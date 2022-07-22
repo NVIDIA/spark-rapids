@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from os import cpu_count
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_write, \
@@ -21,7 +22,7 @@ from datetime import datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, is_before_spark_330
+from spark_session import with_cpu_session, is_before_spark_330, with_gpu_session
 
 _acq_schema = StructType([
     StructField('loan_id', LongType()),
@@ -540,3 +541,16 @@ def test_csv_read_case_insensitivity(spark_tmp_path):
         lambda spark: spark.read.option('header', True).csv(data_path).select('one', 'two', 'three'),
         {'spark.sql.caseSensitive': 'false'}
     )
+
+@allow_non_gpu(any = True)
+@pytest.mark.parametrize('data_gen', csv_supported_gens, ids=idfn)
+def test_csv_read_count(spark_tmp_path, data_gen):
+    gen = StructGen([('a', data_gen)], nullable=False)
+    data_path = spark_tmp_path + '/CSV_DATA'
+
+    with_cpu_session(lambda spark: gen_df(spark, gen).write.csv(data_path))
+
+    cpu_count = with_cpu_session(lambda spark: spark.read.csv(data_path).count())
+    gpu_count = with_gpu_session(lambda spark: spark.read.csv(data_path).count())
+
+    assert(cpu_count == gpu_count)

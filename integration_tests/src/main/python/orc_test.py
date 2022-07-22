@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from os import cpu_count
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, is_before_spark_320, is_before_spark_330
+from spark_session import with_cpu_session, is_before_spark_320, is_before_spark_330, with_gpu_session
 from parquet_test import _nested_pruning_schemas
 from conftest import is_databricks_runtime
 
@@ -663,3 +664,15 @@ def test_read_type_casting_integral(spark_tmp_path, offset, reader_confs, v1_ena
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(rs).orc(data_path),
         conf=all_confs)
+
+def test_orc_read_count(spark_tmp_path):
+    data_path = spark_tmp_path + '/ORC_DATA'
+    gen_list = [('c' + str(i), gen) for i, gen in enumerate(orc_basic_gens)]
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).write.orc(data_path))
+
+    # read the data back with count()
+    cpu_count = with_cpu_session(lambda spark: spark.read.orc(data_path).count())
+    gpu_count = with_gpu_session(lambda spark: spark.read.orc(data_path).count())
+    
+    assert(cpu_count == gpu_count)

@@ -1145,3 +1145,14 @@ def test_parquet_read_encryption(spark_tmp_path, reader_confs, v1_enabled_list):
         lambda: with_gpu_session(
             lambda spark: spark.read.parquet(data_path).collect(), conf=conf),
         error_message='The GPU does not support reading encrypted Parquet files')
+
+@pytest.mark.parametrize('parquet_gens', parquet_gens_legacy_list, ids=idfn)
+def test_parquet_read_count(spark_tmp_path, parquet_gens):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(lambda spark: gen_df(spark, gen_list).write.parquet(data_path))
+
+    cpu_count = with_cpu_session(lambda spark: spark.read.parquet(data_path).count())
+    gpu_count = with_gpu_session(lambda spark: spark.read.parquet(data_path).count())
+
+    assert(cpu_count == gpu_count)
