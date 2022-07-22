@@ -115,7 +115,6 @@ object AlluxioUtils extends Logging {
         case Seq(first, _, _*) => first
         case Seq(last) => last + param
       }.toSeq
-    logInfo(s"Run command ${params.last}")
     val out : scala.collection.mutable.ArrayBuffer[String] =
       new scala.collection.mutable.ArrayBuffer[String](10)
     val ret = if (params.length == 1) {
