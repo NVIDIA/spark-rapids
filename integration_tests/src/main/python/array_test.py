@@ -34,10 +34,38 @@ array_all_null_gen = ArrayGen(int_gen, all_null=True)
 array_item_test_gens = array_gens_sample + [array_all_null_gen,
     ArrayGen(MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen(), max_length=10), max_length=10)]
 
+
+_non_neg_zero_float_special_cases = [
+    FLOAT_MIN,
+    FLOAT_MAX,
+    -1.0,
+    1.0,
+    0.0,
+    float('inf'),
+    float('-inf'),
+    float('nan'),
+    NEG_FLOAT_NAN_MAX_VALUE
+]
+
+_non_neg_zero_double_special_cases = [
+    DoubleGen.make_from(1, DOUBLE_MAX_EXP, DOUBLE_MAX_FRACTION),
+    DoubleGen.make_from(0, DOUBLE_MAX_EXP, DOUBLE_MAX_FRACTION),
+    DoubleGen.make_from(1, DOUBLE_MIN_EXP, DOUBLE_MAX_FRACTION),
+    DoubleGen.make_from(0, DOUBLE_MIN_EXP, DOUBLE_MAX_FRACTION),
+    -1.0,
+    1.0,
+    0.0,
+    float('inf'),
+    float('-inf'),
+    float('nan'),
+    NEG_DOUBLE_NAN_MAX_VALUE
+]
+
 no_neg_zero_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
         # -0.0 cannot work because of -0.0 == 0.0 in cudf for distinct
-        # but nans do work
-        FloatGen(special_cases=[]), DoubleGen(special_cases=[]),
+        # but nans and other default special cases do work
+        FloatGen(special_cases=_non_neg_zero_float_special_cases), 
+        DoubleGen(special_cases=_non_neg_zero_double_special_cases),
         string_gen, boolean_gen, date_gen, timestamp_gen]
 
 # Merged "test_nested_array_item" with this one since arrays as literals is supported
