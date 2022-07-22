@@ -136,7 +136,12 @@ object RapidsShuffleInternalManagerBase extends Logging {
     def shutdownNow(): Unit = p.shutdownNow()
   }
 
-  // "slots" are a thread + queue thin wrapper that carries
+  // "slots" are a thread + queue thin wrapper that is used
+  // to execute tasks that need to be done in sequentially.
+  // This is done such that the threaded shuffle writer posts
+  // tasks that are for writer_i, and that writer is guaranteed
+  // to be written to sequentially, but writer_j may end up
+  // in a different slot.
   private var numSlots: Int = 0
   private lazy val slots = new mutable.HashMap[Int, Slot]()
 
@@ -157,7 +162,7 @@ object RapidsShuffleInternalManagerBase extends Logging {
   }
 
   def stopThreadPool(): Unit = synchronized {
-    slots.foreach { case(_, slot) => slot.shutdownNow() }
+    slots.values.foreach(_.shutdownNow())
     slots.clear()
   }
 
