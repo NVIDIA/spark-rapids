@@ -60,9 +60,9 @@ public final class JCudfUtil {
   public static final int JCUDF_OPTIMIZED_CUDF_KERNEL_MAX_BYTES = 1536;
 
   /**
-   * The maximum buffer size allocated to copy JCudf row.
+   * The maximum buffer size allocated to copy JCudf row (8-bytes aligned).
    */
-  public static final long JCUDF_MAX_DATA_BUFFER_LENGTH =
+  public static final long JCUDF_MAX_ROW_BUFFER_LENGTH =
       Integer.MAX_VALUE - (JCUDF_ROW_ALIGNMENT - 1);
 
   /**

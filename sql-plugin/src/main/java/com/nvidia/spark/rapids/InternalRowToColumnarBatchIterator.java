@@ -188,13 +188,12 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
         // Handle corner case when the dataLength is too small to copy a single row.
         // We retry after doubling the bufferSize.
         // dataLength can be considered a rough estimate of a single row.
-        long newRowSizeEst = dataLength << 1 ;
-        newRowSizeEst = Math.min(newRowSizeEst, JCudfUtil.JCUDF_MAX_DATA_BUFFER_LENGTH);
-        if (newRowSizeEst <= dataLength) { // We already reached the limit.
+        if (dataLength >= JCudfUtil.JCUDF_MAX_ROW_BUFFER_LENGTH) {
           // proceed with throwing exception.
           throw new RuntimeException(
               "JCudf row is too large to fit in MemoryBuffer", ex);
         }
+        long newRowSizeEst = Math.min(dataLength << 1, JCudfUtil.JCUDF_MAX_ROW_BUFFER_LENGTH);
         // Recalculate the dataLength based on the new size estimate
         setBuffersCapacities(newRowSizeEst, goalTargetSize);
         retryCount++;
