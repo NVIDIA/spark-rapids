@@ -42,7 +42,7 @@ import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.rapids.{CpuToGpuAggregateBufferConverter, CudfAggregate, GpuAggregateExpression, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.rapids.execution.{GpuShuffleMeta, TrampolineUtil}
-import org.apache.spark.sql.types.{ArrayType, DataType, MapType}
+import org.apache.spark.sql.types.{DataType, MapType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object AggregateUtils {
@@ -856,9 +856,9 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     // we need to run recursive type check on the structs.
     val arrayOrMapGroupings = agg.groupingExpressions.exists(e =>
       TrampolineUtil.dataTypeExistsRecursively(e.dataType,
-        dt => dt.isInstanceOf[ArrayType] || dt.isInstanceOf[MapType]))
+        dt => dt.isInstanceOf[MapType]))
     if (arrayOrMapGroupings) {
-      willNotWorkOnGpu("ArrayTypes or MapTypes in grouping expressions are not supported")
+      willNotWorkOnGpu("MapTypes in grouping expressions are not supported")
     }
 
     tagForReplaceMode()

@@ -128,6 +128,10 @@ _grpkey_floats_with_nulls_and_nans = [
     ('b', FloatGen(nullable=(True, 10.0), special_cases=[(float('nan'), 10.0)])),
     ('c', LongGen())]
 
+# grouping single-level lists
+_grpkey_list_with_non_nested_children = [
+    ('a', RepeatSeqGen(ArrayGen(IntegerGen()), length=3)),
+    ('b', IntegerGen())]
 _nan_zero_float_special_cases = [
     (float('nan'),  5.0),
     (NEG_FLOAT_NAN_MIN_VALUE, 5.0),
@@ -335,7 +339,7 @@ def test_hash_reduction_decimal_overflow_sum(precision):
         # some optimizations are conspiring against us.
         conf = {'spark.rapids.sql.batchSizeBytes': '128m'})
 
-@pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
+@pytest.mark.parametrize('data_gen', [_grpkey_list_with_non_nested_children, _longs_with_nulls], ids=idfn)
 def test_hash_grpby_sum_count_action(data_gen):
     assert_gpu_and_cpu_row_counts_equal(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b'))
