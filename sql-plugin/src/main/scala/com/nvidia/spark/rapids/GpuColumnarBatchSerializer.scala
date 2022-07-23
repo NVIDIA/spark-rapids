@@ -144,6 +144,7 @@ private class GpuColumnarBatchSerializerInstance(dataSize: GpuMetric) extends Se
       override def asKeyValueIterator: Iterator[(Int, ColumnarBatch)] = {
         new Iterator[(Int, ColumnarBatch)] with Arm {
           var toBeReturned: Option[ColumnarBatch] = None
+          var streamClosed: Boolean = false
 
           TaskContext.get().addTaskCompletionListener[Unit]((_: TaskContext) => {
             toBeReturned.foreach(_.close())
@@ -152,23 +153,29 @@ private class GpuColumnarBatchSerializerInstance(dataSize: GpuMetric) extends Se
           })
 
           def tryReadNext(): Option[ColumnarBatch] = {
-            withResource(new NvtxRange("Read Batch", NvtxColor.YELLOW)) { _ =>
-              val header = new SerializedTableHeader(dIn)
-              if (header.wasInitialized) {
-                if (header.getNumColumns > 0) {
-                  // This buffer will later be concatenated into another host buffer before being
-                  // sent to the GPU, so no need to use pinned memory for these buffers.
-                  closeOnExcept(HostMemoryBuffer.allocate(header.getDataLen, false)) { hostBuffer =>
-                    JCudfSerialization.readTableIntoBuffer(dIn, header, hostBuffer)
-                    Some(SerializedTableColumn.from(header, hostBuffer))
+            if (streamClosed) {
+              None
+            } else {
+              withResource(new NvtxRange("Read Batch", NvtxColor.YELLOW)) { _ =>
+                val header = new SerializedTableHeader(dIn)
+                if (header.wasInitialized) {
+                  if (header.getNumColumns > 0) {
+                    // This buffer will later be concatenated into another host buffer before being
+                    // sent to the GPU, so no need to use pinned memory for these buffers.
+                    closeOnExcept(
+                        HostMemoryBuffer.allocate(header.getDataLen, false)) { hostBuffer =>
+                      JCudfSerialization.readTableIntoBuffer(dIn, header, hostBuffer)
+                      Some(SerializedTableColumn.from(header, hostBuffer))
+                    }
+                  } else {
+                    Some(SerializedTableColumn.from(header))
                   }
                 } else {
-                  Some(SerializedTableColumn.from(header))
+                  // at EOF
+                  dIn.close()
+                  streamClosed = true
+                  None
                 }
-              } else {
-                // at EOF
-                dIn.close()
-                None
               }
             }
           }
@@ -263,5 +270,18 @@ object SerializedTableColumn {
       hostBuffer: HostMemoryBuffer = null): ColumnarBatch = {
     val column = new SerializedTableColumn(header, hostBuffer)
     new ColumnarBatch(Array(column), header.getNumRows)
+  }
+
+  def getMemoryUsed(batch: ColumnarBatch): Long = {
+    var sum: Long = 0
+    if (batch.numCols == 1) {
+      val cv = batch.column(0)
+      cv match {
+        case serializedTableColumn: SerializedTableColumn =>
+          sum += serializedTableColumn.hostBuffer.getLength
+        case _ =>
+      }
+    }
+    sum
   }
 }

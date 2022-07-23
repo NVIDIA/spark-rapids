@@ -1305,6 +1305,12 @@ object RapidsConf {
       .integerConf
       .createWithDefault(20)
 
+  val SHUFFLE_MULTITHREADED_READER_THREADS =
+    conf("spark.rapids.shuffle.multiThreaded.reader.threads")
+        .doc("The number of threads to use for reading shuffle blocks per executor.")
+        .integerConf
+        .createWithDefault(20)
+
   // ALLUXIO CONFIGS
 
   val ALLUXIO_PATHS_REPLACE = conf("spark.rapids.alluxio.pathsToReplace")
@@ -1962,6 +1968,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
 
   lazy val shuffleMultiThreadedWriterThreads: Int = get(SHUFFLE_MULTITHREADED_WRITER_THREADS)
+
+  lazy val shuffleMultiThreadedReaderThreads: Int = get(SHUFFLE_MULTITHREADED_READER_THREADS)
 
   def isUCXShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode
