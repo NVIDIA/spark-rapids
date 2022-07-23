@@ -111,11 +111,11 @@ object RapidsShuffleInternalManagerBase extends Logging {
    * tasks that are for writer_i, and that writer is guaranteed
    * to be written to sequentially, but writer_j may end up
    * in a different slot, and could perform its work in parallel.
-   * @param id string identifying the slot (and thread)
+   * @param slotNum this slot's unique number only used to name its executor
    */
-  private class Slot(id: Int) {
+  private class Slot(slotNum: Int) {
     private val p = Executors.newSingleThreadExecutor(new ThreadFactoryBuilder()
-        .setNameFormat(s"rapids-shuffle-writer-$id")
+        .setNameFormat(s"rapids-shuffle-writer-$slotNum")
         .setDaemon(true)
         .build())
 
@@ -135,15 +135,22 @@ object RapidsShuffleInternalManagerBase extends Logging {
   // used by callers to obtain a unique slot
   private val slotNumber = new AtomicInteger(0)
 
-  def queueTask[T](slot: Int, task: Callable[T]): Unit = {
-    slots(slot % numSlots).offer(task)
+  /**
+   * Send a task to a specific slot.
+   * @param slotNum the slot to submit to
+   * @param task a task to execute
+   * @note there must not be an uncaught exception while calling
+   *      `task`.
+   */
+  def queueTask[T](slotNum: Int, task: Callable[T]): Unit = {
+    slots(slotNum % numSlots).offer(task)
   }
 
   def startThreadPoolIfNeeded(numConfiguredThreads: Int): Unit = synchronized {
     if (slots.isEmpty) {
       numSlots = numConfiguredThreads
-      (0 until numSlots).foreach { slotId =>
-        slots.put(slotId, new Slot(slotId))
+      (0 until numSlots).foreach { slotNum =>
+        slots.put(slotNum, new Slot(slotNum))
       }
     }
   }
@@ -229,8 +236,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               // Places writer objects at round robin slot numbers apriori
               // this choice is for simplicity but likely needs to change so that
               // we can handle skew better
-              val slotNumber = RapidsShuffleInternalManagerBase.getNextSlot
-              diskBlockObjectWriters.put(i, (slotNumber, writer))
+              val slotNum = RapidsShuffleInternalManagerBase.getNextSlot
+              diskBlockObjectWriters.put(i, (slotNum, writer))
             }
             writeMetrics.incWriteTime(System.nanoTime() - openStartTime);
 
@@ -241,7 +248,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               val value = record._2
               val reducePartitionId: Int = partitioner.getPartition(key)
               scheduledWrites.incrementAndGet()
-              val (slot, myWriter) = diskBlockObjectWriters(reducePartitionId)
+              val (slotNum, myWriter) = diskBlockObjectWriters(reducePartitionId)
 
               // we close batches actively in the `records` iterator as we get the next batch
               // this makes sure it is kept alive while a task is able to handle it.
@@ -252,7 +259,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                   null
               }
 
-              RapidsShuffleInternalManagerBase.queueTask(slot, () => {
+              RapidsShuffleInternalManagerBase.queueTask(slotNum, () => {
                 try {
                   withResource(cb) { _ =>
                     myWriter.write(key, value)
