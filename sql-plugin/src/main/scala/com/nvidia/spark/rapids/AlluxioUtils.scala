@@ -72,7 +72,7 @@ object AlluxioUtils extends Logging {
         }
         alluxioMasterHost = Some(alluxio_master + ":" + alluxio_port)
         // load mounted point by call Alluxio mount command.
-        val (ret, output) = runAlluxioCmd(" fs mount")
+        val (ret, output) = runAlluxioCmd("fs mount")
         if (ret == 0) {
           // parse the output, E.g.
           // s3a://bucket-foo/        on  /bucket-foo
@@ -113,7 +113,7 @@ object AlluxioUtils extends Logging {
     scala.collection.mutable.ArrayBuffer[String]) = {
     val params = alluxioCmd.tails.collect {
         case Seq(first, _, _*) => first
-        case Seq(last) => last + param
+        case Seq(last) => last + " " + param
       }.toSeq
     val out : scala.collection.mutable.ArrayBuffer[String] =
       new scala.collection.mutable.ArrayBuffer[String](10)
@@ -143,7 +143,7 @@ object AlluxioUtils extends Logging {
         // not mount yet, call mount command
         // we only support s3 or s3a bucket for now.
         // To support other cloud storage, we need to support credential parameters for the others
-        val parameter = " fs mount --readonly " +(
+        val parameter = "fs mount --readonly " +(
           if (access_key.isDefined && secret_key.isDefined) {
             s"--option s3a.accessKeyId=${access_key.get} " +
             s"--option s3a.secretKey=${secret_key.get} " } else "") +

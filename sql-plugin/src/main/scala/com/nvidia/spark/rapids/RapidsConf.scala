@@ -1261,7 +1261,7 @@ object RapidsConf {
   // ALLUXIO CONFIGS
 
   val ALLUXIO_PATHS_REPLACE = conf("spark.rapids.alluxio.pathsToReplace")
-    .doc("List of paths to be replaced with corresponding alluxio scheme. " +
+    .doc("List of paths to be replaced with corresponding Alluxio scheme. " +
       "E.g. when configure is set to " +
       "\"s3://foo->alluxio://0.1.2.3:19998/foo,gs://bar->alluxio://0.1.2.3:19998/bar\", " +
       "it means: " +
@@ -1277,6 +1277,9 @@ object RapidsConf {
     .doc("Enable the feature of auto mounting the cloud storage to Alluxio. " +
       "It requires the Alluxio master is the same node of Spark driver node. " +
       "When it's true, it requires an environment variable ALLUXIO_HOME be set properly. " +
+      "The default value of ALLUXIO_HOME is \"/opt/alluxio-2.8.0\". " +
+      "You can set it as an environment variable when running a spark-submit or " +
+      "you can use spark.yarn.appMasterEnv.ALLUXIO_HOME to set it on Yarn. " +
       "The Alluxio master's host and port will be read from alluxio.master.hostname and " +
       "alluxio.master.rpc.port(default: 19998) from ALLUXIO_HOME/conf/alluxio-site.properties, " +
       "then replace a cloud path which matches spark.rapids.alluxio.bucket.regex like " +
@@ -1298,7 +1301,7 @@ object RapidsConf {
 
   val ALLUXIO_CMD = conf("spark.rapids.alluxio.cmd")
     .doc("Provide the Alluxio command, which is used to mount or get information. " +
-      "E.g. \"su,ubuntu,-c,/opt/alluxio-2.8.0/bin/alluxio\", it means: " +
+      "We use \"su,ubuntu,-c,/opt/alluxio-2.8.0/bin/alluxio\" when it's not set, it means: " +
       "run Process(Seq(\"su\", \"ubuntu\", \"-c\", " +
       "\"/opt/alluxio-2.8.0/bin/alluxio fs mount --readonly /bucket-foo s3://bucket-foo\")), " +
       "to mount s3://bucket-foo to /bucket-foo. " +

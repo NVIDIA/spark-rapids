@@ -244,6 +244,8 @@ NM_hostname_2
        ```
 
    For other filesystems, please refer to [this site](https://www.alluxio.io/).
+   We also provide auto mount feature for an easier usage.
+   Please refer to [Alluxio auto mount for AWS S3 buckets](#alluxio-auto-mount-for-aws-s3-buckets)
 
 ## RAPIDS Configuration
 
