@@ -408,7 +408,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 }
 
 class RapidsCachingWriter[K, V](
-                                 blockManager: BlockManager,
+    blockManager: BlockManager,
     // Never keep a reference to the ShuffleHandle in the cache as it being GCed triggers
     // the data being released
     handle: GpuShuffleHandle[K, V],
