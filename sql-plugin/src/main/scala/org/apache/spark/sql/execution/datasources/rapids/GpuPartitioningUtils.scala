@@ -35,13 +35,13 @@ import org.apache.spark.sql.catalyst.catalog.ExternalCatalogUtils.{unescapePathN
 import org.apache.spark.sql.catalyst.expressions.{Cast, Literal}
 import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, DateTimeUtils, TimestampFormatter}
 import org.apache.spark.sql.catalyst.util.rapids.DateFormatter
-import org.apache.spark.sql.errors.rapids.QueryExecutionErrors
 import org.apache.spark.sql.execution.datasources.{PartitionPath, PartitionSpec}
 import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex.BASE_PATH_PARAM
 import org.apache.spark.sql.execution.datasources.PartitioningUtils.timestampPartitionPattern
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.types.rapids.{AnsiIntervalType, AnyTimestampType}
+import org.apache.spark.sql.types.shims.PartitionValueCastShims
 import org.apache.spark.unsafe.types.UTF8String
+
 
 
 
@@ -181,18 +181,11 @@ object GpuPartitioningUtils extends SQLConfHelper {
     case _: DecimalType => Literal(new JBigDecimal(value)).value
     case DateType =>
       Cast(Literal(value), DateType, Some(zoneId.getId)).eval()
-    // Timestamp types
-    case dt if AnyTimestampType.acceptsType(dt) =>
-      Try {
-        Cast(Literal(unescapePathName(value)), dt, Some(zoneId.getId)).eval()
-      }.getOrElse {
-        Cast(Cast(Literal(value), DateType, Some(zoneId.getId)), dt).eval()
-      }
-    case it: AnsiIntervalType =>
-      Cast(Literal(unescapePathName(value)), it).eval()
     case BinaryType => value.getBytes()
     case BooleanType => value.toBoolean
-    case dt => throw QueryExecutionErrors.typeUnsupportedError(dt)
+    case t if PartitionValueCastShims.isSupportedType(t) =>
+      PartitionValueCastShims.castTo(t, value, zoneId)
+    case dt => throw new IllegalArgumentException(s"Unexpected type $dt")
   }
 
   /**
@@ -321,8 +314,8 @@ object GpuPartitioningUtils extends SQLConfHelper {
             } catch {
               case NonFatal(_) =>
                 if (validatePartitionColumns) {
-                  throw QueryExecutionErrors.failedToCastValueToDataTypeForPartitionColumnError(
-                    typedValue.value, typedValue.dataType, columnName)
+                  throw new RuntimeException(s"Failed to cast value `$typedValue.value` to " +
+                    s"`$typedValue.dataType` for partition column `$columnName`")
                 } else null
             }
           }
