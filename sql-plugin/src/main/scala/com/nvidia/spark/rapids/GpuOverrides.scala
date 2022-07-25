@@ -3332,11 +3332,11 @@ object GpuOverrides extends Logging {
       "Collect a set of unique elements, not supported in reduction",
       ExprChecks.fullAgg(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP),
+            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-              TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+              TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY).nested(),
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
