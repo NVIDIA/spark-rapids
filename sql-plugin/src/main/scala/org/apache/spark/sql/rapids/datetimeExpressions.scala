@@ -374,26 +374,19 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
    rule: DataFromReplacementRule)
   extends BinaryExprMeta[A](expr, conf, parent, rule) {
 
-  val optionalRightStringLit: Option[String] =
-    if (expr.right.dataType == StringType) {
-      extractStringLit(expr.right)
-    } else {
-      None
-    }
-
-  lazy val (sparkFormat, strfFormat): (String, String) =
-    optionalRightStringLit match {
-      case Some(rightLit) =>
-        (rightLit,
-         DateUtils.tagAndGetCudfFormat(this, rightLit,
-                                       expr.left.dataType == DataTypes.StringType))
-      case None => (null, null)
-    }
-
+  var sparkFormat: String = _
+  var strfFormat: String = _
   override def tagExprForGpu(): Unit = {
     // Date and Timestamp work too
-    if (expr.right.dataType == StringType && optionalRightStringLit.isEmpty) {
-      willNotWorkOnGpu("format has to be a string literal")
+    if (expr.right.dataType == StringType) {
+      extractStringLit(expr.right) match {
+        case Some(rightLit) =>
+          sparkFormat = rightLit
+          strfFormat = DateUtils.tagAndGetCudfFormat(this,
+            sparkFormat, expr.left.dataType == DataTypes.StringType)
+        case None =>
+          willNotWorkOnGpu("format has to be a string literal")
+      }
     }
   }
 }
