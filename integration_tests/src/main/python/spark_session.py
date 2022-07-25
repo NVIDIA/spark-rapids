@@ -192,3 +192,10 @@ def get_java_major_version():
     elif dash_pos != -1:
         ver = ver[0:dash_pos]
     return int(ver)
+
+def get_jvm_charset():
+    sc = _spark.sparkContext
+    return str(sc._jvm.java.nio.charset.Charset.defaultCharset())
+
+def is_jvm_charset_utf8():
+    return get_jvm_charset() == 'UTF-8'
