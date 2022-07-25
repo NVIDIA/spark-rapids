@@ -158,7 +158,7 @@ object RapidsPluginUtils extends Logging {
       if (conf.contains(EXECUTOR_CORES_KEY)) {
         conf.set(numThreadsKey, Math.max(RapidsConf.MULTITHREAD_READ_NUM_THREADS_DEFAULT,
           conf.get(EXECUTOR_CORES_KEY).toInt).toString)
-        logWarning(s"$numThreadsKey is set to " + conf.get(numThreadsKey) +".")
+        logWarning(s"$numThreadsKey is set to " + conf.get(numThreadsKey) + ".")
       }
     }
 
