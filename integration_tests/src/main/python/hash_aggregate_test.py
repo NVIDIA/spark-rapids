@@ -577,10 +577,15 @@ _repeat_agg_column_for_collect_set_op = [
     RepeatSeqGen(StructGen([
         ['c0', all_basic_struct_gen], ['c1', int_gen]]), length=15)]
 
+all_basic_struct_gen_no_nan = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens_no_nan)])
+
 _repeat_agg_column_for_collect_set_op_nested = [
     RepeatSeqGen(array_struct_gen, length=15),
     RepeatSeqGen(StructGen([
-        ['c0', array_struct_gen], ['c1', int_gen]]), length=15)]
+        ['c0', array_struct_gen], ['c1', int_gen]]), length=15),
+    RepeatSeqGen(ArrayGen(all_basic_struct_gen_no_nan), length=15)]
+
+_array_of_array_gen = [RepeatSeqGen(ArrayGen(sub_gen), length=15) for sub_gen in single_level_array_gens_no_nan]
 
 _gen_data_for_collect_set_op = [[
     ('a', RepeatSeqGen(LongGen(), length=20)),
@@ -588,7 +593,7 @@ _gen_data_for_collect_set_op = [[
 
 _gen_data_for_collect_set_op_nested = [[
     ('a', RepeatSeqGen(LongGen(), length=20)),
-    ('b', value_gen)] for value_gen in _repeat_agg_column_for_collect_set_op_nested]
+    ('b', value_gen)] for value_gen in _repeat_agg_column_for_collect_set_op_nested + _array_of_array_gen]
 
 # very simple test for just a count on decimals 128 values until we can support more with them
 @ignore_order(local=True)
