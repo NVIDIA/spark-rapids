@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
-from spark_session import is_before_spark_330, is_databricks104_or_later
+from spark_session import is_before_spark_313, is_before_spark_330, is_databricks104_or_later
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 from pyspark.sql.functions import array_contains, col, element_at, lit
@@ -432,6 +432,8 @@ def test_array_max_q1():
 
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
 def test_array_intersect(data_gen):
+    if is_before_spark_313() and isinstance(data_gen, (FloatGen, DoubleGen)):
+        pytest.xfail("array_intersect tests on floating point types will fail because of NaN inequalilty in Spark 3.1.2 or earlier")
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
         ('b', ArrayGen(data_gen, nullable=True))],
@@ -449,6 +451,8 @@ def test_array_intersect(data_gen):
     
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
 def test_array_union(data_gen):
+    if is_before_spark_313() and isinstance(data_gen, (FloatGen, DoubleGen)):
+        pytest.xfail("array_union tests on floating point types will fail because of NaN inequality in Spark 3.1.2 or earlier")
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
         ('b', ArrayGen(data_gen, nullable=True))],
@@ -466,6 +470,8 @@ def test_array_union(data_gen):
 
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
 def test_array_except(data_gen):
+    if is_before_spark_313() and isinstance(data_gen, (FloatGen, DoubleGen)):
+        pytest.xfail("array_except tests on floating point types will fail because of NaN inequality in Spark 3.1.2 or earlier")
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
         ('b', ArrayGen(data_gen, nullable=True))],
@@ -483,6 +489,8 @@ def test_array_except(data_gen):
 
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
 def test_arrays_overlap(data_gen):
+    if is_before_spark_313() and isinstance(data_gen, (FloatGen, DoubleGen)):
+        pytest.xfail("arrays_overlap tests on floating point types will fail because of NaN inequality in Spark 3.1.2 or earlier")
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
         ('b', ArrayGen(data_gen, nullable=True))],

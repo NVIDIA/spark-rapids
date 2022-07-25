@@ -134,6 +134,9 @@ def with_gpu_session(func, conf={}):
 def is_before_spark_312():
     return spark_version() < "3.1.2"
 
+def is_before_spark_313():
+    return spark_version() < "3.1.3"
+
 def is_before_spark_314():
     return spark_version() < "3.1.4"
 
