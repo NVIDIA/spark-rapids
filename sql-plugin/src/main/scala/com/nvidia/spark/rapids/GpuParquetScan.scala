@@ -754,9 +754,7 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
           val clippedSchema =
           GpuParquetPartitionReaderFactoryBase.filterClippedSchema(clippedSchemaTmp,
             fileSchema, isCaseSensitive, readUseFieldId)
-          val columnPaths = clippedSchema.getPaths.asScala.map(x => ColumnPath.get(x: _*))
-          val clipped =
-            ParquetPartitionReader.clipBlocks(columnPaths, blocks.asScala, isCaseSensitive)
+          val clipped = GpuParquetUtils.clipBlocksToSchema(clippedSchema, blocks, isCaseSensitive)
           (clipped, clippedSchema)
         }
 
@@ -1278,7 +1276,7 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
         currentCopyEnd += column.getTotalSize
         totalBytesToCopy += column.getTotalSize
       }
-      outputBlocks += ParquetPartitionReader.newParquetBlock(block.getRowCount, outputColumns)
+      outputBlocks += GpuParquetUtils.newBlockMeta(block.getRowCount, outputColumns)
     }
 
     if (currentCopyEnd != currentCopyStart) {
@@ -2154,7 +2152,7 @@ class ParquetPartitionReader(
     override val conf: Configuration,
     split: PartitionedFile,
     filePath: Path,
-    clippedBlocks: Seq[BlockMetaData],
+    clippedBlocks: Iterable[BlockMetaData],
     clippedParquetSchema: MessageType,
     override val isSchemaCaseSensitive: Boolean,
     override val readDataSchema: StructType,
@@ -2296,39 +2294,6 @@ object ParquetPartitionReader {
     block.setTotalByteSize(totalSize)
 
     block
-  }
-
-  /**
-   * Trim block metadata to contain only the column chunks that occur in the specified columns.
-   * The column chunks that are returned are preserved verbatim
-   * (i.e.: file offsets remain unchanged).
-   *
-   * @param columnPaths the paths of columns to preserve
-   * @param blocks the block metadata from the original Parquet file
-   * @param isCaseSensitive indicate if it is case sensitive
-   * @return the updated block metadata with undesired column chunks removed
-   */
-  @scala.annotation.nowarn(
-    "msg=method getPath in class ColumnChunkMetaData is deprecated"
-  )
-  private[spark] def clipBlocks(columnPaths: Seq[ColumnPath],
-      blocks: Seq[BlockMetaData], isCaseSensitive: Boolean): Seq[BlockMetaData] = {
-    val pathSet = if (isCaseSensitive) {
-      columnPaths.map(cp => cp.toDotString).toSet
-    } else {
-      columnPaths.map(cp => cp.toDotString.toLowerCase(Locale.ROOT)).toSet
-    }
-    blocks.map(oldBlock => {
-      //noinspection ScalaDeprecation
-      val newColumns = if (isCaseSensitive) {
-        oldBlock.getColumns.asScala.filter(c =>
-          pathSet.contains(c.getPath.toDotString))
-      } else {
-        oldBlock.getColumns.asScala.filter(c =>
-          pathSet.contains(c.getPath.toDotString.toLowerCase(Locale.ROOT)))
-      }
-      ParquetPartitionReader.newParquetBlock(oldBlock.getRowCount, newColumns)
-    })
   }
 }
 

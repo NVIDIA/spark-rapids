@@ -224,7 +224,7 @@ class TypedConfBuilder[T](
     }
   }
 
-  def createWithDefault(value: T): ConfEntry[T] = {
+  def createWithDefault(value: T): ConfEntryWithDefault[T] = {
     val ret = new ConfEntryWithDefault[T](parent.key, converter,
       parent.doc, parent.isInternal, value)
     parent.register(ret)
@@ -1007,6 +1007,16 @@ object RapidsConf {
       .integerConf
       .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
       .createWithDefault(Integer.MAX_VALUE)
+
+  val ENABLE_ICEBERG = conf("spark.rapids.sql.format.iceberg.enabled")
+    .doc("When set to false disables all Iceberg acceleration")
+    .booleanConf
+    .createWithDefault(true)
+
+  val ENABLE_ICEBERG_READ = conf("spark.rapids.sql.format.iceberg.read.enabled")
+    .doc("When set to false disables Iceberg input acceleration")
+    .booleanConf
+    .createWithDefault(true)
 
   val ENABLE_RANGE_WINDOW_BYTES = conf("spark.rapids.sql.window.range.byte.enabled")
     .doc("When the order-by column of a range based window is byte type and " +
@@ -1866,6 +1876,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     RapidsReaderType.withName(get(AVRO_READER_TYPE)) == RapidsReaderType.MULTITHREADED
 
   lazy val maxNumAvroFilesParallel: Int = get(AVRO_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
+
+  lazy val isIcebergEnabled: Boolean = get(ENABLE_ICEBERG)
+
+  lazy val isIcebergReadEnabled: Boolean = get(ENABLE_ICEBERG_READ)
 
   lazy val shuffleManagerEnabled: Boolean = get(SHUFFLE_MANAGER_ENABLED)
 
