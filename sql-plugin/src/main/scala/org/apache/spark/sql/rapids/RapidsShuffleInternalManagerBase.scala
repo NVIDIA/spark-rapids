@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import java.io.{File, FileInputStream}
 import java.util.Optional
-import java.util.concurrent.{Callable, ExecutionException, Executors, Future}
+import java.util.concurrent.{Callable, Executors, Future}
 import java.util.concurrent.atomic.AtomicInteger
 
 import scala.collection.mutable
