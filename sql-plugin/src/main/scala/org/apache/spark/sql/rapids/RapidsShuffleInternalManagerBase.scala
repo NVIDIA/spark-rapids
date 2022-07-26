@@ -242,7 +242,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             writeMetrics.incWriteTime(System.nanoTime() - openStartTime);
 
             // we call write on every writer for every record in parallel
-            val writeFutures = new ArrayBuffer[Future[Unit]]
+            val writeFutures = new mutable.Queue[Future[Unit]]
             records.foreach { record =>
               val key = record._1
               val value = record._2
@@ -266,30 +266,13 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             }
 
             withResource(new NvtxRange("WaitingForWrites", NvtxColor.PURPLE)) { _ =>
-              synchronized {
-                var errorOccurred: Throwable = null
-                while (writeFutures.nonEmpty && errorOccurred == null) {
-                  // get the head future
-                  val fut = writeFutures.remove(0)
-                  try {
-                    fut.get()
-                  } catch {
-                    case ee: ExecutionException =>
-                      // `ExecutionException` wraps the actual exception from the task,
-                      // so extract it here. This is the exception we would normally get.
-                      errorOccurred = ee.getCause
-                    case t: Throwable =>
-                      // got a different exception here, lets not ignore it
-                      errorOcurred = t
-                  }
+              try {
+                while (writeFutures.nonEmpty) {
+                  writeFutures.dequeue().get()
                 }
-                if (errorOccurred != null) {
-                  // cancel all pending futures
-                  writeFutures.foreach(_.cancel(true /*ok to interrupt*/))
-                  writeFutures.clear()
-                  // get the cause of the exception
-                  throw errorOccurred
-                }
+              } finally {
+                // cancel all pending futures (only in case of error will we cancel)
+                writeFutures.foreach(_.cancel(true /*ok to interrupt*/))
               }
             }
             writePartitionedData(mapOutputWriter)
