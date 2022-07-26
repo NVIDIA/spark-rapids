@@ -1109,3 +1109,42 @@ def test_window_first_last_nth_ignore_nulls(data_gen):
         "window_agg_table",
         'SELECT a, b, c, ' + exprs_for_nth_first_last_ignore_nulls +
         'FROM window_agg_table')
+
+
+@ignore_order(local=True)
+def test_to_date_with_window_functions():
+    """
+    This test ensures that date expressions participating alongside window aggregations
+    are initialized correctly. (See: https://github.com/NVIDIA/spark-rapids/issues/5984)
+
+    For certain vendor-specific Spark versions, the date expression might be evaluated
+    directly in the WindowExec, instead of being projected upstream. For instance,
+    the query in this test might produce this plan on CPU:
+    ```
+      Window [cast(gettimestamp(cast(date_1#1 as string), yyyy-MM-dd, TimestampType, Some(Etc/UTC), false) as date)...]
+      +- Sort [id#0L ASC NULLS FIRST, date_2#2 ASC NULLS FIRST], false, 0
+         +- Exchange hashpartitioning(id#0L, 200), ENSURE_REQUIREMENTS, [id=#136]
+            +- *(1) Project [date_1#1, id#0L, date_2#2]
+    ```
+
+    This might trip up the GPU plan, by incompletely initializing `GpuGetTimeStamp` for `date_1` thus:
+    ```
+    +- GpuProject [cast(gpugettimestamp(cast(date_1#1 as string), yyyy-MM-dd, null, null, None) as date) AS my_date#6]
+    ```
+
+    The correct initialization should have yielded:
+    ```
+    +- GpuProject [cast(gpugettimestamp(cast(date_1#1 as string), yyyy-MM-dd, yyyy-MM-dd, %Y-%m-%d, None) as date)]
+    ```
+    """
+    assert_gpu_and_cpu_are_equal_sql(
+        df_fun=lambda spark: gen_df(spark, [('id', RepeatSeqGen(int_gen, 20)),
+                                            ('date_1', DateGen()),
+                                            ('date_2', DateGen())]),
+        table_name="window_input",
+        sql="""
+        SELECT TO_DATE( CAST(date_1 AS STRING), 'yyyy-MM-dd' ) AS my_date,
+               SUM(1) OVER(PARTITION BY id ORDER BY date_2) AS my_sum
+        FROM window_input
+        """
+    )
