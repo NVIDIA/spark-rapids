@@ -101,7 +101,7 @@ def test_iceberg_unsupported_formats(spark_tmp_table_factory, data_gens, iceberg
         "UnsupportedOperationException")
 
 @iceberg
-@allow_non_gpu("BatchScanExec")
+@allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize("disable_conf", ["spark.rapids.sql.format.iceberg.enabled",
                                           "spark.rapids.sql.format.iceberg.read.enabled"], ids=idfn)

@@ -77,7 +77,7 @@ TEST_MODE=${TEST_MODE:-'DEFAULT'}
 TEST_TYPE="nightly"
 PCBS_CONF="com.nvidia.spark.ParquetCachedBatchSerializer"
 
-ICEBERG_VERSION=0.13.2
+ICEBERG_VERSION=${ICEBERG_VERSION:-0.14.0}
 ICEBERG_SPARK_VER=$(echo $BASE_SPARK_VER | cut -d. -f1,2)
 # Classloader config is here to work around classloader issues with
 # --packages in distributed setups, should be fixed by
