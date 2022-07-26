@@ -42,9 +42,6 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.types.shims.PartitionValueCastShims
 import org.apache.spark.unsafe.types.UTF8String
 
-
-
-
 object GpuPartitioningUtils extends SQLConfHelper {
 
   case class TypedPartValue(value: String, dataType: DataType)
@@ -64,9 +61,6 @@ object GpuPartitioningUtils extends SQLConfHelper {
    *
    * Mainly copied from PartitioningAwareFileIndex.inferPartitioning
    */
-    // Copied from Spark: org/apache/spark/sql/execution/datasources/PartitionUtils.scala
-    // for for https://github.com/NVIDIA/spark-rapids/issues/6026
-    // It can be removed when Spark3.3 is the least supported Spark version
   def inferPartitioning(
       sparkSession: SparkSession,
       rootPaths: Seq[Path],
