@@ -2145,6 +2145,10 @@ object SupportedOpsDocs {
         totalCount += 2
     }
     println("</table>")
+    println()
+    println("### Apache Iceberg Support")
+    println("Support for Apache Iceberg has additional limitations. See the")
+    println("[Apache Iceberg Support](additional-functionality/iceberg-support.md) document.")
     // scalastyle:on line.size.limit
   }
 
@@ -2197,6 +2201,7 @@ object SupportedOpsForTools {
           case "orc" => conf.isOrcEnabled && conf.isOrcReadEnabled
           case "json" => conf.isJsonEnabled && conf.isJsonReadEnabled
           case "avro" => conf.isAvroEnabled && conf.isAvroReadEnabled
+          case "iceberg" => conf.isIcebergEnabled && conf.isIcebergReadEnabled
           case _ =>
             throw new IllegalArgumentException("Format is unknown we need to add it here!")
         }
