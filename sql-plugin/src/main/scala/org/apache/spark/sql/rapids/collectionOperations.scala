@@ -733,7 +733,7 @@ case class GpuArrayExcept(left: Expression, right: Expression)
   override def nullable: Boolean = true
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    ColumnView.setDifference(lhs.getBase, rhs.getBase)
+    ColumnView.listsDifferenceDistinct(lhs.getBase, rhs.getBase)
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
@@ -778,7 +778,7 @@ case class GpuArrayIntersect(left: Expression, right: Expression)
   override def nullable: Boolean = true
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    ColumnView.setIntersect(lhs.getBase, rhs.getBase)
+    ColumnView.listsIntersectDistinct(lhs.getBase, rhs.getBase)
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
@@ -823,7 +823,7 @@ case class GpuArrayUnion(left: Expression, right: Expression)
   override def nullable: Boolean = true
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    ColumnView.setUnion(lhs.getBase, rhs.getBase)
+    ColumnView.listsUnionDistinct(lhs.getBase, rhs.getBase)
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
@@ -870,7 +870,7 @@ case class GpuArraysOverlap(left: Expression, right: Expression)
   override def nullable: Boolean = true
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    ColumnView.listOverlap(lhs.getBase, rhs.getBase)
+    ColumnView.listsHaveOverlap(lhs.getBase, rhs.getBase)
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {

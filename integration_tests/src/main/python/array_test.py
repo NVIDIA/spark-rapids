@@ -446,7 +446,8 @@ def test_array_intersect(data_gen):
             'sort_array(array_intersect(a, array()))',
             'sort_array(array_intersect(array(), b))',
             'sort_array(array_intersect(a, a))',
-        )
+            'sort_array(array_intersect(array(1), array(1, 2, 3)))',
+            'sort_array(array_intersect(array(), array(1, 2, 3)))')
     )
     
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
@@ -465,7 +466,8 @@ def test_array_union(data_gen):
             'sort_array(array_union(a, array()))',
             'sort_array(array_union(array(), b))',
             'sort_array(array_union(a, a))',
-        )
+            'sort_array(array_union(array(1), array(1, 2, 3)))',
+            'sort_array(array_union(array(), array(1, 2, 3)))')
     )
 
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
@@ -484,7 +486,8 @@ def test_array_except(data_gen):
             'sort_array(array_except(a, array()))',
             'sort_array(array_except(array(), b))',
             'sort_array(array_except(a, a))',
-        )
+            'sort_array(array_except(array(1, 2, 3), array(1, 2, 3)))',
+            'sort_array(array_except(array(1), array(1, 2, 3)))')
     )
 
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
@@ -503,5 +506,7 @@ def test_arrays_overlap(data_gen):
             'arrays_overlap(a, array())',
             'arrays_overlap(array(), b)',
             'arrays_overlap(a, a)',
-        )
+            'arrays_overlap(array(1), array(1, 2))',
+            'arrays_overlap(array(3, 4), array(1, 2))',
+            'arrays_overlap(array(), array(1, 2))')
     )
