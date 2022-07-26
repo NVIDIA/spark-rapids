@@ -74,10 +74,5 @@ object RapidsErrorUtils {
       requiredFieldName: String, matchedFields: String): Throwable = {
     QueryExecutionErrors.foundDuplicateFieldInCaseInsensitiveModeError(
       requiredFieldName, matchedFields)
-    new RuntimeException(
-      s"""
-         |Found duplicate field(s) "$requiredId": $matchedFields
-         |in id mapping mode
-       """.stripMargin.replaceAll("\n", " "))
   }
 }

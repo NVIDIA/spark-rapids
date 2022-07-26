@@ -78,9 +78,6 @@ object SchemaUtils extends Arm {
    *  5) Running type casting when the required type is not equal to the column type.
    *     "castFunc" is required in this case, otherwise it will blow up.
    *
-   * (This is designed for the GPU Parquet/ORC readers to support the schema evolution. Will
-   *  update the Parquet reader in the future.)
-   *
    * @param table The input table, will be closed after returning
    * @param tableSchema The schema of the table
    * @param readSchema  The read schema from Spark
