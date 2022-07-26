@@ -206,25 +206,25 @@ object GpuPartitioningUtils extends SQLConfHelper {
    * }}}
    */
   private[datasources] def parsePartitions(
-    paths: Seq[Path],
-    typeInference: Boolean,
-    basePaths: Set[Path],
-    userSpecifiedSchema: Option[StructType],
-    caseSensitive: Boolean,
-    validatePartitionColumns: Boolean,
-    timeZoneId: String): PartitionSpec = {
+      paths: Seq[Path],
+      typeInference: Boolean,
+      basePaths: Set[Path],
+      userSpecifiedSchema: Option[StructType],
+      caseSensitive: Boolean,
+      validatePartitionColumns: Boolean,
+      timeZoneId: String): PartitionSpec = {
     parsePartitions(paths, typeInference, basePaths, userSpecifiedSchema, caseSensitive,
       validatePartitionColumns, DateTimeUtils.getZoneId(timeZoneId))
   }
 
   private[datasources] def parsePartitions(
-    paths: Seq[Path],
-    typeInference: Boolean,
-    basePaths: Set[Path],
-    userSpecifiedSchema: Option[StructType],
-    caseSensitive: Boolean,
-    validatePartitionColumns: Boolean,
-    zoneId: ZoneId): PartitionSpec = {
+      paths: Seq[Path],
+      typeInference: Boolean,
+      basePaths: Set[Path],
+      userSpecifiedSchema: Option[StructType],
+      caseSensitive: Boolean,
+      validatePartitionColumns: Boolean,
+      zoneId: ZoneId): PartitionSpec = {
     val userSpecifiedDataTypes = if (userSpecifiedSchema.isDefined) {
       val nameToDataType = userSpecifiedSchema.get.fields.map(f => f.name -> f.dataType).toMap
       if (!caseSensitive) {
