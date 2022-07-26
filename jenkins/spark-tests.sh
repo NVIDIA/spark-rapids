@@ -173,13 +173,17 @@ export TARGET_DIR="$SCRIPT_PATH/target"
 mkdir -p $TARGET_DIR
 
 run_iceberg_tests() {
-  ICEBERG_VERSION="0.13.1"
+  ICEBERG_VERSION="0.13.2"
   # get the major/minor version of Spark
   ICEBERG_SPARK_VER=$(echo $SPARK_VER | cut -d. -f1,2)
 
   # Iceberg does not support Spark 3.3+ yet
   if [[ "$ICEBERG_SPARK_VER" < "3.3" ]]; then
+    # Classloader config is here to work around classloader issues with
+    # --packages in distributed setups, should be fixed by
+    # https://github.com/NVIDIA/spark-rapids/pull/5646
     SPARK_SUBMIT_FLAGS="$BASE_SPARK_SUBMIT_ARGS $SEQ_CONF \
+      --conf spark.rapids.force.caller.classloader=false \
       --packages org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_2.12:${ICEBERG_VERSION} \
       --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
       --conf spark.sql.catalog.spark_catalog=org.apache.iceberg.spark.SparkSessionCatalog \

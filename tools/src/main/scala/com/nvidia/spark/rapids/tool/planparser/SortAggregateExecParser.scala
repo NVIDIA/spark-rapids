@@ -30,7 +30,11 @@ case class SortAggregateExecParser(
   override def parse: ExecInfo = {
     // SortAggregate doesn't have duration
     val duration = None
-    val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
+    val exprString = node.desc.replaceFirst("SortAggregate", "")
+    val expressions = SQLPlanParser.parseAggregateExpressions(exprString)
+    val isAllExprsSupported = expressions.forall(expr => checker.isExprSupported(expr))
+    val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName) &&
+        isAllExprsSupported) {
       (checker.getSpeedupFactor(fullExecName), true)
     } else {
       (1.0, false)

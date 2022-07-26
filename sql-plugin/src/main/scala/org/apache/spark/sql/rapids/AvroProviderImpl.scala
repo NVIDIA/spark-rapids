@@ -113,4 +113,13 @@ class AvroProviderImpl extends AvroProvider {
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
   }
+
+  def isSupportedScan(scan: Scan): Boolean = scan.isInstanceOf[GpuAvroScan]
+
+  def copyScanWithInputFileTrue(scan: Scan): Scan = scan match {
+    case avroScan: GpuAvroScan =>
+      avroScan.copy(queryUsesInputFile=true)
+    case _ =>
+      throw new RuntimeException(s"Unsupported scan type: ${scan.getClass.getSimpleName}")
+  }
 }
