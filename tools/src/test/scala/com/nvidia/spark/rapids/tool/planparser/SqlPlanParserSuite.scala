@@ -576,7 +576,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val app = createAppFromEventlog(eventLog)
       assert(app.sqlPlans.size == 1)
       val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
-        SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, pluginTypeChecker, app)
+        SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, "", pluginTypeChecker, app)
       }
       val execInfo = getAllExecsFromPlan(parsedPlans.toSeq)
       val sortAggregate = execInfo.filter(_.exec == "SortAggregate")
@@ -602,7 +602,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val app = createAppFromEventlog(eventLog)
         assert(app.sqlPlans.size == 4)
         val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
-          SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, pluginTypeChecker, app)
+          SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, "", pluginTypeChecker, app)
         }
         val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
         val sortExec = allExecInfo.filter(_.exec.contains("Sort"))
