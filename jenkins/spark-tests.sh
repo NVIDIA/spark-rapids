@@ -173,12 +173,12 @@ export TARGET_DIR="$SCRIPT_PATH/target"
 mkdir -p $TARGET_DIR
 
 run_iceberg_tests() {
-  ICEBERG_VERSION=${ICEBERG_VERSION:-0.14.0}
+  ICEBERG_VERSION=${ICEBERG_VERSION:-0.13.2}
   # get the major/minor version of Spark
   ICEBERG_SPARK_VER=$(echo $SPARK_VER | cut -d. -f1,2)
 
-  # Iceberg does not support Spark 3.4+ yet
-  if [[ "$ICEBERG_SPARK_VER" < "3.4" ]]; then
+  # Iceberg does not support Spark 3.3+ yet
+  if [[ "$ICEBERG_SPARK_VER" < "3.3" ]]; then
     # Classloader config is here to work around classloader issues with
     # --packages in distributed setups, should be fixed by
     # https://github.com/NVIDIA/spark-rapids/pull/5646
