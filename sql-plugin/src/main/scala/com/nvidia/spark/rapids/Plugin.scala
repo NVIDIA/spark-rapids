@@ -148,9 +148,8 @@ object RapidsPluginUtils extends Logging {
     // set driver timezone
     conf.set(RapidsConf.DRIVER_TIMEZONE.key, ZoneId.systemDefault().normalized().toString)
 
-    // If spark.rapids.sql.multiThreadedRead.numThreads is not set explicitly, or it is set
-    // explicitly as value 0, then we derive it from other settings. Otherwise, we keep the
-    // users' setting.
+    // If spark.rapids.sql.multiThreadedRead.numThreads is not set explicitly, then we derive it
+    // from other settings. Otherwise, we keep the users' setting.
     val numThreadsKey = RapidsConf.MULTITHREAD_READ_NUM_THREADS.key
     if (!conf.contains(numThreadsKey)) {
       // Derive it from spark.executor.cores, since spark.executor.cores is not set on all cluster
