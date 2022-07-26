@@ -2315,7 +2315,7 @@ object GpuOverrides extends Logging {
           val dataType = a.child.dataType
           checkAndTagFloatNanAgg("Min", dataType, conf, this)
         }
-        
+
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuMin(childExprs.head)
 
