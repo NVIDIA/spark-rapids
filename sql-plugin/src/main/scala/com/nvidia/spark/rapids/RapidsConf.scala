@@ -1261,11 +1261,52 @@ object RapidsConf {
   // ALLUXIO CONFIGS
 
   val ALLUXIO_PATHS_REPLACE = conf("spark.rapids.alluxio.pathsToReplace")
-    .doc("List of paths to be replaced with corresponding alluxio scheme. Eg, when configure" +
-      "is set to \"s3:/foo->alluxio://0.1.2.3:19998/foo,gcs:/bar->alluxio://0.1.2.3:19998/bar\", " +
-      "which means:  " +
-      "     s3:/foo/a.csv will be replaced to alluxio://0.1.2.3:19998/foo/a.csv and " +
-      "     gcs:/bar/b.csv will be replaced to alluxio://0.1.2.3:19998/bar/b.csv")
+    .doc("List of paths to be replaced with corresponding Alluxio scheme. " +
+      "E.g. when configure is set to " +
+      "\"s3://foo->alluxio://0.1.2.3:19998/foo,gs://bar->alluxio://0.1.2.3:19998/bar\", " +
+      "it means: " +
+      "\"s3://foo/a.csv\" will be replaced to \"alluxio://0.1.2.3:19998/foo/a.csv\" and " +
+      "\"gs://bar/b.csv\" will be replaced to \"alluxio://0.1.2.3:19998/bar/b.csv\". " +
+      "To use this config, you have to mount the buckets to Alluxio by yourself. " +
+      "If you set this config, spark.rapids.alluxio.automount.enabled won't be valid.")
+    .stringConf
+    .toSequence
+    .createOptional
+
+  val ALLUXIO_AUTOMOUNT_ENABLED = conf("spark.rapids.alluxio.automount.enabled")
+    .doc("Enable the feature of auto mounting the cloud storage to Alluxio. " +
+      "It requires the Alluxio master is the same node of Spark driver node. " +
+      "When it's true, it requires an environment variable ALLUXIO_HOME be set properly. " +
+      "The default value of ALLUXIO_HOME is \"/opt/alluxio-2.8.0\". " +
+      "You can set it as an environment variable when running a spark-submit or " +
+      "you can use spark.yarn.appMasterEnv.ALLUXIO_HOME to set it on Yarn. " +
+      "The Alluxio master's host and port will be read from alluxio.master.hostname and " +
+      "alluxio.master.rpc.port(default: 19998) from ALLUXIO_HOME/conf/alluxio-site.properties, " +
+      "then replace a cloud path which matches spark.rapids.alluxio.bucket.regex like " +
+      "\"s3://bar/b.csv\" to \"alluxio://0.1.2.3:19998/bar/b.csv\", " +
+      "and the bucket \"s3://bar\" will be mounted to \"/bar\" in Alluxio automatically.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ALLUXIO_BUCKET_REGEX = conf("spark.rapids.alluxio.bucket.regex")
+    .doc("A regex to decide which bucket should be auto-mounted to Alluxio. " +
+      "E.g. when setting as \"^s3://bucket.*\", " +
+      "the bucket which starts with \"s3://bucket\" will be mounted to Alluxio " +
+      "and the path \"s3://bucket-foo/a.csv\" will be replaced to " +
+      "\"alluxio://0.1.2.3:19998/bucket-foo/a.csv\". " +
+      "It's only valid when setting spark.rapids.alluxio.automount.enabled=true. " +
+      "The default value matches all the buckets in \"s3://\" or \"s3a://\" scheme.")
+    .stringConf
+    .createWithDefault("^s3a{0,1}://.*")
+
+  val ALLUXIO_CMD = conf("spark.rapids.alluxio.cmd")
+    .doc("Provide the Alluxio command, which is used to mount or get information. " +
+      "We use \"su,ubuntu,-c,/opt/alluxio-2.8.0/bin/alluxio\" when it's not set, it means: " +
+      "run Process(Seq(\"su\", \"ubuntu\", \"-c\", " +
+      "\"/opt/alluxio-2.8.0/bin/alluxio fs mount --readonly /bucket-foo s3://bucket-foo\")), " +
+      "to mount s3://bucket-foo to /bucket-foo. " +
+      "the delimiter \",\" is used to convert to Seq[String] " +
+      "when you need to use a special user to run the mount command.")
     .stringConf
     .toSequence
     .createOptional
@@ -1913,6 +1954,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val gpuWriteMemorySpeed: Double = get(OPTIMIZER_GPU_WRITE_SPEED)
 
   lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
+
+  lazy val getAlluxioAutoMountEnabled: Boolean = get(ALLUXIO_AUTOMOUNT_ENABLED)
+
+  lazy val getAlluxioBucketRegex: String = get(ALLUXIO_BUCKET_REGEX)
+
+  lazy val getAlluxioCmd: Option[Seq[String]] = get(ALLUXIO_CMD)
 
   lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
 
