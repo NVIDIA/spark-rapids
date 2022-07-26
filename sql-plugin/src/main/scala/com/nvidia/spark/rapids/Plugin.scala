@@ -152,20 +152,15 @@ object RapidsPluginUtils extends Logging {
     // explicitly as value 0, then we derive it from other settings. Otherwise, we keep the
     // users' setting.
     val numThreadsKey = RapidsConf.MULTITHREAD_READ_NUM_THREADS.key
-    if (!conf.contains(numThreadsKey) || conf.get(numThreadsKey).toInt == 0) {
+    if (!conf.contains(numThreadsKey)) {
       // Derive it from spark.executor.cores, since spark.executor.cores is not set on all cluster
       // managers by default, we should judge whether if it's set explicitly.
       if (conf.contains(EXECUTOR_CORES_KEY)) {
-        conf.set(numThreadsKey, Math.max(RapidsConf.MULTITHREAD_READ_NUM_THREADS_DEFAULT,
-          conf.get(EXECUTOR_CORES_KEY).toInt).toString)
-        logWarning(s"$numThreadsKey is set to " + conf.get(numThreadsKey) + ".")
+        val numThreads = Math.max(RapidsConf.MULTITHREAD_READ_NUM_THREADS_DEFAULT,
+          conf.get(EXECUTOR_CORES_KEY).toInt).toString
+        conf.set(numThreadsKey, numThreads)
+        logWarning(s"$numThreadsKey is set to $numThreads.")
       }
-    }
-
-    // If spark.rapids.sql.multiThreadedRead.numThreads is set explicitly as 0, and it can not
-    // be derived from other settings, we should throw an exception.
-    if (conf.contains(numThreadsKey) && conf.get(numThreadsKey).toInt == 0) {
-      throw new IllegalArgumentException(s"$numThreadsKey can not be zero.")
     }
   }
 
