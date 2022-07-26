@@ -378,11 +378,18 @@ object GpuCast extends Arm {
       // ansi cast from larger-than-long integral-like types, to long
       case (dt: DecimalType, LongType) if ansiMode =>
         // This is a work around for https://github.com/rapidsai/cudf/issues/9282
-        val min = BigDecimal(Long.MinValue)
+        val bigDecimalMin = BigDecimal(Long.MinValue)
             .setScale(dt.scale, BigDecimal.RoundingMode.DOWN).bigDecimal
-        val max = BigDecimal(Long.MaxValue)
+        val bigDecimalMax = BigDecimal(Long.MaxValue)
             .setScale(dt.scale, BigDecimal.RoundingMode.DOWN).bigDecimal
-        assertValuesInRange(input, Scalar.fromDecimal(min), Scalar.fromDecimal(max))
+        withResource(input.min()) { min =>
+          withResource(input.max()) { max =>
+            if (min.getBigDecimal().compareTo(bigDecimalMin) == -1 ||
+                max.getBigDecimal().compareTo(bigDecimalMax) == 1) {
+              throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+            }
+          }
+        }
         if (dt.precision <= DType.DECIMAL32_MAX_PRECISION && dt.scale < 0) {
           // This is a work around for https://github.com/rapidsai/cudf/issues/9281
           withResource(input.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -dt.scale))) { tmp =>
