@@ -15,7 +15,7 @@ import os
 
 import pytest
 
-from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect, \
+from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, \
     assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_py4j_exception
 from data_gen import *
 from marks import *
@@ -23,7 +23,7 @@ import pyarrow as pa
 import pyarrow.parquet as pa_pq
 from pyspark.sql.types import *
 from pyspark.sql.functions import *
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_320, is_before_spark_330, is_spark_321cdh
+from spark_session import with_cpu_session, is_before_spark_320, is_before_spark_330, is_spark_321cdh
 from conftest import is_databricks_runtime
 
 
@@ -1146,13 +1146,13 @@ def test_parquet_read_encryption(spark_tmp_path, reader_confs, v1_enabled_list):
             lambda spark: spark.read.parquet(data_path).collect(), conf=conf),
         error_message='The GPU does not support reading encrypted Parquet files')
 
-@pytest.mark.parametrize('parquet_gens', parquet_gens_legacy_list, ids=idfn)
-def test_parquet_read_count(spark_tmp_path, parquet_gens):
+def test_parquet_read_count(spark_tmp_path):
+    parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+    string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
+    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
+
     with_cpu_session(lambda spark: gen_df(spark, gen_list).write.parquet(data_path))
 
-    cpu_count = with_cpu_session(lambda spark: spark.read.parquet(data_path).count())
-    gpu_count = with_gpu_session(lambda spark: spark.read.parquet(data_path).count())
-
-    assert(cpu_count == gpu_count)
+    assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.parquet(data_path))

@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -664,14 +664,12 @@ def test_read_type_casting_integral(spark_tmp_path, offset, reader_confs, v1_ena
         lambda spark: spark.read.schema(rs).orc(data_path),
         conf=all_confs)
 
-def test_orc_read_count(spark_tmp_path):
+@pytest.mark.parametrize('orc_gens', orc_basic_gens, ids=idfn)
+def test_orc_read_count(spark_tmp_path, orc_gens):
     data_path = spark_tmp_path + '/ORC_DATA'
-    gen_list = [('c' + str(i), gen) for i, gen in enumerate(orc_basic_gens)]
-    with_cpu_session(
-        lambda spark: gen_df(spark, gen_list).write.orc(data_path))
-
-    # read the data back with count()
-    cpu_count = with_cpu_session(lambda spark: spark.read.orc(data_path).count())
-    gpu_count = with_gpu_session(lambda spark: spark.read.orc(data_path).count())
+    orc_gens = [int_gen, string_gen, double_gen]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
     
-    assert(cpu_count == gpu_count)
+    with_cpu_session(lambda spark: gen_df(spark, gen_list).write.orc(data_path))
+
+    assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.orc(data_path))
