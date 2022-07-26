@@ -18,8 +18,8 @@ package org.apache.spark.sql.rapids
 
 import java.io.{File, FileInputStream}
 import java.util.Optional
-import java.util.concurrent.{Callable, Executors}
-import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
+import java.util.concurrent.{Callable, ExecutionException, Executors, Future}
+import java.util.concurrent.atomic.AtomicInteger
 
 import scala.collection.mutable
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
@@ -119,7 +119,7 @@ object RapidsShuffleInternalManagerBase extends Logging {
         .setDaemon(true)
         .build())
 
-    def offer[T](task: Callable[T]): Unit = {
+    def offer[T](task: Callable[T]): Future[T] = {
       p.submit(task)
     }
 
@@ -142,7 +142,7 @@ object RapidsShuffleInternalManagerBase extends Logging {
    * @note there must not be an uncaught exception while calling
    *      `task`.
    */
-  def queueTask[T](slotNum: Int, task: Callable[T]): Unit = {
+  def queueTask[T](slotNum: Int, task: Callable[T]): Future[T] = {
     slots(slotNum % numSlots).offer(task)
   }
 
@@ -242,12 +242,11 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             writeMetrics.incWriteTime(System.nanoTime() - openStartTime);
 
             // we call write on every writer for every record in parallel
-            val scheduledWrites = new AtomicLong(0L)
+            val writeFutures = new ArrayBuffer[Future[Unit]]
             records.foreach { record =>
               val key = record._1
               val value = record._2
               val reducePartitionId: Int = partitioner.getPartition(key)
-              scheduledWrites.incrementAndGet()
               val (slotNum, myWriter) = diskBlockObjectWriters(reducePartitionId)
 
               // we close batches actively in the `records` iterator as we get the next batch
@@ -259,32 +258,37 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                   null
               }
 
-              RapidsShuffleInternalManagerBase.queueTask(slotNum, () => {
-                try {
-                  withResource(cb) { _ =>
-                    myWriter.write(key, value)
-                  }
-                  synchronized {
-                    scheduledWrites.decrementAndGet()
-                    notifyAll()
-                  }
-                } catch {
-                  case e: Throwable =>
-                    synchronized {
-                      errorOcurred = e
-                      notifyAll()
-                    }
+              writeFutures += RapidsShuffleInternalManagerBase.queueTask(slotNum, () => {
+                withResource(cb) { _ =>
+                  myWriter.write(key, value)
                 }
               })
             }
 
             withResource(new NvtxRange("WaitingForWrites", NvtxColor.PURPLE)) { _ =>
               synchronized {
-                while (errorOcurred == null && scheduledWrites.get() > 0) {
-                  wait()
+                var errorOccurred: Throwable = null
+                while (writeFutures.nonEmpty && errorOccurred == null) {
+                  // get the head future
+                  val fut = writeFutures.remove(0)
+                  try {
+                    fut.get()
+                  } catch {
+                    case ee: ExecutionException =>
+                      // `ExecutionException` wraps the actual exception from the task,
+                      // so extract it here. This is the exception we would normally get.
+                      errorOccurred = ee.getCause
+                    case t: Throwable =>
+                      // got a different exception here, lets not ignore it
+                      errorOcurred = t
+                  }
                 }
-                if (errorOcurred != null) {
-                  throw errorOcurred
+                if (errorOccurred != null) {
+                  // cancel all pending futures
+                  writeFutures.foreach(_.cancel(true /*ok to interrupt*/))
+                  writeFutures.clear()
+                  // get the cause of the exception
+                  throw errorOccurred
                 }
               }
             }
