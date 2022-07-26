@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import java.io.{File, FileInputStream}
 import java.util.Optional
-import java.util.concurrent.{Callable, Executors, Future}
+import java.util.concurrent.{Callable, ExecutionException, Executors, Future}
 import java.util.concurrent.atomic.AtomicInteger
 
 import scala.collection.mutable
@@ -28,8 +28,8 @@ import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
-
 import org.apache.spark.{ShuffleDependency, SparkConf, SparkEnv, TaskContext}
+
 import org.apache.spark.executor.ShuffleWriteMetrics
 import org.apache.spark.internal.{config, Logging}
 import org.apache.spark.network.buffer.ManagedBuffer
@@ -268,7 +268,15 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             withResource(new NvtxRange("WaitingForWrites", NvtxColor.PURPLE)) { _ =>
               try {
                 while (writeFutures.nonEmpty) {
-                  writeFutures.dequeue().get()
+                  try {
+                    writeFutures.dequeue().get()
+                  } catch {
+                    case ee: ExecutionException =>
+                      // this exception is a wrapper for the underlying exception
+                      // i.e. `IOException`. The ShuffleWriter.write interface says
+                      // it can throw these.
+                      throw ee.getCause
+                  }
                 }
               } finally {
                 // cancel all pending futures (only in case of error will we cancel)
