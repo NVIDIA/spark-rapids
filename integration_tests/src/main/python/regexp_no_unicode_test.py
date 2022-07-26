@@ -20,7 +20,9 @@ from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 
-if locale.nl_langinfo(locale.CODESET) == 'UTF-8':
+from spark_session import is_jvm_charset_utf8
+
+if is_jvm_charset_utf8():
     pytestmark = pytest.mark.skip(reason=str("Current locale uses UTF-8, fallback will not occur"))
 
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }

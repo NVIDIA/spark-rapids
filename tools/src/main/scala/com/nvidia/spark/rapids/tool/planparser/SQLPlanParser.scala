@@ -287,7 +287,62 @@ object SQLPlanParser extends Logging {
         case _ => // NO OP
       }
     }
-    parsedExpressions.toArray
+    parsedExpressions.distinct.toArray
+  }
+
+  // This parser is used for SortAggregateExec, HashAggregateExec and ObjectHashAggregateExec
+  def parseAggregateExpressions(exprStr: String): Array[String] = {
+    val parsedExpressions = ArrayBuffer[String]()
+    // (key=[num#83], functions=[partial_collect_list(letter#84, 0, 0), partial_count(letter#84)])
+    val pattern = """functions=\[([\w#, +*\\\-\.<>=\`\(\)]+\])""".r
+    val aggregatesString = pattern.findFirstMatchIn(exprStr)
+    // This is to split multiple column names in AggregateExec. Each column will be aggregating
+    // based on the aggregate function. Here "partial_" is removed and only function name is
+    // preserved. Below regex will first remove the "functions=" from the string followed by
+    // removing "partial_". That string is split which produces an array containing
+    // column names. Finally we remove the parentheses from the beginning and end to get only
+    // the expressions. Result will be as below.
+    // paranRemoved = Array(collect_list(letter#84, 0, 0),, count(letter#84))
+    if (aggregatesString.isDefined) {
+      val paranRemoved = aggregatesString.get.toString.replaceAll("functions=", "").
+          replaceAll("partial_", "").split("(?<=\\),)").map(_.trim).
+          map(_.replaceAll("""^\[+""", "").replaceAll("""\]+$""", ""))
+      val functionPattern = """(\w+)\(.*\)""".r
+      paranRemoved.foreach { case expr =>
+        val functionName = getFunctionName(functionPattern, expr)
+        functionName match {
+          case Some(func) => parsedExpressions += func
+          case _ => // NO OP
+        }
+      }
+    }
+    parsedExpressions.distinct.toArray
+  }
+
+  def parseSortExpressions(exprStr: String): Array[String] = {
+    val parsedExpressions = ArrayBuffer[String]()
+    // Sort [round(num#126, 0) ASC NULLS FIRST, letter#127 DESC NULLS LAST], true, 0
+    val pattern = """\[([\w#, \(\)]+\])""".r
+    val sortString = pattern.findFirstMatchIn(exprStr)
+    // This is to split multiple column names in SortExec. Project may have a function on a column.
+    // The string is split on delimiter containing FIRST, OR LAST, which is the last string
+    // of each column in SortExec that produces an array containing
+    // column names. Finally we remove the parentheses from the beginning and end to get only
+    // the expressions. Result will be as below.
+    // paranRemoved = Array(round(num#7, 0) ASC NULLS FIRST,, letter#8 DESC NULLS LAST)
+    if (sortString.isDefined) {
+      val paranRemoved = sortString.get.toString.split("(?<=FIRST,)|(?<=LAST,)").
+          map(_.trim).map(_.replaceAll("""^\[+""", "").replaceAll("""\]+$""", ""))
+      val functionPattern = """(\w+)\(.*\)""".r
+      paranRemoved.foreach { case expr =>
+        val functionName = getFunctionName(functionPattern, expr)
+        functionName match {
+          case Some(func) => parsedExpressions += func
+          case _ => // NO OP
+        }
+      }
+    }
+    parsedExpressions.distinct.toArray
   }
 
   def parseFilterExpressions(exprStr: String): Array[String] = {
@@ -364,6 +419,6 @@ object SQLPlanParser extends Logging {
         }
       }
     }
-    parsedExpressions.toArray
+    parsedExpressions.distinct.toArray
   }
 }

@@ -24,7 +24,7 @@ import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
 import org.apache.spark.sql.expressions.Window
-import org.apache.spark.sql.functions.{broadcast, ceil, col, collect_list, explode, hex, sum}
+import org.apache.spark.sql.functions.{broadcast, ceil, col, collect_list, count, explode, hex, round, sum}
 import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.qualification.QualificationAppInfo
 import org.apache.spark.sql.types.StringType
@@ -558,6 +558,56 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val allChildren = wholeStages.flatMap(_.children).flatten
         val filters = allChildren.filter(_.exec == "Filter")
         assertSizeAndNotSupported(1, filters)
+      }
+    }
+  }
+
+  test("Expressions supported in SortAggregateExec") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
+        import spark.implicits._
+        spark.conf.set("spark.sql.execution.useObjectHashAggregateExec", "false")
+        val df1 = Seq((1, "a"), (1, "aa"), (1, "a"), (2, "b"),
+          (2, "b"), (3, "c"), (3, "c")).toDF("num", "letter")
+        df1.groupBy("num").agg(collect_list("letter").as("collected_letters"),
+          count("letter").as("letter_count"))
+      }
+      val pluginTypeChecker = new PluginTypeChecker()
+      val app = createAppFromEventlog(eventLog)
+      assert(app.sqlPlans.size == 1)
+      val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+        SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, pluginTypeChecker, app)
+      }
+      val execInfo = getAllExecsFromPlan(parsedPlans.toSeq)
+      val sortAggregate = execInfo.filter(_.exec == "SortAggregate")
+      assertSizeAndSupported(2, sortAggregate)
+    }
+  }
+
+  test("Expressions supported in SortExec") {
+    TrampolineUtil.withTempDir { parquetoutputLoc =>
+      TrampolineUtil.withTempDir { eventLogDir =>
+        val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
+          "ProjectExprsSupported") { spark =>
+          import spark.implicits._
+          val df1 = Seq((1.7, "a"), (1.6, "aa"), (1.1, "b"), (2.5, "a"), (2.2, "b"),
+            (3.2, "a"), (10.6, "c")).toDF("num", "letter")
+          df1.write.parquet(s"$parquetoutputLoc/testsortExec")
+          val df2 = spark.read.parquet(s"$parquetoutputLoc/testsortExec")
+          df2.sort("num").collect
+          df2.orderBy("num").collect
+          df2.select(round(col("num")), col("letter")).sort(round(col("num")), col("letter").desc)
+        }
+        val pluginTypeChecker = new PluginTypeChecker()
+        val app = createAppFromEventlog(eventLog)
+        assert(app.sqlPlans.size == 4)
+        val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+          SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, pluginTypeChecker, app)
+        }
+        val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
+        val sortExec = allExecInfo.filter(_.exec.contains("Sort"))
+        assert(sortExec.size == 3)
+        assertSizeAndSupported(3, sortExec, 5.2)
       }
     }
   }

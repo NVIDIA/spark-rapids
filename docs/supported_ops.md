@@ -18375,6 +18375,49 @@ dates or timestamps, or for a lack of type coercion support.
 <td> </td>
 </tr>
 <tr>
+<th rowSpan="2">Iceberg</th>
+<th>Read</th>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
+<td>S</td>
+<td>S</td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, UDT</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, UDT</em></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<th>Write</th>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td> </td>
+<td><b>NS</b></td>
+<td> </td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
 <th rowSpan="2">JSON</th>
 <th>Read</th>
 <td>S</td>
@@ -18504,3 +18547,7 @@ dates or timestamps, or for a lack of type coercion support.
 <td><b>NS</b></td>
 </tr>
 </table>
+
+### Apache Iceberg Support
+Support for Apache Iceberg has additional limitations. See the
+[Apache Iceberg Support](additional-functionality/iceberg-support.md) document.

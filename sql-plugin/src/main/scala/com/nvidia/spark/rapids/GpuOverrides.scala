@@ -440,6 +440,9 @@ object JsonFormatType extends FileFormatType {
 object AvroFormatType extends FileFormatType {
   override def toString = "Avro"
 }
+object IcebergFormatType extends FileFormatType {
+  override def toString = "Iceberg"
+}
 
 sealed trait FileFormatOp
 object ReadFileOp extends FileFormatOp {
@@ -846,7 +849,13 @@ object GpuOverrides extends Logging {
         TypeSig.FLOAT + TypeSig.DOUBLE + TypeSig.STRING,
       cudfWrite = TypeSig.none,
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-        TypeSig.UDT).nested())))
+        TypeSig.UDT).nested())),
+    (IcebergFormatType, FileFormatChecks(
+      cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
+          TypeSig.ARRAY + TypeSig.MAP + GpuTypeShims.additionalParquetSupportedTypes).nested(),
+      cudfWrite = TypeSig.none,
+      sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+          TypeSig.UDT + GpuTypeShims.additionalParquetSupportedTypes).nested())))
 
   val commonExpressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     expr[Literal](
