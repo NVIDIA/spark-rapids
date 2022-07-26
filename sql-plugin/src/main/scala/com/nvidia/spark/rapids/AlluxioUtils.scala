@@ -64,8 +64,7 @@ object AlluxioUtils extends Logging {
   private def initAlluxioInfo(conf: RapidsConf): Unit = {
     this.synchronized {
       alluxioHome = scala.util.Properties.envOrElse("ALLUXIO_HOME", "/opt/alluxio-2.8.0")
-      alluxioCmd = conf.getAlluxioCmd.getOrElse(
-        Seq("su", "ubuntu", "-c", s"$alluxioHome/bin/alluxio"))
+      alluxioCmd = conf.getAlluxioCmd
 
       if (!isInit) {
         // Default to read from /opt/alluxio-2.8.0 if not setting ALLUXIO_HOME
@@ -153,8 +152,8 @@ object AlluxioUtils extends Logging {
   // And we'll append --option to set access_key and secret_key if existing.
   // Suppose the key doesn't exist when using like Databricks's instance profile
   private def autoMountBucket(scheme: String, bucket: String,
-                              access_key: Option[String],
-                              secret_key: Option[String]): Unit = {
+                                access_key: Option[String],
+                                secret_key: Option[String]): Unit = {
     // to match the output of alluxio fs mount, append / to remote_path
     // and add / before bucket name for absolute path in Alluxio
     val remote_path = scheme + "://" + bucket + "/"

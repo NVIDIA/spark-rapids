@@ -1301,7 +1301,7 @@ object RapidsConf {
 
   val ALLUXIO_CMD = conf("spark.rapids.alluxio.cmd")
     .doc("Provide the Alluxio command, which is used to mount or get information. " +
-      "We use \"su,ubuntu,-c,/opt/alluxio-2.8.0/bin/alluxio\" when it's not set, it means: " +
+      "The default value is \"su,ubuntu,-c,/opt/alluxio-2.8.0/bin/alluxio\", it means: " +
       "run Process(Seq(\"su\", \"ubuntu\", \"-c\", " +
       "\"/opt/alluxio-2.8.0/bin/alluxio fs mount --readonly /bucket-foo s3://bucket-foo\")), " +
       "to mount s3://bucket-foo to /bucket-foo. " +
@@ -1309,7 +1309,7 @@ object RapidsConf {
       "when you need to use a special user to run the mount command.")
     .stringConf
     .toSequence
-    .createOptional
+    .createWithDefault(Seq("su", "ubuntu", "-c", "/opt/alluxio-2.8.0/bin/alluxio"))
 
   // USER FACING DEBUG CONFIGS
 
@@ -1959,7 +1959,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val getAlluxioBucketRegex: String = get(ALLUXIO_BUCKET_REGEX)
 
-  lazy val getAlluxioCmd: Option[Seq[String]] = get(ALLUXIO_CMD)
+  lazy val getAlluxioCmd: Seq[String] = get(ALLUXIO_CMD)
 
   lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
 

@@ -350,9 +350,8 @@ For exmaple, `^s3a{1,1}://foo.*` will match the buckets which start with `foo`.
 --conf spark.rapids.alluxio.cmd="su,ubuntu,-c,/opt/alluxio-2.8.0/bin/alluxio"
 ```
 This cmd config defines a sequence to be used run the alluxio command by a specific user,
-mostly the user with Alluxio permission. We run the command in `ALLUXIO_HOME/bin/alluxio`
-by user `ubuntu` as default. If you have a different user and command path, you can redefine it.
-If the path is different, you can define the `ALLUXIO_HOME` without changing this config.
+mostly the user with Alluxio permission. We run the command by user `ubuntu` as default.
+If you have a different user and command path, you can redefine it.
 The default value is suitable for the case of running Alluxio with RAPIDS on Databricks.
 
 ## Alluxio Troubleshooting
