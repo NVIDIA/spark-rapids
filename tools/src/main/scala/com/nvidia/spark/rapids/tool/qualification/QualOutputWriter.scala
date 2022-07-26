@@ -20,6 +20,8 @@ import scala.collection.mutable.{Buffer, LinkedHashMap, ListBuffer}
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import com.nvidia.spark.rapids.tool.planparser.{ExecInfo, PlanInfo}
+import com.nvidia.spark.rapids.tool.profiling.ProfileUtils.replaceDelimiter
+import com.nvidia.spark.rapids.tool.qualification.QualOutputWriter.TEXT_DELIMITER
 
 import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.qualification.{EstimatedPerSQLSummaryInfo, EstimatedSummaryInfo, QualificationAppInfo, QualificationSummaryInfo}
@@ -77,8 +79,9 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
       val plans = sums.flatMap(_.planInfo)
       val allExecs = QualOutputWriter.getAllExecsFromPlan(plans)
       val headersAndSizes = QualOutputWriter.getDetailedPerSqlHeaderStringsAndSizes(sums,
-        maxSQLDescLength)
-      csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes, ",", false))
+        maxSQLDescLength, QualOutputWriter.CSV_DELIMITER)
+      csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes,
+        QualOutputWriter.CSV_DELIMITER, false))
       val appIdMaxSize = QualOutputWriter.getAppIdSize(sums)
       sums.foreach { sumInfo =>
         val rows = QualOutputWriter.constructPerSqlInfo(sumInfo, headersAndSizes,
@@ -94,9 +97,10 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
       sums: Seq[QualificationSummaryInfo],
       numOutputRows: Int, maxSQLDescLength: Int): Unit = {
     val appIdMaxSize = QualOutputWriter.getAppIdSize(sums)
-    val headersAndSizes =
-      QualOutputWriter.getDetailedPerSqlHeaderStringsAndSizes(sums, maxSQLDescLength)
-    val entireHeader = QualOutputWriter.constructOutputRowFromMap(headersAndSizes, "|", true)
+    val headersAndSizes = QualOutputWriter.getDetailedPerSqlHeaderStringsAndSizes(sums,
+      maxSQLDescLength, TEXT_DELIMITER)
+    val entireHeader = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
+      TEXT_DELIMITER, true)
     val sep = "=" * (entireHeader.size - 1)
     writer.write(s"$sep\n")
     writer.write(entireHeader)
@@ -121,7 +125,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
     val finalSums = sorted.take(numOutputRows)
     sorted.foreach { estInfo =>
       val wStr = QualOutputWriter.constructPerSqlSummaryInfo(estInfo, headersAndSizes,
-        appIdMaxSize, "|", true, maxSQLDescLength)
+        appIdMaxSize, TEXT_DELIMITER, true, maxSQLDescLength)
       writer.write(wStr)
       if (printStdout) print(wStr)
     }
@@ -175,7 +179,8 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
       numOutputRows: Int): Unit = {
     val appIdMaxSize = QualOutputWriter.getAppIdSize(sums)
     val headersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(sums, appIdMaxSize)
-    val entireHeader = QualOutputWriter.constructOutputRowFromMap(headersAndSizes, "|", true)
+    val entireHeader = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
+      TEXT_DELIMITER, true)
     val sep = "=" * (entireHeader.size - 1)
     writer.write(s"$sep\n")
     writer.write(entireHeader)
@@ -190,7 +195,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
     val finalSums = estSum.take(numOutputRows)
     finalSums.foreach { sumInfo =>
       val wStr = QualOutputWriter.constructAppSummaryInfo(sumInfo, headersAndSizes,
-        appIdMaxSize, "|", true)
+        appIdMaxSize, TEXT_DELIMITER, true)
       writer.write(wStr)
       if (printStdout) print(wStr)
     }
@@ -275,15 +280,17 @@ object QualOutputWriter {
   val GPU_OPPORTUNITY_STR_SIZE: Int = GPU_OPPORTUNITY_STR.size
 
   val CSV_DELIMITER = ","
+  val TEXT_DELIMITER = "|"
 
   def getAppIdSize(sums: Seq[QualificationSummaryInfo]): Int = {
     val sizes = sums.map(_.appId.size)
     getMaxSizeForHeader(sizes, QualOutputWriter.APP_ID_STR)
   }
 
-  def getSqlDescSize(sums: Seq[QualificationSummaryInfo], maxSQLDescLength: Int): Int = {
+  def getSqlDescSize(sums: Seq[QualificationSummaryInfo], maxSQLDescLength: Int,
+      delimiter: String): Int = {
     val sizes = sums.flatMap(_.perSQLEstimatedInfo).flatten.map{ info =>
-      formatSQLDescription(info.sqlDesc, maxSQLDescLength).size
+      formatSQLDescription(info.sqlDesc, maxSQLDescLength, delimiter).size
     }
     val maxSizeOfDesc = getMaxSizeForHeader(sizes, QualOutputWriter.SQL_DESC_STR)
     Math.min(maxSQLDescLength, maxSizeOfDesc)
@@ -300,14 +307,14 @@ object QualOutputWriter {
   // ordered hashmap contains each header string and the size to use
   def constructOutputRowFromMap(
       strAndSizes: LinkedHashMap[String, Int],
-      delimiter: String = "|",
+      delimiter: String = TEXT_DELIMITER,
       prettyPrint: Boolean = false): String = {
     constructOutputRow(strAndSizes.toBuffer, delimiter, prettyPrint)
   }
 
   private def constructOutputRow(
       strAndSizes: Buffer[(String, Int)],
-      delimiter: String = "|",
+      delimiter: String = TEXT_DELIMITER,
       prettyPrint: Boolean = false): String = {
     val entireHeader = new StringBuffer
     if (prettyPrint) {
@@ -432,12 +439,12 @@ object QualOutputWriter {
   }
   def getDetailedPerSqlHeaderStringsAndSizes(
       appInfos: Seq[QualificationSummaryInfo],
-      maxSQLDescLength: Int): LinkedHashMap[String, Int] = {
+      maxSQLDescLength: Int, delimiter: String): LinkedHashMap[String, Int] = {
     val detailedHeadersAndFields = LinkedHashMap[String, Int](
       APP_NAME_STR -> getMaxSizeForHeader(appInfos.map(_.appName.size), APP_NAME_STR),
       APP_ID_STR -> QualOutputWriter.getAppIdSize(appInfos),
       SQL_ID_STR -> SQL_ID_STR.size,
-      SQL_DESC_STR -> QualOutputWriter.getSqlDescSize(appInfos, maxSQLDescLength),
+      SQL_DESC_STR -> QualOutputWriter.getSqlDescSize(appInfos, maxSQLDescLength, delimiter),
       SQL_DUR_STR -> SQL_DUR_STR_SIZE,
       GPU_OPPORTUNITY_STR -> GPU_OPPORTUNITY_STR_SIZE,
       ESTIMATED_GPU_DURATION -> ESTIMATED_GPU_DURATION.size,
@@ -448,9 +455,13 @@ object QualOutputWriter {
     detailedHeadersAndFields
   }
 
-  private def formatSQLDescription(sqlDesc: String, maxSQLDescLength: Int): String = {
-    val escapedStr = ToolUtils.escapeMetaCharacters(sqlDesc).trim()
-    escapedStr.substring(0, Math.min(maxSQLDescLength, escapedStr.length))
+  private def formatSQLDescription(sqlDesc: String, maxSQLDescLength: Int,
+      delimiter: String): String = {
+    val escapedMetaStr = ToolUtils.escapeMetaCharacters(sqlDesc).trim()
+    val sqlDescTruncated = escapedMetaStr.substring(0,
+      Math.min(maxSQLDescLength, escapedMetaStr.length))
+    // should be a one for one replacement so length wouldn't be affected by this
+    replaceDelimiter(sqlDescTruncated, delimiter)
   }
 
   def constructPerSqlSummaryInfo(
@@ -464,7 +475,8 @@ object QualOutputWriter {
       sumInfo.info.appName -> headersAndSizes(APP_NAME_STR),
       sumInfo.info.appId -> appIdMaxSize,
       sumInfo.sqlID.toString -> SQL_ID_STR.size,
-      formatSQLDescription(sumInfo.sqlDesc, maxSQLDescLength) -> headersAndSizes(SQL_DESC_STR),
+      formatSQLDescription(sumInfo.sqlDesc, maxSQLDescLength, delimiter) ->
+        headersAndSizes(SQL_DESC_STR),
       sumInfo.info.sqlDfDuration.toString -> SQL_DUR_STR_SIZE,
       sumInfo.info.gpuOpportunity.toString -> GPU_OPPORTUNITY_STR_SIZE,
       ToolUtils.formatDoublePrecision(sumInfo.info.estimatedGpuDur) -> ESTIMATED_GPU_DURATION.size,
@@ -497,8 +509,12 @@ object QualOutputWriter {
     detailedHeadersAndFields
   }
 
-  private def constructExecInfoBuffer(info: ExecInfo, appId: String, delimiter: String = "|",
-      prettyPrint: Boolean, headersAndSizes: LinkedHashMap[String, Int]): String = {
+  private def constructExecInfoBuffer(
+      info: ExecInfo,
+      appId: String,
+      delimiter: String = TEXT_DELIMITER,
+      prettyPrint: Boolean,
+      headersAndSizes: LinkedHashMap[String, Int]): String = {
     val data = ListBuffer[(String, Int)](
       stringIfempty(appId) -> headersAndSizes(APP_ID_STR),
       info.sqlID.toString -> headersAndSizes(SQL_ID_STR),
@@ -533,7 +549,7 @@ object QualOutputWriter {
   def constructStagesInfo(
       sumInfo: QualificationSummaryInfo,
       headersAndSizes: LinkedHashMap[String, Int],
-      delimiter: String = "|",
+      delimiter: String = TEXT_DELIMITER,
       prettyPrint: Boolean): Seq[String] = {
     val appId = sumInfo.appId
     sumInfo.stageInfo.map { info =>
@@ -559,7 +575,7 @@ object QualOutputWriter {
   def constructExecsInfo(
       sumInfo: QualificationSummaryInfo,
       headersAndSizes: LinkedHashMap[String, Int],
-      delimiter: String = "|",
+      delimiter: String = TEXT_DELIMITER,
       prettyPrint: Boolean): Set[String] = {
     val allExecs = getAllExecsFromPlan(sumInfo.planInfo)
     val appId = sumInfo.appId
@@ -575,7 +591,7 @@ object QualOutputWriter {
       sumInfo: QualificationSummaryInfo,
       headersAndSizes: LinkedHashMap[String, Int],
       appIdMaxSize: Int,
-      delimiter: String = "|",
+      delimiter: String = TEXT_DELIMITER,
       prettyPrint: Boolean,
       maxSQLDescLength: Int): Seq[String] = {
     sumInfo.perSQLEstimatedInfo match {
@@ -590,7 +606,7 @@ object QualOutputWriter {
 
   def createFormattedQualSummaryInfo(
       appInfo: QualificationSummaryInfo,
-      delimiter: String = "|") : FormattedQualificationSummaryInfo = {
+      delimiter: String = TEXT_DELIMITER) : FormattedQualificationSummaryInfo = {
     FormattedQualificationSummaryInfo(
       appInfo.appName,
       appInfo.appId,
