@@ -1569,30 +1569,6 @@ object ExprChecks {
         ParamCheck(param2._1, param2._2, param2._3)))
 
   /**
-   * Aggregate operation where only reduction is supported 
-   */
-  def reductionOnly(
-      outputCheck: TypeSig,
-      sparkOutputSig: TypeSig,
-      paramCheck: Seq[ParamCheck] = Seq.empty,
-      repeatingParamCheck: Option[RepeatingParamCheck] = None): ExprChecks =
-    ExprChecksImpl(Map(
-      (ReductionAggExprContext,
-          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
-
-  /**
-   * Aggregate operation where only group by agg is supported 
-   */
-  def groupByAggOnly(
-      outputCheck: TypeSig,
-      sparkOutputSig: TypeSig,
-      paramCheck: Seq[ParamCheck] = Seq.empty,
-      repeatingParamCheck: Option[RepeatingParamCheck] = None): ExprChecks =
-    ExprChecksImpl(Map(
-      (GroupByAggExprContext,
-          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
-
-  /**
    * Aggregate operation where only group by agg and reduction is supported in the plugin and in
    * Spark.
    */
