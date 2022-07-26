@@ -580,10 +580,10 @@ abstract class GpuMax(child: Expression) extends GpuAggregateFunction
   }
 }
 
-/** Max aggregation for non FloatType or DoubleType */
+/** Max aggregation without `NaN` handling */
 case class GpuBasicMax(child: Expression) extends GpuMax(child)
 
-/** Max aggregation for FloatType and DoubleType */
+/** Max aggregation for FloatType and DoubleType to handle `NaN`s */
 case class GpuFloatMax(child: Expression) extends GpuMax(child) 
     with GpuReplaceWindowFunction{
   override lazy val inputProjection: Seq[Expression] = child.dataType match {
@@ -627,11 +627,15 @@ case class GpuFloatMax(child: Expression) extends GpuMax(child)
   }
 
   override def windowReplacement(spec: GpuWindowSpecDefinition): Expression = child.dataType match {
-    case DoubleType => 
-      {
-        val isNan = GpuWindowExpression(GpuIsNan(child), spec)
+    case DoubleType => {
+        val isNan = GpuWindowExpression(GpuBasicMax(GpuIsNan(child)), spec)
         val max = GpuWindowExpression(GpuBasicMax(child), spec)
-        GpuIf(GpuBasicMax(isNan), GpuLiteral(Double.NaN), max)
+        GpuIf(isNan, GpuLiteral(Double.NaN), max)
+      }
+    case FloatType => {
+        val isNan = GpuWindowExpression(GpuBasicMax(GpuIsNan(child)), spec)
+        val max = GpuWindowExpression(GpuBasicMax(child), spec)
+        GpuIf(isNan, GpuLiteral(Float.NaN), max)
       }
     case _ => GpuWindowExpression(GpuBasicMax(child), spec)
   }
