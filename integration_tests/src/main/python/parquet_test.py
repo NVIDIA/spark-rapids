@@ -23,7 +23,7 @@ import pyarrow as pa
 import pyarrow.parquet as pa_pq
 from pyspark.sql.types import *
 from pyspark.sql.functions import *
-from spark_session import with_cpu_session, is_before_spark_320, is_before_spark_330, is_spark_321cdh
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_320, is_before_spark_330, is_spark_321cdh
 from conftest import is_databricks_runtime
 
 
