@@ -59,6 +59,7 @@ class ExecInfo(
 case class PlanInfo(
     appID: String,
     sqlID: Long,
+    sqlDesc: String,
     execInfo: Seq[ExecInfo]
 )
 
@@ -68,6 +69,7 @@ object SQLPlanParser extends Logging {
       appID: String,
       planInfo: SparkPlanInfo,
       sqlID: Long,
+      sqlDesc: String,
       checker: PluginTypeChecker,
       app: AppBase): PlanInfo = {
     val planGraph = SparkPlanGraph(planInfo)
@@ -76,7 +78,7 @@ object SQLPlanParser extends Logging {
     val execInfos = planGraph.nodes.flatMap { node =>
       parsePlanNode(node, sqlID, checker, app)
     }
-    PlanInfo(appID, sqlID, execInfos)
+    PlanInfo(appID, sqlID, sqlDesc, execInfos)
   }
 
   def getStagesInSQLNode(node: SparkPlanGraphNode, app: AppBase): Set[Int] = {
