@@ -48,3 +48,4 @@ class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
 class ProxyRapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
   extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver)
     with ShuffleManager
+

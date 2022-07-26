@@ -396,3 +396,4 @@ class RapidsShuffleThreadedWriterSuite extends FunSuite
     }
   }
 }
+
