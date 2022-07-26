@@ -366,7 +366,7 @@ class QualificationAppInfo(
 
       val appName = appInfo.map(_.appName).getOrElse("")
       val perSqlInfos = if (reportSqlLevel) {
-        Some(origPlanInfos.flatMap { pInfo =>
+        Some(planInfos.flatMap { pInfo =>
           sqlIdToInfo.get(pInfo.sqlID).map { info =>
             val wallClockDur = info.duration.getOrElse(0L)
             // get task duration ratio
