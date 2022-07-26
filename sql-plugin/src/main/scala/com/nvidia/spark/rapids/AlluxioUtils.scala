@@ -16,13 +16,37 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.FileNotFoundException
+
 import org.apache.hadoop.fs.Path
 
+import org.apache.spark.internal.Logging
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{Expression, PlanExpression}
 import org.apache.spark.sql.execution.datasources.{FileIndex, HadoopFsRelation, InMemoryFileIndex}
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 
-object AlluxioUtils {
+
+object AlluxioUtils extends Logging {
+  private val checkedAlluxioPath = scala.collection.mutable.HashSet[String]()
+
+  def checkAlluxioMounted(sparkSession: SparkSession, alluxio_path: String): Unit = {
+    this.synchronized {
+      if (!checkedAlluxioPath.contains(alluxio_path)) {
+        val path = new Path(alluxio_path)
+        val fs = path.getFileSystem(sparkSession.sparkContext.hadoopConfiguration)
+        if (!fs.exists(path)) {
+          throw new FileNotFoundException(
+            s"Alluxio path $alluxio_path does not exist, maybe forgot to mount it")
+        }
+        logInfo(s"Alluxio path $alluxio_path is mounted")
+        checkedAlluxioPath.add(alluxio_path)
+      } else {
+        logDebug(s"Alluxio path $alluxio_path already mounted")
+      }
+    }
+  }
+
   def replacePathIfNeeded(
       conf: RapidsConf,
       relation: HadoopFsRelation,
@@ -81,6 +105,14 @@ object AlluxioUtils {
 
         // replace all of rootPaths which are already unique
         val rootPaths = relation.location.rootPaths.map(replaceFunc)
+
+        // check the alluxio paths in root paths exist or not
+        // throw out an exception to stop the job when any of them is not mounted
+        rootPaths.foreach { rootPath =>
+          replaceMap.values.find(value => rootPath.toString.startsWith(value)).foreach { matched =>
+            checkAlluxioMounted(relation.sparkSession, matched)
+          }
+        }
 
         val parameters: Map[String, String] = relation.options
 
