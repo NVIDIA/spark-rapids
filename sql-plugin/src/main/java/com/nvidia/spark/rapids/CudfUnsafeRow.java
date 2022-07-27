@@ -62,7 +62,7 @@ public final class CudfUnsafeRow extends InternalRow {
   private int[] startOffsets;
 
   /**
-   * At what point validity data starts.
+   * At what point validity data starts from the beginning of a row's data.
    */
   private int validityOffsetInBytes;
 
