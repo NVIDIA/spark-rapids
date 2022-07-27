@@ -318,7 +318,7 @@ public final class JCudfUtil {
 
     /**
      * This is used internally to estimate the memory needed by the row.
-     * The value calculated is 8-bytes aligned.
+     * The value calculated is 8-byte aligned since a JCUDF row is 8-byte aligned
      * It loops on variable-width columns using a moving-cursor that represents the offset
      * of the data.
      * Note that the calculation requires that {@link #initFixedWidthSection(int[])} has
