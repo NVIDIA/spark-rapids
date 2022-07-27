@@ -27,7 +27,7 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{Expression, PlanExpression}
-import org.apache.spark.sql.execution.datasources.{FileIndex, HadoopFsRelation, InMemoryFileIndex}
+import org.apache.spark.sql.execution.datasources.{CatalogFileIndex, FileIndex, HadoopFsRelation, InMemoryFileIndex, PartitionSpec, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 
 object AlluxioUtils extends Logging {
@@ -289,48 +289,86 @@ object AlluxioUtils extends Logging {
     }
 
     if (replaceFunc.isDefined) {
-      def isDynamicPruningFilter(e: Expression): Boolean =
-        e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
 
-      val partitionDirs = relation.location.listFiles(
-        partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
+      if (relation.location.isInstanceOf[PartitioningAwareFileIndex]) {
+        logWarning("In PartitioningAwareFileIndex")
+        val fi = relation.location.asInstanceOf[PartitioningAwareFileIndex]
+        val spec = fi.partitionSpec()
+        val partitionsReplaced = spec.partitions.map { p =>
+          val replacedPath = replaceFunc.get(p.path)
+          org.apache.spark.sql.execution.datasources.PartitionPath(p.values, replacedPath)
+        }
+        val specAdjusted = PartitionSpec(spec.partitionColumns, partitionsReplaced)
+        val replacedPaths = fi.rootPaths.map {p => replaceFunc.get(p)}
+        new InMemoryFileIndex(
+          relation.sparkSession,
+          replacedPaths,
+          relation.options,
+          Option(relation.dataSchema),
+          userSpecifiedPartitionSpec = Some(specAdjusted))
+      } else if (relation.location.isInstanceOf[CatalogFileIndex]) {
+        logWarning("In CatalogFileIndex")
+        val fi = relation.location.asInstanceOf[CatalogFileIndex]
+        val memFI = fi.filterPartitions(Nil)
+        val spec = memFI.partitionSpec()
+        logWarning("TOM catalogfileindex spec: " + spec)
+        val partitionsReplaced = spec.partitions.map { p =>
+          val replacedPath = replaceFunc.get(p.path)
+          org.apache.spark.sql.execution.datasources.PartitionPath(p.values, replacedPath)
+        }
+        val replacedPaths = memFI.rootPaths.map {p => replaceFunc.get(p)}
+        val specAdjusted = PartitionSpec(spec.partitionColumns, partitionsReplaced)
+        new InMemoryFileIndex(
+          relation.sparkSession,
+          replacedPaths,
+          relation.options,
+          Option(relation.dataSchema),
+          userSpecifiedPartitionSpec = Some(specAdjusted))
+      } else {
 
-      // replace all of input files
-      val inputFiles: Seq[Path] = partitionDirs.flatMap(partitionDir => {
-        partitionDir.files.map(f => replaceFunc.get(f.getPath))
-      })
+        def isDynamicPruningFilter(e: Expression): Boolean =
+          e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
 
-      // replace all of rootPaths which are already unique
-      val rootPaths = relation.location.rootPaths.map(replaceFunc.get)
+        val partitionDirs = relation.location.listFiles(
+          partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
 
-      // check the alluxio paths in root paths exist or not
-      // throw out an exception to stop the job when any of them is not mounted
-      if (replaceMapOption.isDefined) {
-        rootPaths.foreach { rootPath =>
-          replaceMapOption.get.values.find(value => rootPath.toString.startsWith(value)).foreach {
-            matched => checkAlluxioMounted(relation.sparkSession, matched)
+        // replace all of input files
+        val inputFiles: Seq[Path] = partitionDirs.flatMap(partitionDir => {
+          partitionDir.files.map(f => replaceFunc.get(f.getPath))
+        })
+
+        // replace all of rootPaths which are already unique
+        val rootPaths = relation.location.rootPaths.map(replaceFunc.get)
+
+        // check the alluxio paths in root paths exist or not
+        // throw out an exception to stop the job when any of them is not mounted
+        if (replaceMapOption.isDefined) {
+          rootPaths.foreach { rootPath =>
+            replaceMapOption.get.values.find(value => rootPath.toString.startsWith(value)).foreach {
+              matched => checkAlluxioMounted(relation.sparkSession, matched)
+            }
           }
         }
+
+        val parameters: Map[String, String] = relation.options
+
+        // infer PartitionSpec
+        val partitionSpec = GpuPartitioningUtils.inferPartitioning(
+          relation.sparkSession,
+          rootPaths,
+          inputFiles,
+          parameters,
+          Option(relation.dataSchema),
+          replaceFunc.get)
+
+        // generate a new InMemoryFileIndex holding paths with alluxio schema
+        new InMemoryFileIndex(
+          relation.sparkSession,
+          inputFiles,
+          parameters,
+          Option(relation.dataSchema),
+          userSpecifiedPartitionSpec = Some(partitionSpec))
       }
-
-      val parameters: Map[String, String] = relation.options
-
-      // infer PartitionSpec
-      val partitionSpec = GpuPartitioningUtils.inferPartitioning(
-        relation.sparkSession,
-        rootPaths,
-        inputFiles,
-        parameters,
-        Option(relation.dataSchema),
-        replaceFunc.get)
-
-      // generate a new InMemoryFileIndex holding paths with alluxio schema
-      new InMemoryFileIndex(
-        relation.sparkSession,
-        inputFiles,
-        parameters,
-        Option(relation.dataSchema),
-        userSpecifiedPartitionSpec = Some(partitionSpec))
     } else {
       relation.location
     }
