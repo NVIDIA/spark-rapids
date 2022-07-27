@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder, UnsafeProjection, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder, UnsafeProjection}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
 import org.apache.spark.sql.rapids.execution.GpuColumnToRowMapPartitionsRDD
@@ -45,25 +45,16 @@ class AcceleratedColumnarToRowIterator(
   @transient private var pendingCvs: Queue[HostColumnVector] = Queue.empty
   // GPU batches read in must be closed by the receiver (us)
   @transient private var currentCv: Option[HostColumnVector] = None
-  // This only works on fixedWidth types for now...
-  assert(schema.forall(attr => UnsafeRow.isFixedLength(attr.dataType)))
+
   // We want to remap the rows to improve packing.  This means that they should be sorted by
   // the largest alignment to the smallest.
 
   // for packMap the nth entry is the index of the original input column that we want at
   // the nth entry.
-  private val packMap: Array[Int] = schema
-    .zipWithIndex
-    .sortWith {
-      (x, y) =>
-        DecimalUtil.getDataTypeSize(x._1.dataType) > DecimalUtil.getDataTypeSize(y._1.dataType)
-    }.map(_._2)
-    .toArray
+  private val packMap: Array[Int] = CudfRowTransitions.reorderSchemaToPackedColumns(schema)
+
   // For unpackMap the nth entry is the index in the row that came back for the original
-  private val unpackMap: Array[Int] = packMap
-      .zipWithIndex
-      .sortWith(_._1 < _._1)
-      .map(_._2)
+  private val unpackMap: Array[Int] = CudfRowTransitions.getUnpackedMapForSchema(packMap)
 
   private val outputRow = new CudfUnsafeRow(packMap.map(schema(_)), unpackMap)
   private var baseDataAddress: Long = -1
@@ -107,13 +98,9 @@ class AcceleratedColumnarToRowIterator(
     if (cb.numRows() > 0) {
       withResource(new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, opTime)) { _ =>
         withResource(rearrangeRows(cb)) { table =>
-          // The fixed-width optimized cudf kernel only supports up to 1.5 KB per row which means at
-          // most 184 double/long values. Spark by default limits codegen to 100 fields
-          // "spark.sql.codegen.maxFields". So, we are going to be cautious and start with that
-          // until we have tested it more. We branching over the size of the output to know which
-          // kernel to call. If schema.length < 100 we call the fixed-width optimized version,
-          // otherwise the generic one
-          withResource(if (schema.length < 100) {
+          // If the cudfUnsafeRow fits the criteria, we call the fixed-width optimized version.
+          // Otherwise, we call the generic one.
+          withResource(if (JCudfUtil.fitsOptimizedConversion(outputRow)) {
             table.convertToRowsFixedWidthOptimized()
           } else {
             table.convertToRows()
@@ -272,15 +259,31 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
 
 object CudfRowTransitions {
   def isSupportedType(dataType: DataType): Boolean = dataType match {
-    // Only fixed width for now...
     case ByteType | ShortType | IntegerType | LongType |
-         FloatType | DoubleType | BooleanType | DateType | TimestampType => true
+         FloatType | DoubleType | BooleanType | DateType | TimestampType | StringType => true
     case dt: DecimalType if dt.precision <= Decimal.MAX_LONG_DIGITS => true
     case _ => false
   }
 
   def areAllSupported(schema: Seq[Attribute]): Boolean =
     schema.forall(att => isSupportedType(att.dataType))
+
+  def reorderSchemaToPackedColumns(originalSchema: Seq[Attribute]): Array[Int] = {
+    val packedColumns: Array[Int] = originalSchema
+      .zipWithIndex
+      .sortWith {
+        (x, y) =>
+          JCudfUtil.compareDataTypePrecedence(x._1.dataType, y._1.dataType)
+      }.map(_._2).toArray
+    packedColumns
+  }
+
+  def getUnpackedMapForSchema(packedCols: Array[Int]) : Array[Int] = {
+    packedCols
+      .zipWithIndex
+      .sortWith(_._1 < _._1)
+      .map(_._2)
+  }
 }
 
 case class GpuColumnarToRowExec(
