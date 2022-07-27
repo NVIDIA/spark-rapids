@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids
 import scala.util.Try
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.iceberg.IcebergProvider
 
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
@@ -49,7 +50,14 @@ object ExternalSource extends Logging {
     }
   }
 
-  lazy val avroProvider = ShimLoader.newAvroProvider
+  lazy val avroProvider = ShimLoader.newAvroProvider()
+
+  private lazy val hasIcebergJar = {
+    Utils.classIsLoadable(IcebergProvider.cpuScanClassName) &&
+        Try(ShimLoader.loadClass(IcebergProvider.cpuScanClassName)).isSuccess
+  }
+
+  private lazy val icebergProvider = IcebergProvider()
 
   /** If the file format is supported as an external source */
   def isSupportedFormat(format: FileFormat): Boolean = {
@@ -100,19 +108,25 @@ object ExternalSource extends Logging {
   }
 
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = {
+    var scans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Map.empty
     if (hasSparkAvroJar) {
-      avroProvider.getScans
-    } else Map.empty
+      scans = scans ++ avroProvider.getScans
+    }
+    if (hasIcebergJar) {
+      scans = scans ++ icebergProvider.getScans
+    }
+    scans
   }
 
   /** If the scan is supported as an external source */
   def isSupportedScan(scan: Scan): Boolean = {
-    if (hasSparkAvroJar) {
-      scan match {
-        case _: GpuAvroScan => true
-        case _ => false
-      }
-    } else false
+    if (hasSparkAvroJar && avroProvider.isSupportedScan(scan)) {
+      true
+    } else if (hasIcebergJar && icebergProvider.isSupportedScan(scan)) {
+      true
+    } else {
+      false
+    }
   }
 
   /**
@@ -120,12 +134,11 @@ object ExternalSource extends Logging {
    * Better to check if the scan is supported first by calling 'isSupportedScan'.
    */
   def copyScanWithInputFileTrue(scan: Scan): Scan = {
-    if (hasSparkAvroJar) {
-      scan match {
-        case avroScan: GpuAvroScan => avroScan.copy(queryUsesInputFile=true)
-        case _ =>
-          throw new RuntimeException(s"Unsupported scan type: ${scan.getClass.getSimpleName}")
-      }
+    if (hasSparkAvroJar && avroProvider.isSupportedScan(scan)) {
+      avroProvider.copyScanWithInputFileTrue(scan)
+    } else if (hasIcebergJar && icebergProvider.isSupportedScan(scan)) {
+      // Iceberg does not yet support a coalescing reader, so nothing to change
+      scan
     } else {
       throw new RuntimeException(s"Unsupported scan type: ${scan.getClass.getSimpleName}")
     }

@@ -116,6 +116,7 @@
                                     <sources>
                                         <source>${project.basedir}/src/main/311-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/311until320-all/java</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/311until320-nondb/scala</source>
@@ -183,6 +184,7 @@
                                     <sources>
                                         <source>${project.basedir}/src/main/312db/scala</source>
                                         <source>${project.basedir}/src/main/311+-db/scala</source>
+                                        <source>${project.basedir}/src/main/311until320-all/java</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/311until330-all/scala</source>
@@ -235,6 +237,7 @@
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/312-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/311until320-all/java</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/311until320-nondb/scala</source>
@@ -289,6 +292,7 @@
                                     <sources>
                                         <source>${project.basedir}/src/main/313/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/311until320-all/java</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/311until320-nondb/scala</source>
@@ -343,6 +347,7 @@
                                     <sources>
                                         <source>${project.basedir}/src/main/314/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/311until320-all/java</source>
                                         <source>${project.basedir}/src/main/311until320-all/scala</source>
                                         <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/311until320-nondb/scala</source>
@@ -411,6 +416,7 @@
                                         <source>${project.basedir}/src/main/311until330-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until340-all/scala</source>
                                         <source>${project.basedir}/src/main/320/scala</source>
+                                        <source>${project.basedir}/src/main/320+/java</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/320+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/320+-noncdh/scala</source>
@@ -477,6 +483,7 @@
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until330-all/scala</source>
                                         <source>${project.basedir}/src/main/311until330-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/320+/java</source>
                                         <source>${project.basedir}/src/main/311until340-all/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/320+-nondb/scala</source>
@@ -546,6 +553,7 @@
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until330-all/scala</source>
                                         <source>${project.basedir}/src/main/311until330-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/320+/java</source>
                                         <source>${project.basedir}/src/main/311until340-all/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/320+-nondb/scala</source>
@@ -619,6 +627,7 @@
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until330-all/scala</source>
                                         <source>${project.basedir}/src/main/311until330-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/320+/java</source>
                                         <source>${project.basedir}/src/main/311until340-all/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/320+-nondb/scala</source>
@@ -701,6 +710,7 @@
                                         <source>${project.basedir}/src/main/311until330-all/scala</source>
                                         <source>${project.basedir}/src/main/311until340-all/scala</source>
                                         <source>${project.basedir}/src/main/311+-db/scala</source>
+                                        <source>${project.basedir}/src/main/320+/java</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/320+-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/320until330-all/scala</source>
@@ -754,6 +764,7 @@
                                     <sources>
                                         <source>${project.basedir}/src/main/330/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/320+/java</source>
                                         <source>${project.basedir}/src/main/311until340-all/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/320+-nondb/scala</source>
@@ -820,6 +831,7 @@
                                         <source>${project.basedir}/src/main/331/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until340-all/scala</source>
+                                        <source>${project.basedir}/src/main/320+/java</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/320+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/320+-noncdh/scala</source>
@@ -884,6 +896,7 @@
                                     <sources>
                                         <source>${project.basedir}/src/main/340/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/320+/java</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
                                         <source>${project.basedir}/src/main/320+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/320+-noncdh/scala</source>
@@ -1022,6 +1035,7 @@
         <slf4j.version>1.7.30</slf4j.version>
         <flatbuffers.java.version>1.11.0</flatbuffers.java.version>
         <hadoop.client.version>3.3.1</hadoop.client.version>
+        <iceberg.version>0.14.0</iceberg.version>
         <scala.local-lib.path>org/scala-lang/scala-library/${scala.version}/scala-library-${scala.version}.jar</scala.local-lib.path>
         <target.classifier>${spark.version.classifier}</target.classifier>
         <maven.clean.plugin.version>3.1.0</maven.clean.plugin.version>
@@ -1057,6 +1071,24 @@
               <artifactId>scala-library</artifactId>
               <version>${scala.version}</version>
               <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.iceberg</groupId>
+                <artifactId>iceberg-api</artifactId>
+                <version>${iceberg.version}</version>
+                <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.iceberg</groupId>
+                <artifactId>iceberg-bundled-guava</artifactId>
+                <version>${iceberg.version}</version>
+                <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.iceberg</groupId>
+                <artifactId>iceberg-core</artifactId>
+                <version>${iceberg.version}</version>
+                <scope>provided</scope>
             </dependency>
             <dependency>
               <groupId>org.apache.spark</groupId>
