@@ -386,7 +386,7 @@ object GpuCast extends Arm {
           withResource(input.max()) { max =>
             if (min.getBigDecimal().compareTo(bigDecimalMin) == -1 ||
                 max.getBigDecimal().compareTo(bigDecimalMax) == 1) {
-              throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+              throw new ArithmeticException(GpuCast.INVALID_INPUT_MESSAGE)
             }
           }
         }
