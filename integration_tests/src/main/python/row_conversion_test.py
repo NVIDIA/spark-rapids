@@ -105,7 +105,7 @@ def test_row_conversions_var_width_basic():
 
 # This is one of the tests where we verify that we can move data onto and off of the GPU when the
 # schema is variable width. Note that the supported variable width types (i.e., string)
-# are scattered so that the test covers packing.
+# are scattered so that the test covers packing, which is where columns are reordered for smaller data size by placing columns with the same alignment requirements next to each other.
 def test_row_conversions_var_width():
     gens = [["a", byte_gen], ["b", short_gen], ["c", int_gen], ["d", long_gen],
             ["e", float_gen], ["f", double_gen], ["g", boolean_gen], ["h", string_gen],
