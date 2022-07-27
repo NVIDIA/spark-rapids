@@ -16,22 +16,32 @@
 
 package org.apache.spark.sql.rapids
 
+import java.io.{File, FileInputStream}
+import java.util.Optional
+import java.util.concurrent.{Callable, ExecutionException, Executors, Future}
+import java.util.concurrent.atomic.AtomicInteger
+
+import scala.collection.mutable
+import scala.collection.mutable.{ArrayBuffer, ListBuffer}
+
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.shuffle.{RapidsShuffleRequestHandler, RapidsShuffleServer, RapidsShuffleTransport}
-import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
 import org.apache.spark.{ShuffleDependency, SparkConf, SparkEnv, TaskContext}
-import org.apache.spark.internal.Logging
+import org.apache.spark.executor.ShuffleWriteMetrics
+import org.apache.spark.internal.{config, Logging}
 import org.apache.spark.network.buffer.ManagedBuffer
 import org.apache.spark.scheduler.MapStatus
-import org.apache.spark.shuffle._
-import org.apache.spark.shuffle.sort.SortShuffleManager
+import org.apache.spark.shuffle.{ShuffleWriter, _}
+import org.apache.spark.shuffle.api._
+import org.apache.spark.shuffle.sort.{BypassMergeSortShuffleHandle, SortShuffleManager}
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.shims.GpuShuffleBlockResolver
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage._
+import org.apache.spark.util.Utils
 
 class GpuShuffleHandle[K, V](
     val wrapped: ShuffleHandle,
@@ -63,11 +73,332 @@ abstract class GpuShuffleBlockResolverBase(
   override def stop(): Unit = wrapped.stop()
 }
 
+/**
+ * The `ShuffleWriteMetricsReporter` is based on accumulators, which are not thread safe.
+ * This class is a thin wrapper that adds synchronization, since these metrics will be written
+ * by multiple threads.
+ * @param wrapped
+ */
+class ThreadSafeShuffleWriteMetricsReporter(wrapped: ShuffleWriteMetricsReporter)
+  extends ShuffleWriteMetrics {
+  override private[spark] def incBytesWritten(v: Long): Unit = synchronized {
+    wrapped.incBytesWritten(v)
+  }
+  override private[spark] def incRecordsWritten(v: Long): Unit = synchronized {
+    wrapped.incRecordsWritten(v)
+  }
+  override private[spark] def incWriteTime(v: Long): Unit = synchronized {
+    wrapped.incWriteTime(v)
+  }
+  override private[spark] def decBytesWritten(v: Long): Unit = synchronized {
+    wrapped.decBytesWritten(v)
+  }
+  override private[spark] def decRecordsWritten(v: Long): Unit = synchronized {
+    wrapped.decRecordsWritten(v)
+  }
+}
 
 object RapidsShuffleInternalManagerBase extends Logging {
   def unwrapHandle(handle: ShuffleHandle): ShuffleHandle = handle match {
     case gh: GpuShuffleHandle[_, _] => gh.wrapped
     case other => other
+  }
+
+  /**
+   * "slots" are a thread + queue thin wrapper that is used
+   * to execute tasks that need to be done in sequentially.
+   * This is done such that the threaded shuffle writer posts
+   * tasks that are for writer_i, and that writer is guaranteed
+   * to be written to sequentially, but writer_j may end up
+   * in a different slot, and could perform its work in parallel.
+   * @param slotNum this slot's unique number only used to name its executor
+   */
+  private class Slot(slotNum: Int) {
+    private val p = Executors.newSingleThreadExecutor(new ThreadFactoryBuilder()
+        .setNameFormat(s"rapids-shuffle-writer-$slotNum")
+        .setDaemon(true)
+        .build())
+
+    def offer[T](task: Callable[T]): Future[T] = {
+      p.submit(task)
+    }
+
+    def shutdownNow(): Unit = p.shutdownNow()
+  }
+
+  // this is set by the executor on startup, when the MULTITHREADED
+  // shuffle mode is utilized, as per this config:
+  //   spark.rapids.shuffle.multiThreaded.writer.threads
+  private var numSlots: Int = 0
+  private lazy val slots = new mutable.HashMap[Int, Slot]()
+
+  // used by callers to obtain a unique slot
+  private val slotNumber = new AtomicInteger(0)
+
+  /**
+   * Send a task to a specific slot.
+   * @param slotNum the slot to submit to
+   * @param task a task to execute
+   * @note there must not be an uncaught exception while calling
+   *      `task`.
+   */
+  def queueTask[T](slotNum: Int, task: Callable[T]): Future[T] = {
+    slots(slotNum % numSlots).offer(task)
+  }
+
+  def startThreadPoolIfNeeded(numConfiguredThreads: Int): Unit = synchronized {
+    if (slots.isEmpty) {
+      numSlots = numConfiguredThreads
+      (0 until numSlots).foreach { slotNum =>
+        slots.put(slotNum, new Slot(slotNum))
+      }
+    }
+  }
+
+  def stopThreadPool(): Unit = synchronized {
+    slots.values.foreach(_.shutdownNow())
+    slots.clear()
+  }
+
+  def getNextSlot: Int = Math.abs(slotNumber.incrementAndGet())
+}
+
+trait RapidsShuffleWriterShimHelper {
+  def setChecksumIfNeeded(writer: DiskBlockObjectWriter, partition: Int): Unit = {
+    // noop until Spark 3.2.0+
+  }
+
+  // Partition lengths, used for MapStatus, but also exposed in Spark 3.2.0+
+  private var myPartitionLengths: Array[Long] = null
+
+  // This is a Spark 3.2.0+ function, adding a default here for testing purposes
+  def getPartitionLengths: Array[Long] = myPartitionLengths
+
+  def commitAllPartitions(writer: ShuffleMapOutputWriter, emptyChecksums: Boolean): Array[Long] = {
+    myPartitionLengths = doCommitAllPartitions(writer, emptyChecksums)
+    myPartitionLengths
+  }
+
+  def doCommitAllPartitions(writer: ShuffleMapOutputWriter, emptyChecksums: Boolean): Array[Long]
+}
+
+abstract class RapidsShuffleThreadedWriterBase[K, V](
+    blockManager: BlockManager,
+    handle: BypassMergeSortShuffleHandle[K, V],
+    mapId: Long,
+    sparkConf: SparkConf,
+    writeMetrics: ShuffleWriteMetricsReporter,
+    shuffleExecutorComponents: ShuffleExecutorComponents)
+      extends ShuffleWriter[K, V]
+        with RapidsShuffleWriterShimHelper
+        with Arm
+        with Logging {
+
+  private var myMapStatus: Option[MapStatus] = None
+
+  private val dep: ShuffleDependency[K, V, V] = handle.dependency
+  private val shuffleId = dep.shuffleId
+  private val partitioner = dep.partitioner
+  private val numPartitions = partitioner.numPartitions
+  private val serializer = dep.serializer.newInstance()
+  private val transferToEnabled = sparkConf.getBoolean("spark.file.transferTo", true)
+  private val fileBufferSize = sparkConf.get(config.SHUFFLE_FILE_BUFFER_SIZE).toInt * 1024
+  /**
+   * Are we in the process of stopping? Because map tasks can call stop() with success = true
+   * and then call stop() with success = false if they get an exception, we want to make sure
+   * we don't try deleting files, etc twice.
+   */
+  private var stopping = false
+
+  val diskBlockObjectWriters = new mutable.HashMap[Int, (Int, DiskBlockObjectWriter)]()
+
+  override def write(records: Iterator[Product2[K, V]]): Unit = {
+    withResource(new NvtxRange("ThreadedWriter.write", NvtxColor.RED)) { _ =>
+      withResource(new NvtxRange("compute", NvtxColor.GREEN)) { _ =>
+        var errorOcurred: Throwable = null
+        val mapOutputWriter = shuffleExecutorComponents.createMapOutputWriter(
+          shuffleId,
+          mapId,
+          numPartitions)
+        try {
+          val partLengths = if (!records.hasNext) {
+            commitAllPartitions(mapOutputWriter, true /*empty checksum*/)
+          } else {
+            // per reduce partition id
+            // open all the writers ahead of time (Spark does this already)
+            val openStartTime = System.nanoTime()
+            (0 until numPartitions).map { i =>
+              val (blockId, file) = blockManager.diskBlockManager.createTempShuffleBlock()
+              val writer: DiskBlockObjectWriter = blockManager.getDiskWriter(
+                blockId, file, serializer, fileBufferSize, writeMetrics)
+              setChecksumIfNeeded(writer, i) // spark3.2.0+
+
+              // Places writer objects at round robin slot numbers apriori
+              // this choice is for simplicity but likely needs to change so that
+              // we can handle skew better
+              val slotNum = RapidsShuffleInternalManagerBase.getNextSlot
+              diskBlockObjectWriters.put(i, (slotNum, writer))
+            }
+            writeMetrics.incWriteTime(System.nanoTime() - openStartTime);
+
+            // we call write on every writer for every record in parallel
+            val writeFutures = new mutable.Queue[Future[Unit]]
+            records.foreach { record =>
+              val key = record._1
+              val value = record._2
+              val reducePartitionId: Int = partitioner.getPartition(key)
+              val (slotNum, myWriter) = diskBlockObjectWriters(reducePartitionId)
+
+              // we close batches actively in the `records` iterator as we get the next batch
+              // this makes sure it is kept alive while a task is able to handle it.
+              val cb = value match {
+                case columnarBatch: ColumnarBatch =>
+                  SlicedGpuColumnVector.incRefCount(columnarBatch)
+                case _ =>
+                  null
+              }
+
+              writeFutures += RapidsShuffleInternalManagerBase.queueTask(slotNum, () => {
+                withResource(cb) { _ =>
+                  myWriter.write(key, value)
+                }
+              })
+            }
+
+            withResource(new NvtxRange("WaitingForWrites", NvtxColor.PURPLE)) { _ =>
+              try {
+                while (writeFutures.nonEmpty) {
+                  try {
+                    writeFutures.dequeue().get()
+                  } catch {
+                    case ee: ExecutionException =>
+                      // this exception is a wrapper for the underlying exception
+                      // i.e. `IOException`. The ShuffleWriter.write interface says
+                      // it can throw these.
+                      throw ee.getCause
+                  }
+                }
+              } finally {
+                // cancel all pending futures (only in case of error will we cancel)
+                writeFutures.foreach(_.cancel(true /*ok to interrupt*/))
+              }
+            }
+            writePartitionedData(mapOutputWriter)
+          }
+          myMapStatus = Some(MapStatus(blockManager.shuffleServerId, partLengths, mapId))
+        } catch {
+          // taken directly from BypassMergeSortShuffleWriter
+          case e: Exception =>
+            try {
+              mapOutputWriter.abort(e)
+            } catch {
+              case e2: Exception =>
+                logError("Failed to abort the writer after failing to write map output.", e2);
+                e.addSuppressed(e2);
+            }
+            throw e
+        }
+      }
+    }
+  }
+
+  def writePartitionedData(mapOutputWriter: ShuffleMapOutputWriter): Array[Long] = {
+    // after all temporary shuffle writes are done, we need to produce a single
+    // file (shuffle_[map_id]_0) which is done during this commit phase
+    withResource(new NvtxRange("CommitShuffle", NvtxColor.RED)) { _ =>
+      // per reduce partition
+      val segments = (0 until numPartitions).map {
+        reducePartitionId =>
+          withResource(diskBlockObjectWriters(reducePartitionId)._2) { writer =>
+            val segment = writer.commitAndGet()
+            (reducePartitionId, segment.file)
+          }
+      }
+
+      val writeStartTime = System.nanoTime()
+      segments.foreach { case (reducePartitionId, file) =>
+        val partWriter = mapOutputWriter.getPartitionWriter(reducePartitionId)
+        if (file.exists()) {
+          if (transferToEnabled) {
+            val maybeOutputChannel: Optional[WritableByteChannelWrapper] =
+              partWriter.openChannelWrapper()
+            if (maybeOutputChannel.isPresent) {
+              writePartitionedDataWithChannel(file, maybeOutputChannel.get())
+            } else {
+              writePartitionedDataWithStream(file, partWriter)
+            }
+          } else {
+            writePartitionedDataWithStream(file, partWriter)
+          }
+          file.delete()
+        }
+      }
+      writeMetrics.incWriteTime(System.nanoTime() - writeStartTime)
+    }
+    commitAllPartitions(mapOutputWriter, false /*non-empty checksums*/)
+  }
+
+  // taken from BypassMergeSortShuffleWriter
+  // this code originally called into guava.Closeables.close
+  // and had logic to silence exceptions thrown while copying
+  // I am ignoring this for now.
+  def writePartitionedDataWithStream(file: java.io.File, writer: ShufflePartitionWriter): Unit = {
+    withResource(new FileInputStream(file)) { in =>
+      withResource(writer.openStream()) { os =>
+        Utils.copyStream(in, os, false, false)
+      }
+    }
+  }
+
+  // taken from BypassMergeSortShuffleWriter
+  // this code originally called into guava.Closeables.close
+  // and had logic to silence exceptions thrown while copying
+  // I am ignoring this for now.
+  def writePartitionedDataWithChannel(
+    file: File,
+    outputChannel: WritableByteChannelWrapper): Unit = {
+    // note outputChannel.close() doesn't actually close it.
+    // The call is there to record keep the partition lengths
+    // after the serialization completes.
+    withResource(outputChannel) { _ =>
+      withResource(new FileInputStream(file)) { in =>
+        withResource(in.getChannel) { inputChannel =>
+          Utils.copyFileStreamNIO(
+            inputChannel, outputChannel.channel, 0L, inputChannel.size)
+        }
+      }
+    }
+  }
+
+  override def stop(success: Boolean): Option[MapStatus] = {
+    if (stopping) {
+      None
+    } else {
+      stopping = true
+      if (success) {
+        if (myMapStatus.isEmpty) {
+          // should not happen, but adding it just in case (this differs from Spark)
+          cleanupTempData()
+          throw new IllegalStateException("Cannot call stop(true) without having called write()");
+        }
+        myMapStatus
+      } else {
+        cleanupTempData()
+        None
+      }
+    }
+  }
+
+  private def cleanupTempData(): Unit = {
+    // The map task failed, so delete our output data.
+    try {
+      diskBlockObjectWriters.values.foreach { case (_, writer) =>
+        val file = writer.revertPartialWritesAndClose()
+        if (!file.delete()) logError(s"Error while deleting file ${file.getAbsolutePath()}")
+      }
+    } finally {
+      diskBlockObjectWriters.clear()
+    }
   }
 }
 
@@ -208,7 +539,7 @@ class RapidsCachingWriter[K, V](
  *       `ShuffleManager` and `SortShuffleManager` classes. When configuring
  *       Apache Spark to use the RAPIDS shuffle manager,
  */
-class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
+abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     extends ShuffleManager with RapidsShuffleHeartbeatHandler with Logging {
 
   def getServerId: BlockManagerId = server.fold(blockManager.blockManagerId)(_.getId)
@@ -235,13 +566,23 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
 
   private val rapidsConf = new RapidsConf(conf)
 
+  if (!isDriver && rapidsConf.isMultiThreadedShuffleManagerMode) {
+    RapidsShuffleInternalManagerBase.startThreadPoolIfNeeded(
+      rapidsConf.shuffleMultiThreadedWriterThreads)
+  }
+
   protected val wrapped = new SortShuffleManager(conf)
 
-  private[this] val transportEnabledMessage = if (!rapidsConf.shuffleTransportEnabled) {
-    "Transport disabled (local cached blocks only)"
-  } else {
-    s"Transport enabled (remote fetches will use ${rapidsConf.shuffleTransportClassName}"
-  }
+  private[this] val transportEnabledMessage =
+    if (!rapidsConf.isUCXShuffleManagerMode) {
+      if (rapidsConf.isCacheOnlyShuffleManagerMode) {
+        "Transport disabled (local cached blocks only)"
+      } else {
+        "Experimental threaded shuffle writer mode"
+      }
+    } else {
+      s"Transport enabled (remote fetches will use ${rapidsConf.shuffleTransportClassName}"
+    }
 
   logWarning(s"Rapids Shuffle Plugin enabled. ${transportEnabledMessage}. To disable the " +
       s"RAPIDS Shuffle Manager set `${RapidsConf.SHUFFLE_MANAGER_ENABLED}` to false")
@@ -250,8 +591,8 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
   // so they all need to be lazy values that are executed when things are first called
 
   // NOTE: this can be null in the driver side.
-  private lazy val env = SparkEnv.get
-  private lazy val blockManager = env.blockManager
+  protected lazy val env = SparkEnv.get
+  protected lazy val blockManager = env.blockManager
   protected lazy val shouldFallThroughOnEverything = {
     val fallThroughReasons = new ListBuffer[String]()
     if (GpuShuffleEnv.isExternalShuffleEnabled) {
@@ -283,14 +624,15 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
       throw new IllegalStateException("The ShuffleBufferCatalog is not initialized but the " +
           "RapidsShuffleManager is configured"))
 
-  protected lazy val resolver = if (shouldFallThroughOnEverything) {
-    wrapped.shuffleBlockResolver
-  } else {
-    new GpuShuffleBlockResolver(wrapped.shuffleBlockResolver, getCatalogOrThrow)
-  }
+  protected lazy val resolver =
+    if (shouldFallThroughOnEverything || rapidsConf.isMultiThreadedShuffleManagerMode) {
+      wrapped.shuffleBlockResolver
+    } else {
+      new GpuShuffleBlockResolver(wrapped.shuffleBlockResolver, getCatalogOrThrow)
+    }
 
   private[this] lazy val transport: Option[RapidsShuffleTransport] = {
-    if (rapidsConf.shuffleTransportEnabled && !isDriver) {
+    if (rapidsConf.isUCXShuffleManagerMode && !isDriver) {
       Some(RapidsShuffleTransport.makeTransport(blockManager.shuffleServerId, rapidsConf))
     } else {
       None
@@ -298,7 +640,7 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
   }
 
   private[this] lazy val server: Option[RapidsShuffleServer] = {
-    if (rapidsConf.shuffleTransportEnabled && !isDriver) {
+    if (rapidsConf.isGPUShuffle && !isDriver) {
       val catalog = getCatalogOrThrow
       val requestHandler = new RapidsShuffleRequestHandler() {
         override def acquireShuffleBuffer(tableId: Int): RapidsBuffer = {
@@ -327,19 +669,39 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     val orig = wrapped.registerShuffle(shuffleId, dependency)
 
     dependency match {
-      case _ if shouldFallThroughOnEverything => orig
-      case gpuDependency: GpuShuffleDependency[K, V, C] if gpuDependency.useRapidsShuffle =>
+      case _ if shouldFallThroughOnEverything ||
+        rapidsConf.isMultiThreadedShuffleManagerMode => orig
+      case gpuDependency: GpuShuffleDependency[K, V, C] if gpuDependency.useGPUShuffle =>
         new GpuShuffleHandle(orig,
           dependency.asInstanceOf[GpuShuffleDependency[K, V, V]])
       case _ => orig
     }
   }
 
+  lazy val execComponents: Option[ShuffleExecutorComponents] = {
+    import scala.collection.JavaConverters._
+    val executorComponents = ShuffleDataIOUtils.loadShuffleDataIO(conf).executor()
+    val extraConfigs = conf.getAllWithPrefix(ShuffleDataIOUtils.SHUFFLE_SPARK_CONF_PREFIX).toMap
+    executorComponents.initializeExecutor(
+      conf.getAppId,
+      SparkEnv.get.executorId,
+      extraConfigs.asJava)
+    Some(executorComponents)
+  }
+
+  /**
+   * Creates a BypassMergeSortShuffleWriter specific to a spark version.
+   * Implemented in subclasses of `RapidsShuffleInternalManagerBase` per shim.
+   */
+  def makeBypassMergeSortShuffleWriter[K, V](
+     handle: BypassMergeSortShuffleHandle[K, V],
+     mapId: Long,
+     context: TaskContext,
+     metricsReporter: ShuffleWriteMetricsReporter): ShuffleWriter[K, V]
+
   override def getWriter[K, V](
-      handle: ShuffleHandle,
-      mapId: Long,
-      context: TaskContext,
-      metricsReporter: ShuffleWriteMetricsReporter): ShuffleWriter[K, V] = {
+    handle: ShuffleHandle, mapId: Long, context: TaskContext,
+    metricsReporter: ShuffleWriteMetricsReporter): ShuffleWriter[K, V] = {
     handle match {
       case gpu: GpuShuffleHandle[_, _] =>
         registerGpuShuffle(handle.shuffleId)
@@ -352,8 +714,18 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
           RapidsBufferCatalog.getDeviceStorage,
           server,
           gpu.dependency.metrics)
-      case other =>
-        wrapped.getWriter(other, mapId, context, metricsReporter)
+      case bmssh: BypassMergeSortShuffleHandle[_, _] =>
+        bmssh.dependency match {
+          case g: GpuShuffleDependency[_, _, _] if g.useMultiThreadedShuffle =>
+            makeBypassMergeSortShuffleWriter(
+              handle.asInstanceOf[BypassMergeSortShuffleHandle[K, V]],
+              mapId, context,
+              new ThreadSafeShuffleWriteMetricsReporter(metricsReporter))
+          case _ =>
+            wrapped.getWriter(handle, mapId, context, metricsReporter)
+        }
+      case _ =>
+        wrapped.getWriter(handle, mapId, context, metricsReporter)
     }
   }
 
@@ -390,10 +762,10 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
           transport,
           getCatalogOrThrow,
           gpu.dependency.sparkTypes)
-      case other => {
+      case other =>
         val shuffleHandle = RapidsShuffleInternalManagerBase.unwrapHandle(other)
-        wrapped.getReader(shuffleHandle, startPartition, endPartition, context, metrics)
-      }
+        wrapped.getReader(shuffleHandle, startMapIndex, endMapIndex, startPartition,
+          endPartition, context, metrics)
     }
   }
 
@@ -427,6 +799,9 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
       stopped = true
       server.foreach(_.close())
       transport.foreach(_.close())
+      if (!isDriver && rapidsConf.isMultiThreadedShuffleManagerMode) {
+        RapidsShuffleInternalManagerBase.stopThreadPool()
+      }
     }
   }
 }

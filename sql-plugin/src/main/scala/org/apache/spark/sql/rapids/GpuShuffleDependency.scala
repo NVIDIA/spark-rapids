@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,8 @@ class GpuShuffleDependency[K: ClassTag, V: ClassTag, C: ClassTag](
     aggregator: Option[Aggregator[K, V, C]] = None,
     mapSideCombine: Boolean = false,
     shuffleWriterProcessor: ShuffleWriteProcessor = new ShuffleWriteProcessor,
-    val useRapidsShuffle: Boolean,
+    val useGPUShuffle: Boolean,
+    val useMultiThreadedShuffle: Boolean,
     val metrics: Map[String, SQLMetric] = Map.empty)
   extends ShuffleDependency[K, V, C](rdd, partitioner, serializer, keyOrdering,
     aggregator, mapSideCombine, shuffleWriterProcessor) {
