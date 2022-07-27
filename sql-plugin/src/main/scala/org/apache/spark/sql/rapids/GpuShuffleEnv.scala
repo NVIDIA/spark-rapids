@@ -64,6 +64,11 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
 }
 
 object GpuShuffleEnv extends Logging {
+  def isUCXShuffleAndEarlyStart(conf: RapidsConf): Boolean = {
+    conf.isUCXShuffleManagerMode &&
+      conf.shuffleTransportEarlyStart
+  }
+
   val RAPIDS_SHUFFLE_CLASS: String = ShimLoader.getRapidsShuffleManagerClass
   val RAPIDS_SHUFFLE_INTERNAL: String = ShimLoader.getRapidsShuffleInternalClass
 
@@ -118,15 +123,24 @@ object GpuShuffleEnv extends Logging {
     }
     // executors have `env` defined when this is checked
     // in tests
-    val isConfiguredInEnv = Option(env).map(_.isRapidsShuffleConfigured).getOrElse(false)
+    val isConfiguredInEnv = Option(env).exists(_.isRapidsShuffleConfigured)
     (isConfiguredInEnv || isRapidsManager) &&
-      !isExternalShuffleEnabled &&
-      !isSparkAuthenticateEnabled &&
+      (conf.isMultiThreadedShuffleManagerMode ||
+        (conf.isGPUShuffle && !isExternalShuffleEnabled &&
+          !isSparkAuthenticateEnabled)) &&
       conf.isSqlExecuteOnGPU
   }
 
-  def shouldUseRapidsShuffle(conf: RapidsConf): Boolean = {
-    conf.shuffleManagerEnabled && isRapidsShuffleAvailable(conf)
+  def useGPUShuffle(conf: RapidsConf): Boolean = {
+    conf.shuffleManagerEnabled &&
+      conf.isGPUShuffle &&
+        isRapidsShuffleAvailable(conf)
+  }
+
+  def useMultiThreadedShuffle(conf: RapidsConf): Boolean = {
+    conf.shuffleManagerEnabled &&
+      conf.isMultiThreadedShuffleManagerMode &&
+      isRapidsShuffleAvailable(conf)
   }
 
   def getCatalog: ShuffleBufferCatalog = if (env == null) {
