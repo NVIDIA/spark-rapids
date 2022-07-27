@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,6 +49,7 @@ object QualificationMain extends Logging {
     val matchEventLogs = appArgs.matchEventLogs
     val outputDirectory = appArgs.outputDirectory().stripSuffix("/")
     val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
+    val maxSQLDescLength = appArgs.maxSqlDescLength.getOrElse(100)
 
     val nThreads = appArgs.numThreads.getOrElse(
       Math.ceil(Runtime.getRuntime.availableProcessors() / 4f).toInt)
@@ -56,6 +57,7 @@ object QualificationMain extends Logging {
     val reportReadSchema = appArgs.reportReadSchema.getOrElse(false)
     val order = appArgs.order.getOrElse("desc")
     val uiEnabled = appArgs.htmlReport.getOrElse(false)
+    val reportSqlLevel = appArgs.perSql.getOrElse(false)
 
     val hadoopConf = new Configuration()
 
@@ -88,7 +90,8 @@ object QualificationMain extends Logging {
     }
 
     val qual = new Qualification(outputDirectory, numOutputRows, hadoopConf, timeout,
-      nThreads, order, pluginTypeChecker, reportReadSchema, printStdout, uiEnabled, enablePB)
+      nThreads, order, pluginTypeChecker, reportReadSchema, printStdout, uiEnabled,
+      enablePB, reportSqlLevel, maxSQLDescLength)
     val res = qual.qualifyApps(filteredLogs)
     (0, res)
   }
