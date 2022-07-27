@@ -36,6 +36,7 @@ ARG UCX_CUDA_VER=11
 FROM ubuntu:18.04 as rdma_core
 ARG RDMA_CORE_VERSION
 
+RUN apt-get update && apt-get install -y gnupg2
 # https://forums.developer.nvidia.com/t/notice-cuda-linux-repository-key-rotation/212771
 RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub
 RUN apt update && apt install -y dh-make wget build-essential cmake gcc libudev-dev libnl-3-dev libnl-route-3-dev ninja-build pkg-config valgrind python3-dev cython3 python3-docutils pandoc
