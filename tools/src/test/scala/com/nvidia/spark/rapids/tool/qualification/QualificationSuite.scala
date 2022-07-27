@@ -91,7 +91,20 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     ("Task Speedup Factor", DoubleType),
     ("App Duration Estimated", BooleanType))
 
+  private val csvPerSQLFields = Seq(
+    ("App Name", StringType),
+    ("App ID", StringType),
+    ("SQL ID", StringType),
+    ("SQL Description", StringType),
+    ("SQL DF Duration", LongType),
+    ("GPU Opportunity", LongType),
+    ("Estimated GPU Duration", DoubleType),
+    ("Estimated GPU Speedup", DoubleType),
+    ("Estimated GPU Time Saved", DoubleType),
+    ("Recommendation", StringType))
+
   val schema = new StructType(csvDetailedFields.map(f => StructField(f._1, f._2, true)).toArray)
+  val perSQLSchema = new StructType(csvPerSQLFields.map(f => StructField(f._1, f._2, true)).toArray)
 
   def csvDetailedHeader(ind: Int) = csvDetailedFields(ind)._1
 
@@ -107,6 +120,11 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   def readExpectedFile(expected: File): DataFrame = {
     ToolTestUtils.readExpectationCSV(sparkSession, expected.getPath(),
       Some(schema))
+  }
+
+  def readPerSqlFile(expected: File): DataFrame = {
+    ToolTestUtils.readExpectationCSV(sparkSession, expected.getPath(),
+      Some(perSQLSchema))
   }
 
   private def createSummaryForDF(
@@ -127,12 +145,18 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   private def runQualificationTest(eventLogs: Array[String], expectFileName: String,
-      shouldReturnEmpty: Boolean = false) = {
+      shouldReturnEmpty: Boolean = false, expectPerSqlFileName: Option[String] = None) = {
     TrampolineUtil.withTempDir { outpath =>
       val resultExpectation = new File(expRoot, expectFileName)
-      val allArgs = Array(
+      val outputArgs = Array(
         "--output-directory",
         outpath.getAbsolutePath())
+
+      val allArgs = if (expectPerSqlFileName.isDefined) {
+        outputArgs ++ Array("--per-sql")
+      } else {
+        outputArgs
+      }
 
       val appArgs = new QualificationArgs(allArgs ++ eventLogs)
       val (exit, appSum) = QualificationMain.mainInternal(appArgs)
@@ -147,6 +171,14 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val dfExpect = readExpectedFile(resultExpectation)
         assert(!dfQual.isEmpty)
         ToolTestUtils.compareDataFrames(dfQual, dfExpect)
+        if (expectPerSqlFileName.isDefined) {
+          val resultExpectation = new File(expRoot, expectPerSqlFileName.get)
+          val dfPerSqlExpect = readPerSqlFile(resultExpectation)
+          val actualExpectation = s"$outpath/rapids_4_spark_qualification_output/" +
+            s"rapids_4_spark_qualification_output_persql.csv"
+          val dfPerSqlActual = readPerSqlFile(new File(actualExpectation))
+          ToolTestUtils.compareDataFrames(dfPerSqlActual, dfPerSqlExpect)
+        }
       }
     }
   }
@@ -199,7 +231,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         "--output-directory",
         outpath.getAbsolutePath(),
         "--order",
-        "desc")
+        "desc",
+        "--per-sql")
 
       val appArgs = new QualificationArgs(allArgs ++ logFiles)
       val (exit, appSum) = QualificationMain.mainInternal(appArgs)
@@ -220,6 +253,21 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       } finally {
         inputSource.close()
       }
+      val persqlFileName = s"$outpath/rapids_4_spark_qualification_output/" +
+        s"rapids_4_spark_qualification_output_persql.log"
+      val persqlInputSource = Source.fromFile(persqlFileName)
+      try {
+        val lines = persqlInputSource.getLines.toArray
+        // 4 lines of header and footer
+        assert(lines.size == (4 + 17))
+        // skip the 3 header lines
+        val firstRow = lines(3)
+        // this should be app + sqlID
+        assert(firstRow.contains("local-1622043423018|     1"))
+        assert(firstRow.contains("count at QualificationInfoUtils.scala:94"))
+      } finally {
+        persqlInputSource.close()
+      }
     }
   }
 
@@ -237,7 +285,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         "--order",
         "desc",
         "-n",
-        "2")
+        "2",
+        "--per-sql")
 
       val appArgs = new QualificationArgs(allArgs ++ logFiles)
       val (exit, _) = QualificationMain.mainInternal(appArgs)
@@ -252,6 +301,16 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(lines.size == (4 + 2))
       } finally {
         inputSource.close()
+      }
+      val persqlFileName = s"$outpath/rapids_4_spark_qualification_output/" +
+        s"rapids_4_spark_qualification_output_persql.log"
+      val persqlInputSource = Source.fromFile(persqlFileName)
+      try {
+        val lines = persqlInputSource.getLines
+        // 4 lines of header and footer, limit is 2
+        assert(lines.size == (4 + 17))
+      } finally {
+        persqlInputSource.close()
       }
     }
   }
@@ -372,7 +431,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       s"$logDir/udf_dataset_eventlog",
       s"$logDir/udf_func_eventlog"
     )
-    runQualificationTest(logFiles, "qual_test_simple_expectation.csv")
+    runQualificationTest(logFiles, "qual_test_simple_expectation.csv",
+      expectPerSqlFileName = Some("qual_test_simple_expectation_persql.csv"))
   }
 
   test("test missing sql end") {
@@ -397,7 +457,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   test("test nds q86 test") {
     val logFiles = Array(s"$logDir/nds_q86_test")
-    runQualificationTest(logFiles, "nds_q86_test_expectation.csv")
+    runQualificationTest(logFiles, "nds_q86_test_expectation.csv",
+      expectPerSqlFileName = Some("nds_q86_test_expectation_persql.csv"))
   }
 
   // event log rolling creates files under a directory
@@ -415,7 +476,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   test("test nds q86 with failure test") {
     val logFiles = Array(s"$logDir/nds_q86_fail_test")
-    runQualificationTest(logFiles, "nds_q86_fail_test_expectation.csv")
+    runQualificationTest(logFiles, "nds_q86_fail_test_expectation.csv",
+      expectPerSqlFileName = Some("nds_q86_fail_test_expectation_persql.csv"))
   }
 
   test("test event log write format") {
