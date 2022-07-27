@@ -1,9 +1,9 @@
 ﻿{
   "paragraphs": [
     {
-      "text": "%md\n# Introduction to XGBoost Spark with GPU\n\nMortgage is an example of xgboost classifier to do binary classification.\n\n## Load libraries\nFirst load some common libraries will be used by both GPU version and CPU version xgboost.",
+      "text": "%md\n# Introduction to XGBoost Spark with GPU\nMortgage is an example of xgboost classifier to do binary classification. This notebook will show you how to load data, train the xgboost model and use this model to predict if a mushroom is \"poisonous\". Camparing to original XGBoost Spark code, there're only one API difference.\n\n\n## Prerequisite\nSet ```spark.rapids.memory.gpu.pool=NONE, spark.dynamicAllocation.enabled=false, spark.task.resource.gpu.amount=1``` in the init script before starting the dataproc cluster.",
       "user": "anonymous",
-      "dateUpdated": "2022-07-26T19:27:39+0000",
+      "dateUpdated": "2022-07-27T19:56:12+0000",
       "progress": 0,
       "config": {
         "tableHide": false,
@@ -28,7 +28,7 @@
         "msg": [
           {
             "type": "HTML",
-            "data": "<div class=\"markdown-body\">\n<h1>Introduction to XGBoost Spark with GPU</h1>\n<p>Mortgage is an example of xgboost classifier to do binary classification.</p>\n<h2>Load libraries</h2>\n<p>First load some common libraries will be used by both GPU version and CPU version xgboost.</p>\n\n</div>"
+            "data": "<div class=\"markdown-body\">\n<h1>Introduction to XGBoost Spark with GPU</h1>\n<p>Mortgage is an example of xgboost classifier to do binary classification. This notebook will show you how to load data, train the xgboost model and use this model to predict if a mushroom is &ldquo;poisonous&rdquo;. Camparing to original XGBoost Spark code, there&rsquo;re only one API difference.</p>\n<h2>Prerequisite</h2>\n<p>Set <code>spark.rapids.memory.gpu.pool=NONE, spark.dynamicAllocation.enabled=false, spark.task.resource.gpu.amount=1</code> in the init script before starting the dataproc cluster.</p>\n\n</div>"
           }
         ]
       },
@@ -38,11 +38,11 @@
       "jobName": "paragraph_1658780182414_723095168",
       "id": "20200712-043620_382811823",
       "dateCreated": "2022-07-25T20:16:22+0000",
+      "dateStarted": "2022-07-27T19:56:12+0000",
+      "dateFinished": "2022-07-27T19:56:12+0000",
       "status": "FINISHED",
       "focus": true,
-      "$$hashKey": "object:207",
-      "dateFinished": "2022-07-26T19:27:39+0000",
-      "dateStarted": "2022-07-26T19:27:39+0000"
+      "$$hashKey": "object:216"
     },
     {
       "text": "import ml.dmlc.xgboost4j.scala.spark.{XGBoostClassifier, XGBoostClassificationModel}\nimport org.apache.spark.sql.SparkSession\nimport org.apache.spark.ml.evaluation.MulticlassClassificationEvaluator\nimport org.apache.spark.sql.types.{DoubleType, IntegerType, StructField, StructType}\nimport org.apache.spark.SparkConf",
@@ -85,7 +85,7 @@
       "dateStarted": "2022-07-26T19:22:04+0000",
       "dateFinished": "2022-07-26T19:22:25+0000",
       "status": "FINISHED",
-      "$$hashKey": "object:208"
+      "$$hashKey": "object:217"
     },
     {
       "text": "%md\nBesides CPU version requires some extra libraries, such as:\n\n```scala\nimport org.apache.spark.ml.feature.VectorAssembler\nimport org.apache.spark.sql.DataFrame\nimport org.apache.spark.sql.functions._\nimport org.apache.spark.sql.types.FloatType\n```",
@@ -124,7 +124,7 @@
       "id": "20200712-043620_1625961573",
       "dateCreated": "2022-07-25T20:16:22+0000",
       "status": "READY",
-      "$$hashKey": "object:209"
+      "$$hashKey": "object:218"
     },
     {
       "title": "Set the dataset path",
@@ -169,7 +169,7 @@
       "dateStarted": "2022-07-26T19:26:32+0000",
       "dateFinished": "2022-07-26T19:26:32+0000",
       "status": "FINISHED",
-      "$$hashKey": "object:210"
+      "$$hashKey": "object:219"
     },
     {
       "text": "%md\n## Build the schema and parameters\nThe mortgage data has 27 columns: 26 features and 1 label. \"deinquency_12\" is the label column. The schema will be used to load data in the future.\n\nThe next block also defines some key parameters used in xgboost training process.",
@@ -208,7 +208,7 @@
       "id": "20200712-043620_2043825692",
       "dateCreated": "2022-07-25T20:16:22+0000",
       "status": "READY",
-      "$$hashKey": "object:211"
+      "$$hashKey": "object:220"
     },
     {
       "text": "val labelColName = \"delinquency_12\"\nval schema = StructType(List(\n  StructField(\"orig_channel\", DoubleType),\n  StructField(\"first_home_buyer\", DoubleType),\n  StructField(\"loan_purpose\", DoubleType),\n  StructField(\"property_type\", DoubleType),\n  StructField(\"occupancy_status\", DoubleType),\n  StructField(\"property_state\", DoubleType),\n  StructField(\"product_type\", DoubleType),\n  StructField(\"relocation_mortgage_indicator\", DoubleType),\n  StructField(\"seller_name\", DoubleType),\n  StructField(\"mod_flag\", DoubleType),\n  StructField(\"orig_interest_rate\", DoubleType),\n  StructField(\"orig_upb\", DoubleType),\n  StructField(\"orig_loan_term\", IntegerType),\n  StructField(\"orig_ltv\", DoubleType),\n  StructField(\"orig_cltv\", DoubleType),\n  StructField(\"num_borrowers\", DoubleType),\n  StructField(\"dti\", DoubleType),\n  StructField(\"borrower_credit_score\", DoubleType),\n  StructField(\"num_units\", IntegerType),\n  StructField(\"zip\", IntegerType),\n  StructField(\"mortgage_insurance_percent\", DoubleType),\n  StructField(\"current_loan_delinquency_status\", IntegerType),\n  StructField(\"current_actual_upb\", DoubleType),\n  StructField(\"interest_rate\", DoubleType),\n  StructField(\"loan_age\", DoubleType),\n  StructField(\"msa\", DoubleType),\n  StructField(\"non_interest_bearing_upb\", DoubleType),\n  StructField(labelColName, IntegerType)))\n\nval featureNames = schema.filter(_.name != labelColName).map(_.name).toArray",
@@ -251,7 +251,7 @@
       "dateStarted": "2022-07-26T19:22:25+0000",
       "dateFinished": "2022-07-26T19:22:26+0000",
       "status": "FINISHED",
-      "$$hashKey": "object:212"
+      "$$hashKey": "object:221"
     },
     {
       "text": "%md\n## Create a new spark session and load data\n\nA new spark session should be created to continue all the following spark operations.\n\nNOTE: in this notebook, the dependency jars have been loaded when installing toree kernel. Alternatively the jars can be loaded into notebook by [%AddJar magic](https://toree.incubator.apache.org/docs/current/user/faq/). However, there's one restriction for `%AddJar`: the jar uploaded can only be available when `AddJar` is called just after a new spark session is created. Do it as below:\n\n```scala\nimport org.apache.spark.sql.SparkSession\nval spark = SparkSession.builder().appName(\"mortgage-GPU\").getOrCreate\n%AddJar file:/data/libs/rapids-4-spark-XXX.jar\n%AddJar file:/data/libs/xgboost4j_3.0-XXX.jar\n%AddJar file:/data/libs/xgboost4j-spark_3.0-XXX.jar\n// ...\n```\n\n##### Please note the new jar \"rapids-4-spark-XXX.jar\" is only needed for GPU version, you can not add it to dependence list for CPU version.",
@@ -293,12 +293,12 @@
       "dateStarted": "2022-07-25T20:51:06+0000",
       "dateFinished": "2022-07-25T20:51:08+0000",
       "status": "FINISHED",
-      "$$hashKey": "object:213"
+      "$$hashKey": "object:222"
     },
     {
-      "text": "// Build the spark session and data reader as usual\nval conf = new SparkConf()\nconf.set(\"spark.executor.instances\", \"20\")\nconf.set(\"spark.executor.cores\", \"7\")\nconf.set(\"spark.task.cpus\", \"7\")\nconf.set(\"spark.executor.memory\", \"24g\")\nconf.set(\"spark.rapids.memory.pinnedPool.size\", \"2G\")\nconf.set(\"spark.executor.memoryOverhead\", \"16G\")\nconf.set(\"spark.executor.extraJavaOptions\", \"-Dai.rapids.cudf.prefer-pinned=true\")\nconf.set(\"spark.locality.wait\", \"0s\")\nconf.set(\"spark.sql.files.maxPartitionBytes\", \"512m\")\nconf.set(\"spark.executor.resource.gpu.amount\", \"1\")\nconf.set(\"spark.task.resource.gpu.amount\", \"1\")\nconf.set(\"spark.plugins\", \"com.nvidia.spark.SQLPlugin\")\nconf.set(\"spark.rapids.sql.hasNans\", \"false\")\nconf.set(\"spark.rapids.sql.batchSizeBytes\", \"512M\")\nconf.set(\"spark.rapids.sql.reader.batchSizeBytes\", \"768M\")\nconf.set(\"spark.rapids.sql.variableFloatAgg.enabled\", \"true\")\nconf.set(\"spark.rapids.memory.gpu.pooling.enabled\", \"false\")\nconf.set(\"spark.dynamicAllocation.enabled\",\"false\")\n\n// conf.set(\"spark.rapids.memory.gpu.allocFraction\", \"0.1\")\nval spark = SparkSession.builder.appName(\"mortgage-gpu\")\n                               .enableHiveSupport()\n                               .config(conf)\n                               .getOrCreate\nval reader = spark.read",
+      "text": "//Update spark config\nspark.conf.set(\"spark.rapids.sql.hasNans\", \"false\")\nspark.conf.set(\"spark.rapids.sql.batchSizeBytes\", \"512M\")\nspark.conf.set(\"spark.rapids.sql.reader.batchSizeBytes\", \"768M\")\n\nval reader = spark.read",
       "user": "anonymous",
-      "dateUpdated": "2022-07-26T19:22:30+0000",
+      "dateUpdated": "2022-07-27T19:57:34+0000",
       "progress": 0,
       "config": {
         "editorSetting": {
@@ -323,7 +323,7 @@
         "msg": [
           {
             "type": "TEXT",
-            "data": "\u001b[1m\u001b[34mconf\u001b[0m: \u001b[1m\u001b[32morg.apache.spark.SparkConf\u001b[0m = org.apache.spark.SparkConf@25554a31\n\u001b[1m\u001b[34mspark\u001b[0m: \u001b[1m\u001b[32morg.apache.spark.sql.SparkSession\u001b[0m = org.apache.spark.sql.SparkSession@178b626a\n\u001b[1m\u001b[34mreader\u001b[0m: \u001b[1m\u001b[32morg.apache.spark.sql.DataFrameReader\u001b[0m = org.apache.spark.sql.DataFrameReader@6af04341\n"
+            "data": "\u001b[1m\u001b[34mreader\u001b[0m: \u001b[1m\u001b[32morg.apache.spark.sql.DataFrameReader\u001b[0m = org.apache.spark.sql.DataFrameReader@4aa71aa6\n"
           }
         ]
       },
@@ -333,10 +333,70 @@
       "jobName": "paragraph_1658780182416_646034133",
       "id": "20200712-043620_622739089",
       "dateCreated": "2022-07-25T20:16:22+0000",
-      "dateStarted": "2022-07-26T19:22:30+0000",
-      "dateFinished": "2022-07-26T19:22:31+0000",
+      "dateStarted": "2022-07-27T19:57:34+0000",
+      "dateFinished": "2022-07-27T19:57:59+0000",
       "status": "FINISHED",
-      "$$hashKey": "object:214"
+      "$$hashKey": "object:223"
+    },
+    {
+      "user": "anonymous",
+      "progress": 0,
+      "config": {
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "completionKey": "TAB",
+          "editOnDblClick": false,
+          "completionSupport": true,
+          "language": "scala"
+        },
+        "editorMode": "ace/mode/scala"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1658951870735_465602330",
+      "id": "paragraph_1658951870735_465602330",
+      "dateCreated": "2022-07-27T19:57:50+0000",
+      "status": "READY",
+      "focus": true,
+      "$$hashKey": "object:4939"
+    },
+    {
+      "user": "anonymous",
+      "progress": 0,
+      "config": {
+        "colWidth": 12,
+        "fontSize": 9,
+        "enabled": true,
+        "results": {},
+        "editorSetting": {
+          "completionKey": "TAB",
+          "editOnDblClick": false,
+          "completionSupport": true,
+          "language": "scala"
+        },
+        "editorMode": "ace/mode/scala"
+      },
+      "settings": {
+        "params": {},
+        "forms": {}
+      },
+      "apps": [],
+      "runtimeInfos": {},
+      "progressUpdateIntervalMs": 500,
+      "jobName": "paragraph_1658951858209_1870534221",
+      "id": "paragraph_1658951858209_1870534221",
+      "dateCreated": "2022-07-27T19:57:38+0000",
+      "status": "READY",
+      "focus": true,
+      "$$hashKey": "object:4851"
     },
     {
       "user": "anonymous",
@@ -365,7 +425,7 @@
       "id": "paragraph_1658780222540_20155323",
       "dateCreated": "2022-07-25T20:17:02+0000",
       "status": "READY",
-      "$$hashKey": "object:215"
+      "$$hashKey": "object:224"
     },
     {
       "user": "anonymous",
@@ -394,13 +454,13 @@
       "id": "paragraph_1658780223232_341914976",
       "dateCreated": "2022-07-25T20:17:03+0000",
       "status": "READY",
-      "$$hashKey": "object:216"
+      "$$hashKey": "object:225"
     },
     {
       "text": "val trainSet = reader.parquet(trainPath)\nval evalSet  = reader.parquet(evalPath)\nval transSet = reader.parquet(transPath)",
       "user": "anonymous",
       "dateUpdated": "2022-07-26T19:22:37+0000",
-      "progress": 100,
+      "progress": 0,
       "config": {
         "editorSetting": {
           "language": "scala",
@@ -438,15 +498,15 @@
           "values": [
             {
               "jobUrl": "http://saralihalli-dataproc-2208-m.c.rapids-spark.internal:35249/jobs/job?id=0",
-              "$$hashKey": "object:5044"
+              "$$hashKey": "object:1639"
             },
             {
               "jobUrl": "http://saralihalli-dataproc-2208-m.c.rapids-spark.internal:35249/jobs/job?id=1",
-              "$$hashKey": "object:5045"
+              "$$hashKey": "object:1640"
             },
             {
               "jobUrl": "http://saralihalli-dataproc-2208-m.c.rapids-spark.internal:35249/jobs/job?id=2",
-              "$$hashKey": "object:5046"
+              "$$hashKey": "object:1641"
             }
           ],
           "interpreterSettingId": "spark"
@@ -459,7 +519,7 @@
       "dateStarted": "2022-07-26T19:22:37+0000",
       "dateFinished": "2022-07-26T19:22:44+0000",
       "status": "FINISHED",
-      "$$hashKey": "object:217"
+      "$$hashKey": "object:226"
     },
     {
       "text": "%md\n## Set xgboost parameters and build a XGBoostClassifier\n\nFor CPU version, `num_workers` is recommended being equal to the number of CPU cores, while for GPU version, it should be set to the number of GPUs in Spark cluster.\n\nBesides the `tree_method` for CPU version is also different from that for GPU version. Now only \"gpu_hist\" is supported for training on GPU.\n\n```scala\n// difference in parameters\n  \"num_workers\" -> 12,\n  \"tree_method\" -> \"hist\",\n```",
@@ -502,7 +562,7 @@
       "dateStarted": "2022-07-25T20:56:05+0000",
       "dateFinished": "2022-07-25T20:56:05+0000",
       "status": "FINISHED",
-      "$$hashKey": "object:218"
+      "$$hashKey": "object:227"
     },
     {
       "text": "val commParamMap = Map(\n  \"eta\" -> 0.1,\n  \"gamma\" -> 0.1,\n  \"missing\" -> 0.0,\n  \"max_depth\" -> 10,\n  \"max_leaves\" -> 256,\n  \"objective\" -> \"binary:logistic\",\n  \"grow_policy\" -> \"depthwise\",\n  \"min_child_weight\" -> 30,\n  \"lambda\" -> 1,\n  \"scale_pos_weight\" -> 2,\n  \"subsample\" -> 1,\n  \"num_round\" -> 100)\n  \n// val xgbParamFinal = commParamMap ++ Map(\"tree_method\" -> \"gpu_hist\", \"num_workers\" -> 20, \"nthread\" -> 7)\nval xgbParamFinal = commParamMap ++ Map(\"tree_method\" -> \"gpu_hist\", \"num_workers\" -> 2, \"nthread\" -> 1)",
@@ -545,7 +605,7 @@
       "dateStarted": "2022-07-26T19:22:46+0000",
       "dateFinished": "2022-07-26T19:22:47+0000",
       "status": "FINISHED",
-      "$$hashKey": "object:219"
+      "$$hashKey": "object:228"
     },
     {
       "text": "val xgbClassifier = new XGBoostClassifier(xgbParamFinal)\n      .setLabelCol(labelColName)\n      // === diff ===\n      .setFeaturesCol(featureNames)",
@@ -588,7 +648,7 @@
       "dateStarted": "2022-07-26T19:22:49+0000",
       "dateFinished": "2022-07-26T19:22:50+0000",
       "status": "FINISHED",
-      "$$hashKey": "object:221"
+      "$$hashKey": "object:229"
     },
     {
       "text": "%md\n## Benchmark and train\nThe object `benchmark` is used to compute the elapsed time of some operations.\n\nTraining with evaluation sets is also supported in 2 ways, the same as CPU version's behavior:\n\n* Call API `setEvalSets` after initializing an XGBoostClassifier\n\n```scala\nxgbClassifier.setEvalSets(Map(\"eval\" -> evalSet))\n\n```\n\n* Use parameter `eval_sets` when initializing an XGBoostClassifier\n\n```scala\nval paramMapWithEval = paramMap + (\"eval_sets\" -> Map(\"eval\" -> evalSet))\nval xgbClassifierWithEval = new XGBoostClassifier(paramMapWithEval)\n```\n\nHere chooses the API way to set evaluation sets.",
@@ -631,7 +691,7 @@
       "dateStarted": "2022-07-26T19:22:54+0000",
       "dateFinished": "2022-07-26T19:22:57+0000",
       "status": "FINISHED",
-      "$$hashKey": "object:222"
+      "$$hashKey": "object:230"
     },
     {
       "text": "xgbClassifier.setEvalSets(Map(\"eval\" -> evalSet))",
@@ -674,7 +734,7 @@
       "dateStarted": "2022-07-26T19:23:00+0000",
       "dateFinished": "2022-07-26T19:23:00+0000",
       "status": "FINISHED",
-      "$$hashKey": "object:223"
+      "$$hashKey": "object:231"
     },
     {
       "text": "def benchmark[R](phase: String)(block: => R): (R, Float) = {\n  val t0 = System.currentTimeMillis\n  val result = block // call-by-name\n  val t1 = System.currentTimeMillis\n  println(\"Elapsed time [\" + phase + \"]: \" + ((t1 - t0).toFloat / 1000) + \"s\")\n  (result, (t1 - t0).toFloat / 1000)\n}",
@@ -717,7 +777,7 @@
       "dateStarted": "2022-07-26T19:23:02+0000",
       "dateFinished": "2022-07-26T19:23:03+0000",
       "status": "FINISHED",
-      "$$hashKey": "object:224"
+      "$$hashKey": "object:232"
     },
     {
       "text": "%md\nCPU version reqires an extra step before fitting data to classifier, using `VectorAssembler` to assemble all feature columns into one column. The following code snip shows how to do the vectorizing.\n\n```scala\nobject Vectorize {\n  def apply(df: DataFrame, featureNames: Seq[String], labelName: String): DataFrame = {\n    val toFloat = df.schema.map(f => col(f.name).cast(FloatType))\n    new VectorAssembler()\n      .setInputCols(featureNames.toArray)\n      .setOutputCol(\"features\")\n      .transform(df.select(toFloat:_*))\n      .select(col(\"features\"), col(labelName))\n  }\n}\n\ntrainSet = Vectorize(trainSet, featureCols, labelName)\nevalSet = Vectorize(evalSet, featureCols, labelName)\ntransSet = Vectorize(transSet, featureCols, labelName)\n\n```\n\n`VectorAssembler` is not needed for GPU version. Just fit the loaded data directly to XGBoostClassifier.",
@@ -760,13 +820,13 @@
       "dateStarted": "2022-07-26T19:23:06+0000",
       "dateFinished": "2022-07-26T19:23:06+0000",
       "status": "FINISHED",
-      "$$hashKey": "object:225"
+      "$$hashKey": "object:233"
     },
     {
       "text": "// Start training\nprintln(\"\\n------ Training ------\")\nval (xgbClassificationModel, _) = benchmark(\"train\") {\n  xgbClassifier.fit(trainSet)\n}",
       "user": "anonymous",
       "dateUpdated": "2022-07-26T19:23:10+0000",
-      "progress": 100,
+      "progress": 12,
       "config": {
         "editorSetting": {
           "language": "scala",
@@ -804,23 +864,23 @@
           "values": [
             {
               "jobUrl": "http://saralihalli-dataproc-2208-m.c.rapids-spark.internal:35249/jobs/job?id=3",
-              "$$hashKey": "object:5306"
+              "$$hashKey": "object:1975"
             },
             {
               "jobUrl": "http://saralihalli-dataproc-2208-m.c.rapids-spark.internal:35249/jobs/job?id=4",
-              "$$hashKey": "object:5307"
+              "$$hashKey": "object:1976"
             },
             {
               "jobUrl": "http://saralihalli-dataproc-2208-m.c.rapids-spark.internal:35249/jobs/job?id=5",
-              "$$hashKey": "object:5308"
+              "$$hashKey": "object:1977"
             },
             {
               "jobUrl": "http://saralihalli-dataproc-2208-m.c.rapids-spark.internal:35249/jobs/job?id=6",
-              "$$hashKey": "object:5309"
+              "$$hashKey": "object:1978"
             },
             {
               "jobUrl": "http://saralihalli-dataproc-2208-m.c.rapids-spark.internal:35249/jobs/job?id=7",
-              "$$hashKey": "object:5310"
+              "$$hashKey": "object:1979"
             }
           ],
           "interpreterSettingId": "spark"
@@ -833,7 +893,7 @@
       "dateStarted": "2022-07-26T19:23:10+0000",
       "dateFinished": "2022-07-26T19:23:55+0000",
       "status": "FINISHED",
-      "$$hashKey": "object:226"
+      "$$hashKey": "object:234"
     },
     {
       "text": "%md\n## Transformation and evaluation\nHere uses `transSet` to evaluate our model and prints some useful columns to show our prediction result. After that `MulticlassClassificationEvaluator` is used to calculate an overall accuracy of our predictions.",
@@ -872,13 +932,13 @@
       "id": "20200712-043620_470610364",
       "dateCreated": "2022-07-25T20:16:22+0000",
       "status": "READY",
-      "$$hashKey": "object:227"
+      "$$hashKey": "object:235"
     },
     {
       "text": "println(\"\\n------ Transforming ------\")\nval (results, _) = benchmark(\"transform\") {\n  val ret = xgbClassificationModel.transform(transSet).cache()\n  ret\n}\nz.show(results.select(\"orig_channel\", labelColName,\"rawPrediction\",\"probability\",\"prediction\").limit(10))\n\nprintln(\"\\n------Accuracy of Evaluation------\")\nval evaluator = new MulticlassClassificationEvaluator().setLabelCol(labelColName)\nval accuracy = evaluator.evaluate(results)\nprintln(accuracy)",
       "user": "anonymous",
       "dateUpdated": "2022-07-26T19:23:16+0000",
-      "progress": 0,
+      "progress": 33,
       "config": {
         "editorSetting": {
           "language": "scala",
@@ -956,11 +1016,11 @@
           "values": [
             {
               "jobUrl": "http://saralihalli-dataproc-2208-m.c.rapids-spark.internal:35249/jobs/job?id=8",
-              "$$hashKey": "object:5722"
+              "$$hashKey": "object:2081"
             },
             {
               "jobUrl": "http://saralihalli-dataproc-2208-m.c.rapids-spark.internal:35249/jobs/job?id=9",
-              "$$hashKey": "object:5723"
+              "$$hashKey": "object:2082"
             }
           ],
           "interpreterSettingId": "spark"
@@ -970,10 +1030,10 @@
       "jobName": "paragraph_1658780182418_29336490",
       "id": "20200712-043620_775095654",
       "dateCreated": "2022-07-25T20:16:22+0000",
-      "status": "FINISHED",
-      "$$hashKey": "object:228",
+      "dateStarted": "2022-07-26T19:23:16+0000",
       "dateFinished": "2022-07-26T19:26:00+0000",
-      "dateStarted": "2022-07-26T19:23:16+0000"
+      "status": "FINISHED",
+      "$$hashKey": "object:236"
     },
     {
       "title": "Example to save/load the model, predict with the model",
@@ -1085,15 +1145,15 @@
           "values": [
             {
               "jobUrl": "http://saralihalli-dataproc-2208-m.c.rapids-spark.internal:35249/jobs/job?id=10",
-              "$$hashKey": "object:5898"
+              "$$hashKey": "object:2132"
             },
             {
               "jobUrl": "http://saralihalli-dataproc-2208-m.c.rapids-spark.internal:35249/jobs/job?id=11",
-              "$$hashKey": "object:5899"
+              "$$hashKey": "object:2133"
             },
             {
               "jobUrl": "http://saralihalli-dataproc-2208-m.c.rapids-spark.internal:35249/jobs/job?id=12",
-              "$$hashKey": "object:5900"
+              "$$hashKey": "object:2134"
             }
           ],
           "interpreterSettingId": "spark"
@@ -1103,10 +1163,10 @@
       "jobName": "paragraph_1658780182418_853911954",
       "id": "20200712-043620_1435219490",
       "dateCreated": "2022-07-25T20:16:22+0000",
-      "status": "FINISHED",
-      "$$hashKey": "object:229",
+      "dateStarted": "2022-07-26T19:23:56+0000",
       "dateFinished": "2022-07-26T19:26:03+0000",
-      "dateStarted": "2022-07-26T19:23:56+0000"
+      "status": "FINISHED",
+      "$$hashKey": "object:237"
     },
     {
       "user": "anonymous",
@@ -1136,7 +1196,7 @@
       "id": "paragraph_1594528930033_-558128424",
       "dateCreated": "2022-07-25T20:16:22+0000",
       "status": "READY",
-      "$$hashKey": "object:230"
+      "$$hashKey": "object:238"
     }
   ],
   "name": "mortgage-gpu-scala",
