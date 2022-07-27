@@ -34,7 +34,7 @@ public final class JCudfUtil {
    */
   public static final int JCUDF_ROW_ALIGNMENT = 8;
   /**
-   * For Variable length fields, a record of (int offset, int elements) is 32-bit aligned.
+   * For variable length fields, a record of (int offset, int elements) is stored in the fixed width data and is 32-bit aligned.
    */
   public static final int JCUDF_VAR_LENGTH_FIELD_ALIGNMENT = 4;
   /**
