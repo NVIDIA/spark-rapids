@@ -83,10 +83,15 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
     getPartitionSpecs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   val orderSpec: Seq[BaseExprMeta[SortOrder]] =
     getOrderSpecs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-
   lazy val inputFields: Seq[BaseExprMeta[Attribute]] =
     windowExec.children.head.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
+  /**
+   * Define all dependency expressions as `childExprs`.
+   * This ensures that they are tagged for GPU execution.
+   */
+  override val childExprs: Seq[BaseExprMeta[_]] =
+        windowExpressions ++ partitionSpec ++ orderSpec ++ inputFields
 
   override def namedChildExprs: Map[String, Seq[BaseExprMeta[_]]] = Map(
     "partitionSpec" -> partitionSpec

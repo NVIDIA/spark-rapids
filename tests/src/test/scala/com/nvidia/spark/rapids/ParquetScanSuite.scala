@@ -157,6 +157,8 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
    *  |    |    |-- c3: long (nullable = true)
    *
    */
+  // temporarily disabled for https://github.com/NVIDIA/spark-rapids/issues/6054
+/*
   testSparkResultsAreEqual("Test Parquet nested unsigned int: uint8, uint16, uint32",
     frameFromParquet("nested-unsigned.parquet"),
     // CPU version throws an exception when Spark < 3.2, so skip when Spark < 3.2.
@@ -164,6 +166,7 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
     assumeCondition = (_ => (VersionUtils.isSpark320OrLater, "Spark version not 3.2.0+"))) {
     frame => frame.select(col("*"))
   }
+*/
 
   /**
    * Parquet file with 2 columns
