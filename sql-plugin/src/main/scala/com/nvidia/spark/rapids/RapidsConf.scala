@@ -293,6 +293,7 @@ object RapidsReaderType extends Enumeration {
 }
 
 object RapidsConf {
+  val MULTITHREAD_READ_NUM_THREADS_DEFAULT = 20
   private val registeredConfs = new ListBuffer[ConfEntry[_]]()
 
   private def register(entry: ConfEntry[_]): Unit = {
@@ -726,10 +727,14 @@ object RapidsConf {
         "started. Used with COALESCING and MULTITHREADED readers, see " +
         "spark.rapids.sql.format.parquet.reader.type, " +
         "spark.rapids.sql.format.orc.reader.type, or " +
-        "spark.rapids.sql.format.avro.reader.type for a discussion of reader types.")
+        "spark.rapids.sql.format.avro.reader.type for a discussion of reader types. " +
+        "If it is not set explicitly and spark.executor.cores is set, it will be tried to " +
+        "assign value of `max(MULTITHREAD_READ_NUM_THREADS_DEFAULT, spark.executor.cores)`, " +
+        s"where MULTITHREAD_READ_NUM_THREADS_DEFAULT = $MULTITHREAD_READ_NUM_THREADS_DEFAULT" +
+        ".")
       .integerConf
       .checkValue(v => v > 0, "The thread count must be greater than zero.")
-      .createWithDefault(20)
+      .createWithDefault(MULTITHREAD_READ_NUM_THREADS_DEFAULT)
 
   val ENABLE_PARQUET = conf("spark.rapids.sql.format.parquet.enabled")
     .doc("When set to false disables all parquet input and output acceleration")
