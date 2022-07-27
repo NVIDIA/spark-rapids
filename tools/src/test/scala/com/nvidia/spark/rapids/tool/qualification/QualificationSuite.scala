@@ -108,13 +108,17 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   def csvDetailedHeader(ind: Int) = csvDetailedFields(ind)._1
 
-  override protected def beforeEach(): Unit = {
-    TrampolineUtil.cleanupAnyExistingSession()
+  private def createSparkSession(): Unit = {
     sparkSession = SparkSession
       .builder()
       .master("local[*]")
       .appName("Rapids Spark Profiling Tool Unit Tests")
       .getOrCreate()
+  }
+
+  override protected def beforeEach(): Unit = {
+    TrampolineUtil.cleanupAnyExistingSession()
+    createSparkSession()
   }
 
   def readExpectedFile(expected: File): DataFrame = {
@@ -656,6 +660,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         spark.sparkContext.addSparkListener(listener)
         import spark.implicits._
         val testData = Seq((1, 2), (3, 4)).toDF("a", "b")
+        spark.sparkContext.setJobDescription("testing, csv delimiter; replacement")
         testData.createOrReplaceTempView("t1")
         testData.createOrReplaceTempView("t2")
         spark.sql("SELECT a, MAX(b) FROM (SELECT t1.a, t2.b " +
@@ -667,6 +672,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       // run the qualification tool
       TrampolineUtil.withTempDir { outpath =>
         val appArgs = new QualificationArgs(Array(
+          "--per-sql",
           "--output-directory",
           outpath.getAbsolutePath,
           eventLog))
@@ -674,6 +680,22 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val (exit, sumInfo) =
           QualificationMain.mainInternal(appArgs)
         assert(exit == 0)
+        // the code above that runs the Spark query stops the Sparksession
+        // so create a new one to read in the csv file
+        createSparkSession()
+
+        // validate that the SQL description in the csv file escapes commas properly
+        val persqlResults = s"$outpath/rapids_4_spark_qualification_output/" +
+          s"rapids_4_spark_qualification_output_persql.csv"
+        val dfPerSqlActual = readPerSqlFile(new File(persqlResults))
+        // the number of columns actually won't be wrong if sql description is malformatted
+        // because spark seems to drop extra column so need more checking
+        assert(dfPerSqlActual.columns.size == 10)
+        val rows = dfPerSqlActual.collect()
+        assert(rows.size == 3)
+        val firstRow = rows(1)
+        // , should be replaced with ;
+        assert(firstRow(3) == "testing; csv delimiter; replacement")
 
         // parse results from listener
         val executorCpuTime = listener.executorCpuTime
