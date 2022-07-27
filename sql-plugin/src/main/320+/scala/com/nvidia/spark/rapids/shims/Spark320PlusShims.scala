@@ -459,12 +459,17 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       }
     }
 
+    override val childExprs: Seq[BaseExprMeta[_]] = {
+      // We want to leave the runtime filters as CPU expressions
+      p.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+    }
+
     override val childScans: scala.Seq[ScanMeta[_]] =
       Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
 
     override def tagPlanForGpu(): Unit = {
-      if (!p.runtimeFilters.isEmpty) {
-        willNotWorkOnGpu("runtime filtering (DPP) on datasource V2 is not supported")
+      if (!p.runtimeFilters.isEmpty && !childScans.head.supportsRuntimeFilters) {
+        willNotWorkOnGpu("runtime filtering (DPP) is not supported for this scan")
       }
     }
 

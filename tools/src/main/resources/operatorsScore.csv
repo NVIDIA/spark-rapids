@@ -161,6 +161,7 @@ NaNvl,4
 NamedLambdaVariable,4
 NormalizeNaNAndZero,4
 Not,4
+NthValue,4
 OctetLength,4
 Or,4
 PercentRank,4

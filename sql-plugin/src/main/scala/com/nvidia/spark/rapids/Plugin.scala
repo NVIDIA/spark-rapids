@@ -69,6 +69,7 @@ object RapidsPluginUtils extends Logging {
   private val KRYO_SERIALIZER_NAME = classOf[KryoSerializer].getName
   private val KRYO_REGISTRATOR_KEY = "spark.kryo.registrator"
   private val KRYO_REGISTRATOR_NAME = classOf[GpuKryoRegistrator].getName
+  private val EXECUTOR_CORES_KEY = "spark.executor.cores"
 
   {
     val pluginProps = loadProps(RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
@@ -146,6 +147,20 @@ object RapidsPluginUtils extends Logging {
     }
     // set driver timezone
     conf.set(RapidsConf.DRIVER_TIMEZONE.key, ZoneId.systemDefault().normalized().toString)
+
+    // If spark.rapids.sql.multiThreadedRead.numThreads is not set explicitly, then we derive it
+    // from other settings. Otherwise, we keep the users' setting.
+    val numThreadsKey = RapidsConf.MULTITHREAD_READ_NUM_THREADS.key
+    if (!conf.contains(numThreadsKey)) {
+      // Derive it from spark.executor.cores, since spark.executor.cores is not set on all cluster
+      // managers by default, we should judge whether if it's set explicitly.
+      if (conf.contains(EXECUTOR_CORES_KEY)) {
+        val numThreads = Math.max(RapidsConf.MULTITHREAD_READ_NUM_THREADS_DEFAULT,
+          conf.get(EXECUTOR_CORES_KEY).toInt).toString
+        conf.set(numThreadsKey, numThreads)
+        logWarning(s"$numThreadsKey is set to $numThreads.")
+      }
+    }
   }
 
   def loadProps(resourceName: String): Properties = {
