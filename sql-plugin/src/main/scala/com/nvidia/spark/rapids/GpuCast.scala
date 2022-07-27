@@ -382,6 +382,9 @@ object GpuCast extends Arm {
             .setScale(dt.scale, BigDecimal.RoundingMode.DOWN).bigDecimal
         val bigDecimalMax = BigDecimal(Long.MaxValue)
             .setScale(dt.scale, BigDecimal.RoundingMode.DOWN).bigDecimal
+        // We are going against our convention of calling assertValuesInRange()
+        // because the min/max values are a different decimal type i.e. Decimal 128 as opposed to
+        // the incoming input column type.
         withResource(input.min()) { min =>
           withResource(input.max()) { max =>
             if (min.getBigDecimal().compareTo(bigDecimalMin) == -1 ||
