@@ -176,7 +176,7 @@ public final class JCudfUtil {
   }
 
   /**
-   * Sets an estimate size in bytes for variable-length data types.
+   * Returns an estimated size in bytes for variable-length data types.
    * This is used to get a rough estimate of the bytes needed to allocate JCUDF row.
    *
    * @param rapidsType a variable length data type.
