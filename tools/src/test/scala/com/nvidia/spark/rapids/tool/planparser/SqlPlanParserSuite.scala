@@ -24,7 +24,7 @@ import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
 import org.apache.spark.sql.expressions.Window
-import org.apache.spark.sql.functions.{broadcast, ceil, col, collect_list, count, explode, hex, round, sum}
+import org.apache.spark.sql.functions.{broadcast, ceil, col, collect_list, count, explode, hex, round, row_number, sum}
 import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.qualification.QualificationAppInfo
 import org.apache.spark.sql.types.StringType
@@ -468,16 +468,16 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
-  test("WindowExec") {
+  test("WindowExec and expressions within WIndowExec") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
         import spark.implicits._
         val metrics = Seq(
           (0, 0, 0), (1, 0, 1), (2, 5, 2), (3, 0, 3), (4, 0, 1), (5, 5, 3), (6, 5, 0)
         ).toDF("id", "device", "level")
-        val rangeWithTwoDevicesById = Window.partitionBy('device).orderBy('id).
-            rangeBetween(start = -1, end = Window.currentRow)
+        val rangeWithTwoDevicesById = Window.partitionBy('device).orderBy('id)
         metrics.withColumn("sum", sum('level) over rangeWithTwoDevicesById)
+            .withColumn("row_number", row_number.over(rangeWithTwoDevicesById))
       }
       val pluginTypeChecker = new PluginTypeChecker()
       val app = createAppFromEventlog(eventLog)
