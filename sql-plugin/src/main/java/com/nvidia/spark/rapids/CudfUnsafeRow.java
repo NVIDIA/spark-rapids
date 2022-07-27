@@ -234,8 +234,8 @@ public final class CudfUnsafeRow extends InternalRow {
       return null;
     }
     final long columnOffset = getFieldAddressFromOrdinal(ordinal);
-    // data format for the fixed-width portion of variable-width data is 4 bytes of offset from the start of the row followed
-    // by 4 bytes of length.
+    // data format for the fixed-width portion of variable-width data is 4 bytes of offset from the
+    // start of the row followed by 4 bytes of length.
     final int offset = Platform.getInt(null, columnOffset);
     final int size = Platform.getInt(null, columnOffset + 4);
     return UTF8String.fromAddress(null, address + offset, size);

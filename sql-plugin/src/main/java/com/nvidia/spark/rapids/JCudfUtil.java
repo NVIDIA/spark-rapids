@@ -34,11 +34,13 @@ public final class JCudfUtil {
    */
   public static final int JCUDF_ROW_ALIGNMENT = 8;
   /**
-   * For variable length fields, a record of (int offset, int elements) is stored in the fixed width data and is 32-bit aligned.
+   * For variable length fields, a record of (int offset, int elements) is stored in the fixed width
+   * data and is 32-bit aligned.
    */
   public static final int JCUDF_VAR_LENGTH_FIELD_ALIGNMENT = 4;
   /**
-   * Default alignment for data of variable length size. i.e., Struct data is 64-bit aligned.
+   * Default alignment used for the start of variable-width data.
+   * For example, Struct data is 64-bit aligned.
    */
   public static final int JCUDF_VAR_LENGTH_DATA_DEFAULT_ALIGNMENT = 8;
   /**
@@ -48,6 +50,7 @@ public final class JCudfUtil {
   public static final int JCUDF_VAR_LENGTH_FIELD_SIZE = 8;
   /**
    * An estimate of the String data size in bytes.
+   * Spark uses 20 bytes as an estimate to string size.
    */
   public static final int JCUDF_TYPE_STRING_LENGTH_ESTIMATE = 20;
   public static final int JCUDF_STRING_TYPE_ALIGNMENT = 1;
@@ -117,7 +120,8 @@ public final class JCudfUtil {
   }
 
   /**
-   * A method used to order the columns to pack the schema based on the JCudf specifications, which are designed to reduce the memory footprint of a row by reducing padding bytes.
+   * A method used to order the columns to pack the schema based on the JCudf specifications, which
+   * are designed to reduce the memory footprint of a row by reducing padding bytes.
    * It sorts fixed-width columns by their length.
    * Variable-length columns store 8 bytes, but are 4 byte aligned since they are two 4-byte
    * values.
@@ -271,7 +275,7 @@ public final class JCudfUtil {
         }
       }
       // set the validity size, and mark where it starts
-      setValidityBits(attributes.length);
+      addValiditySizeToByteCursor(attributes.length);
     }
 
     /**
@@ -311,14 +315,14 @@ public final class JCudfUtil {
       validityBytesOffset = 0;
     }
 
-    private void setValidityBits(int fieldsCount) {
+    private void addValiditySizeToByteCursor(int fieldsCount) {
       validityBytesOffset = byteCursor;
       byteCursor += calculateBitSetWidthInBytes(fieldsCount);
     }
 
     /**
      * This is used internally to estimate the memory needed by the row.
-     * The value calculated is 8-byte aligned since a JCUDF row is 8-byte aligned
+     * The value calculated is 8-byte aligned since a JCUDF row is 8-byte aligned.
      * It loops on variable-width columns using a moving-cursor that represents the offset
      * of the data.
      * Note that the calculation requires that {@link #initFixedWidthSection(int[])} has
@@ -459,7 +463,7 @@ public final class JCudfUtil {
       this.attributes = attrArr;
     }
 
-    private void setValidityBits(int fieldsCount){
+    private void addValiditySizeToByteCursor(int fieldsCount) {
       validityBytesOffset = byteCursor;
       validitySizeInBytes = calculateBitSetWidthInBytes(fieldsCount);
       byteCursor += validitySizeInBytes;
@@ -544,7 +548,7 @@ public final class JCudfUtil {
       if (colIndex == attributes.length - 1) {
         // this is the last column.
         // we can mark the validityBytes offsets
-        setValidityBits(attributes.length);
+        addValiditySizeToByteCursor(attributes.length);
       }
       return result;
     }
