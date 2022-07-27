@@ -27,7 +27,7 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{Expression, PlanExpression}
-import org.apache.spark.sql.execution.datasources.{CatalogFileIndex, FileIndex, HadoopFsRelation, InMemoryFileIndex, PartitionSpec, PartitioningAwareFileIndex}
+import org.apache.spark.sql.execution.datasources.{CatalogFileIndex, FileIndex, HadoopFsRelation, InMemoryFileIndex, PartitioningAwareFileIndex, PartitionSpec}
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 
 object AlluxioUtils extends Logging {
@@ -289,43 +289,45 @@ object AlluxioUtils extends Logging {
     }
 
     if (replaceFunc.isDefined) {
+      def replacePathsInPartitionSpec(spec: PartitionSpec): PartitionSpec = {
+        val partitionsWithPathsReplaced = spec.partitions.map { p =>
+          val replacedPath = replaceFunc.get(p.path)
+          org.apache.spark.sql.execution.datasources.PartitionPath(p.values, replacedPath)
+        }
+        PartitionSpec(spec.partitionColumns, partitionsWithPathsReplaced)
+      }
 
+      def createNewFileIndexPathsReplaced(
+          spec: PartitionSpec,
+          rootPaths: Seq[Path]): InMemoryFileIndex = {
+        val specAdjusted = replacePathsInPartitionSpec(spec)
+        val replacedPaths = rootPaths.map(p => replaceFunc.get(p))
+        new InMemoryFileIndex(
+          relation.sparkSession,
+          replacedPaths,
+          relation.options,
+          Option(relation.dataSchema),
+          userSpecifiedPartitionSpec = Some(specAdjusted))
+      }
+
+      // If we know the type of file index try to reuse as much of the existing
+      // FileIndex the same to keep from having to
+      // recalculate it and potentially mess it up. Things like partitioning are
+      // already included and some of the Spark infer code didn't handle it
+      // properly. Here we try to just update the paths to the new Alluxio path.
       if (relation.location.isInstanceOf[PartitioningAwareFileIndex]) {
         logWarning("In PartitioningAwareFileIndex")
-        val fi = relation.location.asInstanceOf[PartitioningAwareFileIndex]
-        val spec = fi.partitionSpec()
-        val partitionsReplaced = spec.partitions.map { p =>
-          val replacedPath = replaceFunc.get(p.path)
-          org.apache.spark.sql.execution.datasources.PartitionPath(p.values, replacedPath)
-        }
-        val specAdjusted = PartitionSpec(spec.partitionColumns, partitionsReplaced)
-        val replacedPaths = fi.rootPaths.map {p => replaceFunc.get(p)}
-        new InMemoryFileIndex(
-          relation.sparkSession,
-          replacedPaths,
-          relation.options,
-          Option(relation.dataSchema),
-          userSpecifiedPartitionSpec = Some(specAdjusted))
+        val pfi = relation.location.asInstanceOf[PartitioningAwareFileIndex]
+        createNewFileIndexPathsReplaced(pfi.partitionSpec(), pfi.rootPaths)
       } else if (relation.location.isInstanceOf[CatalogFileIndex]) {
         logWarning("In CatalogFileIndex")
-        val fi = relation.location.asInstanceOf[CatalogFileIndex]
-        val memFI = fi.filterPartitions(Nil)
-        val spec = memFI.partitionSpec()
-        logWarning("TOM catalogfileindex spec: " + spec)
-        val partitionsReplaced = spec.partitions.map { p =>
-          val replacedPath = replaceFunc.get(p.path)
-          org.apache.spark.sql.execution.datasources.PartitionPath(p.values, replacedPath)
-        }
-        val replacedPaths = memFI.rootPaths.map {p => replaceFunc.get(p)}
-        val specAdjusted = PartitionSpec(spec.partitionColumns, partitionsReplaced)
-        new InMemoryFileIndex(
-          relation.sparkSession,
-          replacedPaths,
-          relation.options,
-          Option(relation.dataSchema),
-          userSpecifiedPartitionSpec = Some(specAdjusted))
+        val cfi = relation.location.asInstanceOf[CatalogFileIndex]
+        val memFI = cfi.filterPartitions(Nil)
+        createNewFileIndexPathsReplaced(memFI.partitionSpec(), memFI.rootPaths)
       } else {
-
+        logWarning(s"the file index type is: ${relation.location.getClass}")
+        // With the base Spark FileIndex type we don't know how to modify it to
+        // just replace the paths so we have to try to recompute.
         def isDynamicPruningFilter(e: Expression): Boolean =
           e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
 
