@@ -225,8 +225,11 @@ class TypedConfBuilder[T](
   }
 
   def createWithDefault(value: T): ConfEntryWithDefault[T] = {
+    // 'converter' will check the validity of default 'value', if it's not valid,
+    // then 'converter' will throw an exception
+    val transformedValue = converter(stringConverter(value))
     val ret = new ConfEntryWithDefault[T](parent.key, converter,
-      parent.doc, parent.isInternal, value)
+      parent.doc, parent.isInternal, transformedValue)
     parent.register(ret)
     ret
   }
