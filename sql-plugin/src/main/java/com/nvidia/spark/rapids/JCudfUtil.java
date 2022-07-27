@@ -117,7 +117,7 @@ public final class JCudfUtil {
   }
 
   /**
-   * A method used to order the columns to pack the schema based on the JCudf specifications.
+   * A method used to order the columns to pack the schema based on the JCudf specifications, which are designed to reduce the memory footprint of a row by reducing padding bytes.
    * It sorts fixed-width columns by their length.
    * Variable-length columns store 8 bytes, but are 4 byte aligned since they are two 4-byte
    * values.
