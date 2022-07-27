@@ -117,6 +117,14 @@ let toolTipsValues = {
         "Exec Is Supported": "Whether the Exec is supported by RAPIDS or not.",
         "Is Removed": "Whether the Op is removed from the migrated plan."
     },
+    "appSQLs": {
+        "GPU Opportunity": "Wall-Clock time that shows how much of the SQL duration can be accelerated on the GPU.",
+        "Recommendation": "Recommendation based on \<em\>Estimated Speed-up Factor\<\/em\>.",
+        "Estimated GPU Speedup":
+          "Speed-up factor estimated for the app. Calculated as (<sup>SQL Duration</sup>&frasl;<sub>GPU Estimated Duration</sub>)",
+        "Estimated GPU Duration": "Predicted runtime of the SQL if it was run on GPU",
+        "Estimated GPU Time Saved": "Estimated Wall-Clock time saved if it was run on the GPU",
+    },
 }
 
 let UIConfig = {
@@ -472,6 +480,68 @@ let UIConfig = {
                         combiner: 'and',
                     }
                 }
+            }
+        },
+        "appSQLs": {
+            "colEnabledPrefix": "displayCol_",
+            "singleAppView": {
+                Dom : 'Bfrtlip',
+                skipColumns: ["appID"],
+                sortTable: true,
+                sortColumns: [
+                    {colName: "gpuRecommendation", order: "desc"},
+                    {colName: "estimatedGpuSpeedup", order:"desc"},
+                    {colName: "sqlID", order:"asc"}
+                ],
+                fileExportPrefix: 'rapids_4_spark_qualification_output_ui_sqls_data_app',
+                searchableColumns: ["sqlDescription", "gpuRecommendation"],
+                hideColumns: [],
+                enabledPanes: ["recommendation"],
+                toolTipID: "appSQLs",
+            },
+            "listAppsView": {
+                Dom : 'Bfrtlip',
+                skipColumns: [],
+                sortTable: true,
+                sortColumns: [
+                    {colName: "gpuRecommendation", order: "desc"},
+                    {colName: "estimatedGpuSpeedup", order:"desc"},
+                    {colName: "appID", order:"asc"},
+                    {colName: "sqlID", order:"asc"}
+                ],
+                searchableColumns: ["sqlDescription", "gpuRecommendation", "appID"],
+                fileExportPrefix: 'rapids_4_spark_qualification_output_ui_sqls_data',
+                hideColumns: [],
+                enabledPanes: ["recommendation", "apps"],
+                toolTipID: "appSQLs",
+            },
+            "searchPanes": {
+                enabled: true,
+                "dtConfigurations": {
+                    initCollapsed: true,
+                    viewTotal: true,
+                    // Note that there is a bug in cascading that breaks paging of the table
+                    cascadePanes: true,
+                    show: false,
+                },
+                "panes": {
+                    "recommendation": {
+                        header: "By Recommendation",
+                        dtOpts: {
+                            searching: true,
+                        },
+                        order: [[0, 'desc']],
+                        combiner: 'and',
+                    },
+                    "apps": {
+                        header: "By App ID",
+                        dtOpts: {
+                            "searching": true
+                        },
+                        combiner: 'and',
+                    }
+                },
+
             }
         },
     },

@@ -55,6 +55,8 @@ function getAppExecArray(appRecord) {
   return execInfos;
 }
 
+
+
 function getAppStagesArray(appRecord) {
   return appStagesMap.addAppRec(appRecord);
 }
@@ -239,6 +241,8 @@ $(document).ready(function() {
   applicationUIRecord = processRawData(attemptsArray)[0];
 
   let execsArray = getAppExecArray(applicationUIRecord);
+
+  let sqlIDsArray = getAppSqlArray(applicationUIRecord);
   //
   // set the statistics cards
   //
@@ -314,6 +318,28 @@ $(document).ready(function() {
       tableDivId: '#app-execs-raw-data-table',
     }
   );
+
+  //
+  // set the sqlID details table
+  //
+
+  let appSQLsDetailsTable = constructDataTableFromHTMLTemplate(
+    sqlIDsArray,
+    "singleAppView",
+    createAppDetailsSQLsTableConf,
+    {
+      tableId: "appSQLs",
+      appId: appID,
+      dataTableTemplate: getAppSQLsDetailsTableTemplate(),
+      datatableContainerID: '#app-sqls-details-data-container',
+      tableDivId: '#app-sqls-raw-data-table',
+      replaceTableIfEmptyData: {
+        enabled: true,
+        text: "No Data to display in the table"
+      }
+    }
+  );
+
 
   //
   // Set tooltips for the three tables.

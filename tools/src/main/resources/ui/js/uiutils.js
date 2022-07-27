@@ -343,6 +343,26 @@ function processRawData(rawRecords) {
   return processedRecords;
 }
 
+// get the sqlInfo items from an apprecord
+function getAppSqlArray(appRecord) {
+  let sqlInfos = [];
+  if (appRecord.hasOwnProperty('perSQLEstimatedInfo')) {
+    for (let ind in appRecord.perSQLEstimatedInfo) {
+      let sqlInfo = appRecord.perSQLEstimatedInfo[ind];
+      sqlInfo["recommendation"] = sqlInfo.info.recommendation;
+      if (UIConfig.fullAppView.enabled) {
+        sqlInfo["attemptDetailsURL"] = "application.html?app_id=" + sqlInfo.info.appId;
+      } else {
+        sqlInfo["attemptDetailsURL"] = "#!"
+      }
+      sqlInfos.push(sqlInfo);
+    }
+    setGPURecommendations(sqlInfos);
+  }
+
+  return sqlInfos;
+}
+
 function setGlobalReportSummary(processedApps) {
   let totalEstimatedApps = 0;
   let recommendedCnt = 0;
@@ -880,6 +900,15 @@ function constructDataTableFromHTMLTemplate(
   viewType,
   confInitializerFunc,
   dataTableArgs = {}) {
+  if (dataTableArgs.hasOwnProperty('replaceTableIfEmptyData')) {
+    if (dataTableArgs.replaceTableIfEmptyData.enabled) {
+      if (dataArray.length == 0) {
+        $(dataTableArgs.datatableContainerID).html(jQuery.parseHTML(
+          dataTableArgs.replaceTableIfEmptyData.text, false));
+        return null;
+      }
+    }
+  }
   let htmlMustacheRec = {};
   let dataTableConf = confInitializerFunc(dataArray, viewType, htmlMustacheRec, dataTableArgs);
   let dataTableContainerContent = Mustache.render(dataTableArgs.dataTableTemplate, htmlMustacheRec);
@@ -1190,6 +1219,209 @@ function createAppDetailsStagesTableConf(
   return stagesDataTableConf;
 }
 
+
+function createAppDetailsSQLsTableConf(
+  appSQLsRecords,
+  tableViewType,
+  mustacheRecord,
+  extraFunctionArgs) {
+  let appSQLsDetailsBaseParams = UIConfig.datatables[extraFunctionArgs.tableId];
+  let appSQLsDetailsCustomParams = appSQLsDetailsBaseParams[tableViewType];
+  let fileExportName = appSQLsDetailsCustomParams.fileExportPrefix;
+  if (tableViewType === 'singleAppView') {
+    fileExportName =  appSQLsDetailsCustomParams.fileExportPrefix + "_" + extraFunctionArgs.appId;
+  }
+  let recommendGPUColName = "gpuRecommendation"
+
+  let appSQLsDataTableConf = {
+    paging: (appSQLsRecords.length > defaultPageLength),
+    pageLength: defaultPageLength,
+    lengthMenu: defaultLengthMenu,
+    info: true,
+    data: appSQLsRecords,
+    columns: [
+      {
+        name: "appID",
+        data: "info.appId",
+        className: "all",
+        render:  (appID, type, row) => {
+          if (type === 'display') {
+            if (createAppIDLinkEnabled(tableViewType)) {
+              return `<a href="${row.attemptDetailsURL}">${appID}</a>`
+            }
+          }
+          return appID;
+        }
+      },
+      {
+        name: "sqlID",
+        data: "sqlID",
+        className: "all",
+      },
+      {
+        name: recommendGPUColName,
+        data: 'gpuCategory',
+        className: "all",
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return getAppBadgeHTMLWrapper(row);
+          }
+          return data;
+        },
+        fnCreatedCell: (nTd, sData, oData, _ignored_iRow, _ignored_iCol) => {
+          let recommendGroup = recommendationsMap.get(sData);
+          let toolTipVal = recommendGroup.description;
+          $(nTd).attr('data-toggle', "tooltip");
+          $(nTd).attr('data-placement', "top");
+          $(nTd).attr('html', "true");
+          $(nTd).attr('data-html', "true");
+          $(nTd).attr('title', toolTipVal);
+        }
+      },
+      {
+        name: "sqlDescription",
+        data: "sqlDesc",
+        className: "all",
+      },
+      {
+        name: 'estimatedGpuSpeedup',
+        data: 'info.estimatedGpuSpeedup',
+        render: function (data, type, row) {
+          if (data && type === 'display') {
+            return twoDecimalFormatter.format(data);
+          }
+          return data;
+        },
+      },
+      {
+        name: 'sqlDataFrameDuration',
+        data: 'info.sqlDfDuration',
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return formatDuration(data)
+          }
+          return data;
+        },
+      },
+      {
+        name: 'gpuOpportunity',
+        data: 'info.gpuOpportunity',
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return formatDuration(data)
+          }
+          return data;
+        },
+      },
+      {
+        name: 'estimatedGpuDur',
+        data: 'info.estimatedGpuDur',
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return formatDuration(data)
+          }
+          return data;
+        },
+      },
+      {
+        name: 'estimatedGpuTimeSaved',
+        data: 'info.estimatedGpuTimeSaved',
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return formatDuration(data)
+          }
+          return data;
+        },
+      },
+    ],
+    responsive: {
+      details: {
+        renderer: function ( api, rowIdx, columns ) {
+          let data = $.map( columns, function ( col, i ) {
+            let dataTableToolTip = toolTipsValues[appSQLsDetailsCustomParams.toolTipID];
+            return col.hidden ?
+              '<tr data-dt-row="'+col.rowIndex+'" data-dt-column="'+col.columnIndex+'">'+
+              '<th scope=\"row\"><span data-toggle=\"tooltip\" data-placement=\"top\"' +
+              '    title=\"' + dataTableToolTip[col.title] + '\">'+col.title+':'+
+              '</span></th> '+
+              '<td>'+col.data+'</td>'+
+              '</tr>' :
+              '';
+          } ).join('');
+
+          return data ?
+            $('<table/>').append( data ) :
+            false;
+        }
+      }
+    },
+    dom: appSQLsDetailsCustomParams.Dom,
+    buttons: [{
+      extend: 'csv',
+      title: fileExportName,
+      text: 'Export'
+    }],
+    initComplete: function(settings, json) {
+      // Add custom Tool Tip to the headers of the table
+      // Add custom Tool Tip to the headers of the table
+      let thLabel = extraFunctionArgs.tableDivId + ' thead th';
+      let dataTableToolTip = toolTipsValues[appSQLsDetailsCustomParams.toolTipID];
+      $(thLabel).each(function () {
+        let $td = $(this);
+        let toolTipVal = dataTableToolTip[$td.text().trim()];
+        $td.attr('data-toggle', "tooltip");
+        $td.attr('data-placement', "top");
+        $td.attr('html', "true");
+        $td.attr('data-html', "true");
+        $td.attr('title', toolTipVal);
+      });
+    }
+  };
+
+  processDatableColumns(
+    appSQLsDataTableConf,
+    appSQLsDetailsBaseParams,
+    appSQLsDetailsCustomParams,
+    mustacheRecord);
+
+  // set searchpanes
+  let optionGeneratorsFunctionsMap = new Map();
+  optionGeneratorsFunctionsMap.set("recommendation", function() {
+    let categoryOptions = [];
+    for (let i in recommendationContainer) {
+      let currOption = {
+        label: recommendationContainer[i].displayName,
+        value: function(rowData, rowIdx) {
+          return (rowData["gpuCategory"] === recommendationContainer[i].displayName);
+        }
+      }
+      categoryOptions.push(currOption);
+    }
+    return categoryOptions;
+  });
+  optionGeneratorsFunctionsMap.set("apps", function() {
+    let stageIdOptions = [];
+    qualificationRecords.forEach(appRecord => {
+      let currOption = {
+        label: appRecord.appId,
+        value: function(rowData, rowIdx) {
+          return (rowData.info.appId === appRecord.appId);
+        },
+      };
+      stageIdOptions.push(currOption);
+    });
+    return stageIdOptions;
+  });
+
+  setDataTableSearchPanes(
+    appSQLsDataTableConf,
+    appSQLsDetailsBaseParams,
+    appSQLsDetailsCustomParams,
+    optionGeneratorsFunctionsMap);
+
+  return appSQLsDataTableConf;
+}
+
 function getAppDetailsTableTemplate() {
   return `
       <div id="all-apps-raw-data">
@@ -1229,6 +1461,31 @@ function getAppDetailsTableTemplate() {
         </table>
       </div>
   `;
+}
+
+function getAppSQLsDetailsTableTemplate() {
+  let content = `
+    <div id="app-sqls-raw-data">
+      <table id="app-sqls-raw-data-table" class="table data-table display wrap" style="width:100%">
+        <thead>
+        <tr>
+          {{#displayCol_appID}}
+          <th>App ID</th>
+          {{/displayCol_appID}}
+          <th>SQL ID</th>
+          <th>Recommendation</th>
+          <th>SQL Description</th>
+          <th>Estimated GPU Speedup</th>
+          <th>SQL DF Duration</th>
+          <th>GPU Opportunity</th>
+          <th>Estimated GPU Duration</th>
+          <th>Estimated GPU Time Saved</th>
+        </tr>
+        </thead>
+      </table>
+    </div>
+  `;
+  return content;
 }
 
 function setupNavigation() {

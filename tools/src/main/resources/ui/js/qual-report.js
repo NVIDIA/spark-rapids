@@ -23,7 +23,7 @@
 function getExpandedAppDetails() {
   let fullDetailsContent =
     '<div class=\" mt-3\">' +
-    '  <a href=\"{{attemptDetailsURL}}\" target=\"_blank\" class=\"btn btn-secondary btn-lg btn-block mb-1\">Go To Full Details</button>' +
+    '  <a href=\"{{attemptDetailsURL}}\" target=\"_blank\" class=\"btn btn-secondary btn-lg btn-block mb-1\">Go To Full App Details</button>' +
     '</div>';
   let tableContent =
     '<table class=\"table table-striped style=padding-left:50px;\">' +
