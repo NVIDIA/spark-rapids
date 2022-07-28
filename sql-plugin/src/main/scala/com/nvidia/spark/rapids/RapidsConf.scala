@@ -1623,7 +1623,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   }
 
   def get[T](entry: ConfEntry[T]): T = {
-    entry.get(conf)
+    // 'converter' is wrapped with 'checkValue' (if the config item has), so we can check the
+    //  validity of the value set by user.
+    val ret = entry.get(conf)
+    if (ret != None) entry.converter(ret.toString)
+    ret
   }
 
   lazy val rapidsConfMap: util.Map[String, String] = conf.filterKeys(
