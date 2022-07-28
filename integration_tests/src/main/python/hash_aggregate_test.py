@@ -569,16 +569,12 @@ _gen_data_for_collect_list_op = _full_gen_data_for_collect_op + [[
     ('a', RepeatSeqGen(LongGen(), length=20)),
     ('b', value_gen)] for value_gen in _repeat_agg_column_for_collect_list_op]
 
-# data generating for collect_set based-nested Struct[Array] types
-array_struct_gen =  StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(single_level_array_gens_no_nan)])
-
 _repeat_agg_column_for_collect_set_op = [
     RepeatSeqGen(all_basic_struct_gen, length=15),
     RepeatSeqGen(StructGen([
         ['c0', all_basic_struct_gen], ['c1', int_gen]]), length=15)]
 
-all_basic_struct_gen_no_nan = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens_no_nan)])
-
+# data generating for collect_set based-nested Struct[Array] types
 _repeat_agg_column_for_collect_set_op_nested = [
     RepeatSeqGen(array_struct_gen, length=15),
     RepeatSeqGen(StructGen([
