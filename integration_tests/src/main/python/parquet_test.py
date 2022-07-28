@@ -15,7 +15,7 @@ import os
 
 import pytest
 
-from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, \
+from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_cpu_and_gpu_are_equal_sql_with_capture, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, \
     assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_py4j_exception
 from data_gen import *
 from marks import *
@@ -1147,9 +1147,7 @@ def test_parquet_read_encryption(spark_tmp_path, reader_confs, v1_enabled_list):
         error_message='The GPU does not support reading encrypted Parquet files')
 
 def test_parquet_read_count(spark_tmp_path):
-    parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-    string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens
+    parquet_gens = [int_gen, string_gen, double_gen]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
 
@@ -1157,11 +1155,6 @@ def test_parquet_read_count(spark_tmp_path):
 
     assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.parquet(data_path))
 
-    def do_parquet_read(spark):
-        df = spark.read.parquet(data_path)
-        df.createOrReplaceTempView("tab")
-        return spark.sql("SELECT COUNT(*) FROM tab")
-
-    # assert the spark plan of the equivalent SQL query contains no column in read schema
-    assert_cpu_and_gpu_are_equal_collect_with_capture(
-        do_parquet_read, exist_classes="ReadSchema: struct<>")
+    assert_cpu_and_gpu_are_equal_sql_with_capture(
+        lambda spark: spark.read.parquet(data_path), "SELECT COUNT(*) FROM tab", "tab",
+        exist_classes=r'GpuFileGpuScan parquet .* ReadSchema: struct<>')

@@ -542,11 +542,11 @@ def test_csv_read_case_insensitivity(spark_tmp_path):
     )
 
 @allow_non_gpu('FileSourceScanExec', 'CollectLimitExec', 'DeserializeToObjectExec')
-@pytest.mark.parametrize('data_gen', csv_supported_gens, ids=idfn)
-def test_csv_read_count(spark_tmp_path, data_gen):
-    gen = StructGen([('a', data_gen)], nullable=False)
+def test_csv_read_count(spark_tmp_path):
+    data_gens = [byte_gen, short_gen, int_gen, long_gen, boolean_gen, date_gen]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
     data_path = spark_tmp_path + '/CSV_DATA'
 
-    with_cpu_session(lambda spark: gen_df(spark, gen).write.csv(data_path))
+    with_cpu_session(lambda spark: gen_df(spark, gen_list).write.csv(data_path))
 
     assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.csv(data_path))

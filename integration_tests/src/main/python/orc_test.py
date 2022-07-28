@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, \
+from asserts import assert_cpu_and_gpu_are_equal_sql_with_capture, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, \
     assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
 from marks import *
@@ -665,8 +665,7 @@ def test_read_type_casting_integral(spark_tmp_path, offset, reader_confs, v1_ena
         lambda spark: spark.read.schema(rs).orc(data_path),
         conf=all_confs)
 
-@pytest.mark.parametrize('orc_gens', orc_basic_gens, ids=idfn)
-def test_orc_read_count(spark_tmp_path, orc_gens):
+def test_orc_read_count(spark_tmp_path):
     data_path = spark_tmp_path + '/ORC_DATA'
     orc_gens = [int_gen, string_gen, double_gen]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
@@ -675,11 +674,6 @@ def test_orc_read_count(spark_tmp_path, orc_gens):
 
     assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.orc(data_path))
 
-    def do_orc_read(spark):
-        df = spark.read.orc(data_path)
-        df.createOrReplaceTempView("tab")
-        return spark.sql("SELECT COUNT(*) FROM tab")
-
-    # assert the spark plan of the equivalent SQL query contains no column in read schema
-    assert_cpu_and_gpu_are_equal_collect_with_capture(
-        do_orc_read, exist_classes="ReadSchema: struct<>")
+    assert_cpu_and_gpu_are_equal_sql_with_capture(
+        lambda spark: spark.read.orc(data_path), "SELECT COUNT(*) FROM tab", "tab",
+        exist_classes=r'GpuFileGpuScan orc .* ReadSchema: struct<>')
