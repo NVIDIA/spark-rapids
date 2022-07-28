@@ -387,8 +387,8 @@ object GpuCast extends Arm {
         // the incoming input column type.
         withResource(input.min()) { min =>
           withResource(input.max()) { max =>
-            if (min.getBigDecimal().compareTo(bigDecimalMin) == -1 ||
-                max.getBigDecimal().compareTo(bigDecimalMax) == 1) {
+            if (min.isValid && min.getBigDecimal().compareTo(bigDecimalMin) == -1 ||
+                max.isValid && max.getBigDecimal().compareTo(bigDecimalMax) == 1) {
               throw new ArithmeticException(GpuCast.INVALID_INPUT_MESSAGE)
             }
           }
