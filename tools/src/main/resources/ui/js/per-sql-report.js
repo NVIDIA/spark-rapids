@@ -16,20 +16,32 @@
 
 /* global $, Mustache, formatDuration, jQuery, qualificationRecords */
 
+function processSQLRawData(rawAppRecords) {
+  let sqlArray = [];
+  for (let ind in rawAppRecords) {
+    let currAppRec = rawAppRecords[ind];
+    sqlArray.push(...getAppSqlArray(currAppRec));
+  }
+  return sqlArray;
+}
+
 $(document).ready(function() {
-  let attemptArray = processRawData(qualificationRecords);
-  //
-  // set the app details table
-  //
-  let appDetailsDataTable = constructDataTableFromHTMLTemplate(
-    attemptArray,
+  let sqlArray = processSQLRawData(qualificationRecords);
+
+  // set the per-sql details table
+  let appSQLDetailsDataTable = constructDataTableFromHTMLTemplate(
+    sqlArray,
     "listAppsView",
-    createAppDetailedTableConf,
+    createAppDetailsSQLsTableConf,
     {
-      tableId: "appDetails",
-      dataTableTemplate: getAppDetailsTableTemplate(),
-      datatableContainerID: '#app-details-data-container',
-      tableDivId: '#all-apps-raw-data-table',
+      tableId: "appSQLs",
+      dataTableTemplate: getAppSQLsDetailsTableTemplate(),
+      datatableContainerID: '#per-sql-details-data-container',
+      tableDivId: '#app-sqls-raw-data-table',
+      replaceTableIfEmptyData: {
+        enabled: true,
+        text: "No Data to display in the table"
+      }
     }
   );
 

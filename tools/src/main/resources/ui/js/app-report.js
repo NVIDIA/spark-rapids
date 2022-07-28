@@ -232,13 +232,12 @@ $(document).ready(function() {
   const queryString = window.location.search;
   const urlParams = new URLSearchParams(queryString);
   const appID = urlParams.get('app_id')
-
   // get the appData
   let rawAppRecord = fetchApplicationData(qualificationRecords, appID);
   let attemptsArray = [rawAppRecord];
   applicationUIRecord = processRawData(attemptsArray)[0];
-
   let execsArray = getAppExecArray(applicationUIRecord);
+  let sqlIDsArray = getAppSqlArray(applicationUIRecord);
   //
   // set the statistics cards
   //
@@ -316,27 +315,25 @@ $(document).ready(function() {
   );
 
   //
-  // Set tooltips for the three tables.
-  // Note that we should always use method-2
+  // set the sqlID details table
   //
-  // method-1:
-  //           using datatables. This method has limitations because datatable removes nodes from
-  //           the DOM, therefore events applied with a static event listener might not be able to
-  //           bind themselves to all nodes in the table.
-  // $('#app-execs-details-data-container [data-toggle="tooltip"]').tooltip({
-  //   container: 'body',
-  //   html: true,
-  //   animation: true,
-  //   placement:"bottom",});
-  //
-  // method-2:
-  //          Using jQuery delegated event listener options which overcomes the limitations in method-1
-  $('tbody').on('mouseover', 'td, th', function () {
-    $('[data-toggle="tooltip"]').tooltip({
-      trigger: 'hover',
-      html: true
-    });
-  });
+  let appSQLsDetailsTable = constructDataTableFromHTMLTemplate(
+    sqlIDsArray,
+    "singleAppView",
+    createAppDetailsSQLsTableConf,
+    {
+      tableId: "appSQLs",
+      appId: appID,
+      dataTableTemplate: getAppSQLsDetailsTableTemplate(),
+      datatableContainerID: '#app-sqls-details-data-container',
+      tableDivId: '#app-sqls-raw-data-table',
+      replaceTableIfEmptyData: {
+        enabled: true,
+        text: "No Data to display in the table"
+      }
+    }
+  );
 
+  setupToolTipForTableCells();
   setupNavigation();
 });
