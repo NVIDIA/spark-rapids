@@ -297,7 +297,7 @@ object AlluxioUtils extends Logging {
         PartitionSpec(spec.partitionColumns, partitionsWithPathsReplaced)
       }
 
-      def createNewFileIndexPathsReplaced(
+      def createNewFileIndexWithPathsReplaced(
           spec: PartitionSpec,
           rootPaths: Seq[Path]): InMemoryFileIndex = {
         val specAdjusted = replacePathsInPartitionSpec(spec)
@@ -310,22 +310,24 @@ object AlluxioUtils extends Logging {
           userSpecifiedPartitionSpec = Some(specAdjusted))
       }
 
-      // If we know the type of file index try to reuse as much of the existing
-      // FileIndex the same to keep from having to
-      // recalculate it and potentially mess it up. Things like partitioning are
-      // already included and some of the Spark infer code didn't handle it
-      // properly. Here we try to just update the paths to the new Alluxio path.
+      // If we know the type of file index, try to reuse as much of the existing
+      // FileIndex as we can to keep from having to recalculate it and potentially
+      // mess it up. Things like partitioning are already included and some of the
+      // Spark infer code didn't handle certain types properly. Here we try to just
+      // update the paths to the new Alluxio path. If its not a type of file index
+      // we know then fall back to inferring. The latter happens on certain CSPs
+      // like Databricks where they have customer file index types.
       if (relation.location.isInstanceOf[PartitioningAwareFileIndex]) {
-        logWarning("In PartitioningAwareFileIndex")
+        logDebug("Handling PartitioningAwareFileIndex")
         val pfi = relation.location.asInstanceOf[PartitioningAwareFileIndex]
-        createNewFileIndexPathsReplaced(pfi.partitionSpec(), pfi.rootPaths)
+        createNewFileIndexWithPathsReplaced(pfi.partitionSpec(), pfi.rootPaths)
       } else if (relation.location.isInstanceOf[CatalogFileIndex]) {
-        logWarning("In CatalogFileIndex")
+        logDebug("Handling CatalogFileIndex")
         val cfi = relation.location.asInstanceOf[CatalogFileIndex]
         val memFI = cfi.filterPartitions(Nil)
-        createNewFileIndexPathsReplaced(memFI.partitionSpec(), memFI.rootPaths)
+        createNewFileIndexWithPathsReplaced(memFI.partitionSpec(), memFI.rootPaths)
       } else {
-        logWarning(s"the file index type is: ${relation.location.getClass}")
+        logDebug(s"Handling file index type: ${relation.location.getClass}")
         // With the base Spark FileIndex type we don't know how to modify it to
         // just replace the paths so we have to try to recompute.
         def isDynamicPruningFilter(e: Expression): Boolean =
