@@ -466,6 +466,7 @@ case class SQLTaskAggMetricsProfileResult(
     executorDeserializeTimeSum: Long,
     executorRunTimeSum: Long,
     inputBytesReadSum: Long,
+    inputBytesReadAvg: Double,
     inputRecordsReadSum: Long,
     jvmGCTimeSum: Long,
     memoryBytesSpilledSum: Long,
@@ -631,9 +632,9 @@ case class WholeStageCodeGenResults(
   }
 }
 
-case class GpuProps(count: Int, memory: Long, name: String)
-case class SystemProps(numCores: Int, cpu_arch: String, memory: Long,
-  disk_space: Long, time_zone: String, gpu_props: GpuProps)
+case class GpuProps(count: Int, memory: String, name: String)
+case class SystemProps(numCores: Int, cpu_arch: String, memory: String,
+  disk_space: String, time_zone: String, num_workers: Option[Int], gpu_props: GpuProps)
 
 case class RecommendedPropertyResult(property: String, value: String){
   override def toString: String = "--conf %s=%s".format(property, value)
