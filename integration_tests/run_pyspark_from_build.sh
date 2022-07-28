@@ -51,6 +51,9 @@ else
         if [ -f $(echo $LOCAL_JAR_PATH/parquet-hadoop*.jar) ]; then
             export INCLUDE_PARQUET_HADOOP_TEST_JAR=true
             PARQUET_HADOOP_TESTS=$(echo $LOCAL_JAR_PATH/parquet-hadoop*.jar)
+            # remove the log4j.properties file so it doesn't conflict with ours, ignore errors
+            # if it isn't present or already removed
+            zip -d $PARQUET_HADOOP_TESTS log4j.properties || true
         else
             export INCLUDE_PARQUET_HADOOP_TEST_JAR=false
             PARQUET_HADOOP_TESTS=
@@ -60,7 +63,13 @@ else
     else
         AVRO_JARS=$(echo "$SCRIPTPATH"/target/dependency/spark-avro*.jar)
         PARQUET_HADOOP_TESTS=$(echo "$SCRIPTPATH"/target/dependency/parquet-hadoop*.jar)
-        export INCLUDE_PARQUET_HADOOP_TEST_JAR=true
+        # remove the log4j.properties file so it doesn't conflict with ours, ignore errors
+        # if it isn't present or already removed
+        zip -d $PARQUET_HADOOP_TESTS log4j.properties || true
+        MIN_PARQUET_JAR="$SCRIPTPATH/target/dependency/parquet-hadoop-1.12.0-tests.jar"
+        # Make sure we have Parquet version >= 1.12 in the dependency
+        LOWEST_PARQUET_JAR=$(echo -e "$MIN_PARQUET_JAR\n$PARQUET_HADOOP_TESTS" | sort -V | head -1)
+        export INCLUDE_PARQUET_HADOOP_TEST_JAR=$([[ "$LOWEST_PARQUET_JAR" == "$MIN_PARQUET_JAR" ]] && echo true || echo false)
         PLUGIN_JARS=$(echo "$SCRIPTPATH"/../dist/target/rapids-4-spark_*.jar)
         # the integration-test-spark3xx.jar, should not include the integration-test-spark3xxtest.jar
         TEST_JARS=$(echo "$SCRIPTPATH"/target/rapids-4-spark-integration-tests*-$INTEGRATION_TEST_VERSION.jar)

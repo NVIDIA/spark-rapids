@@ -49,7 +49,7 @@ class MortgageSparkSuite extends FunSuite {
       // configure the cache-only shuffle manager (disable transport)
       builder = builder
           .config("spark.shuffle.manager", rapidsShuffle)
-          .config("spark.rapids.shuffle.transport.enabled", false)
+          .config("spark.rapids.shuffle.mode", "CACHE_ONLY")
     } else {
       println("RAPIDS SHUFFLE MANAGER INACTIVE")
     }

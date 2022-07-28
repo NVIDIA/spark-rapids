@@ -101,9 +101,10 @@ $MVN_GET_CMD -DremoteRepositories=$SPARK_REPO \
 
 # Download parquet-hadoop jar for parquet-read encryption tests
 PARQUET_HADOOP_VER=`mvn help:evaluate -q -N -Dexpression=parquet.hadoop.version -DforceStdout -Dbuildver=${SHUFFLE_SPARK_SHIM/spark/}`
-[[ "$(printf '%s\n' "1.12.0" "$PARQUET_HADOOP_VER" | sort -V | head -n1)" = "1.12.0" ]] && \
+if [[ "$(printf '%s\n' "1.12.0" "$PARQUET_HADOOP_VER" | sort -V | head -n1)" = "1.12.0" ]]; then
   $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
       -DgroupId=org.apache.parquet -DartifactId=parquet-hadoop -Dversion=$PARQUET_HADOOP_VER -Dclassifier=tests
+fi
 
 export SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-bin-hadoop3.2"
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
@@ -172,13 +173,17 @@ export TARGET_DIR="$SCRIPT_PATH/target"
 mkdir -p $TARGET_DIR
 
 run_iceberg_tests() {
-  ICEBERG_VERSION="0.13.1"
+  ICEBERG_VERSION=${ICEBERG_VERSION:-0.13.2}
   # get the major/minor version of Spark
   ICEBERG_SPARK_VER=$(echo $SPARK_VER | cut -d. -f1,2)
 
   # Iceberg does not support Spark 3.3+ yet
   if [[ "$ICEBERG_SPARK_VER" < "3.3" ]]; then
+    # Classloader config is here to work around classloader issues with
+    # --packages in distributed setups, should be fixed by
+    # https://github.com/NVIDIA/spark-rapids/pull/5646
     SPARK_SUBMIT_FLAGS="$BASE_SPARK_SUBMIT_ARGS $SEQ_CONF \
+      --conf spark.rapids.force.caller.classloader=false \
       --packages org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_2.12:${ICEBERG_VERSION} \
       --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
       --conf spark.sql.catalog.spark_catalog=org.apache.iceberg.spark.SparkSessionCatalog \
@@ -256,11 +261,11 @@ get_tests_by_tags() {
 export -f get_tests_by_tags
 
 # TEST_MODE
-# - IT_ONLY
-# - CUDF_UDF_ONLY
-# - ALL: IT+CUDF_UDF
-TEST_MODE=${TEST_MODE:-'IT_ONLY'}
-if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
+# - DEFAULT: all tests except cudf_udf tests
+# - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
+# - ICEBERG_ONLY: iceberg tests only
+TEST_MODE=${TEST_MODE:-'DEFAULT'}
+if [[ $TEST_MODE == "DEFAULT" ]]; then
   # integration tests
   if [[ $PARALLEL_TEST == "true" ]] && [ -x "$(command -v parallel)" ]; then
     # separate run for special cases that require smaller parallelism
@@ -307,12 +312,12 @@ if [[ $TEST_MODE == "ALL" || $TEST_MODE == "IT_ONLY" ]]; then
 fi
 
 # cudf_udf_test
-if [[ "$TEST_MODE" == "ALL" || "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
+if [[ "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
   run_test_not_parallel cudf_udf_test
 fi
 
 # Iceberg tests
-if [[ "$TEST_MODE" == "ALL" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
+if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
   run_test_not_parallel iceberg
 fi
 

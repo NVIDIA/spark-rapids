@@ -734,34 +734,48 @@ class CudfRegexTranspiler(mode: RegexMode) {
       case _ => false
     }
   }
-
-  private def isSupportedRepetitionBase(e: RegexAST): (Boolean, Option[RegexAST]) = {
+  
+  private def getUnsupportedRepetitionBaseOption(e: RegexAST): Option[RegexAST] = {
     e match {
       case RegexEscaped(ch) => ch match {
-        case 'd' | 'w' | 's' | 'S' | 'h' | 'H' | 'v' | 'V' => (true, None)
-        case _ => (false, Some(e))
+        case 'd' | 'w' | 's' | 'S' | 'h' | 'H' | 'v' | 'V' => None
+        case _ => Some(e)
       }
-
       case RegexChar(a) if "$^".contains(a) =>
         // example: "$*"
-        (false, Some(e))
+        Some(e)
 
       case RegexRepetition(_, _) =>
         // example: "a*+"
-        (false, Some(e))
+        Some(e)
 
       case RegexSequence(parts) =>
-        parts.foreach { part => isSupportedRepetitionBase(part) match {
-            case (false, unsupportedPart) => return (false, unsupportedPart)
-            case _ =>
+        parts.foreach { part => getUnsupportedRepetitionBaseOption(part) match {
+            case r @ Some(_) => return r
+            case None =>
           } 
         }
-        (true, None)
-        
-      case RegexGroup(_, term) =>
-        isSupportedRepetitionBase(term)
+        None
 
-      case _ => (true, None)
+      case RegexGroup(_, term) =>
+        getUnsupportedRepetitionBaseOption(term)
+
+      case _ => None
+    }
+  }
+
+  private def getUnsupportedRepetitionBase(e: RegexAST): RegexAST = {
+    getUnsupportedRepetitionBaseOption(e) match {
+      case None => throw new NoSuchElementException(
+        s"Expected repetition base ${e.toRegexString} to be unsupported but was actully supported")
+      case Some(unsupportedTerm) => unsupportedTerm
+    }
+  }
+
+  private def isSupportedRepetitionBase(e: RegexAST): Boolean = {
+    getUnsupportedRepetitionBaseOption(e) match {
+      case None => true
+      case _ => false
     }
   }
 
@@ -945,8 +959,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           terminatorChars ++= lineTerminatorChars.map(RegexChar)
           RegexCharacterClass(negated = true, terminatorChars)
         case '$' if mode == RegexSplitMode =>
-          throw new RegexUnsupportedException(
-            "Line anchor $ is not supported in split", regex.position)
+          RegexEscaped('Z')
         case '$' =>
           // in the case of the line anchor $, the JVM has special conditions when handling line 
           // terminators in and around the anchor
@@ -954,7 +967,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           // NOTE: this applies to when using *standard* mode. In multiline mode, all these 
           // conditions will change. Currently Spark does not use multiline mode.
           previous match {
-            case Some(RegexChar('$')) =>
+            case Some(RegexChar('$')) | Some(RegexEscaped('Z')) =>
               // repeating the line anchor in cuDF (for example b$$) causes matches to fail, but in 
               // Java, it's treated as a single (b$ and b$$ are synonymous), so we create 
               // an empty RegexAST that outputs to empty string
@@ -999,8 +1012,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
                 RegexChar('$')))
           }
         case '^' if mode == RegexSplitMode =>
-          throw new RegexUnsupportedException("Line anchor ^ is not supported in split mode",
-            regex.position)
+          RegexEscaped('A')
         case '\r' | '\n' if mode == RegexFindMode =>
           previous match {
             case Some(RegexChar('$')) =>
@@ -1060,16 +1072,22 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case 'b' | 'B' if mode == RegexSplitMode =>
           // see https://github.com/NVIDIA/spark-rapids/issues/5478
           throw new RegexUnsupportedException(
-            "Word boundaries are not supported in split mode", regex.position)
-        case 'A' if mode == RegexSplitMode =>
-          throw new RegexUnsupportedException(
-            "String anchor \\A is not supported in split mode", regex.position)
-        case 'Z' if mode == RegexSplitMode =>
-          throw new RegexUnsupportedException(
-            "String anchor \\Z is not supported in split or replace mode", regex.position)
+              "Word boundaries are not supported in split mode", regex.position)
+        case 'b' | 'B' =>
+          previous match {
+            case Some(RegexEscaped(ch)) if "DWSHV".contains(ch) =>
+              throw new RegexUnsupportedException(
+                  "Word boundaries around \\D, \\S,\\W, \\H, or \\V are not supported",
+                  regex.position)
+            case Some(RegexCharacterClass(negated, _)) if negated =>
+              throw new RegexUnsupportedException(
+                  "Word boundaries around negated character classes are not supported",
+                  regex.position)
+            case _ =>
+              RegexEscaped(ch)
+          }
         case 'z' if mode == RegexSplitMode =>
-          throw new RegexUnsupportedException(
-            "String anchor \\z is not supported in split mode", regex.position)
+          RegexEscaped('Z')
         case 'z' =>
           // cuDF does not support "\z" but supports "$", which is equivalent
           RegexChar('$')
@@ -1302,7 +1320,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
             quantifier.position)
 
         case (RegexGroup(capture, term), SimpleQuantifier(ch))
-            if "+*".contains(ch) && !(isSupportedRepetitionBase(term)._1) =>
+            if "+*".contains(ch) && !isSupportedRepetitionBase(term) =>
           (term, ch) match {
             // \Z is not supported in groups
             case (RegexEscaped('A'), '+') |
@@ -1314,13 +1332,13 @@ class CudfRegexTranspiler(mode: RegexMode) {
             // NOTE: (\A)* can be transpiled to (\A)?
             // however, (\A)? is not supported in libcudf yet
             case _ =>
-              val unsupportedTerm = isSupportedRepetitionBase(term)._2.get
+              val unsupportedTerm = getUnsupportedRepetitionBase(term)
               throw new RegexUnsupportedException(
                 s"cuDF does not support repetition of group containing: " +
                   s"${unsupportedTerm.toRegexString}", term.position)
           }
         case (RegexGroup(capture, term), QuantifierVariableLength(n, _))
-            if !(isSupportedRepetitionBase(term)._1) =>
+            if !isSupportedRepetitionBase(term) =>
           term match {
             // \Z is not supported in groups
             case RegexEscaped('A') | 
@@ -1332,13 +1350,13 @@ class CudfRegexTranspiler(mode: RegexMode) {
             // NOTE: (\A)* can be transpiled to (\A)?
             // however, (\A)? is not supported in libcudf yet
             case _ =>
-              val unsupportedTerm = isSupportedRepetitionBase(term)._2.get
+              val unsupportedTerm = getUnsupportedRepetitionBase(term)
               throw new RegexUnsupportedException(
                 s"cuDF does not support repetition of group containing: " +
                   s"${unsupportedTerm.toRegexString}", term.position)
           }
         case (RegexGroup(capture, term), QuantifierFixedLength(n))
-            if !(isSupportedRepetitionBase(term)._1) =>
+            if !isSupportedRepetitionBase(term) =>
           term match {
             // \Z is not supported in groups
             case RegexEscaped('A') | 
@@ -1350,7 +1368,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
             // NOTE: (\A)* can be transpiled to (\A)?
             // however, (\A)? is not supported in libcudf yet
             case _ =>
-              val unsupportedTerm = isSupportedRepetitionBase(term)._2.get
+              val unsupportedTerm = getUnsupportedRepetitionBase(term)
               throw new RegexUnsupportedException(
                 s"cuDF does not support repetition of group containing: " +
                   s"${unsupportedTerm.toRegexString}", term.position)
@@ -1373,7 +1391,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           // \A{1,5} can be transpiled to \A (dropping the repetition)
           // \Z{1,} can be transpiled to \Z (dropping the repetition)
           rewrite(base, replacement, previous)
-        case _ if isSupportedRepetitionBase(base)._1 =>
+        case _ if isSupportedRepetitionBase(base) =>
           RegexRepetition(rewrite(base, replacement, None), quantifier)
         case (RegexRepetition(_, SimpleQuantifier('*')), SimpleQuantifier('+')) => 
           throw new RegexUnsupportedException("Possessive quantifier *+ not supported", 
@@ -1493,6 +1511,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     case RegexRepetition(term, _) => isBeginOrEndLineAnchor(term)
     case RegexChar(ch) => ch == '^' || ch == '$'
     case RegexEscaped(ch) if "zZ".contains(ch) => true // \z gets translated to $
+    case RegexEscaped(ch) if 'A' == ch && mode == RegexSplitMode => true 
     case _ => false
   }
 
