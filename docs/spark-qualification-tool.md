@@ -20,9 +20,9 @@ it reports by looking at the amount of time spent in tasks of SQL Dataframe oper
 
 > **Disclaimer!**  
 > Estimates provided by the Qualification tool are based on the currently supported "_SparkPlan_" or "_Executor Nodes_"
-> used in the application. It currently does not look at the expressions or datatypes used.
-> Please refer to the [Supported Operators](./supported_ops.md) guide to check the types and expressions you are using
-> are supported.
+> used in the application. It currently does not handle all the expressions or datatypes used.  
+> Please refer to "[Understanding Execs report](#execs-report)" section and the
+> "[Supported Operators](./supported_ops.md)" guide to check the types and expressions you are using are supported.
 
 This document covers below topics:
 
@@ -503,6 +503,61 @@ details on limitations on UDFs and unsupported operators.
 10. _Exec Children_
 11. _Exec Children Node Ids_
 12. _Exec Should Remove_: whether the Op is removed from the migrated plan.
+
+**Parsing Expressions within each Exec**
+
+The Qualification tool looks at the expressions in each _Exec_ to provide a fine-grained assessment of
+RAPIDS' support.  
+Note that it is not possible to extract the expressions for each available _Exec_:
+- some Execs do not take any expressions, and
+- some execs may not show the expressions in the _eventlog_.
+
+The following table lists the exec's name and the status of parsing their expressions where:
+- "_Expressions Unavailable_" marks the _Execs_ that do not show expressions in the _eventlog_;
+- "_Fully Parsed_" marks the _Execs_ that have their expressions fully parsed by the Qualification tool;
+- "_In Progress_" marks the _Execs_ that are still being investigated; therefore, a set of the
+  marked _Execs_ may be fully parsed in future releases.
+
+| **Exec**                              | **Expressions Unavailable** | **Fully Parsed** | **In Progress** |
+|---------------------------------------|:---------------------------:|:----------------:|:---------------:|
+| AggregateInPandasExec                 |              -              |         -        |        x        |
+| AQEShuffleReadExec                    |              -              |         -        |        x        |
+| ArrowEvalPythonExec                   |              -              |         -        |        x        |
+| BatchScanExec                         |              -              |         -        |        x        |
+| BroadcastExchangeExec                 |              -              |         -        |        x        |
+| BroadcastHashJoinExec                 |              -              |         -        |        x        |
+| BroadcastNestedLoopJoinExec           |              -              |         -        |        x        |
+| CartesianProductExec                  |              -              |         -        |        x        |
+| CoalesceExec                          |              -              |         -        |        x        |
+| CollectLimitExec                      |              x              |         -        |        -        |
+| CreateDataSourceTableAsSelectCommand  |              -              |         -        |        x        |
+| CustomShuffleReaderExec               |              -              |         -        |        x        |
+| DataWritingCommandExec                |              -              |         -        |        x        |
+| ExpandExec                            |              -              |         -        |        x        |
+| FileSourceScanExec                    |              -              |         -        |        x        |
+| FilterExec                            |              -              |         x        |        -        |
+| FlatMapGroupsInPandasExec             |              -              |         -        |        x        |
+| GenerateExec                          |              -              |         -        |        x        |
+| GlobalLimitExec                       |              x              |         -        |        -        |
+| HashAggregateExec                     |              -              |         x        |        -        |
+| InMemoryTableScanExec                 |              -              |         -        |        x        |
+| InsertIntoHadoopFsRelationCommand     |              -              |         -        |        x        |
+| LocalLimitExec                        |              x              |         -        |        -        |
+| MapInPandasExec                       |              -              |         -        |        x        |
+| ObjectHashAggregateExec               |              -              |         x        |        -        |
+| ProjectExec                           |              -              |         x        |        -        |
+| RangeExec                             |              x              |         -        |        -        |
+| SampleExec                            |              -              |         -        |        x        |
+| ShuffledHashJoinExec                  |              -              |         -        |        x        |
+| ShuffleExchangeExec                   |              -              |         -        |        x        |
+| SortAggregateExec                     |              -              |         x        |        -        |
+| SortExec                              |              -              |         x        |        -        |
+| SortMergeJoinExec                     |              -              |         -        |        x        |
+| SubqueryBroadcastExec                 |              -              |         -        |        x        |
+| TakeOrderedAndProjectExec             |              -              |         -        |        x        |
+| UnionExec                             |              x              |         -        |        -        |
+| WindowExec                            |              -              |         x        |        -        |
+| WindowInPandasExec                    |              -              |         -        |        x        |
 
 ## Output Formats
 
