@@ -30,12 +30,6 @@ class RapidsParquetScanMeta(
 
   override def tagSelfForGpu(): Unit = {
     GpuParquetScan.tagSupport(this)
-
-    if (pScan.options.getBoolean("mergeSchema", false) &&
-      conf.parquetReaderFooterType == RapidsConf.ParquetFooterReaderType.NATIVE) {
-      willNotWorkOnGpu("Native footer reader for parquet does not work when" +
-        " mergeSchema is enabled")
-    }
   }
 
   override def convertToGpu(): Scan = {

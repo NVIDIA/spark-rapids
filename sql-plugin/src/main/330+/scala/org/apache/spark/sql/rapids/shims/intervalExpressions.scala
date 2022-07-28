@@ -22,6 +22,7 @@ import ai.rapids.cudf.{BinaryOperable, ColumnVector, ColumnView, DType, RoundMod
 import com.nvidia.spark.rapids.{Arm, BoolUtils, GpuBinaryExpression, GpuColumnVector, GpuScalar}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, NullIntolerant}
+import org.apache.spark.sql.rapids.GpuDivModLike.makeZeroScalar
 import org.apache.spark.sql.types._
 
 object IntervalUtils extends Arm {
@@ -34,7 +35,7 @@ object IntervalUtils extends Arm {
     withResource(longCv.castTo(DType.INT32)) { intResult =>
       withResource(longCv.notEqualTo(intResult)) { notEquals =>
         if (BoolUtils.isAnyValidTrue(notEquals)) {
-          throw new ArithmeticException("overflow occurs")
+          throw RapidsErrorUtils.arithmeticOverflowError("overflow occurs")
         } else {
           intResult.incRefCount()
         }
@@ -47,7 +48,7 @@ object IntervalUtils extends Arm {
     withResource(Scalar.fromLong(minValue)) { minScalar =>
       withResource(decimal128Cv.lessThan(minScalar)) { lessThanMin =>
         if (BoolUtils.isAnyValidTrue(lessThanMin)) {
-          throw new ArithmeticException("overflow occurs")
+          throw RapidsErrorUtils.arithmeticOverflowError("overflow occurs")
         }
       }
     }
@@ -56,7 +57,7 @@ object IntervalUtils extends Arm {
     withResource(Scalar.fromLong(maxValue)) { maxScalar =>
       withResource(decimal128Cv.greaterThan(maxScalar)) { greaterThanMax =>
         if (BoolUtils.isAnyValidTrue(greaterThanMax)) {
-          throw new ArithmeticException("overflow occurs")
+          throw RapidsErrorUtils.arithmeticOverflowError("overflow occurs")
         }
       }
     }
@@ -260,7 +261,7 @@ object IntervalUtils extends Arm {
               withResource(rCv.equalTo(negOneScalar)) { isNegOne =>
                 withResource(isMin.and(isNegOne)) { invalid =>
                   if (BoolUtils.isAnyValidTrue(invalid)) {
-                    throw new ArithmeticException("overflow occurs")
+                    throw RapidsErrorUtils.overflowInIntegralDivideError()
                   }
                 }
               }
@@ -268,13 +269,13 @@ object IntervalUtils extends Arm {
           case (lCv: ColumnVector, rS: Scalar) =>
             withResource(lCv.equalTo(minScalar)) { isMin =>
               if (getLong(rS) == -1L && BoolUtils.isAnyValidTrue(isMin)) {
-                throw new ArithmeticException("overflow occurs")
+                throw RapidsErrorUtils.arithmeticOverflowError("overflow occurs")
               }
             }
           case (lS: Scalar, rCv: ColumnVector) =>
             withResource(rCv.equalTo(negOneScalar)) { isNegOne =>
               if (getLong(lS) == min && BoolUtils.isAnyValidTrue(isNegOne)) {
-                throw new ArithmeticException("overflow occurs")
+                throw RapidsErrorUtils.arithmeticOverflowError("overflow occurs")
               }
             }
           case (lS: Scalar, rS: Scalar) =>
@@ -519,14 +520,29 @@ case class GpuDivideDTInterval(
   override def right: Expression = num
 
   override def doColumnar(interval: GpuColumnVector, numScalar: GpuScalar): ColumnVector = {
+    withResource(makeZeroScalar(numScalar.getBase.getType)) { zeroScalar =>
+      if (numScalar.getBase.equals(zeroScalar)) {
+        throw RapidsErrorUtils.divByZeroError(origin)
+      }
+    }
     doColumnar(interval.getBase, numScalar.getBase, num.dataType)
   }
 
   override def doColumnar(interval: GpuColumnVector, num: GpuColumnVector): ColumnVector = {
+    withResource(makeZeroScalar(num.getBase.getType)) { zeroScalar =>
+      if (num.getBase.contains(zeroScalar)) {
+        throw RapidsErrorUtils.divByZeroError(origin)
+      }
+    }
     doColumnar(interval.getBase, num.getBase, num.dataType)
   }
 
   override def doColumnar(intervalScalar: GpuScalar, num: GpuColumnVector): ColumnVector = {
+    withResource(makeZeroScalar(num.getBase.getType)) { zeroScalar =>
+      if (num.getBase.contains(zeroScalar)) {
+        throw RapidsErrorUtils.divByZeroError(origin)
+      }
+    }
     doColumnar(intervalScalar.getBase, num.getBase, num.dataType)
   }
 

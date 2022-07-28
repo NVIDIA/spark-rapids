@@ -54,10 +54,13 @@ case object GpuSinglePartitioning extends GpuExpression with ShimExpression
     }
   }
 
-  // this override is required since `GpuSinglePartitioning` is used as a static class
+  // these next overrides are required since `GpuSinglePartitioning` is used as a static class
   // and the RAPIDS Shuffle Manager can be enabled and disabled dynamically
-  override def usesRapidsShuffle: Boolean =
-    GpuShuffleEnv.shouldUseRapidsShuffle(new RapidsConf(SQLConf.get))
+  override def usesGPUShuffle: Boolean =
+    GpuShuffleEnv.useGPUShuffle(new RapidsConf(SQLConf.get))
+
+  override def usesMultiThreadedShuffle: Boolean =
+    GpuShuffleEnv.useMultiThreadedShuffle(new RapidsConf(SQLConf.get))
 
   override def nullable: Boolean = false
 

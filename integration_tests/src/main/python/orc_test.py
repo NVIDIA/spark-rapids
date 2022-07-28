@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_co
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, is_before_spark_320, is_before_spark_330
+from spark_session import with_cpu_session, is_before_spark_320, is_before_spark_330, is_spark_321cdh
 from parquet_test import _nested_pruning_schemas
 from conftest import is_databricks_runtime
 
@@ -174,6 +174,10 @@ def test_pred_push_round_trip(spark_tmp_path, orc_gen, read_func, v1_enabled_lis
             conf=all_confs)
 
 orc_compress_options = ['none', 'uncompressed', 'snappy', 'zlib']
+# zstd is available in spark 3.2.0 and later.
+if not is_before_spark_320() and not is_spark_321cdh():
+    orc_compress_options.append('zstd')
+
 # The following need extra jars 'lzo'
 # https://github.com/NVIDIA/spark-rapids/issues/143
 
@@ -638,3 +642,24 @@ def test_orc_scan_with_aggregate_no_pushdown_on_col_partition(spark_tmp_path, ag
     assert_gpu_and_cpu_are_equal_collect(
                 lambda spark: _do_orc_scan_with_agg_on_partitioned_column(spark, data_path, aggregate),
                 conf=_orc_aggregate_pushdown_enabled_conf)
+
+
+@pytest.mark.parametrize('offset', [1,2,3,4], ids=idfn)
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+def test_read_type_casting_integral(spark_tmp_path, offset, reader_confs, v1_enabled_list):
+    int_gens = [boolean_gen] + integral_gens
+    gen_list = [('c' + str(i), gen) for i, gen in enumerate(int_gens)]
+    data_path = spark_tmp_path + '/ORC_DATA'
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).write.orc(data_path))
+
+    # build the read schema by a left shift of int_gens
+    shifted_int_gens = int_gens[offset:] + int_gens[:offset]
+    rs_gen_list = [('c' + str(i), gen) for i, gen in enumerate(shifted_int_gens)]
+    rs = StructGen(rs_gen_list, nullable=False).data_type
+    all_confs = copy_and_update(reader_confs,
+        {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(rs).orc(data_path),
+        conf=all_confs)
