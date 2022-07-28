@@ -1155,6 +1155,7 @@ def test_parquet_read_count(spark_tmp_path):
 
     assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.parquet(data_path))
 
+    # assert the spark plan of the equivalent SQL query contains no column in read schema
     assert_cpu_and_gpu_are_equal_sql_with_capture(
         lambda spark: spark.read.parquet(data_path), "SELECT COUNT(*) FROM tab", "tab",
         exist_classes=r'GpuFileGpuScan parquet .* ReadSchema: struct<>')
