@@ -317,61 +317,61 @@ object AlluxioUtils extends Logging {
       // update the paths to the new Alluxio path. If its not a type of file index
       // we know then fall back to inferring. The latter happens on certain CSPs
       // like Databricks where they have customer file index types.
-      if (relation.location.isInstanceOf[PartitioningAwareFileIndex]) {
-        logDebug("Handling PartitioningAwareFileIndex")
-        val pfi = relation.location.asInstanceOf[PartitioningAwareFileIndex]
-        createNewFileIndexWithPathsReplaced(pfi.partitionSpec(), pfi.rootPaths)
-      } else if (relation.location.isInstanceOf[CatalogFileIndex]) {
-        logDebug("Handling CatalogFileIndex")
-        val cfi = relation.location.asInstanceOf[CatalogFileIndex]
-        val memFI = cfi.filterPartitions(Nil)
-        createNewFileIndexWithPathsReplaced(memFI.partitionSpec(), memFI.rootPaths)
-      } else {
-        logDebug(s"Handling file index type: ${relation.location.getClass}")
-        // With the base Spark FileIndex type we don't know how to modify it to
-        // just replace the paths so we have to try to recompute.
-        def isDynamicPruningFilter(e: Expression): Boolean =
-          e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
+      relation.location match {
+        case pfi: PartitioningAwareFileIndex =>
+          logDebug("Handling PartitioningAwareFileIndex")
+          createNewFileIndexWithPathsReplaced(pfi.partitionSpec(), pfi.rootPaths)
+        case cfi: CatalogFileIndex =>
+          logDebug("Handling CatalogFileIndex")
+          val memFI = cfi.filterPartitions(Nil)
+          createNewFileIndexWithPathsReplaced(memFI.partitionSpec(), memFI.rootPaths)
+        case _ => {
+          logDebug(s"Handling file index type: ${relation.location.getClass}")
 
-        val partitionDirs = relation.location.listFiles(
-          partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
+          // With the base Spark FileIndex type we don't know how to modify it to
+          // just replace the paths so we have to try to recompute.
+          def isDynamicPruningFilter(e: Expression): Boolean =
+            e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
 
-        // replace all of input files
-        val inputFiles: Seq[Path] = partitionDirs.flatMap(partitionDir => {
-          partitionDir.files.map(f => replaceFunc.get(f.getPath))
-        })
+          val partitionDirs = relation.location.listFiles(
+            partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
 
-        // replace all of rootPaths which are already unique
-        val rootPaths = relation.location.rootPaths.map(replaceFunc.get)
+          // replace all of input files
+          val inputFiles: Seq[Path] = partitionDirs.flatMap(partitionDir => {
+            partitionDir.files.map(f => replaceFunc.get(f.getPath))
+          })
 
-        // check the alluxio paths in root paths exist or not
-        // throw out an exception to stop the job when any of them is not mounted
-        if (replaceMapOption.isDefined) {
-          rootPaths.foreach { rootPath =>
-            replaceMapOption.get.values.find(value => rootPath.toString.startsWith(value)).foreach {
-              matched => checkAlluxioMounted(relation.sparkSession, matched)
+          // replace all of rootPaths which are already unique
+          val rootPaths = relation.location.rootPaths.map(replaceFunc.get)
+
+          // check the alluxio paths in root paths exist or not
+          // throw out an exception to stop the job when any of them is not mounted
+          if (replaceMapOption.isDefined) {
+            rootPaths.foreach { rootPath =>
+              replaceMapOption.get.values.find(value => rootPath.toString.startsWith(value)).
+                foreach(matched => checkAlluxioMounted(relation.sparkSession, matched))
             }
           }
+
+          val parameters: Map[String, String] = relation.options
+
+          // infer PartitionSpec
+          val partitionSpec = GpuPartitioningUtils.inferPartitioning(
+            relation.sparkSession,
+            rootPaths,
+            inputFiles,
+            parameters,
+            Option(relation.dataSchema),
+            replaceFunc.get)
+
+          // generate a new InMemoryFileIndex holding paths with alluxio schema
+          new InMemoryFileIndex(
+            relation.sparkSession,
+            inputFiles,
+            parameters,
+            Option(relation.dataSchema),
+            userSpecifiedPartitionSpec = Some(partitionSpec))
         }
-
-        val parameters: Map[String, String] = relation.options
-
-        // infer PartitionSpec
-        val partitionSpec = GpuPartitioningUtils.inferPartitioning(
-          relation.sparkSession,
-          rootPaths,
-          inputFiles,
-          parameters,
-          Option(relation.dataSchema),
-          replaceFunc.get)
-
-        // generate a new InMemoryFileIndex holding paths with alluxio schema
-        new InMemoryFileIndex(
-          relation.sparkSession,
-          inputFiles,
-          parameters,
-          Option(relation.dataSchema),
-          userSpecifiedPartitionSpec = Some(partitionSpec))
       }
     } else {
       relation.location
