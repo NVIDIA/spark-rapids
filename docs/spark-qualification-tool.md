@@ -6,16 +6,16 @@ nav_order: 8
 # Qualification Tool
 
 The Qualification tool analyzes Spark events generated from CPU based Spark applications to help quantify
-the expected acceleration of migrating a Spark application to GPU.
+the expected acceleration of migrating a Spark application or query to GPU.
 
 The tool first analyzes the CPU event log and determine which operators are likely to run on the GPU.
 The tool then uses estimates from historical queries and benchmarks to estimate a speed-up at an individual operator
-level to calculate how much a specific operator would accelerate on GPU for the specific application.
+level to calculate how much a specific operator would accelerate on GPU for the specific query or application.
 It calculates an _"Estimated GPU App Duration"_ by adding up the accelerated operator durations along with durations
 that could not run on GPU because they are unsupported operators or not SQL/Dataframe.
 
 This tool is intended to give the users a starting point and does not guarantee the
-applications with the highest _recommendation_ will actually be accelerated the most. Currently,
+queries or applications with the highest _recommendation_ will actually be accelerated the most. Currently,
 it reports by looking at the amount of time spent in tasks of SQL Dataframe operations.
 
 > **Disclaimer!**  
@@ -113,101 +113,105 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
        com.nvidia.spark.rapids.tool.qualification.QualificationMain [options]
        <eventlogs | eventlog directories ...>
 
-      --all                        Apply multiple event log filtering criteria
-                                   and process only logs for which all
-                                   conditions are satisfied.Example: <Filter1>
-                                   <Filter2> <Filter3> --all -> result is
-                                   <Filter1> AND <Filter2> AND <Filter3>.
-                                   Default is all=true
-      --any                        Apply multiple event log filtering criteria
-                                   and process only logs for which any condition
-                                   is satisfied.Example: <Filter1> <Filter2>
-                                   <Filter3> --any -> result is <Filter1> OR
-                                   <Filter2> OR <Filter3>
-  -a, --application-name  <arg>    Filter event logs by application name. The
-                                   string specified can be a regular expression,
-                                   substring, or exact match. For filtering
-                                   based on complement of application name, use
-                                   ~APPLICATION_NAME. i.e Select all event logs
-                                   except the ones which have application name
-                                   as the input string.
-  -f, --filter-criteria  <arg>     Filter newest or oldest N eventlogs based on
-                                   application start timestamp, unique
-                                   application name or filesystem timestamp.
-                                   Filesystem based filtering happens before any
-                                   application based filtering.For application
-                                   based filtering, the order in which filters
-                                   areapplied is: application-name,
-                                   start-app-time, filter-criteria.Application
-                                   based filter-criteria are:100-newest (for
-                                   processing newest 100 event logs based on
-                                   timestamp insidethe eventlog) i.e application
-                                   start time)  100-oldest (for processing
-                                   oldest 100 event logs based on timestamp
-                                   insidethe eventlog) i.e application start
-                                   time)  100-newest-per-app-name (select at
-                                   most 100 newest log files for each unique
-                                   application name) 100-oldest-per-app-name
-                                   (select at most 100 oldest log files for each
-                                   unique application name)Filesystem based
-                                   filter criteria are:100-newest-filesystem
-                                   (for processing newest 100 event logs based
-                                   on filesystem timestamp).
-                                   100-oldest-filesystem (for processing oldest
-                                   100 event logsbased on filesystem timestamp).
-  -h, --html-report                Default is to generate an HTML report.
-      --no-html-report             Disables generating the HTML report.
-  -m, --match-event-logs  <arg>    Filter event logs whose filenames contain the
-                                   input string. Filesystem based filtering
-                                   happens before any application based
-                                   filtering.
-  -n, --num-output-rows  <arg>     Number of output rows in the summary report.
-                                   Default is 1000.
-      --num-threads  <arg>         Number of thread to use for parallel
-                                   processing. The default is the number of
-                                   cores on host divided by 4.
-      --order  <arg>               Specify the sort order of the report. desc or
-                                   asc, desc is the default. desc (descending)
-                                   would report applications most likely to be
-                                   accelerated at the top and asc (ascending)
-                                   would show the least likely to be accelerated
-                                   at the top.
-  -o, --output-directory  <arg>    Base output directory. Default is current
-                                   directory for the default filesystem. The
-                                   final output will go into a subdirectory
-                                   called rapids_4_spark_qualification_output.
-                                   It will overwrite any existing directory with
-                                   the same name.
-  -r, --report-read-schema         Whether to output the read formats and
-                                   datatypes to the CSV file. This can be very
-                                   long. Default is false.
-      --spark-property  <arg>...   Filter applications based on certain Spark
-                                   properties that were set during launch of the
-                                   application. It can filter based on key:value
-                                   pair or just based on keys. Multiple configs
-                                   can be provided where the filtering is done
-                                   if any of theconfig is present in the
-                                   eventlog. filter on specific configuration:
-                                   --spark-property=spark.eventLog.enabled:truefilter
-                                   all eventlogs which has config:
-                                   --spark-property=spark.driver.portMultiple
-                                   configs:
-                                   --spark-property=spark.eventLog.enabled:true
-                                   --spark-property=spark.driver.port
-  -s, --start-app-time  <arg>      Filter event logs whose application start
-                                   occurred within the past specified time
-                                   period. Valid time periods are
-                                   min(minute),h(hours),d(days),w(weeks),m(months).
-                                   If a period is not specified it defaults to
-                                   days.
-  -t, --timeout  <arg>             Maximum time in seconds to wait for the event
-                                   logs to be processed. Default is 24 hours
-                                   (86400 seconds) and must be greater than 3
-                                   seconds. If it times out, it will report what
-                                   it was able to process up until the timeout.
-  -u, --user-name  <arg>           Applications which a particular user has
-                                   submitted.
-      --help                       Show help message
+      --all                          Apply multiple event log filtering criteria
+                                     and process only logs for which all
+                                     conditions are satisfied.Example: <Filter1>
+                                     <Filter2> <Filter3> --all -> result is
+                                     <Filter1> AND <Filter2> AND <Filter3>.
+                                     Default is all=true
+      --any                          Apply multiple event log filtering criteria
+                                     and process only logs for which any condition
+                                     is satisfied.Example: <Filter1> <Filter2>
+                                     <Filter3> --any -> result is <Filter1> OR
+                                     <Filter2> OR <Filter3>
+  -a, --application-name  <arg>      Filter event logs by application name. The
+                                     string specified can be a regular expression,
+                                     substring, or exact match. For filtering
+                                     based on complement of application name, use
+                                     ~APPLICATION_NAME. i.e Select all event logs
+                                     except the ones which have application name
+                                     as the input string.
+  -f, --filter-criteria  <arg>       Filter newest or oldest N eventlogs based on
+                                     application start timestamp, unique
+                                     application name or filesystem timestamp.
+                                     Filesystem based filtering happens before any
+                                     application based filtering.For application
+                                     based filtering, the order in which filters
+                                     areapplied is: application-name,
+                                     start-app-time, filter-criteria.Application
+                                     based filter-criteria are:100-newest (for
+                                     processing newest 100 event logs based on
+                                     timestamp insidethe eventlog) i.e application
+                                     start time)  100-oldest (for processing
+                                     oldest 100 event logs based on timestamp
+                                     insidethe eventlog) i.e application start
+                                     time)  100-newest-per-app-name (select at
+                                     most 100 newest log files for each unique
+                                     application name) 100-oldest-per-app-name
+                                     (select at most 100 oldest log files for each
+                                     unique application name)Filesystem based
+                                     filter criteria are:100-newest-filesystem
+                                     (for processing newest 100 event logs based
+                                     on filesystem timestamp).
+                                     100-oldest-filesystem (for processing oldest
+                                     100 event logsbased on filesystem timestamp).
+  -h, --html-report                  Default is to generate an HTML report.
+      --no-html-report               Disables generating the HTML report.
+  -m, --match-event-logs  <arg>      Filter event logs whose filenames contain the
+                                     input string. Filesystem based filtering
+                                     happens before any application based
+                                     filtering.
+      --max-sql-desc-length  <arg>   Maximum length of the SQL description
+                                     string output with the per sql output.
+                                     Default is 100.
+  -n, --num-output-rows  <arg>       Number of output rows in the summary report.
+                                     Default is 1000.
+      --num-threads  <arg>           Number of thread to use for parallel
+                                     processing. The default is the number of
+                                     cores on host divided by 4.
+      --order  <arg>                 Specify the sort order of the report. desc or
+                                     asc, desc is the default. desc (descending)
+                                     would report applications most likely to be
+                                     accelerated at the top and asc (ascending)
+                                     would show the least likely to be accelerated
+                                     at the top.
+  -o, --output-directory  <arg>      Base output directory. Default is current
+                                     directory for the default filesystem. The
+                                     final output will go into a subdirectory
+                                     called rapids_4_spark_qualification_output.
+                                     It will overwrite any existing directory with
+                                     the same name.
+  -p, --per-sql                      Report at the individual SQL query level.
+  -r, --report-read-schema           Whether to output the read formats and
+                                     datatypes to the CSV file. This can be very
+                                     long. Default is false.
+      --spark-property  <arg>...     Filter applications based on certain Spark
+                                     properties that were set during launch of the
+                                     application. It can filter based on key:value
+                                     pair or just based on keys. Multiple configs
+                                     can be provided where the filtering is done
+                                     if any of theconfig is present in the
+                                     eventlog. filter on specific configuration:
+                                     --spark-property=spark.eventLog.enabled:truefilter
+                                     all eventlogs which has config:
+                                     --spark-property=spark.driver.portMultiple
+                                     configs:
+                                     --spark-property=spark.eventLog.enabled:true
+                                     --spark-property=spark.driver.port
+  -s, --start-app-time  <arg>        Filter event logs whose application start
+                                     occurred within the past specified time
+                                     period. Valid time periods are
+                                     min(minute),h(hours),d(days),w(weeks),m(months).
+                                     If a period is not specified it defaults to
+                                     days.
+  -t, --timeout  <arg>               Maximum time in seconds to wait for the event
+                                     logs to be processed. Default is 24 hours
+                                     (86400 seconds) and must be greater than 3
+                                     seconds. If it times out, it will report what
+                                     it was able to process up until the timeout.
+  -u, --user-name  <arg>             Applications which a particular user has
+                                     submitted.
+      --help                         Show help message
 
  trailing arguments:
   eventlog (required)   Event log filenames(space separated) or directories
@@ -265,6 +269,8 @@ The tree structure of the output directory `${OUTPUT_FOLDER}/rapids_4_spark_qual
     rapids_4_spark_qualification_output
     ├── rapids_4_spark_qualification_output.csv
     ├── rapids_4_spark_qualification_output.log
+    ├── rapids_4_spark_qualification_output_persql.log
+    ├── rapids_4_spark_qualification_output_persql.csv
     ├── rapids_4_spark_qualification_output_execs.csv
     ├── rapids_4_spark_qualification_output_stages.csv
     └── ui
@@ -303,7 +309,8 @@ to [Understanding the Qualification tool output](#understanding-the-qualificatio
 
 ### Modify your application code to call the api's
 
-Currently only Scala api's are supported.
+Currently only Scala api's are supported. Note this does not support reporting at the per sql level currently. This can be done
+manually by just wrapping and reporting around those queries instead of the entire application.
 
 Create the `RunningQualicationApp`:
 ```
@@ -378,7 +385,7 @@ $SPARK_HOME/bin/spark-shell --jars rapids-4-spark-tools_2.12-<version>.jar
 ## Understanding the Qualification tool output
 
 For each processed Spark application, the Qualification tool generates two main fields to help quantify the expected
-acceleration of migrating a Spark application to GPU.
+acceleration of migrating a Spark application or query to GPU.
 
 1. `Estimated GPU Duration`: predicted runtime of the app if it was run on GPU. It is the sum add of the accelerated
    operator durations along with durations that could not run on GPU because they are unsupported operators or not SQL/Dataframe.
@@ -386,7 +393,7 @@ acceleration of migrating a Spark application to GPU.
    estimated GPU duration. That will estimate how much faster the application would run on GPU.
 
 The lower the estimated GPU duration, the higher the "_Estimated Speed-up_".
-The processed applications are ranked by the "_Estimated Speed-up_". Based on how high the speed-up factor,
+The processed applications or queries are ranked by the "_Estimated Speed-up_". Based on how high the speed-up factor,
 the tool classifies the applications into the following different categories:
 
 - `Strongly Recommended`
@@ -394,7 +401,7 @@ the tool classifies the applications into the following different categories:
 - `Not Recommended`
 - `Not Applicable`: indicates that the app has job or stage failures.
 
-As mentioned before, the tool does not guarantee the applications with the highest _recommendation_ will actually be
+As mentioned before, the tool does not guarantee the applications or queries with the highest _recommendation_ will actually be
 accelerated the most. Please refer to [Supported Operators](./supported_ops.md) section.
 
 In addition to the _recommendation_, the Qualification tool reports a set of metrics in tasks of SQL Dataframe operations
@@ -402,6 +409,8 @@ within the scope of: "_Entire App_"; "_Stages_"; and "_Execs_". The report is di
 of each level are described in details in the following sections: [Detailed App Report](#detailed-app-report),
 [Stages report](#stages-report), and [Execs report](#execs-report). Then we describe the output formats and their file
 locations in [Output Formats](#output-formats) section.
+
+There is an option to print a report at the SQL query level in addition to the application level.
 
 ### Detailed App report
 
@@ -453,7 +462,7 @@ The report represents the entire app execution, including unsupported operators 
 **Note:** the Qualification tool won't catch all UDFs, and some of the UDFs can be handled with additional steps.
 Please refer to [Supported Operators](./supported_ops.md) for more details on UDF.
 
-By default, the applications are sorted in descending order by the following fields:
+By default, the applications and queries are sorted in descending order by the following fields:
 - _Recommendation_;
 - _Estimated GPU Speed-up_;
 - _Estimated GPU Time Saved_; and
@@ -520,7 +529,7 @@ By default, all tables show 20 entries per page, which can be changed by selecti
 
 The following sections describe the HTML views.
 
-#### Recommendations Summary
+#### Application Recommendations Summary
 
 `index.html` shows the summary of the estimated GPU performance. The "_GPU Recommendations Table_"
 lists the processed applications ranked by the "_Estimated GPU Speed-up_" along with the ability to search, and filter
@@ -617,7 +626,7 @@ The Qualification tool generates a set of log/CSV files in the output folder
 `${OUTPUT_FOLDER}/rapids_4_spark_qualification_output`. The content of each
 file is summarized in the following two sections.
 
-#### Report Summary
+#### Application Report Summary
 
 The Qualification tool generates a brief summary that includes the projected application's performance
 if the application is run on the GPU. Beside sending the summary to `STDOUT`, the Qualification tool
@@ -647,6 +656,32 @@ In the above example, two application event logs were analyzed. “app-ID-01-01�
 because `Estimated GPU Speedup` is ~3.27. On the other hand, the estimated acceleration running
 “app-ID-02-01” on the GPU is not high enough; hence the app is not recommended.
 
+#### Per SQL Query Report Summary
+
+The Qualification tool has an option to generate a report at the per SQL query level. It generates a brief summary
+that includes the projected queries performance if the query is run on the GPU. Beside sending the summary to `STDOUT`,
+the Qualification tool generates _text_ as `rapids_4_spark_qualification_output_persql.log`
+
+The summary report outputs the following information: "_App Name_", "_App ID_", "_SQL ID_", "_SQL Description_", "_SQL DF duration_",
+"_GPU Opportunity_", "_Estimated GPU Duration_", "_Estimated GPU Speed-up_", "_Estimated GPU Time Saved_", and
+"_Recommendation_".
+
+Note: the duration(s) reported are in milliseconds.
+Sample output in text:
+
+```
++------------+--------------+----------+---------------+----------+-------------+-----------+-----------+-----------+--------------------+
+|  App Name  |    App ID    |  SQL ID  |      SQL      |  SQL DF  |     GPU     | Estimated | Estimated | Estimated |  Recommendation    |
+|            |              |          |  Description  | Duration | Opportunity |    GPU    |    GPU    |    GPU    |                    |
+|            |              |          |               |          |             |  Duration |  Speedup  |    Time   |                    |
+|            |              |          |               |          |             |           |           |   Saved   |                    |
++============+==============+==========+===============+==========+=============+===========+===========+===========+====================+
+| appName-01 | app-ID-01-01 |         1|        query41|       571|          571|     187.21|       3.05|     383.78|Strongly Recommended|
++------------+--------------+----------+---------------+----------+-------------+-----------+-----------+-----------+--------------------+
+| appName-02 | app-ID-02-01 |         3|        query44|      1116|            0|    1115.98|        1.0|       0.01|     Not Recommended|
++------------+--------------+----------+---------------+----------+-------------+-----------+-----------+-----------+--------------------+
+```
+
 #### Detailed App Report
 
 **1. Entire App report**
@@ -656,10 +691,25 @@ The apps are processed and ranked by the `Estimated GPU Speed-up`.
 In addition to the fields listed in the "_Report Summary_", it shows all the app fields.
 The duration(s) are reported are in milliseconds.
 
+**2. Per SQL report**
 
-**2. Stages report**
+The second file is saved as `rapids_4_spark_qualification_output_persql.csv`. This contains the
+per SQL query report in CSV format.
 
-The second file is saved as `rapids_4_spark_qualification_output_stages.csv`.
+Sample output in text:
+```
++---------------+-----------------------+------+----------------------------------------------------------+---------------+---------------+----------------------+---------------------+------------------------+--------------------+
+|       App Name|                 App ID|SQL ID|                                           SQL Description|SQL DF Duration|GPU Opportunity|Estimated GPU Duration|Estimated GPU Speedup|Estimated GPU Time Saved|      Recommendation|
++===============+=======================+======+==========================================================+===============+===============+======================+=====================+========================+====================+
+|NDS - Power Run|app-20220702220255-0008|   103|                                                   query87|          15871|          15871|               4496.03|                 3.53|                11374.96|Strongly Recommended|
+|NDS - Power Run|app-20220702220255-0008|   106|                                                   query38|          11077|          11077|               3137.96|                 3.53|                 7939.03|Strongly Recommended|
++---------------+-----------------------+------+----------------------------------------------------------+---------------+---------------+----------------------+---------------------+------------------------+--------------------+
+```
+
+
+**3. Stages report**
+
+The third file is saved as `rapids_4_spark_qualification_output_stages.csv`.
 
 Sample output in text:
 ```
@@ -673,7 +723,7 @@ Sample output in text:
 +--------------+----------+-----------------+------------+---------------+-----------+
 ```
 
-**3. Execs report**
+**4. Execs report**
 
 The last file is saved `rapids_4_spark_qualification_output_execs.csv`. Similar to the app and stage information,
 the table shows estimated GPU performance of the SQL Dataframe operations.

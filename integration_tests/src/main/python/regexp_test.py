@@ -100,7 +100,11 @@ def test_split_re_no_limit():
             'split(a, "[^o]")',
             'split(a, "[o]{1,2}")',
             'split(a, "[bf]")',
-            'split(a, "[o]")'),
+            'split(a, "[o]")',
+            'split(a, "^(boo|foo):$")',
+            'split(a, "[bf]$:")',
+            'split(a, "b^")',
+            'split(a, "^[o]")'),
             conf=_regexp_conf)
 
 def test_split_optimized_no_re():

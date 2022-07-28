@@ -59,6 +59,7 @@ class ExecInfo(
 case class PlanInfo(
     appID: String,
     sqlID: Long,
+    sqlDesc: String,
     execInfo: Seq[ExecInfo]
 )
 
@@ -68,6 +69,7 @@ object SQLPlanParser extends Logging {
       appID: String,
       planInfo: SparkPlanInfo,
       sqlID: Long,
+      sqlDesc: String,
       checker: PluginTypeChecker,
       app: AppBase): PlanInfo = {
     val planGraph = SparkPlanGraph(planInfo)
@@ -76,7 +78,7 @@ object SQLPlanParser extends Logging {
     val execInfos = planGraph.nodes.flatMap { node =>
       parsePlanNode(node, sqlID, checker, app)
     }
-    PlanInfo(appID, sqlID, execInfos)
+    PlanInfo(appID, sqlID, sqlDesc, execInfos)
   }
 
   def getStagesInSQLNode(node: SparkPlanGraphNode, app: AppBase): Set[Int] = {
@@ -312,6 +314,41 @@ object SQLPlanParser extends Logging {
           case Some(func) => parsedExpressions += func
           case _ => // NO OP
         }
+      }
+    }
+    parsedExpressions.distinct.toArray
+  }
+
+  def parseWindowExpressions(exprStr:String): Array[String] = {
+    val parsedExpressions = ArrayBuffer[String]()
+    // [sum(cast(level#30 as bigint)) windowspecdefinition(device#29, id#28 ASC NULLS FIRST,
+    // specifiedwindowframe(RangeFrame, unboundedpreceding$(), currentrow$())) AS sum#35L,
+    // row_number() windowspecdefinition(device#29, id#28 ASC NULLS FIRST, specifiedwindowframe
+    // (RowFrame, unboundedpreceding$(), currentrow$())) AS row_number#41], [device#29],
+    // [id#28 ASC NULLS FIRST]
+
+    // This splits the string to get only the expressions in WindowExec. So we first split the
+    // string on closing bracket ] and get the first element from the array. This is followed
+    // by removing the first and last parenthesis and removing the cast as it is not an expr.
+    // Lastly we split the string by keyword windowsspecdefinition so that each array element
+    // except the last element contains one window aggregate function.
+    // sum(level#30 as bigint))
+    // (device#29, id#28 ASC NULLS FIRST, .....  AS sum#35L, row_number()
+    // (device#29, id#28 ASC NULLS FIRST, ......  AS row_number#41
+    val windowExprs = exprStr.split("(?<=\\])")(0).
+        trim.replaceAll("""^\[+""", "").replaceAll("""\]+$""", "").
+        replaceAll("cast\\(", "").split("windowspecdefinition").map(_.trim)
+    val functionPattern = """(\w+)\(""".r
+
+    // Get functionname from each array element except the last one as it doesn't contain
+    // any window function
+    for ( i <- 0 to windowExprs.size - 1 ) {
+      val windowFunc = functionPattern.findAllIn(windowExprs(i)).toList
+      val expr = windowFunc(windowFunc.size -1)
+      val functionName = getFunctionName(functionPattern, expr)
+      functionName match {
+        case Some(func) => parsedExpressions += func
+        case _ => // NO OP
       }
     }
     parsedExpressions.distinct.toArray

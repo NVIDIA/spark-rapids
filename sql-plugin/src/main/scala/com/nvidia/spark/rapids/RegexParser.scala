@@ -959,8 +959,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           terminatorChars ++= lineTerminatorChars.map(RegexChar)
           RegexCharacterClass(negated = true, terminatorChars)
         case '$' if mode == RegexSplitMode =>
-          throw new RegexUnsupportedException(
-            "Line anchor $ is not supported in split", regex.position)
+          RegexEscaped('Z')
         case '$' =>
           // in the case of the line anchor $, the JVM has special conditions when handling line 
           // terminators in and around the anchor
@@ -1013,8 +1012,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
                 RegexChar('$')))
           }
         case '^' if mode == RegexSplitMode =>
-          throw new RegexUnsupportedException("Line anchor ^ is not supported in split mode",
-            regex.position)
+          RegexEscaped('A')
         case '\r' | '\n' if mode == RegexFindMode =>
           previous match {
             case Some(RegexChar('$')) =>
@@ -1088,15 +1086,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
             case _ =>
               RegexEscaped(ch)
           }
-        case 'A' if mode == RegexSplitMode =>
-          throw new RegexUnsupportedException(
-            "String anchor \\A is not supported in split mode", regex.position)
-        case 'Z' if mode == RegexSplitMode =>
-          throw new RegexUnsupportedException(
-            "String anchor \\Z is not supported in split or replace mode", regex.position)
         case 'z' if mode == RegexSplitMode =>
-          throw new RegexUnsupportedException(
-            "String anchor \\z is not supported in split mode", regex.position)
+          RegexEscaped('Z')
         case 'z' =>
           // cuDF does not support "\z" but supports "$", which is equivalent
           RegexChar('$')
@@ -1520,6 +1511,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     case RegexRepetition(term, _) => isBeginOrEndLineAnchor(term)
     case RegexChar(ch) => ch == '^' || ch == '$'
     case RegexEscaped(ch) if "zZ".contains(ch) => true // \z gets translated to $
+    case RegexEscaped(ch) if 'A' == ch && mode == RegexSplitMode => true 
     case _ => false
   }
 
