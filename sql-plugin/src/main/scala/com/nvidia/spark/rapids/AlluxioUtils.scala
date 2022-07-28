@@ -301,7 +301,7 @@ object AlluxioUtils extends Logging {
           spec: PartitionSpec,
           rootPaths: Seq[Path]): InMemoryFileIndex = {
         val specAdjusted = replacePathsInPartitionSpec(spec)
-        val replacedPaths = rootPaths.map(p => replaceFunc.get(p))
+        val replacedPaths = rootPaths.map(replaceFunc.get)
         new InMemoryFileIndex(
           relation.sparkSession,
           replacedPaths,
