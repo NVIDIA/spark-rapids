@@ -67,7 +67,8 @@ object ConfHelper {
   }
 
   def stringToSeq(str: String): Seq[String] = {
-    str.split(",").map(_.trim()).filter(_.nonEmpty)
+    // Here 'split' returns a mutable array, 'toList' will convert it into a immutable list
+    str.split(",").map(_.trim()).filter(_.nonEmpty).toList
   }
 
   def stringToSeq[T](str: String, converter: String => T): Seq[T] = {
