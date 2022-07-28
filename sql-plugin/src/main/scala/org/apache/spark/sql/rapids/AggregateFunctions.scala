@@ -343,6 +343,10 @@ class CudfMax(override val dataType: DataType) extends CudfAggregate with Arm {
   override val name: String = "CudfMax"
 }
 
+object CudfAny {
+  def apply(): CudfAggregate = new CudfMax(BooleanType)
+}
+
 class CudfMin(override val dataType: DataType) extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => col.min
@@ -516,8 +520,7 @@ case class GpuMin(child: Expression) extends GpuAggregateFunction
 object GpuMax {
   def apply(child: Expression): GpuMax = {
     child.dataType match {
-      case FloatType | DoubleType =>
-        GpuFloatMax(child)
+      case FloatType | DoubleType => GpuFloatMax(child)
       case _ => GpuBasicMax(child)
     }
   }
@@ -582,66 +585,40 @@ case class GpuBasicMax(child: Expression) extends GpuMax(child)
 /** Max aggregation for FloatType and DoubleType to handle `NaN`s */
 case class GpuFloatMax(child: Expression) extends GpuMax(child) 
     with GpuReplaceWindowFunction{
-  override lazy val inputProjection: Seq[Expression] = child.dataType match {
-    case FloatType | DoubleType => Seq(child, GpuIsNan(child))
-    case _ => Seq(child)
-  }
 
-  protected lazy val updateIsNan = new CudfMax(BooleanType)
+  override val dataType: DataType = child.dataType match {
+    case FloatType | DoubleType => child.dataType
+    case t => throw new IllegalStateException(s"child type $t is not FloatType or DoubleType")
+  }
+  protected val nan: Any = child.dataType match {
+      case FloatType => Float.NaN
+      case DoubleType => Double.NaN
+      case t => throw new IllegalStateException(s"child type $t is not FloatType or DoubleType")
+  }
+  override lazy val inputProjection: Seq[Expression] = Seq(child, GpuIsNan(child))
+  protected lazy val updateIsNan = CudfAny()
   protected lazy val updateMaxVal = new CudfMax(dataType)
-  override lazy val updateAggregates: Seq[CudfAggregate] = child.dataType match {
-    case FloatType | DoubleType => Seq(updateMaxVal, updateIsNan)
-    case _ => Seq(updateMaxVal)
-  }
-
-  override lazy val postUpdate: Seq[Expression] = child.dataType match {
-    case FloatType => Seq(
-      GpuIf(updateIsNan.attr, GpuLiteral(Float.NaN, FloatType), updateMaxVal.attr)
+  override lazy val updateAggregates: Seq[CudfAggregate] = Seq(updateMaxVal, updateIsNan)
+  override lazy val postUpdate: Seq[Expression] = 
+    Seq(
+      GpuIf(updateIsNan.attr, GpuLiteral(nan, child.dataType), updateMaxVal.attr)
     )
-    case DoubleType => Seq(
-      GpuIf(updateIsNan.attr, GpuLiteral(Double.NaN, DoubleType), updateMaxVal.attr)
-    )
-    case _ => postUpdateAttr
-  }
 
-  override lazy val preMerge: Seq[Expression] = child.dataType match {
-    case FloatType | DoubleType => Seq(evaluateExpression, GpuIsNan(evaluateExpression))
-    case _ => aggBufferAttributes
-  } 
-  protected lazy val mergeIsNan = new CudfMax(BooleanType)
+  override lazy val preMerge: Seq[Expression] = 
+    Seq(evaluateExpression, GpuIsNan(evaluateExpression))
+  protected lazy val mergeIsNan = CudfAny()
   protected lazy val mergeMaxVal = new CudfMax(dataType)
-  override lazy val mergeAggregates: Seq[CudfAggregate] = child.dataType match {
-    case FloatType | DoubleType => Seq(mergeMaxVal,  mergeIsNan)
-    case _ => Seq(mergeMaxVal)
-  }
-
-  override lazy val postMerge: Seq[Expression] = child.dataType match {
-    case FloatType => Seq(
-      GpuIf(mergeIsNan.attr, GpuLiteral(Float.NaN, FloatType), mergeMaxVal.attr)
+  override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(mergeMaxVal,  mergeIsNan)
+  override lazy val postMerge: Seq[Expression] =
+    Seq(
+      GpuIf(mergeIsNan.attr, GpuLiteral(nan, child.dataType), mergeMaxVal.attr)
     )
-    case DoubleType => Seq(
-      GpuIf(mergeIsNan.attr, GpuLiteral(Double.NaN, DoubleType), mergeMaxVal.attr)
-    )
-    case _ => postMergeAttr
-  }
 
-  override def shouldReplaceWindow(spec: GpuWindowSpecDefinition): Boolean =  child.dataType match {
-    case DoubleType | FloatType => true
-    case _ => false
-  }
-
-  override def windowReplacement(spec: GpuWindowSpecDefinition): Expression = child.dataType match {
-    case DoubleType => {
-        val isNan = GpuWindowExpression(GpuBasicMax(GpuIsNan(child)), spec)
-        val max = GpuWindowExpression(GpuBasicMax(child), spec)
-        GpuIf(isNan, GpuLiteral(Double.NaN), max)
-      }
-    case FloatType => {
-        val isNan = GpuWindowExpression(GpuBasicMax(GpuIsNan(child)), spec)
-        val max = GpuWindowExpression(GpuBasicMax(child), spec)
-        GpuIf(isNan, GpuLiteral(Float.NaN), max)
-      }
-    case _ => GpuWindowExpression(GpuBasicMax(child), spec)
+  override def shouldReplaceWindow(spec: GpuWindowSpecDefinition): Boolean =  true
+  override def windowReplacement(spec: GpuWindowSpecDefinition): Expression = {
+    val isNan = GpuWindowExpression(GpuBasicMax(GpuIsNan(child)), spec)
+    val max = GpuWindowExpression(GpuBasicMax(child), spec)
+    GpuIf(isNan, GpuLiteral(nan), max)
   }
 }
 
