@@ -617,13 +617,12 @@ def test_float_max_reduction_with_nan(data_gen):
         lambda spark: unary_op_df(spark, data_gen).selectExpr('max(a)'))
 
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', [float_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
 def test_float_max_group_by_with_nan(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: two_col_df(spark, byte_gen, data_gen, length=100)
+        lambda spark: two_col_df(spark, byte_gen, data_gen)
             .groupby('a')
             .agg(f.max('b')))
-
 
 # to avoid ordering issues with collect_list we do it all in a single task
 @ignore_order(local=True)

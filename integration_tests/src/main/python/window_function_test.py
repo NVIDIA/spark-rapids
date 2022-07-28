@@ -139,6 +139,14 @@ all_basic_gens_no_nans = [byte_gen, short_gen, int_gen, long_gen,
         FloatGen(no_nans=True, special_cases=[]), DoubleGen(no_nans=True, special_cases=[]),
         string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
+def test_float_window_max_with_nan(data_gen):
+  w = Window().partitionBy('a')
+  assert_gpu_and_cpu_are_equal_collect(
+      lambda spark: two_col_df(spark, byte_gen, data_gen)
+          .withColumn("max_b", f.max('a').over(w)))
+
 @ignore_order
 @pytest.mark.parametrize('data_gen', [decimal_gen_128bit], ids=idfn)
 def test_decimal128_count_window(data_gen):
