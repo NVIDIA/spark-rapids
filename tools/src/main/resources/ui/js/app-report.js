@@ -70,9 +70,11 @@ function getAppReportPageHeaderTemplate() {
                xmlns="http://www.w3.org/2000/svg">
             <path d="M8 6.5V10M8 11.0001V12.0001M8 2L14.5 13.4983H1.5L8 2Z" stroke="black"/>
           </svg>
-          <strong>Disclaimer!</strong><ul>
-          <li>Estimates provided by the Qualification tool are based on the currently supported "<em>SparkPlan</em>" or "<em>Executor Nodes</em>" used in the application. It currently does not look at the expressions or datatypes used.</li>
-          <li>Please refer to the <a href="https://nvidia.github.io/spark-rapids/docs/supported_ops.html">Supported Operators</a> guide to check the types and expressions you are using are supported.</li></ul>
+          <strong>Disclaimer!</strong>
+          <ul>
+            <li>Estimates provided by the Qualification tool are based on the currently supported "<em>SparkPlan</em>" or "<em>Executor Nodes</em>" used in the application. It currently does not handle all the expressions or datatypes used.</li>
+            <li>Please refer to <a href="https://nvidia.github.io/spark-rapids/docs/spark-qualification-tool.html#execs-report">Understanding Execs report</a> section and the <a href="https://nvidia.github.io/spark-rapids/docs/supported_ops.html">Supported Operators</a> guide to check the types and expressions you are using are supported.</li>
+          </ul>
           <button type="button" class="close" data-dismiss="alert" aria-label="Close">
             <span aria-hidden="true">&times;</span>
           </button>
