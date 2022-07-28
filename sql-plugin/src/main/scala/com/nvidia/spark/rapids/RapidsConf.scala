@@ -67,7 +67,8 @@ object ConfHelper {
   }
 
   def stringToSeq(str: String): Seq[String] = {
-    str.split(",").map(_.trim()).filter(_.nonEmpty)
+    // Here 'split' returns a mutable array, 'toList' will convert it into a immutable list
+    str.split(",").map(_.trim()).filter(_.nonEmpty).toList
   }
 
   def stringToSeq[T](str: String, converter: String => T): Seq[T] = {
@@ -225,8 +226,11 @@ class TypedConfBuilder[T](
   }
 
   def createWithDefault(value: T): ConfEntryWithDefault[T] = {
+    // 'converter' will check the validity of default 'value', if it's not valid,
+    // then 'converter' will throw an exception
+    val transformedValue = converter(stringConverter(value))
     val ret = new ConfEntryWithDefault[T](parent.key, converter,
-      parent.doc, parent.isInternal, value)
+      parent.doc, parent.isInternal, transformedValue)
     parent.register(ret)
     ret
   }
