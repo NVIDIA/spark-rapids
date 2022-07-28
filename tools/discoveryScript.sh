@@ -2,7 +2,13 @@
 
 OS=$(uname -s)
 
-if [ -z "$1" ]; then
+if [ -n "$1" ]; then
+  NUM_WORKERS_STR="num_workers: $1"
+else
+  NUM_WORKERS_STR=""
+fi
+
+if [ -z "$2" ]; then
   OUTFILE=/tmp/system_props.yaml
 else
   OUTFILE=$1
@@ -19,6 +25,7 @@ function get_linux_properties() {
   local memInKb_=$(cat /proc/meminfo | grep MemTotal)
   local memInKb="$(echo $memInKb_ | cut -d' ' -f2)"
   memInGb=$((memInKb / (1024 * 1024)))
+  memInGb="${memInGb}gb"
 
   local numCores_=$(lscpu | grep "CPU(s)")
   numCores="$(echo $numCores_ | cut -d' ' -f2)"
@@ -30,6 +37,8 @@ function get_linux_properties() {
 function get_macos_properties() {
   local memInB=$(sysctl -n hw.memsize)
   memInGb=$((memInB / (1024 * 1024 * 1024)))
+  memInGb="${memInGb}gb"
+
   numCores=$(sysctl -n hw.ncpu)
   cpuArch=$(arch)
 
@@ -54,11 +63,13 @@ function get_gpu_properties() {
   gpuName=${gpuInfoArr[1]}
   local gpuMemoryInMb="$(echo ${gpuInfoArr[2]} | cut -d' ' -f1)"
   gpuMemoryInGb=$((gpuMemoryInMb / 1024))
+  gpuMemoryInGb="${gpuMemoryInGb}gb"
 }
 
 function get_disk_space() {
   local freeDiskSpaceInKb=$(df -Pk . | sed 1d | grep -v used | awk '{ print $4 "\t" }')
   freeDiskSpaceInGb=$((freeDiskSpaceInKb / (1024 * 1024)))
+  freeDiskSpaceInGb="${freeDiskSpaceInGb}gb"
 }
 
 function read_system_properties() {
@@ -78,12 +89,13 @@ function write_system_properties() {
 system:
   num_cores: $numCores
   cpu_arch: $cpuArch
-  memory_gb: $memInGb
-  free_disk_space_gb: $freeDiskSpaceInGb
+  memory: $memInGb
+  free_disk_space: $freeDiskSpaceInGb
   time_zone: $timeZone
+  $NUM_WORKERS_STR
 gpu:
   count: $gpuCount
-  memory_gb: $gpuMemoryInGb
+  memory: $gpuMemoryInMb
   name: $gpuName
 EOF
 
