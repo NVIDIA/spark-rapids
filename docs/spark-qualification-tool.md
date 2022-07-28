@@ -286,7 +286,7 @@ The tree structure of the output directory `${OUTPUT_FOLDER}/rapids_4_spark_qual
         │   ├── application.html
         │   ├── index.html
         │   ├── raw.html
-        │   └── sql-recommendnation.html
+        │   └── sql-recommendation.html
         └── js
             ├── app-report.js
             ├── data-output.js

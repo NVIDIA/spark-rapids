@@ -124,6 +124,11 @@ let toolTipsValues = {
           "Speed-up factor estimated for the app. Calculated as (<sup>SQL Duration</sup>&frasl;<sub>GPU Estimated Duration</sub>)",
         "Estimated GPU Duration": "Predicted runtime of the SQL if it was run on GPU",
         "Estimated GPU Time Saved": "Estimated Wall-Clock time saved if it was run on the GPU",
+        "SQL DF Duration": "Wall-Clock time duration of the query.",
+        "App ID": "An application is referenced by its application ID, \<em\>app-id\<\/em\>. " +
+          "\<br\> When running on YARN, each application may have multiple attempts, but there are " +
+          "attempt IDs only for applications in cluster mode, not applications in client mode. " +
+          "Applications in YARN cluster mode can be identified by their \<em\>attempt-id\<\/em\>.",
     },
 }
 

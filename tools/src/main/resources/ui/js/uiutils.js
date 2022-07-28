@@ -1363,7 +1363,6 @@ function createAppDetailsSQLsTableConf(
     }],
     initComplete: function(settings, json) {
       // Add custom Tool Tip to the headers of the table
-      // Add custom Tool Tip to the headers of the table
       let thLabel = extraFunctionArgs.tableDivId + ' thead th';
       let dataTableToolTip = toolTipsValues[appSQLsDetailsCustomParams.toolTipID];
       $(thLabel).each(function () {
@@ -1502,5 +1501,34 @@ function setupNavigation() {
 
   $(".menu-toggle").click(function () {
     $(".dash").toggleClass("dash-compact");
+  });
+}
+
+function setupToolTipForTableCells() {
+  // Set the tootTips for the table header.
+  $('thead th[title]').tooltip({
+    container: 'body', "html": true
+  });
+
+  // Set tooltips for the three tables.
+  // Note that we should always use method-2
+  //
+  // method-1:
+  //           using datatables. This method has limitations because datatable removes nodes from
+  //           the DOM, therefore events applied with a static event listener might not be able to
+  //           bind themselves to all nodes in the table.
+  // $('#app-execs-details-data-container [data-toggle="tooltip"]').tooltip({
+  //   container: 'body',
+  //   html: true,
+  //   animation: true,
+  //   placement:"bottom",});
+  //
+  // method-2:
+  //          Using jQuery delegated event listener options which overcomes the limitations in method-1
+  $('tbody').on('mouseover', 'td', function () {
+    $('[data-toggle="tooltip"]').tooltip({
+      trigger: 'hover',
+      html: true
+    });
   });
 }

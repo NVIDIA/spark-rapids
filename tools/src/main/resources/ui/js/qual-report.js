@@ -211,7 +211,6 @@ function createGPURecommendationTableConf(
     dom: initGpuRecommendationCustomConf.Dom,
     initComplete: function(settings, json) {
       // Add custom Tool Tip to the headers of the table
-      // Add custom Tool Tip to the headers of the table
       let thLabel = extraFunctionArgs.tableDivId + ' thead th';
       let dataTableToolTip = toolTipsValues[initGpuRecommendationCustomConf.toolTipID];
       $(thLabel).each(function () {
@@ -446,17 +445,6 @@ $(document).ready(function(){
   let text = Mustache.render(getGlobalStatisticsTemplate(), qualReportSummary);
   $("#qual-report-summary").html(jQuery.parseHTML(text, false));
 
-  //
-  // Set tooltips for the datatables using jQuery delegated event listener options.
-  // Note that we should always use Note that we should always use jQuery delegated event listener
-  // options as documented in app-report.js
-  //
-  $('#gpu-recommendation-table tbody').on('mouseover', 'td, th', function () {
-    $('[data-toggle="tooltip"]').tooltip({
-      trigger: 'hover',
-      html: true
-    });
-  });
-
+  setupToolTipForTableCells();
   setupNavigation();
 });
