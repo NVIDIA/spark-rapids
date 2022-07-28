@@ -39,7 +39,7 @@ g4dn.2xlarge nodes:
 
 ```
 aws emr create-cluster \
---release-label emr-6.6.0 \
+--release-label emr-6.7.0 \
 --applications Name=Hadoop Name=Spark Name=Livy Name=JupyterEnterpriseGateway \
 --service-role EMR_DefaultRole \
 --ec2-attributes KeyName=my-key-pair,InstanceProfile=EMR_EC2_DefaultRole \
