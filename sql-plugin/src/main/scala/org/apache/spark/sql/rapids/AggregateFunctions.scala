@@ -599,8 +599,12 @@ case class GpuFloatMax(child: Expression) extends GpuMax(child)
   }
 
   override lazy val postUpdate: Seq[Expression] = child.dataType match {
-    case FloatType => Seq(GpuIf(updateIsNan.attr, GpuLiteral(Float.NaN, FloatType), updateMaxVal.attr))
-    case DoubleType => Seq(GpuIf(updateIsNan.attr, GpuLiteral(Double.NaN, DoubleType), updateMaxVal.attr))
+    case FloatType => Seq(
+      GpuIf(updateIsNan.attr, GpuLiteral(Float.NaN, FloatType), updateMaxVal.attr)
+    )
+    case DoubleType => Seq(
+      GpuIf(updateIsNan.attr, GpuLiteral(Double.NaN, DoubleType), updateMaxVal.attr)
+    )
     case _ => postUpdateAttr
   }
 
@@ -616,8 +620,12 @@ case class GpuFloatMax(child: Expression) extends GpuMax(child)
   }
 
   override lazy val postMerge: Seq[Expression] = child.dataType match {
-    case FloatType => Seq(GpuIf(mergeIsNan.attr, GpuLiteral(Float.NaN, FloatType), mergeMaxVal.attr))
-    case DoubleType => Seq(GpuIf(mergeIsNan.attr, GpuLiteral(Double.NaN, DoubleType), mergeMaxVal.attr))
+    case FloatType => Seq(
+      GpuIf(mergeIsNan.attr, GpuLiteral(Float.NaN, FloatType), mergeMaxVal.attr)
+    )
+    case DoubleType => Seq(
+      GpuIf(mergeIsNan.attr, GpuLiteral(Double.NaN, DoubleType), mergeMaxVal.attr)
+    )
     case _ => postMergeAttr
   }
 
