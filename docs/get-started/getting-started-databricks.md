@@ -169,7 +169,7 @@ cluster.
 8. Once the cluster comes back up, it is now enabled for GPU-accelerated Spark.
 
 ## Import the GPU Mortgage Example Notebook
-Import the example [notebook](../demo/gpu-mortgage_accelerated.ipynb) from the repo into your
+Import the example [notebook](../demo/Databricks/Mortgage-ETL-db.ipynb) from the repo into your
 workspace, then open the notebook.  Modify the first cell to point to your workspace, and download a
 larger dataset if needed. You can find the links to the datasets at
 [docs.rapids.ai](https://docs.rapids.ai/datasets/mortgage-data).
