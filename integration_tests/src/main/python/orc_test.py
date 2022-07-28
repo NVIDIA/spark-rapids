@@ -14,7 +14,8 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, \
+    assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -673,3 +674,12 @@ def test_orc_read_count(spark_tmp_path, orc_gens):
     with_cpu_session(lambda spark: gen_df(spark, gen_list).write.orc(data_path))
 
     assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.orc(data_path))
+
+    def do_orc_read(spark):
+        df = spark.read.orc(data_path)
+        df.createOrReplaceTempView("tab")
+        return spark.sql("SELECT COUNT(*) FROM tab")
+
+    # assert the spark plan of the equivalent SQL query contains no column in read schema
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        do_orc_read, exist_classes="ReadSchema: struct<>")

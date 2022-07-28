@@ -1156,3 +1156,12 @@ def test_parquet_read_count(spark_tmp_path):
     with_cpu_session(lambda spark: gen_df(spark, gen_list).write.parquet(data_path))
 
     assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.parquet(data_path))
+
+    def do_parquet_read(spark):
+        df = spark.read.parquet(data_path)
+        df.createOrReplaceTempView("tab")
+        return spark.sql("SELECT COUNT(*) FROM tab")
+
+    # assert the spark plan of the equivalent SQL query contains no column in read schema
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        do_parquet_read, exist_classes="ReadSchema: struct<>")
