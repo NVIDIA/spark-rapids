@@ -41,13 +41,13 @@ jobs:
       - name: package aggregator check
         run: >
           mvn package -pl aggregator -am
-            -P 'individual,pre-merge'
-            -Dbuildver=${{ spark-version }}
-            -DskipTests
-            -Dskip
-            -Dmaven.javadoc.skip
-            -Dmaven.scalastyle.skip=true
-            -Drat.skip=true
+          -P 'individual,pre-merge'
+          -Dbuildver=${{ spark-version }}
+          -DskipTests
+          -Dskip
+          -Dmaven.javadoc.skip
+          -Dmaven.scalastyle.skip=true
+          -Drat.skip=true
 
   verify-all-modules-with-spark311:
     runs-on: ubuntu-latest
@@ -62,8 +62,8 @@ jobs:
 
       # includes RAT, code style and doc-gen checks of default shim
       - name: verify all modules 311
-        run: |
+        run: >
           mvn verify -P 'individual,pre-merge'
-            -DskipTests
-            -Dskip
-            -Dmaven.javadoc.skip
+          -DskipTests
+          -Dskip
+          -Dmaven.javadoc.skip
