@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # A workflow to run mvn verify check
-name: Maven verify checks (Scala style, Compile and Doc-gen w/ base Spark version)
+name: Maven
 
 on:
   pull_request:
@@ -38,7 +38,7 @@ jobs:
           distribution: adopt
           java-version: 8
 
-      - name: mvn package check
+      - name: package aggregator check
         run: mvn package -pl aggregator -am -P 'individual,pre-merge' -DskipTests -Dskip -Dmaven.javadoc.skip -Dmaven.scalastyle.skip=true -Drat.skip=true
 
   mvn-verify-check-311:
@@ -53,5 +53,5 @@ jobs:
           java-version: 8
 
       # includes RAT, code style and doc-gen checks of default shim
-      - name: mvn verify check all 311
+      - name: verify all modules 311
         run: mvn verify -P 'individual,pre-merge' -DskipTests -Dskip -Dmaven.javadoc.skip
