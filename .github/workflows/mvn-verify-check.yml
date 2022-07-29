@@ -39,7 +39,7 @@ jobs:
           java-version: 8
 
       - name: package aggregator check
-        run: >-
+        run: >
           mvn package -pl aggregator -am
             -P 'individual,pre-merge'
             -Dbuildver=${{ spark-version }}
@@ -62,7 +62,7 @@ jobs:
 
       # includes RAT, code style and doc-gen checks of default shim
       - name: verify all modules 311
-        run: >-
+        run: |
           mvn verify -P 'individual,pre-merge'
             -DskipTests
             -Dskip
