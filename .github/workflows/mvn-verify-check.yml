@@ -46,8 +46,11 @@ jobs:
           noSnapshotVersionsStr=$(echo $noSnapshotVersionsStr)
           noSnapshotVersionsArr=($(IFS=", "; echo $noSnapshotVersionsStr))
           tailNoSnapshotVersionsArr=(${noSnapshotVersionsArr[@]:1})
+          svArrBody=$(printf ",{\"spark-version\":\"%s\"}" "${tailNoSnapshotVersionsArr[@]}")
+          svArrBody=${svArrBody:1}
+          svJsonStr=$(printf {\"include\":[%s]} $svArrBody)
           echo ::set-output name=headVersion::${noSnapshotVersionsArr[0]}
-          echo ::set-output name=tailVersions::{\"include\":[{\"v\":\"311\"}]}
+          echo ::set-output name=tailVersions::$svJsonStr
 
   package-aggregator:
     needs: get-noSnapshot-versions-from-dist
