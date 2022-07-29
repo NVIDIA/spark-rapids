@@ -24,22 +24,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  mvn-package-except-311:
-    strategy:
-      matrix:
-        spark-version: [312, 313, 320, 321, 322, 330]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2 # refs/pull/:prNumber/merge
+  # mvn-package-except-311:
+  #   strategy:
+  #     matrix:
+  #       spark-version: [312, 313, 320, 321, 322, 330]
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v2 # refs/pull/:prNumber/merge
 
-      - name: Setup Java and Maven Env
-        uses: actions/setup-java@v3
-        with:
-          distribution: adopt
-          java-version: 8
+  #     - name: Setup Java and Maven Env
+  #       uses: actions/setup-java@v3
+  #       with:
+  #         distribution: adopt
+  #         java-version: 8
 
-      - name: mvn package check
-        run: mvn package -pl aggregator -am -P 'individual,pre-merge' -DskipTests -Dskip -Dmaven.javadoc.skip -Dmaven.scalastyle.skip=true -Drat.skip=true
+  #     - name: mvn package check
+  #       run: mvn package -pl aggregator -am -P 'individual,pre-merge' -DskipTests -Dskip -Dmaven.javadoc.skip -Dmaven.scalastyle.skip=true -Drat.skip=true
   mvn-verify-check-311:
     runs-on: ubuntu-latest
     steps:
