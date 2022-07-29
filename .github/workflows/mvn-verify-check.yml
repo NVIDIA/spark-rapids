@@ -46,16 +46,13 @@ jobs:
           noSnapshotVersionsStr=$(echo $noSnapshotVersionsStr)
           noSnapshotVersionsArr=($(IFS=", "; echo $noSnapshotVersionsStr))
           tailNoSnapshotVersionsArr=(${noSnapshotVersionsArr[@]:1})
-          tailNoSnapshotVersionsCSV=$(IFS=", " ; echo "${tailNoSnapshotVersionsArr[*]}")
-          export tailNoSnapshotVersionsJSONStr=$(echo [$tailNoSnapshotVersionsCSV])
           echo ::set-output name=headVersion::${noSnapshotVersionsArr[0]}
-          echo ::set-output name=tailVersions::${{ toJSON(env.tailNoSnapshotVersionsJSONStr) }}
+          echo ::set-output name=tailVersions::{\"include\":[{\"v\":\"311\"}]}
 
   package-aggregator:
     needs: get-noSnapshot-versions-from-dist
     strategy:
-      matrix:
-        spark-version: ${{ fromJSON(needs.get-noSnapshot-versions-from-dist.outputs.sparkTailVersions) }}
+      matrix: ${{ fromJSON(needs.get-noSnapshot-versions-from-dist.outputs.sparkTailVersions) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2 # refs/pull/:prNumber/merge
