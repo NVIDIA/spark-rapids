@@ -40,7 +40,7 @@ jobs:
 
       - name: all noSnapshot versions
         id: noSnapshotVersionsStep
-        run: >
+        run: |
           set -x
           noSnapshotVersionsStr=$(mvn help:evaluate -q -pl dist
           -PnoSnapshots -Dexpression=included_buildvers -DforceStdout)
