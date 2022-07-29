@@ -54,7 +54,7 @@ jobs:
     needs: get-noSnapshot-versions-from-dist
     strategy:
       matrix:
-        spark-version: ${{ fromJson(needs.get-noSnapshot-versions-from-dist.outputs.sparkTailVersions) }}
+        spark-version: ${{ needs.get-noSnapshot-versions-from-dist.outputs.sparkTailVersions }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2 # refs/pull/:prNumber/merge
