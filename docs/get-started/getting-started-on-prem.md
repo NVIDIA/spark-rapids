@@ -194,7 +194,7 @@ multiple applications you could write your own custom discovery class to deal wi
 
 This assumes you have YARN already installed and set up. Setting up a YARN cluster is not covered
 in these instructions. Spark must have been built specifically for the Hadoop/YARN version you
-use - either 3.x or 2.x.
+use 3.x. Spark built for the Hadoop/YARN 2.x version will raise `No devices were found` exception.
 
 YARN GPU scheduling does not support [MIG](https://docs.nvidia.com/datacenter/tesla/mig-user-guide/index.html#introduction)
 enabled GPUs by default, see section [MIG GPU on YARN](#mig-gpu-on-yarn) on how to add support.
