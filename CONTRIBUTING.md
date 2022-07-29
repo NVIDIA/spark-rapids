@@ -218,8 +218,20 @@ not clobbered by repeated `bloopInstall` Maven plugin invocations, and it uses
 [jq](https://stedolan.github.io/jq/) to post-process JSON-formatted project files such that they
 compile project classes into non-overlapping set of output directories.
 
+To activate the Spark dependency you currentky work update the symlink
+`.bloop` to the right `.bloop-spark3XY`
+
+Example usage:
+```Bash
+./build/buildall --generate-bloop --profile=311,330
+rm -vf .bloop
+ln -s .bloop-spark330 .bloop
+```
+
 You can now open the spark-rapids as a
 [BSP project in IDEA](https://www.jetbrains.com/help/idea/bsp-support.html)
+
+Read on for VS Code Scala Metals instructions.
 
 # Bloop, Scala Metals, and Visual Studio Code
 

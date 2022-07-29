@@ -58,15 +58,14 @@ function bloopInstall() {
     set -x
   fi
 
-  mkdir 
-  local bloopTmpDir=$(mktemp -d target/tmp.bloop.XXXXXX)
+  local bloopTmpDir=$(mktemp -d /tmp/tmp.bloop.XXXXXX)
 
   time (
+    bloopDirsGenerated=()
     for bv in "${SPARK_SHIM_VERSIONS[@]}"; do
       bloopTmpConfigDir="$bloopTmpDir/.bloop$bv"
-      mkdir -p "$bloopTmpConfigDir"
-
-      $MVN -X clean install \
+      mkdir -p $bloopTmpConfigDir
+      $MVN -B clean install \
         ch.epfl.scala:maven-bloop_${BLOOP_SCALA_VERSION}:${BLOOP_VERSION}:bloopInstall \
         -pl aggregator -am \
         -Dbloop.configDirectory="$bloopTmpConfigDir" \
@@ -80,8 +79,8 @@ function bloopInstall() {
 
       specifier="spark$bv"
       bloopDir=$PWD/.bloop-$specifier
+      rm -rf $bloopDir
       mkdir -p $bloopDir
-      rm $bloopDir/*
       for bloop_json in $(echo $bloopTmpConfigDir/*.json); do
         IFS="/" <<< "$bloop_json" read -ra bloop_json_parts
         last_idx=$((${#bloop_json_parts[@]} - 1))
@@ -94,7 +93,12 @@ function bloopInstall() {
       done
       mv $bloopTmpConfigDir $bloopDir
       echo "generated bloop files under $bloopDir"
+      bloopDirsGenerated+=($bloopDir)
     done
+    echo "#### Created bloop projects ${bloopDirsGenerated[@]}"
+    echo "Execute"
+    echo "  ln -s .bloop-spark3XY .bloop"
+    echo "to make it an active Bloop project in VS Code Scala Metals"
   )
 }
 
@@ -208,6 +212,8 @@ case $DIST_PROFILE in
 
 esac
 
+export MVN_BASE_DIR=$($MVN help:evaluate -Dexpression=project.basedir -q -DforceStdout)
+
 if [[ "$GEN_BLOOP" == "true" ]]; then
   bloopInstall
   exit 0
@@ -226,8 +232,6 @@ if [[ "$SKIP_CLEAN" != "1" ]]; then
 fi
 
 echo "Building a combined dist jar with Shims for ${SPARK_SHIM_VERSIONS[@]} ..."
-
-export MVN_BASE_DIR=$($MVN help:evaluate -Dexpression=project.basedir -q -DforceStdout)
 
 function build_single_shim() {
   set -x
