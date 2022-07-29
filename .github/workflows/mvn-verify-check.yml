@@ -43,7 +43,7 @@ jobs:
         run: |
           set -x
           noSnapshotVersionsStr=$(mvn -B help:evaluate -q -pl dist -PnoSnapshots -Dexpression=included_buildvers -DforceStdout)
-          noSnapshotVersionsArr=($(echo ${noSnapshotVersionStr//[$'\n',]/}))
+          noSnapshotVersionsArr=($(IFS=", "; echo $noSnapshotVersionStr))
           tailNoSnapshotVersionsArr=(${noSnapshotVersionsArr[@]:1})
           tailNoSnapshotVersionsCSV=$(IFS=", " ; echo "${tailNoSnapshotVersionsArr[*]}")
           echo ::set-output name=headVersion::${noSnapshotVersionsArr[0]}
