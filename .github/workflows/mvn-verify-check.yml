@@ -24,7 +24,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  mvn-verify-check:
+  mvn-package-except-311:
+    strategy:
+      matrix:
+        spark-version: [321cdh, 312, 313, 320, 321, 322, 330]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2 # refs/pull/:prNumber/merge
@@ -35,6 +38,18 @@ jobs:
           distribution: adopt
           java-version: 8
 
+      - name: mvn package check ${{ spark-version }}
+        run: >-
+          mvn package -pl aggregator -am
+          -P 'individual,pre-merge' -DskipTests -Dskip -Dmaven.javadoc.skip
+          -Dmaven.scalastyle.skip=true -Drat.skip=true
+
+  mvn-verify-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: mvn-package-except-311
       # includes RAT, code style and doc-gen checks of default shim
       - name: mvn verify check
-        run: mvn verify -P 'individual,pre-merge' -pl dist -am -DskipTests -Dskip -Dmaven.javadoc.skip
+        run: >-
+          mvn verify
+          -P 'individual,pre-merge' -DskipTests -Dskip -Dmaven.javadoc.skip

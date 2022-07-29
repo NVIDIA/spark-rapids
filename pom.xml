@@ -1039,6 +1039,7 @@
         <scala.local-lib.path>org/scala-lang/scala-library/${scala.version}/scala-library-${scala.version}.jar</scala.local-lib.path>
         <target.classifier>${spark.version.classifier}</target.classifier>
         <maven.clean.plugin.version>3.1.0</maven.clean.plugin.version>
+        <maven.scalastyle.skip>false</maven.scalastyle.skip>
     </properties>
 
     <dependencyManagement>
