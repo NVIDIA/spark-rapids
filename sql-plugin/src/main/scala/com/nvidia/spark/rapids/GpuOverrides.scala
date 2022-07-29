@@ -4326,7 +4326,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         val found = f.relation.inputFiles.exists(name =>
           name.contains("/_delta_log/") && name.endsWith(".json"))
         if (found) {
-          logDebug(s"fallback for FileSourceScanExec delta log: $f")
+          logDebug(s"Fallback for FileSourceScanExec delta log: $f")
         }
         found
       case rdd: RDDScanExec =>
@@ -4348,7 +4348,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
             case udf: ScalaUDF =>
               val contains = udf.function.getClass.getCanonicalName.contains("tahoe.Snapshot")
               if (contains) {
-                logWarning(s"Found ScalaUDF with tahoe.Snapshot: $udf," +
+                logDebug(s"Found ScalaUDF with tahoe.Snapshot: $udf," +
                   s" function class name is: ${udf.function.getClass.getCanonicalName}")
               }
               contains
