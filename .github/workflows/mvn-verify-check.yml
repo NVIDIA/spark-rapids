@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # A workflow to run mvn verify check
-name: Maven
+name: mvn[compile,RAT,scalastyle,docgen]
 
 on:
   pull_request:
@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  mvn-package-except-311:
+  package-aggregator:
     strategy:
       matrix:
         spark-version: [312, 313, 320, 321, 322, 330]
@@ -41,7 +41,7 @@ jobs:
       - name: package aggregator check
         run: mvn package -pl aggregator -am -P 'individual,pre-merge' -DskipTests -Dskip -Dmaven.javadoc.skip -Dmaven.scalastyle.skip=true -Drat.skip=true
 
-  mvn-verify-check-311:
+  verify-all-modules-with-spark311:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2 # refs/pull/:prNumber/merge
