@@ -171,8 +171,8 @@ cluster.
 ## Import the GPU Mortgage Example Notebook
 Import the example [notebook](../demo/Databricks/Mortgage-ETL-db.ipynb) from the repo into your
 workspace, then open the notebook.  Modify the first cell to point to your workspace, and download a
-larger dataset if needed. You can find the links to the datasets at
-[docs.rapids.ai](https://docs.rapids.ai/datasets/mortgage-data).
+larger dataset if needed. Please find this [instruction](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-22.08/docs/get-started/xgboost-examples/dataset/mortgage.md)
+to download the dataset.
 
 ```bash
 %sh

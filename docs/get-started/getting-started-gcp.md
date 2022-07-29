@@ -144,9 +144,9 @@ and navigate to the "Web Interfaces" tab.  Under "Web Interfaces", click on the 
 Jupyter link. Download the sample 
 [Mortgage ETL on GPU Jupyter Notebook](../demo/GCP/Mortgage-ETL.ipynb) and upload it in Jupyter.
 
-To get the input data of the sample notebook, we need to download the full 17 years' [Mortgage 
-data](https://docs.rapids.ai/datasets/mortgage-data) as `mortgage_2000-2016.tgz`, uncompress and 
-upload it to a GCS bucket. Above notebook has handy commands to do this step on master node.
+To get the input data of the sample notebook, please find this [instruction](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-22.08/docs/get-started/xgboost-examples/dataset/mortgage.md)
+to download the dataset, uncompress and 
+upload it to a GCS bucket.
 
 ![Dataproc Web Interfaces](../img/GCP/dataproc-service.png)
 
