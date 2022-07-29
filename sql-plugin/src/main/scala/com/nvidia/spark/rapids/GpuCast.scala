@@ -378,17 +378,17 @@ object GpuCast extends Arm {
       // ansi cast from larger-than-long integral-like types, to long
       case (dt: DecimalType, LongType) if ansiMode =>
         // This is a work around for https://github.com/rapidsai/cudf/issues/9282
-        val bigDecimalMin = BigDecimal(Long.MinValue)
+        val min = BigDecimal(Long.MinValue)
             .setScale(dt.scale, BigDecimal.RoundingMode.DOWN).bigDecimal
-        val bigDecimalMax = BigDecimal(Long.MaxValue)
+        val max = BigDecimal(Long.MaxValue)
             .setScale(dt.scale, BigDecimal.RoundingMode.DOWN).bigDecimal
         // We are going against our convention of calling assertValuesInRange()
         // because the min/max values are a different decimal type i.e. Decimal 128 as opposed to
         // the incoming input column type.
-        withResource(input.min()) { min =>
-          withResource(input.max()) { max =>
-            if (min.isValid && min.getBigDecimal().compareTo(bigDecimalMin) == -1 ||
-                max.isValid && max.getBigDecimal().compareTo(bigDecimalMax) == 1) {
+        withResource(input.min()) { minInput =>
+          withResource(input.max()) { maxInput =>
+            if (minInput.isValid && minInput.getBigDecimal().compareTo(min) == -1 ||
+                maxInput.isValid && maxInput.getBigDecimal().compareTo(max) == 1) {
               throw new ArithmeticException(GpuCast.INVALID_INPUT_MESSAGE)
             }
           }
