@@ -67,9 +67,7 @@ object PlanUtils {
     }
     recurse(exp, predicate, new ListBuffer[Expression]())
   }
-
-
-
+  
   /**
    * Return list of matching predicates present in the plan
    * This is in shim due to changes in ShuffleQueryStageExec between Spark versions.
