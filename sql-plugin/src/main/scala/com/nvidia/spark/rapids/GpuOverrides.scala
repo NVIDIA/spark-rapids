@@ -4311,19 +4311,54 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     }
   }
 
-  /** Determine whether query is running against Delta Lake _delta_log JSON files */
+  /**
+   *  Determine whether query is running against Delta Lake _delta_log JSON files or
+   *  if Delta is doing stats collection that ends up hardcoding the use of AQE,
+   *  even though the AQE setting is disabled. To protect against the latter, we
+   *  check for a ScalaUDF using a tahoe.Snapshot function and if we ever see
+   *  an AdaptiveSparkPlan on a Spark version we don't expect, fallback to the
+   *  CPU for those plans.
+   */
   def isDeltaLakeMetadataQuery(plan: SparkPlan): Boolean = {
     val deltaLogScans = PlanUtils.findOperators(plan, {
       case f: FileSourceScanExec =>
         // example filename: "file:/tmp/delta-table/_delta_log/00000000000000000000.json"
-        f.relation.inputFiles.exists(name =>
+        val found = f.relation.inputFiles.exists(name =>
           name.contains("/_delta_log/") && name.endsWith(".json"))
+        if (found) {
+          logDebug(s"fallback for FileSourceScanExec delta log: $f")
+        }
+        found
       case rdd: RDDScanExec =>
         // example rdd name: "Delta Table State #1 - file:///tmp/delta-table/_delta_log"
-        rdd.inputRDD != null &&
+        val found = rdd.inputRDD != null &&
           rdd.inputRDD.name != null &&
           rdd.inputRDD.name.startsWith("Delta Table State") &&
           rdd.inputRDD.name.endsWith("/_delta_log")
+        if (found) {
+          logDebug(s"Fallback for RDDScanExec delta log: $rdd")
+        }
+        found
+      case aqe: AdaptiveSparkPlanExec if !AQEUtils.isAdaptiveExecutionSupportedInSparkVersion =>
+        logDebug(s"AdaptiveSparkPlanExec found on unsupported Spark Version: $aqe")
+        true
+      case project: ProjectExec =>
+        val foundExprs = project.expressions.flatMap { e =>
+          PlanUtils.findExpressions(e, {
+            case udf: ScalaUDF =>
+              val contains = udf.function.getClass.getCanonicalName.contains("tahoe.Snapshot")
+              if (contains) {
+                logWarning(s"Found ScalaUDF with tahoe.Snapshot: $udf," +
+                  s" function class name is: ${udf.function.getClass.getCanonicalName}")
+              }
+              contains
+            case _ => false
+          })
+        }
+        if (foundExprs.nonEmpty) {
+          logDebug(s"Project with Snapshot ScalaUDF: $project")
+        }
+        foundExprs.nonEmpty
       case _ =>
         false
     })
