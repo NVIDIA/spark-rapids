@@ -14,7 +14,7 @@ only a small number of Python dependencies that you need to install for the test
 dependencies also only need to be on the driver.  You can install them on all nodes
 in the cluster but it is not required.
 
-### Prerequisities
+### Prerequisites
 
 The build requires `OpenJDK 8`, `maven`, and `python`.
 Skip to the next section if you have already installed them.
