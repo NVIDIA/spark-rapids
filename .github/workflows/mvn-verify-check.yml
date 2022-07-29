@@ -42,7 +42,6 @@ jobs:
         run: >
           mvn package -pl aggregator -am
           -P 'individual,pre-merge'
-          -Dbuildver="${{ spark-version }}"
           -DskipTests
           -Dskip
           -Dmaven.javadoc.skip
