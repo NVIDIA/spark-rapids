@@ -22,6 +22,7 @@ shopt -s extglob
 BLOOP_VERSION=${BLOOP_VERSION:-"1.4.13"}
 BLOOP_SCALA_VERSION=${BLOOP_SCALA_VERSION:-"2.13"}
 SKIP_CLEAN=1
+BUILD_ALL_DEBUG=0
 
 function print_usage() {
   echo "Usage: buildall [OPTION]"
@@ -52,18 +53,23 @@ function print_usage() {
 }
 
 function bloopInstall() {
-  BLOOP_DIR="${BLOOP_DIR:-$PWD/.bloop}"
-  mkdir -p $BLOOP_DIR
-  rm -f $BLOOP_DIR/*
+
+  if [[ "$BUILD_ALL_DEBUG" == "1" ]]; then
+    set -x
+  fi
+
+  mkdir 
+  local bloopTmpDir=$(mktemp -d target/tmp.bloop.XXXXXX)
 
   time (
-    for bv in $SPARK_SHIM_VERSIONS; do
-      bloop_config_dir="$PWD/.bloop$bv"
-      mkdir -p "$bloop_config_dir"
-      rm -f "$bloop_config_dir"/*
+    for bv in "${SPARK_SHIM_VERSIONS[@]}"; do
+      bloopTmpConfigDir="$bloopTmpDir/.bloop$bv"
+      mkdir -p "$bloopTmpConfigDir"
 
-      $MVN install ch.epfl.scala:maven-bloop_${BLOOP_SCALA_VERSION}:${BLOOP_VERSION}:bloopInstall -pl dist -am \
-        -Dbloop.configDirectory="$bloop_config_dir" \
+      $MVN -X clean install \
+        ch.epfl.scala:maven-bloop_${BLOOP_SCALA_VERSION}:${BLOOP_VERSION}:bloopInstall \
+        -pl aggregator -am \
+        -Dbloop.configDirectory="$bloopTmpConfigDir" \
         -DdownloadSources=true \
         -Dbuildver="$bv" \
         -DskipTests \
@@ -73,7 +79,10 @@ function bloopInstall() {
         -Dmaven.updateconfig.skip=true
 
       specifier="spark$bv"
-      for bloop_json in $(echo $bloop_config_dir/*.json); do
+      bloopDir=$PWD/.bloop-$specifier
+      mkdir -p $bloopDir
+      rm $bloopDir/*
+      for bloop_json in $(echo $bloopTmpConfigDir/*.json); do
         IFS="/" <<< "$bloop_json" read -ra bloop_json_parts
         last_idx=$((${#bloop_json_parts[@]} - 1))
         file="${bloop_json_parts[$last_idx]}"
@@ -81,11 +90,11 @@ function bloopInstall() {
         < $bloop_json jq \
           --arg specifier "$specifier" \
           '.project.out=.project.out + "/" + $specifier | .project.name=.project.name + "-" + $specifier' \
-           > "$BLOOP_DIR/$project.json"
+           > "$bloopDir/$project.json"
       done
+      mv $bloopTmpConfigDir $bloopDir
+      echo "generated bloop files under $bloopDir"
     done
-
-    echo "Generated Bloop files under $BLOOP_DIR"
   )
 }
 
@@ -117,6 +126,7 @@ case "$1" in
   ;;
 
 --debug)
+  BUILD_ALL_DEBUG=1
   set -x
   ;;
 
