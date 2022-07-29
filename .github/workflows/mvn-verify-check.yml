@@ -24,10 +24,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  get-noSnapshot-versions-from-dist:
+    runs-on: ubuntu-latest
+    outputs:
+      sparkHeadVersion: ${{ steps.noSnapshotVersionsStep.outputs.headVersion }}
+      sparkTailVersions: ${{ steps.noSnapshotVersionsStep.outputs.tailVersions }}
+    steps:
+      - uses: actions/checkout@v2 # refs/pull/:prNumber/merge
+
+      - name: Setup Java and Maven Env
+        uses: actions/setup-java@v3
+        with:
+          distribution: adopt
+          java-version: 8
+
+      - name: all noSnapshot versions
+        id: noSnapshotVersionsStep
+        run: >
+          set -x
+          noSnapshotVersionsStr=$(mvn help:evaluate -q -pl dist
+          -PnoSnapshots -Dexpression=included_buildvers -DforceStdout)
+          noSnapshotVersionsArr=($(echo ${noSnapshotVersionStr//[$'\n',]/}))
+          tailNoSnapshotVersionsArr=(${noSnapshotVersionsArr[@]:1})
+          tailNoSnapshotVersionsCSV=$(IFS=", " ; echo "${tailNoSnapshotVersionsArr[*]}")
+          echo ::set-output name=headVersion::${noSnapshotVersionsArr[0]}
+          echo ::set-output name=tailVersions::[$tailNoSnapshotVersionsCSV]
+
   package-aggregator:
+    needs: get-noSnapshot-versions-from-dist
     strategy:
       matrix:
-        spark-version: [312, 313, 320, 321, 322, 330]
+        spark-version: ${{ fromJson(needs.get-noSnapshot-versions-from-dist.outputs.sparkTailVersions) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2 # refs/pull/:prNumber/merge
@@ -49,7 +76,7 @@ jobs:
           -Dmaven.scalastyle.skip=true
           -Drat.skip=true
 
-  verify-all-modules-with-spark311:
+  verify-all-modules-with-headSparkVersion:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2 # refs/pull/:prNumber/merge
@@ -61,7 +88,7 @@ jobs:
           java-version: 8
 
       # includes RAT, code style and doc-gen checks of default shim
-      - name: verify all modules 311
+      - name: verify all modules with lowest-supported Spark version
         run: >
           mvn -B verify -P 'individual,pre-merge'
           -DskipTests
