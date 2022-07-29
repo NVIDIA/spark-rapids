@@ -40,8 +40,9 @@ jobs:
 
       - name: package aggregator check
         run: >
-          mvn package -pl aggregator -am
+          mvn -B package -pl aggregator -am
           -P 'individual,pre-merge'
+          -Dbuildver=${{ matrix.spark-version }}
           -DskipTests
           -Dskip
           -Dmaven.javadoc.skip
@@ -62,7 +63,7 @@ jobs:
       # includes RAT, code style and doc-gen checks of default shim
       - name: verify all modules 311
         run: >
-          mvn verify -P 'individual,pre-merge'
+          mvn -B verify -P 'individual,pre-merge'
           -DskipTests
           -Dskip
           -Dmaven.javadoc.skip
