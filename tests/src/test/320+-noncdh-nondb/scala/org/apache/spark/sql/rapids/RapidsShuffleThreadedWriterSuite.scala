@@ -119,12 +119,17 @@ class BadSerializable(i: Int) extends Serializable {
 }
 
 // Added so that we can mock a method that was created in Spark 3.3.0
+// and the override can be used in all versions of Spark
+trait ShimIndexShuffleBlockResolver330 {
+  def createTempFile(file: File): File
+}
 class TestIndexShuffleBlockResolver(
     conf: SparkConf,
     bm: BlockManager)
-      extends IndexShuffleBlockResolver(conf, bm) {
+      extends IndexShuffleBlockResolver(conf, bm)
+        with ShimIndexShuffleBlockResolver330 {
   // implemented in Spark 3.3.0
-  def createTempFile(file: File): File = { null }
+  override def createTempFile(file: File): File = { null }
 }
 
 class RapidsShuffleThreadedWriterSuite extends FunSuite
