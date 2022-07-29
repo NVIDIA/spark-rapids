@@ -42,8 +42,7 @@ jobs:
         id: noSnapshotVersionsStep
         run: |
           set -x
-          noSnapshotVersionsStr=$(mvn help:evaluate -q -pl dist
-          -PnoSnapshots -Dexpression=included_buildvers -DforceStdout)
+          noSnapshotVersionsStr=$(mvn help:evaluate -q -pl dist -PnoSnapshots -Dexpression=included_buildvers -DforceStdout)
           noSnapshotVersionsArr=($(echo ${noSnapshotVersionStr//[$'\n',]/}))
           tailNoSnapshotVersionsArr=(${noSnapshotVersionsArr[@]:1})
           tailNoSnapshotVersionsCSV=$(IFS=", " ; echo "${tailNoSnapshotVersionsArr[*]}")
