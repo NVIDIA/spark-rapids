@@ -177,8 +177,8 @@ object GpuCast extends Arm {
   private val TIMESTAMP_TRUNCATE_REGEX = "^([0-9]{4}-[0-9]{2}-[0-9]{2} " +
     "[0-9]{2}:[0-9]{2}:[0-9]{2})" +
     "(.[1-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?$"
-  private val bigDecimalLongMin = BigDecimal(Long.MinValue)
-  private val bigDecimalLongMax = BigDecimal(Long.MaxValue)
+  private val BIG_DECIMAL_LONG_MIN = BigDecimal(Long.MinValue)
+  private val BIG_DECIMAL_LONG_MAX = BigDecimal(Long.MaxValue)
 
   val INVALID_INPUT_MESSAGE: String = "Column contains at least one value that is not in the " +
     "required range"
@@ -380,8 +380,8 @@ object GpuCast extends Arm {
       // ansi cast from larger-than-long integral-like types, to long
       case (dt: DecimalType, LongType) if ansiMode =>
         // This is a work around for https://github.com/rapidsai/cudf/issues/9282
-        val min = bigDecimalLongMin.setScale(dt.scale, BigDecimal.RoundingMode.DOWN).bigDecimal
-        val max = bigDecimalLongMax.setScale(dt.scale, BigDecimal.RoundingMode.DOWN).bigDecimal
+        val min = BIG_DECIMAL_LONG_MIN.setScale(dt.scale, BigDecimal.RoundingMode.DOWN).bigDecimal
+        val max = BIG_DECIMAL_LONG_MAX.setScale(dt.scale, BigDecimal.RoundingMode.DOWN).bigDecimal
         // We are going against our convention of calling assertValuesInRange()
         // because the min/max values are a different decimal type i.e. Decimal 128 as opposed to
         // the incoming input column type.
