@@ -80,17 +80,6 @@ function bloopInstall() {
       specifier="spark$bv"
       bloopDir=$PWD/.bloop-$specifier
       rm -rf $bloopDir
-      mkdir -p $bloopDir
-      for bloop_json in $(echo $bloopTmpConfigDir/*.json); do
-        IFS="/" <<< "$bloop_json" read -ra bloop_json_parts
-        last_idx=$((${#bloop_json_parts[@]} - 1))
-        file="${bloop_json_parts[$last_idx]}"
-        project="${file%.json}-$specifier"
-        < $bloop_json jq \
-          --arg specifier "$specifier" \
-          '.project.out=.project.out + "/" + $specifier | .project.name=.project.name + "-" + $specifier' \
-           > "$bloopDir/$project.json"
-      done
       mv $bloopTmpConfigDir $bloopDir
       echo "generated bloop files under $bloopDir"
       bloopDirsGenerated+=($bloopDir)

@@ -218,8 +218,8 @@ not clobbered by repeated `bloopInstall` Maven plugin invocations, and it uses
 [jq](https://stedolan.github.io/jq/) to post-process JSON-formatted project files such that they
 compile project classes into non-overlapping set of output directories.
 
-To activate the Spark dependency you currentky work update the symlink
-`.bloop` to the right `.bloop-spark3XY`
+To activate the Spark dependency version 3XY you currently are working with update
+the symlink `.bloop` to point to the corresponding directory `.bloop-spark3XY`
 
 Example usage:
 ```Bash
