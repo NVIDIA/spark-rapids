@@ -343,6 +343,9 @@ class CudfMax(override val dataType: DataType) extends CudfAggregate with Arm {
   override val name: String = "CudfMax"
 }
 
+/**
+ * Check if there is a `true` value in a boolean column.
+ */
 object CudfAny {
   def apply(): CudfAggregate = new CudfMax(BooleanType)
 }
@@ -539,7 +542,7 @@ abstract class GpuMax(child: Expression) extends GpuAggregateFunction
   private lazy val cudfMax = AttributeReference("max", child.dataType)()
   override lazy val evaluateExpression: Expression = cudfMax
   override lazy val aggBufferAttributes: Seq[AttributeReference] = cudfMax :: Nil
-  
+
   // Copied from Max
   override def nullable: Boolean = true
   override def dataType: DataType = child.dataType
