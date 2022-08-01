@@ -87,8 +87,12 @@ else
         AVRO_JARS=""
     fi
 
-    # Only 3 jars: dist.jar integration-test.jar avro.jar
-    ALL_JARS="$PLUGIN_JARS $TEST_JARS $AVRO_JARS $PARQUET_HADOOP_TESTS"
+    # ALL_JARS includes dist.jar integration-test.jar avro.jar parquet.jar if they exist
+    # Remove non-existing paths and canonicalize the paths including get rid of links and `..`
+    ALL_JARS=$(readlink -e $PLUGIN_JARS $TEST_JARS $AVRO_JARS $PARQUET_HADOOP_TESTS || true)
+    # comma separated jars
+    ALL_JARS="${ALL_JARS//$'\n'/\,}"
+
     echo "AND PLUGIN JARS: $ALL_JARS"
     if [[ "${TEST}" != "" ]];
     then
@@ -195,8 +199,7 @@ else
     SPARK_TASK_MAXFAILURES=1
     [[ "$VERSION_STRING" < "3.1.1" ]] && SPARK_TASK_MAXFAILURES=4
 
-    export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS// /:}"
-    export PYSP_TEST_spark_executor_extraClassPath="${ALL_JARS// /:}"
+    export PYSP_TEST_spark_jars="${ALL_JARS}"
     export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=UTC $COVERAGE_SUBMIT_FLAGS"
     export PYSP_TEST_spark_executor_extraJavaOptions='-ea -Duser.timezone=UTC'
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
@@ -253,7 +256,8 @@ else
     else
         # We set the GPU memory size to be a constant value even if only running with a parallelism of 1
         # because it helps us have consistent test runs.
-        exec "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
+        # `spark.jars` is the same as `--jars`, e.g.: --jars a.jar,b.jar...
+        exec "$SPARK_HOME"/bin/spark-submit --conf spark.jars=${PYSP_TEST_spark_jars} \
             --driver-java-options "$PYSP_TEST_spark_driver_extraJavaOptions" \
             $SPARK_SUBMIT_FLAGS \
             --conf 'spark.rapids.memory.gpu.allocSize='"$PYSP_TEST_spark_rapids_memory_gpu_allocSize" \
