@@ -359,7 +359,8 @@ final class InsertIntoHadoopFsRelationCommandMeta(
       cmd.mode,
       cmd.catalogTable,
       cmd.fileIndex,
-      cmd.outputColumnNames)
+      cmd.outputColumnNames,
+      conf.stableSort)
   }
 }
 
@@ -408,7 +409,8 @@ final class CreateDataSourceTableAsSelectCommandMeta(
       cmd.query,
       cmd.outputColumnNames,
       origProvider,
-      newProvider)
+      newProvider,
+      conf.stableSort)
   }
 }
 
@@ -437,6 +439,9 @@ object JsonFormatType extends FileFormatType {
 }
 object AvroFormatType extends FileFormatType {
   override def toString = "Avro"
+}
+object IcebergFormatType extends FileFormatType {
+  override def toString = "Iceberg"
 }
 
 sealed trait FileFormatOp
@@ -844,7 +849,13 @@ object GpuOverrides extends Logging {
         TypeSig.FLOAT + TypeSig.DOUBLE + TypeSig.STRING,
       cudfWrite = TypeSig.none,
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-        TypeSig.UDT).nested())))
+        TypeSig.UDT).nested())),
+    (IcebergFormatType, FileFormatChecks(
+      cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
+          TypeSig.ARRAY + TypeSig.MAP + GpuTypeShims.additionalParquetSupportedTypes).nested(),
+      cudfWrite = TypeSig.none,
+      sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+          TypeSig.UDT + GpuTypeShims.additionalParquetSupportedTypes).nested())))
 
   val commonExpressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     expr[Literal](
@@ -2344,18 +2355,36 @@ object GpuOverrides extends Logging {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuSum(childExprs.head, a.dataType)
       }),
-    expr[First](
-      "first aggregate operator", {
-        ExprChecks.aggNotWindow(
+    expr[NthValue](
+      "nth window operator",
+      ExprChecks.windowOnly(
+        (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
+        TypeSig.all,
+        Seq(ParamCheck("input",
           (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
               TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
-          TypeSig.all,
-          Seq(ParamCheck("input",
-            (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
-            TypeSig.all))
-        )
-      },
+          TypeSig.all),
+          ParamCheck("offset", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT)))
+      ),
+      (a, conf, p, r) => new AggExprMeta[NthValue](a, conf, p, r) {
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuNthValue(childExprs.head, a.offset, a.ignoreNulls)
+
+        // nth does not overflow, so it doesn't need the ANSI check
+        override val needsAnsiCheck: Boolean = false
+      }),
+    expr[First](
+      "first aggregate operator",
+      ExprChecks.fullAgg(
+        (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
+        TypeSig.all,
+        Seq(ParamCheck("input",
+          (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+              TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
+          TypeSig.all))
+      ),
       (a, conf, p, r) => new AggExprMeta[First](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuFirst(childExprs.head, a.ignoreNulls)
@@ -2364,17 +2393,16 @@ object GpuOverrides extends Logging {
         override val needsAnsiCheck: Boolean = false
       }),
     expr[Last](
-      "last aggregate operator", {
-        ExprChecks.aggNotWindow(
+    "last aggregate operator",
+      ExprChecks.fullAgg(
+        (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
+        TypeSig.all,
+        Seq(ParamCheck("input",
           (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
               TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
-          TypeSig.all,
-          Seq(ParamCheck("input",
-            (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
-            TypeSig.all))
-        )
-      },
+          TypeSig.all))
+      ),
       (a, conf, p, r) => new AggExprMeta[Last](a, conf, p, r) {
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuLast(childExprs.head, a.ignoreNulls)
@@ -3194,6 +3222,14 @@ object GpuOverrides extends Logging {
           ParamCheck("idx", TypeSig.lit(TypeEnum.INT),
             TypeSig.lit(TypeEnum.INT)))),
       (a, conf, p, r) => new GpuRegExpExtractMeta(a, conf, p, r)),
+    expr[RegExpExtractAll](
+      "Extract all strings matching a regular expression corresponding to the regex group index",
+      ExprChecks.projectOnly(TypeSig.ARRAY.nested(TypeSig.STRING),
+        TypeSig.ARRAY.nested(TypeSig.STRING),
+        Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
+          ParamCheck("idx", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
+      (a, conf, p, r) => new GpuRegExpExtractAllMeta(a, conf, p, r)),
     expr[Length](
       "String character length or binary byte length",
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
@@ -4061,7 +4097,7 @@ object GpuOverrides extends Logging {
       // is impacted by forcing operators onto CPU due to other rules that we have
       wrap.runAfterTagRules()
       val optimizer = try {
-        ShimLoader.newInstanceOf[Optimizer](conf.optimizerClassName)
+        ShimLoader.newOptimizerClass(conf.optimizerClassName)
       } catch {
         case e: Exception =>
           throw new RuntimeException(s"Failed to create optimizer ${conf.optimizerClassName}", e)

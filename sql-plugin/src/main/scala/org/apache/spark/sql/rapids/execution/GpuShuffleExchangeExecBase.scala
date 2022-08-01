@@ -149,17 +149,25 @@ abstract class GpuShuffleExchangeExecBase(
     child: SparkPlan) extends Exchange with ShimUnaryExecNode with GpuExec {
   import GpuMetric._
 
-  private lazy val useRapidsShuffle = {
+  private lazy val useGPUShuffle = {
     gpuOutputPartitioning match {
-      case gpuPartitioning: GpuPartitioning => gpuPartitioning.usesRapidsShuffle
+      case gpuPartitioning: GpuPartitioning => gpuPartitioning.usesGPUShuffle
+      case _ => false
+    }
+  }
+
+  private lazy val useMultiThreadedShuffle = {
+    gpuOutputPartitioning match {
+      case gpuPartitioning: GpuPartitioning => gpuPartitioning.usesMultiThreadedShuffle
       case _ => false
     }
   }
 
   // Shuffle produces a lot of small output batches that should be coalesced together.
-  // This coalesce occurs on the GPU and should always be done when using RAPIDS shuffle.
+  // This coalesce occurs on the GPU and should always be done when using RAPIDS shuffle,
+  // when it is under UCX or CACHE_ONLY modes.
   // Normal shuffle performs the coalesce on the CPU to optimize the transfers to the GPU.
-  override def coalesceAfter: Boolean = useRapidsShuffle
+  override def coalesceAfter: Boolean = useGPUShuffle
 
   private lazy val writeMetrics =
     SQLShuffleWriteMetricsReporter.createShuffleWriteMetrics(sparkContext)
@@ -205,7 +213,8 @@ abstract class GpuShuffleExchangeExecBase(
       gpuOutputPartitioning,
       sparkTypes,
       serializer,
-      useRapidsShuffle,
+      useGPUShuffle,
+      useMultiThreadedShuffle,
       allMetrics,
       writeMetrics,
       additionalMetrics)
@@ -236,7 +245,8 @@ object GpuShuffleExchangeExecBase {
       newPartitioning: GpuPartitioning,
       sparkTypes: Array[DataType],
       serializer: Serializer,
-      useRapidsShuffle: Boolean,
+      useGPUShuffle: Boolean,
+      useMultiThreadedShuffle: Boolean,
       metrics: Map[String, GpuMetric],
       writeMetrics: Map[String, SQLMetric],
       additionalMetrics: Map[String, GpuMetric])
@@ -335,7 +345,8 @@ object GpuShuffleExchangeExecBase {
       sparkTypes,
       serializer,
       shuffleWriterProcessor = ShuffleExchangeExec.createShuffleWriteProcessor(writeMetrics),
-      useRapidsShuffle = useRapidsShuffle,
+      useGPUShuffle = useGPUShuffle,
+      useMultiThreadedShuffle = useMultiThreadedShuffle,
       metrics = GpuMetric.unwrap(additionalMetrics))
 
     dependency

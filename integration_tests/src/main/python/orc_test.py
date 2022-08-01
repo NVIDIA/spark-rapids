@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_co
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, is_before_spark_320, is_before_spark_330
+from spark_session import with_cpu_session, is_before_spark_320, is_before_spark_330, is_spark_321cdh
 from parquet_test import _nested_pruning_schemas
 from conftest import is_databricks_runtime
 
@@ -174,6 +174,10 @@ def test_pred_push_round_trip(spark_tmp_path, orc_gen, read_func, v1_enabled_lis
             conf=all_confs)
 
 orc_compress_options = ['none', 'uncompressed', 'snappy', 'zlib']
+# zstd is available in spark 3.2.0 and later.
+if not is_before_spark_320() and not is_spark_321cdh():
+    orc_compress_options.append('zstd')
+
 # The following need extra jars 'lzo'
 # https://github.com/NVIDIA/spark-rapids/issues/143
 
