@@ -917,18 +917,6 @@ def test_hash_multiple_filters(data_gen, conf):
         'min(a), max(b) filter (where c > 250) from hash_agg_table group by a',
         conf)
 
-
-@ignore_order
-@allow_non_gpu('HashAggregateExec', 'AggregateExpression', 'AttributeReference', 'Alias', 'Max',
-               'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'ShuffleExchangeExec',
-               'HashPartitioning')
-@pytest.mark.parametrize('data_gen', struct_gens_xfail, ids=idfn)
-def test_hash_query_max_nan_fallback(data_gen):
-    print_params(data_gen)
-    assert_gpu_fallback_collect(
-        lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.max('b')),
-        "Max")
-
 @approximate_float
 @ignore_order
 @pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nan_zero_grouping_keys,
