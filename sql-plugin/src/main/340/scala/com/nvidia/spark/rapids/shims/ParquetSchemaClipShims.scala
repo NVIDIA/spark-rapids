@@ -78,8 +78,6 @@ object ParquetSchemaClipShims {
     }
   }
 
-  def timestampNTZEnabled(conf: SQLConf): Boolean = conf.parquetTimestampNTZEnabled
-
   /**
    * Convert a Parquet primitive type to a Spark type.
    * Based on Spark's ParquetSchemaConverter.convertPrimitiveField

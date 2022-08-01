@@ -35,9 +35,9 @@ object ParquetSchemaUtils extends Arm {
   val EMPTY_MESSAGE: MessageType = Types.buildMessage().named(SPARK_PARQUET_SCHEMA_NAME)
 
   /**
-   * Similar to Spark's ParquetReadSupport.clipParquetSchema but does NOT add fields missing
-   * in `catalystSchema` to the resulting Parquet schema. This only removes column paths that
-   * do not exist in `catalystSchema`.
+   * Similar to Spark's ParquetReadSupport.clipParquetSchema but does NOT add fields that only
+   * exist in `catalystSchema` to the resulting Parquet schema. This only removes column paths
+   * that do not exist in `catalystSchema`.
    */
   def clipParquetSchema(
       parquetSchema: MessageType,

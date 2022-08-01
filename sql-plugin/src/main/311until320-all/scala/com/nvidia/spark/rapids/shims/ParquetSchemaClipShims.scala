@@ -30,8 +30,6 @@ object ParquetSchemaClipShims {
 
   def ignoreMissingIds(conf: SQLConf): Boolean = false
 
-  def timestampNTZEnabled(conf: SQLConf): Boolean = false
-
   def checkIgnoreMissingIds(ignoreMissingIds: Boolean, parquetFileSchema: MessageType,
       catalystRequestedSchema: StructType): Unit = {}
 
