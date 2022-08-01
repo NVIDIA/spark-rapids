@@ -663,3 +663,7 @@ def test_read_type_casting_integral(spark_tmp_path, offset, reader_confs, v1_ena
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(rs).orc(data_path),
         conf=all_confs)
+
+def test_orc_read_varchar_as_string(std_input_path):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema("id bigint, name string").orc(std_input_path + "/test_orc_varchar.orc"))

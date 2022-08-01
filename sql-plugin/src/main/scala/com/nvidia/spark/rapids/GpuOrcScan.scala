@@ -237,6 +237,11 @@ object GpuOrcScan extends Arm {
           case BOOLEAN | BYTE | SHORT | INT | LONG => true
           case _ => false
         }
+      case VARCHAR =>
+        to.getCategory match {
+          case STRING => true
+          case _ => false
+        }
       // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
       case _ =>
         false
