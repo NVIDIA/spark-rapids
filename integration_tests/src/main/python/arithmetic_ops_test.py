@@ -921,7 +921,7 @@ def test_add_overflow_with_ansi_enabled(data, tp, expr):
         assert_gpu_and_cpu_error(
             lambda spark: _get_overflow_df(spark, data, tp, expr).collect(),
             conf=ansi_enabled_conf,
-            error_message='overflow')
+            error_message='java.lang.ArithmeticException' if is_before_spark_330() else 'SparkArithmeticException')
     elif isinstance(tp, DecimalType):
         assert_gpu_and_cpu_error(
             lambda spark: _get_overflow_df(spark, data, tp, expr).collect(),
@@ -950,7 +950,7 @@ def test_subtraction_overflow_with_ansi_enabled(data, tp, expr):
         assert_gpu_and_cpu_error(
             lambda spark: _get_overflow_df(spark, data, tp, expr).collect(),
             conf=ansi_enabled_conf,
-            error_message='overflow')
+            error_message='java.lang.ArithmeticException' if is_before_spark_330() else 'SparkArithmeticException')
     elif isinstance(tp, DecimalType):
         assert_gpu_and_cpu_error(
             lambda spark: _get_overflow_df(spark, data, tp, expr).collect(),
