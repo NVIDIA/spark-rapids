@@ -30,9 +30,9 @@ import org.apache.spark.sql.rapids.tool.ui.{ConsoleProgressBar, QualificationRep
 
 class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     timeout: Option[Long], nThreads: Int, order: String,
-    pluginTypeChecker: PluginTypeChecker,
-    reportReadSchema: Boolean, printStdout: Boolean, uiEnabled: Boolean,
-    enablePB: Boolean) extends Logging {
+    pluginTypeChecker: PluginTypeChecker, reportReadSchema: Boolean,
+    printStdout: Boolean, uiEnabled: Boolean, enablePB: Boolean,
+    reportSqlLevel: Boolean, maxSQLDescLength: Int) extends Logging {
 
   private val allApps = new ConcurrentLinkedQueue[QualificationSummaryInfo]()
 
@@ -72,12 +72,17 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     }
     progressBar.foreach(_.finishAll())
     val allAppsSum = allApps.asScala.toSeq
-    val qWriter = new QualOutputWriter(getReportOutputPath, reportReadSchema, printStdout)
+    val qWriter = new QualOutputWriter(getReportOutputPath, reportReadSchema, printStdout,
+      order)
     // sort order and limit only applies to the report summary text file,
     // the csv file we write the entire data in descending order
     val sortedDescDetailed = sortDescForDetailedReport(allAppsSum)
     qWriter.writeReport(allAppsSum, sortForExecutiveSummary(sortedDescDetailed, order), numRows)
     qWriter.writeDetailedReport(sortedDescDetailed)
+    if (reportSqlLevel) {
+      qWriter.writePerSqlTextReport(allAppsSum, numRows, maxSQLDescLength)
+      qWriter.writePerSqlCSVReport(allAppsSum, maxSQLDescLength)
+    }
     qWriter.writeExecReport(allAppsSum, order)
     qWriter.writeStageReport(allAppsSum, order)
     if (uiEnabled) {
@@ -112,7 +117,7 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
       hadoopConf: Configuration): Unit = {
     try {
       val startTime = System.currentTimeMillis()
-      val app = QualificationAppInfo.createApp(path, hadoopConf, pluginTypeChecker)
+      val app = QualificationAppInfo.createApp(path, hadoopConf, pluginTypeChecker, reportSqlLevel)
       if (!app.isDefined) {
         progressBar.foreach(_.reportUnkownStatusProcess())
         logWarning(s"No Application found that contain SQL for ${path.eventLog.toString}!")

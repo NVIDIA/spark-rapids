@@ -33,23 +33,6 @@ $(document).ready(function() {
     }
   );
 
-  // Set the tootTips for the table header. Enable this when tooltips are limited to the
-  // table headers
-  // $('thead th[title]').tooltip({
-  //   container: 'body', "delay":0, "track":true, "fade":250,  "animation": true, "html": true
-  // });
-
-  //
-  // Set tooltips for the datatables using jQuery delegated event listener options.
-  // Note that we should always use Note that we should always use jQuery delegated event listener
-  // options as documented in app-report.js
-  //
-  $('tbody').on('mouseover', 'td, th', function () {
-    $('[data-toggle="tooltip"]').tooltip({
-      trigger: 'hover',
-      html: true
-    });
-  });
-
+  setupToolTipForTableCells();
   setupNavigation();
 });

@@ -67,7 +67,8 @@ object ConfHelper {
   }
 
   def stringToSeq(str: String): Seq[String] = {
-    str.split(",").map(_.trim()).filter(_.nonEmpty)
+    // Here 'split' returns a mutable array, 'toList' will convert it into a immutable list
+    str.split(",").map(_.trim()).filter(_.nonEmpty).toList
   }
 
   def stringToSeq[T](str: String, converter: String => T): Seq[T] = {
@@ -225,8 +226,11 @@ class TypedConfBuilder[T](
   }
 
   def createWithDefault(value: T): ConfEntryWithDefault[T] = {
+    // 'converter' will check the validity of default 'value', if it's not valid,
+    // then 'converter' will throw an exception
+    val transformedValue = converter(stringConverter(value))
     val ret = new ConfEntryWithDefault[T](parent.key, converter,
-      parent.doc, parent.isInternal, value)
+      parent.doc, parent.isInternal, transformedValue)
     parent.register(ret)
     ret
   }
@@ -293,6 +297,7 @@ object RapidsReaderType extends Enumeration {
 }
 
 object RapidsConf {
+  val MULTITHREAD_READ_NUM_THREADS_DEFAULT = 20
   private val registeredConfs = new ListBuffer[ConfEntry[_]]()
 
   private def register(entry: ConfEntry[_]): Unit = {
@@ -726,10 +731,14 @@ object RapidsConf {
         "started. Used with COALESCING and MULTITHREADED readers, see " +
         "spark.rapids.sql.format.parquet.reader.type, " +
         "spark.rapids.sql.format.orc.reader.type, or " +
-        "spark.rapids.sql.format.avro.reader.type for a discussion of reader types.")
+        "spark.rapids.sql.format.avro.reader.type for a discussion of reader types. " +
+        "If it is not set explicitly and spark.executor.cores is set, it will be tried to " +
+        "assign value of `max(MULTITHREAD_READ_NUM_THREADS_DEFAULT, spark.executor.cores)`, " +
+        s"where MULTITHREAD_READ_NUM_THREADS_DEFAULT = $MULTITHREAD_READ_NUM_THREADS_DEFAULT" +
+        ".")
       .integerConf
       .checkValue(v => v > 0, "The thread count must be greater than zero.")
-      .createWithDefault(20)
+      .createWithDefault(MULTITHREAD_READ_NUM_THREADS_DEFAULT)
 
   val ENABLE_PARQUET = conf("spark.rapids.sql.format.parquet.enabled")
     .doc("When set to false disables all parquet input and output acceleration")
@@ -1126,14 +1135,20 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val SHUFFLE_TRANSPORT_ENABLE = conf("spark.rapids.shuffle.transport.enabled")
-    .doc("Enable the RAPIDS Shuffle Transport for accelerated shuffle. By default, this " +
-        "requires UCX to be installed in the system. Consider setting to false if running with " +
-        "a single executor and UCX is not available, for short-circuit cached shuffle " +
-        "(i.e. for testing purposes)")
-    .internal()
-    .booleanConf
-    .createWithDefault(true)
+  object RapidsShuffleManagerMode extends Enumeration {
+    val UCX, CACHE_ONLY, MULTITHREADED = Value
+  }
+
+  val SHUFFLE_MANAGER_MODE = conf("spark.rapids.shuffle.mode")
+    .doc("RAPIDS Shuffle Manager mode. The default mode is " +
+        "\"UCX\", which has to be installed in the system. Consider setting to \"CACHE_ONLY\" if " +
+        "running with a single executor and UCX is not installed, for short-circuit cached " +
+        "shuffle (for testing purposes). Set to \"MULTITHREADED\" for an experimental mode that " +
+        "uses a thread pool to speed up shuffle writes without needing UCX. Note: Changing this " +
+        "mode dynamically is not supported.")
+    .stringConf
+    .checkValues(RapidsShuffleManagerMode.values.map(_.toString))
+    .createWithDefault(RapidsShuffleManagerMode.UCX.toString)
 
   val SHUFFLE_TRANSPORT_EARLY_START = conf("spark.rapids.shuffle.transport.earlyStart")
     .doc("Enable early connection establishment for RAPIDS Shuffle")
@@ -1267,6 +1282,12 @@ object RapidsConf {
     .internal()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(64 * 1024)
+
+  val SHUFFLE_MULTITHREADED_WRITER_THREADS =
+    conf("spark.rapids.shuffle.multiThreaded.writer.threads")
+      .doc("The number of threads to use for writing shuffle blocks per executor.")
+      .integerConf
+      .createWithDefault(20)
 
   // ALLUXIO CONFIGS
 
@@ -1883,7 +1904,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleManagerEnabled: Boolean = get(SHUFFLE_MANAGER_ENABLED)
 
-  lazy val shuffleTransportEnabled: Boolean = get(SHUFFLE_TRANSPORT_ENABLE)
+  lazy val shuffleManagerMode: String = get(SHUFFLE_MANAGER_MODE)
 
   lazy val shuffleTransportClassName: String = get(SHUFFLE_TRANSPORT_CLASS_NAME)
 
@@ -1929,6 +1950,22 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleCompressionLz4ChunkSize: Long = get(SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE)
 
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
+
+  lazy val shuffleMultiThreadedWriterThreads: Int = get(SHUFFLE_MULTITHREADED_WRITER_THREADS)
+
+  def isUCXShuffleManagerMode: Boolean =
+    RapidsShuffleManagerMode
+      .withName(get(SHUFFLE_MANAGER_MODE)) == RapidsShuffleManagerMode.UCX
+
+  def isMultiThreadedShuffleManagerMode: Boolean =
+    RapidsShuffleManagerMode
+      .withName(get(SHUFFLE_MANAGER_MODE)) == RapidsShuffleManagerMode.MULTITHREADED
+
+  def isCacheOnlyShuffleManagerMode: Boolean =
+    RapidsShuffleManagerMode
+      .withName(get(SHUFFLE_MANAGER_MODE)) == RapidsShuffleManagerMode.CACHE_ONLY
+
+  def isGPUShuffle: Boolean = isUCXShuffleManagerMode || isCacheOnlyShuffleManagerMode
 
   lazy val shimsProviderOverride: Option[String] = get(SHIMS_PROVIDER_OVERRIDE)
 
