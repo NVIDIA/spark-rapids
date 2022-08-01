@@ -56,7 +56,7 @@ import org.apache.spark.sql.rapids.tool.qualification._
  */
 class RunningQualificationApp(
     reportSqlLevel: Boolean)
-  extends QualificationAppInfo(None, None, new PluginTypeChecker(), reportSqlLevel = false) {
+  extends QualificationAppInfo(None, None, new PluginTypeChecker(), reportSqlLevel) {
 
   def this() = {
     this(false)
@@ -83,6 +83,40 @@ class RunningQualificationApp(
   }
 
   initApp()
+
+  /**
+   * Get the per SQL query summary report for qualification.
+   * @param delimiter The delimiter separating fields of the summary report.
+   * @param prettyPrint Whether to include the delimiter at start and end and
+   *                    add spacing so the data rows align with column headings.
+   *                    @param sqlID Optionally specify
+   * @return String containing the summary report.
+   */
+  def getPerSQLSummary(delimiter: String = "|", prettyPrint: Boolean = true,
+      sqlID: Option[Long] = None): String = {
+    val appInfo = super.aggregateStats()
+    appInfo match {
+      case Some(info) =>
+        if (info.perSQLEstimatedInfo.isDefined && sqlID.isDefined) {
+          val sqlInfo = info.perSQLEstimatedInfo.get.filter(_.sqlID == sqlID.get)
+          sqlInfo.foreach { info =>
+
+          }
+        }
+        val appIdMaxSize = QualOutputWriter.getAppIdSize(Seq(info))
+        val headersAndSizes =
+          QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(info), appIdMaxSize)
+        val headerStr = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
+          delimiter, prettyPrint)
+        val appInfoStr = QualOutputWriter.constructAppSummaryInfo(info.estimatedInfo,
+          headersAndSizes, appIdMaxSize,
+          delimiter, prettyPrint)
+        headerStr + appInfoStr
+      case None =>
+        logWarning(s"Unable to get qualification information for this application")
+        ""
+    }
+  }
 
   /**
    * Get the summary report for qualification.
