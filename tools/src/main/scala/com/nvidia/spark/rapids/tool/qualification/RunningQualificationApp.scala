@@ -35,6 +35,11 @@ import org.apache.spark.sql.rapids.tool.qualification._
  *   val qualApp = new com.nvidia.spark.rapids.tool.qualification.RunningQualificationApp()
  * }}}
  *
+ *  * Create the `RunningQualicationApp` that reports for each SQL Query:
+ * {{{
+ *   val qualApp = new com.nvidia.spark.rapids.tool.qualification.RunningQualificationApp(true)
+ * }}}
+ *
  * Get the event listener from it and install it as a Spark listener:
  * {{{
  *   val listener = qualApp.getEventListener
@@ -49,8 +54,13 @@ import org.apache.spark.sql.rapids.tool.qualification._
  * }}}
  *
  */
-class RunningQualificationApp() extends QualificationAppInfo(None, None,
-  new PluginTypeChecker(), reportSqlLevel = false) {
+class RunningQualificationApp(
+    reportSqlLevel: Boolean)
+  extends QualificationAppInfo(None, None, new PluginTypeChecker(), reportSqlLevel = false) {
+
+  def this() = {
+    this(false)
+  }
 
   // since application is running, try to initialize current state
   private def initApp(): Unit = {

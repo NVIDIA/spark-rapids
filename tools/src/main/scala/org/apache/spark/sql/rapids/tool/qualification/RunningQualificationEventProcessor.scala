@@ -16,6 +16,8 @@
 
 package org.apache.spark.sql.rapids.tool.qualification
 
+import com.nvidia.spark.rapids.tool.qualification.QualOutputWriter
+
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
@@ -25,6 +27,19 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
 
   private val qualApp = new com.nvidia.spark.rapids.tool.qualification.RunningQualificationApp()
   private val listener = qualApp.getEventListener
+
+  private val outputFileFromConfig = sparkConf.get("spark.rapids.qualification.outputFile", "")
+  private val outputFunc = (output: String) => {
+    if (outputFileFromConfig.nonEmpty) {
+      // TODO - do we want to add other configs?
+      // could also just modify the writer to do this
+      val qWriter = new QualOutputWriter(outputFileFromConfig, reportReadSchema=false, printStdout=false,
+        prettyPrintOrder = "desc")
+      qWriter.
+    } else {
+      logWarning(output)
+    }
+  }
 
   override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = {
     listener.onStageCompleted(stageCompleted)

@@ -72,12 +72,14 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
     }
   }
 
-  def writePerSqlCSVReport(sums: Seq[QualificationSummaryInfo], maxSQLDescLength: Int) : Unit = {
+  def writePerSqlCSVHeader(): Unit = {
+
+  }
+
+  def writePerSqlCSVReport(sums: Seq[QualificationSummaryInfo], maxSQLDescLength: Int): Unit = {
     val csvFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}_persql.csv",
       "Per SQL CSV Report")
     try {
-      val plans = sums.flatMap(_.planInfo)
-      val allExecs = QualOutputWriter.getAllExecsFromPlan(plans)
       val headersAndSizes = QualOutputWriter.getDetailedPerSqlHeaderStringsAndSizes(sums,
         maxSQLDescLength, QualOutputWriter.CSV_DELIMITER)
       csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes,
@@ -123,7 +125,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
       sortedAsc.reverse
     }
     val finalSums = sorted.take(numOutputRows)
-    sorted.foreach { estInfo =>
+    finalSums.foreach { estInfo =>
       val wStr = QualOutputWriter.constructPerSqlSummaryInfo(estInfo, headersAndSizes,
         appIdMaxSize, TEXT_DELIMITER, true, maxSQLDescLength)
       writer.write(wStr)
