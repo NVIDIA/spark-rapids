@@ -91,6 +91,13 @@ function bloopInstall() {
   )
 }
 
+function versionsFromDistProfile() {
+  [[ BUILD_ALL_DEBUG == "1" ]] && set -x
+  versionRawStr=$(mvn -B help:evaluate -q -pl dist -P"$1" -Dexpression=included_buildvers -DforceStdout)
+  versionStr=${versionRawStr//[$'\n',]/}
+  echo -n $versionStr
+}
+
 FINAL_OP="package"
 
 while [[ "$1" != "" ]] ; do
@@ -153,40 +160,15 @@ DIST_PROFILE=${DIST_PROFILE:-"noSnapshots"}
 case $DIST_PROFILE in
 
   snapshots?(WithDatabricks))
-    SPARK_SHIM_VERSIONS=(
-      311
-      321cdh
-      312
-      313
-      314
-      320
-      321
-      322
-      330
-      331
-    )
+    SPARK_SHIM_VERSIONS=($(versionsFromDistProfile "snapshots"))
     ;;
 
   noSnapshots?(WithDatabricks))
-    SPARK_SHIM_VERSIONS=(
-      311
-      321cdh
-      312
-      313
-      320
-      321
-      322
-      330
-    )
+    SPARK_SHIM_VERSIONS=($(versionsFromDistProfile "noSnapshots"))
     ;;
 
   minimumFeatureVersionMix)
-    SPARK_SHIM_VERSIONS=(
-      321cdh
-      312
-      320
-      330
-    )
+    SPARK_SHIM_VERSIONS=($(versionsFromDistProfile "minimumFeatureVersionMix"))
     ;;
 
   3*)
@@ -201,6 +183,7 @@ case $DIST_PROFILE in
 
 esac
 
+echo "Spark versions involved: ${SPARK_SHIM_VERSIONS[@]} ..."
 export MVN_BASE_DIR=$($MVN help:evaluate -Dexpression=project.basedir -q -DforceStdout)
 
 if [[ "$GEN_BLOOP" == "true" ]]; then
@@ -223,7 +206,7 @@ fi
 echo "Building a combined dist jar with Shims for ${SPARK_SHIM_VERSIONS[@]} ..."
 
 function build_single_shim() {
-  set -x
+  [[ BUILD_ALL_DEBUG == "1" ]] && set -x
   BUILD_VER=$1
   mkdir -p "$MVN_BASE_DIR/target"
   (( BUILD_PARALLEL == 1 || NUM_SHIMS == 1 )) && LOG_FILE="/dev/tty" || \

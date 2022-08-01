@@ -118,6 +118,20 @@ class BadSerializable(i: Int) extends Serializable {
   }
 }
 
+// Added so that we can mock a method that was created in Spark 3.3.0
+// and the override can be used in all versions of Spark
+trait ShimIndexShuffleBlockResolver330 {
+  def createTempFile(file: File): File
+}
+class TestIndexShuffleBlockResolver(
+    conf: SparkConf,
+    bm: BlockManager)
+      extends IndexShuffleBlockResolver(conf, bm)
+        with ShimIndexShuffleBlockResolver330 {
+  // implemented in Spark 3.3.0
+  override def createTempFile(file: File): File = { null }
+}
+
 class RapidsShuffleThreadedWriterSuite extends FunSuite
     with BeforeAndAfterEach
     with MockitoSugar
@@ -125,7 +139,7 @@ class RapidsShuffleThreadedWriterSuite extends FunSuite
   @Mock(answer = RETURNS_SMART_NULLS) private var blockManager: BlockManager = _
   @Mock(answer = RETURNS_SMART_NULLS) private var diskBlockManager: DiskBlockManager = _
   @Mock(answer = RETURNS_SMART_NULLS) private var taskContext: TaskContext = _
-  @Mock(answer = RETURNS_SMART_NULLS) private var blockResolver: IndexShuffleBlockResolver = _
+  @Mock(answer = RETURNS_SMART_NULLS) private var blockResolver: TestIndexShuffleBlockResolver = _
   @Mock(answer = RETURNS_SMART_NULLS) private var dependency: ShuffleDependency[Int, Int, Int] = _
   @Mock(answer = RETURNS_SMART_NULLS)
     private var dependencyBad: ShuffleDependency[Int, BadSerializable, BadSerializable] = _
@@ -188,6 +202,12 @@ class RapidsShuffleThreadedWriterSuite extends FunSuite
           syncWrites = false,
           args(4).asInstanceOf[ShuffleWriteMetrics],
           blockId = args(0).asInstanceOf[BlockId])
+      }
+
+    when(blockResolver.createTempFile(any(classOf[File])))
+      .thenAnswer { invocationOnMock =>
+        val file = invocationOnMock.getArguments()(0).asInstanceOf[File]
+        Utils.tempFileWith(file)
       }
 
     when(diskBlockManager.createTempShuffleBlock())
@@ -321,7 +341,9 @@ class RapidsShuffleThreadedWriterSuite extends FunSuite
   }
 
   test("write checksum file") {
-    val blockResolver = new IndexShuffleBlockResolver(conf, blockManager)
+    // this is a spy so we can intercept calls to `createTempShuffleBlock`
+    // in spark 3.3.0+
+    val blockResolver = spy(new TestIndexShuffleBlockResolver(conf, blockManager))
     val shuffleId = shuffleHandle.shuffleId
     val mapId = 0
     val checksumBlockId = ShuffleChecksumBlockId(shuffleId, mapId, 0)
@@ -343,6 +365,12 @@ class RapidsShuffleThreadedWriterSuite extends FunSuite
         val file = new File(tempDir, blockId.name)
         temporaryFilesCreated += file
         (blockId, file)
+      }
+
+    when(blockResolver.createTempFile(any(classOf[File])))
+      .thenAnswer { invocationOnMock =>
+        val file = invocationOnMock.getArguments()(0).asInstanceOf[File]
+        Utils.tempFileWith(file)
       }
 
     val numPartition = shuffleHandle.dependency.partitioner.numPartitions
