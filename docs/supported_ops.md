@@ -2033,7 +2033,7 @@ are limited.
 <td rowSpan="3">ArrayExcept</td>
 <td rowSpan="3">`array_except`</td>
 <td rowSpan="3">Returns an array of the elements in array1 but not in array2, without duplicates</td>
-<td rowSpan="3">None</td>
+<td rowSpan="3">This is not 100% compatible with the Spark version because the GPU implementation treats -0.0 and 0.0 as equal, but the CPU implementation currently does not (see SPARK-39845). Also, Apache Spark 3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were not treated as being equal. We have chosen to break with compatibility for the older versions of Spark in this instance and handle NaNs the same as 3.1.3+</td>
 <td rowSpan="3">project</td>
 <td>array1</td>
 <td> </td>
@@ -2195,7 +2195,7 @@ are limited.
 <td rowSpan="3">ArrayIntersect</td>
 <td rowSpan="3">`array_intersect`</td>
 <td rowSpan="3">Returns an array of the elements in the intersection of array1 and array2, without duplicates</td>
-<td rowSpan="3">None</td>
+<td rowSpan="3">This is not 100% compatible with the Spark version because the GPU implementation treats -0.0 and 0.0 as equal, but the CPU implementation currently does not (see SPARK-39845). Also, Apache Spark 3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were not treated as being equal. We have chosen to break with compatibility for the older versions of Spark in this instance and handle NaNs the same as 3.1.3+</td>
 <td rowSpan="3">project</td>
 <td>array1</td>
 <td> </td>
@@ -2519,7 +2519,7 @@ are limited.
 <td rowSpan="3">ArrayUnion</td>
 <td rowSpan="3">`array_union`</td>
 <td rowSpan="3">Returns an array of the elements in the union of array1 and array2, without duplicates.</td>
-<td rowSpan="3">None</td>
+<td rowSpan="3">This is not 100% compatible with the Spark version because the GPU implementation treats -0.0 and 0.0 as equal, but the CPU implementation currently does not (see SPARK-39845). Also, Apache Spark 3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were not treated as being equal. We have chosen to break with compatibility for the older versions of Spark in this instance and handle NaNs the same as 3.1.3+</td>
 <td rowSpan="3">project</td>
 <td>array1</td>
 <td> </td>
@@ -2587,7 +2587,7 @@ are limited.
 <td rowSpan="3">ArraysOverlap</td>
 <td rowSpan="3">`arrays_overlap`</td>
 <td rowSpan="3">Returns true if a1 contains at least a non-null element present also in a2. If the arrays have no common element and they are both non-empty and either of them contains a null element null is returned, false otherwise.</td>
-<td rowSpan="3">None</td>
+<td rowSpan="3">This is not 100% compatible with the Spark version because the GPU implementation treats -0.0 and 0.0 as equal, but the CPU implementation currently does not (see SPARK-39845). Also, Apache Spark 3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were not treated as being equal. We have chosen to break with compatibility for the older versions of Spark in this instance and handle NaNs the same as 3.1.3+</td>
 <td rowSpan="3">project</td>
 <td>array1</td>
 <td> </td>

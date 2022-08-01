@@ -2942,7 +2942,11 @@ object GpuOverrides extends Logging {
           GpuArrayExcept(lhs, rhs)
         }
       }
-    ),
+    ).incompat("the GPU implementation treats -0.0 and 0.0 as equal, but the CPU " +
+        "implementation currently does not (see SPARK-39845). Also, Apache Spark " +
+        "3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were " +
+        "not treated as being equal. We have chosen to break with compatibility for " +
+        "the older versions of Spark in this instance and handle NaNs the same as 3.1.3+"),
     expr[ArrayIntersect](
       "Returns an array of the elements in the intersection of array1 and array2, without" +
         " duplicates",
@@ -2960,7 +2964,11 @@ object GpuOverrides extends Logging {
           GpuArrayIntersect(lhs, rhs)
         }
       }
-    ),
+    ).incompat("the GPU implementation treats -0.0 and 0.0 as equal, but the CPU " +
+        "implementation currently does not (see SPARK-39845). Also, Apache Spark " +
+        "3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were " +
+        "not treated as being equal. We have chosen to break with compatibility for " +
+        "the older versions of Spark in this instance and handle NaNs the same as 3.1.3+"),
     expr[ArrayUnion](
       "Returns an array of the elements in the union of array1 and array2, without duplicates.",
       ExprChecks.binaryProject(
@@ -2977,7 +2985,11 @@ object GpuOverrides extends Logging {
           GpuArrayUnion(lhs, rhs)
         }
       }
-    ),
+    ).incompat("the GPU implementation treats -0.0 and 0.0 as equal, but the CPU " +
+        "implementation currently does not (see SPARK-39845). Also, Apache Spark " +
+        "3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were " +
+        "not treated as being equal. We have chosen to break with compatibility for " +
+        "the older versions of Spark in this instance and handle NaNs the same as 3.1.3+"),
     expr[ArraysOverlap](
       "Returns true if a1 contains at least a non-null element present also in a2. If the arrays " +
       "have no common element and they are both non-empty and either of them contains a null " + 
@@ -2994,7 +3006,11 @@ object GpuOverrides extends Logging {
           GpuArraysOverlap(lhs, rhs)
         }
       }
-    ),
+    ).incompat("the GPU implementation treats -0.0 and 0.0 as equal, but the CPU " +
+        "implementation currently does not (see SPARK-39845). Also, Apache Spark " +
+        "3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were " +
+        "not treated as being equal. We have chosen to break with compatibility for " +
+        "the older versions of Spark in this instance and handle NaNs the same as 3.1.3+"),
     expr[TransformKeys](
       "Transform keys in a map using a transform function",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
