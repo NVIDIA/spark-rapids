@@ -92,7 +92,9 @@ jobs:
       # includes RAT, code style and doc-gen checks of default shim
       - name: verify all modules with lowest-supported Spark version
         run: >
-          mvn -B verify -P 'individual,pre-merge'
+          mvn -B verify
+          -P 'individual,pre-merge'
+          -Dbuildver=${{ needs.get-noSnapshot-versions-from-dist.outputs.sparkTailVersions }}
           -DskipTests
           -Dskip
           -Dmaven.javadoc.skip
