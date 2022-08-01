@@ -7318,6 +7318,53 @@ are limited.
 <td> </td>
 </tr>
 <tr>
+<td rowSpan="2">JsonToStructs</td>
+<td rowSpan="2">`from_json`</td>
+<td rowSpan="2">Returns a struct value with the given `jsonStr` and `schema`</td>
+<td rowSpan="2">None</td>
+<td rowSpan="2">project</td>
+<td>jsonStr</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td>S</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+</tr>
+<tr>
+<td>result</td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td> </td>
+<td><b>NS</b></td>
+<td><em>PS<br/>unsupported child types BOOLEAN, BYTE, SHORT, INT, LONG, FLOAT, DOUBLE, DATE, TIMESTAMP, DECIMAL, NULL, BINARY, CALENDAR, ARRAY, MAP, STRUCT, UDT</em></td>
+<td><b>NS</b></td>
+<td> </td>
+</tr>
+<tr>
 <td rowSpan="2">KnownFloatingPointNormalized</td>
 <td rowSpan="2"> </td>
 <td rowSpan="2">Tag to prevent redundant normalization</td>
