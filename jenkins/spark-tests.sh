@@ -284,6 +284,7 @@ export -f get_tests_by_tags
 # - DEFAULT: all tests except cudf_udf tests
 # - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
 # - ICEBERG_ONLY: iceberg tests only
+# - DELTA_LAKE_ONLY: Delta Lake tests only
 TEST_MODE=${TEST_MODE:-'DEFAULT'}
 if [[ $TEST_MODE == "DEFAULT" ]]; then
   # integration tests
@@ -337,7 +338,7 @@ if [[ "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
 fi
 
 # Delta Lake tests
-if [[ "$TEST_MODE" == "ALL" || "$TEST_MODE" == "DELTA_LAKE_ONLY" ]]; then
+if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "DELTA_LAKE_ONLY" ]]; then
   run_test_not_parallel delta_lake
 fi
 
