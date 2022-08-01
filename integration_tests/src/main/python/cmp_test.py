@@ -20,7 +20,7 @@ from spark_session import with_cpu_session, is_before_spark_330
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
-@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen + struct_gens_sample_with_decimal128_no_list, ids=idfn)
 def test_eq(data_gen):
     (s1, s2) = gen_scalars(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     data_type = data_gen.data_type
@@ -33,8 +33,10 @@ def test_eq(data_gen):
                 f.col('a') == f.col('b')))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-def test_eq_for_interval():
-    data_gen = DayTimeIntervalGen()
+# DayTimeIntervalType not supported inside Structs -- issue #6184
+# @pytest.mark.parametrize('data_gen', [DayTimeIntervalGen(), StructGen([['child0', StructGen([['child2', DayTimeIntervalGen()]])], ['child1', short_gen]])], ids=idfn)
+@pytest.mark.parametrize('data_gen', [DayTimeIntervalGen()], ids=idfn)
+def test_eq_for_interval(data_gen):
     (s1, s2) = gen_scalars(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -58,8 +60,10 @@ def test_eq_ns(data_gen):
                 f.col('a').eqNullSafe(f.col('b'))))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-def test_eq_ns_for_interval():
-    data_gen = DayTimeIntervalGen()
+# DayTimeIntervalType not supported inside Structs -- issue #6184
+# @pytest.mark.parametrize('data_gen', [DayTimeIntervalGen(), StructGen([['child0', StructGen([['child2', DayTimeIntervalGen()]])], ['child1', short_gen]])], ids=idfn)
+@pytest.mark.parametrize('data_gen', [DayTimeIntervalGen()], ids=idfn)
+def test_eq_ns_for_interval(data_gen):
     (s1, s2) = gen_scalars(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -70,7 +74,7 @@ def test_eq_ns_for_interval():
             f.col('b').eqNullSafe(f.lit(None).cast(data_type)),
             f.col('a').eqNullSafe(f.col('b'))))
 
-@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen + struct_gens_sample_with_decimal128_no_list, ids=idfn)
 def test_ne(data_gen):
     (s1, s2) = gen_scalars(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     data_type = data_gen.data_type
@@ -83,8 +87,10 @@ def test_ne(data_gen):
                 f.col('a') != f.col('b')))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-def test_ne_for_interval():
-    data_gen = DayTimeIntervalGen()
+# DayTimeIntervalType not supported inside Structs -- issue #6184
+# @pytest.mark.parametrize('data_gen', [DayTimeIntervalGen(), StructGen([['child0', StructGen([['child2', DayTimeIntervalGen()]])], ['child1', short_gen]])], ids=idfn)
+@pytest.mark.parametrize('data_gen', [DayTimeIntervalGen()], ids=idfn)
+def test_ne_for_interval(data_gen):
     (s1, s2) = gen_scalars(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -95,7 +101,7 @@ def test_ne_for_interval():
             f.col('b') != f.lit(None).cast(data_type),
             f.col('a') != f.col('b')))
 
-@pytest.mark.parametrize('data_gen', orderable_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', orderable_gens + struct_gens_sample_with_decimal128_no_list, ids=idfn)
 def test_lt(data_gen):
     (s1, s2) = gen_scalars(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     data_type = data_gen.data_type
@@ -108,8 +114,10 @@ def test_lt(data_gen):
                 f.col('a') < f.col('b')))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-def test_lt_for_interval():
-    data_gen = DayTimeIntervalGen()
+# DayTimeIntervalType not supported inside Structs -- issue #6184
+# @pytest.mark.parametrize('data_gen', [DayTimeIntervalGen(), StructGen([['child0', StructGen([['child2', DayTimeIntervalGen()]])], ['child1', short_gen]])], ids=idfn)
+@pytest.mark.parametrize('data_gen', [DayTimeIntervalGen()], ids=idfn)
+def test_lt_for_interval(data_gen):
     (s1, s2) = gen_scalars(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -120,7 +128,7 @@ def test_lt_for_interval():
             f.col('b') < f.lit(None).cast(data_type),
             f.col('a') < f.col('b')))
 
-@pytest.mark.parametrize('data_gen', orderable_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', orderable_gens + struct_gens_sample_with_decimal128_no_list, ids=idfn)
 def test_lte(data_gen):
     (s1, s2) = gen_scalars(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     data_type = data_gen.data_type
@@ -133,8 +141,10 @@ def test_lte(data_gen):
                 f.col('a') <= f.col('b')))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-def test_lte_for_interval():
-    data_gen = DayTimeIntervalGen()
+# DayTimeIntervalType not supported inside Structs -- issue #6184
+# @pytest.mark.parametrize('data_gen', [DayTimeIntervalGen(), StructGen([['child0', StructGen([['child2', DayTimeIntervalGen()]])], ['child1', short_gen]])], ids=idfn)
+@pytest.mark.parametrize('data_gen', [DayTimeIntervalGen()], ids=idfn)
+def test_lte_for_interval(data_gen):
     (s1, s2) = gen_scalars(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -159,8 +169,10 @@ def test_gt(data_gen):
                 f.col('a') > f.col('b')))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-def test_gt_interval():
-    data_gen = DayTimeIntervalGen()
+# DayTimeIntervalType not supported inside Structs -- issue #6184
+# @pytest.mark.parametrize('data_gen', [DayTimeIntervalGen(), StructGen([['child0', StructGen([['child2', DayTimeIntervalGen()]])], ['child1', short_gen]])], ids=idfn)
+@pytest.mark.parametrize('data_gen', [DayTimeIntervalGen()], ids=idfn)
+def test_gt_interval(data_gen):
     (s1, s2) = gen_scalars(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -171,7 +183,7 @@ def test_gt_interval():
             f.col('b') > f.lit(None).cast(data_type),
             f.col('a') > f.col('b')))
 
-@pytest.mark.parametrize('data_gen', orderable_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', orderable_gens + struct_gens_sample_with_decimal128_no_list, ids=idfn)
 def test_gte(data_gen):
     (s1, s2) = gen_scalars(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     data_type = data_gen.data_type
@@ -184,8 +196,10 @@ def test_gte(data_gen):
                 f.col('a') >= f.col('b')))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-def test_gte_for_interval():
-    data_gen = DayTimeIntervalGen()
+# DayTimeIntervalType not supported inside Structs -- issue #6184
+# @pytest.mark.parametrize('data_gen', [DayTimeIntervalGen(), StructGen([['child0', StructGen([['child2', DayTimeIntervalGen()]])], ['child1', short_gen]])], ids=idfn)
+@pytest.mark.parametrize('data_gen', [DayTimeIntervalGen()], ids=idfn)
+def test_gte_for_interval(data_gen):
     (s1, s2) = gen_scalars(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -203,8 +217,10 @@ def test_isnull(data_gen):
                 f.isnull(f.col('a'))))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-def test_isnull_for_interval():
-    data_gen = DayTimeIntervalGen()
+# DayTimeIntervalType not supported inside Structs -- issue #6184
+# @pytest.mark.parametrize('data_gen', [DayTimeIntervalGen(), StructGen([['child0', StructGen([['child2', DayTimeIntervalGen()]])], ['child1', short_gen]])], ids=idfn)
+@pytest.mark.parametrize('data_gen', [DayTimeIntervalGen()], ids=idfn)
+def test_isnull_for_interval(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).select(
             f.isnull(f.col('a'))))

@@ -953,11 +953,16 @@ all_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen i
 nonempty_struct_gens_sample = [all_basic_struct_gen,
         StructGen([['child0', byte_gen], ['child1', all_basic_struct_gen]]),
         StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
+nonempty_struct_gens_sample_no_list = [all_basic_struct_gen,
+        StructGen([['child0', byte_gen], ['child1', all_basic_struct_gen]]),
+        StructGen([['child0', short_gen], ['child1', double_gen]])]
 
 struct_gens_sample = nonempty_struct_gens_sample + [StructGen([])]
+struct_gens_sample_no_list = nonempty_struct_gens_sample_no_list + [StructGen([])]
 struct_gen_decimal128 = StructGen(
     [['child' + str(ind), sub_gen] for ind, sub_gen in enumerate([decimal_gen_128bit])])
 struct_gens_sample_with_decimal128 = struct_gens_sample + [struct_gen_decimal128]
+struct_gens_sample_with_decimal128_no_list = struct_gens_sample_no_list + [struct_gen_decimal128]
 
 simple_string_to_string_map_gen = MapGen(StringGen(pattern='key_[0-9]', nullable=False),
         StringGen(), max_length=10)
