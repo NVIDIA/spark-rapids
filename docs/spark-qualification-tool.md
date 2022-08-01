@@ -20,9 +20,9 @@ it reports by looking at the amount of time spent in tasks of SQL Dataframe oper
 
 > **Disclaimer!**  
 > Estimates provided by the Qualification tool are based on the currently supported "_SparkPlan_" or "_Executor Nodes_"
-> used in the application. It currently does not look at the expressions or datatypes used.
-> Please refer to the [Supported Operators](./supported_ops.md) guide to check the types and expressions you are using
-> are supported.
+> used in the application. It currently does not handle all the expressions or datatypes used.  
+> Please refer to "[Understanding Execs report](#execs-report)" section and the
+> "[Supported Operators](./supported_ops.md)" guide to check the types and expressions you are using are supported.
 
 This document covers below topics:
 
@@ -285,10 +285,12 @@ The tree structure of the output directory `${OUTPUT_FOLDER}/rapids_4_spark_qual
         ├── html
         │   ├── application.html
         │   ├── index.html
-        │   └── raw.html
+        │   ├── raw.html
+        │   └── sql-recommendation.html
         └── js
             ├── app-report.js
             ├── data-output.js
+            ├── per-sql-report.js            
             ├── qual-report.js
             ├── raw-report.js
             ├── ui-config.js
@@ -502,6 +504,61 @@ details on limitations on UDFs and unsupported operators.
 11. _Exec Children Node Ids_
 12. _Exec Should Remove_: whether the Op is removed from the migrated plan.
 
+**Parsing Expressions within each Exec**
+
+The Qualification tool looks at the expressions in each _Exec_ to provide a fine-grained assessment of
+RAPIDS' support.  
+Note that it is not possible to extract the expressions for each available _Exec_:
+- some Execs do not take any expressions, and
+- some execs may not show the expressions in the _eventlog_.
+
+The following table lists the exec's name and the status of parsing their expressions where:
+- "_Expressions Unavailable_" marks the _Execs_ that do not show expressions in the _eventlog_;
+- "_Fully Parsed_" marks the _Execs_ that have their expressions fully parsed by the Qualification tool;
+- "_In Progress_" marks the _Execs_ that are still being investigated; therefore, a set of the
+  marked _Execs_ may be fully parsed in future releases.
+
+| **Exec**                              | **Expressions Unavailable** | **Fully Parsed** | **In Progress** |
+|---------------------------------------|:---------------------------:|:----------------:|:---------------:|
+| AggregateInPandasExec                 |              -              |         -        |        x        |
+| AQEShuffleReadExec                    |              -              |         -        |        x        |
+| ArrowEvalPythonExec                   |              -              |         -        |        x        |
+| BatchScanExec                         |              -              |         -        |        x        |
+| BroadcastExchangeExec                 |              -              |         -        |        x        |
+| BroadcastHashJoinExec                 |              -              |         -        |        x        |
+| BroadcastNestedLoopJoinExec           |              -              |         -        |        x        |
+| CartesianProductExec                  |              -              |         -        |        x        |
+| CoalesceExec                          |              -              |         -        |        x        |
+| CollectLimitExec                      |              x              |         -        |        -        |
+| CreateDataSourceTableAsSelectCommand  |              -              |         -        |        x        |
+| CustomShuffleReaderExec               |              -              |         -        |        x        |
+| DataWritingCommandExec                |              -              |         -        |        x        |
+| ExpandExec                            |              -              |         -        |        x        |
+| FileSourceScanExec                    |              -              |         -        |        x        |
+| FilterExec                            |              -              |         x        |        -        |
+| FlatMapGroupsInPandasExec             |              -              |         -        |        x        |
+| GenerateExec                          |              -              |         -        |        x        |
+| GlobalLimitExec                       |              x              |         -        |        -        |
+| HashAggregateExec                     |              -              |         x        |        -        |
+| InMemoryTableScanExec                 |              -              |         -        |        x        |
+| InsertIntoHadoopFsRelationCommand     |              -              |         -        |        x        |
+| LocalLimitExec                        |              x              |         -        |        -        |
+| MapInPandasExec                       |              -              |         -        |        x        |
+| ObjectHashAggregateExec               |              -              |         x        |        -        |
+| ProjectExec                           |              -              |         x        |        -        |
+| RangeExec                             |              x              |         -        |        -        |
+| SampleExec                            |              -              |         -        |        x        |
+| ShuffledHashJoinExec                  |              -              |         -        |        x        |
+| ShuffleExchangeExec                   |              -              |         -        |        x        |
+| SortAggregateExec                     |              -              |         x        |        -        |
+| SortExec                              |              -              |         x        |        -        |
+| SortMergeJoinExec                     |              -              |         -        |        x        |
+| SubqueryBroadcastExec                 |              -              |         -        |        x        |
+| TakeOrderedAndProjectExec             |              -              |         -        |        x        |
+| UnionExec                             |              x              |         -        |        -        |
+| WindowExec                            |              -              |         x        |        -        |
+| WindowInPandasExec                    |              -              |         -        |        x        |
+
 ## Output Formats
 
 The Qualification tool generates the output as CSV/log files. Starting from "_22.06_", the default
@@ -551,10 +608,12 @@ The summary report contains the following components:
    values selected in the other pane.
 4. Text Search field that allows further filtering, removing data from the result set as keywords are entered. The
    search box will match on multiple columns including: "_App ID_", "_App Name_", "_Recommendation_"
-5. The `Raw Data` link in the left navigation bar redirects to a detailed report.
-6. HTML5 export button saves the table to CSV file into the browser's default download folder.
+5. HTML5 export button saves the table to CSV file into the browser's default download folder.
+6. The `Raw Data` link in the left navigation bar redirects to a detailed report.
+7. The `Per-SQL Data` link in the left navigation bar redirects to a summary report that shows
+   the _per-SQL_ estimated GPU performance.
 
-![Qualification-HTML-Recommendation-View](img/Tools/qualification-tool-recommendation-indexview.png)
+![Qualification-HTML-Recommendation-View](img/Tools/qualification-tool-recommendation-indexview-with-persql.png)
 
 #### App-Details View
 
@@ -567,7 +626,7 @@ It contains the following main components:
     1. "_App Duration_": the total execution time of the app, marking the start and end time.
     2. "_GPU Opportunity_": the wall-Clock time that shows how much of the SQL duration can be accelerated on the GPU. It
        shows the actual wall-Clock time duration that includes only SQL-Dataframe queries including non-supported ops,
-       dubbed "_SQL DF Duration_". This is followed by "Task Speed-up Factor" which represents the average speed-up
+       dubbed "_SQL DF Duration_". This is followed by "_Task Speed-up Factor_" which represents the average speed-up
        of all app stages.
     3. "_Estimated GPU Duration_": the predicted runtime of the app if it was run on GPU. For convenience, it calculates
        the estimated wall-clock time difference between the CPU and GPU executions. The original CPU duration of the app
@@ -590,7 +649,7 @@ It contains the following main components:
        predefined speed-up ranges: `1.0 (No Speed-up)`; `]1.0, 1.3[`; `[1.3, 2.5[`; `[2.5, 5[`; and `[5, _]`. The
        search-pane does not show a range bucket if its count is 0.
     3. "_Tasks GPU Support_": this filter can be used to find stages having all their execs supported by the GPU.
-5. **Execs Details Table**: lists all the app stages with set of columns listed in [Execs report](#execs-report)
+5. **Execs Details Table**: lists all the app Execs with set of columns listed in [Execs report](#execs-report)
    section. The HTML5 export button saves the table to CSV file into the browser's default
    download folder.
    ![Qualification-HTML-App-Details-View-Execs](img/Tools/qualification-tool-app-view-03.png)
@@ -606,7 +665,9 @@ It contains the following main components:
     4. "_Stage ID_": filters rows by the stage ID. It also allows text-searching by typing into the filter-title as a text
        input.
     5. "_Is Exec Removed_": filters rows that were removed from the migrated plan.
-   
+    6. **SQL Details Table**: lists _Per-SQL_ GPU recommendation. The HTML5 export button saves the table to CSV file into
+       the browser's default download folder. The rows in the table can be filtered by "_SQL Description_", "_SQL ID_",
+       or "_Recommendation_".
 
 #### Raw Data
 
@@ -614,11 +675,17 @@ It contains the following main components:
 Columns representing "_time duration_" are rounded to nearest "ms", "seconds", "minutes", and "hours".
 The search box will match on multiple columns including: "_App ID_", "_App Name_", "_Recommendation_",
 "_User Name_", "_Unsupported Write Data Format_", "_Complex Types_", "_Nested Complex Types_", and "_Read Schema_".
-The detailed table can also be exported as `Qualification Tool Dashboard – Raw Data.csv`.
+The detailed table can also be exported as a CSV file into the browser's default download folder.
 
 Note that this table has more columns than can fit in a normal browser window. Therefore, the UI application dynamically
 optimizes the layout of the table
 to fit the browser screen. By clicking on the control column, the row expands to show the remaining hidden columns.
+
+#### Per-SQL Data
+
+`sql-recommendation.html` displays a summary of the estimate GPU performance for each query. Note that the
+SQL queries across all the apps are combined in a single view; therefore, the "_SQL ID_" field may not be
+unique. 
 
 ### Text and CSV files
 
