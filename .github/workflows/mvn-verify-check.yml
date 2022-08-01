@@ -94,7 +94,7 @@ jobs:
         run: >
           mvn -B verify
           -P 'individual,pre-merge'
-          -Dbuildver=${{ needs.get-noSnapshot-versions-from-dist.outputs.sparkTailVersions }}
+          -Dbuildver=${{ needs.get-noSnapshot-versions-from-dist.outputs.sparkHeadVersion }}
           -DskipTests
           -Dskip
           -Dmaven.javadoc.skip
