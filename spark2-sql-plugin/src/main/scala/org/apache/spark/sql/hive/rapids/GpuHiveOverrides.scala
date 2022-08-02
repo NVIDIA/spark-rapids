@@ -39,53 +39,10 @@ object GpuHiveOverrides {
    * mapping if spark-hive is unavailable.
    */
   def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    if (!isSparkHiveAvailable) {
-      return Map.empty
+    if (isSparkHiveAvailable) {
+      ShimLoader.newHiveProvider().getExprs
+    } else {
+      Map.empty
     }
-
-    Seq(
-      GpuOverrides.expr[HiveSimpleUDF](
-        "Hive UDF, the UDF can choose to implement a RAPIDS accelerated interface to" +
-          " get better performance",
-        ExprChecks.projectOnly(
-          udfTypeSig,
-          TypeSig.all,
-          repeatingParamCheck = Some(RepeatingParamCheck("param", udfTypeSig, TypeSig.all))),
-        (a, conf, p, r) => new ExprMeta[HiveSimpleUDF](a, conf, p, r) {
-          private val opRapidsFunc = a.function match {
-            case rapidsUDF: RapidsUDF => Some(rapidsUDF)
-            case _ => None
-          }
-
-          override def tagExprForGpu(): Unit = {
-            if (opRapidsFunc.isEmpty && !conf.isCpuBasedUDFEnabled) {
-              willNotWorkOnGpu(s"Hive SimpleUDF ${a.name} implemented by " +
-                s"${a.funcWrapper.functionClassName} does not provide a GPU implementation " +
-                s"and CPU-based UDFs are not enabled by `${RapidsConf.ENABLE_CPU_BASED_UDF.key}`")
-            }
-          }
-        }),
-      GpuOverrides.expr[HiveGenericUDF](
-        "Hive Generic UDF, the UDF can choose to implement a RAPIDS accelerated interface to" +
-          " get better performance",
-        ExprChecks.projectOnly(
-          udfTypeSig,
-          TypeSig.all,
-          repeatingParamCheck = Some(RepeatingParamCheck("param", udfTypeSig, TypeSig.all))),
-        (a, conf, p, r) => new ExprMeta[HiveGenericUDF](a, conf, p, r) {
-          private val opRapidsFunc = a.function match {
-            case rapidsUDF: RapidsUDF => Some(rapidsUDF)
-            case _ => None
-          }
-
-          override def tagExprForGpu(): Unit = {
-            if (opRapidsFunc.isEmpty && !conf.isCpuBasedUDFEnabled) {
-              willNotWorkOnGpu(s"Hive GenericUDF ${a.name} implemented by " +
-                s"${a.funcWrapper.functionClassName} does not provide a GPU implementation " +
-                s"and CPU-based UDFs are not enabled by `${RapidsConf.ENABLE_CPU_BASED_UDF.key}`")
-            }
-          }
-        })
-    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }
 }
