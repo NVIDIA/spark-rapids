@@ -103,6 +103,51 @@ class GpuRegExpExtractMeta(
   }
 }
 
+class GpuRegExpExtractAllMeta(
+    expr: RegExpExtractAll,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends TernaryExprMeta[RegExpExtractAll](expr, conf, parent, rule) {
+
+  private var pattern: Option[String] = None
+  private var numGroups = 0
+
+  override def tagExprForGpu(): Unit = {
+    GpuRegExpUtils.tagForRegExpEnabled(this)
+
+    expr.regexp match {
+      case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
+        try {
+          val javaRegexpPattern = str.toString
+          // verify that we support this regex and can transpile it to cuDF format
+          pattern = Some(new CudfRegexTranspiler(RegexFindMode)
+            .transpile(javaRegexpPattern, None)._1)
+          numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
+        } catch {
+          case e: RegexUnsupportedException =>
+            willNotWorkOnGpu(e.getMessage)
+        }
+      case _ =>
+        willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
+    }
+
+    expr.idx match {
+      case Literal(value, DataTypes.IntegerType) =>
+        val idx = value.asInstanceOf[Int]
+        if (idx < 0) {
+          willNotWorkOnGpu("the specified group index cannot be less than zero")
+        }
+        if (idx > numGroups) {
+          willNotWorkOnGpu(
+            s"regex group count is $numGroups, but the specified group index is $idx")
+        }
+      case _ =>
+        willNotWorkOnGpu("GPU only supports literal index")
+    }
+  }
+}
+
 class SubstringIndexMeta(
     expr: SubstringIndex,
     override val conf: RapidsConf,

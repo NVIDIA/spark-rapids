@@ -161,7 +161,10 @@ abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPU
         if (sparkSQLFunctions.isDefined) {
           print(s"|${sparkSQLFunctions.get}")
         }
-        print(s"|$desc|${notesMsg.isEmpty}|")
+        val incompatOps = RapidsConf.INCOMPATIBLE_OPS.asInstanceOf[ConfEntryWithDefault[Boolean]]
+        val expressionEnabled = disabledMsg.isEmpty &&
+          (incompatDoc.isEmpty || incompatOps.defaultValue)
+        print(s"|$desc|$expressionEnabled|")
         if (notesMsg.isDefined) {
           print(s"${notesMsg.get}")
         } else {
@@ -399,6 +402,10 @@ object JsonFormatType extends FileFormatType {
 
 object AvroFormatType extends FileFormatType {
   override def toString = "Avro"
+}
+
+object IcebergFormatType extends FileFormatType {
+  override def toString = "Iceberg"
 }
 
 sealed trait FileFormatOp
@@ -707,7 +714,13 @@ object GpuOverrides extends Logging {
         TypeSig.FLOAT + TypeSig.DOUBLE + TypeSig.STRING,
       cudfWrite = TypeSig.none,
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-        TypeSig.UDT).nested())))
+        TypeSig.UDT).nested())),
+    (IcebergFormatType, FileFormatChecks(
+      cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
+          TypeSig.ARRAY + TypeSig.MAP + GpuTypeShims.additionalParquetSupportedTypes).nested(),
+      cudfWrite = TypeSig.none,
+      sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+          TypeSig.UDT + GpuTypeShims.additionalParquetSupportedTypes).nested())))
 
   val commonExpressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     expr[Literal](
@@ -1402,7 +1415,6 @@ object GpuOverrides extends Logging {
               willNotWorkOnGpu("interval months isn't supported")
             }
           }
-          checkTimeZoneId(timeAdd.timeZoneId)
         }
 
     }),
@@ -1443,9 +1455,6 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
       (hour, conf, p, r) => new UnaryExprMeta[Hour](hour, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          checkTimeZoneId(hour.timeZoneId)
-        }
 
       }),
     expr[Minute](
@@ -1453,19 +1462,12 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
       (minute, conf, p, r) => new UnaryExprMeta[Minute](minute, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-         checkTimeZoneId(minute.timeZoneId)
-        }
-
       }),
     expr[Second](
       "Returns the second component of the string/timestamp",
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
         TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
       (second, conf, p, r) => new UnaryExprMeta[Second](second, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          checkTimeZoneId(second.timeZoneId)
-        }
       }),
     expr[WeekDay](
       "Returns the day of the week (0 = Monday...6=Sunday)",
@@ -1868,32 +1870,31 @@ object GpuOverrides extends Logging {
         }
 
       }),
+    // Spark 2.x doesn't have NthValue
     expr[First](
       "first aggregate operator", {
-        ExprChecks.aggNotWindow(
+      ExprChecks.fullAgg(
+        (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
+        TypeSig.all,
+        Seq(ParamCheck("input",
           (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
               TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
-          TypeSig.all,
-          Seq(ParamCheck("input",
-            (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
-            TypeSig.all))
-        )
-      },
+          TypeSig.all))
+      ),
       (a, conf, p, r) => new AggExprMeta[First](a, conf, p, r) {
       }),
     expr[Last](
       "last aggregate operator", {
-        ExprChecks.aggNotWindow(
+      ExprChecks.fullAgg(
+        (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
+        TypeSig.all,
+        Seq(ParamCheck("input",
           (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
               TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
-          TypeSig.all,
-          Seq(ParamCheck("input",
-            (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-                TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
-            TypeSig.all))
-        )
-      },
+          TypeSig.all))
+      ),
       (a, conf, p, r) => new AggExprMeta[Last](a, conf, p, r) {
       }),
     expr[BRound](
@@ -2081,7 +2082,7 @@ object GpuOverrides extends Logging {
         TypeSig.all,
         ("map", TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT +
           TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP), TypeSig.MAP.nested(TypeSig.all)),
-        ("key", TypeSig.commonCudfTypesLit() + TypeSig.lit(TypeEnum.DECIMAL), TypeSig.all)),
+        ("key", TypeSig.commonCudfTypes + TypeSig.DECIMAL_128, TypeSig.all)),
       (in, conf, p, r) => new BinaryExprMeta[GetMapValue](in, conf, p, r) {
       }),
     expr[ElementAt](
@@ -2097,13 +2098,10 @@ object GpuOverrides extends Logging {
             .withPsNote(TypeEnum.MAP ,"If it's map, only primitive key types are supported."),
           TypeSig.ARRAY.nested(TypeSig.all) + TypeSig.MAP.nested(TypeSig.all)),
         ("index/key", (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128)
-          .withPsNote(TypeEnum.INT, "Supported as array index. " +
-            "Only Literals supported as map keys.")
           .withPsNote(
             Seq(TypeEnum.BOOLEAN, TypeEnum.BYTE, TypeEnum.SHORT, TypeEnum.LONG,
               TypeEnum.FLOAT, TypeEnum.DOUBLE, TypeEnum.DATE, TypeEnum.TIMESTAMP,
-              TypeEnum.STRING, TypeEnum.DECIMAL),
-            "Unsupported as array index. Only Literals supported as map keys."),
+              TypeEnum.STRING, TypeEnum.DECIMAL), "Unsupported as array index."),
           TypeSig.all)),
       (in, conf, p, r) => new BinaryExprMeta[ElementAt](in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
@@ -2119,7 +2117,7 @@ object GpuOverrides extends Logging {
                   TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT +
                     TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP),
                   TypeSig.MAP.nested(TypeSig.all)),
-                ("key", TypeSig.commonCudfTypesLit() + TypeSig.lit(TypeEnum.DECIMAL), TypeSig.all))
+                ("key", TypeSig.commonCudfTypes + TypeSig.DECIMAL_128, TypeSig.all))
             case _: ArrayType =>
               // Match exactly with the checks for GetArrayItem
               ExprChecks.binaryProject(
@@ -2329,6 +2327,91 @@ object GpuOverrides extends Logging {
       (in, conf, p, r) => new ExprMeta[ArraysZip](in, conf, p, r) {
       }
     ),
+    expr[ArrayExcept](
+      "Returns an array of the elements in array1 but not in array2, without duplicates",
+      ExprChecks.binaryProject(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        ("array1",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+        ("array2",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all))),
+      (in, conf, p, r) => new BinaryExprMeta[ArrayExcept](in, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuArrayExcept(lhs, rhs)
+        }
+      }
+    ).incompat("the GPU implementation treats -0.0 and 0.0 as equal, but the CPU " +
+        "implementation currently does not (see SPARK-39845). Also, Apache Spark " +
+        "3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were " +
+        "not treated as being equal. We have chosen to break with compatibility for " +
+        "the older versions of Spark in this instance and handle NaNs the same as 3.1.3+"),
+    expr[ArrayIntersect](
+      "Returns an array of the elements in the intersection of array1 and array2, without" +
+        " duplicates",
+      ExprChecks.binaryProject(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        ("array1",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+        ("array2",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all))),
+      (in, conf, p, r) => new BinaryExprMeta[ArrayIntersect](in, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuArrayIntersect(lhs, rhs)
+        }
+      }
+    ).incompat("the GPU implementation treats -0.0 and 0.0 as equal, but the CPU " +
+        "implementation currently does not (see SPARK-39845). Also, Apache Spark " +
+        "3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were " +
+        "not treated as being equal. We have chosen to break with compatibility for " +
+        "the older versions of Spark in this instance and handle NaNs the same as 3.1.3+"),
+    expr[ArrayUnion](
+      "Returns an array of the elements in the union of array1 and array2, without duplicates.",
+      ExprChecks.binaryProject(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        ("array1",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+        ("array2",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all))),
+      (in, conf, p, r) => new BinaryExprMeta[ArrayUnion](in, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuArrayUnion(lhs, rhs)
+        }
+      }
+    ).incompat("the GPU implementation treats -0.0 and 0.0 as equal, but the CPU " +
+        "implementation currently does not (see SPARK-39845). Also, Apache Spark " +
+        "3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were " +
+        "not treated as being equal. We have chosen to break with compatibility for " +
+        "the older versions of Spark in this instance and handle NaNs the same as 3.1.3+"),
+    expr[ArraysOverlap](
+      "Returns true if a1 contains at least a non-null element present also in a2. If the arrays " +
+      "have no common element and they are both non-empty and either of them contains a null " +
+      "element null is returned, false otherwise.",
+      ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+        ("array1",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+        ("array2",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all))),
+      (in, conf, p, r) => new BinaryExprMeta[ArraysOverlap](in, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuArraysOverlap(lhs, rhs)
+        }
+      }
+    ).incompat("the GPU implementation treats -0.0 and 0.0 as equal, but the CPU " +
+        "implementation currently does not (see SPARK-39845). Also, Apache Spark " +
+        "3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were " +
+        "not treated as being equal. We have chosen to break with compatibility for " +
+        "the older versions of Spark in this instance and handle NaNs the same as 3.1.3+"),
     // spark 2.x doesn't have MapFilter
     expr[StringLocate](
       "Substring search operator",
@@ -2423,14 +2506,25 @@ object GpuOverrides extends Logging {
       }),
     expr[MapConcat](
       "Returns the union of all the given maps",
+      // Currently, GpuMapConcat supports nested values but not nested keys.
+      // We will add the nested key support after
+      // cuDF can fully support nested types in lists::drop_list_duplicates.
+      // Issue link: https://github.com/rapidsai/cudf/issues/11093
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-          TypeSig.NULL),
+          TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         TypeSig.MAP.nested(TypeSig.all),
         repeatingParamCheck = Some(RepeatingParamCheck("input",
           TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-          TypeSig.NULL),
+          TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
           TypeSig.MAP.nested(TypeSig.all)))),
       (a, conf, p, r) => new ComplexTypeMergingExprMeta[MapConcat](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          a.dataType.keyType match {
+            case MapType(_,_,_) | ArrayType(_,_) | StructType(_) => willNotWorkOnGpu(
+              s"GpuMapConcat does not currently support the key type ${a.dataType.keyType}.")
+            case _ =>
+          }
+        }
       }),
     expr[ConcatWs](
       "Concatenates multiple input strings or array of strings into a single " +
@@ -2497,6 +2591,14 @@ object GpuOverrides extends Logging {
           ParamCheck("idx", TypeSig.lit(TypeEnum.INT),
             TypeSig.lit(TypeEnum.INT)))),
       (a, conf, p, r) => new GpuRegExpExtractMeta(a, conf, p, r)),
+    expr[RegExpExtractAll](
+      "Extract all strings matching a regular expression corresponding to the regex group index",
+      ExprChecks.projectOnly(TypeSig.ARRAY.nested(TypeSig.STRING),
+        TypeSig.ARRAY.nested(TypeSig.STRING),
+        Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
+          ParamCheck("idx", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
+      (a, conf, p, r) => new GpuRegExpExtractAllMeta(a, conf, p, r)),
     expr[Length](
       "String character length or binary byte length",
       ExprChecks.unaryProject(TypeSig.INT, TypeSig.INT,
@@ -2641,7 +2743,7 @@ object GpuOverrides extends Logging {
           aggBuffer.copy(dataType = CudfTDigest.dataType)(aggBuffer.exprId, aggBuffer.qualifier)
         }
       }).incompat("the GPU implementation of approx_percentile is not bit-for-bit " +
-          s"compatible with Apache Spark. To enable it, set ${RapidsConf.INCOMPATIBLE_OPS}"),
+          s"compatible with Apache Spark."),
     expr[GetJsonObject](
       "Extracts a json object from path",
       ExprChecks.projectOnly(
@@ -2704,7 +2806,7 @@ object GpuOverrides extends Logging {
         TypeSig.ARRAY.nested(TypeSig.all)),
       (e, conf, p, r) => new GpuGetArrayStructFieldsMeta(e, conf, p, r)
       )
-    // Spark 2.x doesn't have RaiseError
+    // Spark 2.x doesn't have RaiseError or ansicast
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   // Shim expressions should be last to allow overrides with shim-specific versions
