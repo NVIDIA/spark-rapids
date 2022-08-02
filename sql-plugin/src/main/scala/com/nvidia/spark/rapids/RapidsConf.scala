@@ -1559,6 +1559,14 @@ object RapidsConf {
     .integerConf
     .createWithDefault(value = 0)
 
+  val CONCURRENT_WRITER_CACHE_SIZE = conf("spark.rapids.sql.concurrentWriterCacheSize")
+      .doc("The size of the concurrent writer cache in bytes for each partition. " +
+          "If specified spark.sql.maxConcurrentOutputFileWriters, use concurrent writer to " +
+          "write data, concurrent writer flushes data when cache is full. Max value may get " +
+          "better performance but consume more GPU memory")
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(ByteUnit.MiB.toBytes(64))
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -2082,7 +2090,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRegExpEnabled: Boolean = get(ENABLE_REGEXP)
 
   lazy val maxRegExpStateMemory: Long =  {
-    val size = get(REGEXP_MAX_STATE_MEMORY_BYTES) 
+    val size = get(REGEXP_MAX_STATE_MEMORY_BYTES)
     if (size > 3 * gpuTargetBatchSizeBytes) {
       logWarning(s"${REGEXP_MAX_STATE_MEMORY_BYTES.key} is more than 3 times " +
         s"${GPU_BATCH_SIZE_BYTES.key}. This may cause regular expression operations to " +
@@ -2098,6 +2106,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isFastSampleEnabled: Boolean = get(ENABLE_FAST_SAMPLE)
 
   lazy val isDetectDeltaLogQueries: Boolean = get(DETECT_DELTA_LOG_QUERIES)
+
+  lazy val concurrentWriterCacheSize:Long = get(CONCURRENT_WRITER_CACHE_SIZE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

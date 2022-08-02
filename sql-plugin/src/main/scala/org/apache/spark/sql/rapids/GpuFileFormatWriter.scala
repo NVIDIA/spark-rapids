@@ -80,6 +80,10 @@ object GpuFileFormatWriter extends Logging {
     }
   }
 
+  /** Describes how concurrent output writers should be executed. */
+  case class GpuConcurrentOutputWriterSpec(maxWriters: Int, exec: GpuExec,
+      sortOrder: Seq[SortOrder])
+
   /**
    * Basic work flow of this command is:
    * 1. Driver side setup, including output committer initialization and data source specific
@@ -105,7 +109,8 @@ object GpuFileFormatWriter extends Logging {
       bucketSpec: Option[BucketSpec],
       statsTrackers: Seq[ColumnarWriteJobStatsTracker],
       options: Map[String, String],
-      useStableSort: Boolean): Set[String] = {
+      useStableSort: Boolean,
+      concurrentWriterCacheSize: Long): Set[String] = {
 
     val job = Job.getInstance(hadoopConf)
     job.setOutputKeyClass(classOf[Void])
@@ -168,7 +173,8 @@ object GpuFileFormatWriter extends Logging {
           .getOrElse(sparkSession.sessionState.conf.maxRecordsPerFile),
       timeZoneId = caseInsensitiveOptions.get(DateTimeUtils.TIMEZONE_OPTION)
           .getOrElse(sparkSession.sessionState.conf.sessionLocalTimeZone),
-      statsTrackers = statsTrackers
+      statsTrackers = statsTrackers,
+      concurrentWriterCacheSize = concurrentWriterCacheSize
     )
 
     // We should first sort by partition columns, then bucket id, and finally sorting columns.
@@ -195,29 +201,40 @@ object GpuFileFormatWriter extends Logging {
     // prepares the job, any exception thrown from here shouldn't cause abortJob() to be called.
     committer.setupJob(job)
 
+
+    val maxWriters = sparkSession.sessionState.conf.maxConcurrentOutputFileWriters
+    val concurrentWritersEnabled = maxWriters > 0 && sortColumns.isEmpty
+
     try {
-      val rdd = if (orderingMatched) {
-        empty2NullPlan.executeColumnar()
+      val (rdd, concurrentOutputWriterSpec) = if (orderingMatched) {
+        (empty2NullPlan.executeColumnar(), None)
       } else {
         // SPARK-21165: the `requiredOrdering` is based on the attributes from analyzed plan, and
         // the physical plan may have different attribute ids due to optimizer removing some
         // aliases. Here we bind the expression ahead to avoid potential attribute ids mismatch.
         val orderingExpr = GpuBindReferences.bindReferences(
           requiredOrdering
-            .map(attr => SortOrder(attr, Ascending)), finalOutputSpec.outputColumns)
-        val sortType = if (useStableSort) {
-          FullSortSingleBatch
+              .map(attr => SortOrder(attr, Ascending)), finalOutputSpec.outputColumns)
+        if (concurrentWritersEnabled) {
+          (empty2NullPlan.executeColumnar(),
+              Some(GpuConcurrentOutputWriterSpec(maxWriters, empty2NullPlan.asInstanceOf[GpuExec],
+                orderingExpr)))
         } else {
-          OutOfCoreSort
+          val sortType = if (useStableSort) {
+            FullSortSingleBatch
+          } else {
+            OutOfCoreSort
+          }
+          // TODO: Using a GPU ordering as a CPU ordering here. Should be OK for now since we do not
+          //       support bucket expressions yet and the rest should be simple attributes.
+          val sort = GpuSortExec(
+            orderingExpr,
+            global = false,
+            child = empty2NullPlan,
+            sortType = sortType
+          )(orderingExpr).executeColumnar()
+          (sort, None)
         }
-        // TODO: Using a GPU ordering as a CPU ordering here. Should be OK for now since we do not
-        //       support bucket expressions yet and the rest should be simple attributes.
-        GpuSortExec(
-          orderingExpr,
-          global = false,
-          child = empty2NullPlan,
-          sortType = sortType
-        )(orderingExpr).executeColumnar()
       }
 
       // SPARK-23271 If we are attempting to write a zero partition rdd, create a dummy single
@@ -240,7 +257,8 @@ object GpuFileFormatWriter extends Logging {
             sparkPartitionId = taskContext.partitionId(),
             sparkAttemptNumber = taskContext.taskAttemptId().toInt & Integer.MAX_VALUE,
             committer,
-            iterator = iter)
+            iterator = iter,
+            concurrentOutputWriterSpec = concurrentOutputWriterSpec)
         },
         rddWithNonEmptyPartitions.partitions.indices,
         (index, res: WriteTaskResult) => {
@@ -273,7 +291,8 @@ object GpuFileFormatWriter extends Logging {
       sparkPartitionId: Int,
       sparkAttemptNumber: Int,
       committer: FileCommitProtocol,
-      iterator: Iterator[ColumnarBatch]): WriteTaskResult = {
+      iterator: Iterator[ColumnarBatch],
+      concurrentOutputWriterSpec: Option[GpuConcurrentOutputWriterSpec]): WriteTaskResult = {
 
     val jobId = SparkHadoopWriterUtils.createJobID(new Date(jobIdInstant), sparkStageId)
     val taskId = new TaskID(jobId, TaskType.MAP, sparkPartitionId)
@@ -301,15 +320,19 @@ object GpuFileFormatWriter extends Logging {
       } else if (description.partitionColumns.isEmpty && description.bucketSpec.isEmpty) {
         new GpuSingleDirectoryDataWriter(description, taskAttemptContext, committer)
       } else {
-        new GpuDynamicPartitionDataWriter(description, taskAttemptContext, committer)
+        concurrentOutputWriterSpec match {
+          case Some(spec) =>
+            new GpuDynamicPartitionDataConcurrentWriter(
+              description, taskAttemptContext, committer, spec)
+          case _ =>
+            new GpuDynamicPartitionDataSingleWriter(description, taskAttemptContext, committer)
+        }
       }
 
     try {
       Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
         // Execute the task to write rows out and commit the task.
-        while (iterator.hasNext) {
-          dataWriter.write(iterator.next())
-        }
+        dataWriter.writeWithIterator(iterator)
         dataWriter.commit()
       })(catchBlock = {
         // If there is an error, abort the task

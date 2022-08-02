@@ -504,3 +504,49 @@ def test_write_daytime_interval(spark_tmp_path):
             lambda spark, path: spark.read.parquet(path),
             data_path,
             conf=writer_confs)
+
+
+# TODO add tests
+# test_path='/home/chongg/local-disk/data/concurrent-partition-write-1-partition'
+test_path='/home/chongg/local-disk/data/concurrent-partition-write-2-partition-10000'
+# test_path='/home/chongg/local-disk/data/concurrent-partition-write'
+
+@pytest.mark.parametrize('is_stable_sort', ["false"])
+# concurrent writer mode
+def test_my1(is_stable_sort):
+    import time
+    start = time.time()
+    with_gpu_session(lambda spark: spark.read.parquet(test_path)
+                     .write.mode("overwrite").partitionBy('c1', 'c2').parquet("/tmp/my-parquet1"),
+                     copy_and_update({"spark.rapids.sql.format.parquet.reader.type": "PERFILE"},
+                                     {"spark.sql.files.maxPartitionBytes": "11000m"},
+                                     {"spark.sql.maxConcurrentOutputFileWriters": 100}
+                                     ))
+    end = time.time()
+    print("\n"  + "used time: " + str(end - start))
+
+@pytest.mark.parametrize('is_stable_sort', ["false"])
+# single writer mode
+def test_my2(is_stable_sort):
+    import time
+    start = time.time()
+    with_gpu_session(lambda spark: spark.read.parquet(test_path)
+                     .write.mode("overwrite").partitionBy('c1', 'c2').parquet("/tmp/my-parquet1"),
+                     copy_and_update({"spark.rapids.sql.format.parquet.reader.type": "PERFILE"},
+                                     {"spark.sql.files.maxPartitionBytes": "11000m"}
+                                     ))
+    end = time.time()
+    print("\n"  + "used time: " + str(end - start))
+
+# concurrent mode fall back to single mode
+def test_my3():
+    import time
+    start = time.time()
+    with_gpu_session(lambda spark: spark.read.parquet(test_path)
+                     .write.mode("overwrite").partitionBy('c1', 'c2').parquet("/tmp/my-parquet1"),
+                     copy_and_update({"spark.rapids.sql.format.parquet.reader.type": "PERFILE"},
+                                     {"spark.sql.files.maxPartitionBytes": "11000m"},
+                                     {"spark.sql.maxConcurrentOutputFileWriters": 10}
+                                     ))
+    end = time.time()
+    print("\n"  + "used time: " + str(end - start))

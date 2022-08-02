@@ -37,7 +37,8 @@ case class GpuCreateDataSourceTableAsSelectCommand(
     outputColumnNames: Seq[String],
     origProvider: Class[_],
     gpuFileFormat: ColumnarFileFormat,
-    useStableSort: Boolean)
+    useStableSort: Boolean,
+    concurrentWriterCacheSize: Long)
   extends GpuDataWritingCommand {
 
   override def runColumnar(sparkSession: SparkSession, child: SparkPlan): Seq[ColumnarBatch] = {
@@ -119,7 +120,8 @@ case class GpuCreateDataSourceTableAsSelectCommand(
       origProvider = origProvider,
       gpuFileFormat = gpuFileFormat)
     try {
-      dataSource.writeAndRead(mode, query, outputColumnNames, physicalPlan, useStableSort)
+      dataSource.writeAndRead(mode, query, outputColumnNames, physicalPlan, useStableSort,
+        concurrentWriterCacheSize)
     } catch {
       case ex: AnalysisException =>
         logError(s"Failed to write to table ${table.identifier.unquotedString}", ex)
