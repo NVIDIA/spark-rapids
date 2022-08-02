@@ -22,7 +22,6 @@ import com.nvidia.spark.rapids.iceberg.parquet.GpuParquet;
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquetReader;
 import com.nvidia.spark.rapids.iceberg.parquet.ParquetSchemaUtil;
 import com.nvidia.spark.rapids.iceberg.parquet.TypeWithSchemaVisitor;
-import com.nvidia.spark.rapids.iceberg.spark.SparkSchemaUtil;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.iceberg.*;
@@ -54,8 +53,8 @@ import java.util.List;
 import java.util.Map;
 
 /** The wrapper of the GPU multi-threaded and coalescing(TBD) reader for Iceberg */
-class GpuBatchRapidsReader extends BaseDataReader<ColumnarBatch> {
-  private static final Logger LOG = LoggerFactory.getLogger(GpuBatchRapidsReader.class);
+class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
+  private static final Logger LOG = LoggerFactory.getLogger(GpuMultiFileBatchReader.class);
   private final LinkedHashMap<String, FileScanTask> files;
   private final Map<String, Map<Integer, ?>> constantsMap = Maps.newConcurrentMap();
   private final Schema expectedSchema;
@@ -76,7 +75,7 @@ class GpuBatchRapidsReader extends BaseDataReader<ColumnarBatch> {
   // lazy variables
   private FilePartitionReaderBase rapidsReader = null;
 
-  GpuBatchRapidsReader(CombinedScanTask task, Table table, Schema expectedSchema,
+  GpuMultiFileBatchReader(CombinedScanTask task, Table table, Schema expectedSchema,
       boolean caseSensitive, Configuration conf, int maxBatchSizeRows, long maxBatchSizeBytes,
       String parquetDebugDumpPrefix, int numThreads, int maxNumFileProcessed,
       boolean useMultiThread, FileFormat fileFormat,
@@ -162,15 +161,15 @@ class GpuBatchRapidsReader extends BaseDataReader<ColumnarBatch> {
   }
 
   private FilePartitionReaderBase createParquetMultiThreadReader() {
-    LOG.debug("Using multi-threaded Parquet reader, task attempt ID: " +
+    LOG.debug("Using multi-threaded Iceberg Parquet reader, task attempt ID: " +
         TaskContext.get().taskAttemptId());
     // Iceberg will handle partition values itself.
     StructType emptyPartSchema = new StructType();
     InternalRow emptyPartValue = InternalRow.empty();
 
     PartitionedFile[] files = this.files.values().stream()
-      .map(fst -> PartitionedFileUtils.newPartitionedFile(
-          emptyPartValue, fst.file().path().toString(), fst.start(), fst.length()))
+      .map(fst -> PartitionedFileUtils.newPartitionedFile(emptyPartValue,
+          fst.file().path().toString(), fst.start(), fst.length()))
       .toArray(PartitionedFile[]::new);
 
     return new MultiFileCloudParquetPartitionReader(conf, files, this::filterParquetBlocks,

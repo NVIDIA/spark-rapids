@@ -204,9 +204,9 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
       if (partition instanceof ReadTask) {
         ReadTask rTask = (ReadTask) partition;
         // ret = (canAccelerateRead, isMultiThread, fileFormat) = (_1(), _2(), _3())
-        scala.Tuple3<Boolean, Boolean, FileFormat> ret = accelerationCheck(rTask);
+        scala.Tuple3<Boolean, Boolean, FileFormat> ret = multiFileReadCheck(rTask);
         if (ret._1()) {
-          return new BatchRapidsReader(rTask, ret._2(), ret._3(), metrics);
+          return new MultiFileBatchReader(rTask, ret._2(), ret._3(), metrics);
         } else {
           return new BatchReader(rTask, metrics);
         }
@@ -228,7 +228,7 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
      *   - "fileFormat" The file format of this combined task. Acceleration requires
      *     all the files in a combined task have the same format.
      */
-    private scala.Tuple3<Boolean, Boolean, FileFormat> accelerationCheck(ReadTask readTask) {
+    private scala.Tuple3<Boolean, Boolean, FileFormat> multiFileReadCheck(ReadTask readTask) {
       Collection<FileScanTask> scans = readTask.files();
       boolean canUseMultiThread = false, canUseCoalescing = false;
       FileFormat ff = null;
@@ -243,9 +243,20 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
       String[] files = scans.stream().map(f -> f.file().path().toString())
           .toArray(String[]::new);
       // Get the final decision for the subtype of the Rapids reader.
-      boolean useMultiThread = MultiFileReaderUtils.useMultiThreadReader(canUseCoalescing,
-          canUseMultiThread, files, allCloudSchemes);
+      boolean useMultiThread = MultiFileReaderUtils.useMultiThreadReader(
+          canUseCoalescing, canUseMultiThread, files, allCloudSchemes);
       return scala.Tuple3.apply(canAccelerateRead, useMultiThread, ff);
+    }
+  }
+
+  private static class MultiFileBatchReader
+      extends GpuMultiFileBatchReader implements PartitionReader<ColumnarBatch> {
+    MultiFileBatchReader(ReadTask task, boolean useMultiThread, FileFormat ff,
+                         scala.collection.immutable.Map<String, GpuMetric> metrics) {
+      super(task.task, task.table(), task.expectedSchema(), task.isCaseSensitive(),
+          task.getConfiguration(), task.getMaxBatchSizeRows(), task.getMaxBatchSizeBytes(),
+          task.getParquetDebugDumpPrefix(), task.getNumThreads(), task.getMaxNumFileProcessed(),
+          useMultiThread, ff, metrics);
     }
   }
 
@@ -254,17 +265,6 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
       super(task.task, task.table(), task.expectedSchema(), task.isCaseSensitive(),
           task.getConfiguration(), task.getMaxBatchSizeRows(), task.getMaxBatchSizeBytes(),
           task.getParquetDebugDumpPrefix(), metrics);
-    }
-  }
-
-  private static class BatchRapidsReader
-      extends GpuBatchRapidsReader implements PartitionReader<ColumnarBatch> {
-    BatchRapidsReader(ReadTask task, boolean useMultiThread, FileFormat ff,
-        scala.collection.immutable.Map<String, GpuMetric> metrics) {
-      super(task.task, task.table(), task.expectedSchema(), task.isCaseSensitive(),
-          task.getConfiguration(), task.getMaxBatchSizeRows(), task.getMaxBatchSizeBytes(),
-          task.getParquetDebugDumpPrefix(), task.getNumThreads(), task.getMaxNumFileProcessed(),
-          useMultiThread, ff, metrics);
     }
   }
 
