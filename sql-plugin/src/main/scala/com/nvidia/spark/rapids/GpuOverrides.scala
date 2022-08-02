@@ -4369,7 +4369,12 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       GpuOverrides.logDuration(conf.shouldExplain,
         t => f"Plan conversion to the GPU took $t%.2f ms") {
         val updatedPlan = updateForAdaptivePlan(plan, conf)
-        applyOverrides(updatedPlan, conf)
+        val newPlan = applyOverrides(updatedPlan, conf)
+        if (conf.logQueryTransformations) {
+          logWarning(s"Transformed query to run on GPU:" +
+            s"\nOriginal Plan:\n$plan\nTransformed Plan:\n$newPlan")
+        }
+        newPlan
       }
     } else if (conf.isSqlEnabled && conf.isSqlExplainOnlyEnabled) {
       // this mode logs the explain output and returns the original CPU plan
