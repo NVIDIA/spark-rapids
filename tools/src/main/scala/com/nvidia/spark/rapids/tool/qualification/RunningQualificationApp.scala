@@ -54,9 +54,15 @@ import org.apache.spark.sql.rapids.tool.qualification._
  * }}}
  *
  */
-class RunningQualificationApp(
-    reportSqlLevel: Boolean)
+class RunningQualificationApp(reportSqlLevel: Boolean)
   extends QualificationAppInfo(None, None, new PluginTypeChecker(), reportSqlLevel) {
+
+  // we don't know the max sql query name size so lets cap it at 100
+  private val SQL_DESC_LENGTH = 100
+  private lazy val appName = appInfo.map(_.appName).getOrElse("")
+  private lazy val appNameSize = if (appName.nonEmpty) appName.size else 100
+  private lazy val headersAndSizes =
+    QualOutputWriter.getDetailedPerSqlHeaderStringsAndSizes(appNameSize, appId.size, SQL_DESC_LENGTH)
 
   def this() = {
     this(false)
@@ -85,33 +91,56 @@ class RunningQualificationApp(
   initApp()
 
   /**
-   * Get the per SQL query summary report for qualification.
+   * Get the per SQL query summary report in both Text and CSV format.
+   * @param sqlID The sqlID of the query.
+   * @return a tuple of the CSV summary followed by the Text summary.
+   */
+  def getPerSqlTextAndCSVSummary(sqlID: Long): (String, String) = {
+    val appInfo = super.aggregateStats()
+    val csvResult = constructPerSqlResult(sqlID, appInfo, QualOutputWriter.CSV_DELIMITER, false)
+    val textResult = constructPerSqlResult(sqlID, appInfo, QualOutputWriter.TEXT_DELIMITER, true)
+    (csvResult, textResult)
+  }
+
+  /**
+   * Get the per SQL query summary report for qualification for the specified sqlID.
+   * @param sqlID The sqlID of the query.
    * @param delimiter The delimiter separating fields of the summary report.
    * @param prettyPrint Whether to include the delimiter at start and end and
    *                    add spacing so the data rows align with column headings.
-   *                    @param sqlID Optionally specify
-   * @return String containing the summary report.
+   * @param sqlDescLength Maximum length to use for the SQL query description.
+   * @return String containing the summary report, or empty string if its not available.
    */
-  def getPerSQLSummary(delimiter: String = "|", prettyPrint: Boolean = true,
-      sqlID: Option[Long] = None): String = {
+  def getPerSQLSummary(sqlID: Long, delimiter: String = "|",
+      prettyPrint: Boolean = true, sqlDescLength: Int = SQL_DESC_LENGTH): String = {
     val appInfo = super.aggregateStats()
+    constructPerSqlResult(sqlID, appInfo, delimiter, prettyPrint, sqlDescLength)
+  }
+
+  private def constructPerSqlResult(
+      sqlID: Long,
+      appInfo: Option[QualificationSummaryInfo],
+      delimiter: String = "|",
+      prettyPrint: Boolean = true,
+      sqlDescLength: Int = SQL_DESC_LENGTH): String = {
     appInfo match {
       case Some(info) =>
-        if (info.perSQLEstimatedInfo.isDefined && sqlID.isDefined) {
-          val sqlInfo = info.perSQLEstimatedInfo.get.filter(_.sqlID == sqlID.get)
-          sqlInfo.foreach { info =>
-
+        if (info.perSQLEstimatedInfo.isDefined) {
+          val res = info.perSQLEstimatedInfo.get.filter(_.sqlID == sqlID)
+          if (res.isEmpty) {
+            logWarning(s"Unable to get per sql qualification information for $sqlID")
+            ""
+          } else {
+            assert(res.size == 1)
+            val line = QualOutputWriter.constructPerSqlSummaryInfo(res.head, headersAndSizes,
+              appId.size, delimiter, prettyPrint, SQL_DESC_LENGTH)
+            line
           }
+        } else {
+          logWarning(s"Unable to get per sql qualification information, " +
+            s"no SQL information available")
+          ""
         }
-        val appIdMaxSize = QualOutputWriter.getAppIdSize(Seq(info))
-        val headersAndSizes =
-          QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(info), appIdMaxSize)
-        val headerStr = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
-          delimiter, prettyPrint)
-        val appInfoStr = QualOutputWriter.constructAppSummaryInfo(info.estimatedInfo,
-          headersAndSizes, appIdMaxSize,
-          delimiter, prettyPrint)
-        headerStr + appInfoStr
       case None =>
         logWarning(s"Unable to get qualification information for this application")
         ""
@@ -130,8 +159,9 @@ class RunningQualificationApp(
     appInfo match {
       case Some(info) =>
         val appIdMaxSize = QualOutputWriter.getAppIdSize(Seq(info))
+        val appNameMaxSize = QualOutputWriter.getAppNameSize(Seq(info).map(_.appName.size))
         val headersAndSizes =
-          QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(info), appIdMaxSize)
+          QualOutputWriter.getSummaryHeaderStringsAndSizes(appNameMaxSize, appIdMaxSize)
         val headerStr = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
           delimiter, prettyPrint)
         val appInfoStr = QualOutputWriter.constructAppSummaryInfo(info.estimatedInfo,
@@ -167,5 +197,9 @@ class RunningQualificationApp(
         logWarning(s"Unable to get qualification information for this application")
         ""
     }
+  }
+
+  def getApplicationDetails: Option[QualificationSummaryInfo] = {
+    super.aggregateStats()
   }
 }

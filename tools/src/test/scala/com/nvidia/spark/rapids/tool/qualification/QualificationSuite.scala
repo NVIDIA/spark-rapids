@@ -22,13 +22,14 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 import scala.io.Source
 
+import com.nvidia.spark.rapids.tool.qualification.QualOutputWriter.{APP_NAME_STR, getMaxSizeForHeader}
 import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTestUtils}
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
 import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
-import org.apache.spark.sql.functions.{desc,udf}
+import org.apache.spark.sql.functions.{desc, udf}
 import org.apache.spark.sql.rapids.tool.{AppBase, AppFilterImpl, ToolUtils}
 import org.apache.spark.sql.rapids.tool.qualification.{QualificationAppInfo, QualificationSummaryInfo}
 import org.apache.spark.sql.types._
@@ -738,8 +739,9 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val values = rowsSumOut(1).split(",")
     val appInfo = qualApp.aggregateStats()
     assert(appInfo.nonEmpty)
+    val appNameMaxSize = QualOutputWriter.getAppNameSize(Seq(appInfo.get))
     assert(headers.size ==
-      QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(appInfo.get), 0).keys.size)
+      QualOutputWriter.getSummaryHeaderStringsAndSizes(appNameMaxSize, 0).keys.size)
     assert(values.size == headers.size)
     // 3 should be the SQL DF Duration
     assert(headers(3).contains("SQL DF"))

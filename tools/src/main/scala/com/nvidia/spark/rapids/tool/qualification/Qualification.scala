@@ -77,8 +77,8 @@ class Qualification(outputDir: String, numRows: Int, hadoopConf: Configuration,
     // sort order and limit only applies to the report summary text file,
     // the csv file we write the entire data in descending order
     val sortedDescDetailed = sortDescForDetailedReport(allAppsSum)
-    qWriter.writeReport(allAppsSum, sortForExecutiveSummary(sortedDescDetailed, order), numRows)
-    qWriter.writeDetailedReport(sortedDescDetailed)
+    qWriter.writeTextReport(allAppsSum, sortForExecutiveSummary(sortedDescDetailed, order), numRows)
+    qWriter.writeDetailedCSVReport(sortedDescDetailed)
     if (reportSqlLevel) {
       qWriter.writePerSqlTextReport(allAppsSum, numRows, maxSQLDescLength)
       qWriter.writePerSqlCSVReport(allAppsSum, maxSQLDescLength)
