@@ -28,7 +28,9 @@ import ai.rapids.cudf.Table;
 import com.nvidia.spark.rapids.shims.GpuTypeShims;
 import org.apache.arrow.memory.ReferenceManager;
 
+import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.catalyst.expressions.Attribute;
+import org.apache.spark.sql.internal.SQLConf;
 import org.apache.spark.sql.types.*;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
@@ -713,7 +715,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       }
       return true;
     } else if (colType instanceof BinaryType) {
-      if (!(dt.equals(DType.LIST))) {
+      SQLConf conf = SQLConf.get();
+      if (dt.equals(DType.STRING) && conf.isParquetBinaryAsString()) {
+        return true;
+      } else if (!(dt.equals(DType.LIST))) {
         return false;
       }
       try (ColumnView tmp = cv.getChildColumnView(0)) {

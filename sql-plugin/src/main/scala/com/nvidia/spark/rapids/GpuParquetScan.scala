@@ -1611,6 +1611,17 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       }
     }
   }
+
+  def getParquetOptions(clippedSchema: MessageType, useFieldId: Boolean): ParquetOptions = {
+    val binaryAsString = conf.getBoolean("spark.sql.parquet.binaryAsString", false)
+    val includeColumns = toCudfColumnNamesAndDataTypes(readDataSchema, clippedSchema,
+      isSchemaCaseSensitive, useFieldId)
+    val builder = ParquetOptions.builder().withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
+    includeColumns.foreach { t =>
+      builder.includeColumn(t._1, !binaryAsString && t._2 == BinaryType)
+    }
+    builder.build()
+  }
 }
 
 // Parquet schema wrapper
@@ -1790,13 +1801,7 @@ class MultiFileParquetPartitionReader(
     // Dump parquet data into a file
     dumpDataToFile(dataBuffer, dataSize, splits, Option(debugDumpPrefix), Some("parquet"))
 
-    val includeColumns = toCudfColumnNamesAndDataTypes(readDataSchema, clippedSchema,
-      isSchemaCaseSensitive, useFieldId)
-    val parseOpts = {
-      val builder = ParquetOptions.builder().withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
-      includeColumns.foreach(t => builder.includeColumn(t._1, t._2 == StringType))
-      builder.build()
-    }
+    val parseOpts = getParquetOptions(clippedSchema, useFieldId)
 
     // About to start using the GPU
     GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
@@ -2093,14 +2098,7 @@ class MultiFileCloudParquetPartitionReader(
 
       // Dump parquet data into a file
       dumpDataToFile(hostBuffer, dataSize, files, Option(debugDumpPrefix), Some("parquet"))
-
-      val includeColumns = toCudfColumnNamesAndDataTypes(readDataSchema, clippedSchema,
-        isSchemaCaseSensitive, useFieldId)
-      val parseOpts = {
-        val builder = ParquetOptions.builder().withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
-        includeColumns.foreach(t => builder.includeColumn(t._1, t._2 == StringType))
-        builder.build()
-      }
+      val parseOpts = getParquetOptions(clippedSchema, useFieldId)
 
       // about to start using the GPU
       GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
@@ -2238,13 +2236,7 @@ class ParquetPartitionReader(
 
         // Dump parquet data into a file
         dumpDataToFile(dataBuffer, dataSize, Array(split), Option(debugDumpPrefix), Some("parquet"))
-        val includeColumns = toCudfColumnNamesAndDataTypes(readDataSchema, clippedParquetSchema,
-          isSchemaCaseSensitive, useFieldId)
-        val parseOpts = {
-          val builder = ParquetOptions.builder().withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
-          includeColumns.foreach(t => builder.includeColumn(t._1, t._2 == StringType))
-          builder.build()
-        }
+        val parseOpts = getParquetOptions(clippedParquetSchema, useFieldId)
 
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
