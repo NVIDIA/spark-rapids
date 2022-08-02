@@ -581,12 +581,12 @@ CollectList,S,`collect_list`,None,reduction,input,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS
 CollectList,S,`collect_list`,None,reduction,result,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,PS,NA,NA,NA
 CollectList,S,`collect_list`,None,window,input,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,PS,PS,PS,NS
 CollectList,S,`collect_list`,None,window,result,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,PS,NA,NA,NA
-CollectSet,S,`collect_set`,None,aggregation,input,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,PS,NS,PS,NS
-CollectSet,S,`collect_set`,None,aggregation,result,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,PS,NA,NA,NA
-CollectSet,S,`collect_set`,None,reduction,input,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,PS,NS,PS,NS
-CollectSet,S,`collect_set`,None,reduction,result,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,PS,NA,NA,NA
-CollectSet,S,`collect_set`,None,window,input,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,PS,NS,PS,NS
-CollectSet,S,`collect_set`,None,window,result,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,PS,NA,NA,NA
+CollectSet,S,`collect_set`,This is not 100% compatible with the Spark version because when using CollectSet with nested types that include arrays; NaN equality is not respected on the GPU but is respected on the CPU,aggregation,input,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,PS,NS,PS,NS
+CollectSet,S,`collect_set`,This is not 100% compatible with the Spark version because when using CollectSet with nested types that include arrays; NaN equality is not respected on the GPU but is respected on the CPU,aggregation,result,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,PS,NA,NA,NA
+CollectSet,S,`collect_set`,This is not 100% compatible with the Spark version because when using CollectSet with nested types that include arrays; NaN equality is not respected on the GPU but is respected on the CPU,reduction,input,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,PS,NS,PS,NS
+CollectSet,S,`collect_set`,This is not 100% compatible with the Spark version because when using CollectSet with nested types that include arrays; NaN equality is not respected on the GPU but is respected on the CPU,reduction,result,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,PS,NA,NA,NA
+CollectSet,S,`collect_set`,This is not 100% compatible with the Spark version because when using CollectSet with nested types that include arrays; NaN equality is not respected on the GPU but is respected on the CPU,window,input,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,PS,NS,PS,NS
+CollectSet,S,`collect_set`,This is not 100% compatible with the Spark version because when using CollectSet with nested types that include arrays; NaN equality is not respected on the GPU but is respected on the CPU,window,result,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,PS,NA,NA,NA
 Count,S,`count`,None,aggregation,input,S,S,S,S,S,S,S,S,PS,S,S,S,S,S,PS,PS,PS,S
 Count,S,`count`,None,aggregation,result,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 Count,S,`count`,None,reduction,input,S,S,S,S,S,S,S,S,PS,S,S,S,S,S,PS,PS,PS,S
