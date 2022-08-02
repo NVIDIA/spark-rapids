@@ -576,9 +576,9 @@ _repeat_agg_column_for_collect_set_op = [
 
 # data generating for collect_set based-nested Struct[Array] types
 _repeat_agg_column_for_collect_set_op_nested = [
-    RepeatSeqGen(array_struct_gen, length=15),
+    RepeatSeqGen(struct_array_gen_no_nans, length=15),
     RepeatSeqGen(StructGen([
-        ['c0', array_struct_gen], ['c1', int_gen]]), length=15),
+        ['c0', struct_array_gen_no_nans], ['c1', int_gen]]), length=15),
     RepeatSeqGen(ArrayGen(all_basic_struct_gen_no_nan), length=15)]
 
 _array_of_array_gen = [RepeatSeqGen(ArrayGen(sub_gen), length=15) for sub_gen in single_level_array_gens_no_nan]
@@ -635,9 +635,7 @@ def test_hash_groupby_collect_list(data_gen, use_obj_hash_agg):
         conf={'spark.sql.execution.useObjectHashAggregateExec': str(use_obj_hash_agg).lower(),
             'spark.sql.shuffle.partitions': '1'})
 
-@approximate_float
 @ignore_order(local=True)
-@incompat
 @pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)
 def test_hash_groupby_collect_set(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -645,9 +643,7 @@ def test_hash_groupby_collect_set(data_gen):
             .groupby('a')
             .agg(f.sort_array(f.collect_set('b')), f.count('b')))
 
-@approximate_float
 @ignore_order(local=True)
-@incompat
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op, ids=idfn)
 def test_hash_groupby_collect_set_on_nested_type(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -660,9 +656,7 @@ def test_hash_groupby_collect_set_on_nested_type(data_gen):
 # support sorting certain nested/arbitrary types on the GPU
 # See https://github.com/NVIDIA/spark-rapids/issues/3715
 # and https://github.com/rapidsai/cudf/issues/11222
-@approximate_float
 @ignore_order(local=True)
-@incompat
 @allow_non_gpu("ProjectExec", "SortArray")
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_nested, ids=idfn)
 def test_hash_groupby_collect_set_on_nested_array_type(data_gen):
@@ -679,18 +673,14 @@ def test_hash_groupby_collect_set_on_nested_array_type(data_gen):
             .selectExpr("sort_array(collect_set)")
         , conf=conf)
 
-@approximate_float
 @ignore_order(local=True)
-@incompat
 @pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)
 def test_hash_reduction_collect_set(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
             .agg(f.sort_array(f.collect_set('b')), f.count('b')))
 
-@approximate_float
 @ignore_order(local=True)
-@incompat
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op, ids=idfn)
 def test_hash_reduction_collect_set_on_nested_type(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -702,9 +692,7 @@ def test_hash_reduction_collect_set_on_nested_type(data_gen):
 # support sorting certain nested/arbitrary types on the GPU
 # See https://github.com/NVIDIA/spark-rapids/issues/3715
 # and https://github.com/rapidsai/cudf/issues/11222
-@approximate_float
 @ignore_order(local=True)
-@incompat
 @allow_non_gpu("ProjectExec", "SortArray")
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_nested, ids=idfn)
 def test_hash_reduction_collect_set_on_nested_array_type(data_gen):
@@ -720,9 +708,7 @@ def test_hash_reduction_collect_set_on_nested_array_type(data_gen):
             .selectExpr("sort_array(collect_set)")
         , conf=conf)
 
-@approximate_float
 @ignore_order(local=True)
-@incompat
 @pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)
 def test_hash_groupby_collect_with_single_distinct(data_gen):
     # test collect_ops with other distinct aggregations
@@ -734,9 +720,7 @@ def test_hash_groupby_collect_with_single_distinct(data_gen):
                  f.countDistinct('c'),
                  f.count('c')))
 
-@approximate_float
 @ignore_order(local=True)
-@incompat
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
 def test_hash_groupby_single_distinct_collect(data_gen):
     # test distinct collect
@@ -759,7 +743,6 @@ def test_hash_groupby_single_distinct_collect(data_gen):
         df_fun=lambda spark: gen_df(spark, data_gen, length=100),
         table_name="tbl", sql=sql)
 
-@approximate_float
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_op, ids=idfn)
 def test_hash_groupby_collect_with_multi_distinct(data_gen):
