@@ -26,7 +26,8 @@ class GpuRegExpReplaceMeta(
     rule: DataFromReplacementRule)
   extends TernaryExprMeta[RegExpReplace](expr, conf, parent, rule) {
 
-  private var pattern: Option[String] = None
+  private var javaPattern: Option[String] = None
+  private var cudfPattern: Option[String] = None
   private var replacement: Option[String] = None
   private var canUseGpuStringReplace = false
   private var containsBackref: Boolean = false
@@ -44,9 +45,10 @@ class GpuRegExpReplaceMeta(
           canUseGpuStringReplace = true
         } else {
           try {
+            javaPattern = Some(s.toString())
             val (pat, repl) =
                 new CudfRegexTranspiler(RegexReplaceMode).transpile(s.toString, replacement)
-            pattern = Some(pat)
+            cudfPattern = Some(pat)
             repl.map(GpuRegExpUtils.backrefConversion).foreach {
                 case (hasBackref, convertedRep) =>
                   containsBackref = hasBackref

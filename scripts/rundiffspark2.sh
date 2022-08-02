@@ -211,7 +211,7 @@ sed -n  '/GpuOverrides.exec\[WindowInPandasExec\]/,/override def convertToGpu/{/
 diff -c -w --ignore-blank-lines $tmp_dir/WindowInPandasExec_new.out $tmp_dir/WindowInPandasExec_old.out
 
 sed -n  '/object GpuOrcScan/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOrcScan.scala > $tmp_dir/GpuOrcScanBase_new.out
-sed -n  '/object GpuOrcScan/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOrcScan.scala > $tmp_dir/GpuOrcScanBase_old.out
+sed -n  '/object GpuOrcScan/,/private lazy val numericLevels/{/private lazy val numericLevels/!p}'  ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOrcScan.scala > $tmp_dir/GpuOrcScanBase_old.out
 diff  $tmp_dir/GpuOrcScanBase_new.out $tmp_dir/GpuOrcScanBase_old.out > $tmp_dir/GpuOrcScanBase.newdiff || true
 diff -c spark2diffs/GpuOrcScanBase.diff $tmp_dir/GpuOrcScanBase.newdiff
 

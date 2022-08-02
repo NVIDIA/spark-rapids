@@ -146,9 +146,7 @@ object GpuCSVScan {
 
     if (types.contains(TimestampType)) {
       // Spark 2.x doesn't have zoneId, so use timeZone and then to id
-      if (!TypeChecks.areTimestampsSupported(parsedOptions.timeZone.toZoneId)) {
-        meta.willNotWorkOnGpu("Only UTC zone id is supported")
-      }
+      meta.checkTimeZoneId(parsedOptions.timeZone.toZoneId)
       GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuCsvUtils.timestampFormatInRead(parsedOptions), parseString = true)
     }
