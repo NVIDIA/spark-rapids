@@ -43,6 +43,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.collection.Seq;
+import scala.Tuple2;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -55,8 +56,9 @@ import java.util.Map;
 /** The wrapper of the GPU multi-threaded and coalescing(TBD) reader for Iceberg */
 class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
   private static final Logger LOG = LoggerFactory.getLogger(GpuMultiFileBatchReader.class);
+  private final Map<String, Tuple2<Map<Integer, ?>, Schema>> constsSchemaMap =
+      Maps.newConcurrentMap();
   private final LinkedHashMap<String, FileScanTask> files;
-  private final Map<String, Map<Integer, ?>> constantsMap = Maps.newConcurrentMap();
   private final Schema expectedSchema;
   private final boolean caseSensitive;
   private final Configuration conf;
@@ -112,10 +114,11 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
     try (ColumnarBatch batch = rapidsReader.get()) {
       // The Rapids reader should already set the current file.
       String curFile = InputFileUtils.getCurInputFilePath();
-      Map<Integer, ?> idToConstant = constantsMap.get(curFile);
+      // <idToConstants, updatedExpectedSchema>
+      Tuple2<Map<Integer, ?>, Schema> constsSchema = constsSchemaMap.get(curFile);
       return GpuIcebergReader.addUpcastsIfNeeded(
-          GpuIcebergReader.addConstantColumns(batch, expectedSchema, idToConstant),
-          expectedSchema);
+          GpuIcebergReader.addConstantColumns(batch, constsSchema._2(), constsSchema._1()),
+          constsSchema._2());
     }
   }
 
@@ -188,7 +191,8 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
     if (deleteFilter != null) {
       throw new UnsupportedOperationException("Delete filter is not supported");
     }
-    Map<Integer, ?> idToConstant = constantsMap(fst, expectedSchema);
+    Schema updatedSchema = requiredSchema(deleteFilter);
+    Map<Integer, ?> idToConstant = constantsMap(fst, updatedSchema);
     InputFile inFile = getInputFile(fst);
     ParquetReadOptions readOptions =
         GpuParquet.buildReaderOptions(inFile, fst.start(), fst.length());
@@ -196,23 +200,23 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
       MessageType fileSchema = reader.getFileMetaData().getSchema();
 
       List<BlockMetaData> filteredRowGroups = GpuParquetReader.filterRowGroups(reader,
-          nameMapping, expectedSchema, fst.residual(), caseSensitive);
+          nameMapping, updatedSchema, fst.residual(), caseSensitive);
 
       GpuParquetReader.ReorderColumns reorder = ParquetSchemaUtil.hasIds(fileSchema) ?
           new GpuParquetReader.ReorderColumns(idToConstant) :
           new GpuParquetReader.ReorderColumnsFallback(idToConstant);
 
       MessageType fileReadSchema = (MessageType) TypeWithSchemaVisitor.visit(
-          expectedSchema.asStruct(), fileSchema, reorder);
+          updatedSchema.asStruct(), fileSchema, reorder);
       Seq<BlockMetaData> clippedBlocks = GpuParquetUtils.clipBlocksToSchema(
           fileReadSchema, filteredRowGroups, caseSensitive);
       StructType partReaderSparkSchema = (StructType) TypeWithSchemaVisitor.visit(
-          expectedSchema.asStruct(), fileReadSchema, new GpuParquetReader.SparkSchemaConverter());
+          updatedSchema.asStruct(), fileReadSchema, new GpuParquetReader.SparkSchemaConverter());
 
       // cache the updated constants
       Map<Integer, ?> updatedConstants =
           GpuParquetReader.addNullsForMissingFields(idToConstant, reorder.getMissingFields());
-      constantsMap.put(file.filePath(), updatedConstants);
+      constsSchemaMap.put(file.filePath(), Tuple2.apply(updatedConstants, updatedSchema));
 
       return ParquetFileInfoWithBlockMeta.apply(new Path(new URI(file.filePath())),
           clippedBlocks, InternalRow.empty(), fileReadSchema, partReaderSparkSchema,
