@@ -15,6 +15,7 @@
 import os
 from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime
 from pyspark.sql import SparkSession, DataFrame
+from pyspark import SparkContext
 from spark_init_internal import get_spark_i_know_what_i_am_doing, spark_version
 
 def _from_scala_map(scala_map):
@@ -133,6 +134,9 @@ def with_gpu_session(func, conf={}):
 def is_before_spark_312():
     return spark_version() < "3.1.2"
 
+def is_before_spark_313():
+    return spark_version() < "3.1.3"
+
 def is_before_spark_314():
     return spark_version() < "3.1.4"
 
@@ -170,3 +174,28 @@ def is_databricks91_or_later():
 
 def is_databricks104_or_later():
     return is_databricks_version_or_later(10, 4)
+
+def get_java_major_version():
+    sc = SparkContext.getOrCreate()
+    ver = sc._jvm.System.getProperty("java.version")
+    # Allow these formats:
+    # 1.8.0_72-ea
+    # 9-ea
+    # 9
+    # 11.0.1
+    if ver.startswith('1.'):
+        ver = ver[2:]
+    dot_pos = ver.find('.')
+    dash_pos = ver.find('-')
+    if dot_pos != -1:
+        ver = ver[0:dot_pos]
+    elif dash_pos != -1:
+        ver = ver[0:dash_pos]
+    return int(ver)
+
+def get_jvm_charset():
+    sc = _spark.sparkContext
+    return str(sc._jvm.java.nio.charset.Charset.defaultCharset())
+
+def is_jvm_charset_utf8():
+    return get_jvm_charset() == 'UTF-8'

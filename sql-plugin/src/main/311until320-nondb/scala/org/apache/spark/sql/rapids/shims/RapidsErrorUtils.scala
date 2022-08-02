@@ -60,4 +60,14 @@ object RapidsErrorUtils {
     new ArithmeticException(s"${value.toDebugString} cannot be represented as " +
       s"Decimal(${toType.precision}, ${toType.scale}).")
   }
+
+  def overflowInIntegralDivideError(context: String = ""): ArithmeticException = {
+    new ArithmeticException("Overflow in integral divide.")
+  }
+
+  def foundDuplicateFieldInCaseInsensitiveModeError(
+      requiredFieldName: String, matchedFields: String): Throwable = {
+    new RuntimeException(s"""Found duplicate field(s) "$requiredFieldName": """ +
+        s"$matchedFields in case-insensitive mode")
+  }
 }

@@ -37,6 +37,9 @@ case class GpuBatchScanExec(
     extends DataSourceV2ScanExecBase with GpuBatchScanExecMetrics {
   @transient lazy val batch: Batch = scan.toBatch
 
+  // All expressions are filter expressions used on the CPU.
+  override def gpuExpressions: Seq[Expression] = Nil
+
   // TODO: unify the equal/hashCode implementation for all data source v2 query plans.
   override def equals(other: Any): Boolean = other match {
     case other: GpuBatchScanExec =>

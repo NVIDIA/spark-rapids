@@ -27,4 +27,7 @@ object AQEUtils {
     val reusedExchange = ReusedExchangeExec(newOutput, sqse.shuffle)
     ShuffleQueryStageExec(sqse.id, reusedExchange, sqse.originalPlan, sqse.isSparkExchange)
   }
+
+  // currently we don't support AQE on Databricks
+  def isAdaptiveExecutionSupportedInSparkVersion: Boolean = false
 }

@@ -260,7 +260,7 @@ def test_ts_read_fails_datetime_legacy(gen, spark_tmp_path, ts_write, ts_rebase,
                                           [ArrayGen(decimal_gen_32bit, max_length=10)],
                                           [StructGen([['child0', decimal_gen_32bit]])]], ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
-@pytest.mark.parametrize('reader_confs', reader_opt_confs_no_native)
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_decimal_read_legacy(spark_tmp_path, parquet_gens, read_func, reader_confs, v1_enabled_list):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
@@ -365,7 +365,7 @@ def test_parquet_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reade
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
 
-@pytest.mark.parametrize('reader_confs', reader_opt_confs_no_native)
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
@@ -389,7 +389,7 @@ def test_parquet_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs
             lambda spark : spark.read.option('mergeSchema', 'true').parquet(data_path),
             conf=all_confs)
 
-@pytest.mark.parametrize('reader_confs', reader_opt_confs_no_native)
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_read_merge_schema_from_conf(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
@@ -414,32 +414,6 @@ def test_parquet_read_merge_schema_from_conf(spark_tmp_path, v1_enabled_list, re
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
-
-@pytest.mark.parametrize('reader_confs', reader_opt_confs_native)
-@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-@allow_non_gpu('ColumnarToRowExec')
-def test_parquet_read_merge_schema_native_fallback(spark_tmp_path, v1_enabled_list, reader_confs):
-    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
-    # we should go with a more standard set of generators
-    parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-                    string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-                    TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc))] + decimal_gens
-    first_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
-    first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
-    with_cpu_session(
-        lambda spark: gen_df(spark, first_gen_list).write.parquet(first_data_path),
-        conf=rebase_write_legacy_conf)
-    second_gen_list = [(('_c' if i % 2 == 0 else '_b') + str(i), gen) for i, gen in enumerate(parquet_gens)]
-    second_data_path = spark_tmp_path + '/PARQUET_DATA/key=1'
-    with_cpu_session(
-        lambda spark: gen_df(spark, second_gen_list).write.parquet(second_data_path),
-        conf=rebase_write_corrected_conf)
-    data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
-    assert_gpu_fallback_collect(
-        lambda spark: spark.read.option('mergeSchema', 'true').parquet(data_path),
-        cpu_fallback_class_name='FileSourceScanExec' if v1_enabled_list == 'parquet' else 'BatchScanExec',
-        conf=all_confs)
 
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
@@ -1073,6 +1047,24 @@ def test_parquet_int32_downcast(spark_tmp_path, reader_confs, v1_enabled_list):
         lambda spark: spark.read.schema(read_schema).parquet(data_path),
         conf=conf)
 
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_parquet_nested_column_missing(spark_tmp_path, reader_confs, v1_enabled_list):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    write_schema = [("a", string_gen), ("b", int_gen), ("c", StructGen([("ca", long_gen)]))]
+    with_cpu_session(
+        lambda spark: gen_df(spark, write_schema).write.parquet(data_path))
+
+    read_schema = StructType([StructField("a", StringType()),
+                              StructField("b", IntegerType()),
+                              StructField("c", StructType([
+                                  StructField("ca", LongType()),
+                                  StructField("cb", StringType())]))])
+    conf = copy_and_update(reader_confs,
+                           {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(read_schema).parquet(data_path),
+        conf=conf)
 
 def test_parquet_check_schema_compatibility(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
