@@ -58,7 +58,9 @@ object RegexComplexityEstimator {
   private def estimateGpuMemory(numStates: Int, desiredBatchSizeBytes: Long): Long = {
     val numRows = GpuBatchUtils.estimateRowCount(
       desiredBatchSizeBytes, DataTypes.StringType.defaultSize, 1)
-
+    
+    // cuDF requests num_instructions * num_threads * 2 when allocating the memory on the device
+    // (ignoring memory alignment). We are trying to reproduce that calculation here:
     numStates * numRows * 2
   }
 
