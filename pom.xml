@@ -995,7 +995,7 @@
         <ucx.version>1.12.1</ucx.version>
         <!--
              If the shade package changes we need to also update jenkins/spark-premerge-build.sh
-             so code coverage does not inclu<dist.jar.compress>true</dist.jar.compress>de the shaded classes.
+             so code coverage does not include the shaded classes.
         -->
         <rapids.shade.package>${spark.version.classifier}.com.nvidia.shaded.spark</rapids.shade.package>
         <test.exclude.tags/>
