@@ -995,7 +995,7 @@
         <ucx.version>1.12.1</ucx.version>
         <!--
              If the shade package changes we need to also update jenkins/spark-premerge-build.sh
-             so code coverage does not include the shaded classes.
+             so code coverage does not inclu<dist.jar.compress>true</dist.jar.compress>de the shaded classes.
         -->
         <rapids.shade.package>${spark.version.classifier}.com.nvidia.shaded.spark</rapids.shade.package>
         <test.exclude.tags/>
@@ -1039,6 +1039,7 @@
         <scala.local-lib.path>org/scala-lang/scala-library/${scala.version}/scala-library-${scala.version}.jar</scala.local-lib.path>
         <target.classifier>${spark.version.classifier}</target.classifier>
         <maven.clean.plugin.version>3.1.0</maven.clean.plugin.version>
+        <maven.scalastyle.skip>false</maven.scalastyle.skip>
         <dist.jar.compress>true</dist.jar.compress>
     </properties>
 

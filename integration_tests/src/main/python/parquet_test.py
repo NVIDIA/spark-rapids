@@ -1047,6 +1047,24 @@ def test_parquet_int32_downcast(spark_tmp_path, reader_confs, v1_enabled_list):
         lambda spark: spark.read.schema(read_schema).parquet(data_path),
         conf=conf)
 
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_parquet_nested_column_missing(spark_tmp_path, reader_confs, v1_enabled_list):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    write_schema = [("a", string_gen), ("b", int_gen), ("c", StructGen([("ca", long_gen)]))]
+    with_cpu_session(
+        lambda spark: gen_df(spark, write_schema).write.parquet(data_path))
+
+    read_schema = StructType([StructField("a", StringType()),
+                              StructField("b", IntegerType()),
+                              StructField("c", StructType([
+                                  StructField("ca", LongType()),
+                                  StructField("cb", StringType())]))])
+    conf = copy_and_update(reader_confs,
+                           {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(read_schema).parquet(data_path),
+        conf=conf)
 
 def test_parquet_check_schema_compatibility(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
