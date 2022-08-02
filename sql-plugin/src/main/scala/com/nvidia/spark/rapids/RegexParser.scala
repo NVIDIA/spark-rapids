@@ -1447,10 +1447,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
         term match {
           case RegexSequence(parts) =>
             parts.foreach { part => 
-              isBeginOrEndLineAnchor(part) match {
-                case true => throw new RegexUnsupportedException(
+              if (isBeginOrEndLineAnchor(part)) {
+                throw new RegexUnsupportedException(
                   "Line and string anchors are not supported in capture groups", part.position)
-                case false =>
               }
               part match {
                 case RegexRepetition(base, quantifier) => (base, quantifier) match {
