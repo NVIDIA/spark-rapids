@@ -664,6 +664,9 @@ def test_read_type_casting_integral(spark_tmp_path, offset, reader_confs, v1_ena
         lambda spark: spark.read.schema(rs).orc(data_path),
         conf=all_confs)
 
+# The test_orc_varchar file was created with the Hive CLI like this:
+# CREATE TABLE test_orc_varchar(id int, name varchar(20)) STORED AS ORC LOCATION '...';
+# INSERT INTO test_orc_varchar values(1, 'abc');
 def test_orc_read_varchar_as_string(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema("id bigint, name string").orc(std_input_path + "/test_orc_varchar.orc"))
