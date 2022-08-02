@@ -202,6 +202,7 @@ else
     # Not the default 2G but should be large enough for a single batch for all data (we found
     # 200 MiB being allocated by a single test at most, and we typically have 4 tasks.
     export PYSP_TEST_spark_rapids_sql_batchSizeBytes='100m'
+    export PYSP_TEST_spark_rapids_sql_regexp_maxStateMemoryBytes='300m'
 
     # Extract Databricks version from deployed configs. This is set automatically on Databricks
     # notebooks but not when running Spark manually.

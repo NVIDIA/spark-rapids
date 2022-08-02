@@ -852,8 +852,8 @@ object GpuRegExpUtils {
 
   def validateRegExpComplexity(meta: ExprMeta[_], regex: RegexAST): Unit = {
     if(!RegexComplexityEstimator.isValid(meta.conf, regex)) {
-      meta.willNotWorkOnGpu(s"Estimated memory needed for regular expression exceeds the maximum." +
-        s"Set ${RapidsConf.REGEXP_MAX_STATE_MEMORY} to change it.")
+      meta.willNotWorkOnGpu(s"estimated memory needed for regular expression exceeds the maximum." +
+        s" Set ${RapidsConf.REGEXP_MAX_STATE_MEMORY_BYTES} to change it.")
     }
   }
 

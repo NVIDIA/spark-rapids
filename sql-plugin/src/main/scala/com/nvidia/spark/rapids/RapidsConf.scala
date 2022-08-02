@@ -1049,14 +1049,14 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val REGEXP_MAX_STATE_MEMORY = conf("spark.rapids.sql.regexp.maxStateMemory")
+  val REGEXP_MAX_STATE_MEMORY_BYTES = conf("spark.rapids.sql.regexp.maxStateMemoryBytes")
     .doc("Specifies the maximum memory on GPU to be used for regular expressions." +
       "The memory usage is an estimate based on an upper-bound approximation on the " +
       "complexity of the regular expression. Note that the actual memory usage may " +
       "still be higher than this estimate depending on the number of rows in the data" +
       "column and the input strings themselves. It is recommended to not set this to " +
       s"more than 3 times ${GPU_BATCH_SIZE_BYTES.key}")
-    .longConf
+    .bytesConf(ByteUnit.BYTE)
     .createWithDefault(Integer.MAX_VALUE)
 
   // INTERNAL TEST AND DEBUG CONFIGS
@@ -1937,9 +1937,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRegExpEnabled: Boolean = get(ENABLE_REGEXP)
 
   lazy val maxRegExpStateMemory: Long =  {
-    val size = get(REGEXP_MAX_STATE_MEMORY) 
+    val size = get(REGEXP_MAX_STATE_MEMORY_BYTES) 
     if (size > 3 * gpuTargetBatchSizeBytes) {
-      logWarning(s"${REGEXP_MAX_STATE_MEMORY.key} is more than 3 times " +
+      logWarning(s"${REGEXP_MAX_STATE_MEMORY_BYTES.key} is more than 3 times " +
         s"${GPU_BATCH_SIZE_BYTES.key}. This may cause regular expression operations to " +
         s"encounter GPU out of memory errors.")
     }
