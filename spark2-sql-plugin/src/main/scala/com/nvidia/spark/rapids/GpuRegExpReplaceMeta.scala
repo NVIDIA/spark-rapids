@@ -138,4 +138,18 @@ object GpuRegExpUtils {
         s"Set ${RapidsConf.ENABLE_REGEXP}=true to enable it")
     }
   }
+
+  /**
+   * Returns the number of groups in regexp
+   * (includes both capturing and non-capturing groups)
+   */
+  def countGroups(pattern: String): Int = {
+    def countGroups(regexp: RegexAST): Int = {
+      regexp match {
+        case RegexGroup(_, term) => 1 + countGroups(term)
+        case other => other.children().map(countGroups).sum
+      }
+   }
+   countGroups(parseAST(pattern))
+  }
 }
