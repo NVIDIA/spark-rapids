@@ -134,6 +134,9 @@ def with_gpu_session(func, conf={}):
 def is_before_spark_312():
     return spark_version() < "3.1.2"
 
+def is_before_spark_313():
+    return spark_version() < "3.1.3"
+
 def is_before_spark_314():
     return spark_version() < "3.1.4"
 
@@ -189,3 +192,10 @@ def get_java_major_version():
     elif dash_pos != -1:
         ver = ver[0:dash_pos]
     return int(ver)
+
+def get_jvm_charset():
+    sc = _spark.sparkContext
+    return str(sc._jvm.java.nio.charset.Charset.defaultCharset())
+
+def is_jvm_charset_utf8():
+    return get_jvm_charset() == 'UTF-8'

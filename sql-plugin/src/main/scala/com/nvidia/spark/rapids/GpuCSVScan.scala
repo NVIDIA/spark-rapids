@@ -49,6 +49,9 @@ trait ScanWithMetrics {
   var metrics : Map[String, GpuMetric] = Map.empty
 }
 
+// Allows use of ScanWithMetrics from Java code
+class ScanWithMetricsWrapper extends ScanWithMetrics
+
 object GpuCSVScan {
   def tagSupport(scanMeta: ScanMeta[CSVScan]) : Unit = {
     val scan = scanMeta.wrapped

@@ -185,7 +185,6 @@ class RegexParser(pattern: String) {
             case codePoint => RegexChar(codePoint.toChar)
           }
         case Some('0') => 
-          consumeExpected('0')
           val octalChar = parseOctalDigit
           octalChar.codePoint match {
             case 0 => RegexHexDigit("00")
@@ -974,8 +973,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           terminatorChars ++= lineTerminatorChars.map(RegexChar)
           RegexCharacterClass(negated = true, terminatorChars)
         case '$' if mode == RegexSplitMode =>
-          throw new RegexUnsupportedException(
-            "Line anchor $ is not supported in split", regex.position)
+          RegexEscaped('Z')
         case '$' =>
           // in the case of the line anchor $, the JVM has special conditions when handling line 
           // terminators in and around the anchor
@@ -1028,8 +1026,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
                 RegexChar('$')))
           }
         case '^' if mode == RegexSplitMode =>
-          throw new RegexUnsupportedException("Line anchor ^ is not supported in split mode",
-            regex.position)
+          RegexEscaped('A')
         case '\r' | '\n' if mode == RegexFindMode =>
           previous match {
             case Some(RegexChar('$')) =>
@@ -1047,14 +1044,19 @@ class CudfRegexTranspiler(mode: RegexMode) {
         } else  {
           digits
         }
-        if (r.codePoint >= 128) {
+
+        if (regexMetaChars.map(_.toInt).contains(r.codePoint)) {
+          RegexEscaped(r.codePoint.toChar)
+        } else if(r.codePoint >= 128) {
           RegexChar(r.codePoint.toChar)
         } else {
           RegexOctalChar(octal)
         }
 
       case r @ RegexHexDigit(digits) =>
-        if (r.codePoint >= 128) {
+        if (regexMetaChars.map(_.toInt).contains(r.codePoint)) {
+          RegexEscaped(r.codePoint.toChar)
+        } else if (r.codePoint >= 128) {
           // cuDF only supports 0x00 to 0x7f hexidecimal chars
           RegexChar(r.codePoint.toChar)
         } else {
@@ -1103,15 +1105,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
             case _ =>
               RegexEscaped(ch)
           }
-        case 'A' if mode == RegexSplitMode =>
-          throw new RegexUnsupportedException(
-            "String anchor \\A is not supported in split mode", regex.position)
-        case 'Z' if mode == RegexSplitMode =>
-          throw new RegexUnsupportedException(
-            "String anchor \\Z is not supported in split or replace mode", regex.position)
         case 'z' if mode == RegexSplitMode =>
-          throw new RegexUnsupportedException(
-            "String anchor \\z is not supported in split mode", regex.position)
+          RegexEscaped('Z')
         case 'z' =>
           // cuDF does not support "\z" but supports "$", which is equivalent
           RegexChar('$')
@@ -1471,11 +1466,27 @@ class CudfRegexTranspiler(mode: RegexMode) {
       case RegexGroup(capture, term) =>
         term match {
           case RegexSequence(parts) =>
-            parts.foreach { part => isBeginOrEndLineAnchor(part) match {
-              case true => throw new RegexUnsupportedException(
-                "Line and string anchors are not supported in capture groups", part.position)
-              case false =>
-            }}
+            parts.foreach { part => 
+              if (isBeginOrEndLineAnchor(part)) {
+                throw new RegexUnsupportedException(
+                  "Line and string anchors are not supported in capture groups", part.position)
+              }
+              part match {
+                case RegexRepetition(base, quantifier) => (base, quantifier) match {
+                  case (_, QuantifierVariableLength(0, Some(0))) =>
+                    throw new RegexUnsupportedException(
+                      "Repetition with {0,0} not supported in capture groups",
+                      quantifier.position)
+
+                  case (_, QuantifierFixedLength(0)) =>
+                    throw new RegexUnsupportedException(
+                      "Reptition with {0} not supported in capture groups",
+                      quantifier.position)
+                  case _ =>
+                }
+                case _ =>
+              }
+            }
             RegexGroup(capture, rewrite(term, replacement, None))
           case _ =>
             RegexGroup(capture, rewrite(term, replacement, None))
@@ -1535,6 +1546,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     case RegexRepetition(term, _) => isBeginOrEndLineAnchor(term)
     case RegexChar(ch) => ch == '^' || ch == '$'
     case RegexEscaped(ch) if "zZ".contains(ch) => true // \z gets translated to $
+    case RegexEscaped(ch) if 'A' == ch && mode == RegexSplitMode => true 
     case _ => false
   }
 

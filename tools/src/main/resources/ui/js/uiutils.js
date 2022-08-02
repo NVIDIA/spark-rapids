@@ -65,11 +65,6 @@ class AppsToStagesMap {
 
 let appStagesMap = new AppsToStagesMap();
 
-const twoDecimalFormatter = new Intl.NumberFormat('en-US', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-
 function padZeroes(num) {
   return ("0" + num).slice(-2);
 }
@@ -101,19 +96,23 @@ function formatDuration(milliseconds) {
   }
   let seconds = milliseconds * 1.0 / 1000;
   if (seconds < 1) {
-    return seconds.toFixed(1) + " s";
+    return seconds.toFixed(2) + " s";
   }
   if (seconds < 60) {
-    return seconds.toFixed(0) + " s";
+    return seconds.toFixed(1) + " s";
   }
   let minutes = seconds / 60;
   if (minutes < 10) {
-    return minutes.toFixed(1) + " min";
+    return minutes.toFixed(2) + " min";
   } else if (minutes < 60) {
-    return minutes.toFixed(0) + " min";
+    return minutes.toFixed(1) + " min";
   }
   let hours = minutes / 60;
-  return hours.toFixed(1) + " h";
+  return hours.toFixed(2) + " h";
+}
+
+function formatFloatingPoints(numArg) {
+  return Math.floor(parseFloat(numArg) * 100) / 100;
 }
 
 function getColumnIndex(columns, columnName) {
@@ -319,10 +318,8 @@ function processRawData(rawRecords) {
     }
 
     // Set numeric fields for display
-    appRecord["totalSpeedup_display"] =
-      Math.floor(parseFloat(appRecord["totalSpeedup"]) * 10) / 10;
-    appRecord["taskSpeedupFactor_display"] =
-      Math.floor(parseFloat(appRecord["taskSpeedupFactor"]) * 10) / 10;
+    appRecord["totalSpeedup_display"] = formatFloatingPoints(appRecord["totalSpeedup"]);
+    appRecord["taskSpeedupFactor_display"] = formatFloatingPoints(appRecord["taskSpeedupFactor"]);
 
     setAppInfoRecord(appRecord);
     maxOpportunity =
@@ -341,6 +338,26 @@ function processRawData(rawRecords) {
   setGPURecommendations(processedRecords);
   setGlobalReportSummary(processedRecords);
   return processedRecords;
+}
+
+// get the sqlInfo items from an apprecord
+function getAppSqlArray(appRecord) {
+  let sqlInfos = [];
+  if (appRecord.hasOwnProperty('perSQLEstimatedInfo')) {
+    for (let ind in appRecord.perSQLEstimatedInfo) {
+      let sqlInfo = appRecord.perSQLEstimatedInfo[ind];
+      sqlInfo["recommendation"] = sqlInfo.info.recommendation;
+      if (UIConfig.fullAppView.enabled) {
+        sqlInfo["attemptDetailsURL"] = "application.html?app_id=" + sqlInfo.info.appId;
+      } else {
+        sqlInfo["attemptDetailsURL"] = "#!"
+      }
+      sqlInfos.push(sqlInfo);
+    }
+    setGPURecommendations(sqlInfos);
+  }
+
+  return sqlInfos;
 }
 
 function setGlobalReportSummary(processedApps) {
@@ -393,20 +410,20 @@ function setGlobalReportSummary(processedApps) {
     formatDuration(totalGPUOpportunityDurations);
   qualReportSummary.speedups.totalSqlDataframeTaskDuration =
     formatDuration(totalSqlDataframeDuration);
-  qualReportSummary.speedups.statsPercentage = twoDecimalFormatter.format(speedUpPercent)
+  qualReportSummary.speedups.statsPercentage = formatFloatingPoints(speedUpPercent)
     + qualReportSummary.speedups.statsPercentage;
 
   // candidates
   qualReportSummary.candidates.numeric = recommendedCnt;
   qualReportSummary.tlc.numeric = tlcCount;
   qualReportSummary.totalApps.statsPercentage =
-      twoDecimalFormatter.format(estimatedPercentage)
+    formatFloatingPoints(estimatedPercentage)
       + qualReportSummary.totalApps.statsPercentage;
   qualReportSummary.candidates.statsPercentage =
-      twoDecimalFormatter.format(gpuPercent)
+    formatFloatingPoints(gpuPercent)
       + qualReportSummary.candidates.statsPercentage;
   qualReportSummary.tlc.statsPercentage =
-      twoDecimalFormatter.format(tlcPercent)
+    formatFloatingPoints(tlcPercent)
       + qualReportSummary.tlc.statsPercentage;
 }
 
@@ -880,6 +897,15 @@ function constructDataTableFromHTMLTemplate(
   viewType,
   confInitializerFunc,
   dataTableArgs = {}) {
+  if (dataTableArgs.hasOwnProperty('replaceTableIfEmptyData')) {
+    if (dataTableArgs.replaceTableIfEmptyData.enabled) {
+      if (dataArray.length == 0) {
+        $(dataTableArgs.datatableContainerID).html(jQuery.parseHTML(
+          dataTableArgs.replaceTableIfEmptyData.text, false));
+        return null;
+      }
+    }
+  }
   let htmlMustacheRec = {};
   let dataTableConf = confInitializerFunc(dataArray, viewType, htmlMustacheRec, dataTableArgs);
   let dataTableContainerContent = Mustache.render(dataTableArgs.dataTableTemplate, htmlMustacheRec);
@@ -935,7 +961,7 @@ function createAppDetailsExecsTableConf(
         data: "speedupFactor",
         render: function (data, type, row) {
           if (data && type === 'display') {
-            return twoDecimalFormatter.format(data);
+            return formatFloatingPoints(data);
           }
           return data;
         },
@@ -1102,7 +1128,7 @@ function createAppDetailsStagesTableConf(
         data: "averageSpeedup",
         render: function (data, type, row) {
           if (data && type === 'display') {
-            return twoDecimalFormatter.format(data);
+            return formatFloatingPoints(data);
           }
           return data;
         },
@@ -1190,6 +1216,208 @@ function createAppDetailsStagesTableConf(
   return stagesDataTableConf;
 }
 
+
+function createAppDetailsSQLsTableConf(
+  appSQLsRecords,
+  tableViewType,
+  mustacheRecord,
+  extraFunctionArgs) {
+  let appSQLsDetailsBaseParams = UIConfig.datatables[extraFunctionArgs.tableId];
+  let appSQLsDetailsCustomParams = appSQLsDetailsBaseParams[tableViewType];
+  let fileExportName = appSQLsDetailsCustomParams.fileExportPrefix;
+  if (tableViewType === 'singleAppView') {
+    fileExportName =  appSQLsDetailsCustomParams.fileExportPrefix + "_" + extraFunctionArgs.appId;
+  }
+  let recommendGPUColName = "gpuRecommendation"
+
+  let appSQLsDataTableConf = {
+    paging: (appSQLsRecords.length > defaultPageLength),
+    pageLength: defaultPageLength,
+    lengthMenu: defaultLengthMenu,
+    info: true,
+    data: appSQLsRecords,
+    columns: [
+      {
+        name: "appID",
+        data: "info.appId",
+        className: "all",
+        render:  (appID, type, row) => {
+          if (type === 'display') {
+            if (createAppIDLinkEnabled(tableViewType)) {
+              return `<a href="${row.attemptDetailsURL}">${appID}</a>`
+            }
+          }
+          return appID;
+        }
+      },
+      {
+        name: "sqlID",
+        data: "sqlID",
+        className: "all",
+      },
+      {
+        name: recommendGPUColName,
+        data: 'gpuCategory',
+        className: "all",
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return getAppBadgeHTMLWrapper(row);
+          }
+          return data;
+        },
+        fnCreatedCell: (nTd, sData, oData, _ignored_iRow, _ignored_iCol) => {
+          let recommendGroup = recommendationsMap.get(sData);
+          let toolTipVal = recommendGroup.description;
+          $(nTd).attr('data-toggle', "tooltip");
+          $(nTd).attr('data-placement', "top");
+          $(nTd).attr('html', "true");
+          $(nTd).attr('data-html', "true");
+          $(nTd).attr('title', toolTipVal);
+        }
+      },
+      {
+        name: "sqlDescription",
+        data: "sqlDesc",
+        className: "all",
+      },
+      {
+        name: 'estimatedGpuSpeedup',
+        data: 'info.estimatedGpuSpeedup',
+        render: function (data, type, row) {
+          if (data && type === 'display') {
+            return formatFloatingPoints(data);
+          }
+          return data;
+        },
+      },
+      {
+        name: 'sqlDataFrameDuration',
+        data: 'info.sqlDfDuration',
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return formatDuration(data)
+          }
+          return data;
+        },
+      },
+      {
+        name: 'gpuOpportunity',
+        data: 'info.gpuOpportunity',
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return formatDuration(data)
+          }
+          return data;
+        },
+      },
+      {
+        name: 'estimatedGpuDur',
+        data: 'info.estimatedGpuDur',
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return formatDuration(data)
+          }
+          return data;
+        },
+      },
+      {
+        name: 'estimatedGpuTimeSaved',
+        data: 'info.estimatedGpuTimeSaved',
+        render: function (data, type, row) {
+          if (type === 'display') {
+            return formatDuration(data)
+          }
+          return data;
+        },
+      },
+    ],
+    responsive: {
+      details: {
+        renderer: function ( api, rowIdx, columns ) {
+          let data = $.map( columns, function ( col, i ) {
+            let dataTableToolTip = toolTipsValues[appSQLsDetailsCustomParams.toolTipID];
+            return col.hidden ?
+              '<tr data-dt-row="'+col.rowIndex+'" data-dt-column="'+col.columnIndex+'">'+
+              '<th scope=\"row\"><span data-toggle=\"tooltip\" data-placement=\"top\"' +
+              '    title=\"' + dataTableToolTip[col.title] + '\">'+col.title+':'+
+              '</span></th> '+
+              '<td>'+col.data+'</td>'+
+              '</tr>' :
+              '';
+          } ).join('');
+
+          return data ?
+            $('<table/>').append( data ) :
+            false;
+        }
+      }
+    },
+    dom: appSQLsDetailsCustomParams.Dom,
+    buttons: [{
+      extend: 'csv',
+      title: fileExportName,
+      text: 'Export'
+    }],
+    initComplete: function(settings, json) {
+      // Add custom Tool Tip to the headers of the table
+      let thLabel = extraFunctionArgs.tableDivId + ' thead th';
+      let dataTableToolTip = toolTipsValues[appSQLsDetailsCustomParams.toolTipID];
+      $(thLabel).each(function () {
+        let $td = $(this);
+        let toolTipVal = dataTableToolTip[$td.text().trim()];
+        $td.attr('data-toggle', "tooltip");
+        $td.attr('data-placement', "top");
+        $td.attr('html', "true");
+        $td.attr('data-html', "true");
+        $td.attr('title', toolTipVal);
+      });
+    }
+  };
+
+  processDatableColumns(
+    appSQLsDataTableConf,
+    appSQLsDetailsBaseParams,
+    appSQLsDetailsCustomParams,
+    mustacheRecord);
+
+  // set searchpanes
+  let optionGeneratorsFunctionsMap = new Map();
+  optionGeneratorsFunctionsMap.set("recommendation", function() {
+    let categoryOptions = [];
+    for (let i in recommendationContainer) {
+      let currOption = {
+        label: recommendationContainer[i].displayName,
+        value: function(rowData, rowIdx) {
+          return (rowData["gpuCategory"] === recommendationContainer[i].displayName);
+        }
+      }
+      categoryOptions.push(currOption);
+    }
+    return categoryOptions;
+  });
+  optionGeneratorsFunctionsMap.set("apps", function() {
+    let stageIdOptions = [];
+    qualificationRecords.forEach(appRecord => {
+      let currOption = {
+        label: appRecord.appId,
+        value: function(rowData, rowIdx) {
+          return (rowData.info.appId === appRecord.appId);
+        },
+      };
+      stageIdOptions.push(currOption);
+    });
+    return stageIdOptions;
+  });
+
+  setDataTableSearchPanes(
+    appSQLsDataTableConf,
+    appSQLsDetailsBaseParams,
+    appSQLsDetailsCustomParams,
+    optionGeneratorsFunctionsMap);
+
+  return appSQLsDataTableConf;
+}
+
 function getAppDetailsTableTemplate() {
   return `
       <div id="all-apps-raw-data">
@@ -1231,6 +1459,31 @@ function getAppDetailsTableTemplate() {
   `;
 }
 
+function getAppSQLsDetailsTableTemplate() {
+  let content = `
+    <div id="app-sqls-raw-data">
+      <table id="app-sqls-raw-data-table" class="table data-table display wrap" style="width:100%">
+        <thead>
+        <tr>
+          {{#displayCol_appID}}
+          <th>App ID</th>
+          {{/displayCol_appID}}
+          <th>SQL ID</th>
+          <th>Recommendation</th>
+          <th>SQL Description</th>
+          <th>Estimated GPU Speedup</th>
+          <th>SQL DF Duration</th>
+          <th>GPU Opportunity</th>
+          <th>Estimated GPU Duration</th>
+          <th>Estimated GPU Time Saved</th>
+        </tr>
+        </thead>
+      </table>
+    </div>
+  `;
+  return content;
+}
+
 function setupNavigation() {
   $(".dash-nav-dropdown-toggle").click(function () {
     $(this).closest(".dash-nav-dropdown")
@@ -1245,5 +1498,34 @@ function setupNavigation() {
 
   $(".menu-toggle").click(function () {
     $(".dash").toggleClass("dash-compact");
+  });
+}
+
+function setupToolTipForTableCells() {
+  // Set the tootTips for the table header.
+  $('thead th[title]').tooltip({
+    container: 'body', "html": true
+  });
+
+  // Set tooltips for the three tables.
+  // Note that we should always use method-2
+  //
+  // method-1:
+  //           using datatables. This method has limitations because datatable removes nodes from
+  //           the DOM, therefore events applied with a static event listener might not be able to
+  //           bind themselves to all nodes in the table.
+  // $('#app-execs-details-data-container [data-toggle="tooltip"]').tooltip({
+  //   container: 'body',
+  //   html: true,
+  //   animation: true,
+  //   placement:"bottom",});
+  //
+  // method-2:
+  //          Using jQuery delegated event listener options which overcomes the limitations in method-1
+  $('tbody').on('mouseover', 'td', function () {
+    $('[data-toggle="tooltip"]').tooltip({
+      trigger: 'hover',
+      html: true
+    });
   });
 }

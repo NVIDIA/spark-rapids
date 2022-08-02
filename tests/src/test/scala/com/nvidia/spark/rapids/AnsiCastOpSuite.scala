@@ -466,6 +466,11 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
+  testSparkResultsAreEqual("ansi_cast decimals to long",
+    generateValidValuesDecimalDF(Short.MinValue, Short.MaxValue, 18, 3), sparkConf) {
+    frame => testCastTo(DataTypes.LongType)(frame)
+  }
+
   private def castToStringExpectedFun[T]: T => Option[String] = (d: T) => Some(String.valueOf(d))
 
   private def testCastToString[T](dataType: DataType, ansiMode: Boolean,
