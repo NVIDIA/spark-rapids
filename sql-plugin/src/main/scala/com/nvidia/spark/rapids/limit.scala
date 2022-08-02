@@ -89,7 +89,7 @@ trait GpuBaseLimitExec extends LimitExec with GpuExec with ShimUnaryExecNode {
 
           // If the last batch is null, then we have offset >= numRows in this partition.
           // In such case, we should return an empty batch
-          if (batch == null) {
+          if (batch == null || batch.numRows() == 0) {
             return new ColumnarBatch(new ArrayBuffer[GpuColumnVector](numCols).toArray, 0)
           }
 
