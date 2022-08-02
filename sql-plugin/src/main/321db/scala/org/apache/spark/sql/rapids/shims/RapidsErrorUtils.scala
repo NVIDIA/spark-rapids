@@ -69,4 +69,10 @@ object RapidsErrorUtils {
   def overflowInIntegralDivideError(context: String = ""): ArithmeticException = {
     QueryExecutionErrors.overflowInIntegralDivideError()
   }
+
+  def foundDuplicateFieldInCaseInsensitiveModeError(
+      requiredFieldName: String, matchedFields: String): Throwable = {
+    QueryExecutionErrors.foundDuplicateFieldInCaseInsensitiveModeError(
+      requiredFieldName, matchedFields)
+  }
 }
