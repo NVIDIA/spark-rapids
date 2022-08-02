@@ -566,7 +566,9 @@ object GpuOverrides extends Logging {
       case FloatType => true
       case DoubleType => true
       case DateType => true
-      case TimestampType => TypeChecks.areTimestampsSupported(ZoneId.systemDefault())
+      case TimestampType =>
+        TypeChecks.areTimestampsSupported(ZoneId.systemDefault()) &&
+        TypeChecks.areTimestampsSupported(SQLConf.get.sessionLocalTimeZone)
       case StringType => true
       case dt: DecimalType if allowDecimal => dt.precision <= GpuOverrides.DECIMAL64_MAX_PRECISION
       case NullType => allowNull
@@ -1872,7 +1874,7 @@ object GpuOverrides extends Logging {
       }),
     // Spark 2.x doesn't have NthValue
     expr[First](
-      "first aggregate operator", {
+      "first aggregate operator",
       ExprChecks.fullAgg(
         (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
             TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
@@ -1885,7 +1887,7 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new AggExprMeta[First](a, conf, p, r) {
       }),
     expr[Last](
-      "last aggregate operator", {
+      "last aggregate operator",
       ExprChecks.fullAgg(
         (TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
             TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128).nested(),
@@ -2496,11 +2498,13 @@ object GpuOverrides extends Logging {
     expr[Concat](
       "List/String concatenate",
       ExprChecks.projectOnly((TypeSig.STRING + TypeSig.ARRAY).nested(
-        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128),
+        TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         (TypeSig.STRING + TypeSig.BINARY + TypeSig.ARRAY).nested(TypeSig.all),
         repeatingParamCheck = Some(RepeatingParamCheck("input",
           (TypeSig.STRING + TypeSig.ARRAY).nested(
-            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128),
+            TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
           (TypeSig.STRING + TypeSig.BINARY + TypeSig.ARRAY).nested(TypeSig.all)))),
       (a, conf, p, r) => new ComplexTypeMergingExprMeta[Concat](a, conf, p, r) {
       }),
@@ -2743,7 +2747,7 @@ object GpuOverrides extends Logging {
           aggBuffer.copy(dataType = CudfTDigest.dataType)(aggBuffer.exprId, aggBuffer.qualifier)
         }
       }).incompat("the GPU implementation of approx_percentile is not bit-for-bit " +
-          s"compatible with Apache Spark."),
+          s"compatible with Apache Spark"),
     expr[GetJsonObject](
       "Extracts a json object from path",
       ExprChecks.projectOnly(
