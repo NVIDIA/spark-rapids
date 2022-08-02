@@ -243,6 +243,10 @@ else
         # buffers as large as batchSizeBytes can be allocated, and the fewer of them we have the better.
         LOCAL_PARALLEL=$(( $CPU_CORES > 4 ? 4 : $CPU_CORES ))
         export PYSP_TEST_spark_master="local[$LOCAL_PARALLEL,$SPARK_TASK_MAXFAILURES]"
+      else
+        # If specified master, set `spark.executor.extraClassPath` due to issue https://github.com/NVIDIA/spark-rapids/issues/5796
+        # Remove this line if the issue is fixed
+        export PYSP_TEST_spark_executor_extraClassPath="${ALL_JARS}"
       fi
     fi
 
