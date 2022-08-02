@@ -660,11 +660,11 @@ def test_hash_groupby_collect_set_on_nested_type(data_gen):
 @allow_non_gpu("ProjectExec", "SortArray")
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_nested, ids=idfn)
 def test_hash_groupby_collect_set_on_nested_array_type(data_gen):
-    conf = {
+    conf = copy_and_update(_no_nans_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
         "spark.rapids.sql.castDecimalToString.enabled": "true",
         "spark.rapids.sql.expression.SortArray": "false"
-    }
+    })
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -696,11 +696,11 @@ def test_hash_reduction_collect_set_on_nested_type(data_gen):
 @allow_non_gpu("ProjectExec", "SortArray")
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_nested, ids=idfn)
 def test_hash_reduction_collect_set_on_nested_array_type(data_gen):
-    conf = {
+    conf = copy_and_update(_no_nans_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
         "spark.rapids.sql.castDecimalToString.enabled": "true",
         "spark.rapids.sql.expression.SortArray": "false"
-    }
+    })
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)

@@ -139,6 +139,11 @@ all_basic_gens_no_nans = [byte_gen, short_gen, int_gen, long_gen,
         FloatGen(no_nans=True, special_cases=[]), DoubleGen(no_nans=True, special_cases=[]),
         string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
+_no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
+                       'spark.rapids.sql.hasNans': 'false',
+                       'spark.rapids.sql.castStringToFloat.enabled': 'true'
+                      }
+
 @ignore_order
 @pytest.mark.parametrize('data_gen', [decimal_gen_128bit], ids=idfn)
 def test_decimal128_count_window(data_gen):
@@ -1007,11 +1012,11 @@ def test_window_aggs_for_rows_collect_set():
 @ignore_order(local=True)
 @allow_non_gpu("ProjectExec", "SortArray")
 def test_window_aggs_for_rows_collect_set_nested_array():
-    conf = {
+    conf = copy_and_update(_no_nans_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
         "spark.rapids.sql.castDecimalToString.enabled": "true",
         "spark.rapids.sql.expression.SortArray": "false"
-    }
+    })
 
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, _gen_data_for_collect_set_nested, length=1024),
