@@ -75,6 +75,9 @@ class GpuRegExpReplaceMeta(
 }
 
 object GpuRegExpUtils {
+  private def parseAST(pattern: String): RegexAST = {
+    new RegexParser(pattern).parse()
+  }
 
   /**
    * Convert symbols of back-references if input string contains any.
@@ -139,6 +142,39 @@ object GpuRegExpUtils {
       meta.willNotWorkOnGpu(s"regular expression support is disabled. " +
         s"Set ${RapidsConf.ENABLE_REGEXP}=true to enable it")
     }
+
+    Charset.defaultCharset().name() match {
+      case "UTF-8" =>
+        // supported
+      case _ =>
+        meta.willNotWorkOnGpu(s"regular expression support is disabled because the GPU only " +
+        "supports the UTF-8 charset when using regular expressions")
+    }
+  }
+
+  /**
+   * Recursively check if pattern contains only zero-match repetitions
+   * ?, *, {0,}, or {0,n} or any combination of them.
+   */
+  def isEmptyRepetition(pattern: String): Boolean = {
+    def isASTEmptyRepetition(regex: RegexAST): Boolean = {
+      regex match {
+        case RegexRepetition(_, term) => term match {
+          case SimpleQuantifier('*') | SimpleQuantifier('?') => true
+          case QuantifierFixedLength(0) => true
+          case QuantifierVariableLength(0, _) => true
+          case _ => false
+        }
+        case RegexGroup(_, term) =>
+          isASTEmptyRepetition(term)
+        case RegexSequence(parts) =>
+          parts.forall(isASTEmptyRepetition)
+        // cuDF does not support repetitions adjacent to a choice (eg. "a*|a"), but if
+        // we did, we would need to add a `case RegexChoice()` here
+        case _ => false
+      }
+    }
+    isASTEmptyRepetition(parseAST(pattern))
   }
 
   /**
