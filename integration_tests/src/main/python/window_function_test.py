@@ -924,9 +924,9 @@ _gen_data_for_collect_set_nested = [
     ('a', RepeatSeqGen(LongGen(), length=20)),
     ('b', LongRangeGen()),
     ('c_int', RepeatSeqGen(IntegerGen(), length=15)),
-    ('c_struct_array_1', RepeatSeqGen(struct_array_gen_no_nans, length=15)),
+    ('c_struct_array_1', RepeatSeqGen(array_struct_gen, length=15)),
     ('c_struct_array_2', RepeatSeqGen(StructGen([
-        ['c0', struct_array_gen_no_nans], ['c1', int_gen]]), length=14)),
+        ['c0', array_struct_gen], ['c1', int_gen]]), length=14)),
     ('c_array_struct', RepeatSeqGen(ArrayGen(all_basic_struct_gen_no_nan), length=15)),
     ('c_array_array_bool', RepeatSeqGen(ArrayGen(ArrayGen(BooleanGen())), length=15)),
     ('c_array_array_int', RepeatSeqGen(ArrayGen(ArrayGen(IntegerGen())), length=15)),
@@ -944,7 +944,6 @@ _gen_data_for_collect_set_nested = [
 ]
 
 # SortExec does not support array type, so sort the result locally.
-@incompat
 @ignore_order(local=True)
 def test_window_aggs_for_rows_collect_set():
     assert_gpu_and_cpu_are_equal_sql(
@@ -1005,6 +1004,7 @@ def test_window_aggs_for_rows_collect_set():
 # support sorting certain nested/arbitrary types on the GPU
 # See https://github.com/NVIDIA/spark-rapids/issues/3715
 # and https://github.com/rapidsai/cudf/issues/11222
+@approximate_float
 @ignore_order(local=True)
 @incompat
 @allow_non_gpu("ProjectExec", "SortArray")

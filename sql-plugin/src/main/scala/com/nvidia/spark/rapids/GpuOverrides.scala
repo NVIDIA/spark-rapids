@@ -3329,7 +3329,7 @@ object GpuOverrides extends Logging {
         override val needsAnsiCheck: Boolean = false
       }),
     expr[CollectSet](
-      "Collect a set of unique elements",
+      "Collect a set of unique elements, not supported in reduction",
       ExprChecks.fullAgg(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
             TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY),
@@ -3357,8 +3357,7 @@ object GpuOverrides extends Logging {
 
         // Last does not overflow, so it doesn't need the ANSI check
         override val needsAnsiCheck: Boolean = false
-      }).incompat("when using CollectSet with nested types that include arrays, NaN equality is " +
-          "not respected on the GPU but is respected on the CPU"),
+      }),
     expr[StddevPop](
       "Aggregation computing population standard deviation",
       ExprChecks.groupByOnly(

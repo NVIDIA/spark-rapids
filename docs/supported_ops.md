@@ -15441,8 +15441,8 @@ are limited.
 <tr>
 <td rowSpan="6">CollectSet</td>
 <td rowSpan="6">`collect_set`</td>
-<td rowSpan="6">Collect a set of unique elements</td>
-<td rowSpan="6">This is not 100% compatible with the Spark version because when using CollectSet with nested types that include arrays, NaN equality is not respected on the GPU but is respected on the CPU</td>
+<td rowSpan="6">Collect a set of unique elements, not supported in reduction</td>
+<td rowSpan="6">None</td>
 <td rowSpan="2">aggregation</td>
 <td>input</td>
 <td>S</td>
