@@ -2935,7 +2935,91 @@ object GpuOverrides extends Logging {
         }
       }
     ),
-
+    expr[ArrayExcept](
+      "Returns an array of the elements in array1 but not in array2, without duplicates",
+      ExprChecks.binaryProject(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        ("array1",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+        ("array2",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all))),
+      (in, conf, p, r) => new BinaryExprMeta[ArrayExcept](in, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuArrayExcept(lhs, rhs)
+        }
+      }
+    ).incompat("the GPU implementation treats -0.0 and 0.0 as equal, but the CPU " +
+        "implementation currently does not (see SPARK-39845). Also, Apache Spark " +
+        "3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were " +
+        "not treated as being equal. We have chosen to break with compatibility for " +
+        "the older versions of Spark in this instance and handle NaNs the same as 3.1.3+"),
+    expr[ArrayIntersect](
+      "Returns an array of the elements in the intersection of array1 and array2, without" +
+        " duplicates",
+      ExprChecks.binaryProject(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        ("array1",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+        ("array2",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all))),
+      (in, conf, p, r) => new BinaryExprMeta[ArrayIntersect](in, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuArrayIntersect(lhs, rhs)
+        }
+      }
+    ).incompat("the GPU implementation treats -0.0 and 0.0 as equal, but the CPU " +
+        "implementation currently does not (see SPARK-39845). Also, Apache Spark " +
+        "3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were " +
+        "not treated as being equal. We have chosen to break with compatibility for " +
+        "the older versions of Spark in this instance and handle NaNs the same as 3.1.3+"),
+    expr[ArrayUnion](
+      "Returns an array of the elements in the union of array1 and array2, without duplicates.",
+      ExprChecks.binaryProject(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        ("array1",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+        ("array2",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all))),
+      (in, conf, p, r) => new BinaryExprMeta[ArrayUnion](in, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuArrayUnion(lhs, rhs)
+        }
+      }
+    ).incompat("the GPU implementation treats -0.0 and 0.0 as equal, but the CPU " +
+        "implementation currently does not (see SPARK-39845). Also, Apache Spark " +
+        "3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were " +
+        "not treated as being equal. We have chosen to break with compatibility for " +
+        "the older versions of Spark in this instance and handle NaNs the same as 3.1.3+"),
+    expr[ArraysOverlap](
+      "Returns true if a1 contains at least a non-null element present also in a2. If the arrays " +
+      "have no common element and they are both non-empty and either of them contains a null " + 
+      "element null is returned, false otherwise.",
+      ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+        ("array1",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+        ("array2",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all))),
+      (in, conf, p, r) => new BinaryExprMeta[ArraysOverlap](in, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuArraysOverlap(lhs, rhs)
+        }
+      }
+    ).incompat("the GPU implementation treats -0.0 and 0.0 as equal, but the CPU " +
+        "implementation currently does not (see SPARK-39845). Also, Apache Spark " +
+        "3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were " +
+        "not treated as being equal. We have chosen to break with compatibility for " +
+        "the older versions of Spark in this instance and handle NaNs the same as 3.1.3+"),
     expr[TransformKeys](
       "Transform keys in a map using a transform function",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
