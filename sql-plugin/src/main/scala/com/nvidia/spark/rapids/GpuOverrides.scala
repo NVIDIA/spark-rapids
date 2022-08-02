@@ -3336,7 +3336,11 @@ object GpuOverrides extends Logging {
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-              TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY).nested(),
+              TypeSig.NULL + 
+              TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Support for structs containing " +
+              s"float/double array columns requires ${RapidsConf.HAS_NANS} to be set to false") +
+              TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Support for arrays of arrays of " +
+              s"floats/doubles requires ${RapidsConf.HAS_NANS} to be set to false")).nested(),
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
 
