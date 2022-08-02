@@ -44,8 +44,6 @@ object GpuParquetScan {
       meta: RapidsMeta[_, _]): Unit = {
     val sqlConf = sparkSession.conf
 
-    ParquetFieldIdShims.tagGpuSupportReadForFieldId(meta, sparkSession.sessionState.conf)
-
     if (!meta.conf.isParquetEnabled) {
       meta.willNotWorkOnGpu("Parquet input and output has been disabled. To enable set" +
         s"${RapidsConf.ENABLE_PARQUET} to true")
@@ -57,16 +55,6 @@ object GpuParquetScan {
     }
 
     FileFormatChecks.tag(meta, readSchema, ParquetFormatType, ReadFileOp)
-
-    val schemaHasStrings = readSchema.exists { field =>
-      TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[StringType])
-    }
-
-    if (sqlConf.get(SQLConf.PARQUET_BINARY_AS_STRING.key,
-      SQLConf.PARQUET_BINARY_AS_STRING.defaultValueString).toBoolean && schemaHasStrings) {
-      meta.willNotWorkOnGpu(s"GpuParquetScan does not support" +
-          s" ${SQLConf.PARQUET_BINARY_AS_STRING.key}")
-    }
 
     val schemaHasTimestamps = readSchema.exists { field =>
       TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[TimestampType])
@@ -133,5 +121,46 @@ object GpuParquetScan {
         meta.willNotWorkOnGpu(s"$other is not a supported read rebase mode")
     }
     */
+  }
+
+  /**
+   * This estimates the number of nodes in a parquet footer schema based off of the parquet spec
+   * Specifically https://github.com/apache/parquet-format/blob/master/LogicalTypes.md
+   */
+  private def numNodesEstimate(dt: DataType): Long = dt match {
+    case StructType(fields) =>
+      // A struct has a group node that holds the children
+      1 + fields.map(f => numNodesEstimate(f.dataType)).sum
+    case ArrayType(elementType, _) =>
+      // A List/Array has one group node to tag it as a list and another one
+      // that is marked as repeating.
+      2 + numNodesEstimate(elementType)
+    case MapType(keyType, valueType, _) =>
+      // A Map has one group node to tag it as a map and another one
+      // that is marked as repeating, but holds the key/value
+      2 + numNodesEstimate(keyType) + numNodesEstimate(valueType)
+    case _ =>
+      // All the other types are just value types and are represented by a non-group node
+      1
+  }
+
+  /**
+   * Adjust the footer reader type based off of a heuristic.
+   */
+  def footerReaderHeuristic(
+      inputValue: ParquetFooterReaderType.Value,
+      data: StructType,
+      read: StructType): ParquetFooterReaderType.Value = {
+    inputValue match {
+      case ParquetFooterReaderType.AUTO =>
+        val dnc = numNodesEstimate(data)
+        val rnc = numNodesEstimate(read)
+        if (rnc.toDouble/dnc <= 0.5 && dnc - rnc > 10) {
+          ParquetFooterReaderType.NATIVE
+        } else {
+          ParquetFooterReaderType.JAVA
+        }
+      case other => other
+    }
   }
 }

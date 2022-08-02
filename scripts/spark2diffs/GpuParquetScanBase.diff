@@ -1,14 +1,13 @@
-2,4c2,27
-< 
-<   // Spark 2.x doesn't have datasource v2 so ignore ScanMeta
-<   // Spark 2.x doesn't have the rebase mode so ignore throwIfNeeded
----
+1a2,6
 >   def tagSupport(scanMeta: ScanMeta[ParquetScan]): Unit = {
 >     val scan = scanMeta.wrapped
 >     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
 >     tagSupport(scan.sparkSession, schema, scanMeta)
 >   }
-> 
+3,4c8,27
+<   // Spark 2.x doesn't have datasource v2 so ignore ScanMeta
+<   // Spark 2.x doesn't have the rebase mode so ignore throwIfNeeded
+---
 >   def throwIfNeeded(
 >       table: Table,
 >       isCorrectedInt96Rebase: Boolean,
@@ -33,7 +32,7 @@
 <       meta: RapidsMeta[_, _]): Unit = {
 ---
 >       meta: RapidsMeta[_, _, _]): Unit = {
-64,70d86
+52,58d74
 <     // Spark 2.x doesn't have the rebase mode because the changes of calendar type weren't made
 <     // so just skip the checks, since this is just explain only it would depend on how
 <     // they set when they get to 3.x. The default in 3.x is EXCEPTION which would be good
@@ -41,5 +40,7 @@
 < 
 <     // Spark 2.x doesn't support the rebase mode
 <     /*
-100d115
+88d103
 <     */
+130a146
+> 
