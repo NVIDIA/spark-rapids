@@ -762,3 +762,49 @@ def test_regexp_split_unicode_support():
             'split(a, "[bf]", -1)',
             'split(a, "[o]", -2)'),
             conf=_regexp_conf)
+
+@allow_non_gpu('ProjectExec', 'RLike')
+def test_regexp_memory_fallback():
+    gen = StringGen('test')
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'regexp_like(a, "a{6}")',
+            'regexp_like(a, "a{6,}")',
+            'regexp_like(a, "(?:ab){0,3}")',
+            'regexp_like(a, "(?:12345)?")',
+            'regexp_like(a, "(?:12345)+")',
+            'regexp_like(a, "(?:123456)*")',
+            'regexp_like(a, "a{1,6}")',
+            'regexp_like(a, "abcdef")',
+            'regexp_like(a, "(1)(2)(3)")',
+            'regexp_like(a, "1|2|3|4|5|6")'
+        ),
+        cpu_fallback_class_name='RLike',
+        conf={ 
+            'spark.rapids.sql.regexp.enabled': 'true',
+            'spark.rapids.sql.regexp.maxStateMemoryBytes': '10',
+            'spark.rapids.sql.batchSizeBytes': '20' # 1 row in the batch
+        }
+    )
+
+def test_regexp_memory_ok():
+    gen = StringGen('test')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'regexp_like(a, "a{6}")',
+            'regexp_like(a, "a{6,}")',
+            'regexp_like(a, "(?:ab){0,3}")',
+            'regexp_like(a, "(?:12345)?")',
+            'regexp_like(a, "(?:12345)+")',
+            'regexp_like(a, "(?:123456)*")',
+            'regexp_like(a, "a{1,6}")',
+            'regexp_like(a, "abcdef")',
+            'regexp_like(a, "(1)(2)(3)")',
+            'regexp_like(a, "1|2|3|4|5|6")'
+        ),
+        conf={ 
+            'spark.rapids.sql.regexp.enabled': 'true',
+            'spark.rapids.sql.regexp.maxStateMemoryBytes': '12',
+            'spark.rapids.sql.batchSizeBytes': '20' # 1 row in the batch
+        }
+    )
