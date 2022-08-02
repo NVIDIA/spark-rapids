@@ -1094,7 +1094,7 @@ object RapidsConf {
     .createWithDefault(Nil)
 
   val LOG_TRANSFORMATIONS = conf("spark.rapids.sql.debug.logTransformations")
-    .doc("TBD")
+    .doc("When enabled, all query transformations will be logged.")
     .internal()
     .booleanConf
     .createWithDefault(false)
