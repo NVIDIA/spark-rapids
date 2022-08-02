@@ -126,16 +126,16 @@ trait GpuBaseLimitExec extends LimitExec with GpuExec with ShimUnaryExecNode {
           withResource(batch) { _ =>
             // result buffer need to be closed when there is an exception
             closeOnExcept(new ArrayBuffer[GpuColumnVector](numCols)) { result =>
-              withResource(GpuColumnVector.from(batch)) { table =>
-                if (numCols > 0) {
+              if (numCols > 0) {
+                withResource(GpuColumnVector.from(batch)) { table =>
                   (0 until numCols).zip(output).foreach{ case (i, attr) =>
                     val subVector = table.getColumn(i).subVector(offset, end)
                     assert(subVector != null)
                     result.append(GpuColumnVector.from(subVector, attr.dataType))
                   }
                 }
-                new ColumnarBatch(result.toArray, end - offset)
               }
+              new ColumnarBatch(result.toArray, end - offset)
             }
           }
         }
