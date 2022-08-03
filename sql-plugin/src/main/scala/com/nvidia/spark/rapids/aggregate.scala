@@ -691,9 +691,9 @@ class GpuHashAggregateIterator(
 
     // a bound expression that is applied before the cuDF aggregate
     private val preStepBound = if (forceMerge) {
-      GpuBindReferences.bindGpuReferences(preStep.toList, aggBufferAttributes.toList)
+      GpuBindReferences.bindGpuReferencesTiered(preStep.toList, aggBufferAttributes.toList)
     } else {
-      GpuBindReferences.bindGpuReferences(preStep, inputAttributes)
+      GpuBindReferences.bindGpuReferencesTiered(preStep, inputAttributes)
     }
 
     // a bound expression that is applied after the cuDF aggregate
@@ -708,7 +708,8 @@ class GpuHashAggregateIterator(
      */
     def preProcess(toAggregateBatch: ColumnarBatch): ColumnarBatch = {
       withResource(new NvtxRange("pre-process", NvtxColor.DARK_GREEN)) { _ =>
-        GpuProjectExec.project(toAggregateBatch, preStepBound)
+        //GpuProjectExec.project(toAggregateBatch, preStepBound)
+        preStepBound.tieredProject(toAggregateBatch)
       }
     }
 

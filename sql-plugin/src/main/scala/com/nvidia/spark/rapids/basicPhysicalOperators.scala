@@ -254,6 +254,38 @@ case class GpuProjectAstExec(
 }
 
 /**
+ */
+case class GpuTieredProject(
+    exprSets: Seq[Seq[GpuExpression]]) extends Arm with Logging {
+
+  private def projectTier(boundExprs: Seq[Seq[GpuExpression]], cb: ColumnarBatch): ColumnarBatch = {
+    withResource(new NvtxRange("project tier", NvtxColor.ORANGE)) { _ =>
+      boundExprs match {
+        case Nil => {
+          GpuColumnVector.incRefCounts(cb)
+          cb
+        }
+        case exprSet :: tail => {
+          withResource(GpuProjectExec.project(cb, exprSet)) { projectCb =>
+            if (tail.isEmpty) {
+              projectTier(tail, projectCb)
+            } else {
+              withResource(GpuColumnVector.combineColumns(cb, projectCb)) {
+                nextCb => projectTier(tail, nextCb)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  def tieredProject(batch: ColumnarBatch): ColumnarBatch = {
+    projectTier(exprSets, batch)
+  }
+}
+
+/**
  * Run a filter on a batch.  The batch will be consumed.
  */
 object GpuFilter extends Arm {

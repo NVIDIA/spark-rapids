@@ -20,7 +20,7 @@ import ai.rapids.cudf.ast
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, Expression, ExprId, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, EquivalentExpressions, Expression, ExprId, SortOrder}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -108,6 +108,119 @@ object GpuBindReferences extends Logging {
       input: AttributeSeq): Seq[GpuExpression] = {
     // Force list to avoid recursive Java serialization of lazy list Seq implementation
     expressions.map(GpuBindReferences.bindGpuReference(_, input)).toList
+  }
+
+  def logTree(expr : Expression) = {
+    var gpu = "Expression with "
+    var hasSideEffects = ""
+    if (expr.isInstanceOf[GpuExpression]) {
+      gpu = "GPU Expression with "
+      if (expr.asInstanceOf[GpuExpression].hasSideEffects) {
+        hasSideEffects = "side-effects with "
+      }
+    }
+    var isLiteral = ""
+    if (expr.isInstanceOf[GpuLiteral]) {
+      isLiteral = "Literal "
+    }
+    logWarning(gpu + hasSideEffects + isLiteral +
+        "hashcode: " + expr.hashCode() + " nodeName: " + expr.nodeName + "\n" + expr.treeString)
+  }
+  def logExprs(title: String, exprs: Seq[Expression]): Unit = {
+    logWarning(title)
+    exprs.foreach(logTree)
+    logWarning("-----------------------------------------------------------")
+  }
+
+  /**
+   * Recursively replaces expression with its proxy expression in `substitutionMap`.
+   */
+  private def replaceWithCommonRef(
+      expr: Expression,
+      substitutionMap: Map[Expression, Expression]): Expression = {
+    expr match {
+      case e : AttributeReference => expr
+      case _ =>
+        substitutionMap.get(expr) match {
+          case Some(e) => e
+          case None => expr.mapChildren(replaceWithCommonRef(_, substitutionMap))
+        }
+    }
+  }
+
+  private def skipReplaceExpr(e : Expression): Boolean = (e.isInstanceOf[GpuUnevaluable] ||
+      (e.isInstanceOf[GpuExpression] && e.asInstanceOf[GpuExpression].hasSideEffects) ||
+      (e.isInstanceOf[GpuCaseWhen]) ||
+      (e.isInstanceOf[GpuIf]) ||
+      (e.isInstanceOf[GpuCoalesce]) ||
+      (e.isInstanceOf[GpuLiteral]) ||
+      (e.isInstanceOf[AttributeReference]) ||
+      (e.isInstanceOf[GpuBoundReference]))
+
+  private def getExprSets(expressions : Seq[Expression]): Seq[Seq[Expression]] = {
+    def recurse(exprs: Seq[Expression], startIdx: Int): Seq[Seq[Expression]] = {
+      //logExprs("recursing on exprs:", exprs)
+      val equivalentExpressions = new EquivalentExpressions
+
+      // Filter out some expressions that we know are problematic
+      // This won't be necessary if we replace EquivalentExpressions
+      exprs.filterNot(e => skipReplaceExpr(e)).foreach(equivalentExpressions.addExprTree(_))
+      val commonExprs = equivalentExpressions.getAllEquivalentExprs.filter(_.size > 1).map(_.head)
+      val gpuExprs = commonExprs.
+          filterNot(e => (skipReplaceExpr(e) || e.isInstanceOf[GpuAlias]))
+
+      if (gpuExprs.isEmpty) {
+        Seq(exprs)
+      } else {
+        val newExprs = gpuExprs.zipWithIndex.map {
+          case (e, i) =>
+            GpuAlias(e, s"tiered_input_${startIdx + i}")()
+        }
+        val subMap = gpuExprs.zip(newExprs).map {
+          case (e, r) => (e, r.toAttribute)
+        }.toMap[Expression, Expression]
+
+        //logExprs("Before Update:", exprs)
+        val updatedExpressions = exprs.map(replaceWithCommonRef(_, subMap))
+        //logExprs("After Update:", updatedExpressions)
+        recurse(newExprs, startIdx + newExprs.size) ++ Seq(updatedExpressions)
+      }
+    }
+    recurse(expressions, 0)
+  }
+
+  private def getInputSets(exprSets: Seq[Seq[Expression]], inputs: AttributeSeq):
+    Seq[AttributeSeq] = {
+    def recurse(exprSet: Seq[Seq[Expression]], inputs: AttributeSeq): Seq[AttributeSeq] = {
+      exprSet match {
+        case Nil => Nil
+        case s :: tail => {
+          val newInputs = if (tail.isEmpty) {
+            Nil
+          } else {
+            s.filter(e => e.isInstanceOf[GpuAlias]).map(_.asInstanceOf[GpuAlias].toAttribute)
+          }
+          return Seq(inputs) ++ recurse(tail, AttributeSeq(inputs.attrs ++ newInputs))
+        }
+      }
+    }
+    recurse(exprSets, inputs)
+  }
+
+  /**
+   * A helper function to bind given expressions to an input schema where the expressions are
+   * to be processed on the GPU, and the result type indicates this.
+   */
+  def bindGpuReferencesTiered[A <: Expression](
+      expressions: Seq[A],
+      input: AttributeSeq): GpuTieredProject = {
+
+    val exprSets = getExprSets(expressions)
+    val inputSets = getInputSets(exprSets, input)
+    GpuTieredProject(exprSets.zip(inputSets).map {
+      case (es:Seq[Expression], is:AttributeSeq) =>
+        es.map(GpuBindReferences.bindGpuReference(_, is)).toList
+    })
   }
 
   def bindReference[A <: Expression](

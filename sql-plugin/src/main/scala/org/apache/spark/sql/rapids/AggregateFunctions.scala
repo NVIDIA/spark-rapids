@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NaNEquality, NullEquality, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
+import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NaNEquality, NullEquality, NullPolicy, NvtxColor, NvtxRange, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, ShimExpression, ShimUnaryExpression}
 
@@ -667,23 +667,25 @@ case class GpuExtractChunk32(
   override def sql: String = data.sql
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(GpuProjectExec.projectSingle(batch, data)) { dataCol =>
-      val dtype = if (chunkIdx < 3) DType.UINT32 else DType.INT32
-      val chunkCol = Aggregation128Utils.extractInt32Chunk(dataCol.getBase, dtype, chunkIdx)
-      val replacedCol = if (replaceNullsWithZero) {
-        withResource(chunkCol) { chunkCol =>
-          val zero = dtype match {
-            case DType.INT32 => Scalar.fromInt(0)
-            case DType.UINT32 => Scalar.fromUnsignedInt(0)
+    withResource(new NvtxRange("GpuExtractChunk32", NvtxColor.RED)) { _ =>
+      withResource(GpuProjectExec.projectSingle(batch, data)) { dataCol =>
+        val dtype = if (chunkIdx < 3) DType.UINT32 else DType.INT32
+        val chunkCol = Aggregation128Utils.extractInt32Chunk(dataCol.getBase, dtype, chunkIdx)
+        val replacedCol = if (replaceNullsWithZero) {
+          withResource(chunkCol) { chunkCol =>
+            val zero = dtype match {
+              case DType.INT32 => Scalar.fromInt(0)
+              case DType.UINT32 => Scalar.fromUnsignedInt(0)
+            }
+            withResource(zero) { zero =>
+              chunkCol.replaceNulls(zero)
+            }
           }
-          withResource(zero) { zero =>
-            chunkCol.replaceNulls(zero)
-          }
+        } else {
+          chunkCol
         }
-      } else {
-        chunkCol
+        GpuColumnVector.from(replacedCol, dataType)
       }
-      GpuColumnVector.from(replacedCol, dataType)
     }
   }
 
