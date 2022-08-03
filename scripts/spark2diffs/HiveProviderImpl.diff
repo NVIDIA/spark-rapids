@@ -1,3 +1,7 @@
+20c20
+< import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuOverrides, HiveProvider, RapidsConf, RepeatingParamCheck, TypeSig}
+---
+> import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuOverrides, HiveProvider, RapidsConf, RepeatingParamCheck, TypeSig}
 54,73d53
 < 
 <           override def convertToGpu(): GpuExpression = {

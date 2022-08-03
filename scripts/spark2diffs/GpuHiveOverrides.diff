@@ -16,3 +16,8 @@
 ---
 >       getClass().getClassLoader.loadClass("org.apache.spark.sql.hive.HiveSessionStateBuilder")
 >       getClass().getClassLoader.loadClass("org.apache.hadoop.hive.conf.HiveConf")
+40c43,44
+<       ShimLoader.newHiveProvider().getExprs
+---
+>       // don't use the ShimLoader for Spark 2.x
+>       new HiveProviderImpl().getExprs

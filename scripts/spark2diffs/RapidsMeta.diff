@@ -2,9 +2,12 @@
 <  * Copyright (c) 2022, NVIDIA CORPORATION.
 ---
 >  * Copyright (c) 2019-2022, NVIDIA CORPORATION.
-22a23,24
+23c23,25
+< import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, WindowExpression, WindowFunction}
+---
 > import com.nvidia.spark.rapids.shims.SparkShimImpl
 > 
+> import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, WindowExpression, WindowFunction}
 25a28,29
 > import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 > import org.apache.spark.sql.connector.read.Scan
@@ -225,6 +228,10 @@
 >   extends RapidsMeta[INPUT, Expression, Expression](expr, conf, parent, rule) {
 857a948
 >   override val childScans: Seq[ScanMeta[_]] = Seq.empty
+907c998
+<       case tzAware: TimeZoneAwareExpression => checkTimeZoneId(tzAware.timeZone.toZoneId)
+---
+>       case tzAware: TimeZoneAwareExpression => checkTimeZoneId(tzAware.zoneId)
 1000c1091
 <     parent: Option[RapidsMeta[_, _]],
 ---

@@ -30,63 +30,80 @@
 <     meta: RapidsMeta[_, _],
 ---
 >     meta: RapidsMeta[_, _, _],
-842c842
+804,814d803
+<   // Spark 2.X doesn't have getZoneId - copy it here
+<   private def getZoneId(timeZoneId: String): ZoneId = {
+<     val formattedZoneId = timeZoneId
+<       // To support the (+|-)h:mm format because it was supported before Spark 3.0.
+<       .replaceFirst("(\\+|\\-)(\\d):", "$10$2:")
+<       // To support the (+|-)hh:m format because it was supported before Spark 3.0.
+<       .replaceFirst("(\\+|\\-)(\\d\\d):(\\d)$", "$1$2:0$3")
+< 
+<     ZoneId.of(formattedZoneId, ZoneId.SHORT_IDS)
+<   }
+< 
+816,817c805
+<     // Spark 2.X doesn't have getZoneId
+<     val zoneId = getZoneId(zoneIdString)
+---
+>     val zoneId = DateTimeUtils.getZoneId(zoneIdString)
+854c842
 <   override def tag(rapidsMeta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(rapidsMeta: RapidsMeta[_, _, _]): Unit = {
-846c846
+858c846
 <   private[this] def tagBase(rapidsMeta: RapidsMeta[_, _], willNotWork: String => Unit): Unit = {
 ---
 >   private[this] def tagBase(rapidsMeta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
-904c904
+916c904
 <   def tag(meta: RapidsMeta[_, _],
 ---
 >   def tag(meta: RapidsMeta[_, _, _],
-915c915
+927c915
 <   override def tag(meta: RapidsMeta[_, _]): Unit =
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit =
-941c941
+953c941
 <   def tag(meta: RapidsMeta[_, _],
 ---
 >   def tag(meta: RapidsMeta[_, _, _],
-962c962
+974c962
 <   override def tag(rapidsMeta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(rapidsMeta: RapidsMeta[_, _, _]): Unit = {
-1037c1037
+1049c1037
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1089c1089
+1101c1089
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1132c1132
+1144c1132
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1182c1182
+1194c1182
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1228c1228
+1240c1228
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1264c1264
+1276c1264
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1418c1418
+1430c1418
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1428c1428
+1440c1428
 <   private[this] def tagBase(meta: RapidsMeta[_, _], willNotWork: String => Unit): Unit = {
 ---
 >   private[this] def tagBase(meta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
-1763,1771d1762
+1775,1783d1762
 <   def getSparkVersion: String = {
 <     // hack for databricks, try to find something more reliable?
 <     if (SPARK_BUILD_USER.equals("Databricks")) {
@@ -96,27 +113,27 @@
 <     }
 <   }
 < 
-1786c1777
+1798c1777
 <     println(s"against version ${getSparkVersion} of Spark. Most of this should still")
 ---
 >     println(s"against version ${ShimLoader.getSparkVersion} of Spark. Most of this should still")
-1894c1885
+1906c1885
 <         val allData = allSupportedTypes.toList.map { t =>
 ---
 >         val allData = allSupportedTypes.map { t =>
-1977c1968
+1989c1968
 <         val allData = allSupportedTypes.toList.map { t =>
 ---
 >         val allData = allSupportedTypes.map { t =>
-2081c2072
+2093c2072
 <         val allData = allSupportedTypes.toList.map { t =>
 ---
 >         val allData = allSupportedTypes.map { t =>
-2282d2272
+2294d2272
 <   /*
-2358d2347
+2370d2347
 <   */
-2362,2363c2351,2352
+2374,2375c2351,2352
 <       // case a if a.equals("execs") => outputSupportedExecs()
 <       // case expr if expr.equals("exprs") => outputSupportedExpressions()
 ---
