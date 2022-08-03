@@ -48,8 +48,6 @@ function print_usage() {
   echo "        Build in parallel, N (4 by default) is passed via -P to xargs"
   echo "   --install"
   echo "        Intall the resulting jar instead of just building it"
-  echo "   -o=MVN_OPT, --option=MVN_OPT"
-  echo "        use this option to build project with maven. E.g., --option='-Dcudf.version=cuda11'"
 }
 
 function bloopInstall() {
