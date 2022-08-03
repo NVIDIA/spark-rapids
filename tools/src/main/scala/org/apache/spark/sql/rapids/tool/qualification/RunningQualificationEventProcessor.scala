@@ -147,6 +147,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
         logWarning("starting new SQL query")
       case e: SparkListenerSQLExecutionEnd =>
         outputFuncSQLDetails(e.executionId)
+      case _ =>
     }
     listener.onOtherEvent(event)
   }
