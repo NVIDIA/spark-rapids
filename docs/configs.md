@@ -243,7 +243,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.IsNaN"></a>spark.rapids.sql.expression.IsNaN|`isnan`|Checks if a value is NaN|true|None|
 <a name="sql.expression.IsNotNull"></a>spark.rapids.sql.expression.IsNotNull|`isnotnull`|Checks if a value is not null|true|None|
 <a name="sql.expression.IsNull"></a>spark.rapids.sql.expression.IsNull|`isnull`|Checks if a value is null|true|None|
-<a name="sql.expression.JsonToStructs"></a>spark.rapids.sql.expression.JsonToStructs|`from_json`|Returns a struct value with the given `jsonStr` and `schema`|false|This is disabled by default because Parsing JSON from a column has a large number of issues and should be considered beta quality right now.|
+<a name="sql.expression.JsonToStructs"></a>spark.rapids.sql.expression.JsonToStructs|`from_json`|Returns a struct value with the given `jsonStr` and `schema`|false|This is disabled by default because parsing JSON from a column has a large number of issues and should be considered beta quality right now.|
 <a name="sql.expression.KnownFloatingPointNormalized"></a>spark.rapids.sql.expression.KnownFloatingPointNormalized| |Tag to prevent redundant normalization|true|None|
 <a name="sql.expression.KnownNotNull"></a>spark.rapids.sql.expression.KnownNotNull| |Tag an expression as known to not be null|true|None|
 <a name="sql.expression.Lag"></a>spark.rapids.sql.expression.Lag|`lag`|Window function that returns N entries behind this one|true|None|

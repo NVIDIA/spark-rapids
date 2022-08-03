@@ -3488,7 +3488,7 @@ object GpuOverrides extends Logging {
 
         override def convertToGpu(child: Expression): GpuExpression =
           GpuJsonToStructs(a.schema, a.options, child, a.timeZoneId)
-      }).disabledByDefault("Parsing JSON from a column has a large number of issues and " +
+      }).disabledByDefault("parsing JSON from a column has a large number of issues and " +
         "should be considered beta quality right now."),
     expr[org.apache.spark.sql.execution.ScalarSubquery](
       "Subquery that will return only one row and one column",
