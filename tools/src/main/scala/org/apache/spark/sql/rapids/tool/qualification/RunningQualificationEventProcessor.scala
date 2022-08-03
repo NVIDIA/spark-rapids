@@ -142,6 +142,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
   }
 
   override def onOtherEvent(event: SparkListenerEvent): Unit = {
+    listener.onOtherEvent(event)
     event match {
       case e: SparkListenerSQLExecutionStart =>
         logWarning("starting new SQL query")
@@ -149,7 +150,6 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
         outputFuncSQLDetails(e.executionId)
       case _ =>
     }
-    listener.onOtherEvent(event)
   }
 
   override def onResourceProfileAdded(event: SparkListenerResourceProfileAdded): Unit = {

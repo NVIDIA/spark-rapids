@@ -98,6 +98,9 @@ class RunningQualificationApp(reportSqlLevel: Boolean)
    */
   def getPerSqlTextAndCSVSummary(sqlID: Long): (String, String) = {
     val appInfo = super.aggregateStats()
+    appInfo.foreach { info =>
+    logWarning("application info is: " + info)
+    }
     val csvResult = constructPerSqlResult(sqlID, appInfo, QualOutputWriter.CSV_DELIMITER, false)
     val textResult = constructPerSqlResult(sqlID, appInfo, QualOutputWriter.TEXT_DELIMITER, true)
     (csvResult, textResult)
@@ -134,7 +137,7 @@ class RunningQualificationApp(reportSqlLevel: Boolean)
           } else {
             assert(res.size == 1)
             val line = QualOutputWriter.constructPerSqlSummaryInfo(res.head, headersAndSizes,
-              appId.size, delimiter, prettyPrint, SQL_DESC_LENGTH)
+              appId.size, delimiter, prettyPrint, sqlDescLength)
             line
           }
         } else {
