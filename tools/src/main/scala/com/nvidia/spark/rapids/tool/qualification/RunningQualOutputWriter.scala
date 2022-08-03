@@ -79,7 +79,7 @@ class RunningQualOutputWriter(
 
   def writeApplicationReport(appSummary: QualificationSummaryInfo): Unit = {
     // only writing a single application so num output rows should be 1
-    writeTextReport(textPerSQLFileWriter, Seq(appSummary), Seq.empty, numOutputRows=1)
-    writeDetailedCSVReport(csvPerSQLFileWriter, Seq(appSummary))
+    writeTextReport(Seq(appSummary), Seq.empty, numOutputRows=1)
+    writeDetailedCSVReport(Seq(appSummary))
   }
 }
