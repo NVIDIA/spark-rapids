@@ -178,7 +178,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
     return new MultiFileCloudParquetPartitionReader(conf, files, this::filterParquetBlocks,
         caseSensitive, parquetDebugDumpPrefix, maxBatchSizeRows, maxBatchSizeBytes,
         metrics, emptyPartSchema, numThreads, maxNumFileProcessed,
-        true, // ignoreMissingFiles
+        false, // ignoreMissingFiles
         false, // ignoreCorruptFiles
         false // useFieldId
     );
