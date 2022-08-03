@@ -62,7 +62,8 @@ class RunningQualificationApp(reportSqlLevel: Boolean)
   private lazy val appName = appInfo.map(_.appName).getOrElse("")
   private lazy val appNameSize = if (appName.nonEmpty) appName.size else 100
   private lazy val headersAndSizes =
-    QualOutputWriter.getDetailedPerSqlHeaderStringsAndSizes(appNameSize, appId.size, SQL_DESC_LENGTH)
+    QualOutputWriter.getDetailedPerSqlHeaderStringsAndSizes(appNameSize,
+      appId.size, SQL_DESC_LENGTH)
 
   def this() = {
     this(false)
@@ -158,15 +159,10 @@ class RunningQualificationApp(reportSqlLevel: Boolean)
     val appInfo = super.aggregateStats()
     appInfo match {
       case Some(info) =>
-        val appIdMaxSize = QualOutputWriter.getAppIdSize(Seq(info))
-        val appNameMaxSize = QualOutputWriter.getAppNameSize(Seq(info).map(_.appName.size))
-        val headersAndSizes =
-          QualOutputWriter.getSummaryHeaderStringsAndSizes(appNameMaxSize, appIdMaxSize)
         val headerStr = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
           delimiter, prettyPrint)
         val appInfoStr = QualOutputWriter.constructAppSummaryInfo(info.estimatedInfo,
-          headersAndSizes, appIdMaxSize,
-          delimiter, prettyPrint)
+          headersAndSizes, appId.size, delimiter, prettyPrint)
         headerStr + appInfoStr
       case None =>
         logWarning(s"Unable to get qualification information for this application")
@@ -186,12 +182,15 @@ class RunningQualificationApp(reportSqlLevel: Boolean)
     val appInfo = super.aggregateStats()
     appInfo match {
       case Some(info) =>
-        val headersAndSizes =
-          QualOutputWriter.getDetailedHeaderStringsAndSizes(Seq(info),reportReadSchema )
-        val headerStr = QualOutputWriter.constructDetailedHeader(headersAndSizes,
+        val headersAndSizesToUse = if (reportReadSchema) {
+          QualOutputWriter.getDetailedHeaderStringsAndSizes(Seq(info), reportReadSchema)
+        } else {
+          headersAndSizes
+        }
+        val headerStr = QualOutputWriter.constructDetailedHeader(headersAndSizesToUse,
           delimiter, prettyPrint)
-        val appInfoStr = QualOutputWriter.constructAppDetailedInfo(info, headersAndSizes, delimiter,
-          prettyPrint, reportReadSchema)
+        val appInfoStr = QualOutputWriter.constructAppDetailedInfo(info, headersAndSizesToUse,
+          delimiter, prettyPrint, reportReadSchema)
         headerStr + appInfoStr
       case None =>
         logWarning(s"Unable to get qualification information for this application")
