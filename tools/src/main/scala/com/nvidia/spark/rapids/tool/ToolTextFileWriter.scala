@@ -27,12 +27,18 @@ class ToolTextFileWriter(finalOutputDir: String, logFileName: String,
     finalLocationText: String) extends Logging {
 
   private val textOutputPath = new Path(s"$finalOutputDir/$logFileName")
+  logWarning("text output path is: " + textOutputPath)
   private val fs = FileSystem.get(textOutputPath.toUri, new Configuration())
   // this overwrites existing path
   private var outFile: Option[FSDataOutputStream] = Some(fs.create(textOutputPath))
 
   def write(stringToWrite: String): Unit = {
     outFile.foreach(_.writeBytes(stringToWrite))
+    if (outFile.nonEmpty) {
+      logWarning(s"write : $stringToWrite outfile is: $outFile")
+    } else {
+      logWarning("outFile is empty not writing")
+    }
   }
 
   def flush(): Unit = {

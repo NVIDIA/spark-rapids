@@ -25,13 +25,15 @@ import org.apache.spark.sql.execution.ui.{SparkListenerSQLExecutionEnd, SparkLis
 
 class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkListener with Logging {
 
-  private val qualApp = new com.nvidia.spark.rapids.tool.qualification.RunningQualificationApp()
+  private val qualApp = new com.nvidia.spark.rapids.tool.qualification.RunningQualificationApp(true)
   private val listener = qualApp.getEventListener
 
   private val outputFileFromConfig = sparkConf.get("spark.rapids.qualification.outputDir", "")
+  logWarning("Tom otuput file is: " + outputFileFromConfig)
   private lazy val appName = qualApp.appInfo.map(_.appName).getOrElse("")
   private lazy val fileWriter: Option[RunningQualOutputWriter] =
     if (outputFileFromConfig.nonEmpty) {
+      logWarning("create output writer")
       Some(new RunningQualOutputWriter(qualApp.appId, appName, outputFileFromConfig))
     } else {
       None
@@ -145,6 +147,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
     listener.onOtherEvent(event)
     event match {
       case e: SparkListenerSQLExecutionStart =>
+        logWarning("Tom otuput file is: " + outputFileFromConfig)
         logWarning("starting new SQL query")
       case e: SparkListenerSQLExecutionEnd =>
         outputFuncSQLDetails(e.executionId)
