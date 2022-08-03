@@ -57,6 +57,8 @@ class RunningQualOutputWriter(
     textPerSQLFileWriter.write(s"$sep\n")
     textPerSQLFileWriter.write(entireTextHeader)
     textPerSQLFileWriter.write(s"$sep\n")
+    csvPerSQLFileWriter.flush()
+    textPerSQLFileWriter.flush()
   }
 
   def close(): Unit = {
