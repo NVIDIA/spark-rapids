@@ -34,7 +34,9 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
   private lazy val fileWriter: Option[RunningQualOutputWriter] =
     if (outputFileFromConfig.nonEmpty) {
       logWarning("create output writer")
-      Some(new RunningQualOutputWriter(qualApp.appId, appName, outputFileFromConfig))
+      val writer = Some(new RunningQualOutputWriter(qualApp.appId, appName, outputFileFromConfig))
+      writer.foreach(_.init())
+      writer
     } else {
       None
     }
@@ -66,12 +68,6 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
 
   private def close(): Unit = {
     fileWriter.foreach(_.close())
-  }
-
-  private def initWriter: Unit = {
-    if (outputFileFromConfig.nonEmpty) {
-      fileWriter.foreach(_.init())
-    }
   }
 
   override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = {
