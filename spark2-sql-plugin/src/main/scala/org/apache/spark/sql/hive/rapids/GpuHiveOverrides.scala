@@ -40,7 +40,8 @@ object GpuHiveOverrides {
    */
   def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     if (isSparkHiveAvailable) {
-      ShimLoader.newHiveProvider().getExprs
+      // don't use the ShimLoader for Spark 2.x
+      new HiveProviderImpl().getExprs
     } else {
       Map.empty
     }

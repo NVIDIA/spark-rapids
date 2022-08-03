@@ -143,24 +143,4 @@ object GpuParquetScan {
       // All the other types are just value types and are represented by a non-group node
       1
   }
-
-  /**
-   * Adjust the footer reader type based off of a heuristic.
-   */
-  def footerReaderHeuristic(
-      inputValue: ParquetFooterReaderType.Value,
-      data: StructType,
-      read: StructType): ParquetFooterReaderType.Value = {
-    inputValue match {
-      case ParquetFooterReaderType.AUTO =>
-        val dnc = numNodesEstimate(data)
-        val rnc = numNodesEstimate(read)
-        if (rnc.toDouble/dnc <= 0.5 && dnc - rnc > 10) {
-          ParquetFooterReaderType.NATIVE
-        } else {
-          ParquetFooterReaderType.JAVA
-        }
-      case other => other
-    }
-  }
 }

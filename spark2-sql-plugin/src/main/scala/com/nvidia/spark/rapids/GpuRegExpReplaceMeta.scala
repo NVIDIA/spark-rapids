@@ -15,6 +15,8 @@
  */
 package com.nvidia.spark.rapids
 
+import java.nio.charset.Charset
+
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, RegExpReplace}
 import org.apache.spark.sql.types.DataTypes
 import org.apache.spark.unsafe.types.UTF8String

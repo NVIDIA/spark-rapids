@@ -17,7 +17,7 @@
 package org.apache.spark.sql.hive.rapids
 
 import com.nvidia.spark.RapidsUDF
-import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuOverrides, HiveProvider, RapidsConf, RepeatingParamCheck, TypeSig}
+import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuOverrides, HiveProvider, RapidsConf, RepeatingParamCheck, TypeSig}
 import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
 
 import org.apache.spark.sql.catalyst.expressions.Expression

@@ -801,8 +801,20 @@ object TypeChecks {
     timezoneId.normalized() == GpuOverrides.UTC_TIMEZONE_ID
   }
 
+  // Spark 2.X doesn't have getZoneId - copy it here
+  private def getZoneId(timeZoneId: String): ZoneId = {
+    val formattedZoneId = timeZoneId
+      // To support the (+|-)h:mm format because it was supported before Spark 3.0.
+      .replaceFirst("(\\+|\\-)(\\d):", "$10$2:")
+      // To support the (+|-)hh:m format because it was supported before Spark 3.0.
+      .replaceFirst("(\\+|\\-)(\\d\\d):(\\d)$", "$1$2:0$3")
+
+    ZoneId.of(formattedZoneId, ZoneId.SHORT_IDS)
+  }
+
   def areTimestampsSupported(zoneIdString: String): Boolean = {
-    val zoneId = DateTimeUtils.getZoneId(zoneIdString)
+    // Spark 2.X doesn't have getZoneId
+    val zoneId = getZoneId(zoneIdString)
     areTimestampsSupported(zoneId)
   }
 }

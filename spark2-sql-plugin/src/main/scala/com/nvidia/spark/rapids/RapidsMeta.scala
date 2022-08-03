@@ -20,7 +20,7 @@ import java.time.ZoneId
 
 import scala.collection.mutable
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, WindowExpression, WindowFunction}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
@@ -904,7 +904,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
     }
     rule.getChecks.foreach(_.tag(this))
     wrapped match {
-      case tzAware: TimeZoneAwareExpression => checkTimeZoneId(tzAware.zoneId)
+      case tzAware: TimeZoneAwareExpression => checkTimeZoneId(tzAware.timeZone.toZoneId)
       case _ => // do nothing
     }
     tagExprForGpu()
