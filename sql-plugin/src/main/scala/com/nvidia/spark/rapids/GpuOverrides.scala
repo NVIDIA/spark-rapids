@@ -3346,7 +3346,14 @@ object GpuOverrides extends Logging {
 
         private def isNestedArrayType(dt: DataType): Boolean = {
           dt match {
-            case StructType(fields) => fields.exists(_.dataType.isInstanceOf[ArrayType])
+            case StructType(fields) => 
+              fields.exists { field =>
+                field.dataType match {
+                  case sdt: StructType => isNestedArrayType(sdt)
+                  case _: ArrayType => true
+                  case _ => false
+                }
+              }
             case ArrayType(et, _) => et.isInstanceOf[ArrayType] || et.isInstanceOf[StructType]
             case _ => false
           }
