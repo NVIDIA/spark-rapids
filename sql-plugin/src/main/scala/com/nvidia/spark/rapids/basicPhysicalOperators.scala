@@ -254,6 +254,41 @@ case class GpuProjectAstExec(
 }
 
 /**
+ * Do projections in a tiered fashion, where earlier tiers contain sub-expressions that are
+ * referenced in later tiers.  Each tier adds columns to the original batch corresponding
+ * to the output of the sub-expressions.
+ */
+case class GpuTieredProject(
+    exprSets: Seq[Seq[GpuExpression]]) extends Arm with Logging {
+
+  private def projectTier(boundExprs: Seq[Seq[GpuExpression]], cb: ColumnarBatch): ColumnarBatch = {
+    boundExprs match {
+      case Nil => {
+        GpuColumnVector.incRefCounts(cb)
+        cb
+      }
+      case exprSet :: tail => {
+        withResource(new NvtxRange("project tier", NvtxColor.ORANGE)) { _ =>
+          withResource(GpuProjectExec.project(cb, exprSet)) { projectCb =>
+            if (tail.isEmpty) {
+              projectTier(tail, projectCb)
+            } else {
+              withResource(GpuColumnVector.combineColumns(cb, projectCb)) {
+                nextCb => projectTier(tail, nextCb)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  def tieredProject(batch: ColumnarBatch): ColumnarBatch = {
+    projectTier(exprSets, batch)
+  }
+}
+
+/**
  * Run a filter on a batch.  The batch will be consumed.
  */
 object GpuFilter extends Arm {
