@@ -72,6 +72,16 @@ object ToolUtils extends Logging {
     math.floor(valNum * 100) / 100
   }
 
+  def escapeMetaCharacters(str: String): String = {
+    str.replaceAll("\n", "\\\\n")
+      .replaceAll("\r", "\\\\r")
+      .replaceAll("\t", "\\\\t")
+      .replaceAll("\f", "\\\\f")
+      .replaceAll("\b", "\\\\b")
+      .replaceAll("\u000B", "\\\\v")
+      .replaceAll("\u0007", "\\\\a")
+  }
+
   /**
    * Converts a sequence of elements to a single string that can be appended to a formatted text.
    * Delegates to [[com.nvidia.spark.rapids.tool.profiling.ProfileUtils.replaceDelimiter]] to

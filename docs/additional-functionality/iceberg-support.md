@@ -12,8 +12,8 @@ This document details the Apache Iceberg features that are supported.
 
 ## Apache Iceberg Versions
 
-The RAPIDS Accelerator supports Apache Iceberg 0.13.x through 0.14.0. Earlier versions of
-Apache Iceberg are not supported.
+The RAPIDS Accelerator supports Apache Iceberg 0.13.x. Earlier versions of Apache Iceberg are
+not supported.
 
 ## Reading Tables
 

@@ -25,4 +25,6 @@ object AQEUtils {
   def newReuseInstance(sqse: ShuffleQueryStageExec, newOutput: Seq[Attribute]): QueryStageExec = {
     sqse.newReuseInstance(sqse.id, newOutput)
   }
+
+  def isAdaptiveExecutionSupportedInSparkVersion: Boolean = true
 }

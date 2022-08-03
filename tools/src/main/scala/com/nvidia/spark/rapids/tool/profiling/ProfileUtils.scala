@@ -77,6 +77,8 @@ object ProfileUtils {
         ";"
       } else if (delimiter.equals(";")) {
         ":"
+      } else if (delimiter.equals("|")) {
+        ":"
       } else {
         ";"
       }

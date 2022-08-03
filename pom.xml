@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>22.08.0-SNAPSHOT</version>
+    <version>22.10.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <url>https://nvidia.github.io/spark-rapids/</url>
@@ -987,7 +987,7 @@
         <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
-        <spark-rapids-jni.version>22.08.0-SNAPSHOT</spark-rapids-jni.version>
+        <spark-rapids-jni.version>22.10.0-SNAPSHOT</spark-rapids-jni.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.recompileMode>incremental</scala.recompileMode>
         <scala.version>2.12.15</scala.version>
@@ -1035,10 +1035,11 @@
         <slf4j.version>1.7.30</slf4j.version>
         <flatbuffers.java.version>1.11.0</flatbuffers.java.version>
         <hadoop.client.version>3.3.1</hadoop.client.version>
-        <iceberg.version>0.14.0</iceberg.version>
+        <iceberg.version>0.13.2</iceberg.version>
         <scala.local-lib.path>org/scala-lang/scala-library/${scala.version}/scala-library-${scala.version}.jar</scala.local-lib.path>
         <target.classifier>${spark.version.classifier}</target.classifier>
         <maven.clean.plugin.version>3.1.0</maven.clean.plugin.version>
+        <maven.scalastyle.skip>false</maven.scalastyle.skip>
     </properties>
 
     <dependencyManagement>

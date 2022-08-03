@@ -15,7 +15,7 @@ import os
 
 import pytest
 
-from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect, \
+from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_cpu_and_gpu_are_equal_sql_with_capture, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, \
     assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_py4j_exception
 from data_gen import *
 from marks import *
@@ -1047,6 +1047,24 @@ def test_parquet_int32_downcast(spark_tmp_path, reader_confs, v1_enabled_list):
         lambda spark: spark.read.schema(read_schema).parquet(data_path),
         conf=conf)
 
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_parquet_nested_column_missing(spark_tmp_path, reader_confs, v1_enabled_list):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    write_schema = [("a", string_gen), ("b", int_gen), ("c", StructGen([("ca", long_gen)]))]
+    with_cpu_session(
+        lambda spark: gen_df(spark, write_schema).write.parquet(data_path))
+
+    read_schema = StructType([StructField("a", StringType()),
+                              StructField("b", IntegerType()),
+                              StructField("c", StructType([
+                                  StructField("ca", LongType()),
+                                  StructField("cb", StringType())]))])
+    conf = copy_and_update(reader_confs,
+                           {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(read_schema).parquet(data_path),
+        conf=conf)
 
 def test_parquet_check_schema_compatibility(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -1145,3 +1163,17 @@ def test_parquet_read_encryption(spark_tmp_path, reader_confs, v1_enabled_list):
         lambda: with_gpu_session(
             lambda spark: spark.read.parquet(data_path).collect(), conf=conf),
         error_message='The GPU does not support reading encrypted Parquet files')
+
+def test_parquet_read_count(spark_tmp_path):
+    parquet_gens = [int_gen, string_gen, double_gen]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+
+    with_cpu_session(lambda spark: gen_df(spark, gen_list).write.parquet(data_path))
+
+    assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.parquet(data_path))
+
+    # assert the spark plan of the equivalent SQL query contains no column in read schema
+    assert_cpu_and_gpu_are_equal_sql_with_capture(
+        lambda spark: spark.read.parquet(data_path), "SELECT COUNT(*) FROM tab", "tab",
+        exist_classes=r'GpuFileGpuScan parquet .* ReadSchema: struct<>')
