@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids.tool.qualification
 
-import com.nvidia.spark.rapids.tool.qualification.{QualOutputWriter, RunningQualOutputWriter}
+import com.nvidia.spark.rapids.tool.qualification.RunningQualOutputWriter
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
@@ -28,7 +28,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
   private val qualApp = new com.nvidia.spark.rapids.tool.qualification.RunningQualificationApp()
   private val listener = qualApp.getEventListener
 
-  private val outputFileFromConfig = sparkConf.get("spark.rapids.qualification.outputFile", "")
+  private val outputFileFromConfig = sparkConf.get("spark.rapids.qualification.outputDir", "")
   private lazy val appName = qualApp.appInfo.map(_.appName).getOrElse("")
   private lazy val fileWriter: Option[RunningQualOutputWriter] =
     if (outputFileFromConfig.nonEmpty) {

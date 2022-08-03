@@ -186,8 +186,8 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
 
   def writePerSqlTextReport(sums: Seq[QualificationSummaryInfo], numOutputRows: Int,
       maxSQLDescLength: Int) : Unit = {
-    val textFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}_persql.log",
-      "Per SQL Summary Report")
+    val textFileWriter = new ToolTextFileWriter(outputDir,
+      s"${QualOutputWriter.LOGFILE_NAME}_persql.log", "Per SQL Summary Report")
     try {
       writePerSqlTextSummary(textFileWriter, sums, numOutputRows, maxSQLDescLength)
     } finally {
@@ -196,8 +196,8 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
   }
 
   def writeExecReport(sums: Seq[QualificationSummaryInfo], order: String) : Unit = {
-    val csvFileWriter = new ToolTextFileWriter(outputDir, s"${logFileName}_execs.csv",
-      "Plan Exec Info")
+    val csvFileWriter = new ToolTextFileWriter(outputDir,
+      s"${QualOutputWriter.LOGFILE_NAME}_execs.csv", "Plan Exec Info")
     try {
       val plans = sums.flatMap(_.planInfo)
       val allExecs = QualOutputWriter.getAllExecsFromPlan(plans)

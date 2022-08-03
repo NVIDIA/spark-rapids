@@ -22,7 +22,6 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 import scala.io.Source
 
-import com.nvidia.spark.rapids.tool.qualification.QualOutputWriter.{APP_NAME_STR, getMaxSizeForHeader}
 import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTestUtils}
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
@@ -823,7 +822,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val appInfo = qualApp.aggregateStats()
         assert(appInfo.nonEmpty)
         assert(headers.size ==
-          QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(appInfo.get), 0).keys.size)
+          QualOutputWriter.getSummaryHeaderStringsAndSizes(30, 30).keys.size)
         assert(values.size == headers.size)
         // 3 should be the SQL DF Duration
         assert(headers(3).contains("SQL DF"))
