@@ -53,6 +53,8 @@ fi
 diff ../sql-plugin/src/main/scala/org/apache/spark/sql/hive/rapids/HiveProviderImpl.scala ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/hive/rapids/HiveProviderImpl.scala > $tmp_dir/HiveProviderImpl.newdiff || true
 diff -c spark2diffs/HiveProviderImpl.diff $tmp_dir/HiveProviderImpl.newdiff
 
+diff -c ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/HiveProvider.scala ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/HiveProvider.scala
+
 sed -n  '/class GpuBroadcastNestedLoopJoinMeta/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastNestedLoopJoinMeta.scala > $tmp_dir/GpuBroadcastNestedLoopJoinMeta_new.out
 sed -n  '/class GpuBroadcastNestedLoopJoinMeta/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastNestedLoopJoinExec.scala > $tmp_dir/GpuBroadcastNestedLoopJoinMeta_old.out
 diff $tmp_dir/GpuBroadcastNestedLoopJoinMeta_new.out $tmp_dir/GpuBroadcastNestedLoopJoinMeta_old.out > $tmp_dir/GpuBroadcastNestedLoopJoinMeta.newdiff || true
