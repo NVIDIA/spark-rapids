@@ -67,7 +67,8 @@ object ConfHelper {
   }
 
   def stringToSeq(str: String): Seq[String] = {
-    str.split(",").map(_.trim()).filter(_.nonEmpty)
+    // Here 'split' returns a mutable array, 'toList' will convert it into a immutable list
+    str.split(",").map(_.trim()).filter(_.nonEmpty).toList
   }
 
   def stringToSeq[T](str: String, converter: String => T): Seq[T] = {
@@ -225,8 +226,11 @@ class TypedConfBuilder[T](
   }
 
   def createWithDefault(value: T): ConfEntryWithDefault[T] = {
+    // 'converter' will check the validity of default 'value', if it's not valid,
+    // then 'converter' will throw an exception
+    val transformedValue = converter(stringConverter(value))
     val ret = new ConfEntryWithDefault[T](parent.key, converter,
-      parent.doc, parent.isInternal, value)
+      parent.doc, parent.isInternal, transformedValue)
     parent.register(ret)
     ret
   }
@@ -1542,7 +1546,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars rapids-4-spark_2.12-22.08.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark --jars rapids-4-spark_2.12-22.10.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
