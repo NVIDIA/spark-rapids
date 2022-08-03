@@ -716,9 +716,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return true;
     } else if (colType instanceof BinaryType) {
       SQLConf conf = SQLConf.get();
-      if (dt.equals(DType.STRING) && conf.isParquetBinaryAsString()) {
-        return true;
-      } else if (!(dt.equals(DType.LIST))) {
+      if (!(dt.equals(DType.LIST))) {
         return false;
       }
       try (ColumnView tmp = cv.getChildColumnView(0)) {

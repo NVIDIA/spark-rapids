@@ -754,9 +754,9 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
           still state the dataType as binary which is what Spark will try to do but cudf will read
           it as a string which will result in a mismatch when creating GpuColumnVector.from(...)
 
-          To avoid this, we convert the clipped schema to parquet type, which converts the BinaryType
-          to the appropriate type but the returned schema is incompatible with catalyst so we convert
-          it back to Spark schema
+          To avoid this, we convert the clipped schema to parquet type, which converts the
+          BinaryType to the appropriate type but the returned schema is incompatible with catalyst
+          so we convert it back to Spark schema
            */
           val clippedSchemaTmp = sparkToParquetSchema.convert(
               parquetToSparkSchema.convert(ParquetSchemaClipShims.clipSchema(fileSchema,
