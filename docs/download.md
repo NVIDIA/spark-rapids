@@ -47,7 +47,7 @@ New functionality and performance improvements for this release include:
 * Ability to build Spark RAPIDS jar using JDK 11 
 * ZSTD parquet read support
 * Binary read support from parquet
-* Apache iceberg 0.14 support  
+* Apache Iceberg 0.13 support  
 * Array function support: array_intersect, array_union, array_except and arrays_overlap
 * Function from_json support
 * Support nth_value, first and last in windowing function
