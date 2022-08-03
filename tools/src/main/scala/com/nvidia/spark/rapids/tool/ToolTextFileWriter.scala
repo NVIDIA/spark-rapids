@@ -15,8 +15,10 @@
  */
 package com.nvidia.spark.rapids.tool
 
+import java.io.FileOutputStream
+
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileSystem, FSDataOutputStream, Path}
+import org.apache.hadoop.fs.{FSDataOutputStream, FileSystem, Path}
 
 import org.apache.spark.internal.Logging
 
@@ -28,9 +30,23 @@ class ToolTextFileWriter(finalOutputDir: String, logFileName: String,
 
   private val textOutputPath = new Path(s"$finalOutputDir/$logFileName")
   logWarning("text output path is: " + textOutputPath)
-  private val fs = FileSystem.get(textOutputPath.toUri, new Configuration())
+  private val hadoopConf = new Configuration()
+
+  val defaultFs = FileSystem.getDefaultUri(hadoopConf).getScheme
+  val isDefaultLocal = defaultFs == null || defaultFs == "file"
+  val uri = textOutputPath.toUri
+
+  // The Hadoop LocalFileSystem (r1.0.4) has known issues with syncing (HADOOP-7844).
+  // Therefore, for local files, use FileOutputStream instead.
   // this overwrites existing path
-  private var outFile: Option[FSDataOutputStream] = Some(fs.create(textOutputPath))
+  private var outFile: Option[FSDataOutputStream] = {
+    if ((isDefaultLocal && uri.getScheme == null) || uri.getScheme == "file") {
+      Some(new FSDataOutputStream(new FileOutputStream(uri.getPath), null))
+    } else {
+      val fs = FileSystem.get(uri, hadoopConf)
+      Some(fs.create(textOutputPath))
+    }
+  }
 
   def write(stringToWrite: String): Unit = {
     outFile.foreach(_.writeBytes(stringToWrite))
@@ -44,6 +60,7 @@ class ToolTextFileWriter(finalOutputDir: String, logFileName: String,
   def flush(): Unit = {
     outFile.foreach { file =>
       file.flush()
+      file.hflush()
     }
   }
 
@@ -51,6 +68,7 @@ class ToolTextFileWriter(finalOutputDir: String, logFileName: String,
     outFile.foreach { file =>
       logInfo(s"$finalLocationText output location: $textOutputPath")
       file.flush()
+      file.hflush()
       file.close()
       outFile = None
     }
