@@ -65,7 +65,7 @@ conditions within the computation itself the result may not be the same each tim
 run. This is inherent in how the plugin speeds up the calculations and cannot be "fixed." If a query
 joins on a floating point value, which is not wise to do anyways, and the value is the result of a
 floating point aggregation then the join may fail to work properly with the plugin but would have
-worked with plain Spark. As of 22.06 this is behavior is enabled by default but can be disabled with 
+worked with plain Spark. Starting from 22.06 this is behavior is enabled by default but can be disabled with 
 the config
 [`spark.rapids.sql.variableFloatAgg.enabled`](configs.md#sql.variableFloatAgg.enabled).
 
@@ -807,7 +807,7 @@ leads to restrictions:
 * Float values cannot be larger than `1e18` or smaller than `-1e18` after conversion.
 * The results produced by GPU slightly differ from the default results of Spark.
 
-As of 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or 
+Starting from 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or 
 later, set
 [`spark.rapids.sql.castFloatToDecimal.enabled`](configs.md#sql.castFloatToDecimal.enabled) to `false`
 
@@ -819,7 +819,7 @@ Spark 3.1.0 the MIN and MAX values were floating-point values such as `Int.MaxVa
 starting with 3.1.0 these are now integral types such as `Int.MaxValue` so this has slightly
 affected the valid range of values and now differs slightly from the behavior on GPU in some cases.
 
-As of 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or later, set
+Starting from 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or later, set
 [`spark.rapids.sql.castFloatToIntegralTypes.enabled`](configs.md#sql.castFloatToIntegralTypes.enabled)
 to `false`.
 
@@ -831,7 +831,7 @@ The GPU will use different precision than Java's toString method when converting
 types to strings. The GPU uses a lowercase `e` prefix for an exponent while Spark uses uppercase
 `E`. As a result the computed string can differ from the default behavior in Spark.
 
-As of 22.06 this conf is enabled by default, to disable this operation on the GPU, set
+Starting from 22.06 this conf is enabled by default, to disable this operation on the GPU, set
 [`spark.rapids.sql.castFloatToString.enabled`](configs.md#sql.castFloatToString.enabled) to `false`.
 
 ### String to Float
@@ -845,7 +845,7 @@ default behavior in Apache Spark is to return `+Infinity` and `-Infinity`, respe
 
 Also, the GPU does not support casting from strings containing hex values.
 
-As of 22.06 this conf is enabled by default, to enable this operation on the GPU, set
+Starting from 22.06 this conf is enabled by default, to enable this operation on the GPU, set
 [`spark.rapids.sql.castStringToFloat.enabled`](configs.md#sql.castStringToFloat.enabled) to `false`.
 
 ### String to Date
