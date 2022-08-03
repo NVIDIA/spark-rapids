@@ -30,19 +30,35 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
 
   private val outputFileFromConfig = sparkConf.get("spark.rapids.qualification.outputFile", "")
   private lazy val appName = qualApp.appInfo.map(_.appName).getOrElse("")
-  private lazy val fileWriter: Option[RunningQualOutputWriter] = if (outputFileFromConfig.nonEmpty) {
-    Some(new RunningQualOutputWriter(qualApp.appId, appName, outputFileFromConfig))
-  } else {
-    None
-  }
+  private lazy val fileWriter: Option[RunningQualOutputWriter] =
+    if (outputFileFromConfig.nonEmpty) {
+      Some(new RunningQualOutputWriter(qualApp.appId, appName, outputFileFromConfig))
+    } else {
+      None
+    }
 
-  private val outputFunc = (output: String) => {
+  private val outputFuncApplicationDetails = () => {
     if (outputFileFromConfig.nonEmpty) {
       fileWriter.foreach { writer =>
-        writer.
+        val appInfo = qualApp.getApplicationDetails
+        appInfo.foreach(writer.writeApplicationReport(_))
       }
     } else {
-      logWarning(output)
+      // TODO - fix
+      logWarning("no output location")
+    }
+  }
+
+  private val outputFuncSQLDetails = (sqlID: Long) => {
+    val (csvSQLInfo, textSQLInfo) = qualApp.getPerSqlTextAndCSVSummary(sqlID)
+    if (outputFileFromConfig.nonEmpty) {
+      fileWriter.foreach { writer =>
+        writer.writePerSqlCSVReport(csvSQLInfo)
+        logWarning(s"Done with SQL query ${sqlID} \n summary: $textSQLInfo")
+        writer.writePerSqlTextReport(textSQLInfo)
+      }
+    } else {
+      logWarning(textSQLInfo)
     }
   }
 
@@ -103,9 +119,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
 
   override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
     listener.onApplicationEnd(applicationEnd)
-    fileWriter.foreach { writer =>
-      qualApp.getApplicationDetails.foreach(writer.writeApplicationReport(_))
-    }
+    outputFuncApplicationDetails()
     close()
   }
 
@@ -132,10 +146,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
       case e: SparkListenerSQLExecutionStart =>
         logWarning("starting new SQL query")
       case e: SparkListenerSQLExecutionEnd =>
-        val (csvSQLInfo, textSQLInfo) = qualApp.getPerSqlTextAndCSVSummary(e.executionId)
-        fileWriter.foreach(_.writePerSqlCSVReport(csvSQLInfo))
-        logWarning(s"Done with SQL query ${e.executionId} \n summary: $textSQLInfo")
-        fileWriter.foreach(_.writePerSqlTextReport(textSQLInfo))
+        outputFuncSQLDetails(e.executionId)
     }
     listener.onOtherEvent(event)
   }
