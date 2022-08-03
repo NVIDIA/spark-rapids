@@ -715,7 +715,6 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       }
       return true;
     } else if (colType instanceof BinaryType) {
-      SQLConf conf = SQLConf.get();
       if (!(dt.equals(DType.LIST))) {
         return false;
       }
