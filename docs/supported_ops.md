@@ -7321,7 +7321,7 @@ are limited.
 <td rowSpan="2">JsonToStructs</td>
 <td rowSpan="2">`from_json`</td>
 <td rowSpan="2">Returns a struct value with the given `jsonStr` and `schema`</td>
-<td rowSpan="2">None</td>
+<td rowSpan="2">This is disabled by default because Parsing JSON from a column has a large number of issues and should be considered beta quality right now.</td>
 <td rowSpan="2">project</td>
 <td>jsonStr</td>
 <td> </td>
