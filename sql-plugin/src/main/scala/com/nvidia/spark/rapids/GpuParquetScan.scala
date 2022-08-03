@@ -63,6 +63,7 @@ import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{DataSourceUtils, PartitionedFile, PartitioningAwareFileIndex, SchemaColumnConvertNotSupportedException}
+import org.apache.spark.sql.execution.datasources.parquet.{ParquetToSparkSchemaConverter, SparkToParquetSchemaConverter}
 import org.apache.spark.sql.execution.datasources.v2.FileScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.internal.SQLConf
@@ -741,8 +742,25 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
 
       val (clipped, clippedSchema) =
         withResource(new NvtxRange("clipSchema", NvtxColor.DARK_GREEN)) { _ =>
-          val clippedSchemaTmp = ParquetSchemaClipShims.clipSchema(fileSchema, readDataSchema,
-            isCaseSensitive, readUseFieldId, timestampNTZEnabled)
+
+          val parquetToSparkSchema = new ParquetToSparkSchemaConverter()
+          val sparkToParquetSchema = new SparkToParquetSchemaConverter()
+
+          /*
+          When reading binary data there could be two cases. Either we are reading binary as binary
+          or reading binary as string.
+          If reading as binary, the file schema and read schema are the same datatypes i.e. binary.
+          If reading binary as string (spark.sql.parquet.binaryAsString = true) the file schema will
+          still state the dataType as binary which is what Spark will try to do but cudf will read
+          it as a string which will result in a mismatch when creating GpuColumnVector.from(...)
+
+          To avoid this, we convert the clipped schema to parquet type, which converts the BinaryType
+          to the appropriate type but the returned schema is incompatible with catalyst so we convert
+          it back to Spark schema
+           */
+          val clippedSchemaTmp = sparkToParquetSchema.convert(
+              parquetToSparkSchema.convert(ParquetSchemaClipShims.clipSchema(fileSchema,
+                readDataSchema, isCaseSensitive, readUseFieldId, timestampNTZEnabled)))
           // Check if the read schema is compatible with the file schema.
           checkSchemaCompat(clippedSchemaTmp, readDataSchema,
             (t: Type, d: DataType) => throwTypeIncompatibleError(t, d, file.filePath),
@@ -1560,7 +1578,7 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       readDataSchema: StructType,
       fileSchema: MessageType,
       isCaseSensitive: Boolean,
-      useFieldId: Boolean): Seq[(String, DataType)] = {
+      useFieldId: Boolean): Seq[(String, StructField)] = {
 
     // map from field ID to the parquet column name
     val fieldIdToNameMap = ParquetSchemaClipShims.fieldIdToNameMap(useFieldId, fileSchema)
@@ -1596,29 +1614,32 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       clippedReadFields.map { f =>
         if (useFieldId && ParquetSchemaClipShims.hasFieldId(f)) {
           // find the parquet column name
-          (fieldIdToNameMap(ParquetSchemaClipShims.getFieldId(f)), f.dataType)
+          (fieldIdToNameMap(ParquetSchemaClipShims.getFieldId(f)), f)
         } else {
-          (m.get(f.name).getOrElse(f.name), f.dataType)
+          (m.get(f.name).getOrElse(f.name), f)
         }
       }
     } else {
       clippedReadFields.map { f =>
         if (useFieldId && ParquetSchemaClipShims.hasFieldId(f)) {
-          (fieldIdToNameMap(ParquetSchemaClipShims.getFieldId(f)), f.dataType)
+          (fieldIdToNameMap(ParquetSchemaClipShims.getFieldId(f)), f)
         } else {
-          (f.name, f.dataType)
+          (f.name, f)
         }
       }
     }
   }
 
+  val sparkToParquetSchema = new SparkToParquetSchemaConverter()
   def getParquetOptions(clippedSchema: MessageType, useFieldId: Boolean): ParquetOptions = {
-    val binaryAsString = conf.getBoolean("spark.sql.parquet.binaryAsString", false)
     val includeColumns = toCudfColumnNamesAndDataTypes(readDataSchema, clippedSchema,
       isSchemaCaseSensitive, useFieldId)
     val builder = ParquetOptions.builder().withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
     includeColumns.foreach { t =>
-      builder.includeColumn(t._1, !binaryAsString && t._2 == BinaryType)
+      builder.includeColumn(t._1,
+        t._2.dataType == BinaryType &&
+            sparkToParquetSchema.convertField(t._2).asPrimitiveType().getPrimitiveTypeName
+                == PrimitiveTypeName.BINARY)
     }
     builder.build()
   }
