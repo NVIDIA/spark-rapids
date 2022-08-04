@@ -4349,7 +4349,7 @@ object GpuOverrideUtil extends Logging {
 }
 
 object GpuOverridesContext {
-    private val local = ThreadLocal.withInitial[String](() => null);
+  private val local = ThreadLocal.withInitial[String](() => null);
   def set(s: String): Unit = local.set(s)
 
   def get(): Option[String] = Option(local.get())
