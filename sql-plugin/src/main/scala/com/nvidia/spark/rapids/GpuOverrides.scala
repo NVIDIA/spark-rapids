@@ -4348,26 +4348,12 @@ object GpuOverrideUtil extends Logging {
   }
 }
 
-object GpuOverridesContext {
-  private val local = ThreadLocal.withInitial[String](() => null);
-  def set(s: String): Unit = local.set(s)
-
-  def get(): Option[String] = Option(local.get())
-
-  def clear() = local.set(null)
-}
-
 /** Tag the initial plan when AQE is enabled */
 case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
   override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
     // Note that we disregard the GPU plan returned here and instead rely on side effects of
     // tagging the underlying SparkPlan.
-    try {
-      GpuOverridesContext.set("AQE Query Stage Prep")
-      GpuOverrides().apply(plan)
-    } finally {
-      GpuOverridesContext.clear()
-    }
+    GpuOverrides().applyWithContext(plan, Some("AQE Query Stage Prep"))
     // return the original plan which is now modified as a side-effect of invoking GpuOverrides
     plan
   }(sparkPlan)
@@ -4377,7 +4363,10 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
 
   // Spark calls this method once for the whole plan when AQE is off. When AQE is on, it
   // gets called once for each query stage (where a query stage is an `Exchange`).
-  override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
+  override def apply(sparkPlan: SparkPlan): SparkPlan = applyWithContext(sparkPlan, None)
+
+  def applyWithContext(sparkPlan: SparkPlan, context: Option[String]): SparkPlan =
+      GpuOverrideUtil.tryOverride { plan =>
     val conf = new RapidsConf(plan.conf)
     if (conf.isSqlEnabled && conf.isSqlExecuteOnGPU) {
       GpuOverrides.logDuration(conf.shouldExplain,
@@ -4385,7 +4374,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         val updatedPlan = updateForAdaptivePlan(plan, conf)
         val newPlan = applyOverrides(updatedPlan, conf)
         if (conf.logQueryTransformations) {
-          val logPrefix = GpuOverridesContext.get() match {
+          val logPrefix = context match {
             case Some(str) => s"[$str] "
             case _ => ""
           }
