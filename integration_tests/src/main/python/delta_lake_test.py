@@ -21,7 +21,7 @@ _conf = {'spark.rapids.sql.explain': 'ALL'}
 
 @delta_lake
 @allow_non_gpu('FileSourceScanExec')
-@pytest.mark.skipif(not is_databricks91_or_later(), reason="Delta Lake is already configured on Databricks so we just run these tests there for now")
+# @pytest.mark.skipif(not is_databricks91_or_later(), reason="Delta Lake is already configured on Databricks so we just run these tests there for now")
 def test_delta_metadata_query_fallback(spark_tmp_table_factory):
     table = spark_tmp_table_factory.get()
     def setup_delta_table(spark):
@@ -34,3 +34,43 @@ def test_delta_metadata_query_fallback(spark_tmp_table_factory):
     assert_gpu_fallback_collect(
         lambda spark : spark.read.json("/tmp/delta-table/{}/_delta_log/00000000000000000000.json".format(table)),
         "FileSourceScanExec", conf = _conf)
+
+@delta_lake
+@allow_non_gpu('FileSourceScanExec')
+# @pytest.mark.skipif(not is_databricks91_or_later(), reason="Delta Lake is already configured on Databricks so we just run these tests there for now")
+def test_delta_merge_fallback(spark_tmp_table_factory):
+    table = spark_tmp_table_factory.get()
+    def setup_delta_table(spark):
+        df = spark.createDataFrame([(1, 'a'), (2, 'b'), (3, 'c')], ["id", "data"])
+        df.write.format("delta").save("/tmp/delta-table/{}".format(table))
+    with_cpu_session(setup_delta_table)
+
+import org.apache.spark.sql._
+import spark.implicits._
+
+spark.conf.set("spark.rapids.sql.debug.logTransformations", "true")
+
+val df = Seq(("a", 1), ("b", 2)).toDF("c0", "c1")
+val df2 = Seq(("b", 8), ("c", 3)).toDF("c0", "c1")
+
+df.write.mode(SaveMode.Overwrite).format("delta").save("/tmp/t1")
+df2.write.mode(SaveMode.Overwrite).format("delta").save("/tmp/t2")
+
+spark.read.format("delta").load("/tmp/t1").createTempView("t1")
+spark.read.format("delta").load("/tmp/t2").createTempView("t2")
+
+spark.sql("""MERGE INTO t1
+USING t2
+ON t1.c0 = t2.c0
+WHEN MATCHED THEN
+  UPDATE SET
+    c1 = t2.c1
+WHEN NOT MATCHED
+  THEN INSERT (
+    c0,
+    c1
+  )
+  VALUES (
+    t2.c0,
+    t2.c1
+  )""")
