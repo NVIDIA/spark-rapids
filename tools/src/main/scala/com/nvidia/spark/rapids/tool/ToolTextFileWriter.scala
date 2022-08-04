@@ -40,7 +40,10 @@ class ToolTextFileWriter(finalOutputDir: String, logFileName: String,
   // Therefore, for local files, use FileOutputStream instead.
   // this overwrites existing path
   private var outFile: Option[FSDataOutputStream] = {
-    if ((isDefaultLocal && uri.getScheme == null) || uri.getScheme == "file") {
+    logWarning(s"schem is: ${uri.getScheme} is default is $isDefaultLocal final output" +
+      s" dir $finalOutputDir")
+    if ((isDefaultLocal && uri.getScheme == null) || uri.getScheme == "file"
+      || finalOutputDir.startsWith("/dbfs")) {
       logWarning("using local file system")
       Some(new FSDataOutputStream(new FileOutputStream(uri.getPath), null))
     } else {
