@@ -335,7 +335,7 @@ class CudfSum(override val dataType: DataType) extends CudfAggregate with Arm {
   override val name: String = "CudfSum"
 }
 
-class CudfMax(override val dataType: DataType) extends CudfAggregate with Arm {
+class CudfMax(override val dataType: DataType) extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => col.max
   override lazy val groupByAggregate: GroupByAggregation =
@@ -598,30 +598,32 @@ case class GpuFloatMax(child: Expression) extends GpuMax(child)
       case DoubleType => Double.NaN
       case t => throw new IllegalStateException(s"child type $t is not FloatType or DoubleType")
   }
-  override lazy val inputProjection: Seq[Expression] = Seq(child, GpuIsNan(child))
+
   protected lazy val updateIsNan = CudfAny()
   protected lazy val updateMaxVal = new CudfMax(dataType)
+  protected lazy val mergeIsNan = CudfAny()
+  protected lazy val mergeMaxVal = new CudfMax(dataType)
+
+  override lazy val inputProjection: Seq[Expression] = Seq(child, GpuIsNan(child))
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(updateMaxVal, updateIsNan)
   override lazy val postUpdate: Seq[Expression] = 
     Seq(
-      GpuIf(updateIsNan.attr, GpuLiteral(nan, child.dataType), updateMaxVal.attr)
+      GpuIf(updateIsNan.attr, GpuLiteral(nan, dataType), updateMaxVal.attr)
     )
 
   override lazy val preMerge: Seq[Expression] = 
     Seq(evaluateExpression, GpuIsNan(evaluateExpression))
-  protected lazy val mergeIsNan = CudfAny()
-  protected lazy val mergeMaxVal = new CudfMax(dataType)
   override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(mergeMaxVal,  mergeIsNan)
   override lazy val postMerge: Seq[Expression] =
     Seq(
-      GpuIf(mergeIsNan.attr, GpuLiteral(nan, child.dataType), mergeMaxVal.attr)
+      GpuIf(mergeIsNan.attr, GpuLiteral(nan, dataType), mergeMaxVal.attr)
     )
 
   override def shouldReplaceWindow(spec: GpuWindowSpecDefinition): Boolean =  true
   override def windowReplacement(spec: GpuWindowSpecDefinition): Expression = {
     val isNan = GpuWindowExpression(GpuBasicMax(GpuIsNan(child)), spec)
     val max = GpuWindowExpression(GpuBasicMax(child), spec)
-    GpuIf(isNan, GpuLiteral(nan), max)
+    GpuIf(isNan, GpuLiteral(nan, dataType), max)
   }
 }
 
