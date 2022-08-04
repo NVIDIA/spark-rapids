@@ -123,7 +123,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
       sortedAsc.reverse
     }
     val finalSums = sorted.take(numOutputRows)
-    sorted.foreach { estInfo =>
+    finalSums.foreach { estInfo =>
       val wStr = QualOutputWriter.constructPerSqlSummaryInfo(estInfo, headersAndSizes,
         appIdMaxSize, TEXT_DELIMITER, true, maxSQLDescLength)
       writer.write(wStr)

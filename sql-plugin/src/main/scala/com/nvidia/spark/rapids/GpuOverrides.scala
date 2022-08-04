@@ -2936,7 +2936,91 @@ object GpuOverrides extends Logging {
         }
       }
     ),
-
+    expr[ArrayExcept](
+      "Returns an array of the elements in array1 but not in array2, without duplicates",
+      ExprChecks.binaryProject(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        ("array1",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+        ("array2",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all))),
+      (in, conf, p, r) => new BinaryExprMeta[ArrayExcept](in, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuArrayExcept(lhs, rhs)
+        }
+      }
+    ).incompat("the GPU implementation treats -0.0 and 0.0 as equal, but the CPU " +
+        "implementation currently does not (see SPARK-39845). Also, Apache Spark " +
+        "3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were " +
+        "not treated as being equal. We have chosen to break with compatibility for " +
+        "the older versions of Spark in this instance and handle NaNs the same as 3.1.3+"),
+    expr[ArrayIntersect](
+      "Returns an array of the elements in the intersection of array1 and array2, without" +
+        " duplicates",
+      ExprChecks.binaryProject(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        ("array1",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+        ("array2",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all))),
+      (in, conf, p, r) => new BinaryExprMeta[ArrayIntersect](in, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuArrayIntersect(lhs, rhs)
+        }
+      }
+    ).incompat("the GPU implementation treats -0.0 and 0.0 as equal, but the CPU " +
+        "implementation currently does not (see SPARK-39845). Also, Apache Spark " +
+        "3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were " +
+        "not treated as being equal. We have chosen to break with compatibility for " +
+        "the older versions of Spark in this instance and handle NaNs the same as 3.1.3+"),
+    expr[ArrayUnion](
+      "Returns an array of the elements in the union of array1 and array2, without duplicates.",
+      ExprChecks.binaryProject(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        ("array1",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+        ("array2",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all))),
+      (in, conf, p, r) => new BinaryExprMeta[ArrayUnion](in, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuArrayUnion(lhs, rhs)
+        }
+      }
+    ).incompat("the GPU implementation treats -0.0 and 0.0 as equal, but the CPU " +
+        "implementation currently does not (see SPARK-39845). Also, Apache Spark " +
+        "3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were " +
+        "not treated as being equal. We have chosen to break with compatibility for " +
+        "the older versions of Spark in this instance and handle NaNs the same as 3.1.3+"),
+    expr[ArraysOverlap](
+      "Returns true if a1 contains at least a non-null element present also in a2. If the arrays " +
+      "have no common element and they are both non-empty and either of them contains a null " + 
+      "element null is returned, false otherwise.",
+      ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+        ("array1",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+        ("array2",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
+            TypeSig.ARRAY.nested(TypeSig.all))),
+      (in, conf, p, r) => new BinaryExprMeta[ArraysOverlap](in, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          GpuArraysOverlap(lhs, rhs)
+        }
+      }
+    ).incompat("the GPU implementation treats -0.0 and 0.0 as equal, but the CPU " +
+        "implementation currently does not (see SPARK-39845). Also, Apache Spark " +
+        "3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were " +
+        "not treated as being equal. We have chosen to break with compatibility for " +
+        "the older versions of Spark in this instance and handle NaNs the same as 3.1.3+"),
     expr[TransformKeys](
       "Transform keys in a map using a transform function",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
@@ -4312,19 +4396,54 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     }
   }
 
-  /** Determine whether query is running against Delta Lake _delta_log JSON files */
+  /**
+   *  Determine whether query is running against Delta Lake _delta_log JSON files or
+   *  if Delta is doing stats collection that ends up hardcoding the use of AQE,
+   *  even though the AQE setting is disabled. To protect against the latter, we
+   *  check for a ScalaUDF using a tahoe.Snapshot function and if we ever see
+   *  an AdaptiveSparkPlan on a Spark version we don't expect, fallback to the
+   *  CPU for those plans.
+   */
   def isDeltaLakeMetadataQuery(plan: SparkPlan): Boolean = {
     val deltaLogScans = PlanUtils.findOperators(plan, {
       case f: FileSourceScanExec =>
         // example filename: "file:/tmp/delta-table/_delta_log/00000000000000000000.json"
-        f.relation.inputFiles.exists(name =>
+        val found = f.relation.inputFiles.exists(name =>
           name.contains("/_delta_log/") && name.endsWith(".json"))
+        if (found) {
+          logDebug(s"Fallback for FileSourceScanExec delta log: $f")
+        }
+        found
       case rdd: RDDScanExec =>
         // example rdd name: "Delta Table State #1 - file:///tmp/delta-table/_delta_log"
-        rdd.inputRDD != null &&
+        val found = rdd.inputRDD != null &&
           rdd.inputRDD.name != null &&
           rdd.inputRDD.name.startsWith("Delta Table State") &&
           rdd.inputRDD.name.endsWith("/_delta_log")
+        if (found) {
+          logDebug(s"Fallback for RDDScanExec delta log: $rdd")
+        }
+        found
+      case aqe: AdaptiveSparkPlanExec if !AQEUtils.isAdaptiveExecutionSupportedInSparkVersion =>
+        logDebug(s"AdaptiveSparkPlanExec found on unsupported Spark Version: $aqe")
+        true
+      case project: ProjectExec if !AQEUtils.isAdaptiveExecutionSupportedInSparkVersion =>
+        val foundExprs = project.expressions.flatMap { e =>
+          PlanUtils.findExpressions(e, {
+            case udf: ScalaUDF =>
+              val contains = udf.function.getClass.getCanonicalName.contains("tahoe.Snapshot")
+              if (contains) {
+                logDebug(s"Found ScalaUDF with tahoe.Snapshot: $udf," +
+                  s" function class name is: ${udf.function.getClass.getCanonicalName}")
+              }
+              contains
+            case _ => false
+          })
+        }
+        if (foundExprs.nonEmpty) {
+          logDebug(s"Project with Snapshot ScalaUDF: $project")
+        }
+        foundExprs.nonEmpty
       case _ =>
         false
     })

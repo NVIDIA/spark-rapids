@@ -14,6 +14,7 @@ Different versions of EMR ship with different versions of Spark, RAPIDS Accelera
 
 | EMR | Spark | RAPIDS Accelerator jar | cuDF jar | xgboost4j-spark jar
 | --- | --- | --- | ---| --- |
+| 6.7 | 3.2.1 | rapids-4-spark_2.12-22.02.0.jar | cudf-22.02.0-cuda11.jar | xgboost4j-spark_3.0-1.2.0-0.1.0.jar |
 | 6.6 | 3.2.0 | rapids-4-spark_2.12-22.02.0.jar | cudf-22.02.0-cuda11.jar | xgboost4j-spark_3.0-1.2.0-0.1.0.jar |
 | 6.5 | 3.1.2 | rapids-4-spark_2.12-0.4.1.jar | cudf-0.18.1-cuda10-1.jar | xgboost4j-spark_3.0-1.2.0-0.1.0.jar |
 | 6.4 | 3.1.2 | rapids-4-spark_2.12-0.4.1.jar | cudf-0.18.1-cuda10-1.jar | xgboost4j-spark_3.0-1.2.0-0.1.0.jar |
@@ -38,7 +39,7 @@ g4dn.2xlarge nodes:
 
 ```
 aws emr create-cluster \
---release-label emr-6.6.0 \
+--release-label emr-6.7.0 \
 --applications Name=Hadoop Name=Spark Name=Livy Name=JupyterEnterpriseGateway \
 --service-role EMR_DefaultRole \
 --ec2-attributes KeyName=my-key-pair,InstanceProfile=EMR_EC2_DefaultRole \
@@ -78,8 +79,8 @@ detailed cluster configuration page.
 
 #### Step 1:  Software Configuration and Steps
 
-Select **emr-6.6.0** for the release, uncheck all the software options, and then check **Hadoop
-3.2.1**, **Spark 3.2.0**, **Livy 0.7.1** and **JupyterEnterpriseGateway 2.1.0**.
+Select **emr-6.7.0** for the release, uncheck all the software options, and then check **Hadoop
+3.2.1**, **Spark 3.2.1**, **Livy 0.7.1** and **JupyterEnterpriseGateway 2.1.0**.
 
 In the "Edit software settings" field, copy and paste the configuration from the [EMR
 document](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-rapids.html). You can also

@@ -50,7 +50,7 @@ import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
 import org.apache.parquet.hadoop.ParquetFileWriter.MAGIC
 import org.apache.parquet.hadoop.metadata._
 import org.apache.parquet.io.{InputFile, SeekableInputStream}
-import org.apache.parquet.schema.{DecimalMetadata, GroupType, MessageType, OriginalType, PrimitiveType, Type, Types}
+import org.apache.parquet.schema.{DecimalMetadata, GroupType, MessageType, OriginalType, PrimitiveType, Type}
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
 
 import org.apache.spark.TaskContext
@@ -300,51 +300,6 @@ object GpuParquetScan {
  */
 object GpuParquetPartitionReaderFactoryBase {
 
-  /**
-   * Remove the columns not in `fileSchema` from `clippedSchema`.
-   * Note: if `useFieldId` is true, `clippedSchema` can contain `_fake_name_UUID` columns
-   * that do not exist in `fileSchema`.
-   */
-  def filterClippedSchema(
-      clippedSchema: MessageType,
-      fileSchema: MessageType,
-      isCaseSensitive: Boolean,
-      useFieldId: Boolean): MessageType = {
-    val idMap = ParquetSchemaClipShims.fieldIdToFieldMap(useFieldId, fileSchema)
-
-    val fs = fileSchema.asGroupType()
-    val types = if (isCaseSensitive) {
-      val inFile = fs.getFields.asScala.map(_.getName).toSet
-      clippedSchema.asGroupType().getFields.asScala.filter { f =>
-        if (useFieldId && f.getId != null) {
-          // if use fieldID configuration and read schema field has specified `parquet.field.id`
-          idMap.contains(f.getId.intValue())
-        } else {
-          inFile.contains(f.getName)
-        }
-      }
-    } else {
-      val inFile = fs.getFields.asScala
-        .map(_.getName.toLowerCase(Locale.ROOT)).toSet
-      clippedSchema.asGroupType().getFields.asScala.filter { f =>
-        if (useFieldId && f.getId != null) {
-          // if has `fieldID` configuration and read schema field has specified `parquet.field.id`
-          idMap.contains(f.getId.intValue())
-        } else {
-          inFile.contains(f.getName.toLowerCase(Locale.ROOT))
-        }
-      }
-    }
-    if (types.isEmpty) {
-      Types.buildMessage().named("spark_schema")
-    } else {
-      Types
-        .buildMessage()
-        .addFields(types: _*)
-        .named("spark_schema")
-    }
-  }
-
   // Copied from Spark
   private val SPARK_VERSION_METADATA_KEY = "org.apache.spark.version"
   // Copied from Spark
@@ -523,7 +478,6 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
   private val isInt96CorrectedRebase = "CORRECTED" == int96RebaseMode
   private val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
   private val ignoreMissingParquetFieldId = ParquetSchemaClipShims.ignoreMissingIds(sqlConf)
-  private val timestampNTZEnabled = ParquetSchemaClipShims.timestampNTZEnabled(sqlConf)
 
   private val PARQUET_ENCRYPTION_CONFS = Seq("parquet.encryption.kms.client.class",
     "parquet.encryption.kms.client.class", "parquet.crypto.factory.class")
@@ -742,19 +696,12 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
 
       val (clipped, clippedSchema) =
         withResource(new NvtxRange("clipSchema", NvtxColor.DARK_GREEN)) { _ =>
-          val clippedSchemaTmp = ParquetSchemaClipShims.clipSchema(fileSchema,
-                readDataSchema, isCaseSensitive, readUseFieldId, timestampNTZEnabled)
+          val clippedSchema = ParquetSchemaUtils.clipParquetSchema(
+            fileSchema, readDataSchema, isCaseSensitive, readUseFieldId)
           // Check if the read schema is compatible with the file schema.
-          checkSchemaCompat(clippedSchemaTmp, readDataSchema,
+          checkSchemaCompat(clippedSchema, readDataSchema,
             (t: Type, d: DataType) => throwTypeIncompatibleError(t, d, file.filePath),
             isCaseSensitive, readUseFieldId)
-
-          // ParquetSchemaClipShims.clipSchema does most of what we want, but it includes
-          // everything in readDataSchema, even if it is not in fileSchema we want to remove those
-          // for our own purposes
-          val clippedSchema =
-          GpuParquetPartitionReaderFactoryBase.filterClippedSchema(clippedSchemaTmp,
-            fileSchema, isCaseSensitive, readUseFieldId)
           val clipped = GpuParquetUtils.clipBlocksToSchema(clippedSchema, blocks, isCaseSensitive)
           (clipped, clippedSchema)
         }
@@ -769,8 +716,7 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
    * Recursively check if the read schema is compatible with the file schema. The errorCallback
    * will be invoked to throw an exception once any incompatible type pairs are found.
    *
-   * The function assumes all elements in read schema are included in file schema, so please
-   * run this check after clipping read schema upon file schema.
+   * Any element in the read schema that are missing from the file schema are ignored.
    *
    * The function only accepts top-level schemas, which means structures of root columns. Based
    * on this assumption, it can infer root types from input schemas.
@@ -797,27 +743,26 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
 
         val fieldIdToFieldMap = ParquetSchemaClipShims.fieldIdToFieldMap(useFieldId, fileType)
 
-        def getParquetType(f: StructField): Type = {
+        def getParquetType(f: StructField): Option[Type] = {
           if(useFieldId && ParquetSchemaClipShims.hasFieldId(f)) {
             // use field ID and Spark schema specified field ID
-            // Note: can always get a result from the map.
-            // For unmatched field ID column `fileType` has a `_fake_name_UUID` column.
-            fieldIdToFieldMap(ParquetSchemaClipShims.getFieldId(f))
+            fieldIdToFieldMap.get(ParquetSchemaClipShims.getFieldId(f))
           } else {
-            fileFieldMap(if (isCaseSensitive) f.name else f.name.toLowerCase(Locale.ROOT))
+            fileFieldMap.get(if (isCaseSensitive) f.name else f.name.toLowerCase(Locale.ROOT))
           }
         }
         struct.fields.foreach { f =>
-          val curFile = getParquetType(f)
-          checkSchemaCompat(curFile,
-            f.dataType,
-            errorCallback,
-            isCaseSensitive,
-            useFieldId,
-            // Record root types for each column, so as to throw a readable exception
-            // over nested types.
-            Some(rootFileType.getOrElse(curFile)),
-            Some(rootReadType.getOrElse(f.dataType)))
+          getParquetType(f).foreach { fieldType =>
+            checkSchemaCompat(fieldType,
+              f.dataType,
+              errorCallback,
+              isCaseSensitive,
+              useFieldId,
+              // Record root types for each column, so as to throw a readable exception
+              // over nested types.
+              Some(rootFileType.getOrElse(fieldType)),
+              Some(rootReadType.getOrElse(f.dataType)))
+          }
         }
       case array: ArrayType =>
         val fileChild = fileType.asGroupType().getType(0)
@@ -1312,175 +1257,6 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
     outputBlocks
   }
 
-  /**
-   * Check if field ID matches if `useFieldId` is true, or check if name matches
-   */
-  protected def areFieldIDsOrNamesEquiv(useFieldId: Boolean, groups: GroupType, index: Int,
-      readField: StructField, isCaseSensitive: Boolean): Boolean = {
-    if (useFieldId && ParquetSchemaClipShims.hasFieldId(readField)) {
-      val actualId = groups.getFields.get(index).getId
-      // check if field ID matches
-      actualId != null && actualId.intValue() == ParquetSchemaClipShims.getFieldId(readField)
-    } else {
-      val otherName = readField.name
-      if (groups.getFieldCount > index) {
-        if (isCaseSensitive) {
-          groups.getFieldName(index) == otherName
-        } else {
-          groups.getFieldName(index).toLowerCase(Locale.ROOT) == otherName.toLowerCase(Locale.ROOT)
-        }
-      } else {
-        false
-      }
-    }
-  }
-
-  @scala.annotation.nowarn(
-    "msg=method getDecimalMetadata in class PrimitiveType is deprecated"
-  )
-  def getPrecisionsList(fields: Seq[Type]): Seq[Int] = {
-    fields.filter(field => field.getOriginalType == OriginalType.DECIMAL || !field.isPrimitive())
-      .flatMap { field =>
-        if (!field.isPrimitive) {
-          getPrecisionsList(field.asGroupType().getFields.asScala)
-        } else {
-          Seq(field.asPrimitiveType().getDecimalMetadata.getPrecision)
-        }
-      }
-  }
-
-  protected def evolveSchemaIfNeededAndClose(
-      useFieldId: Boolean,
-      inputTable: Table,
-      filePath: String,
-      clippedSchema: MessageType): Table = {
-
-    val precisions = getPrecisionsList(clippedSchema.asGroupType().getFields.asScala)
-    // check if there are cols with precision that can be stored in an int
-    val hasDecimalAsInt = precisions.exists(p => p <= Decimal.MAX_INT_DIGITS)
-    val hasUnsignedType = existsUnsignedType(clippedSchema.asGroupType())
-    val hasInt32Downcast = existsInt32Downcast(readDataSchema)
-    val needExtraCast = hasDecimalAsInt || hasUnsignedType || hasInt32Downcast
-
-    if (readDataSchema.length > inputTable.getNumberOfColumns || needExtraCast) {
-      // Spark+Parquet schema evolution is relatively simple with only adding/removing columns
-      // To type casting or anything like that
-      val clippedGroups = clippedSchema.asGroupType()
-      val newColumns = new Array[ColumnVector](readDataSchema.length)
-      try {
-        withResource(inputTable) { table =>
-          var readAt = 0
-          (0 until readDataSchema.length).foreach(writeAt => {
-            val readField = readDataSchema(writeAt)
-            if (areFieldIDsOrNamesEquiv(useFieldId, clippedGroups, readAt, readField,
-              isSchemaCaseSensitive)) {
-              val origCol = table.getColumn(readAt)
-              val col: ColumnVector = if (needExtraCast) {
-                ColumnCastUtil.ifTrueThenDeepConvertTypeAtoTypeB(origCol, readField.dataType,
-                  (dt, cv) => needDecimalCast(cv, dt) || needUnsignedToSignedCast(cv, dt) ||
-                    needInt32Downcast(cv, dt),
-                  (dt, cv) => evolveSchemaCasts(cv, dt))
-              } else {
-                origCol.incRefCount()
-              }
-              newColumns(writeAt) = col
-              readAt += 1
-            } else {
-              newColumns(writeAt) =
-                GpuColumnVector.columnVectorFromNull(table.getRowCount.toInt, readField.dataType)
-            }
-          })
-          if (readAt != table.getNumberOfColumns) {
-            throw new QueryExecutionException(s"Could not find the expected columns " +
-              s"$readAt out of ${table.getNumberOfColumns} from $filePath")
-          }
-        }
-        new Table(newColumns: _*)
-      } finally {
-        newColumns.safeClose()
-      }
-    } else {
-      inputTable
-    }
-  }
-
-  /**
-   * Need to convert cudf unsigned integer to wider signed integer that Spark expects
-   * After Spark 3.2.0, Spark reads uint8 as int16, uint16 as int32, uint32 as int64
-   * TODO uint64 -> Decimal(20,0) depends CUDF, see issue #3475
-   *
-   * @param group the schema
-   * @return if has unsigned integer
-   */
-  def existsUnsignedType(group: GroupType): Boolean = {
-    group.getFields.asScala.exists(
-      field => {
-        if (field.isPrimitive) {
-          val t = field.getOriginalType
-          (t == OriginalType.UINT_8) || (t == OriginalType.UINT_16) ||
-            (t == OriginalType.UINT_32) || (t == OriginalType.UINT_64)
-        } else {
-          existsUnsignedType(field.asGroupType)
-        }
-      }
-    )
-  }
-
-  /**
-   * ByteType/ShortType/DateType are physically stored as INT32 in parquet files. We need to do
-   * extra conversion on these types, since cuDF reads these columns as INT32.
-   */
-  def existsInt32Downcast(dt: DataType): Boolean =
-    dt match {
-      case struct: StructType =>
-        struct.fields.exists(f => existsInt32Downcast(f.dataType))
-      case array: ArrayType =>
-        existsInt32Downcast(array.elementType)
-      case map: MapType =>
-        existsInt32Downcast(map.keyType) || existsInt32Downcast(map.valueType)
-      case ByteType | ShortType | DateType =>
-        true
-      case _ =>
-        false
-    }
-
-  def needDecimalCast(cv: ColumnView, dt: DataType): Boolean = {
-    // UINT64 is casted to Decimal(20,0) by Spark to accommodate
-    // the largest possible values this type can take. Other Unsigned data types are converted to
-    // basic types like LongType, this is analogous to that except we spill over to large
-    // decimal/ints.
-    cv.getType.isDecimalType && !GpuColumnVector.getNonNestedRapidsType(dt).equals(cv.getType()) ||
-      cv.getType.equals(DType.UINT64)
-  }
-
-  def needUnsignedToSignedCast(cv: ColumnView, dt: DataType): Boolean = {
-    (cv.getType.equals(DType.UINT8) && dt.isInstanceOf[ShortType]) ||
-      (cv.getType.equals(DType.UINT16) && dt.isInstanceOf[IntegerType]) ||
-      (cv.getType.equals(DType.UINT32) && dt.isInstanceOf[LongType])
-  }
-
-  def needInt32Downcast(cv: ColumnView, dt: DataType): Boolean = {
-    cv.getType.equals(DType.INT32) && Seq(ByteType, ShortType, DateType).contains(dt)
-  }
-
-  // Wrap up all required casts for Parquet schema evolution
-  //
-  // Note: The behavior of unsigned to signed is decided by the Spark,
-  // this means the parameter dt is from Spark meta module.
-  // This implements the requested type behavior accordingly for GPU.
-  // This is suitable for all Spark versions, no need to add to shim layer.
-  private def evolveSchemaCasts(cv: ColumnView, dt: DataType): ColumnView = {
-    if (needDecimalCast(cv, dt)) {
-      cv.castTo(DecimalUtil.createCudfDecimal(dt.asInstanceOf[DecimalType]))
-    } else if (needUnsignedToSignedCast(cv, dt)) {
-      cv.castTo(DType.create(GpuColumnVector.getNonNestedRapidsType(dt).getTypeId))
-    } else if (needInt32Downcast(cv, dt)) {
-      cv.castTo(DType.create(GpuColumnVector.getNonNestedRapidsType(dt).getTypeId))
-    } else {
-      throw new IllegalStateException("Logical error: no valid casts are found")
-    }
-  }
-
   protected def readPartFile(
       blocks: Seq[BlockMetaData],
       clippedSchema: MessageType,
@@ -1822,7 +1598,9 @@ class MultiFileParquetPartitionReader(
         extraInfo.isCorrectedRebaseMode,
         extraInfo.hasInt96Timestamps)
     }
-    evolveSchemaIfNeededAndClose(useFieldId, table, splits.mkString(","), clippedSchema)
+
+    ParquetSchemaUtils.evolveSchemaIfNeededAndClose(table, clippedSchema, readDataSchema,
+      isSchemaCaseSensitive, useFieldId)
   }
 
   override def writeFileHeader(buffer: HostMemoryBuffer, bContext: BatchContext): Long = {
@@ -2121,7 +1899,8 @@ class MultiFileCloudParquetPartitionReader(
         }
       }
       metrics(NUM_OUTPUT_BATCHES) += 1
-      Some(evolveSchemaIfNeededAndClose(useFieldId, table, fileName, clippedSchema))
+      Some(ParquetSchemaUtils.evolveSchemaIfNeededAndClose(table, clippedSchema, readDataSchema,
+        isSchemaCaseSensitive, useFieldId))
     }
     try {
       val colTypes = readDataSchema.fields.map(f => f.dataType)
@@ -2259,8 +2038,8 @@ class ParquetPartitionReader(
           }
         }
         metrics(NUM_OUTPUT_BATCHES) += 1
-        Some(evolveSchemaIfNeededAndClose(useFieldId, table, filePath.toString,
-          clippedParquetSchema))
+        Some(ParquetSchemaUtils.evolveSchemaIfNeededAndClose(table, clippedParquetSchema,
+          readDataSchema, isSchemaCaseSensitive, useFieldId))
       }
     } finally {
       dataBuffer.close()

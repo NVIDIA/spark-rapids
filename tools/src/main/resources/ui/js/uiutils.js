@@ -65,11 +65,6 @@ class AppsToStagesMap {
 
 let appStagesMap = new AppsToStagesMap();
 
-const twoDecimalFormatter = new Intl.NumberFormat('en-US', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-
 function padZeroes(num) {
   return ("0" + num).slice(-2);
 }
@@ -101,19 +96,23 @@ function formatDuration(milliseconds) {
   }
   let seconds = milliseconds * 1.0 / 1000;
   if (seconds < 1) {
-    return seconds.toFixed(1) + " s";
+    return seconds.toFixed(2) + " s";
   }
   if (seconds < 60) {
-    return seconds.toFixed(0) + " s";
+    return seconds.toFixed(1) + " s";
   }
   let minutes = seconds / 60;
   if (minutes < 10) {
-    return minutes.toFixed(1) + " min";
+    return minutes.toFixed(2) + " min";
   } else if (minutes < 60) {
-    return minutes.toFixed(0) + " min";
+    return minutes.toFixed(1) + " min";
   }
   let hours = minutes / 60;
-  return hours.toFixed(1) + " h";
+  return hours.toFixed(2) + " h";
+}
+
+function formatFloatingPoints(numArg) {
+  return Math.floor(parseFloat(numArg) * 100) / 100;
 }
 
 function getColumnIndex(columns, columnName) {
@@ -319,10 +318,8 @@ function processRawData(rawRecords) {
     }
 
     // Set numeric fields for display
-    appRecord["totalSpeedup_display"] =
-      Math.floor(parseFloat(appRecord["totalSpeedup"]) * 10) / 10;
-    appRecord["taskSpeedupFactor_display"] =
-      Math.floor(parseFloat(appRecord["taskSpeedupFactor"]) * 10) / 10;
+    appRecord["totalSpeedup_display"] = formatFloatingPoints(appRecord["totalSpeedup"]);
+    appRecord["taskSpeedupFactor_display"] = formatFloatingPoints(appRecord["taskSpeedupFactor"]);
 
     setAppInfoRecord(appRecord);
     maxOpportunity =
@@ -413,20 +410,20 @@ function setGlobalReportSummary(processedApps) {
     formatDuration(totalGPUOpportunityDurations);
   qualReportSummary.speedups.totalSqlDataframeTaskDuration =
     formatDuration(totalSqlDataframeDuration);
-  qualReportSummary.speedups.statsPercentage = twoDecimalFormatter.format(speedUpPercent)
+  qualReportSummary.speedups.statsPercentage = formatFloatingPoints(speedUpPercent)
     + qualReportSummary.speedups.statsPercentage;
 
   // candidates
   qualReportSummary.candidates.numeric = recommendedCnt;
   qualReportSummary.tlc.numeric = tlcCount;
   qualReportSummary.totalApps.statsPercentage =
-      twoDecimalFormatter.format(estimatedPercentage)
+    formatFloatingPoints(estimatedPercentage)
       + qualReportSummary.totalApps.statsPercentage;
   qualReportSummary.candidates.statsPercentage =
-      twoDecimalFormatter.format(gpuPercent)
+    formatFloatingPoints(gpuPercent)
       + qualReportSummary.candidates.statsPercentage;
   qualReportSummary.tlc.statsPercentage =
-      twoDecimalFormatter.format(tlcPercent)
+    formatFloatingPoints(tlcPercent)
       + qualReportSummary.tlc.statsPercentage;
 }
 
@@ -964,7 +961,7 @@ function createAppDetailsExecsTableConf(
         data: "speedupFactor",
         render: function (data, type, row) {
           if (data && type === 'display') {
-            return twoDecimalFormatter.format(data);
+            return formatFloatingPoints(data);
           }
           return data;
         },
@@ -1131,7 +1128,7 @@ function createAppDetailsStagesTableConf(
         data: "averageSpeedup",
         render: function (data, type, row) {
           if (data && type === 'display') {
-            return twoDecimalFormatter.format(data);
+            return formatFloatingPoints(data);
           }
           return data;
         },
@@ -1288,7 +1285,7 @@ function createAppDetailsSQLsTableConf(
         data: 'info.estimatedGpuSpeedup',
         render: function (data, type, row) {
           if (data && type === 'display') {
-            return twoDecimalFormatter.format(data);
+            return formatFloatingPoints(data);
           }
           return data;
         },

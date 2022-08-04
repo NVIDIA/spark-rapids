@@ -141,8 +141,7 @@ EOF
 
 readonly DEFAULT_SPARK_RAPIDS_VERSION="22.06.0"
 readonly DEFAULT_CUDA_VERSION="11.0"
-readonly DEFAULT_XGBOOST_VERSION="1.4.2"
-readonly DEFAULT_XGBOOST_GPU_SUB_VERSION="0.3.0"
+readonly DEFAULT_XGBOOST_VERSION="1.6.1"
 readonly SPARK_VERSION="3.0"
 
 # SPARK config
@@ -152,7 +151,7 @@ readonly XGBOOST_GPU_SUB_VERSION=${DEFAULT_XGBOOST_GPU_SUB_VERSION}
 
 function install_spark_rapids() {
   local -r rapids_repo_url='https://repo1.maven.org/maven2/ai/rapids'
-  local -r nvidia_repo_url='https://repo1.maven.org/maven2/com/nvidia'
+  local -r dmlc_repo_url='https://repo.maven.apache.org/maven2/ml/dmlc'
 
   # Convert . to - for URL formatting
   local cudf_cuda_version="${CUDA_VERSION//\./-}"
@@ -164,15 +163,19 @@ function install_spark_rapids() {
   fi
     
   wget -nv --timeout=30 --tries=5 --retry-connrefused \
-    "${nvidia_repo_url}/xgboost4j-spark_${SPARK_VERSION}/${XGBOOST_VERSION}-${XGBOOST_GPU_SUB_VERSION}/xgboost4j-spark_${SPARK_VERSION}-${XGBOOST_VERSION}-${XGBOOST_GPU_SUB_VERSION}.jar" \
+    "${dmlc_repo_url}/xgboost4j-spark-gpu_2.12/${XGBOOST_VERSION}/xgboost4j-spark-gpu_2.12-${XGBOOST_VERSION}.jar" \
     -P /usr/lib/spark/jars/
   wget -nv --timeout=30 --tries=5 --retry-connrefused \
-    "${nvidia_repo_url}/xgboost4j_${SPARK_VERSION}/${XGBOOST_VERSION}-${XGBOOST_GPU_SUB_VERSION}/xgboost4j_${SPARK_VERSION}-${XGBOOST_VERSION}-${XGBOOST_GPU_SUB_VERSION}.jar" \
+    "${dmlc_repo_url}/xgboost4j-gpu_2.12/${XGBOOST_VERSION}/xgboost4j-gpu_2.12-${XGBOOST_VERSION}.jar" \
     -P /usr/lib/spark/jars/
   wget -nv --timeout=30 --tries=5 --retry-connrefused \
     "${nvidia_repo_url}/rapids-4-spark_2.12/${SPARK_RAPIDS_VERSION}/rapids-4-spark_2.12-${SPARK_RAPIDS_VERSION}.jar" \
     -P /usr/lib/spark/jars/
 }
+
+# For PySpark based XGBoost, please refer to the version 22.04 branch that uses NVIDIA’s Spark XGBoost version. 
+# https://repo1.maven.org/maven2/com/nvidia/xgboost4j_3.0
+# https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/
 
 function configure_spark() {
     cat >>${SPARK_CONF_DIR}/spark-defaults.conf <<EOF

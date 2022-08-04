@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ListBuffer
 import scala.util.Try
 
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 
@@ -47,6 +48,26 @@ object PlanUtils {
         .getOrElse(false)
   }
 
+  /**
+   * Return list of matching predicates present in the expression
+   */
+  def findExpressions(exp: Expression, predicate: Expression => Boolean): Seq[Expression] = {
+    def recurse(
+        exp: Expression,
+        predicate: Expression => Boolean,
+        accum: ListBuffer[Expression]): Seq[Expression] = {
+      exp match {
+        case _ if predicate(exp) =>
+          accum += exp
+          exp.children.flatMap(p => recurse(p, predicate, accum)).headOption
+        case other =>
+          other.children.flatMap(p => recurse(p, predicate, accum)).headOption
+      }
+      accum
+    }
+    recurse(exp, predicate, new ListBuffer[Expression]())
+  }
+  
   /**
    * Return list of matching predicates present in the plan
    * This is in shim due to changes in ShuffleQueryStageExec between Spark versions.

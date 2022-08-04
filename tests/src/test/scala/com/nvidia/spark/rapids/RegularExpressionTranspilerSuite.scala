@@ -382,13 +382,10 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assert(transpiled === expected)
   }
 
-  // this was a test for transpiling but we did not ever try to run the
-  // resulting regex to see if it produced valid results
-  // see https://github.com/NVIDIA/spark-rapids/issues/5656
-  ignore("transpile complex regex 2") {
+  test("transpile complex regex 2") {
     val TIMESTAMP_TRUNCATE_REGEX = "^([0-9]{4}-[0-9]{2}-[0-9]{2} " +
       "[0-9]{2}:[0-9]{2}:[0-9]{2})" +
-      "(.[1-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?\\z"
+      "(.[1-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?.\\z"
 
     // input and output should be identical except for `.` being replaced 
     // with `[^\n\r\u0085\u2028\u2029]` and `\z` being replaced with `$`
@@ -937,7 +934,7 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true,
       // when we reach maximum depth we generate a non-nested type
       nonNestedTerm
     } else {
-      val baseGenerators: Seq[() => RegexAST] = Seq(
+      val generators: Seq[() => RegexAST] = Seq(
         () => lineTerminator,
         () => escapedChar,
         () => char,
@@ -948,13 +945,8 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true,
         () => group(depth),
         () => boundaryMatch,
         () => sequence(depth),
-        () => repetition(depth))
-      val generators = if (skipKnownIssues) {
-        baseGenerators
-      } else {
-        baseGenerators ++ Seq(
-          () => choice(depth)) // https://github.com/NVIDIA/spark-rapids/issues/4603
-      }
+        () => repetition(depth),
+        () => choice(depth))
       generators(rr.nextInt(generators.length))()
     }
   }
@@ -974,36 +966,25 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true,
   }
 
   private def characterClassComponent = {
-    val baseGenerators = Seq[() => RegexCharacterClassComponent](
+    val generators = Seq[() => RegexCharacterClassComponent](
         () => char,
         () => charRange,
         () => hexDigit,
+        () => octalDigit,
         () => escapedChar)
-    val generators = if (skipKnownIssues) {
-      baseGenerators
-    } else {
-      baseGenerators ++ Seq(
-        () => octalDigit) // https://github.com/NVIDIA/spark-rapids/issues/4862
-    }
     generators(rr.nextInt(generators.length))()
   }
 
   private def charRange: RegexCharacterClassComponent = {
-    val baseGenerators = Seq[() => RegexCharacterClassComponent](
+    val generators = Seq[() => RegexCharacterClassComponent](
       () => RegexCharacterRange(RegexChar('a'), RegexChar('z')),
       () => RegexCharacterRange(RegexChar('A'), RegexChar('Z')),
       () => RegexCharacterRange(RegexChar('z'), RegexChar('a')),
       () => RegexCharacterRange(RegexChar('Z'), RegexChar('A')),
       () => RegexCharacterRange(RegexChar('0'), RegexChar('9')),
-      () => RegexCharacterRange(RegexChar('9'), RegexChar('0'))
+      () => RegexCharacterRange(RegexChar('9'), RegexChar('0')),
+      () => RegexCharacterRange(char, char)
     )
-    val generators = if (skipKnownIssues) {
-      baseGenerators
-    } else {
-      // we do not support escaped characters in character ranges yet
-      // see https://github.com/NVIDIA/spark-rapids/issues/4505
-      baseGenerators ++ Seq(() => RegexCharacterRange(char, char))
-    }
     generators(rr.nextInt(generators.length))()
   }
 
