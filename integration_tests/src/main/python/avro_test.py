@@ -141,9 +141,8 @@ def test_avro_read_with_corrupt_files(spark_tmp_path, reader_type, v1_enabled_li
 @pytest.mark.parametrize('v1_enabled_list', ["avro", ""], ids=["v1", "v2"])
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_read_count(spark_tmp_path, v1_enabled_list, reader_type):
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(support_gens)]
     data_path = spark_tmp_path + '/AVRO_DATA'
-    gen_avro_files(gen_list, data_path)
+    gen_avro_files([('_c0', int_gen)], data_path)
 
     all_confs = copy_and_update(_enable_all_types_conf, {
         'spark.rapids.sql.format.avro.reader.type': reader_type,
