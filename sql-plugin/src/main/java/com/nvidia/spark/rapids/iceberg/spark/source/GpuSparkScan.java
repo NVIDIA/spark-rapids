@@ -205,8 +205,11 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
         ReadTask rTask = (ReadTask) partition;
         // ret = (canAccelerateRead, isMultiThread, fileFormat) = (_1(), _2(), _3())
         scala.Tuple3<Boolean, Boolean, FileFormat> ret = multiFileReadCheck(rTask);
-        if (ret._1()) {
-          return new MultiFileBatchReader(rTask, ret._2(), ret._3(), metrics);
+        boolean canAccelerateRead = ret._1();
+        if (canAccelerateRead) {
+          boolean isMultiThread = ret._2();
+          FileFormat ff = ret._3();
+          return new MultiFileBatchReader(rTask, isMultiThread, ff, metrics);
         } else {
           return new BatchReader(rTask, metrics);
         }

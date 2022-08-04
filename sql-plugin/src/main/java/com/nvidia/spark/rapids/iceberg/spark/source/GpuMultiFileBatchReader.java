@@ -114,11 +114,12 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
     try (ColumnarBatch batch = rapidsReader.get()) {
       // The Rapids reader should already set the current file.
       String curFile = InputFileUtils.getCurInputFilePath();
-      // <idToConstants, updatedExpectedSchema>
       Tuple2<Map<Integer, ?>, Schema> constsSchema = constsSchemaMap.get(curFile);
+      Map<Integer, ?> idToConsts = constsSchema._1();
+      Schema updatedReadSchema = constsSchema._2();
       return GpuIcebergReader.addUpcastsIfNeeded(
-          GpuIcebergReader.addConstantColumns(batch, constsSchema._2(), constsSchema._1()),
-          constsSchema._2());
+          GpuIcebergReader.addConstantColumns(batch, updatedReadSchema, idToConsts),
+          updatedReadSchema);
     }
   }
 
@@ -142,7 +143,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
   CloseableIterator<ColumnarBatch> open(FileScanTask task) {
     // Stub for the required implementation.
     // This method will never be called after overriding the "next" method.
-    throw new UnsupportedOperationException();
+    throw new IllegalStateException();
   }
 
   private void ensureRapidsReader() {
