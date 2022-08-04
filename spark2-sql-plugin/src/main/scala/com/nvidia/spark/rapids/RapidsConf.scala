@@ -1460,15 +1460,15 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |$SPARK_HOME/bin/spark --jars 'rapids-4-spark_2.12-22.08.0-SNAPSHOT.jar,cudf-22.08.0-SNAPSHOT-cuda11.jar' \
+        |$SPARK_HOME/bin/spark-shell --jars 'rapids-4-spark_2.12-22.08.0-SNAPSHOT.jar,cudf-22.08.0-SNAPSHOT-cuda11.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
-        |--conf spark.rapids.sql.incompatibleOps.enabled=true
+        |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
         |
         |At runtime use: `spark.conf.set("[conf key]", [conf value])`. For example:
         |
         |```
-        |scala> spark.conf.set("spark.rapids.sql.incompatibleOps.enabled", true)
+        |scala> spark.conf.set("spark.rapids.sql.concurrentGpuTasks", 2)
         |```
         |
         | All configs can be set on startup, but some configs, especially for shuffle, will not
