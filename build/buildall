@@ -50,6 +50,8 @@ function print_usage() {
   echo "        Intall the resulting jar instead of just building it"
   echo "   -o=MVN_OPT, --option=MVN_OPT"
   echo "        use this option to build project with maven. E.g., --option='-Dcudf.version=cuda11'"
+  echo "   --rebuild-dist-only"
+  echo "        repackage the dist module artifact using installed dependencies"
 }
 
 function bloopInstall() {
@@ -134,6 +136,15 @@ case "$1" in
 
 --install)
   FINAL_OP="install"
+  ;;
+
+--rebuild-dist-only)
+  SKIP_DIST_DEPS="1"
+  MODULE="dist"
+  ;;
+
+-o=*|--option=*)
+  MVN_OPT="${1#*=}"
   ;;
 
 *)
@@ -253,9 +264,11 @@ export -f build_single_shim
 # Then resume maven build from the dist module now that shims have been installed
 time (
   # printf a single buildver array element per line
-  printf "%s\n" "${SPARK_SHIM_VERSIONS[@]}" | \
-    xargs -t -I% -P "$BUILD_PARALLEL" -n 1 \
-    bash -c 'build_single_shim "$@"' _ %
+  if [[ "$SKIP_DIST_DEPS" != "1" ]]; then
+    printf "%s\n" "${SPARK_SHIM_VERSIONS[@]}" | \
+      xargs -t -I% -P "$BUILD_PARALLEL" -n 1 \
+      bash -c 'build_single_shim "$@"' _ %
+  fi
   # This used to resume from dist. However, without including aggregator in the build
   # the build does not properly initialize spark.version property via buildver profiles
   # in the root pom, and we get a missing spark311 dependency even for --profile=312,321

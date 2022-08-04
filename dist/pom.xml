@@ -264,6 +264,7 @@
                             <goal>jar</goal>
                         </goals>
                         <configuration>
+                            <archive><compress>${dist.jar.compress}</compress></archive>
                             <classesDirectory>${project.build.directory}/parallel-world</classesDirectory>
                             <classifier>${cuda.version}</classifier>
                             <excludes>
