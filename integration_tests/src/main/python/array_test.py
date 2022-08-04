@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
 from marks import incompat
-from spark_session import is_before_spark_313, is_before_spark_330, is_databricks104_or_later
+from spark_session import is_before_spark_313, is_before_spark_330, is_spark_330_or_later, is_databricks104_or_later
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 from pyspark.sql.functions import array_contains, col, element_at, lit
@@ -70,6 +70,16 @@ no_neg_zero_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
         FloatGen(special_cases=_non_neg_zero_float_special_cases), 
         DoubleGen(special_cases=_non_neg_zero_double_special_cases),
         string_gen, boolean_gen, date_gen, timestamp_gen]
+
+no_neg_zero_all_basic_gens_no_nulls = [StringGen(nullable=False), ByteGen(nullable=False),
+        ShortGen(nullable=False), IntegerGen(nullable=False), LongGen(nullable=False),
+        BooleanGen(nullable=False), DateGen(nullable=False), TimestampGen(nullable=False),
+        FloatGen(special_cases=_non_neg_zero_float_special_cases, nullable=False),
+        DoubleGen(special_cases=_non_neg_zero_double_special_cases, nullable=False)]
+
+decimal_gens_no_nulls = [DecimalGen(precision=7, scale=3, nullable=False),
+        DecimalGen(precision=12, scale=2, nullable=False),
+        DecimalGen(precision=20, scale=2, nullable=False)]
 
 no_neg_zero_all_basic_gens_no_nans = [byte_gen, short_gen, int_gen, long_gen,
         # -0.0 cannot work because of -0.0 == 0.0 in cudf for distinct
@@ -441,7 +451,7 @@ def test_array_max_q1():
 
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
-@pytest.mark.skipif(is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
+@pytest.mark.skipif(is_before_spark_313() or is_spark_330_or_later() or is_databricks104_or_later(), reason="NaN equality is only handled in Spark 3.1.3+")
 def test_array_intersect(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -458,6 +468,27 @@ def test_array_intersect(data_gen):
             'sort_array(array_intersect(array(1), array(1, 2, 3)))',
             'sort_array(array_intersect(array(), array(1, 2, 3)))')
     )
+
+@incompat
+@pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens_no_nulls + decimal_gens_no_nulls, ids=idfn)
+@pytest.mark.skipif(is_before_spark_330() and not is_databricks104_or_later(), reason="SPARK-39976 issue with null and ArrayIntersect")
+def test_array_intersect_spark330(data_gen):
+    gen = StructGen(
+        [('a', ArrayGen(data_gen, nullable=True)),
+        ('b', ArrayGen(data_gen, nullable=True))],
+        nullable=False)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'sort_array(array_intersect(a, b))',
+            'sort_array(array_intersect(b, a))',
+            'sort_array(array_intersect(a, array()))',
+            'sort_array(array_intersect(array(), b))',
+            'sort_array(array_intersect(a, a))',
+            'sort_array(array_intersect(array(1), array(1, 2, 3)))',
+            'sort_array(array_intersect(array(), array(1, 2, 3)))')
+    )
+
 
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens_no_nans + decimal_gens, ids=idfn)
