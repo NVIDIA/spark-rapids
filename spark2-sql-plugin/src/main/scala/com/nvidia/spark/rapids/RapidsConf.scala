@@ -1462,7 +1462,7 @@ object RapidsConf {
         |```
         |$SPARK_HOME/bin/spark --jars 'rapids-4-spark_2.12-22.08.0-SNAPSHOT.jar,cudf-22.08.0-SNAPSHOT-cuda11.jar' \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
-        |--conf spark.rapids.sql.incompatibleOps.enabled=true 
+        |--conf spark.rapids.sql.incompatibleOps.enabled=true
         |```
         |
         |At runtime use: `spark.conf.set("[conf key]", [conf value])`. For example:
