@@ -3560,6 +3560,20 @@ object GpuOverrides extends Logging {
           GpuGetJsonObject(lhs, rhs)
       }
     ),
+    expr[JsonToStructs](
+       "Returns a struct value with the given `jsonStr` and `schema`",
+      ExprChecks.projectOnly(
+        TypeSig.MAP.nested(TypeSig.STRING),
+        (TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(TypeSig.all),
+        Seq(ParamCheck("jsonStr", TypeSig.STRING, TypeSig.STRING))),
+      (a, conf, p, r) => new UnaryExprMeta[JsonToStructs](a, conf, p, r) {
+        override def tagExprForGpu(): Unit =
+          GpuJsonScan.tagJsonToStructsSupport(a.options, this)
+
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuJsonToStructs(a.schema, a.options, child, a.timeZoneId)
+      }).disabledByDefault("parsing JSON from a column has a large number of issues and " +
+        "should be considered beta quality right now."),
     expr[org.apache.spark.sql.execution.ScalarSubquery](
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(
