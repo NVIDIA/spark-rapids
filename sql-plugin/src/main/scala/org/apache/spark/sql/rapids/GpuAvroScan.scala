@@ -777,6 +777,7 @@ class GpuMultiFileCloudAvroPartitionReader(
 
           val bufAndSize: Array[(HostMemoryBuffer, Long)] = if (readDataSchema.isEmpty) {
             // Overload the size to be the number of rows with null buffer
+            hostBuffers.foreach(_._1.safeClose(new Exception))
             Array((null, totalRowsNum))
           } else if (isDone) {
             // got close before finishing, return null buffer and zero size
