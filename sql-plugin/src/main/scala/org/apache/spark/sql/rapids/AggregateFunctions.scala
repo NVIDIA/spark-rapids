@@ -351,6 +351,11 @@ class CudfMin(override val dataType: DataType) extends CudfAggregate {
   override val name: String = "CudfMin"
 }
 
+/** Check if all values in a boolean column are trues */
+object CudfAll {
+  def apply(): CudfAggregate = new CudfMin(BooleanType)
+}
+
 class CudfCollectList(override val dataType: DataType) extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => col.reduce(ReductionAggregation.collectList(), DType.LIST)
@@ -461,7 +466,14 @@ class CudfMergeM2 extends CudfAggregate {
         StructField("m2", DoubleType, nullable = true) :: Nil)
 }
 
-case class GpuMin(child: Expression) extends GpuAggregateFunction
+object GpuMin{
+  def apply(child: Expression): GpuMin = child.dataType match {
+    case FloatType | DoubleType => GpuFloatMin(child)
+    case _ => GpuBasicMin(child)
+  }
+}
+
+abstract class GpuMin(child: Expression) extends GpuAggregateFunction
     with GpuBatchedRunningWindowWithFixer
     with GpuAggregateWindowFunction
     with GpuRunningWindowFunction {
@@ -510,6 +522,52 @@ case class GpuMin(child: Expression) extends GpuAggregateFunction
   override def isScanSupported: Boolean  = child.dataType match {
     case TimestampType | DateType => false
     case _ => true
+  }
+}
+
+/** Min aggregation without `NaN` handling */
+case class GpuBasicMin(child: Expression) extends GpuMin(child)
+
+/** Min Aggregation for FloatType and DoubleType to handle `NaN`s */
+case class GpuFloatMin(child: Expression) extends GpuMin(child)
+  with GpuReplaceWindowFunction {
+  
+  override val dataType: DataType = child.dataType match {
+    case FloatType | DoubleType => child.dataType
+    case t => throw new IllegalStateException(s"child type $t is not FloatType or DoubleType")
+  }
+
+  protected val nan: Any = child.dataType match {
+    case FloatType => Float.NaN
+    case DoubleType => Double.NaN
+    case t => throw new IllegalStateException(s"child type $t is not FloatType or DoubleType")
+  }
+
+
+  protected lazy val updateIsNan = CudfAll()
+  protected lazy val updateMinVal = new CudfMin(dataType)
+  protected lazy val mergeIsNan = CudfAll()
+  protected lazy val mergeMinVal = new CudfMin(dataType)
+
+  override lazy val inputProjection: Seq[Expression] = Seq(child, GpuIsNan(child))
+  override lazy val updateAggregates: Seq[CudfAggregate] = Seq(updateMinVal, updateIsNan)
+  override lazy val postUpdate: Seq[Expression] = Seq(
+    GpuIf(updateIsNan.attr, GpuLiteral(nan, dataType), updateMinVal.attr)
+  )
+
+  override lazy val preMerge: Seq[Expression] = Seq (
+    evaluateExpression, GpuIsNan(evaluateExpression)
+  )
+  override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(mergeMinVal, mergeIsNan)
+  override lazy val postMerge: Seq[Expression] = Seq(
+    GpuIf(mergeIsNan.attr, GpuLiteral(nan, dataType), mergeMinVal.attr)
+  )
+
+  override def shouldReplaceWindow(spec: GpuWindowSpecDefinition): Boolean = true
+  override def windowReplacement(spec: GpuWindowSpecDefinition): Expression = {
+    val isNan = GpuWindowExpression(GpuBasicMin(GpuIsNan(child)), spec)
+    val min = GpuWindowExpression(GpuBasicMin(child), spec)
+    GpuIf(isNan, GpuLiteral(nan, dataType), min)
   }
 }
 
