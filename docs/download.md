@@ -44,7 +44,7 @@ for your hardware's minimum driver version.
 ### Release Notes
 New functionality and performance improvements for this release include:
 * Rocky Linux 8 support
-* Ability to build Spark RAPIDS jar using JDK 11 
+* Ability to build Spark RAPIDS jars for Java versions 9+
 * Zstandard Parquet and ORC read support
 * Binary read support from parquet
 * Apache Iceberg 0.13 support  
