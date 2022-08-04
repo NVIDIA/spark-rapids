@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.tool
 import java.io.FileOutputStream
 
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FSDataOutputStream, FileSystem, Path}
+import org.apache.hadoop.fs.{FileSystem, FSDataOutputStream, Path}
 
 import org.apache.spark.internal.Logging
 
@@ -41,8 +41,10 @@ class ToolTextFileWriter(finalOutputDir: String, logFileName: String,
   // this overwrites existing path
   private var outFile: Option[FSDataOutputStream] = {
     if ((isDefaultLocal && uri.getScheme == null) || uri.getScheme == "file") {
+      logWarning("using local file system")
       Some(new FSDataOutputStream(new FileOutputStream(uri.getPath), null))
     } else {
+      logWarning("using distributed file system")
       val fs = FileSystem.get(uri, hadoopConf)
       Some(fs.create(textOutputPath))
     }
