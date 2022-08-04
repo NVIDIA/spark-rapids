@@ -45,7 +45,7 @@ for your hardware's minimum driver version.
 New functionality and performance improvements for this release include:
 * Rocky Linux 8 support
 * Ability to build Spark RAPIDS jar using JDK 11 
-* ZSTD parquet read support
+* Zstandard Parquet and ORC read support
 * Binary read support from parquet
 * Apache Iceberg 0.13 support  
 * Array function support: array_intersect, array_union, array_except and arrays_overlap
