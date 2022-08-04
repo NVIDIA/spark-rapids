@@ -4374,10 +4374,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         val updatedPlan = updateForAdaptivePlan(plan, conf)
         val newPlan = applyOverrides(updatedPlan, conf)
         if (conf.logQueryTransformations) {
-          val logPrefix = context match {
-            case Some(str) => s"[$str] "
-            case _ => ""
-          }
+          val logPrefix = context.map(str => s"[$str]").getOrElse("")
           logWarning(s"${logPrefix}Transformed query:" +
             s"\nOriginal Plan:\n$plan\nTransformed Plan:\n$newPlan")
         }
