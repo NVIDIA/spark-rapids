@@ -49,7 +49,6 @@ New functionality and performance improvements for this release include:
 * Binary read support from parquet
 * Apache Iceberg 0.13 support  
 * Array function support: array_intersect, array_union, array_except and arrays_overlap
-* Function from_json support
 * Support nth_value, first and last in windowing function
 * Alluxio auto mount for AWS S3 buckets
 * Qualification tool: 
