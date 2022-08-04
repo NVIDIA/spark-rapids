@@ -4348,12 +4348,26 @@ object GpuOverrideUtil extends Logging {
   }
 }
 
+object GpuOverridesContext {
+    private val local = ThreadLocal.withInitial[String](() => null);
+  def set(s: String): Unit = local.set(s)
+
+  def get(): Option[String] = Option(local.get())
+
+  def clear() = local.set(null)
+}
+
 /** Tag the initial plan when AQE is enabled */
 case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
   override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
     // Note that we disregard the GPU plan returned here and instead rely on side effects of
     // tagging the underlying SparkPlan.
-    GpuOverrides().apply(plan)
+    try {
+      GpuOverridesContext.set("AQE Query Stage Prep")
+      GpuOverrides().apply(plan)
+    } finally {
+      GpuOverridesContext.clear()
+    }
     // return the original plan which is now modified as a side-effect of invoking GpuOverrides
     plan
   }(sparkPlan)
@@ -4371,7 +4385,11 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         val updatedPlan = updateForAdaptivePlan(plan, conf)
         val newPlan = applyOverrides(updatedPlan, conf)
         if (conf.logQueryTransformations) {
-          logWarning(s"Transformed query to run on GPU:" +
+          val logPrefix = GpuOverridesContext.get() match {
+            case Some(str) => s"[$str] "
+            case _ => ""
+          }
+          logWarning(s"${logPrefix}Transformed query:" +
             s"\nOriginal Plan:\n$plan\nTransformed Plan:\n$newPlan")
         }
         newPlan
