@@ -28,9 +28,7 @@ import ai.rapids.cudf.Table;
 import com.nvidia.spark.rapids.shims.GpuTypeShims;
 import org.apache.arrow.memory.ReferenceManager;
 
-import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.catalyst.expressions.Attribute;
-import org.apache.spark.sql.internal.SQLConf;
 import org.apache.spark.sql.types.*;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
