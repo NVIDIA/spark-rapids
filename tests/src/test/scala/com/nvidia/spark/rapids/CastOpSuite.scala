@@ -1123,6 +1123,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
 /** Data shared between CastOpSuite and AnsiCastOpSuite. */
 object CastOpSuite {
+  val SPARK_OVERFLOW_INSERT_CLASS_NAME =
+    "org.apache.spark.sql.catalyst.expressions.CheckOverflowInTableInsert"
 
   def doublesAsStrings(session: SparkSession): DataFrame = {
     val schema = FuzzerUtils.createSchema(Seq(DoubleType), false)

@@ -76,4 +76,12 @@ object RapidsErrorUtils {
     QueryExecutionErrors.foundDuplicateFieldInCaseInsensitiveModeError(
       requiredFieldName, matchedFields)
   }
+
+  def castCausesOverflowInTableInsert(
+      from: DataType,
+      to: DataType,
+      columnName: String,
+      arithmeticException: Option[ArithmeticException] = None): ArithmeticException = {
+    arithmeticException.get
+  }
 }

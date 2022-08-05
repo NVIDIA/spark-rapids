@@ -23,16 +23,18 @@ import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
 object RapidsErrorUtils {
   def invalidArrayIndexError(index: Int, numElements: Int,
       isElementAtF: Boolean = false): ArrayIndexOutOfBoundsException = {
-    // Follow the Spark string format before 3.3.0
-    new ArrayIndexOutOfBoundsException(s"Invalid index: $index, numElements: $numElements")
+    if (isElementAtF) {
+      QueryExecutionErrors.invalidElementAtIndexError(index, numElements)
+    } else {
+      QueryExecutionErrors.invalidArrayIndexError(index, numElements)
+    }
   }
 
   def mapKeyNotExistError(
       key: String,
       keyType: DataType,
       origin: Origin): NoSuchElementException = {
-    // Follow the Spark string format before 3.3.0
-    new NoSuchElementException(s"Key $key does not exist.")
+    QueryExecutionErrors.mapKeyNotExistError(key, keyType, origin.context)
   }
 
   def sqlArrayIndexNotStartAtOneError(): ArrayIndexOutOfBoundsException = {
@@ -40,31 +42,33 @@ object RapidsErrorUtils {
   }
 
   def divByZeroError(origin: Origin): ArithmeticException = {
-    QueryExecutionErrors.divideByZeroError()
+    QueryExecutionErrors.divideByZeroError(origin.context)
   }
 
   def divOverflowError(origin: Origin): ArithmeticException = {
-    QueryExecutionErrors.overflowInIntegralDivideError()
+    QueryExecutionErrors.overflowInIntegralDivideError(origin.context)
   }
 
   def arithmeticOverflowError(
       message: String,
       hint: String = "",
       errorContext: String = ""): ArithmeticException = {
-    new ArithmeticException(message)
+    QueryExecutionErrors.arithmeticOverflowError(message, hint, errorContext)
   }
 
-  def cannotChangeDecimalPrecisionError(      
+  def cannotChangeDecimalPrecisionError(
       value: Decimal,
       toType: DecimalType,
       context: String = ""): ArithmeticException = {
     QueryExecutionErrors.cannotChangeDecimalPrecisionError(
-      value, toType.precision, toType.scale
+      value, toType.precision, toType.scale, context
     )
   }
 
   def overflowInIntegralDivideError(context: String = ""): ArithmeticException = {
-    QueryExecutionErrors.overflowInIntegralDivideError()
+    QueryExecutionErrors.arithmeticOverflowError(
+      "Overflow in integral divide", "try_divide", context
+    )
   }
 
   def foundDuplicateFieldInCaseInsensitiveModeError(
@@ -73,11 +77,11 @@ object RapidsErrorUtils {
       requiredFieldName, matchedFields)
   }
 
+  // To support Spark-3.3.1+ CAST_OVERFLOW_IN_TABLE_INSERT
   def castCausesOverflowInTableInsert(
       from: DataType,
       to: DataType,
       columnName: String): ArithmeticException = {
-    // We should never call this method because GpuCheckOverflowInTableInsert cannot be in hthe plan
-    throw new IllegalStateException("castingCauseOverflowErrorInTableInsert is not supported")
+    QueryExecutionErrors.castingCauseOverflowErrorInTableInsert(from, to, columnName)
   }
 }
