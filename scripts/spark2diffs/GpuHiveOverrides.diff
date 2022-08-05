@@ -1,57 +1,23 @@
 2c2
-<  * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+<  * Copyright (c) 2020-2022, NVIDIA CORPORATION.
 ---
 >  * Copyright (c) 2022, NVIDIA CORPORATION.
-20c20
-< import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuOverrides, RapidsConf, RepeatingParamCheck, ShimLoader, TypeSig}
+19c19,21
+< import com.nvidia.spark.rapids.{ExprRule, ShimLoader}
 ---
+> import com.nvidia.spark.RapidsUDF
 > import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuOverrides, RapidsConf, RepeatingParamCheck, TypeSig}
-29,30c29,30
+> import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
+21a24
+> import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
+26,27c29,30
 <       ShimLoader.loadClass("org.apache.spark.sql.hive.HiveSessionStateBuilder")
 <       ShimLoader.loadClass("org.apache.hadoop.hive.conf.HiveConf")
 ---
 >       getClass().getClassLoader.loadClass("org.apache.spark.sql.hive.HiveSessionStateBuilder")
 >       getClass().getClassLoader.loadClass("org.apache.hadoop.hive.conf.HiveConf")
-67,86d66
-< 
-<           override def convertToGpu(): GpuExpression = {
-<             opRapidsFunc.map { _ =>
-<               // We use the original HiveGenericUDF `deterministic` method as a proxy
-<               // for simplicity.
-<               GpuHiveSimpleUDF(
-<                 a.name,
-<                 a.funcWrapper,
-<                 childExprs.map(_.convertToGpu()),
-<                 a.dataType,
-<                 a.deterministic)
-<             }.getOrElse {
-<               // This `require` is just for double check.
-<               require(conf.isCpuBasedUDFEnabled)
-<               GpuRowBasedHiveSimpleUDF(
-<                 a.name,
-<                 a.funcWrapper,
-<                 childExprs.map(_.convertToGpu()))
-<             }
-<           }
-106,126d85
-<             }
-<           }
-< 
-<           override def convertToGpu(): GpuExpression = {
-<             opRapidsFunc.map { _ =>
-<               // We use the original HiveGenericUDF `deterministic` method as a proxy
-<               // for simplicity.
-<               GpuHiveGenericUDF(
-<                 a.name,
-<                 a.funcWrapper,
-<                 childExprs.map(_.convertToGpu()),
-<                 a.dataType,
-<                 a.deterministic,
-<                 a.foldable)
-<             }.getOrElse {
-<               // This `require` is just for double check.
-<               require(conf.isCpuBasedUDFEnabled)
-<               GpuRowBasedHiveGenericUDF(
-<                 a.name,
-<                 a.funcWrapper,
-<                 childExprs.map(_.convertToGpu()))
+40c43,44
+<       ShimLoader.newHiveProvider().getExprs
+---
+>       // don't use the ShimLoader for Spark 2.x
+>       new HiveProviderImpl().getExprs
