@@ -891,7 +891,7 @@ object GpuOverrides extends Logging {
       ExprChecks.projectAndAst(
         TypeSig.astTypes + GpuTypeShims.additionalArithmeticSupportedTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.DECIMAL_128 +
+            TypeSig.STRUCT + TypeSig.DECIMAL_128 + TypeSig.BINARY +
             GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
         TypeSig.all),
       (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
@@ -3426,13 +3426,38 @@ object GpuOverrides extends Logging {
       "Collect a set of unique elements, not supported in reduction",
       ExprChecks.fullAgg(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-            TypeSig.NULL + TypeSig.STRUCT),
+            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-              TypeSig.NULL + TypeSig.STRUCT).nested(),
+              TypeSig.NULL + 
+              TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Support for structs containing " +
+              s"float/double array columns requires ${RapidsConf.HAS_NANS} to be set to false") +
+              TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Support for arrays of arrays of " +
+              s"floats/doubles requires ${RapidsConf.HAS_NANS} to be set to false")).nested(),
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
+
+        private def isNestedArrayType(dt: DataType): Boolean = {
+          dt match {
+            case StructType(fields) => 
+              fields.exists { field =>
+                field.dataType match {
+                  case sdt: StructType => isNestedArrayType(sdt)
+                  case _: ArrayType => true
+                  case _ => false
+                }
+              }
+            case ArrayType(et, _) => et.isInstanceOf[ArrayType] || et.isInstanceOf[StructType]
+            case _ => false
+          }
+        }
+
+        override def tagAggForGpu(): Unit = {
+          if (isNestedArrayType(c.child.dataType)) {
+            checkAndTagFloatNanAgg("CollectSet", c.child.dataType, conf, this)
+          }
+        }
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuCollectSet(childExprs.head, c.mutableAggBufferOffset, c.inputAggBufferOffset)
 
@@ -3810,7 +3835,7 @@ object GpuOverrides extends Logging {
       "The backend for most file input",
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
-            TypeSig.DECIMAL_128).nested(),
+            TypeSig.DECIMAL_128 + TypeSig.BINARY).nested(),
         TypeSig.all),
       (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
         override val childScans: scala.Seq[ScanMeta[_]] =
