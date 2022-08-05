@@ -18,9 +18,9 @@
 ---
 >     .createWithDefault(ByteUnit.MiB.toBytes(8))
 1547c1549
-<         |$SPARK_HOME/bin/spark --jars rapids-4-spark_2.12-22.08.0-SNAPSHOT-cuda11.jar \
+<         |$SPARK_HOME/bin/spark-shell --jars rapids-4-spark_2.12-22.08.0-SNAPSHOT-cuda11.jar \
 ---
->         |${SPARK_HOME}/bin/spark --jars rapids-4-spark_2.12-22.08.0-SNAPSHOT-cuda11.jar \
+>         |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-22.08.0-SNAPSHOT-cuda11.jar \
 1602,1606c1604,1607
 <     // scans not supported in Spark 2.x
 <     // if (asTable) {
