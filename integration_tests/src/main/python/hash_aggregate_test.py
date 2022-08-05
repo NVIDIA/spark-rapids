@@ -666,12 +666,18 @@ def test_hash_groupby_collect_set_on_nested_array_type(data_gen):
         "spark.rapids.sql.expression.SortArray": "false"
     })
 
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen, length=100)
-            .groupby('a')
+    def do_it(spark):
+        df = gen_df(spark, data_gen, length=100)\
+            .groupby('a')\
             .agg(f.collect_set('b').alias("collect_set"))
+        # pull out the rdd and schema and create a new dataframe to run SortArray
+        # to handle Spark 3.3.0+ optimization that moves SortArray from ProjectExec
+        # to ObjectHashAggregateExec
+        return spark.createDataFrame(df.rdd, schema=df.schema)\
             .selectExpr("sort_array(collect_set)")
-        , conf=conf)
+        
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
+
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)
@@ -702,11 +708,16 @@ def test_hash_reduction_collect_set_on_nested_array_type(data_gen):
         "spark.rapids.sql.expression.SortArray": "false"
     })
 
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen, length=100)
+    def do_it(spark):
+        df = gen_df(spark, data_gen, length=100)\
             .agg(f.collect_set('b').alias("collect_set"))
+        # pull out the rdd and schema and create a new dataframe to run SortArray
+        # to handle Spark 3.3.0+ optimization that moves SortArray from ProjectExec
+        # to ObjectHashAggregateExec
+        return spark.createDataFrame(df.rdd, schema=df.schema)\
             .selectExpr("sort_array(collect_set)")
-        , conf=conf)
+        
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)
