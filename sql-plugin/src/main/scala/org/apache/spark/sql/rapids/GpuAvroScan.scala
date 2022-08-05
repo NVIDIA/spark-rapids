@@ -701,6 +701,15 @@ class GpuMultiFileCloudAvroPartitionReader(
      */
     private def doRead(): HostMemoryBuffersWithMetaDataBase = {
       val startingBytesRead = fileSystemBytesRead()
+      if (readDataSchema.isEmpty) {
+        // Read metadata only to get rows count when readDataSchema is empty
+        withResource(AvroFileReader.openMetaReader(partFile.filePath, config)) { reader =>
+          reader.sync(partFile.start)
+          val partBlocks = reader.getPartialBlocks(partFile.start + partFile.length)
+          val totalRowsNum = partBlocks.map(_.count.toInt).sum
+          return createBufferAndMeta(Array((null, totalRowsNum)), startingBytesRead)
+        }
+      }
       withResource(AvroFileReader.openDataReader(partFile.filePath, config)) { reader =>
         // Go to the start of the first block after the start position
         reader.sync(partFile.start)
@@ -775,11 +784,7 @@ class GpuMultiFileCloudAvroPartitionReader(
             }
           } // end of while
 
-          val bufAndSize: Array[(HostMemoryBuffer, Long)] = if (readDataSchema.isEmpty) {
-            // Overload the size to be the number of rows with null buffer
-            hostBuffers.foreach(_._1.safeClose(new Exception))
-            Array((null, totalRowsNum))
-          } else if (isDone) {
+          val bufAndSize: Array[(HostMemoryBuffer, Long)] = if (isDone) {
             // got close before finishing, return null buffer and zero size
             hostBuffers.foreach(_._1.safeClose(new Exception))
             Array((null, 0))
