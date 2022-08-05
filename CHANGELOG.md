@@ -1,5 +1,5 @@
 # Change log
-Generated on 2022-08-04
+Generated on 2022-08-05
 
 ## Release 22.08
 
@@ -21,7 +21,6 @@ Generated on 2022-08-04
 |[#5510](https://github.com/NVIDIA/spark-rapids/issues/5510)|[FEA] Support Iceberg for data INSERT, DELETE operations|
 |[#5890](https://github.com/NVIDIA/spark-rapids/issues/5890)|[FEA] Mount the alluxio buckets/paths on the fly when the query is being executed|
 |[#6018](https://github.com/NVIDIA/spark-rapids/issues/6018)|[FEA] Support Spark 3.2.2 |
-|[#3624](https://github.com/NVIDIA/spark-rapids/issues/3624)|[FEA] Refactor RapidsShuffle managers classes |
 |[#5417](https://github.com/NVIDIA/spark-rapids/issues/5417)|[FEA] Fully support reading parquet binary as string|
 |[#4283](https://github.com/NVIDIA/spark-rapids/issues/4283)|[FEA] Implement regexp_extract_all on GPU for idx > 0|
 |[#4353](https://github.com/NVIDIA/spark-rapids/issues/4353)|[FEA] Implement regexp_extract_all on GPU for idx = 0|
@@ -32,14 +31,13 @@ Generated on 2022-08-04
 |[#4323](https://github.com/NVIDIA/spark-rapids/issues/4323)|[FEA] Profiling tool add option to filter based on filesystem date|
 |[#5846](https://github.com/NVIDIA/spark-rapids/issues/5846)|[FEA] Support null characters in regular expressions|
 |[#5904](https://github.com/NVIDIA/spark-rapids/issues/5904)|[FEA] Add support for negated POSIX character classes in regular expressions|
-|[#5702](https://github.com/NVIDIA/spark-rapids/issues/5702)|[FEA] set spark.rapids.sql.explain=NOT_ON_GPU by default|
+|[#5702](https://github.com/NVIDIA/spark-rapids/issues/5702)|[FEA] Set spark.rapids.sql.explain=NOT_ON_GPU by default|
 |[#5867](https://github.com/NVIDIA/spark-rapids/issues/5867)|[FEA] Add shim for Spark 3.3.1|
 |[#5628](https://github.com/NVIDIA/spark-rapids/issues/5628)|[FEA] Enable Application detailed view in Qualification UI|
 |[#5831](https://github.com/NVIDIA/spark-rapids/issues/5831)|[FEA] Update default speedup factors used for qualification tool|
 |[#4519](https://github.com/NVIDIA/spark-rapids/issues/4519)|[FEA] Add regular expression support for Form Feed, Alert, and Escape control characters|
 |[#4040](https://github.com/NVIDIA/spark-rapids/issues/4040)|[FEA] Support spark.sql.parquet.binaryAsString=true|
 |[#5797](https://github.com/NVIDIA/spark-rapids/issues/5797)|[FEA] Support RoundCeil and RoundFloor when scale is zero|
-|[#5128](https://github.com/NVIDIA/spark-rapids/issues/5128)|[FEA] create Spark 3.4 shim|
 |[#4468](https://github.com/NVIDIA/spark-rapids/issues/4468)|[FEA] Support repetition quantifiers `?` and `*` with regexp_replace|
 |[#5679](https://github.com/NVIDIA/spark-rapids/issues/5679)|[FEA] Support MMyyyy date/timestamp format|
 |[#4413](https://github.com/NVIDIA/spark-rapids/issues/4413)|[FEA] Add support for POSIX characters in regular expressions|
@@ -62,6 +60,7 @@ Generated on 2022-08-04
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#6220](https://github.com/NVIDIA/spark-rapids/issues/6220)|[BUG] Host buffer leak occurred when executing `count` with Avro multi-threaded reader |
 |[#6160](https://github.com/NVIDIA/spark-rapids/issues/6160)|[BUG] When Hive table's actual data has varchar, but the DDL is string, then query fails to do varchar to string conversion|
 |[#6183](https://github.com/NVIDIA/spark-rapids/issues/6183)|[BUG] Qualification UI uses single precision floating point|
 |[#6005](https://github.com/NVIDIA/spark-rapids/issues/6005)|[BUG] When old Hive partition has different schema than new partition& Hive Schema, read old partition fails with "Found no metadata for schema index"|
@@ -119,7 +118,7 @@ Generated on 2022-08-04
 |[#5775](https://github.com/NVIDIA/spark-rapids/issues/5775)|[BUG] TimestampSuite is run on Spark 3.3.0 only|
 |[#5678](https://github.com/NVIDIA/spark-rapids/issues/5678)|[BUG] Inconsistency between the time zone in the fallback reason and the actual time zone checked in RapidsMeta.checkTImeZoneId|
 |[#5688](https://github.com/NVIDIA/spark-rapids/issues/5688)|[BUG] AnsiCast is merged into Cast in Spark 340, failing the 340 build|
-|[#5480](https://github.com/NVIDIA/spark-rapids/issues/5480)|[BUG]Some arithmetic tests are failing on Spark 3.4.0|
+|[#5480](https://github.com/NVIDIA/spark-rapids/issues/5480)|[BUG] Some arithmetic tests are failing on Spark 3.4.0|
 |[#5777](https://github.com/NVIDIA/spark-rapids/issues/5777)|[BUG] repeated runs of `mvn package` without `clean` lead to missing spark-rapids-jni-version-info.properties in dist jar|
 |[#5456](https://github.com/NVIDIA/spark-rapids/issues/5456)|[BUG] Handle regexp_replace inconsistency from https://issues.apache.org/jira/browse/SPARK-39107|
 |[#5683](https://github.com/NVIDIA/spark-rapids/issues/5683)|[BUG] test_cast_neg_to_decimal_err failed in recent 22.08 tests|
@@ -130,6 +129,10 @@ Generated on 2022-08-04
 ### PRs
 |||
 |:---|:---|
+|[#6225](https://github.com/NVIDIA/spark-rapids/pull/6225)|Fix count() in avro failed when reader_types is coalescing|
+|[#6216](https://github.com/NVIDIA/spark-rapids/pull/6216)|[Doc] Update 22.08 documentation|
+|[#6223](https://github.com/NVIDIA/spark-rapids/pull/6223)|Temporary fix for test_array_intersect failures on Spark 3.3.0|
+|[#6221](https://github.com/NVIDIA/spark-rapids/pull/6221)|Release host buffers when Avro read schema is empty|
 |[#6132](https://github.com/NVIDIA/spark-rapids/pull/6132)|[DOC]update outofdate mortgage notebooks and update docs for xgboost161 jar[skip ci]|
 |[#6188](https://github.com/NVIDIA/spark-rapids/pull/6188)|Allow ORC conversion from VARCHAR to STRING|
 |[#6013](https://github.com/NVIDIA/spark-rapids/pull/6013)|Add fixed issues to regex fuzzer|
