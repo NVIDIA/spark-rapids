@@ -40,7 +40,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.avro.AvroOptions
+import org.apache.spark.sql.avro.{AvroOptions, SchemaConverters}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
@@ -268,7 +268,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
             fPath,
             AvroDataBlock(block),
             file.partitionValues,
-            AvroSchemaWrapper(singleFileInfo.header.schema),
+            AvroSchemaWrapper(SchemaConverters.toAvroType(readDataSchema)),
             AvroExtraInfo()))
       if (singleFileInfo.blocks.nonEmpty) {
         // No need to check the header since it can not be null when blocks is not empty here.
