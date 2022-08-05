@@ -345,6 +345,8 @@ class CudfMax(override val dataType: DataType) extends CudfAggregate {
 
 /**
  * Check if there is a `true` value in a boolean column.
+ * The CUDF any aggregation does not work for reductions or group by aggregations
+ * so we use Max as a workaround for this.
  */
 object CudfAny {
   def apply(): CudfAggregate = new CudfMax(BooleanType)
