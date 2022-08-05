@@ -29,9 +29,6 @@ import org.apache.spark.sql.rapids.GpuRegExpUtils
 import org.apache.spark.sql.types.DataTypes
 
 class RegularExpressionTranspilerSuite extends FunSuite with Arm {
-  // test("sdfg") {
-
-  // }
 
   test("transpiler detects invalid cuDF patterns") {
     // The purpose of this test is to document some examples of valid Java regular expressions
@@ -390,7 +387,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       "[0-9]{2}:[0-9]{2}:[0-9]{2})" +
       "(.[1-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?.\\z"
 
-    // println(parse(TIMESTAMP_TRUNCATE_REGEX))
     // input and output should be identical except for `.` being replaced 
     // with `[^\n\r\u0085\u2028\u2029]` and `\z` being replaced with `$`
     doTranspileTest(TIMESTAMP_TRUNCATE_REGEX,

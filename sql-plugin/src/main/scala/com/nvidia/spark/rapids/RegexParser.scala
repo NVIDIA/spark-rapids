@@ -1340,7 +1340,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
               throw new RegexUnsupportedException(
                 s"cuDF does not support repetition of group containing: " +
                   s"${unsupportedTerm.toRegexString}", term.position)
-          } 
+          }
         case (RegexGroup(capture, term), QuantifierVariableLength(n, _))
             if !isSupportedRepetitionBase(term) =>
           term match {
