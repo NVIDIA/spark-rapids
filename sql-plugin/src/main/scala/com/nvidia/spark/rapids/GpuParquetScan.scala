@@ -1390,7 +1390,10 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
   }
 
   val sparkToParquetSchema = new SparkToParquetSchemaConverter()
-  def getParquetOptions(clippedSchema: MessageType, useFieldId: Boolean): ParquetOptions = {
+  def getParquetOptions(
+      readDataSchema: StructType,
+      clippedSchema: MessageType,
+      useFieldId: Boolean): ParquetOptions = {
     val includeColumns = toCudfColumnNamesAndDataTypes(readDataSchema, clippedSchema,
       isSchemaCaseSensitive, useFieldId)
     val builder = ParquetOptions.builder().withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
@@ -1581,7 +1584,7 @@ class MultiFileParquetPartitionReader(
     // Dump parquet data into a file
     dumpDataToFile(dataBuffer, dataSize, splits, Option(debugDumpPrefix), Some("parquet"))
 
-    val parseOpts = getParquetOptions(clippedSchema, useFieldId)
+    val parseOpts = getParquetOptions(readDataSchema, clippedSchema, useFieldId)
 
     // About to start using the GPU
     GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
@@ -1880,7 +1883,7 @@ class MultiFileCloudParquetPartitionReader(
 
       // Dump parquet data into a file
       dumpDataToFile(hostBuffer, dataSize, files, Option(debugDumpPrefix), Some("parquet"))
-      val parseOpts = getParquetOptions(clippedSchema, useFieldId)
+      val parseOpts = getParquetOptions(readDataSchema, clippedSchema, useFieldId)
 
       // about to start using the GPU
       GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
@@ -2019,7 +2022,7 @@ class ParquetPartitionReader(
 
         // Dump parquet data into a file
         dumpDataToFile(dataBuffer, dataSize, Array(split), Option(debugDumpPrefix), Some("parquet"))
-        val parseOpts = getParquetOptions(clippedParquetSchema, useFieldId)
+        val parseOpts = getParquetOptions(readDataSchema, clippedParquetSchema, useFieldId)
 
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
