@@ -1956,11 +1956,11 @@ object GpuOverrides extends Logging {
       "Check if the values are equal including nulls <=>",
       ExprChecks.binaryProject(
         TypeSig.BOOLEAN, TypeSig.BOOLEAN,
-        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-            GpuTypeShims.additionalPredicateSupportedTypes,
+        ("lhs", (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+            GpuTypeShims.additionalPredicateSupportedTypes + TypeSig.STRUCT).nested(),
             TypeSig.comparable),
-        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-            GpuTypeShims.additionalPredicateSupportedTypes,
+        ("rhs", (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+            GpuTypeShims.additionalPredicateSupportedTypes + TypeSig.STRUCT).nested(),
             TypeSig.comparable)),
       (a, conf, p, r) => new BinaryExprMeta[EqualNullSafe](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
