@@ -1340,7 +1340,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
               throw new RegexUnsupportedException(
                 s"cuDF does not support repetition of group containing: " +
                   s"${unsupportedTerm.toRegexString}", term.position)
-          }
+          } 
         case (RegexGroup(capture, term), QuantifierVariableLength(n, _))
             if !isSupportedRepetitionBase(term) =>
           term match {
@@ -1377,7 +1377,11 @@ class CudfRegexTranspiler(mode: RegexMode) {
                 s"cuDF does not support repetition of group containing: " +
                   s"${unsupportedTerm.toRegexString}", term.position)
           }
-        case (RegexGroup(_, _), SimpleQuantifier(ch)) if ch == '?' =>
+        case (RegexGroup(_, term), SimpleQuantifier(ch)) if ch == '?' =>
+          if (isEntirelyWordBoundary(term) || isEntirelyLineAnchor(term)) {
+            throw new RegexUnsupportedException(
+                s"cuDF does not support repetition of: ${term.toRegexString}", term.position)
+          }
           RegexRepetition(rewrite(base, replacement, None), quantifier)
         case (RegexEscaped(ch), SimpleQuantifier('+')) if "AZ".contains(ch) =>
           // \A+ can be transpiled to \A (dropping the repetition)
@@ -1498,6 +1502,30 @@ class CudfRegexTranspiler(mode: RegexMode) {
     }
   }
 
+  private def isEntirely(regex: RegexAST, f: RegexAST => Boolean): Boolean = {
+    regex match {
+      case RegexSequence(parts) if parts.nonEmpty =>
+        parts.forall(f)
+      case RegexGroup(_, term) =>
+        isEntirely(term, f)
+      case _ => f(regex)
+    }
+  }
+
+  private def isEntirelyWordBoundary(regex: RegexAST): Boolean = {
+    isEntirely(regex, {
+      case RegexEscaped(ch) if "bB".contains(ch) => true
+      case _ => false
+    })
+  }
+
+  private def isEntirelyLineAnchor(regex: RegexAST): Boolean = {
+    isEntirely(regex, {
+      case RegexEscaped('A') => true
+      case other => isBeginOrEndLineAnchor(other)
+    })
+  }
+
   private def endsWith(regex: RegexAST, f: RegexAST => Boolean): Boolean = {
     regex match {
       case RegexSequence(parts) if parts.nonEmpty =>
@@ -1506,6 +1534,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
             case _ => true
         }
         endsWith(parts(j), f)
+      case RegexGroup(_, term) =>
+        endsWith(term, f) 
       case _ => f(regex)
     }
   }
