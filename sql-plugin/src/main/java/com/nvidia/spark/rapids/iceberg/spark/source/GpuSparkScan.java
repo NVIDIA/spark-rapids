@@ -79,13 +79,14 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
   private final List<Expression> filterExpressions;
   private final boolean readTimestampWithoutZone;
   private final RapidsConf rapidsConf;
+  private final boolean queryUsesInputFile;
 
   // lazy variables
   private StructType readSchema = null;
 
   GpuSparkScan(SparkSession spark, Table table, SparkReadConf readConf,
                Schema expectedSchema, List<Expression> filters,
-               RapidsConf rapidsConf) {
+               RapidsConf rapidsConf, boolean queryUsesInputFile) {
 
     SparkSchemaUtil.validateMetadataColumnReferences(table.schema(), expectedSchema);
 
@@ -97,10 +98,19 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
     this.filterExpressions = filters != null ? filters : Collections.emptyList();
     this.readTimestampWithoutZone = readConf.handleTimestampWithoutZone();
     this.rapidsConf = rapidsConf;
+    this.queryUsesInputFile = queryUsesInputFile;
   }
 
   protected Table table() {
     return table;
+  }
+
+  protected SparkReadConf readConf() {
+    return readConf;
+  }
+
+  protected RapidsConf rapidsConf() {
+    return rapidsConf;
   }
 
   protected boolean caseSensitive() {
@@ -116,6 +126,10 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
   }
 
   protected abstract List<CombinedScanTask> tasks();
+
+  boolean queryUsesInputFile() {
+    return queryUsesInputFile;
+  }
 
   @Override
   public Batch toBatch() {
@@ -186,12 +200,15 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
     private final boolean canUseParquetCoalescing;
 
     public ReaderFactory(scala.collection.immutable.Map<String, GpuMetric> metrics,
-                         RapidsConf rapidsConf) {
+                         RapidsConf rapidsConf, boolean queryUsesInputFile) {
       this.metrics = metrics;
       this.allCloudSchemes = rapidsConf.getCloudSchemes().toSet();
-      // Only multi-threaded Parquet is supported.
       this.canUseParquetMultiThread = rapidsConf.isParquetMultiThreadReadEnabled();
-      this.canUseParquetCoalescing = false;
+      // Here ignores the "ignoreCorruptFiles" comparing to the code in
+      // "GpuParquetMultiFilePartitionReaderFactory", since "ignoreCorruptFiles" is
+      // always false for Iceberg.
+      this.canUseParquetCoalescing = rapidsConf.isParquetCoalesceFileReadEnabled() &&
+          !queryUsesInputFile;
     }
 
     @Override
@@ -203,7 +220,6 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
     public PartitionReader<ColumnarBatch> createColumnarReader(InputPartition partition) {
       if (partition instanceof ReadTask) {
         ReadTask rTask = (ReadTask) partition;
-        // ret = (canAccelerateRead, isMultiThread, fileFormat) = (_1(), _2(), _3())
         scala.Tuple3<Boolean, Boolean, FileFormat> ret = multiFileReadCheck(rTask);
         boolean canAccelerateRead = ret._1();
         if (canAccelerateRead) {
