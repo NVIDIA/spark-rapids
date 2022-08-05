@@ -43,11 +43,15 @@ Alias,4
 And,4
 ApproximatePercentile,4
 ArrayContains,4
+ArrayExcept,4
 ArrayExists,4
+ArrayIntersect,4
 ArrayMax,4
 ArrayMin,4
 ArrayRepeat,4
 ArrayTransform,4
+ArrayUnion,4
+ArraysOverlap,4
 ArraysZip,4
 Asin,4
 Asinh,4
