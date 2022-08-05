@@ -1018,29 +1018,11 @@ def test_window_aggs_for_rows_collect_set_nested_array():
         "spark.rapids.sql.expression.SortArray": "false"
     })
 
-    assert_gpu_and_cpu_are_equal_sql(
-        lambda spark: gen_df(spark, _gen_data_for_collect_set_nested, length=1024),
-        "window_collect_table",
-        '''
-          select a, b,
-            sort_array(cc_struct_array_1),
-            sort_array(cc_struct_array_2),
-            sort_array(cc_array_struct),
-            sort_array(cc_array_array_bool),
-            sort_array(cc_array_array_int),
-            sort_array(cc_array_array_long),
-            sort_array(cc_array_array_short),
-            sort_array(cc_array_array_date),
-            sort_array(cc_array_array_ts),
-            sort_array(cc_array_array_byte),
-            sort_array(cc_array_array_str),
-            sort_array(cc_array_array_float),
-            sort_array(cc_array_array_double),
-            sort_array(cc_array_array_decimal_32),
-            sort_array(cc_array_array_decimal_64),
-            sort_array(cc_array_array_decimal_128)
-          from (
-            select a, b,
+    def do_it(spark):
+        df = gen_df(spark, _gen_data_for_collect_set_nested, length=512)
+        df.createOrReplaceTempView("window_collect_table")
+        df = spark.sql(
+            """select a, b,
               collect_set(c_struct_array_1) over
                 (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_struct_array_1, 
               collect_set(c_struct_array_2) over
@@ -1073,9 +1055,33 @@ def test_window_aggs_for_rows_collect_set_nested_array():
                 (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_decimal_64,
               collect_set(c_array_array_decimal_128) over
                 (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_decimal_128
-            from window_collect_table
-          ) t
-        ''', conf=conf)
+        from window_collect_table
+        """)
+        df = spark.createDataFrame(df.rdd, schema=df.schema)
+        # pull out the rdd and schema and create a new dataframe to run SortArray
+        # to handle Databricks 10.4+ optimization that moves SortArray from ProjectExec
+        # to ObjectHashAggregateExec
+        df.createOrReplaceTempView("window_collect_table_2")
+        return spark.sql("""select a, b,
+              sort_array(cc_struct_array_1),
+              sort_array(cc_struct_array_2),
+              sort_array(cc_array_struct),
+              sort_array(cc_array_array_bool),
+              sort_array(cc_array_array_int),
+              sort_array(cc_array_array_long),
+              sort_array(cc_array_array_short),
+              sort_array(cc_array_array_date),
+              sort_array(cc_array_array_ts),
+              sort_array(cc_array_array_byte),
+              sort_array(cc_array_array_str),
+              sort_array(cc_array_array_float),
+              sort_array(cc_array_array_double),
+              sort_array(cc_array_array_decimal_32),
+              sort_array(cc_array_array_decimal_64),
+              sort_array(cc_array_array_decimal_128)
+        from window_collect_table_2
+        """)
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
 
 
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
