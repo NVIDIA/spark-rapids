@@ -195,6 +195,10 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    */
   final def entirePlanWillNotWork(because: String): Unit = {
     cannotReplaceAnyOfPlanReasons.get.add(because)
+    // recursively tag the plan so that AQE does not attempt
+    // to run any of the child query stages on the GPU
+    willNotWorkOnGpu(because)
+    childPlans.foreach(_.entirePlanWillNotWork(because))
   }
 
   final def shouldBeRemoved(because: String): Unit =
