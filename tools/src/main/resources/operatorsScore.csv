@@ -128,6 +128,7 @@ IntegralDivide,4
 IsNaN,4
 IsNotNull,4
 IsNull,4
+JsonToStructs,4
 KnownFloatingPointNormalized,4
 KnownNotNull,4
 Lag,4

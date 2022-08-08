@@ -826,7 +826,8 @@ object GpuOverrides extends Logging {
       sparkSig = TypeSig.cpuAtomics)),
     (ParquetFormatType, FileFormatChecks(
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
-        TypeSig.ARRAY + TypeSig.MAP + GpuTypeShims.additionalParquetSupportedTypes).nested(),
+          TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +
+          GpuTypeShims.additionalParquetSupportedTypes).nested(),
       cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
           TypeSig.ARRAY + TypeSig.MAP + GpuTypeShims.additionalParquetSupportedTypes).nested(),
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
@@ -890,7 +891,7 @@ object GpuOverrides extends Logging {
       ExprChecks.projectAndAst(
         TypeSig.astTypes + GpuTypeShims.additionalArithmeticSupportedTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.DECIMAL_128 +
+            TypeSig.STRUCT + TypeSig.DECIMAL_128 + TypeSig.BINARY +
             GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
         TypeSig.all),
       (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
@@ -3418,13 +3419,38 @@ object GpuOverrides extends Logging {
       "Collect a set of unique elements, not supported in reduction",
       ExprChecks.fullAgg(
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-            TypeSig.NULL + TypeSig.STRUCT),
+            TypeSig.NULL + TypeSig.STRUCT + TypeSig.ARRAY),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-              TypeSig.NULL + TypeSig.STRUCT).nested(),
+              TypeSig.NULL + 
+              TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Support for structs containing " +
+              s"float/double array columns requires ${RapidsConf.HAS_NANS} to be set to false") +
+              TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Support for arrays of arrays of " +
+              s"floats/doubles requires ${RapidsConf.HAS_NANS} to be set to false")).nested(),
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
+
+        private def isNestedArrayType(dt: DataType): Boolean = {
+          dt match {
+            case StructType(fields) => 
+              fields.exists { field =>
+                field.dataType match {
+                  case sdt: StructType => isNestedArrayType(sdt)
+                  case _: ArrayType => true
+                  case _ => false
+                }
+              }
+            case ArrayType(et, _) => et.isInstanceOf[ArrayType] || et.isInstanceOf[StructType]
+            case _ => false
+          }
+        }
+
+        override def tagAggForGpu(): Unit = {
+          if (isNestedArrayType(c.child.dataType)) {
+            checkAndTagFloatNanAgg("CollectSet", c.child.dataType, conf, this)
+          }
+        }
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuCollectSet(childExprs.head, c.mutableAggBufferOffset, c.inputAggBufferOffset)
 
@@ -3553,6 +3579,20 @@ object GpuOverrides extends Logging {
           GpuGetJsonObject(lhs, rhs)
       }
     ),
+    expr[JsonToStructs](
+       "Returns a struct value with the given `jsonStr` and `schema`",
+      ExprChecks.projectOnly(
+        TypeSig.MAP.nested(TypeSig.STRING),
+        (TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(TypeSig.all),
+        Seq(ParamCheck("jsonStr", TypeSig.STRING, TypeSig.STRING))),
+      (a, conf, p, r) => new UnaryExprMeta[JsonToStructs](a, conf, p, r) {
+        override def tagExprForGpu(): Unit =
+          GpuJsonScan.tagJsonToStructsSupport(a.options, this)
+
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuJsonToStructs(a.schema, a.options, child, a.timeZoneId)
+      }).disabledByDefault("parsing JSON from a column has a large number of issues and " +
+        "should be considered beta quality right now."),
     expr[org.apache.spark.sql.execution.ScalarSubquery](
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(
@@ -3788,7 +3828,7 @@ object GpuOverrides extends Logging {
       "The backend for most file input",
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
-            TypeSig.DECIMAL_128).nested(),
+            TypeSig.DECIMAL_128 + TypeSig.BINARY).nested(),
         TypeSig.all),
       (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
         override val childScans: scala.Seq[ScanMeta[_]] =
