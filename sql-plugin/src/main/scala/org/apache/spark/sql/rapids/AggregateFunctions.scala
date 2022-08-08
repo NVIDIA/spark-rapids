@@ -543,24 +543,35 @@ case class GpuFloatMin(child: Expression) extends GpuMin(child)
     case t => throw new IllegalStateException(s"child type $t is not FloatType or DoubleType")
   }
 
-
-  protected lazy val updateIsNan = CudfAll()
+  protected lazy val updateAllNansOrNulls = CudfAll()
+  protected lazy val updateHasNulls = CudfAny()
   protected lazy val updateMinVal = new CudfMin(dataType)
-  protected lazy val mergeIsNan = CudfAll()
+
+  protected lazy val mergeAllNansOrNulls = CudfAll()
+  protected lazy val mergeHasNulls = CudfAny()
   protected lazy val mergeMinVal = new CudfMin(dataType)
 
-  override lazy val inputProjection: Seq[Expression] = Seq(child, GpuIsNan(child))
-  override lazy val updateAggregates: Seq[CudfAggregate] = Seq(updateMinVal, updateIsNan)
+  override lazy val inputProjection: Seq[Expression] = Seq(
+    child, 
+    GpuOr(GpuIsNan(child), GpuIsNull(child)),
+    GpuIsNull(child)
+  )
+  override lazy val updateAggregates: Seq[CudfAggregate] = Seq(updateMinVal, updateAllNansOrNulls, updateHasNulls)
+
   override lazy val postUpdate: Seq[Expression] = Seq(
-    GpuIf(updateIsNan.attr, GpuLiteral(nan, dataType), updateMinVal.attr)
+    GpuIf(
+      updateAllNansOrNulls.attr, 
+      GpuLiteral(nan, dataType), 
+      updateMinVal.attr
+    )
   )
 
   override lazy val preMerge: Seq[Expression] = Seq (
     evaluateExpression, GpuIsNan(evaluateExpression)
   )
-  override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(mergeMinVal, mergeIsNan)
+  override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(mergeMinVal, mergeAllNansOrNulls)
   override lazy val postMerge: Seq[Expression] = Seq(
-    GpuIf(mergeIsNan.attr, GpuLiteral(nan, dataType), mergeMinVal.attr)
+    GpuIf(mergeAllNansOrNulls.attr, GpuLiteral(nan, dataType), mergeMinVal.attr)
   )
 
   override def shouldReplaceWindow(spec: GpuWindowSpecDefinition): Boolean = true
