@@ -18,12 +18,15 @@ package com.nvidia.spark.rapids.shims
 
 import scala.collection.JavaConverters._
 
-import org.apache.parquet.schema.{MessageType, Type}
+import org.apache.parquet.schema._
+import org.apache.parquet.schema.LogicalTypeAnnotation._
+import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName._
 
-import org.apache.spark.sql.execution.datasources.parquet.{ParquetReadSupport, ParquetUtils}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetReadSupport.containsFieldIds
+import org.apache.spark.sql.execution.datasources.parquet.ParquetUtils
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{StructField, StructType}
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.types._
 
 object ParquetSchemaClipShims {
 
@@ -53,6 +56,8 @@ object ParquetSchemaClipShims {
 
   def hasFieldId(field: StructField): Boolean = ParquetUtils.hasFieldId(field)
 
+  def hasFieldIds(schema: StructType): Boolean = ParquetUtils.hasFieldIds(schema)
+
   def getFieldId(field: StructField): Int = ParquetUtils.getFieldId(field)
 
   def fieldIdToFieldMap(useFieldId: Boolean, fileType: Type): Map[Int, Type] = {
@@ -73,19 +78,121 @@ object ParquetSchemaClipShims {
     }
   }
 
-  /** The stub for the config not defined in Spark 330 */
-  def timestampNTZEnabled(conf: SQLConf): Boolean = false
+  /**
+   * Convert a Parquet primitive type to a Spark type.
+   * Based on Spark's ParquetSchemaConverter.convertPrimitiveField
+   */
+  def convertPrimitiveField(parquetType: PrimitiveType): DataType = {
+    val typeAnnotation = parquetType.getLogicalTypeAnnotation
+    val typeName = parquetType.getPrimitiveTypeName
 
-  def clipSchema(
-      parquetSchema: MessageType,
-      catalystSchema: StructType,
-      caseSensitive: Boolean,
-      useFieldId: Boolean,
-      timestampNTZEnabled: Boolean): MessageType = {
+    def typeString =
+      if (typeAnnotation == null) s"$typeName" else s"$typeName ($typeAnnotation)"
 
-    // If useFieldId, Spark generate random `_fake_name_UUID` columns for the columns that
-    // not exist in `parquetSchema`
-    ParquetReadSupport.clipParquetSchema(parquetSchema, catalystSchema, caseSensitive,
-      useFieldId)
+    def typeNotImplemented() =
+      TrampolineUtil.throwAnalysisException(s"Parquet type not yet supported: $parquetType")
+
+    def illegalType() =
+      TrampolineUtil.throwAnalysisException(s"Illegal Parquet type: $parquetType")
+
+    // When maxPrecision = -1, we skip precision range check, and always respect the precision
+    // specified in field.getDecimalMetadata.  This is useful when interpreting decimal types stored
+    // as binaries with variable lengths.
+    def makeDecimalType(maxPrecision: Int = -1): DecimalType = {
+      val decimalLogicalTypeAnnotation = typeAnnotation
+          .asInstanceOf[DecimalLogicalTypeAnnotation]
+      val precision = decimalLogicalTypeAnnotation.getPrecision
+      val scale = decimalLogicalTypeAnnotation.getScale
+
+      if (!(maxPrecision == -1 || 1 <= precision && precision <= maxPrecision)) {
+        TrampolineUtil.throwAnalysisException(s"Invalid decimal precision: $typeName " +
+            s"cannot store $precision digits (max $maxPrecision)")
+      }
+
+      DecimalType(precision, scale)
+    }
+
+    typeName match {
+      case BOOLEAN => BooleanType
+
+      case FLOAT => FloatType
+
+      case DOUBLE => DoubleType
+
+      case INT32 =>
+        typeAnnotation match {
+          case intTypeAnnotation: IntLogicalTypeAnnotation if intTypeAnnotation.isSigned =>
+            intTypeAnnotation.getBitWidth match {
+              case 8 => ByteType
+              case 16 => ShortType
+              case 32 => IntegerType
+              case _ => illegalType()
+            }
+          case null => IntegerType
+          case _: DateLogicalTypeAnnotation => DateType
+          case _: DecimalLogicalTypeAnnotation => makeDecimalType(Decimal.MAX_INT_DIGITS)
+          case intTypeAnnotation: IntLogicalTypeAnnotation if !intTypeAnnotation.isSigned =>
+            intTypeAnnotation.getBitWidth match {
+              case 8 => ShortType
+              case 16 => IntegerType
+              case 32 => LongType
+              case _ => illegalType()
+            }
+          case t: TimestampLogicalTypeAnnotation if t.getUnit == TimeUnit.MILLIS =>
+            typeNotImplemented()
+          case _ => illegalType()
+        }
+
+      case INT64 =>
+        typeAnnotation match {
+          case intTypeAnnotation: IntLogicalTypeAnnotation if intTypeAnnotation.isSigned =>
+            intTypeAnnotation.getBitWidth match {
+              case 64 => LongType
+              case _ => illegalType()
+            }
+          case null => LongType
+          case _: DecimalLogicalTypeAnnotation => makeDecimalType(Decimal.MAX_LONG_DIGITS)
+          case intTypeAnnotation: IntLogicalTypeAnnotation if !intTypeAnnotation.isSigned =>
+            intTypeAnnotation.getBitWidth match {
+              // The precision to hold the largest unsigned long is:
+              // `java.lang.Long.toUnsignedString(-1).length` = 20
+              case 64 => DecimalType(20, 0)
+              case _ => illegalType()
+            }
+          case timestamp: TimestampLogicalTypeAnnotation
+            if timestamp.getUnit == TimeUnit.MICROS || timestamp.getUnit == TimeUnit.MILLIS =>
+              TimestampType
+          case _ => illegalType()
+        }
+
+      case INT96 =>
+        if (!SQLConf.get.isParquetINT96AsTimestamp) {
+          TrampolineUtil.throwAnalysisException(
+            "INT96 is not supported unless it's interpreted as timestamp. " +
+                s"Please try to set ${SQLConf.PARQUET_INT96_AS_TIMESTAMP.key} to true.")
+        }
+        TimestampType
+
+      case BINARY =>
+        typeAnnotation match {
+          case _: StringLogicalTypeAnnotation | _: EnumLogicalTypeAnnotation |
+               _: JsonLogicalTypeAnnotation => StringType
+          case null if SQLConf.get.isParquetBinaryAsString => StringType
+          case null => BinaryType
+          case _: BsonLogicalTypeAnnotation => BinaryType
+          case _: DecimalLogicalTypeAnnotation => makeDecimalType()
+          case _ => illegalType()
+        }
+
+      case FIXED_LEN_BYTE_ARRAY =>
+        typeAnnotation match {
+          case _: DecimalLogicalTypeAnnotation =>
+            makeDecimalType(Decimal.maxPrecisionForBytes(parquetType.getTypeLength))
+          case _: IntervalLogicalTypeAnnotation => typeNotImplemented()
+          case _ => illegalType()
+        }
+
+      case _ => illegalType()
+    }
   }
 }
