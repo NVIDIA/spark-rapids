@@ -29,7 +29,9 @@ basic_struct_gen = StructGen([
                                    BooleanGen(), DateGen(), TimestampGen(), null_gen] + decimal_gens)],
     nullable=False)
 
-@pytest.mark.parametrize('data_gen', map_gens_sample + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
+maps_with_binary = [MapGen(IntegerGen(nullable=False), BinaryGen(max_length=5))]
+
+@pytest.mark.parametrize('data_gen', map_gens_sample + maps_with_binary + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
 def test_map_keys(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
@@ -39,7 +41,7 @@ def test_map_keys(data_gen):
                 # in here yet, and would need some special case code for checking equality
                 'map_keys(a)'))
 
-@pytest.mark.parametrize('data_gen', map_gens_sample + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', map_gens_sample + maps_with_binary + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
 def test_map_values(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
@@ -49,7 +51,7 @@ def test_map_values(data_gen):
                 # in here yet, and would need some special case code for checking equality
                 'map_values(a)'))
 
-@pytest.mark.parametrize('data_gen', map_gens_sample  + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', map_gens_sample  + maps_with_binary + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
 def test_map_entries(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
@@ -77,7 +79,7 @@ def get_map_value_gens(precision=18, scale=0):
         return DecimalGen(precision, scale)
 
     return [ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen,
-            StringGen, DateGen, TimestampGen, decimal_value_gen,
+            StringGen, DateGen, TimestampGen, decimal_value_gen, BinaryGen,
             simple_struct_value_gen, nested_struct_value_gen, nested_map_value_gen, array_value_gen]
 
 

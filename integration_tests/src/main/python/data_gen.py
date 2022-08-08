@@ -651,6 +651,19 @@ class DayTimeIntervalGen(DataGen):
     def start(self, rand):
         self._start(rand, lambda: self._gen_random(rand))
 
+class BinaryGen(DataGen):
+    """Generate BinaryType values"""
+    def __init__(self, min_length=0, max_length=20, nullable=True):
+        super().__init__(BinaryType(), nullable=nullable)
+        self._min_length = min_length
+        self._max_length = max_length
+
+    def start(self, rand):
+        def gen_bytes():
+            length = rand.randint(self._min_length, self._max_length)
+            return bytes([ rand.randint(0, 255) for _ in range(length) ])
+        self._start(rand, gen_bytes)
+
 def skip_if_not_utc():
     if (not is_tz_utc()):
         skip_unless_precommit_tests('The java system time zone is not set to UTC')
@@ -827,6 +840,8 @@ def to_cast_string(spark_type):
     elif isinstance(spark_type, StructType):
         children = [fd.name + ':' + to_cast_string(fd.dataType) for fd in spark_type.fields]
         return 'STRUCT<{}>'.format(','.join(children))
+    elif isinstance(spark_type, BinaryType):
+        return 'BINARY'
     else:
         raise RuntimeError('CAST TO TYPE {} NOT SUPPORTED YET'.format(spark_type))
 
@@ -853,6 +868,8 @@ def _convert_to_sql(spark_type, data):
         children = ["'{}'".format(fd.name) + ',' + _convert_to_sql(fd.dataType, x)
                 for fd, x in zip(spark_type.fields, data)]
         d = "named_struct({})".format(','.join(children))
+    elif isinstance(data, bytearray) or isinstance(data, bytes):
+        d = "X'{}'".format(data.hex())
     elif not data:
         # data is None
         d = "null"
@@ -883,6 +900,7 @@ string_gen = StringGen()
 boolean_gen = BooleanGen()
 date_gen = DateGen()
 timestamp_gen = TimestampGen()
+binary_gen = BinaryGen()
 null_gen = NullGen()
 
 numeric_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen]
