@@ -16,7 +16,7 @@
 75,77c85,86
 <    if (types.contains(TimestampType)) {
 <       // Spark 2.x doesn't have zoneId, so use timeZone and then to id
-<       if (!TypeChecks.areTimestampsSupported(parsedOptions.timeZone.toZoneId)) {
+<       meta.checkTimeZoneId(parsedOptions.timeZone.toZoneId)
 ---
 >     if (types.contains(TimestampType)) {
->       if (!TypeChecks.areTimestampsSupported(parsedOptions.zoneId)) {
+>       meta.checkTimeZoneId(parsedOptions.zoneId)

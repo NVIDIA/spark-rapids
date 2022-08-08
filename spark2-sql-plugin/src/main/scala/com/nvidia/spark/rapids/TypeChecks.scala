@@ -23,6 +23,8 @@ import com.nvidia.spark.rapids.shims.{GpuTypeShims, TypeSigUtil}
 
 import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
+import org.apache.spark.sql.catalyst.util.DateTimeUtils
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 
 /** Trait of TypeSigUtil for different spark versions */
@@ -358,7 +360,8 @@ final class TypeSig private(
       case DoubleType => check.contains(TypeEnum.DOUBLE)
       case DateType => check.contains(TypeEnum.DATE)
       case TimestampType if check.contains(TypeEnum.TIMESTAMP) =>
-          TypeChecks.areTimestampsSupported(ZoneId.systemDefault())
+          TypeChecks.areTimestampsSupported(ZoneId.systemDefault()) &&
+          TypeChecks.areTimestampsSupported(SQLConf.get.sessionLocalTimeZone)
       case StringType => check.contains(TypeEnum.STRING)
       case dt: DecimalType =>
           check.contains(TypeEnum.DECIMAL) &&
@@ -419,10 +422,11 @@ final class TypeSig private(
         basicNotSupportedMessage(dataType, TypeEnum.DATE, check, isChild)
       case TimestampType =>
         if (check.contains(TypeEnum.TIMESTAMP) &&
-            (!TypeChecks.areTimestampsSupported(ZoneId.systemDefault()))) {
-          Seq(withChild(isChild, s"$dataType is not supported when the JVM system " +
-              s"timezone is set to ${ZoneId.systemDefault()}. Set the timezone to UTC to enable " +
-              s"$dataType support"))
+            (!TypeChecks.areTimestampsSupported(ZoneId.systemDefault()) ||
+             !TypeChecks.areTimestampsSupported(SQLConf.get.sessionLocalTimeZone))) {
+          Seq(withChild(isChild, s"$dataType is not supported with timezone settings: (JVM:" +
+              s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
+              s" Set both of the timezones to UTC to enable $dataType support"))
         } else {
           basicNotSupportedMessage(dataType, TypeEnum.TIMESTAMP, check, isChild)
         }
@@ -795,6 +799,23 @@ object TypeChecks {
    */
   def areTimestampsSupported(timezoneId: ZoneId): Boolean = {
     timezoneId.normalized() == GpuOverrides.UTC_TIMEZONE_ID
+  }
+
+  // Spark 2.X doesn't have getZoneId - copy it here
+  private def getZoneId(timeZoneId: String): ZoneId = {
+    val formattedZoneId = timeZoneId
+      // To support the (+|-)h:mm format because it was supported before Spark 3.0.
+      .replaceFirst("(\\+|\\-)(\\d):", "$10$2:")
+      // To support the (+|-)hh:m format because it was supported before Spark 3.0.
+      .replaceFirst("(\\+|\\-)(\\d\\d):(\\d)$", "$1$2:0$3")
+
+    ZoneId.of(formattedZoneId, ZoneId.SHORT_IDS)
+  }
+
+  def areTimestampsSupported(zoneIdString: String): Boolean = {
+    // Spark 2.X doesn't have getZoneId
+    val zoneId = getZoneId(zoneIdString)
+    areTimestampsSupported(zoneId)
   }
 }
 
@@ -2145,6 +2166,10 @@ object SupportedOpsDocs {
         totalCount += 2
     }
     println("</table>")
+    println()
+    println("### Apache Iceberg Support")
+    println("Support for Apache Iceberg has additional limitations. See the")
+    println("[Apache Iceberg Support](additional-functionality/iceberg-support.md) document.")
     // scalastyle:on line.size.limit
   }
 
@@ -2197,6 +2222,7 @@ object SupportedOpsForTools {
           case "orc" => conf.isOrcEnabled && conf.isOrcReadEnabled
           case "json" => conf.isJsonEnabled && conf.isJsonReadEnabled
           case "avro" => conf.isAvroEnabled && conf.isAvroReadEnabled
+          case "iceberg" => conf.isIcebergEnabled && conf.isIcebergReadEnabled
           case _ =>
             throw new IllegalArgumentException("Format is unknown we need to add it here!")
         }
@@ -2229,8 +2255,8 @@ object SupportedOpsForTools {
       ("ShuffleExchangeExec", "3.1"),
       ("FilterExec", "2.4"),
       ("HashAggregateExec", "3.4"),
-      ("SortExec", "6.0"),
-      ("SortMergeJoinExec", "14.9"),
+      ("SortExec", "5.2"),
+      ("SortMergeJoinExec", "14.1"),
       ("ArrowEvalPythonExec", "1.2"),
       ("AggregateInPandasExec", "1.2"),
       ("FlatMapGroupsInPandasExec", "1.2"),
@@ -2247,7 +2273,7 @@ object SupportedOpsForTools {
         val allCols = if (operatorCustomSpeedUp.contains(cpuName)) {
           Seq(cpuName, operatorCustomSpeedUp(cpuName))
         } else {
-          Seq(cpuName, "2.0")
+          Seq(cpuName, "3.0")
         }
         println(s"${allCols.mkString(",")}")
       }
@@ -2259,7 +2285,7 @@ object SupportedOpsForTools {
         val cpuName = rule.tag.runtimeClass.getSimpleName
         // We are assigning speed up of 3 to all the Exprs supported by the plugin. This can be
         // adjusted later.
-        val allCols = Seq(cpuName, "3")
+        val allCols = Seq(cpuName, "4")
         println(s"${allCols.mkString(",")}")
       }
     }

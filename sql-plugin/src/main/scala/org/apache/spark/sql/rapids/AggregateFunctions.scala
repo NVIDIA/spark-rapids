@@ -1691,7 +1691,8 @@ case class GpuCollectSet(
 
   override def windowAggregation(
       inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
-    RollingAggregation.collectSet().onColumn(inputs.head._2)
+    RollingAggregation.collectSet(NullPolicy.EXCLUDE, NullEquality.EQUAL,
+        NaNEquality.UNEQUAL).onColumn(inputs.head._2)
 }
 
 trait CpuToGpuAggregateBufferConverter {
