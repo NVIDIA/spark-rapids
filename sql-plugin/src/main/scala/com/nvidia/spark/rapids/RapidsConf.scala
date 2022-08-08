@@ -1093,6 +1093,12 @@ object RapidsConf {
     .toSequence
     .createWithDefault(Nil)
 
+  val LOG_TRANSFORMATIONS = conf("spark.rapids.sql.debug.logTransformations")
+    .doc("When enabled, all query transformations will be logged.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val PARQUET_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.parquet.debug.dumpPrefix")
     .doc("A path prefix where Parquet split file data is dumped for debugging.")
     .internal()
@@ -1675,6 +1681,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
 
   lazy val validateExecsInGpuPlan: Seq[String] = get(TEST_VALIDATE_EXECS_ONGPU)
+
+  lazy val logQueryTransformations: Boolean = get(LOG_TRANSFORMATIONS)
 
   lazy val rmmDebugLocation: String = get(RMM_DEBUG)
 

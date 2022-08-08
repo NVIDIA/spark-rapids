@@ -4393,7 +4393,7 @@ case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
   override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
     // Note that we disregard the GPU plan returned here and instead rely on side effects of
     // tagging the underlying SparkPlan.
-    GpuOverrides().apply(plan)
+    GpuOverrides().applyWithContext(plan, Some("AQE Query Stage Prep"))
     // return the original plan which is now modified as a side-effect of invoking GpuOverrides
     plan
   }(sparkPlan)
@@ -4403,13 +4403,22 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
 
   // Spark calls this method once for the whole plan when AQE is off. When AQE is on, it
   // gets called once for each query stage (where a query stage is an `Exchange`).
-  override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
+  override def apply(sparkPlan: SparkPlan): SparkPlan = applyWithContext(sparkPlan, None)
+
+  def applyWithContext(sparkPlan: SparkPlan, context: Option[String]): SparkPlan =
+      GpuOverrideUtil.tryOverride { plan =>
     val conf = new RapidsConf(plan.conf)
     if (conf.isSqlEnabled && conf.isSqlExecuteOnGPU) {
       GpuOverrides.logDuration(conf.shouldExplain,
         t => f"Plan conversion to the GPU took $t%.2f ms") {
         val updatedPlan = updateForAdaptivePlan(plan, conf)
-        applyOverrides(updatedPlan, conf)
+        val newPlan = applyOverrides(updatedPlan, conf)
+        if (conf.logQueryTransformations) {
+          val logPrefix = context.map(str => s"[$str]").getOrElse("")
+          logWarning(s"${logPrefix}Transformed query:" +
+            s"\nOriginal Plan:\n$plan\nTransformed Plan:\n$newPlan")
+        }
+        newPlan
       }
     } else if (conf.isSqlEnabled && conf.isSqlExplainOnlyEnabled) {
       // this mode logs the explain output and returns the original CPU plan
