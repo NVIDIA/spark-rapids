@@ -205,6 +205,11 @@ abstract class AvroFileReader(si: SeekableInput) extends AutoCloseable {
     (curBlockStart >= position + SYNC_SIZE) || (curBlockStart >= sin.length())
   }
 
+  // skip next length bytes
+  def skip(length: Int): Unit = {
+    vin.skipFixed(length)
+  }
+
   /**
    * Move to the next synchronization point after a position. To process a range
    * of file entries, call this with the starting position, then check
@@ -444,7 +449,7 @@ class AvroDataFileReader(si: SeekableInput) extends AvroFileReader(si) {
       throw new NoSuchElementException
     }
     val dataSize = curDataSize.toInt
-    vin.skipFixed(dataSize + SYNC_SIZE)
+    skip(dataSize + SYNC_SIZE)
     curBlockStart = sin.tell - vin.inputStream.available
     curBlockReady = false
   }
