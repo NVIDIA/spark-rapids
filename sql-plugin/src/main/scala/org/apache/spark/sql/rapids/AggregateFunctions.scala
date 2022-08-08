@@ -587,7 +587,14 @@ abstract class GpuMax(child: Expression) extends GpuAggregateFunction
 /** Max aggregation without `NaN` handling */
 case class GpuBasicMax(child: Expression) extends GpuMax(child)
 
-/** Max aggregation for FloatType and DoubleType to handle `NaN`s */
+/** Max aggregation for FloatType and DoubleType to handle `NaN`s.
+ *
+ * In Spark, `Nan` is the max float value, however in cuDF, `Infinity` is.
+ * We design a workaround method here to match the Spark's behaviour.
+ * The high level idea is that, in the projection stage, we create another
+ * column `isNan`. If any value in this column is true, return `Nan`,
+ * Else, return what `GpuBasicMax` returns.
+ */
 case class GpuFloatMax(child: Expression) extends GpuMax(child) 
     with GpuReplaceWindowFunction{
 
@@ -606,24 +613,38 @@ case class GpuFloatMax(child: Expression) extends GpuMax(child)
   protected lazy val mergeIsNan = CudfAny()
   protected lazy val mergeMaxVal = new CudfMax(dataType)
 
+  // Project 2 columns. The first one is the target column, second one is a
+  // Boolean column indicating whether the values in the target column are` Nan`s.
   override lazy val inputProjection: Seq[Expression] = Seq(child, GpuIsNan(child))
+  // Execute the `CudfMax` on the target column. At the same time,
+  // execute the `CudfAny` on the `isNan` column.
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(updateMaxVal, updateIsNan)
+  // If there is `Nan` value in the target column, return `Nan`
+  // else return what the `CudfMax` returns
   override lazy val postUpdate: Seq[Expression] = 
     Seq(
       GpuIf(updateIsNan.attr, GpuLiteral(nan, dataType), updateMaxVal.attr)
     )
 
+  // Same logic as the `inputProjection` stage.
   override lazy val preMerge: Seq[Expression] = 
     Seq(evaluateExpression, GpuIsNan(evaluateExpression))
+  // Same logic as the `updateAggregates` stage.
   override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(mergeMaxVal,  mergeIsNan)
+  // Same logic as the `postUpdate` stage.
   override lazy val postMerge: Seq[Expression] =
     Seq(
       GpuIf(mergeIsNan.attr, GpuLiteral(nan, dataType), mergeMaxVal.attr)
     )
 
+  // We should always override the windowing expression to handle `Nan`.
   override def shouldReplaceWindow(spec: GpuWindowSpecDefinition): Boolean =  true
+
   override def windowReplacement(spec: GpuWindowSpecDefinition): Expression = {
+    // The `GpuBasicMax` here has the same functionality as `CudfAny`,
+    // as `true > false` in cuDF.
     val isNan = GpuWindowExpression(GpuBasicMax(GpuIsNan(child)), spec)
+    // We use `GpuBasicMax` but not `GpuMax` to avoid self recursion.
     val max = GpuWindowExpression(GpuBasicMax(child), spec)
     GpuIf(isNan, GpuLiteral(nan, dataType), max)
   }
