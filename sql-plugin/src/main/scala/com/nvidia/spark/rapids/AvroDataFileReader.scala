@@ -436,6 +436,19 @@ class AvroDataFileReader(si: SeekableInput) extends AvroFileReader(si) {
     curBlockReady = false
   }
 
+  /**
+   * Skip the current block raw data to the given output stream.
+   */
+  def skipCurrentBlock(): Unit = {
+    if (!hasNextBlock) {
+      throw new NoSuchElementException
+    }
+    val dataSize = curDataSize.toInt
+    vin.skipFixed(dataSize + SYNC_SIZE)
+    curBlockStart = sin.tell - vin.inputStream.available
+    curBlockReady = false
+  }
+
 }
 
 object AvroFileReader extends Arm {

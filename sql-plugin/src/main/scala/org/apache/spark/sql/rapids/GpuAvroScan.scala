@@ -701,15 +701,6 @@ class GpuMultiFileCloudAvroPartitionReader(
      */
     private def doRead(): HostMemoryBuffersWithMetaDataBase = {
       val startingBytesRead = fileSystemBytesRead()
-      if (readDataSchema.isEmpty) {
-        // Read metadata only to get rows count when readDataSchema is empty
-        withResource(AvroFileReader.openMetaReader(partFile.filePath, config)) { reader =>
-          reader.sync(partFile.start)
-          val partBlocks = reader.getPartialBlocks(partFile.start + partFile.length)
-          val totalRowsNum = partBlocks.map(_.count.toInt).sum
-          return createBufferAndMeta(Array((null, totalRowsNum)), startingBytesRead)
-        }
-      }
       withResource(AvroFileReader.openDataReader(partFile.filePath, config)) { reader =>
         // Go to the start of the first block after the start position
         reader.sync(partFile.start)
@@ -754,18 +745,31 @@ class GpuMultiFileCloudAvroPartitionReader(
             } else {
               estBlocksSize
             }
+            val optHmb = if (readDataSchema.nonEmpty) {
+              Some(HostMemoryBuffer.allocate(headerSize + estSizeToRead))
+            } else None
             // Allocate the buffer for the header and blocks for a batch
-            closeOnExcept(HostMemoryBuffer.allocate(headerSize + estSizeToRead)) { hmb =>
-              val out = new HostMemoryOutputStream(hmb)
-              // Write the header to the output stream
-              AvroFileWriter(out).writeHeader(reader.header)
+            closeOnExcept(optHmb) { _ =>
+              val optOut = optHmb.map { hmb =>
+                val out = new HostMemoryOutputStream(hmb)
+                // Write the header to the output stream
+                AvroFileWriter(out).writeHeader(reader.header)
+                out
+              }
               // Read the block data to the output stream
               var batchRowsNum: Int = 0
+              var batchSize: Long = 0
               var hasNextBlock = true
               do {
-                reader.readNextRawBlock(out)
+                if (optOut.nonEmpty) {
+                  reader.readNextRawBlock(optOut.get)
+                } else {
+                  // skip the current block
+                  reader.skipCurrentBlock()
+                }
                 batchRowsNum += curBlock.count.toInt
                 estSizeToRead -= curBlock.blockSize
+                batchSize += curBlock.blockSize
                 // Continue reading the next block into the current batch when
                 //  - the next block exists, and
                 //  - the remaining buffer is enough to hold the next block, and
@@ -778,13 +782,18 @@ class GpuMultiFileCloudAvroPartitionReader(
                   batchRowsNum <= maxReadBatchSizeRows)
 
               // One batch is done
-              hostBuffers += ((hmb, out.getPos))
+              if (optOut.nonEmpty) {
+                hostBuffers += ((optHmb.get, optOut.get.getPos))
+              }
               totalRowsNum += batchRowsNum
-              estBlocksSize -= (out.getPos - headerSize)
+              estBlocksSize -= batchSize
             }
           } // end of while
 
-          val bufAndSize: Array[(HostMemoryBuffer, Long)] = if (isDone) {
+          val bufAndSize: Array[(HostMemoryBuffer, Long)] = if (readDataSchema.isEmpty) {
+            hostBuffers.foreach(_._1.safeClose(new Exception))
+            Array((null, totalRowsNum))
+          } else if (isDone) {
             // got close before finishing, return null buffer and zero size
             hostBuffers.foreach(_._1.safeClose(new Exception))
             Array((null, 0))
