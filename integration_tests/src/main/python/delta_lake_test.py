@@ -56,7 +56,7 @@ def test_delta_merge_query(spark_tmp_table_factory):
         spark.read.format("delta").load("/tmp/delta-table/{}".format(table_name_1)).createOrReplaceTempView("t1")
         spark.read.format("delta").load("/tmp/delta-table/{}".format(table_name_2)).createOrReplaceTempView("t2")
         return spark.sql("MERGE INTO t1 USING t2 ON t1.c0 = t2.c0 \
-            WHEN MATCHED THEN UPDATE SET c1 = c1 + t2.c1 \
+            WHEN MATCHED THEN UPDATE SET c1 = t1.c1 + t2.c1 \
             WHEN NOT MATCHED THEN INSERT (c0, c1) VALUES (t2.c0, t2.c1)").collect()
     # run the MERGE on GPU
     with_gpu_session(lambda spark : merge(spark), conf = _conf)
