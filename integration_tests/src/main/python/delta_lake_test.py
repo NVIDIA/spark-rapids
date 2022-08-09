@@ -37,13 +37,14 @@ def test_delta_metadata_query_fallback(spark_tmp_table_factory):
         "FileSourceScanExec", conf = _conf)
 
 @delta_lake
-@pytest.mark.skipif(not is_databricks91_or_later(), reason="Delta Lake is already configured on Databricks so we just run these tests there for now")
-@allow_non_gpu('FileSourceScanExec', 'ProjectExec', 'SerializeFromObjectExec', 'MapPartitionsExec', 'DeserializeToObjectExec', 'ObjectHashAggregateExec', 'BroadcastHashJoinExec', 'FilterExec', 'ShuffleExchangeExec')
+@pytest.mark.skipif(not is_databricks104_or_later(), \
+    reason="This test is specific to Databricks because we only fall back to CPU for merges on Databricks")
+@allow_non_gpu('FileSourceScanExec', 'ProjectExec', 'SerializeFromObjectExec', 'MapPartitionsExec', \
+    'DeserializeToObjectExec', 'ObjectHashAggregateExec', 'BroadcastHashJoinExec', 'FilterExec', \
+    'ShuffleExchangeExec')
 def test_delta_merge_query(spark_tmp_table_factory):
     table_name_1 = spark_tmp_table_factory.get()
     table_name_2 = spark_tmp_table_factory.get()
-    print(table_name_1)
-    print(table_name_2)
     def setup_delta_table1(spark):
         df = spark.createDataFrame([('a', 10), ('b', 20)], ["c0", "c1"])
         df.write.format("delta").save("/tmp/delta-table/{}".format(table_name_1))
@@ -58,8 +59,7 @@ def test_delta_merge_query(spark_tmp_table_factory):
         return spark.sql("MERGE INTO t1 USING t2 ON t1.c0 = t2.c0 \
             WHEN MATCHED THEN UPDATE SET c1 = t1.c1 + t2.c1 \
             WHEN NOT MATCHED THEN INSERT (c0, c1) VALUES (t2.c0, t2.c1)").collect()
-    # run the MERGE on GPU
-    with_gpu_session(lambda spark : merge(spark), conf = _conf)
+    # run the MERGE on GPU and confirm that at least the Parquet read falls back
     assert_gpu_fallback_collect(
         lambda spark : merge(spark),
         "FileSourceScanExec",
