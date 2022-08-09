@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import pytest
-import pyspark.sql import Row
+from pyspark.sql import Row
 from asserts import assert_gpu_fallback_collect
 from marks import allow_non_gpu, delta_lake
 from spark_session import with_cpu_session, with_gpu_session, is_databricks91_or_later
