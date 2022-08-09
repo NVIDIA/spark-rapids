@@ -623,6 +623,20 @@ def test_decimal128_min_max_group_by(data_gen):
             .groupby('a')
             .agg(f.min('b'), f.max('b')))
 
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
+def test_float_max_reduction_with_nan(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('max(a)'))
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
+def test_float_max_group_by_with_nan(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, byte_gen, data_gen)
+            .groupby('a')
+            .agg(f.max('b')))
+
 # to avoid ordering issues with collect_list we do it all in a single task
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_list_op, ids=idfn)
@@ -974,18 +988,6 @@ def test_hash_multiple_filters(data_gen, conf):
         'avg(b) filter (where b > 20),' +
         'min(a), max(b) filter (where c > 250) from hash_agg_table group by a',
         conf)
-
-
-@ignore_order
-@allow_non_gpu('HashAggregateExec', 'AggregateExpression', 'AttributeReference', 'Alias', 'Max',
-               'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'ShuffleExchangeExec',
-               'HashPartitioning')
-@pytest.mark.parametrize('data_gen', struct_gens_xfail, ids=idfn)
-def test_hash_query_max_nan_fallback(data_gen):
-    print_params(data_gen)
-    assert_gpu_fallback_collect(
-        lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.max('b')),
-        "Max")
 
 @approximate_float
 @ignore_order
