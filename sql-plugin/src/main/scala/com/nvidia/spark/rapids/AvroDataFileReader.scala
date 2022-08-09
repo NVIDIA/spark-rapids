@@ -442,7 +442,7 @@ class AvroDataFileReader(si: SeekableInput) extends AvroFileReader(si) {
   }
 
   /**
-   * Skip the current block raw data to the given output stream.
+   * Skip the current raw block
    */
   def skipCurrentBlock(): Unit = {
     if (!hasNextBlock) {

@@ -782,9 +782,7 @@ class GpuMultiFileCloudAvroPartitionReader(
                   batchRowsNum <= maxReadBatchSizeRows)
 
               // One batch is done
-              if (optOut.nonEmpty) {
-                hostBuffers += ((optHmb.get, optOut.get.getPos))
-              }
+              optOut.foreach(out => hostBuffers += ((optHmb.get, out.getPos))) 
               totalRowsNum += batchRowsNum
               estBlocksSize -= batchSize
             }
