@@ -205,7 +205,7 @@ abstract class AvroFileReader(si: SeekableInput) extends AutoCloseable {
     (curBlockStart >= position + SYNC_SIZE) || (curBlockStart >= sin.length())
   }
 
-  // skip next length bytes
+   /** Skip next length bytes */
   def skip(length: Int): Unit = {
     vin.skipFixed(length)
   }
