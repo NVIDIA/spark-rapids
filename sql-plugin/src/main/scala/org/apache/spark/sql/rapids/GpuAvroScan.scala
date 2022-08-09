@@ -761,12 +761,13 @@ class GpuMultiFileCloudAvroPartitionReader(
               var batchSize: Long = 0
               var hasNextBlock = true
               do {
-                if (optOut.nonEmpty) {
-                  reader.readNextRawBlock(optOut.get)
-                } else {
-                  // skip the current block
-                  reader.skipCurrentBlock()
-                }
+                optOut.map(reader.readNextRawBlock(_)).getOrElse(reader.skipCurrentBlock())
+                // if (optOut.nonEmpty) {
+                //   reader.readNextRawBlock(optOut.get)
+                // } else {
+                //   // skip the current block
+                //   reader.skipCurrentBlock()
+                // }
                 batchRowsNum += curBlock.count.toInt
                 estSizeToRead -= curBlock.blockSize
                 batchSize += curBlock.blockSize
