@@ -1,4 +1,4 @@
-# Copyright (c) 2020, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,10 +17,13 @@ name: signoff check
 
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, edited]
 
 jobs:
   signoff-check:
+    if: |
+      github.event.action != 'edited' ||
+      (github.event.action == 'edited' && github.event.changes.base.ref.from != '')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2

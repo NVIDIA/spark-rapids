@@ -17,10 +17,13 @@ name: Check Markdown links
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, edited]
 
 jobs:
   markdown-link-check:
+    if: |
+      github.event.action != 'edited' ||
+      (github.event.action == 'edited' && github.event.changes.base.ref.from != '')
     runs-on: ubuntu-latest
     steps:
     - name: work around permission issue
