@@ -538,6 +538,7 @@ class TimestampGen(DataGen):
 
     _epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
     _us = timedelta(microseconds=1)
+
     def _to_us_since_epoch(self, val):
         return int((val - self._epoch)/self._us)
 
