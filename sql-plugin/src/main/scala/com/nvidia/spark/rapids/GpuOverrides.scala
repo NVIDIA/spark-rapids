@@ -4447,6 +4447,10 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
    */
   def isDeltaLakeMetadataQuery(plan: SparkPlan): Boolean = {
     val deltaLogScans = PlanUtils.findOperators(plan, {
+      case f: FileSourceScanExec if f.requiredSchema.fields
+         .exists(_.name.startsWith("_databricks_internal")) =>
+        logDebug(s"Fallback for FileSourceScanExec with _databricks_internal: $f")
+        true
       case f: FileSourceScanExec =>
         // example filename: "file:/tmp/delta-table/_delta_log/00000000000000000000.json"
         val found = f.relation.inputFiles.exists(name =>
