@@ -28,9 +28,11 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BoundReference, Cast, Expression, NamedExpression, UnsafeProjection}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
+import org.apache.spark.sql.catalyst.plans.physical.IdentityBroadcastMode
 import org.apache.spark.sql.execution.{BaseSubqueryExec, SparkPlan, SQLExecution, SubqueryBroadcastExec}
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
+import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
 import org.apache.spark.util.ThreadUtils
 
 
@@ -134,7 +136,29 @@ class GpuSubqueryBroadcastMeta(
   override def convertToCpu(): SparkPlan = s
 
   override def convertToGpu(): GpuExec = {
-    GpuSubqueryBroadcastExec(s.name, s.index, s.buildKeys, broadcastBuilder())
+    GpuSubqueryBroadcastExec(s.name, s.index, s.buildKeys, broadcastBuilder())(
+      getBroadcastModeKeyExprs)
+  }
+
+  /** Extract the broadcast mode key expressions if there are any. */
+  private def getBroadcastModeKeyExprs: Option[Seq[Expression]] = {
+    val broadcastMode = s.child match {
+      case b: BroadcastExchangeExec =>
+        b.mode
+      case a: AdaptiveSparkPlanExec =>
+        SparkShimImpl.getAdaptiveInputPlan(a) match {
+          case b: BroadcastExchangeExec =>
+            b.mode
+          case _ =>
+            throw new AssertionError("should not reach here")
+        }
+    }
+
+    broadcastMode match {
+      case HashedRelationBroadcastMode(keys, _) => Some(keys)
+      case IdentityBroadcastMode => None
+      case m => throw new UnsupportedOperationException(s"Unknown broadcast mode $m")
+    }
   }
 }
 
@@ -143,7 +167,10 @@ case class GpuSubqueryBroadcastExec(
     name: String,
     index: Int,
     buildKeys: Seq[Expression],
-    child: SparkPlan) extends BaseSubqueryExec with GpuExec with ShimUnaryExecNode {
+    child: SparkPlan)(modeKeys: Option[Seq[Expression]])
+    extends BaseSubqueryExec with GpuExec with ShimUnaryExecNode {
+
+  override def otherCopyArgs: Seq[AnyRef] = modeKeys :: Nil
 
   // As `SubqueryBroadcastExec`, `GpuSubqueryBroadcastExec` is only used with `InSubqueryExec`.
   // No one would reference this output, so the exprId doesn't matter here. But it's important to
@@ -168,7 +195,7 @@ case class GpuSubqueryBroadcastExec(
 
   override def doCanonicalize(): SparkPlan = {
     val keys = buildKeys.map(k => QueryPlan.normalizeExpressions(k, child.output))
-    GpuSubqueryBroadcastExec("dpp", index, keys, child.canonicalized)
+    GpuSubqueryBroadcastExec("dpp", index, keys, child.canonicalized)(modeKeys)
   }
 
   @transient
@@ -185,18 +212,28 @@ case class GpuSubqueryBroadcastExec(
         val serBatch = child.executeBroadcast[SerializeConcatHostBuffersDeserializeBatch]()
 
         // Creates projection to extract target field from Row, as what Spark does.
-        val rowProject = {
-          val extractKey = BoundReference(
-            index, buildKeys(index).dataType, buildKeys(index).nullable)
-          UnsafeProjection.create(extractKey)
+        // Note that unlike Spark, the GPU broadcast data has not applied the key expressions from
+        // the HashedRelation, so that is applied here if necessary to ensure the proper values
+        // are being extracted. The CPU already has the key projections applied in the broadcast
+        // data and thus does not have similar logic here.
+        val broadcastModeProject = modeKeys.map { keyExprs =>
+          val keyExpr = keyExprs(index)
+          UnsafeProjection.create(keyExpr)
         }
+
+        // Use the single output of the broadcast mode projection if it exists
+        val rowProjectIndex = if (broadcastModeProject.isDefined) 0 else index
+        val rowProject = UnsafeProjection.create(
+          BoundReference(rowProjectIndex, buildKeys(index).dataType, buildKeys(index).nullable))
 
         // Deserializes the batch on the host. Then, transforms it to rows and performs row-wise
         // projection. We should NOT run any device operation on the driver node.
         val result = withResource(serBatch.value.hostBatches) { hostBatches =>
           hostBatches.flatMap { cb =>
-            cb.rowIterator().asScala
-              .map(rowProject(_).copy().asInstanceOf[InternalRow])
+            cb.rowIterator().asScala.map { row =>
+              val broadcastRow = broadcastModeProject.map(_(row)).getOrElse(row)
+              rowProject(broadcastRow).copy().asInstanceOf[InternalRow]
+            }
           }
         }
 
