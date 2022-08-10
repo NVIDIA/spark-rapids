@@ -326,7 +326,7 @@ case class GpuDateFormatClass(timestamp: Expression,
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     // we aren't using rhs as it was already converted in the GpuOverrides while creating the
     // expressions map and passed down here as strfFormat
-    withResource(lhs.getBase.asTimestampSeconds) { tsVector =>
+    withResource(lhs.getBase.asTimestampMicroseconds()) { tsVector =>
       tsVector.asStrings(strfFormat)
     }
   }
