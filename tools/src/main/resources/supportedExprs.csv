@@ -75,7 +75,7 @@ Atanh,S,`atanh`,None,project,input,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,N
 Atanh,S,`atanh`,None,project,result,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 Atanh,S,`atanh`,None,AST,input,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 Atanh,S,`atanh`,None,AST,result,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
-AttributeReference,S, ,None,project,result,S,S,S,S,S,S,S,S,PS,S,S,S,S,NS,PS,PS,PS,NS
+AttributeReference,S, ,None,project,result,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,PS,PS,PS,NS
 AttributeReference,S, ,None,AST,result,S,S,S,S,S,S,S,S,PS,NS,NS,NS,NS,NS,NS,NS,NS,NS
 BRound,S,`bround`,None,project,value,NA,S,S,S,S,PS,PS,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA
 BRound,S,`bround`,None,project,scale,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA

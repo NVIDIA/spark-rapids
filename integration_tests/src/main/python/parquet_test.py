@@ -155,23 +155,6 @@ def test_binary_df_read(spark_tmp_path, binary_as_string, read_func):
         'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'}
     assert_gpu_and_cpu_are_equal_collect(read_func(data_path), conf=all_confs)
 
-@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_parquet_read_forced_binary_schema(std_input_path, v1_enabled_list):
-    data_path = std_input_path + '/binary_as_string.parquet'
-
-    all_confs = copy_and_update(reader_opt_confs[0], {
-        'spark.sql.sources.useV1SourceList': v1_enabled_list,
-        # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
-        'spark.sql.legacy.parquet.int96RebaseModeInRead' : 'CORRECTED',
-        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
-    # once https://github.com/NVIDIA/spark-rapids/issues/1126 is in we can remove spark.sql.legacy.parquet.datetimeRebaseModeInRead config which is a workaround
-    # for nested timestamp/date support
-
-    # This forces a Binary Column to a String Column and a String Column to a Binary Column.
-    schema = StructType([StructField("a", LongType()), StructField("b", StringType()), StructField("c", BinaryType())])
-    assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.read.schema(schema).parquet(data_path),
-            conf=all_confs)
-
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])

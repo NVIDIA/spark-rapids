@@ -891,7 +891,7 @@ object GpuOverrides extends Logging {
       ExprChecks.projectAndAst(
         TypeSig.astTypes + GpuTypeShims.additionalArithmeticSupportedTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
-            TypeSig.STRUCT + TypeSig.DECIMAL_128 + TypeSig.BINARY +
+            TypeSig.STRUCT + TypeSig.DECIMAL_128 +
             GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
         TypeSig.all),
       (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
@@ -3821,7 +3821,7 @@ object GpuOverrides extends Logging {
       "The backend for most file input",
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
-            TypeSig.DECIMAL_128 + TypeSig.BINARY).nested(),
+            TypeSig.DECIMAL_128).nested(),
         TypeSig.all),
       (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
         override val childScans: scala.Seq[ScanMeta[_]] =
