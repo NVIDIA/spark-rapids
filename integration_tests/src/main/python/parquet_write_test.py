@@ -51,12 +51,14 @@ parquet_basic_gen =[byte_gen, short_gen, int_gen, long_gen, float_gen, double_ge
                     string_gen, boolean_gen, date_gen,
                     # we are limiting TimestampGen to avoid overflowing the INT96 value
                     # see https://github.com/rapidsai/cudf/issues/8070
-                    limited_timestamp()]
+                    limited_timestamp(), binary_gen]
 
 parquet_basic_map_gens = [MapGen(f(nullable=False), f()) for f in [
     BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DateGen,
     limited_timestamp]] + [simple_string_to_string_map_gen,
-                           MapGen(DecimalGen(20, 2, nullable=False), decimal_gen_128bit)]
+                           MapGen(DecimalGen(20, 2, nullable=False), decimal_gen_128bit),
+                           # python is not happy with binary values being keys of a map
+                           MapGen(StringGen("a{1,5}", nullable=False), binary_gen)]
 
 parquet_struct_gen_no_maps = [
     StructGen([['child' + str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_basic_gen)]),
@@ -81,7 +83,7 @@ parquet_map_gens_sample = parquet_basic_map_gens + [MapGen(StringGen(pattern='ke
 parquet_map_gens = parquet_map_gens_sample + [
     MapGen(StructGen([['child0', StringGen()], ['child1', StringGen()]], nullable=False), FloatGen()),
     MapGen(StructGen([['child0', StringGen(nullable=True)]], nullable=False), StringGen())]
-parquet_write_gens_list = [parquet_basic_gen, decimal_gens] +  [ [single_gen] for single_gen in parquet_struct_gen + parquet_array_gen + parquet_map_gens]
+parquet_write_gens_list = [[binary_gen], parquet_basic_gen, decimal_gens] +  [ [single_gen] for single_gen in parquet_struct_gen + parquet_array_gen + parquet_map_gens]
 parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
