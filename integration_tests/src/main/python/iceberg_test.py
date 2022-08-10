@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_py4j_exception
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_py4j_exception
 from data_gen import *
 from marks import allow_non_gpu, iceberg, ignore_order
 from spark_session import is_before_spark_320, is_databricks_runtime, with_cpu_session, with_gpu_session
@@ -232,6 +232,28 @@ def test_iceberg_read_metadata_fallback(spark_tmp_table_factory):
         assert_gpu_fallback_collect(
             lambda spark : spark.read.format("iceberg").load("default.{}.{}".format(table, subtable)),
             "BatchScanExec")
+
+@iceberg
+# Some metadata files have types that are not supported on the GPU yet (e.g.: BinaryType)
+@allow_non_gpu("BatchScanExec", "ProjectExec")
+def test_iceberg_read_metadata_count(spark_tmp_table_factory):
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = binary_op_df(spark, long_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
+                  "AS SELECT * FROM {}".format(tmpview))
+        df = binary_op_df(spark, long_gen, seed=1)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("INSERT INTO {} ".format(table) + \
+                  "SELECT * FROM {}".format(tmpview))
+    with_cpu_session(setup_iceberg_table)
+    for subtable in ["all_data_files", "all_manifests", "files", "history",
+                     "manifests", "partitions", "snapshots"]:
+        # SQL does not have syntax to read table metadata
+        assert_gpu_and_cpu_row_counts_equal(
+            lambda spark : spark.read.format("iceberg").load("default.{}.{}".format(table, subtable)))
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
