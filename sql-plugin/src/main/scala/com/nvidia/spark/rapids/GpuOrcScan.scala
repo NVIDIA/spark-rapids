@@ -211,6 +211,35 @@ object GpuOrcScan extends Arm {
         } else {
           downCastAnyInteger(col, toDt)
         }
+      // bool to float, double(float64)
+      case (DType.BOOL8, DType.FLOAT32 | DType.FLOAT64) =>
+        col.castTo(toDt)
+      // bool to string
+      case (DType.BOOL8, DType.STRING) =>
+        withResource(col.castTo(toDt)) { casted =>
+          // cuDF produces "ture"/"false" while CPU outputs "TRUE"/"FALSE".
+          casted.upper()
+        }
+      // integer to float, double(float64), string
+      case (DType.INT8 | DType.INT16 | DType.INT32 | DType.INT64,
+      DType.FLOAT32 | DType.FLOAT64 | DType.STRING) =>
+        col.castTo(toDt)
+      // {bool, integer} to timestamp(micro seconds)
+      case (DType.BOOL8 | DType.INT8 | DType.INT16 | DType.INT32, DType.TIMESTAMP_MICROSECONDS) =>
+        // TODO: overflow checking
+        // cuDF requires casting to a long first.
+        withResource(col.castTo(DType.INT64)) { longs =>
+          // In CPU, ORC assumes the integer value is in seconds, and returns timestamp in
+          // micro seconds.
+          withResource(longs.bitCastTo(DType.TIMESTAMP_SECONDS)) { seconds =>
+            seconds.castTo(DType.TIMESTAMP_MICROSECONDS)
+          }
+        }
+      case (DType.INT64, DType.TIMESTAMP_MICROSECONDS) =>
+        // TODO: overflow checking
+        withResource(col.bitCastTo(DType.TIMESTAMP_SECONDS)) { seconds =>
+           seconds.castTo(DType.TIMESTAMP_MICROSECONDS)
+        }
       // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
       case (f, t) =>
         throw new QueryExecutionException(s"Unsupported type casting: $f -> $t")
@@ -227,21 +256,49 @@ object GpuOrcScan extends Arm {
   def canCast(from: TypeDescription, to: TypeDescription): Boolean = {
     import org.apache.orc.TypeDescription.Category._
     if (!to.getCategory.isPrimitive || !from.getCategory.isPrimitive) {
+      // List, Map, Struct, Union is not primitive
       // Don't convert from any to complex, or from complex to any.
       // Align with what CPU does.
       return false
     }
+    val toType = to.getCategory
     from.getCategory match {
-      case BOOLEAN | BYTE | SHORT | INT | LONG =>
-        to.getCategory match {
-          case BOOLEAN | BYTE | SHORT | INT | LONG => true
+      case BOOLEAN | BYTE | SHORT | INT | LONG | FLOAT | DOUBLE | DECIMAL =>
+        toType match {
+          case BOOLEAN | BYTE | SHORT | INT | LONG | FLOAT | DOUBLE | DECIMAL | STRING |
+               TIMESTAMP => true
+          // BINARY and DATE are not supported by design.
+          // The 'to' type (aka read schema) is from Spark, and VARCHAR and CHAR will
+          // be replaced by STRING. Meanwhile, cuDF doesn't support them as output
+          // types, and also replaces them with STRING.
+          // TIMESTAMP_INSTANT is not supported by cuDF.
           case _ => false
         }
-      case VARCHAR =>
-        to.getCategory == STRING
-      // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
-      case _ =>
-        false
+      case STRING | CHAR | VARCHAR =>
+        toType match {
+          case BOOLEAN | BYTE | SHORT | INT | LONG | FLOAT | DOUBLE | DECIMAL | STRING |
+               TIMESTAMP | DATE => true
+          // BINARY, TIMESTAMP_INSTANT is not supported by cuDF.
+          // VARCHAR and CHAR will be replaced with STRING in Spark as told above.
+          case _ => false
+        }
+      case TIMESTAMP =>
+        toType match {
+          case BOOLEAN | BYTE | SHORT | INT | LONG | FLOAT | DOUBLE | DECIMAL | STRING |
+               TIMESTAMP | DATE => true
+          case _ => false
+        }
+      case DATE =>
+        toType match {
+          case STRING | TIMESTAMP | DATE => true
+          case _ => false
+        }
+      case BINARY =>
+        toType match {
+          case STRING | BINARY => true
+          case _ => false
+        }
+      case _ => false
     }
   }
 }
