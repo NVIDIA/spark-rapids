@@ -70,12 +70,4 @@ object RapidsErrorUtils {
     new RuntimeException(s"""Found duplicate field(s) "$requiredFieldName": """ +
         s"$matchedFields in case-insensitive mode")
   }
-
-  def castCausesOverflowInTableInsert(
-      from: DataType,
-      to: DataType,
-      columnName: String): ArithmeticException = {
-    // We should never call this method because GpuCheckOverflowInTableInsert cannot be in hthe plan
-    throw new IllegalStateException("castingCauseOverflowErrorInTableInsert is not supported")
-  }
 }

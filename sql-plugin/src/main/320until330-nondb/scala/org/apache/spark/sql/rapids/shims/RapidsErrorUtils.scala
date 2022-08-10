@@ -72,12 +72,4 @@ object RapidsErrorUtils {
     QueryExecutionErrors.foundDuplicateFieldInCaseInsensitiveModeError(
       requiredFieldName, matchedFields)
   }
-
-  def castCausesOverflowInTableInsert(
-      from: DataType,
-      to: DataType,
-      columnName: String): ArithmeticException = {
-    // We should never call this method because GpuCheckOverflowInTableInsert cannot be in hthe plan
-    throw new IllegalStateException("castingCauseOverflowErrorInTableInsert is not supported")
-  }
 }
