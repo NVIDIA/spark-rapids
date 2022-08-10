@@ -14,10 +14,16 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package org.apache.spark.sql.rapids.shims.spark331plus
 
-import com.nvidia.spark.rapids._
+import org.apache.spark.sql.errors.QueryExecutionErrors
+import org.apache.spark.sql.types.DataType
 
-object SparkShimImpl extends Spark331PlusShims with Spark320until340Shims {
-  override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
+object CastOverflowUtil {
+  // To support Spark-3.3.1+ CAST_OVERFLOW_IN_TABLE_INSERT
+  def castCausingOverflowInTableInsertError(from: DataType,
+      to: DataType,
+      columnName: String): ArithmeticException = {
+    QueryExecutionErrors.castingCauseOverflowErrorInTableInsert(from, to, columnName)
+  }
 }

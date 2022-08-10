@@ -31,6 +31,7 @@ import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, Nu
 import org.apache.spark.sql.catalyst.util.DateTimeConstants.MICROS_PER_SECOND
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuToTimestamp.replaceSpecialDates
+import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 
 /** Meta-data for cast and ansi_cast. */
@@ -389,7 +390,7 @@ object GpuCast extends Arm {
           withResource(input.max()) { maxInput =>
             if (minInput.isValid && minInput.getBigDecimal().compareTo(min) == -1 ||
                 maxInput.isValid && maxInput.getBigDecimal().compareTo(max) == 1) {
-              throw new ArithmeticException(GpuCast.INVALID_INPUT_MESSAGE)
+              throw new ArithmeticException(GpuCast.OVERFLOW_MESSAGE)
             }
           }
         }
@@ -634,13 +635,13 @@ object GpuCast extends Arm {
       maxValue: => Scalar,
       inclusiveMin: Boolean = true,
       inclusiveMax: Boolean = true,
-      errorMsg:String = GpuCast.INVALID_INPUT_MESSAGE): Unit = {
+      errorMsg:String = GpuCast.OVERFLOW_MESSAGE): Unit = {
 
     def throwIfAny(cv: ColumnView): Unit = {
       withResource(cv) { cv =>
         withResource(cv.any()) { isAny =>
           if (isAny.isValid && isAny.getBoolean) {
-            throw new IllegalStateException(errorMsg)
+            throw RapidsErrorUtils.arithmeticOverflowError(errorMsg)
           }
         }
       }
@@ -1514,7 +1515,7 @@ object GpuCast extends Arm {
     if (ansiMode) {
       withResource(outOfBounds.any()) { isAny =>
         if (isAny.isValid && isAny.getBoolean) {
-          throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+          throw RapidsErrorUtils.arithmeticOverflowError(GpuCast.OVERFLOW_MESSAGE)
         }
       }
       input.copyToColumnVector()
