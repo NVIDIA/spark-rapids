@@ -1,0 +1,47 @@
+20c20
+< import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuOverrides, HiveProvider, RapidsConf, RepeatingParamCheck, TypeSig}
+---
+> import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuOverrides, HiveProvider, RapidsConf, RepeatingParamCheck, TypeSig}
+54,73d53
+< 
+<           override def convertToGpu(): GpuExpression = {
+<             opRapidsFunc.map { _ =>
+<               // We use the original HiveGenericUDF `deterministic` method as a proxy
+<               // for simplicity.
+<               GpuHiveSimpleUDF(
+<                 a.name,
+<                 a.funcWrapper,
+<                 childExprs.map(_.convertToGpu()),
+<                 a.dataType,
+<                 a.deterministic)
+<             }.getOrElse {
+<               // This `require` is just for double check.
+<               require(conf.isCpuBasedUDFEnabled)
+<               GpuRowBasedHiveSimpleUDF(
+<                 a.name,
+<                 a.funcWrapper,
+<                 childExprs.map(_.convertToGpu()))
+<             }
+<           }
+93,113d72
+<             }
+<           }
+< 
+<           override def convertToGpu(): GpuExpression = {
+<             opRapidsFunc.map { _ =>
+<               // We use the original HiveGenericUDF `deterministic` method as a proxy
+<               // for simplicity.
+<               GpuHiveGenericUDF(
+<                 a.name,
+<                 a.funcWrapper,
+<                 childExprs.map(_.convertToGpu()),
+<                 a.dataType,
+<                 a.deterministic,
+<                 a.foldable)
+<             }.getOrElse {
+<               // This `require` is just for double check.
+<               require(conf.isCpuBasedUDFEnabled)
+<               GpuRowBasedHiveGenericUDF(
+<                 a.name,
+<                 a.funcWrapper,
+<                 childExprs.map(_.convertToGpu()))

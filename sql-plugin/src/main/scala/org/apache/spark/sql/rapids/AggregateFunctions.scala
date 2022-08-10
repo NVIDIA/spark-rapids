@@ -343,6 +343,15 @@ class CudfMax(override val dataType: DataType) extends CudfAggregate {
   override val name: String = "CudfMax"
 }
 
+/**
+ * Check if there is a `true` value in a boolean column.
+ * The CUDF any aggregation does not work for reductions or group by aggregations
+ * so we use Max as a workaround for this.
+ */
+object CudfAny {
+  def apply(): CudfAggregate = new CudfMax(BooleanType)
+}
+
 class CudfMin(override val dataType: DataType) extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => col.min
@@ -582,10 +591,20 @@ case class GpuFloatMin(child: Expression) extends GpuMin(child)
   }
 }
 
-case class GpuMax(child: Expression) extends GpuAggregateFunction
+object GpuMax {
+  def apply(child: Expression): GpuMax = {
+    child.dataType match {
+      case FloatType | DoubleType => GpuFloatMax(child)
+      case _ => GpuBasicMax(child)
+    }
+  }
+}
+
+abstract class GpuMax(child: Expression) extends GpuAggregateFunction
     with GpuBatchedRunningWindowWithFixer
     with GpuAggregateWindowFunction
-    with GpuRunningWindowFunction {
+    with GpuRunningWindowFunction 
+    with Serializable {
   override lazy val initialValues: Seq[GpuLiteral] = Seq(GpuLiteral(null, child.dataType))
   override lazy val inputProjection: Seq[Expression] = Seq(child)
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(new CudfMax(dataType))
@@ -631,6 +650,72 @@ case class GpuMax(child: Expression) extends GpuAggregateFunction
   override def isScanSupported: Boolean = child.dataType match {
     case TimestampType | DateType => false
     case _ => true
+  }
+}
+
+/** Max aggregation without `NaN` handling */
+case class GpuBasicMax(child: Expression) extends GpuMax(child)
+
+/** Max aggregation for FloatType and DoubleType to handle `NaN`s.
+ *
+ * In Spark, `Nan` is the max float value, however in cuDF, `Infinity` is.
+ * We design a workaround method here to match the Spark's behaviour.
+ * The high level idea is that, in the projection stage, we create another
+ * column `isNan`. If any value in this column is true, return `Nan`,
+ * Else, return what `GpuBasicMax` returns.
+ */
+case class GpuFloatMax(child: Expression) extends GpuMax(child) 
+    with GpuReplaceWindowFunction{
+
+  override val dataType: DataType = child.dataType match {
+    case FloatType | DoubleType => child.dataType
+    case t => throw new IllegalStateException(s"child type $t is not FloatType or DoubleType")
+  }
+  protected val nan: Any = child.dataType match {
+      case FloatType => Float.NaN
+      case DoubleType => Double.NaN
+      case t => throw new IllegalStateException(s"child type $t is not FloatType or DoubleType")
+  }
+
+  protected lazy val updateIsNan = CudfAny()
+  protected lazy val updateMaxVal = new CudfMax(dataType)
+  protected lazy val mergeIsNan = CudfAny()
+  protected lazy val mergeMaxVal = new CudfMax(dataType)
+
+  // Project 2 columns. The first one is the target column, second one is a
+  // Boolean column indicating whether the values in the target column are` Nan`s.
+  override lazy val inputProjection: Seq[Expression] = Seq(child, GpuIsNan(child))
+  // Execute the `CudfMax` on the target column. At the same time,
+  // execute the `CudfAny` on the `isNan` column.
+  override lazy val updateAggregates: Seq[CudfAggregate] = Seq(updateMaxVal, updateIsNan)
+  // If there is `Nan` value in the target column, return `Nan`
+  // else return what the `CudfMax` returns
+  override lazy val postUpdate: Seq[Expression] = 
+    Seq(
+      GpuIf(updateIsNan.attr, GpuLiteral(nan, dataType), updateMaxVal.attr)
+    )
+
+  // Same logic as the `inputProjection` stage.
+  override lazy val preMerge: Seq[Expression] = 
+    Seq(evaluateExpression, GpuIsNan(evaluateExpression))
+  // Same logic as the `updateAggregates` stage.
+  override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(mergeMaxVal,  mergeIsNan)
+  // Same logic as the `postUpdate` stage.
+  override lazy val postMerge: Seq[Expression] =
+    Seq(
+      GpuIf(mergeIsNan.attr, GpuLiteral(nan, dataType), mergeMaxVal.attr)
+    )
+
+  // We should always override the windowing expression to handle `Nan`.
+  override def shouldReplaceWindow(spec: GpuWindowSpecDefinition): Boolean =  true
+
+  override def windowReplacement(spec: GpuWindowSpecDefinition): Expression = {
+    // The `GpuBasicMax` here has the same functionality as `CudfAny`,
+    // as `true > false` in cuDF.
+    val isNan = GpuWindowExpression(GpuBasicMax(GpuIsNan(child)), spec)
+    // We use `GpuBasicMax` but not `GpuMax` to avoid self recursion.
+    val max = GpuWindowExpression(GpuBasicMax(child), spec)
+    GpuIf(isNan, GpuLiteral(nan, dataType), max)
   }
 }
 
@@ -1760,7 +1845,8 @@ case class GpuCollectSet(
 
   override def windowAggregation(
       inputs: Seq[(ColumnVector, Int)]): RollingAggregationOnColumn =
-    RollingAggregation.collectSet().onColumn(inputs.head._2)
+    RollingAggregation.collectSet(NullPolicy.EXCLUDE, NullEquality.EQUAL,
+        NaNEquality.UNEQUAL).onColumn(inputs.head._2)
 }
 
 trait CpuToGpuAggregateBufferConverter {

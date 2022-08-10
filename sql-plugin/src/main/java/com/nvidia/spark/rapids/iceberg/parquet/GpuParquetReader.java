@@ -115,38 +115,8 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
   public org.apache.iceberg.io.CloseableIterator<ColumnarBatch> iterator() {
     try (ParquetFileReader reader = newReader(input, options)) {
       MessageType fileSchema = reader.getFileMetaData().getSchema();
-
-      MessageType typeWithIds;
-      if (ParquetSchemaUtil.hasIds(fileSchema)) {
-        typeWithIds = fileSchema;
-      } else if (nameMapping != null) {
-        typeWithIds = ParquetSchemaUtil.applyNameMapping(fileSchema, nameMapping);
-      } else {
-        typeWithIds = ParquetSchemaUtil.addFallbackIds(fileSchema);
-      }
-
-      List<BlockMetaData> rowGroups = reader.getRowGroups();
-      List<BlockMetaData> filteredRowGroups = Lists.newArrayListWithCapacity(rowGroups.size());
-
-      if (expectedSchema.findField(MetadataColumns.ROW_POSITION.fieldId()) != null) {
-        throw new UnsupportedOperationException("row position meta column not implemented");
-      }
-
-      ParquetMetricsRowGroupFilter statsFilter = null;
-      ParquetDictionaryRowGroupFilter dictFilter = null;
-      if (filter != null) {
-        statsFilter = new ParquetMetricsRowGroupFilter(expectedSchema, filter, caseSensitive);
-        dictFilter = new ParquetDictionaryRowGroupFilter(expectedSchema, filter, caseSensitive);
-      }
-
-      for (BlockMetaData rowGroup : rowGroups) {
-        boolean shouldRead = filter == null || (
-            statsFilter.shouldRead(typeWithIds, rowGroup) &&
-                dictFilter.shouldRead(typeWithIds, rowGroup, reader.getDictionaryReader(rowGroup)));
-        if (shouldRead) {
-          filteredRowGroups.add(rowGroup);
-        }
-      }
+      List<BlockMetaData> filteredRowGroups = filterRowGroups(reader, nameMapping,
+          expectedSchema, filter, caseSensitive);
 
       ReorderColumns reorder = ParquetSchemaUtil.hasIds(fileSchema) ? new ReorderColumns(idToConstant)
           : new ReorderColumnsFallback(idToConstant);
@@ -176,7 +146,45 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
     }
   }
 
-  private static ParquetFileReader newReader(InputFile file, ParquetReadOptions options) {
+  public static List<BlockMetaData> filterRowGroups(ParquetFileReader reader,
+      NameMapping nameMapping, Schema expectedSchema, Expression filter, boolean caseSensitive) {
+    MessageType fileSchema = reader.getFileMetaData().getSchema();
+
+    MessageType typeWithIds;
+    if (ParquetSchemaUtil.hasIds(fileSchema)) {
+      typeWithIds = fileSchema;
+    } else if (nameMapping != null) {
+      typeWithIds = ParquetSchemaUtil.applyNameMapping(fileSchema, nameMapping);
+    } else {
+      typeWithIds = ParquetSchemaUtil.addFallbackIds(fileSchema);
+    }
+
+    List<BlockMetaData> rowGroups = reader.getRowGroups();
+    List<BlockMetaData> filteredRowGroups = Lists.newArrayListWithCapacity(rowGroups.size());
+
+    if (expectedSchema.findField(MetadataColumns.ROW_POSITION.fieldId()) != null) {
+      throw new UnsupportedOperationException("row position meta column not implemented");
+    }
+
+    ParquetMetricsRowGroupFilter statsFilter = null;
+    ParquetDictionaryRowGroupFilter dictFilter = null;
+    if (filter != null) {
+      statsFilter = new ParquetMetricsRowGroupFilter(expectedSchema, filter, caseSensitive);
+      dictFilter = new ParquetDictionaryRowGroupFilter(expectedSchema, filter, caseSensitive);
+    }
+
+    for (BlockMetaData rowGroup : rowGroups) {
+      boolean shouldRead = filter == null || (
+          statsFilter.shouldRead(typeWithIds, rowGroup) &&
+              dictFilter.shouldRead(typeWithIds, rowGroup, reader.getDictionaryReader(rowGroup)));
+      if (shouldRead) {
+        filteredRowGroups.add(rowGroup);
+      }
+    }
+    return filteredRowGroups;
+  }
+
+  public static ParquetFileReader newReader(InputFile file, ParquetReadOptions options) {
     try {
       return ParquetFileReader.open(ParquetIO.file(file), options);
     } catch (IOException e) {
@@ -184,7 +192,7 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
     }
   }
 
-  private static Map<Integer, ?> addNullsForMissingFields(Map<Integer, ?> idToConstant,
+  public static Map<Integer, ?> addNullsForMissingFields(Map<Integer, ?> idToConstant,
                                                           Set<Integer> missingFields) {
     if (missingFields.isEmpty()) {
       return idToConstant;
@@ -197,7 +205,7 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
   }
 
   /** Generate the Spark schema corresponding to a Parquet schema and expected Iceberg schema */
-  private static class SparkSchemaConverter extends TypeWithSchemaVisitor<DataType> {
+  public static class SparkSchemaConverter extends TypeWithSchemaVisitor<DataType> {
     @Override
     public DataType message(Types.StructType iStruct, MessageType message, List<DataType> fields) {
       return struct(iStruct, message, fields);
@@ -273,7 +281,7 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
     }
   }
 
-  private static class ReorderColumns extends TypeWithSchemaVisitor<Type> {
+  public static class ReorderColumns extends TypeWithSchemaVisitor<Type> {
     private final Map<Integer, ?> idToConstant;
     private final Set<Integer> missingFields = Sets.newHashSet();
 
@@ -373,7 +381,7 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
     }
   }
 
-  private static class ReorderColumnsFallback extends ReorderColumns {
+  public static class ReorderColumnsFallback extends ReorderColumns {
     public ReorderColumnsFallback(Map<Integer, ?> idToConstant) {
       super(idToConstant);
     }
