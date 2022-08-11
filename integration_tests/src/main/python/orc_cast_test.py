@@ -20,6 +20,14 @@ from pyspark.sql.types import *
 from spark_session import with_cpu_session
 from orc_test import reader_opt_confs
 
+
+def create_orc(data_gen_list, data_path):
+    # generate ORC dataframe, and dump it to local file 'data_path'
+    with_cpu_session(
+        lambda spark: gen_df(spark, data_gen_list).write.mode('overwrite').orc(data_path)
+    )
+
+
 @pytest.mark.parametrize('offset', [1,2,3,4], ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
@@ -28,8 +36,7 @@ def test_read_type_casting_integral(spark_tmp_path, offset, reader_confs, v1_ena
     int_gens = [boolean_gen] + integral_gens
     gen_list = [('c' + str(i), gen) for i, gen in enumerate(int_gens)]
     data_path = spark_tmp_path + '/ORC_DATA'
-    with_cpu_session(
-        lambda spark: gen_df(spark, gen_list).write.orc(data_path))
+    create_orc(gen_list, data_path)
 
     # build the read schema by a left shift of int_gens
     shifted_int_gens = int_gens[offset:] + int_gens[:offset]
@@ -52,10 +59,7 @@ def test_casting_from_integer(spark_tmp_path, to_type):
                 ('int', IntegerGen(min_val=SHORT_MAX + 1)),
                 ('bigint', LongGen(min_val=INT_MAX + 1, max_val=int(1e11))),
                 ('negint', IntegerGen(max_val=-1))]
-    # generate ORC dataframe, and dump it to local file
-    with_cpu_session(
-        lambda spark: gen_df(spark, data_gen).write.mode('overwrite').orc(orc_path)
-    )
+    create_orc(data_gen, orc_path)
 
     schema_str = "boolean {}, tinyint {}, smallint {}, int {}, bigint {}, negint {}"
     assert_gpu_and_cpu_are_equal_collect(
@@ -71,9 +75,7 @@ def test_casting_from_overflow_long(spark_tmp_path, to_type):
     # 'ArithmeticException' is caught.
     orc_path = spark_tmp_path + '/long_overflow'
     data_gen = [('long_column', LongGen(min_val=int(1e13)))]
-    with_cpu_session(
-        lambda spark: gen_df(spark, data_gen).write.mode('overwrite').orc(orc_path)
-    )
+    create_orc(data_gen, orc_path)
     schema_str = "long_column {}".format(to_type)
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: spark.read.schema(schema_str).orc(orc_path).collect(),
