@@ -277,39 +277,15 @@ object GpuOrcScan extends Arm {
     }
     val toType = to.getCategory
     from.getCategory match {
-      case BOOLEAN | BYTE | SHORT | INT | LONG | FLOAT | DOUBLE | DECIMAL =>
+      case BOOLEAN | BYTE | SHORT | INT | LONG =>
         toType match {
-          case BOOLEAN | BYTE | SHORT | INT | LONG | FLOAT | DOUBLE | DECIMAL | STRING |
+          case BOOLEAN | BYTE | SHORT | INT | LONG | FLOAT | DOUBLE | STRING |
                TIMESTAMP => true
           // BINARY and DATE are not supported by design.
           // The 'to' type (aka read schema) is from Spark, and VARCHAR and CHAR will
           // be replaced by STRING. Meanwhile, cuDF doesn't support them as output
           // types, and also replaces them with STRING.
           // TIMESTAMP_INSTANT is not supported by cuDF.
-          case _ => false
-        }
-      case STRING | CHAR | VARCHAR =>
-        toType match {
-          case BOOLEAN | BYTE | SHORT | INT | LONG | FLOAT | DOUBLE | DECIMAL | STRING |
-               TIMESTAMP | DATE => true
-          // BINARY, TIMESTAMP_INSTANT is not supported by cuDF.
-          // VARCHAR and CHAR will be replaced with STRING in Spark as told above.
-          case _ => false
-        }
-      case TIMESTAMP =>
-        toType match {
-          case BOOLEAN | BYTE | SHORT | INT | LONG | FLOAT | DOUBLE | DECIMAL | STRING |
-               TIMESTAMP | DATE => true
-          case _ => false
-        }
-      case DATE =>
-        toType match {
-          case STRING | TIMESTAMP | DATE => true
-          case _ => false
-        }
-      case BINARY =>
-        toType match {
-          case STRING | BINARY => true
           case _ => false
         }
       case _ => false
