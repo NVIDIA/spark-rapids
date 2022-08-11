@@ -90,8 +90,8 @@ else
     # ALL_JARS includes dist.jar integration-test.jar avro.jar parquet.jar if they exist
     # Remove non-existing paths and canonicalize the paths including get rid of links and `..`
     ALL_JARS=$(readlink -e $PLUGIN_JARS $TEST_JARS $AVRO_JARS $PARQUET_HADOOP_TESTS || true)
-    # comma separated jars
-    ALL_JARS="${ALL_JARS//$'\n'/\,}"
+    # `:` separated jars
+    ALL_JARS="${ALL_JARS//$'\n'/:}"
 
     echo "AND PLUGIN JARS: $ALL_JARS"
     if [[ "${TEST}" != "" ]];
@@ -199,7 +199,15 @@ else
     SPARK_TASK_MAXFAILURES=1
     [[ "$VERSION_STRING" < "3.1.1" ]] && SPARK_TASK_MAXFAILURES=4
 
-    export PYSP_TEST_spark_jars="${ALL_JARS}"
+    if [[ "${PYSP_TEST_spark_shuffle_manager}" =~ "RapidsShuffleManager" ]]; then
+        # If specified shuffle manager, set `extraClassPath` due to issue https://github.com/NVIDIA/spark-rapids/issues/5796
+        # Remove this line if the issue is fixed
+        export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS}"
+        export PYSP_TEST_spark_executor_extraClassPath="${ALL_JARS}"
+    else
+        export PYSP_TEST_spark_jars="${ALL_JARS//:/,}"
+    fi
+
     export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=UTC $COVERAGE_SUBMIT_FLAGS"
     export PYSP_TEST_spark_executor_extraJavaOptions='-ea -Duser.timezone=UTC'
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
@@ -243,10 +251,6 @@ else
         # buffers as large as batchSizeBytes can be allocated, and the fewer of them we have the better.
         LOCAL_PARALLEL=$(( $CPU_CORES > 4 ? 4 : $CPU_CORES ))
         export PYSP_TEST_spark_master="local[$LOCAL_PARALLEL,$SPARK_TASK_MAXFAILURES]"
-      else
-        # If specified master, set `spark.executor.extraClassPath` due to issue https://github.com/NVIDIA/spark-rapids/issues/5796
-        # Remove this line if the issue is fixed
-        export PYSP_TEST_spark_executor_extraClassPath="${ALL_JARS}"
       fi
     fi
 
@@ -260,8 +264,14 @@ else
     else
         # We set the GPU memory size to be a constant value even if only running with a parallelism of 1
         # because it helps us have consistent test runs.
-        # `spark.jars` is the same as `--jars`, e.g.: --jars a.jar,b.jar...
-        exec "$SPARK_HOME"/bin/spark-submit --conf spark.jars=${PYSP_TEST_spark_jars} \
+        if [[ -n "$PYSP_TEST_spark_jars" ]]; then
+            # `spark.jars` is the same as `--jars`, e.g.: --jars a.jar,b.jar...
+            jarOpts=(--conf spark.jars="${PYSP_TEST_spark_jars}")
+        elif [[ -n "$PYSP_TEST_spark_driver_extraClassPath" ]]; then
+            jarOpts=(--driver-class-path "${PYSP_TEST_spark_driver_extraClassPath}")
+        fi
+
+        exec "$SPARK_HOME"/bin/spark-submit "${jarOpts[@]}" \
             --driver-java-options "$PYSP_TEST_spark_driver_extraJavaOptions" \
             $SPARK_SUBMIT_FLAGS \
             --conf 'spark.rapids.memory.gpu.allocSize='"$PYSP_TEST_spark_rapids_memory_gpu_allocSize" \
