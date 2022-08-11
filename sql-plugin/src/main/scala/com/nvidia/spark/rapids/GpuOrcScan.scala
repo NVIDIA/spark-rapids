@@ -239,9 +239,7 @@ object GpuOrcScan extends Arm {
         // INT64 to micro seconds(also a INT64 actually), we need multiply 1e6, it may cause long
         // overflow.
         // If val * 1e6 / 1e6 == val, then there is no overflow.
-        val k = 1e6.toLong
-        val maxVal = col.max().getLong()
-        if (maxVal * k / k != maxVal) {
+        if (!canMultiply(col, 1e6.toLong)) {
           throw new ArithmeticException("Long overflow")
         }
         withResource(col.bitCastTo(DType.TIMESTAMP_SECONDS)) { seconds =>
@@ -285,6 +283,19 @@ object GpuOrcScan extends Arm {
         toType == STRING
       case _ => false
     }
+  }
+
+  /**
+   * Check whether if integerVec can be multiplied with k. If val * k / k == val, then there is no
+   * integer-overflow, we can make a multiplication. Otherwise, there is integer-overflow.
+   *
+   * @param integerVec a column vector with type of INT64 integers
+   * @param k          the number to be multiplied
+   */
+  def canMultiply(integerVec: ColumnView, k: Long): Boolean = {
+    assert(integerVec.getType() == DType.INT64)
+    val maxVal = integerVec.max().getLong
+    maxVal * k / k == maxVal
   }
 }
 
