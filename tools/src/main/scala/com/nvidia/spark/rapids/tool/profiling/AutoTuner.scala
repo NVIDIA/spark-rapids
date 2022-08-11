@@ -271,7 +271,7 @@ class AutoTuner(app: ApplicationSummaryInfo, workerInfo: String) extends Logging
   }
 
   private def recommendGpuProperties(bestConfig: Config, systemProps: SystemProps): Unit = {
-    if (systemProps.gpu_props == null) {
+    if (systemProps == null || systemProps.gpu_props == null) {
       logWarning("GPU information is not available. Cannot recommend properties.")
       comments :+= "'spark.task.resource.gpu.amount' should be set to 1/#cores."
     } else {
@@ -340,35 +340,43 @@ class AutoTuner(app: ApplicationSummaryInfo, workerInfo: String) extends Logging
 }
 
 object AutoTuner extends Logging {
-  private def parseSystemInfo(inputFile: String): SystemProps = {
-    val yaml = new Yaml()
-    val file = scala.io.Source.fromFile(inputFile)
-    val text = file.mkString
-    val rawProps = yaml.load(text).asInstanceOf[java.util.Map[String, Any]]
-      .asScala.toMap.filter { case (_, v) => v != null }
-    val rawSystemProps = rawProps("system").asInstanceOf[java.util.Map[String, Any]]
-      .asScala.toMap.filter { case (_, v) => v != null }
+  val SUPPORTED_UNITS = Seq("b", "k", "m", "g", "t", "p")
 
-    if(rawSystemProps.nonEmpty) {
-      val rawGpuProps = rawProps("gpu").asInstanceOf[java.util.Map[String, Any]]
-        .asScala.toMap.filter { case (_, v) => v != null }
+  def parseSystemInfo(inputFile: String): SystemProps = {
+     try {
+       val yaml = new Yaml()
+       val file = scala.io.Source.fromFile(inputFile)
+       val text = file.mkString
+       val rawProps = yaml.load(text).asInstanceOf[java.util.Map[String, Any]]
+         .asScala.toMap.filter { case (_, v) => v != null }
+       val rawSystemProps = rawProps("system").asInstanceOf[java.util.Map[String, Any]]
+         .asScala.toMap.filter { case (_, v) => v != null }
 
-      val gpuProps = if (rawGpuProps.nonEmpty) {
-        GpuProps(
-          rawGpuProps("count").toString.toInt,
-          rawGpuProps("memory").toString,
-          rawGpuProps("name").toString)
-      } else null
+       if (rawSystemProps.nonEmpty) {
+         val rawGpuProps = rawProps("gpu").asInstanceOf[java.util.Map[String, Any]]
+           .asScala.toMap.filter { case (_, v) => v != null }
 
-      SystemProps(
-        rawSystemProps.getOrElse("num_cores", 1).toString.toInt,
-        rawSystemProps.getOrElse("cpu_arch", "").toString,
-        rawSystemProps.getOrElse("memory", "0b").toString,
-        rawSystemProps.getOrElse("free_disk_space", "0b").toString,
-        rawSystemProps.getOrElse("time_zone", "").toString,
-        rawSystemProps.get("num_workers").map(_.toString.toInt),
-        gpuProps)
-    } else null
+         val gpuProps = if (rawGpuProps.nonEmpty) {
+           GpuProps(
+             rawGpuProps("count").toString.toInt,
+             rawGpuProps("memory").toString,
+             rawGpuProps("name").toString)
+         } else null
+
+         SystemProps(
+           rawSystemProps.getOrElse("num_cores", 1).toString.toInt,
+           rawSystemProps.getOrElse("cpu_arch", "").toString,
+           rawSystemProps.getOrElse("memory", "0b").toString,
+           rawSystemProps.getOrElse("free_disk_space", "0b").toString,
+           rawSystemProps.getOrElse("time_zone", "").toString,
+           rawSystemProps.get("num_workers").map(_.toString.toInt),
+           gpuProps)
+       } else null
+     } catch {
+       case e: Exception =>
+         logError("Exception: " + e.getStackTrace.mkString("Array(", ", ", ")"))
+         null
+     }
   }
 
   private def getSparkProperty(app: ApplicationSummaryInfo, property: String): Option[String] = {
@@ -379,24 +387,23 @@ object AutoTuner extends Logging {
     }
   }
 
-  private def convertFromHumanReadableSize(size: String): Long = {
+  def convertFromHumanReadableSize(size: String): Long = {
     val sizesArr = size.toLowerCase.split("(?=[a-z])")
     val sizeNum = sizesArr(0).toDouble
     val sizeUnit = sizesArr(1)
-    val units = Seq("b", "k", "m", "g", "t", "p", "e", "z", "y")
-    assert(units.contains(sizeUnit), s"$size is not a valid human readable size")
-    (sizeNum * Math.pow(1024, units.indexOf(sizeUnit))).toLong
+    assert(SUPPORTED_UNITS.contains(sizeUnit), s"$size is not a valid human readable size")
+    (sizeNum * Math.pow(1024, SUPPORTED_UNITS.indexOf(sizeUnit))).toLong
   }
 
-  private def convertToHumanReadableSize(size: Long): String = {
+  def convertToHumanReadableSize(size: Long): String = {
     if(size < 0) return "0b"
 
-    val units = Seq("b", "k", "m", "g", "t", "p", "e", "z", "y")
     val unitIndex = (Math.log10(size)/Math.log10(1024)).toInt
-    assert(unitIndex < units.size, s"$size is too large to convert to human readable size")
+    assert(unitIndex < SUPPORTED_UNITS.size,
+      s"$size is too large to convert to human readable size")
 
     val sizeNum = size * 1.0/Math.pow(1024, unitIndex)
-    val sizeUnit = units(unitIndex)
+    val sizeUnit = SUPPORTED_UNITS(unitIndex)
 
     // If sizeNum is an integer omit fraction part
     if ((sizeNum % 1) == 0) {
@@ -409,7 +416,7 @@ object AutoTuner extends Logging {
   /**
    * Reference - https://stackoverflow.com/a/55246235
    */
-  private def compareSparkVersion(version1: String, version2: String): Int = {
+  def compareSparkVersion(version1: String, version2: String): Int = {
     val paddedVersions = version1.split("\\.").zipAll(version2.split("\\."), "0", "0")
     val difference = paddedVersions.find { case (a, b) => a != b }
     difference.fold(0) { case (a, b) => a.toInt - b.toInt }

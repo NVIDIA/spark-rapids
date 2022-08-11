@@ -1,0 +1,11 @@
+### D. Recommended Configuration ###
+
+Spark Properties:
+--conf spark.executor.cores=64
+--conf spark.executor.instances=4
+--conf spark.executor.memory=8.97g
+--conf spark.sql.files.maxPartitionBytes=31.67g
+--conf spark.sql.shuffle.partitions=200
+
+Comments:
+- 'spark.task.resource.gpu.amount' should be set to 1/#cores.

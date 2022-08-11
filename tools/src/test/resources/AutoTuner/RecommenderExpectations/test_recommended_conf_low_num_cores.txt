@@ -1,0 +1,16 @@
+### D. Recommended Configuration ###
+
+Spark Properties:
+--conf spark.executor.cores=2
+--conf spark.executor.instances=32
+--conf spark.executor.memory=63.75g
+--conf spark.executor.memoryOverhead=8.38g
+--conf spark.rapids.memory.pinnedPool.size=2g
+--conf spark.rapids.sql.concurrentGpuTasks=4
+--conf spark.sql.files.maxPartitionBytes=31.67g
+--conf spark.sql.shuffle.partitions=200
+--conf spark.task.resource.gpu.amount=0.5
+
+Comments:
+- Number of cores per executor is very low. It is recommended to have at least 4 cores per executor.
+- For the given GPU, number of CPU cores is very low. It should be at least equal to concurrent gpu tasks i.e. 4.

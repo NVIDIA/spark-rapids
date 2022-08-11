@@ -1,0 +1,15 @@
+### D. Recommended Configuration ###
+
+Spark Properties:
+--conf spark.executor.cores=8
+--conf spark.executor.instances=32
+--conf spark.executor.memory=2.25g
+--conf spark.executor.memoryOverhead=4g
+--conf spark.rapids.memory.pinnedPool.size=2g
+--conf spark.rapids.sql.concurrentGpuTasks=4
+--conf spark.sql.files.maxPartitionBytes=31.67g
+--conf spark.sql.shuffle.partitions=200
+--conf spark.task.resource.gpu.amount=0.125
+
+Comments:
+- Executor memory is very low. It is recommended to have at least 8g

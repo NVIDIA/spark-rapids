@@ -1,0 +1,11 @@
+system:
+  num_cores: 16
+  cpu_arch: x86_64
+  memory: 512gb
+  free_disk_space: 800gb
+  time_zone: America/Los_Angeles
+  num_workers: 4
+gpu:
+  count: 8
+  memory: 32gb
+  name: NVIDIA V100
