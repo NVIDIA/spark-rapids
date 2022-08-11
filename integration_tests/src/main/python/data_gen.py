@@ -840,6 +840,8 @@ def to_cast_string(spark_type):
     elif isinstance(spark_type, StructType):
         children = [fd.name + ':' + to_cast_string(fd.dataType) for fd in spark_type.fields]
         return 'STRUCT<{}>'.format(','.join(children))
+    elif isinstance(spark_type, BinaryType):
+        return 'BINARY'
     else:
         raise RuntimeError('CAST TO TYPE {} NOT SUPPORTED YET'.format(spark_type))
 
@@ -866,6 +868,8 @@ def _convert_to_sql(spark_type, data):
         children = ["'{}'".format(fd.name) + ',' + _convert_to_sql(fd.dataType, x)
                 for fd, x in zip(spark_type.fields, data)]
         d = "named_struct({})".format(','.join(children))
+    elif isinstance(data, bytearray) or isinstance(data, bytes):
+        d = "X'{}'".format(data.hex())
     elif not data:
         # data is None
         d = "null"
