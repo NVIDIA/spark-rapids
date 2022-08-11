@@ -2625,6 +2625,12 @@ object GpuOverrides extends Logging {
           TypeSig.MAP.nested(TypeSig.all)),
         ("key", TypeSig.commonCudfTypes + TypeSig.DECIMAL_128, TypeSig.all)),
       (in, conf, p, r) => new BinaryExprMeta[GetMapValue](in, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (isLit(in.left) && (!isLit(in.right))) {
+            willNotWorkOnGpu("Looking up Map Scalars with Key Vectors " +
+              "is not currently unsupported.")
+          }
+        }
         override def convertToGpu(map: Expression, key: Expression): GpuExpression =
           GpuGetMapValue(map, key, in.failOnError)
       }),
