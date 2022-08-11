@@ -1103,6 +1103,12 @@ object RapidsConf {
     .toSequence
     .createWithDefault(Nil)
 
+  val LOG_TRANSFORMATIONS = conf("spark.rapids.sql.debug.logTransformations")
+    .doc("When enabled, all query transformations will be logged.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val PARQUET_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.parquet.debug.dumpPrefix")
     .doc("A path prefix where Parquet split file data is dumped for debugging.")
     .internal()
@@ -1556,15 +1562,15 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars rapids-4-spark_2.12-22.08.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-22.10.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
-        |--conf spark.rapids.sql.incompatibleOps.enabled=true
+        |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
         |
         |At runtime use: `spark.conf.set("[conf key]", [conf value])`. For example:
         |
         |```
-        |scala> spark.conf.set("spark.rapids.sql.incompatibleOps.enabled", true)
+        |scala> spark.conf.set("spark.rapids.sql.concurrentGpuTasks", 2)
         |```
         |
         | All configs can be set on startup, but some configs, especially for shuffle, will not
@@ -1685,6 +1691,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
 
   lazy val validateExecsInGpuPlan: Seq[String] = get(TEST_VALIDATE_EXECS_ONGPU)
+
+  lazy val logQueryTransformations: Boolean = get(LOG_TRANSFORMATIONS)
 
   lazy val rmmDebugLocation: String = get(RMM_DEBUG)
 

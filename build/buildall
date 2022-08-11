@@ -22,6 +22,7 @@ shopt -s extglob
 BLOOP_VERSION=${BLOOP_VERSION:-"1.4.13"}
 BLOOP_SCALA_VERSION=${BLOOP_SCALA_VERSION:-"2.13"}
 SKIP_CLEAN=1
+BUILD_ALL_DEBUG=0
 
 function print_usage() {
   echo "Usage: buildall [OPTION]"
@@ -49,21 +50,25 @@ function print_usage() {
   echo "        Intall the resulting jar instead of just building it"
   echo "   -o=MVN_OPT, --option=MVN_OPT"
   echo "        use this option to build project with maven. E.g., --option='-Dcudf.version=cuda11'"
+  echo "   --rebuild-dist-only"
+  echo "        repackage the dist module artifact using installed dependencies"
 }
 
 function bloopInstall() {
-  BLOOP_DIR="${BLOOP_DIR:-$PWD/.bloop}"
-  mkdir -p $BLOOP_DIR
-  rm -f $BLOOP_DIR/*
+
+  [[ "$BUILD_ALL_DEBUG" == "1" ]] && set -x
+
+  local bloopTmpDir=$(mktemp -d /tmp/tmp.bloop.XXXXXX)
 
   time (
-    for bv in $SPARK_SHIM_VERSIONS; do
-      bloop_config_dir="$PWD/.bloop$bv"
-      mkdir -p "$bloop_config_dir"
-      rm -f "$bloop_config_dir"/*
-
-      $MVN install ch.epfl.scala:maven-bloop_${BLOOP_SCALA_VERSION}:${BLOOP_VERSION}:bloopInstall -pl dist -am \
-        -Dbloop.configDirectory="$bloop_config_dir" \
+    bloopDirsGenerated=()
+    for bv in "${SPARK_SHIM_VERSIONS[@]}"; do
+      bloopTmpConfigDir="$bloopTmpDir/.bloop$bv"
+      mkdir -p $bloopTmpConfigDir
+      $MVN -B clean install \
+        ch.epfl.scala:maven-bloop_${BLOOP_SCALA_VERSION}:${BLOOP_VERSION}:bloopInstall \
+        -pl aggregator -am \
+        -Dbloop.configDirectory="$bloopTmpConfigDir" \
         -DdownloadSources=true \
         -Dbuildver="$bv" \
         -DskipTests \
@@ -73,20 +78,24 @@ function bloopInstall() {
         -Dmaven.updateconfig.skip=true
 
       specifier="spark$bv"
-      for bloop_json in $(echo $bloop_config_dir/*.json); do
-        IFS="/" <<< "$bloop_json" read -ra bloop_json_parts
-        last_idx=$((${#bloop_json_parts[@]} - 1))
-        file="${bloop_json_parts[$last_idx]}"
-        project="${file%.json}-$specifier"
-        < $bloop_json jq \
-          --arg specifier "$specifier" \
-          '.project.out=.project.out + "/" + $specifier | .project.name=.project.name + "-" + $specifier' \
-           > "$BLOOP_DIR/$project.json"
-      done
+      bloopDir=$PWD/.bloop-$specifier
+      rm -rf $bloopDir
+      mv $bloopTmpConfigDir $bloopDir
+      echo "generated bloop files under $bloopDir"
+      bloopDirsGenerated+=($bloopDir)
     done
-
-    echo "Generated Bloop files under $BLOOP_DIR"
+    echo "#### Created bloop projects ${bloopDirsGenerated[@]}"
+    echo "Execute"
+    echo "  ln -s .bloop-spark3XY .bloop"
+    echo "to make it an active Bloop project in VS Code Scala Metals"
   )
+}
+
+function versionsFromDistProfile() {
+  [[ "$BUILD_ALL_DEBUG" == "1" ]] && set -x
+  versionRawStr=$(mvn -B help:evaluate -q -pl dist -P"$1" -Dexpression=included_buildvers -DforceStdout)
+  versionStr=${versionRawStr//[$'\n',]/}
+  echo -n $versionStr
 }
 
 FINAL_OP="package"
@@ -117,6 +126,7 @@ case "$1" in
   ;;
 
 --debug)
+  BUILD_ALL_DEBUG=1
   set -x
   ;;
 
@@ -126,6 +136,15 @@ case "$1" in
 
 --install)
   FINAL_OP="install"
+  ;;
+
+--rebuild-dist-only)
+  SKIP_DIST_DEPS="1"
+  MODULE="dist"
+  ;;
+
+-o=*|--option=*)
+  MVN_OPT="${1#*=}"
   ;;
 
 *)
@@ -150,40 +169,15 @@ DIST_PROFILE=${DIST_PROFILE:-"noSnapshots"}
 case $DIST_PROFILE in
 
   snapshots?(WithDatabricks))
-    SPARK_SHIM_VERSIONS=(
-      311
-      321cdh
-      312
-      313
-      314
-      320
-      321
-      322
-      330
-      331
-    )
+    SPARK_SHIM_VERSIONS=($(versionsFromDistProfile "snapshots"))
     ;;
 
   noSnapshots?(WithDatabricks))
-    SPARK_SHIM_VERSIONS=(
-      311
-      321cdh
-      312
-      313
-      320
-      321
-      322
-      330
-    )
+    SPARK_SHIM_VERSIONS=($(versionsFromDistProfile "noSnapshots"))
     ;;
 
   minimumFeatureVersionMix)
-    SPARK_SHIM_VERSIONS=(
-      321cdh
-      312
-      320
-      330
-    )
+    SPARK_SHIM_VERSIONS=($(versionsFromDistProfile "minimumFeatureVersionMix"))
     ;;
 
   3*)
@@ -197,6 +191,9 @@ case $DIST_PROFILE in
     exit 1
 
 esac
+
+echo "Spark versions involved: ${SPARK_SHIM_VERSIONS[@]} ..."
+export MVN_BASE_DIR=$($MVN help:evaluate -Dexpression=project.basedir -q -DforceStdout)
 
 if [[ "$GEN_BLOOP" == "true" ]]; then
   bloopInstall
@@ -217,10 +214,8 @@ fi
 
 echo "Building a combined dist jar with Shims for ${SPARK_SHIM_VERSIONS[@]} ..."
 
-export MVN_BASE_DIR=$($MVN help:evaluate -Dexpression=project.basedir -q -DforceStdout)
-
 function build_single_shim() {
-  set -x
+  [[ "$BUILD_ALL_DEBUG" == "1" ]] && set -x
   BUILD_VER=$1
   mkdir -p "$MVN_BASE_DIR/target"
   (( BUILD_PARALLEL == 1 || NUM_SHIMS == 1 )) && LOG_FILE="/dev/tty" || \
@@ -269,9 +264,11 @@ export -f build_single_shim
 # Then resume maven build from the dist module now that shims have been installed
 time (
   # printf a single buildver array element per line
-  printf "%s\n" "${SPARK_SHIM_VERSIONS[@]}" | \
-    xargs -t -I% -P "$BUILD_PARALLEL" -n 1 \
-    bash -c 'build_single_shim "$@"' _ %
+  if [[ "$SKIP_DIST_DEPS" != "1" ]]; then
+    printf "%s\n" "${SPARK_SHIM_VERSIONS[@]}" | \
+      xargs -t -I% -P "$BUILD_PARALLEL" -n 1 \
+      bash -c 'build_single_shim "$@"' _ %
+  fi
   # This used to resume from dist. However, without including aggregator in the build
   # the build does not properly initialize spark.version property via buildver profiles
   # in the root pom, and we get a missing spark311 dependency even for --profile=312,321
