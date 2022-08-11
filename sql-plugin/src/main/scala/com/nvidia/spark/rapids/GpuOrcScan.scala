@@ -238,7 +238,7 @@ object GpuOrcScan extends Arm {
         // We need overflow checking here, since max value of INT64 is about 9 * 1e18, and convert
         // INT64 to micro seconds(also a INT64 actually), we need multiply 1e6, it may cause long
         // overflow.
-        // If val * 1e6 / 1e6 == val, the there is no overflow.
+        // If val * 1e6 / 1e6 == val, then there is no overflow.
         withResource(ColumnVector.fromScalar(Scalar.fromLong(1000000),
           col.getRowCount().toInt)) { vec =>
           withResource(col.mul(vec)) { mulRes =>
