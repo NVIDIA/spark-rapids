@@ -19,22 +19,18 @@ package com.nvidia.spark.rapids
 import org.apache.spark.sql.functions.map_concat
 
 class CollectionOpSuite extends SparkQueryCompareTestSuite {
-  testGpuFallback(
-    "MapConcat with Array keys fall back",
-    "ProjectExec",
-    ArrayKeyMapDF, 
-    execsAllowedNonGpu = Seq("ProjectExec", "ShuffleExchangeExec")) {
+  testSparkResultsAreEqual(
+    "MapConcat with Array keys",
+    ArrayKeyMapDF) {
     frame => {
       import frame.sparkSession.implicits._
       frame.select(map_concat($"col1", $"col2"))
     }
   }
 
-  testGpuFallback(
-    "MapConcat with Struct keys fall back",
-    "ProjectExec",
-    StructKeyMapDF, 
-    execsAllowedNonGpu = Seq("ProjectExec", "ShuffleExchangeExec")) {
+   testSparkResultsAreEqual(
+    "MapConcat with Struct keys",
+    StructKeyMapDF) {
     frame => {
       import frame.sparkSession.implicits._
       frame.select(map_concat($"col1", $"col2"))
