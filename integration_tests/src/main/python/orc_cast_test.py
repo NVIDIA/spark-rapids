@@ -33,7 +33,8 @@ def create_orc_dataframe(output_orc, col_name, col_gen):
                                        ('smallint', ShortGen(min_val=BYTE_MAX + 1)),
                                        ('int', IntegerGen(min_val=SHORT_MAX + 1)),
                                        ('bigint', LongGen(min_val=INT_MAX + 1,
-                                                          max_val=int(1e11)))])
+                                                          max_val=int(1e11))),
+                                       ('negint', IntegerGen(max_val=-1))])
 @pytest.mark.parametrize('to_type', ['float', 'double', 'string', 'timestamp'])
 def test_casting_from_integer(spark_tmp_path, from_type, to_type):
     from_type, from_type_gen = from_type
