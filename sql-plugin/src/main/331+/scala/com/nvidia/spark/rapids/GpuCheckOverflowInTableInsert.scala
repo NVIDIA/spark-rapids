@@ -16,10 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimUnaryExpression
 
-import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.rapids.shims.spark331plus.CastOverflowUtil
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -35,7 +33,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * QueryExecutionError.
  * The calculation of the sideEffect is delegated to the child Expression "GpuCast".
  */
-case class GpuCheckOverflowInTableInsert(child: Expression, columnName: String)
+case class GpuCheckOverflowInTableInsert(child: GpuCast, columnName: String)
   extends ShimUnaryExpression with GpuExpression {
 
   override def dataType: DataType = child.dataType
@@ -44,12 +42,14 @@ case class GpuCheckOverflowInTableInsert(child: Expression, columnName: String)
     try {
       child.columnarEval(batch)
     } catch {
-      // Convert ArithmeticException to Spark error class "CAST_OVERFLOW_IN_TABLE_INSERT"
-      case _: ArithmeticException =>
+      // map SparkArithmeticException to SparkArithmeticException("CAST_OVERFLOW_IN_TABLE_INSERT")
+      case e if CastOverflowUtil.isCastOverflowException(e) =>
         throw CastOverflowUtil.castCausingOverflowInTableInsertError(
-          child.asInstanceOf[GpuCast].child.dataType, child.dataType, columnName)
+          child.child.dataType, child.dataType, columnName)
     }
   }
 
-  override def toString: String = s"GpuCheckOverflowInTableInsert($child, $columnName)"
+  override def toString: String = child.toString
+
+  override def sql: String = child.sql
 }

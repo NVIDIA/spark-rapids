@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{ExprChecks, ExprRule, GpuCheckOverflowInTableInsert, GpuExpression, GpuOverrides, TypeSig, UnaryExprMeta}
+import com.nvidia.spark.rapids.{ExprChecks, ExprRule, GpuCast, GpuCheckOverflowInTableInsert, GpuExpression, GpuOverrides, TypeSig, UnaryExprMeta}
 
 import org.apache.spark.sql.catalyst.expressions.{CheckOverflowInTableInsert, Expression}
 
@@ -31,8 +31,14 @@ trait Spark331PlusShims extends Spark330PlusShims {
           TypeSig.all,
           TypeSig.all),
         (t, conf, p, r) => new UnaryExprMeta[CheckOverflowInTableInsert](t, conf, p, r) {
-          override def convertToGpu(child: Expression): GpuExpression =
-            GpuCheckOverflowInTableInsert(child, t.columnName)
+
+          override def convertToGpu(child: Expression): GpuExpression = {
+            child match {
+              case c: GpuCast => GpuCheckOverflowInTableInsert(c, t.columnName)
+              case _ =>
+                throw new IllegalStateException("Expression child is not of Type GpuCast")
+            }
+          }
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ map

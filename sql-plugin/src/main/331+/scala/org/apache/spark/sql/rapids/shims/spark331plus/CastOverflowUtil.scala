@@ -16,6 +16,7 @@
 
 package org.apache.spark.sql.rapids.shims.spark331plus
 
+import org.apache.spark.SparkArithmeticException
 import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.types.DataType
 
@@ -25,5 +26,12 @@ object CastOverflowUtil {
       to: DataType,
       columnName: String): ArithmeticException = {
     QueryExecutionErrors.castingCauseOverflowErrorInTableInsert(from, to, columnName)
+  }
+
+  def isCastOverflowException(e: Throwable): Boolean = {
+    e match {
+      case _: SparkArithmeticException => true
+      case _ => false
+    }
   }
 }
