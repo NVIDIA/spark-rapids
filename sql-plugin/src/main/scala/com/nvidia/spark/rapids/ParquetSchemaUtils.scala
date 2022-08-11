@@ -25,6 +25,7 @@ import com.nvidia.spark.rapids.shims.ParquetSchemaClipShims
 import org.apache.parquet.schema._
 import org.apache.parquet.schema.Type.Repetition
 
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 
@@ -511,17 +512,7 @@ object ParquetSchemaUtils extends Arm {
     SchemaUtils.evolveSchemaIfNeededAndClose(table, fileSparkSchema, sparkSchema,
       caseSensitive, Some(evolveSchemaCasts),
       existsUnsignedType(fileSchema.asGroupType()) ||
-          existsBinaryType(sparkSchema))
-  }
-
-  private def existsBinaryType(dt: DataType): Boolean = dt match {
-    case BinaryType => true
-    case ArrayType(elementType, _) => existsBinaryType(elementType)
-    case MapType(keyType, valueType, _) =>
-      existsBinaryType(keyType) || existsBinaryType(valueType)
-    case StructType(fields) =>
-      fields.exists(f => existsBinaryType(f.dataType))
-    case _ => false
+          TrampolineUtil.dataTypeExistsRecursively(sparkSchema, _.isInstanceOf[BinaryType]))
   }
 
   /**

@@ -661,7 +661,7 @@ class BinaryGen(DataGen):
     def start(self, rand):
         def gen_bytes():
             length = rand.randint(self._min_length, self._max_length)
-            return bytearray([ rand.randint(0, 255) for _ in range(length) ])
+            return bytes([ rand.randint(0, 255) for _ in range(length) ])
         self._start(rand, gen_bytes)
 
 def skip_if_not_utc():
