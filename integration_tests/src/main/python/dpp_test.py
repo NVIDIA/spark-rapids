@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture
+from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect
 from conftest import spark_tmp_table_factory, is_databricks_runtime
 from data_gen import *
 from marks import ignore_order, allow_non_gpu
@@ -269,3 +269,31 @@ def test_dpp_like_any(spark_tmp_table_factory, store_format, aqe_enabled):
         lambda spark: spark.sql(statement),
         exist_classes='DynamicPruningExpression,GpuSubqueryBroadcastExec,ReusedExchangeExec',
         conf=dict(_exchange_reuse_conf + [('spark.sql.adaptive.enabled', aqe_enabled)]))
+
+# Test handling DPP expressions from a HashedRelation that rearranges columns
+@pytest.mark.parametrize('aqe_enabled', [
+    'false',
+    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320(),
+                                                  reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
+], ids=idfn)
+@pytest.mark.skipif(is_databricks_runtime(), reason='DPP is not supported on Databricks runtime')
+def test_dpp_from_swizzled_hash_keys(spark_tmp_table_factory, aqe_enabled):
+    dim_table = spark_tmp_table_factory.get()
+    fact_table = spark_tmp_table_factory.get()
+    def setup_tables(spark):
+        spark.sql("CREATE TABLE {}(id string) PARTITIONED BY (dt date, hr string, mins string) STORED AS PARQUET".format(dim_table))
+        spark.sql("INSERT INTO {}(id,dt,hr,mins) values ('somevalue', date('2022-01-01'), '11', '59')".format(dim_table))
+        spark.sql("CREATE TABLE {}(id string)".format(fact_table) +
+                  " PARTITIONED BY (dt date, hr string, mins string) STORED AS PARQUET")
+        spark.sql("INSERT INTO {}(id,dt,hr,mins)".format(fact_table) +
+                  " SELECT 'somevalue', to_date('2022-01-01'), '11', '59'")
+    with_cpu_session(setup_tables)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT COUNT(*) AS cnt FROM {} f".format(fact_table) +
+                                 " LEFT JOIN (SELECT *, " +
+                                 " date_format(concat(string(dt),' ',hr,':',mins,':','00'),'yyyy-MM-dd HH:mm:ss.SSS') AS ts" +
+                                 " from {}) tmp".format(dim_table) +
+                                 " ON f.hr = tmp.hr AND f.dt = tmp.dt WHERE tmp.ts < CURRENT_TIMESTAMP"),
+        conf=dict(_dpp_conf + [('spark.sql.adaptive.enabled', aqe_enabled),
+                               ("spark.rapids.sql.castStringToTimestamp.enabled", "true"),
+                               ("spark.rapids.sql.hasExtendedYearValues", "false")]))
