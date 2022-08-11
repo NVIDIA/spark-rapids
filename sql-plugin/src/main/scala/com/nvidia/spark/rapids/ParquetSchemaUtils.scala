@@ -510,7 +510,18 @@ object ParquetSchemaUtils extends Arm {
     }
     SchemaUtils.evolveSchemaIfNeededAndClose(table, fileSparkSchema, sparkSchema,
       caseSensitive, Some(evolveSchemaCasts),
-      existsUnsignedType(fileSchema.asGroupType()))
+      existsUnsignedType(fileSchema.asGroupType()) ||
+          existsBinaryType(sparkSchema))
+  }
+
+  private def existsBinaryType(dt: DataType): Boolean = dt match {
+    case BinaryType => true
+    case ArrayType(elementType, _) => existsBinaryType(elementType)
+    case MapType(keyType, valueType, _) =>
+      existsBinaryType(keyType) || existsBinaryType(valueType)
+    case StructType(fields) =>
+      fields.exists(f => existsBinaryType(f.dataType))
+    case _ => false
   }
 
   /**
