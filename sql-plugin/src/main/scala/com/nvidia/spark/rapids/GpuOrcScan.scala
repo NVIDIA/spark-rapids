@@ -239,17 +239,10 @@ object GpuOrcScan extends Arm {
         // INT64 to micro seconds(also a INT64 actually), we need multiply 1e6, it may cause long
         // overflow.
         // If val * 1e6 / 1e6 == val, then there is no overflow.
-        withResource(ColumnVector.fromScalar(Scalar.fromLong(1000000),
-          col.getRowCount().toInt)) { vec =>
-          withResource(col.mul(vec)) { mulRes =>
-            withResource(mulRes.div(vec)) { divRes =>
-              withResource(divRes.equalTo(col)) { isEqual =>
-                if (isEqual.contains(Scalar.fromBool(false))) {
-                  throw new ArithmeticException("Long overflow")
-                }
-              }
-            }
-          }
+        val k = 1e6.toLong
+        val maxVal = col.max().getLong()
+        if (maxVal * k / k != maxVal) {
+          throw new ArithmeticException("Long overflow")
         }
         withResource(col.bitCastTo(DType.TIMESTAMP_SECONDS)) { seconds =>
           seconds.castTo(DType.TIMESTAMP_MICROSECONDS)
@@ -288,6 +281,8 @@ object GpuOrcScan extends Arm {
           // TIMESTAMP_INSTANT is not supported by cuDF.
           case _ => false
         }
+      case CHAR | VARCHAR =>
+        toType == STRING
       case _ => false
     }
   }
