@@ -226,7 +226,6 @@ object GpuOrcScan extends Arm {
         col.castTo(toDt)
       // {bool, integer} to timestamp(micro seconds)
       case (DType.BOOL8 | DType.INT8 | DType.INT16 | DType.INT32, DType.TIMESTAMP_MICROSECONDS) =>
-        // TODO: overflow checking
         // cuDF requires casting to a long first.
         withResource(col.castTo(DType.INT64)) { longs =>
           // In CPU, ORC assumes the integer value is in seconds, and returns timestamp in
@@ -236,9 +235,24 @@ object GpuOrcScan extends Arm {
           }
         }
       case (DType.INT64, DType.TIMESTAMP_MICROSECONDS) =>
-        // TODO: overflow checking
+        // We need overflow checking here, since max value of INT64 is about 9 * 1e18, and convert
+        // INT64 to micro seconds(also a INT64 actually), we need multiply 1e6, it may cause long
+        // overflow.
+        // If val * 1e6 / 1e6 == val, the there is no overflow.
+        withResource(ColumnVector.fromScalar(Scalar.fromLong(1000000),
+          col.getRowCount().toInt)) { vec =>
+          withResource(col.mul(vec)) { mulRes =>
+            withResource(mulRes.div(vec)) { divRes =>
+              withResource(divRes.equalTo(col)) { isEqual =>
+                if (isEqual.contains(Scalar.fromBool(false))) {
+                  throw new ArithmeticException("Long overflow")
+                }
+              }
+            }
+          }
+        }
         withResource(col.bitCastTo(DType.TIMESTAMP_SECONDS)) { seconds =>
-           seconds.castTo(DType.TIMESTAMP_MICROSECONDS)
+          seconds.castTo(DType.TIMESTAMP_MICROSECONDS)
         }
       // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
       case (f, t) =>
