@@ -772,16 +772,16 @@ def test_regexp_memory_fallback():
     gen = StringGen('test')
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, gen).selectExpr(
-            'regexp_like(a, "a{6}")',
-            'regexp_like(a, "a{6,}")',
-            'regexp_like(a, "(?:ab){0,3}")',
-            'regexp_like(a, "(?:12345)?")',
-            'regexp_like(a, "(?:12345)+")',
-            'regexp_like(a, "(?:123456)*")',
-            'regexp_like(a, "a{1,6}")',
-            'regexp_like(a, "abcdef")',
-            'regexp_like(a, "(1)(2)(3)")',
-            'regexp_like(a, "1|2|3|4|5|6")'
+            'a rlike "a{6}"',
+            'a rlike "a{6,}"',
+            'a rlike "(?:ab){0,3}"',
+            'a rlike "(?:12345)?"',
+            'a rlike "(?:12345)+"',
+            'a rlike "(?:123456)*"',
+            'a rlike "a{1,6}"',
+            'a rlike "abcdef"',
+            'a rlike "(1)(2)(3)"',
+            'a rlike "1|2|3|4|5|6"'
         ),
         cpu_fallback_class_name='RLike',
         conf={ 
@@ -795,16 +795,16 @@ def test_regexp_memory_ok():
     gen = StringGen('test')
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen).selectExpr(
-            'regexp_like(a, "a{6}")',
-            'regexp_like(a, "a{6,}")',
-            'regexp_like(a, "(?:ab){0,3}")',
-            'regexp_like(a, "(?:12345)?")',
-            'regexp_like(a, "(?:12345)+")',
-            'regexp_like(a, "(?:123456)*")',
-            'regexp_like(a, "a{1,6}")',
-            'regexp_like(a, "abcdef")',
-            'regexp_like(a, "(1)(2)(3)")',
-            'regexp_like(a, "1|2|3|4|5|6")'
+            'a rlike "a{6}"',
+            'a rlike "a{6,}"',
+            'a rlike "(?:ab){0,3}"',
+            'a rlike "(?:12345)?"',
+            'a rlike "(?:12345)+"',
+            'a rlike "(?:123456)*"',
+            'a rlike "a{1,6}"',
+            'a rlike "abcdef"',
+            'a rlike "(1)(2)(3)"',
+            'a rlike "1|2|3|4|5|6"'
         ),
         conf={ 
             'spark.rapids.sql.regexp.enabled': 'true',
