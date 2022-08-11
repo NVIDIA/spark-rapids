@@ -563,7 +563,8 @@ case class GpuFloatMin(child: Expression) extends GpuMin(child)
   override lazy val inputProjection: Seq[Expression] = Seq(
     child, 
     GpuOr(GpuIsNan(child), GpuIsNull(child)),
-    GpuIsNull(child)
+    GpuIsNan(child),
+    // Replace `Nan`s with `null`s in the column
   )
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(updateMinVal, updateAllNansOrNulls, updateHasNulls)
 
