@@ -5704,7 +5704,7 @@ are limited.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -5725,7 +5725,7 @@ are limited.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -6596,7 +6596,7 @@ are limited.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -6617,7 +6617,7 @@ are limited.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -6728,7 +6728,7 @@ are limited.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -6749,7 +6749,7 @@ are limited.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -8192,7 +8192,7 @@ are limited.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -8213,7 +8213,7 @@ are limited.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -8324,7 +8324,7 @@ are limited.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
@@ -8345,7 +8345,7 @@ are limited.
 <td><b>NS</b></td>
 <td><b>NS</b></td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, UDT</em></td>
 <td><b>NS</b></td>
 </tr>
 <tr>
