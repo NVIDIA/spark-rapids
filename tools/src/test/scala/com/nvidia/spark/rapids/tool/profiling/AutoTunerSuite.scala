@@ -16,52 +16,93 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files, Paths}
+
 import com.nvidia.spark.rapids.tool.ToolTestUtils
 import org.scalatest.FunSuite
 import scala.io.Source.fromFile
 import scala.util.Random
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{SparkSession, TrampolineUtil}
+import org.apache.spark.sql.TrampolineUtil
 
 class AutoTunerSuite extends FunSuite with Logging {
-
-  lazy val sparkSession = {
-    SparkSession
-      .builder()
-      .master("local[*]")
-      .appName("Rapids Spark Profiling Tool Unit Tests")
-      .getOrCreate()
-  }
-
   private val autoTunerLogDir =
-    ToolTestUtils.getTestResourcePath("AutoTuner/EventLogs")
-  private val expectedDir =
-    ToolTestUtils.getTestResourcePath("AutoTuner/RecommenderExpectations")
-  private val systemPropsDir = ToolTestUtils.getTestResourcePath("AutoTuner/SystemProperties")
+    ToolTestUtils.getTestResourcePath("AutoTuner")
 
-  test("test system property file - exists") {
-    val systemPropsFilePath = s"$systemPropsDir/system_props.yaml"
-    val systemInfo = AutoTuner.parseSystemInfo(systemPropsFilePath)
-    assert(systemInfo != null)
+  private def testSystemPropertyFile(systemProperties: String): SystemProps = {
+    var systemInfo: SystemProps = null
+    TrampolineUtil.withTempDir { tempDir =>
+      val systemPropsFile = Paths.get(tempDir.getAbsolutePath, "system_props.yaml")
+      Files.write(systemPropsFile, systemProperties.getBytes(StandardCharsets.UTF_8))
+      systemInfo = AutoTuner.parseSystemInfo(systemPropsFile.toAbsolutePath.toString)
+    }
+    systemInfo
   }
 
-  test("test system property file - does not exists") {
-    val systemPropsFilePath = s"$systemPropsDir/system_props_fail.yaml"
-    val systemInfo = AutoTuner.parseSystemInfo(systemPropsFilePath)
+  test("test system property - exists") {
+    val systemProperties =
+      """
+        |system:
+        |  num_cores: 64
+        |  cpu_arch: x86_64
+        |  memory: 512gb
+        |  free_disk_space: 800gb
+        |  time_zone: America/Los_Angeles
+        |  num_workers: 4
+        |gpu:
+        |  count: 8
+        |  memory: 32gb
+        |  name: NVIDIA V100
+        |""".stripMargin
+    val systemInfo = testSystemPropertyFile(systemProperties)
+    assert(systemInfo != null)
+
+  }
+
+  test("test system property - does not exists") {
+    val systemProperties = ""
+    val systemInfo = testSystemPropertyFile(systemProperties)
     assert(systemInfo == null)
   }
 
-  test("test system property file - without gpu") {
-    val systemPropsFilePath = s"$systemPropsDir/system_props_without_gpu.yaml"
-    val systemInfo = AutoTuner.parseSystemInfo(systemPropsFilePath)
+  test("test system property - without gpu") {
+    val systemProperties =
+      """
+        |system:
+        |  num_cores: 64
+        |  cpu_arch: x86_64
+        |  memory: 576gb
+        |  free_disk_space: 800gb
+        |  time_zone: America/Los_Angeles
+        |  num_workers: 4
+        |gpu:
+        |  count:
+        |  memory:
+        |  name:
+        |""".stripMargin
+    val systemInfo = testSystemPropertyFile(systemProperties)
     assert(systemInfo != null)
     assert(systemInfo.gpuProps == null)
   }
 
-  test("test system property file - without num-workers") {
-    val systemPropsFilePath = s"$systemPropsDir/system_props_without_num_workers.yaml"
-    val systemInfo = AutoTuner.parseSystemInfo(systemPropsFilePath)
+  test("test system property - without num-workers") {
+    val systemProperties =
+      """
+        |system:
+        |  num_cores: 64
+        |  cpu_arch: x86_64
+        |  memory: 512gb
+        |  free_disk_space: 800gb
+        |  time_zone: America/Los_Angeles
+        |  num_workers:
+        |gpu:
+        |  count: 8
+        |  memory: 32gb
+        |  name: NVIDIA V100
+        |""".stripMargin
+    val systemInfo = testSystemPropertyFile(systemProperties)
     assert(systemInfo != null)
     assert(systemInfo.numWorkers.isEmpty)
   }
@@ -99,15 +140,17 @@ class AutoTunerSuite extends FunSuite with Logging {
   }
 
   private def testSingleEvent(
-    eventLog: String,
-    systemPropsFilePath: String,
-    expectedFilePath: String): Unit = {
-
+      eventLog: String,
+      systemProperties: String,
+      expectedResults: String): Unit = {
     TrampolineUtil.withTempDir { tempDir =>
+      val systemPropsFile = Paths.get(tempDir.getAbsolutePath, "system_props.yaml")
+      Files.write(systemPropsFile, systemProperties.getBytes(StandardCharsets.UTF_8))
+
       val appArgs = new ProfileArgs(Array(
         "--auto-tuner",
         "--worker-info",
-        systemPropsFilePath,
+        systemPropsFile.toAbsolutePath.toString,
         "--output-directory",
         tempDir.getAbsolutePath,
         eventLog))
@@ -116,48 +159,170 @@ class AutoTunerSuite extends FunSuite with Logging {
       val resultsFile = fromFile(tempDir + s"/${Profiler.SUBDIR}/local-1655514789396/profile.log")
       val recommendedResults = resultsFile.getLines().toSeq
 
-      val expectedFile = fromFile(expectedFilePath)
-      val expectedResults = expectedFile.getLines().toSeq
-
       val startIndex =
         recommendedResults.indexWhere(line => line.contains("Recommended Configuration"))
-      val endIndex = expectedResults.size
-      val filteredResults = recommendedResults.slice(startIndex, startIndex + endIndex)
+      val endIndex = expectedResults.split("\r\n|\r|\n").length
+      val filteredResults = recommendedResults
+        .slice(startIndex, startIndex + endIndex).mkString("\n")
       assert(filteredResults == expectedResults)
     }
   }
 
   test("test recommended configuration") {
     val eventLog = s"$autoTunerLogDir/auto_tuner_eventlog"
-    val systemPropsFilePath = s"$systemPropsDir/system_props.yaml"
-    val expectedFilePath = s"$expectedDir/test_recommended_conf.txt"
-    testSingleEvent(eventLog, systemPropsFilePath, expectedFilePath)
+    val systemProperties =
+      """
+        |system:
+        |  num_cores: 64
+        |  cpu_arch: x86_64
+        |  memory: 512gb
+        |  free_disk_space: 800gb
+        |  time_zone: America/Los_Angeles
+        |  num_workers: 4
+        |gpu:
+        |  count: 8
+        |  memory: 32gb
+        |  name: NVIDIA V100
+        |""".stripMargin
+    val expectedResults =
+      """
+        |### D. Recommended Configuration ###
+        |
+        |Spark Properties:
+        |--conf spark.executor.cores=8
+        |--conf spark.executor.instances=32
+        |--conf spark.executor.memory=63.75g
+        |--conf spark.executor.memoryOverhead=8.38g
+        |--conf spark.rapids.memory.pinnedPool.size=2g
+        |--conf spark.rapids.sql.concurrentGpuTasks=4
+        |--conf spark.sql.files.maxPartitionBytes=31.67g
+        |--conf spark.sql.shuffle.partitions=200
+        |--conf spark.task.resource.gpu.amount=0.125
+        |""".stripMargin.trim
+    testSingleEvent(eventLog, systemProperties, expectedResults)
   }
 
   test("test recommended configuration - without system properties") {
     val eventLog = s"$autoTunerLogDir/auto_tuner_eventlog"
-    val expectedFilePath = s"$expectedDir/test_recommended_conf_without_system_prop.txt"
-    testSingleEvent(eventLog, "", expectedFilePath)
+    val systemProperties = ""
+    val expectedResults =
+      """
+        |### D. Recommended Configuration ###
+        |Unable to find system properties. Cannot recommend properties.
+        |
+        |Comments:
+        |- 'spark.executor.memory' should be set to at least 2GB/core.
+        |- 'spark.executor.instances' should be set to 'num_gpus * num_workers'.
+        |- 'spark.task.resource.gpu.amount' should be set to 1/#cores.
+        |""".stripMargin.trim
+    testSingleEvent(eventLog, systemProperties, expectedResults)
   }
 
   test("test recommended configuration - without gpu properties") {
     val eventLog = s"$autoTunerLogDir/auto_tuner_eventlog"
-    val systemPropsFilePath = s"$systemPropsDir/system_props_without_gpu.yaml"
-    val expectedFilePath = s"$expectedDir/test_recommended_conf_without_gpu_prop.txt"
-    testSingleEvent(eventLog, systemPropsFilePath, expectedFilePath)
+    val systemProperties =
+      """
+        |system:
+        |  num_cores: 64
+        |  cpu_arch: x86_64
+        |  memory: 576gb
+        |  free_disk_space: 800gb
+        |  time_zone: America/Los_Angeles
+        |  num_workers: 4
+        |gpu:
+        |  count:
+        |  memory:
+        |  name:
+        |""".stripMargin
+    val expectedResults =
+      """
+        |### D. Recommended Configuration ###
+        |
+        |Spark Properties:
+        |--conf spark.executor.cores=64
+        |--conf spark.executor.instances=4
+        |--conf spark.executor.memory=8.97g
+        |--conf spark.sql.files.maxPartitionBytes=31.67g
+        |--conf spark.sql.shuffle.partitions=200
+        |
+        |Comments:
+        |- 'spark.task.resource.gpu.amount' should be set to 1/#cores.
+        |""".stripMargin.trim
+    testSingleEvent(eventLog, systemProperties, expectedResults)
   }
 
   test("test recommended configuration - low memory") {
     val eventLog = s"$autoTunerLogDir/auto_tuner_eventlog"
-    val systemPropsFilePath = s"$systemPropsDir/system_props_low_memory.yaml"
-    val expectedFilePath = s"$expectedDir/test_recommended_conf_low_memory.txt"
-    testSingleEvent(eventLog, systemPropsFilePath, expectedFilePath)
+    val systemProperties =
+      """
+        |system:
+        |  num_cores: 64
+        |  cpu_arch: x86_64
+        |  memory: 20gb
+        |  free_disk_space: 800gb
+        |  time_zone: America/Los_Angeles
+        |  num_workers: 4
+        |gpu:
+        |  count: 8
+        |  memory: 32gb
+        |  name: NVIDIA V100
+        |""".stripMargin
+    val expectedResults =
+      """
+        |### D. Recommended Configuration ###
+        |
+        |Spark Properties:
+        |--conf spark.executor.cores=8
+        |--conf spark.executor.instances=32
+        |--conf spark.executor.memory=2.25g
+        |--conf spark.executor.memoryOverhead=4g
+        |--conf spark.rapids.memory.pinnedPool.size=2g
+        |--conf spark.rapids.sql.concurrentGpuTasks=4
+        |--conf spark.sql.files.maxPartitionBytes=31.67g
+        |--conf spark.sql.shuffle.partitions=200
+        |--conf spark.task.resource.gpu.amount=0.125
+        |
+        |Comments:
+        |- Executor memory is very low. It is recommended to have at least 8g
+        |""".stripMargin.trim
+    testSingleEvent(eventLog, systemProperties, expectedResults)
   }
 
   test("test recommended configuration - low num cores") {
     val eventLog = s"$autoTunerLogDir/auto_tuner_eventlog"
-    val systemPropsFilePath = s"$systemPropsDir/system_props_low_num_cores.yaml"
-    val expectedFilePath = s"$expectedDir/test_recommended_conf_low_num_cores.txt"
+    val systemPropsFilePath =
+      """
+        |system:
+        |  num_cores: 16
+        |  cpu_arch: x86_64
+        |  memory: 512gb
+        |  free_disk_space: 800gb
+        |  time_zone: America/Los_Angeles
+        |  num_workers: 4
+        |gpu:
+        |  count: 8
+        |  memory: 32gb
+        |  name: NVIDIA V100
+        |""".stripMargin
+    val expectedFilePath =
+      """
+        |### D. Recommended Configuration ###
+        |
+        |Spark Properties:
+        |--conf spark.executor.cores=2
+        |--conf spark.executor.instances=32
+        |--conf spark.executor.memory=63.75g
+        |--conf spark.executor.memoryOverhead=8.38g
+        |--conf spark.rapids.memory.pinnedPool.size=2g
+        |--conf spark.rapids.sql.concurrentGpuTasks=4
+        |--conf spark.sql.files.maxPartitionBytes=31.67g
+        |--conf spark.sql.shuffle.partitions=200
+        |--conf spark.task.resource.gpu.amount=0.5
+        |
+        |Comments:
+        |- Number of cores per executor is very low. It is recommended to have at least 4 cores per executor.
+        |- For the given GPU, number of CPU cores is very low. It should be at least equal to concurrent gpu tasks i.e. 4.
+        |""".stripMargin.trim
     testSingleEvent(eventLog, systemPropsFilePath, expectedFilePath)
   }
 }

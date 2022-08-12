@@ -450,7 +450,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         Some("Unsupported SQL Ops"))
 
       if (useAutoTuner) {
-        val workerInfo: String = appArgs.workerInfo.getOrElse(".")
+        val workerInfo: String = appArgs.workerInfo.getOrElse(AutoTuner.DEFAULT_WORKER_INFO)
         val autoTuner: AutoTuner = new AutoTuner(app, workerInfo)
         val (properties, comments) = autoTuner.getRecommendedProperties
         profileOutputWriter.writeText("\n### D. Recommended Configuration ###\n")
@@ -459,7 +459,10 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
           val propertiesToStr = properties.map(_.toString).reduce(_ + "\n" + _)
           profileOutputWriter.writeText("\nSpark Properties:\n" + propertiesToStr + "\n")
         } else {
-          profileOutputWriter.writeText("No properties to recommend\n")
+          // Currently, properties would be empty only if system properties were not present.
+          // Refer AutoTuner.
+          profileOutputWriter.writeText("Unable to find system properties." +
+            " Cannot recommend properties.\n")
         }
 
         // Comments are optional

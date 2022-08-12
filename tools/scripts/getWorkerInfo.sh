@@ -20,6 +20,16 @@
 # recommending Spark RAPIDS configurations.
 # Usage: ./getWorkerInfo.sh [num-workers] [worker-ip]
 
+function usage() {
+  echo "Usage: ./getWorkerInfo.sh [num-workers] [worker-ip]"
+}
+
+if [ "$#" -ne 2 ]; then
+  echo "Illegal number of parameters"
+  usage
+  exit 1
+fi
+
 OUTPUT_FILE=/tmp/system_props.yaml
 NUM_WORKERS=$1
 WORKER_IP=$2

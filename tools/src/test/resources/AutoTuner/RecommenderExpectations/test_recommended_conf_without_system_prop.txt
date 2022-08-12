@@ -1,7 +1,0 @@
-### D. Recommended Configuration ###
-No properties to recommend
-
-Comments:
-- 'spark.executor.memory' should be set to at least 2GB/core.
-- 'spark.executor.instances' should be set to 'num_gpus * num_workers'.
-- 'spark.task.resource.gpu.amount' should be set to 1/#cores.

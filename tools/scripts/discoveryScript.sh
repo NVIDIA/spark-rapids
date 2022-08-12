@@ -19,19 +19,19 @@
 # file is used by the AutoTuner for recommending Spark RAPIDS configurations.
 # Usage: ./discoveryScript.sh [num-workers] [output-file]
 
+function usage() {
+  echo "Usage: ./discoveryScript.sh [num-workers] [output-file]"
+}
+
+if [ "$#" -ne 2 ]; then
+  echo "Illegal number of parameters"
+  usage
+  exit 1
+fi
+
 OS=$(uname -s)
-
-if [ -n "$1" ]; then
-  NUM_WORKERS_STR="num_workers: $1"
-else
-  NUM_WORKERS_STR=""
-fi
-
-if [ -z "$2" ]; then
-  OUTPUT_FILE=/tmp/system_props.yaml
-else
-  OUTPUT_FILE=$1
-fi
+NUM_WORKERS=$1
+OUTPUT_FILE=$2
 
 function echo_warn {
   CLEAR='\033[0m'
@@ -111,7 +111,7 @@ system:
   memory: $memInGb
   free_disk_space: $freeDiskSpaceInGb
   time_zone: $timeZone
-  $NUM_WORKERS_STR
+  num_workers: $NUM_WORKERS
 gpu:
   count: $gpuCount
   memory: $gpuMemoryInMb

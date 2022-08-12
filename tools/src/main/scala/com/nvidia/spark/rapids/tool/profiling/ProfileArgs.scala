@@ -88,13 +88,14 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
         "m(months). If a period is not specified it defaults to days.")
   val autoTuner: ScallopOption[Boolean] =
     opt[Boolean](required = false,
-      descr = "Toggle auto-tuner module",
+      descr = "Toggle auto-tuner module.",
       default = Some(false))
   val workerInfo: ScallopOption[String] =
     opt[String](required = false,
       descr = "File path containing the system information of a worker node. It is assumed " +
-        "that all workers are homogenous.",
-      default = Some("."))
+        "that all workers are homogenous. It requires the AutoTuner to be enabled. Default is" +
+        "current directory.",
+      default = Some(AutoTuner.DEFAULT_WORKER_INFO))
 
   validate(filterCriteria) {
     case crit if (crit.endsWith("-newest-filesystem") ||
