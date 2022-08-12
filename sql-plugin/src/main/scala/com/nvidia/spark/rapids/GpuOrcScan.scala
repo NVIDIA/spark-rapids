@@ -211,19 +211,23 @@ object GpuOrcScan extends Arm {
         } else {
           downCastAnyInteger(col, toDt)
         }
+
       // bool to float, double(float64)
       case (DType.BOOL8, DType.FLOAT32 | DType.FLOAT64) =>
         col.castTo(toDt)
+
       // bool to string
       case (DType.BOOL8, DType.STRING) =>
         withResource(col.castTo(toDt)) { casted =>
           // cuDF produces "ture"/"false" while CPU outputs "TRUE"/"FALSE".
           casted.upper()
         }
+
       // integer to float, double(float64), string
       case (DType.INT8 | DType.INT16 | DType.INT32 | DType.INT64,
       DType.FLOAT32 | DType.FLOAT64 | DType.STRING) =>
         col.castTo(toDt)
+
       // {bool, integer} to timestamp(micro seconds)
       case (DType.BOOL8 | DType.INT8 | DType.INT16 | DType.INT32, DType.TIMESTAMP_MICROSECONDS) =>
         // cuDF requires casting to a long first.
@@ -234,17 +238,23 @@ object GpuOrcScan extends Arm {
             seconds.castTo(DType.TIMESTAMP_MICROSECONDS)
           }
         }
+
+      // int64 to timestamp
       case (DType.INT64, DType.TIMESTAMP_MICROSECONDS) =>
         // We need overflow checking here, since max value of INT64 is about 9 * 1e18, and convert
         // INT64 to micro seconds(also a INT64 actually), we need multiply 1e6, it may cause long
-        // overflow.
-        // If val * 1e6 / 1e6 == val, then there is no overflow.
-        if (!canMultiply(col, 1e6.toLong)) {
-          throw new ArithmeticException("Long overflow")
-        }
+        // integer-overflow.
+        // In Math.multiplyExact, if there is an integer-overflow, then it will throw an
+        // ArithmeticException.
+        // If these two 'Math.multiplyExact' throw no exception, it means no integer-overflow when
+        // casting 'col' to TIMESTAMP_MICROSECONDS. We did the similar thing as CPU code here.
+        val k = 1e6.toLong
+        Math.multiplyExact(col.max().getLong, k)
+        Math.multiplyExact(col.min().getLong, k)
         withResource(col.bitCastTo(DType.TIMESTAMP_SECONDS)) { seconds =>
           seconds.castTo(DType.TIMESTAMP_MICROSECONDS)
         }
+
       // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
       case (f, t) =>
         throw new QueryExecutionException(s"Unsupported type casting: $f -> $t")
@@ -283,19 +293,6 @@ object GpuOrcScan extends Arm {
         toType == STRING
       case _ => false
     }
-  }
-
-  /**
-   * Check whether if integerVec can be multiplied with k. If val * k / k == val, then there is no
-   * integer-overflow, we can make a multiplication. Otherwise, there is integer-overflow.
-   *
-   * @param integerVec a column vector with type of INT64 integers
-   * @param k          the number to be multiplied
-   */
-  def canMultiply(integerVec: ColumnView, k: Long): Boolean = {
-    assert(integerVec.getType() == DType.INT64)
-    val maxVal = integerVec.max().getLong
-    maxVal * k / k == maxVal
   }
 }
 
