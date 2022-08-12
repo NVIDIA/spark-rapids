@@ -92,7 +92,8 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
       default = Some(false))
   val workerInfo: ScallopOption[String] =
     opt[String](required = false,
-      descr = "File path containing the system information of a worker node",
+      descr = "File path containing the system information of a worker node. It is assumed " +
+        "that all workers are homogenous.",
       default = Some("."))
 
   validate(filterCriteria) {

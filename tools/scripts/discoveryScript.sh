@@ -15,6 +15,10 @@
 # limitations under the License.
 #
 
+# This script generates a YAML file containing system properties. The YAML
+# file is used by the AutoTuner for recommending Spark RAPIDS configurations.
+# Usage: ./discoveryScript.sh [num-workers] [output-file]
+
 OS=$(uname -s)
 
 if [ -n "$1" ]; then
@@ -24,16 +28,16 @@ else
 fi
 
 if [ -z "$2" ]; then
-  OUTFILE=/tmp/system_props.yaml
+  OUTPUT_FILE=/tmp/system_props.yaml
 else
-  OUTFILE=$1
+  OUTPUT_FILE=$1
 fi
 
 function echo_warn {
-    CLEAR='\033[0m'
-    YELLOW='\033[0;33m'
+  CLEAR='\033[0m'
+  YELLOW='\033[0;33m'
 
-    echo -e "${YELLOW}[WARN] $1${CLEAR}\n";
+  echo -e "${YELLOW}[WARN] $1${CLEAR}\n";
 }
 
 function get_linux_properties() {
@@ -100,7 +104,7 @@ function read_system_properties() {
 }
 
 function write_system_properties() {
-  cat > "$OUTFILE" << EOF
+  cat > "$OUTPUT_FILE" << EOF
 system:
   num_cores: $numCores
   cpu_arch: $cpuArch
@@ -114,9 +118,9 @@ gpu:
   name: $gpuName
 EOF
 
-  echo "YAML file generated at $OUTFILE"
+  echo "YAML file generated at $OUTPUT_FILE"
   echo "Contents - "
-  cat "$OUTFILE"
+  cat "$OUTPUT_FILE"
 }
 
 read_system_properties

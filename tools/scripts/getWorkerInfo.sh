@@ -15,13 +15,17 @@
 # limitations under the License.
 #
 
-output_file=/tmp/system_props.yaml
-num_workers=$1
-worker_ip=$2
+# This script copies and executes discoveryScript.sh to the worker and copies
+# back the generated YAML file. The YAML file is used by the AutoTuner for
+# recommending Spark RAPIDS configurations.
+# Usage: ./getWorkerInfo.sh [num-workers] [worker-ip]
 
-echo "Fetching system information from worker - $worker_ip"
-scp -q ./discoveryScript.sh "$worker_ip":/tmp
-ssh "$worker_ip" "bash /tmp/discoveryScript.sh $num_workers $output_file"
-scp -q "$worker_ip":$output_file ./
+OUTPUT_FILE=/tmp/system_props.yaml
+NUM_WORKERS=$1
+WORKER_IP=$2
+
+echo "Fetching system information from worker - $WORKER_IP"
+scp -q ./discoveryScript.sh "$WORKER_IP":/tmp
+ssh "$WORKER_IP" "bash /tmp/discoveryScript.sh $NUM_WORKERS $OUTPUT_FILE"
+scp -q "$WORKER_IP":$OUTPUT_FILE ./
 echo -e "\nYAML file copied to driver"
-

@@ -56,19 +56,19 @@ class AutoTunerSuite extends FunSuite with Logging {
     val systemPropsFilePath = s"$systemPropsDir/system_props_without_gpu.yaml"
     val systemInfo = AutoTuner.parseSystemInfo(systemPropsFilePath)
     assert(systemInfo != null)
-    assert(systemInfo.gpu_props == null)
+    assert(systemInfo.gpuProps == null)
   }
 
   test("test system property file - without num-workers") {
     val systemPropsFilePath = s"$systemPropsDir/system_props_without_num_workers.yaml"
     val systemInfo = AutoTuner.parseSystemInfo(systemPropsFilePath)
     assert(systemInfo != null)
-    assert(systemInfo.num_workers.isEmpty)
+    assert(systemInfo.numWorkers.isEmpty)
   }
 
   test("test convert from human readable size") {
     val rand = new Random()
-    AutoTuner.SUPPORTED_UNITS.zipWithIndex.foreach {
+    AutoTuner.SUPPORTED_SIZE_UNITS.zipWithIndex.foreach {
       case (size, index) =>
         val randomValue = "%.3f".format(10 * rand.nextDouble())
         val testSize = s"$randomValue$size"
@@ -80,7 +80,7 @@ class AutoTunerSuite extends FunSuite with Logging {
 
   test("test convert to human readable size") {
     val rand = new Random()
-    AutoTuner.SUPPORTED_UNITS.zipWithIndex.foreach {
+    AutoTuner.SUPPORTED_SIZE_UNITS.zipWithIndex.foreach {
       case (size, index) =>
       val randomValue = 1 + rand.nextInt(9)
       val testSize = (randomValue * Math.pow(1024, index)).toLong

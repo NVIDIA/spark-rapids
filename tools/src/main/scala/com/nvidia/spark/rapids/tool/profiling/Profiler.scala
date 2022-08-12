@@ -449,10 +449,10 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       profileOutputWriter.write("Unsupported SQL Plan", app.unsupportedOps,
         Some("Unsupported SQL Ops"))
 
-      if(useAutoTuner) {
+      if (useAutoTuner) {
         val workerInfo: String = appArgs.workerInfo.getOrElse(".")
         val autoTuner: AutoTuner = new AutoTuner(app, workerInfo)
-        val (properties, comments) = autoTuner.getRecommendedProperties()
+        val (properties, comments) = autoTuner.getRecommendedProperties
         profileOutputWriter.writeText("\n### D. Recommended Configuration ###\n")
 
         if (properties.nonEmpty) {
