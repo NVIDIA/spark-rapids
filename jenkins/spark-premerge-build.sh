@@ -57,7 +57,7 @@ mvn_verify() {
       -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
     $MVN_INSTALL_CMD -DskipTests -Dbuildver=321
     $MVN_INSTALL_CMD -DskipTests -Dbuildver=322
-    env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=330 clean install MVN_BUILD_ARGS \
+    env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=330 clean install $MVN_BUILD_ARGS \
       -Dpytest.TEST_TAGS='' -pl '!tools'
     [[ $BUILD_MAINTENANCE_VERSION_SNAPSHOTS == "true" ]] && $MVN_INSTALL_CMD -DskipTests -Dbuildver=331
     # TODO: move it to BUILD_MAINTENANCE_VERSION_SNAPSHOTS when we resolve all spark340 build issues
