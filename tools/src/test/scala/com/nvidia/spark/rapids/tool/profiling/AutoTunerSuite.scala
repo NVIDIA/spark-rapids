@@ -284,8 +284,14 @@ class AutoTunerSuite extends FunSuite with Logging {
         |  memory: 32gb
         |  name: NVIDIA V100
         |""".stripMargin
+
+    val comments = "Comments:\n" +
+      "- Executor memory is very low. It is recommended to have at least 8g.\n" +
+      "- Although 'spark.sql.files.maxPartitionBytes' was set to 2gb, recommended" +
+      " value is 31.67g."
+
     val expectedResults =
-      """
+      s"""
         |### D. Recommended Configuration ###
         |
         |Spark Properties:
@@ -299,9 +305,7 @@ class AutoTunerSuite extends FunSuite with Logging {
         |--conf spark.sql.shuffle.partitions=200
         |--conf spark.task.resource.gpu.amount=0.125
         |
-        |Comments:
-        |- Executor memory is very low. It is recommended to have at least 8g.
-        |- Although 'spark.sql.files.maxPartitionBytes' was set to 2gb, recommended value is 31.67g.
+        |$comments
         |""".stripMargin.trim
     testSingleEvent(eventLog, appId, systemProperties, expectedResults)
   }
@@ -323,8 +327,17 @@ class AutoTunerSuite extends FunSuite with Logging {
         |  memory: 32gb
         |  name: NVIDIA V100
         |""".stripMargin
+
+    val comments = "Comments:\n" +
+        "- Number of cores per executor is very low. It is recommended to" +
+        " have at least 4 cores per executor.\n" +
+        "- Although 'spark.sql.files.maxPartitionBytes' was set to 2gb," +
+        " recommended value is 31.67g.\n" +
+        "- For the given GPU, number of CPU cores is very low. It should be at least equal" +
+        " to concurrent gpu tasks i.e. 4."
+
     val expectedFilePath =
-      """
+      s"""
         |### D. Recommended Configuration ###
         |
         |Spark Properties:
@@ -338,10 +351,7 @@ class AutoTunerSuite extends FunSuite with Logging {
         |--conf spark.sql.shuffle.partitions=200
         |--conf spark.task.resource.gpu.amount=0.5
         |
-        |Comments:
-        |- Number of cores per executor is very low. It is recommended to have at least 4 cores per executor.
-        |- Although 'spark.sql.files.maxPartitionBytes' was set to 2gb, recommended value is 31.67g.
-        |- For the given GPU, number of CPU cores is very low. It should be at least equal to concurrent gpu tasks i.e. 4.
+        |$comments
         |""".stripMargin.trim
     testSingleEvent(eventLog, appId, systemPropsFilePath, expectedFilePath)
   }
