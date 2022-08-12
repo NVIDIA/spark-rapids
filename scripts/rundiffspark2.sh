@@ -50,6 +50,11 @@ if [[ $(diff spark2diffs/GpuHiveOverrides.diff $tmp_dir/GpuHiveOverrides.newdiff
   echo "check diff for  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/hive/rapids/GpuHiveOverrides.scala"
 fi
 
+diff ../sql-plugin/src/main/scala/org/apache/spark/sql/hive/rapids/HiveProviderImpl.scala ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/hive/rapids/HiveProviderImpl.scala > $tmp_dir/HiveProviderImpl.newdiff || true
+diff -c spark2diffs/HiveProviderImpl.diff $tmp_dir/HiveProviderImpl.newdiff
+
+diff -c ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/HiveProvider.scala ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/HiveProvider.scala
+
 sed -n  '/class GpuBroadcastNestedLoopJoinMeta/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastNestedLoopJoinMeta.scala > $tmp_dir/GpuBroadcastNestedLoopJoinMeta_new.out
 sed -n  '/class GpuBroadcastNestedLoopJoinMeta/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/execution/GpuBroadcastNestedLoopJoinExec.scala > $tmp_dir/GpuBroadcastNestedLoopJoinMeta_old.out
 diff $tmp_dir/GpuBroadcastNestedLoopJoinMeta_new.out $tmp_dir/GpuBroadcastNestedLoopJoinMeta_old.out > $tmp_dir/GpuBroadcastNestedLoopJoinMeta.newdiff || true
@@ -208,7 +213,7 @@ sed -n  '/GpuOverrides.exec\[WindowInPandasExec\]/,/override def convertToGpu/{/
 diff -c -w --ignore-blank-lines $tmp_dir/WindowInPandasExec_new.out $tmp_dir/WindowInPandasExec_old.out
 
 sed -n  '/object GpuOrcScan/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOrcScan.scala > $tmp_dir/GpuOrcScanBase_new.out
-sed -n  '/object GpuOrcScan/,/^}/{/^}/!p}'  ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOrcScan.scala > $tmp_dir/GpuOrcScanBase_old.out
+sed -n  '/object GpuOrcScan/,/private lazy val numericLevels/{/private lazy val numericLevels/!p}'  ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOrcScan.scala > $tmp_dir/GpuOrcScanBase_old.out
 diff  $tmp_dir/GpuOrcScanBase_new.out $tmp_dir/GpuOrcScanBase_old.out > $tmp_dir/GpuOrcScanBase.newdiff || true
 diff -c spark2diffs/GpuOrcScanBase.diff $tmp_dir/GpuOrcScanBase.newdiff
 

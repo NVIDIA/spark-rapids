@@ -29,30 +29,34 @@ basic_struct_gen = StructGen([
                                    BooleanGen(), DateGen(), TimestampGen(), null_gen] + decimal_gens)],
     nullable=False)
 
-@pytest.mark.parametrize('data_gen', map_gens_sample + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
+maps_with_binary = [MapGen(IntegerGen(nullable=False), BinaryGen(max_length=5))]
+
+@pytest.mark.parametrize('data_gen', map_gens_sample + maps_with_binary + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
 def test_map_keys(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 # Technically the order of the keys could change, and be different and still correct
                 # but it works this way for now so lets see if we can maintain it.
                 # Good thing too, because we cannot support sorting all of the types that could be
                 # in here yet, and would need some special case code for checking equality
                 'map_keys(a)'))
 
-@pytest.mark.parametrize('data_gen', map_gens_sample + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
+
+@pytest.mark.parametrize('data_gen', map_gens_sample + maps_with_binary + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
 def test_map_values(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 # Technically the order of the values could change, and be different and still correct
                 # but it works this way for now so lets see if we can maintain it.
                 # Good thing too, because we cannot support sorting all of the types that could be
                 # in here yet, and would need some special case code for checking equality
                 'map_values(a)'))
 
-@pytest.mark.parametrize('data_gen', map_gens_sample  + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
+
+@pytest.mark.parametrize('data_gen', map_gens_sample  + maps_with_binary + decimal_64_map_gens + decimal_128_map_gens, ids=idfn)
 def test_map_entries(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 # Technically the order of the values could change, and be different and still correct
                 # but it works this way for now so lets see if we can maintain it.
                 # Good thing too, because we cannot support sorting all of the types that could be
@@ -77,7 +81,7 @@ def get_map_value_gens(precision=18, scale=0):
         return DecimalGen(precision, scale)
 
     return [ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen,
-            StringGen, DateGen, TimestampGen, decimal_value_gen,
+            StringGen, DateGen, TimestampGen, decimal_value_gen, BinaryGen,
             simple_struct_value_gen, nested_struct_value_gen, nested_map_value_gen, array_value_gen]
 
 
@@ -115,6 +119,14 @@ def test_get_map_value_numeric_keys(data_gen):
                 'a[999]'))
 
 
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('key_gen', numeric_key_gens, ids=idfn)
+def test_cpu_fallback_map_scalars(key_gen):
+    def query_map_scalar(spark):
+        return unary_op_df(spark, key_gen).selectExpr('map(0, "zero", 1, "one")[a]')
+    assert_gpu_fallback_collect(query_map_scalar, "ProjectExec", {"spark.rapids.sql.explain": "NONE"})
+
+
 @pytest.mark.parametrize('data_gen',
                          [MapGen(DateGen(nullable=False), value(), max_length=6)
                           for value in get_map_value_gens()], ids=idfn)
@@ -136,79 +148,90 @@ def test_get_map_value_timestamp_keys(data_gen):
             'a[timestamp "2022-01-01"]',
             'a[null]'))
 
+
 def test_map_side_effects():
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : spark.range(10).selectExpr(
+            lambda spark: spark.range(10).selectExpr(
                 'id',
                 'if(id == 0, null, map(id, id, id DIV 2, id)) as m'),
             conf={'spark.sql.mapKeyDedupPolicy': 'EXCEPTION'})
+
 
 @pytest.mark.parametrize('key_gen', [StringGen(nullable=False), IntegerGen(nullable=False), basic_struct_gen], ids=idfn)
 @pytest.mark.parametrize('value_gen', [StringGen(nullable=True), IntegerGen(nullable=True), basic_struct_gen], ids=idfn)
 def test_single_entry_map(key_gen, value_gen):
     data_gen = [('a', key_gen), ('b', value_gen)]
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : gen_df(spark, data_gen).selectExpr(
+            lambda spark: gen_df(spark, data_gen).selectExpr(
                 'map("literal_key", b) as map1',
                 'map(a, b) as map2'))
+
 
 def test_map_expr_no_pairs():
     data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : gen_df(spark, data_gen).selectExpr(
+            lambda spark: gen_df(spark, data_gen).selectExpr(
                 'map() as m1'))
+
 
 def test_map_expr_multiple_pairs():
     # we don't hit duplicate keys in this test due to the high cardinality of the generated strings
     data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : gen_df(spark, data_gen).selectExpr(
+            lambda spark: gen_df(spark, data_gen).selectExpr(
                 'map("key1", b, "key2", a) as m1',
                 'map(a, b, b, a) as m2'))
+
 
 def test_map_expr_expr_keys_dupe_last_win():
     data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : gen_df(spark, data_gen).selectExpr(
+            lambda spark: gen_df(spark, data_gen).selectExpr(
                 'map(a, b, a, b) as m2'),
-                conf={'spark.sql.mapKeyDedupPolicy':'LAST_WIN'})
+            conf={'spark.sql.mapKeyDedupPolicy':'LAST_WIN'})
+
 
 def test_map_expr_expr_keys_dupe_exception():
     data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
     assert_gpu_and_cpu_error(
-            lambda spark : gen_df(spark, data_gen).selectExpr(
+            lambda spark: gen_df(spark, data_gen).selectExpr(
                 'map(a, b, a, b) as m2').collect(),
-                conf={'spark.sql.mapKeyDedupPolicy':'EXCEPTION'},
-                error_message = "Duplicate map key")
+            conf={'spark.sql.mapKeyDedupPolicy':'EXCEPTION'},
+            error_message = "Duplicate map key")
+
 
 def test_map_expr_literal_keys_dupe_last_win():
     data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : gen_df(spark, data_gen).selectExpr(
+            lambda spark: gen_df(spark, data_gen).selectExpr(
                 'map("key1", b, "key1", a) as m1'),
-                conf={'spark.sql.mapKeyDedupPolicy':'LAST_WIN'})
+            conf={'spark.sql.mapKeyDedupPolicy':'LAST_WIN'})
+
 
 def test_map_expr_literal_keys_dupe_exception():
     data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
     assert_gpu_and_cpu_error(
-            lambda spark : gen_df(spark, data_gen).selectExpr(
+            lambda spark: gen_df(spark, data_gen).selectExpr(
                 'map("key1", b, "key1", a) as m1').collect(),
-                conf={'spark.sql.mapKeyDedupPolicy':'EXCEPTION'},
-                error_message = "Duplicate map key")
+            conf={'spark.sql.mapKeyDedupPolicy':'EXCEPTION'},
+            error_message = "Duplicate map key")
+
 
 def test_map_expr_multi_non_literal_keys():
     data_gen = [('a', StringGen(nullable=False)), ('b', StringGen(nullable=False))]
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : gen_df(spark, data_gen).selectExpr(
+            lambda spark: gen_df(spark, data_gen).selectExpr(
                 'map(a, b, b, a) as m1'))
+
 
 def test_map_scalar_project():
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : spark.range(2).selectExpr(
+            lambda spark: spark.range(2).selectExpr(
                 "map(1, 2, 3, 4) as i",
                 "map('a', 'b', 'c', 'd') as s",
                 "map('a', named_struct('foo', 10, 'bar', 'bar')) as st"
                 "id"))
+
 
 def test_str_to_map_expr_fixed_pattern_input():
     # Test pattern "key1:val1,key2:val2".
@@ -222,6 +245,7 @@ def test_str_to_map_expr_fixed_pattern_input():
             'str_to_map(a, ",") as m2',
             'str_to_map(a, ",", ":") as m3'))
 
+
 def test_str_to_map_expr_fixed_delimiters():
     data_gen = [('a', StringGen(pattern='[0-9a-zA-Z:,]{0,100}', nullable=True)
                  .with_special_pattern('[abc]:.{0,20},[abc]:.{0,20}', weight=100))]
@@ -231,6 +255,7 @@ def test_str_to_map_expr_fixed_delimiters():
             'str_to_map(a, ",") as m2',
             'str_to_map(a, ",", ":") as m3'
         ), conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
+
 
 def test_str_to_map_expr_random_delimiters():
     data_gen = [('a', StringGen(pattern='[0-9a-z:,]{0,100}', nullable=True)
@@ -246,6 +271,7 @@ def test_str_to_map_expr_random_delimiters():
             'str_to_map(a, {}, {}) as m3'.format(pair_delim, keyval_delim)
         ), conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
 
+
 def test_str_to_map_expr_input_no_delimiter():
     # Test input strings that contain either one delimiter or do not contain delimiters at all.
     data_gen = [('a', StringGen(pattern='[0-9:,]{0,100}', nullable=True)
@@ -256,6 +282,7 @@ def test_str_to_map_expr_input_no_delimiter():
             'str_to_map(a, ",", "A") as m2',  # input doesn't contain key-value delimiter
             'str_to_map(a, "A", "A") as m3'   # input doesn't contain any delimiter
         ), conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
+
 
 def test_str_to_map_expr_with_regex_and_non_regex_delimiters():
     data_gen = [('a', StringGen(pattern='(([bf]:{0,5}){1,7},{0,5}[0-9]{1,10}){0,10}',
@@ -270,6 +297,7 @@ def test_str_to_map_expr_with_regex_and_non_regex_delimiters():
             'str_to_map(a, ",", "[:]{1,10}") as m6'
         ), conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
 
+
 def test_str_to_map_expr_with_all_regex_delimiters():
     data_gen = [('a', StringGen(pattern='(([bf]:{0,5}){1,7},{0,5}[0-9]{1,10}){0,10}',
                                 nullable=True))]
@@ -282,6 +310,7 @@ def test_str_to_map_expr_with_all_regex_delimiters():
             'str_to_map(a, "[,]{1,10}", "[:]{1,10}") as m5'
         ), conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
 
+
 @pytest.mark.skipif(not is_before_spark_330(),
                     reason="Only in Spark 3.1.1+ (< 3.3.0) + ANSI mode, map key throws on no such element")
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
@@ -290,8 +319,9 @@ def test_simple_get_map_value_ansi_fail(data_gen):
     assert_gpu_and_cpu_error(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'a["NOT_FOUND"]').collect(),
-                conf=ansi_enabled_conf,
-                error_message=message)
+            conf=ansi_enabled_conf,
+            error_message=message)
+
 
 @pytest.mark.skipif(is_before_spark_330(),
                     reason="Only in Spark 3.3.0 + ANSI mode + Strict Index, map key throws on no such element")
@@ -299,7 +329,7 @@ def test_simple_get_map_value_ansi_fail(data_gen):
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 def test_simple_get_map_value_with_strict_index(strict_index, data_gen):
     message = "org.apache.spark.SparkNoSuchElementException"
-    test_conf=copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': strict_index})
+    test_conf = copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': strict_index})
     if strict_index == 'true':
         assert_gpu_and_cpu_error(
                 lambda spark: unary_op_df(spark, data_gen).selectExpr(
@@ -311,6 +341,7 @@ def test_simple_get_map_value_with_strict_index(strict_index, data_gen):
                 lambda spark: unary_op_df(spark, data_gen).selectExpr(
                         'a["NOT_FOUND"]'),
                 conf=test_conf)
+
 
 @pytest.mark.parametrize('data_gen',
                          [MapGen(StringGen(pattern='key_[0-9]', nullable=False), value(), max_length=6)
@@ -339,6 +370,7 @@ def test_element_at_map_numeric_keys(data_gen):
             'element_at(a, 999)'),
         conf={'spark.sql.ansi.enabled': False})
 
+
 @pytest.mark.parametrize('data_gen',
                          [MapGen(DecimalGen(precision=35, scale=2, nullable=False), value(), max_length=6)
                           for value in get_map_value_gens(precision=37, scale=0)],
@@ -350,8 +382,10 @@ def test_get_map_value_element_at_map_dec_col_keys(data_gen):
             'element_at(a, b)', 'a[b]'),
         conf={'spark.sql.ansi.enabled': False})
 
+
 @pytest.mark.parametrize('data_gen',
-                         [MapGen(StringGen(pattern='key', nullable=False), IntegerGen(nullable=False), max_length=1, min_length=1, nullable=False)],
+                         [MapGen(StringGen(pattern='key', nullable=False),
+                                 IntegerGen(nullable=False), max_length=1, min_length=1, nullable=False)],
                          ids=idfn)
 @pytest.mark.parametrize('ansi', [True, False], ids=idfn)
 def test_get_map_value_element_at_map_string_col_keys_ansi(data_gen, ansi):
@@ -360,6 +394,7 @@ def test_get_map_value_element_at_map_string_col_keys_ansi(data_gen, ansi):
         lambda spark: two_col_df(spark, data_gen, keys).selectExpr(
             'element_at(a, b)', 'a[b]'),
         conf={'spark.sql.ansi.enabled': ansi})
+
 
 @pytest.mark.parametrize('data_gen',
                          [MapGen(StringGen(pattern='key_[0-9]', nullable=False), value(), max_length=6)
@@ -372,17 +407,19 @@ def test_get_map_value_element_at_map_string_col_keys(data_gen):
             'element_at(a, b)', 'a[b]'),
         conf={'spark.sql.ansi.enabled': False})
 
+
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 def test_element_at_map_string_col_keys_ansi_fail(data_gen):
     keys = StringGen(pattern='NOT_FOUND')
     message = "org.apache.spark.SparkNoSuchElementException" if (not is_before_spark_330() or is_databricks104_or_later()) else "java.util.NoSuchElementException"
     # For 3.3.0+ strictIndexOperator should not affect element_at
-    test_conf=copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': 'false'})
+    test_conf = copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': 'false'})
     assert_gpu_and_cpu_error(
         lambda spark: two_col_df(spark, data_gen, keys).selectExpr(
             'element_at(a, b)').collect(),
         conf=test_conf,
         error_message=message)
+
 
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 def test_get_map_value_string_col_keys_ansi_fail(data_gen):
@@ -393,6 +430,7 @@ def test_get_map_value_string_col_keys_ansi_fail(data_gen):
             'a[b]').collect(),
         conf=ansi_enabled_conf,
         error_message=message)
+
 
 @pytest.mark.parametrize('data_gen',
                          [MapGen(DateGen(nullable=False), value(), max_length=6)
@@ -423,22 +461,23 @@ def test_element_at_map_timestamp_keys(data_gen):
 def test_map_element_at_ansi_fail(data_gen):
     message = "org.apache.spark.SparkNoSuchElementException" if (not is_before_spark_330() or is_databricks104_or_later()) else "java.util.NoSuchElementException"
     # For 3.3.0+ strictIndexOperator should not affect element_at
-    test_conf=copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': 'false'})
+    test_conf = copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': 'false'})
     assert_gpu_and_cpu_error(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'element_at(a, "NOT_FOUND")').collect(),
-                conf=test_conf,
-                error_message=message)
+            conf=test_conf,
+            error_message=message)
+
 
 @pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
 def test_transform_values(data_gen):
     def do_it(spark):
         columns = ['a', 'b',
-                'transform_values(a, (key, value) -> value) as ident',
-                'transform_values(a, (key, value) -> null) as n',
-                'transform_values(a, (key, value) -> 1) as one',
-                'transform_values(a, (key, value) -> key) as indexed',
-                'transform_values(a, (key, value) -> b) as b_val']
+                   'transform_values(a, (key, value) -> value) as ident',
+                   'transform_values(a, (key, value) -> null) as n',
+                   'transform_values(a, (key, value) -> 1) as one',
+                   'transform_values(a, (key, value) -> key) as indexed',
+                   'transform_values(a, (key, value) -> b) as b_val']
         value_type = data_gen.data_type.valueType
         # decimal types can grow too large so we are avoiding those here for now
         if isinstance(value_type, IntegralType):
@@ -452,9 +491,12 @@ def test_transform_values(data_gen):
 
         if isinstance(value_type, ArrayType):
             columns.extend([
-                'transform_values(a, (key, value) -> transform(value, sub_entry -> 1)) as sub_one',
-                'transform_values(a, (key, value) -> transform(value, (sub_entry, sub_index) -> sub_index)) as sub_index',
-                'transform_values(a, (key, value) -> transform(value, (sub_entry, sub_index) -> sub_index + b)) as add_indexes'])
+                'transform_values(a, '
+                '                 (key, value) -> transform(value, sub_entry -> 1)) as sub_one',
+                'transform_values(a, '
+                '                 (key, value) -> transform(value, (sub_entry, sub_index) -> sub_index)) as sub_index',
+                'transform_values(a, '
+                '                 (key, value) -> transform(value, (sub_entry, sub_index) -> sub_index + b)) as add_indexes'])
 
         if isinstance(value_type, MapType):
             columns.extend([
@@ -464,14 +506,14 @@ def test_transform_values(data_gen):
 
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
+
 @pytest.mark.parametrize('data_gen', map_gens_sample + decimal_128_map_gens + decimal_64_map_gens, ids=idfn)
 def test_transform_keys(data_gen):
     # The processing here is very limited, because we need to be sure we do not create duplicate keys.
     # This can happen because of integer overflow, round off errors in floating point, etc. So for now
     # we really are only looking at a very basic transformation.
     def do_it(spark):
-        columns = ['a',
-                'transform_keys(a, (key, value) -> key) as ident']
+        columns = ['a', 'transform_keys(a, (key, value) -> key) as ident']
         key_type = data_gen.data_type.keyType
         if isinstance(key_type, StringType):
             columns.extend(['transform_keys(a, (key, value) -> concat(key, "-test")) as con'])
@@ -480,13 +522,15 @@ def test_transform_keys(data_gen):
 
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
+
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 def test_transform_keys_null_fail(data_gen):
     assert_gpu_and_cpu_error(
             lambda spark: unary_op_df(spark, data_gen).selectExpr(
                 'transform_keys(a, (key, value) -> CAST(null as INT))').collect(),
-                conf={},
-                error_message='Cannot use null as map key')
+            conf={},
+            error_message='Cannot use null as map key')
+
 
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 def test_transform_keys_duplicate_fail(data_gen):
@@ -503,11 +547,13 @@ def test_transform_keys_last_win(data_gen):
             lambda spark: unary_op_df(spark, data_gen).selectExpr('transform_keys(a, (key, value) -> 1)'),
             conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
 
+
 @pytest.mark.parametrize('data_gen', [MapGen(IntegerGen(nullable=False), long_gen)], ids=idfn)
 def test_transform_keys_last_win2(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).selectExpr('transform_keys(a, (key, value) -> key % 2)'),
         conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
+
 
 # We add in several types of processing for foldable functions because the output
 # can be different types.
@@ -517,7 +563,8 @@ def test_transform_keys_last_win2(data_gen):
     'map(1, sequence(1, 5)) as m'], ids=idfn)
 def test_sql_map_scalars(query):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : spark.sql('SELECT {}'.format(query)))
+            lambda spark: spark.sql('SELECT {}'.format(query)))
+
 
 @pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
 def test_map_filter(data_gen):

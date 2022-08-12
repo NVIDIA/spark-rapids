@@ -1040,6 +1040,7 @@
         <target.classifier>${spark.version.classifier}</target.classifier>
         <maven.clean.plugin.version>3.1.0</maven.clean.plugin.version>
         <maven.scalastyle.skip>false</maven.scalastyle.skip>
+        <dist.jar.compress>true</dist.jar.compress>
     </properties>
 
     <dependencyManagement>

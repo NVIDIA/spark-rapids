@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.Locale
+import java.util.{Locale, Optional}
 
 import scala.collection.JavaConverters._
 
@@ -25,6 +25,7 @@ import com.nvidia.spark.rapids.shims.ParquetSchemaClipShims
 import org.apache.parquet.schema._
 import org.apache.parquet.schema.Type.Repetition
 
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 
@@ -510,7 +511,8 @@ object ParquetSchemaUtils extends Arm {
     }
     SchemaUtils.evolveSchemaIfNeededAndClose(table, fileSparkSchema, sparkSchema,
       caseSensitive, Some(evolveSchemaCasts),
-      existsUnsignedType(fileSchema.asGroupType()))
+      existsUnsignedType(fileSchema.asGroupType()) ||
+          TrampolineUtil.dataTypeExistsRecursively(sparkSchema, _.isInstanceOf[BinaryType]))
   }
 
   /**
@@ -567,8 +569,23 @@ object ParquetSchemaUtils extends Arm {
       cv.castTo(DType.create(GpuColumnVector.getNonNestedRapidsType(dt).getTypeId))
     } else if (needInt32Downcast(cv, dt)) {
       cv.castTo(DType.create(GpuColumnVector.getNonNestedRapidsType(dt).getTypeId))
+    } else if (DType.STRING.equals(cv.getType) && dt == BinaryType) {
+      // Ideally we would bitCast the STRING to a LIST, but that does not work.
+      // Instead we are going to have to pull apart the string and put it back together
+      // as a list.
+
+      val dataBuf = cv.getData
+      withResource(new ColumnView(DType.INT8, dataBuf.getLength, Optional.of(0L),
+        dataBuf, null)) { data =>
+        withResource(new ColumnView(DType.LIST, cv.getRowCount,
+          Optional.of[java.lang.Long](cv.getNullCount),
+          cv.getValid, cv.getOffsets, Array(data))) { everything =>
+          everything.copyToColumnVector()
+        }
+      }
     } else {
-      throw new IllegalStateException("Logical error: no valid casts are found")
+      throw new IllegalStateException("Logical error: no valid casts are found " +
+          s"${cv.getType} to $dt")
     }
   }
 }
