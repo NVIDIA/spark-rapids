@@ -22,6 +22,7 @@ from pyspark.sql.types import *
 from spark_init_internal import spark_version
 from datetime import datetime
 import math
+import datetime
 
 _decimal_gen_36_5 = DecimalGen(precision=36, scale=5)
 
@@ -472,6 +473,11 @@ def test_cast_timestamp_to_numeric_non_ansi():
         lambda spark: unary_op_df(spark, timestamp_gen)
             .selectExpr("cast(a as byte)", "cast(a as short)", "cast(a as int)", "cast(a as long)",
                         "cast(a as float)", "cast(a as double)"))
+
+def test_cast_timestamp_to_string():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, timestamp_gen)
+            .selectExpr("cast(a as string)"))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 def test_cast_day_time_interval_to_string():
