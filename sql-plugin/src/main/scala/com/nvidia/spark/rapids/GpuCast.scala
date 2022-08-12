@@ -176,7 +176,7 @@ object GpuCast extends Arm {
    */
   private val TIMESTAMP_TRUNCATE_REGEX = "^([0-9]{4}-[0-9]{2}-[0-9]{2} " +
     "[0-9]{2}:[0-9]{2}:[0-9]{2})" +
-    "(.[0-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?$"
+    "(.0*[1-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?$"
   private val BIG_DECIMAL_LONG_MIN = BigDecimal(Long.MinValue)
   private val BIG_DECIMAL_LONG_MAX = BigDecimal(Long.MaxValue)
 
