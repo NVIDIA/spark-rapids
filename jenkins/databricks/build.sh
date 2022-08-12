@@ -445,7 +445,7 @@ $MVN_CMD -B install:install-file \
    -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
    -Dpackaging=jar
 
-$MVN_CMD -B -Ddatabricks -Dbuildver=$BUILDVER clean package -DskipTests $MVN_CMD_OPT
+$MVN_CMD -B -Ddatabricks -Dbuildver=$BUILDVER clean package -DskipTests $MVN_OPT
 
 cd /home/ubuntu
 tar -zcf spark-rapids-built.tgz spark-rapids
