@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.tool.profiling
 
+import java.io.FileNotFoundException
+
 import org.yaml.snakeyaml.Yaml
 import scala.collection.JavaConverters._
 
@@ -144,6 +146,7 @@ class AutoTuner(app: ApplicationSummaryInfo, workerInfo: String) extends Logging
   val DEFAULT_SHUFFLE_PARTITION_MULTIPLIER: Int = 2
   val MAX_JVM_GCTIME_FRACTION: Double = 0.3
 
+  val DEFAULT_CONCURRENT_GPU_TASKS: Int = 2
   val DEFAULT_CONCURRENT_GPU_TASKS_MULTIPLIER: Double = 0.125 // Currently aggressively set to 1/8
   val MAX_CONCURRENT_GPU_TASKS: Int = 4
 
@@ -165,152 +168,98 @@ class AutoTuner(app: ApplicationSummaryInfo, workerInfo: String) extends Logging
 
   var comments: Seq[String] = Seq()
 
-  private def recommendSparkProperties(recommendedConfig: Config,
+  /**
+   * Recommendation for 'spark.executor.instances' based on number of gpus and workers.
+   */
+  private def recommendExecutorInstances(recommendedConfig: Config,
       systemProps: SystemProps): Unit = {
-    if (systemProps == null) {
-      logWarning("System information is not available. Cannot recommend properties.")
-      comments :+= "'spark.executor.memory' should be set to at least 2GB/core."
-      comments :+= "'spark.executor.instances' should be set to 'num_gpus * num_workers'."
-    } else {
-      // Recommendation for 'spark.executor.instances' based on number of gpus and workers
-      systemProps.numWorkers match {
-        case Some(numWorkers) =>
-          val numInstances = if (systemProps.gpuProps != null) {
-            numWorkers * systemProps.gpuProps.count
-          } else {
-            numWorkers
-          }
-
-          recommendedConfig.setExecutorInstances(numInstances)
-        case None =>
-          val num_gpus_str = if (systemProps.gpuProps != null) {
-            systemProps.gpuProps.count.toString
-          } else {
-            "num_gpus"
-          }
-
-          comments :+= s"'spark.executor.instances' should be set to $num_gpus_str * num_workers."
-      }
-
-      // Recommendation for 'spark.executor.cores' based on number of cpu cores and gpus
-      val numCores: Int = if (systemProps.gpuProps != null) {
-        Math.min(systemProps.numCores * 1.0 / systemProps.gpuProps.count,
-          MAX_PER_EXECUTOR_CORE_COUNT).toInt
-      } else {
-        systemProps.numCores
-      }
-
-      if (numCores < MIN_PER_EXECUTOR_CORE_COUNT) {
-        comments :+= s"Number of cores per executor is very low. " +
-          s"It is recommended to have at least $MIN_PER_EXECUTOR_CORE_COUNT cores per executor."
-      }
-
-      if (systemProps.numWorkers.nonEmpty) {
-        val numInstances = recommendedConfig.getExecutorInstances
-        if (numCores * numInstances < systemProps.numCores) {
-          comments :+= "Not all cores in the machine are being used. " +
-            "It is recommended to use different machine."
-        }
-      }
-
-      recommendedConfig.setExecutorCores(numCores)
-
-      // Recommendation for 'spark.executor.memory' based on system memory, cluster scheduler
-      // and num of gpus
-      val sparkMaster = getSparkProperty(app, "spark.master")
-      val systemMemoryNum: Long = convertFromHumanReadableSize(systemProps.memory)
-      val extraSystemMemoryNum: Long = convertFromHumanReadableSize(MAX_EXTRA_SYSTEM_MEMORY)
-      val effectiveSystemMemoryNum: Long =
-        if (sparkMaster.contains("yarn") || sparkMaster.contains("k8s")) {
-          systemMemoryNum - extraSystemMemoryNum -
-            convertFromHumanReadableSize(MIN_MEMORY_OVERHEAD)
+    systemProps.numWorkers match {
+      case Some(numWorkers) =>
+        val numInstances = if (systemProps.gpuProps != null) {
+          numWorkers * systemProps.gpuProps.count
         } else {
-          systemMemoryNum - extraSystemMemoryNum
+          numWorkers
         }
-      val maxExecutorMemNum: Long = convertFromHumanReadableSize(MAX_EXECUTOR_MEMORY)
 
-      val executorMemory: Long = if (systemProps.gpuProps != null) {
-        Math.min(effectiveSystemMemoryNum * 1.0 / systemProps.gpuProps.count,
-          maxExecutorMemNum).toLong
-      } else {
-        Math.min(effectiveSystemMemoryNum * 1.0 / numCores,
-          maxExecutorMemNum).toLong
-      }
+        recommendedConfig.setExecutorInstances(numInstances)
+      case None =>
+        val num_gpus_str = if (systemProps.gpuProps != null) {
+          systemProps.gpuProps.count.toString
+        } else {
+          "num_gpus"
+        }
 
-      if(executorMemory < convertFromHumanReadableSize(MIN_EXECUTOR_MEMORY)) {
-        comments :+= s"Executor memory is very low. " +
-          s"It is recommended to have at least $MIN_EXECUTOR_MEMORY"
-      }
-
-      recommendedConfig.setExecutorMemory(convertToHumanReadableSize(executorMemory))
-
-      // Recommendation for 'spark.sql.shuffle.partitions' based on spill size
-      var shufflePartitions: Int = getSparkProperty(app, "spark.sql.shuffle.partitions")
-        .getOrElse("200").toInt
-
-      // TODO: Need to look at other metrics for GPU spills (DEBUG mode), and batch sizes metric
-      val totalSpilledMetrics = app.sqlTaskAggMetrics.map {
-        task => task.diskBytesSpilledSum + task.memoryBytesSpilledSum
-      }.sum
-      if (totalSpilledMetrics > 0) {
-        shufflePartitions *= DEFAULT_SHUFFLE_PARTITION_MULTIPLIER
-        // Could be memory instead of partitions
-        comments :+= "\"spark.sql.shuffle.partitions\" should be increased since spilling occurred."
-      }
-      recommendedConfig.setShufflePartitions(shufflePartitions)
-
-      // Recommendation for 'spark.sql.files.maxPartitionBytes' based on input size for each task
-      getSparkProperty(app, "spark.sql.files.maxPartitionBytes") match {
-        case None => recommendedConfig.setMaxPartitionBytes(DEFAULT_MAX_PARTITION_BYTES)
-        case Some(maxPartitionBytes) =>
-          val taskInputSize =
-            app.sqlTaskAggMetrics.map(_.inputBytesReadAvg).sum / app.sqlTaskAggMetrics.size
-          val maxPartitionBytesNum = convertFromHumanReadableSize(maxPartitionBytes)
-          val newMaxPartitionBytes =
-            if (taskInputSize < convertFromHumanReadableSize(MIN_PARTITION_BYTES_RANGE)) {
-              // Increase partition size
-              val calculatedMaxPartitionBytes = Math.max(
-                maxPartitionBytesNum *
-                  (convertFromHumanReadableSize(MIN_PARTITION_BYTES_RANGE) / taskInputSize),
-                convertFromHumanReadableSize(MAX_PARTITION_BYTES_BOUND))
-
-              convertToHumanReadableSize(calculatedMaxPartitionBytes.toLong)
-            } else if (taskInputSize > convertFromHumanReadableSize(MAX_PARTITION_BYTES_RANGE)) {
-              // Decrease partition size
-              val calculatedMaxPartitionBytes = Math.max(
-                maxPartitionBytesNum /
-                  (taskInputSize / convertFromHumanReadableSize(MAX_PARTITION_BYTES_RANGE)),
-                convertFromHumanReadableSize(MAX_PARTITION_BYTES_BOUND))
-
-              convertToHumanReadableSize(calculatedMaxPartitionBytes.toLong)
-            } else {
-              // Do not recommend maxPartitionBytes
-              null
-            }
-
-          recommendedConfig.setMaxPartitionBytes(newMaxPartitionBytes)
-      }
-
-      // Other general recommendations
-      val aqeEnabled = getSparkProperty(app, "spark.sql.adaptive.enabled").getOrElse("False")
-      if (aqeEnabled == "False") {
-        comments :+= "'spark.sql.adaptive.enabled' should be enabled for better performance."
-      }
-
-      val jvmGCFraction = app.sqlTaskAggMetrics.map {
-        taskMetrics => taskMetrics.jvmGCTimeSum * 1.0 / taskMetrics.executorCpuTime
-      }
-      if ((jvmGCFraction.sum / jvmGCFraction.size) > MAX_JVM_GCTIME_FRACTION) {
-        comments :+= "Average JVM GC time is very high. " +
-          "Other Garbage Collectors can be used for better performance"
-      }
+        comments :+= s"'spark.executor.instances' should be set to $num_gpus_str * num_workers."
     }
   }
 
   /**
-   * Recommend memory overhead as: pinnedPoolSize + (memoryOverheadFactor * executorMemory)
+   * Recommendation for 'spark.executor.cores' based on number of cpu cores and gpus.
    */
-  private def recommendMemoryOverhead(pinnedPoolSize: String, executorMemory: String): Long = {
+  private def recommendExecutorCores(recommendedConfig: Config,
+      systemProps: SystemProps): Unit = {
+    val numCores: Int = if (systemProps.gpuProps != null) {
+      Math.min(systemProps.numCores * 1.0 / systemProps.gpuProps.count,
+        MAX_PER_EXECUTOR_CORE_COUNT).toInt
+    } else {
+      systemProps.numCores
+    }
+
+    if (numCores < MIN_PER_EXECUTOR_CORE_COUNT) {
+      comments :+= s"Number of cores per executor is very low. " +
+        s"It is recommended to have at least $MIN_PER_EXECUTOR_CORE_COUNT cores per executor."
+    }
+
+    if (systemProps.numWorkers.nonEmpty) {
+      val numInstances = recommendedConfig.getExecutorInstances
+      if (numCores * numInstances < systemProps.numCores) {
+        comments :+= "Not all cores in the machine are being used. " +
+          "It is recommended to use different machine."
+      }
+    }
+
+    recommendedConfig.setExecutorCores(numCores)
+  }
+
+  /**
+   * Recommendation for 'spark.executor.memory' based on system memory, cluster scheduler
+   * and num of gpus.
+   * Note - This method requires recommendedConfig to have 'spark.executor.cores' set.
+   */
+  private def recommendExecutorMemory(recommendedConfig: Config,
+      systemProps: SystemProps): Unit = {
+    val sparkMaster = getSparkProperty(app, "spark.master")
+    val systemMemoryNum: Long = convertFromHumanReadableSize(systemProps.memory)
+    val extraSystemMemoryNum: Long = convertFromHumanReadableSize(MAX_EXTRA_SYSTEM_MEMORY)
+    val effectiveSystemMemoryNum: Long =
+      if (sparkMaster.contains("yarn") || sparkMaster.contains("k8s")) {
+        systemMemoryNum - extraSystemMemoryNum -
+          convertFromHumanReadableSize(MIN_MEMORY_OVERHEAD)
+      } else {
+        systemMemoryNum - extraSystemMemoryNum
+      }
+    val maxExecutorMemNum: Long = convertFromHumanReadableSize(MAX_EXECUTOR_MEMORY)
+
+    val executorMemory: Long = if (systemProps.gpuProps != null) {
+      Math.min(effectiveSystemMemoryNum * 1.0 / systemProps.gpuProps.count,
+        maxExecutorMemNum).toLong
+    } else {
+      Math.min(effectiveSystemMemoryNum * 1.0 / recommendedConfig.getExecutorCores,
+        maxExecutorMemNum).toLong
+    }
+
+    if(executorMemory < convertFromHumanReadableSize(MIN_EXECUTOR_MEMORY)) {
+      comments :+= s"Executor memory is very low. " +
+        s"It is recommended to have at least $MIN_EXECUTOR_MEMORY."
+    }
+
+    recommendedConfig.setExecutorMemory(convertToHumanReadableSize(executorMemory))
+  }
+
+  /**
+   * Calculate memory overhead as: pinnedPoolSize + (memoryOverheadFactor * executorMemory)
+   */
+  private def calculateMemoryOverhead(pinnedPoolSize: String, executorMemory: String): Long = {
     val pinnedPoolSizeNum = convertFromHumanReadableSize(pinnedPoolSize)
     val executorMemoryNum = convertFromHumanReadableSize(executorMemory)
     val minMemoryOverhead = convertFromHumanReadableSize(MIN_MEMORY_OVERHEAD)
@@ -318,64 +267,178 @@ class AutoTuner(app: ApplicationSummaryInfo, workerInfo: String) extends Logging
       DEFAULT_MEMORY_OVERHEAD_FACTOR * executorMemoryNum)).toLong
   }
 
+  /**
+   * Recommendation for 'spark.executor.memoryOverhead', 'spark.executor.memoryOverheadFactor'
+   * or 'spark.kubernetes.memoryOverheadFactor' based on cluster scheduler, spark version.
+   * See [[calculateMemoryOverhead]] for the calculation used.
+   *
+   * Also, recommends 'spark.rapids.memory.pinnedPool.size' if it is not set.
+   */
+  private def recommendMemoryOverheadProperties(recommendedConfig: Config): Unit = {
+    getSparkProperty(app, "spark.rapids.memory.pinnedPool.size") match {
+      case Some(pinnedPoolSize) =>
+        val sparkMaster = getSparkProperty(app, "spark.master")
+        if (sparkMaster.contains("k8s")) {
+          if (compareSparkVersion(app.appInfo.head.sparkVersion, "3.3.0") > 0) {
+            if (getSparkProperty(app, "spark.executor.memoryOverheadFactor").isEmpty) {
+              comments :+= "'spark.executor.memoryOverheadFactor' must be set " +
+                "if using 'spark.rapids.memory.pinnedPool.size'"
+            }
+          } else {
+            if (getSparkProperty(app, "spark.kubernetes.memoryOverheadFactor").isEmpty) {
+              comments :+= "'spark.kubernetes.memoryOverheadFactor' must be set " +
+                "if using 'spark.rapids.memory.pinnedPool.size'"
+            }
+          }
+        } else if (sparkMaster.contains("yarn")) {
+          if (getSparkProperty(app, "spark.executor.memoryOverhead").isEmpty) {
+            val memoryOverhead = calculateMemoryOverhead(pinnedPoolSize,
+              recommendedConfig.getExecutorMemory)
+            recommendedConfig.setExecutorMemoryOverhead(
+              convertToHumanReadableSize(memoryOverhead))
+          }
+        }
+
+      case None =>
+        recommendedConfig.setPinnedPoolSize(DEFAULT_PINNED_POOL_SIZE)
+        val memoryOverhead = calculateMemoryOverhead(DEFAULT_PINNED_POOL_SIZE,
+          recommendedConfig.getExecutorMemory)
+        recommendedConfig.setExecutorMemoryOverhead(
+          convertToHumanReadableSize(memoryOverhead))
+    }
+  }
+
+  /**
+   * Recommendation for 'spark.sql.shuffle.partitions' based on spill size.
+   */
+  private def recommendShufflePartitions(recommendedConfig: Config): Unit = {
+    var shufflePartitions: Int = getSparkProperty(app, "spark.sql.shuffle.partitions")
+      .getOrElse("200").toInt
+
+    // TODO: Need to look at other metrics for GPU spills (DEBUG mode), and batch sizes metric
+    val totalSpilledMetrics = app.sqlTaskAggMetrics.map {
+      task => task.diskBytesSpilledSum + task.memoryBytesSpilledSum
+    }.sum
+    if (totalSpilledMetrics > 0) {
+      shufflePartitions *= DEFAULT_SHUFFLE_PARTITION_MULTIPLIER
+      // Could be memory instead of partitions
+      comments :+= "\"spark.sql.shuffle.partitions\" should be increased since spilling occurred."
+    }
+    recommendedConfig.setShufflePartitions(shufflePartitions)
+  }
+
+  /**
+   * Recommendation for 'spark.sql.files.maxPartitionBytes' based on input size for each task.
+   */
+  private def recommendMaxPartitionBytes(recommendedConfig: Config): Unit = {
+    getSparkProperty(app, "spark.sql.files.maxPartitionBytes") match {
+      case None => recommendedConfig.setMaxPartitionBytes(DEFAULT_MAX_PARTITION_BYTES)
+      case Some(maxPartitionBytes) =>
+        val taskInputSize =
+          app.sqlTaskAggMetrics.map(_.inputBytesReadAvg).sum / app.sqlTaskAggMetrics.size
+        val maxPartitionBytesNum = convertFromHumanReadableSize(maxPartitionBytes)
+        val newMaxPartitionBytes =
+          if (taskInputSize < convertFromHumanReadableSize(MIN_PARTITION_BYTES_RANGE)) {
+            // Increase partition size
+            val calculatedMaxPartitionBytes = Math.max(
+              maxPartitionBytesNum *
+                (convertFromHumanReadableSize(MIN_PARTITION_BYTES_RANGE) / taskInputSize),
+              convertFromHumanReadableSize(MAX_PARTITION_BYTES_BOUND))
+
+            convertToHumanReadableSize(calculatedMaxPartitionBytes.toLong)
+          } else if (taskInputSize > convertFromHumanReadableSize(MAX_PARTITION_BYTES_RANGE)) {
+            // Decrease partition size
+            val calculatedMaxPartitionBytes = Math.max(
+              maxPartitionBytesNum /
+                (taskInputSize / convertFromHumanReadableSize(MAX_PARTITION_BYTES_RANGE)),
+              convertFromHumanReadableSize(MAX_PARTITION_BYTES_BOUND))
+
+            convertToHumanReadableSize(calculatedMaxPartitionBytes.toLong)
+          } else {
+            // Do not recommend maxPartitionBytes
+            null
+          }
+
+        recommendedConfig.setMaxPartitionBytes(newMaxPartitionBytes)
+    }
+  }
+
+  private def recommendGeneralProperties() = {
+    val aqeEnabled = getSparkProperty(app, "spark.sql.adaptive.enabled").getOrElse("False")
+    if (aqeEnabled == "False") {
+      comments :+= "'spark.sql.adaptive.enabled' should be enabled for better performance."
+    }
+
+    val jvmGCFraction = app.sqlTaskAggMetrics.map {
+      taskMetrics => taskMetrics.jvmGCTimeSum * 1.0 / taskMetrics.executorCpuTime
+    }
+    if ((jvmGCFraction.sum / jvmGCFraction.size) > MAX_JVM_GCTIME_FRACTION) {
+      comments :+= "Average JVM GC time is very high. " +
+        "Other Garbage Collectors can be used for better performance"
+    }
+  }
+
+  /**
+   * Recommendation for 'spark.task.resource.gpu.amount' based on num of cpu cores.
+   */
+  private def recommendTaskResourceGpu(recommendedConfig: Config): Unit = {
+    val numCores: Int = recommendedConfig.getExecutorCores
+    val taskResourceGpu: Double = 1.0 / numCores
+    recommendedConfig.setTaskResourceGpu(taskResourceGpu)
+  }
+
+  /**
+   * Recommendation for 'spark.rapids.sql.concurrentGpuTasks' based on gpu memory.
+   */
+  private def recommendConcurrentGpuTasks(recommendedConfig: Config,
+      systemProps: SystemProps): Unit = {
+    val numCores: Int = recommendedConfig.getExecutorCores
+    val gpuMemoryNum: Long = convertFromHumanReadableSize(systemProps.gpuProps.memory)
+    val concurrentGpuTasks: Int = Math.min(
+      gpuMemoryNum * DEFAULT_CONCURRENT_GPU_TASKS_MULTIPLIER,
+      MAX_CONCURRENT_GPU_TASKS).toInt
+    recommendedConfig.setConcurrentGpuTasks(concurrentGpuTasks)
+
+    if(numCores < concurrentGpuTasks) {
+      comments :+= s"For the given GPU, number of CPU cores is very low. It should be" +
+        s" at least equal to concurrent gpu tasks i.e. $concurrentGpuTasks."
+    }
+  }
+
+  /**
+   * Recommendations for Spark only properties.
+   */
+  private def recommendSparkProperties(recommendedConfig: Config,
+      systemProps: SystemProps): Unit = {
+    if (systemProps == null) {
+      logWarning("System information is not available. Cannot recommend properties.")
+      comments :+= "'spark.executor.memory' should be set to at least 2GB/core."
+      comments :+= "'spark.executor.instances' should be set to 'num_gpus * num_workers'."
+    } else {
+      recommendExecutorInstances(recommendedConfig, systemProps)
+      recommendExecutorCores(recommendedConfig, systemProps)
+      recommendExecutorMemory(recommendedConfig, systemProps)
+      recommendMemoryOverheadProperties(recommendedConfig)
+      recommendShufflePartitions(recommendedConfig)
+      recommendMaxPartitionBytes(recommendedConfig)
+      recommendGeneralProperties()
+    }
+  }
+
+  /**
+   * Recommendations for GPU (RAPIDS) properties.
+   */
   private def recommendGpuProperties(recommendedConfig: Config, systemProps: SystemProps): Unit = {
     if (systemProps == null || systemProps.gpuProps == null) {
       logWarning("GPU information is not available. Cannot recommend properties.")
       comments :+= "'spark.task.resource.gpu.amount' should be set to 1/#cores."
+      comments :+= s"'spark.rapids.sql.concurrentGpuTasks' should be set to" +
+        s" $DEFAULT_CONCURRENT_GPU_TASKS."
+      comments :+= s"'spark.rapids.memory.pinnedPool.size' should be set to" +
+        s" $DEFAULT_PINNED_POOL_SIZE."
     } else {
-      // Recommendation for 'spark.task.resource.gpu.amount' based on num of cpu cores and
-      // 'spark.rapids.sql.concurrentGpuTasks' based on gpu memory
-      val numGpus: Int = systemProps.gpuProps.count
-      val numCores: Int = recommendedConfig.getExecutorCores
-
-      val taskResourceGpu: Double = 1.0 / numCores
-      val gpuMemoryNum: Long = convertFromHumanReadableSize(systemProps.gpuProps.memory)
-      val concurrentGpuTasks: Int = Math.min(
-        gpuMemoryNum * DEFAULT_CONCURRENT_GPU_TASKS_MULTIPLIER,
-        MAX_CONCURRENT_GPU_TASKS).toInt
-
-      recommendedConfig.setTaskResourceGpu(taskResourceGpu)
-      recommendedConfig.setConcurrentGpuTasks(concurrentGpuTasks)
-
-      if(numCores < concurrentGpuTasks) {
-        comments :+= s"For the given GPU, number of CPU cores is very low. It should be" +
-          s" at least equal to concurrent gpu tasks i.e. $concurrentGpuTasks."
-      }
-
-      // Recommendation for 'spark.executor.memoryOverhead', 'spark.executor.memoryOverheadFactor'
-      // or 'spark.kubernetes.memoryOverheadFactor' based on cluster scheduler, spark
-      // version. See recommendMemoryOverhead() for the calculation used.
-      getSparkProperty(app, "spark.rapids.memory.pinnedPool.size") match {
-        case Some(pinnedPoolSize) =>
-          val sparkMaster = getSparkProperty(app, "spark.master")
-          if (sparkMaster.contains("k8s")) {
-            if (compareSparkVersion(app.appInfo.head.sparkVersion, "3.3.0") > 0) {
-              if (getSparkProperty(app, "spark.executor.memoryOverheadFactor").isEmpty) {
-                comments :+= "'spark.executor.memoryOverheadFactor' must be set " +
-                  "if using 'spark.rapids.memory.pinnedPool.size'"
-              }
-            } else {
-              if (getSparkProperty(app, "spark.kubernetes.memoryOverheadFactor").isEmpty) {
-                comments :+= "'spark.kubernetes.memoryOverheadFactor' must be set " +
-                  "if using 'spark.rapids.memory.pinnedPool.size'"
-              }
-            }
-          } else if (sparkMaster.contains("yarn")) {
-            if (getSparkProperty(app, "spark.executor.memoryOverhead").isEmpty) {
-              val memoryOverhead = recommendMemoryOverhead(pinnedPoolSize,
-                recommendedConfig.getExecutorMemory)
-              recommendedConfig.setExecutorMemoryOverhead(
-                convertToHumanReadableSize(memoryOverhead))
-            }
-          }
-
-        case None =>
-          recommendedConfig.setPinnedPoolSize(DEFAULT_PINNED_POOL_SIZE)
-          val memoryOverhead = recommendMemoryOverhead(DEFAULT_PINNED_POOL_SIZE,
-            recommendedConfig.getExecutorMemory)
-          recommendedConfig.setExecutorMemoryOverhead(
-            convertToHumanReadableSize(memoryOverhead))
-      }
+      recommendTaskResourceGpu(recommendedConfig)
+      recommendConcurrentGpuTasks(recommendedConfig, systemProps)
     }
   }
 
@@ -384,7 +447,11 @@ class AutoTuner(app: ApplicationSummaryInfo, workerInfo: String) extends Logging
    */
   def getRecommendedProperties: (Seq[RecommendedPropertyResult],
     Seq[RecommendedCommentResult]) = {
-    val systemProps = parseSystemInfo(workerInfo)
+    val (systemProps, message) = parseSystemInfo(workerInfo)
+    if(message.nonEmpty) {
+      comments :+= message.get
+    }
+
     val recommendedConfig = new Config()
     recommendSparkProperties(recommendedConfig, systemProps)
     recommendGpuProperties(recommendedConfig, systemProps)
@@ -400,7 +467,7 @@ object AutoTuner extends Logging {
    * Parses the yaml file and returns system and gpu properties.
    * See [[SystemProps]] and [[GpuProps]].
    */
-  def parseSystemInfo(yamlFile: String): SystemProps = {
+  def parseSystemInfo(yamlFile: String): (SystemProps, Option[String]) = {
      try {
        val yaml = new Yaml()
        val file = scala.io.Source.fromFile(yamlFile)
@@ -423,21 +490,27 @@ object AutoTuner extends Logging {
            null
          }
 
-         SystemProps(
+         (SystemProps(
            rawSystemProps.getOrElse("num_cores", 1).toString.toInt,
            rawSystemProps.getOrElse("cpu_arch", "").toString,
            rawSystemProps.getOrElse("memory", "0b").toString,
            rawSystemProps.getOrElse("free_disk_space", "0b").toString,
            rawSystemProps.getOrElse("time_zone", "").toString,
            rawSystemProps.get("num_workers").map(_.toString.toInt),
-           gpuProps)
+           gpuProps), None)
        } else {
-         null
+         (null, Some("System properties was empty"))
        }
      } catch {
+       case e: FileNotFoundException =>
+         logError("Exception: " + e.getStackTrace.mkString("Array(", ", ", ")"))
+         (null, Some("System properties file was not found"))
+       case e: NullPointerException =>
+         logError("Exception: " + e.getStackTrace.mkString("Array(", ", ", ")"))
+         (null, Some("System properties file was not formatted correctly."))
        case e: Exception =>
          logError("Exception: " + e.getStackTrace.mkString("Array(", ", ", ")"))
-         null
+         (null, Some(e.toString))
      }
   }
 

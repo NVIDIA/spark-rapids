@@ -459,10 +459,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
           val propertiesToStr = properties.map(_.toString).reduce(_ + "\n" + _)
           profileOutputWriter.writeText("\nSpark Properties:\n" + propertiesToStr + "\n")
         } else {
-          // Currently, properties would be empty only if system properties were not present.
-          // Refer AutoTuner.
-          profileOutputWriter.writeText("Unable to find system properties." +
-            " Cannot recommend properties.\n")
+          profileOutputWriter.writeText("Cannot recommend properties. See Comments.\n")
         }
 
         // Comments are optional

@@ -31,14 +31,14 @@ class AutoTunerSuite extends FunSuite with Logging {
   private val autoTunerLogDir =
     ToolTestUtils.getTestResourcePath("AutoTuner")
 
-  private def testSystemPropertyFile(systemProperties: String): SystemProps = {
-    var systemInfo: SystemProps = null
+  private def testSystemPropertyFile(systemProperties: String): (SystemProps, Option[String]) = {
+    var systemInfoWithMsg:(SystemProps, Option[String]) = null
     TrampolineUtil.withTempDir { tempDir =>
       val systemPropsFile = Paths.get(tempDir.getAbsolutePath, "system_props.yaml")
       Files.write(systemPropsFile, systemProperties.getBytes(StandardCharsets.UTF_8))
-      systemInfo = AutoTuner.parseSystemInfo(systemPropsFile.toAbsolutePath.toString)
+      systemInfoWithMsg = AutoTuner.parseSystemInfo(systemPropsFile.toAbsolutePath.toString)
     }
-    systemInfo
+    systemInfoWithMsg
   }
 
   test("test system property - exists") {
@@ -56,15 +56,14 @@ class AutoTunerSuite extends FunSuite with Logging {
         |  memory: 32gb
         |  name: NVIDIA V100
         |""".stripMargin
-    val systemInfo = testSystemPropertyFile(systemProperties)
-    assert(systemInfo != null)
-
+    val (systemInfo, msg) = testSystemPropertyFile(systemProperties)
+    assert(systemInfo != null && msg.isEmpty)
   }
 
   test("test system property - does not exists") {
     val systemProperties = ""
-    val systemInfo = testSystemPropertyFile(systemProperties)
-    assert(systemInfo == null)
+    val (systemInfo, msg) = testSystemPropertyFile(systemProperties)
+    assert(systemInfo == null && msg.nonEmpty)
   }
 
   test("test system property - without gpu") {
@@ -82,8 +81,9 @@ class AutoTunerSuite extends FunSuite with Logging {
         |  memory:
         |  name:
         |""".stripMargin
-    val systemInfo = testSystemPropertyFile(systemProperties)
+    val (systemInfo, msg) = testSystemPropertyFile(systemProperties)
     assert(systemInfo != null)
+    assert(msg.isEmpty)
     assert(systemInfo.gpuProps == null)
   }
 
@@ -102,8 +102,9 @@ class AutoTunerSuite extends FunSuite with Logging {
         |  memory: 32gb
         |  name: NVIDIA V100
         |""".stripMargin
-    val systemInfo = testSystemPropertyFile(systemProperties)
+    val (systemInfo, msg) = testSystemPropertyFile(systemProperties)
     assert(systemInfo != null)
+    assert(msg.isEmpty)
     assert(systemInfo.numWorkers.isEmpty)
   }
 
@@ -208,12 +209,15 @@ class AutoTunerSuite extends FunSuite with Logging {
     val expectedResults =
       """
         |### D. Recommended Configuration ###
-        |Unable to find system properties. Cannot recommend properties.
+        |Cannot recommend properties. See Comments.
         |
         |Comments:
+        |- System properties file was not formatted correctly.
         |- 'spark.executor.memory' should be set to at least 2GB/core.
         |- 'spark.executor.instances' should be set to 'num_gpus * num_workers'.
         |- 'spark.task.resource.gpu.amount' should be set to 1/#cores.
+        |- 'spark.rapids.sql.concurrentGpuTasks' should be set to 2.
+        |- 'spark.rapids.memory.pinnedPool.size' should be set to 2g.
         |""".stripMargin.trim
     testSingleEvent(eventLog, systemProperties, expectedResults)
   }
@@ -242,11 +246,15 @@ class AutoTunerSuite extends FunSuite with Logging {
         |--conf spark.executor.cores=64
         |--conf spark.executor.instances=4
         |--conf spark.executor.memory=8.97g
+        |--conf spark.executor.memoryOverhead=4g
+        |--conf spark.rapids.memory.pinnedPool.size=2g
         |--conf spark.sql.files.maxPartitionBytes=31.67g
         |--conf spark.sql.shuffle.partitions=200
         |
         |Comments:
         |- 'spark.task.resource.gpu.amount' should be set to 1/#cores.
+        |- 'spark.rapids.sql.concurrentGpuTasks' should be set to 2.
+        |- 'spark.rapids.memory.pinnedPool.size' should be set to 2g.
         |""".stripMargin.trim
     testSingleEvent(eventLog, systemProperties, expectedResults)
   }
@@ -283,7 +291,7 @@ class AutoTunerSuite extends FunSuite with Logging {
         |--conf spark.task.resource.gpu.amount=0.125
         |
         |Comments:
-        |- Executor memory is very low. It is recommended to have at least 8g
+        |- Executor memory is very low. It is recommended to have at least 8g.
         |""".stripMargin.trim
     testSingleEvent(eventLog, systemProperties, expectedResults)
   }
