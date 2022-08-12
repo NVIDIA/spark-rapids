@@ -14,11 +14,13 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package org.apache.spark.sql.rapids
 
+import com.nvidia.spark.rapids.{GpuCast, GpuExpression}
 import com.nvidia.spark.rapids.shims.ShimUnaryExpression
 
-import org.apache.spark.sql.rapids.shims.spark331plus.CastOverflowUtil
+import org.apache.spark.SparkArithmeticException
+import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -43,9 +45,11 @@ case class GpuCheckOverflowInTableInsert(child: GpuCast, columnName: String)
       child.columnarEval(batch)
     } catch {
       // map SparkArithmeticException to SparkArithmeticException("CAST_OVERFLOW_IN_TABLE_INSERT")
-      case e if CastOverflowUtil.isCastOverflowException(e) =>
-        throw CastOverflowUtil.castCausingOverflowInTableInsertError(
-          child.child.dataType, child.dataType, columnName)
+      case _: SparkArithmeticException =>
+        throw QueryExecutionErrors.castingCauseOverflowErrorInTableInsert(
+          child.child.dataType,
+          dataType,
+          columnName)
     }
   }
 

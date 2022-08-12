@@ -835,7 +835,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
       val exprKlassName = if (cpuSession) {
           "org.apache.spark.sql.catalyst.expressions.CheckOverflowInTableInsert"
         } else {
-          "com.nvidia.spark.rapids.GpuCheckOverflowInTableInsert"
+          "org.apache.spark.sql.rapids.GpuCheckOverflowInTableInsert"
         }
       if (expr.getClass.getName.equals(exprKlassName)) {
         val exprClzz = Class.forName(exprKlassName)

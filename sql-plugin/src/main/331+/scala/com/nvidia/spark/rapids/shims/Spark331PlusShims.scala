@@ -16,9 +16,10 @@
 
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{ExprChecks, ExprRule, GpuCast, GpuCheckOverflowInTableInsert, GpuExpression, GpuOverrides, TypeSig, UnaryExprMeta}
+import com.nvidia.spark.rapids.{ExprChecks, ExprRule, GpuCast, GpuExpression, GpuOverrides, TypeSig, UnaryExprMeta}
 
 import org.apache.spark.sql.catalyst.expressions.{CheckOverflowInTableInsert, Expression}
+import org.apache.spark.sql.rapids.GpuCheckOverflowInTableInsert
 
 trait Spark331PlusShims extends Spark330PlusShims {
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
@@ -31,7 +32,6 @@ trait Spark331PlusShims extends Spark330PlusShims {
           TypeSig.all,
           TypeSig.all),
         (t, conf, p, r) => new UnaryExprMeta[CheckOverflowInTableInsert](t, conf, p, r) {
-
           override def convertToGpu(child: Expression): GpuExpression = {
             child match {
               case c: GpuCast => GpuCheckOverflowInTableInsert(c, t.columnName)
