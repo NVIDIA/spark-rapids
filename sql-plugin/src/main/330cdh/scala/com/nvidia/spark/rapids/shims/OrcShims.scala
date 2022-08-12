@@ -103,7 +103,7 @@ object OrcShims {
    * Compare if the two TypeDescriptions are equal by ignoring attribute
    */
   def typeDescriptionEqual(lhs: TypeDescription, rhs: TypeDescription): Boolean = {
-    lhs.equals(rhs)
+    lhs.equals(rhs, false)
   }
 
   // forcePositionalEvolution is available from Spark-3.2.
