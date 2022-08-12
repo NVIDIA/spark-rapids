@@ -111,7 +111,7 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
     GpuOverrides.exec[CustomShuffleReaderExec](
       "A wrapper of shuffle query stage",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.ARRAY +
-          TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
+          TypeSig.STRUCT + TypeSig.MAP + TypeSig.BINARY).nested(), TypeSig.all),
       (exec, conf, p, r) => new GpuCustomShuffleReaderMeta(exec, conf, p, r))
 
   override def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
