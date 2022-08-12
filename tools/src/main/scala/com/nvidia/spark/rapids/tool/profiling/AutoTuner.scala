@@ -157,8 +157,7 @@ class AutoTuner(app: ApplicationSummaryInfo, workerInfo: String) extends Logging
 
   val DEFAULT_PINNED_POOL_SIZE: String = "2g"
   val DEFAULT_MEMORY_OVERHEAD_FACTOR: Double = 0.1
-  val MIN_MEMORY_OVERHEAD: String = "2g"
-  val MAX_EXTRA_SYSTEM_MEMORY: String = "2g"
+  val DEFAULT_SYSTEM_OVERHEAD: String = "2g" // Overhead of other system processes
 
   val MAX_PER_EXECUTOR_CORE_COUNT: Int = 16
   val MIN_PER_EXECUTOR_CORE_COUNT: Int = 4
@@ -170,6 +169,7 @@ class AutoTuner(app: ApplicationSummaryInfo, workerInfo: String) extends Logging
 
   /**
    * Recommendation for 'spark.executor.instances' based on number of gpus and workers.
+   * Assumption - In case GPU properties are not available, it assumes 1 GPU per worker.
    */
   private def recommendExecutorInstances(recommendedConfig: Config,
       systemProps: SystemProps): Unit = {
@@ -178,6 +178,7 @@ class AutoTuner(app: ApplicationSummaryInfo, workerInfo: String) extends Logging
         val numInstances = if (systemProps.gpuProps != null) {
           numWorkers * systemProps.gpuProps.count
         } else {
+          // Assumption: 1 GPU per worker.
           numWorkers
         }
 
@@ -228,16 +229,10 @@ class AutoTuner(app: ApplicationSummaryInfo, workerInfo: String) extends Logging
    */
   private def recommendExecutorMemory(recommendedConfig: Config,
       systemProps: SystemProps): Unit = {
-    val sparkMaster = getSparkProperty(app, "spark.master")
     val systemMemoryNum: Long = convertFromHumanReadableSize(systemProps.memory)
-    val extraSystemMemoryNum: Long = convertFromHumanReadableSize(MAX_EXTRA_SYSTEM_MEMORY)
-    val effectiveSystemMemoryNum: Long =
-      if (sparkMaster.contains("yarn") || sparkMaster.contains("k8s")) {
-        systemMemoryNum - extraSystemMemoryNum -
-          convertFromHumanReadableSize(MIN_MEMORY_OVERHEAD)
-      } else {
-        systemMemoryNum - extraSystemMemoryNum
-      }
+    val systemOverhead: Long = convertFromHumanReadableSize(DEFAULT_SYSTEM_OVERHEAD)
+    val effectiveSystemMemoryNum: Long =  systemMemoryNum - systemOverhead -
+          convertFromHumanReadableSize(DEFAULT_PINNED_POOL_SIZE)
     val maxExecutorMemNum: Long = convertFromHumanReadableSize(MAX_EXECUTOR_MEMORY)
 
     val executorMemory: Long = if (systemProps.gpuProps != null) {
@@ -262,49 +257,51 @@ class AutoTuner(app: ApplicationSummaryInfo, workerInfo: String) extends Logging
   private def calculateMemoryOverhead(pinnedPoolSize: String, executorMemory: String): Long = {
     val pinnedPoolSizeNum = convertFromHumanReadableSize(pinnedPoolSize)
     val executorMemoryNum = convertFromHumanReadableSize(executorMemory)
-    val minMemoryOverhead = convertFromHumanReadableSize(MIN_MEMORY_OVERHEAD)
-    (pinnedPoolSizeNum + Math.max(minMemoryOverhead,
-      DEFAULT_MEMORY_OVERHEAD_FACTOR * executorMemoryNum)).toLong
+    (pinnedPoolSizeNum + DEFAULT_MEMORY_OVERHEAD_FACTOR * executorMemoryNum).toLong
   }
 
   /**
-   * Recommendation for 'spark.executor.memoryOverhead', 'spark.executor.memoryOverheadFactor'
-   * or 'spark.kubernetes.memoryOverheadFactor' based on cluster scheduler, spark version.
-   * See [[calculateMemoryOverhead]] for the calculation used.
+   * Recommendation for 'spark.rapids.memory.pinnedPool.size' if it is not set.
+   * Recommendation for memoryOverhead and memoryOverheadFactor based on cluster scheduler and
+   * spark version used.
    *
-   * Also, recommends 'spark.rapids.memory.pinnedPool.size' if it is not set.
+   * Flow:
+   * if (pinnedPoolSize is not set) -> set pinnedPoolSize, calculate and set memoryOverhead
+   * else
+   *   if using yarn
+   *     -> if memoryOverhead is not set, calculate and set.
+   *   if using k8s
+   *     -> if memoryOverheadFactor is not set, add comment.
    */
   private def recommendMemoryOverheadProperties(recommendedConfig: Config): Unit = {
-    getSparkProperty(app, "spark.rapids.memory.pinnedPool.size") match {
-      case Some(pinnedPoolSize) =>
-        val sparkMaster = getSparkProperty(app, "spark.master")
-        if (sparkMaster.contains("k8s")) {
-          if (compareSparkVersion(app.appInfo.head.sparkVersion, "3.3.0") > 0) {
-            if (getSparkProperty(app, "spark.executor.memoryOverheadFactor").isEmpty) {
-              comments :+= "'spark.executor.memoryOverheadFactor' must be set " +
-                "if using 'spark.rapids.memory.pinnedPool.size'"
-            }
-          } else {
-            if (getSparkProperty(app, "spark.kubernetes.memoryOverheadFactor").isEmpty) {
-              comments :+= "'spark.kubernetes.memoryOverheadFactor' must be set " +
-                "if using 'spark.rapids.memory.pinnedPool.size'"
-            }
+    val pinnedPoolSize = getSparkProperty(app, "spark.rapids.memory.pinnedPool.size")
+    if (pinnedPoolSize.isEmpty) {
+      recommendedConfig.setPinnedPoolSize(DEFAULT_PINNED_POOL_SIZE)
+      val memoryOverhead = calculateMemoryOverhead(DEFAULT_PINNED_POOL_SIZE,
+        recommendedConfig.getExecutorMemory)
+      recommendedConfig.setExecutorMemoryOverhead(convertToHumanReadableSize(memoryOverhead))
+    } else {
+      val sparkMaster = getSparkProperty(app, "spark.master")
+      if (sparkMaster.contains("yarn")) {
+        if (getSparkProperty(app, "spark.executor.memoryOverhead").isEmpty) {
+          val memoryOverhead = calculateMemoryOverhead(pinnedPoolSize.get,
+            recommendedConfig.getExecutorMemory)
+          recommendedConfig.setExecutorMemoryOverhead(
+            convertToHumanReadableSize(memoryOverhead))
+        }
+      } else if (sparkMaster.contains("k8s")) {
+        if (compareSparkVersion(app.appInfo.head.sparkVersion, "3.3.0") > 0) {
+          if (getSparkProperty(app, "spark.executor.memoryOverheadFactor").isEmpty) {
+            comments :+= "'spark.executor.memoryOverheadFactor' must be set " +
+              "if using 'spark.rapids.memory.pinnedPool.size'"
           }
-        } else if (sparkMaster.contains("yarn")) {
-          if (getSparkProperty(app, "spark.executor.memoryOverhead").isEmpty) {
-            val memoryOverhead = calculateMemoryOverhead(pinnedPoolSize,
-              recommendedConfig.getExecutorMemory)
-            recommendedConfig.setExecutorMemoryOverhead(
-              convertToHumanReadableSize(memoryOverhead))
+        } else {
+          if (getSparkProperty(app, "spark.kubernetes.memoryOverheadFactor").isEmpty) {
+            comments :+= "'spark.kubernetes.memoryOverheadFactor' must be set " +
+              "if using 'spark.rapids.memory.pinnedPool.size'"
           }
         }
-
-      case None =>
-        recommendedConfig.setPinnedPoolSize(DEFAULT_PINNED_POOL_SIZE)
-        val memoryOverhead = calculateMemoryOverhead(DEFAULT_PINNED_POOL_SIZE,
-          recommendedConfig.getExecutorMemory)
-        recommendedConfig.setExecutorMemoryOverhead(
-          convertToHumanReadableSize(memoryOverhead))
+      }
     }
   }
 
@@ -328,38 +325,57 @@ class AutoTuner(app: ApplicationSummaryInfo, workerInfo: String) extends Logging
   }
 
   /**
+   * Calculate max partition bytes using task input size.
+   * Eg,
+   * MIN_PARTITION_BYTES_RANGE = 128m, MAX_PARTITION_BYTES_RANGE = 256m
+   * (1) Input:  maxPartitionBytes = 512m
+   *             taskInputSize = 12m
+   *     Output: newMaxPartitionBytes = 512m * (128m/12m) = 5g
+   * (2) Input:  maxPartitionBytes = 2g
+   *             taskInputSize = 512m,
+   *     Output: newMaxPartitionBytes = 2g / (512m/128m) = 512m
+   */
+  private def calculateMaxPartitionBytes(maxPartitionBytes: String): String = {
+    val taskInputSize =
+      app.sqlTaskAggMetrics.map(_.inputBytesReadAvg).sum / app.sqlTaskAggMetrics.size
+    val maxPartitionBytesNum = convertFromHumanReadableSize(maxPartitionBytes)
+
+    if (taskInputSize < convertFromHumanReadableSize(MIN_PARTITION_BYTES_RANGE)) {
+      // Increase partition size
+      val calculatedMaxPartitionBytes = Math.max(
+        maxPartitionBytesNum *
+          (convertFromHumanReadableSize(MIN_PARTITION_BYTES_RANGE) / taskInputSize),
+        convertFromHumanReadableSize(MAX_PARTITION_BYTES_BOUND))
+
+      convertToHumanReadableSize(calculatedMaxPartitionBytes.toLong)
+    } else if (taskInputSize > convertFromHumanReadableSize(MAX_PARTITION_BYTES_RANGE)) {
+      // Decrease partition size
+      val calculatedMaxPartitionBytes = Math.max(
+        maxPartitionBytesNum /
+          (taskInputSize / convertFromHumanReadableSize(MAX_PARTITION_BYTES_RANGE)),
+        convertFromHumanReadableSize(MAX_PARTITION_BYTES_BOUND))
+
+      convertToHumanReadableSize(calculatedMaxPartitionBytes.toLong)
+    } else {
+      // Do not recommend maxPartitionBytes
+      null
+    }
+  }
+
+  /**
    * Recommendation for 'spark.sql.files.maxPartitionBytes' based on input size for each task.
    */
   private def recommendMaxPartitionBytes(recommendedConfig: Config): Unit = {
     getSparkProperty(app, "spark.sql.files.maxPartitionBytes") match {
-      case None => recommendedConfig.setMaxPartitionBytes(DEFAULT_MAX_PARTITION_BYTES)
-      case Some(maxPartitionBytes) =>
-        val taskInputSize =
-          app.sqlTaskAggMetrics.map(_.inputBytesReadAvg).sum / app.sqlTaskAggMetrics.size
-        val maxPartitionBytesNum = convertFromHumanReadableSize(maxPartitionBytes)
-        val newMaxPartitionBytes =
-          if (taskInputSize < convertFromHumanReadableSize(MIN_PARTITION_BYTES_RANGE)) {
-            // Increase partition size
-            val calculatedMaxPartitionBytes = Math.max(
-              maxPartitionBytesNum *
-                (convertFromHumanReadableSize(MIN_PARTITION_BYTES_RANGE) / taskInputSize),
-              convertFromHumanReadableSize(MAX_PARTITION_BYTES_BOUND))
-
-            convertToHumanReadableSize(calculatedMaxPartitionBytes.toLong)
-          } else if (taskInputSize > convertFromHumanReadableSize(MAX_PARTITION_BYTES_RANGE)) {
-            // Decrease partition size
-            val calculatedMaxPartitionBytes = Math.max(
-              maxPartitionBytesNum /
-                (taskInputSize / convertFromHumanReadableSize(MAX_PARTITION_BYTES_RANGE)),
-              convertFromHumanReadableSize(MAX_PARTITION_BYTES_BOUND))
-
-            convertToHumanReadableSize(calculatedMaxPartitionBytes.toLong)
-          } else {
-            // Do not recommend maxPartitionBytes
-            null
-          }
-
+      case None =>
+        val newMaxPartitionBytes = calculateMaxPartitionBytes(DEFAULT_MAX_PARTITION_BYTES)
         recommendedConfig.setMaxPartitionBytes(newMaxPartitionBytes)
+
+      case Some(maxPartitionBytes) =>
+        val newMaxPartitionBytes = calculateMaxPartitionBytes(maxPartitionBytes)
+        recommendedConfig.setMaxPartitionBytes(newMaxPartitionBytes)
+        comments :+= s"Although 'spark.sql.files.maxPartitionBytes' was set to $maxPartitionBytes" +
+          s", recommended value is $newMaxPartitionBytes."
     }
   }
 

@@ -142,6 +142,7 @@ class AutoTunerSuite extends FunSuite with Logging {
 
   private def testSingleEvent(
       eventLog: String,
+      appId: String,
       systemProperties: String,
       expectedResults: String): Unit = {
     TrampolineUtil.withTempDir { tempDir =>
@@ -157,7 +158,7 @@ class AutoTunerSuite extends FunSuite with Logging {
         eventLog))
       val (exit, _) = ProfileMain.mainInternal(appArgs)
       assert(exit == 0)
-      val resultsFile = fromFile(tempDir + s"/${Profiler.SUBDIR}/local-1655514789396/profile.log")
+      val resultsFile = fromFile(tempDir + s"/${Profiler.SUBDIR}/$appId/profile.log")
       val recommendedResults = resultsFile.getLines().toSeq
 
       val startIndex =
@@ -171,6 +172,7 @@ class AutoTunerSuite extends FunSuite with Logging {
 
   test("test recommended configuration") {
     val eventLog = s"$autoTunerLogDir/auto_tuner_eventlog"
+    val appId = "local-1655514789396"
     val systemProperties =
       """
         |system:
@@ -192,19 +194,23 @@ class AutoTunerSuite extends FunSuite with Logging {
         |Spark Properties:
         |--conf spark.executor.cores=8
         |--conf spark.executor.instances=32
-        |--conf spark.executor.memory=63.75g
-        |--conf spark.executor.memoryOverhead=8.38g
+        |--conf spark.executor.memory=63.50g
+        |--conf spark.executor.memoryOverhead=8.35g
         |--conf spark.rapids.memory.pinnedPool.size=2g
         |--conf spark.rapids.sql.concurrentGpuTasks=4
         |--conf spark.sql.files.maxPartitionBytes=31.67g
         |--conf spark.sql.shuffle.partitions=200
         |--conf spark.task.resource.gpu.amount=0.125
+        |
+        |Comments:
+        |- Although 'spark.sql.files.maxPartitionBytes' was set to 2gb, recommended value is 31.67g.
         |""".stripMargin.trim
-    testSingleEvent(eventLog, systemProperties, expectedResults)
+    testSingleEvent(eventLog, appId, systemProperties, expectedResults)
   }
 
   test("test recommended configuration - without system properties") {
     val eventLog = s"$autoTunerLogDir/auto_tuner_eventlog"
+    val appId = "local-1655514789396"
     val systemProperties = ""
     val expectedResults =
       """
@@ -219,11 +225,12 @@ class AutoTunerSuite extends FunSuite with Logging {
         |- 'spark.rapids.sql.concurrentGpuTasks' should be set to 2.
         |- 'spark.rapids.memory.pinnedPool.size' should be set to 2g.
         |""".stripMargin.trim
-    testSingleEvent(eventLog, systemProperties, expectedResults)
+    testSingleEvent(eventLog, appId, systemProperties, expectedResults)
   }
 
   test("test recommended configuration - without gpu properties") {
     val eventLog = s"$autoTunerLogDir/auto_tuner_eventlog"
+    val appId = "local-1655514789396"
     val systemProperties =
       """
         |system:
@@ -245,22 +252,24 @@ class AutoTunerSuite extends FunSuite with Logging {
         |Spark Properties:
         |--conf spark.executor.cores=64
         |--conf spark.executor.instances=4
-        |--conf spark.executor.memory=8.97g
-        |--conf spark.executor.memoryOverhead=4g
+        |--conf spark.executor.memory=8.94g
+        |--conf spark.executor.memoryOverhead=2.89g
         |--conf spark.rapids.memory.pinnedPool.size=2g
         |--conf spark.sql.files.maxPartitionBytes=31.67g
         |--conf spark.sql.shuffle.partitions=200
         |
         |Comments:
+        |- Although 'spark.sql.files.maxPartitionBytes' was set to 2gb, recommended value is 31.67g.
         |- 'spark.task.resource.gpu.amount' should be set to 1/#cores.
         |- 'spark.rapids.sql.concurrentGpuTasks' should be set to 2.
         |- 'spark.rapids.memory.pinnedPool.size' should be set to 2g.
         |""".stripMargin.trim
-    testSingleEvent(eventLog, systemProperties, expectedResults)
+    testSingleEvent(eventLog, appId, systemProperties, expectedResults)
   }
 
   test("test recommended configuration - low memory") {
     val eventLog = s"$autoTunerLogDir/auto_tuner_eventlog"
+    val appId = "local-1655514789396"
     val systemProperties =
       """
         |system:
@@ -282,8 +291,8 @@ class AutoTunerSuite extends FunSuite with Logging {
         |Spark Properties:
         |--conf spark.executor.cores=8
         |--conf spark.executor.instances=32
-        |--conf spark.executor.memory=2.25g
-        |--conf spark.executor.memoryOverhead=4g
+        |--conf spark.executor.memory=2g
+        |--conf spark.executor.memoryOverhead=2.20g
         |--conf spark.rapids.memory.pinnedPool.size=2g
         |--conf spark.rapids.sql.concurrentGpuTasks=4
         |--conf spark.sql.files.maxPartitionBytes=31.67g
@@ -292,12 +301,14 @@ class AutoTunerSuite extends FunSuite with Logging {
         |
         |Comments:
         |- Executor memory is very low. It is recommended to have at least 8g.
+        |- Although 'spark.sql.files.maxPartitionBytes' was set to 2gb, recommended value is 31.67g.
         |""".stripMargin.trim
-    testSingleEvent(eventLog, systemProperties, expectedResults)
+    testSingleEvent(eventLog, appId, systemProperties, expectedResults)
   }
 
   test("test recommended configuration - low num cores") {
     val eventLog = s"$autoTunerLogDir/auto_tuner_eventlog"
+    val appId = "local-1655514789396"
     val systemPropsFilePath =
       """
         |system:
@@ -319,8 +330,8 @@ class AutoTunerSuite extends FunSuite with Logging {
         |Spark Properties:
         |--conf spark.executor.cores=2
         |--conf spark.executor.instances=32
-        |--conf spark.executor.memory=63.75g
-        |--conf spark.executor.memoryOverhead=8.38g
+        |--conf spark.executor.memory=63.50g
+        |--conf spark.executor.memoryOverhead=8.35g
         |--conf spark.rapids.memory.pinnedPool.size=2g
         |--conf spark.rapids.sql.concurrentGpuTasks=4
         |--conf spark.sql.files.maxPartitionBytes=31.67g
@@ -329,8 +340,9 @@ class AutoTunerSuite extends FunSuite with Logging {
         |
         |Comments:
         |- Number of cores per executor is very low. It is recommended to have at least 4 cores per executor.
+        |- Although 'spark.sql.files.maxPartitionBytes' was set to 2gb, recommended value is 31.67g.
         |- For the given GPU, number of CPU cores is very low. It should be at least equal to concurrent gpu tasks i.e. 4.
         |""".stripMargin.trim
-    testSingleEvent(eventLog, systemPropsFilePath, expectedFilePath)
+    testSingleEvent(eventLog, appId, systemPropsFilePath, expectedFilePath)
   }
 }

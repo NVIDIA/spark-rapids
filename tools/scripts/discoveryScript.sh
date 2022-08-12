@@ -29,9 +29,9 @@ if [ "$#" -ne 2 ]; then
   exit 1
 fi
 
-OS=$(uname -s)
 NUM_WORKERS=$1
 OUTPUT_FILE=$2
+OS=$(uname -s)
 
 function echo_warn {
   CLEAR='\033[0m'
