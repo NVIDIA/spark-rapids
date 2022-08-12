@@ -169,7 +169,6 @@ def test_lte_for_interval():
     for data_gen in data_gens:
         test_func(data_gen)
 
-
 @pytest.mark.parametrize('data_gen', orderable_gens, ids=idfn)
 def test_gt(data_gen):
     (s1, s2) = gen_scalars(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
