@@ -50,7 +50,6 @@ def test_eq_for_interval():
     data_gens = [DayTimeIntervalGen()]
     for data_gen in data_gens:
         test_func(data_gen)
-    
 
 @pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen + struct_gens_sample_with_decimal128_no_list, ids=idfn)
 def test_eq_ns(data_gen):
