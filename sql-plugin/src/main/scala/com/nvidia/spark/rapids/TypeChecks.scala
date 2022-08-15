@@ -791,9 +791,9 @@ abstract class TypeChecks[RET] {
           checkCustomMessageType(elementType)
         case MapType(keyType, valueType, _) =>
           // prevent short-circuit evaluation
-          val keySupported = checkCustomMessageType(keyType)
-          val valueSupported = checkCustomMessageType(valueType)
-          keySupported || valueSupported
+          val keyChecked = checkCustomMessageType(keyType)
+          val valueChecked = checkCustomMessageType(valueType)
+          keyChecked || valueChecked
         case StructType(fields) =>
           fields.map(field => checkCustomMessageType(field.dataType)).exists(identity)
         case _ => true
