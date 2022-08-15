@@ -924,7 +924,6 @@ class FileFormatChecks private (
       schema: StructType,
       fileType: FileFormatType,
       op: FileFormatOp): Unit = {
-    // tagTimestampUtcCheck(meta, schema.fields)
     tagUnsupportedTypes(meta, sig, schema.fields,
       s"unsupported data types %s in $op for $fileType")
   }
