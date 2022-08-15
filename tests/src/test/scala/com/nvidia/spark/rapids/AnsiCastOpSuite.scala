@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.{SparkConf, SparkException}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.apache.spark.sql.catalyst.expressions.{Alias, CastBase, Expression, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, NamedExpression}
 import org.apache.spark.sql.execution.ProjectExec
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
@@ -819,7 +819,20 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
       case _ => false
     })
 
-    def isAnsiCast(c: CastBase): Boolean = {
+    def isSparkCastExpression(c: Expression): Boolean = {
+      val sparkClzz = Class.forName {
+        if (cmpSparkVersion(3, 4, 0) < 0) {
+          "org.apache.spark.sql.catalyst.expressions.AnsiCast"
+        } else {
+          "org.apache.spark.sql.catalyst.expressions.Cast"
+        }
+      }
+      c.getClass == sparkClzz
+    }
+
+    def isAnsiCast(c: Expression): Boolean = {
+      // prior to Spark 3.4.0 we could use CastBase as argument type, but starting 3.4.0 the type is
+      // the case class Cast.
       // prior to Spark 3.3.0 we could use toString to see if the name of
       // the cast was "cast" or "ansi_cast" but now the name is always "cast"
       // so we need to use reflection to access the protected field "ansiEnabled"
@@ -842,7 +855,8 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
         val childField = exprClzz.getDeclaredField("child")
         childField.setAccessible(true)
         childField.get(expr) match {
-          case castExpr: CastBase if cpuSession => isAnsiCast(castExpr)
+          case castExpr: Expression if cpuSession && isSparkCastExpression(castExpr) =>
+            isAnsiCast(castExpr)
           case castExpr: GpuCast => castExpr.ansiMode
           case _ => false
         }
@@ -853,10 +867,10 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
 
     val count = projections.map {
       case p: ProjectExec => p.projectList.count {
-        case c: CastBase => isAnsiCast(c)
+        case c: Expression if isSparkCastExpression(c) => isAnsiCast(c)
         case expr: Alias =>
           expr.child match {
-            case c: CastBase => isAnsiCast(c)
+            case c: Expression if isSparkCastExpression(c) => isAnsiCast(c)
             // To support the conversion of CheckOverflowInTableInsert starting Spark-3.3.1+
             case _ => isAnsiCastInTableInsert(expr.child, cpuSession = true)
           }
