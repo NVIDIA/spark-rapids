@@ -21,7 +21,22 @@ except ImportError as error:
     findspark.init()
     import pyspark
 
-_DRIVER_ENV = 'PYSP_TEST_spark_driver_extraJavaOptions'
+_CONF_ENV_PREFIX = 'PYSP_TEST_'
+_EXECUTOR_ENV_PREFIX = 'spark_executorEnv_'
+
+def env_for_conf(spark_conf_name):
+    return _CONF_ENV_PREFIX + spark_conf_name.replace('.', '_')
+
+def conf_for_env(env_name):
+    conf_key = env_name[len(_CONF_ENV_PREFIX):]
+    if conf_key.startswith(_EXECUTOR_ENV_PREFIX):
+        res = _EXECUTOR_ENV_PREFIX.replace('_', '.') + conf_key[len(_EXECUTOR_ENV_PREFIX):]
+    else:
+        res = conf_key.replace('_', '.')
+    return res
+
+_DRIVER_ENV = env_for_conf('spark.driver.extraJavaOptions')
+
 
 def _spark__init():
     #Force the RapidsPlugin to be enabled, so it blows up if the classpath is not set properly
@@ -34,8 +49,8 @@ def _spark__init():
             .config('spark.sql.queryExecutionListeners', 'com.nvidia.spark.rapids.ExecutionPlanCaptureCallback')
 
     for key, value in os.environ.items():
-        if key.startswith('PYSP_TEST_') and key != _DRIVER_ENV:
-            _sb.config(key[10:].replace('_', '.'), value)
+        if key.startswith(_CONF_ENV_PREFIX) and key != _DRIVER_ENV:
+            _sb.config(conf_for_env(key), value)
 
     driver_opts = os.environ.get(_DRIVER_ENV, "")
 
@@ -71,11 +86,11 @@ def _handle_event_log_dir(sb, wid):
         return
 
     spark_conf = pyspark.SparkConf()
-    master_url = os.environ.get('PYSP_TEST_spark_master',
+    master_url = os.environ.get(env_for_conf('spark.master'),
                                 spark_conf.get("spark.master", 'local'))
-    event_log_config = os.environ.get('PYSP_TEST_spark_eventLog_enabled',
+    event_log_config = os.environ.get(env_for_conf('spark.eventLog.enabled'),
                                       spark_conf.get('spark.eventLog.enabled', str(False).lower()))
-    event_log_codec = os.environ.get('PYSP_TEST_spark_eventLog_compression_codec', 'zstd')
+    event_log_codec = os.environ.get(env_for_conf('spark.eventLog.compression.codec'), 'zstd')
 
     if not master_url.startswith('local') or event_log_config != str(False).lower():
         print("SPARK_EVENTLOG_ENABLED is ignored for non-local Spark master and when "

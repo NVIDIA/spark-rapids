@@ -185,7 +185,6 @@ class RegexParser(pattern: String) {
             case codePoint => RegexChar(codePoint.toChar)
           }
         case Some('0') => 
-          consumeExpected('0')
           val octalChar = parseOctalDigit
           octalChar.codePoint match {
             case 0 => RegexHexDigit("00")
@@ -1030,14 +1029,19 @@ class CudfRegexTranspiler(mode: RegexMode) {
         } else  {
           digits
         }
-        if (r.codePoint >= 128) {
+
+        if (regexMetaChars.map(_.toInt).contains(r.codePoint)) {
+          RegexEscaped(r.codePoint.toChar)
+        } else if(r.codePoint >= 128) {
           RegexChar(r.codePoint.toChar)
         } else {
           RegexOctalChar(octal)
         }
 
       case r @ RegexHexDigit(digits) =>
-        if (r.codePoint >= 128) {
+        if (regexMetaChars.map(_.toInt).contains(r.codePoint)) {
+          RegexEscaped(r.codePoint.toChar)
+        } else if (r.codePoint >= 128) {
           // cuDF only supports 0x00 to 0x7f hexidecimal chars
           RegexChar(r.codePoint.toChar)
         } else {
@@ -1373,7 +1377,11 @@ class CudfRegexTranspiler(mode: RegexMode) {
                 s"cuDF does not support repetition of group containing: " +
                   s"${unsupportedTerm.toRegexString}", term.position)
           }
-        case (RegexGroup(_, _), SimpleQuantifier(ch)) if ch == '?' =>
+        case (RegexGroup(_, term), SimpleQuantifier(ch)) if ch == '?' =>
+          if (isEntirelyWordBoundary(term) || isEntirelyLineAnchor(term)) {
+            throw new RegexUnsupportedException(
+                s"cuDF does not support repetition of: ${term.toRegexString}", term.position)
+          }
           RegexRepetition(rewrite(base, replacement, None), quantifier)
         case (RegexEscaped(ch), SimpleQuantifier('+')) if "AZ".contains(ch) =>
           // \A+ can be transpiled to \A (dropping the repetition)
@@ -1447,11 +1455,27 @@ class CudfRegexTranspiler(mode: RegexMode) {
       case RegexGroup(capture, term) =>
         term match {
           case RegexSequence(parts) =>
-            parts.foreach { part => isBeginOrEndLineAnchor(part) match {
-              case true => throw new RegexUnsupportedException(
-                "Line and string anchors are not supported in capture groups", part.position)
-              case false =>
-            }}
+            parts.foreach { part => 
+              if (isBeginOrEndLineAnchor(part)) {
+                throw new RegexUnsupportedException(
+                  "Line and string anchors are not supported in capture groups", part.position)
+              }
+              part match {
+                case RegexRepetition(base, quantifier) => (base, quantifier) match {
+                  case (_, QuantifierVariableLength(0, Some(0))) =>
+                    throw new RegexUnsupportedException(
+                      "Repetition with {0,0} not supported in capture groups",
+                      quantifier.position)
+
+                  case (_, QuantifierFixedLength(0)) =>
+                    throw new RegexUnsupportedException(
+                      "Reptition with {0} not supported in capture groups",
+                      quantifier.position)
+                  case _ =>
+                }
+                case _ =>
+              }
+            }
             RegexGroup(capture, rewrite(term, replacement, None))
           case _ =>
             RegexGroup(capture, rewrite(term, replacement, None))
@@ -1478,6 +1502,30 @@ class CudfRegexTranspiler(mode: RegexMode) {
     }
   }
 
+  private def isEntirely(regex: RegexAST, f: RegexAST => Boolean): Boolean = {
+    regex match {
+      case RegexSequence(parts) if parts.nonEmpty =>
+        parts.forall(f)
+      case RegexGroup(_, term) =>
+        isEntirely(term, f)
+      case _ => f(regex)
+    }
+  }
+
+  private def isEntirelyWordBoundary(regex: RegexAST): Boolean = {
+    isEntirely(regex, {
+      case RegexEscaped(ch) if "bB".contains(ch) => true
+      case _ => false
+    })
+  }
+
+  private def isEntirelyLineAnchor(regex: RegexAST): Boolean = {
+    isEntirely(regex, {
+      case RegexEscaped('A') => true
+      case other => isBeginOrEndLineAnchor(other)
+    })
+  }
+
   private def endsWith(regex: RegexAST, f: RegexAST => Boolean): Boolean = {
     regex match {
       case RegexSequence(parts) if parts.nonEmpty =>
@@ -1486,6 +1534,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
             case _ => true
         }
         endsWith(parts(j), f)
+      case RegexGroup(_, term) =>
+        endsWith(term, f) 
       case _ => f(regex)
     }
   }

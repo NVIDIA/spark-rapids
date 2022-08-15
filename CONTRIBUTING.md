@@ -125,6 +125,35 @@ mvn clean verify -Dbuildver=321 \
   -DallowConventionalDistJar=true
 ```
 
+### Iterative development during local testing
+
+When iterating on changes impacting the `dist` module artifact directly or via
+dependencies you might find the jar creation step unacceptably slow. Due to the
+current size of the artifact `rapids-4-spark_2.12` Maven Jar Plugin spends the
+bulk of the time compressing the artifact content.
+Since the JAR file specification focusses on the file entry layout in a ZIP
+archive without requiring file entries to be compressed it is possible to skip
+compression, and increase the speed of creating `rapids-4-spark_2.12` jar ~3x
+for a single Spark version Shim alone.
+
+To this end in a pre-production build you can set the Boolean property
+`dist.jar.compress` to `false`, its default value is `true`.
+
+The time saved is more significant if you are merely changing
+the `aggregator` module, or the `dist` module, or just incorporating changes from
+[spark-rapids-jni](https://github.com/NVIDIA/spark-rapids-jni/blob/branch-22.10/CONTRIBUTING.md#local-testing-of-cross-repo-contributions-cudf-spark-rapids-jni-and-spark-rapids)
+
+For example, to quickly repackage `rapids-4-spark` after the
+initial `./build/buildall` you can iterate by invoking
+```Bash
+mvn package -pl dist -PnoSnapshots -Ddist.jar.compress=false
+```
+
+or similarly
+```Bash
+ ./build/buildall --rebuild-dist-only --option="-Ddist.jar.compress=false"
+```
+
 ## Code contributions
 
 ### Source code layout
@@ -218,8 +247,20 @@ not clobbered by repeated `bloopInstall` Maven plugin invocations, and it uses
 [jq](https://stedolan.github.io/jq/) to post-process JSON-formatted project files such that they
 compile project classes into non-overlapping set of output directories.
 
+To activate the Spark dependency version 3XY you currently are working with update
+the symlink `.bloop` to point to the corresponding directory `.bloop-spark3XY`
+
+Example usage:
+```Bash
+./build/buildall --generate-bloop --profile=311,330
+rm -vf .bloop
+ln -s .bloop-spark330 .bloop
+```
+
 You can now open the spark-rapids as a
 [BSP project in IDEA](https://www.jetbrains.com/help/idea/bsp-support.html)
+
+Read on for VS Code Scala Metals instructions.
 
 # Bloop, Scala Metals, and Visual Studio Code
 

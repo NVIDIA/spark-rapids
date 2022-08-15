@@ -1,9 +1,9 @@
 ---
 layout: page
-title: Profiling tool
+title: Profiling Tool
 nav_order: 9
 ---
-# Profiling tool
+# Profiling Tool
 
 The Profiling tool analyzes both CPU or GPU generated event logs and generates information 
 which can be used for debugging and profiling Apache Spark applications.
