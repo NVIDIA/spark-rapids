@@ -22,7 +22,7 @@ nvidia-smi
 . jenkins/version-def.sh
 
 ARTF_ROOT="$WORKSPACE/jars"
-MVN_GET_CMD="mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
+MVN_GET_CMD="mvn -Dmaven.wagon.http.retryHandler.count=3 org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
     -Dmaven.repo.local=$WORKSPACE/.m2 \
     $MVN_URM_MIRROR -Ddest=$ARTF_ROOT"
 

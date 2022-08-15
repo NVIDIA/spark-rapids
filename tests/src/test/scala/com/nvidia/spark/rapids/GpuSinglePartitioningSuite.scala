@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import ai.rapids.cudf.Table
 import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.GpuShuffleEnv
+import org.apache.spark.sql.rapids.{GpuShuffleEnv, RapidsDiskBlockManager}
 import org.apache.spark.sql.types.{DecimalType, DoubleType, IntegerType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -44,7 +44,7 @@ class GpuSinglePartitioningSuite extends FunSuite with Arm {
     val conf = new SparkConf().set("spark.shuffle.manager", GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS)
         .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "none")
     TestUtils.withGpuSparkSession(conf) { _ =>
-      GpuShuffleEnv.init(new RapidsConf(conf))
+      GpuShuffleEnv.init(new RapidsConf(conf), new RapidsDiskBlockManager(conf))
       val partitioner = GpuSinglePartitioning
       withResource(buildBatch()) { batch =>
         withResource(GpuColumnVector.from(batch)) { table =>
