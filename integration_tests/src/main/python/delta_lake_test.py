@@ -24,7 +24,8 @@ _conf = {'spark.rapids.sql.explain': 'ALL'}
 
 @delta_lake
 @allow_non_gpu('FileSourceScanExec')
-@pytest.mark.skipif(not (is_databricks91_or_later() or spark_version() == "3.2.1"), reason="Delta Lake is already configured on Databricks and CI supports Delta Lake OSS with Spark 3.2.1 so far")
+@pytest.mark.skipif(not (is_databricks91_or_later() or spark_version().startswith("3.2.")), \
+    reason="Delta Lake is already configured on Databricks and CI supports Delta Lake OSS with Spark 3.2.x so far")
 def test_delta_metadata_query_fallback(spark_tmp_table_factory):
     table = spark_tmp_table_factory.get()
     def setup_delta_table(spark):
