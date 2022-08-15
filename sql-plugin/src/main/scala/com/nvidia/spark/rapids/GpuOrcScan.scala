@@ -320,7 +320,7 @@ object GpuOrcScan extends Arm {
         //     val millis = Math.round(doubleMillis)
         //     if (noOverflow) millis else null
         val milliSeconds = withResource(Scalar.fromDouble(1000.0)) { thousand =>
-          // ORC assumes value is in seconds, and returns timestamps in milliseconds.
+          // ORC assumes value is in seconds
           withResource(col.mul(thousand, DType.FLOAT64)) { doubleMillis =>
             withResource(doubleMillis.round()) { millis =>
               withResource(getOverflowFlags(doubleMillis, millis)) { overflows =>
@@ -331,9 +331,13 @@ object GpuOrcScan extends Arm {
         }
         // Cast milli-seconds to micro-seconds
         // We need to pay attention that when convert (milliSeconds * 1000) to INT64, there may be
-        // INT64-overflow, but we do not handle this issue here (as CPU code of ORC does).
-        // If (milliSeconds * 1000) > INT64.MAX, then 'castTo' will throw an exception.
+        // INT64-overflow.
         withResource(milliSeconds) { _ =>
+          // Test whether if there is long-overflow
+          // If milliSeconds.max() > LONG_MAX, then milliSeconds.max().getLong will return LONG_MAX
+          // If milliSeconds.max() * 1000 > LONG_MAX, then 'Math.multiplyExact' will throw an
+          // exception (as CPU code does).
+          Math.multiplyExact(milliSeconds.max().getLong, 1000.toLong)
           withResource(milliSeconds.mul(Scalar.fromDouble(1000.0))) { microSeconds =>
             withResource(microSeconds.castTo(DType.INT64)) { longVec =>
               longVec.castTo(DType.TIMESTAMP_MICROSECONDS)
