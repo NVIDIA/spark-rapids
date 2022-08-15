@@ -187,6 +187,78 @@ object GpuOrcScan extends Arm {
   }
 
   /**
+   * Get the overflow flags in booleans.
+   * true means no overflow, while false means getting overflow.
+   *
+   * @param doubleMillis the input double column
+   * @param millis the long column casted from the doubleMillis
+   */
+  private def getOverflowFlags(doubleMillis: ColumnView, millis: ColumnView): ColumnView = {
+    // No overflow when
+    //     doubleMillis <= Long.MAX_VALUE &&
+    //     doubleMillis >= Long.MIN_VALUE &&
+    //     ((millis >= 0) == (doubleMillis >= 0))
+    val rangeCheck = withResource(Scalar.fromLong(Long.MaxValue)) { max =>
+      withResource(doubleMillis.lessOrEqualTo(max)) { upperCheck =>
+        withResource(Scalar.fromLong(Long.MinValue)) { min =>
+          withResource(doubleMillis.greaterOrEqualTo(min)) { lowerCheck =>
+            upperCheck.and(lowerCheck)
+          }
+        }
+      }
+    }
+    withResource(rangeCheck) { _ =>
+      val signCheck = withResource(Scalar.fromInt(0)) { zero =>
+        withResource(millis.greaterOrEqualTo(zero)) { longSign =>
+          withResource(doubleMillis.greaterOrEqualTo(zero)) { doubleSign =>
+            longSign.equalTo(doubleSign)
+          }
+        }
+      }
+      withResource(signCheck) { _ =>
+        rangeCheck.and(signCheck)
+      }
+    }
+  }
+
+  /**
+   * Borrowed from ORC "ConvertTreeReaderFactory"
+   * Scala does not support such numeric literal, so parse from string.
+   */
+  private val MIN_LONG_AS_DOUBLE = java.lang.Double.valueOf("-0x1p63")
+
+  /**
+   * We cannot store Long.MAX_VALUE as a double without losing precision. Instead, we store
+   * Long.MAX_VALUE + 1 == -Long.MIN_VALUE, and then offset all comparisons by 1.
+   */
+  private val MAX_LONG_AS_DOUBLE_PLUS_ONE = java.lang.Double.valueOf("0x1p63")
+
+  /**
+   * Return a boolean column indicates whether the rows in col can fix in a long.
+   * It assumes the input type is float or double.
+   */
+  private def doubleCanFitInLong(col: ColumnView): ColumnVector = {
+    // It is true when
+    //   (MIN_LONG_AS_DOUBLE - doubleValue < 1.0) &&
+    //   (doubleValue < MAX_LONG_AS_DOUBLE_PLUS_ONE)
+    val lowRet = withResource(Scalar.fromDouble(MIN_LONG_AS_DOUBLE)) { sMin =>
+      withResource(Scalar.fromDouble(1.0)) { sOne =>
+        withResource(sMin.sub(col)) { diff =>
+          diff.lessThan(sOne)
+        }
+      }
+    }
+    withResource(lowRet) { _ =>
+      withResource(Scalar.fromDouble(MAX_LONG_AS_DOUBLE_PLUS_ONE)) { sMax =>
+        withResource(col.lessThan(sMax)) { highRet =>
+          lowRet.and(highRet)
+        }
+      }
+    }
+  }
+
+
+  /**
    * Cast the column to the target type for ORC schema evolution.
    * It is designed to support all the cases that `canCast` returns true.
    * Both of the column type and target type should be primitive.
@@ -211,6 +283,64 @@ object GpuOrcScan extends Arm {
         } else {
           downCastAnyInteger(col, toDt)
         }
+
+      // float/double(float64) to {bool, integer types, double/float, string, timestamp}
+      // float to bool/integral
+      case (DType.FLOAT32 | DType.FLOAT64, DType.BOOL8 | DType.INT8 | DType.INT16 | DType.INT32
+                                           | DType.INT64) =>
+        // Follow the CPU ORC conversion:
+        //   First replace rows that cannot fit in long with nulls,
+        //   next convert to long,
+        //   then down cast long to the target integral type.
+        val longDoubles = withResource(doubleCanFitInLong(col)) { fitLongs =>
+          col.copyWithBooleanColumnAsValidity(fitLongs)
+        }
+        withResource(longDoubles) { _ =>
+          withResource(longDoubles.castTo(DType.INT64)) { longs =>
+            toDt match {
+              case DType.BOOL8 => longs.castTo(toDt)
+              case DType.INT64 => longs.incRefCount()
+              case _ => downCastAnyInteger(longs, toDt)
+            }
+          }
+        }
+
+      // float/double to double/float
+      case (DType.FLOAT32 | DType.FLOAT64, DType.FLOAT32 | DType.FLOAT64) =>
+        col.castTo(toDt)
+
+      // FIXME float/double to string, there are some precision error issues
+      case (DType.FLOAT32 | DType.FLOAT64, DType.STRING) =>
+        GpuCast.castFloatingTypeToString(col)
+
+      // float/double -> timestamp
+      case (DType.FLOAT32 | DType.FLOAT64, DType.TIMESTAMP_MICROSECONDS) =>
+        // Follow the CPU ORC conversion.
+        //     val doubleMillis = doubleValue * 1000,
+        //     val millis = Math.round(doubleMillis)
+        //     if (noOverflow) millis else null
+        val milliSeconds = withResource(Scalar.fromDouble(1000.0)) { thousand =>
+          // ORC assumes value is in seconds, and returns timestamps in milliseconds.
+          withResource(col.mul(thousand, DType.FLOAT64)) { doubleMillis =>
+            withResource(doubleMillis.round()) { millis =>
+              withResource(getOverflowFlags(doubleMillis, millis)) { overflows =>
+                millis.copyWithBooleanColumnAsValidity(overflows)
+              }
+            }
+          }
+        }
+        // Cast milli-seconds to micro-seconds
+        // We need to pay attention that when convert (milliSeconds * 1000) to INT64, there may be
+        // INT64-overflow, but we do not handle this issue here (as CPU code of ORC does).
+        // If (milliSeconds * 1000) > INT64.MAX, then 'castTo' will throw an exception.
+        withResource(milliSeconds) { _ =>
+          withResource(milliSeconds.mul(Scalar.fromDouble(1000.0))) { microSeconds =>
+            withResource(microSeconds.castTo(DType.INT64)) { longVec =>
+              longVec.castTo(DType.TIMESTAMP_MICROSECONDS)
+            }
+          }
+        }
+
       // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
       case (f, t) =>
         throw new QueryExecutionException(s"Unsupported type casting: $f -> $t")
@@ -239,6 +369,12 @@ object GpuOrcScan extends Arm {
         }
       case VARCHAR =>
         to.getCategory == STRING
+
+      case FLOAT | DOUBLE =>
+        to.getCategory match {
+          case BOOLEAN | BYTE | SHORT | INT | LONG | FLOAT | DOUBLE | STRING | TIMESTAMP => true
+          case _ => false
+        }
       // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
       case _ =>
         false
