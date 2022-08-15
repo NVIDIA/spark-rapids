@@ -67,7 +67,8 @@ object ConfHelper {
   }
 
   def stringToSeq(str: String): Seq[String] = {
-    str.split(",").map(_.trim()).filter(_.nonEmpty)
+    // Here 'split' returns a mutable array, 'toList' will convert it into a immutable list
+    str.split(",").map(_.trim()).filter(_.nonEmpty).toList
   }
 
   def stringToSeq[T](str: String, converter: String => T): Seq[T] = {
@@ -224,9 +225,12 @@ class TypedConfBuilder[T](
     }
   }
 
-  def createWithDefault(value: T): ConfEntry[T] = {
+  def createWithDefault(value: T): ConfEntryWithDefault[T] = {
+    // 'converter' will check the validity of default 'value', if it's not valid,
+    // then 'converter' will throw an exception
+    val transformedValue = converter(stringConverter(value))
     val ret = new ConfEntryWithDefault[T](parent.key, converter,
-      parent.doc, parent.isInternal, value)
+      parent.doc, parent.isInternal, transformedValue)
     parent.register(ret)
     ret
   }
@@ -293,6 +297,7 @@ object RapidsReaderType extends Enumeration {
 }
 
 object RapidsConf {
+  val MULTITHREAD_READ_NUM_THREADS_DEFAULT = 20
   private val registeredConfs = new ListBuffer[ConfEntry[_]]()
 
   private def register(entry: ConfEntry[_]): Unit = {
@@ -726,10 +731,14 @@ object RapidsConf {
         "started. Used with COALESCING and MULTITHREADED readers, see " +
         "spark.rapids.sql.format.parquet.reader.type, " +
         "spark.rapids.sql.format.orc.reader.type, or " +
-        "spark.rapids.sql.format.avro.reader.type for a discussion of reader types.")
+        "spark.rapids.sql.format.avro.reader.type for a discussion of reader types. " +
+        "If it is not set explicitly and spark.executor.cores is set, it will be tried to " +
+        "assign value of `max(MULTITHREAD_READ_NUM_THREADS_DEFAULT, spark.executor.cores)`, " +
+        s"where MULTITHREAD_READ_NUM_THREADS_DEFAULT = $MULTITHREAD_READ_NUM_THREADS_DEFAULT" +
+        ".")
       .integerConf
       .checkValue(v => v > 0, "The thread count must be greater than zero.")
-      .createWithDefault(20)
+      .createWithDefault(MULTITHREAD_READ_NUM_THREADS_DEFAULT)
 
   val ENABLE_PARQUET = conf("spark.rapids.sql.format.parquet.enabled")
     .doc("When set to false disables all parquet input and output acceleration")
@@ -1008,6 +1017,16 @@ object RapidsConf {
       .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
       .createWithDefault(Integer.MAX_VALUE)
 
+  val ENABLE_ICEBERG = conf("spark.rapids.sql.format.iceberg.enabled")
+    .doc("When set to false disables all Iceberg acceleration")
+    .booleanConf
+    .createWithDefault(true)
+
+  val ENABLE_ICEBERG_READ = conf("spark.rapids.sql.format.iceberg.read.enabled")
+    .doc("When set to false disables Iceberg input acceleration")
+    .booleanConf
+    .createWithDefault(true)
+
   val ENABLE_RANGE_WINDOW_BYTES = conf("spark.rapids.sql.window.range.byte.enabled")
     .doc("When the order-by column of a range based window is byte type and " +
       "the range boundary calculated for a value has overflow, CPU and GPU will get " +
@@ -1049,6 +1068,16 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val REGEXP_MAX_STATE_MEMORY_BYTES = conf("spark.rapids.sql.regexp.maxStateMemoryBytes")
+    .doc("Specifies the maximum memory on GPU to be used for regular expressions." +
+      "The memory usage is an estimate based on an upper-bound approximation on the " +
+      "complexity of the regular expression. Note that the actual memory usage may " +
+      "still be higher than this estimate depending on the number of rows in the data" +
+      "column and the input strings themselves. It is recommended to not set this to " +
+      s"more than 3 times ${GPU_BATCH_SIZE_BYTES.key}")
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(Integer.MAX_VALUE)
+
   // INTERNAL TEST AND DEBUG CONFIGS
 
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
@@ -1073,6 +1102,12 @@ object RapidsConf {
     .stringConf
     .toSequence
     .createWithDefault(Nil)
+
+  val LOG_TRANSFORMATIONS = conf("spark.rapids.sql.debug.logTransformations")
+    .doc("When enabled, all query transformations will be logged.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
 
   val PARQUET_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.parquet.debug.dumpPrefix")
     .doc("A path prefix where Parquet split file data is dumped for debugging.")
@@ -1116,14 +1151,20 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val SHUFFLE_TRANSPORT_ENABLE = conf("spark.rapids.shuffle.transport.enabled")
-    .doc("Enable the RAPIDS Shuffle Transport for accelerated shuffle. By default, this " +
-        "requires UCX to be installed in the system. Consider setting to false if running with " +
-        "a single executor and UCX is not available, for short-circuit cached shuffle " +
-        "(i.e. for testing purposes)")
-    .internal()
-    .booleanConf
-    .createWithDefault(true)
+  object RapidsShuffleManagerMode extends Enumeration {
+    val UCX, CACHE_ONLY, MULTITHREADED = Value
+  }
+
+  val SHUFFLE_MANAGER_MODE = conf("spark.rapids.shuffle.mode")
+    .doc("RAPIDS Shuffle Manager mode. The default mode is " +
+        "\"UCX\", which has to be installed in the system. Consider setting to \"CACHE_ONLY\" if " +
+        "running with a single executor and UCX is not installed, for short-circuit cached " +
+        "shuffle (for testing purposes). Set to \"MULTITHREADED\" for an experimental mode that " +
+        "uses a thread pool to speed up shuffle writes without needing UCX. Note: Changing this " +
+        "mode dynamically is not supported.")
+    .stringConf
+    .checkValues(RapidsShuffleManagerMode.values.map(_.toString))
+    .createWithDefault(RapidsShuffleManagerMode.UCX.toString)
 
   val SHUFFLE_TRANSPORT_EARLY_START = conf("spark.rapids.shuffle.transport.earlyStart")
     .doc("Enable early connection establishment for RAPIDS Shuffle")
@@ -1258,17 +1299,64 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(64 * 1024)
 
+  val SHUFFLE_MULTITHREADED_WRITER_THREADS =
+    conf("spark.rapids.shuffle.multiThreaded.writer.threads")
+      .doc("The number of threads to use for writing shuffle blocks per executor.")
+      .integerConf
+      .createWithDefault(20)
+
   // ALLUXIO CONFIGS
 
   val ALLUXIO_PATHS_REPLACE = conf("spark.rapids.alluxio.pathsToReplace")
-    .doc("List of paths to be replaced with corresponding alluxio scheme. Eg, when configure" +
-      "is set to \"s3:/foo->alluxio://0.1.2.3:19998/foo,gcs:/bar->alluxio://0.1.2.3:19998/bar\", " +
-      "which means:  " +
-      "     s3:/foo/a.csv will be replaced to alluxio://0.1.2.3:19998/foo/a.csv and " +
-      "     gcs:/bar/b.csv will be replaced to alluxio://0.1.2.3:19998/bar/b.csv")
+    .doc("List of paths to be replaced with corresponding Alluxio scheme. " +
+      "E.g. when configure is set to " +
+      "\"s3://foo->alluxio://0.1.2.3:19998/foo,gs://bar->alluxio://0.1.2.3:19998/bar\", " +
+      "it means: " +
+      "\"s3://foo/a.csv\" will be replaced to \"alluxio://0.1.2.3:19998/foo/a.csv\" and " +
+      "\"gs://bar/b.csv\" will be replaced to \"alluxio://0.1.2.3:19998/bar/b.csv\". " +
+      "To use this config, you have to mount the buckets to Alluxio by yourself. " +
+      "If you set this config, spark.rapids.alluxio.automount.enabled won't be valid.")
     .stringConf
     .toSequence
     .createOptional
+
+  val ALLUXIO_AUTOMOUNT_ENABLED = conf("spark.rapids.alluxio.automount.enabled")
+    .doc("Enable the feature of auto mounting the cloud storage to Alluxio. " +
+      "It requires the Alluxio master is the same node of Spark driver node. " +
+      "When it's true, it requires an environment variable ALLUXIO_HOME be set properly. " +
+      "The default value of ALLUXIO_HOME is \"/opt/alluxio-2.8.0\". " +
+      "You can set it as an environment variable when running a spark-submit or " +
+      "you can use spark.yarn.appMasterEnv.ALLUXIO_HOME to set it on Yarn. " +
+      "The Alluxio master's host and port will be read from alluxio.master.hostname and " +
+      "alluxio.master.rpc.port(default: 19998) from ALLUXIO_HOME/conf/alluxio-site.properties, " +
+      "then replace a cloud path which matches spark.rapids.alluxio.bucket.regex like " +
+      "\"s3://bar/b.csv\" to \"alluxio://0.1.2.3:19998/bar/b.csv\", " +
+      "and the bucket \"s3://bar\" will be mounted to \"/bar\" in Alluxio automatically.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val ALLUXIO_BUCKET_REGEX = conf("spark.rapids.alluxio.bucket.regex")
+    .doc("A regex to decide which bucket should be auto-mounted to Alluxio. " +
+      "E.g. when setting as \"^s3://bucket.*\", " +
+      "the bucket which starts with \"s3://bucket\" will be mounted to Alluxio " +
+      "and the path \"s3://bucket-foo/a.csv\" will be replaced to " +
+      "\"alluxio://0.1.2.3:19998/bucket-foo/a.csv\". " +
+      "It's only valid when setting spark.rapids.alluxio.automount.enabled=true. " +
+      "The default value matches all the buckets in \"s3://\" or \"s3a://\" scheme.")
+    .stringConf
+    .createWithDefault("^s3a{0,1}://.*")
+
+  val ALLUXIO_CMD = conf("spark.rapids.alluxio.cmd")
+    .doc("Provide the Alluxio command, which is used to mount or get information. " +
+      "The default value is \"su,ubuntu,-c,/opt/alluxio-2.8.0/bin/alluxio\", it means: " +
+      "run Process(Seq(\"su\", \"ubuntu\", \"-c\", " +
+      "\"/opt/alluxio-2.8.0/bin/alluxio fs mount --readonly /bucket-foo s3://bucket-foo\")), " +
+      "to mount s3://bucket-foo to /bucket-foo. " +
+      "the delimiter \",\" is used to convert to Seq[String] " +
+      "when you need to use a special user to run the mount command.")
+    .stringConf
+    .toSequence
+    .createWithDefault(Seq("su", "ubuntu", "-c", "/opt/alluxio-2.8.0/bin/alluxio"))
 
   // USER FACING DEBUG CONFIGS
 
@@ -1466,15 +1554,15 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark --jars rapids-4-spark_2.12-22.08.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-22.10.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
-        |--conf spark.rapids.sql.incompatibleOps.enabled=true
+        |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
         |
         |At runtime use: `spark.conf.set("[conf key]", [conf value])`. For example:
         |
         |```
-        |scala> spark.conf.set("spark.rapids.sql.incompatibleOps.enabled", true)
+        |scala> spark.conf.set("spark.rapids.sql.concurrentGpuTasks", 2)
         |```
         |
         | All configs can be set on startup, but some configs, especially for shuffle, will not
@@ -1595,6 +1683,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
 
   lazy val validateExecsInGpuPlan: Seq[String] = get(TEST_VALIDATE_EXECS_ONGPU)
+
+  lazy val logQueryTransformations: Boolean = get(LOG_TRANSFORMATIONS)
 
   lazy val rmmDebugLocation: String = get(RMM_DEBUG)
 
@@ -1818,9 +1908,13 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val maxNumAvroFilesParallel: Int = get(AVRO_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
 
+  lazy val isIcebergEnabled: Boolean = get(ENABLE_ICEBERG)
+
+  lazy val isIcebergReadEnabled: Boolean = get(ENABLE_ICEBERG_READ)
+
   lazy val shuffleManagerEnabled: Boolean = get(SHUFFLE_MANAGER_ENABLED)
 
-  lazy val shuffleTransportEnabled: Boolean = get(SHUFFLE_TRANSPORT_ENABLE)
+  lazy val shuffleManagerMode: String = get(SHUFFLE_MANAGER_MODE)
 
   lazy val shuffleTransportClassName: String = get(SHUFFLE_TRANSPORT_CLASS_NAME)
 
@@ -1867,6 +1961,22 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
 
+  lazy val shuffleMultiThreadedWriterThreads: Int = get(SHUFFLE_MULTITHREADED_WRITER_THREADS)
+
+  def isUCXShuffleManagerMode: Boolean =
+    RapidsShuffleManagerMode
+      .withName(get(SHUFFLE_MANAGER_MODE)) == RapidsShuffleManagerMode.UCX
+
+  def isMultiThreadedShuffleManagerMode: Boolean =
+    RapidsShuffleManagerMode
+      .withName(get(SHUFFLE_MANAGER_MODE)) == RapidsShuffleManagerMode.MULTITHREADED
+
+  def isCacheOnlyShuffleManagerMode: Boolean =
+    RapidsShuffleManagerMode
+      .withName(get(SHUFFLE_MANAGER_MODE)) == RapidsShuffleManagerMode.CACHE_ONLY
+
+  def isGPUShuffle: Boolean = isUCXShuffleManagerMode || isCacheOnlyShuffleManagerMode
+
   lazy val shimsProviderOverride: Option[String] = get(SHIMS_PROVIDER_OVERRIDE)
 
   lazy val cudfVersionOverride: Boolean = get(CUDF_VERSION_OVERRIDE)
@@ -1906,6 +2016,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
 
+  lazy val getAlluxioAutoMountEnabled: Boolean = get(ALLUXIO_AUTOMOUNT_ENABLED)
+
+  lazy val getAlluxioBucketRegex: String = get(ALLUXIO_BUCKET_REGEX)
+
+  lazy val getAlluxioCmd: Seq[String] = get(ALLUXIO_CMD)
+
   lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
 
   lazy val isRangeWindowByteEnabled: Boolean = get(ENABLE_RANGE_WINDOW_BYTES)
@@ -1917,6 +2033,16 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
 
   lazy val isRegExpEnabled: Boolean = get(ENABLE_REGEXP)
+
+  lazy val maxRegExpStateMemory: Long =  {
+    val size = get(REGEXP_MAX_STATE_MEMORY_BYTES) 
+    if (size > 3 * gpuTargetBatchSizeBytes) {
+      logWarning(s"${REGEXP_MAX_STATE_MEMORY_BYTES.key} is more than 3 times " +
+        s"${GPU_BATCH_SIZE_BYTES.key}. This may cause regular expression operations to " +
+        s"encounter GPU out of memory errors.")
+    }
+    size
+  }
 
   lazy val getSparkGpuResourceName: String = get(SPARK_GPU_RESOURCE_NAME)
 

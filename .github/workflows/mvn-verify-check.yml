@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # A workflow to run mvn verify check
-name: Maven verify checks (Scala style, Compile and Doc-gen w/ base Spark version)
+name: mvn[compile,RAT,scalastyle,docgen]
 
 on:
   pull_request:
@@ -24,7 +24,61 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  mvn-verify-check:
+  get-noSnapshot-versions-from-dist:
+    runs-on: ubuntu-latest
+    outputs:
+      sparkHeadVersion: ${{ steps.noSnapshotVersionsStep.outputs.headVersion }}
+      sparkTailVersions: ${{ steps.noSnapshotVersionsStep.outputs.tailVersions }}
+    steps:
+      - uses: actions/checkout@v2 # refs/pull/:prNumber/merge
+
+      - name: Setup Java and Maven Env
+        uses: actions/setup-java@v3
+        with:
+          distribution: adopt
+          java-version: 8
+
+      - name: all noSnapshot versions
+        id: noSnapshotVersionsStep
+        run: |
+          set -x
+          noSnapshotVersionsStr=$(mvn -B help:evaluate -q -pl dist -PnoSnapshots -Dexpression=included_buildvers -DforceStdout)
+          noSnapshotVersionsStr=$(echo $noSnapshotVersionsStr)
+          noSnapshotVersionsArr=($(IFS=", "; echo $noSnapshotVersionsStr))
+          tailNoSnapshotVersionsArr=(${noSnapshotVersionsArr[@]:1})
+          svArrBody=$(printf ",{\"spark-version\":\"%s\"}" "${tailNoSnapshotVersionsArr[@]}")
+          svArrBody=${svArrBody:1}
+          svJsonStr=$(printf {\"include\":[%s]} $svArrBody)
+          echo ::set-output name=headVersion::${noSnapshotVersionsArr[0]}
+          echo ::set-output name=tailVersions::$svJsonStr
+
+  package-aggregator:
+    needs: get-noSnapshot-versions-from-dist
+    strategy:
+      matrix: ${{ fromJSON(needs.get-noSnapshot-versions-from-dist.outputs.sparkTailVersions) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2 # refs/pull/:prNumber/merge
+
+      - name: Setup Java and Maven Env
+        uses: actions/setup-java@v3
+        with:
+          distribution: adopt
+          java-version: 8
+
+      - name: package aggregator check
+        run: >
+          mvn -B package -pl aggregator -am
+          -P 'individual,pre-merge'
+          -Dbuildver=${{ matrix.spark-version }}
+          -DskipTests
+          -Dskip
+          -Dmaven.javadoc.skip
+          -Dmaven.scalastyle.skip=true
+          -Drat.skip=true
+
+  verify-all-modules-with-headSparkVersion:
+    needs: get-noSnapshot-versions-from-dist
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2 # refs/pull/:prNumber/merge
@@ -36,5 +90,11 @@ jobs:
           java-version: 8
 
       # includes RAT, code style and doc-gen checks of default shim
-      - name: mvn verify check
-        run: mvn verify -P 'individual,pre-merge' -pl dist -am -DskipTests -Dskip -Dmaven.javadoc.skip
+      - name: verify all modules with lowest-supported Spark version
+        run: >
+          mvn -B verify
+          -P 'individual,pre-merge'
+          -Dbuildver=${{ needs.get-noSnapshot-versions-from-dist.outputs.sparkHeadVersion }}
+          -DskipTests
+          -Dskip
+          -Dmaven.javadoc.skip

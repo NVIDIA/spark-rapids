@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -112,7 +112,7 @@ class GpuPartitioningSuite extends FunSuite with Arm {
     TrampolineUtil.cleanupAnyExistingSession()
     val conf = new SparkConf().set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "none")
     TestUtils.withGpuSparkSession(conf) { _ =>
-      GpuShuffleEnv.init(new RapidsConf(conf))
+      GpuShuffleEnv.init(new RapidsConf(conf), new RapidsDiskBlockManager(conf))
       val partitionIndices = Array(0, 2, 2)
       val gp = new GpuPartitioning {
         override val numPartitions: Int = partitionIndices.length
@@ -144,7 +144,7 @@ class GpuPartitioningSuite extends FunSuite with Arm {
     val conf = new SparkConf()
         .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "lz4")
     TestUtils.withGpuSparkSession(conf) { _ =>
-      GpuShuffleEnv.init(new RapidsConf(conf))
+      GpuShuffleEnv.init(new RapidsConf(conf), new RapidsDiskBlockManager(conf))
       val spillPriority = 7L
       val catalog = RapidsBufferCatalog.singleton
       withResource(new RapidsDeviceMemoryStore(catalog)) { deviceStore =>

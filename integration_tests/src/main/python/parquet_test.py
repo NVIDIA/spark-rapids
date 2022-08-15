@@ -15,7 +15,7 @@ import os
 
 import pytest
 
-from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect, \
+from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_cpu_and_gpu_are_equal_sql_with_capture, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, \
     assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_py4j_exception
 from data_gen import *
 from marks import *
@@ -126,6 +126,56 @@ def test_parquet_fallback(spark_tmp_path, read_func, disable_conf):
             'FileSourceScanExec',
             conf={disable_conf: 'false',
                 "spark.sql.sources.useV1SourceList": "parquet"})
+
+@pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
+@pytest.mark.parametrize('binary_as_string', [True, False])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+def test_parquet_read_round_trip_binary(std_input_path, read_func, binary_as_string, reader_confs):
+    data_path = std_input_path + '/binary_as_string.parquet'
+
+    all_confs = copy_and_update(reader_confs, {
+        'spark.sql.parquet.binaryAsString': binary_as_string,
+        # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
+        'spark.sql.legacy.parquet.int96RebaseModeInRead' : 'CORRECTED',
+        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+    # once https://github.com/NVIDIA/spark-rapids/issues/1126 is in we can remove spark.sql.legacy.parquet.datetimeRebaseModeInRead config which is a workaround
+    # for nested timestamp/date support
+    assert_gpu_and_cpu_are_equal_collect(read_func(data_path),
+                                         conf=all_confs)
+
+@pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
+@pytest.mark.parametrize('binary_as_string', [True, False])
+@pytest.mark.parametrize('data_gen', [binary_gen,
+    ArrayGen(binary_gen),
+    StructGen([('a_1', binary_gen), ('a_2', string_gen)]),
+    StructGen([('a_1', ArrayGen(binary_gen))]),
+    MapGen(ByteGen(nullable=False), binary_gen)], ids=idfn)
+def test_binary_df_read(spark_tmp_path, binary_as_string, read_func, data_gen):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(lambda spark: unary_op_df(spark, data_gen).write.parquet(data_path))
+    all_confs = {
+        'spark.sql.parquet.binaryAsString': binary_as_string,
+        # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
+        'spark.sql.legacy.parquet.int96RebaseModeInRead': 'CORRECTED',
+        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'}
+    assert_gpu_and_cpu_are_equal_collect(read_func(data_path), conf=all_confs)
+
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_parquet_read_forced_binary_schema(std_input_path, v1_enabled_list):
+    data_path = std_input_path + '/binary_as_string.parquet'
+
+    all_confs = copy_and_update(reader_opt_confs[0], {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
+        'spark.sql.legacy.parquet.int96RebaseModeInRead' : 'CORRECTED',
+        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+    # once https://github.com/NVIDIA/spark-rapids/issues/1126 is in we can remove spark.sql.legacy.parquet.datetimeRebaseModeInRead config which is a workaround
+    # for nested timestamp/date support
+
+    # This forces a Binary Column to a String Column and a String Column to a Binary Column.
+    schema = StructType([StructField("a", LongType()), StructField("b", StringType()), StructField("c", BinaryType())])
+    assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.read.schema(schema).parquet(data_path),
+            conf=all_confs)
 
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
@@ -1047,6 +1097,24 @@ def test_parquet_int32_downcast(spark_tmp_path, reader_confs, v1_enabled_list):
         lambda spark: spark.read.schema(read_schema).parquet(data_path),
         conf=conf)
 
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_parquet_nested_column_missing(spark_tmp_path, reader_confs, v1_enabled_list):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    write_schema = [("a", string_gen), ("b", int_gen), ("c", StructGen([("ca", long_gen)]))]
+    with_cpu_session(
+        lambda spark: gen_df(spark, write_schema).write.parquet(data_path))
+
+    read_schema = StructType([StructField("a", StringType()),
+                              StructField("b", IntegerType()),
+                              StructField("c", StructType([
+                                  StructField("ca", LongType()),
+                                  StructField("cb", StringType())]))])
+    conf = copy_and_update(reader_confs,
+                           {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(read_schema).parquet(data_path),
+        conf=conf)
 
 def test_parquet_check_schema_compatibility(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -1145,3 +1213,17 @@ def test_parquet_read_encryption(spark_tmp_path, reader_confs, v1_enabled_list):
         lambda: with_gpu_session(
             lambda spark: spark.read.parquet(data_path).collect(), conf=conf),
         error_message='The GPU does not support reading encrypted Parquet files')
+
+def test_parquet_read_count(spark_tmp_path):
+    parquet_gens = [int_gen, string_gen, double_gen]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+
+    with_cpu_session(lambda spark: gen_df(spark, gen_list).write.parquet(data_path))
+
+    assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.parquet(data_path))
+
+    # assert the spark plan of the equivalent SQL query contains no column in read schema
+    assert_cpu_and_gpu_are_equal_sql_with_capture(
+        lambda spark: spark.read.parquet(data_path), "SELECT COUNT(*) FROM tab", "tab",
+        exist_classes=r'GpuFileGpuScan parquet .* ReadSchema: struct<>')

@@ -60,7 +60,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
   override final def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan] = exec[AQEShuffleReadExec](
     "A wrapper of shuffle query stage",
     ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.ARRAY +
-      TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
+      TypeSig.STRUCT + TypeSig.MAP + TypeSig.BINARY).nested(), TypeSig.all),
     (exec, conf, p, r) => new GpuCustomShuffleReaderMeta(exec, conf, p, r))
 
   override final def sessionFromPlan(plan: SparkPlan): SparkSession = {
@@ -191,8 +191,9 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       ExprChecks.projectAndAst(
         TypeSig.astTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.CALENDAR
-            + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT + TypeSig.ansiIntervals)
-            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+            + TypeSig.BINARY + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT
+            + TypeSig.ansiIntervals)
+            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +
                 TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
         TypeSig.all),
       (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
@@ -276,13 +277,13 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-          TypeSig.ARRAY + TypeSig.DECIMAL_128).nested(), TypeSig.all),
+          TypeSig.ARRAY + TypeSig.BINARY + TypeSig.DECIMAL_128).nested(), TypeSig.all),
         (fsse, conf, p, r) => new FileSourceScanExecMeta(fsse, conf, p, r)),
       GpuOverrides.exec[BatchScanExec](
         "The backend for most file input",
         ExecChecks(
           (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
-            TypeSig.DECIMAL_128).nested(),
+            TypeSig.DECIMAL_128 + TypeSig.BINARY).nested(),
           TypeSig.all),
         (p, conf, parent, r) => new BatchScanExecMeta(p, conf, parent, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
@@ -459,12 +460,17 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       }
     }
 
+    override val childExprs: Seq[BaseExprMeta[_]] = {
+      // We want to leave the runtime filters as CPU expressions
+      p.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+    }
+
     override val childScans: scala.Seq[ScanMeta[_]] =
       Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
 
     override def tagPlanForGpu(): Unit = {
-      if (!p.runtimeFilters.isEmpty) {
-        willNotWorkOnGpu("runtime filtering (DPP) on datasource V2 is not supported")
+      if (!p.runtimeFilters.isEmpty && !childScans.head.supportsRuntimeFilters) {
+        willNotWorkOnGpu("runtime filtering (DPP) is not supported for this scan")
       }
     }
 

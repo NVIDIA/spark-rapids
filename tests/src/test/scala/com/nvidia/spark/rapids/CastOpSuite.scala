@@ -835,7 +835,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
         intercept[org.apache.spark.SparkException] {
           nonOverflowCase(dataType, generator, precision, scale)
         },
-        GpuCast.INVALID_INPUT_MESSAGE)
+        GpuCast.OVERFLOW_MESSAGE)
       )
       // Compare gpu results with cpu ones when AnsiMode is off (most of them should be null)
       testCastToDecimal(dataType,

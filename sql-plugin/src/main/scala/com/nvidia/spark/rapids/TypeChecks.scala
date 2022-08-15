@@ -1120,7 +1120,7 @@ case class ExprChecksImpl(contexts: Map[ExpressionContext, ContextChecks])
  */
 object CaseWhenCheck extends ExprChecks {
   val check: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-    TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested()
+    TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP + TypeSig.BINARY).nested()
 
   val sparkSig: TypeSig = TypeSig.all
 
@@ -1251,7 +1251,7 @@ object CreateNamedStructCheck extends ExprChecks {
   val nameSig: TypeSig = TypeSig.lit(TypeEnum.STRING)
   val sparkNameSig: TypeSig = TypeSig.lit(TypeEnum.STRING)
   val valueSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-      TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
+      TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT + TypeSig.BINARY).nested()
   val sparkValueSig: TypeSig = TypeSig.all
   val resultSig: TypeSig = TypeSig.STRUCT.nested(valueSig)
   val sparkResultSig: TypeSig = TypeSig.STRUCT.nested(sparkValueSig)
@@ -1332,7 +1332,7 @@ class CastChecks extends ExprChecks {
   val sparkStringSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + DATE + CALENDAR + STRING +
       BINARY + GpuTypeShims.additionalTypesStringCanCastTo
 
-  val binaryChecks: TypeSig = none
+  val binaryChecks: TypeSig = BINARY
   val sparkBinarySig: TypeSig = STRING + BINARY
 
   val decimalChecks: TypeSig = gpuNumeric + STRING
@@ -2145,6 +2145,10 @@ object SupportedOpsDocs {
         totalCount += 2
     }
     println("</table>")
+    println()
+    println("### Apache Iceberg Support")
+    println("Support for Apache Iceberg has additional limitations. See the")
+    println("[Apache Iceberg Support](additional-functionality/iceberg-support.md) document.")
     // scalastyle:on line.size.limit
   }
 
@@ -2197,6 +2201,7 @@ object SupportedOpsForTools {
           case "orc" => conf.isOrcEnabled && conf.isOrcReadEnabled
           case "json" => conf.isJsonEnabled && conf.isJsonReadEnabled
           case "avro" => conf.isAvroEnabled && conf.isAvroReadEnabled
+          case "iceberg" => conf.isIcebergEnabled && conf.isIcebergReadEnabled
           case _ =>
             throw new IllegalArgumentException("Format is unknown we need to add it here!")
         }

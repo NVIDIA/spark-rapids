@@ -1,2 +1,26 @@
-66a67
+9,10c9,10
+<    * \group_index and $group_index
+<    * This method transforms above two patterns into cuDF pattern ${group_index}, except they are
+---
+>    * \group_index and \$group_index
+>    * This method transforms above two patterns into cuDF pattern \${group_index}, except they are
+73c73
+<       case _ =>
+---
+>       case _ => 
+80,81c80,81
+<    * Recursively check if pattern contains only zero-match repetitions
+<    * ?, *, {0,}, or {0,n} or any combination of them.
+---
+>    * Recursively check if pattern contains only zero-match repetitions 
+>    * ?, *, {0,}, or {0,n} or any combination of them. 
+93c93
+<           isASTEmptyRepetition(term)
+---
+>           isASTEmptyRepetition(term) 
+105c105
+<    * Returns the number of groups in regexp
+---
+>    * Returns the number of groups in regexp 
+116a117
 > 

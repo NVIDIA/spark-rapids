@@ -122,8 +122,8 @@ case class GpuFlatMapGroupsInPandasExec(
         StructField("out_struct", StructType.fromAttributes(localOutput)) :: Nil)
 
     // Configs from DB 10.4 runtime
-    val maxBytes = conf.pandasZeroConfConversionMaxBytesPerSlice
-    val zeroConfEnabled = conf.pandasZeroConfConversionEnabled
+    val maxBytes = conf.pandasZeroConfConversionGroupbyApplyMaxBytesPerSlice
+    val zeroConfEnabled = conf.pandasZeroConfConversionGroupbyApplyEnabled
 
     // Resolve the argument offsets and related attributes.
     val GroupArgs(dedupAttrs, argOffsets, groupingOffsets) =

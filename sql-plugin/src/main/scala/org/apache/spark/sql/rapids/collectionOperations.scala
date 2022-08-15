@@ -28,7 +28,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NamedExpression, RowOrdering, Sequence, TimeZoneAwareExpression}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, NamedExpression, NullIntolerant, RowOrdering, Sequence, TimeZoneAwareExpression}
 import org.apache.spark.sql.catalyst.util.GenericArrayData
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
@@ -440,7 +440,19 @@ case class GpuArrayMin(child: Expression) extends GpuUnaryExpression with Implic
     input.getBase.listReduce(SegmentedReductionAggregation.min())
 }
 
-case class GpuArrayMax(child: Expression) extends GpuUnaryExpression with ImplicitCastInputTypes {
+object GpuArrayMax {
+  def apply(child: Expression): GpuArrayMax = {
+    child.dataType match {
+      case ArrayType(FloatType | DoubleType, _) => GpuFloatArrayMax(child)
+      case ArrayType(_, _) => GpuBasicArrayMax(child)
+      case _ => throw new IllegalStateException(s"array_max accepts only arrays.")
+    }
+  }
+}
+
+abstract class GpuArrayMax(child: Expression) extends GpuUnaryExpression
+  with ImplicitCastInputTypes
+  with Serializable{
 
   override def nullable: Boolean = true
 
@@ -455,6 +467,44 @@ case class GpuArrayMax(child: Expression) extends GpuUnaryExpression with Implic
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector =
     input.getBase.listReduce(SegmentedReductionAggregation.max())
+}
+
+/** ArrayMax without `NaN` handling */
+case class GpuBasicArrayMax(child: Expression) extends GpuArrayMax(child)
+
+/** ArrayMax for FloatType and DoubleType to handle `NaN`s.
+ *
+ * In Spark, `Nan` is the max float value, however in cuDF, the calculation
+ * involving `Nan` is undefined.
+ * We design a workaround method here to match the Spark's behaviour.
+ * The high level idea is that, we firstly check if each array contains `Nan`.
+ * If it is, the max value is `Nan`, else we use the cuDF kernel to
+ * calculate the max value.
+ */
+case class GpuFloatArrayMax(child: Expression) extends GpuArrayMax(child){
+  @transient override lazy val dataType: DataType = child.dataType match {
+    case ArrayType(FloatType, _) => FloatType
+    case ArrayType(DoubleType, _) => DoubleType
+    case _ => throw new IllegalStateException(
+      s"GpuFloatArrayMax accepts only float array and double array."
+    )
+  }
+
+  protected def getNanSalar: Scalar = dataType match {
+    case FloatType => Scalar.fromFloat(Float.NaN)
+    case DoubleType => Scalar.fromDouble(Double.NaN)
+    case t => throw new IllegalStateException(s"dataType $t is not FloatType or DoubleType")
+  }
+
+  override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
+    withResource(getNanSalar){nan =>
+      withResource(input.getBase().listContains(nan)){hasNan =>
+        withResource(input.getBase().listReduce(SegmentedReductionAggregation.max())) {max =>
+          hasNan.ifElse(nan, max)
+        }
+      }
+    }
+  }
 }
 
 case class GpuArrayRepeat(left: Expression, right: Expression) extends GpuBinaryExpression {
@@ -675,6 +725,221 @@ case class GpuArraysZip(children: Seq[Expression]) extends GpuExpression with Sh
     // the output record will be null if any of input records is null.
     withResource(zipped) { _ =>
       zipped.mergeAndSetValidity(BinaryOp.BITWISE_AND, inputs: _*)
+    }
+  }
+}
+
+// Base class for GpuArrayExcept, GpuArrayUnion, GpuArrayIntersect 
+trait GpuArrayBinaryLike extends GpuComplexTypeMergingExpression with NullIntolerant {
+  val left: Expression
+  val right: Expression
+
+  @transient override final lazy val children: Seq[Expression] = IndexedSeq(left, right)
+
+  def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector
+  def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector
+  def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector
+  def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    withResourceIfAllowed(left.columnarEval(batch)) { lhs =>
+      withResourceIfAllowed(right.columnarEval(batch)) { rhs =>
+        (lhs, rhs) match {
+          case (l: GpuColumnVector, r: GpuColumnVector) =>
+            GpuColumnVector.from(doColumnar(l, r), dataType)
+          case (l: GpuScalar, r: GpuColumnVector) =>
+            GpuColumnVector.from(doColumnar(l, r), dataType)
+          case (l: GpuColumnVector, r: GpuScalar) =>
+            GpuColumnVector.from(doColumnar(l, r), dataType)
+          case (l: GpuScalar, r: GpuScalar) =>
+            GpuColumnVector.from(doColumnar(batch.numRows(), l, r), dataType)
+          case (l, r) =>
+            throw new UnsupportedOperationException(s"Unsupported data '($l: " +
+              s"${l.getClass}, $r: ${r.getClass})' for GPU binary expression.")
+        }
+      }
+    }
+  }
+}
+
+case class GpuArrayExcept(left: Expression, right: Expression)
+    extends GpuArrayBinaryLike with ExpectsInputTypes {
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(ArrayType, ArrayType)
+
+  override def checkInputDataTypes(): TypeCheckResult =
+    (left.dataType, right.dataType) match {
+    case (ArrayType(ldt, _), ArrayType(rdt, _)) =>
+      if (ldt.sameType(rdt)) {
+        TypeCheckResult.TypeCheckSuccess
+      } else {
+        TypeCheckResult.TypeCheckFailure(
+          s"Array_intersect requires both array params to have the same subType: $ldt != $rdt")
+      }
+    case dt =>
+      TypeCheckResult.TypeCheckFailure(s"$prettyName only supports array input, but found $dt")
+  }
+
+  override def nullable: Boolean = true
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    ColumnView.listsDifferenceDistinct(lhs.getBase, rhs.getBase)
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+      doColumnar(left, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, rhs.dataType)) { right =>
+      doColumnar(lhs, right)
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
+      withResource(GpuColumnVector.from(rhs, numRows, rhs.dataType)) { right =>
+        doColumnar(left, right)
+      }
+    }
+  }
+}
+
+case class GpuArrayIntersect(left: Expression, right: Expression)
+    extends GpuArrayBinaryLike with ExpectsInputTypes {
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(ArrayType, ArrayType)
+
+  override def checkInputDataTypes(): TypeCheckResult =
+    (left.dataType, right.dataType) match {
+    case (ArrayType(ldt, _), ArrayType(rdt, _)) =>
+      if (ldt.sameType(rdt)) {
+        TypeCheckResult.TypeCheckSuccess
+      } else {
+        TypeCheckResult.TypeCheckFailure(
+          s"Array_intersect requires both array params to have the same subType: $ldt != $rdt")
+      }
+    case dt =>
+      TypeCheckResult.TypeCheckFailure(s"$prettyName only supports array input, but found $dt")
+  }
+
+  override def nullable: Boolean = true
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    ColumnView.listsIntersectDistinct(lhs.getBase, rhs.getBase)
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+      doColumnar(left, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, rhs.dataType)) { right =>
+      doColumnar(lhs, right)
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
+      withResource(GpuColumnVector.from(rhs, numRows, rhs.dataType)) { right =>
+        doColumnar(left, right)
+      }
+    }
+  }
+}
+
+case class GpuArrayUnion(left: Expression, right: Expression)
+    extends GpuArrayBinaryLike with ExpectsInputTypes {
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(ArrayType, ArrayType)
+
+  override def checkInputDataTypes(): TypeCheckResult =
+    (left.dataType, right.dataType) match {
+    case (ArrayType(ldt, _), ArrayType(rdt, _)) =>
+      if (ldt.sameType(rdt)) {
+        TypeCheckResult.TypeCheckSuccess
+      } else {
+        TypeCheckResult.TypeCheckFailure(
+          s"Array_union requires both array params to have the same subType: $ldt != $rdt")
+      }
+    case dt =>
+      TypeCheckResult.TypeCheckFailure(s"$prettyName only supports array input, but found $dt")
+  }
+
+  override def nullable: Boolean = true
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    ColumnView.listsUnionDistinct(lhs.getBase, rhs.getBase)
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+      doColumnar(left, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, rhs.dataType)) { right =>
+      doColumnar(lhs, right)
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
+      withResource(GpuColumnVector.from(rhs, numRows, rhs.dataType)) { right =>
+        doColumnar(left, right)
+      }
+    }
+  }
+}
+
+case class GpuArraysOverlap(left: Expression, right: Expression)
+    extends GpuBinaryExpression with ExpectsInputTypes with NullIntolerant {
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(ArrayType, ArrayType)
+
+  override def checkInputDataTypes(): TypeCheckResult =
+    (left.dataType, right.dataType) match {
+    case (ArrayType(ldt, _), ArrayType(rdt, _)) =>
+      if (ldt.sameType(rdt)) {
+        TypeCheckResult.TypeCheckSuccess
+      } else {
+        TypeCheckResult.TypeCheckFailure(
+          s"Array_union requires both array params to have the same subType: $ldt != $rdt")
+      }
+    case dt =>
+      TypeCheckResult.TypeCheckFailure(s"$prettyName only supports array input, but found $dt")
+  }
+
+  override def dataType: DataType = BooleanType
+
+  override def nullable: Boolean = true
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    ColumnView.listsHaveOverlap(lhs.getBase, rhs.getBase)
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+      doColumnar(left, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, rhs.dataType)) { right =>
+      doColumnar(lhs, right)
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
+      withResource(GpuColumnVector.from(rhs, numRows, rhs.dataType)) { right =>
+        doColumnar(left, right)
+      }
     }
   }
 }

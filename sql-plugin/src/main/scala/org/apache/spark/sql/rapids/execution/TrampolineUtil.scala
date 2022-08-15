@@ -77,6 +77,12 @@ object TrampolineUtil {
     dt.existsRecursively(f)
   }
 
+  /**
+   * Check if `a` and `b` are the same data type when ignoring nullability
+   * (`StructField.nullable`, `ArrayType.containsNull`, and `MapType.valueContainsNull`).
+   */
+  def sameType(a: DataType, b: DataType): Boolean = a.sameType(b)
+
   def incInputRecordsRows(inputMetrics: InputMetrics, rows: Long): Unit =
     inputMetrics.incRecordsRead(rows)
 

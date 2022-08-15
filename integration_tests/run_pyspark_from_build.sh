@@ -51,6 +51,9 @@ else
         if [ -f $(echo $LOCAL_JAR_PATH/parquet-hadoop*.jar) ]; then
             export INCLUDE_PARQUET_HADOOP_TEST_JAR=true
             PARQUET_HADOOP_TESTS=$(echo $LOCAL_JAR_PATH/parquet-hadoop*.jar)
+            # remove the log4j.properties file so it doesn't conflict with ours, ignore errors
+            # if it isn't present or already removed
+            zip -d $PARQUET_HADOOP_TESTS log4j.properties || true
         else
             export INCLUDE_PARQUET_HADOOP_TEST_JAR=false
             PARQUET_HADOOP_TESTS=
@@ -60,10 +63,13 @@ else
     else
         AVRO_JARS=$(echo "$SCRIPTPATH"/target/dependency/spark-avro*.jar)
         PARQUET_HADOOP_TESTS=$(echo "$SCRIPTPATH"/target/dependency/parquet-hadoop*.jar)
+        # remove the log4j.properties file so it doesn't conflict with ours, ignore errors
+        # if it isn't present or already removed
+        zip -d $PARQUET_HADOOP_TESTS log4j.properties || true
         MIN_PARQUET_JAR="$SCRIPTPATH/target/dependency/parquet-hadoop-1.12.0-tests.jar"
         # Make sure we have Parquet version >= 1.12 in the dependency
         LOWEST_PARQUET_JAR=$(echo -e "$MIN_PARQUET_JAR\n$PARQUET_HADOOP_TESTS" | sort -V | head -1)
-        export INCLUDE_PARQUET_HADOOP_TEST_JAR=$([[ "$LOWEST_PARQUET_JAR" == "MIN_PARQUET_JAR" ]] && echo true || echo false)
+        export INCLUDE_PARQUET_HADOOP_TEST_JAR=$([[ "$LOWEST_PARQUET_JAR" == "$MIN_PARQUET_JAR" ]] && echo true || echo false)
         PLUGIN_JARS=$(echo "$SCRIPTPATH"/../dist/target/rapids-4-spark_*.jar)
         # the integration-test-spark3xx.jar, should not include the integration-test-spark3xxtest.jar
         TEST_JARS=$(echo "$SCRIPTPATH"/target/rapids-4-spark-integration-tests*-$INTEGRATION_TEST_VERSION.jar)
@@ -186,7 +192,7 @@ else
     MB_PER_EXEC=${MB_PER_EXEC:-1024}
     CORES_PER_EXEC=${CORES_PER_EXEC:-1}
 
-    SPARK_TASK_MAXFAILURES=1
+    SPARK_TASK_MAXFAILURES=${SPARK_TASK_MAXFAILURES:-1}
     [[ "$VERSION_STRING" < "3.1.1" ]] && SPARK_TASK_MAXFAILURES=4
 
     export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS// /:}"
@@ -202,6 +208,7 @@ else
     # Not the default 2G but should be large enough for a single batch for all data (we found
     # 200 MiB being allocated by a single test at most, and we typically have 4 tasks.
     export PYSP_TEST_spark_rapids_sql_batchSizeBytes='100m'
+    export PYSP_TEST_spark_rapids_sql_regexp_maxStateMemoryBytes='300m'
 
     # Extract Databricks version from deployed configs. This is set automatically on Databricks
     # notebooks but not when running Spark manually.

@@ -162,17 +162,16 @@ cluster.
     ```bash
     spark.rapids.sql.python.gpu.enabled true
     spark.python.daemon.module rapids.daemon_databricks
-    spark.executorEnv.PYTHONPATH /databricks/jars/rapids-4-spark_2.12-22.06.0.jar:/databricks/spark/python
+    spark.executorEnv.PYTHONPATH /databricks/jars/rapids-4-spark_2.12-22.08.0.jar:/databricks/spark/python
     ```
 
 7. Once you’ve added the Spark config, click “Confirm and Restart”.
 8. Once the cluster comes back up, it is now enabled for GPU-accelerated Spark.
 
 ## Import the GPU Mortgage Example Notebook
-Import the example [notebook](../demo/gpu-mortgage_accelerated.ipynb) from the repo into your
-workspace, then open the notebook.  Modify the first cell to point to your workspace, and download a
-larger dataset if needed. You can find the links to the datasets at
-[docs.rapids.ai](https://docs.rapids.ai/datasets/mortgage-data).
+Import the example [notebook](../demo/Databricks/Mortgage-ETL-db.ipynb) from the repo into your
+workspace, then open the notebook. Please find this [instruction](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-22.08/docs/get-started/xgboost-examples/dataset/mortgage.md)
+to download the dataset.
 
 ```bash
 %sh
