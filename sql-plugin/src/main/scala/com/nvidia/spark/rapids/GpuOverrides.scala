@@ -996,6 +996,8 @@ object GpuOverrides extends Logging {
             // Here we try to strip out the extra casts, etc to get to as close to the original
             // query as possible. This lets us then calculate what CUDF needs to get the correct
             // answer, which in some cases is a lot smaller.
+            // For multiply we can support all of the types. For divide we still have to fall back
+            // to the CPU in some cases.
             case _: Divide =>
               val intermediatePrecision =
                 GpuDecimalDivide.nonRoundedIntermediateArgPrecision(lhsDecimalType,
@@ -1009,21 +1011,6 @@ object GpuOverrides extends Logging {
                 } else {
                   logWarning("Decimal overflow guarantees disabled for " +
                       s"${lhs.dataType} / ${rhs.dataType} produces ${a.dataType} with an " +
-                      s"intermediate precision of $intermediatePrecision")
-                }
-              }
-            case _: Multiply =>
-              val intermediatePrecision =
-                GpuDecimalMultiply.nonRoundedIntermediatePrecision(lhsDecimalType,
-                  rhsDecimalType, a.dataType)
-              if (intermediatePrecision > DType.DECIMAL128_MAX_PRECISION) {
-                if (conf.needDecimalGuarantees) {
-                  binExpr.willNotWorkOnGpu(s"the intermediate precision of " +
-                      s"$intermediatePrecision that is required to guarantee no overflow issues " +
-                      s"for this multiply is too large to be supported on the GPU")
-                } else {
-                  logWarning("Decimal overflow guarantees disabled for " +
-                      s"${lhs.dataType} * ${rhs.dataType} produces ${a.dataType} with an " +
                       s"intermediate precision of $intermediatePrecision")
                 }
               }
@@ -1042,7 +1029,7 @@ object GpuOverrides extends Logging {
                 GpuDecimalMultiply.nonRoundedIntermediatePrecision(lhsDecimalType,
                   rhsDecimalType, a.dataType)
               GpuDecimalMultiply(lhs.convertToGpu(), rhs.convertToGpu(), wrapped.dataType,
-                needsExtraOverflowChecks = intermediatePrecision > DType.DECIMAL128_MAX_PRECISION)
+                useLongMultiply = intermediatePrecision > DType.DECIMAL128_MAX_PRECISION)
             case _ =>
               GpuCheckOverflow(childExprs.head.convertToGpu(),
                 wrapped.dataType, wrapped.nullOnOverflow)
