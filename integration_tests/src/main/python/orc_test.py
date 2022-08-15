@@ -478,7 +478,25 @@ def test_read_struct_without_stream(spark_tmp_path):
             lambda spark : spark.read.orc(data_path))
 
 
-@pytest.mark.parametrize('orc_gen', flattened_orc_gens, ids=idfn)
+# There is an issue when writing timestamp: https://github.com/NVIDIA/spark-rapids/issues/6312
+# When the issue is resolved, remove all these `*_no_timestamp` generators and  use just `flattened_orc_gens`
+# for `orc_gen` parameter.
+orc_basic_gens_no_timestamp = [gen for gen in orc_basic_gens if not isinstance(gen, TimestampGen)]
+
+orc_array_gens_sample_no_timestamp = [ArrayGen(sub_gen) for sub_gen in orc_basic_gens_no_timestamp] + [
+    ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
+    ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10),
+    ArrayGen(ArrayGen(decimal_gen_64bit, max_length=10), max_length=10),
+    ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))]
+
+orc_basic_struct_gen_no_timestamp = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(orc_basic_gens_no_timestamp)])
+orc_struct_gens_sample_no_timestamp = [orc_basic_struct_gen_no_timestamp,
+    StructGen([['child0', byte_gen], ['child1', orc_basic_struct_gen_no_timestamp]]),
+    StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
+
+flattened_orc_gens_no_timestamp = orc_basic_gens + orc_array_gens_sample_no_timestamp + orc_struct_gens_sample_no_timestamp
+
+@pytest.mark.parametrize('orc_gen', flattened_orc_gens_no_timestamp, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('case_sensitive', ["false", "true"])
