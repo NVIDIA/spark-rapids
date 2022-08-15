@@ -28,7 +28,12 @@ def create_orc(data_gen_list, data_path):
 
 # TODO: merge test_casting_from_float and test_casting_from_double into one test
 # TODO: Need a float_gen with range [a, b], if float/double >= 1e13, then float/double -> timestamp will overflow
-
+'''
+We need this test cases:
+1. val * 1e3 <= LONG_MAX && val * 1e6 <= LONG_MAX  (no overflow)
+2. val * 1e3 <= LONG_MAX && val * 1e6 > LONG_MAX   (caught java.lang.ArithmeticException)
+3. val * 1e3 > LONG_MAX  (caught java.lang.ArithmeticException)
+'''
 @pytest.mark.parametrize('to_type', ['double', 'boolean', 'tinyint', 'smallint', 'int', 'bigint', 'timestamp'])
 def test_casting_from_float(spark_tmp_path, to_type):
     orc_path = spark_tmp_path + '/orc_casting_from_float'
