@@ -25,7 +25,6 @@ import com.nvidia.spark.rapids.shims.{GpuTypeShims, TypeSigUtil}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
 /** Trait of TypeSigUtil for different spark versions */
@@ -777,6 +776,23 @@ abstract class TypeChecks[RET] {
     }.mkString(", ")
   }
 
+  private def tagCustomMessage(
+    groupedByType: Map[DataType, Set[String]],
+    meta: RapidsMeta[_, _, _]
+    ): Map[DataType, Set[String]] = {
+    groupedByType.filterKeys {
+      case TimestampType if !(TypeChecks.areTimestampsSupported(ZoneId.systemDefault()) &&
+        TypeChecks.areTimestampsSupported(SQLConf.get.sessionLocalTimeZone))=> {
+        //  Add more infomation in log when timezone not UTC
+        meta.willNotWorkOnGpu(s"your timezone isn't in UTC (JVM:" +
+          s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
+          s" Set both of the timezones to UTC to enable TimestampType support")
+        false
+      }
+      case _ => true
+    }
+  }
+
   protected def tagUnsupportedTypes(
     meta: RapidsMeta[_, _, _],
     sig: TypeSig,
@@ -788,24 +804,10 @@ abstract class TypeChecks[RET] {
       .groupBy(_.dataType)
       .mapValues(_.map(_.name).toSet)
 
-    if (unsupportedTypes.nonEmpty) {
-      meta.willNotWorkOnGpu(msgFormat.format(stringifyTypeAttributeMap(unsupportedTypes)))
-    }
-  }
+    val defaultUnsupportedTypes = tagCustomMessage(unsupportedTypes, meta)
 
-  /** Add more infomation in log when timezone not UTC */
-  protected def tagTimestampUtcCheck(
-    meta: RapidsMeta[_, _, _],
-    fields: Seq[StructField]
-    ): Unit = {
-    val schemaHasTimestamps = fields.exists { field =>
-      TrampolineUtil.dataTypeExistsRecursively(field.dataType, _.isInstanceOf[TimestampType])
-    }
-    if (schemaHasTimestamps && !(TypeChecks.areTimestampsSupported(ZoneId.systemDefault()) &&
-        TypeChecks.areTimestampsSupported(SQLConf.get.sessionLocalTimeZone))) {
-      meta.willNotWorkOnGpu(s"your timezone isn't in UTC (JVM:" +
-          s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
-          s" Set both of the timezones to UTC to enable TimestampType support")
+    if (defaultUnsupportedTypes.nonEmpty) {
+      meta.willNotWorkOnGpu(msgFormat.format(stringifyTypeAttributeMap(unsupportedTypes)))
     }
   }
 }
@@ -922,7 +924,7 @@ class FileFormatChecks private (
       schema: StructType,
       fileType: FileFormatType,
       op: FileFormatOp): Unit = {
-    tagTimestampUtcCheck(meta, schema.fields)
+    // tagTimestampUtcCheck(meta, schema.fields)
     tagUnsupportedTypes(meta, sig, schema.fields,
       s"unsupported data types %s in $op for $fileType")
   }
