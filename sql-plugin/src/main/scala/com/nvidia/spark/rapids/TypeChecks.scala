@@ -774,31 +774,33 @@ abstract class TypeChecks[RET] {
     }.mkString(", ")
   }
 
-  private def tagCustomMessage(
-    groupedByType: Map[DataType, Set[String]],
+  /** 
+   * Original log does not print enough info when timezone is not UTC, 
+   * here check again to add UTC info and return other unsupported types.
+   */
+  private def tagTimestampTypeAndReturnOthers(
+    unsupportedTypes: Map[DataType, Set[String]],
     meta: RapidsMeta[_, _, _]
     ): Map[DataType, Set[String]] = {
-    /** Tag types need custom messages and return false else return true */
-    def checkCustomMessageType(dataType: DataType): Boolean = dataType match {
+    def checkTimestampType(dataType: DataType): Boolean = dataType match {
         case TimestampType if !TypeChecks.areTimestampsSupported() => {
-          //  Add more infomation in log when timezone not UTC
           meta.willNotWorkOnGpu(s"your timezone isn't in UTC (JVM:" +
             s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
             s" Set both of the timezones to UTC to enable TimestampType support")
           false
         }
         case ArrayType(elementType, _) =>
-          checkCustomMessageType(elementType)
+          checkTimestampType(elementType)
         case MapType(keyType, valueType, _) =>
           // prevent short-circuit evaluation
-          val keyChecked = checkCustomMessageType(keyType)
-          val valueChecked = checkCustomMessageType(valueType)
+          val keyChecked = checkTimestampType(keyType)
+          val valueChecked = checkTimestampType(valueType)
           keyChecked || valueChecked
         case StructType(fields) =>
-          fields.map(field => checkCustomMessageType(field.dataType)).exists(identity)
+          fields.map(field => checkTimestampType(field.dataType)).exists(identity)
         case _ => true
     }
-    groupedByType.filterKeys(checkCustomMessageType)
+    unsupportedTypes.filterKeys(checkTimestampType)
   }
 
   protected def tagUnsupportedTypes(
@@ -812,7 +814,7 @@ abstract class TypeChecks[RET] {
       .groupBy(_.dataType)
       .mapValues(_.map(_.name).toSet)
 
-    val defaultUnsupportedTypes = tagCustomMessage(unsupportedTypes, meta)
+    val defaultUnsupportedTypes = tagTimestampTypeAndReturnOthers(unsupportedTypes, meta)
 
     if (defaultUnsupportedTypes.nonEmpty) {
       meta.willNotWorkOnGpu(msgFormat.format(stringifyTypeAttributeMap(defaultUnsupportedTypes)))
