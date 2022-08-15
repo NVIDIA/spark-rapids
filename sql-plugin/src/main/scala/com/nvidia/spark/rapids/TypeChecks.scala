@@ -781,8 +781,8 @@ abstract class TypeChecks[RET] {
     meta: RapidsMeta[_, _, _]
     ): Map[DataType, Set[String]] = {
     groupedByType.filterKeys {
-      case TimestampType if !(TypeChecks.areTimestampsSupported(ZoneId.systemDefault()) &&
-        TypeChecks.areTimestampsSupported(SQLConf.get.sessionLocalTimeZone))=> {
+      case TimestampType if !TypeChecks.areTimestampsSupported(ZoneId.systemDefault()) ||
+        !TypeChecks.areTimestampsSupported(SQLConf.get.sessionLocalTimeZone) => {
         //  Add more infomation in log when timezone not UTC
         meta.willNotWorkOnGpu(s"your timezone isn't in UTC (JVM:" +
           s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
