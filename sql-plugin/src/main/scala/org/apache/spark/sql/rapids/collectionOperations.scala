@@ -469,8 +469,18 @@ abstract class GpuArrayMax(child: Expression) extends GpuUnaryExpression
     input.getBase.listReduce(SegmentedReductionAggregation.max())
 }
 
+/** ArrayMax without `NaN` handling */
 case class GpuBasicArrayMax(child: Expression) extends GpuArrayMax(child)
 
+/** ArrayMax for FloatType and DoubleType to handle `NaN`s.
+ *
+ * In Spark, `Nan` is the max float value, however in cuDF, the calculation
+ * involving `Nan` is undefined.
+ * We design a workaround method here to match the Spark's behaviour.
+ * The high level idea is that, we firstly check if each array contains `Nan`.
+ * If it is, the max value is `Nan`, else we use the cuDF kernel to
+ * calculate the max value.
+ */
 case class GpuFloatArrayMax(child: Expression) extends GpuArrayMax(child){
   @transient override lazy val dataType: DataType = child.dataType match {
     case ArrayType(FloatType, _) => FloatType
