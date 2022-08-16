@@ -339,8 +339,8 @@ class AutoTuner(app: ApplicationSummaryInfo, workerInfo: String) extends Logging
     val taskInputSize =
       app.sqlTaskAggMetrics.map(_.inputBytesReadAvg).sum / app.sqlTaskAggMetrics.size
     val maxPartitionBytesNum = convertFromHumanReadableSize(maxPartitionBytes)
-
-    if (taskInputSize < convertFromHumanReadableSize(MIN_PARTITION_BYTES_RANGE)) {
+    if (taskInputSize > 0 &&
+      taskInputSize < convertFromHumanReadableSize(MIN_PARTITION_BYTES_RANGE)) {
       // Increase partition size
       val calculatedMaxPartitionBytes = Math.max(
         maxPartitionBytesNum *

@@ -29,7 +29,7 @@ import org.apache.spark.sql.TrampolineUtil
 
 class AutoTunerSuite extends FunSuite with Logging {
   private val autoTunerLogDir =
-    ToolTestUtils.getTestResourcePath("AutoTuner")
+    ToolTestUtils.getTestResourcePath("spark-events-profiling")
 
   private def testSystemPropertyFile(systemProperties: String): (SystemProps, Option[String]) = {
     var systemInfoWithMsg:(SystemProps, Option[String]) = null
@@ -171,7 +171,7 @@ class AutoTunerSuite extends FunSuite with Logging {
   }
 
   test("test recommended configuration") {
-    val eventLog = s"$autoTunerLogDir/auto_tuner_eventlog"
+    val eventLog = s"$autoTunerLogDir/auto_tuner_eventlog.gz"
     val appId = "local-1655514789396"
     val systemProperties =
       """
@@ -209,7 +209,7 @@ class AutoTunerSuite extends FunSuite with Logging {
   }
 
   test("test recommended configuration - without system properties") {
-    val eventLog = s"$autoTunerLogDir/auto_tuner_eventlog"
+    val eventLog = s"$autoTunerLogDir/auto_tuner_eventlog.gz"
     val appId = "local-1655514789396"
     val systemProperties = ""
     val expectedResults =
@@ -229,7 +229,7 @@ class AutoTunerSuite extends FunSuite with Logging {
   }
 
   test("test recommended configuration - without gpu properties") {
-    val eventLog = s"$autoTunerLogDir/auto_tuner_eventlog"
+    val eventLog = s"$autoTunerLogDir/auto_tuner_eventlog.gz"
     val appId = "local-1655514789396"
     val systemProperties =
       """
@@ -268,7 +268,7 @@ class AutoTunerSuite extends FunSuite with Logging {
   }
 
   test("test recommended configuration - low memory") {
-    val eventLog = s"$autoTunerLogDir/auto_tuner_eventlog"
+    val eventLog = s"$autoTunerLogDir/auto_tuner_eventlog.gz"
     val appId = "local-1655514789396"
     val systemProperties =
       """
@@ -311,7 +311,7 @@ class AutoTunerSuite extends FunSuite with Logging {
   }
 
   test("test recommended configuration - low num cores") {
-    val eventLog = s"$autoTunerLogDir/auto_tuner_eventlog"
+    val eventLog = s"$autoTunerLogDir/auto_tuner_eventlog.gz"
     val appId = "local-1655514789396"
     val systemPropsFilePath =
       """
