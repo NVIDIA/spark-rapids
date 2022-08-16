@@ -87,8 +87,12 @@ else
         AVRO_JARS=""
     fi
 
-    # Only 3 jars: dist.jar integration-test.jar avro.jar
-    ALL_JARS="$PLUGIN_JARS $TEST_JARS $AVRO_JARS $PARQUET_HADOOP_TESTS"
+    # ALL_JARS includes dist.jar integration-test.jar avro.jar parquet.jar if they exist
+    # Remove non-existing paths and canonicalize the paths including get rid of links and `..`
+    ALL_JARS=$(readlink -e $PLUGIN_JARS $TEST_JARS $AVRO_JARS $PARQUET_HADOOP_TESTS || true)
+    # `:` separated jars
+    ALL_JARS="${ALL_JARS//$'\n'/:}"
+
     echo "AND PLUGIN JARS: $ALL_JARS"
     if [[ "${TEST}" != "" ]];
     then
@@ -177,8 +181,9 @@ else
       "$LOCAL_ROOTDIR"
       "$LOCAL_ROOTDIR"/src/main/python)
 
+    REPORT_CHARS=${REPORT_CHARS:="fE"} # default as (f)ailed, (E)rror
     TEST_COMMON_OPTS=(-v
-          -rfExXs
+          -r"$REPORT_CHARS"
           "$TEST_TAGS"
           --std_input_path="$INPUT_PATH"/src/test/resources
           --color=yes
@@ -195,8 +200,15 @@ else
     SPARK_TASK_MAXFAILURES=${SPARK_TASK_MAXFAILURES:-1}
     [[ "$VERSION_STRING" < "3.1.1" ]] && SPARK_TASK_MAXFAILURES=4
 
-    export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS// /:}"
-    export PYSP_TEST_spark_executor_extraClassPath="${ALL_JARS// /:}"
+    if [[ "${PYSP_TEST_spark_shuffle_manager}" =~ "RapidsShuffleManager" ]]; then
+        # If specified shuffle manager, set `extraClassPath` due to issue https://github.com/NVIDIA/spark-rapids/issues/5796
+        # Remove this line if the issue is fixed
+        export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS}"
+        export PYSP_TEST_spark_executor_extraClassPath="${ALL_JARS}"
+    else
+        export PYSP_TEST_spark_jars="${ALL_JARS//:/,}"
+    fi
+
     export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=UTC $COVERAGE_SUBMIT_FLAGS"
     export PYSP_TEST_spark_executor_extraJavaOptions='-ea -Duser.timezone=UTC'
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
@@ -208,6 +220,7 @@ else
     # Not the default 2G but should be large enough for a single batch for all data (we found
     # 200 MiB being allocated by a single test at most, and we typically have 4 tasks.
     export PYSP_TEST_spark_rapids_sql_batchSizeBytes='100m'
+    export PYSP_TEST_spark_rapids_sql_regexp_maxStateMemoryBytes='300m'
 
     # Extract Databricks version from deployed configs. This is set automatically on Databricks
     # notebooks but not when running Spark manually.
@@ -253,7 +266,14 @@ else
     else
         # We set the GPU memory size to be a constant value even if only running with a parallelism of 1
         # because it helps us have consistent test runs.
-        exec "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
+        if [[ -n "$PYSP_TEST_spark_jars" ]]; then
+            # `spark.jars` is the same as `--jars`, e.g.: --jars a.jar,b.jar...
+            jarOpts=(--conf spark.jars="${PYSP_TEST_spark_jars}")
+        elif [[ -n "$PYSP_TEST_spark_driver_extraClassPath" ]]; then
+            jarOpts=(--driver-class-path "${PYSP_TEST_spark_driver_extraClassPath}")
+        fi
+
+        exec "$SPARK_HOME"/bin/spark-submit "${jarOpts[@]}" \
             --driver-java-options "$PYSP_TEST_spark_driver_extraJavaOptions" \
             $SPARK_SUBMIT_FLAGS \
             --conf 'spark.rapids.memory.gpu.allocSize='"$PYSP_TEST_spark_rapids_memory_gpu_allocSize" \

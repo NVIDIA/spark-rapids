@@ -23,8 +23,8 @@ import pyspark.sql.functions as f
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
 
-all_gens = all_gen + [NullGen()]
-all_nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
+all_gens = all_gen + [NullGen(), binary_gen]
+all_nested_gens = array_gens_sample + [ArrayGen(BinaryGen(max_length=10), max_length=10)] + struct_gens_sample + map_gens_sample
 all_nested_gens_nonempty_struct = array_gens_sample + nonempty_struct_gens_sample
 
 # Create dedicated data gens of nested type for 'if' tests here with two exclusions:

@@ -138,15 +138,25 @@ def test_avro_read_with_corrupt_files(spark_tmp_path, reader_type, v1_enabled_li
             conf=all_confs)
 
 
+# 10 rows is a small batch size for multi-batch read test, 2147483647 is the default value
+@pytest.mark.parametrize('batch_size_rows', [10, 2147483647])
 @pytest.mark.parametrize('v1_enabled_list', ["avro", ""], ids=["v1", "v2"])
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-def test_read_count(spark_tmp_path, v1_enabled_list, reader_type):
+def test_read_count(spark_tmp_path, v1_enabled_list, reader_type, batch_size_rows):
     data_path = spark_tmp_path + '/AVRO_DATA'
-    gen_avro_files([('_c0', int_gen)], data_path)
+
+    # the default block size of the avro file is about 64kb, so we need to generate a larger file
+    # to test multi-batch read. length=30000 will generate 2 blocks in each partition.
+    with_cpu_session(
+        lambda spark: gen_df(spark, [('_c0', int_gen)], length=30000)
+            .repartition(2).write.format("avro").save(data_path)
+    )
 
     all_confs = copy_and_update(_enable_all_types_conf, {
         'spark.rapids.sql.format.avro.reader.type': reader_type,
-        'spark.sql.sources.useV1SourceList': v1_enabled_list})
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.rapids.sql.reader.batchSizeRows': batch_size_rows})
+
     assert_gpu_and_cpu_row_counts_equal(
         lambda spark: spark.read.format("avro").load(data_path),
         conf=all_confs)

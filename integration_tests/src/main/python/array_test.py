@@ -33,7 +33,8 @@ array_no_zero_index_gen = IntegerGen(min_val=1, max_val=25,
 
 array_all_null_gen = ArrayGen(int_gen, all_null=True)
 array_item_test_gens = array_gens_sample + [array_all_null_gen,
-    ArrayGen(MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen(), max_length=10), max_length=10)]
+    ArrayGen(MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen(), max_length=10), max_length=10),
+    ArrayGen(BinaryGen(max_length=10), max_length=10)]
 
 
 # Need these for set-based operations
@@ -153,7 +154,7 @@ def test_array_item_ansi_not_fail_all_null_data():
 
 
 @pytest.mark.parametrize('data_gen', all_basic_gens + [
-                         decimal_gen_32bit, decimal_gen_64bit, decimal_gen_128bit,
+                         decimal_gen_32bit, decimal_gen_64bit, decimal_gen_128bit, binary_gen,
                          StructGen([['child0', StructGen([['child01', IntegerGen()]])], ['child1', string_gen], ['child2', float_gen]], nullable=False),
                          StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]], nullable=False)], ids=idfn)
 def test_make_array(data_gen):
@@ -324,6 +325,11 @@ def test_array_concat_decimal(data_gen):
             'concat(a, a)')),
         conf=no_nans_conf)
 
+@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
+def test_array_max_with_nans(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
+                'array_max(a)'))
 
 @pytest.mark.parametrize('data_gen', array_min_max_gens_no_nan, ids=idfn)
 def test_array_max(data_gen):
@@ -332,7 +338,7 @@ def test_array_max(data_gen):
                 'array_max(a)'),
             conf=no_nans_conf)
 
-@pytest.mark.parametrize('data_gen', [ArrayGen(int_gen, all_null=True)], ids=idfn)
+@pytest.mark.parametrize('data_gen', [ArrayGen(gen, all_null=True) for gen in [int_gen, float_gen, double_gen]], ids=idfn)
 def test_array_max_all_nulls(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
@@ -415,7 +421,8 @@ def test_array_exists(data_gen, threeVL):
     })
 
 
-array_zips_gen = array_gens_sample + [ArrayGen(map_string_string_gen[0], max_length=5)]
+array_zips_gen = array_gens_sample + [ArrayGen(map_string_string_gen[0], max_length=5),
+                                      ArrayGen(BinaryGen(max_length=5), max_length=5)]
 
 
 @pytest.mark.parametrize('data_gen', array_zips_gen, ids=idfn)

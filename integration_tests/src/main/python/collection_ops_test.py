@@ -22,7 +22,9 @@ import pyspark.sql.functions as f
 
 nested_gens = [ArrayGen(LongGen()), ArrayGen(decimal_gen_128bit),
                StructGen([("a", LongGen()), ("b", decimal_gen_128bit)]),
-               MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen())]
+               MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen()),
+               ArrayGen(BinaryGen(max_length=5)),
+               MapGen(IntegerGen(nullable=False), BinaryGen(max_length=5))]
 # additional test for NonNull Array because of https://github.com/rapidsai/cudf/pull/8181
 non_nested_array_gens = [ArrayGen(sub_gen, nullable=nullable)
                          for nullable in [True, False]

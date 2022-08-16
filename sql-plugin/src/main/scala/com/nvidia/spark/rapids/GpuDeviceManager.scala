@@ -232,10 +232,6 @@ object GpuDeviceManager extends Logging {
       val conf = rapidsConf.getOrElse(new RapidsConf(SparkEnv.get.conf))
       val info = Cuda.memGetInfo()
 
-      // We need to reserve more memory when RAPIDS shuffle is enabled and we are using the CUDA
-      // async allocator, so initialize the shuffle environment first.
-      GpuShuffleEnv.init(conf)
-
       val poolAllocation = computeRmmPoolSize(conf, info)
       var init = RmmAllocationMode.CUDA_DEFAULT
       val features = ArrayBuffer[String]()
@@ -299,6 +295,8 @@ object GpuDeviceManager extends Logging {
       Cuda.setDevice(gpuId)
       Rmm.initialize(init, logConf, poolAllocation)
       RapidsBufferCatalog.init(conf)
+
+      GpuShuffleEnv.init(conf, RapidsBufferCatalog.getDiskBlockManager())
     }
   }
 
