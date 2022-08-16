@@ -365,8 +365,7 @@ def test_date_format_f_incompat(data_gen, date_format):
     assert_gpu_fallback_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)), 'ProjectExec', conf)
 
-#maybe_supported_date_formats = ['dd-MM-yyyy', 'yyyy-MM-dd HH:mm:ss.SSS']
-maybe_supported_date_formats = ['yyyy-MM-dd HH:mm:ss.SSSSSSSSS']
+maybe_supported_date_formats = ['dd-MM-yyyy', 'yyyy-MM-dd HH:mm:ss.SSS', 'yyyy-MM-dd HH:mm:ss.SSSSSS']
 @pytest.mark.parametrize('date_format', maybe_supported_date_formats, ids=idfn)
 @pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 @allow_non_gpu('ProjectExec,Alias,DateFormatClass,Literal,Cast')
@@ -376,15 +375,11 @@ def test_date_format_maybe(data_gen, date_format):
         'ProjectExec')
 
 @pytest.mark.parametrize('date_format', maybe_supported_date_formats, ids=idfn)
-@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen', date_n_time_gens, ids=idfn)
 def test_date_format_maybe_incompat(data_gen, date_format):
     conf = {"spark.rapids.sql.incompatibleDateFormats.enabled": "true"}
-    def doit(spark):
-        df = unary_op_df(spark, data_gen)
-        print("MY STUFF", df.collect())
-        return df.selectExpr("date_format(a, '{}')".format(date_format))
-    assert_gpu_and_cpu_are_equal_collect(doit, conf)
-        #lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)), conf)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)), conf)
 
 # Reproduce conditions for https://github.com/NVIDIA/spark-rapids/issues/5670
 # where we had a failure due to GpuCast canonicalization with timezone.
