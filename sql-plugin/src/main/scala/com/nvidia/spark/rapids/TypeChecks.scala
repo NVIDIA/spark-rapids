@@ -796,6 +796,8 @@ abstract class TypeChecks[RET] {
           checkTimestampType(valueType)
         case StructType(fields) =>
           fields.foreach(field => checkTimestampType(field.dataType))
+        case _ =>
+          // do nothing
     }
     unsupportedTypes.foreach { case (dataType, nameSet) =>
       checkTimestampType(dataType)
