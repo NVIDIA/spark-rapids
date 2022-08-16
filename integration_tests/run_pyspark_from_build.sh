@@ -181,8 +181,9 @@ else
       "$LOCAL_ROOTDIR"
       "$LOCAL_ROOTDIR"/src/main/python)
 
+    REPORT_CHARS=${REPORT_CHARS:="fE"} # default as (f)ailed, (E)rror
     TEST_COMMON_OPTS=(-v
-          -rfExXs
+          -r"$REPORT_CHARS"
           "$TEST_TAGS"
           --std_input_path="$INPUT_PATH"/src/test/resources
           --color=yes
