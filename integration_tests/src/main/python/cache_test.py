@@ -150,8 +150,9 @@ def test_cache_diff_req_order(spark_tmp_path):
 
 # This test doesn't allow negative scale for Decimals as ` df.write.mode('overwrite').parquet(data_path)`
 # writes parquet which doesn't allow negative decimals
-# In addition, outputTimestampType can't be handled correctly when the input is of nested types containing timestamp.
-# See issue https://github.com/NVIDIA/spark-rapids/issues/6302
+# In addition, `TIMESTAMP_MILLIS` can't be handled correctly when the input is of nested types containing timestamp.
+# See issue https://github.com/NVIDIA/spark-rapids/issues/6302.
+# Thus, we exclude nested types contaning timestamp from the tests here.
 # When the issue is resolved, remove `_cache_single_array_gens_no_null_no_timestamp` and 
 # use just `_cache_single_array_gens_no_null` for `data_gen` parameter.
 _all_basic_gens_no_null_no_timestamp = [gen for gen in all_basic_gens_no_null if gen != timestamp_gen]

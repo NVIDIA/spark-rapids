@@ -479,6 +479,7 @@ def test_read_struct_without_stream(spark_tmp_path):
 
 
 # There is an issue when writing timestamp: https://github.com/NVIDIA/spark-rapids/issues/6312
+# Thus, we exclude timestamp types from the tests here.
 # When the issue is resolved, remove all these `*_no_timestamp` generators and  use just `flattened_orc_gens`
 # for `orc_gen` parameter.
 orc_basic_gens_no_timestamp = [gen for gen in orc_basic_gens if not isinstance(gen, TimestampGen)]
