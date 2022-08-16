@@ -776,32 +776,30 @@ abstract class TypeChecks[RET] {
 
   /** 
    * Original log does not print enough info when timezone is not UTC, 
-   * here check again to add UTC info and return other unsupported types.
+   * here check again to add UTC info.
    */
-  private def tagTimestampTypeAndReturnOthers(
+  private def tagTimezoneInfoIfHasTimestampType(
     unsupportedTypes: Map[DataType, Set[String]],
     meta: RapidsMeta[_, _, _]
-    ): Map[DataType, Set[String]] = {
-    def checkTimestampType(dataType: DataType): Boolean = dataType match {
+    ): Unit = {
+    def checkTimestampType(dataType: DataType): Unit = dataType match {
         case TimestampType if !TypeChecks.areTimestampsSupported() => {
           meta.willNotWorkOnGpu(s"your timezone isn't in UTC (JVM:" +
             s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
             s" Set both of the timezones to UTC to enable TimestampType support")
-          false
+          return
         }
         case ArrayType(elementType, _) =>
           checkTimestampType(elementType)
-          true
         case MapType(keyType, valueType, _) =>
           checkTimestampType(keyType)
           checkTimestampType(valueType)
-          true
         case StructType(fields) =>
           fields.foreach(field => checkTimestampType(field.dataType))
-          true
-        case _ => true
     }
-    unsupportedTypes.filterKeys(checkTimestampType)
+    unsupportedTypes.foreach { case (dataType, nameSet) =>
+      checkTimestampType(dataType)
+    }
   }
 
   protected def tagUnsupportedTypes(
@@ -815,10 +813,10 @@ abstract class TypeChecks[RET] {
       .groupBy(_.dataType)
       .mapValues(_.map(_.name).toSet)
 
-    val defaultUnsupportedTypes = tagTimestampTypeAndReturnOthers(unsupportedTypes, meta)
+    tagTimezoneInfoIfHasTimestampType(unsupportedTypes, meta)
 
-    if (defaultUnsupportedTypes.nonEmpty) {
-      meta.willNotWorkOnGpu(msgFormat.format(stringifyTypeAttributeMap(defaultUnsupportedTypes)))
+    if (unsupportedTypes.nonEmpty) {
+      meta.willNotWorkOnGpu(msgFormat.format(stringifyTypeAttributeMap(unsupportedTypes)))
     }
   }
 }
