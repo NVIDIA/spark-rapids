@@ -31,6 +31,7 @@ import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, Nu
 import org.apache.spark.sql.catalyst.util.DateTimeConstants.MICROS_PER_SECOND
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuToTimestamp.replaceSpecialDates
+import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 
 /** Meta-data for cast and ansi_cast. */
@@ -171,12 +172,6 @@ object GpuCast extends Arm {
     "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}[ T]?(\\d{1,2}:\\d{1,2}:\\d{1,2}\\.\\d{6}Z)\\Z"
   private val TIMESTAMP_REGEX_NO_DATE = "\\A[T]?(\\d{1,2}:\\d{1,2}:\\d{1,2}\\.\\d{6}Z)\\Z"
 
-  /**
-   * Regex to match timestamps with or without trailing zeros.
-   */
-  private val TIMESTAMP_TRUNCATE_REGEX = "^([0-9]{4}-[0-9]{2}-[0-9]{2} " +
-    "[0-9]{2}:[0-9]{2}:[0-9]{2})" +
-    "(.0*[1-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?$"
   private val BIG_DECIMAL_LONG_MIN = BigDecimal(Long.MinValue)
   private val BIG_DECIMAL_LONG_MAX = BigDecimal(Long.MaxValue)
 
@@ -389,7 +384,7 @@ object GpuCast extends Arm {
           withResource(input.max()) { maxInput =>
             if (minInput.isValid && minInput.getBigDecimal().compareTo(min) == -1 ||
                 maxInput.isValid && maxInput.getBigDecimal().compareTo(max) == 1) {
-              throw new ArithmeticException(GpuCast.INVALID_INPUT_MESSAGE)
+              throw new ArithmeticException(GpuCast.OVERFLOW_MESSAGE)
             }
           }
         }
@@ -634,13 +629,13 @@ object GpuCast extends Arm {
       maxValue: => Scalar,
       inclusiveMin: Boolean = true,
       inclusiveMax: Boolean = true,
-      errorMsg:String = GpuCast.INVALID_INPUT_MESSAGE): Unit = {
+      errorMsg:String = GpuCast.OVERFLOW_MESSAGE): Unit = {
 
     def throwIfAny(cv: ColumnView): Unit = {
       withResource(cv) { cv =>
         withResource(cv.any()) { isAny =>
           if (isAny.isValid && isAny.getBoolean) {
-            throw new IllegalStateException(errorMsg)
+            throw RapidsErrorUtils.arithmeticOverflowError(errorMsg)
           }
         }
       }
@@ -707,9 +702,29 @@ object GpuCast extends Arm {
   }
 
   private def castTimestampToString(input: ColumnView): ColumnVector = {
+    // the complexity in this function is due to Spark's rules for truncating
+    // the fractional part of the timestamp string. Any trailing decimal place
+    // or zeroes should be truncated
+    // ".000000" -> ""
+    // ".000100" -> ".0001"
+    // ".100000" -> ".1"
+    // ".101010" -> ".10101"
     withResource(input.castTo(DType.TIMESTAMP_MICROSECONDS)) { micros =>
       withResource(micros.asStrings("%Y-%m-%d %H:%M:%S.%6f")) { cv =>
-        cv.stringReplaceWithBackrefs(GpuCast.TIMESTAMP_TRUNCATE_REGEX, "\\1\\2\\3")
+        // to keep code complexity down, do a first pass that
+        // removes ".000000" using simple string replace
+        val firstPass = withResource(Scalar.fromString(".000000")) { search =>
+          withResource(Scalar.fromString("")) { replace =>
+            cv.stringReplace(search, replace)
+          }
+        }
+        // now remove trailing zeroes from any remaining fractional parts
+        // the first group captures everything between
+        // the decimal point and the last non-zero digit
+        // the second group (non-capture) covers the remaining zeroes
+        withResource(firstPass) { _ =>
+          firstPass.stringReplaceWithBackrefs("(\\.[0-9]*[1-9]+)(?:0+)?$", "\\1")
+        }
       }
     }
   }
@@ -1514,7 +1529,7 @@ object GpuCast extends Arm {
     if (ansiMode) {
       withResource(outOfBounds.any()) { isAny =>
         if (isAny.isValid && isAny.getBoolean) {
-          throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+          throw RapidsErrorUtils.arithmeticOverflowError(GpuCast.OVERFLOW_MESSAGE)
         }
       }
       input.copyToColumnVector()
