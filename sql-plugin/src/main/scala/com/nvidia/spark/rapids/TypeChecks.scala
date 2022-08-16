@@ -791,13 +791,14 @@ abstract class TypeChecks[RET] {
         }
         case ArrayType(elementType, _) =>
           checkTimestampType(elementType)
+          true
         case MapType(keyType, valueType, _) =>
-          // prevent short-circuit evaluation
-          val keyChecked = checkTimestampType(keyType)
-          val valueChecked = checkTimestampType(valueType)
-          keyChecked || valueChecked
+          checkTimestampType(keyType)
+          checkTimestampType(valueType)
+          true
         case StructType(fields) =>
-          fields.map(field => checkTimestampType(field.dataType)).exists(identity)
+          fields.foreach(field => checkTimestampType(field.dataType))
+          true
         case _ => true
     }
     unsupportedTypes.filterKeys(checkTimestampType)
