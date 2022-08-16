@@ -168,9 +168,25 @@ export CUDF_UDF_TEST_ARGS="--conf spark.rapids.memory.gpu.allocFraction=0.1 \
 --conf spark.pyspark.python=/opt/conda/bin/python \
 --py-files ${RAPIDS_PLUGIN_JAR}"
 
+
 export SCRIPT_PATH="$(pwd -P)"
 export TARGET_DIR="$SCRIPT_PATH/target"
 mkdir -p $TARGET_DIR
+
+run_delta_lake_tests() {
+  echo "run_delta_lake_tests SPARK_VER = $SPARK_VER"
+  SPARK_321_PATTERN="(3\.2\.[1-9])"
+  DELTA_LAKE_VER="1.2.1"
+  if [[ $SPARK_VER =~ $SPARK_321_PATTERN ]]; then
+    SPARK_SUBMIT_FLAGS="$BASE_SPARK_SUBMIT_ARGS $SEQ_CONF \
+      --packages io.delta:delta-core_2.12:$DELTA_LAKE_VER \
+      --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
+      --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog" \
+      ./run_pyspark_from_build.sh -m delta_lake --delta_lake
+  else
+    echo "Skipping Delta Lake tests. Delta Lake does not support Spark version $SPARK_VER"
+  fi
+}
 
 run_iceberg_tests() {
   ICEBERG_VERSION=${ICEBERG_VERSION:-0.13.2}
@@ -212,6 +228,10 @@ run_test_not_parallel() {
         SPARK_SUBMIT_FLAGS="$BASE_SPARK_SUBMIT_ARGS $SEQ_CONF \
         --conf spark.sql.cache.serializer=com.nvidia.spark.ParquetCachedBatchSerializer" \
           ./run_pyspark_from_build.sh -k cache_test
+        ;;
+
+      delta_lake)
+        run_delta_lake_tests
         ;;
 
       iceberg)
@@ -263,6 +283,7 @@ export -f get_tests_by_tags
 # - DEFAULT: all tests except cudf_udf tests
 # - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
 # - ICEBERG_ONLY: iceberg tests only
+# - DELTA_LAKE_ONLY: Delta Lake tests only
 TEST_MODE=${TEST_MODE:-'DEFAULT'}
 if [[ $TEST_MODE == "DEFAULT" ]]; then
   # integration tests
@@ -313,6 +334,11 @@ fi
 # cudf_udf_test
 if [[ "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
   run_test_not_parallel cudf_udf_test
+fi
+
+# Delta Lake tests
+if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "DELTA_LAKE_ONLY" ]]; then
+  run_test_not_parallel delta_lake
 fi
 
 # Iceberg tests
