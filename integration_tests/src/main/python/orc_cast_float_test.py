@@ -46,7 +46,7 @@ def test_casting_from_double_to_timestamp(spark_tmp_path, data_gen):
     # The maximum valid positive number is INT64_MAX / 1e6 -> 1e12 -> 2e36, so we add some special cases
     # from 2e33 to 2e36.
     #
-    # In DoubleGen, special_case=None will generate some NaN corner case.
+    # In DoubleGen, special_case=None will generate some NaN, INF corner cases.
 
     orc_path = spark_tmp_path + '/orc_casting_from_double_to_timestamp'
     with_cpu_session(
