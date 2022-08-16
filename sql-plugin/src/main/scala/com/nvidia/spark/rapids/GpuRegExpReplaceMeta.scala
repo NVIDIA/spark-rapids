@@ -48,9 +48,10 @@ class GpuRegExpReplaceMeta(
           try {
             javaPattern = Some(s.toString())
             val (pat, repl) = 
-                new CudfRegexTranspiler(RegexReplaceMode).transpile(s.toString, replacement)
-            cudfPattern = Some(pat)
-            repl.map(GpuRegExpUtils.backrefConversion).foreach {
+                new CudfRegexTranspiler(RegexReplaceMode).getTranspiledAST(s.toString, replacement)
+            GpuRegExpUtils.validateRegExpComplexity(this, pat)
+            cudfPattern = Some(pat.toRegexString)
+            repl.map { r => GpuRegExpUtils.backrefConversion(r.toRegexString) }.foreach {
                 case (hasBackref, convertedRep) =>
                   containsBackref = hasBackref
                   replacement = Some(GpuRegExpUtils.unescapeReplaceString(convertedRep))

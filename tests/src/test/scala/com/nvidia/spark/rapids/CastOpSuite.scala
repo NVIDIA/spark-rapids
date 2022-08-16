@@ -835,7 +835,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
         intercept[org.apache.spark.SparkException] {
           nonOverflowCase(dataType, generator, precision, scale)
         },
-        GpuCast.INVALID_INPUT_MESSAGE)
+        GpuCast.OVERFLOW_MESSAGE)
       )
       // Compare gpu results with cpu ones when AnsiMode is off (most of them should be null)
       testCastToDecimal(dataType,
@@ -1442,6 +1442,9 @@ object CastOpSuite {
       "1920-12-31T11:59:59.999",
       "1969-12-31T23:59:59.999",
       "1969-12-31T23:59:59.999999",
+      "1969-12-31T23:59:59.001700",
+      "1969-12-31T23:59:59.001070",
+      "1969-12-31T23:59:59.010701",
       "1970-01-01T00:00:00.000",
       "1970-01-01T00:00:00.999",
       "1970-01-01T00:00:00.999111",

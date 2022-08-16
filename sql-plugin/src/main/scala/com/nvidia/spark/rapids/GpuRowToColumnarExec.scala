@@ -44,7 +44,7 @@ private class GpuRowToColumnConverter(schema: StructType) extends Serializable w
    */
   final def convert(row: InternalRow, builders: GpuColumnarBatchBuilder): Double = {
     var bytes: Double = 0
-    for (idx <- 0 until row.numFields) {
+    for (idx <- schema.fields.indices) {
       bytes += converters(idx).append(row, idx, builders.builder(idx))
     }
     bytes
