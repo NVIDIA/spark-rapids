@@ -323,8 +323,8 @@ object GpuOrcScan extends Arm {
           // ORC assumes value is in seconds
           withResource(col.mul(thousand, DType.FLOAT64)) { doubleMillis =>
             withResource(doubleMillis.round()) { millis =>
-              withResource(getOverflowFlags(doubleMillis, millis)) { overflows =>
-                millis.copyWithBooleanColumnAsValidity(overflows)
+              withResource(getOverflowFlags(doubleMillis, millis)) { overflowFlags =>
+                millis.copyWithBooleanColumnAsValidity(overflowFlags)
               }
             }
           }
@@ -337,7 +337,7 @@ object GpuOrcScan extends Arm {
           // If milliSeconds.max() > LONG_MAX, then milliSeconds.max().getLong will return LONG_MAX
           // If milliSeconds.max() * 1000 > LONG_MAX, then 'Math.multiplyExact' will throw an
           // exception (as CPU code does).
-          Math.multiplyExact(milliSeconds.max().getLong, 1000.toLong)
+          Math.multiplyExact(milliSeconds.max().getDouble.toLong, 1000.toLong)
           withResource(milliSeconds.mul(Scalar.fromDouble(1000.0))) { microSeconds =>
             withResource(microSeconds.castTo(DType.INT64)) { longVec =>
               longVec.castTo(DType.TIMESTAMP_MICROSECONDS)
