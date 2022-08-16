@@ -183,7 +183,6 @@ run_iceberg_tests() {
     # --packages in distributed setups, should be fixed by
     # https://github.com/NVIDIA/spark-rapids/pull/5646
     SPARK_SUBMIT_FLAGS="$BASE_SPARK_SUBMIT_ARGS $SEQ_CONF \
-      --conf spark.rapids.force.caller.classloader=false \
       --packages org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_2.12:${ICEBERG_VERSION} \
       --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
       --conf spark.sql.catalog.spark_catalog=org.apache.iceberg.spark.SparkSessionCatalog \
