@@ -68,7 +68,3 @@ def test_casting_from_overflow_double_to_timestamp(spark_tmp_path):
         conf={},
         error_message="ArithmeticException"
     )
-
-'''
-TODO: In the above cases, we test double -> timestamp. Should we add cases to test float -> timestamp?
-'''

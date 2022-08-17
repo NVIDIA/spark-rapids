@@ -122,6 +122,8 @@ case class GpuOrcScan(
 }
 
 object GpuOrcScan extends Arm {
+  var rapidsConf: RapidsConf = null
+
   def tagSupport(scanMeta: ScanMeta[OrcScan]): Unit = {
     val scan = scanMeta.wrapped
     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
@@ -151,6 +153,10 @@ object GpuOrcScan extends Arm {
       .getOption("spark.sql.orc.mergeSchema").exists(_.toBoolean)) {
       meta.willNotWorkOnGpu("mergeSchema and schema evolution is not supported yet")
     }
+
+    // We need the value of 'isOrcFloatTypesToStringEnable' in 'canCast' method.
+    // So we get a reference of 'meta.conf'.
+    rapidsConf = meta.conf
   }
 
   private lazy val numericLevels = Seq(
@@ -284,7 +290,6 @@ object GpuOrcScan extends Arm {
           downCastAnyInteger(col, toDt)
         }
 
-      // float/double(float64) to {bool, integer types, double/float, string, timestamp}
       // float to bool/integral
       case (DType.FLOAT32 | DType.FLOAT64, DType.BOOL8 | DType.INT8 | DType.INT16 | DType.INT32
                                            | DType.INT64) =>
@@ -309,7 +314,11 @@ object GpuOrcScan extends Arm {
       case (DType.FLOAT32 | DType.FLOAT64, DType.FLOAT32 | DType.FLOAT64) =>
         col.castTo(toDt)
 
-      // FIXME float/double to string, there are some precision error issues
+      // float/double to string
+      // cuDF keep 9 decimal numbers after the decimal point, and CPU keeps more than 10.
+      // So when casting float/double to string, the result of GPU is different from CPU.
+      // We let a conf 'spark.rapids.sql.format.orc.floatTypesToString.enable' to control it's
+      // enable or not.
       case (DType.FLOAT32 | DType.FLOAT64, DType.STRING) =>
         GpuCast.castFloatingTypeToString(col)
 
@@ -376,7 +385,10 @@ object GpuOrcScan extends Arm {
 
       case FLOAT | DOUBLE =>
         to.getCategory match {
-          case BOOLEAN | BYTE | SHORT | INT | LONG | FLOAT | DOUBLE | STRING | TIMESTAMP => true
+          case BOOLEAN | BYTE | SHORT | INT | LONG | FLOAT | DOUBLE | TIMESTAMP => true
+          case STRING => {
+            rapidsConf != null && rapidsConf.isOrcFloatTypesToStringEnable
+          }
           case _ => false
         }
       // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895

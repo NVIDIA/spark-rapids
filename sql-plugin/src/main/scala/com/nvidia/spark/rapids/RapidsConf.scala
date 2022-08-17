@@ -864,6 +864,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_ORC_FLOAT_TYPES_TO_STRING =
+    conf("spark.rapids.sql.format.orc.floatTypesToString.enable")
+    .doc("The float/double numbers in GPU have different precision with CPU. So when casting " +
+      "them to string, the result of GPU is different from result of CPU spark.")
+    .booleanConf
+    .createWithDefault(true)
+
   val ORC_READER_TYPE = conf("spark.rapids.sql.format.orc.reader.type")
     .doc("Sets the ORC reader type. We support different types that are optimized for " +
       "different environments. The original Spark style reader can be selected by setting this " +
@@ -1853,6 +1860,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isOrcReadEnabled: Boolean = get(ENABLE_ORC_READ)
 
   lazy val isOrcWriteEnabled: Boolean = get(ENABLE_ORC_WRITE)
+
+  lazy val isOrcFloatTypesToStringEnable: Boolean = get(ENABLE_ORC_FLOAT_TYPES_TO_STRING)
 
   lazy val isOrcPerFileReadEnabled: Boolean =
     RapidsReaderType.withName(get(ORC_READER_TYPE)) == RapidsReaderType.PERFILE
