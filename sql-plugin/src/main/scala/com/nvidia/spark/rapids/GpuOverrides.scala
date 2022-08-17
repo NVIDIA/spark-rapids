@@ -2738,14 +2738,9 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(
         TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL,
         TypeSig.orderable,
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-            .withPsNote(Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
         TypeSig.ARRAY.nested(TypeSig.orderable)),
       (in, conf, p, r) => new UnaryExprMeta[ArrayMin](in, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          checkAndTagFloatNanAgg("Min", in.dataType, conf, this)
-        }
-
         override def convertToGpu(child: Expression): GpuExpression =
           GpuArrayMin(child)
       }),

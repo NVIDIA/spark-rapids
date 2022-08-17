@@ -423,7 +423,19 @@ case class GpuSortArray(base: Expression, ascendingOrder: Expression)
   }
 }
 
-case class GpuArrayMin(child: Expression) extends GpuUnaryExpression with ImplicitCastInputTypes {
+object GpuArrayMin {
+  def apply(child: Expression): GpuArrayMin = {
+    child.dataType match {
+      case ArrayType(FloatType | DoubleType, _) => GpuFloatArrayMin(child)
+      case ArrayType(_, _) => GpuBasicArrayMin(child)
+      case _ => throw new IllegalStateException(s"array_min accepts only arrays.")
+    }
+  }
+}
+
+abstract class GpuArrayMin(child: Expression) extends GpuUnaryExpression 
+  with ImplicitCastInputTypes 
+  with Serializable {
 
   override def nullable: Boolean = true
 
@@ -438,6 +450,65 @@ case class GpuArrayMin(child: Expression) extends GpuUnaryExpression with Implic
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector =
     input.getBase.listReduce(SegmentedReductionAggregation.min())
+}
+
+case class GpuBasicArrayMin(child: Expression) extends GpuArrayMin(child)
+
+case class GpuFloatArrayMin(child: Expression) extends GpuArrayMin(child) {
+    @transient override lazy val dataType: DataType = child.dataType match {
+    case ArrayType(FloatType, _) => FloatType
+    case ArrayType(DoubleType, _) => DoubleType
+    case _ => throw new IllegalStateException(
+      s"GpuFloatArrayMin accepts only float array and double array."
+    )
+  }
+
+  protected def getNanSalar: Scalar = dataType match {
+    case FloatType => Scalar.fromFloat(Float.NaN)
+    case DoubleType => Scalar.fromDouble(Double.NaN)
+    case t => throw new IllegalStateException(s"dataType $t is not FloatType or DoubleType")
+  }
+
+  protected def getNullScalar: Scalar = dataType match {
+    case FloatType => Scalar.fromNull(DType.FLOAT32)
+    case DoubleType => Scalar.fromNull(DType.FLOAT64)
+    case t => throw new IllegalStateException(s"dataType $t is not FloatType or DoubleType")
+  }
+
+  override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
+    val listAll = SegmentedReductionAggregation.min _
+    val listAny = SegmentedReductionAggregation.max _
+    val base = input.getBase()
+
+    withResource(base.getChildColumnView(0)) {child => 
+      withResource(child.isNan()){child_is_nan =>
+        withResource(child.isNull()){child_is_null =>
+          withResource(child_is_null.or(child_is_nan)) {child_is_nan_or_null =>
+            withResource(base.replaceListChild(child_is_nan_or_null)) {nan_or_null_list =>
+              withResource(nan_or_null_list.listReduce(listAll())) {all_nan_or_null =>
+                all_nan_or_null.ifElse(
+                  withResource(base.replaceListChild(child_is_nan)) {nan_list =>
+                    withResource(nan_list.listReduce(listAny())) {any_nan =>
+                      withResource(getNanSalar) {nan_scalar =>
+                        withResource(getNullScalar) {null_scalar => 
+                          any_nan.ifElse(nan_scalar, null_scalar)
+                        }
+                      }
+                    }  
+                  },
+                  withResource(child.nansToNulls()) {no_nan_child =>
+                    withResource(base.replaceListChild(no_nan_child)) { no_nan_list =>
+                      no_nan_list.listReduce(SegmentedReductionAggregation.min())
+                    }  
+                  }
+                )
+              }
+            }
+          }
+        }
+      } 
+    }
+  }
 }
 
 object GpuArrayMax {

@@ -310,6 +310,12 @@ def test_array_transform(data_gen):
 array_min_max_gens_no_nan = [byte_gen, short_gen, int_gen, long_gen, FloatGen(no_nans=True), DoubleGen(no_nans=True),
         string_gen, boolean_gen, date_gen, timestamp_gen, null_gen] + decimal_gens
 
+@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
+def test_array_min_with_nans(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, ArrayGen(data_gen), length=10).selectExpr(
+                'array_min(a)'))
+
 @pytest.mark.parametrize('data_gen', array_min_max_gens_no_nan, ids=idfn)
 def test_array_min(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
