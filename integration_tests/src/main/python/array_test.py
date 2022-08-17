@@ -307,22 +307,20 @@ def test_array_transform(data_gen):
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 # TODO add back in string_gen when https://github.com/rapidsai/cudf/issues/9156 is fixed
-array_min_max_gens_no_nan = [byte_gen, short_gen, int_gen, long_gen, FloatGen(no_nans=True), DoubleGen(no_nans=True),
+array_min_max_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
         string_gen, boolean_gen, date_gen, timestamp_gen, null_gen] + decimal_gens
 
-@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
-def test_array_min_with_nans(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, ArrayGen(data_gen), length=10).selectExpr(
-                'array_min(a)'))
-
-@pytest.mark.parametrize('data_gen', array_min_max_gens_no_nan, ids=idfn)
-def test_array_min(data_gen):
+@pytest.mark.parametrize('data_gen', array_min_max_gens, ids=idfn)
+def test_array_min_max(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
-                'array_min(a)'),
-            conf=no_nans_conf)
+                'array_min(a)', 'array_max(a)'))
 
+@pytest.mark.parametrize('data_gen', [ArrayGen(gen, all_null=True) for gen in [int_gen, float_gen, double_gen]], ids=idfn)
+def test_array_min_max_all_nulls(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr(
+                'array_min(a)', 'array_max(a)'))
 
 @pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
 def test_array_concat_decimal(data_gen):
@@ -330,26 +328,6 @@ def test_array_concat_decimal(data_gen):
         lambda spark : debug_df(unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
             'concat(a, a)')),
         conf=no_nans_conf)
-
-@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
-def test_array_max_with_nans(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
-                'array_max(a)'))
-
-@pytest.mark.parametrize('data_gen', array_min_max_gens_no_nan, ids=idfn)
-def test_array_max(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
-                'array_max(a)'),
-            conf=no_nans_conf)
-
-@pytest.mark.parametrize('data_gen', [ArrayGen(gen, all_null=True) for gen in [int_gen, float_gen, double_gen]], ids=idfn)
-def test_array_max_all_nulls(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr(
-                'array_max(a)'),
-            conf=no_nans_conf)
 
 @pytest.mark.parametrize('data_gen', orderable_gens + nested_gens_sample, ids=idfn)
 def test_array_repeat_with_count_column(data_gen):
