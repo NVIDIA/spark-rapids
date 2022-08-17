@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_write, \
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_write, \
     assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_fallback_collect
 from conftest import get_non_gpu_allowed
 from datetime import datetime, timezone
@@ -540,3 +540,13 @@ def test_csv_read_case_insensitivity(spark_tmp_path):
         lambda spark: spark.read.option('header', True).csv(data_path).select('one', 'two', 'three'),
         {'spark.sql.caseSensitive': 'false'}
     )
+
+@allow_non_gpu('FileSourceScanExec', 'CollectLimitExec', 'DeserializeToObjectExec')
+def test_csv_read_count(spark_tmp_path):
+    data_gens = [byte_gen, short_gen, int_gen, long_gen, boolean_gen, date_gen]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
+    data_path = spark_tmp_path + '/CSV_DATA'
+
+    with_cpu_session(lambda spark: gen_df(spark, gen_list).write.csv(data_path))
+
+    assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.csv(data_path))

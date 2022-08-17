@@ -139,6 +139,19 @@ all_basic_gens_no_nans = [byte_gen, short_gen, int_gen, long_gen,
         FloatGen(no_nans=True, special_cases=[]), DoubleGen(no_nans=True, special_cases=[]),
         string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
+_no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
+                       'spark.rapids.sql.hasNans': 'false',
+                       'spark.rapids.sql.castStringToFloat.enabled': 'true'
+                      }
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
+def test_float_window_max_with_nan(data_gen):
+  w = Window().partitionBy('a')
+  assert_gpu_and_cpu_are_equal_collect(
+      lambda spark: two_col_df(spark, byte_gen, data_gen)
+          .withColumn("max_b", f.max('a').over(w)))
+
 @ignore_order
 @pytest.mark.parametrize('data_gen', [decimal_gen_128bit], ids=idfn)
 def test_decimal128_count_window(data_gen):
@@ -920,6 +933,28 @@ _gen_data_for_collect_set = [
     ('c_fp_nan', RepeatSeqGen(FloatGen().with_special_case(math.nan, 200.0), length=5)),
 ]
 
+_gen_data_for_collect_set_nested = [
+    ('a', RepeatSeqGen(LongGen(), length=20)),
+    ('b', LongRangeGen()),
+    ('c_int', RepeatSeqGen(IntegerGen(), length=15)),
+    ('c_struct_array_1', RepeatSeqGen(struct_array_gen_no_nans, length=15)),
+    ('c_struct_array_2', RepeatSeqGen(StructGen([
+        ['c0', struct_array_gen_no_nans], ['c1', int_gen]]), length=14)),
+    ('c_array_struct', RepeatSeqGen(ArrayGen(all_basic_struct_gen_no_nan), length=15)),
+    ('c_array_array_bool', RepeatSeqGen(ArrayGen(ArrayGen(BooleanGen())), length=15)),
+    ('c_array_array_int', RepeatSeqGen(ArrayGen(ArrayGen(IntegerGen())), length=15)),
+    ('c_array_array_long', RepeatSeqGen(ArrayGen(ArrayGen(LongGen())), length=15)),
+    ('c_array_array_short', RepeatSeqGen(ArrayGen(ArrayGen(ShortGen())), length=15)),
+    ('c_array_array_date', RepeatSeqGen(ArrayGen(ArrayGen(DateGen())), length=15)),
+    ('c_array_array_timestamp', RepeatSeqGen(ArrayGen(ArrayGen(TimestampGen())), length=15)),
+    ('c_array_array_byte', RepeatSeqGen(ArrayGen(ArrayGen(ByteGen())), length=15)),
+    ('c_array_array_string', RepeatSeqGen(ArrayGen(ArrayGen(StringGen())), length=15)),
+    ('c_array_array_float', RepeatSeqGen(ArrayGen(ArrayGen(FloatGen(no_nans=True))), length=15)),
+    ('c_array_array_double', RepeatSeqGen(ArrayGen(ArrayGen(DoubleGen(no_nans=True))), length=15)),
+    ('c_array_array_decimal_32', RepeatSeqGen(ArrayGen(ArrayGen(DecimalGen(precision=8, scale=3))), length=15)),
+    ('c_array_array_decimal_64', RepeatSeqGen(ArrayGen(ArrayGen(decimal_gen_64bit)), length=15)),
+    ('c_array_array_decimal_128', RepeatSeqGen(ArrayGen(ArrayGen(decimal_gen_128bit)), length=15)),
+]
 
 # SortExec does not support array type, so sort the result locally.
 @ignore_order(local=True)
@@ -976,6 +1011,86 @@ def test_window_aggs_for_rows_collect_set():
             from window_collect_table
         ) t
         ''')
+
+
+# Note, using sort_array() on the CPU, because sort_array() does not yet
+# support sorting certain nested/arbitrary types on the GPU
+# See https://github.com/NVIDIA/spark-rapids/issues/3715
+# and https://github.com/rapidsai/cudf/issues/11222
+@ignore_order(local=True)
+@allow_non_gpu("ProjectExec", "SortArray")
+def test_window_aggs_for_rows_collect_set_nested_array():
+    conf = copy_and_update(_no_nans_float_conf, {
+        "spark.rapids.sql.castFloatToString.enabled": "true",
+        "spark.rapids.sql.castDecimalToString.enabled": "true",
+        "spark.rapids.sql.expression.SortArray": "false"
+    })
+
+    def do_it(spark):
+        df = gen_df(spark, _gen_data_for_collect_set_nested, length=512)
+        df.createOrReplaceTempView("window_collect_table")
+        df = spark.sql(
+            """select a, b,
+              collect_set(c_struct_array_1) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_struct_array_1, 
+              collect_set(c_struct_array_2) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_struct_array_2,
+              collect_set(c_array_struct) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_struct,
+              collect_set(c_array_array_bool) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_bool,
+              collect_set(c_array_array_int) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_int,
+              collect_set(c_array_array_long) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_long,
+              collect_set(c_array_array_short) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_short,
+              collect_set(c_array_array_date) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_date,
+              collect_set(c_array_array_timestamp) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_ts,
+              collect_set(c_array_array_byte) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_byte,
+              collect_set(c_array_array_string) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_str,
+              collect_set(c_array_array_float) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_float,
+              collect_set(c_array_array_double) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_double,
+              collect_set(c_array_array_decimal_32) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_decimal_32,
+              collect_set(c_array_array_decimal_64) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_decimal_64,
+              collect_set(c_array_array_decimal_128) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_decimal_128
+        from window_collect_table
+        """)
+        df = spark.createDataFrame(df.rdd, schema=df.schema)
+        # pull out the rdd and schema and create a new dataframe to run SortArray
+        # to handle Databricks 10.4+ optimization that moves SortArray from ProjectExec
+        # to ObjectHashAggregateExec
+        df.createOrReplaceTempView("window_collect_table_2")
+        return spark.sql("""select a, b,
+              sort_array(cc_struct_array_1),
+              sort_array(cc_struct_array_2),
+              sort_array(cc_array_struct),
+              sort_array(cc_array_array_bool),
+              sort_array(cc_array_array_int),
+              sort_array(cc_array_array_long),
+              sort_array(cc_array_array_short),
+              sort_array(cc_array_array_date),
+              sort_array(cc_array_array_ts),
+              sort_array(cc_array_array_byte),
+              sort_array(cc_array_array_str),
+              sort_array(cc_array_array_float),
+              sort_array(cc_array_array_double),
+              sort_array(cc_array_array_decimal_32),
+              sort_array(cc_array_array_decimal_64),
+              sort_array(cc_array_array_decimal_128)
+        from window_collect_table_2
+        """)
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
+
 
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
@@ -1109,3 +1224,42 @@ def test_window_first_last_nth_ignore_nulls(data_gen):
         "window_agg_table",
         'SELECT a, b, c, ' + exprs_for_nth_first_last_ignore_nulls +
         'FROM window_agg_table')
+
+
+@ignore_order(local=True)
+def test_to_date_with_window_functions():
+    """
+    This test ensures that date expressions participating alongside window aggregations
+    are initialized correctly. (See: https://github.com/NVIDIA/spark-rapids/issues/5984)
+
+    For certain vendor-specific Spark versions, the date expression might be evaluated
+    directly in the WindowExec, instead of being projected upstream. For instance,
+    the query in this test might produce this plan on CPU:
+    ```
+      Window [cast(gettimestamp(cast(date_1#1 as string), yyyy-MM-dd, TimestampType, Some(Etc/UTC), false) as date)...]
+      +- Sort [id#0L ASC NULLS FIRST, date_2#2 ASC NULLS FIRST], false, 0
+         +- Exchange hashpartitioning(id#0L, 200), ENSURE_REQUIREMENTS, [id=#136]
+            +- *(1) Project [date_1#1, id#0L, date_2#2]
+    ```
+
+    This might trip up the GPU plan, by incompletely initializing `GpuGetTimeStamp` for `date_1` thus:
+    ```
+    +- GpuProject [cast(gpugettimestamp(cast(date_1#1 as string), yyyy-MM-dd, null, null, None) as date) AS my_date#6]
+    ```
+
+    The correct initialization should have yielded:
+    ```
+    +- GpuProject [cast(gpugettimestamp(cast(date_1#1 as string), yyyy-MM-dd, yyyy-MM-dd, %Y-%m-%d, None) as date)]
+    ```
+    """
+    assert_gpu_and_cpu_are_equal_sql(
+        df_fun=lambda spark: gen_df(spark, [('id', RepeatSeqGen(int_gen, 20)),
+                                            ('date_1', DateGen()),
+                                            ('date_2', DateGen())]),
+        table_name="window_input",
+        sql="""
+        SELECT TO_DATE( CAST(date_1 AS STRING), 'yyyy-MM-dd' ) AS my_date,
+               SUM(1) OVER(PARTITION BY id ORDER BY date_2) AS my_sum
+        FROM window_input
+        """
+    )

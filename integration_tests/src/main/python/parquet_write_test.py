@@ -95,12 +95,33 @@ def test_write_round_trip(spark_tmp_path, parquet_gens):
             data_path,
             conf=writer_confs)
 
+# `TIMESTAMP_MILLIS` can't be handled correctly when the input is of nested types containing timestamp.
+# See issue https://github.com/NVIDIA/spark-rapids/issues/6302.
+# Thus, we exclude `TIMESTAMP_MILLIS` from the tests here.
+# When the issue is resolved, unify this test with the test below.
+parquet_ts_write_options_no_millis = ['INT96', 'TIMESTAMP_MICROS']
 @pytest.mark.parametrize('parquet_gens', [[
     limited_timestamp(),
     ArrayGen(limited_timestamp(), max_length=10),
     MapGen(limited_timestamp(nullable=False), limited_timestamp())]], ids=idfn)
+@pytest.mark.parametrize('ts_type', parquet_ts_write_options_no_millis)
+def test_timestamp_write_round_trip_no_millis(spark_tmp_path, parquet_gens, ts_type):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    all_confs = copy_and_update(writer_confs, {'spark.sql.parquet.outputTimestampType': ts_type})
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        conf=all_confs)
+
+# `TIMESTAMP_MILLIS` can't be handled correctly when the input is of nested types containing timestamp.
+# See issue https://github.com/NVIDIA/spark-rapids/issues/6302.
+# Thus, we exclude nested types contaning timestamp from the tests here.
+# When the issue is resolved, unify this test with the test above.
+@pytest.mark.parametrize('parquet_gens', [[limited_timestamp()]], ids=idfn)
 @pytest.mark.parametrize('ts_type', parquet_ts_write_options)
-def test_timestamp_write_round_trip(spark_tmp_path, parquet_gens, ts_type):
+def test_timestamp_write_round_trip_no_nested_timestamp(spark_tmp_path, parquet_gens, ts_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = copy_and_update(writer_confs, {'spark.sql.parquet.outputTimestampType': ts_type})

@@ -16,12 +16,12 @@
 # Sample Dockerfile to install UCX in a Ubuntu 18.04 image
 #
 # The parameters are: 
-#   - CUDA_VER: 11.2.2 to pick up the latest 11.2 CUDA base layer
+#   - CUDA_VER: 11.5.1 by default
 #   - UCX_VER and UCX_CUDA_VER: these are used to pick a package matching a specific UCX version and 
 #                               CUDA runtime from the UCX github repo.
 #                               See: https://github.com/openucx/ucx/releases/
 
-ARG CUDA_VER=11.2.2
+ARG CUDA_VER=11.5.1
 ARG UCX_VER=1.12.1
 ARG UCX_CUDA_VER=11
 
@@ -29,6 +29,7 @@ FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu18.04
 ARG UCX_VER
 ARG UCX_CUDA_VER
 
+RUN apt-get update && apt-get install -y gnupg2
 # https://forums.developer.nvidia.com/t/notice-cuda-linux-repository-key-rotation/212771
 RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub
 

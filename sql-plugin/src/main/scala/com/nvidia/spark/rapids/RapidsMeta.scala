@@ -195,6 +195,10 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    */
   final def entirePlanWillNotWork(because: String): Unit = {
     cannotReplaceAnyOfPlanReasons.get.add(because)
+    // recursively tag the plan so that AQE does not attempt
+    // to run any of the child query stages on the GPU
+    willNotWorkOnGpu(because)
+    childPlans.foreach(_.entirePlanWillNotWork(because))
   }
 
   final def shouldBeRemoved(because: String): Unit =
@@ -229,8 +233,8 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    * set means the entire plan is ok to be replaced, do the normal checking
    * per exec and children.
    */
-  final def entirePlanExcludedReasons: Seq[String] = {
-    cannotReplaceAnyOfPlanReasons.getOrElse(mutable.Set.empty).toSeq
+  final def entirePlanExcludedReasons: Set[String] = {
+    cannotReplaceAnyOfPlanReasons.getOrElse(mutable.Set.empty).toSet
   }
 
   /**
@@ -493,6 +497,8 @@ abstract class ScanMeta[INPUT <: Scan](scan: INPUT,
   override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
 
   override def tagSelfForGpu(): Unit = {}
+
+  def supportsRuntimeFilters: Boolean = false
 }
 
 /**
@@ -607,7 +613,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     wrapped.withNewChildren(childPlans.map(_.convertIfNeeded()))
   }
 
-  def getReasonsNotToReplaceEntirePlan: Seq[String] = {
+  def getReasonsNotToReplaceEntirePlan: Set[String] = {
     val childReasons = childPlans.flatMap(_.getReasonsNotToReplaceEntirePlan)
     entirePlanExcludedReasons ++ childReasons
   }

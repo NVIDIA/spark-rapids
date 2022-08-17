@@ -16,7 +16,8 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
-from spark_session import is_before_spark_330, is_databricks104_or_later
+from marks import incompat
+from spark_session import is_before_spark_313, is_before_spark_330, is_spark_330_or_later, is_databricks104_or_later
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 from pyspark.sql.functions import array_contains, col, element_at, lit
@@ -32,7 +33,60 @@ array_no_zero_index_gen = IntegerGen(min_val=1, max_val=25,
 
 array_all_null_gen = ArrayGen(int_gen, all_null=True)
 array_item_test_gens = array_gens_sample + [array_all_null_gen,
-    ArrayGen(MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen(), max_length=10), max_length=10)]
+    ArrayGen(MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen(), max_length=10), max_length=10),
+    ArrayGen(BinaryGen(max_length=10), max_length=10)]
+
+
+# Need these for set-based operations
+# See https://issues.apache.org/jira/browse/SPARK-39845
+_non_neg_zero_float_special_cases = [
+    FLOAT_MIN,
+    FLOAT_MAX,
+    -1.0,
+    1.0,
+    0.0,
+    float('inf'),
+    float('-inf'),
+    float('nan'),
+    NEG_FLOAT_NAN_MAX_VALUE
+]
+
+_non_neg_zero_double_special_cases = [
+    DoubleGen.make_from(1, DOUBLE_MAX_EXP, DOUBLE_MAX_FRACTION),
+    DoubleGen.make_from(0, DOUBLE_MAX_EXP, DOUBLE_MAX_FRACTION),
+    DoubleGen.make_from(1, DOUBLE_MIN_EXP, DOUBLE_MAX_FRACTION),
+    DoubleGen.make_from(0, DOUBLE_MIN_EXP, DOUBLE_MAX_FRACTION),
+    -1.0,
+    1.0,
+    0.0,
+    float('inf'),
+    float('-inf'),
+    float('nan'),
+    NEG_DOUBLE_NAN_MAX_VALUE
+]
+
+no_neg_zero_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
+        # -0.0 cannot work because of -0.0 == 0.0 in cudf for distinct
+        # but nans and other default special cases do work
+        FloatGen(special_cases=_non_neg_zero_float_special_cases), 
+        DoubleGen(special_cases=_non_neg_zero_double_special_cases),
+        string_gen, boolean_gen, date_gen, timestamp_gen]
+
+no_neg_zero_all_basic_gens_no_nulls = [StringGen(nullable=False), ByteGen(nullable=False),
+        ShortGen(nullable=False), IntegerGen(nullable=False), LongGen(nullable=False),
+        BooleanGen(nullable=False), DateGen(nullable=False), TimestampGen(nullable=False),
+        FloatGen(special_cases=_non_neg_zero_float_special_cases, nullable=False),
+        DoubleGen(special_cases=_non_neg_zero_double_special_cases, nullable=False)]
+
+decimal_gens_no_nulls = [DecimalGen(precision=7, scale=3, nullable=False),
+        DecimalGen(precision=12, scale=2, nullable=False),
+        DecimalGen(precision=20, scale=2, nullable=False)]
+
+no_neg_zero_all_basic_gens_no_nans = [byte_gen, short_gen, int_gen, long_gen,
+        # -0.0 cannot work because of -0.0 == 0.0 in cudf for distinct
+        FloatGen(special_cases=[], no_nans=True), 
+        DoubleGen(special_cases=[], no_nans=True),
+        string_gen, boolean_gen, date_gen, timestamp_gen]
 
 # Merged "test_nested_array_item" with this one since arrays as literals is supported
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
@@ -100,7 +154,7 @@ def test_array_item_ansi_not_fail_all_null_data():
 
 
 @pytest.mark.parametrize('data_gen', all_basic_gens + [
-                         decimal_gen_32bit, decimal_gen_64bit, decimal_gen_128bit,
+                         decimal_gen_32bit, decimal_gen_64bit, decimal_gen_128bit, binary_gen,
                          StructGen([['child0', StructGen([['child01', IntegerGen()]])], ['child1', string_gen], ['child2', float_gen]], nullable=False),
                          StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]], nullable=False)], ids=idfn)
 def test_make_array(data_gen):
@@ -271,6 +325,11 @@ def test_array_concat_decimal(data_gen):
             'concat(a, a)')),
         conf=no_nans_conf)
 
+@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
+def test_array_max_with_nans(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
+                'array_max(a)'))
 
 @pytest.mark.parametrize('data_gen', array_min_max_gens_no_nan, ids=idfn)
 def test_array_max(data_gen):
@@ -279,7 +338,7 @@ def test_array_max(data_gen):
                 'array_max(a)'),
             conf=no_nans_conf)
 
-@pytest.mark.parametrize('data_gen', [ArrayGen(int_gen, all_null=True)], ids=idfn)
+@pytest.mark.parametrize('data_gen', [ArrayGen(gen, all_null=True) for gen in [int_gen, float_gen, double_gen]], ids=idfn)
 def test_array_max_all_nulls(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
@@ -362,7 +421,8 @@ def test_array_exists(data_gen, threeVL):
     })
 
 
-array_zips_gen = array_gens_sample + [ArrayGen(map_string_string_gen[0], max_length=5)]
+array_zips_gen = array_gens_sample + [ArrayGen(map_string_string_gen[0], max_length=5),
+                                      ArrayGen(BinaryGen(max_length=5), max_length=5)]
 
 
 @pytest.mark.parametrize('data_gen', array_zips_gen, ids=idfn)
@@ -394,3 +454,187 @@ def test_array_max_q1():
     def q1(spark):
         return spark.sql('SELECT ARRAY_MAX(TRANSFORM(ARRAY_REPEAT(STRUCT(1, 2), 0), s -> s.col2))')
     assert_gpu_and_cpu_are_equal_collect(q1)
+
+
+@incompat
+@pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
+@pytest.mark.skipif(is_before_spark_313() or is_spark_330_or_later() or is_databricks104_or_later(), reason="NaN equality is only handled in Spark 3.1.3+")
+def test_array_intersect(data_gen):
+    gen = StructGen(
+        [('a', ArrayGen(data_gen, nullable=True)),
+        ('b', ArrayGen(data_gen, nullable=True))],
+        nullable=False)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'sort_array(array_intersect(a, b))',
+            'sort_array(array_intersect(b, a))',
+            'sort_array(array_intersect(a, array()))',
+            'sort_array(array_intersect(array(), b))',
+            'sort_array(array_intersect(a, a))',
+            'sort_array(array_intersect(array(1), array(1, 2, 3)))',
+            'sort_array(array_intersect(array(), array(1, 2, 3)))')
+    )
+
+@incompat
+@pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens_no_nulls + decimal_gens_no_nulls, ids=idfn)
+@pytest.mark.skipif(is_before_spark_330() and not is_databricks104_or_later(), reason="SPARK-39976 issue with null and ArrayIntersect")
+def test_array_intersect_spark330(data_gen):
+    gen = StructGen(
+        [('a', ArrayGen(data_gen, nullable=True)),
+        ('b', ArrayGen(data_gen, nullable=True))],
+        nullable=False)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'sort_array(array_intersect(a, b))',
+            'sort_array(array_intersect(b, a))',
+            'sort_array(array_intersect(a, array()))',
+            'sort_array(array_intersect(array(), b))',
+            'sort_array(array_intersect(a, a))',
+            'sort_array(array_intersect(array(1), array(1, 2, 3)))',
+            'sort_array(array_intersect(array(), array(1, 2, 3)))')
+    )
+
+
+@incompat
+@pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens_no_nans + decimal_gens, ids=idfn)
+@pytest.mark.skipif(not is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
+def test_array_intersect_before_spark313(data_gen):
+    gen = StructGen(
+        [('a', ArrayGen(data_gen, nullable=True)),
+        ('b', ArrayGen(data_gen, nullable=True))],
+        nullable=False)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'sort_array(array_intersect(a, b))',
+            'sort_array(array_intersect(b, a))',
+            'sort_array(array_intersect(a, array()))',
+            'sort_array(array_intersect(array(), b))',
+            'sort_array(array_intersect(a, a))',
+            'sort_array(array_intersect(array(1), array(1, 2, 3)))',
+            'sort_array(array_intersect(array(), array(1, 2, 3)))')
+    )
+
+@incompat
+@pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
+@pytest.mark.skipif(is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
+def test_array_union(data_gen):
+    gen = StructGen(
+        [('a', ArrayGen(data_gen, nullable=True)),
+        ('b', ArrayGen(data_gen, nullable=True))],
+        nullable=False)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'sort_array(array_union(a, b))',
+            'sort_array(array_union(b, a))',
+            'sort_array(array_union(a, array()))',
+            'sort_array(array_union(array(), b))',
+            'sort_array(array_union(a, a))',
+            'sort_array(array_union(array(1), array(1, 2, 3)))',
+            'sort_array(array_union(array(), array(1, 2, 3)))')
+    )
+
+@incompat
+@pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens_no_nans + decimal_gens, ids=idfn)
+@pytest.mark.skipif(not is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
+def test_array_union_before_spark313(data_gen):
+    gen = StructGen(
+        [('a', ArrayGen(data_gen, nullable=True)),
+        ('b', ArrayGen(data_gen, nullable=True))],
+        nullable=False)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'sort_array(array_union(a, b))',
+            'sort_array(array_union(b, a))',
+            'sort_array(array_union(a, array()))',
+            'sort_array(array_union(array(), b))',
+            'sort_array(array_union(a, a))',
+            'sort_array(array_union(array(1), array(1, 2, 3)))',
+            'sort_array(array_union(array(), array(1, 2, 3)))')
+    )
+
+@incompat
+@pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
+@pytest.mark.skipif(is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
+def test_array_except(data_gen):
+    gen = StructGen(
+        [('a', ArrayGen(data_gen, nullable=True)),
+        ('b', ArrayGen(data_gen, nullable=True))],
+        nullable=False)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'sort_array(array_except(a, b))',
+            'sort_array(array_except(b, a))',
+            'sort_array(array_except(a, array()))',
+            'sort_array(array_except(array(), b))',
+            'sort_array(array_except(a, a))',
+            'sort_array(array_except(array(1, 2, 3), array(1, 2, 3)))',
+            'sort_array(array_except(array(1), array(1, 2, 3)))')
+    )
+
+@incompat
+@pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens_no_nans + decimal_gens, ids=idfn)
+@pytest.mark.skipif(not is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
+def test_array_except_before_spark313(data_gen):
+    gen = StructGen(
+        [('a', ArrayGen(data_gen, nullable=True)),
+        ('b', ArrayGen(data_gen, nullable=True))],
+        nullable=False)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'sort_array(array_except(a, b))',
+            'sort_array(array_except(b, a))',
+            'sort_array(array_except(a, array()))',
+            'sort_array(array_except(array(), b))',
+            'sort_array(array_except(a, a))',
+            'sort_array(array_except(array(1, 2, 3), array(1, 2, 3)))',
+            'sort_array(array_except(array(1), array(1, 2, 3)))')
+    )
+
+@incompat
+@pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
+@pytest.mark.skipif(is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
+def test_arrays_overlap(data_gen):
+    gen = StructGen(
+        [('a', ArrayGen(data_gen, nullable=True)),
+        ('b', ArrayGen(data_gen, nullable=True))],
+        nullable=False)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'arrays_overlap(a, b)',
+            'arrays_overlap(b, a)',
+            'arrays_overlap(a, array())',
+            'arrays_overlap(array(), b)',
+            'arrays_overlap(a, a)',
+            'arrays_overlap(array(1), array(1, 2))',
+            'arrays_overlap(array(3, 4), array(1, 2))',
+            'arrays_overlap(array(), array(1, 2))')
+    )
+
+@incompat
+@pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens_no_nans + decimal_gens, ids=idfn)
+@pytest.mark.skipif(not is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
+def test_arrays_overlap_before_spark313(data_gen):
+    gen = StructGen(
+        [('a', ArrayGen(data_gen, nullable=True)),
+        ('b', ArrayGen(data_gen, nullable=True))],
+        nullable=False)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: gen_df(spark, gen).selectExpr(
+            'arrays_overlap(a, b)',
+            'arrays_overlap(b, a)',
+            'arrays_overlap(a, array())',
+            'arrays_overlap(array(), b)',
+            'arrays_overlap(a, a)',
+            'arrays_overlap(array(1), array(1, 2))',
+            'arrays_overlap(array(3, 4), array(1, 2))',
+            'arrays_overlap(array(), array(1, 2))')
+    )

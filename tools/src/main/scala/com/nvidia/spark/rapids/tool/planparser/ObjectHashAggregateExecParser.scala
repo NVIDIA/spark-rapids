@@ -35,7 +35,11 @@ case class ObjectHashAggregateExecParser(
     val accumId = node.metrics.find(
       _.name == "time in aggregation build total").map(_.accumulatorId)
     val maxDuration = SQLPlanParser.getTotalDuration(accumId, app)
-    val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
+    val exprString = node.desc.replaceFirst("ObjectHashAggregate", "")
+    val expressions = SQLPlanParser.parseAggregateExpressions(exprString)
+    val isAllExprsSupported = expressions.forall(expr => checker.isExprSupported(expr))
+    val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName) &&
+        isAllExprsSupported) {
       (checker.getSpeedupFactor(fullExecName), true)
     } else {
       (1.0, false)

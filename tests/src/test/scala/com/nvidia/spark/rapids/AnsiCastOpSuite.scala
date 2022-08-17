@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.{SparkConf, SparkException}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.apache.spark.sql.catalyst.expressions.{Alias, CastBase, Expression, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, NamedExpression}
 import org.apache.spark.sql.execution.ProjectExec
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
@@ -148,23 +148,26 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   }
 
   testCastFailsForBadInputs("ansi_cast overflow decimals to bytes",
-    generateOutOfRangeDecimalDF(Byte.MinValue, Byte.MaxValue, 10, 0, Byte.MaxValue + 1)) {
+    generateOutOfRangeDecimalDF(Byte.MinValue, Byte.MaxValue, 10, 0, Byte.MaxValue + 1),
+    msg = GpuCast.OVERFLOW_MESSAGE) {
     frame => testCastTo(DataTypes.ByteType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast overflow decimals to shorts",
-    generateOutOfRangeDecimalDF(Short.MinValue, Short.MaxValue, 10, 0, Short.MaxValue + 1)) {
+    generateOutOfRangeDecimalDF(Short.MinValue, Short.MaxValue, 10, 0, Short.MaxValue + 1),
+    msg = GpuCast.OVERFLOW_MESSAGE) {
     frame => testCastTo(DataTypes.ShortType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast overflow decimals to Ints",
-    generateOutOfRangeDecimalDF(Int.MinValue, Int.MaxValue, 10, 0, Int.MaxValue.toLong + 1)) {
+    generateOutOfRangeDecimalDF(Int.MinValue, Int.MaxValue, 10, 0, Int.MaxValue.toLong + 1),
+    msg = GpuCast.OVERFLOW_MESSAGE) {
     frame => testCastTo(DataTypes.IntegerType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast overflow decimals to longs",
     generateOutOfRangeDecimalDF(Long.MinValue, Long.MaxValue, 18, -3,
-      BigDecimal("999999999999999999000"))) {
+      BigDecimal("999999999999999999000")), msg = GpuCast.OVERFLOW_MESSAGE) {
     frame => testCastTo(DataTypes.LongType)(frame)
   }
 
@@ -466,10 +469,15 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
+  testSparkResultsAreEqual("ansi_cast decimals to long",
+    generateValidValuesDecimalDF(Short.MinValue, Short.MaxValue, 18, 3), sparkConf) {
+    frame => testCastTo(DataTypes.LongType)(frame)
+  }
+
   private def castToStringExpectedFun[T]: T => Option[String] = (d: T) => Some(String.valueOf(d))
 
   private def testCastToString[T](dataType: DataType, ansiMode: Boolean,
-      comparisonFunc: Option[(String, String) => Boolean] = None) {
+      comparisonFunc: Option[(String, String) => Boolean] = None): Unit = {
     // AnsiCast is merged into Cast from Spark 3.4.0.
     // Use reflection to avoid shims.
     val key = Class.forName {
@@ -554,6 +562,11 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   // Writing to Hive tables, which has special rules
   ///////////////////////////////////////////////////////////////////////////
 
+  // Disable tests for Spark-3.3.1+ until new support to CheckOverflowInTableInsert is added
+  def before3_3_1(s: SparkSession): (Boolean, String) = {
+    (s.version < "3.3.1", s"Spark version must be prior to 3.3.1")
+  }
+
   testSparkResultsAreEqual("Write bytes to string", testBytes, sparkConf) {
     frame => doTableInsert(frame, HIVE_STRING_SQL_TYPE)
   }
@@ -574,43 +587,35 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write longs to int (values within range)", intsAsLongs,
-    sparkConf) {
+  testSparkResultsAreEqual("Write longs to int (values within range)", intsAsLongs, sparkConf) {
     frame => doTableInsert(frame, HIVE_INT_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write longs to short (values within range)", shortsAsLongs,
-    sparkConf) {
+  testSparkResultsAreEqual("Write longs to short (values within range)", shortsAsLongs, sparkConf) {
     frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write longs to byte (values within range)", bytesAsLongs,
-    sparkConf) {
+  testSparkResultsAreEqual("Write longs to byte (values within range)", bytesAsLongs, sparkConf) {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write ints to short (values within range)", shortsAsInts,
-    sparkConf) {
+  testSparkResultsAreEqual("Write ints to short (values within range)", shortsAsInts, sparkConf) {
     frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write ints to byte (values within range)", bytesAsInts,
-    sparkConf) {
+  testSparkResultsAreEqual("Write ints to byte (values within range)", bytesAsInts, sparkConf) {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write shorts to byte (values within range)", bytesAsShorts,
-    sparkConf) {
+  testSparkResultsAreEqual("Write shorts to byte (values within range)", bytesAsShorts, sparkConf) {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write floats to long (values within range)", longsAsFloats,
-    sparkConf) {
+  testSparkResultsAreEqual("Write floats to long (values within range)", longsAsFloats, sparkConf) {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write floats to int (values within range)", intsAsFloats,
-    sparkConf) {
+  testSparkResultsAreEqual("Write floats to int (values within range)", intsAsFloats, sparkConf) {
     frame => doTableInsert(frame, HIVE_INT_SQL_TYPE)
   }
 
@@ -619,8 +624,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write floats to byte (values within range)", bytesAsFloats,
-    sparkConf) {
+  testSparkResultsAreEqual("Write floats to byte (values within range)", bytesAsFloats, sparkConf) {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
@@ -629,13 +633,12 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write doubles to int (values within range)", intsAsDoubles,
-    sparkConf) {
+  testSparkResultsAreEqual("Write doubles to int (values within range)", intsAsDoubles, sparkConf) {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
 
-  testSparkResultsAreEqual("Write doubles to short (values within range)",
-    shortsAsDoubles, sparkConf) {
+  testSparkResultsAreEqual("Write doubles to short (values within range)", shortsAsDoubles,
+    sparkConf) {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
 
@@ -648,65 +651,73 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   // Test for exceptions when casting out of range values
   ///////////////////////////////////////////////////////////////////////////
 
-  testCastFailsForBadInputs("Detect overflow from long to int", testLongs, sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from long to int", testLongs, sparkConf,
+    msg = getExMsgForOverflowInTableInsert) {
     frame => doTableInsert(frame, HIVE_INT_SQL_TYPE)
   }
 
-  testCastFailsForBadInputs("Detect overflow from long to short", testLongs, sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from long to short", testLongs, sparkConf,
+    msg = getExMsgForOverflowInTableInsert) {
     frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
   }
 
-  testCastFailsForBadInputs("Detect overflow from long to byte", testLongs, sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from long to byte", testLongs, sparkConf,
+    msg = getExMsgForOverflowInTableInsert) {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
-  testCastFailsForBadInputs("Detect overflow from int to short", testInts, sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from int to short", testInts, sparkConf,
+    msg = getExMsgForOverflowInTableInsert) {
     frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
   }
 
-  testCastFailsForBadInputs("Detect overflow from int to byte", testInts, sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from int to byte", testInts, sparkConf,
+    msg = getExMsgForOverflowInTableInsert) {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
-  testCastFailsForBadInputs("Detect overflow from short to byte", testShorts, sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from short to byte", testShorts, sparkConf,
+    msg = getExMsgForOverflowInTableInsert) {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
-  testCastFailsForBadInputs("Detect overflow from float to long", testFloats, sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from float to long", testFloats, sparkConf,
+    msg = getExMsgForOverflowInTableInsert) {
     frame => doTableInsert(frame, HIVE_INT_SQL_TYPE)
   }
 
-  testCastFailsForBadInputs("Detect overflow from float to int", testFloats, sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from float to int", testFloats, sparkConf,
+    msg = getExMsgForOverflowInTableInsert) {
     frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
   }
 
-  testCastFailsForBadInputs("Detect overflow from float to short", testFloats,
-    sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from float to short", testFloats, sparkConf,
+    msg = getExMsgForOverflowInTableInsert) {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
 
-  testCastFailsForBadInputs("Detect overflow from float to byte", testFloats,
-    sparkConf) {
+  testCastFailsForBadInputs("Detect overflow from float to byte", testFloats, sparkConf,
+    msg = getExMsgForOverflowInTableInsert) {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
   testCastFailsForBadInputs("Detect overflow from double to long", testDoubles,
-    sparkConf) {
+    sparkConf, msg = getExMsgForOverflowInTableInsert) {
     frame => doTableInsert(frame, HIVE_LONG_SQL_TYPE)
   }
 
   testCastFailsForBadInputs("Detect overflow from double to int", testDoubles,
-    sparkConf) {
+    sparkConf, msg = getExMsgForOverflowInTableInsert) {
     frame => doTableInsert(frame, HIVE_INT_SQL_TYPE)
   }
 
   testCastFailsForBadInputs("Detect overflow from double to short", testDoubles,
-    sparkConf) {
+    sparkConf, msg = getExMsgForOverflowInTableInsert) {
     frame => doTableInsert(frame, HIVE_SHORT_SQL_TYPE)
   }
 
   testCastFailsForBadInputs("Detect overflow from double to byte", testDoubles,
-    sparkConf) {
+    sparkConf, msg = getExMsgForOverflowInTableInsert) {
     frame => doTableInsert(frame, HIVE_BYTE_SQL_TYPE)
   }
 
@@ -802,14 +813,26 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-
   private def assertContainsAnsiCast(df: DataFrame, expected: Int = 1): DataFrame = {
     val projections = SparkShimImpl.findOperators(df.queryExecution.executedPlan, {
       case _: ProjectExec | _: GpuProjectExec => true
       case _ => false
     })
 
-    def isAnsiCast(c: CastBase): Boolean = {
+    def isSparkCastExpression(c: Expression): Boolean = {
+      val sparkClzz = Class.forName {
+        if (cmpSparkVersion(3, 4, 0) < 0) {
+          "org.apache.spark.sql.catalyst.expressions.AnsiCast"
+        } else {
+          "org.apache.spark.sql.catalyst.expressions.Cast"
+        }
+      }
+      c.getClass == sparkClzz
+    }
+
+    def isAnsiCast(c: Expression): Boolean = {
+      // prior to Spark 3.4.0 we could use CastBase as argument type, but starting 3.4.0 the type is
+      // the case class Cast.
       // prior to Spark 3.3.0 we could use toString to see if the name of
       // the cast was "cast" or "ansi_cast" but now the name is always "cast"
       // so we need to use reflection to access the protected field "ansiEnabled"
@@ -818,18 +841,52 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
       m.getBoolean(c)
     }
 
+    def isAnsiCastInTableInsert(expr: Expression, cpuSession: Boolean): Boolean = {
+      // Use reflection to avoid using shims for Spark-3.3.1+ in the form of:
+      // CPU: Alias(CheckOverflowInTableInsert(Cast, _), _)
+      // GPU: GpuAlias(GpuCheckOverflowInTableInsert(GpuCast, _), _)
+      val exprKlassName = if (cpuSession) {
+          "org.apache.spark.sql.catalyst.expressions.CheckOverflowInTableInsert"
+        } else {
+          "org.apache.spark.sql.rapids.GpuCheckOverflowInTableInsert"
+        }
+      if (expr.getClass.getName.equals(exprKlassName)) {
+        val exprClzz = Class.forName(exprKlassName)
+        val childField = exprClzz.getDeclaredField("child")
+        childField.setAccessible(true)
+        childField.get(expr) match {
+          case castExpr: Expression if cpuSession && isSparkCastExpression(castExpr) =>
+            isAnsiCast(castExpr)
+          case castExpr: GpuCast => castExpr.ansiMode
+          case _ => false
+        }
+      } else {
+        false
+      }
+    }
+
     val count = projections.map {
-        case p: ProjectExec => p.projectList.count {
-          case c: CastBase => isAnsiCast(c)
-          case Alias(c: CastBase, _) => isAnsiCast(c)
-          case _ => false
-        }
-        case p: GpuProjectExec => p.projectList.count {
-          case c: GpuCast => c.ansiMode
-          case GpuAlias(c: GpuCast, _) => c.ansiMode
-          case _ => false
-        }
-        case _ => 0
+      case p: ProjectExec => p.projectList.count {
+        case c: Expression if isSparkCastExpression(c) => isAnsiCast(c)
+        case expr: Alias =>
+          expr.child match {
+            case c: Expression if isSparkCastExpression(c) => isAnsiCast(c)
+            // To support the conversion of CheckOverflowInTableInsert starting Spark-3.3.1+
+            case _ => isAnsiCastInTableInsert(expr.child, cpuSession = true)
+          }
+        case _ => false
+      }
+      case p: GpuProjectExec => p.projectList.count {
+        case c: GpuCast => c.ansiMode
+        case c: GpuAlias =>
+          c.child match {
+            case exp: GpuCast => exp.ansiMode
+            // To support the conversion of CheckOverflowInTableInsert starting Spark-3.3.1+
+            case _ => isAnsiCastInTableInsert(c.child, cpuSession = false)
+          }
+        case _ => false
+      }
+      case _ => 0
     }.sum
 
     if (count != expected) {
@@ -837,6 +894,25 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
         s"ansi_cast expressions, found $count")
     }
     df
+  }
+
+  /**
+   * Returns the expected pattern in the Exception thrown by an arithmetic overflow during table
+   * insertion.
+   * The GPU throws an Spark/ArithmeticException with GpuCast.OVERFLOW_MESSAGE.
+   * Starting 3.3.1, case during insert throws a new SparkArithmeticException class.
+   *
+   * @return the exception message from overflow exception during table insertion, depending on the
+   *         Spark Error Shims loaded.
+   */
+  private def getExMsgForOverflowInTableInsert: String = {
+    if (cmpSparkVersion(3, 3, 1) < 0) {
+      // Prior to Spark-3.3.1, GPU throws an ArithmeticException with overflowMessage
+      GpuCast.OVERFLOW_MESSAGE
+    } else {
+      // spark 3.3.1+ shows a different error message for overflow during table insert
+      "due to an overflow."
+    }
   }
 
   private def testBools = testData(DataTypes.BooleanType)(_)

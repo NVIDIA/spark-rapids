@@ -77,8 +77,11 @@ TEST_MODE=${TEST_MODE:-'DEFAULT'}
 TEST_TYPE="nightly"
 PCBS_CONF="com.nvidia.spark.ParquetCachedBatchSerializer"
 
-ICEBERG_VERSION=0.13.1
+ICEBERG_VERSION=${ICEBERG_VERSION:-0.13.2}
 ICEBERG_SPARK_VER=$(echo $BASE_SPARK_VER | cut -d. -f1,2)
+# Classloader config is here to work around classloader issues with
+# --packages in distributed setups, should be fixed by
+# https://github.com/NVIDIA/spark-rapids/pull/5646
 ICEBERG_CONFS="--packages org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_2.12:${ICEBERG_VERSION} \
  --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
  --conf spark.sql.catalog.spark_catalog=org.apache.iceberg.spark.SparkSessionCatalog \

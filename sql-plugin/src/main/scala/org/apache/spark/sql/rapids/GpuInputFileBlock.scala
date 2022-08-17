@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,6 +54,8 @@ object InputFileUtils {
   def setInputFileBlock(filePath: String, start: Long, length: Long): Unit = {
     InputFileBlockHolder.set(filePath, start, length)
   }
+
+  def getCurInputFilePath(): String = InputFileBlockHolder.getInputFilePath.toString
 }
 
 /**

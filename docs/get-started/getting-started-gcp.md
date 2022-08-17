@@ -83,7 +83,8 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --optional-components=JUPYTER,ZEPPELIN \
     --metadata=rapids-runtime=SPARK \
     --bucket=$GCS_BUCKET \
-    --enable-component-gateway
+    --enable-component-gateway \
+    --subnet=default
 ```
 
 This may take around 10-15 minutes to complete.  You can navigate to the Dataproc clusters tab in the
@@ -142,11 +143,11 @@ If you'd like to further accelerate init time to 4-5 minutes, create a custom Da
 To use notebooks with a Dataproc cluster, click on the cluster name under the Dataproc cluster tab
 and navigate to the "Web Interfaces" tab.  Under "Web Interfaces", click on the JupyterLab or
 Jupyter link. Download the sample 
-[Mortgage ETL on GPU Jupyter Notebook](../demo/GCP/Mortgage-ETL-GPU.ipynb) and upload it in Jupyter.
+[Mortgage ETL on GPU Jupyter Notebook](../demo/GCP/Mortgage-ETL.ipynb) and upload it in Jupyter.
 
-To get the input data of the sample notebook, we need to download the full 17 years' [Mortgage 
-data](https://docs.rapids.ai/datasets/mortgage-data) as `mortgage_2000-2016.tgz`, uncompress and 
-upload it to a GCS bucket. Above notebook has handy commands to do this step on master node.
+To get the input data of the sample notebook, please find this [instruction](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-22.08/docs/get-started/xgboost-examples/dataset/mortgage.md)
+to download the dataset, uncompress and 
+upload it to a GCS bucket.
 
 ![Dataproc Web Interfaces](../img/GCP/dataproc-service.png)
 
@@ -161,16 +162,15 @@ Dataproc [RAPIDS init
 script](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/rapids).
 
 Once data is prepared, we use the [Mortgage XGBoost4j Scala
-Notebook](../demo/GCP/mortgage-xgboost4j-gpu-scala.zpln) in Dataproc's Zeppelin service to execute
-the training job on the GPU.  NVIDIA also ships [Spark
-XGBoost4j](https://github.com/NVIDIA/spark-xgboost) which is based on [DMLC
-xgboost](https://github.com/dmlc/xgboost).  Precompiled
-[XGBoost4j](https://repo1.maven.org/maven2/com/nvidia/xgboost4j_3.0/) and [XGBoost4j
-Spark](https://repo1.maven.org/maven2/com/nvidia/xgboost4j-spark_3.0/) libraries can be
+Notebook](../demo/GCP/mortgage-xgboost4j-gpu-scala.ipynb) in Dataproc's jupyter notebook to execute
+the training job on the GPU. Scala based XGBoost examples use [DLMC XGBoost](https://github.com/dmlc/xgboost).
+For PySpark based XGBoost, please refer to the [Spark-RAPIDS-examples 22.04 branch](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.04)
+that uses [NVIDIA’s Spark XGBoost version](https://repo1.maven.org/maven2/com/nvidia/xgboost4j-spark_3.0/1.4.2-0.3.0/).
+Precompiled
+[XGBoost4j](https://repo1.maven.org/maven2/ml/dmlc/xgboost4j-gpu_2.12/) and [XGBoost4j
+Spark](https://repo1.maven.org/maven2/ml/dmlc/xgboost4j-gpu_2.12/) libraries can be
 downloaded from maven.  They are pre-downloaded by the GCP [RAPIDS init
-action](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/rapids).  Since
-github cannot render a Zeppelin notebook, we prepared a [Jupyter Notebook with Scala
-code](../demo/GCP/mortgage-xgboost4j-gpu-scala.ipynb) for you to view the code content.
+action](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/rapids).
 
 The training time should be around 480 seconds (1/10 of CPU execution time with same config).  This
 is shown under cell:
@@ -186,9 +186,9 @@ val (xgbClassificationModel, _) = benchmark("train") {
 ## Submit Spark jobs to a Dataproc Cluster Accelerated by GPUs
 Similar to spark-submit for on-prem clusters, Dataproc supports a Spark application job to be
 submitted as a Dataproc job.  The mortgage examples we use above are also available as a [spark
-application](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.08/examples/XGBoost-Examples).
+application](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.10/examples/XGBoost-Examples).
 After [building the jar
-files](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-22.08/docs/get-started/xgboost-examples/building-sample-apps/scala.md)
+files](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-22.10/docs/get-started/xgboost-examples/building-sample-apps/scala.md)
 .
 
 Place the jar file `sample_xgboost_apps-<version>-jar-with-dependencies.jar` under the
@@ -229,7 +229,7 @@ notebook](https://cloud.google.com/blog/products/data-analytics/administering-ju
 The AI platform will connect to a Dataproc cluster through a yaml configuration.
 
 In the future, users will be able to provision a Dataproc cluster through DataprocHub notebook.  You
-can use example [pyspark notebooks](../demo/GCP/Mortgage-ETL-GPU.ipynb) to experiment.
+can use example [pyspark notebooks](../demo/GCP/Mortgage-ETL.ipynb) to experiment.
 
 ## Build custom dataproc image to accelerate cluster init time
 In order to accelerate cluster init time to 3-4 minutes, we need to build a custom Dataproc image

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -131,6 +131,14 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
       prefix = "no-",
       descrYes = "Generates an HTML Report. Enabled by default.",
       descrNo = "Disables generating the HTML report.")
+  val perSql : ScallopOption[Boolean] =
+    opt[Boolean](required = false,
+      descr = "Report at the individual SQL query level.")
+  val maxSqlDescLength: ScallopOption[Int] =
+    opt[Int](required = false,
+      descr = "Maximum length of the SQL description string output with the " +
+        "per sql output. Default is 100.",
+      default = Some(100))
 
   validate(order) {
     case o if (QualificationArgs.isOrderAsc(o) || QualificationArgs.isOrderDesc(o)) => Right(Unit)

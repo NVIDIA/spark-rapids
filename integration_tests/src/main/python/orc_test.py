@@ -14,11 +14,12 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
+from asserts import assert_cpu_and_gpu_are_equal_sql_with_capture, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, \
+    assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, is_before_spark_320, is_before_spark_330
+from spark_session import with_cpu_session, is_before_spark_320, is_before_spark_330, is_spark_321cdh
 from parquet_test import _nested_pruning_schemas
 from conftest import is_databricks_runtime
 
@@ -175,7 +176,7 @@ def test_pred_push_round_trip(spark_tmp_path, orc_gen, read_func, v1_enabled_lis
 
 orc_compress_options = ['none', 'uncompressed', 'snappy', 'zlib']
 # zstd is available in spark 3.2.0 and later.
-if not is_before_spark_320():
+if not is_before_spark_320() and not is_spark_321cdh():
     orc_compress_options.append('zstd')
 
 # The following need extra jars 'lzo'
@@ -477,7 +478,26 @@ def test_read_struct_without_stream(spark_tmp_path):
             lambda spark : spark.read.orc(data_path))
 
 
-@pytest.mark.parametrize('orc_gen', flattened_orc_gens, ids=idfn)
+# There is an issue when writing timestamp: https://github.com/NVIDIA/spark-rapids/issues/6312
+# Thus, we exclude timestamp types from the tests here.
+# When the issue is resolved, remove all these `*_no_timestamp` generators and  use just `flattened_orc_gens`
+# for `orc_gen` parameter.
+orc_basic_gens_no_timestamp = [gen for gen in orc_basic_gens if not isinstance(gen, TimestampGen)]
+
+orc_array_gens_sample_no_timestamp = [ArrayGen(sub_gen) for sub_gen in orc_basic_gens_no_timestamp] + [
+    ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
+    ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10),
+    ArrayGen(ArrayGen(decimal_gen_64bit, max_length=10), max_length=10),
+    ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))]
+
+orc_basic_struct_gen_no_timestamp = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(orc_basic_gens_no_timestamp)])
+orc_struct_gens_sample_no_timestamp = [orc_basic_struct_gen_no_timestamp,
+    StructGen([['child0', byte_gen], ['child1', orc_basic_struct_gen_no_timestamp]]),
+    StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
+
+flattened_orc_gens_no_timestamp = orc_basic_gens + orc_array_gens_sample_no_timestamp + orc_struct_gens_sample_no_timestamp
+
+@pytest.mark.parametrize('orc_gen', flattened_orc_gens_no_timestamp, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('case_sensitive', ["false", "true"])
@@ -663,3 +683,24 @@ def test_read_type_casting_integral(spark_tmp_path, offset, reader_confs, v1_ena
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(rs).orc(data_path),
         conf=all_confs)
+
+def test_orc_read_count(spark_tmp_path):
+    data_path = spark_tmp_path + '/ORC_DATA'
+    orc_gens = [int_gen, string_gen, double_gen]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
+    
+    with_cpu_session(lambda spark: gen_df(spark, gen_list).write.orc(data_path))
+
+    assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.orc(data_path))
+
+    # assert the spark plan of the equivalent SQL query contains no column in read schema
+    assert_cpu_and_gpu_are_equal_sql_with_capture(
+        lambda spark: spark.read.orc(data_path), "SELECT COUNT(*) FROM tab", "tab",
+        exist_classes=r'GpuFileGpuScan orc .* ReadSchema: struct<>')
+
+# The test_orc_varchar file was created with the Hive CLI like this:
+# CREATE TABLE test_orc_varchar(id int, name varchar(20)) STORED AS ORC LOCATION '...';
+# INSERT INTO test_orc_varchar values(1, 'abc');
+def test_orc_read_varchar_as_string(std_input_path):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema("id bigint, name string").orc(std_input_path + "/test_orc_varchar.orc"))

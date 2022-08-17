@@ -6,16 +6,16 @@
 <   extends TernaryExprMeta[RegExpReplace](expr, conf, parent, rule) {
 ---
 >   extends QuaternaryExprMeta[RegExpReplace](expr, conf, parent, rule) {
-26c26
+28c28
 <             val (pat, repl) =
 ---
 >             val (pat, repl) = 
-43,44c43
+45,46c45
 <     // Spark 2.x is ternary and doesn't have pos parameter
 <     /*
 ---
 > 
-50d48
+52d50
 <     */
-51a50
+53a52
 > 

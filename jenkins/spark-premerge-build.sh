@@ -27,6 +27,8 @@ elif [[ $# -gt 1 ]]; then
     exit 1
 fi
 
+MVN_CMD="mvn -Dmaven.wagon.http.retryHandler.count=3"
+MVN_BUILD_ARGS="-Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER"
 
 mvn_verify() {
     echo "Run mvn verify..."
@@ -36,28 +38,34 @@ mvn_verify() {
     pre-commit run check-added-large-files --from-ref $BASE_REF --to-ref HEAD
 
     # build the Spark 2.x explain jar
-    env -u SPARK_HOME mvn -B $MVN_URM_MIRROR -Dbuildver=24X clean install -DskipTests
+    env -u SPARK_HOME $MVN_CMD -B $MVN_URM_MIRROR -Dbuildver=24X clean install -DskipTests
 
-    # build all the versions but only run unit tests on one 3.1.X version (base version covers this), and one 3.2.X version.
+    MVN_INSTALL_CMD="env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR clean install $MVN_BUILD_ARGS -DskipTests -pl aggregator -am"
+    # build all the versions but only run unit tests on one 3.1.X version (base version covers this), one 3.2.X and one 3.3.X version.
     # All others shims test should be covered in nightly pipelines
-    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=321cdh clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
-    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=312 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
-    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=313 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
-    [[ $BUILD_MAINTENANCE_VERSION_SNAPSHOTS == "true" ]] && env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=314 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
+    $MVN_INSTALL_CMD -DskipTests -Dbuildver=321cdh
+    $MVN_INSTALL_CMD -DskipTests -Dbuildver=312
+    $MVN_INSTALL_CMD -DskipTests -Dbuildver=313
+    [[ $BUILD_MAINTENANCE_VERSION_SNAPSHOTS == "true" ]] && $MVN_INSTALL_CMD -Dbuildver=314
 
     # don't skip tests
-    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=320 clean install -Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -Dpytest.TEST_TAGS='' -pl '!tools'
+    env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=320 clean install $MVN_BUILD_ARGS \
+      -Dpytest.TEST_TAGS='' -pl '!tools'
     # enable UTF-8 for regular expression tests
-    env -u SPARK_HOME LC_ALL="en_US.UTF-8" mvn $MVN_URM_MIRROR -Dbuildver=320 test -Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -Dpytest.TEST_TAGS='' -pl '!tools' -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
-    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=321 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
-    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=322 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
-    env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=330 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
-    [[ $BUILD_MAINTENANCE_VERSION_SNAPSHOTS == "true" ]] && env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=331 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
-    [[ $BUILD_FEATURE_VERSION_SNAPSHOTS == "true" ]] && env -u SPARK_HOME mvn -U -B $MVN_URM_MIRROR -Dbuildver=340 clean install -Drat.skip=true -DskipTests -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER -pl aggregator -am
+    env -u SPARK_HOME LC_ALL="en_US.UTF-8" $MVN_CMD $MVN_URM_MIRROR -Dbuildver=320 test $MVN_BUILD_ARGS \
+      -Dpytest.TEST_TAGS='' -pl '!tools' \
+      -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
+    $MVN_INSTALL_CMD -DskipTests -Dbuildver=321
+    $MVN_INSTALL_CMD -DskipTests -Dbuildver=322
+    env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=330 clean install $MVN_BUILD_ARGS \
+      -Dpytest.TEST_TAGS='' -pl '!tools'
+    [[ $BUILD_MAINTENANCE_VERSION_SNAPSHOTS == "true" ]] && $MVN_INSTALL_CMD -DskipTests -Dbuildver=331
+    # TODO: move it to BUILD_MAINTENANCE_VERSION_SNAPSHOTS when we resolve all spark340 build issues
+    [[ $BUILD_FEATURE_VERSION_SNAPSHOTS == "true" ]] && $MVN_INSTALL_CMD -DskipTests -Dbuildver=340
 
     # Here run Python integration tests tagged with 'premerge_ci_1' only, that would help balance test duration and memory
     # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'ci_2()' respectively.
-    mvn -B $MVN_URM_MIRROR $PREMERGE_PROFILES clean verify -Dpytest.TEST_TAGS="premerge_ci_1" \
+    $MVN_CMD -B $MVN_URM_MIRROR $PREMERGE_PROFILES clean verify -Dpytest.TEST_TAGS="premerge_ci_1" \
         -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=4 -Dcuda.version=$CUDA_CLASSIFIER
 
     # The jacoco coverage should have been collected, but because of how the shade plugin
@@ -77,14 +85,6 @@ mvn_verify() {
 
     # Triggering here until we change the jenkins file
     rapids_shuffle_smoke_test
-
-    # non-caller classloader smoke test in pseudo-distributed
-    # standalone cluster
-    echo "Running test_cartesian_join_special_case_count with spark.rapids.force.caller.classloader=false"
-    PYSP_TEST_spark_rapids_force_caller_classloader=false \
-        NUM_LOCAL_EXECS=1 \
-        TEST_PARALLEL=0 \
-        ./integration_tests/run_pyspark_from_build.sh -k 'test_cartesian_join_special_case_count[100]'
 }
 
 rapids_shuffle_smoke_test() {
@@ -99,16 +99,27 @@ rapids_shuffle_smoke_test() {
     $SPARK_HOME/sbin/start-master.sh -h $SPARK_MASTER_HOST
     $SPARK_HOME/sbin/spark-daemon.sh start org.apache.spark.deploy.worker.Worker 1 $SPARK_MASTER
 
-    PYSP_TEST_spark_master=$SPARK_MASTER \
-      TEST_PARALLEL=0 \
-      PYSP_TEST_spark_cores_max=2 \
-      PYSP_TEST_spark_executor_cores=1 \
-      SPARK_SUBMIT_FLAGS="--conf spark.executorEnv.UCX_ERROR_SIGNALS=" \
-      PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
-      PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0 \
-      PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=0.1 \
-      PYSP_TEST_spark_rapids_memory_gpu_allocFraction=0.1 \
-      ./integration_tests/run_pyspark_from_build.sh -m shuffle_test
+    invoke_shuffle_integration_test() {
+      SPECIFIC_SHUFFLE_FLAGS=$1
+      PYSP_TEST_spark_master=$SPARK_MASTER \
+        TEST_PARALLEL=0 \
+        PYSP_TEST_spark_cores_max=2 \
+        PYSP_TEST_spark_executor_cores=1 \
+        PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
+        PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0 \
+        PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=0.1 \
+        PYSP_TEST_spark_rapids_memory_gpu_allocFraction=0.1 \
+        SPARK_SUBMIT_FLAGS=$SPECIFIC_SHUFFLE_FLAGS \
+        ./integration_tests/run_pyspark_from_build.sh -m shuffle_test
+    }
+
+    # using UCX shuffle
+    invoke_shuffle_integration_test "--conf spark.executorEnv.UCX_ERROR_SIGNALS="
+
+    # using MULTITHREADED shuffle
+    invoke_shuffle_integration_test "\
+      --conf spark.rapids.shuffle.mode=MULTITHREADED \
+      --conf spark.rapids.shuffle.multiThreaded.writer.threads=2"
 
     $SPARK_HOME/sbin/spark-daemon.sh stop org.apache.spark.deploy.worker.Worker 1
     $SPARK_HOME/sbin/stop-master.sh
@@ -116,7 +127,7 @@ rapids_shuffle_smoke_test() {
 
 ci_2() {
     echo "Run premerge ci 2 testings..."
-    mvn -U -B $MVN_URM_MIRROR clean package -DskipTests=true -Dcuda.version=$CUDA_CLASSIFIER
+    $MVN_CMD -U -B $MVN_URM_MIRROR clean package $MVN_BUILD_ARGS -DskipTests=true
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
     export TEST_PARALLEL=4
@@ -135,23 +146,23 @@ nvidia-smi
 
 . jenkins/version-def.sh
 
-# controls whether we build snapshots for the Spark maintenance versions like 3.1.4 and 3.2.2
+# controls whether we build snapshots for the Spark maintenance versions like 3.1.4 and 3.3.1
 BUILD_MAINTENANCE_VERSION_SNAPSHOTS="false"
 # controls whether we build snapshots for the next Spark major or feature version like 3.4.0 or 4.0.0
 BUILD_FEATURE_VERSION_SNAPSHOTS="false"
 PREMERGE_PROFILES="-PnoSnapshots,pre-merge"
-if [[ ${PROJECT_VER} =~ ^22\.08\. ]]; then # enable snapshot builds for active development branch only
+if [[ ${PROJECT_VER} =~ ^22\.10\. ]]; then # enable snapshot builds for active development branch only
   BUILD_MAINTENANCE_VERSION_SNAPSHOTS="true"
   BUILD_FEATURE_VERSION_SNAPSHOTS="false"
   PREMERGE_PROFILES="-Psnapshots,pre-merge"
-elif [[ ${PROJECT_VER} =~ ^22\.10\. ]]; then
+elif [[ ${PROJECT_VER} =~ ^22\.12\. ]]; then
   BUILD_MAINTENANCE_VERSION_SNAPSHOTS="true"
   BUILD_FEATURE_VERSION_SNAPSHOTS="true"
   PREMERGE_PROFILES="-Psnapshots,pre-merge"
 fi
 
 ARTF_ROOT="$WORKSPACE/.download"
-MVN_GET_CMD="mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
+MVN_GET_CMD="$MVN_CMD org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
     $MVN_URM_MIRROR -DremoteRepositories=$URM_URL \
     -Ddest=$ARTF_ROOT"
 

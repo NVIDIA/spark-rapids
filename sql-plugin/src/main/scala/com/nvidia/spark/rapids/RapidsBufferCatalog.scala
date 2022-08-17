@@ -158,6 +158,7 @@ object RapidsBufferCatalog extends Logging with Arm {
   val singleton = new RapidsBufferCatalog
   private var deviceStorage: RapidsDeviceMemoryStore = _
   private var hostStorage: RapidsHostMemoryStore = _
+  private var diskBlockManager: RapidsDiskBlockManager = _
   private var diskStorage: RapidsDiskStore = _
   private var gdsStorage: RapidsGdsStore = _
   private var memoryEventHandler: DeviceMemoryEventHandler = _
@@ -178,7 +179,7 @@ object RapidsBufferCatalog extends Logging with Arm {
     closeImpl()
     assert(memoryEventHandler == null)
     deviceStorage = new RapidsDeviceMemoryStore()
-    val diskBlockManager = new RapidsDiskBlockManager(conf)
+    diskBlockManager = new RapidsDiskBlockManager(conf)
     if (rapidsConf.isGdsSpillEnabled) {
       gdsStorage = new RapidsGdsStore(diskBlockManager, rapidsConf.gdsSpillBatchWriteBufferSize)
       deviceStorage.setSpillStore(gdsStorage)
@@ -298,4 +299,6 @@ object RapidsBufferCatalog extends Logging with Arm {
 
   /** Remove a buffer ID from the catalog and release the resources of the registered buffer. */
   def removeBuffer(id: RapidsBufferId): Unit = singleton.removeBuffer(id)
+
+  def getDiskBlockManager(): RapidsDiskBlockManager = diskBlockManager
 }

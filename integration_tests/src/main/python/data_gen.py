@@ -531,23 +531,24 @@ class TimestampGen(DataGen):
         elif not isinstance(start, date):
             raise RuntimeError('Unsupported type passed in for end {}'.format(end))
 
-        self._start_time = self._to_ms_since_epoch(start)
-        self._end_time = self._to_ms_since_epoch(end)
+        self._start_time = self._to_us_since_epoch(start)
+        self._end_time = self._to_us_since_epoch(end)
         if (self._epoch >= start and self._epoch <= end):
             self.with_special_case(self._epoch)
 
     _epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
-    _ms = timedelta(milliseconds=1)
-    def _to_ms_since_epoch(self, val):
-        return int((val - self._epoch)/self._ms)
+    _us = timedelta(microseconds=1)
 
-    def _from_ms_since_epoch(self, ms):
-        return self._epoch + timedelta(milliseconds=ms)
+    def _to_us_since_epoch(self, val):
+        return int((val - self._epoch)/self._us)
+
+    def _from_us_since_epoch(self, us):
+        return self._epoch + timedelta(microseconds=us)
 
     def start(self, rand):
         start = self._start_time
         end = self._end_time
-        self._start(rand, lambda : self._from_ms_since_epoch(rand.randint(start, end)))
+        self._start(rand, lambda : self._from_us_since_epoch(rand.randint(start, end)))
 
     def contains_ts(self):
         return True
@@ -650,6 +651,19 @@ class DayTimeIntervalGen(DataGen):
 
     def start(self, rand):
         self._start(rand, lambda: self._gen_random(rand))
+
+class BinaryGen(DataGen):
+    """Generate BinaryType values"""
+    def __init__(self, min_length=0, max_length=20, nullable=True):
+        super().__init__(BinaryType(), nullable=nullable)
+        self._min_length = min_length
+        self._max_length = max_length
+
+    def start(self, rand):
+        def gen_bytes():
+            length = rand.randint(self._min_length, self._max_length)
+            return bytes([ rand.randint(0, 255) for _ in range(length) ])
+        self._start(rand, gen_bytes)
 
 def skip_if_not_utc():
     if (not is_tz_utc()):
@@ -827,6 +841,8 @@ def to_cast_string(spark_type):
     elif isinstance(spark_type, StructType):
         children = [fd.name + ':' + to_cast_string(fd.dataType) for fd in spark_type.fields]
         return 'STRUCT<{}>'.format(','.join(children))
+    elif isinstance(spark_type, BinaryType):
+        return 'BINARY'
     else:
         raise RuntimeError('CAST TO TYPE {} NOT SUPPORTED YET'.format(spark_type))
 
@@ -853,6 +869,8 @@ def _convert_to_sql(spark_type, data):
         children = ["'{}'".format(fd.name) + ',' + _convert_to_sql(fd.dataType, x)
                 for fd, x in zip(spark_type.fields, data)]
         d = "named_struct({})".format(','.join(children))
+    elif isinstance(data, bytearray) or isinstance(data, bytes):
+        d = "X'{}'".format(data.hex())
     elif not data:
         # data is None
         d = "null"
@@ -883,6 +901,7 @@ string_gen = StringGen()
 boolean_gen = BooleanGen()
 date_gen = DateGen()
 timestamp_gen = TimestampGen()
+binary_gen = BinaryGen()
 null_gen = NullGen()
 
 numeric_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen]
@@ -949,15 +968,24 @@ array_gens_sample = single_level_array_gens + nested_array_gens_sample
 # all of the basic types in a single struct
 all_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens)])
 
+all_basic_struct_gen_no_nan = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens_no_nan)])
+
+struct_array_gen_no_nans =  StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(single_level_array_gens_no_nan)])
+
 # Some struct gens, but not all because of nesting
 nonempty_struct_gens_sample = [all_basic_struct_gen,
         StructGen([['child0', byte_gen], ['child1', all_basic_struct_gen]]),
         StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
+nonempty_struct_gens_sample_no_list = [all_basic_struct_gen,
+        StructGen([['child0', byte_gen], ['child1', all_basic_struct_gen]]),
+        StructGen([['child0', short_gen], ['child1', double_gen]])]
 
 struct_gens_sample = nonempty_struct_gens_sample + [StructGen([])]
+struct_gens_sample_no_list = nonempty_struct_gens_sample_no_list + [StructGen([])]
 struct_gen_decimal128 = StructGen(
     [['child' + str(ind), sub_gen] for ind, sub_gen in enumerate([decimal_gen_128bit])])
 struct_gens_sample_with_decimal128 = struct_gens_sample + [struct_gen_decimal128]
+struct_gens_sample_with_decimal128_no_list = struct_gens_sample_no_list + [struct_gen_decimal128]
 
 simple_string_to_string_map_gen = MapGen(StringGen(pattern='key_[0-9]', nullable=False),
         StringGen(), max_length=10)

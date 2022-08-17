@@ -26,10 +26,21 @@ object GlobalLimitShims {
    * Estimate the number of rows for a GlobalLimitExec.
    */
   def visit(plan: SparkPlanMeta[GlobalLimitExec]): Option[BigInt] = {
-    // offset is ignored now, but we should support it.
-    // See https://github.com/NVIDIA/spark-rapids/issues/5589
-    //val offset = plan.wrapped.limit
+    // offset is introduce in spark-3.4.0, and it ensures that offset >= 0. And limit can be -1,
+    // such case happens only when we execute sql like 'select * from table offset 10'
+    val offset = plan.wrapped.offset
     val limit = plan.wrapped.limit
-    RowCountPlanVisitor.visit(plan.childPlans.head).map(_.min(limit)).orElse(Some(limit))
+    val sliced = if (limit >= 0) {
+      Some(BigInt(limit - offset).max(0))
+    } else {
+      // limit can be -1, meaning no limit
+      None
+    }
+    RowCountPlanVisitor.visit(plan.childPlans.head)
+      .map { rowNum =>
+        val remaining = (rowNum - offset).max(0)
+        sliced.map(_.min(remaining)).getOrElse(remaining)
+      }
+      .orElse(sliced)
   }
 }

@@ -16,15 +16,15 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
-from spark_session import is_before_spark_320
+from spark_session import is_before_spark_320, is_jvm_charset_utf8
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
 
-all_gens = all_gen + [NullGen()]
-all_nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
+all_gens = all_gen + [NullGen(), binary_gen]
+all_nested_gens = array_gens_sample + [ArrayGen(BinaryGen(max_length=10), max_length=10)] + struct_gens_sample + map_gens_sample
 all_nested_gens_nonempty_struct = array_gens_sample + nonempty_struct_gens_sample
 
 # Create dedicated data gens of nested type for 'if' tests here with two exclusions:
@@ -199,6 +199,7 @@ def test_conditional_with_side_effects_col_scalar(data_gen):
             conf = ansi_enabled_conf)
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[0-9]{1,20}')], ids=idfn)
+@pytest.mark.skipif(not is_jvm_charset_utf8(), reason="regular expressions require UTF-8")
 def test_conditional_with_side_effects_cast(data_gen):
     test_conf=copy_and_update(
         ansi_enabled_conf, {'spark.rapids.sql.regexp.enabled': True})
@@ -208,6 +209,7 @@ def test_conditional_with_side_effects_cast(data_gen):
             conf = test_conf)
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[0-9]{1,9}')], ids=idfn)
+@pytest.mark.skipif(not is_jvm_charset_utf8(), reason="regular expressions require UTF-8")
 def test_conditional_with_side_effects_case_when(data_gen):
     test_conf=copy_and_update(
         ansi_enabled_conf, {'spark.rapids.sql.regexp.enabled': True})

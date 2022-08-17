@@ -1,0 +1,26 @@
+App Name,App ID,SQL ID,SQL Description,SQL DF Duration,GPU Opportunity,Estimated GPU Duration,Estimated GPU Speedup,Estimated GPU Time Saved,Recommendation
+TPC-DS Like Bench q86,app-20210319163812-1778,23,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,8,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,17,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,11,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,2,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,20,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,5,Register input tables,1,1,1.0,1.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,14,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,4,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,13,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,22,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,7,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,16,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,10,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,1,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,19,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,9,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,18,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,12,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,3,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,21,Register input tables,1,1,1.0,1.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,15,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,6,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
+TPC-DS Like Bench q86,app-20210319163812-1778,24,Benchmark Run: query=q86; iteration=0,9565,9565,3105.51,3.08,6459.48,Not Applicable
+TPC-DS Like Bench q86,app-20210319163812-1778,0,Register input tables,2,2,2.0,1.0,0.0,Not Recommended
