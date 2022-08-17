@@ -452,8 +452,24 @@ abstract class GpuArrayMin(child: Expression) extends GpuUnaryExpression
     input.getBase.listReduce(SegmentedReductionAggregation.min())
 }
 
+/** ArrayMin without `Nan` handling */
 case class GpuBasicArrayMin(child: Expression) extends GpuArrayMin(child)
 
+/** ArrayMin for FloatType and DoubleType to handle `Nan`s.
+ *
+ * In Spark, `Nan` is the max float value, however in cuDF, the calculation
+ * involving `Nan` is undefined.
+ * We design a workaround method here to match the Spark's behaviour.
+ * The high level idea is:
+ *   if one list contains only `Nan`s or `null`s
+ *   then
+       if the list contains `Nan`
+ *     then return `Nan`
+ *     else return null
+ *   else
+ *     replace all `Nan`s with nulls;
+ *     use cuDF kernel to find the min value
+ */
 case class GpuFloatArrayMin(child: Expression) extends GpuArrayMin(child) {
     @transient override lazy val dataType: DataType = child.dataType match {
     case ArrayType(FloatType, _) => FloatType
@@ -480,8 +496,8 @@ case class GpuFloatArrayMin(child: Expression) extends GpuArrayMin(child) {
     val listAny = SegmentedReductionAggregation.max()
     val base = input.getBase()
 
-    withResource(base.getChildColumnView(0)) {child => 
-      withResource(child.isNan()){childIsNan =>
+    withResource(base.getChildColumnView(0)) { child =>
+      withResource(child.isNan()){ childIsNan =>
         // if all values in each list are nans or nulls
         val allNanOrNull = {
           val childIsNanOrNull = withResource(child.isNull()) {_.or(childIsNan)}
@@ -498,14 +514,14 @@ case class GpuFloatArrayMin(child: Expression) extends GpuArrayMin(child) {
           }
         }
         // replace all nans to nulls, and then find the min value.
-        val falseOption = withResource(child.nansToNulls()) {noNanChild =>
-          withResource(base.replaceListChild(noNanChild)) { noNanList =>
-            noNanList.listReduce(SegmentedReductionAggregation.min())
+        val falseOption = withResource(child.nansToNulls()) { nanToNullChild =>
+          withResource(base.replaceListChild(nanToNullChild)) { nanToNullList =>
+            nanToNullList.listReduce(SegmentedReductionAggregation.min())
           }
         }
         // if a list contains values other than nan or null
         // return `trueOption`, else return `falseOption`.
-        withResource(Seq(trueOption, falseOption)){case Seq(trueOption, falseOption) =>
+        withResource(Seq(trueOption, falseOption)){ case Seq(trueOption, falseOption) =>
           withResource(allNanOrNull) {_.ifElse(trueOption, falseOption)}
         }
       } 
@@ -545,12 +561,12 @@ abstract class GpuArrayMax(child: Expression) extends GpuUnaryExpression
 /** ArrayMax without `NaN` handling */
 case class GpuBasicArrayMax(child: Expression) extends GpuArrayMax(child)
 
-/** ArrayMax for FloatType and DoubleType to handle `NaN`s.
+/** ArrayMax for FloatType and DoubleType to handle `Nan`s.
  *
  * In Spark, `Nan` is the max float value, however in cuDF, the calculation
  * involving `Nan` is undefined.
  * We design a workaround method here to match the Spark's behaviour.
- * The high level idea is that, we firstly check if each array contains `Nan`.
+ * The high level idea is that, we firstly check if each list contains `Nan`.
  * If it is, the max value is `Nan`, else we use the cuDF kernel to
  * calculate the max value.
  */
