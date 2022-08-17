@@ -476,8 +476,8 @@ case class GpuFloatArrayMin(child: Expression) extends GpuArrayMin(child) {
   }
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
-    val listAll = SegmentedReductionAggregation.min _
-    val listAny = SegmentedReductionAggregation.max _
+    val listAll = SegmentedReductionAggregation.min()
+    val listAny = SegmentedReductionAggregation.max()
     val base = input.getBase()
 
     withResource(base.getChildColumnView(0)) {child => 
@@ -485,14 +485,12 @@ case class GpuFloatArrayMin(child: Expression) extends GpuArrayMin(child) {
         withResource(child.isNull()){child_is_null =>
           withResource(child_is_null.or(child_is_nan)) {child_is_nan_or_null =>
             withResource(base.replaceListChild(child_is_nan_or_null)) {nan_or_null_list =>
-              withResource(nan_or_null_list.listReduce(listAll())) {all_nan_or_null =>
+              withResource(nan_or_null_list.listReduce(listAll)) {all_nan_or_null =>
                 all_nan_or_null.ifElse(
                   withResource(base.replaceListChild(child_is_nan)) {nan_list =>
-                    withResource(nan_list.listReduce(listAny())) {any_nan =>
-                      withResource(getNanSalar) {nan_scalar =>
-                        withResource(getNullScalar) {null_scalar => 
-                          any_nan.ifElse(nan_scalar, null_scalar)
-                        }
+                    withResource(nan_list.listReduce(listAny)) {any_nan =>
+                      withResource(Seq(getNanSalar, getNullScalar)) {case Seq(nan_scalar, null_scalar) =>
+                        any_nan.ifElse(nan_scalar, null_scalar)
                       }
                     }  
                   },
