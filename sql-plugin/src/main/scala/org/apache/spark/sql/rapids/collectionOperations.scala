@@ -494,15 +494,16 @@ case class GpuFloatArrayMin(child: Expression) extends GpuArrayMin(child) {
                   }  
                 }
                 val false_option = withResource(child.nansToNulls()) {no_nan_child =>
-                    withResource(base.replaceListChild(no_nan_child)) { no_nan_list =>
-                      no_nan_list.listReduce(SegmentedReductionAggregation.min())
-                    }  
+                  withResource(base.replaceListChild(no_nan_child)) { no_nan_list =>
+                    no_nan_list.listReduce(SegmentedReductionAggregation.min())
+                  }
                 }
                 withResource(Seq(true_option, false_option)){case Seq(true_option, false_option) => 
                   all_nan_or_null.ifElse(true_option, false_option)
+                }
               }
             }
-          }}
+          }
         }
       } 
     }
