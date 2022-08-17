@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.tool.qualification
 
+import com.nvidia.spark.rapids.tool.planparser.SQLPlanParser
+
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.rapids.tool.qualification._
 
@@ -54,8 +56,9 @@ import org.apache.spark.sql.rapids.tool.qualification._
  * }}}
  *
  */
-class RunningQualificationApp(reportSqlLevel: Boolean)
-  extends QualificationAppInfo(None, None, new PluginTypeChecker(), reportSqlLevel) {
+class RunningQualificationApp(reportSqlLevel: Boolean,
+    pluginTypeChecker: PluginTypeChecker = new PluginTypeChecker())
+  extends QualificationAppInfo(None, None, pluginTypeChecker, reportSqlLevel) {
 
   // we don't know the max sql query name size so lets cap it at 100
   private val SQL_DESC_LENGTH = 100
@@ -117,33 +120,27 @@ class RunningQualificationApp(reportSqlLevel: Boolean)
    */
   def getPerSQLSummary(sqlID: Long, delimiter: String = "|",
       prettyPrint: Boolean = true, sqlDescLength: Int = SQL_DESC_LENGTH): String = {
-    val appInfo = super.aggregateStats()
-    constructPerSqlResult(sqlID, appInfo, delimiter, prettyPrint, sqlDescLength)
+    val sqlInfo = aggregatePerSQLStats()
+    constructPerSqlResult(sqlID, sqlInfo, delimiter, prettyPrint, sqlDescLength)
   }
 
   private def constructPerSqlResult(
       sqlID: Long,
-      appInfo: Option[QualificationSummaryInfo],
+      sqlInfo: Option[Seq[EstimatedPerSQLSummaryInfo]],
       delimiter: String = "|",
       prettyPrint: Boolean = true,
       sqlDescLength: Int = SQL_DESC_LENGTH): String = {
-    appInfo match {
+    sqlInfo match {
       case Some(info) =>
-        if (info.perSQLEstimatedInfo.isDefined) {
-          val res = info.perSQLEstimatedInfo.get.filter(_.sqlID == sqlID)
-          if (res.isEmpty) {
-            logWarning(s"Unable to get per sql qualification information for $sqlID")
-            ""
-          } else {
-            assert(res.size == 1)
-            val line = QualOutputWriter.constructPerSqlSummaryInfo(res.head, headersAndSizes,
-              appId.size, delimiter, prettyPrint, sqlDescLength)
-            line
-          }
-        } else {
-          logWarning(s"Unable to get per sql qualification information, " +
-            s"no SQL information available")
+        val res = info.filter(_.sqlID == sqlID)
+        if (res.isEmpty) {
+          logWarning(s"Unable to get per sql qualification information for $sqlID")
           ""
+        } else {
+          assert(res.size == 1)
+          val line = QualOutputWriter.constructPerSqlSummaryInfo(res.head, headersAndSizes,
+            appId.size, delimiter, prettyPrint, sqlDescLength)
+          line
         }
       case None =>
         logWarning(s"Unable to get qualification information for this application")
@@ -203,5 +200,40 @@ class RunningQualificationApp(reportSqlLevel: Boolean)
 
   def getApplicationDetails: Option[QualificationSummaryInfo] = {
     super.aggregateStats()
+  }
+
+  def aggregatePerSQLStats(): Option[Seq[EstimatedPerSQLSummaryInfo]] = {
+    appInfo.flatMap { info =>
+      // a bit odd but force filling in notSupportFormatAndTypes
+      // TODO - make this better
+      super.checkUnsupportedReadFormats()
+
+      val origPlanInfos = sqlPlans.map { case (id, plan) =>
+        val sqlDesc = sqlIdToInfo(id).description
+        SQLPlanParser.parseSQLPlan(appId, plan, id, sqlDesc, pluginTypeChecker, this)
+      }.toSeq
+
+      // filter out any execs that should be removed
+      val planInfos = removeExecsShouldRemove(origPlanInfos)
+      // get a summary of each SQL Query
+      val perSqlStageSummary = summarizeSQLStageInfo(planInfos)
+
+      val appName = appInfo.map(_.appName).getOrElse("")
+      val perSqlInfos = if (reportSqlLevel) {
+        Some(planInfos.flatMap { pInfo =>
+          sqlIdToInfo.get(pInfo.sqlID).map { info =>
+            val wallClockDur = info.duration.getOrElse(0L)
+            // get task duration ratio
+            val sqlStageSums = perSqlStageSummary.filter(_.sqlID == pInfo.sqlID)
+            val estimatedInfo = getPerSQLWallClockSummary(sqlStageSums, wallClockDur,
+              sqlIDtoFailures.get(pInfo.sqlID).nonEmpty, appName)
+            EstimatedPerSQLSummaryInfo(pInfo.sqlID, pInfo.sqlDesc, estimatedInfo)
+          }
+        })
+      } else {
+        None
+      }
+      perSqlInfos
+    }
   }
 }

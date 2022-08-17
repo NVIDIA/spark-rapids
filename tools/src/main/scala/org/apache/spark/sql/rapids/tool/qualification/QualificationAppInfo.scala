@@ -161,7 +161,7 @@ class QualificationAppInfo(
     }
   }
 
-  private def checkUnsupportedReadFormats(): Unit = {
+  protected def checkUnsupportedReadFormats(): Unit = {
     if (dataSourceInfo.size > 0) {
       dataSourceInfo.map { ds =>
         val (readScore, nsTypes) = pluginTypeChecker.scoreReadDataTypes(ds.format, ds.schema)

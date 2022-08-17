@@ -60,6 +60,7 @@ abstract class AppBase(
     HashMap[Long, ArrayBuffer[TaskStageAccumCase]]()
 
   val stageIdToInfo: HashMap[(Int, Int), StageInfoClass] = new HashMap[(Int, Int), StageInfoClass]()
+  // TODO - used by per sql
   val accumulatorToStages: HashMap[Long, Set[Int]] = new HashMap[Long, Set[Int]]()
 
   var driverAccumMap: HashMap[Long, ArrayBuffer[DriverAccumCase]] =
