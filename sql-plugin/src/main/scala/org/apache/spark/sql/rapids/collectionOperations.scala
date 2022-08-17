@@ -486,23 +486,23 @@ case class GpuFloatArrayMin(child: Expression) extends GpuArrayMin(child) {
         val child_is_nan_or_null = withResource(child.isNull()) {_.or(child_is_nan)}
         // replace the child array using `child_is_nan_or_null`
         val nan_or_null_list = withResource(child_is_nan_or_null) {base.replaceListChild(_)}
-        withResource(nan_or_null_list) {nan_or_null_list =>
-          withResource(nan_or_null_list.listReduce(listAll)) {all_nan_or_null =>
-            val true_option = withResource(base.replaceListChild(child_is_nan)) {nan_list =>
-              withResource(nan_list.listReduce(listAny)) {any_nan =>
-                withResource(Seq(getNanSalar, getNullScalar)) {
-                  case Seq(nan_scalar, null_scalar) => any_nan.ifElse(nan_scalar, null_scalar)
-                }
+        // if all values in each array are nans or nulls
+        val all_nan_or_null = withResource(nan_or_null_list) {_.listReduce(listAll)}
+        withResource(all_nan_or_null) {all_nan_or_null =>
+          val true_option = withResource(base.replaceListChild(child_is_nan)) {nan_list =>
+            withResource(nan_list.listReduce(listAny)) {any_nan =>
+              withResource(Seq(getNanSalar, getNullScalar)) {
+                case Seq(nan_scalar, null_scalar) => any_nan.ifElse(nan_scalar, null_scalar)
               }
             }
-            val false_option = withResource(child.nansToNulls()) {no_nan_child =>
-              withResource(base.replaceListChild(no_nan_child)) { no_nan_list =>
-                no_nan_list.listReduce(SegmentedReductionAggregation.min())
-              }
+          }
+          val false_option = withResource(child.nansToNulls()) {no_nan_child =>
+            withResource(base.replaceListChild(no_nan_child)) { no_nan_list =>
+              no_nan_list.listReduce(SegmentedReductionAggregation.min())
             }
-            withResource(Seq(true_option, false_option)){case Seq(true_option, false_option) =>
-              all_nan_or_null.ifElse(true_option, false_option)
-            }
+          }
+          withResource(Seq(true_option, false_option)){case Seq(true_option, false_option) =>
+            all_nan_or_null.ifElse(true_option, false_option)
           }
         }
       } 
