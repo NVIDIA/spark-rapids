@@ -488,7 +488,6 @@ case class GpuFloatArrayMin(child: Expression) extends GpuArrayMin(child) {
           val nan_or_null_list = withResource(child_is_nan_or_null) {base.replaceListChild(_)}
           withResource(nan_or_null_list) {_.listReduce(listAll)}
         }
-        // if all values in one list are nans or nulls
         // return nan if the list contains nan, else return null
         val true_option = {
           val any_nan = withResource(base.replaceListChild(child_is_nan)) {
@@ -498,17 +497,16 @@ case class GpuFloatArrayMin(child: Expression) extends GpuArrayMin(child) {
               withResource(any_nan) {_.ifElse(nan_scalar, null_scalar)}
           }
         }
-        // if a list contains values other than nan or null
-        // we replace all nans to nulls, and then find the min value.
+        // replace all nans to nulls, and then find the min value.
         val false_option = withResource(child.nansToNulls()) {no_nan_child =>
           withResource(base.replaceListChild(no_nan_child)) { no_nan_list =>
             no_nan_list.listReduce(SegmentedReductionAggregation.min())
           }
         }
-        withResource(all_nan_or_null) {all_nan_or_null =>
-          withResource(Seq(true_option, false_option)){case Seq(true_option, false_option) =>
-            all_nan_or_null.ifElse(true_option, false_option)
-          }
+        // if a list contains values other than nan or null
+        // return `trueOption`, else return `falseOption`.
+        withResource(Seq(true_option, false_option)){case Seq(true_option, false_option) =>
+          withResource(all_nan_or_null) {_.ifElse(true_option, false_option)}
         }
       } 
     }
