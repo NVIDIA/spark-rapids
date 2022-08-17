@@ -3953,7 +3953,7 @@ object GpuOverrides extends Logging {
           .withPsNote(TypeEnum.STRUCT, "Round-robin partitioning is not supported for nested " +
               s"structs if ${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
           .withPsNote(
-            Seq(TypeEnum.ARRAY, TypeEnum.MAP), 
+            Seq(TypeEnum.ARRAY, TypeEnum.MAP),
             "Round-robin partitioning is not supported if " +
               s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true"),
         TypeSig.all),
@@ -4017,7 +4017,7 @@ object GpuOverrides extends Logging {
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
           TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
             .nested()
-            .withPsNote(Seq(TypeEnum.ARRAY, TypeEnum.MAP), 
+            .withPsNote(Seq(TypeEnum.ARRAY, TypeEnum.MAP),
               "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT,
               "not allowed for grouping expressions if containing Array or Map as child"),
@@ -4033,7 +4033,7 @@ object GpuOverrides extends Logging {
             .nested()
             .withPsNote(TypeEnum.BINARY, "only allowed when aggregate buffers can be " +
               "converted between CPU and GPU")
-            .withPsNote(Seq(TypeEnum.ARRAY, TypeEnum.MAP), 
+            .withPsNote(Seq(TypeEnum.ARRAY, TypeEnum.MAP),
               "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT,
               "not allowed for grouping expressions if containing Array or Map as child"),
@@ -4051,7 +4051,7 @@ object GpuOverrides extends Logging {
             .nested()
             .withPsNote(TypeEnum.BINARY, "only allowed when aggregate buffers can be " +
               "converted between CPU and GPU")
-            .withPsNote(Seq(TypeEnum.ARRAY, TypeEnum.MAP), 
+            .withPsNote(Seq(TypeEnum.ARRAY, TypeEnum.MAP),
               "not allowed for grouping expressions")
             .withPsNote(TypeEnum.STRUCT,
               "not allowed for grouping expressions if containing Array or Map as child"),
