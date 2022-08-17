@@ -531,23 +531,24 @@ class TimestampGen(DataGen):
         elif not isinstance(start, date):
             raise RuntimeError('Unsupported type passed in for end {}'.format(end))
 
-        self._start_time = self._to_ms_since_epoch(start)
-        self._end_time = self._to_ms_since_epoch(end)
+        self._start_time = self._to_us_since_epoch(start)
+        self._end_time = self._to_us_since_epoch(end)
         if (self._epoch >= start and self._epoch <= end):
             self.with_special_case(self._epoch)
 
     _epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
-    _ms = timedelta(milliseconds=1)
-    def _to_ms_since_epoch(self, val):
-        return int((val - self._epoch)/self._ms)
+    _us = timedelta(microseconds=1)
 
-    def _from_ms_since_epoch(self, ms):
-        return self._epoch + timedelta(milliseconds=ms)
+    def _to_us_since_epoch(self, val):
+        return int((val - self._epoch)/self._us)
+
+    def _from_us_since_epoch(self, us):
+        return self._epoch + timedelta(microseconds=us)
 
     def start(self, rand):
         start = self._start_time
         end = self._end_time
-        self._start(rand, lambda : self._from_ms_since_epoch(rand.randint(start, end)))
+        self._start(rand, lambda : self._from_us_since_epoch(rand.randint(start, end)))
 
     def contains_ts(self):
         return True
