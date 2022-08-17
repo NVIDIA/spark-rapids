@@ -1,0 +1,18 @@
+App Name,App ID,SQL ID,SQL Description,SQL DF Duration,GPU Opportunity,Estimated GPU Duration,Estimated GPU Speedup,Estimated GPU Time Saved,Recommendation
+Spark shell,local-1651188809790,1,show at <console>:26,196,98,147.0,1.33,49.0,Recommended
+Spark shell,local-1651188809790,0,show at <console>:26,715,2,713.6,1.0,1.39,Not Recommended
+Spark shell,local-1651187225439,1,show at <console>:26,262,60,246.65,1.06,15.34,Not Recommended
+Spark shell,local-1651187225439,0,show at <console>:26,498,249,373.5,1.33,124.5,Recommended
+Rapids Spark Profiling Tool Unit Tests,local-1623281204390,8,json at QualificationInfoUtils.scala:136,127,0,127.0,1.0,0.0,Not Recommended
+Rapids Spark Profiling Tool Unit Tests,local-1623281204390,2,json at QualificationInfoUtils.scala:136,321,0,321.0,1.0,0.0,Not Recommended
+Rapids Spark Profiling Tool Unit Tests,local-1623281204390,5,json at QualificationInfoUtils.scala:136,129,0,129.0,1.0,0.0,Not Recommended
+Rapids Spark Profiling Tool Unit Tests,local-1623281204390,4,createOrReplaceTempView at QualificationInfoUtils.scala:133,22,22,22.0,1.0,0.0,Not Recommended
+Rapids Spark Profiling Tool Unit Tests,local-1623281204390,7,createOrReplaceTempView at QualificationInfoUtils.scala:133,4,4,4.0,1.0,0.0,Not Recommended
+Rapids Spark Profiling Tool Unit Tests,local-1623281204390,1,createOrReplaceTempView at QualificationInfoUtils.scala:133,2,2,2.0,1.0,0.0,Not Recommended
+Rapids Spark Profiling Tool Unit Tests,local-1623281204390,3,json at QualificationInfoUtils.scala:130,108,0,108.0,1.0,0.0,Not Recommended
+Rapids Spark Profiling Tool Unit Tests,local-1623281204390,6,json at QualificationInfoUtils.scala:130,110,0,110.0,1.0,0.0,Not Recommended
+Rapids Spark Profiling Tool Unit Tests,local-1623281204390,0,json at QualificationInfoUtils.scala:130,1209,0,1209.0,1.0,0.0,Not Recommended
+Rapids Spark Profiling Tool Unit Tests,local-1622043423018,2,count at QualificationInfoUtils.scala:94,1933,1551,911.3,2.12,1021.69,Recommended
+Rapids Spark Profiling Tool Unit Tests,local-1622043423018,1,count at QualificationInfoUtils.scala:94,7143,6719,2716.79,2.62,4426.2,Strongly Recommended
+Rapids Spark Profiling Tool Unit Tests,local-1622043423018,3,count at QualificationInfoUtils.scala:94,2052,1660,958.28,2.14,1093.71,Recommended
+Rapids Spark Profiling Tool Unit Tests,local-1622043423018,0,json at QualificationInfoUtils.scala:76,1306,187,1263.88,1.03,42.11,Not Recommended

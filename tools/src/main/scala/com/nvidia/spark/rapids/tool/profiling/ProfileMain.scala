@@ -20,6 +20,7 @@ import com.nvidia.spark.rapids.tool.EventLogPathProcessor
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.rapids.tool.AppFilterImpl
 
 /**
  * A profiling tool to parse Spark Event Log
@@ -29,7 +30,7 @@ object ProfileMain extends Logging {
    * Entry point from spark-submit running this as the driver.
    */
   def main(args: Array[String]) {
-    val exitCode = mainInternal(new ProfileArgs(args))
+    val (exitCode, _) = mainInternal(new ProfileArgs(args))
     if (exitCode != 0) {
       System.exit(exitCode)
     }
@@ -38,23 +39,40 @@ object ProfileMain extends Logging {
   /**
    * Entry point for tests
    */
-  def mainInternal(appArgs: ProfileArgs): Int = {
+  def mainInternal(appArgs: ProfileArgs): (Int, Int) = {
 
     // Parsing args
     val eventlogPaths = appArgs.eventlog()
     val filterN = appArgs.filterCriteria
     val matchEventLogs = appArgs.matchEventLogs
     val hadoopConf = new Configuration()
+    val numOutputRows = appArgs.numOutputRows.getOrElse(1000)
+    val timeout = appArgs.timeout.toOption
+    val nThreads = appArgs.numThreads.getOrElse(
+      Math.ceil(Runtime.getRuntime.availableProcessors() / 4f).toInt)
 
     // Get the event logs required to process
     val (eventLogFsFiltered, _) = EventLogPathProcessor.processAllPaths(filterN.toOption,
       matchEventLogs.toOption, eventlogPaths, hadoopConf)
-    if (eventLogFsFiltered.isEmpty) {
-      logWarning("No event logs to process after checking paths, exiting!")
-      return 0
+
+    val filteredLogs = if (argsContainsAppFilters(appArgs)) {
+      val appFilter = new AppFilterImpl(numOutputRows, hadoopConf, timeout, nThreads)
+      appFilter.filterEventLogs(eventLogFsFiltered, appArgs)
+    } else {
+      eventLogFsFiltered
     }
+
+    if (filteredLogs.isEmpty) {
+      logWarning("No event logs to process after checking paths, exiting!")
+      return (0, filteredLogs.size)
+    }
+
     val profiler = new Profiler(hadoopConf, appArgs)
     profiler.profile(eventLogFsFiltered)
-    0
+    (0, filteredLogs.size)
+  }
+
+  def argsContainsAppFilters(appArgs: ProfileArgs): Boolean = {
+    appArgs.startAppTime.isSupplied
   }
 }

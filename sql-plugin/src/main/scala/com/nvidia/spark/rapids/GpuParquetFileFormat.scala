@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf._
 import com.nvidia.spark.RebaseHelper
-import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, ParquetTimestampNTZShims, SparkShimImpl}
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}
 import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
 import org.apache.parquet.hadoop.ParquetOutputFormat.JobSummaryLevel
@@ -44,8 +44,6 @@ object GpuParquetFileFormat {
       schema: StructType): Option[GpuParquetFileFormat] = {
 
     val sqlConf = spark.sessionState.conf
-
-    ParquetFieldIdShims.tagGpuSupportWriteForFieldId(meta, schema, sqlConf)
 
     val parquetOptions = new ParquetOptions(options, sqlConf)
 
@@ -227,6 +225,9 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
     conf.set(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key, outputTimestampType.toString)
 
     ParquetFieldIdShims.setupParquetFieldIdWriteConfig(conf, sqlConf)
+    val parquetFieldIdWriteEnabled = ParquetFieldIdShims.getParquetIdWriteEnabled(sqlConf)
+
+    ParquetTimestampNTZShims.setupTimestampNTZConfig(conf, sqlConf)
 
     // Sets compression scheme
     conf.set(ParquetOutputFormat.COMPRESSION, parquetOptions.compressionCodecClassName)
@@ -257,7 +258,7 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
           dataSchema: StructType,
           context: TaskAttemptContext): ColumnarOutputWriter = {
         new GpuParquetWriter(path, dataSchema, compressionType, dateTimeRebaseException,
-          timestampRebaseException, context)
+          timestampRebaseException, context, parquetFieldIdWriteEnabled)
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {
@@ -273,7 +274,8 @@ class GpuParquetWriter(
     compressionType: CompressionType,
     dateRebaseException: Boolean,
     timestampRebaseException: Boolean,
-    context: TaskAttemptContext)
+    context: TaskAttemptContext,
+    parquetFieldIdEnabled: Boolean)
   extends ColumnarOutputWriter(context, dataSchema, "Parquet") {
 
   val outputTimestampType = conf.get(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key)
@@ -354,7 +356,8 @@ class GpuParquetWriter(
     val writeContext = new ParquetWriteSupport().init(conf)
     val builder = SchemaUtils
       .writerOptionsFromSchema(ParquetWriterOptions.builder(), dataSchema,
-        ParquetOutputTimestampType.INT96 == SQLConf.get.parquetOutputTimestampType)
+        ParquetOutputTimestampType.INT96 == SQLConf.get.parquetOutputTimestampType,
+        parquetFieldIdEnabled)
       .withMetadata(writeContext.getExtraMetaData)
       .withCompressionType(compressionType)
     Table.writeParquetChunked(builder.build(), this)

@@ -129,65 +129,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       (cast, conf, p, r) => new CastExprMeta[Cast](cast,
         SparkSession.active.sessionState.conf.ansiEnabled, conf, p, r,
         doFloatToIntCheck = true, stringToAnsiDate = true)),
-    GpuOverrides.expr[AnsiCast](
-      "Convert a column of one type of data into another type",
-      new CastChecks {
-
-        import TypeSig._
-        // nullChecks are the same
-
-        override val booleanChecks: TypeSig = integral + fp + BOOLEAN + STRING
-        override val sparkBooleanSig: TypeSig = cpuNumeric + BOOLEAN + STRING
-
-        override val integralChecks: TypeSig = gpuNumeric + BOOLEAN + STRING
-        override val sparkIntegralSig: TypeSig = cpuNumeric + BOOLEAN + STRING
-
-        override val fpChecks: TypeSig = (gpuNumeric + BOOLEAN + STRING)
-          .withPsNote(TypeEnum.STRING, fpToStringPsNote)
-        override val sparkFpSig: TypeSig = cpuNumeric + BOOLEAN + STRING
-
-        override val dateChecks: TypeSig = TIMESTAMP + DATE + STRING
-        override val sparkDateSig: TypeSig = TIMESTAMP + DATE + STRING
-
-        override val timestampChecks: TypeSig = TIMESTAMP + DATE + STRING
-        override val sparkTimestampSig: TypeSig = TIMESTAMP + DATE + STRING
-
-        // stringChecks are the same, but adding in PS note
-        private val fourDigitYearMsg: String = "Only 4 digit year parsing is available. To " +
-          s"enable parsing anyways set ${RapidsConf.HAS_EXTENDED_YEAR_VALUES} to false."
-        override val stringChecks: TypeSig = gpuNumeric + BOOLEAN + STRING + BINARY +
-          TypeSig.psNote(TypeEnum.DATE, fourDigitYearMsg) +
-          TypeSig.psNote(TypeEnum.TIMESTAMP, fourDigitYearMsg)
-
-        // binaryChecks are the same
-        override val decimalChecks: TypeSig = gpuNumeric + STRING
-        override val sparkDecimalSig: TypeSig = cpuNumeric + BOOLEAN + STRING
-
-        // calendarChecks are the same
-
-        override val arrayChecks: TypeSig =
-          ARRAY.nested(commonCudfTypes + DECIMAL_128 + NULL + ARRAY + BINARY + STRUCT) +
-            psNote(TypeEnum.ARRAY, "The array's child type must also support being cast to " +
-              "the desired child type")
-        override val sparkArraySig: TypeSig = ARRAY.nested(all)
-
-        override val mapChecks: TypeSig =
-          MAP.nested(commonCudfTypes + DECIMAL_128 + NULL + ARRAY + BINARY + STRUCT + MAP) +
-            psNote(TypeEnum.MAP, "the map's key and value must also support being cast to the " +
-              "desired child types")
-        override val sparkMapSig: TypeSig = MAP.nested(all)
-
-        override val structChecks: TypeSig =
-          STRUCT.nested(commonCudfTypes + DECIMAL_128 + NULL + ARRAY + BINARY + STRUCT) +
-            psNote(TypeEnum.STRUCT, "the struct's children must also support being cast to the " +
-              "desired child type(s)")
-        override val sparkStructSig: TypeSig = STRUCT.nested(all)
-
-        override val udtChecks: TypeSig = none
-        override val sparkUdtSig: TypeSig = UDT
-      },
-      (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, ansiEnabled = true, conf = conf,
-        parent = p, rule = r, doFloatToIntCheck = true, stringToAnsiDate = true)),
     GpuOverrides.expr[Average](
       "Average aggregate operator",
       ExprChecks.fullAgg(
@@ -273,7 +214,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
               case _: DayTimeIntervalType => // Supported
             }
           }
-          checkTimeZoneId(timeAdd.timeZoneId)
         }
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
@@ -336,13 +276,13 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-          TypeSig.ARRAY + TypeSig.DECIMAL_128).nested(), TypeSig.all),
+          TypeSig.ARRAY + TypeSig.BINARY + TypeSig.DECIMAL_128).nested(), TypeSig.all),
         (fsse, conf, p, r) => new FileSourceScanExecMeta(fsse, conf, p, r)),
       GpuOverrides.exec[BatchScanExec](
         "The backend for most file input",
         ExecChecks(
           (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
-            TypeSig.DECIMAL_128).nested(),
+            TypeSig.DECIMAL_128 + TypeSig.BINARY).nested(),
           TypeSig.all),
         (p, conf, parent, r) => new BatchScanExecMeta(p, conf, parent, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
@@ -519,12 +459,17 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       }
     }
 
+    override val childExprs: Seq[BaseExprMeta[_]] = {
+      // We want to leave the runtime filters as CPU expressions
+      p.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+    }
+
     override val childScans: scala.Seq[ScanMeta[_]] =
       Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
 
     override def tagPlanForGpu(): Unit = {
-      if (!p.runtimeFilters.isEmpty) {
-        willNotWorkOnGpu("runtime filtering (DPP) on datasource V2 is not supported")
+      if (!p.runtimeFilters.isEmpty && !childScans.head.supportsRuntimeFilters) {
+        willNotWorkOnGpu("runtime filtering (DPP) is not supported for this scan")
       }
     }
 

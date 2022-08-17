@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,9 +29,10 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, IdentityBroadcastMode}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
+import org.apache.spark.sql.rapids.shims.SparkUpgradeExceptionShims
 import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.storage.BlockManagerId
-import org.apache.spark.util.Utils
+import org.apache.spark.util.{ShutdownHookManager, Utils}
 
 object TrampolineUtil {
   def doExecuteBroadcast[T](child: SparkPlan): Broadcast[T] = child.doExecuteBroadcast()
@@ -76,6 +77,12 @@ object TrampolineUtil {
     dt.existsRecursively(f)
   }
 
+  /**
+   * Check if `a` and `b` are the same data type when ignoring nullability
+   * (`StructField.nullable`, `ArrayType.containsNull`, and `MapType.valueContainsNull`).
+   */
+  def sameType(a: DataType, b: DataType): Boolean = a.sameType(b)
+
   def incInputRecordsRows(inputMetrics: InputMetrics, rows: Long): Unit =
     inputMetrics.incRecordsRead(rows)
 
@@ -83,7 +90,7 @@ object TrampolineUtil {
                                 version: String,
                                 message: String,
                                 cause: Throwable): SparkUpgradeException = {
-    new SparkUpgradeException(version, message, cause)
+    SparkUpgradeExceptionShims.newSparkUpgradeException(version, message, cause)
   }
 
   /** Shuts down and cleans up any existing Spark session */
@@ -151,4 +158,9 @@ object TrampolineUtil {
 
   /** Remove the task context for the current thread */
   def unsetTaskContext(): Unit = TaskContext.unset()
+
+  /** Add shutdown hook with priority */
+  def addShutdownHook(priority: Int, runnable: Runnable): AnyRef = {
+    ShutdownHookManager.addShutdownHook(priority)(() => runnable.run())
+  }
 }

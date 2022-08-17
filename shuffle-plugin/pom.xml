@@ -22,20 +22,19 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>22.06.0</version>
+        <version>22.08.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>rapids-4-spark-shuffle_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Shuffle Plugin</name>
     <description>Accelerated shuffle plugin for the RAPIDS plugin for Apache Spark</description>
-    <version>22.06.0</version>
+    <version>22.08.0-SNAPSHOT</version>
 
     <dependencies>
         <dependency>
             <groupId>com.nvidia</groupId>
             <artifactId>spark-rapids-jni</artifactId>
             <classifier>${cuda.version}</classifier>
-            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.scala-lang</groupId>
@@ -44,8 +43,6 @@
         <dependency>
           <groupId>org.openucx</groupId>
           <artifactId>jucx</artifactId>
-          <version>1.12.1</version>
-          <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>com.nvidia</groupId>

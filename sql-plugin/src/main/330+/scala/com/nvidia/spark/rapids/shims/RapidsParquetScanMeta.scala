@@ -40,12 +40,6 @@ class RapidsParquetScanMeta(
       willNotWorkOnGpu(
         "aggregates pushed into Parquet read, which is a metadata only operation")
     }
-
-    if (pScan.options.getBoolean("mergeSchema", false) &&
-      conf.parquetReaderFooterType == RapidsConf.ParquetFooterReaderType.NATIVE) {
-      willNotWorkOnGpu("Native footer reader for parquet does not work when" +
-        " mergeSchema is enabled")
-    }
   }
 
   override def convertToGpu(): Scan = {

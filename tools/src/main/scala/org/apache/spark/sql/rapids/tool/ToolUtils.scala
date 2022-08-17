@@ -16,6 +16,9 @@
 
 package org.apache.spark.sql.rapids.tool
 
+import com.nvidia.spark.rapids.tool.profiling.ProfileUtils.replaceDelimiter
+import com.nvidia.spark.rapids.tool.qualification.QualOutputWriter
+
 import org.apache.spark.internal.{config, Logging}
 import org.apache.spark.sql.DataFrame
 
@@ -67,6 +70,42 @@ object ToolUtils extends Logging {
   def truncateDoubleToTwoDecimal(valNum: Double): Double = {
     // floor is applied after multiplying by 100. This keeps the number "as is" up-to two decimal.
     math.floor(valNum * 100) / 100
+  }
+
+  def escapeMetaCharacters(str: String): String = {
+    str.replaceAll("\n", "\\\\n")
+      .replaceAll("\r", "\\\\r")
+      .replaceAll("\t", "\\\\t")
+      .replaceAll("\f", "\\\\f")
+      .replaceAll("\b", "\\\\b")
+      .replaceAll("\u000B", "\\\\v")
+      .replaceAll("\u0007", "\\\\a")
+  }
+
+  /**
+   * Converts a sequence of elements to a single string that can be appended to a formatted text.
+   * Delegates to [[com.nvidia.spark.rapids.tool.profiling.ProfileUtils.replaceDelimiter]] to
+   * replace what is used as a text delimiter with something else.
+   *
+   * @param values the sequence of elements to join together.
+   * @param separator the separator string to use.
+   * @param txtDelimiter the delimiter used by the output file format (i.e., comma for CSV).
+   * @return a string representation of the input sequence value. In the resulting string the string
+   *         representations (w.r.t. the method toString) of all elements are separated by
+   *         the string sep.
+   */
+  def renderTextField(values: Seq[Any], separator: String, txtDelimiter: String): String = {
+    replaceDelimiter(values.mkString(separator), txtDelimiter)
+  }
+
+  def formatComplexTypes(
+      values: Seq[String], fileDelimiter: String = QualOutputWriter.CSV_DELIMITER): String = {
+    renderTextField(values, ";", fileDelimiter)
+  }
+
+  def formatPotentialProblems(
+      values: Seq[String], fileDelimiter: String = QualOutputWriter.CSV_DELIMITER): String = {
+    renderTextField(values, ":", fileDelimiter)
   }
 }
 

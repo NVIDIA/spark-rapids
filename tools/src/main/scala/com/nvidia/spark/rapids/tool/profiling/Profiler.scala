@@ -279,10 +279,12 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     val dsInfo = collect.getDataSourceInfo
     val execInfo = collect.getExecutorInfo
     val jobInfo = collect.getJobInfo
+    val sqlStageInfo = collect.getSQLToStage
     val rapidsProps = collect.getProperties(rapidsOnly = true)
     val sparkProps = collect.getProperties(rapidsOnly = false)
     val rapidsJar = collect.getRapidsJARInfo
     val sqlMetrics = collect.getSQLPlanMetrics
+    val wholeStage = collect.getWholeStageCodeGenMapping
     // for compare mode we just add in extra tables for matching across applications
     // the rest of the tables simply list all applications specified
     val compareRes = if (appArgs.compare()) {
@@ -338,7 +340,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     }
     (ApplicationSummaryInfo(appInfo, dsInfo, execInfo, jobInfo, rapidsProps, rapidsJar,
       sqlMetrics, jsMetAgg, sqlTaskAggMetrics, durAndCpuMet, skewInfo, failedTasks, failedStages,
-      failedJobs, removedBMs, removedExecutors, unsupportedOps, sparkProps), compareRes)
+      failedJobs, removedBMs, removedExecutors, unsupportedOps, sparkProps, sqlStageInfo,
+      wholeStage), compareRes)
   }
 
   def writeOutput(profileOutputWriter: ProfileOutputWriter,
@@ -393,7 +396,9 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         appsSum.flatMap(_.removedBMs).sortBy(_.appIndex),
         appsSum.flatMap(_.removedExecutors).sortBy(_.appIndex),
         appsSum.flatMap(_.unsupportedOps).sortBy(_.appIndex),
-        combineProps(rapidsOnly=false, appsSum).sortBy(_.key)
+        combineProps(rapidsOnly=false, appsSum).sortBy(_.key),
+        appsSum.flatMap(_.sqlStageInfo).sortBy(_.duration)(Ordering[Option[Long]].reverse),
+        appsSum.flatMap(_.wholeStage).sortBy(_.appIndex)
       )
       Seq(reduced)
     } else {
@@ -405,6 +410,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       profileOutputWriter.write("Data Source Information", app.dsInfo)
       profileOutputWriter.write("Executor Information", app.execInfo)
       profileOutputWriter.write("Job Information", app.jobInfo)
+      profileOutputWriter.write("SQL to Stage Information", app.sqlStageInfo)
       profileOutputWriter.write("Spark Rapids parameters set explicitly", app.rapidsProps,
         Some("Spark Rapids parameters"))
       profileOutputWriter.write("Spark Properties", app.sparkProps,
@@ -413,7 +419,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         Some("Rapids 4 Spark Jars"))
       profileOutputWriter.write("SQL Plan Metrics for Application", app.sqlMetrics,
         Some("SQL Plan Metrics"))
-
+      profileOutputWriter.write("WholeStageCodeGen Mapping", app.wholeStage,
+        Some("WholeStagecodeGen Mapping"))
       comparedRes.foreach { compareSum =>
         val matchingSqlIds = compareSum.matchingSqlIds
         val matchingStageIds = compareSum.matchingStageIds

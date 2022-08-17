@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids.tool.profiling
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import org.apache.commons.lang3.StringUtils
 
+import org.apache.spark.sql.rapids.tool.ToolUtils
+
 class ProfileOutputWriter(outputDir: String, filePrefix: String, numOutputRows: Int,
     outputCSV: Boolean = false) {
 
@@ -123,16 +125,6 @@ object ProfileOutputWriter {
     if (str == null) 0 else str.length + fullWidthRegex.findAllIn(str).size
   }
 
-  def escapeMetaCharacters(str: String): String = {
-    str.replaceAll("\n", "\\\\n")
-      .replaceAll("\r", "\\\\r")
-      .replaceAll("\t", "\\\\t")
-      .replaceAll("\f", "\\\\f")
-      .replaceAll("\b", "\\\\b")
-      .replaceAll("\u000B", "\\\\v")
-      .replaceAll("\u0007", "\\\\a")
-  }
-
   // originally copied from Spark showString and modified
   def makeFormattedString(
       _numRows: Int,
@@ -153,7 +145,7 @@ object ProfileOutputWriter {
     if (rows.nonEmpty && schema.size != rows.head.size) {
       throw new IllegalArgumentException("schema must be same size as data!")
     }
-    val escapedSchema = schema.map(escapeMetaCharacters)
+    val escapedSchema = schema.map(ToolUtils.escapeMetaCharacters)
 
     val schemaAndData = escapedSchema +: rows.map { row =>
       row.map { cell =>
@@ -161,7 +153,7 @@ object ProfileOutputWriter {
           case null => "null"
           case _ =>
             // Escapes meta-characters not to break the `showString` format
-            escapeMetaCharacters(cell.toString)
+            ToolUtils.escapeMetaCharacters(cell.toString)
         }
         if (truncate > 0 && str.length > truncate) {
           // do not show ellipses for strings shorter than 4 characters.

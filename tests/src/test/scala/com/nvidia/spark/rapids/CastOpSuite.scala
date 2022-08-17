@@ -28,7 +28,7 @@ import scala.util.{Failure, Random, Success, Try}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Cast, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, NamedExpression}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
@@ -258,6 +258,9 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("Test all supported casts with in-range values") {
+    // Temporarily disable it for Spark 340.
+    // Tracked by https://github.com/NVIDIA/spark-rapids/issues/5748
+    assume(cmpSparkVersion(3, 4, 0) < 0)
     // test cast() and ansi_cast()
     Seq(false, true).foreach { ansiEnabled =>
 
@@ -269,9 +272,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
         .set("spark.sql.ansi.enabled", String.valueOf(ansiEnabled))
         .set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")
 
-      val key = if (ansiEnabled) classOf[AnsiCast] else classOf[Cast]
-      val checks = GpuOverrides.expressions(key).getChecks.get.asInstanceOf[CastChecks]
-
+      val checks = getCastChecks(ansiEnabled)
       typeMatrix.foreach {
         case (from, to) =>
           // check if Spark supports this cast
@@ -333,10 +334,20 @@ class CastOpSuite extends GpuExpressionTestSuite {
     assert(unsupported == expected)
   }
 
-  private def getUnsupportedCasts(ansiEnabled: Boolean): Seq[(DataType, DataType)] = {
-    val key = if (ansiEnabled) classOf[AnsiCast] else classOf[Cast]
-    val checks = GpuOverrides.expressions(key).getChecks.get.asInstanceOf[CastChecks]
+  private def getCastChecks(ansiEnabled: Boolean): CastChecks = {
+    // AnsiCast is merged into Cast from Spark 3.4.0.
+    // Use reflection to avoid shims.
+    val keyString = if (cmpSparkVersion(3, 4, 0) < 0 && ansiEnabled) {
+      "org.apache.spark.sql.catalyst.expressions.AnsiCast"
+    } else {
+      "org.apache.spark.sql.catalyst.expressions.Cast"
+    }
+    val key = Class.forName(keyString).asInstanceOf[Class[Expression]]
+    GpuOverrides.expressions(key).getChecks.get.asInstanceOf[CastChecks]
+  }
 
+  private def getUnsupportedCasts(ansiEnabled: Boolean): Seq[(DataType, DataType)] = {
+    val checks = getCastChecks(ansiEnabled)
     val unsupported = typeMatrix.flatMap {
       case (from, to) =>
         if (checks.sparkCanCast(from, to) && !checks.gpuCanCast(from, to)) {

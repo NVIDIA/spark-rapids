@@ -33,7 +33,8 @@ import org.apache.spark.sql.rapids.tool.{AppBase, GpuEventLogException, ToolUtil
 class QualificationAppInfo(
     eventLogInfo: Option[EventLogInfo],
     hadoopConf: Option[Configuration] = None,
-    pluginTypeChecker: PluginTypeChecker)
+    pluginTypeChecker: PluginTypeChecker,
+    reportSqlLevel: Boolean)
   extends AppBase(eventLogInfo, hadoopConf) with Logging {
 
   var appId: String = ""
@@ -154,10 +155,10 @@ class QualificationAppInfo(
     res
   }
 
-  private def getAllReadFileFormats: String = {
+  private def getAllReadFileFormats: Seq[String] = {
     dataSourceInfo.map { ds =>
       s"${ds.format.toLowerCase()}[${ds.schema}]"
-    }.mkString(":")
+    }
   }
 
   private def checkUnsupportedReadFormats(): Unit = {
@@ -331,7 +332,7 @@ class QualificationAppInfo(
       // TODO - what about incomplete, do we want to change those?
       val sqlIdsWithFailures = sqlIDtoFailures.filter { case (_, v) =>
         v.size > 0
-      }.keys.mkString(",")
+      }.keys.map(_.toString).toSeq
 
       // a bit odd but force filling in notSupportFormatAndTypes
       // TODO - make this better
@@ -339,13 +340,14 @@ class QualificationAppInfo(
       val notSupportFormatAndTypesString = notSupportFormatAndTypes.map { case (format, types) =>
         val typeString = types.mkString(":").replace(",", ":")
         s"${format}[$typeString]"
-      }.mkString(";")
+      }.toSeq
       val writeFormat = writeFormatNotSupported(writeDataFormat)
       val (allComplexTypes, nestedComplexTypes) = reportComplexTypes
       val problems = getAllPotentialProblems(getPotentialProblemsForDf, nestedComplexTypes)
 
       val origPlanInfos = sqlPlans.map { case (id, plan) =>
-        SQLPlanParser.parseSQLPlan(appId, plan, id, pluginTypeChecker, this)
+        val sqlDesc = sqlIdToInfo(id).description
+        SQLPlanParser.parseSQLPlan(appId, plan, id, sqlDesc, pluginTypeChecker, this)
       }.toSeq
 
       // filter out any execs that should be removed
@@ -361,12 +363,30 @@ class QualificationAppInfo(
       val allSQLDurations = sqlIdToInfo.map { case (_, info) =>
         info.duration.getOrElse(0L)
       }
+
+      val appName = appInfo.map(_.appName).getOrElse("")
+      val perSqlInfos = if (reportSqlLevel) {
+        Some(planInfos.flatMap { pInfo =>
+          sqlIdToInfo.get(pInfo.sqlID).map { info =>
+            val wallClockDur = info.duration.getOrElse(0L)
+            // get task duration ratio
+            val sqlStageSums = perSqlStageSummary.filter(_.sqlID == pInfo.sqlID)
+            val estimatedInfo = getPerSQLWallClockSummary(sqlStageSums, wallClockDur,
+              sqlIDtoFailures.get(pInfo.sqlID).nonEmpty, appName)
+            EstimatedPerSQLSummaryInfo(pInfo.sqlID, pInfo.sqlDesc, estimatedInfo)
+          }
+        })
+      } else {
+        None
+      }
+
       val sparkSQLDFWallClockDuration = allSQLDurations.sum
       val longestSQLDuration = if (allSQLDurations.size > 0) {
         allSQLDurations.max
       } else {
         0L
       }
+
       val allStagesSummary = perSqlStageSummary.flatMap(_.stageSum)
       val sqlDataframeTaskDuration = allStagesSummary.map(s => s.stageTaskTime).sum
       val unsupportedSQLTaskDuration = calculateSQLUnsupportedTaskDuration(allStagesSummary)
@@ -387,7 +407,6 @@ class QualificationAppInfo(
         1
       }
 
-      val appName = appInfo.map(_.appName).getOrElse("")
       val estimatedInfo = QualificationAppInfo.calculateEstimatedInfoSummary(estimatedGPURatio,
         sparkSQLDFWallClockDuration, appDuration, taskSpeedupFactor, appName, appId,
         sqlIdsWithFailures.nonEmpty)
@@ -398,8 +417,28 @@ class QualificationAppInfo(
         allComplexTypes, nestedComplexTypes, longestSQLDuration, sqlDataframeTaskDuration,
         nonSQLTaskDuration, unsupportedSQLTaskDuration, supportedSQLTaskDuration,
         taskSpeedupFactor, info.sparkUser, info.startTime, origPlanInfos,
-        perSqlStageSummary.map(_.stageSum).flatten, estimatedInfo)
+        perSqlStageSummary.map(_.stageSum).flatten, estimatedInfo, perSqlInfos)
     }
+  }
+
+  def getPerSQLWallClockSummary(sqlStageSums: Seq[SQLStageSummary], sqlDataFrameDuration: Long,
+      hasFailures: Boolean, appName: String): EstimatedSummaryInfo = {
+    val allStagesSummary = sqlStageSums.flatMap(_.stageSum)
+    val sqlDataframeTaskDuration = allStagesSummary.map(_.stageTaskTime).sum
+    val supportedSQLTaskDuration = calculateSQLSupportedTaskDuration(allStagesSummary)
+    val taskSpeedupFactor = calculateSpeedupFactor(allStagesSummary)
+
+    // get the ratio based on the Task durations that we will use for wall clock durations
+    val estimatedGPURatio = if (sqlDataframeTaskDuration > 0) {
+      supportedSQLTaskDuration.toDouble / sqlDataframeTaskDuration.toDouble
+    } else {
+      1
+    }
+    // reusing the same function here (calculateEstimatedInfoSummary) as the app level,
+    // there is no app duration so just set it to sqlDataFrameDuration
+    QualificationAppInfo.calculateEstimatedInfoSummary(estimatedGPURatio,
+      sqlDataFrameDuration, sqlDataFrameDuration, taskSpeedupFactor, appName,
+      appId, hasFailures)
   }
 
   private[qualification] def processSQLPlan(sqlID: Long, planInfo: SparkPlanInfo): Unit = {
@@ -421,10 +460,10 @@ class QualificationAppInfo(
     }
   }
 
-  private def writeFormatNotSupported(writeFormat: ArrayBuffer[String]): String = {
+  private def writeFormatNotSupported(writeFormat: ArrayBuffer[String]): Seq[String] = {
     // Filter unsupported write data format
     val unSupportedWriteFormat = pluginTypeChecker.isWriteFormatsupported(writeFormat)
-    unSupportedWriteFormat.distinct.mkString(";").toUpperCase
+    unSupportedWriteFormat.distinct
   }
 }
 
@@ -439,6 +478,12 @@ case class EstimatedSummaryInfo(
     estimatedGpuSpeedup: Double, // app_duration / estimated_gpu_duration
     estimatedGpuTimeSaved: Double, // app_duration - estimated_gpu_duration
     recommendation: String)
+
+// Estimate based on wall clock times for each SQL query
+case class EstimatedPerSQLSummaryInfo(
+    sqlID: Long,
+    sqlDesc: String,
+    info: EstimatedSummaryInfo)
 
 case class SQLStageSummary(
     stageSum: Set[StageQualSummaryInfo],
@@ -476,15 +521,15 @@ case class QualSQLExecutionInfo(
 case class QualificationSummaryInfo(
     appName: String,
     appId: String,
-    potentialProblems: String,
+    potentialProblems: Seq[String],
     executorCpuTimePercent: Double,
     endDurationEstimated: Boolean,
-    failedSQLIds: String,
-    readFileFormatAndTypesNotSupported: String,
-    readFileFormats: String,
-    writeDataFormat: String,
-    complexTypes: String,
-    nestedComplexTypes: String,
+    failedSQLIds: Seq[String],
+    readFileFormatAndTypesNotSupported: Seq[String],
+    readFileFormats: Seq[String],
+    writeDataFormat: Seq[String],
+    complexTypes: Seq[String],
+    nestedComplexTypes: Seq[String],
     longestSqlDuration: Long,
     sqlDataframeTaskDuration: Long,
     nonSqlTaskDurationAndOverhead: Long,
@@ -495,7 +540,8 @@ case class QualificationSummaryInfo(
     startTime: Long,
     planInfo: Seq[PlanInfo],
     stageInfo: Seq[StageQualSummaryInfo],
-    estimatedInfo: EstimatedSummaryInfo)
+    estimatedInfo: EstimatedSummaryInfo,
+    perSQLEstimatedInfo: Option[Seq[EstimatedPerSQLSummaryInfo]])
 
 case class StageQualSummaryInfo(
     stageId: Int,
@@ -541,8 +587,11 @@ object QualificationAppInfo extends Logging {
     val estimated_wall_clock_dur_not_on_gpu = appDuration - speedupOpportunityWallClock
     val estimated_gpu_duration =
       (speedupOpportunityWallClock / speedupFactor) + estimated_wall_clock_dur_not_on_gpu
-    // force GPU speedup to be -1.0 if the application is not applicable
-    val estimated_gpu_speedup = if (hasFailures) -1.0 else appDuration / estimated_gpu_duration
+    val estimated_gpu_speedup = if (appDuration == 0 || estimated_gpu_duration == 0) {
+      0
+    } else {
+      appDuration / estimated_gpu_duration
+    }
     val estimated_gpu_timesaved = appDuration - estimated_gpu_duration
     val recommendation = getRecommendation(estimated_gpu_speedup, hasFailures)
 
@@ -552,18 +601,20 @@ object QualificationAppInfo extends Logging {
     EstimatedSummaryInfo(appName, appId, appDuration,
       sqlDataFrameDurationToUse,
       speedupOpportunityWallClock.toLong,
-      ToolUtils.truncateDoubleToTwoDecimal(estimated_gpu_duration),
-      ToolUtils.truncateDoubleToTwoDecimal(estimated_gpu_speedup),
-      ToolUtils.truncateDoubleToTwoDecimal(estimated_gpu_timesaved),
+      estimated_gpu_duration,
+      estimated_gpu_speedup,
+      estimated_gpu_timesaved,
       recommendation)
   }
 
   def createApp(
       path: EventLogInfo,
       hadoopConf: Configuration,
-      pluginTypeChecker: PluginTypeChecker): Option[QualificationAppInfo] = {
+      pluginTypeChecker: PluginTypeChecker,
+      reportSqlLevel: Boolean): Option[QualificationAppInfo] = {
     val app = try {
-        val app = new QualificationAppInfo(Some(path), Some(hadoopConf), pluginTypeChecker)
+        val app = new QualificationAppInfo(Some(path), Some(hadoopConf), pluginTypeChecker,
+          reportSqlLevel)
         logInfo(s"${path.eventLog.toString} has App: ${app.appId}")
         Some(app)
       } catch {

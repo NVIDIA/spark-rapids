@@ -102,4 +102,6 @@ object GpuTypeShims {
   def hasSideEffectsIfCastIntToYearMonth(ym: DataType): Boolean = false
 
   def hasSideEffectsIfCastIntToDayTime(dt: DataType): Boolean = false
+
+  def hasSideEffectsIfCastFloatToTimestamp: Boolean = false
 }

@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import java.io.{FileNotFoundException, IOException, OutputStream}
 import java.net.URI
-import java.util.concurrent.{Callable, ThreadPoolExecutor}
+import java.util.concurrent.Callable
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters.{asScalaBufferConverter, mapAsScalaMapConverter}
@@ -30,6 +30,7 @@ import ai.rapids.cudf.{AvroOptions => CudfAvroOptions, HostMemoryBuffer, NvtxCol
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric.{GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, READ_FS_TIME, SEMAPHORE_WAIT_TIME, WRITE_BUFFER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.avro.Schema
 import org.apache.avro.file.DataFileConstants.SYNC_SIZE
 import org.apache.hadoop.conf.Configuration
@@ -39,13 +40,13 @@ import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.avro.AvroOptions
+import org.apache.spark.sql.avro.{AvroOptions, SchemaConverters}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
-import org.apache.spark.sql.execution.datasources.v2.{FilePartitionReaderFactory, FileScan}
+import org.apache.spark.sql.execution.datasources.v2.FileScan
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.shims.AvroUtils
@@ -117,7 +118,8 @@ case class GpuAvroScan(
     // We should use `readPartitionSchema` as the partition schema here.
     if (rapidsConf.isAvroPerFileReadEnabled) {
       GpuAvroPartitionReaderFactory(sparkSession.sessionState.conf, rapidsConf, broadcastedConf,
-        dataSchema, readDataSchema, readPartitionSchema, parsedOptions, metrics)
+        dataSchema, readDataSchema, readPartitionSchema, parsedOptions, metrics,
+        options.asScala.toMap)
     } else {
       GpuAvroMultiFilePartitionReaderFactory(sparkSession.sessionState.conf,
         rapidsConf, broadcastedConf, dataSchema, readDataSchema, readPartitionSchema,
@@ -152,8 +154,10 @@ case class GpuAvroPartitionReaderFactory(
     dataSchema: StructType,
     readDataSchema: StructType,
     partitionSchema: StructType,
-    options: AvroOptions,
-    metrics: Map[String, GpuMetric]) extends FilePartitionReaderFactory with Logging {
+    avroOptions: AvroOptions,
+    metrics: Map[String, GpuMetric],
+    @transient params: Map[String, String])
+  extends ShimFilePartitionReaderFactory(params) with Logging {
 
   private val debugDumpPrefix = Option(rapidsConf.avroDebugDumpPrefix)
   private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
@@ -167,7 +171,7 @@ case class GpuAvroPartitionReaderFactory(
 
   override def buildColumnarReader(partFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
-    val blockMeta = AvroFileFilterHandler(conf, options).filterBlocks(partFile)
+    val blockMeta = AvroFileFilterHandler(conf, avroOptions).filterBlocks(partFile)
     val reader = new PartitionReaderWithBytesRead(new GpuAvroPartitionReader(conf, partFile,
       blockMeta, readDataSchema, debugDumpPrefix, maxReadBatchSizeRows,
       maxReadBatchSizeBytes, metrics))
@@ -195,7 +199,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
   private val ignoreMissingFiles = sqlConf.ignoreMissingFiles
   private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
 
-  private val numThreads = rapidsConf.avroMultiThreadReadNumThreads
+  private val numThreads = rapidsConf.multiThreadReadNumThreads
   private val maxNumFileProcessed = rapidsConf.maxNumAvroFilesParallel
 
   // we can't use the coalescing files reader when InputFileName, InputFileBlockStart,
@@ -264,7 +268,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
             fPath,
             AvroDataBlock(block),
             file.partitionValues,
-            AvroSchemaWrapper(singleFileInfo.header.schema),
+            AvroSchemaWrapper(SchemaConverters.toAvroType(readDataSchema)),
             AvroExtraInfo()))
       if (singleFileInfo.blocks.nonEmpty) {
         // No need to check the header since it can not be null when blocks is not empty here.
@@ -635,9 +639,6 @@ class GpuMultiFileCloudAvroPartitionReader(
       throw new RuntimeException(s"Unknown avro buffer type: ${t.getClass.getSimpleName}")
   }
 
-  override def getThreadPool(numThreads: Int): ThreadPoolExecutor =
-    AvroMultiFileThreadPool.getOrCreateThreadPool(getFileFormatShortName, numThreads)
-
   override final def getFileFormatShortName: String = "AVRO"
 
   override def getBatchRunner(
@@ -776,6 +777,7 @@ class GpuMultiFileCloudAvroPartitionReader(
 
           val bufAndSize: Array[(HostMemoryBuffer, Long)] = if (readDataSchema.isEmpty) {
             // Overload the size to be the number of rows with null buffer
+            hostBuffers.foreach(_._1.safeClose(new Exception))
             Array((null, totalRowsNum))
           } else if (isDone) {
             // got close before finishing, return null buffer and zero size
@@ -876,9 +878,6 @@ class GpuMultiFileAvroPartitionReader(
     sendToGpuUnchecked(dataBuffer, dataSize, splits)
   }
 
-  override def getThreadPool(numThreads: Int): ThreadPoolExecutor =
-    AvroMultiFileThreadPool.getOrCreateThreadPool(getFileFormatShortName, numThreads)
-
   override final def getFileFormatShortName: String = "AVRO"
 
   override def getBatchRunner(
@@ -940,9 +939,6 @@ class GpuMultiFileAvroPartitionReader(
     in.asInstanceOf[AvroBatchContext]
 
 }
-
-/** Singleton threadpool that is used across all the tasks. */
-object AvroMultiFileThreadPool extends MultiFileReaderThreadPool
 
 /** A tool to filter Avro blocks */
 case class AvroFileFilterHandler(

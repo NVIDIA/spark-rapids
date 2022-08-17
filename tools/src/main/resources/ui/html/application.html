@@ -1,0 +1,212 @@
+<!--
+ Copyright (c) 2022, NVIDIA CORPORATION.
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <!-- bootstrap4 CSS -->
+  <link rel="stylesheet" type="text/css" href="../assets/bootstrap/bootstrap.min.css"/>
+
+  <!-- datatables CSS -->
+  <link rel="stylesheet" type="text/css" href="../assets/datatables/dataTables.bootstrap4.min.css"/>
+  <link rel="stylesheet" type="text/css"
+        href="../assets/datatables/buttons.bootstrap4.min.css"/>
+  <link rel="stylesheet" type="text/css"
+        href="../assets/datatables/responsive.bootstrap4.min.css"/>
+  <link rel="stylesheet" type="text/css"
+        href="../assets/datatables/searchPanes.bootstrap4.min.css"/>
+  <link rel="stylesheet" type="text/css"
+        href="../assets/datatables/select.bootstrap4.min.css"/>
+
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="../assets/spur/spur.min.css">
+  <link rel="stylesheet" href="../css/rapids-dashboard.css">
+
+  <!-- jQuery and Bootstrap4 -->
+  <script type="text/javascript" src="../assets/jquery/jquery.min.js"></script>
+  <script type="text/javascript"
+          src="../assets/bootstrap/bootstrap.bundle.min.js"></script>
+
+  <!-- datatables JS -->
+  <script type="text/javascript"
+          src="../assets/datatables/jquery.dataTables.min.js"></script>
+  <script type="text/javascript"
+          src="../assets/datatables/dataTables.bootstrap4.min.js"></script>
+  <script type="text/javascript"
+          src="../assets/datatables/dataTables.buttons.min.js"></script>
+  <script type="text/javascript"
+          src="../assets/datatables/buttons.bootstrap4.min.js"></script>
+  <script type="text/javascript"
+          src="../assets/datatables/buttons.html5.min.js"></script>
+  <script type="text/javascript"
+          src="../assets/datatables/dataTables.responsive.min.js"></script>
+  <script type="text/javascript"
+          src="../assets/datatables/dataTables.searchPanes.min.js"></script>
+  <script type="text/javascript"
+          src="../assets/datatables/searchPanes.bootstrap4.min.js"></script>
+  <script type="text/javascript"
+          src="../assets/datatables/dataTables.select.min.js"></script>
+  <script type="text/javascript"
+          src="../assets/datatables/responsive.bootstrap4.min.js"></script>
+
+  <!-- Dynamic code replacement using Mustache -->
+  <script src="../assets/mustache-js/mustache.min.js"></script>
+
+  <title>Spark Qualification tool - Application Report</title>
+</head>
+
+<body>
+  <div class="dash">
+    <div class="dash-nav dash-nav-dark">
+      <header>
+        <a href="index.html"><span>Qualification Tool</span></a>
+      </header>
+      <nav class="dash-nav-list">
+        <a href="index.html" class="dash-nav-item">
+          <i><svg width="1.05em" height="1.05em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M1.5 8.5L8 2L14.5 8.5M12.5 6.5V13.5H9.5V9.5H6.5V13.5H3.5V6.5" stroke="white"/>
+          </svg></i> Dashboard </a>
+        <div class="dash-nav-dropdown show">
+          <a href="#!" class="dash-nav-item dash-nav-dropdown-toggle">
+            <i><svg width="1.05em" height="1.05em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M6.00006 7.5H10.0001M3.50006 5.5H12.5001V12.5H3.50006V5.5ZM2.5 3.5V5.5H13.5L13.5 3.5H2.5Z" stroke="white"/>
+            </svg></i>
+            Reports
+          </a>
+          <div class="dash-nav-dropdown-menu">
+            <a href="raw.html" class="dash-nav-dropdown-item">Raw Data</a>
+            <a href="sql-recommendation.html" class="dash-nav-dropdown-item">Per-SQL Data</a>
+          </div>
+        </div>
+        <div class="dash-nav-dropdown show">
+          <a href="#!" class="dash-nav-item dash-nav-dropdown-toggle">
+            <i><svg width="1.05em" height="1.05em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M8 5V4M8 12V6M14.5 8C14.5 11.5899 11.5899 14.5 8 14.5C4.41015 14.5 1.5 11.5899 1.5 8C1.5 4.41015 4.41015 1.5 8 1.5C11.5899 1.5 14.5 4.41015 14.5 8Z" stroke="white"/>
+            </svg></i>
+            About </a>
+          <div class="dash-nav-dropdown-menu">
+            <a href="https://github.com/NVIDIA/spark-rapids" class="dash-nav-dropdown-item">GitHub</a>
+            <a href="https://nvidia.github.io/spark-rapids/" class="dash-nav-dropdown-item">
+              <i><svg width="1.05em" height="1.05em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M13.5 13.5V14H14V13.5H13.5ZM13.5 2.5H14V2H13.5V2.5ZM4 5H11.5V4H4V5ZM4 7H11.5V6H4V7ZM4 9H8V8H4V9ZM13.5 11H3.5V12H13.5V11ZM3.5 14H13.5V13H3.5V14ZM2 12.5C2 13.3284 2.67157 14 3.5 14V13C3.22386 13 3 12.7761 3 12.5H2ZM3.5 11C2.67157 11 2 11.6716 2 12.5H3C3 12.2239 3.22386 12 3.5 12V11ZM13.5 2H3.5V3H13.5V2ZM2 3.5V12.5H3V3.5H2ZM14 13.5V11.5H13V13.5H14ZM14 11.5V2.5H13V11.5H14ZM3.5 2C2.67157 2 2 2.67157 2 3.5H3C3 3.22386 3.22386 3 3.5 3V2Z" fill="white"/>
+              </svg></i> Docs </a>
+          </div>
+        </div>
+      </nav>
+    </div>
+    <div class="dash-app">
+      <header class="dash-toolbar">
+        <a href="#!" class="menu-toggle">
+          <i><svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M6 3.5H14M6 11.5H14M6 7.5H14M2.5 2.5H4.5V4.5H2.5V2.5ZM2.5 10.5H4.5V12.5H2.5V10.5ZM2.5 6.5H4.5V8.5H2.5V6.5Z" stroke="black"/>
+          </svg></i></a>
+        <div class="tools">
+          <a href="https://github.com/NVIDIA/spark-rapids" class="tools-item">GitHub</a>
+        </div>
+      </header>
+      <main class="dash-content">
+        <div class="container-fluid">
+          <div id="app-report-page-header"></div>
+          <!-- application details row -->
+          <div class="row">
+            <div class="col-lg-12">
+              <div class="card spur-card">
+                <div class="card-header">
+                  <div class="spur-card-icon">
+                    <i><svg width="1.5em" height="1.5em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M6.5 13.5V10.5H3.5V13.5H6.5ZM6.5 13.5H9.5M6.5 13.5V8.5H9.5V13.5M9.5 13.5H12.5V6.5H9.5V13.5ZM7.5 2.5L3 7" stroke="black"/>
+                      <path d="M7.5 5V2.5H5" stroke="black"/>
+                    </svg></i>
+                  </div>
+                  <div class="spur-card-title">Application Details</div>
+                </div>
+                <div class="card-body ">
+                  <div id="app-details-data-container"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- application Stages row -->
+          <div class="row">
+            <div class="col-lg-12">
+              <div class="card spur-card">
+                <div class="card-header">
+                  <div class="spur-card-icon">
+                    <i><svg width="1.05em" height="1.05em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M5.45556 3.36389C5.48459 3.24738 5.5 3.12549 5.5 3C5.5 2.17157 4.82843 1.5 4 1.5C3.17157 1.5 2.5 2.17157 2.5 3C2.5 3.82843 3.17157 4.5 4 4.5C4.41421 4.5 4.78921 4.33211 5.06066 4.06066M5.45556 3.36389C5.38876 3.63193 5.24987 3.87145 5.06066 4.06066M5.45556 3.36389L10.5444 4.63611M5.06066 4.06066L10.9393 9.93934M10.5444 4.63611C10.5154 4.75261 10.5 4.87451 10.5 5C10.5 5.18539 10.5336 5.36292 10.5951 5.52683M10.5444 4.63611C10.7071 3.98352 11.2971 3.5 12 3.5C12.8284 3.5 13.5 4.17157 13.5 5C13.5 5.82843 12.8284 6.5 12 6.5C11.5858 6.5 11.2108 6.33211 10.9393 6.06066M10.5951 5.52683C10.671 5.72914 10.7894 5.9107 10.9393 6.06066M10.5951 5.52683L5.40487 7.47317M10.9393 6.06066L5.06066 11.9393M5.40487 7.47317C5.19157 6.90463 4.64304 6.5 4 6.5C3.17157 6.5 2.5 7.17157 2.5 8C2.5 8.82843 3.17157 9.5 4 9.5C4.64304 9.5 5.19157 9.09537 5.40487 8.52683M5.40487 7.47317C5.46637 7.63708 5.5 7.81461 5.5 8C5.5 8.18539 5.46637 8.36292 5.40487 8.52683M5.40487 8.52683L10.5951 10.4732M5.06066 11.9393C4.78921 11.6679 4.41421 11.5 4 11.5C3.17157 11.5 2.5 12.1716 2.5 13C2.5 13.8284 3.17157 14.5 4 14.5C4.82843 14.5 5.5 13.8284 5.5 13C5.5 12.8745 5.48459 12.7526 5.45556 12.6361M5.06066 11.9393C5.24987 12.1285 5.38876 12.3681 5.45556 12.6361M5.45556 12.6361L10.5444 11.3639M10.5444 11.3639C10.7071 12.0165 11.2971 12.5 12 12.5C12.8284 12.5 13.5 11.8284 13.5 11C13.5 10.1716 12.8284 9.5 12 9.5C11.5858 9.5 11.2108 9.66789 10.9393 9.93934M10.5444 11.3639C10.5154 11.2474 10.5 11.1255 10.5 11C10.5 10.8146 10.5336 10.6371 10.5951 10.4732M10.5951 10.4732C10.671 10.2709 10.7894 10.0893 10.9393 9.93934" stroke="black"/>
+                    </svg></i>
+                  </div>
+                  <div class="spur-card-title">Stage Details</div>
+                </div>
+                <div class="card-body ">
+                  <div id="app-stages-details-data-container"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- application Execs row -->
+          <div class="row">
+            <div class="col-lg-12">
+              <div class="card spur-card">
+                <div class="card-header">
+                  <div class="spur-card-icon">
+                    <i><svg width="1.05em" height="1.05em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M5.45556 3.36389C5.48459 3.24738 5.5 3.12549 5.5 3C5.5 2.17157 4.82843 1.5 4 1.5C3.17157 1.5 2.5 2.17157 2.5 3C2.5 3.82843 3.17157 4.5 4 4.5C4.41421 4.5 4.78921 4.33211 5.06066 4.06066M5.45556 3.36389C5.38876 3.63193 5.24987 3.87145 5.06066 4.06066M5.45556 3.36389L10.5444 4.63611M5.06066 4.06066L10.9393 9.93934M10.5444 4.63611C10.5154 4.75261 10.5 4.87451 10.5 5C10.5 5.18539 10.5336 5.36292 10.5951 5.52683M10.5444 4.63611C10.7071 3.98352 11.2971 3.5 12 3.5C12.8284 3.5 13.5 4.17157 13.5 5C13.5 5.82843 12.8284 6.5 12 6.5C11.5858 6.5 11.2108 6.33211 10.9393 6.06066M10.5951 5.52683C10.671 5.72914 10.7894 5.9107 10.9393 6.06066M10.5951 5.52683L5.40487 7.47317M10.9393 6.06066L5.06066 11.9393M5.40487 7.47317C5.19157 6.90463 4.64304 6.5 4 6.5C3.17157 6.5 2.5 7.17157 2.5 8C2.5 8.82843 3.17157 9.5 4 9.5C4.64304 9.5 5.19157 9.09537 5.40487 8.52683M5.40487 7.47317C5.46637 7.63708 5.5 7.81461 5.5 8C5.5 8.18539 5.46637 8.36292 5.40487 8.52683M5.40487 8.52683L10.5951 10.4732M5.06066 11.9393C4.78921 11.6679 4.41421 11.5 4 11.5C3.17157 11.5 2.5 12.1716 2.5 13C2.5 13.8284 3.17157 14.5 4 14.5C4.82843 14.5 5.5 13.8284 5.5 13C5.5 12.8745 5.48459 12.7526 5.45556 12.6361M5.06066 11.9393C5.24987 12.1285 5.38876 12.3681 5.45556 12.6361M5.45556 12.6361L10.5444 11.3639M10.5444 11.3639C10.7071 12.0165 11.2971 12.5 12 12.5C12.8284 12.5 13.5 11.8284 13.5 11C13.5 10.1716 12.8284 9.5 12 9.5C11.5858 9.5 11.2108 9.66789 10.9393 9.93934M10.5444 11.3639C10.5154 11.2474 10.5 11.1255 10.5 11C10.5 10.8146 10.5336 10.6371 10.5951 10.4732M10.5951 10.4732C10.671 10.2709 10.7894 10.0893 10.9393 9.93934" stroke="black"/>
+                    </svg></i>
+                  </div>
+                  <div class="spur-card-title">Execs Details</div>
+                </div>
+                <div class="card-body ">
+                  <div id="app-execs-details-data-container"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- application SQLs row -->
+          <div class="row">
+            <div class="col-lg-12">
+              <div class="card spur-card">
+                <div class="card-header">
+                  <div class="spur-card-icon">
+                    <i><svg width="1.05em" height="1.05em" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M5.45556 3.36389C5.48459 3.24738 5.5 3.12549 5.5 3C5.5 2.17157 4.82843 1.5 4 1.5C3.17157 1.5 2.5 2.17157 2.5 3C2.5 3.82843 3.17157 4.5 4 4.5C4.41421 4.5 4.78921 4.33211 5.06066 4.06066M5.45556 3.36389C5.38876 3.63193 5.24987 3.87145 5.06066 4.06066M5.45556 3.36389L10.5444 4.63611M5.06066 4.06066L10.9393 9.93934M10.5444 4.63611C10.5154 4.75261 10.5 4.87451 10.5 5C10.5 5.18539 10.5336 5.36292 10.5951 5.52683M10.5444 4.63611C10.7071 3.98352 11.2971 3.5 12 3.5C12.8284 3.5 13.5 4.17157 13.5 5C13.5 5.82843 12.8284 6.5 12 6.5C11.5858 6.5 11.2108 6.33211 10.9393 6.06066M10.5951 5.52683C10.671 5.72914 10.7894 5.9107 10.9393 6.06066M10.5951 5.52683L5.40487 7.47317M10.9393 6.06066L5.06066 11.9393M5.40487 7.47317C5.19157 6.90463 4.64304 6.5 4 6.5C3.17157 6.5 2.5 7.17157 2.5 8C2.5 8.82843 3.17157 9.5 4 9.5C4.64304 9.5 5.19157 9.09537 5.40487 8.52683M5.40487 7.47317C5.46637 7.63708 5.5 7.81461 5.5 8C5.5 8.18539 5.46637 8.36292 5.40487 8.52683M5.40487 8.52683L10.5951 10.4732M5.06066 11.9393C4.78921 11.6679 4.41421 11.5 4 11.5C3.17157 11.5 2.5 12.1716 2.5 13C2.5 13.8284 3.17157 14.5 4 14.5C4.82843 14.5 5.5 13.8284 5.5 13C5.5 12.8745 5.48459 12.7526 5.45556 12.6361M5.06066 11.9393C5.24987 12.1285 5.38876 12.3681 5.45556 12.6361M5.45556 12.6361L10.5444 11.3639M10.5444 11.3639C10.7071 12.0165 11.2971 12.5 12 12.5C12.8284 12.5 13.5 11.8284 13.5 11C13.5 10.1716 12.8284 9.5 12 9.5C11.5858 9.5 11.2108 9.66789 10.9393 9.93934M10.5444 11.3639C10.5154 11.2474 10.5 11.1255 10.5 11C10.5 10.8146 10.5336 10.6371 10.5951 10.4732M10.5951 10.4732C10.671 10.2709 10.7894 10.0893 10.9393 9.93934" stroke="black"/>
+                    </svg></i>
+                  </div>
+                  <div class="spur-card-title">SQL Details</div>
+                </div>
+                <div class="card-body ">
+                  <div id="app-sqls-details-data-container"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="../js/data-output.js"></script>
+  <script src="../js/ui-config.js"></script>
+  <script src="../js/uiutils.js"></script>
+  <script src="../js/app-report.js"></script>
+
+</body>
+
+</html>

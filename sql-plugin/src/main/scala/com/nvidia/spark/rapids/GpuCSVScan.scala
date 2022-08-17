@@ -22,6 +22,7 @@ import scala.collection.JavaConverters._
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, Scalar, Schema, Table}
+import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -47,6 +48,9 @@ trait ScanWithMetrics {
   //this is initialized by the exec post creation
   var metrics : Map[String, GpuMetric] = Map.empty
 }
+
+// Allows use of ScanWithMetrics from Java code
+class ScanWithMetricsWrapper extends ScanWithMetrics
 
 object GpuCSVScan {
   def tagSupport(scanMeta: ScanMeta[CSVScan]) : Unit = {
@@ -166,9 +170,7 @@ object GpuCSVScan {
     }
 
     if (types.contains(TimestampType)) {
-      if (!TypeChecks.areTimestampsSupported(parsedOptions.zoneId)) {
-        meta.willNotWorkOnGpu("Only UTC zone id is supported")
-      }
+      meta.checkTimeZoneId(parsedOptions.zoneId)
       GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuCsvUtils.timestampFormatInRead(parsedOptions), parseString = true)
     }
@@ -234,7 +236,7 @@ case class GpuCSVScan(
 
     GpuCSVPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, parsedOptions, maxReaderBatchSizeRows,
-      maxReaderBatchSizeBytes, metrics)
+      maxReaderBatchSizeBytes, metrics, options.asScala.toMap)
   }
 
   // overrides nothing in 330
@@ -263,7 +265,8 @@ case class GpuCSVPartitionReaderFactory(
     parsedOptions: CSVOptions,
     maxReaderBatchSizeRows: Integer,
     maxReaderBatchSizeBytes: Long,
-    metrics: Map[String, GpuMetric]) extends FilePartitionReaderFactory {
+    metrics: Map[String, GpuMetric],
+    @transient params: Map[String, String]) extends ShimFilePartitionReaderFactory(params) {
 
   override def buildReader(partitionedFile: PartitionedFile): PartitionReader[InternalRow] = {
     throw new IllegalStateException("ROW BASED PARSING IS NOT SUPPORTED ON THE GPU...")

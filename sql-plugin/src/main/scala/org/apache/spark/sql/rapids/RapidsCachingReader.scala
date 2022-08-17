@@ -107,9 +107,9 @@ class RapidsCachingReader[K, C](
             blockManagerId.topologyInfo.isDefined &&
               blockManagerId.topologyInfo.get
                 .startsWith(s"${RapidsShuffleTransport.BLOCK_MANAGER_ID_TOPO_PREFIX}="), {
-              val enabledHint = if (!rapidsConf.shuffleTransportEnabled) {
+              val enabledHint = if (rapidsConf.isUCXShuffleManagerMode) {
                 "The shuffle transport is disabled. " +
-                    s"Please set ${RapidsConf.SHUFFLE_TRANSPORT_ENABLE.key}=true to enable " +
+                    s"Please set ${RapidsConf.SHUFFLE_MANAGER_MODE.key}=UCX to enable " +
                     "fetching remote blocks."
               } else {
                 "This is unexpected behavior!"
