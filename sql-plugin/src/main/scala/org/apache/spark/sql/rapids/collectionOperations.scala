@@ -482,12 +482,12 @@ case class GpuFloatArrayMin(child: Expression) extends GpuArrayMin(child) {
 
     withResource(base.getChildColumnView(0)) {child => 
       withResource(child.isNan()){child_is_nan =>
-        // each value in the child array is nan or null
-        val child_is_nan_or_null = withResource(child.isNull()) {_.or(child_is_nan)}
-        // replace the child array using `child_is_nan_or_null`
-        val nan_or_null_list = withResource(child_is_nan_or_null) {base.replaceListChild(_)}
         // if all values in each array are nans or nulls
-        val all_nan_or_null = withResource(nan_or_null_list) {_.listReduce(listAll)}
+        val all_nan_or_null = {
+          val child_is_nan_or_null = withResource(child.isNull()) {_.or(child_is_nan)}
+          val nan_or_null_list = withResource(child_is_nan_or_null) {base.replaceListChild(_)}
+          withResource(nan_or_null_list) {_.listReduce(listAll)}
+        }
         withResource(all_nan_or_null) {all_nan_or_null =>
           val true_option = withResource(base.replaceListChild(child_is_nan)) {nan_list =>
             withResource(nan_list.listReduce(listAny)) {any_nan =>
