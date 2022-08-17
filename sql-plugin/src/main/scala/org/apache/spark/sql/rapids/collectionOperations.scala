@@ -481,32 +481,32 @@ case class GpuFloatArrayMin(child: Expression) extends GpuArrayMin(child) {
     val base = input.getBase()
 
     withResource(base.getChildColumnView(0)) {child => 
-      withResource(child.isNan()){child_is_nan =>
+      withResource(child.isNan()){childIsNan =>
         // if all values in each list are nans or nulls
-        val all_nan_or_null = {
-          val child_is_nan_or_null = withResource(child.isNull()) {_.or(child_is_nan)}
-          val nan_or_null_list = withResource(child_is_nan_or_null) {base.replaceListChild(_)}
-          withResource(nan_or_null_list) {_.listReduce(listAll)}
+        val allNanOrNull = {
+          val childIsNanOrNull = withResource(child.isNull()) {_.or(childIsNan)}
+          val nanOrNullList = withResource(childIsNanOrNull) {base.replaceListChild(_)}
+          withResource(nanOrNullList) {_.listReduce(listAll)}
         }
         // return nan if the list contains nan, else return null
-        val true_option = {
-          val any_nan = withResource(base.replaceListChild(child_is_nan)) {
+        val trueOption = {
+          val anyNan = withResource(base.replaceListChild(childIsNan)) {
             _.listReduce(listAny)
           }
-          withResource(Seq(getNanSalar, getNullScalar)) { case Seq(nan_scalar, null_scalar) =>
-              withResource(any_nan) {_.ifElse(nan_scalar, null_scalar)}
+          withResource(Seq(getNanSalar, getNullScalar)) { case Seq(nanScalar, nullScalar) =>
+              withResource(anyNan) {_.ifElse(nanScalar, nullScalar)}
           }
         }
         // replace all nans to nulls, and then find the min value.
-        val false_option = withResource(child.nansToNulls()) {no_nan_child =>
-          withResource(base.replaceListChild(no_nan_child)) { no_nan_list =>
-            no_nan_list.listReduce(SegmentedReductionAggregation.min())
+        val falseOption = withResource(child.nansToNulls()) {noNanChild =>
+          withResource(base.replaceListChild(noNanChild)) { noNanList =>
+            noNanList.listReduce(SegmentedReductionAggregation.min())
           }
         }
         // if a list contains values other than nan or null
         // return `trueOption`, else return `falseOption`.
-        withResource(Seq(true_option, false_option)){case Seq(true_option, false_option) =>
-          withResource(all_nan_or_null) {_.ifElse(true_option, false_option)}
+        withResource(Seq(trueOption, falseOption)){case Seq(trueOption, falseOption) =>
+          withResource(allNanOrNull) {_.ifElse(trueOption, falseOption)}
         }
       } 
     }
