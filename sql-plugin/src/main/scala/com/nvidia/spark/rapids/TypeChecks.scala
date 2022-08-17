@@ -360,8 +360,7 @@ final class TypeSig private(
       case DoubleType => check.contains(TypeEnum.DOUBLE)
       case DateType => check.contains(TypeEnum.DATE)
       case TimestampType if check.contains(TypeEnum.TIMESTAMP) =>
-          TypeChecks.areTimestampsSupported(ZoneId.systemDefault()) &&
-          TypeChecks.areTimestampsSupported(SQLConf.get.sessionLocalTimeZone)
+          TypeChecks.areTimestampsSupported()
       case StringType => check.contains(TypeEnum.STRING)
       case dt: DecimalType =>
           check.contains(TypeEnum.DECIMAL) &&
@@ -422,8 +421,7 @@ final class TypeSig private(
         basicNotSupportedMessage(dataType, TypeEnum.DATE, check, isChild)
       case TimestampType =>
         if (check.contains(TypeEnum.TIMESTAMP) &&
-            (!TypeChecks.areTimestampsSupported(ZoneId.systemDefault()) ||
-             !TypeChecks.areTimestampsSupported(SQLConf.get.sessionLocalTimeZone))) {
+            !TypeChecks.areTimestampsSupported()) {
           Seq(withChild(isChild, s"$dataType is not supported with timezone settings: (JVM:" +
               s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
               s" Set both of the timezones to UTC to enable $dataType support"))
@@ -776,6 +774,36 @@ abstract class TypeChecks[RET] {
     }.mkString(", ")
   }
 
+  /** 
+   * Original log does not print enough info when timezone is not UTC, 
+   * here check again to add UTC info.
+   */
+  private def tagTimezoneInfoIfHasTimestampType(
+    unsupportedTypes: Map[DataType, Set[String]],
+    meta: RapidsMeta[_, _, _]
+    ): Unit = {
+    def checkTimestampType(dataType: DataType): Unit = dataType match {
+        case TimestampType if !TypeChecks.areTimestampsSupported() => {
+          meta.willNotWorkOnGpu(s"your timezone isn't in UTC (JVM:" +
+            s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
+            s" Set both of the timezones to UTC to enable TimestampType support")
+          return
+        }
+        case ArrayType(elementType, _) =>
+          checkTimestampType(elementType)
+        case MapType(keyType, valueType, _) =>
+          checkTimestampType(keyType)
+          checkTimestampType(valueType)
+        case StructType(fields) =>
+          fields.foreach(field => checkTimestampType(field.dataType))
+        case _ =>
+          // do nothing
+    }
+    unsupportedTypes.foreach { case (dataType, nameSet) =>
+      checkTimestampType(dataType)
+    }
+  }
+
   protected def tagUnsupportedTypes(
     meta: RapidsMeta[_, _, _],
     sig: TypeSig,
@@ -786,6 +814,8 @@ abstract class TypeChecks[RET] {
       .filterNot(attr => sig.isSupportedByPlugin(attr.dataType))
       .groupBy(_.dataType)
       .mapValues(_.map(_.name).toSet)
+
+    tagTimezoneInfoIfHasTimestampType(unsupportedTypes, meta)
 
     if (unsupportedTypes.nonEmpty) {
       meta.willNotWorkOnGpu(msgFormat.format(stringifyTypeAttributeMap(unsupportedTypes)))
@@ -804,6 +834,11 @@ object TypeChecks {
   def areTimestampsSupported(zoneIdString: String): Boolean = {
     val zoneId = DateTimeUtils.getZoneId(zoneIdString)
     areTimestampsSupported(zoneId)
+  }
+
+  def areTimestampsSupported(): Boolean = {
+    areTimestampsSupported(ZoneId.systemDefault()) &&
+      areTimestampsSupported(SQLConf.get.sessionLocalTimeZone)
   }
 }
 
