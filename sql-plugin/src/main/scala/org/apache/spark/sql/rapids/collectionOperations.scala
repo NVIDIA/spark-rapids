@@ -510,20 +510,24 @@ case class GpuFloatArrayMin(child: Expression) extends GpuArrayMin(child) {
             val anyNan = withResource(base.replaceListChild(childIsNan)) {
               _.listReduce(listAny)
             }
-            withResource(Seq(getNanSalar, getNullScalar)) { case Seq(nanScalar, nullScalar) =>
-                withResource(anyNan) {_.ifElse(nanScalar, nullScalar)}
+            withResource(anyNan) { anyNan =>
+              withResource(Seq(getNanSalar, getNullScalar)) { case Seq(nanScalar, nullScalar) =>
+                  anyNan.ifElse(nanScalar, nullScalar)
+                }
             }
           }
-          // replace all nans to nulls, and then find the min value.
-          val falseOption = withResource(child.nansToNulls()) { nanToNullChild =>
-            withResource(base.replaceListChild(nanToNullChild)) { nanToNullList =>
-              nanToNullList.listReduce(SegmentedReductionAggregation.min())
+          withResource(trueOption){ trueOption =>
+            // replace all nans to nulls, and then find the min value.
+            val falseOption = withResource(child.nansToNulls()) { nanToNullChild =>
+              withResource(base.replaceListChild(nanToNullChild)) { nanToNullList =>
+                nanToNullList.listReduce(SegmentedReductionAggregation.min())
+              }
             }
-          }
-          // if a list contains values other than nan or null
-          // return `trueOption`, else return `falseOption`.
-          withResource(Seq(trueOption, falseOption)){ case Seq(trueOption, falseOption) =>
-            allNanOrNull.ifElse(trueOption, falseOption)
+            // if a list contains values other than nan or null
+            // return `trueOption`, else return `falseOption`.
+            withResource(falseOption){ falseOption =>
+              allNanOrNull.ifElse(trueOption, falseOption)
+            }
           }
         }
       }
