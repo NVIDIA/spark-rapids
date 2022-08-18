@@ -215,17 +215,19 @@ class IntegerGen(DataGen):
 
 class DecimalGen(DataGen):
     """Generate Decimals, with some built in corner cases."""
-    def __init__(self, precision=None, scale=None, nullable=True, special_cases=[]):
+    def __init__(self, precision=None, scale=None, nullable=True, special_cases=None):
         if precision is None:
             #Maximum number of decimal digits a Long can represent is 18
             precision = 18
             scale = 0
         DECIMAL_MIN = Decimal('-' + ('9' * precision) + 'e' + str(-scale))
         DECIMAL_MAX = Decimal(('9'* precision) + 'e' + str(-scale))
+        if (special_cases is None):
+            special_cases = [DECIMAL_MIN, DECIMAL_MAX, Decimal('0')]
         super().__init__(DecimalType(precision, scale), nullable=nullable, special_cases=special_cases)
         self.scale = scale
         self.precision = precision
-        pattern = "[0-9]{1,"+ str(precision) + "}e" + str(-scale)
+        pattern = "-?[0-9]{1,"+ str(precision) + "}e" + str(-scale)
         self.base_strs = sre_yield.AllStrings(pattern, flags=0, charset=sre_yield.CHARSET, max_count=_MAX_CHOICES)
 
     def __repr__(self):
