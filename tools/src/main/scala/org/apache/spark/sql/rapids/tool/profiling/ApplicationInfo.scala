@@ -20,6 +20,7 @@ import scala.collection.{mutable, Map}
 import scala.collection.mutable.{ArrayBuffer, HashMap}
 
 import com.nvidia.spark.rapids.tool.EventLogInfo
+import com.nvidia.spark.rapids.tool.planparser.SQLPlanParser
 import com.nvidia.spark.rapids.tool.profiling._
 import org.apache.hadoop.conf.Configuration
 
@@ -28,7 +29,7 @@ import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.metric.SQLMetricInfo
 import org.apache.spark.sql.execution.ui.SparkPlanGraph
-import org.apache.spark.sql.rapids.tool.AppBase
+import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
 import org.apache.spark.ui.UIUtils
 
 
@@ -217,6 +218,9 @@ class ApplicationInfo(
   val accumIdToStageId: mutable.HashMap[Long, Int] = new mutable.HashMap[Long, Int]()
   var taskEnd: ArrayBuffer[TaskCase] = ArrayBuffer[TaskCase]()
   var unsupportedSQLplan: ArrayBuffer[UnsupportedSQLPlan] = ArrayBuffer[UnsupportedSQLPlan]()
+  var wholeStage: ArrayBuffer[WholeStageCodeGenResults] = ArrayBuffer[WholeStageCodeGenResults]()
+  val sqlPlanNodeIdToStageIds: mutable.HashMap[(Long, Long), Set[Int]] =
+    mutable.HashMap.empty[(Long, Long), Set[Int]]
 
   private lazy val eventProcessor =  new EventsProcessor(this)
 
@@ -237,16 +241,39 @@ class ApplicationInfo(
     })
   }
 
+  // Connects Operators to Stages using AccumulatorIDs
+  def connectOperatorToStage(): Unit = {
+    for ((sqlId, planInfo) <- sqlPlan) {
+      val planGraph = SparkPlanGraph(planInfo)
+      // Maps stages to operators by checking for non-zero intersection
+      // between nodeMetrics and stageAccumulateIDs
+      val nodeIdToStage = planGraph.allNodes.map { node =>
+        val mappedStages = SQLPlanParser.getStagesInSQLNode(node, this)
+        ((sqlId, node.id), mappedStages)
+      }.toMap
+      sqlPlanNodeIdToStageIds ++= nodeIdToStage
+    }
+  }
+
   /**
    * Function to process SQL Plan Metrics after all events are processed
    */
   def processSQLPlanMetrics(): Unit = {
+    connectOperatorToStage()
     for ((sqlID, planInfo) <- sqlPlan) {
       checkMetadataForReadSchema(sqlID, planInfo)
       val planGraph = SparkPlanGraph(planInfo)
       // SQLPlanMetric is a case Class of
       // (name: String,accumulatorId: Long,metricType: String)
       val allnodes = planGraph.allNodes
+      planGraph.nodes.foreach { n =>
+        if (n.isInstanceOf[org.apache.spark.sql.execution.ui.SparkPlanGraphCluster]) {
+          val ch = n.asInstanceOf[org.apache.spark.sql.execution.ui.SparkPlanGraphCluster].nodes
+          ch.foreach { c =>
+            wholeStage += WholeStageCodeGenResults(index, sqlID, n.id, n.name, c.name, c.id)
+          }
+        }
+      }
       for (node <- allnodes) {
         checkGraphNodeForReads(sqlID, node)
         if (isDataSetOrRDDPlan(node.desc)) {
@@ -270,14 +297,15 @@ class ApplicationInfo(
         val (_, nestedComplexTypes) = reportComplexTypes
         val potentialProbs = getAllPotentialProblems(getPotentialProblemsForDf, nestedComplexTypes)
         sqlIdToInfo.get(sqlID).foreach { sql =>
-          sql.problematic = potentialProbs
+          sql.problematic = ToolUtils.formatPotentialProblems(potentialProbs)
         }
 
         // Then process SQL plan metric type
         for (metric <- node.metrics) {
+          val stages = sqlPlanNodeIdToStageIds.get((sqlID, node.id)).getOrElse(Set.empty)
           val allMetric = SQLMetricInfoCase(sqlID, metric.name,
             metric.accumulatorId, metric.metricType, node.id,
-            node.name, node.desc)
+            node.name, node.desc, stages)
 
           allSQLMetrics += allMetric
           if (this.sqlPlanMetricsAdaptive.nonEmpty) {
@@ -287,7 +315,7 @@ class ApplicationInfo(
             adaptive.foreach { adaptiveMetric =>
               val allMetric = SQLMetricInfoCase(sqlID, adaptiveMetric.name,
                 adaptiveMetric.accumulatorId, adaptiveMetric.metricType, node.id,
-                node.name, node.desc)
+                node.name, node.desc, stages)
               // could make this more efficient but seems ok for now
               val exists = allSQLMetrics.filter { a =>
                 ((a.accumulatorId == adaptiveMetric.accumulatorId) && (a.sqlID == sqlID)
@@ -301,6 +329,32 @@ class ApplicationInfo(
         }
       }
     }
+  }
+
+  def aggregateSQLStageInfo: Seq[SQLStageInfoProfileResult] = {
+    val jobsWithSQL = jobIdToInfo.filter { case (id, j) =>
+      j.sqlID.nonEmpty
+    }
+    val sqlToStages = jobsWithSQL.flatMap { case (jobId, j) =>
+      val stages = j.stageIds
+      val stagesInJob = stageIdToInfo.filterKeys { case (sid, _) =>
+        stages.contains(sid)
+      }
+      stagesInJob.map { case ((s,sa), info) =>
+        val nodeIds = sqlPlanNodeIdToStageIds.filter { case (_, v) =>
+          v.contains(s)
+        }.keys.toSeq
+        val nodeNames = sqlPlan.get(j.sqlID.get).map { planInfo =>
+          val nodes = SparkPlanGraph(planInfo).allNodes
+          val validNodes = nodes.filter { n =>
+            nodeIds.contains((j.sqlID.get, n.id))
+          }
+          validNodes.map(n => s"${n.name}(${n.id.toString})")
+        }.getOrElse(null)
+        SQLStageInfoProfileResult(index, j.sqlID.get, jobId, s, sa, info.duration, nodeNames)
+      }
+    }
+    sqlToStages.toSeq
   }
 
   private def aggregateAppInfo: Unit = {

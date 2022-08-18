@@ -91,12 +91,24 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     ("Task Speedup Factor", DoubleType),
     ("App Duration Estimated", BooleanType))
 
+  private val csvPerSQLFields = Seq(
+    ("App Name", StringType),
+    ("App ID", StringType),
+    ("SQL ID", StringType),
+    ("SQL Description", StringType),
+    ("SQL DF Duration", LongType),
+    ("GPU Opportunity", LongType),
+    ("Estimated GPU Duration", DoubleType),
+    ("Estimated GPU Speedup", DoubleType),
+    ("Estimated GPU Time Saved", DoubleType),
+    ("Recommendation", StringType))
+
   val schema = new StructType(csvDetailedFields.map(f => StructField(f._1, f._2, true)).toArray)
+  val perSQLSchema = new StructType(csvPerSQLFields.map(f => StructField(f._1, f._2, true)).toArray)
 
   def csvDetailedHeader(ind: Int) = csvDetailedFields(ind)._1
 
-  override protected def beforeEach(): Unit = {
-    TrampolineUtil.cleanupAnyExistingSession()
+  private def createSparkSession(): Unit = {
     sparkSession = SparkSession
       .builder()
       .master("local[*]")
@@ -104,19 +116,30 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       .getOrCreate()
   }
 
+  override protected def beforeEach(): Unit = {
+    TrampolineUtil.cleanupAnyExistingSession()
+    createSparkSession()
+  }
+
   def readExpectedFile(expected: File): DataFrame = {
     ToolTestUtils.readExpectationCSV(sparkSession, expected.getPath(),
       Some(schema))
   }
 
+  def readPerSqlFile(expected: File): DataFrame = {
+    ToolTestUtils.readExpectationCSV(sparkSession, expected.getPath(),
+      Some(perSQLSchema))
+  }
+
   private def createSummaryForDF(
       appSums: Seq[QualificationSummaryInfo]): Seq[TestQualificationSummary] = {
-    appSums.map { sum =>
-      TestQualificationSummary(sum.appName, sum.appId, sum.estimatedInfo.recommendation,
-        sum.estimatedInfo.estimatedGpuSpeedup, sum.estimatedInfo.estimatedGpuDur,
-        sum.estimatedInfo.estimatedGpuTimeSaved, sum.estimatedInfo.sqlDfDuration,
-        sum.sqlDataframeTaskDuration, sum.estimatedInfo.appDur,
-        sum.estimatedInfo.gpuOpportunity, sum.executorCpuTimePercent, sum.failedSQLIds,
+    appSums.map { appInfoRec =>
+      val sum = QualOutputWriter.createFormattedQualSummaryInfo(appInfoRec, ",")
+      TestQualificationSummary(sum.appName, sum.appId, sum.recommendation,
+        sum.estimatedGpuSpeedup, sum.estimatedGpuDur,
+        sum.estimatedGpuTimeSaved, sum.sqlDataframeDuration,
+        sum.sqlDataframeTaskDuration, sum.appDuration,
+        sum.gpuOpportunity, sum.executorCpuTimePercent, sum.failedSQLIds,
         sum.readFileFormatAndTypesNotSupported, sum.writeDataFormat,
         sum.complexTypes, sum.nestedComplexTypes, sum.potentialProblems, sum.longestSqlDuration,
         sum.nonSqlTaskDurationAndOverhead,
@@ -126,12 +149,18 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   private def runQualificationTest(eventLogs: Array[String], expectFileName: String,
-      shouldReturnEmpty: Boolean = false) = {
+      shouldReturnEmpty: Boolean = false, expectPerSqlFileName: Option[String] = None) = {
     TrampolineUtil.withTempDir { outpath =>
       val resultExpectation = new File(expRoot, expectFileName)
-      val allArgs = Array(
+      val outputArgs = Array(
         "--output-directory",
         outpath.getAbsolutePath())
+
+      val allArgs = if (expectPerSqlFileName.isDefined) {
+        outputArgs ++ Array("--per-sql")
+      } else {
+        outputArgs
+      }
 
       val appArgs = new QualificationArgs(allArgs ++ eventLogs)
       val (exit, appSum) = QualificationMain.mainInternal(appArgs)
@@ -146,6 +175,14 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val dfExpect = readExpectedFile(resultExpectation)
         assert(!dfQual.isEmpty)
         ToolTestUtils.compareDataFrames(dfQual, dfExpect)
+        if (expectPerSqlFileName.isDefined) {
+          val resultExpectation = new File(expRoot, expectPerSqlFileName.get)
+          val dfPerSqlExpect = readPerSqlFile(resultExpectation)
+          val actualExpectation = s"$outpath/rapids_4_spark_qualification_output/" +
+            s"rapids_4_spark_qualification_output_persql.csv"
+          val dfPerSqlActual = readPerSqlFile(new File(actualExpectation))
+          ToolTestUtils.compareDataFrames(dfPerSqlActual, dfPerSqlExpect)
+        }
       }
     }
   }
@@ -198,7 +235,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         "--output-directory",
         outpath.getAbsolutePath(),
         "--order",
-        "desc")
+        "desc",
+        "--per-sql")
 
       val appArgs = new QualificationArgs(allArgs ++ logFiles)
       val (exit, appSum) = QualificationMain.mainInternal(appArgs)
@@ -219,6 +257,21 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       } finally {
         inputSource.close()
       }
+      val persqlFileName = s"$outpath/rapids_4_spark_qualification_output/" +
+        s"rapids_4_spark_qualification_output_persql.log"
+      val persqlInputSource = Source.fromFile(persqlFileName)
+      try {
+        val lines = persqlInputSource.getLines.toArray
+        // 4 lines of header and footer
+        assert(lines.size == (4 + 17))
+        // skip the 3 header lines
+        val firstRow = lines(3)
+        // this should be app + sqlID
+        assert(firstRow.contains("local-1622043423018|     1"))
+        assert(firstRow.contains("count at QualificationInfoUtils.scala:94"))
+      } finally {
+        persqlInputSource.close()
+      }
     }
   }
 
@@ -236,7 +289,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         "--order",
         "desc",
         "-n",
-        "2")
+        "2",
+        "--per-sql")
 
       val appArgs = new QualificationArgs(allArgs ++ logFiles)
       val (exit, _) = QualificationMain.mainInternal(appArgs)
@@ -251,6 +305,16 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(lines.size == (4 + 2))
       } finally {
         inputSource.close()
+      }
+      val persqlFileName = s"$outpath/rapids_4_spark_qualification_output/" +
+        s"rapids_4_spark_qualification_output_persql.log"
+      val persqlInputSource = Source.fromFile(persqlFileName)
+      try {
+        val lines = persqlInputSource.getLines
+        // 4 lines of header and footer, limit is 2
+        assert(lines.size == (4 + 2))
+      } finally {
+        persqlInputSource.close()
       }
     }
   }
@@ -371,7 +435,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       s"$logDir/udf_dataset_eventlog",
       s"$logDir/udf_func_eventlog"
     )
-    runQualificationTest(logFiles, "qual_test_simple_expectation.csv")
+    runQualificationTest(logFiles, "qual_test_simple_expectation.csv",
+      expectPerSqlFileName = Some("qual_test_simple_expectation_persql.csv"))
   }
 
   test("test missing sql end") {
@@ -396,7 +461,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   test("test nds q86 test") {
     val logFiles = Array(s"$logDir/nds_q86_test")
-    runQualificationTest(logFiles, "nds_q86_test_expectation.csv")
+    runQualificationTest(logFiles, "nds_q86_test_expectation.csv",
+      expectPerSqlFileName = Some("nds_q86_test_expectation_persql.csv"))
   }
 
   // event log rolling creates files under a directory
@@ -414,7 +480,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   test("test nds q86 with failure test") {
     val logFiles = Array(s"$logDir/nds_q86_fail_test")
-    runQualificationTest(logFiles, "nds_q86_fail_test_expectation.csv")
+    runQualificationTest(logFiles, "nds_q86_fail_test_expectation.csv",
+      expectPerSqlFileName = Some("nds_q86_fail_test_expectation_persql.csv"))
   }
 
   test("test event log write format") {
@@ -471,8 +538,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
     val result = testSchemas.map(x => AppBase.parseReadSchemaForNestedTypes(x))
     result.foreach { actualResult =>
-      assert(actualResult._1.equals(expectedResult(index)._1))
-      assert(actualResult._2.equals(expectedResult(index)._2))
+      assert(ToolUtils.formatComplexTypes(actualResult._1).equals(expectedResult(index)._1))
+      assert(ToolUtils.formatComplexTypes(actualResult._2).equals(expectedResult(index)._2))
       index += 1
     }
   }
@@ -593,6 +660,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         spark.sparkContext.addSparkListener(listener)
         import spark.implicits._
         val testData = Seq((1, 2), (3, 4)).toDF("a", "b")
+        spark.sparkContext.setJobDescription("testing, csv delimiter; replacement")
         testData.createOrReplaceTempView("t1")
         testData.createOrReplaceTempView("t2")
         spark.sql("SELECT a, MAX(b) FROM (SELECT t1.a, t2.b " +
@@ -604,6 +672,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       // run the qualification tool
       TrampolineUtil.withTempDir { outpath =>
         val appArgs = new QualificationArgs(Array(
+          "--per-sql",
           "--output-directory",
           outpath.getAbsolutePath,
           eventLog))
@@ -611,6 +680,22 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val (exit, sumInfo) =
           QualificationMain.mainInternal(appArgs)
         assert(exit == 0)
+        // the code above that runs the Spark query stops the Sparksession
+        // so create a new one to read in the csv file
+        createSparkSession()
+
+        // validate that the SQL description in the csv file escapes commas properly
+        val persqlResults = s"$outpath/rapids_4_spark_qualification_output/" +
+          s"rapids_4_spark_qualification_output_persql.csv"
+        val dfPerSqlActual = readPerSqlFile(new File(persqlResults))
+        // the number of columns actually won't be wrong if sql description is malformatted
+        // because spark seems to drop extra column so need more checking
+        assert(dfPerSqlActual.columns.size == 10)
+        val rows = dfPerSqlActual.collect()
+        assert(rows.size == 3)
+        val firstRow = rows(1)
+        // , should be replaced with ;
+        assert(firstRow(3) == "testing; csv delimiter; replacement")
 
         // parse results from listener
         val executorCpuTime = listener.executorCpuTime
@@ -673,19 +758,22 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       assert(csvDetailedHeader(ind).equals(headersDetailed(ind)))
     }
     // check that recommendation field is relevant to GPU Speed-up
+    // Note that range-check does not apply for NOT-APPLICABLE
     val estimatedFieldsIndStart = 2
-    if (valuesDetailed(estimatedFieldsIndStart + 1).toDouble >=
+    assert(valuesDetailed(estimatedFieldsIndStart + 1).toDouble >= 1.0)
+    if (!valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.NOT_APPLICABLE)) {
+      if (valuesDetailed(estimatedFieldsIndStart + 1).toDouble >=
         QualificationAppInfo.LOWER_BOUND_STRONGLY_RECOMMENDED) {
-      assert(
-        valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.STRONGLY_RECOMMENDED))
-    } else if (valuesDetailed(estimatedFieldsIndStart + 1).toDouble >=
+        assert(
+          valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.STRONGLY_RECOMMENDED))
+      } else if (valuesDetailed(estimatedFieldsIndStart + 1).toDouble >=
         QualificationAppInfo.LOWER_BOUND_RECOMMENDED) {
-      assert(valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.RECOMMENDED))
-    } else if (valuesDetailed(estimatedFieldsIndStart + 1).toDouble >= 1.0) {
-      assert(valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.NOT_RECOMMENDED))
-    } else {
-      assert(valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.NOT_APPLICABLE))
+        assert(valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.RECOMMENDED))
+      } else {
+        assert(valuesDetailed(estimatedFieldsIndStart).equals(QualificationAppInfo.NOT_RECOMMENDED))
+      }
     }
+
     // check numeric fields skipping "Estimated Speed-up" on purpose
     for (ind <- estimatedFieldsIndStart + 2  until csvDetailedFields.size) {
       if (csvDetailedFields(ind)._1.equals(DoubleType)

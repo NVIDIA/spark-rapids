@@ -651,6 +651,19 @@ class DayTimeIntervalGen(DataGen):
     def start(self, rand):
         self._start(rand, lambda: self._gen_random(rand))
 
+class BinaryGen(DataGen):
+    """Generate BinaryType values"""
+    def __init__(self, min_length=0, max_length=20, nullable=True):
+        super().__init__(BinaryType(), nullable=nullable)
+        self._min_length = min_length
+        self._max_length = max_length
+
+    def start(self, rand):
+        def gen_bytes():
+            length = rand.randint(self._min_length, self._max_length)
+            return bytes([ rand.randint(0, 255) for _ in range(length) ])
+        self._start(rand, gen_bytes)
+
 def skip_if_not_utc():
     if (not is_tz_utc()):
         skip_unless_precommit_tests('The java system time zone is not set to UTC')
@@ -883,6 +896,7 @@ string_gen = StringGen()
 boolean_gen = BooleanGen()
 date_gen = DateGen()
 timestamp_gen = TimestampGen()
+binary_gen = BinaryGen()
 null_gen = NullGen()
 
 numeric_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen]
@@ -949,6 +963,10 @@ array_gens_sample = single_level_array_gens + nested_array_gens_sample
 # all of the basic types in a single struct
 all_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens)])
 
+all_basic_struct_gen_no_nan = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(all_basic_gens_no_nan)])
+
+struct_array_gen_no_nans =  StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(single_level_array_gens_no_nan)])
+
 # Some struct gens, but not all because of nesting
 nonempty_struct_gens_sample = [all_basic_struct_gen,
         StructGen([['child0', byte_gen], ['child1', all_basic_struct_gen]]),
@@ -969,7 +987,10 @@ decimal_128_map_gens = [MapGen(key_gen=gen, value_gen=gen, nullable=False) for g
 # Some map gens, but not all because of nesting
 map_gens_sample = all_basic_map_gens + [MapGen(StringGen(pattern='key_[0-9]', nullable=False), ArrayGen(string_gen), max_length=10),
         MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
-        MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
+        MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
+        MapGen(IntegerGen(False), ArrayGen(int_gen, max_length=3), max_length=3),
+        MapGen(ShortGen(False), StructGen([['child0', byte_gen], ['child1', double_gen]]), max_length=3),
+        MapGen(ByteGen(False), MapGen(FloatGen(False), date_gen, max_length=3), max_length=3)]
 
 nested_gens_sample = array_gens_sample + struct_gens_sample_with_decimal128 + map_gens_sample + decimal_128_map_gens
 
@@ -1031,3 +1052,7 @@ def append_unique_int_col_to_df(spark, dataframe):
     new_rows = append_unique_to_rows(collected)
     new_schema = StructType(existing_schema.fields + [StructField("uniq_int", IntegerType(), False)])
     return spark.createDataFrame(new_rows, new_schema)
+
+disable_parquet_field_id_write = {"spark.sql.parquet.fieldId.write.enabled": "false"}  # default is true
+enable_parquet_field_id_write = {"spark.sql.parquet.fieldId.write.enabled": "true"}
+enable_parquet_field_id_read = {"spark.sql.parquet.fieldId.read.enabled": "true"}  # default is false

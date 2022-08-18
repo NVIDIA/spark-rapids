@@ -30,7 +30,7 @@ case class GpuBatchScanExec(
     @transient scan: Scan) extends DataSourceV2ScanExecBase with GpuBatchScanExecMetrics {
   @transient lazy val batch: Batch = scan.toBatch
 
-  override lazy val partitions: Seq[InputPartition] = batch.planInputPartitions()
+  @transient override lazy val partitions: Seq[InputPartition] = batch.planInputPartitions()
 
   override lazy val readerFactory: PartitionReaderFactory = batch.createReaderFactory()
 

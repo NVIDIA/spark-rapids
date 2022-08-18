@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,8 @@ case class GpuInsertIntoHadoopFsRelationCommand(
     mode: SaveMode,
     catalogTable: Option[CatalogTable],
     fileIndex: Option[FileIndex],
-    outputColumnNames: Seq[String])
+    outputColumnNames: Seq[String],
+    useStableSort: Boolean)
   extends GpuDataWritingCommand {
 
   override def runColumnar(sparkSession: SparkSession, child: SparkPlan): Seq[ColumnarBatch] = {
@@ -163,7 +164,8 @@ case class GpuInsertIntoHadoopFsRelationCommand(
           partitionColumns = partitionColumns,
           bucketSpec = bucketSpec,
           statsTrackers = Seq(gpuWriteJobStatsTracker(hadoopConf)),
-          options = options)
+          options = options,
+          useStableSort = useStableSort)
 
 
       // update metastore partition metadata
@@ -257,6 +259,9 @@ case class GpuInsertIntoHadoopFsRelationCommand(
 
   private val isBucketed = bucketSpec.nonEmpty
 
-  // We need a single batch if we have to sort the data
-  override def requireSingleBatch: Boolean = isPartitioned || isBucketed
+  private val needSort = isPartitioned || isBucketed
+
+  // If need sort and use stable sort, require single batch.
+  // If need sort and not use stable sort, use out-of-core sort which not requires single batch.
+  override def requireSingleBatch: Boolean = needSort && useStableSort
 }

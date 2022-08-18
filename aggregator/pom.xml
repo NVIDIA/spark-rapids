@@ -22,12 +22,12 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>22.06.0</version>
+        <version>22.08.0</version>
     </parent>
     <artifactId>rapids-4-spark-aggregator_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Aggregator</name>
     <description>Creates an aggregated shaded package of the RAPIDS plugin for Apache Spark</description>
-    <version>22.06.0</version>
+    <version>22.08.0</version>
 
     <properties>
         <!--
@@ -80,7 +80,12 @@
                 <artifactId>maven-shade-plugin</artifactId>
                 <configuration>
                     <artifactSet>
-                        <excludes>org.slf4j:*</excludes>
+                        <excludes>
+                            <exclude>org.slf4j:*</exclude>
+                            <!-- excludes spark-rapids-jni and jucx, will package them in the dist submodule -->
+                            <exclude>com.nvidia:spark-rapids-jni:*</exclude>
+                            <exclude>org.openucx:jucx:*</exclude>
+                        </excludes>
                     </artifactSet>
                     <transformers>
                         <transformer

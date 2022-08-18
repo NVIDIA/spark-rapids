@@ -39,11 +39,9 @@ trait GpuCachedBatchSerializer extends CachedBatchSerializer {
 /**
  * User facing wrapper class that calls into the internal version.
  */
-class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
+class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer with Proxy {
 
-  private lazy val realSerializer: GpuCachedBatchSerializer = {
-    ShimLoader.newInstanceOf("com.nvidia.spark.rapids.ParquetCachedBatchSerializer")
-  }
+  override lazy val self: GpuCachedBatchSerializer = ShimLoader.newParquetCachedBatchSerializer()
 
   /**
    * Can `convertColumnarBatchToCachedBatch()` be called instead of
@@ -55,7 +53,7 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
    * @return True if columnar input can be supported, else false.
    */
   override def supportsColumnarInput(schema: Seq[Attribute]): Boolean = {
-    realSerializer.supportsColumnarInput(schema)
+    self.supportsColumnarInput(schema)
   }
 
   /**
@@ -71,7 +69,7 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       schema: Seq[Attribute],
       storageLevel: StorageLevel,
       conf: SQLConf): RDD[CachedBatch] = {
-    realSerializer.convertInternalRowToCachedBatch(input, schema, storageLevel, conf)
+    self.convertInternalRowToCachedBatch(input, schema, storageLevel, conf)
   }
 
   /**
@@ -89,7 +87,7 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       schema: Seq[Attribute],
       storageLevel: StorageLevel,
       conf: SQLConf): RDD[CachedBatch] = {
-    realSerializer.convertColumnarBatchToCachedBatch(input, schema, storageLevel, conf)
+    self.convertColumnarBatchToCachedBatch(input, schema, storageLevel, conf)
   }
 
   /**
@@ -109,7 +107,7 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
   override def buildFilter(
       predicates: Seq[Expression],
       cachedAttributes: Seq[Attribute]): (Int, Iterator[CachedBatch]) => Iterator[CachedBatch] = {
-    realSerializer.buildFilter(predicates, cachedAttributes)
+    self.buildFilter(predicates, cachedAttributes)
   }
 
   /**
@@ -122,7 +120,7 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
    * @return true if columnar output should be used for this schema, else false.
    */
   override def supportsColumnarOutput(schema: StructType): Boolean = {
-    realSerializer.supportsColumnarOutput(schema)
+    self.supportsColumnarOutput(schema)
   }
 
   /**
@@ -143,7 +141,7 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       cacheAttributes: Seq[Attribute],
       selectedAttributes: Seq[Attribute],
       conf: SQLConf): RDD[ColumnarBatch] = {
-    realSerializer.convertCachedBatchToColumnarBatch(input, cacheAttributes, selectedAttributes,
+    self.convertCachedBatchToColumnarBatch(input, cacheAttributes, selectedAttributes,
       conf)
   }
 
@@ -162,7 +160,7 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       cacheAttributes: Seq[Attribute],
       selectedAttributes: Seq[Attribute],
       conf: SQLConf): RDD[InternalRow] = {
-    realSerializer.convertCachedBatchToInternalRow(input, cacheAttributes, selectedAttributes, conf)
+    self.convertCachedBatchToInternalRow(input, cacheAttributes, selectedAttributes, conf)
   }
 
   /**
@@ -181,7 +179,7 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       cacheAttributes: Seq[Attribute],
       selectedAttributes: Seq[Attribute],
       conf: SQLConf): RDD[ColumnarBatch] = {
-    realSerializer.gpuConvertCachedBatchToColumnarBatch(input, cacheAttributes,
+    self.gpuConvertCachedBatchToColumnarBatch(input, cacheAttributes,
       selectedAttributes, conf)
   }
 

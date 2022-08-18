@@ -123,11 +123,28 @@ class CollectInformation(apps: Seq[ApplicationInfo]) extends Logging {
   def getJobInfo: Seq[JobInfoProfileResult] = {
     val allRows = apps.flatMap { app =>
       app.jobIdToInfo.map { case (jobId, j) =>
-        JobInfoProfileResult(app.index, j.jobID, j.stageIds, j.sqlID)
+        JobInfoProfileResult(app.index, j.jobID, j.stageIds, j.sqlID, j.startTime, j.endTime)
       }
     }
     if (allRows.size > 0) {
       allRows.sortBy(cols => (cols.appIndex, cols.jobID))
+    } else {
+      Seq.empty
+    }
+  }
+
+  def getSQLToStage: Seq[SQLStageInfoProfileResult] = {
+    val allRows = apps.flatMap { app =>
+      app.aggregateSQLStageInfo
+    }
+    if (allRows.size > 0) {
+      case class Reverse[T](t: T)
+      implicit def ReverseOrdering[T: Ordering]: Ordering[Reverse[T]] =
+        Ordering[T].reverse.on(_.t)
+
+      // intentionally sort this table by the duration to be able to quickly
+      // see the stage that took the longest
+      allRows.sortBy(cols => (cols.appIndex, Reverse(cols.duration)))
     } else {
       Seq.empty
     }
@@ -159,6 +176,18 @@ class CollectInformation(apps: Seq[ApplicationInfo]) extends Logging {
     if (allRows.size > 0) {
       val resRows = allRows.map(r => RapidsPropertyProfileResult(r(0), outputHeaders, r))
       resRows.sortBy(cols => cols.key)
+    } else {
+      Seq.empty
+    }
+  }
+
+  // Print SQL whole stage code gen mapping
+  def getWholeStageCodeGenMapping: Seq[WholeStageCodeGenResults] = {
+    val allWholeStages = apps.flatMap { app =>
+      app.wholeStage
+    }
+    if (allWholeStages.size > 0) {
+      allWholeStages.sortBy(cols => (cols.appIndex, cols.sqlID, cols.nodeID))
     } else {
       Seq.empty
     }
@@ -223,7 +252,7 @@ object CollectInformation extends Logging {
           val max = Math.max(driverMax.getOrElse(0L), taskMax.getOrElse(0L))
           Some(SQLAccumProfileResults(app.index, metric.sqlID,
             metric.nodeID, metric.nodeName, metric.accumulatorId,
-            metric.name, max, metric.metricType))
+            metric.name, max, metric.metricType, metric.stageIds.mkString(",")))
         } else {
           None
         }

@@ -44,13 +44,13 @@ Github personal access token: https://github.com/settings/tokens, and make you h
 Usage:
     cd spark-rapids/
 
-    # generate changelog for releases 21.06 to 22.06
+    # generate changelog for releases 22.02 to 22.08
     scripts/generate-changelog --token=<GITHUB_PERSONAL_ACCESS_TOKEN> \
-    --releases=21.06,21.06.1,21.06.2,21.08,21.08.1,21.10,21.12,22.02,22.04,22.06
+    --releases=22.02,22.04,22.06,22.08
 
-    # generate changelog for releases 21.06 to 22.06 to /tmp/CHANGELOG.md
+    # generate changelog for releases 22.02 to 22.08 to /tmp/CHANGELOG.md
     GITHUB_TOKEN=<GITHUB_PERSONAL_ACCESS_TOKEN> scripts/generate-changelog \
-    --releases=21.06,21.06.1,21.06.2,21.08,21.08.1,21.10,21.12,22.02,22.04,22.06 \
+    --releases=22.02,22.04,22.06,22.08 \
     --path=/tmp/CHANGELOG.md
 """
 import os

@@ -410,21 +410,50 @@ def test_write_empty_parquet_round_trip(spark_tmp_path, parquet_gens):
         data_path,
         conf=writer_confs)
 
-# should fallback when trying to write field ID metadata
+def get_nested_parquet_meta_data_for_field_id():
+    schema = StructType([
+        StructField("c1", IntegerType(), metadata={'parquet.field.id': -1}),
+        StructField("c2", StructType(
+            [StructField("c3", IntegerType(), metadata={'parquet.field.id': -3})]),
+                    metadata={'parquet.field.id': -2})
+    ])
+    data = [(1, (2,)), (11, (22,)), (33, (33,)), ]
+    return schema, data
+
+
 @pytest.mark.skipif(is_before_spark_330(), reason='Field ID is not supported before Spark 330')
-@allow_non_gpu('DataWritingCommandExec')
 def test_parquet_write_field_id(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    schema = StructType([
-        StructField("c1", IntegerType(), metadata={'parquet.field.id' : 1}),
-    ])
-    data = [(1,),(2,),(3,),]
-    assert_gpu_fallback_write(
-            lambda spark, path: spark.createDataFrame(data, schema).coalesce(1).write.mode("overwrite").parquet(path),
-            lambda spark, path: spark.read.parquet(path),
-            data_path,
-            'DataWritingCommandExec',
-            conf = {"spark.sql.parquet.fieldId.write.enabled" : "true"}) # default is true
+    schema, data = get_nested_parquet_meta_data_for_field_id()
+    with_gpu_session(
+        # default write Parquet IDs
+        lambda spark: spark.createDataFrame(data, schema).coalesce(1).write.mode("overwrite")
+            .parquet(data_path), conf=enable_parquet_field_id_write)
+
+    # check data, for schema check refer to Scala test case `ParquetFieldIdSuite`
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: spark.createDataFrame(data, schema).coalesce(1).write
+            .mode("overwrite").parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        conf=enable_parquet_field_id_read)
+
+@pytest.mark.skipif(is_before_spark_330(), reason='Field ID is not supported before Spark 330')
+def test_parquet_write_field_id_disabled(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    schema, data = get_nested_parquet_meta_data_for_field_id()
+    with_gpu_session(
+        lambda spark: spark.createDataFrame(data, schema).coalesce(1).write.mode("overwrite")
+            .parquet(data_path),
+        conf=disable_parquet_field_id_write)  # disable write Parquet IDs
+
+    # check data, for schema check refer to Scala test case `ParquetFieldIdSuite`
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: spark.createDataFrame(data, schema).coalesce(1).write
+            .mode("overwrite").parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        conf=enable_parquet_field_id_read)
 
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')

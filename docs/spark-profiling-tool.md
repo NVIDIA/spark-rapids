@@ -1,9 +1,9 @@
 ---
 layout: page
-title: Profiling tool
+title: Profiling Tool
 nav_order: 9
 ---
-# Profiling tool
+# Profiling Tool
 
 The Profiling tool analyzes both CPU or GPU generated event logs and generates information 
 which can be used for debugging and profiling Apache Spark applications.
@@ -31,7 +31,7 @@ more information.
 The Profiling tool requires the Spark 3.x jars to be able to run but do not need an Apache Spark run time. 
 If you do not already have Spark 3.x installed, 
 you can download the Spark distribution to any machine and include the jars in the classpath.
-- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/22.06.0/)
+- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/22.08.0/)
 - [Download Apache Spark 3.x](http://spark.apache.org/downloads.html) - Spark 3.1.1 for Apache Hadoop is recommended
 If you want to compile the jars, please refer to the instructions [here](./spark-qualification-tool.md#How-to-compile-the-tools-jar). 
 
@@ -119,6 +119,8 @@ Run `--help` for more information.
 - Data Source information
 - Executors information
 - Job, stage and SQL ID information
+- SQL to stage information
+- WholeStageCodeGen to node mappings (only applies to CPU plans)
 - Rapids related parameters
 - Spark Properties
 - Rapids Accelerator Jar and cuDF Jar
@@ -263,29 +265,61 @@ Rapids Accelerator Jar and cuDF Jar:
 - Job, stage and SQL ID information(not in `compare` mode yet):
 
 ```
-+--------+-----+---------+-----+
-|appIndex|jobID|stageIds |sqlID|
-+--------+-----+---------+-----+
-|1       |0    |[0]      |null |
-|1       |1    |[1,2,3,4]|0    |
-+--------+-----+---------+-----+
+Job Information:
++--------+-----+---------+-----+-------------+-------------+
+|appIndex|jobID|stageIds |sqlID|startTime    |endTime      |
++--------+-----+---------+-----+-------------+-------------+
+|1       |0    |[0]      |null |1622846402778|1622846410240|
+|1       |1    |[1,2,3,4]|0    |1622846431114|1622846441591|
++--------+-----+---------+-----+-------------+-------------+
+```
+
+- SQL to Stage Information (sorted by stage duration)
+
+Note that not all SQL nodes have a mapping to stage id so some nodes might be missing.
+
+```
+SQL to Stage Information:
++--------+-----+-----+-------+--------------+--------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+|appIndex|sqlID|jobID|stageId|stageAttemptId|Stage Duration|SQL Nodes(IDs)                                                                                                                                                     |
++--------+-----+-----+-------+--------------+--------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+|1       |0    |1    |1      |0             |8174          |Exchange(9),WholeStageCodegen (1)(10),Scan(13)                                                                                                                     |
+|1       |0    |1    |2      |0             |8154          |Exchange(16),WholeStageCodegen (3)(17),Scan(20)                                                                                                                    |
+|1       |0    |1    |3      |0             |2148          |Exchange(2),HashAggregate(4),SortMergeJoin(6),WholeStageCodegen (5)(3),Sort(8),WholeStageCodegen (2)(7),Exchange(9),Sort(15),WholeStageCodegen (4)(14),Exchange(16)|
+|1       |0    |1    |4      |0             |126           |HashAggregate(1),WholeStageCodegen (6)(0),Exchange(2)                                                                                                              |
++--------+-----+-----+-------+--------------+--------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------+
 ```
 
 - SQL Plan Metrics for Application for each SQL plan node in each SQL:
 
 These are also called accumulables in Spark.
+Note that not all SQL nodes have a mapping to stage id.
 
 ```
 SQL Plan Metrics for Application:
-+--------+-----+------+-----------------------------------------------------------+-------------+-----------------------+-------------+----------+
-|appIndex|sqlID|nodeID|nodeName                                                   |accumulatorId|name                   |max_value    |metricType|
-+--------+-----+------+-----------------------------------------------------------+-------------+-----------------------+-------------+----------+
-|1       |0    |1     |GpuColumnarExchange                                        |111          |output rows            |1111111111   |sum       |
-|1       |0    |1     |GpuColumnarExchange                                        |112          |output columnar batches|222222       |sum       |
-|1       |0    |1     |GpuColumnarExchange                                        |113          |data size              |333333333333 |size      |
-|1       |0    |1     |GpuColumnarExchange                                        |114          |shuffle bytes written  |444444444444 |size      |
-|1       |0    |1     |GpuColumnarExchange                                        |115          |shuffle records written|555555       |sum       |
-|1       |0    |1     |GpuColumnarExchange                                        |116          |shuffle write time     |666666666666 |nsTiming  |
++--------+-----+------+-----------------------------------------------------------+-------------+-----------------------+-------------+----------+--------+
+|appIndex|sqlID|nodeID|nodeName                                                   |accumulatorId|name                   |max_value    |metricType|stageIds|
++--------+-----+------+-----------------------------------------------------------+-------------+-----------------------+-------------+----------+--------+
+|1       |0    |1     |GpuColumnarExchange                                        |111          |output rows            |1111111111   |sum       |4,3     |
+|1       |0    |1     |GpuColumnarExchange                                        |112          |output columnar batches|222222       |sum       |4,3     |
+|1       |0    |1     |GpuColumnarExchange                                        |113          |data size              |333333333333 |size      |4,3     |
+|1       |0    |1     |GpuColumnarExchange                                        |114          |shuffle bytes written  |444444444444 |size      |4,3     | 
+|1       |0    |1     |GpuColumnarExchange                                        |115          |shuffle records written|555555       |sum       |4,3     |
+|1       |0    |1     |GpuColumnarExchange                                        |116          |shuffle write time     |666666666666 |nsTiming  |4,3     |
+```
+
+- WholeStageCodeGen to Node Mapping:
+
+```
+WholeStageCodeGen Mapping:
++--------+-----+------+---------------------+-------------------+------------+
+|appIndex|sqlID|nodeID|SQL Node             |Child Node         |Child NodeID|
++--------+-----+------+---------------------+-------------------+------------+
+|1       |0    |0     |WholeStageCodegen (6)|HashAggregate      |1           |
+|1       |0    |3     |WholeStageCodegen (5)|HashAggregate      |4           |
+|1       |0    |3     |WholeStageCodegen (5)|Project            |5           |
+|1       |0    |3     |WholeStageCodegen (5)|SortMergeJoin      |6           |
+|1       |0    |7     |WholeStageCodegen (2)|Sort               |8           |
 ```
 
 - Print SQL Plans (-p option):
@@ -494,11 +528,13 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                                   applications). Default is false.
       --csv                       Output each table to a CSV file as well
                                   creating the summary text file.
-  -f, --filter-criteria  <arg>    Filter newest or oldest N eventlogs for
-                                  processing.eg: 100-newest-filesystem (for
-                                  processing newest 100 event logs). eg:
-                                  100-oldest-filesystem (for processing oldest
-                                  100 event logs)
+  -f, --filter-criteria  <arg>    Filter newest or oldest N eventlogs based on
+                                  application start timestamp for processing.
+                                  Filesystem based filtering happens before
+                                  application based filtering (see start-app-time).
+                                  eg: 100-newest-filesystem (for processing newest
+                                  100 event logs). eg: 100-oldest-filesystem (for
+                                  processing oldest 100 event logs).
   -g, --generate-dot              Generate query visualizations in DOT format.
                                   Default is false
       --generate-timeline         Write an SVG graph out for the full
@@ -519,6 +555,12 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
   -p, --print-plans               Print the SQL plans to a file named
                                   'planDescriptions.log'.
                                   Default is false.
+  -s, --start-app-time  <arg>     Filter event logs whose application start
+                                  occurred within the past specified time
+                                  period. Valid time periods are
+                                  min(minute),h(hours),d(days),w(weeks),m(months).
+                                  If a period is not specified it defaults to
+                                  days.
   -t, --timeout  <arg>            Maximum time in seconds to wait for the event
                                   logs to be processed. Default is 24 hours
                                   (86400 seconds) and must be greater than 3

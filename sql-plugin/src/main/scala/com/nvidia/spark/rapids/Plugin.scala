@@ -25,8 +25,8 @@ import scala.collection.mutable.{Map => MutableMap}
 import scala.util.Try
 import scala.util.matching.Regex
 
+import ai.rapids.cudf.{CudaException, CudaFatalException, CudfException, MemoryCleaner}
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskFailedReason}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
@@ -40,6 +40,7 @@ import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStag
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.rapids.GpuShuffleEnv
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.util.QueryExecutionListener
 
 class PluginException(msg: String) extends RuntimeException(msg)
@@ -68,6 +69,7 @@ object RapidsPluginUtils extends Logging {
   private val KRYO_SERIALIZER_NAME = classOf[KryoSerializer].getName
   private val KRYO_REGISTRATOR_KEY = "spark.kryo.registrator"
   private val KRYO_REGISTRATOR_NAME = classOf[GpuKryoRegistrator].getName
+  private val EXECUTOR_CORES_KEY = "spark.executor.cores"
 
   {
     val pluginProps = loadProps(RapidsPluginUtils.PLUGIN_PROPS_FILENAME)
@@ -85,6 +87,12 @@ object RapidsPluginUtils extends Logging {
     if (conf.isSqlEnabled && conf.isSqlExecuteOnGPU) {
       logWarning("RAPIDS Accelerator is enabled, to disable GPU " +
         s"support set `${RapidsConf.SQL_ENABLED}` to false.")
+
+      if (conf.explain != "NONE") {
+        logWarning(s"spark.rapids.sql.explain is set to `${conf.explain}`. Set it to 'NONE' to " +
+          "suppress the diagnostics logging about the query placement on the GPU.")
+      }
+
     } else if (conf.isSqlEnabled && conf.isSqlExplainOnlyEnabled) {
       logWarning("RAPIDS Accelerator is in explain only mode, to disable " +
         s"set `${RapidsConf.SQL_ENABLED}` to false. To change the mode, " +
@@ -139,6 +147,20 @@ object RapidsPluginUtils extends Logging {
     }
     // set driver timezone
     conf.set(RapidsConf.DRIVER_TIMEZONE.key, ZoneId.systemDefault().normalized().toString)
+
+    // If spark.rapids.sql.multiThreadedRead.numThreads is not set explicitly, then we derive it
+    // from other settings. Otherwise, we keep the users' setting.
+    val numThreadsKey = RapidsConf.MULTITHREAD_READ_NUM_THREADS.key
+    if (!conf.contains(numThreadsKey)) {
+      // Derive it from spark.executor.cores, since spark.executor.cores is not set on all cluster
+      // managers by default, we should judge whether if it's set explicitly.
+      if (conf.contains(EXECUTOR_CORES_KEY)) {
+        val numThreads = Math.max(RapidsConf.MULTITHREAD_READ_NUM_THREADS_DEFAULT,
+          conf.get(EXECUTOR_CORES_KEY).toInt).toString
+        conf.set(numThreadsKey, numThreads)
+        logWarning(s"$numThreadsKey is set to $numThreads.")
+      }
+    }
   }
 
   def loadProps(resourceName: String): Properties = {
@@ -182,7 +204,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
 
     if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
       GpuShuffleEnv.initShuffleManager()
-      if (conf.shuffleTransportEarlyStart) {
+      if (GpuShuffleEnv.isUCXShuffleAndEarlyStart(conf)) {
         rapidsShuffleHeartbeatManager =
           new RapidsShuffleHeartbeatManager(
             conf.shuffleTransportEarlyStartHeartbeatInterval,
@@ -203,6 +225,9 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       pluginContext: PluginContext,
       extraConf: java.util.Map[String, String]): Unit = {
     try {
+      // if configured, re-register checking leaks hook.
+      reRegisterCheckLeakHook()
+
       val conf = new RapidsConf(extraConf.asScala.toMap)
 
       // Compare if the cudf version mentioned in the classpath is equal to the version which
@@ -232,7 +257,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         GpuDeviceManager.initializeGpuAndMemory(pluginContext.resources().asScala.toMap, conf)
         if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
           GpuShuffleEnv.initShuffleManager()
-          if (conf.shuffleTransportEarlyStart) {
+          if (GpuShuffleEnv.isUCXShuffleAndEarlyStart(conf)) {
             logInfo("Initializing shuffle manager heartbeats")
             rapidsShuffleHeartbeatEndpoint = new RapidsShuffleHeartbeatEndpoint(pluginContext, conf)
             rapidsShuffleHeartbeatEndpoint.registerShuffleHeartbeat()
@@ -250,6 +275,26 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         // and exit immediately.
         logError("Exception in the executor plugin, shutting down!", e)
         System.exit(1)
+    }
+  }
+
+  /**
+   * Re-register leaks checking hook if configured.
+   */
+  private def reRegisterCheckLeakHook(): Unit = {
+    // DEFAULT_SHUTDOWN_THREAD in MemoryCleaner is responsible to check the leaks at shutdown time,
+    // it expects all other hooks are done before the checking
+    // as other hooks will close some resources.
+
+    if (MemoryCleaner.configuredDefaultShutdownHook) {
+      // Shutdown hooks are executed concurrently in JVM, and there is no execution order guarantee.
+      // See the doc of `Runtime.addShutdownHook`.
+      // Here we should wait Spark hooks to be done, or a false leak will be detected.
+      // See issue: https://github.com/NVIDIA/spark-rapids/issues/5854
+      //
+      // Here use `Spark ShutdownHookManager` to manage hooks with priority.
+      // 20 priority is small enough, will run after Spark hooks.
+      TrampolineUtil.addShutdownHook(20, MemoryCleaner.removeDefaultShutdownHook())
     }
   }
 
@@ -289,19 +334,21 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   override def onTaskFailed(failureReason: TaskFailedReason): Unit = {
     failureReason match {
       case ef: ExceptionFailure =>
-        val unrecoverableErrors = Seq("cudaErrorIllegalAddress", "cudaErrorLaunchTimeout",
-          "cudaErrorHardwareStackError", "cudaErrorIllegalInstruction",
-          "cudaErrorMisalignedAddress", "cudaErrorInvalidAddressSpace", "cudaErrorInvalidPc",
-          "cudaErrorLaunchFailure", "cudaErrorExternalDevice", "cudaErrorUnknown",
-          "cudaErrorECCUncorrectable")
-        if (unrecoverableErrors.exists(ef.description.contains(_)) ||
-          unrecoverableErrors.exists(ef.toErrorString.contains(_))) {
-          logError("Stopping the Executor based on exception being a fatal CUDA error: " +
-            s"${ef.toErrorString}")
-          System.exit(20)
+        ef.exception match {
+          case Some(_: CudaFatalException) =>
+            logError("Stopping the Executor based on exception being a fatal CUDA error: " +
+              s"${ef.toErrorString}")
+            System.exit(20)
+          case Some(_: CudaException) =>
+            logDebug(s"Executor onTaskFailed because of a non-fatal CUDA error: " +
+              s"${ef.toErrorString}")
+          case Some(_: CudfException) =>
+            logDebug(s"Executor onTaskFailed because of a CUDF error: ${ef.toErrorString}")
+          case _ =>
+            logDebug(s"Executor onTaskFailed: ${ef.toErrorString}")
         }
       case other =>
-        logDebug(s"Executor onTaskFailed not a CUDA fatal error: ${other.toString}")
+        logDebug(s"Executor onTaskFailed: ${other.toString}")
     }
   }
 }
@@ -423,7 +470,6 @@ object ExecutionPlanCaptureCallback {
   }
 
   private def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean = {
-    SparkShimImpl.getSparkShimVersion.toString
     val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(plan))
     !executedPlan.getClass.getCanonicalName.equals("com.nvidia.spark.rapids.GpuExec") &&
     PlanUtils.sameClass(executedPlan, fallbackCpuClass) ||

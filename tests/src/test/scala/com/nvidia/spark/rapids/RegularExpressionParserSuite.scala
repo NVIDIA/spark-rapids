@@ -189,7 +189,7 @@ class RegularExpressionParserSuite extends FunSuite {
     val e = intercept[RegexUnsupportedException] {
       parse("(?)")
     }
-    assert(e.getMessage.startsWith("base expression cannot start with quantifier"))
+    assert(e.getMessage.startsWith("Base expression cannot start with quantifier"))
 
     assert(parse("(?:a?)") === RegexSequence(ListBuffer(
       RegexGroup(capture = false, RegexSequence(ListBuffer(

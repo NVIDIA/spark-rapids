@@ -45,3 +45,6 @@ def pytest_addoption(parser):
     parser.addoption(
         "--iceberg", action="store_true", default=False, help="if true enable Iceberg tests"
     )
+    parser.addoption(
+        "--delta_lake", action="store_true", default=False, help="if true enable Delta Lake tests"
+    )

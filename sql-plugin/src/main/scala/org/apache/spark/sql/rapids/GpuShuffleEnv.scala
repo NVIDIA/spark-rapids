@@ -64,6 +64,11 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
 }
 
 object GpuShuffleEnv extends Logging {
+  def isUCXShuffleAndEarlyStart(conf: RapidsConf): Boolean = {
+    conf.isUCXShuffleManagerMode &&
+      conf.shuffleTransportEarlyStart
+  }
+
   val RAPIDS_SHUFFLE_CLASS: String = ShimLoader.getRapidsShuffleManagerClass
   val RAPIDS_SHUFFLE_INTERNAL: String = ShimLoader.getRapidsShuffleInternalClass
 
@@ -73,7 +78,7 @@ object GpuShuffleEnv extends Logging {
     // check for nulls in tests
     Option(SparkEnv.get)
       .map(_.shuffleManager)
-      .collect { case sm: VisibleShuffleManager => sm }
+      .collect { case sm: RapidsShuffleManagerLike => sm }
       .foreach(_.stop())
 
     // when we shut down, make sure we clear `env`, as the convention is that
@@ -102,8 +107,8 @@ object GpuShuffleEnv extends Logging {
   //
   def initShuffleManager(): Unit = {
     SparkEnv.get.shuffleManager match {
-      case visibleMgr: VisibleShuffleManager =>
-        visibleMgr.initialize
+      case rapidsShuffleManager: RapidsShuffleManagerLike =>
+        rapidsShuffleManager.initialize
       case _ =>
         throw new IllegalStateException(s"Cannot initialize the RAPIDS Shuffle Manager")
     }
@@ -112,21 +117,30 @@ object GpuShuffleEnv extends Logging {
   def isRapidsShuffleAvailable(conf: RapidsConf): Boolean = {
     // the driver has `mgr` defined when this is checked
     val sparkEnv = SparkEnv.get
-    val isRapidsManager = sparkEnv.shuffleManager.isInstanceOf[VisibleShuffleManager]
+    val isRapidsManager = sparkEnv.shuffleManager.isInstanceOf[RapidsShuffleManagerLike]
     if (isRapidsManager) {
       validateRapidsShuffleManager(sparkEnv.shuffleManager.getClass.getName)
     }
     // executors have `env` defined when this is checked
     // in tests
-    val isConfiguredInEnv = Option(env).map(_.isRapidsShuffleConfigured).getOrElse(false)
+    val isConfiguredInEnv = Option(env).exists(_.isRapidsShuffleConfigured)
     (isConfiguredInEnv || isRapidsManager) &&
-      !isExternalShuffleEnabled &&
-      !isSparkAuthenticateEnabled &&
+      (conf.isMultiThreadedShuffleManagerMode ||
+        (conf.isGPUShuffle && !isExternalShuffleEnabled &&
+          !isSparkAuthenticateEnabled)) &&
       conf.isSqlExecuteOnGPU
   }
 
-  def shouldUseRapidsShuffle(conf: RapidsConf): Boolean = {
-    conf.shuffleManagerEnabled && isRapidsShuffleAvailable(conf)
+  def useGPUShuffle(conf: RapidsConf): Boolean = {
+    conf.shuffleManagerEnabled &&
+      conf.isGPUShuffle &&
+        isRapidsShuffleAvailable(conf)
+  }
+
+  def useMultiThreadedShuffle(conf: RapidsConf): Boolean = {
+    conf.shuffleManagerEnabled &&
+      conf.isMultiThreadedShuffleManagerMode &&
+      isRapidsShuffleAvailable(conf)
   }
 
   def getCatalog: ShuffleBufferCatalog = if (env == null) {

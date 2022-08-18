@@ -93,11 +93,32 @@ case class JobInfoProfileResult(
     appIndex: Int,
     jobID: Int,
     stageIds: Seq[Int],
-    sqlID: Option[Long]) extends ProfileResult {
-  override val outputHeaders = Seq("appIndex", "jobID", "stageIds", "sqlID")
+    sqlID: Option[Long],
+    startTime: Long,
+    endTime: Option[Long]) extends ProfileResult {
+  override val outputHeaders = Seq("appIndex", "jobID", "stageIds", "sqlID", "startTime", "endTime")
   override def convertToSeq: Seq[String] = {
     val stageIdStr = s"[${stageIds.mkString(",")}]"
-    Seq(appIndex.toString, jobID.toString, stageIdStr, sqlID.map(_.toString).getOrElse(null))
+    Seq(appIndex.toString, jobID.toString, stageIdStr, sqlID.map(_.toString).getOrElse(null),
+      startTime.toString, endTime.map(_.toString).getOrElse(null))
+  }
+}
+
+case class SQLStageInfoProfileResult(
+    appIndex: Int,
+    sqlID: Long,
+    jobID: Int,
+    stageId: Int,
+    stageAttemptId: Int,
+    duration: Option[Long],
+    nodeNames: Seq[String]) extends ProfileResult {
+  override val outputHeaders = Seq("appIndex", "sqlID", "jobID", "stageId",
+    "stageAttemptId", "Stage Duration", "SQL Nodes(IDs)")
+
+  override def convertToSeq: Seq[String] = {
+    Seq(appIndex.toString, sqlID.toString, jobID.toString, stageId.toString,
+      stageAttemptId.toString, duration.map(_.toString).getOrElse(null),
+      nodeNames.mkString(","))
   }
 }
 
@@ -136,13 +157,13 @@ class SQLExecutionInfoClass(
     var sqlCpuTimePercent: Double = -1)
 
 case class SQLAccumProfileResults(appIndex: Int, sqlID: Long, nodeID: Long,
-    nodeName: String, accumulatorId: Long,
-    name: String, max_value: Long, metricType: String) extends ProfileResult {
+    nodeName: String, accumulatorId: Long, name: String, max_value: Long,
+    metricType: String, stageIds: String) extends ProfileResult {
   override val outputHeaders = Seq("appIndex", "sqlID", "nodeID", "nodeName", "accumulatorId",
-    "name", "max_value", "metricType")
+    "name", "max_value", "metricType", "stageIds")
   override def convertToSeq: Seq[String] = {
     Seq(appIndex.toString, sqlID.toString, nodeID.toString, nodeName, accumulatorId.toString,
-      name, max_value.toString, metricType)
+      name, max_value.toString, metricType, stageIds)
   }
 }
 
@@ -238,7 +259,8 @@ case class SQLMetricInfoCase(
     metricType: String,
     nodeID: Long,
     nodeName: String,
-    nodeDesc: String)
+    nodeDesc: String,
+    stageIds: Set[Int])
 
 case class DriverAccumCase(
     sqlID: Long,
@@ -587,4 +609,24 @@ case class CompareProfileResults(outputHeadersIn: Seq[String],
 
   override val outputHeaders: Seq[String] = outputHeadersIn
   override def convertToSeq: Seq[String] = rows
+}
+
+case class WholeStageCodeGenResults(
+    appIndex: Int,
+    sqlID: Long,
+    nodeID: Long,
+    parent: String,
+    child: String,
+    childNodeID: Long
+) extends ProfileResult {
+  override val outputHeaders = Seq("appIndex", "sqlID", "nodeID", "SQL Node",
+    "Child Node", "Child NodeID")
+  override def convertToSeq: Seq[String] = {
+    Seq(appIndex.toString,
+      sqlID.toString,
+      nodeID.toString,
+      parent,
+      child,
+      childNodeID.toString)
+  }
 }

@@ -128,7 +128,7 @@ case class GpuLocalLimitExec(limit: Int, child: SparkPlan) extends GpuBaseLimitE
 /**
  * Take the first `limit` elements of the child's single output partition.
  */
-case class GpuGlobalLimitExec(limit: Int, child: SparkPlan) extends GpuBaseLimitExec {
+case class GpuGlobalLimitExec(limit: Int, child: SparkPlan, offset: Int) extends GpuBaseLimitExec {
   override def requiredChildDistribution: List[Distribution] = AllTuples :: Nil
 }
 
@@ -147,7 +147,7 @@ class GpuCollectLimitMeta(
         GpuSinglePartitioning,
         GpuLocalLimitExec(collectLimit.limit, childPlans.head.convertIfNeeded()),
         ENSURE_REQUIREMENTS
-      )(SinglePartition))
+      )(SinglePartition), 0)
 }
 
 object GpuTopN extends Arm {
@@ -296,10 +296,14 @@ case class GpuTopN(
     val sortTime = gpuLongMetric(SORT_TIME)
     val concatTime = gpuLongMetric(CONCAT_TIME)
     val callback = GpuMetric.makeSpillCallback(allMetrics)
+    val localLimit = limit
+    val localProjectList = projectList
+    val childOutput = child.output
+
     child.executeColumnar().mapPartitions { iter =>
-      val topN = GpuTopN(limit, sorter, iter, opTime, sortTime, concatTime,
+      val topN = GpuTopN(localLimit, sorter, iter, opTime, sortTime, concatTime,
         inputBatches, inputRows, outputBatches, outputRows, callback)
-      if (projectList != child.output) {
+      if (localProjectList != childOutput) {
         topN.map { batch =>
           GpuProjectExec.projectAndClose(batch, boundProjectExprs, opTime)
         }

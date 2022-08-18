@@ -58,12 +58,14 @@ Spark getting a value of `1.03` but under the RAPIDS accelerator it produces `1.
 Python will produce `1.02`, Java does not have the ability to do a round like this built in, but if
 you do the simple operation of `Math.round(1.025 * 100.0)/100.0` you also get `1.02`.
 
+For the `degrees` functions, Spark's implementation relies on Java JDK's built-in functions `Math.toDegrees`. It is `angrad * 180.0 / PI` in Java 8 while `angrad * (180d / PI)` in Java 9+. So their results will differ depending on the JDK runtime versions when considering overflow. The RAPIDS Accelerator follows the bahavior of Java 9+. Therefore, with JDK 8 or below, the `degrees` on GPU will not overflow on some very large numbers while the CPU version does.
+
 For aggregations the underlying implementation is doing the aggregations in parallel and due to race
 conditions within the computation itself the result may not be the same each time the query is
 run. This is inherent in how the plugin speeds up the calculations and cannot be "fixed." If a query
 joins on a floating point value, which is not wise to do anyways, and the value is the result of a
 floating point aggregation then the join may fail to work properly with the plugin but would have
-worked with plain Spark. As of 22.06 this is behavior is enabled by default but can be disabled with 
+worked with plain Spark. Starting from 22.06 this is behavior is enabled by default but can be disabled with 
 the config
 [`spark.rapids.sql.variableFloatAgg.enabled`](configs.md#sql.variableFloatAgg.enabled).
 
@@ -368,6 +370,7 @@ INTERVAL HOUR TO SECOND | INTERVAL '10:30:40.999999' HOUR TO SECOND | 10:30:40.9
 INTERVAL MINUTE | INTERVAL '30' MINUTE                      | 30|
 INTERVAL MINUTE TO SECOND | INTERVAL '30:40.999999' MINUTE TO SECOND  | 30:40.999999|
 INTERVAL SECOND | INTERVAL '40.999999' SECOND               | 40.999999|
+
 Currently, the RAPIDS Accelerator only supports the ANSI style.
 
 ## ORC
@@ -568,20 +571,20 @@ The following Apache Spark regular expression functions and expressions are supp
 - `RLIKE`
 - `regexp`
 - `regexp_extract`
+- `regexp_extract_all`
 - `regexp_like`
 - `regexp_replace`
 - `string_split`
 - `str_to_map`
 
-Regular expression evaluation on the GPU is enabled by default. Execution will fall back to the CPU for
-regular expressions that are not yet supported on the GPU. However, there are some edge cases that will
-still execute on the GPU and produce different results to the CPU. To disable regular expressions on the GPU,
-set `spark.rapids.sql.regexp.enabled=false`.
+Regular expression evaluation on the GPU is enabled by default when the UTF-8 character set is used
+by the current locale. Execution will fall back to the CPU for regular expressions that are not yet
+supported on the GPU, and in environments where the locale does not use UTF-8. However, there are
+some edge cases that will still execute on the GPU and produce different results to the CPU. To
+disable regular expressions on the GPU, set `spark.rapids.sql.regexp.enabled=false`.
 
 These are the known edge cases where running on the GPU will produce different results to the CPU:
 
-- Using regular expressions with Unicode data can produce incorrect results if the system `LANG` is not set
- to `en_US.UTF-8` ([#5549](https://github.com/NVIDIA/spark-rapids/issues/5549))
 - Regular expressions that contain an end of line anchor '$' or end of string anchor '\Z' or '\z' immediately
  next to a newline or a repetition that produces zero or more results
  ([#5610](https://github.com/NVIDIA/spark-rapids/pull/5610))`
@@ -591,16 +594,22 @@ The following regular expression patterns are not yet supported on the GPU and w
 - Line anchor `^` is not supported in some contexts, such as when combined with a choice (`^|a`).
 - Line anchor `$` is not supported by `regexp_replace`, and in some rare contexts.
 - String anchor `\Z` is not supported by `regexp_replace`, and in some rare contexts.
+- Patterns containing an end of line or string anchor immediately next to a newline or repetition that produces zero
+  or more results
 - Line anchor `$` and string anchors `\z` and `\Z` are not supported in patterns containing `\W` or `\D`
 - Line and string anchors are not supported by `string_split` and `str_to_map`
-- Word and non-word boundaries, `\b` and `\B`
 - Lazy quantifiers, such as `a*?`
 - Possessive quantifiers, such as `a*+`
 - Character classes that use union, intersection, or subtraction semantics, such as `[a-d[m-p]]`, `[a-z&&[def]]`, 
   or `[a-z&&[^bc]]`
 - Empty groups: `()`
-- Regular expressions containing null characters (unless the pattern is a simple literal string)
 - `regexp_replace` does not support back-references
+
+The following regular expression patterns are known to potentially produce different results on the GPU
+vs the CPU.
+
+- Word and non-word boundaries, `\b` and `\B`
+
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.
 
@@ -699,16 +708,21 @@ The formats which are supported on GPU vary depending on the setting for `timePa
 With timeParserPolicy set to `CORRECTED` or `EXCEPTION` (the default), the following formats are supported
 on the GPU without requiring any additional settings.
 
-- `dd/MM/yyyy`
-- `yyyy/MM`
+- `yyyy-MM-dd`
 - `yyyy/MM/dd`
 - `yyyy-MM`
-- `yyyy-MM-dd`
+- `yyyy/MM`
+- `dd/MM/yyyy`
 - `yyyy-MM-dd HH:mm:ss`
 - `MM-dd`
 - `MM/dd`
 - `dd-MM`
 - `dd/MM`
+- `MM/yyyy`
+- `MM-yyyy`
+- `MM/dd/yyyy`
+- `MM-dd-yyyy`
+- `MMyyyy`
 
 Valid Spark date/time formats that do not appear in the list above may also be supported but have not been 
 extensively tested and may produce different results compared to the CPU. Known issues include:
@@ -794,7 +808,7 @@ leads to restrictions:
 * Float values cannot be larger than `1e18` or smaller than `-1e18` after conversion.
 * The results produced by GPU slightly differ from the default results of Spark.
 
-As of 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or 
+Starting from 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or 
 later, set
 [`spark.rapids.sql.castFloatToDecimal.enabled`](configs.md#sql.castFloatToDecimal.enabled) to `false`
 
@@ -806,7 +820,7 @@ Spark 3.1.0 the MIN and MAX values were floating-point values such as `Int.MaxVa
 starting with 3.1.0 these are now integral types such as `Int.MaxValue` so this has slightly
 affected the valid range of values and now differs slightly from the behavior on GPU in some cases.
 
-As of 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or later, set
+Starting from 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or later, set
 [`spark.rapids.sql.castFloatToIntegralTypes.enabled`](configs.md#sql.castFloatToIntegralTypes.enabled)
 to `false`.
 
@@ -818,7 +832,7 @@ The GPU will use different precision than Java's toString method when converting
 types to strings. The GPU uses a lowercase `e` prefix for an exponent while Spark uses uppercase
 `E`. As a result the computed string can differ from the default behavior in Spark.
 
-As of 22.06 this conf is enabled by default, to disable this operation on the GPU, set
+Starting from 22.06 this conf is enabled by default, to disable this operation on the GPU, set
 [`spark.rapids.sql.castFloatToString.enabled`](configs.md#sql.castFloatToString.enabled) to `false`.
 
 ### String to Float
@@ -832,7 +846,7 @@ default behavior in Apache Spark is to return `+Infinity` and `-Infinity`, respe
 
 Also, the GPU does not support casting from strings containing hex values.
 
-As of 22.06 this conf is enabled by default, to enable this operation on the GPU, set
+Starting from 22.06 this conf is enabled by default, to enable this operation on the GPU, set
 [`spark.rapids.sql.castStringToFloat.enabled`](configs.md#sql.castStringToFloat.enabled) to `false`.
 
 ### String to Date
@@ -908,9 +922,9 @@ updated in a future release to more closely match Spark.
 
 The GPU implementation of `approximate_percentile` uses
 [t-Digests](https://arxiv.org/abs/1902.04023) which have high accuracy, particularly near the tails of a
-distribution. Because the results are not bit-for-bit identical with the Apache Spark implementation of
-`approximate_percentile`, this feature is disabled by default and can be enabled by setting
-`spark.rapids.sql.incompatibleOps.enabled=true`.
+distribution. The results are not bit-for-bit identical with the Apache Spark implementation of
+`approximate_percentile`. This feature is enabled by default and can be disabled by setting
+`spark.rapids.sql.expression.ApproximatePercentile=false`.
 
 ## Conditionals and operations with side effects (ANSI mode)
 

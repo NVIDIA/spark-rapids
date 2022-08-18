@@ -18,7 +18,7 @@
 # The initscript to set up environment for the cudf_udf tests on Databricks
 # Will be automatically pushed into the dbfs:/databricks/init_scripts once it is updated.
 
-CUDF_VER=${CUDF_VER:-22.06}
+CUDF_VER=${CUDF_VER:-22.08}
 
 # Need to explictly add conda into PATH environment, to activate conda environment.
 export PATH=/databricks/conda/bin:$PATH

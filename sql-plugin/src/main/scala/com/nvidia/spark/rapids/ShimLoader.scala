@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids
 
 import java.net.URL
 
+import com.nvidia.spark.GpuCachedBatchSerializer
+import com.nvidia.spark.rapids.iceberg.IcebergProvider
 import org.apache.commons.lang3.reflect.MethodUtils
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -53,13 +55,13 @@ import org.apache.spark.util.MutableURLClassLoader
 
     E.g., Spark 3.2.0 Shim will use
 
-    jar:file:/home/spark/rapids-4-spark_2.12-22.06.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-22.06.0.jar!/spark320/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.08.0.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.08.0.jar!/spark320/
 
     Spark 3.1.1 will use
 
-    jar:file:/home/spark/rapids-4-spark_2.12-22.06.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-22.06.0.jar!/spark311/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.08.0.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.08.0.jar!/spark311/
 
     Using these Jar URL's allows referencing different bytecode produced from identical sources
     by incompatible Scala / Spark dependencies.
@@ -385,9 +387,13 @@ object ShimLoader extends Logging {
     loader.loadClass(className)
   }
 
-  def newInstanceOf[T](className: String): T = {
+  private def newInstanceOf[T](className: String): T = {
     instantiateClass(loadClass(className)).asInstanceOf[T]
   }
+
+  def newOptimizerClass(className: String): Optimizer = {
+    newInstanceOf[Optimizer](className)
+  } 
 
   // avoid cached constructors
   private def instantiateClass[T](cls: Class[T]): T = {
@@ -438,6 +444,10 @@ object ShimLoader extends Logging {
     newInstanceOf("com.nvidia.spark.rapids.InternalExclusiveModeGpuDiscoveryPlugin")
   }
 
+  def newParquetCachedBatchSerializer(): GpuCachedBatchSerializer = {
+    newInstanceOf("com.nvidia.spark.rapids.ParquetCachedBatchSerializer")
+  }
+
   def loadColumnarRDD(): Class[_] = {
     loadClass("org.apache.spark.sql.rapids.execution.InternalColumnarRddConverter")
   }
@@ -445,4 +455,14 @@ object ShimLoader extends Logging {
   def newExplainPlan(): ExplainPlanBase = {
     newInstanceOf[ExplainPlanBase]("com.nvidia.spark.rapids.ExplainPlanImpl")
   }
+
+  def newHiveProvider(): HiveProvider= {
+    newInstanceOf[HiveProvider]("org.apache.spark.sql.hive.rapids.HiveProviderImpl")
+  }
+
+  def newAvroProvider(): AvroProvider = ShimLoader.newInstanceOf[AvroProvider](
+    "org.apache.spark.sql.rapids.AvroProviderImpl")
+
+  def newIcebergProvider(): IcebergProvider = ShimLoader.newInstanceOf[IcebergProvider](
+    "com.nvidia.spark.rapids.iceberg.IcebergProviderImpl")
 }
