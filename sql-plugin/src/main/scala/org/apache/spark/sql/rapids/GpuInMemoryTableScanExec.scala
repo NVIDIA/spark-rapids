@@ -18,13 +18,14 @@ package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.ParquetCachedBatchSerializer
 import com.nvidia.spark.rapids.{DataFromReplacementRule, ExecChecks, GpuExec, GpuMetric, RapidsConf, RapidsMeta, SparkPlanMeta}
+import com.nvidia.spark.rapids.shims.ShimLeafExecNode
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeMap, Expression, SortOrder}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.execution.{LeafExecNode, SparkPlan}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.columnar.{InMemoryRelation, InMemoryTableScanExec}
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.types.DataType
@@ -75,7 +76,7 @@ class InMemoryTableScanMeta(
 case class GpuInMemoryTableScanExec(
    attributes: Seq[Attribute],
    predicates: Seq[Expression],
-   @transient relation: InMemoryRelation) extends LeafExecNode with GpuExec {
+   @transient relation: InMemoryRelation) extends ShimLeafExecNode with GpuExec {
 
   override val nodeName: String = {
     relation.cacheBuilder.tableName match {
