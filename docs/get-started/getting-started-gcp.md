@@ -83,7 +83,8 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --optional-components=JUPYTER,ZEPPELIN \
     --metadata=rapids-runtime=SPARK \
     --bucket=$GCS_BUCKET \
-    --enable-component-gateway
+    --enable-component-gateway \
+    --subnet=default
 ```
 
 This may take around 10-15 minutes to complete.  You can navigate to the Dataproc clusters tab in the

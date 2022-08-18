@@ -150,6 +150,14 @@ def test_cache_diff_req_order(spark_tmp_path):
 
 # This test doesn't allow negative scale for Decimals as ` df.write.mode('overwrite').parquet(data_path)`
 # writes parquet which doesn't allow negative decimals
+# In addition, `TIMESTAMP_MILLIS` can't be handled correctly when the input is of nested types containing timestamp.
+# See issue https://github.com/NVIDIA/spark-rapids/issues/6302.
+# Thus, we exclude nested types contaning timestamp from the tests here.
+# When the issue is resolved, remove `_cache_single_array_gens_no_null_no_timestamp` and 
+# use just `_cache_single_array_gens_no_null` for `data_gen` parameter.
+_all_basic_gens_no_null_no_timestamp = [gen for gen in all_basic_gens_no_null if gen != timestamp_gen]
+_cache_single_array_gens_no_null_no_timestamp = [ArrayGen(gen) for gen in _all_basic_gens_no_null_no_timestamp +
+                                                 _cache_decimal_gens]
 @pytest.mark.parametrize('data_gen', [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
                                       ArrayGen(
                                           StructGen([['child0', StringGen()],
@@ -158,7 +166,7 @@ def test_cache_diff_req_order(spark_tmp_path):
                                      pytest.param(FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), marks=[incompat]),
                                      pytest.param(DoubleGen(special_cases=double_special_cases), marks=[incompat]),
                                      BooleanGen(), DateGen(), TimestampGen(), decimal_gen_32bit, decimal_gen_64bit,
-                                     decimal_gen_128bit] + _cache_single_array_gens_no_null, ids=idfn)
+                                     decimal_gen_128bit] + _cache_single_array_gens_no_null_no_timestamp, ids=idfn)
 @pytest.mark.parametrize('ts_write', ['TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
 @pytest.mark.parametrize('enable_vectorized', ['true', 'false'], ids=idfn)
 @ignore_order
