@@ -866,8 +866,11 @@ object RapidsConf {
 
   val ENABLE_ORC_FLOAT_TYPES_TO_STRING =
     conf("spark.rapids.sql.format.orc.floatTypesToString.enable")
-    .doc("The float/double numbers in GPU have different precision with CPU. So when casting " +
-      "them to string, the result of GPU is different from result of CPU spark.")
+    .doc("When reading an ORC file, the source data schemas(schemas of ORC file) may differ " +
+      "from the target schemas (schemas of the reader), we need to handle the castings from " +
+      "source type to target type. Since float/double numbers in GPU have different precision " +
+      "with CPU, when casting float/double to string, the result of GPU is different from " +
+      "result of CPU spark.")
     .booleanConf
     .createWithDefault(true)
 

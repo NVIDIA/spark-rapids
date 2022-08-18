@@ -25,7 +25,7 @@ def test_casting_from_float_and_double(spark_tmp_path, to_type):
     orc_path = spark_tmp_path + '/orc_casting_from_float_and_double'
     data_gen = [('float_column', float_gen), ('double_column', double_gen)]
     with_cpu_session(
-        lambda spark: gen_df(spark, data_gen).write.mode('overwrite').orc(orc_path)
+        lambda spark: gen_df(spark, data_gen).write.orc(orc_path)
     )
     schema_str = "float_column {}, double_column {}".format(to_type, to_type)
     assert_gpu_and_cpu_are_equal_collect(
@@ -34,23 +34,23 @@ def test_casting_from_float_and_double(spark_tmp_path, to_type):
 
 
 @pytest.mark.parametrize('data_gen', [DoubleGen(max_exp=32, special_cases=None),
-                                      DoubleGen(max_exp=32, special_cases=[8.88e32, 9.99e33, 3.14159e34, 2.712e35, 2e36])])
+                                      DoubleGen(max_exp=32, special_cases=[8.88e9, 9.99e10, 1.314e11])])
 def test_casting_from_double_to_timestamp(spark_tmp_path, data_gen):
     # ORC will assume the original double value in seconds, we need to convert them to
     # timestamp(INT64 in micro-seconds).
     #
-    # Since datetime library in python requires year >= 0, and UTC timestamp is start from 1970/1/1 00:00:00,
-    # that is, the minimum valid negative number is -1970 * 365 * 24 * 3600 = -62125920000 -> 6e10 -> 2e32.
+    # The 'datetime' module in python requires 0 <= year < 10000, and UTC timestamp is start from 1970/1/1.
+    # That is, the minimum valid negative number is -1970 * 365 * 24 * 3600 = -62125920000 -> 6e10 -> 2^32.
     # So we set max_exp = 32 in DoubleGen.
     #
-    # The maximum valid positive number is INT64_MAX / 1e6 -> 1e12 -> 2e36, so we add some special cases
-    # from 2e33 to 2e36.
+    # The maximum valid positive number is (10000 - 1970) * 365 * 24 * 3600 = 253234080000 -> 2e11 -> 2^37,
+    # so we add some special cases from 2^33 - 2^37 (8e9 ~ 1e11).
     #
     # In DoubleGen, special_case=None will generate some NaN, INF corner cases.
 
     orc_path = spark_tmp_path + '/orc_casting_from_double_to_timestamp'
     with_cpu_session(
-        lambda spark: unary_op_df(spark, data_gen).write.mode('overwrite').orc(orc_path)
+        lambda spark: unary_op_df(spark, data_gen).write.orc(orc_path)
     )
     # the name of unique column is 'a', cast it into timestamp type
     assert_gpu_and_cpu_are_equal_collect(
@@ -61,7 +61,7 @@ def test_casting_from_double_to_timestamp(spark_tmp_path, data_gen):
 def test_casting_from_overflow_double_to_timestamp(spark_tmp_path):
     orc_path = spark_tmp_path + '/orc_casting_from_overflow_double_to_timestamp'
     with_cpu_session(
-        lambda spark: unary_op_df(spark, DoubleGen(min_exp=37)).write.mode('overwrite').orc(orc_path)
+        lambda spark: unary_op_df(spark, DoubleGen(min_exp=38)).write.orc(orc_path)
     )
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: spark.read.schema("a timestamp").orc(orc_path).collect(),
