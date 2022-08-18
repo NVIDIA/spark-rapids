@@ -28,7 +28,7 @@ iceberg_map_gens = [MapGen(f(nullable=False), f()) for f in [
 
 iceberg_gens_list = [
     [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-     string_gen, boolean_gen, date_gen, timestamp_gen,
+     string_gen, boolean_gen, date_gen, timestamp_gen, binary_gen, ArrayGen(binary_gen),
      ArrayGen(byte_gen), ArrayGen(long_gen), ArrayGen(string_gen), ArrayGen(date_gen),
      ArrayGen(timestamp_gen), ArrayGen(decimal_gen_64bit), ArrayGen(ArrayGen(byte_gen)),
      StructGen([['child0', ArrayGen(byte_gen)], ['child1', byte_gen], ['child2', float_gen], ['child3', decimal_gen_64bit]]),
