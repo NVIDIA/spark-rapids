@@ -289,7 +289,7 @@ object GpuOrcScan extends Arm {
           // TIMESTAMP_INSTANT is not supported by cuDF.
           case _ => false
         }
-      case CHAR | VARCHAR =>
+      case VARCHAR =>
         toType == STRING
       case _ => false
     }

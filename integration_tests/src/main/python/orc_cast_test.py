@@ -24,16 +24,16 @@ from orc_test import reader_opt_confs
 def create_orc(data_gen_list, data_path):
     # generate ORC dataframe, and dump it to local file 'data_path'
     with_cpu_session(
-        lambda spark: gen_df(spark, data_gen_list).write.mode('overwrite').orc(data_path)
+        lambda spark: gen_df(spark, data_gen_list).write.orc(data_path)
     )
 
 
-@pytest.mark.parametrize('offset', [1,2,3,4], ids=idfn)
+int_gens = [boolean_gen] + integral_gens
+@pytest.mark.parametrize('offset', list(range(1, len(int_gens))), ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 def test_read_type_casting_integral(spark_tmp_path, offset, reader_confs, v1_enabled_list):
     # cast integral types to another integral types
-    int_gens = [boolean_gen] + integral_gens
     gen_list = [('c' + str(i), gen) for i, gen in enumerate(int_gens)]
     data_path = spark_tmp_path + '/ORC_DATA'
     create_orc(gen_list, data_path)
@@ -52,16 +52,16 @@ def test_read_type_casting_integral(spark_tmp_path, offset, reader_confs, v1_ena
 @pytest.mark.parametrize('to_type', ['float', 'double', 'string', 'timestamp'])
 def test_casting_from_integer(spark_tmp_path, to_type):
     orc_path = spark_tmp_path + '/orc_cast_integer'
-    # Since the library 'datatime' in python, the max-year it supports is 10000, for the max value of
-    # Long type, set it to '1e11'. If the long-value is out of this range, pytest will throw exception.
-    data_gen = [('boolean', boolean_gen), ('tinyint', byte_gen),
-                ('smallint', ShortGen(min_val=BYTE_MAX + 1)),
-                ('int', IntegerGen(min_val=SHORT_MAX + 1)),
-                ('bigint', LongGen(min_val=INT_MAX + 1, max_val=int(1e11))),
-                ('negint', IntegerGen(max_val=-1))]
+    # The Python 'datetime' module only supports a max-year of 10000, so we set the Long type max
+    # to '1e11'. If the long-value is out of this range, pytest will throw an exception.
+    data_gen = [('boolean_col', boolean_gen), ('tinyint_col', byte_gen),
+                ('smallint_col', ShortGen(min_val=BYTE_MAX + 1)),
+                ('int_col', IntegerGen(min_val=SHORT_MAX + 1)),
+                ('bigint_col', LongGen(min_val=INT_MAX + 1, max_val=int(1e11))),
+                ('negint_col', IntegerGen(max_val=-1))]
     create_orc(data_gen, orc_path)
 
-    schema_str = "boolean {}, tinyint {}, smallint {}, int {}, bigint {}, negint {}"
+    schema_str = "boolean_col {}, tinyint_col {}, smallint_col {}, int_col {}, bigint_col {}, negint_col {}"
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(
             schema_str.format(*([to_type] * len(data_gen)))).orc(orc_path)
