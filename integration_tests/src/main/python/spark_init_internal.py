@@ -13,32 +13,55 @@
 # limitations under the License.
 
 import os
+import re
 
+
+has_findspark = False
 try:
     import pyspark
 except ImportError as error:
     import findspark
     findspark.init()
+    has_findspark = True
     import pyspark
 
 _CONF_ENV_PREFIX = 'PYSP_TEST_'
 _EXECUTOR_ENV_PREFIX = 'spark_executorEnv_'
 
 def env_for_conf(spark_conf_name):
-    return _CONF_ENV_PREFIX + spark_conf_name.replace('.', '_')
+    # escape underscores
+    escaped_conf = spark_conf_name.replace('_', r'__')
+    return _CONF_ENV_PREFIX + escaped_conf.replace('.', '_')
 
 def conf_for_env(env_name):
     conf_key = env_name[len(_CONF_ENV_PREFIX):]
     if conf_key.startswith(_EXECUTOR_ENV_PREFIX):
         res = _EXECUTOR_ENV_PREFIX.replace('_', '.') + conf_key[len(_EXECUTOR_ENV_PREFIX):]
     else:
-        res = conf_key.replace('_', '.')
+        # replace standalone underscores
+        res1 = re.sub(r'(?<!_)_(?!_)', '.', conf_key)
+        # unescape: remove duplicate underscores
+        res = res1.replace('__', '_')
     return res
 
 _DRIVER_ENV = env_for_conf('spark.driver.extraJavaOptions')
-
+_SPARK_JARS = env_for_conf("spark.jars")
+_SPARK_JARS_PACKAGES = env_for_conf("spark.jars.packages")
+spark_jars_env = {
+    _SPARK_JARS,
+    _SPARK_JARS_PACKAGES
+}
 
 def _spark__init():
+    if has_findspark:
+        spark_jars = os.getenv(_SPARK_JARS)
+        spark_jars_packages = os.getenv(_SPARK_JARS_PACKAGES)
+        if spark_jars is not None:
+            findspark.add_jars(spark_jars)
+
+        if spark_jars_packages is not None:
+            findspark.add_packages(spark_jars_packages)
+
     #Force the RapidsPlugin to be enabled, so it blows up if the classpath is not set properly
     # DO NOT SET ANY OTHER CONFIGS HERE!!!
     # due to bugs in pyspark/pytest it looks like any configs set here
@@ -49,7 +72,7 @@ def _spark__init():
             .config('spark.sql.queryExecutionListeners', 'com.nvidia.spark.rapids.ExecutionPlanCaptureCallback')
 
     for key, value in os.environ.items():
-        if key.startswith(_CONF_ENV_PREFIX) and key != _DRIVER_ENV:
+        if key.startswith(_CONF_ENV_PREFIX) and key != _DRIVER_ENV and key not in spark_jars_env:
             _sb.config(conf_for_env(key), value)
 
     driver_opts = os.environ.get(_DRIVER_ENV, "")

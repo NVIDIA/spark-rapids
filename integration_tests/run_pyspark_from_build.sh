@@ -258,7 +258,7 @@ else
 
     # If you want to change the amount of GPU memory allocated you have to change it here
     # and where TEST_PARALLEL is calculated
-    export PYSP_TEST_spark_rapids_memory_gpu_allocSize='1536m'
+    export PYSP_TEST_spark_rapids_memory_gpu_allocSize=${PYSP_TEST_spark_rapids_memory_gpu_allocSize:-'1536m'}
 
     if ((${#TEST_PARALLEL_OPTS[@]} > 0));
     then
@@ -266,11 +266,17 @@ else
     else
         # We set the GPU memory size to be a constant value even if only running with a parallelism of 1
         # because it helps us have consistent test runs.
+        jarOpts=()
         if [[ -n "$PYSP_TEST_spark_jars" ]]; then
-            # `spark.jars` is the same as `--jars`, e.g.: --jars a.jar,b.jar...
-            jarOpts=(--conf spark.jars="${PYSP_TEST_spark_jars}")
-        elif [[ -n "$PYSP_TEST_spark_driver_extraClassPath" ]]; then
-            jarOpts=(--driver-class-path "${PYSP_TEST_spark_driver_extraClassPath}")
+            jarOpts+=(--jars "${PYSP_TEST_spark_jars}")
+        fi
+
+        if [[ -n "$PYSP_TEST_spark_jars_packages" ]]; then
+            jarOpts+=(--packages "${PYSP_TEST_spark_jars_packages}")
+        fi
+
+        if [[ -n "$PYSP_TEST_spark_driver_extraClassPath" ]]; then
+            jarOpts+=(--driver-class-path "${PYSP_TEST_spark_driver_extraClassPath}")
         fi
 
         driverJavaOpts="$PYSP_TEST_spark_driver_extraJavaOptions"
@@ -281,6 +287,7 @@ else
         unset PYSP_TEST_spark_driver_extraClassPath
         unset PYSP_TEST_spark_driver_extraJavaOptions
         unset PYSP_TEST_spark_jars
+        unset PYSP_TEST_spark_jars_packages
         unset PYSP_TEST_spark_rapids_memory_gpu_allocSize
 
         exec "$SPARK_HOME"/bin/spark-submit "${jarOpts[@]}" \

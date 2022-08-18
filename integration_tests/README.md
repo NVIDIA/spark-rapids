@@ -37,20 +37,20 @@ It is recommended that you use `pyenv` to manage Python installations.
 - Follow instructions to use the right method of installation described
   [here](https://github.com/pyenv/pyenv#installation)
 - Verify that `pyenv` is set correctly
-  
+
   ```shell script
-  which pyenv  
+  which pyenv
   ```
 
 - Using `pyenv` to set Python installation
   - To check versions to be installed (will return a long list)
-  
+
     ```shell script
     ls ~/.pyenv/versions/
     ```
 
   - To install a specific version from the available list
-  
+
     ```shell script
     pyenv install 3.X.Y
     ```
@@ -116,7 +116,7 @@ You can install all the dependencies using `pip` by running the following comman
 ### Installing Spark
 
 You need to install spark-3.x and set `$SPARK_HOME/bin` to your `$PATH`, where
-`SPARK_HOME` points to the directory of a runnable Spark distribution.  
+`SPARK_HOME` points to the directory of a runnable Spark distribution.
 This can be done in the following three steps:
 
 1. Choose the appropriate way to create Spark distribution:
@@ -156,10 +156,10 @@ Make sure that you compile the plugin against the same version of Spark that it 
 Tests will run as a part of the maven build if you have the environment variable `SPARK_HOME` set.
 
 The suggested way to run these tests is to use the shell-script file located in the
- integration_tests folder called [run_pyspark_from_build.sh](run_pyspark_from_build.sh). This script takes 
-care of some of the flags that are required to run the tests which will have to be set for the 
-plugin to work. It will be very useful to read the contents of the 
-[run_pyspark_from_build.sh](run_pyspark_from_build.sh) to get a better insight 
+ integration_tests folder called [run_pyspark_from_build.sh](run_pyspark_from_build.sh). This script takes
+care of some of the flags that are required to run the tests which will have to be set for the
+plugin to work. It will be very useful to read the contents of the
+[run_pyspark_from_build.sh](run_pyspark_from_build.sh) to get a better insight
 into what is needed as we constantly keep working on to improve and expand the plugin-support.
 
 The python tests run with pytest and the script honors pytest parameters. Some handy flags are:
@@ -221,16 +221,18 @@ To run the tests separate from the build go to the `integration_tests` directory
 `runtests.py` through `spark-submit`, but if you want to run the tests in parallel with
 `pytest-xdist` you will need to submit it as a regular python application and have `findspark`
 installed.  Be sure to include the necessary jars for the RAPIDS plugin either with
-`spark-submit` or with the cluster when it is 
+`spark-submit` or with the cluster when it is
 [setup](../docs/get-started/getting-started-on-prem.md).
-The command line arguments to `runtests.py` are the same as for 
+The command line arguments to `runtests.py` are the same as for
 [pytest](https://docs.pytest.org/en/latest/usage.html). The only reason we have a separate script
 is that `spark-submit` uses python if the file name ends with `.py`.
 
 If you want to configure the Spark cluster you may also set environment variables for the tests.
 The name of the env var should be in the form `"PYSP_TEST_" + conf_key.replace('.', '_')`. Linux
-does not allow '.' in the name of an environment variable so we replace it with an underscore. As
-Spark configs avoid this character we have no other special processing.
+does not allow '.' in the name of an environment variable so we replace it with an underscore. If
+the property contains an underscore, replace substitute '__' for each original '_'.
+For example, `spark.sql.catalog.spark_catalog` is represented by the environment variable
+`PYSP_TEST_spark_sql_catalog_spark__catalog`.
 
 We also have a large number of integration tests that currently run as a part of the unit tests
 using scala test. Those are in the `src/test/scala` sub-directory and depend on the testing
@@ -252,7 +254,7 @@ It is recommended that you use `spark-shell` and the scalatest shell to run each
 individually, so you don't risk running unit tests along with the integration tests.
 http://www.scalatest.org/user_guide/using_the_scalatest_shell
 
-```shell 
+```shell
 spark-shell --jars rapids-4-spark-tests_2.12-22.10.0-SNAPSHOT-tests.jar,rapids-4-spark-integration-tests_2.12-22.10.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
@@ -366,8 +368,8 @@ cudf_udf tests needs a couple of different settings, they may need to run separa
 To enable cudf_udf tests, need following pre requirements:
    * Install cuDF Python library on all the nodes running executors. The instruction could be found at [here](https://rapids.ai/start.html). Please follow the steps to choose the version based on your environment and install the cuDF library via Conda or use other ways like building from source.
    * Disable the GPU exclusive mode on all the nodes running executors. The sample command is `sudo nvidia-smi -c DEFAULT`
-   
-To run cudf_udf tests, need following configuration changes:   
+
+To run cudf_udf tests, need following configuration changes:
    * Add configurations `--py-files` and `spark.executorEnv.PYTHONPATH` to specify the plugin jar for python modules 'rapids/daemon' 'rapids/worker'.
    * Decrease `spark.rapids.memory.gpu.allocFraction` to reserve enough GPU memory for Python processes in case of out-of-memory.
    * Add `spark.rapids.python.concurrentPythonWorkers` and `spark.rapids.python.memory.gpu.allocFraction` to reserve enough GPU memory for Python processes in case of out-of-memory.
@@ -380,7 +382,7 @@ $SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-22.10.0-SNAPSHOT-cuda11
 
 ### Enabling fuzz tests
 
-Fuzz tests are intended to find more corner cases in testing. We disable them by default because they might randomly fail. 
+Fuzz tests are intended to find more corner cases in testing. We disable them by default because they might randomly fail.
 The tests can be enabled by appending the option `--fuzz_test` to the command.
 
    * `--fuzz_test` (enable the fuzz tests when provided, and remove this option if you want to disable the tests)
@@ -452,33 +454,33 @@ When support for a new operator is added to the Rapids Accelerator for Spark, or
  to support more data types, it is recommended that the following conditions be covered in its corresponding integration tests:
 
 ### 1. Cover all supported data types
-Ensure that tests cover all data types supported by the added operation. An exhaustive list of data types supported in 
+Ensure that tests cover all data types supported by the added operation. An exhaustive list of data types supported in
 Apache Spark is available [here](https://spark.apache.org/docs/latest/sql-ref-datatypes.html). These include:
-   * Numeric Types 
-     * `ByteType` 
-     * `ShortType` 
+   * Numeric Types
+     * `ByteType`
+     * `ShortType`
      * `IntegerType`
      * `LongType`
      * `FloatType`
      * `DoubleType`
      * `DecimalType`
-   * Strings 
-     * `StringType` 
+   * Strings
+     * `StringType`
      * `VarcharType`
-   * Binary (`BinaryType`)  
+   * Binary (`BinaryType`)
    * Booleans (`BooleanType`)
-   * Chrono Types 
-     * `TimestampType` 
+   * Chrono Types
+     * `TimestampType`
      * `DateType`
      * `Interval`
-   * Complex Types 
+   * Complex Types
      * `ArrayType`
      * `StructType`
      * `MapType`
 
 `data_gen.py` provides `DataGen` classes that help generate test data in integration tests.
 
-The `assert_gpu_and_cpu_are_equal_collect()` function from `asserts.py` may be used to compare that an operator in 
+The `assert_gpu_and_cpu_are_equal_collect()` function from `asserts.py` may be used to compare that an operator in
 the Rapids Accelerator produces the same results as Apache Spark, for a test query.
 
 For data types that are not currently supported for an operator in the Rapids Accelerator,
@@ -498,17 +500,17 @@ E.g.
 The `ArrayGen` and `StructGen` classes in `data_gen.py` can be configured to support arbitrary nesting.
 
 ### 3. Literal (i.e. Scalar) values
-Operators and expressions that support literal operands need to be tested with literal inputs, of all 
-supported types from 1 and 2, above. 
+Operators and expressions that support literal operands need to be tested with literal inputs, of all
+supported types from 1 and 2, above.
 For instance, `SUM()` supports numeric columns (e.g. `SUM(a + b)`), or scalars (e.g. `SUM(20)`).
 Similarly, `COUNT()` supports the following:
    * Columns: E.g. `COUNT(a)` to count non-null rows for column `a`
    * Scalars: E.g. `COUNT(1)` to count all rows (including nulls)
    * `*`: E.g. `COUNT(*)`, functionally equivalent to `COUNT(1)`
 It is advised that tests be added for all applicable literal types, for an operator.
-     
+
 Note that for most operations, if all inputs are literal values, the Spark Catalyst optimizer will evaluate
-the expression during the logical planning phase of query compilation, via 
+the expression during the logical planning phase of query compilation, via
 [Constant Folding](https://jaceklaskowski.gitbooks.io/mastering-spark-sql/content/spark-sql-Optimizer-ConstantFolding.html)
 E.g. Consider this query:
 ```sql
@@ -522,18 +524,18 @@ need not necessarily add more test coverage.
 Ensure that the test data accommodates null values for input columns. This includes null values in columns
 and in literal inputs.
 
-Null values in input columns are a frequent source of bugs in the Rapids Accelerator for Spark, 
-because of mismatches in null-handling and semantics, between RAPIDS `libcudf` (on which 
-the Rapids Accelerator relies heavily), and Apache Spark. 
+Null values in input columns are a frequent source of bugs in the Rapids Accelerator for Spark,
+because of mismatches in null-handling and semantics, between RAPIDS `libcudf` (on which
+the Rapids Accelerator relies heavily), and Apache Spark.
 
-Tests for aggregations (including group-by, reductions, and window aggregations) should cover cases where 
+Tests for aggregations (including group-by, reductions, and window aggregations) should cover cases where
 some rows are null, and where *all* input rows are null.
 
 Apart from null rows in columns of primitive types, the following conditions must be covered for nested types:
 
    * Null rows at the "top" level for `Array`/`Struct` columns.   E.g. `[ [1,2], [3], ∅, [4,5,6] ]`.
    * Non-null rows containing null elements in the child column. E.g. `[ [1,2], [3,∅], ∅, [4,∅,6] ]`.
-   * All null rows at a nested level. E.g. 
+   * All null rows at a nested level. E.g.
      * All null list rows: `[ ∅, ∅, ∅, ∅ ]`
      * All null elements within list rows: `[ [∅,∅], [∅,∅], [∅,∅], [∅,∅] ]`
 
@@ -572,10 +574,10 @@ describes this with examples. Operations should be tested with multiple bit-repr
 The `FloatGen` and `DoubleGen` data generators in `integration_tests/src/main/python/data_gen.py` can be configured
 to generate the special float/double values mentioned above.
 
-For most basic floating-point operations like addition, subtraction, multiplication, and division the plugin will 
+For most basic floating-point operations like addition, subtraction, multiplication, and division the plugin will
 produce a bit for bit identical result as Spark does. For some other functions (like `sin`, `cos`, etc.), the output may
 differ slightly, but remain within the rounding error inherent in floating-point calculations. Certain aggregations
-might compound those differences. In those cases, the `@approximate_float` test annotation may be used to mark tests 
+might compound those differences. In those cases, the `@approximate_float` test annotation may be used to mark tests
 to use "approximate" comparisons for floating-point values.
 
 Refer to the "Floating Point" section of [compatibility.md](../docs/compatibility.md) for details.
@@ -583,11 +585,11 @@ Refer to the "Floating Point" section of [compatibility.md](../docs/compatibilit
 ### 8. Special values in timestamp columns
 Ensure date/timestamp columns include dates before the [epoch](https://en.wikipedia.org/wiki/Epoch_(computing)).
 
-Apache Spark supports dates/timestamps between `0001-01-01 00:00:00.000000` and `9999-12-31 23:59:59.999999`, but at 
+Apache Spark supports dates/timestamps between `0001-01-01 00:00:00.000000` and `9999-12-31 23:59:59.999999`, but at
 values close to the minimum value, the format used in Apache Spark causes rounding errors. To avoid such problems,
 it is recommended that the minimum value used in a test not actually equal `0001-01-01`. For instance, `0001-01-03` is
 acceptable.
 
-It is advised that `DateGen` and `TimestampGen` classes from `data_gen.py` be used to generate valid 
-(proleptic Gregorian calendar) dates when testing operators that work on dates. This data generator respects 
+It is advised that `DateGen` and `TimestampGen` classes from `data_gen.py` be used to generate valid
+(proleptic Gregorian calendar) dates when testing operators that work on dates. This data generator respects
 the valid boundaries for dates and timestamps.
