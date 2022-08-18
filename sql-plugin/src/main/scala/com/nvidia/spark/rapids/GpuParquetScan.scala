@@ -976,6 +976,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       files: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
     val clippedBlocks = ArrayBuffer[ParquetSingleDataBlockMeta]()
+    val scanTimeMetrics = metrics("scanTime")
+    val currentTime = System.nanoTime()
     files.map { file =>
       val singleFileInfo = try {
         filterHandler.filterBlocks(footerReadType, file, conf, filters, readDataSchema)
@@ -1003,6 +1005,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
           ParquetExtraInfo(singleFileInfo.isCorrectedRebaseMode,
             singleFileInfo.isCorrectedInt96RebaseMode, singleFileInfo.hasInt96Timestamps)))
     }
+    scanTimeMetrics += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - currentTime)
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks,
       isCaseSensitive, readDataSchema, debugDumpPrefix,
       maxReadBatchSizeRows, maxReadBatchSizeBytes, metrics,

@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import java.io.{FileNotFoundException, IOException, OutputStream}
 import java.net.URI
-import java.util.concurrent.Callable
+import java.util.concurrent.{Callable, TimeUnit}
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters.{asScalaBufferConverter, mapAsScalaMapConverter}
@@ -248,6 +248,8 @@ case class GpuAvroMultiFilePartitionReaderFactory(
     val clippedBlocks = ArrayBuffer[AvroSingleDataBlockInfo]()
     val mapPathHeader = LinkedHashMap[Path, Header]()
     val filterHandler = AvroFileFilterHandler(conf, options)
+    val scanTimeMetrics = metrics("scanTime")
+    val currentTime = System.nanoTime()
     files.foreach { file =>
       val singleFileInfo = try {
         filterHandler.filterBlocks(file)
@@ -275,6 +277,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
         mapPathHeader.put(fPath, singleFileInfo.header)
       }
     }
+    scanTimeMetrics += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - currentTime)
     new GpuMultiFileAvroPartitionReader(conf, files, clippedBlocks, readDataSchema,
       partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads,
       debugDumpPrefix, metrics, mapPathHeader.toMap)
