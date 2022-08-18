@@ -244,15 +244,17 @@ object GpuOrcScan extends Arm {
         // We need overflow checking here, since max value of INT64 is about 9 * 1e18, and convert
         // INT64 to micro seconds(also a INT64 actually), we need multiply 1e6, it may cause long
         // integer-overflow.
-        // In Math.multiplyExact, if there is an integer-overflow, then it will throw an
-        // ArithmeticException.
-        // If these two 'Math.multiplyExact' throw no exception, it means no integer-overflow when
-        // casting 'col' to TIMESTAMP_MICROSECONDS. We did the similar thing as CPU code here.
-        val k = 1e6.toLong
-        Math.multiplyExact(col.max().getLong, k)
-        Math.multiplyExact(col.min().getLong, k)
-        withResource(col.bitCastTo(DType.TIMESTAMP_SECONDS)) { seconds =>
-          seconds.castTo(DType.TIMESTAMP_MICROSECONDS)
+        // In CPU code of ORC casting, its conversion is 'integer -> milliseconds -> microseconds'
+        withResource(Scalar.fromLong(1000L)) { thousand =>
+          withResource(col.mul(thousand)) { milliSeconds =>
+            // If these two 'testLongOverflow' throw no exception, it means no int64-overflow when
+            // casting 'col' to TIMESTAMP_MICROSECONDS.
+            testLongOverflow(milliSeconds.max().getLong, 1000L)
+            testLongOverflow(milliSeconds.min().getLong, 1000L)
+            withResource(milliSeconds.mul(thousand)) { microSeconds =>
+              microSeconds.castTo(DType.TIMESTAMP_MICROSECONDS)
+            }
+          }
         }
 
       // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
@@ -271,7 +273,6 @@ object GpuOrcScan extends Arm {
   def canCast(from: TypeDescription, to: TypeDescription): Boolean = {
     import org.apache.orc.TypeDescription.Category._
     if (!to.getCategory.isPrimitive || !from.getCategory.isPrimitive) {
-      // List, Map, Struct, Union is not primitive
       // Don't convert from any to complex, or from complex to any.
       // Align with what CPU does.
       return false
@@ -293,6 +294,15 @@ object GpuOrcScan extends Arm {
         toType == STRING
       case _ => false
     }
+  }
+
+  /**
+   * Test whether if a * b will cause Long-overflow.
+   * In Math.multiplyExact, if there is an integer-overflow, then it will throw an
+   * ArithmeticException.
+   */
+  def testLongOverflow(a: Long, b: Long) = {
+    Math.multiplyExact(a, b)
   }
 }
 
