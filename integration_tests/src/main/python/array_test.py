@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
-from marks import incompat
+from marks import incompat, allow_non_gpu_databricks
 from spark_session import is_before_spark_313, is_before_spark_330, is_spark_330_or_later, is_databricks104_or_later
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
@@ -167,6 +167,7 @@ def test_make_array(data_gen):
                 'array(array(b, a, null, {}, {}), array(a), array(null))'.format(s1, s2)))
 
 
+@allow_non_gpu_databricks("ShuffleExchangeExec")
 @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
 def test_orderby_array_unique(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
@@ -175,6 +176,7 @@ def test_orderby_array_unique(data_gen):
         'select array_table.a, array_table.uniq_int from array_table order by uniq_int')
 
 
+@allow_non_gpu_databricks("ShuffleExchangeExec")
 @pytest.mark.parametrize('data_gen', [ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
                                       ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10)], ids=idfn)
 def test_orderby_array_of_arrays(data_gen):
@@ -184,6 +186,7 @@ def test_orderby_array_of_arrays(data_gen):
         'select array_table.a, array_table.uniq_int from array_table order by uniq_int')
 
 
+@allow_non_gpu_databricks("ShuffleExchangeExec")
 @pytest.mark.parametrize('data_gen', [ArrayGen(StructGen([['child0', byte_gen],
                                                           ['child1', string_gen],
                                                           ['child2', float_gen]]))], ids=idfn)
