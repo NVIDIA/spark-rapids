@@ -511,9 +511,11 @@ case class GpuFloatArrayMin(child: Expression) extends GpuArrayMin(child) {
               _.listReduce(listAny)
             }
             withResource(anyNan) { anyNan =>
-              withResource(Seq(getNanSalar, getNullScalar)) { case Seq(nanScalar, nullScalar) =>
+              withResource(getNanSalar) { nanScalar =>
+                withResource(getNullScalar) { nullScalar =>
                   anyNan.ifElse(nanScalar, nullScalar)
                 }
+              }
             }
           }
           withResource(trueOption){ trueOption =>
