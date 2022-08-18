@@ -29,5 +29,5 @@ object AQEUtils {
   }
 
   // currently we don't support AQE on Databricks
-  def isAdaptiveExecutionSupportedInSparkVersion: Boolean = false
+  def isAdaptiveExecutionSupportedInSparkVersion: Boolean = true
 }
