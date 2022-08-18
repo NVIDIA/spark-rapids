@@ -1,11 +1,13 @@
 # Change log
-Generated on 2022-08-05
+Generated on 2022-08-18
 
 ## Release 22.08
 
 ### Features
 |||
 |:---|:---|
+|[#6081](https://github.com/NVIDIA/spark-rapids/issues/6081)|[FEA] Update spark2 code for 22.08|
+|[#5508](https://github.com/NVIDIA/spark-rapids/issues/5508)|[FEA] collect_set on struct[Array]|
 |[#5222](https://github.com/NVIDIA/spark-rapids/issues/5222)|[FEA] Support function array_except |
 |[#5228](https://github.com/NVIDIA/spark-rapids/issues/5228)|[FEA] Support array_union|
 |[#5188](https://github.com/NVIDIA/spark-rapids/issues/5188)|[FEA] Support arrays_overlap|
@@ -60,6 +62,15 @@ Generated on 2022-08-05
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#6112](https://github.com/NVIDIA/spark-rapids/issues/6112)|[BUG] UCX ubuntu dockerfile build failed|
+|[#6146](https://github.com/NVIDIA/spark-rapids/issues/6146)|[BUG] intermittent orc test_read_round_trip failed due to /tmp/hive location|
+|[#6281](https://github.com/NVIDIA/spark-rapids/issues/6281)|[BUG] Reading binary columns from nested types does not work.|
+|[#6282](https://github.com/NVIDIA/spark-rapids/issues/6282)|[BUG] Missing CPU fallback for GetMapValue on scalar map, vector key|
+|[#6208](https://github.com/NVIDIA/spark-rapids/issues/6208)|[BUG] test_array_intersect failed in databricks 10.4 runtime and Spark 3.3+|
+|[#6249](https://github.com/NVIDIA/spark-rapids/issues/6249)|[BUG] test_array_union_before_spark313 failed in UCX job|
+|[#6232](https://github.com/NVIDIA/spark-rapids/issues/6232)|[BUG] Query failed with java.lang.NullPointerException when doing GpuSubqueryBroadcastExec|
+|[#6230](https://github.com/NVIDIA/spark-rapids/issues/6230)|[BUG] AQE does not respect `entirePlanWillNotWork`|
+|[#6131](https://github.com/NVIDIA/spark-rapids/issues/6131)|[BUG] count() in avro failed when reader_types is coalescing|
 |[#6220](https://github.com/NVIDIA/spark-rapids/issues/6220)|[BUG] Host buffer leak occurred when executing `count` with Avro multi-threaded reader |
 |[#6160](https://github.com/NVIDIA/spark-rapids/issues/6160)|[BUG] When Hive table's actual data has varchar, but the DDL is string, then query fails to do varchar to string conversion|
 |[#6183](https://github.com/NVIDIA/spark-rapids/issues/6183)|[BUG] Qualification UI uses single precision floating point|
@@ -129,6 +140,20 @@ Generated on 2022-08-05
 ### PRs
 |||
 |:---|:---|
+|[#6348](https://github.com/NVIDIA/spark-rapids/pull/6348)|Update plugin jni version to released 22.08.0|
+|[#6234](https://github.com/NVIDIA/spark-rapids/pull/6234)|[Doc] Add 22.08 docs' links [skip ci]|
+|[#6288](https://github.com/NVIDIA/spark-rapids/pull/6288)|CPU fallback for Map scalars with key vectors|
+|[#6292](https://github.com/NVIDIA/spark-rapids/pull/6292)|Fix parquet binary reads to do the transformation in the plugin|
+|[#6257](https://github.com/NVIDIA/spark-rapids/pull/6257)|Fallback to CPU for Parquet reads with `_databricks_internal` columns|
+|[#6274](https://github.com/NVIDIA/spark-rapids/pull/6274)|Use schema instead of row field count during columnar conversion|
+|[#6268](https://github.com/NVIDIA/spark-rapids/pull/6268)|Apply BroadcastMode key projections before interpreting key expressions in subqueries|
+|[#6250](https://github.com/NVIDIA/spark-rapids/pull/6250)|Fix bug where AQE does not respect `entirePlanWillNotWork`|
+|[#6248](https://github.com/NVIDIA/spark-rapids/pull/6248)|Fix some issues with reading binary from parquet|
+|[#6239](https://github.com/NVIDIA/spark-rapids/pull/6239)|Add rocky Dockerfiles and refine docker documentation|
+|[#6079](https://github.com/NVIDIA/spark-rapids/pull/6079)|Add support for nested types to `collect_set(...)` on the GPU|
+|[#6215](https://github.com/NVIDIA/spark-rapids/pull/6215)|Update Spark2 Explain API code for 22.08|
+|[#6161](https://github.com/NVIDIA/spark-rapids/pull/6161)|Added binary read support for Parquet [Databricks]|
+|[#6222](https://github.com/NVIDIA/spark-rapids/pull/6222)|Init 22.08 changelog [skip ci]|
 |[#6225](https://github.com/NVIDIA/spark-rapids/pull/6225)|Fix count() in avro failed when reader_types is coalescing|
 |[#6216](https://github.com/NVIDIA/spark-rapids/pull/6216)|[Doc] Update 22.08 documentation|
 |[#6223](https://github.com/NVIDIA/spark-rapids/pull/6223)|Temporary fix for test_array_intersect failures on Spark 3.3.0|
