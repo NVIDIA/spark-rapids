@@ -492,7 +492,7 @@ case class GpuFloatArrayMin(child: Expression) extends GpuArrayMin(child) {
   }
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
-    val listAll = SegmentedReductionAggregation.min()
+    val listAll = SegmentedReductionAggregation.all()
     val listAny = SegmentedReductionAggregation.max()
     val base = input.getBase()
 
@@ -504,27 +504,29 @@ case class GpuFloatArrayMin(child: Expression) extends GpuArrayMin(child) {
           val nanOrNullList = withResource(childIsNanOrNull) {base.replaceListChild(_)}
           withResource(nanOrNullList) {_.listReduce(listAll)}
         }
-        // return nan if the list contains nan, else return null
-        val trueOption = {
-          val anyNan = withResource(base.replaceListChild(childIsNan)) {
-            _.listReduce(listAny)
+        withResource(allNanOrNull){ allNanOrNull =>
+          // return nan if the list contains nan, else return null
+          val trueOption = {
+            val anyNan = withResource(base.replaceListChild(childIsNan)) {
+              _.listReduce(listAny)
+            }
+            withResource(Seq(getNanSalar, getNullScalar)) { case Seq(nanScalar, nullScalar) =>
+                withResource(anyNan) {_.ifElse(nanScalar, nullScalar)}
+            }
           }
-          withResource(Seq(getNanSalar, getNullScalar)) { case Seq(nanScalar, nullScalar) =>
-              withResource(anyNan) {_.ifElse(nanScalar, nullScalar)}
+          // replace all nans to nulls, and then find the min value.
+          val falseOption = withResource(child.nansToNulls()) { nanToNullChild =>
+            withResource(base.replaceListChild(nanToNullChild)) { nanToNullList =>
+              nanToNullList.listReduce(SegmentedReductionAggregation.min())
+            }
+          }
+          // if a list contains values other than nan or null
+          // return `trueOption`, else return `falseOption`.
+          withResource(Seq(trueOption, falseOption)){ case Seq(trueOption, falseOption) =>
+            allNanOrNull.ifElse(trueOption, falseOption)
           }
         }
-        // replace all nans to nulls, and then find the min value.
-        val falseOption = withResource(child.nansToNulls()) { nanToNullChild =>
-          withResource(base.replaceListChild(nanToNullChild)) { nanToNullList =>
-            nanToNullList.listReduce(SegmentedReductionAggregation.min())
-          }
-        }
-        // if a list contains values other than nan or null
-        // return `trueOption`, else return `falseOption`.
-        withResource(Seq(trueOption, falseOption)){ case Seq(trueOption, falseOption) =>
-          withResource(allNanOrNull) {_.ifElse(trueOption, falseOption)}
-        }
-      } 
+      }
     }
   }
 }
