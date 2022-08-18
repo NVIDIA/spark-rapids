@@ -144,9 +144,9 @@ def test_broadcast_nested_loop_join_without_condition_empty(join_type):
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
 @ignore_order(local=True)
-@pytest.mark.skipif(is_databricks_runtime(),
-                    reason="Disabled for databricks because of lack of AQE support, and "
-                           "differences in BroadcastMode.transform")
+# @pytest.mark.skipif(is_databricks_runtime(),
+#                     reason="Disabled for databricks because of lack of AQE support, and "
+#                            "differences in BroadcastMode.transform")
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_right_broadcast_nested_loop_join_without_condition_empty_small_batch(join_type):
     def do_join(spark):
@@ -155,9 +155,9 @@ def test_right_broadcast_nested_loop_join_without_condition_empty_small_batch(jo
     assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.sql.adaptive.enabled': 'true'})
 
 @ignore_order(local=True)
-@pytest.mark.skipif(is_databricks_runtime(),
-                    reason="Disabled for databricks because of lack of AQE support, and "
-                           "differences in BroadcastMode.transform")
+# @pytest.mark.skipif(is_databricks_runtime(),
+#                     reason="Disabled for databricks because of lack of AQE support, and "
+#                            "differences in BroadcastMode.transform")
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_empty_broadcast_hash_join(join_type):
     def do_join(spark):
