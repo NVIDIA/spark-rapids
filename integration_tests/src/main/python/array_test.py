@@ -316,7 +316,7 @@ def test_array_min_max(data_gen):
             lambda spark : unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
                 'array_min(a)', 'array_max(a)'))
 
-@pytest.mark.parametrize('data_gen', [ArrayGen(gen, all_null=True) for gen in [int_gen, float_gen, double_gen]], ids=idfn)
+@pytest.mark.parametrize('data_gen', [ArrayGen(int_gen, all_null=True)], ids=idfn)
 def test_array_min_max_all_nulls(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
