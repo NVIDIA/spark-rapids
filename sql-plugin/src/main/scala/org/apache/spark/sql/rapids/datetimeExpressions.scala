@@ -893,16 +893,12 @@ class FromUTCTimestampExprMeta(expr: FromUTCTimestamp,
     }
 
     val utc = ZoneId.of("UTC").normalized
-    try {
-      // This is copied from Spark, to convert `(+|-)h:mm` into `(+|-)0h:mm`.
-      val timezone = ZoneId.of(timezoneShortID.replaceFirst("(\\+|\\-)(\\d):", "$10$2:"),
-        ZoneId.SHORT_IDS).normalized
+    // This is copied from Spark, to convert `(+|-)h:mm` into `(+|-)0h:mm`.
+    val timezone = ZoneId.of(timezoneShortID.replaceFirst("(\\+|\\-)(\\d):", "$10$2:"),
+      ZoneId.SHORT_IDS).normalized
 
-      if(!timezone.equals(utc)) {
-        willNotWorkOnGpu("only timezones equivalent to UTC are supported")
-      }
-    } catch {
-      case _: Throwable => willNotWorkOnGpu("invalid input time zone")
+    if(!timezone.equals(utc)) {
+      willNotWorkOnGpu("only timezones equivalent to UTC are supported")
     }
   }
 
