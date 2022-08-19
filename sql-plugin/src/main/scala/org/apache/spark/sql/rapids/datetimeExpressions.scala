@@ -903,12 +903,8 @@ case class GpuFromUTCTimestamp(timestamp: Expression,
   extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
 
   override def left: Expression = timestamp
-
   override def right: Expression = timezone
-
   override def inputTypes: Seq[AbstractDataType] = Seq(TimestampType, StringType)
-
-
   override def dataType: DataType = TimestampType
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
