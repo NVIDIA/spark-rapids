@@ -115,7 +115,7 @@ def _handle_event_log_dir(sb, wid):
     if os.environ.get('SPARK_EVENTLOG_ENABLED', str(True)).lower() in [
         str(False).lower(), 'off', '0'
     ]:
-        print('Automatic configuration for spark event log disabled')
+        logging.info('Automatic configuration for spark event log disabled')
         return
 
     spark_conf = pyspark.SparkConf()
@@ -126,14 +126,14 @@ def _handle_event_log_dir(sb, wid):
     event_log_codec = os.environ.get(env_for_conf('spark.eventLog.compression.codec'), 'zstd')
 
     if not master_url.startswith('local') or event_log_config != str(False).lower():
-        print("SPARK_EVENTLOG_ENABLED is ignored for non-local Spark master and when "
+        logging.info("SPARK_EVENTLOG_ENABLED is ignored for non-local Spark master and when "
               "it's pre-configured by the user")
         return
     d = "./eventlog_{}".format(wid)
     if not os.path.exists(d):
         os.makedirs(d)
 
-    print('Spark event logs will appear under {}. Set the environmnet variable '
+    logging.info('Spark event logs will appear under {}. Set the environmnet variable '
           'SPARK_EVENTLOG_ENABLED=false if you want to disable it'.format(d))
 
     sb\
