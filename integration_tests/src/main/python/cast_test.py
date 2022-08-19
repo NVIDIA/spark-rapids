@@ -22,7 +22,6 @@ from pyspark.sql.types import *
 from spark_init_internal import spark_version
 from datetime import datetime
 import math
-import datetime
 
 _decimal_gen_36_5 = DecimalGen(precision=36, scale=5)
 
