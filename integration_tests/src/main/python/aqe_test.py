@@ -19,10 +19,12 @@ from pyspark.sql.types import *
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
 from conftest import is_databricks_runtime, is_emr_runtime
 from data_gen import *
-from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan
+from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan, approximate_float
 from spark_session import with_cpu_session, with_spark_session
 
-_adaptive_conf = { "spark.sql.adaptive.enabled": "true" }
+_adaptive_conf = { "spark.sql.adaptive.enabled": "true",
+                   "spark.rapids.sql.castFloatToString.enabled": "true",
+                   "spark.rapids.sql.castDecimalToString.enabled": "true" }
 
 # Dynamic switching of join strategies
 
@@ -54,10 +56,13 @@ def create_skew_df(spark, data_gen, length):
     return left, right
 
 
+@ignore_order(local=True)
+@approximate_float(abs=1e-6)
+@allow_non_gpu("ShuffleExchangeExec")
 @pytest.mark.parametrize("data_gen", numeric_gens + decimal_gens, ids=idfn)
 def test_skew_join(data_gen):
     def do_join(spark):
-        left, right = create_skew_df(spark, data_gen, length=2048)
+        left, right = create_skew_df(spark, data_gen, length=512)
         left.createOrReplaceTempView("skewData1")
         right.createOrReplaceTempView("skewData2")
         return spark.sql("SELECT * FROM skewData1 join skewData2 ON key1 = key2")
