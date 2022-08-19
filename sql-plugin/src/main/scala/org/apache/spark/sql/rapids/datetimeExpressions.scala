@@ -20,7 +20,7 @@ import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
@@ -886,7 +886,7 @@ class FromUTCTimestampExprMeta(expr: FromUTCTimestamp,
   extends BinaryExprMeta[FromUTCTimestamp](expr, conf, parent, rule) {
 
   override def tagExprForGpu(): Unit = {
-    val timezoneShortID = GpuOverrides.extractStringLit(expr.right).getOrElse("")
+    val timezoneShortID = extractStringLit(expr.right).getOrElse("")
 
     if (timezoneShortID == null) {
       willNotWorkOnGpu("input time zone is null")
