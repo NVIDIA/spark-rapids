@@ -40,7 +40,7 @@ object DateUtils {
     "u", "uu", "uuu", "uuuu", "uuuuu", "uuuuuu", "uuuuuuu", "uuuuuuuu", "uuuuuuuuu", "uuuuuuuuuu",
     "y", "yyy", "yyyyy", "yyyyyy", "yyyyyyy", "yyyyyyyy", "yyyyyyyyy", "yyyyyyyyyy",
     "D", "DD", "DDD", "s", "m", "H", "h", "M", "MMM", "MMMM", "MMMMM", "L", "LLL", "LLLL", "LLLLL",
-    "d", "S", "SS", "SSS", "SSSS", "SSSSS", "SSSSSSSSS", "SSSSSSS", "SSSSSSSS")
+    "d", "S", "SS", "SSSS", "SSSSS", "SSSSSSS", "SSSSSSSS", "SSSSSSSSS")
 
   // we support "yy" in some cases, but not when parsing strings
   // https://github.com/NVIDIA/spark-rapids/issues/2118
@@ -48,7 +48,7 @@ object DateUtils {
 
   val conversionMap = Map(
     "MM" -> "%m", "LL" -> "%m", "dd" -> "%d", "mm" -> "%M", "ss" -> "%S", "HH" -> "%H",
-    "yy" -> "%y", "yyyy" -> "%Y", "SSSSSS" -> "%f")
+    "yy" -> "%y", "yyyy" -> "%Y", "SSS" -> "%3f", "SSSSSS" -> "%6f")
 
   val ONE_SECOND_MICROSECONDS = 1000000
 
