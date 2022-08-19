@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,7 +44,26 @@ import java.util.Arrays;
  * UnsafeRow works.
  */
 public final class CudfUnsafeRow extends InternalRow {
+  public static int alignOffset(int offset, int alignment) {
+    return (offset + alignment - 1) & -alignment;
+  }
 
+  public static int calculateBitSetWidthInBytes(int numFields) {
+    return (numFields + 7)/ 8;
+  }
+
+  public static int getRowSizeEstimate(Attribute[] attributes) {
+    // This needs to match what is in cudf and what is in the constructor.
+    int offset = 0;
+    for (Attribute attr : attributes) {
+      int length = GpuColumnVector.getNonNestedRapidsType(attr.dataType()).getSizeInBytes();
+      offset = alignOffset(offset, length);
+      offset += length;
+    }
+    int bitSetWidthInBytes = calculateBitSetWidthInBytes(attributes.length);
+    // Each row is 64-bit aligned
+    return alignOffset(offset + bitSetWidthInBytes, 8);
+  }
 
   //////////////////////////////////////////////////////////////////////////////
   // Private fields and methods
@@ -56,15 +75,15 @@ public final class CudfUnsafeRow extends InternalRow {
   private long address;
 
   /**
-   * For each column the starting location to read from. The index is the position in
-   * the row bytes, not the user facing ordinal.
+   * For each column the starting location to read from. The index to the is the position in
+   * the row bytes, not the user faceing ordinal.
    */
   private int[] startOffsets;
 
   /**
-   * At what point validity data starts from the beginning of a row's data.
+   * At what point validity data starts.
    */
-  private int validityOffsetInBytes;
+  private int fixedWidthSizeInBytes;
 
   /**
    * The size of this row's backing data, in bytes.
@@ -75,8 +94,6 @@ public final class CudfUnsafeRow extends InternalRow {
    * A mapping from the user facing ordinal to the index in the underlying row.
    */
   private int[] remapping;
-
-  private boolean variableWidthSchema;
 
   /**
    * Get the address where a field is stored.
@@ -114,11 +131,17 @@ public final class CudfUnsafeRow extends InternalRow {
    *                  backing row.
    */
   public CudfUnsafeRow(Attribute[] attributes, int[] remapping) {
+    int offset = 0;
     startOffsets = new int[attributes.length];
-    JCudfUtil.RowOffsetsCalculator jCudfBuilder =
-        JCudfUtil.getRowOffsetsCalculator(attributes, startOffsets);
-    this.validityOffsetInBytes = jCudfBuilder.getValidityBytesOffset();
-    this.variableWidthSchema = jCudfBuilder.hasVarSizeData();
+    for (int i = 0; i < attributes.length; i++) {
+      Attribute attr = attributes[i];
+      int length = GpuColumnVector.getNonNestedRapidsType(attr.dataType()).getSizeInBytes();
+      assert length > 0 : "Only fixed width types are currently supported.";
+      offset = alignOffset(offset, length);
+      startOffsets[i] = offset;
+      offset += length;
+    }
+    fixedWidthSizeInBytes = offset;
     this.remapping = remapping;
     assert startOffsets.length == remapping.length;
   }
@@ -160,7 +183,7 @@ public final class CudfUnsafeRow extends InternalRow {
     assertIndexIsValid(i);
     int validByteIndex = i / 8;
     int validBitIndex = i % 8;
-    byte b = Platform.getByte(null, address + validityOffsetInBytes + validByteIndex);
+    byte b = Platform.getByte(null, address + fixedWidthSizeInBytes + validByteIndex);
     return ((1 << validBitIndex) & b) == 0;
   }
 
@@ -170,9 +193,9 @@ public final class CudfUnsafeRow extends InternalRow {
     assertIndexIsValid(i);
     int validByteIndex = i / 8;
     int validBitIndex = i % 8;
-    byte b = Platform.getByte(null, address + validityOffsetInBytes + validByteIndex);
+    byte b = Platform.getByte(null, address + fixedWidthSizeInBytes + validByteIndex);
     b = (byte)((b & ~(1 << validBitIndex)) & 0xFF);
-    Platform.putByte(null, address + validityOffsetInBytes + validByteIndex, b);
+    Platform.putByte(null, address + fixedWidthSizeInBytes + validByteIndex, b);
   }
 
   @Override
@@ -230,15 +253,12 @@ public final class CudfUnsafeRow extends InternalRow {
 
   @Override
   public UTF8String getUTF8String(int ordinal) {
-    if (isNullAt(ordinal)) {
-      return null;
-    }
-    final long columnOffset = getFieldAddressFromOrdinal(ordinal);
-    // data format for the fixed-width portion of variable-width data is 4 bytes of offset from the
-    // start of the row followed by 4 bytes of length.
-    final int offset = Platform.getInt(null, columnOffset);
-    final int size = Platform.getInt(null, columnOffset + 4);
-    return UTF8String.fromAddress(null, address + offset, size);
+//    if (isNullAt(ordinal)) return null;
+//    final long offsetAndSize = getLong(ordinal);
+//    final int offset = (int) (offsetAndSize >> 32);
+//    final int size = (int) offsetAndSize;
+//    return UTF8String.fromAddress(null, address + offset, size);
+    throw new IllegalArgumentException("NOT IMPLEMENTED YET");
   }
 
   @Override
@@ -376,22 +396,5 @@ public final class CudfUnsafeRow extends InternalRow {
   public boolean anyNull() {
     throw new IllegalArgumentException("NOT IMPLEMENTED YET");
 //    return BitSetMethods.anySet(baseObject, address, bitSetWidthInBytes / 8);
-  }
-
-  public boolean isVariableWidthSchema() {
-    return variableWidthSchema;
-  }
-
-  public int getValidityOffsetInBytes() {
-    return validityOffsetInBytes;
-  }
-
-  /**
-   * Calculates the offset of the variable width section.
-   * This can be used to get the offset of the variable-width data. Note that the data-offset is 1-byte aligned.
-   * @return Total bytes used by the fixed width offsets and the validity bytes without row-alignment.
-   */
-  public int getFixedWidthInBytes() {
-    return getValidityOffsetInBytes() + JCudfUtil.calculateBitSetWidthInBytes(numFields());
   }
 }

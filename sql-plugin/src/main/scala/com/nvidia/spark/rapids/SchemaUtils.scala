@@ -291,8 +291,14 @@ object SchemaUtils extends Arm {
               writeInt96,
               fieldMeta,
               parquetFieldIdWriteEnabled).build().getChildColumnOptions()(0)))
+      case BinaryType =>
+        if (parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
+          builder.withBinaryColumn(name, nullable, parquetFieldId.get)
+        } else {
+          builder.withBinaryColumn(name, nullable)
+        }
       case _ =>
-        if(parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
+        if (parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
           builder.withColumn(nullable, name, parquetFieldId.get)
         } else {
           builder.withColumns(nullable, name)
