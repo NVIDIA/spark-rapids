@@ -234,8 +234,10 @@ object GpuOrcScan extends Arm {
         withResource(col.castTo(DType.INT64)) { longs =>
           // In CPU, ORC assumes the integer value is in seconds, and returns timestamp in
           // micro seconds.
-          withResource(longs.bitCastTo(DType.TIMESTAMP_SECONDS)) { seconds =>
-            seconds.castTo(DType.TIMESTAMP_MICROSECONDS)
+          withResource(Scalar.fromLong(1e6.toLong)) { value =>
+            withResource(longs.mul(value)) { microSeconds =>
+              microSeconds.castTo(DType.TIMESTAMP_MICROSECONDS)
+            }
           }
         }
 
