@@ -1862,12 +1862,9 @@ object GpuOverrides extends Logging {
       ExprChecks.binaryProject(TypeSig.STRING, TypeSig.STRING,
         ("timestamp", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
         ("timezone", TypeSig.lit(TypeEnum.STRING)
-          .withPsNote(TypeEnum.STRING, "A limited number of time zones are supported"),
+          .withPsNote(TypeEnum.STRING, "Only timezones equivalent to UTC are supported"),
           TypeSig.STRING)),
-      (a, conf, p, r) => new BinaryExprMeta[FromUTCTimestamp](a, conf, p, r) {
-        override def convertToGpu(ts: Expression, tz: Expression): GpuExpression =
-          GpuFromUTCTimestamp(ts, tz)
-      }
+      (a, conf, p, r) => new FromUTCTimestampExprMeta(a, conf, p, r)
     ),
     expr[Pmod](
       "Pmod",

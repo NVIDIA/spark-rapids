@@ -19,12 +19,12 @@ package org.apache.spark.sql.rapids
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuOverrides, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
 
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, ImplicitCastInputTypes, NullIntolerant, TimeZoneAwareExpression}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, FromUTCTimestamp, ImplicitCastInputTypes, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -877,30 +877,59 @@ case class GpuFromUnixTime(
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 }
 
+
+class FromUTCTimestampExprMeta(expr: FromUTCTimestamp,
+                               override val conf: RapidsConf,
+                               override val parent: Option[RapidsMeta[_, _, _]],
+                               rule: DataFromReplacementRule)
+  extends BinaryExprMeta[FromUTCTimestamp](expr, conf, parent, rule) {
+
+  // Adding other time zones needs to carefully consider daylight saving time adjustment.
+  private val supportedUTCTimeZones = Set("UTC", "GMT")
+
+  override def tagExprForGpu(): Unit = {
+    val timezone = GpuOverrides.extractStringLit(expr.right).getOrElse("")
+    if (timezone == null || !supportedUTCTimeZones.contains(timezone.toUpperCase)) {
+      willNotWorkOnGpu("only time zones equivalent to UTC are supported")
+    }
+  }
+
+  override def convertToGpu(timestamp: Expression, timezone: Expression): GpuExpression =
+    GpuFromUTCTimestamp(timestamp, timezone)
+}
+
 case class GpuFromUTCTimestamp(timestamp: Expression,
-                               timezone: String)
+                               timezone: Expression)
   extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
+
   override def left: Expression = timestamp
 
   override def right: Expression = timezone
 
-  override def inputTypes: Seq[AbstractDataType] = Seq(timestamp.dataType)
+  override def inputTypes: Seq[AbstractDataType] = Seq(TimestampType, StringType)
 
-  override def dataType: DataType = timestamp.dataType
+
+  override def dataType: DataType = TimestampType
+
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-
+    throw new IllegalStateException("Really should not be here: " +
+      "Cannot have time zone given by a column vector in FromUTCTimestamp")
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-
+    throw new IllegalStateException("Really should not be here: " +
+      "Cannot have time zone given by a column vector in FromUTCTimestamp")
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-
+    // Just a no-op.
+    lhs.getBase.incRefCount()
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-
+    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { lhsCol =>
+      doColumnar(lhsCol, rhs)
+    }
   }
 }
 
