@@ -877,6 +877,33 @@ case class GpuFromUnixTime(
   override lazy val resolved: Boolean = childrenResolved && checkInputDataTypes().isSuccess
 }
 
+case class GpuFromUTCTimestamp(timestamp: Expression,
+                               timezone: String)
+  extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
+  override def left: Expression = timestamp
+
+  override def right: Expression = timezone
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(timestamp.dataType)
+
+  override def dataType: DataType = timestamp.dataType
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+
+  }
+}
+
 trait GpuDateMathBase extends GpuBinaryExpression with ExpectsInputTypes {
   override def inputTypes: Seq[AbstractDataType] =
     Seq(DateType, TypeCollection(IntegerType, ShortType, ByteType))
