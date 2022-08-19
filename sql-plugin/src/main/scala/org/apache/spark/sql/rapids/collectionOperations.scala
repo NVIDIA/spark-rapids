@@ -479,7 +479,7 @@ case class GpuFloatArrayMin(child: Expression) extends GpuArrayMin(child) {
     )
   }
 
-  protected def getNanSalar: Scalar = dataType match {
+  protected def getNanScalar: Scalar = dataType match {
     case FloatType => Scalar.fromFloat(Float.NaN)
     case DoubleType => Scalar.fromDouble(Double.NaN)
     case t => throw new IllegalStateException(s"dataType $t is not FloatType or DoubleType")
