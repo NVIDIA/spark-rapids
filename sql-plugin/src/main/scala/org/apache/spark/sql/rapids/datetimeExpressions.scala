@@ -920,12 +920,12 @@ case class GpuFromUTCTimestamp(timestamp: Expression,
   override def dataType: DataType = TimestampType
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    throw new IllegalStateException("Really should not be here: " +
+    throw new IllegalStateException(
       "Cannot have time zone given by a column vector in FromUTCTimestamp")
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    throw new IllegalStateException("Really should not be here: " +
+    throw new IllegalStateException(
       "Cannot have time zone given by a column vector in FromUTCTimestamp")
   }
 
