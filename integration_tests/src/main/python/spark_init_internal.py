@@ -12,18 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import os
 import re
+import sys
 
+logging.basicConfig(
+    format="%(asctime)s %(levelname)-8s %(message)s",
+    level=logging.INFO,
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
-has_findspark = False
 try:
     import pyspark
+    logging.info('Found pyspark without calling findspark')
 except ImportError as error:
     import findspark
     findspark.init()
-    has_findspark = True
     import pyspark
+    logging.info('Found pyspark using findspark')
 
 _CONF_ENV_PREFIX = 'PYSP_TEST_'
 _EXECUTOR_ENV_PREFIX = 'spark_executorEnv_'
@@ -53,13 +60,16 @@ spark_jars_env = {
 }
 
 def _spark__init():
-    if has_findspark:
+    if 'findspark' in sys.modules:
+        logging.info("Checking if add_jars/packages to findspark required")
         spark_jars = os.getenv(_SPARK_JARS)
         spark_jars_packages = os.getenv(_SPARK_JARS_PACKAGES)
         if spark_jars is not None:
+            logging.info(f"Adding to findspark jars: {spark_jars}")
             findspark.add_jars(spark_jars)
 
         if spark_jars_packages is not None:
+            logging.info(f"Adding to findspark packages: {spark_jars_packages}")
             findspark.add_packages(spark_jars_packages)
 
     #Force the RapidsPlugin to be enabled, so it blows up if the classpath is not set properly
