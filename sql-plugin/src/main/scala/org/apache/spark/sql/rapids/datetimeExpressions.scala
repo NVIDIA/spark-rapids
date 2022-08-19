@@ -879,10 +879,11 @@ case class GpuFromUnixTime(
 }
 
 
-class FromUTCTimestampExprMeta(expr: FromUTCTimestamp,
-                               override val conf: RapidsConf,
-                               override val parent: Option[RapidsMeta[_, _, _]],
-                               rule: DataFromReplacementRule)
+class FromUTCTimestampExprMeta(
+    expr: FromUTCTimestamp,
+    override val conf: RapidsConf,
+    override val parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
   extends BinaryExprMeta[FromUTCTimestamp](expr, conf, parent, rule) {
 
   override def tagExprForGpu(): Unit = {
