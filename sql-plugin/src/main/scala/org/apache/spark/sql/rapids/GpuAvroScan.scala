@@ -248,7 +248,6 @@ case class GpuAvroMultiFilePartitionReaderFactory(
     val clippedBlocks = ArrayBuffer[AvroSingleDataBlockInfo]()
     val mapPathHeader = LinkedHashMap[Path, Header]()
     val filterHandler = AvroFileFilterHandler(conf, options)
-    val scanTimeMetrics = metrics("scanTime")
     val currentTime = System.nanoTime()
     files.foreach { file =>
       val singleFileInfo = try {
@@ -277,7 +276,9 @@ case class GpuAvroMultiFilePartitionReaderFactory(
         mapPathHeader.put(fPath, singleFileInfo.header)
       }
     }
-    scanTimeMetrics += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - currentTime)
+    if (metrics.contains("scanTime")) {
+      metrics("scanTime") += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - currentTime)
+    }
     new GpuMultiFileAvroPartitionReader(conf, files, clippedBlocks, readDataSchema,
       partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads,
       debugDumpPrefix, metrics, mapPathHeader.toMap)
