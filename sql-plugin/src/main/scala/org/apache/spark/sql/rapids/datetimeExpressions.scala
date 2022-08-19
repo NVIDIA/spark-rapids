@@ -16,8 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import java.time.{Instant, ZoneId, ZoneOffset}
-import java.time.zone.ZoneRules
+import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
@@ -886,8 +885,6 @@ class FromUTCTimestampExprMeta(expr: FromUTCTimestamp,
                                rule: DataFromReplacementRule)
   extends BinaryExprMeta[FromUTCTimestamp](expr, conf, parent, rule) {
 
-  private var timeDifference: Integer = 0
-
   override def tagExprForGpu(): Unit = {
     val timezoneShortID = GpuOverrides.extractStringLit(expr.right).getOrElse("")
 
@@ -895,25 +892,26 @@ class FromUTCTimestampExprMeta(expr: FromUTCTimestamp,
       willNotWorkOnGpu("input time zone is null")
     }
 
+    val utc = ZoneId.of("UTC").normalized
     try {
       // This is copied from Spark, to convert `(+|-)h:mm` into `(+|-)0h:mm`.
       val timezone = ZoneId.of(timezoneShortID.replaceFirst("(\\+|\\-)(\\d):", "$10$2:"),
-        ZoneId.SHORT_IDS)
+        ZoneId.SHORT_IDS).normalized
 
-      // Compute time difference (in seconds) from the given time zone to UTC.
-      this.timeDifference = timezone.getRules.getOffset(Instant.now).getTotalSeconds
+      if(!timezone.equals(utc)) {
+        willNotWorkOnGpu("only timezones equivalent to UTC are supported")
+      }
     } catch {
       case _: Throwable => willNotWorkOnGpu("invalid input time zone")
     }
   }
 
   override def convertToGpu(timestamp: Expression, timezone: Expression): GpuExpression =
-    GpuFromUTCTimestamp(timestamp, timezone, this.timeDifference)
+    GpuFromUTCTimestamp(timestamp, timezone)
 }
 
 case class GpuFromUTCTimestamp(timestamp: Expression,
-                               timezone: Expression,
-                               timeDifference: Integer)
+                               timezone: Expression)
   extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
 
   override def left: Expression = timestamp
@@ -932,19 +930,8 @@ case class GpuFromUTCTimestamp(timestamp: Expression,
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    if(timeDifference == 0) {
-      // Just a no-op.
-      lhs.getBase.incRefCount()
-    } else {
-      // Remove the import below
-      import ai.rapids.cudf.DType
-      import ai.rapids.cudf.Scalar
-
-      // Constructing Scalar needs to be done in cudf, this is just a demo:
-      withResource(new Scalar(DType.DURATION_SECONDS, timeDifference, true)) { secondsDifference =>
-        lhs.getBase.add(secondsDifference)
-      }
-    }
+    // Just a no-op.
+    lhs.getBase.incRefCount()
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
