@@ -307,7 +307,7 @@ class SetValuesGen(DataGen):
         self._vals = data
 
     def __repr__(self):
-        return super().__repr__() + '(' + str(self._child) + ')'
+        return super().__repr__() +'(' + str(self.data_type) + ',' + str(self._vals) + ')'
 
     def start(self, rand):
         data = self._vals
@@ -323,9 +323,8 @@ POS_FLOAT_NAN_MAX_VALUE = struct.unpack('f', struct.pack('I', 0x7fffffff))[0]
 class FloatGen(DataGen):
     """Generate floats, which some built in corner cases."""
     def __init__(self, nullable=True,
-            no_nans=False, special_cases=None, all_nans=False):
+            no_nans=False, special_cases=None):
         self._no_nans = no_nans
-        self._all_nans = all_nans
         if special_cases is None:
             special_cases = [FLOAT_MIN, FLOAT_MAX, 0.0, -0.0, 1.0, -1.0]
             if not no_nans:
@@ -342,12 +341,9 @@ class FloatGen(DataGen):
 
     def start(self, rand):
         def gen_float():
-            if self._all_nans:
-                return math.nan
-            else:
-                i = rand.randint(INT_MIN, INT_MAX)
-                p = struct.pack('i', i)
-                return self._fixup_nans(struct.unpack('f', p)[0])
+            i = rand.randint(INT_MIN, INT_MAX)
+            p = struct.pack('i', i)
+            return self._fixup_nans(struct.unpack('f', p)[0])
         self._start(rand, gen_float)
 
 DOUBLE_MIN_EXP = -1022
@@ -362,11 +358,10 @@ POS_DOUBLE_NAN_MAX_VALUE = struct.unpack('d', struct.pack('L', 0x7ffffffffffffff
 class DoubleGen(DataGen):
     """Generate doubles, which some built in corner cases."""
     def __init__(self, min_exp=DOUBLE_MIN_EXP, max_exp=DOUBLE_MAX_EXP, no_nans=False,
-            nullable=True, special_cases = None, all_nans=False):
+            nullable=True, special_cases = None):
         self._min_exp = min_exp
         self._max_exp = max_exp
         self._no_nans = no_nans
-        self._all_nans = all_nans
         self._use_full_range = (self._min_exp == DOUBLE_MIN_EXP) and (self._max_exp == DOUBLE_MAX_EXP)
         if special_cases is None:
             special_cases = [
@@ -404,10 +399,6 @@ class DoubleGen(DataGen):
         return v
 
     def start(self, rand):
-        if self._all_nans:
-            def gen_nan():
-                return math.nan
-            self._start(rand, gen_nan)
         if self._use_full_range:
             def gen_double():
                 i = rand.randint(LONG_MIN, LONG_MAX)
