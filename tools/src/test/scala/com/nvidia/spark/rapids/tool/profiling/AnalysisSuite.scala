@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,6 +37,8 @@ class AnalysisSuite extends FunSuite {
   private val expRoot = ToolTestUtils.getTestResourceFile("ProfilingExpectations")
   private val logDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
   private val qualLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
+  // AutoTuner added a field in SQLTaskAggMetricsProfileResult but it is not among the output
+  private val skippedColumnsInSqlAggProfile = Seq("inputBytesReadAvg")
 
   test("test sqlMetricsAggregation simple") {
     testSqlMetricsAggregation(Array(s"$logDir/rapids_join_eventlog.zstd"),
@@ -64,9 +66,9 @@ class AnalysisSuite extends FunSuite {
     val analysis = new Analysis(apps)
 
     val sqlTaskMetrics = analysis.sqlMetricsAggregation()
-    val resultExpectation = new File(expRoot,expectFile)
+    val resultExpectation = new File(expRoot, expectFile)
     import sparkSession.implicits._
-    val actualDf = sqlTaskMetrics.toDF
+    val actualDf = sqlTaskMetrics.toDF.drop(skippedColumnsInSqlAggProfile:_*)
     val dfExpect = ToolTestUtils.readExpectationCSV(sparkSession, resultExpectation.getPath())
     ToolTestUtils.compareDataFrames(actualDf, dfExpect)
 

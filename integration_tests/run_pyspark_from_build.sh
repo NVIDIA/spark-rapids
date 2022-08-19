@@ -273,10 +273,20 @@ else
             jarOpts=(--driver-class-path "${PYSP_TEST_spark_driver_extraClassPath}")
         fi
 
+        driverJavaOpts="$PYSP_TEST_spark_driver_extraJavaOptions"
+        gpuAllocSize="$PYSP_TEST_spark_rapids_memory_gpu_allocSize"
+
+        # avoid double processing of variables passed to spark in
+        # spark_conf_init
+        unset PYSP_TEST_spark_driver_extraClassPath
+        unset PYSP_TEST_spark_driver_extraJavaOptions
+        unset PYSP_TEST_spark_jars
+        unset PYSP_TEST_spark_rapids_memory_gpu_allocSize
+
         exec "$SPARK_HOME"/bin/spark-submit "${jarOpts[@]}" \
-            --driver-java-options "$PYSP_TEST_spark_driver_extraJavaOptions" \
+            --driver-java-options "$driverJavaOpts" \
             $SPARK_SUBMIT_FLAGS \
-            --conf 'spark.rapids.memory.gpu.allocSize='"$PYSP_TEST_spark_rapids_memory_gpu_allocSize" \
+            --conf 'spark.rapids.memory.gpu.allocSize='"$gpuAllocSize" \
             "${RUN_TESTS_COMMAND[@]}" "${TEST_COMMON_OPTS[@]}"
     fi
 fi

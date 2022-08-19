@@ -276,6 +276,7 @@ class Analysis(apps: Seq[ApplicationInfo]) {
               tasksInSQL.map(_.executorDeserializeTime).sum,
               execRunTime,
               tasksInSQL.map(_.input_bytesRead).sum,
+              tasksInSQL.map(_.input_bytesRead).sum * 1.0 / tasksInSQL.size,
               tasksInSQL.map(_.input_recordsRead).sum,
               tasksInSQL.map(_.jvmGCTime).sum,
               tasksInSQL.map(_.memoryBytesSpilled).sum,

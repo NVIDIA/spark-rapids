@@ -47,6 +47,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
   private val outputCSV: Boolean = appArgs.csv()
   private val outputCombined: Boolean = appArgs.combined()
 
+  private val useAutoTuner: Boolean = appArgs.autoTuner()
+
   logInfo(s"Threadpool size is $nThreads")
 
   /**
@@ -446,6 +448,26 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       profileOutputWriter.write("Removed Executors", app.removedExecutors)
       profileOutputWriter.write("Unsupported SQL Plan", app.unsupportedOps,
         Some("Unsupported SQL Ops"))
+
+      if (useAutoTuner) {
+        val workerInfo: String = appArgs.workerInfo.getOrElse(AutoTuner.DEFAULT_WORKER_INFO)
+        val autoTuner: AutoTuner = new AutoTuner(app, workerInfo)
+        val (properties, comments) = autoTuner.getRecommendedProperties
+        profileOutputWriter.writeText("\n### D. Recommended Configuration ###\n")
+
+        if (properties.nonEmpty) {
+          val propertiesToStr = properties.map(_.toString).reduce(_ + "\n" + _)
+          profileOutputWriter.writeText("\nSpark Properties:\n" + propertiesToStr + "\n")
+        } else {
+          profileOutputWriter.writeText("Cannot recommend properties. See Comments.\n")
+        }
+
+        // Comments are optional
+        if (comments.nonEmpty) {
+          val commentsToStr = comments.map(_.toString).reduce(_ + "\n" + _)
+          profileOutputWriter.writeText("\nComments:\n" + commentsToStr + "\n")
+        }
+      }
     }
   }
 }
