@@ -394,6 +394,13 @@ properly without it. These tests assume Iceberg is not configured and are disabl
 If Spark has been configured to support Iceberg then these tests can be enabled by adding the
 `--iceberg` option to the command.
 
+### Enabling Delta Lake tests
+
+Some tests require that Delta Lake has been configured in the Spark environment and cannot run
+properly without it. These tests assume Delta Lake is not configured and are disabled by default.
+If Spark has been configured to support Delta Lake then these tests can be enabled by adding the
+`--delta_lake` option to the command.
+
 ## Writing tests
 
 There are a number of libraries provided to help someone write new tests.

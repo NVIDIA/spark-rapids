@@ -186,6 +186,10 @@ def pytest_runtest_setup(item):
         elif is_databricks_runtime():
             pytest.skip('Iceberg tests skipped on Databricks')
 
+    if item.get_closest_marker('delta_lake'):
+        if not item.config.getoption('delta_lake'):
+            pytest.skip('delta lake tests not configured to run')
+
 def pytest_configure(config):
     global _runtime_env
     _runtime_env = config.getoption('runtime_env')
