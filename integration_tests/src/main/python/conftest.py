@@ -259,6 +259,7 @@ def get_worker_id(request):
 
 @pytest.fixture
 def spark_tmp_path(request):
+    from spark_init_internal import get_spark_i_know_what_i_am_doing
     debug = request.config.getoption('debug_tmp_path')
     ret = request.config.getoption('tmp_path')
     if ret is None:
@@ -289,6 +290,7 @@ class TmpTableFactory:
 
 @pytest.fixture
 def spark_tmp_table_factory(request):
+    from spark_init_internal import get_spark_i_know_what_i_am_doing
     worker_id = get_worker_id(request)
     table_id = random.getrandbits(31)
     base_id = f'tmp_table_{worker_id}_{table_id}'
@@ -304,6 +306,7 @@ def _get_jvm(spark):
     return spark.sparkContext._jvm
 
 def spark_jvm():
+    from spark_init_internal import get_spark_i_know_what_i_am_doing
     return _get_jvm(get_spark_i_know_what_i_am_doing())
 
 @pytest.fixture(scope="session")

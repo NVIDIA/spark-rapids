@@ -64,11 +64,11 @@ def findspark_init():
         logging.info(f"Adding to findspark packages: {spark_jars_packages}")
         findspark.add_packages(spark_jars_packages)
 
-def running_with_xdist(session):
+def running_with_xdist(session, is_worker):
     try:
         import xdist
-        return xdist.is_xdist_master(session)\
-            or xdist.is_xdist_worker(session)
+        return xdist.is_xdist_worker(session) if is_worker\
+            else xdist.is_xdist_master(session)
     except ImportError:
         return False
 
@@ -82,11 +82,14 @@ def pyspark_ready():
 
 
 def pytest_sessionstart(session):
-    if running_with_xdist(session):
-        logging.info("Initializing findspark because running with xdist")
+    if running_with_xdist(session, is_worker = True):
+        logging.info("Initializing findspark because running with xdist worker")
         findspark_init()
+    elif running_with_xdist(session, is_worker = False):
+        logging.info("Skipping findspark init because on xdist master")
+        return
     elif not pyspark_ready():
-        logging.info("Initializing findspark because pyspark unimportable")
+        logging.info("Initializing findspark because pyspark unimportable on a standalone Pytest instance")
         findspark_init()
 
     import pyspark
