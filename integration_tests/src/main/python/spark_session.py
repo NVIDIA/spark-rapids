@@ -14,9 +14,8 @@
 
 import os
 from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime
-from pyspark.sql import SparkSession, DataFrame
-from pyspark import SparkContext
 from spark_init_internal import get_spark_i_know_what_i_am_doing, spark_version
+from pyspark.sql import DataFrame
 
 def _from_scala_map(scala_map):
     ret = {}
@@ -176,8 +175,7 @@ def is_databricks104_or_later():
     return is_databricks_version_or_later(10, 4)
 
 def get_java_major_version():
-    sc = SparkContext.getOrCreate()
-    ver = sc._jvm.System.getProperty("java.version")
+    ver = _spark.sparkContext._jvm.System.getProperty("java.version")
     # Allow these formats:
     # 1.8.0_72-ea
     # 9-ea

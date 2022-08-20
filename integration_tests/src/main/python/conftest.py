@@ -15,12 +15,12 @@
 import os
 import pytest
 import random
+from spark_init_internal import get_spark_i_know_what_i_am_doing
 
 pytest_plugins = [
     'spark_init_internal'
 ]
 
-from pyspark.sql.dataframe import DataFrame
 
 _approximate_float_args = None
 
