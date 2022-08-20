@@ -15,6 +15,7 @@
 import logging
 import os
 import re
+import sys
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(message)s",
@@ -63,22 +64,34 @@ def findspark_init():
         logging.info(f"Adding to findspark packages: {spark_jars_packages}")
         findspark.add_packages(spark_jars_packages)
 
-try:
-    import xdist
-    if xdist.is_xdist_master or xdist.is_xdist_worker:
-        logging.info("Enforcing findspark for xdist")
+def running_with_xdist(session):
+    try:
+        import xdist
+        return xdist.is_xdist_master(session)\
+            or xdist.is_xdist_worker(session)
+    except ImportError:
+        return False
+
+
+def pyspark_ready():
+    try:
+        import pyspark
+        return True
+    except ImportError:
+        return False
+
+
+def pytest_sessionstart(session):
+    if running_with_xdist(session):
+        logging.info("Initializing findspark because running with xdist")
         findspark_init()
-except ImportError as error:
-    pass
+    elif not pyspark_ready():
+        logging.info("Initializing findspark because pyspark unimportable")
+        findspark_init()
 
-try:
-    import pyspark
-except ImportError as error:
-    findspark_init()
     import pyspark
 
-def _spark__init():
-    #Force the RapidsPlugin to be enabled, so it blows up if the classpath is not set properly
+    # Force the RapidsPlugin to be enabled, so it blows up if the classpath is not set properly
     # DO NOT SET ANY OTHER CONFIGS HERE!!!
     # due to bugs in pyspark/pytest it looks like any configs set here
     # can be reset in the middle of a test if specific operations are done (some types of cast etc)
@@ -107,7 +120,8 @@ def _spark__init():
     #TODO catch the ClassNotFound error that happens if the classpath is not set up properly and
     # make it a better error message
     _s.sparkContext.setLogLevel("WARN")
-    return _s
+    global _spark
+    _spark = _s
 
 
 def _handle_derby_dir(sb, driver_opts, wid):
@@ -124,6 +138,7 @@ def _handle_event_log_dir(sb, wid):
         logging.info('Automatic configuration for spark event log disabled')
         return
 
+    import pyspark
     spark_conf = pyspark.SparkConf()
     master_url = os.environ.get(env_for_conf('spark.master'),
                                 spark_conf.get("spark.master", 'local'))
@@ -147,9 +162,6 @@ def _handle_event_log_dir(sb, wid):
         .config('spark.eventLog.compress', True) \
         .config('spark.eventLog.enabled', True) \
         .config('spark.eventLog.compression.codec', event_log_codec)
-
-
-_spark = _spark__init()
 
 def get_spark_i_know_what_i_am_doing():
     """
