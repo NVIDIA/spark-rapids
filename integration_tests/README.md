@@ -230,7 +230,7 @@ is that `spark-submit` uses python if the file name ends with `.py`.
 If you want to configure the Spark cluster you may also set environment variables for the tests.
 The name of the env var should be in the form `"PYSP_TEST_" + conf_key.replace('.', '_')`. Linux
 does not allow '.' in the name of an environment variable so we replace it with an underscore. If
-the property contains an underscore, replace substitute '__' for each original '_'.
+the property contains an underscore, substitute '__' for each original '_'.
 For example, `spark.sql.catalog.spark_catalog` is represented by the environment variable
 `PYSP_TEST_spark_sql_catalog_spark__catalog`.
 

@@ -18,7 +18,7 @@ import random
 
 # TODO redo _spark stuff using fixtures
 #
-# Don't import pyspark / _spark directly in conftest
+# Don't import pyspark / _spark directly in conftest globally
 # import as a plugin to do a lazy per-pytest-session initialization
 #
 pytest_plugins = [
@@ -302,12 +302,52 @@ def spark_tmp_table_factory(request):
         if (t_name.startswith(base_id)):
             sp.sql("DROP TABLE IF EXISTS {}".format(t_name))
 
+def _get_jvm_session(spark):
+    return spark._jsparkSession
+
 def _get_jvm(spark):
     return spark.sparkContext._jvm
 
 def spark_jvm():
     from spark_init_internal import get_spark_i_know_what_i_am_doing
     return _get_jvm(get_spark_i_know_what_i_am_doing())
+
+class MortgageRunner:
+  def __init__(self, mortgage_format, mortgage_acq_path, mortgage_perf_path):
+    self.mortgage_format = mortgage_format
+    self.mortgage_acq_path = mortgage_acq_path
+    self.mortgage_perf_path = mortgage_perf_path
+
+  def do_test_query(self, spark):
+    from pyspark.sql.dataframe import DataFrame
+    jvm_session = _get_jvm_session(spark)
+    jvm = _get_jvm(spark)
+    acq = self.mortgage_acq_path
+    perf = self.mortgage_perf_path
+    run = jvm.com.nvidia.spark.rapids.tests.mortgage.Run
+    if self.mortgage_format == 'csv':
+        df = run.csv(jvm_session, perf, acq)
+    elif self.mortgage_format == 'parquet':
+        df = run.parquet(jvm_session, perf, acq)
+    elif self.mortgage_format == 'orc':
+        df = run.orc(jvm_session, perf, acq)
+    else:
+        raise AssertionError('Not Supported Format {}'.format(self.mortgage_format))
+
+    return DataFrame(df, spark.getActiveSession())
+
+@pytest.fixture(scope="session")
+def mortgage(request):
+    mortgage_format = request.config.getoption("mortgage_format")
+    mortgage_path = request.config.getoption("mortgage_path")
+    if mortgage_path is None:
+        std_path = request.config.getoption("std_input_path")
+        if std_path is None:
+            skip_unless_precommit_tests("Mortgage tests are not configured to run")
+        else:
+            yield MortgageRunner('parquet', std_path + '/parquet_acq', std_path + '/parquet_perf')
+    else:
+        yield MortgageRunner(mortgage_format, mortgage_path + '/acq', mortgage_path + '/perf')
 
 @pytest.fixture(scope="session")
 def enable_cudf_udf(request):
