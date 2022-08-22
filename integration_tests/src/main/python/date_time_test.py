@@ -214,13 +214,12 @@ def test_to_unix_timestamp(data_gen, ansi_enabled):
         lambda spark : unary_op_df(spark, data_gen).selectExpr("to_unix_timestamp(a)"),
         {'spark.sql.ansi.enabled': ansi_enabled})
 
-#@pytest.mark.parametrize('time_zone', ["UTC", "UTC+0", "UTC-0", "GMT", "GMT+0", "GMT-0"], ids=idfn)
-@pytest.mark.parametrize('time_zone', ["UTC"], ids=idfn)
+@pytest.mark.parametrize('time_zone', ["UTC", "UTC+0", "UTC-0", "GMT", "GMT+0", "GMT-0"], ids=idfn)
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
 def test_from_utc_timestamp(data_gen, time_zone):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr("from_utc_timestamp(a, '{}')".format(time_zone)))
-
+        lambda spark : unary_op_df(spark, data_gen).selectExpr("from_utc_timestamp(a, '{}')".format(time_zone)))
+        
 @pytest.mark.parametrize('invalid,fmt', [
     ('2021-01/01', 'yyyy-MM-dd'),
     ('2021/01-01', 'yyyy/MM/dd'),
