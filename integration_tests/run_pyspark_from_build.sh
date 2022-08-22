@@ -258,6 +258,13 @@ else
 
     # If you want to change the amount of GPU memory allocated you have to change it here
     # and where TEST_PARALLEL is calculated
+    if [[ -n "${PYSP_TEST_spark_rapids_memory_gpu_allocSize}" ]]; then
+       >&2 echo "#### WARNING: using externally set" \
+                "PYSP_TEST_spark_rapids_memory_gpu_allocSize" \
+                "${PYSP_TEST_spark_rapids_memory_gpu_allocSize}." \
+                "If needed permanently in CI please file an issue to accommodate" \
+                "for new GPU memory requirements ####"
+    fi
     export PYSP_TEST_spark_rapids_memory_gpu_allocSize=${PYSP_TEST_spark_rapids_memory_gpu_allocSize:-'1536m'}
 
     if ((${#TEST_PARALLEL_OPTS[@]} > 0));
