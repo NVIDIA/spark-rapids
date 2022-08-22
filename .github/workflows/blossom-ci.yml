@@ -65,7 +65,6 @@ jobs:
       NVnavkumar,\
       amahussein,\
       mattahrens,\
-      anthony-chang,\
       sinkinben,\
       thirtiseven,\
       ', format('{0},', github.actor)) && github.event.comment.body == 'build'
