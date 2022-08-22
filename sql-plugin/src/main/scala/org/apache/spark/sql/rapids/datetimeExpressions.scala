@@ -889,8 +889,8 @@ class FromUTCTimestampExprMeta(
   override def tagExprForGpu(): Unit = {
     val timezoneShortID = extractStringLit(expr.right).getOrElse("")
 
-    if (timezoneShortID == null) {
-      willNotWorkOnGpu("input time zone is null")
+    if (timezoneShortID.isEmpty) {
+      willNotWorkOnGpu("input time zone is null or empty")
     }
 
     val utc = ZoneId.of("UTC").normalized
@@ -898,7 +898,7 @@ class FromUTCTimestampExprMeta(
     val timezone = ZoneId.of(timezoneShortID.replaceFirst("(\\+|\\-)(\\d):", "$10$2:"),
       ZoneId.SHORT_IDS).normalized
 
-    if(!timezone.equals(utc)) {
+    if(timezone != utc) {
       willNotWorkOnGpu("only timezones equivalent to UTC are supported")
     }
   }
