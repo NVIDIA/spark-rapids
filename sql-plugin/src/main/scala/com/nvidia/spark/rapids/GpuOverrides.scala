@@ -829,7 +829,8 @@ object GpuOverrides extends Logging {
           TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +
           GpuTypeShims.additionalParquetSupportedTypes).nested(),
       cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
-          TypeSig.ARRAY + TypeSig.MAP + GpuTypeShims.additionalParquetSupportedTypes).nested(),
+          TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +
+          GpuTypeShims.additionalParquetSupportedTypes).nested(),
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.UDT + GpuTypeShims.additionalParquetSupportedTypes).nested())),
     (OrcFormatType, FileFormatChecks(
@@ -852,11 +853,11 @@ object GpuOverrides extends Logging {
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
         TypeSig.UDT).nested())),
     (IcebergFormatType, FileFormatChecks(
-      cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
+      cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT + TypeSig.BINARY +
           TypeSig.ARRAY + TypeSig.MAP + GpuTypeShims.additionalParquetSupportedTypes).nested(),
       cudfWrite = TypeSig.none,
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
-          TypeSig.UDT + GpuTypeShims.additionalParquetSupportedTypes).nested())))
+          TypeSig.BINARY + TypeSig.UDT + GpuTypeShims.additionalParquetSupportedTypes).nested())))
 
   val commonExpressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     expr[Literal](
@@ -1958,11 +1959,11 @@ object GpuOverrides extends Logging {
       "Check if the values are equal including nulls <=>",
       ExprChecks.binaryProject(
         TypeSig.BOOLEAN, TypeSig.BOOLEAN,
-        ("lhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-            GpuTypeShims.additionalPredicateSupportedTypes,
+        ("lhs", (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+            GpuTypeShims.additionalPredicateSupportedTypes + TypeSig.STRUCT).nested(),
             TypeSig.comparable),
-        ("rhs", TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-            GpuTypeShims.additionalPredicateSupportedTypes,
+        ("rhs", (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+            GpuTypeShims.additionalPredicateSupportedTypes + TypeSig.STRUCT).nested(),
             TypeSig.comparable)),
       (a, conf, p, r) => new BinaryExprMeta[EqualNullSafe](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
@@ -2738,14 +2739,9 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(
         TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL,
         TypeSig.orderable,
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-            .withPsNote(Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
         TypeSig.ARRAY.nested(TypeSig.orderable)),
       (in, conf, p, r) => new UnaryExprMeta[ArrayMin](in, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          checkAndTagFloatNanAgg("Min", in.dataType, conf, this)
-        }
-
         override def convertToGpu(child: Expression): GpuExpression =
           GpuArrayMin(child)
       }),
@@ -3857,6 +3853,7 @@ object GpuOverrides extends Logging {
           TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Only supported for Parquet") +
           TypeSig.MAP.withPsNote(TypeEnum.MAP, "Only supported for Parquet") +
           TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Only supported for Parquet") +
+          TypeSig.BINARY.withPsNote(TypeEnum.BINARY, "Only supported for Parquet") +
           GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
         TypeSig.all),
       (p, conf, parent, r) => new SparkPlanMeta[DataWritingCommandExec](p, conf, parent, r) {

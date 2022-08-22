@@ -307,7 +307,7 @@ class SetValuesGen(DataGen):
         self._vals = data
 
     def __repr__(self):
-        return super().__repr__() + '(' + str(self._child) + ')'
+        return super().__repr__() +'(' + str(self.data_type) + ',' + str(self._vals) + ')'
 
     def start(self, rand):
         data = self._vals
