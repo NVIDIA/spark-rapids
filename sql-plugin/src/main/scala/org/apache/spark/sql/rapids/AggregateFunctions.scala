@@ -535,10 +535,24 @@ abstract class GpuMin(child: Expression) extends GpuAggregateFunction
   }
 }
 
-/** Min aggregation without `NaN` handling */
+/** Min aggregation without `Nan` handling */
 case class GpuBasicMin(child: Expression) extends GpuMin(child)
 
-/** Min Aggregation for FloatType and DoubleType to handle `NaN`s */
+/** GpuMin for FloatType and DoubleType to handle `Nan`s.
+ *
+ * In Spark, `Nan` is the max float value, however in cuDF, the calculation
+ * involving `Nan` is undefined.
+ * We design a workaround method here to match the Spark's behaviour.
+ * The high level idea is:
+ *   if the column contains only `Nan`s or `null`s
+ *   then
+       if the column contains `Nan`
+ *     then return `Nan`
+ *     else return null
+ *   else
+ *     replace all `Nan`s with nulls;
+ *     use cuDF kernel to find the min value
+ */
 case class GpuFloatMin(child: Expression) extends GpuMin(child)
   with GpuReplaceWindowFunction {
   
@@ -561,14 +575,27 @@ case class GpuFloatMin(child: Expression) extends GpuMin(child)
   protected lazy val mergeHasNan = CudfAny()
   protected lazy val mergeMinVal = new CudfMin(dataType)
 
+  // Project 3 columns:
+  // 1. A boolean column indicating whether the values in `child` are `Nan`s or `null`s
+  // 2. A boolean column indicating whether the values in `child` are `Nan`s
+  // 3. Replace all `Nan`s in the `child` with `null`s
   override lazy val inputProjection: Seq[Expression] = Seq(
     GpuOr(GpuIsNan(child), GpuIsNull(child)),
     GpuIsNan(child),
     GpuNansToNulls(child)
   )
+  // 1. Check if all values in the `child` are `Nan`s or `null`s
+  // 2. Check if `child` contains `Nan`
+  // 3. Calculate the min value on `child` with all `Nan`s has been replaced.
   override lazy val updateAggregates: Seq[CudfAggregate] =
     Seq(updateAllNansOrNulls, updateHasNan, updateMinVal)
 
+  // If the column only contains `Nan`s or `null`s
+  // Then
+  //   if the column contains `Nan`
+  //   then return `Nan`
+  //   else return `null`
+  // Else return the min value
   override lazy val postUpdate: Seq[Expression] = Seq(
     GpuIf(
       updateAllNansOrNulls.attr, 
@@ -579,15 +606,18 @@ case class GpuFloatMin(child: Expression) extends GpuMin(child)
     )
   )
 
+  // Same logic as the `inputProjection` stage.
   override lazy val preMerge: Seq[Expression] = Seq (
     GpuOr(GpuIsNan(evaluateExpression), GpuIsNull(evaluateExpression)),
     GpuIsNan(evaluateExpression),
     GpuNansToNulls(evaluateExpression)
   )
 
+  // Same logic as the `updateAggregates` stage.
   override lazy val mergeAggregates: Seq[CudfAggregate] =
     Seq(mergeAllNansOrNulls, mergeHasNan, mergeMinVal)
 
+  // Same logic as the `postUpdate` stage.
   override lazy val postMerge: Seq[Expression] = Seq(
     GpuIf(
       mergeAllNansOrNulls.attr,
@@ -598,12 +628,17 @@ case class GpuFloatMin(child: Expression) extends GpuMin(child)
     )
   )
 
+  // We should always override the windowing expression to handle `Nan`.
   override def shouldReplaceWindow(spec: GpuWindowSpecDefinition): Boolean = true
+
   override def windowReplacement(spec: GpuWindowSpecDefinition): Expression = {
+    // The `GpuBasicMin` here has the same functionality as `CudfAll`,
+    // as `true > false` in cuDF.
     val allNansOrNull = GpuWindowExpression(
       GpuBasicMin(GpuOr(GpuIsNan(child), GpuIsNull(child))), spec
     )
     val hasNan = GpuWindowExpression(GpuBasicMax(GpuIsNan(child)), spec)
+    // We use `GpuBasicMin` but not `GpuMin` to avoid self recursion.
     val min = GpuWindowExpression(GpuBasicMin(GpuNansToNulls(child)), spec)
     GpuIf(
       allNansOrNull,
@@ -675,12 +710,13 @@ abstract class GpuMax(child: Expression) extends GpuAggregateFunction
   }
 }
 
-/** Max aggregation without `NaN` handling */
+/** Max aggregation without `Nan` handling */
 case class GpuBasicMax(child: Expression) extends GpuMax(child)
 
-/** Max aggregation for FloatType and DoubleType to handle `NaN`s.
+/** Max aggregation for FloatType and DoubleType to handle `Nan`s.
  *
- * In Spark, `Nan` is the max float value, however in cuDF, `Infinity` is.
+ * In Spark, `Nan` is the max float value, however in cuDF, the calculation
+ * involving `Nan` is undefined.
  * We design a workaround method here to match the Spark's behaviour.
  * The high level idea is that, in the projection stage, we create another
  * column `isNan`. If any value in this column is true, return `Nan`,
