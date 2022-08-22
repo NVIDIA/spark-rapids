@@ -1750,9 +1750,7 @@ object GpuOverrides extends Logging {
     expr[DateFormatClass](
       "Converts timestamp to a value of string in the format specified by the date format",
       ExprChecks.binaryProject(TypeSig.STRING, TypeSig.STRING,
-        ("timestamp", (TypeSig.STRING + TypeSig.TIMESTAMP)
-          .withPsNote(TypeEnum.STRING, "A limited number of timestamp formats are supported"),
-          TypeSig.STRING + TypeSig.TIMESTAMP),
+        ("timestamp", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
         ("strfmt", TypeSig.lit(TypeEnum.STRING)
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
