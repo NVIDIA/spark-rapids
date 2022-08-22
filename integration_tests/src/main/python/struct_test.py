@@ -31,7 +31,8 @@ def test_struct_scalar_project():
     StructGen([["first", double_gen], ["second", date_gen], ["third", timestamp_gen]]),
     StructGen([["first", string_gen], ["second", ArrayGen(byte_gen)], ["third", simple_string_to_string_map_gen]]),
     StructGen([["first", decimal_gen_64bit], ["second", decimal_gen_32bit], ["third", decimal_gen_32bit]]),
-    StructGen([["first", decimal_gen_128bit], ["second", decimal_gen_128bit], ["third", decimal_gen_128bit]])], ids=idfn)
+    StructGen([["first", decimal_gen_128bit], ["second", decimal_gen_128bit], ["third", decimal_gen_128bit]]),
+    StructGen([["first", binary_gen], ["second", ArrayGen(BinaryGen(max_length=10), max_length=10)], ["third", binary_gen]])], ids=idfn)
 def test_struct_get_item(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
@@ -40,7 +41,7 @@ def test_struct_get_item(data_gen):
                 'a.third'))
 
 
-@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens + [
+@pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens + [binary_gen,
     null_gen] + single_level_array_gens + struct_gens_sample + map_gens_sample, ids=idfn)
 def test_make_struct(data_gen):
     # Spark has no good way to create a map literal without the map function

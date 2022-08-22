@@ -62,16 +62,16 @@ echo "Plan to deploy ${FPATH}.jar to $SERVER_URL (ID:$SERVER_ID)"
 
 FINAL_AGG_VERSION_TOBUILD=${FINAL_AGG_VERSION_TOBUILD:-'311'}
 ###### Choose the deploy command ######
-
+MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3"
 if [ "$SIGN_FILE" == true ]; then
     # No javadoc and sources jar is generated for shade artifact only. Use 'sql-plugin' instead
     SQL_ART_ID=`mvn help:evaluate -q -pl $SQL_PL -Dexpression=project.artifactId -DforceStdout`
     SQL_ART_VER=`mvn help:evaluate -q -pl $SQL_PL -Dexpression=project.version -DforceStdout`
     JS_FPATH="${SQL_PL}/target/spark${FINAL_AGG_VERSION_TOBUILD}/${SQL_ART_ID}-${SQL_ART_VER}"
     SRC_DOC_JARS="-Dsources=${JS_FPATH}-sources.jar -Djavadoc=${JS_FPATH}-javadoc.jar"
-    DEPLOY_CMD="mvn -B gpg:sign-and-deploy-file -s jenkins/settings.xml -Dgpg.passphrase=$GPG_PASSPHRASE"
+    DEPLOY_CMD="$MVN -B gpg:sign-and-deploy-file -s jenkins/settings.xml -Dgpg.passphrase=$GPG_PASSPHRASE"
 else
-    DEPLOY_CMD="mvn -B deploy:deploy-file -s jenkins/settings.xml"
+    DEPLOY_CMD="$MVN -B deploy:deploy-file -s jenkins/settings.xml"
 fi
 
 echo "Deploy CMD: $DEPLOY_CMD"

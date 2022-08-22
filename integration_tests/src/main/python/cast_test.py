@@ -473,6 +473,11 @@ def test_cast_timestamp_to_numeric_non_ansi():
             .selectExpr("cast(a as byte)", "cast(a as short)", "cast(a as int)", "cast(a as long)",
                         "cast(a as float)", "cast(a as double)"))
 
+def test_cast_timestamp_to_string():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, timestamp_gen)
+            .selectExpr("cast(a as string)"))
+
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 def test_cast_day_time_interval_to_string():
     _assert_cast_to_string_equal(DayTimeIntervalGen(start_field='day', end_field='day', special_cases=[MIN_DAY_TIME_INTERVAL, MAX_DAY_TIME_INTERVAL, timedelta(seconds=0)]), {})

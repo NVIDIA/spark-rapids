@@ -829,6 +829,7 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/331/scala</source>
+                                        <source>${project.basedir}/src/main/331+/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/311until340-all/scala</source>
                                         <source>${project.basedir}/src/main/320+/java</source>
@@ -895,6 +896,7 @@
                                 <configuration>
                                     <sources>
                                         <source>${project.basedir}/src/main/340/scala</source>
+                                        <source>${project.basedir}/src/main/331+/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/320+/java</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
