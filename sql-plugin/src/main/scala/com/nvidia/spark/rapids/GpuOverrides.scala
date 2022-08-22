@@ -2313,23 +2313,16 @@ object GpuOverrides extends Logging {
           TypeSig.orderable,
           Seq(ParamCheck("input",
             (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT)
-              .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-              .withPsNote(Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
+              .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
             TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
             (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
             TypeSig.orderable,
             Seq(ParamCheck("input",
-              (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-                .withPsNote(Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
+              (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
               TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts),
       (a, conf, p, r) => new AggExprMeta[Min](a, conf, p, r) {
-        override def tagAggForGpu(): Unit = {
-          val dataType = a.child.dataType
-          checkAndTagFloatNanAgg("Min", dataType, conf, this)
-        }
-
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuMin(childExprs.head)
 

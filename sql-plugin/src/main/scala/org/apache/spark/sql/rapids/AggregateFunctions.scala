@@ -485,7 +485,8 @@ object GpuMin{
 abstract class GpuMin(child: Expression) extends GpuAggregateFunction
     with GpuBatchedRunningWindowWithFixer
     with GpuAggregateWindowFunction
-    with GpuRunningWindowFunction {
+    with GpuRunningWindowFunction
+    with Serializable {
   override lazy val initialValues: Seq[GpuLiteral] = Seq(GpuLiteral(null, child.dataType))
   override lazy val inputProjection: Seq[Expression] = Seq(child)
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(new CudfMin(child.dataType))
@@ -553,42 +554,62 @@ case class GpuFloatMin(child: Expression) extends GpuMin(child)
   }
 
   protected lazy val updateAllNansOrNulls = CudfAll()
-  protected lazy val updateHasNulls = CudfAny()
+  protected lazy val updateHasNan = CudfAny()
   protected lazy val updateMinVal = new CudfMin(dataType)
 
   protected lazy val mergeAllNansOrNulls = CudfAll()
-  protected lazy val mergeHasNulls = CudfAny()
+  protected lazy val mergeHasNan = CudfAny()
   protected lazy val mergeMinVal = new CudfMin(dataType)
 
   override lazy val inputProjection: Seq[Expression] = Seq(
-    child, 
     GpuOr(GpuIsNan(child), GpuIsNull(child)),
     GpuIsNan(child),
-    // Replace `Nan`s with `null`s in the column
+    GpuNansToNulls(child)
   )
-  override lazy val updateAggregates: Seq[CudfAggregate] = Seq(updateMinVal, updateAllNansOrNulls, updateHasNulls)
+  override lazy val updateAggregates: Seq[CudfAggregate] =
+    Seq(updateAllNansOrNulls, updateHasNan, updateMinVal)
 
   override lazy val postUpdate: Seq[Expression] = Seq(
     GpuIf(
       updateAllNansOrNulls.attr, 
-      GpuLiteral(nan, dataType), 
+      GpuIf(
+        updateHasNan.attr, GpuLiteral(nan, dataType), GpuLiteral(null, dataType)
+      ),
       updateMinVal.attr
     )
   )
 
   override lazy val preMerge: Seq[Expression] = Seq (
-    evaluateExpression, GpuIsNan(evaluateExpression)
+    GpuOr(GpuIsNan(evaluateExpression), GpuIsNull(evaluateExpression)),
+    GpuIsNan(evaluateExpression),
+    GpuNansToNulls(evaluateExpression)
   )
-  override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(mergeMinVal, mergeAllNansOrNulls)
+
+  override lazy val mergeAggregates: Seq[CudfAggregate] =
+    Seq(mergeAllNansOrNulls, mergeHasNan, mergeMinVal)
+
   override lazy val postMerge: Seq[Expression] = Seq(
-    GpuIf(mergeAllNansOrNulls.attr, GpuLiteral(nan, dataType), mergeMinVal.attr)
+    GpuIf(
+      mergeAllNansOrNulls.attr,
+      GpuIf(
+        mergeHasNan.attr, GpuLiteral(nan, dataType), GpuLiteral(null, dataType)
+      ),
+      mergeMinVal.attr
+    )
   )
 
   override def shouldReplaceWindow(spec: GpuWindowSpecDefinition): Boolean = true
   override def windowReplacement(spec: GpuWindowSpecDefinition): Expression = {
-    val isNan = GpuWindowExpression(GpuBasicMin(GpuIsNan(child)), spec)
-    val min = GpuWindowExpression(GpuBasicMin(child), spec)
-    GpuIf(isNan, GpuLiteral(nan, dataType), min)
+    val allNansOrNull = GpuWindowExpression(
+      GpuBasicMin(GpuOr(GpuIsNan(child), GpuIsNull(child))), spec
+    )
+    val hasNan = GpuWindowExpression(GpuBasicMax(GpuIsNan(child)), spec)
+    val min = GpuWindowExpression(GpuBasicMin(GpuNansToNulls(child)), spec)
+    GpuIf(
+      allNansOrNull,
+      GpuIf(hasNan, GpuLiteral(nan, dataType), GpuLiteral(null, dataType)),
+      min
+    )
   }
 }
 
