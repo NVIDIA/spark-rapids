@@ -1618,21 +1618,6 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     frame => frame.groupBy("large_longs").agg(avg("large_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
 
-  ALLOW_NON_GPU_testSparkResultsAreEqualWithCapture(
-    "min_with_nans_fall_back",
-    nanDf,
-    Seq("HashAggregateExec", "AggregateExpression",
-      "AttributeReference", "Alias", "Min", "ShuffleExchangeExec"),
-    conf = enableCsvConf()) {
-    frame => frame.agg(min("doubles"))
-  } { (_, gpuPlan) => {
-    // verify nothing ran on the gpu
-    if (gpuPlan.conf.getAllConfs(RapidsConf.SQL_ENABLED.key).toBoolean) {
-      val execNode = gpuPlan.find(_.isInstanceOf[GpuHashAggregateExec])
-      assert(execNode.isEmpty)
-    }
-  }}
-
   IGNORE_ORDER_testSparkResultsAreEqual(
     testName = "Test NormalizeNansAndZeros(Float)",
     floatWithDifferentKindsOfNansAndZeros,
