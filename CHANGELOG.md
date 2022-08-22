@@ -1,5 +1,5 @@
 # Change log
-Generated on 2022-08-18
+Generated on 2022-08-20
 
 ## Release 22.08
 
@@ -50,10 +50,6 @@ Generated on 2022-08-18
 |||
 |:---|:---|
 |[#6060](https://github.com/NVIDIA/spark-rapids/issues/6060)|[FEA] Add experimental multi-threaded BypassMergeSortShuffleWriter|
-|[#5636](https://github.com/NVIDIA/spark-rapids/issues/5636)|[FEA] Update GeneratedInternalRowToCudfRowIterator for string transitions|
-|[#5633](https://github.com/NVIDIA/spark-rapids/issues/5633)|[FEA] Enable Strings as a supported type for GpuColumnarToRow transitions|
-|[#5634](https://github.com/NVIDIA/spark-rapids/issues/5634)|[FEA] Update CudfUnsafeRow to include size estimates for strings and implementation for getUTF8String|
-|[#5635](https://github.com/NVIDIA/spark-rapids/issues/5635)|[FEA] Update AcceleratedColumnarToRowIterator to support strings|
 |[#5453](https://github.com/NVIDIA/spark-rapids/issues/5453)|[FEA] Support runtime filters for BatchScanExec|
 |[#5075](https://github.com/NVIDIA/spark-rapids/issues/5075)|Performance can be very slow when reading just a few columns out of many on parquet|
 |[#5624](https://github.com/NVIDIA/spark-rapids/issues/5624)|[FEA] Let CPU handle Delta table's metadata related queries|
@@ -140,6 +136,8 @@ Generated on 2022-08-18
 ### PRs
 |||
 |:---|:---|
+|[#6367](https://github.com/NVIDIA/spark-rapids/pull/6367)|Revert "Enable Strings as a supported type for GpuColumnarToRow transitions"|
+|[#6354](https://github.com/NVIDIA/spark-rapids/pull/6354)|Update 22.08 changelog to latest [skip ci]|
 |[#6348](https://github.com/NVIDIA/spark-rapids/pull/6348)|Update plugin jni version to released 22.08.0|
 |[#6234](https://github.com/NVIDIA/spark-rapids/pull/6234)|[Doc] Add 22.08 docs' links [skip ci]|
 |[#6288](https://github.com/NVIDIA/spark-rapids/pull/6288)|CPU fallback for Map scalars with key vectors|
