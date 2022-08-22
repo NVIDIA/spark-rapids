@@ -932,12 +932,11 @@ all_basic_gens_no_nan = [byte_gen, short_gen, int_gen, long_gen, FloatGen(no_nan
 
 # Many Spark versions have issues sorting large decimals,
 # see https://issues.apache.org/jira/browse/SPARK-40089.
-# TODO add in some array generators to this once that is supported for sorting
-# a selection of generators that should be orderable (sortable and compareable)
-orderable_decimal_gens = decimal_gens
+orderable_decimal_gen_128bit = decimal_gen_128bit
 if is_before_spark_340():
-    orderable_decimal_gens = [decimal_gen_32bit, decimal_gen_64bit,
-                              DecimalGen(precision=20, scale=2, special_cases=[])]
+    orderable_decimal_gen_128bit = DecimalGen(precision=20, scale=2, special_cases=[])
+
+orderable_decimal_gens = [decimal_gen_32bit, decimal_gen_64bit, orderable_decimal_gen_128bit ]
 
 # TODO add in some array generators to this once that is supported for sorting
 # a selection of generators that should be orderable (sortable and compareable)
