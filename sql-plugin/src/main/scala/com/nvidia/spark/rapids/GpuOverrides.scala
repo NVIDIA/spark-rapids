@@ -1750,7 +1750,9 @@ object GpuOverrides extends Logging {
     expr[DateFormatClass](
       "Converts timestamp to a value of string in the format specified by the date format",
       ExprChecks.binaryProject(TypeSig.STRING, TypeSig.STRING,
-        ("timestamp", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+        ("timestamp", (TypeSig.STRING + TypeSig.TIMESTAMP)
+          .withPsNote(TypeEnum.STRING, "A limited number of timestamp formats are supported"),
+          TypeSig.STRING + TypeSig.TIMESTAMP),
         ("strfmt", TypeSig.lit(TypeEnum.STRING)
             .withPsNote(TypeEnum.STRING, "A limited number of formats are supported"),
             TypeSig.STRING)),
@@ -1859,9 +1861,11 @@ object GpuOverrides extends Logging {
           GpuFromUnixTime(lhs, rhs, strfFormat)
       }),
     expr[FromUTCTimestamp](
-      "Interpret the given timestamp as in UTC and render that time in the given time zone",
+      "Render the input UTC timestamp in the input timezone",
       ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
-        ("timestamp", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+        ("timestamp", (TypeSig.STRING + TypeSig.TIMESTAMP)
+          .withPsNote(TypeEnum.STRING, "A limited number of timestamp formats are supported"),
+          TypeSig.STRING + TypeSig.TIMESTAMP),
         ("timezone", TypeSig.lit(TypeEnum.STRING)
           .withPsNote(TypeEnum.STRING, "Only timezones equivalent to UTC are supported"),
           TypeSig.STRING)),
