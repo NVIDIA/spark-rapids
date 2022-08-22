@@ -360,7 +360,11 @@ class CudfMin(override val dataType: DataType) extends CudfAggregate {
   override val name: String = "CudfMin"
 }
 
-/** Check if all values in a boolean column are trues */
+/**
+ * Check if all values in a boolean column are trues.
+ * The CUDF all aggregation does not work for reductions or group by aggregations
+ * so we use Min as a workaround for this.
+ */
 object CudfAll {
   def apply(): CudfAggregate = new CudfMin(BooleanType)
 }
