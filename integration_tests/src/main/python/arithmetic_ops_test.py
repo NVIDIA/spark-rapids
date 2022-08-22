@@ -263,7 +263,13 @@ def test_mod(data_gen):
                 f.col('b') % f.lit(None).cast(data_type),
                 f.col('a') % f.col('b')))
 
-@pytest.mark.parametrize('data_gen', _arith_data_gens_no_neg_scale, ids=idfn)
+# pmod currently falls back for Decimal(38)
+_pmod_gens = numeric_gens + [ decimal_gen_32bit, decimal_gen_64bit, _decimal_gen_18_0, decimal_gen_128bit,
+                              _decimal_gen_30_2, _decimal_gen_36_5,
+                              DecimalGen(precision=37, scale=0), DecimalGen(precision=37, scale=10),
+                              _decimal_gen_7_7]
+
+@pytest.mark.parametrize('data_gen', _pmod_gens, ids=idfn)
 def test_pmod(data_gen):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
@@ -273,6 +279,19 @@ def test_pmod(data_gen):
                 'pmod(cast(null as {}), a)'.format(string_type),
                 'pmod(b, cast(null as {}))'.format(string_type),
                 'pmod(a, b)'))
+
+@allow_non_gpu("ProjectExec", "Pmod")
+@pytest.mark.parametrize('data_gen', [_decimal_gen_38_0, _decimal_gen_38_10], ids=idfn)
+def test_pmod_fallback(data_gen):
+    string_type = to_cast_string(data_gen.data_type)
+    assert_gpu_fallback_collect(
+        lambda spark : binary_op_df(spark, data_gen).selectExpr(
+            'pmod(a, cast(100 as {}))'.format(string_type),
+            'pmod(cast(-12 as {}), b)'.format(string_type),
+            'pmod(cast(null as {}), a)'.format(string_type),
+            'pmod(b, cast(null as {}))'.format(string_type),
+            'pmod(a, b)'),
+        "Pmod")
 
 # test pmod(Long.MinValue, -1) = 0 and Long.MinValue % -1 = 0, should not throw
 def test_mod_pmod_long_min_value():
