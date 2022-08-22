@@ -48,6 +48,7 @@ mvn_verify() {
     $MVN_INSTALL_CMD -DskipTests -Dbuildver=313
     [[ $BUILD_MAINTENANCE_VERSION_SNAPSHOTS == "true" ]] && $MVN_INSTALL_CMD -Dbuildver=314
 
+    $MVN_INSTALL_CMD -DskipTests -Dbuildver=320
     # enable UTF-8 for regular expression tests
     env -u SPARK_HOME LC_ALL="en_US.UTF-8" $MVN_CMD $MVN_URM_MIRROR -Dbuildver=320 test $MVN_BUILD_ARGS \
       -Dpytest.TEST_TAGS='' -pl '!tools' \
