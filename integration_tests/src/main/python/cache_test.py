@@ -26,7 +26,7 @@ import pyspark.ml.linalg as ml
 enable_vectorized_confs = [{"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "true"},
                            {"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "false"}]
 
-_cache_decimal_gens = [decimal_gen_32bit, decimal_gen_64bit, decimal_gen_128bit]
+_cache_decimal_gens = [decimal_gen_32bit, decimal_gen_64bit, orderable_decimal_gen_128bit]
 _cache_single_array_gens_no_null = [ArrayGen(gen) for gen in all_basic_gens_no_null + _cache_decimal_gens]
 
 decimal_struct_gen= StructGen([['child0', sub_gen] for ind, sub_gen in enumerate(_cache_decimal_gens)])
@@ -166,7 +166,7 @@ _cache_single_array_gens_no_null_no_timestamp = [ArrayGen(gen) for gen in _all_b
                                      pytest.param(FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), marks=[incompat]),
                                      pytest.param(DoubleGen(special_cases=double_special_cases), marks=[incompat]),
                                      BooleanGen(), DateGen(), TimestampGen(), decimal_gen_32bit, decimal_gen_64bit,
-                                     decimal_gen_128bit] + _cache_single_array_gens_no_null_no_timestamp, ids=idfn)
+                                     orderable_decimal_gen_128bit] + _cache_single_array_gens_no_null_no_timestamp, ids=idfn)
 @pytest.mark.parametrize('ts_write', ['TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
 @pytest.mark.parametrize('enable_vectorized', ['true', 'false'], ids=idfn)
 @ignore_order
