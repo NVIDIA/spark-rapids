@@ -276,8 +276,8 @@ case class GpuAvroMultiFilePartitionReaderFactory(
         mapPathHeader.put(fPath, singleFileInfo.header)
       }
     }
-    if (metrics.contains("scanTime")) {
-      metrics("scanTime") += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - currentTime)
+    metrics.get("scanTime").foreach {
+      _ += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - currentTime)
     }
     new GpuMultiFileAvroPartitionReader(conf, files, clippedBlocks, readDataSchema,
       partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads,

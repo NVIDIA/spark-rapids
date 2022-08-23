@@ -330,8 +330,8 @@ case class GpuOrcMultiFilePartitionReaderFactory(
             OrcSchemaWrapper(orcPartitionReaderContext.updatedReadSchema),
             OrcExtraInfo(orcPartitionReaderContext.requestedMapping)))
     }
-    if (metrics.contains("scanTime")) {
-      metrics("scanTime") += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - currentTime)
+    metrics.get("scanTime").foreach {
+      _ += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - currentTime)
     }
     val clippedStripes = compressionAndStripes.values.flatten.toSeq
     new MultiFileOrcPartitionReader(conf, files, clippedStripes, readDataSchema, debugDumpPrefix,

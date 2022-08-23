@@ -1004,8 +1004,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
           ParquetExtraInfo(singleFileInfo.isCorrectedRebaseMode,
             singleFileInfo.isCorrectedInt96RebaseMode, singleFileInfo.hasInt96Timestamps)))
     }
-    if (metrics.contains("scanTime")) {
-      metrics("scanTime") += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - currentTime)
+    metrics.get("scanTime").foreach {
+      _ += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - currentTime)
     }
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks,
       isCaseSensitive, readDataSchema, debugDumpPrefix,
