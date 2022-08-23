@@ -25,6 +25,7 @@ then
     >&2 echo "SPARK_HOME IS NOT SET CANNOT RUN PYTHON INTEGRATION TESTS..."
 else
     echo "WILL RUN TESTS WITH SPARK_HOME: ${SPARK_HOME}"
+    [[ ! -x "$(command -v zip)" ]] && { echo "fail to find zip command in $PATH"; exit 1; }
     # Spark 3.1.1 includes https://github.com/apache/spark/pull/31540
     # which helps with spurious task failures as observed in our tests. If you are running
     # Spark versions before 3.1.1, this sets the spark.max.taskFailures to 4 to allow for

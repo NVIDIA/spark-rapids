@@ -22,6 +22,9 @@ SPARK_CONF=${SPARK_CONF:-''}
 BASE_SPARK_VER=${BASE_SPARK_VER:-'3.1.2'}
 [[ -z $SPARK_SHIM_VER ]] && export SPARK_SHIM_VER=spark${BASE_SPARK_VER//.}db
 
+# install required packages
+sudo apt -y install zip unzip
+
 # Try to use "cudf-udf" conda environment for the python cudf-udf tests.
 if [ -d "/databricks/conda/envs/cudf-udf" ]; then
     export PATH=/databricks/conda/envs/cudf-udf/bin:/databricks/conda/bin:$PATH
