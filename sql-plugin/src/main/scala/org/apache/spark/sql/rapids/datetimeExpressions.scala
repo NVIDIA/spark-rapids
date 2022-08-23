@@ -886,14 +886,10 @@ class FromUTCTimestampExprMeta(
     rule: DataFromReplacementRule)
   extends BinaryExprMeta[FromUTCTimestamp](expr, conf, parent, rule) {
 
-  private var timezoneIsNull : Boolean = false
-
   override def tagExprForGpu(): Unit = {
     val timezoneShortID = extractStringLit(expr.right).getOrElse("")
 
-    if(timezoneShortID == null) {
-      timezoneIsNull = true
-    } else {
+    if (timezoneShortID != null) {
       val utc = ZoneId.of("UTC").normalized
       // This is copied from Spark, to convert `(+|-)h:mm` into `(+|-)0h:mm`.
       val timezone = ZoneId.of(timezoneShortID.replaceFirst("(\\+|\\-)(\\d):", "$10$2:"),
@@ -906,12 +902,10 @@ class FromUTCTimestampExprMeta(
   }
 
   override def convertToGpu(timestamp: Expression, timezone: Expression): GpuExpression =
-    GpuFromUTCTimestamp(timestamp, timezone, timezoneIsNull)
+    GpuFromUTCTimestamp(timestamp, timezone)
 }
 
-case class GpuFromUTCTimestamp(timestamp: Expression,
-                               timezone: Expression,
-                               timezoneIsNull: Boolean)
+case class GpuFromUTCTimestamp(timestamp: Expression, timezone: Expression)
   extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
 
   override def left: Expression = timestamp
@@ -930,12 +924,12 @@ case class GpuFromUTCTimestamp(timestamp: Expression,
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    if(timezoneIsNull) {
-      // All-null output column.
-      GpuColumnVector.fromNull(lhs.getRowCount.toInt, dataType).getBase
-    } else {
+    if (rhs.getBase.isValid) {
       // Just a no-op.
       lhs.getBase.incRefCount()
+    } else {
+      // All-null output column.
+      GpuColumnVector.fromNull(lhs.getRowCount.toInt, dataType).getBase
     }
   }
 
