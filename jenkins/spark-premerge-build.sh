@@ -136,8 +136,8 @@ ci_2() {
     LC_ALL="en_US.UTF-8" TEST="regexp_test.py" ./integration_tests/run_pyspark_from_build.sh
 
     # put some mvn tests here to balance durations of parallel stages
-    echo "Run spark320 mvn test..."
-    env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=320 clean test $MVN_BUILD_ARGS \
+    echo "Run mvn package..."
+    env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=320 clean package $MVN_BUILD_ARGS \
       -Dpytest.TEST_TAGS='' -pl '!tools'
 }
 
