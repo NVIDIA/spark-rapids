@@ -886,29 +886,32 @@ class FromUTCTimestampExprMeta(
     rule: DataFromReplacementRule)
   extends BinaryExprMeta[FromUTCTimestamp](expr, conf, parent, rule) {
 
+  private var timezoneIsNull : Boolean = false
+
   override def tagExprForGpu(): Unit = {
     val timezoneShortID = extractStringLit(expr.right).getOrElse("")
 
-    if (timezoneShortID.isEmpty) {
-      willNotWorkOnGpu("input time zone is null or empty")
-    }
+    if(timezoneShortID == null) {
+      timezoneIsNull = true
+    } else {
+      val utc = ZoneId.of("UTC").normalized
+      // This is copied from Spark, to convert `(+|-)h:mm` into `(+|-)0h:mm`.
+      val timezone = ZoneId.of(timezoneShortID.replaceFirst("(\\+|\\-)(\\d):", "$10$2:"),
+        ZoneId.SHORT_IDS).normalized
 
-    val utc = ZoneId.of("UTC").normalized
-    // This is copied from Spark, to convert `(+|-)h:mm` into `(+|-)0h:mm`.
-    val timezone = ZoneId.of(timezoneShortID.replaceFirst("(\\+|\\-)(\\d):", "$10$2:"),
-      ZoneId.SHORT_IDS).normalized
-
-    if(timezone != utc) {
-      willNotWorkOnGpu("only timezones equivalent to UTC are supported")
+      if (timezone != utc) {
+        willNotWorkOnGpu("only timezones equivalent to UTC are supported")
+      }
     }
   }
 
   override def convertToGpu(timestamp: Expression, timezone: Expression): GpuExpression =
-    GpuFromUTCTimestamp(timestamp, timezone)
+    GpuFromUTCTimestamp(timestamp, timezone, timezoneIsNull)
 }
 
 case class GpuFromUTCTimestamp(timestamp: Expression,
-                               timezone: Expression)
+                               timezone: Expression,
+                               timezoneIsNull: Boolean)
   extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
 
   override def left: Expression = timestamp
@@ -927,8 +930,13 @@ case class GpuFromUTCTimestamp(timestamp: Expression,
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    // Just a no-op.
-    lhs.getBase.incRefCount()
+    if(timezoneIsNull) {
+      // All-null output column.
+      GpuColumnVector.fromNull(lhs.getRowCount.toInt, dataType).getBase
+    } else {
+      // Just a no-op.
+      lhs.getBase.incRefCount()
+    }
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
