@@ -26,6 +26,8 @@ import pyspark.ml.linalg as ml
 enable_vectorized_confs = [{"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "true"},
                            {"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "false"}]
 
+# Many tests sort the results, so use a sortable decimal generator as many Spark versions
+# fail to sort some large decimals properly.
 _cache_decimal_gens = [decimal_gen_32bit, decimal_gen_64bit, orderable_decimal_gen_128bit]
 _cache_single_array_gens_no_null = [ArrayGen(gen) for gen in all_basic_gens_no_null + _cache_decimal_gens]
 
