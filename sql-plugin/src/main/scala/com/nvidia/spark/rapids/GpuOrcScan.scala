@@ -167,6 +167,14 @@ object GpuOrcScan extends Arm {
   ).zipWithIndex.toMap
 
   /**
+   * Regular expression to match integers, which may be with leading zeros, but not with
+   * leading/trailing spaces.
+   * For example, "012", "+0120", "-012", "12345" are valid, while "  0", "-1   " are invalid.
+   */
+  private lazy val integerRegex = "^([+\\-]?[0-9]+)$"
+
+
+  /**
    * Cast the input column to the target type, and replace overflow rows with nulls.
    * Only for conversion between integral types.
    */
@@ -211,6 +219,29 @@ object GpuOrcScan extends Arm {
         } else {
           downCastAnyInteger(col, toDt)
         }
+
+      // string to integral types
+      case (DType.STRING, DType.BOOL8 | DType.INT8 | DType.INT16 | DType.INT32 | DType.INT64) =>
+        // Follow the CPU ORC conversion.
+        //     First convert string to long,
+        //     then down cast long to target integral type
+        // In ORC conversion code, it check the validity of input string by Long.parseLong, see
+        // 'java.lang.Long'. Here we check the validity by regex matching.
+        // If the format of input string is not valid, then replace it with null.
+        // When casting to boolean, "true"/"false"/"True"/"False" are not valid input, and "1"/"0"
+        // such integers are the valid input.
+
+        withResource(col.matchesRe(integerRegex)) { booleanResults =>
+          withResource(col.copyWithBooleanColumnAsValidity(booleanResults)) { replacedNulls =>
+            withResource(replacedNulls.castTo(DType.INT64)) { longVec =>
+              toDt match {
+                case DType.BOOL8 | DType.INT64 => longVec.castTo(toDt)
+                case _ => downCastAnyInteger(longVec, toDt)
+              }
+            }
+          }
+        }
+
       // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
       case (f, t) =>
         throw new QueryExecutionException(s"Unsupported type casting: $f -> $t")
@@ -239,6 +270,12 @@ object GpuOrcScan extends Arm {
         }
       case VARCHAR =>
         to.getCategory == STRING
+
+      case STRING =>
+        to.getCategory match {
+          case BOOLEAN | BYTE | SHORT | INT | LONG | FLOAT | DOUBLE | DATE | TIMESTAMP => true
+          case _ => false
+        }
       // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
       case _ =>
         false
