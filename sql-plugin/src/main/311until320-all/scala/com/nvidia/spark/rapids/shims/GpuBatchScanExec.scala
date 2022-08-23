@@ -27,7 +27,7 @@ import org.apache.spark.sql.execution.datasources.v2._
 
 case class GpuBatchScanExec(
     output: Seq[AttributeReference],
-    @transient scan: Scan) extends DataSourceV2ScanExecBase with GpuBatchScanExecMetrics {
+    @transient scan: Scan) extends ShimDataSourceV2ScanExecBase with GpuBatchScanExecMetrics {
   @transient lazy val batch: Batch = scan.toBatch
 
   @transient override lazy val partitions: Seq[InputPartition] = batch.planInputPartitions()
