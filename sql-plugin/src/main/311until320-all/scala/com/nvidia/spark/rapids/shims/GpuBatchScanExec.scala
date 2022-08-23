@@ -23,7 +23,6 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.connector.read._
-import org.apache.spark.sql.execution.datasources.v2._
 
 case class GpuBatchScanExec(
     output: Seq[AttributeReference],
