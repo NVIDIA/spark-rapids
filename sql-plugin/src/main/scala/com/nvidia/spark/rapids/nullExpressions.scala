@@ -140,6 +140,12 @@ case class GpuIsNan(child: Expression) extends GpuUnaryExpression with Predicate
     input.getBase.isNan
 }
 
+/*
+ * Replace all `Nan`s in child to `null`s.
+ * The data type of child can only be FloatType or DoubleType.
+ *
+ * This class is used in `GpuFloatMin`.
+ */
 case class GpuNansToNulls(child: Expression) extends GpuUnaryExpression{
 
   override def dataType: DataType = child.dataType match {

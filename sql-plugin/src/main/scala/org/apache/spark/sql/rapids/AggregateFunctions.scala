@@ -586,6 +586,10 @@ case class GpuFloatMin(child: Expression) extends GpuMin(child)
   override lazy val inputProjection: Seq[Expression] = Seq(
     GpuOr(GpuIsNan(child), GpuIsNull(child)),
     GpuIsNan(child),
+    // We must eliminate all Nans before calling the cuDF min kernel.
+    // As this expression is only used when `allNansOrNulls` = false,
+    // and `Nan` is the max value in Spark, the elimination will
+    // not affect the final result.
     GpuNansToNulls(child)
   )
   // 1. Check if all values in the `child` are `Nan`s or `null`s
