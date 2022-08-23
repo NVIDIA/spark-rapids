@@ -887,17 +887,20 @@ class FromUTCTimestampExprMeta(
   extends BinaryExprMeta[FromUTCTimestamp](expr, conf, parent, rule) {
 
   override def tagExprForGpu(): Unit = {
-    val timezoneShortID = extractStringLit(expr.right).getOrElse("")
+    extractStringLit(expr.right) match {
+      case None => throw new IllegalStateException(
+        "Timezone input to GpuFromUTCTimestamp must be a literal string")
+      case Some(timezoneShortID) =>
+        if (timezoneShortID != null) {
+          val utc = ZoneId.of("UTC").normalized
+          // This is copied from Spark, to convert `(+|-)h:mm` into `(+|-)0h:mm`.
+          val timezone = ZoneId.of(timezoneShortID.replaceFirst("(\\+|\\-)(\\d):", "$10$2:"),
+            ZoneId.SHORT_IDS).normalized
 
-    if (timezoneShortID != null) {
-      val utc = ZoneId.of("UTC").normalized
-      // This is copied from Spark, to convert `(+|-)h:mm` into `(+|-)0h:mm`.
-      val timezone = ZoneId.of(timezoneShortID.replaceFirst("(\\+|\\-)(\\d):", "$10$2:"),
-        ZoneId.SHORT_IDS).normalized
-
-      if (timezone != utc) {
-        willNotWorkOnGpu("only timezones equivalent to UTC are supported")
-      }
+          if (timezone != utc) {
+            willNotWorkOnGpu("only timezones equivalent to UTC are supported")
+          }
+        }
     }
   }
 
