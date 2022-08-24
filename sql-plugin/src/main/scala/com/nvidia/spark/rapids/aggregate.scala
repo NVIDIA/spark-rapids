@@ -42,7 +42,7 @@ import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.rapids.{CpuToGpuAggregateBufferConverter, CudfAggregate, GpuAggregateExpression, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.rapids.execution.{GpuShuffleMeta, TrampolineUtil}
-import org.apache.spark.sql.types.{DataType, MapType}
+import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object AggregateUtils {
@@ -852,13 +852,39 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     groupingExpressions ++ aggregateExpressions ++ aggregateAttributes ++ resultExpressions
 
   override def tagPlanForGpu(): Unit = {
-    // We don't support Arrays and Maps as GroupBy keys yet, even they are nested in Structs. So,
+    // We don't support Maps as GroupBy keys yet, even if they are nested in Structs. So,
     // we need to run recursive type check on the structs.
-    val arrayOrMapGroupings = agg.groupingExpressions.exists(e =>
+    val mapGroupings = agg.groupingExpressions.exists(e =>
       TrampolineUtil.dataTypeExistsRecursively(e.dataType,
         dt => dt.isInstanceOf[MapType]))
-    if (arrayOrMapGroupings) {
+    if (mapGroupings) {
       willNotWorkOnGpu("MapTypes in grouping expressions are not supported")
+    }
+
+    def getArrayTypesRecursively(dt: DataType): List[DataType] = {
+      // dt shouldn't have any maps at this stage so, we aren't checking for it
+      dt match {
+        case StructType(fields) =>
+          fields.flatMap(f => getArrayTypesRecursively(f.dataType)).toList
+        case _ =>
+          if (dt.isInstanceOf[ArrayType]) {
+            List(dt)
+          } else {
+            List.empty
+          }
+      }
+    }
+    // We support Arrays as grouping expression but not if the child is a struct. So we need to
+    // run recursive type check on the lists
+    val listGroupings = agg.groupingExpressions.flatMap(e => getArrayTypesRecursively(e.dataType))
+
+    // We have a list of ArrayTypes, now we just want to see if it has struct children recursively
+    val arrayWithStructsGroupings = listGroupings.exists(e =>
+      TrampolineUtil.dataTypeExistsRecursively(e,
+        dt => dt.isInstanceOf[StructType]))
+    if (arrayWithStructsGroupings) {
+      willNotWorkOnGpu("ArrayTypes with Struct children in grouping expressions are not " +
+          "supported")
     }
 
     tagForReplaceMode()
