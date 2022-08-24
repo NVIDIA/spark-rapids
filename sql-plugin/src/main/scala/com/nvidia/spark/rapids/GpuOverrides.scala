@@ -1848,12 +1848,10 @@ object GpuOverrides extends Logging {
     expr[FromUTCTimestamp](
       "Render the input UTC timestamp in the input timezone",
       ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
-        ("timestamp", (TypeSig.STRING + TypeSig.TIMESTAMP)
-          .withPsNote(TypeEnum.STRING, "A limited number of timestamp formats are supported"),
-          TypeSig.STRING + TypeSig.TIMESTAMP),
+        ("timestamp", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
         ("timezone", TypeSig.lit(TypeEnum.STRING)
           .withPsNote(TypeEnum.STRING, "Only timezones equivalent to UTC are supported"),
-          TypeSig.STRING)),
+          TypeSig.lit(TypeEnum.STRING))),
       (a, conf, p, r) => new FromUTCTimestampExprMeta(a, conf, p, r)
     ),
     expr[Pmod](
