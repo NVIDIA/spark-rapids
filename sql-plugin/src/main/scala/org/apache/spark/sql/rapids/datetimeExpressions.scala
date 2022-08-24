@@ -888,8 +888,8 @@ class FromUTCTimestampExprMeta(
 
   override def tagExprForGpu(): Unit = {
     extractStringLit(expr.right) match {
-      case None => throw new IllegalStateException(
-        "Timezone input to GpuFromUTCTimestamp must be a literal string")
+      case None =>
+        willNotWorkOnGpu("timezone input to GpuFromUTCTimestamp must be a literal string")
       case Some(timezoneShortID) =>
         if (timezoneShortID != null) {
           val utc = ZoneId.of("UTC").normalized
