@@ -181,7 +181,7 @@ def test_float_multiplication_mixed(lhs, rhs):
 
 @pytest.mark.parametrize('data_gen', [double_gen, decimal_gen_32bit_neg_scale, DecimalGen(6, 3),
  DecimalGen(5, 5), DecimalGen(6, 0), DecimalGen(7, 4), DecimalGen(15, 0), DecimalGen(18, 0), 
- DecimalGen(17, 2), DecimalGen(16, 4)], ids=idfn)
+ DecimalGen(17, 2), DecimalGen(16, 4), DecimalGen(38, 21), DecimalGen(21, 17), DecimalGen(3, -2)], ids=idfn)
 def test_division(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -192,20 +192,32 @@ def test_division(data_gen):
                 f.col('b') / f.lit(None).cast(data_type),
                 f.col('a') / f.col('b')))
 
-@allow_non_gpu('ProjectExec', 'Alias', 'Divide', 'Cast', 'PromotePrecision', 'CheckOverflow')
-@pytest.mark.parametrize('data_gen', [DecimalGen(38, 21), DecimalGen(21, 17)], ids=idfn)
-def test_division_fallback_on_decimal(data_gen):
-    assert_gpu_fallback_collect(
-            lambda spark : binary_op_df(spark, data_gen).select(
-                f.col('a') / f.col('b')),
-            'Divide')
-
 @pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(4, 1), DecimalGen(5, 0), DecimalGen(5, 1), DecimalGen(10, 5)], ids=idfn)
 @pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(1, -2), DecimalGen(16, 1)], ids=idfn)
 def test_division_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, lhs, rhs).select(
+                f.col('a'), f.col('b'),
                 f.col('a') / f.col('b')))
+
+# Spark has some problems with some decimal operations where it can try to generate a type that is invalid (scale > precision) which results in an error
+# instead of increasing the precision. So we have a second test that deals with a few of these use cases
+@pytest.mark.parametrize('rhs', [DecimalGen(30, 10), DecimalGen(28, 18)], ids=idfn)
+@pytest.mark.parametrize('lhs', [DecimalGen(27, 7), DecimalGen(20, -3)], ids=idfn)
+def test_division_mixed_larger_dec(lhs, rhs):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : two_col_df(spark, lhs, rhs).select(
+                f.col('a'), f.col('b'),
+                f.col('a') / f.col('b')))
+
+def test_special_decimal_division():
+    for precision in range(1, 39):
+        for scale in range(-3, precision + 1):
+            print("PRECISION " + str(precision) + " SCALE " + str(scale))
+            data_gen = DecimalGen(precision, scale)
+            assert_gpu_and_cpu_are_equal_collect(
+                    lambda spark : two_col_df(spark, data_gen, data_gen).select(
+                        f.col('a') / f.col('b')))
 
 @approximate_float # we should get the perfectly correct answer for floats except when casting a decimal to a float in some corner cases.
 @pytest.mark.parametrize('rhs', [float_gen, double_gen], ids=idfn)
@@ -215,22 +227,6 @@ def test_float_division_mixed(lhs, rhs):
             lambda spark : two_col_df(spark, lhs, rhs).select(
                 f.col('a') / f.col('b')),
             conf={'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
-
-@ignore_order
-@pytest.mark.parametrize('rhs,rhs_type', [
-    (DecimalGen(15, 3), DecimalType(30, 10)),
-    (DecimalGen(10, 2), DecimalType(28, 18))], ids=idfn)
-@pytest.mark.parametrize('lhs,lhs_type', [
-    (DecimalGen(15, 3), DecimalType(27, 7)),
-    (DecimalGen(3, -3), DecimalType(20, -3))], ids=idfn)
-def test_decimal_division_mixed_no_overflow_guarantees(lhs, lhs_type, rhs, rhs_type):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : two_col_df(spark, lhs, rhs)\
-                    .withColumn('lhs', f.col('a').cast(lhs_type))\
-                    .withColumn('rhs', f.col('b').cast(rhs_type))\
-                    .repartition(1)\
-                    .select(f.col('lhs'), f.col('rhs'), f.col('lhs') / f.col('rhs')),
-            conf={'spark.rapids.sql.decimalOverflowGuarantees': 'false'})
 
 @pytest.mark.parametrize('data_gen', integral_gens + [
     decimal_gen_32bit, decimal_gen_64bit, _decimal_gen_7_7, _decimal_gen_18_3, _decimal_gen_30_2,
