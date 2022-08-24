@@ -133,8 +133,8 @@ def test_cast_string_date_non_ansi():
         conf={'spark.rapids.sql.hasExtendedYearValues': 'false'})
 
 @pytest.mark.parametrize('data_gen', [StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2}'),
-                                      StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}'),
-                                      StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2} [0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}.[0-9]{0,6}Z?')],
+                                      StringGen('[0-9]{1,4}-[0-3][0-9]-[0-5][0-9] [0-3][0-9]:[0-6][0-9]:[0-6][0-9]'),
+                                      StringGen('[0-9]{1,4}-[0-3][0-9]-[0-5][0-9] [0-3][0-9]:[0-6][0-9]:[0-6][0-9].[0-9]{0,6}Z?')],
                         ids=idfn)
 def test_cast_string_ts_valid_format(data_gen):
     # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
