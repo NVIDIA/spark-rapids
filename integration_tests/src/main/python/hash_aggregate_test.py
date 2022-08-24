@@ -129,9 +129,8 @@ _grpkey_floats_with_nulls_and_nans = [
     ('c', LongGen())]
 
 # grouping single-level lists
-def _grpkey_list_with_non_nested_children():
-    return [[('a', RepeatSeqGen(ArrayGen(data_gen), length=3)),
-    ('b', IntegerGen())] for data_gen in all_basic_gens + decimal_gens]
+_grpkey_list_with_non_nested_children = [[('a', RepeatSeqGen(ArrayGen(data_gen), length=3)),
+                                          ('b', IntegerGen())] for data_gen in all_basic_gens + decimal_gens]
 
 #grouping mutliple-level structs with arrays
 _grpkey_nested_structs_with_array_basic_child = [
@@ -349,7 +348,7 @@ def test_hash_reduction_decimal_overflow_sum(precision):
         # some optimizations are conspiring against us.
         conf = {'spark.rapids.sql.batchSizeBytes': '128m'})
 
-@pytest.mark.parametrize('data_gen', [_grpkey_nested_structs_with_array_basic_child,  _longs_with_nulls] + _grpkey_list_with_non_nested_children(), ids=idfn)
+@pytest.mark.parametrize('data_gen', [_grpkey_nested_structs_with_array_basic_child,  _longs_with_nulls] + _grpkey_list_with_non_nested_children, ids=idfn)
 def test_hash_grpby_sum_count_action(data_gen):
     assert_gpu_and_cpu_row_counts_equal(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b'))

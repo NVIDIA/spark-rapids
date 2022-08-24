@@ -1680,11 +1680,7 @@ object GpuOverrides extends Logging {
       }),
     expr[KnownFloatingPointNormalized](
       "Tag to prevent redundant normalization",
-      ExprChecks.unaryProjectInputMatchesOutput(
-        TypeSig.DOUBLE + TypeSig.FLOAT + TypeSig.ARRAY.nested(
-          TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
-        TypeSig.DOUBLE + TypeSig.FLOAT + TypeSig.ARRAY.nested(
-          TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)),
+      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.all, TypeSig.all),
       (a, conf, p, r) => new UnaryExprMeta[KnownFloatingPointNormalized](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuKnownFloatingPointNormalized(child)
@@ -3732,7 +3728,7 @@ object GpuOverrides extends Logging {
       // This needs to match what murmur3 supports.
       PartChecks(RepeatingParamCheck("hash_key",
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-            TypeSig.STRUCT + TypeSig.ARRAY).nested() +
+            TypeSig.STRUCT).nested() +
             TypeSig.ARRAY.nested(
               TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.ARRAY),
         TypeSig.all)
@@ -4020,14 +4016,10 @@ object GpuOverrides extends Logging {
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
             TypeSig.MAP + TypeSig.STRUCT + TypeSig.ARRAY)
             .nested()
-//            +
-//            TypeSig.STRUCT.nested(TypeSig.ARRAY) +
-//            TypeSig.ARRAY.nested(
-//              TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-                .withPsNote(Seq(TypeEnum.MAP),
-                  "not allowed for grouping expressions")
-                .withPsNote(TypeEnum.STRUCT,
-                  "not allowed for grouping expressions if containing Array or Map as child"),
+            .withPsNote(Seq(TypeEnum.MAP),
+              "not allowed for grouping expressions")
+            .withPsNote(TypeEnum.STRUCT,
+              "not allowed for grouping expressions if containing Array or Map as child"),
         TypeSig.all),
       (agg, conf, p, r) => new GpuHashAggregateMeta(agg, conf, p, r)),
     exec[ObjectHashAggregateExec](

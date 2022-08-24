@@ -7669,45 +7669,45 @@ are limited.
 <td rowSpan="2">None</td>
 <td rowSpan="2">project</td>
 <td>input</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
 <td>S</td>
 <td>S</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP</em></td>
-<td> </td>
-<td> </td>
-<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP</em></td>
+<td>S</td>
 </tr>
 <tr>
 <td>result</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
 <td>S</td>
 <td>S</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP</em></td>
-<td> </td>
-<td> </td>
-<td> </td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP</em></td>
+<td>S</td>
 </tr>
 <tr>
 <td rowSpan="2">KnownNotNull</td>
