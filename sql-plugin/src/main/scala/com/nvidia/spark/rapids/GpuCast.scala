@@ -170,7 +170,7 @@ object GpuCast extends Arm {
   private val TIMESTAMP_REGEX_YYYY = "\\A\\d{4}[ ]?\\Z"
   private val TIMESTAMP_REGEX_FULL =
     "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}[ T]?(\\d{1,2}:\\d{1,2}:\\d{1,2}(\\.\\d{0,6})?Z?)\\Z"
-  private val TIMESTAMP_REGEX_NO_DATE = "\\A[T]?(\\d{1,2}:\\d{1,2}:\\d{1,2}\\.\\d{6}Z)\\Z"
+  private val TIMESTAMP_REGEX_NO_DATE = "\\A[T]?(\\d{1,2}:\\d{1,2}:\\d{1,2}(\\.\\d{0,6})?Z?)\\Z"
 
   private val BIG_DECIMAL_LONG_MIN = BigDecimal(Long.MinValue)
   private val BIG_DECIMAL_LONG_MAX = BigDecimal(Long.MaxValue)
@@ -1322,7 +1322,9 @@ object GpuCast extends Arm {
       val isCudfMatch = withResource(input.isTimestamp(cudfFormat1)) { isTimestamp1 =>
         withResource(input.isTimestamp(cudfFormat2)) { isTimestamp2 =>
           withResource(input.isTimestamp(cudfFormat3)) { isTimestamp3 =>
-            isTimestamp1.or(isTimestamp2.or(isTimestamp3))
+            withResource(isTimestamp1.or(isTimestamp2)) { isTimestamp1Or2 =>
+              isTimestamp1Or2.or(isTimestamp3)
+            }
           }
         }
       }
@@ -1351,6 +1353,8 @@ object GpuCast extends Arm {
         .format(today * DateUtils.ONE_DAY_SECONDS * 1000L)
 
     var sanitizedInput = input.incRefCount()
+
+    GpuColumnVector.debug("sanitizedInput", sanitizedInput)
 
     // prepend today's date to timestamp formats without dates
     sanitizedInput = withResource(sanitizedInput) { _ =>
