@@ -932,7 +932,7 @@ case class GpuFromUTCTimestamp(timestamp: Expression, timezone: Expression)
       lhs.getBase.incRefCount()
     } else {
       // All-null output column.
-      GpuColumnVector.fromNull(lhs.getRowCount.toInt, dataType).getBase
+      GpuColumnVector.columnVectorFromNull(lhs.getRowCount.toInt, dataType)
     }
   }
 
