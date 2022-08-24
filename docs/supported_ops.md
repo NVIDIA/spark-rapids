@@ -6129,7 +6129,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
-<td><em>PS<br/>A limited number of timestamp formats are supported</em></td>
+<td> </td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -6150,7 +6150,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>Only timezones equivalent to UTC are supported;<br/>Literal value only</em></td>
+<td><em>PS<br/>Only timezones equivalent to UTC are supported</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
