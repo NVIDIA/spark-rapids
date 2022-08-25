@@ -447,10 +447,27 @@ def test_exceptAll(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : gen_df(spark, data_gen, length=100).exceptAll(gen_df(spark, data_gen, length=100).filter('a != b')))
 
+# Spark fails to sort some decimal values due to overflow when calculating the sorting prefix.
+# See https://issues.apache.org/jira/browse/SPARK-40129
+# Since pivot orders by value, avoid generating these extreme values for this test.
+_pivot_gen_128bit = DecimalGen(precision=20, scale=2, special_cases=[])
+_pivot_big_decimals = [
+    ('a', RepeatSeqGen(DecimalGen(precision=32, scale=10, nullable=(True, 10.0)), length=50)),
+    ('b', _pivot_gen_128bit),
+    ('c', DecimalGen(precision=36, scale=5))]
+_pivot_short_big_decimals = [
+    ('a', RepeatSeqGen(short_gen, length=50)),
+    ('b', _pivot_gen_128bit),
+    ('c', decimal_gen_128bit)]
+
+_pivot_gens_with_decimals = _init_list_with_nans_and_no_nans + [
+    _grpkey_small_decimals, _pivot_big_decimals, _grpkey_short_mid_decimals,
+    _pivot_short_big_decimals, _grpkey_short_very_big_decimals,
+    _grpkey_short_very_big_neg_scale_decimals]
 @approximate_float
 @ignore_order(local=True)
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans_with_decimalbig, ids=idfn)
+@pytest.mark.parametrize('data_gen', _pivot_gens_with_decimals, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
 def test_hash_grpby_pivot(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
@@ -1192,7 +1209,9 @@ def test_sorted_groupby_first_last(data_gen):
         lambda spark: agg_fn(gen_df(spark, gen_fn, num_slices=1)),
         conf = {'spark.sql.shuffle.partitions': '1'})
 
-@ignore_order
+# Spark has a sorting bug with decimals, see https://issues.apache.org/jira/browse/SPARK-40129.
+# Have pytest do the sorting rather than Spark as a workaround.
+@ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('count_func', [f.count, f.countDistinct])
 def test_agg_count(data_gen, count_func):

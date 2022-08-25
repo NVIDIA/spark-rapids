@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ def main():
     subprocess.check_call(rsync_command, shell=True)
 
     ssh_command = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@%s -p 2200 -i %s " \
-        "'LOCAL_JAR_PATH=%s SPARK_CONF=%s BASE_SPARK_VER=%s bash %s %s 2>&1 | tee testout; " \
+        "'LOCAL_JAR_PATH=%s SPARK_CONF=%s BASE_SPARK_VERSION=%s bash %s %s 2>&1 | tee testout; " \
         "if [ ${PIPESTATUS[0]} -ne 0 ]; then false; else true; fi'" % \
         (master_addr, params.private_key_file, params.jar_path, params.spark_conf, params.base_spark_pom_version,
          params.script_dest, ' '.join(params.script_args))
