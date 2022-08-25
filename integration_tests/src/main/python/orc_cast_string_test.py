@@ -24,7 +24,7 @@ def test_casting_string_to_integers(spark_tmp_path, to_type):
     orc_path = spark_tmp_path + '/orc_cast_string_to_int'
     normal_cases = []
     length = 2048
-    while len(normal_cases) < length:
+    for _ in range(0, length):
         normal_cases.append(str(random.randint(INT_MIN, INT_MAX)))
 
     special_cases = [
@@ -46,6 +46,7 @@ def test_casting_string_to_integers(spark_tmp_path, to_type):
         lambda spark: spark.read.schema(schema_str).orc(orc_path)
     )
 
+
 @pytest.mark.approximate_float
 @pytest.mark.parametrize('to_type', ['float', 'double'])
 def test_casting_string_to_float(spark_tmp_path, to_type):
@@ -56,7 +57,7 @@ def test_casting_string_to_float(spark_tmp_path, to_type):
         str(FLOAT_MAX), str(FLOAT_MIN), str(DOUBLE_MAX), str(DOUBLE_MIN)
     ]
     length = 2048
-    while len(normal_cases) < length:
+    for _ in range(0, length):
         normal_cases.append(str(random.uniform(DOUBLE_MIN, DOUBLE_MAX)))
     special_cases = [
         "123", "00123.00", "123.", "-0123.", ".123", "-.123",    # different positions of decimal point, valid
@@ -75,4 +76,28 @@ def test_casting_string_to_float(spark_tmp_path, to_type):
     )
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema("float_str {}".format(to_type)).orc(orc_path)
+    )
+
+
+'''
+FIXME
+There is a strange case, if input string is "9808-02-30", intuitively, we should return null.
+However, CPU spark output 9808-02-39. Need to figure whether if it's a bug or a feature.
+'''
+def test_casting_string_to_date(spark_tmp_path):
+    orc_path = spark_tmp_path + '/orc_cast_string_to_date'
+    length = 2048
+    normal_cases = []
+    for _ in range(0, length):
+        year = str(random.randint(0, 9999)).zfill(4)
+        month = str(random.randint(1, 12)).zfill(2)
+        day = str(random.randint(1, 31)).zfill(2)
+        normal_cases.append('{}-{}-{}'.format(year, month, day))
+    test_cases = [[x] for x in normal_cases]
+    with_cpu_session(
+        func=lambda spark: spark.createDataFrame(data=test_cases,
+                                                 schema=["date_str"]).write.orc(orc_path)
+    )
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema("date_str date").orc(orc_path)
     )
