@@ -234,7 +234,7 @@ object GpuOrcScan extends Arm {
         withResource(col.castTo(DType.INT64)) { longs =>
           // In CPU, ORC assumes the integer value is in seconds, and returns timestamp in
           // micro seconds.
-          withResource(Scalar.fromLong(1e6.toLong)) { value =>
+          withResource(Scalar.fromLong(1000000L)) { value =>
             withResource(longs.mul(value)) { microSeconds =>
               microSeconds.castTo(DType.TIMESTAMP_MICROSECONDS)
             }
@@ -249,10 +249,10 @@ object GpuOrcScan extends Arm {
         // In CPU code of ORC casting, its conversion is 'integer -> milliseconds -> microseconds'
         withResource(Scalar.fromLong(1000L)) { thousand =>
           withResource(col.mul(thousand)) { milliSeconds =>
-            // If these two 'testLongOverflow' throw no exception, it means no int64-overflow when
-            // casting 'col' to TIMESTAMP_MICROSECONDS.
-            testLongOverflow(milliSeconds.max().getLong, 1000L)
-            testLongOverflow(milliSeconds.min().getLong, 1000L)
+            // If these two 'testLongMultiplicationOverflow' throw no exception, it means no
+            // Long-overflow when casting 'col' to TIMESTAMP_MICROSECONDS.
+            testLongMultiplicationOverflow(milliSeconds.max().getLong, 1000L)
+            testLongMultiplicationOverflow(milliSeconds.min().getLong, 1000L)
             withResource(milliSeconds.mul(thousand)) { microSeconds =>
               microSeconds.castTo(DType.TIMESTAMP_MICROSECONDS)
             }
@@ -303,7 +303,7 @@ object GpuOrcScan extends Arm {
    * In Math.multiplyExact, if there is an integer-overflow, then it will throw an
    * ArithmeticException.
    */
-  def testLongOverflow(a: Long, b: Long) = {
+  def testLongMultiplicationOverflow(a: Long, b: Long) = {
     Math.multiplyExact(a, b)
   }
 }
