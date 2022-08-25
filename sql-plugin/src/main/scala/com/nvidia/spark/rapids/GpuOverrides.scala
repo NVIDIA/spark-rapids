@@ -3728,9 +3728,7 @@ object GpuOverrides extends Logging {
       // This needs to match what murmur3 supports.
       PartChecks(RepeatingParamCheck("hash_key",
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-            TypeSig.STRUCT).nested() +
-            TypeSig.ARRAY.nested(
-              TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.ARRAY),
+            TypeSig.STRUCT + TypeSig.ARRAY).nested(),
         TypeSig.all)
       ),
       (hp, conf, p, r) => new PartMeta[HashPartitioning](hp, conf, p, r) {
