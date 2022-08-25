@@ -1354,8 +1354,6 @@ object GpuCast extends Arm {
 
     var sanitizedInput = input.incRefCount()
 
-    GpuColumnVector.debug("sanitizedInput", sanitizedInput)
-
     // prepend today's date to timestamp formats without dates
     sanitizedInput = withResource(sanitizedInput) { _ =>
       sanitizedInput.stringReplaceWithBackrefs(TIMESTAMP_REGEX_NO_DATE, s"${todayStr}T\\1")
