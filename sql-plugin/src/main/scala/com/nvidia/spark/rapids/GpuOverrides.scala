@@ -4016,8 +4016,10 @@ object GpuOverrides extends Logging {
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
             TypeSig.MAP + TypeSig.STRUCT + TypeSig.ARRAY)
             .nested()
-            .withPsNote(Seq(TypeEnum.MAP),
+            .withPsNote(TypeEnum.MAP,
               "not allowed for grouping expressions")
+            .withPsNote(TypeEnum.ARRAY,
+              "not allowed for grouping expressions if containing Struct as child")
             .withPsNote(TypeEnum.STRUCT,
               "not allowed for grouping expressions if containing Array or Map as child"),
         TypeSig.all),
