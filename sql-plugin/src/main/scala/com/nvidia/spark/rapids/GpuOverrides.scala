@@ -1848,9 +1848,18 @@ object GpuOverrides extends Logging {
     expr[Pmod](
       "Pmod",
       ExprChecks.binaryProject(TypeSig.gpuNumeric, TypeSig.cpuNumeric,
-        ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
+        ("lhs", TypeSig.gpuNumeric.withPsNote(TypeEnum.DECIMAL,
+          s"decimals with precision ${DecimalType.MAX_PRECISION} are not supported"),
+            TypeSig.cpuNumeric),
         ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
       (a, conf, p, r) => new BinaryExprMeta[Pmod](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          a.dataType match {
+            case dt: DecimalType if dt.precision == DecimalType.MAX_PRECISION =>
+              willNotWorkOnGpu("pmod at maximum decimal precision is not supported")
+            case _ =>
+          }
+        }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuPmod(lhs, rhs)
       }),
