@@ -166,13 +166,35 @@ object GpuOrcScan extends Arm {
     DType.DTypeEnum.DECIMAL128
   ).zipWithIndex.toMap
 
+  private lazy val startRegex = "^"
+  private lazy val endRegex = "$"
+  private lazy val signRegex = "([+\\-]?)"
+  private lazy val atLeastOneDigitRegex = "([0-9]+)"  // at least one digit
+  private lazy val digitRegex = "([0-9]*)"            // some digits, or empty string
+  private lazy val dotRegex = "(\\.?)"
   /**
    * Regular expression to match integers, which may be with leading zeros, but not with
    * leading/trailing spaces.
    * For example, "012", "+0120", "-012", "12345" are valid, while "  0", "-1   " are invalid.
    */
-  private lazy val integerRegex = "^([+\\-]?[0-9]+)$"
+  private lazy val integerRegex = signRegex + atLeastOneDigitRegex
+  private lazy val INTEGER_REGEX = startRegex + integerRegex + endRegex
 
+  /**
+   * Regex pattern to match float strings, in which leading zeros are valid.
+   * floatRegex1: The pattern to match "+.123", "-.123", ".123", "123".
+   * floatRegex2: The pattern to match  "+0123.456", "-123.", "1.234".
+   * floatRegex3: The pattern to match "+01e-10", "-3.14e15".
+   * INF: The pattern to match "+Infinity", "-Infinity" or "Infinity".
+   * NaN: The pattern to match "+NaN", "-NaN" or "NaN".
+   */
+  private lazy val floatRegex1 = signRegex + dotRegex + atLeastOneDigitRegex
+  private lazy val floatRegex2 = signRegex + atLeastOneDigitRegex + dotRegex + digitRegex
+  private lazy val floatRegex3 = s"(($floatRegex1)|($floatRegex2))" + "([eE])" + integerRegex
+  private lazy val INF = signRegex + "Infinity"
+  private lazy val NaN = signRegex + "NaN"
+  private lazy val FLOAT_REGEX = startRegex +
+    s"(($floatRegex1)|($floatRegex2)|($floatRegex3)|($INF)|($NaN))" + endRegex
 
   /**
    * Cast the input column to the target type, and replace overflow rows with nulls.
@@ -231,7 +253,7 @@ object GpuOrcScan extends Arm {
         // When casting to boolean, "true"/"false"/"True"/"False" are not valid input, and "1"/"0"
         // such integers are the valid input.
 
-        withResource(col.matchesRe(integerRegex)) { booleanResults =>
+        withResource(col.matchesRe(INTEGER_REGEX)) { booleanResults =>
           withResource(col.copyWithBooleanColumnAsValidity(booleanResults)) { replacedNulls =>
             withResource(replacedNulls.castTo(DType.INT64)) { longVec =>
               toDt match {
@@ -241,7 +263,16 @@ object GpuOrcScan extends Arm {
             }
           }
         }
-
+      // Replace some invalid strings with null by regex matching.
+      // Please note that the precision of float number in GPU differs from CPU.
+      case (DType.STRING, DType.FLOAT32) =>
+        withResource(col.strip()) { stripStrings =>
+          withResource(stripStrings.matchesRe(FLOAT_REGEX)) { isMatched =>
+            withResource(stripStrings.copyWithBooleanColumnAsValidity(isMatched)) { replacedNulls =>
+              replacedNulls.castTo(DType.FLOAT32)
+            }
+          }
+        }
       // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
       case (f, t) =>
         throw new QueryExecutionException(s"Unsupported type casting: $f -> $t")

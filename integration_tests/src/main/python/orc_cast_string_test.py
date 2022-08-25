@@ -20,7 +20,7 @@ from pyspark.sql.types import *
 from spark_session import with_cpu_session
 
 @pytest.mark.parametrize('to_type', ['boolean', 'tinyint', 'smallint', 'int', 'bigint'])
-def test_casting_from_string(spark_tmp_path, to_type):
+def test_casting_to_integers(spark_tmp_path, to_type):
     orc_path = spark_tmp_path + '/orc_casting_from_string'
     normal_cases = []
     length = 2048
@@ -28,11 +28,12 @@ def test_casting_from_string(spark_tmp_path, to_type):
         normal_cases.append(str(random.randint(INT_MIN, INT_MAX)))
 
     special_cases = [
-        "0000", "00123", "-00123", "+00123",     # leading zeros, valid cases
-        "+0", "-0", "+1", "-1", "+000", "-000",  # positive or negative sign, valid cases
-        "    ", "  1", "1  ", "1  2",            # leading/trailing spaces, invalid
-        "+-0", "1e3", "1-0", "0.1",              # invalid integer format
-        "true", "false", "True", "False"         # other invalid cases
+        "0000", "00123", "-00123", "+00123",         # leading zeros, valid cases
+        "+0", "-0", "+1", "-1", "+000", "-000",      # positive or negative sign, valid cases
+        "    ", "  1", "1  ", " 1  2 ",              # leading/trailing spaces, invalid
+        "+-0", "1e3", "1-0", "0.1",                  # invalid integer format
+        "+", "-", "0xFF",                            # other invalid cases
+        "true", "false", "True", "False"
     ]
     # convert each case into a data row
     test_cases = [[x] for x in normal_cases + special_cases]
