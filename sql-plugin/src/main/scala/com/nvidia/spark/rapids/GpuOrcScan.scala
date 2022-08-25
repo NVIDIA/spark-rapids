@@ -181,10 +181,10 @@ object GpuOrcScan extends Arm {
   private lazy val INTEGER_REGEX = startRegex + integerRegex + endRegex
 
   /**
-   * Regex pattern to match float strings, in which leading zeros are valid.
-   * floatRegex1: The pattern to match "+.123", "-.123", ".123", "123".
-   * floatRegex2: The pattern to match  "+0123.456", "-123.", "1.234".
-   * floatRegex3: The pattern to match "+01e-10", "-3.14e15".
+   * Regex pattern to match float/double strings, in which leading zeros are valid.
+   * floatRegex1: The pattern to match "+.123", "-.123", ".123", "0123".
+   * floatRegex2: The pattern to match  "+0123.456", "-0123.", "1.234".
+   * floatRegex3: The pattern to match "+01e-10", "1.0e10", "-03.14e015".
    * INF: The pattern to match "+Infinity", "-Infinity" or "Infinity".
    * NaN: The pattern to match "+NaN", "-NaN" or "NaN".
    */
@@ -243,18 +243,17 @@ object GpuOrcScan extends Arm {
         }
 
       // string to integral types
+      // Follow the CPU ORC conversion.
+      //     First convert string to long,
+      //     then down cast long to target integral type
       case (DType.STRING, DType.BOOL8 | DType.INT8 | DType.INT16 | DType.INT32 | DType.INT64) =>
-        // Follow the CPU ORC conversion.
-        //     First convert string to long,
-        //     then down cast long to target integral type
         // In ORC conversion code, it check the validity of input string by Long.parseLong, see
         // 'java.lang.Long'. Here we check the validity by regex matching.
         // If the format of input string is not valid, then replace it with null.
         // When casting to boolean, "true"/"false"/"True"/"False" are not valid input, and "1"/"0"
         // such integers are the valid input.
-
-        withResource(col.matchesRe(INTEGER_REGEX)) { booleanResults =>
-          withResource(col.copyWithBooleanColumnAsValidity(booleanResults)) { replacedNulls =>
+        withResource(col.matchesRe(INTEGER_REGEX)) { isMatched =>
+          withResource(col.copyWithBooleanColumnAsValidity(isMatched)) { replacedNulls =>
             withResource(replacedNulls.castTo(DType.INT64)) { longVec =>
               toDt match {
                 case DType.BOOL8 | DType.INT64 => longVec.castTo(toDt)
@@ -263,13 +262,19 @@ object GpuOrcScan extends Arm {
             }
           }
         }
-      // Replace some invalid strings with null by regex matching.
-      // Please note that the precision of float number in GPU differs from CPU.
-      case (DType.STRING, DType.FLOAT32) =>
+
+      // string -> float/double, please note that:
+      // 1. The precision of float number in GPU differs from CPU. They may have very small errors,
+      //    such as gpu_val = 3.14000003, and cpu_val = 3.14, but we assume gpu_val = cpu_val.
+      // 2. The leading/trailing spaces will be ignored, i.e. "  3.14  " is valid input, and will
+      //    be converted to 3.14. This follows ORC conversion in CPU.
+      case (DType.STRING, DType.FLOAT32 | DType.FLOAT64) =>
+        // Remove leading/trailing spaces, and then replace some invalid strings with null
+        // by regex matching.
         withResource(col.strip()) { stripStrings =>
           withResource(stripStrings.matchesRe(FLOAT_REGEX)) { isMatched =>
             withResource(stripStrings.copyWithBooleanColumnAsValidity(isMatched)) { replacedNulls =>
-              replacedNulls.castTo(DType.FLOAT32)
+              replacedNulls.castTo(toDt)
             }
           }
         }

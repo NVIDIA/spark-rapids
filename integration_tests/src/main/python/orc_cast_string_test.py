@@ -20,8 +20,8 @@ from pyspark.sql.types import *
 from spark_session import with_cpu_session
 
 @pytest.mark.parametrize('to_type', ['boolean', 'tinyint', 'smallint', 'int', 'bigint'])
-def test_casting_to_integers(spark_tmp_path, to_type):
-    orc_path = spark_tmp_path + '/orc_casting_from_string'
+def test_casting_string_to_integers(spark_tmp_path, to_type):
+    orc_path = spark_tmp_path + '/orc_cast_string_to_int'
     normal_cases = []
     length = 2048
     while len(normal_cases) < length:
@@ -39,9 +39,40 @@ def test_casting_to_integers(spark_tmp_path, to_type):
     test_cases = [[x] for x in normal_cases + special_cases]
     with_cpu_session(
         func=lambda spark: spark.createDataFrame(data=test_cases,
-                                                 schema=["string_col"]).write.orc(orc_path)
+                                                 schema=["int_str"]).write.orc(orc_path)
     )
-    schema_str = "string_col {}".format(to_type)
+    schema_str = "int_str {}".format(to_type)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(schema_str).orc(orc_path)
+    )
+
+@pytest.mark.approximate_float
+@pytest.mark.parametrize('to_type', ['float', 'double'])
+def test_casting_string_to_float(spark_tmp_path, to_type):
+    orc_path = spark_tmp_path + '/orc_cast_string_to_float'
+    # INF and NaN are case-sensitive
+    normal_cases = [
+        'Infinity', '+Infinity', '-Infinity', 'NaN', '+NaN', '-NaN',
+        str(FLOAT_MAX), str(FLOAT_MIN), str(DOUBLE_MAX), str(DOUBLE_MIN)
+    ]
+    length = 2048
+    while len(normal_cases) < length:
+        normal_cases.append(str(random.uniform(DOUBLE_MIN, DOUBLE_MAX)))
+    special_cases = [
+        "123", "00123.00", "123.", "-0123.", ".123", "-.123",    # different positions of decimal point, valid
+        "+0", "-0", "+00.0", "-00.0", "-00000.",                 # zero values, valid
+        "    000123.00   ", "   -NaN ", " +Infinity ",           # valid cases with whitespaces
+        "+01.234e10", "3.14e10", "03.14E+015", ".123e001",       # scientific notation
+        "123.e00100", "-.123e10",
+        "9.999e99999", "0.00000001e-999999",                     # overflow, convert it to INF, 0.0
+        "    ", ".", "inf", "nan", "true", "abc",                # some invalid cases
+        "1.2.", "1.2.3", "3.14e3.14"
+    ]
+    test_cases = [[x] for x in normal_cases + special_cases]
+    with_cpu_session(
+        func=lambda spark: spark.createDataFrame(data=test_cases,
+                                                 schema=["float_str"]).write.orc(orc_path)
+    )
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema("float_str {}".format(to_type)).orc(orc_path)
     )
