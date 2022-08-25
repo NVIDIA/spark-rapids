@@ -271,6 +271,7 @@ object QualOutputWriter {
   val ESTIMATED_GPU_SPEEDUP = "Estimated GPU Speedup"
   val ESTIMATED_GPU_TIMESAVED = "Estimated GPU Time Saved"
   val STAGE_ESTIMATED_STR = "Stage Estimated"
+  val UNSUPPORTED_EXECS = "Unsupported Execs"
 
   val APP_DUR_STR_SIZE: Int = APP_DUR_STR.size
   val SQL_DUR_STR_SIZE: Int = SQL_DUR_STR.size
@@ -398,7 +399,8 @@ object QualOutputWriter {
       ESTIMATED_GPU_DURATION -> ESTIMATED_GPU_DURATION.size,
       ESTIMATED_GPU_SPEEDUP -> ESTIMATED_GPU_SPEEDUP.size,
       ESTIMATED_GPU_TIMESAVED -> ESTIMATED_GPU_TIMESAVED.size,
-      SPEEDUP_BUCKET_STR -> SPEEDUP_BUCKET_STR_SIZE
+      SPEEDUP_BUCKET_STR -> SPEEDUP_BUCKET_STR_SIZE,
+      UNSUPPORTED_EXECS -> getMaxSizeForHeader(appInfos.map(_.planInfo.map(_.execInfo.map(_.unsupportedExecs.size).sum).sum), UNSUPPORTED_EXECS)
     )
   }
 
@@ -418,7 +420,8 @@ object QualOutputWriter {
       ToolUtils.formatDoublePrecision(sumInfo.estimatedGpuSpeedup) -> ESTIMATED_GPU_SPEEDUP.size,
       ToolUtils.formatDoublePrecision(sumInfo.estimatedGpuTimeSaved) ->
         ESTIMATED_GPU_TIMESAVED.size,
-      sumInfo.recommendation -> SPEEDUP_BUCKET_STR_SIZE
+      sumInfo.recommendation -> SPEEDUP_BUCKET_STR_SIZE,
+      sumInfo.unsupportedExecs -> UNSUPPORTED_EXECS.size
     )
     constructOutputRow(data, delimiter, prettyPrint)
   }

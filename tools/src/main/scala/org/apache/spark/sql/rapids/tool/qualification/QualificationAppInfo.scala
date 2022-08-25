@@ -399,6 +399,8 @@ class QualificationAppInfo(
       // overhead or execs that didn't have associated stages
       val supportedSQLTaskDuration = calculateSQLSupportedTaskDuration(allStagesSummary)
       val taskSpeedupFactor = calculateSpeedupFactor(allStagesSummary)
+      val unsupportedExecs = origPlanInfos.map(_.execInfo.map(_.unsupportedExecs).mkString(";")).mkString(";")
+      // println(s"UNSUPPORTEDEXECS  is $unsupportedExecs")
 
       // get the ratio based on the Task durations that we will use for wall clock durations
       val estimatedGPURatio = if (sqlDataframeTaskDuration > 0) {
@@ -409,7 +411,7 @@ class QualificationAppInfo(
 
       val estimatedInfo = QualificationAppInfo.calculateEstimatedInfoSummary(estimatedGPURatio,
         sparkSQLDFWallClockDuration, appDuration, taskSpeedupFactor, appName, appId,
-        sqlIdsWithFailures.nonEmpty)
+        sqlIdsWithFailures.nonEmpty, unsupportedExecs)
 
       QualificationSummaryInfo(info.appName, appId, problems,
         executorCpuTimePercent, endDurationEstimated, sqlIdsWithFailures,
@@ -477,7 +479,8 @@ case class EstimatedSummaryInfo(
     estimatedGpuDur: Double, // Predicted runtime for the app if it was run on the GPU
     estimatedGpuSpeedup: Double, // app_duration / estimated_gpu_duration
     estimatedGpuTimeSaved: Double, // app_duration - estimated_gpu_duration
-    recommendation: String)
+    recommendation: String,
+    unsupportedExecs: String)
 
 // Estimate based on wall clock times for each SQL query
 case class EstimatedPerSQLSummaryInfo(
@@ -575,7 +578,7 @@ object QualificationAppInfo extends Logging {
   // Summarize and estimate based on wall clock times
   def calculateEstimatedInfoSummary(estimatedRatio: Double, sqlDataFrameDuration: Long,
       appDuration: Long, speedupFactor: Double, appName: String,
-      appId: String, hasFailures: Boolean): EstimatedSummaryInfo = {
+      appId: String, hasFailures: Boolean, unsupportedExecs: String = ""): EstimatedSummaryInfo = {
     val sqlDataFrameDurationToUse = if (sqlDataFrameDuration > appDuration) {
       // our app duration is shorter then our sql duration, estimate the sql duration down
       // to app duration
@@ -604,7 +607,8 @@ object QualificationAppInfo extends Logging {
       estimated_gpu_duration,
       estimated_gpu_speedup,
       estimated_gpu_timesaved,
-      recommendation)
+      recommendation,
+      unsupportedExecs)
   }
 
   def createApp(

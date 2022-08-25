@@ -33,6 +33,7 @@ case class SortExecParser(
     val exprString = node.desc.replaceFirst("Sort ", "")
     val expressions = SQLPlanParser.parseSortExpressions(exprString)
     val isAllExprsSupported = expressions.forall(expr => checker.isExprSupported(expr))
+    val notSupportedExprs = expressions.filter(expr => !checker.isExprSupported(expr))
     val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName) &&
         isAllExprsSupported) {
       (checker.getSpeedupFactor(fullExecName), true)
@@ -40,6 +41,6 @@ case class SortExecParser(
       (1.0, false)
     }
     // TODO - add in parsing expressions - average speedup across?
-    new ExecInfo(sqlID, node.name, "", speedupFactor, duration, node.id, isSupported, None)
+    new ExecInfo(sqlID, node.name, "", speedupFactor, duration, node.id, isSupported, None, unsupportedExprs = notSupportedExprs)
   }
 }

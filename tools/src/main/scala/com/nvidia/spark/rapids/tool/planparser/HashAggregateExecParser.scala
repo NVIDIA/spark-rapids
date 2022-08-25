@@ -38,6 +38,7 @@ case class HashAggregateExecParser(
     val exprString = node.desc.replaceFirst("HashAggregate", "")
     val expressions = SQLPlanParser.parseAggregateExpressions(exprString)
     val isAllExprsSupported = expressions.forall(expr => checker.isExprSupported(expr))
+    val notSupportedExprs = expressions.filter(expr => !checker.isExprSupported(expr))
     val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName) &&
         isAllExprsSupported) {
       (checker.getSpeedupFactor(fullExecName), true)
@@ -47,6 +48,6 @@ case class HashAggregateExecParser(
 
     // TODO - add in parsing expressions - average speedup across?
     new ExecInfo(sqlID, node.name, "", speedupFactor,
-      maxDuration, node.id, isSupported, None)
+      maxDuration, node.id, isSupported, None, unsupportedExprs = notSupportedExprs)
   }
 }
