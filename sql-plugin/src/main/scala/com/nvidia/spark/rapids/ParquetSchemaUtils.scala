@@ -367,6 +367,7 @@ object ParquetSchemaUtils extends Arm {
     // Unannotated repeated group should be interpreted as required list of required element, so
     // list element type is just the group itself.
     // TODO: When we drop Spark 3.1.x, this should use Parquet's LogicalTypeAnnotation
+    //       Note that the original type is not null for leaf nodes.
     //if (parquetList.getLogicalTypeAnnotation == null &&
     val newSparkType = if (parquetList.getOriginalType == null &&
         parquetList.isRepetition(Repetition.REPEATED)) {
