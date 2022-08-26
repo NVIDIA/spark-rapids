@@ -16,13 +16,16 @@ import pytest
 from pyspark.sql import Row
 from asserts import assert_gpu_fallback_collect
 from marks import allow_non_gpu, delta_lake
-from spark_session import with_cpu_session, with_gpu_session, is_databricks91_or_later, is_databricks104_or_later
+from spark_session import with_cpu_session, is_databricks91_or_later, spark_version
+from spark_session import with_cpu_session, with_gpu_session, is_databricks91_or_later, is_databricks104_or_later, \
+    spark_version
 
 _conf = {'spark.rapids.sql.explain': 'ALL'}
 
 @delta_lake
 @allow_non_gpu('FileSourceScanExec')
-@pytest.mark.skipif(not is_databricks91_or_later(), reason="Delta Lake is already configured on Databricks so we just run these tests there for now")
+@pytest.mark.skipif(not (is_databricks91_or_later() or spark_version().startswith("3.2.")), \
+    reason="Delta Lake is already configured on Databricks and CI supports Delta Lake OSS with Spark 3.2.x so far")
 def test_delta_metadata_query_fallback(spark_tmp_table_factory):
     table = spark_tmp_table_factory.get()
     def setup_delta_table(spark):

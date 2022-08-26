@@ -447,10 +447,27 @@ def test_exceptAll(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : gen_df(spark, data_gen, length=100).exceptAll(gen_df(spark, data_gen, length=100).filter('a != b')))
 
+# Spark fails to sort some decimal values due to overflow when calculating the sorting prefix.
+# See https://issues.apache.org/jira/browse/SPARK-40129
+# Since pivot orders by value, avoid generating these extreme values for this test.
+_pivot_gen_128bit = DecimalGen(precision=20, scale=2, special_cases=[])
+_pivot_big_decimals = [
+    ('a', RepeatSeqGen(DecimalGen(precision=32, scale=10, nullable=(True, 10.0)), length=50)),
+    ('b', _pivot_gen_128bit),
+    ('c', DecimalGen(precision=36, scale=5))]
+_pivot_short_big_decimals = [
+    ('a', RepeatSeqGen(short_gen, length=50)),
+    ('b', _pivot_gen_128bit),
+    ('c', decimal_gen_128bit)]
+
+_pivot_gens_with_decimals = _init_list_with_nans_and_no_nans + [
+    _grpkey_small_decimals, _pivot_big_decimals, _grpkey_short_mid_decimals,
+    _pivot_short_big_decimals, _grpkey_short_very_big_decimals,
+    _grpkey_short_very_big_neg_scale_decimals]
 @approximate_float
 @ignore_order(local=True)
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans_with_decimalbig, ids=idfn)
+@pytest.mark.parametrize('data_gen', _pivot_gens_with_decimals, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
 def test_hash_grpby_pivot(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
@@ -622,6 +639,20 @@ def test_decimal128_min_max_group_by(data_gen):
         lambda spark: two_col_df(spark, byte_gen, data_gen)
             .groupby('a')
             .agg(f.min('b'), f.max('b')))
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
+def test_float_max_reduction_with_nan(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('max(a)'))
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
+def test_float_max_group_by_with_nan(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, byte_gen, data_gen)
+            .groupby('a')
+            .agg(f.max('b')))
 
 # to avoid ordering issues with collect_list we do it all in a single task
 @ignore_order(local=True)
@@ -975,18 +1006,6 @@ def test_hash_multiple_filters(data_gen, conf):
         'min(a), max(b) filter (where c > 250) from hash_agg_table group by a',
         conf)
 
-
-@ignore_order
-@allow_non_gpu('HashAggregateExec', 'AggregateExpression', 'AttributeReference', 'Alias', 'Max',
-               'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'ShuffleExchangeExec',
-               'HashPartitioning')
-@pytest.mark.parametrize('data_gen', struct_gens_xfail, ids=idfn)
-def test_hash_query_max_nan_fallback(data_gen):
-    print_params(data_gen)
-    assert_gpu_fallback_collect(
-        lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.max('b')),
-        "Max")
-
 @approximate_float
 @ignore_order
 @pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nan_zero_grouping_keys,
@@ -1190,7 +1209,9 @@ def test_sorted_groupby_first_last(data_gen):
         lambda spark: agg_fn(gen_df(spark, gen_fn, num_slices=1)),
         conf = {'spark.sql.shuffle.partitions': '1'})
 
-@ignore_order
+# Spark has a sorting bug with decimals, see https://issues.apache.org/jira/browse/SPARK-40129.
+# Have pytest do the sorting rather than Spark as a workaround.
+@ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('count_func', [f.count, f.countDistinct])
 def test_agg_count(data_gen, count_func):

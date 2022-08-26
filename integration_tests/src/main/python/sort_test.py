@@ -19,12 +19,19 @@ from data_gen import *
 from marks import allow_non_gpu
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
+from spark_session import is_before_spark_340
+
+# Many Spark versions have issues sorting decimals.
+# https://issues.apache.org/jira/browse/SPARK-40089
+_orderable_not_null_big_decimal_gen = DecimalGen(precision=20, scale=2, nullable=False)
+if is_before_spark_340():
+    _orderable_not_null_big_decimal_gen = DecimalGen(precision=20, scale=2, nullable=False, special_cases=[])
 
 orderable_not_null_gen = [ByteGen(nullable=False), ShortGen(nullable=False), IntegerGen(nullable=False),
         LongGen(nullable=False), FloatGen(nullable=False), DoubleGen(nullable=False), BooleanGen(nullable=False),
         TimestampGen(nullable=False), DateGen(nullable=False), StringGen(nullable=False),
         DecimalGen(precision=7, scale=3, nullable=False), DecimalGen(precision=12, scale=2, nullable=False),
-        DecimalGen(precision=20, scale=2, nullable=False)]
+        _orderable_not_null_big_decimal_gen]
 
 @allow_non_gpu('SortExec', 'ShuffleExchangeExec', 'RangePartitioning', 'SortOrder')
 @pytest.mark.parametrize('data_gen', [StringGen(nullable=False)], ids=idfn)
@@ -164,7 +171,8 @@ def test_single_nested_sort_in_part(data_gen, order, stable_sort):
         conf=sort_conf)
 
 orderable_gens_sort = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-        boolean_gen, timestamp_gen, date_gen, string_gen, null_gen, StructGen([('child0', long_gen)])] + decimal_gens
+        boolean_gen, timestamp_gen, date_gen, string_gen, null_gen, StructGen([('child0', long_gen)])
+                       ] + orderable_decimal_gens
 @pytest.mark.parametrize('data_gen', orderable_gens_sort, ids=idfn)
 def test_multi_orderby(data_gen):
     assert_gpu_and_cpu_are_equal_collect(

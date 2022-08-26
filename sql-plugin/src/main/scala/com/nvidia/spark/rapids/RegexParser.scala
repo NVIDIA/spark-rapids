@@ -173,7 +173,7 @@ class RegexParser(pattern: String) {
   }
 
   private def parseCharacterClass(): RegexCharacterClass = {
-    val supportedMetaCharacters = "\\^-]+"
+    val supportedMetaCharacters = "\\^-[]+"
 
     def getEscapedComponent(): RegexCharacterClassComponent = {
       peek() match {
@@ -207,7 +207,7 @@ class RegexParser(pattern: String) {
                 RegexEscaped(ch) 
               } else {
                 throw new RegexUnsupportedException(
-                  s"Unsupported escaped character in character class", Some(pos-1))
+                  s"Unsupported escaped character '$ch' in character class", Some(pos-1))
               }
           }
         case None =>
@@ -682,6 +682,22 @@ class CudfRegexTranspiler(mode: RegexMode) {
    * @return Regular expression and optional replacement in cuDF format
    */
   def transpile(pattern: String, repl: Option[String]): (String, Option[String]) = {
+    val (cudfRegex, replacement) = getTranspiledAST(pattern, repl)
+
+    // write out to regex string, performing minor transformations
+    // such as adding additional escaping
+    (cudfRegex.toRegexString, replacement.map(_.toRegexString))
+  }
+  
+  /**
+   * Parse Java regular expression and translate into cuDF regular expression in AST form.
+   *
+   * @param pattern Regular expression that is valid in Java's engine
+   * @param repl Optional replacement pattern
+   * @return Regular expression AST and optional replacement in cuDF format
+   */
+  def getTranspiledAST(
+    pattern: String, repl: Option[String]): (RegexAST, Option[RegexReplacement]) = {
     // parse the source regular expression
     val regex = new RegexParser(pattern).parse()
     // if we have a replacement, parse the replacement string using the regex parser to account
@@ -690,11 +706,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
     // validate that the regex is supported by cuDF
     val cudfRegex = transpile(regex, replacement, None)
-    // write out to regex string, performing minor transformations
-    // such as adding additional escaping
-    (cudfRegex.toRegexString, replacement.map(_.toRegexString))
-  }
 
+    (cudfRegex, replacement)
+  }
+  
   def transpileToSplittableString(e: RegexAST): Option[String] = {
     e match {
       case RegexEscaped(ch) if regexMetaChars.contains(ch) => Some(ch.toString)
@@ -1377,7 +1392,11 @@ class CudfRegexTranspiler(mode: RegexMode) {
                 s"cuDF does not support repetition of group containing: " +
                   s"${unsupportedTerm.toRegexString}", term.position)
           }
-        case (RegexGroup(_, _), SimpleQuantifier(ch)) if ch == '?' =>
+        case (RegexGroup(_, term), SimpleQuantifier(ch)) if ch == '?' =>
+          if (isEntirelyWordBoundary(term) || isEntirelyLineAnchor(term)) {
+            throw new RegexUnsupportedException(
+                s"cuDF does not support repetition of: ${term.toRegexString}", term.position)
+          }
           RegexRepetition(rewrite(base, replacement, None), quantifier)
         case (RegexEscaped(ch), SimpleQuantifier('+')) if "AZ".contains(ch) =>
           // \A+ can be transpiled to \A (dropping the repetition)
@@ -1498,6 +1517,30 @@ class CudfRegexTranspiler(mode: RegexMode) {
     }
   }
 
+  private def isEntirely(regex: RegexAST, f: RegexAST => Boolean): Boolean = {
+    regex match {
+      case RegexSequence(parts) if parts.nonEmpty =>
+        parts.forall(f)
+      case RegexGroup(_, term) =>
+        isEntirely(term, f)
+      case _ => f(regex)
+    }
+  }
+
+  private def isEntirelyWordBoundary(regex: RegexAST): Boolean = {
+    isEntirely(regex, {
+      case RegexEscaped(ch) if "bB".contains(ch) => true
+      case _ => false
+    })
+  }
+
+  private def isEntirelyLineAnchor(regex: RegexAST): Boolean = {
+    isEntirely(regex, {
+      case RegexEscaped('A') => true
+      case other => isBeginOrEndLineAnchor(other)
+    })
+  }
+
   private def endsWith(regex: RegexAST, f: RegexAST => Boolean): Boolean = {
     regex match {
       case RegexSequence(parts) if parts.nonEmpty =>
@@ -1506,6 +1549,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
             case _ => true
         }
         endsWith(parts(j), f)
+      case RegexGroup(_, term) =>
+        endsWith(term, f) 
       case _ => f(regex)
     }
   }

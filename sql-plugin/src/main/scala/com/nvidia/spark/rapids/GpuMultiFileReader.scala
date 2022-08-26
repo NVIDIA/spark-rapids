@@ -23,6 +23,7 @@ import java.util.concurrent.{Callable, ConcurrentLinkedQueue, Future, LinkedBloc
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Queue}
+import scala.language.implicitConversions
 import scala.math.max
 
 import ai.rapids.cudf.{ColumnVector, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
@@ -128,6 +129,35 @@ object MultiFileReaderThreadPool extends Logging {
   }
 }
 
+object MultiFileReaderUtils {
+
+  private implicit def toURI(path: String): URI = {
+    try {
+      val uri = new URI(path)
+      if (uri.getScheme != null) {
+        return uri
+      }
+    } catch {
+      case _: URISyntaxException =>
+    }
+    new File(path).getAbsoluteFile.toURI
+  }
+
+  private def hasPathInCloud(filePaths: Array[String], cloudSchemes: Set[String]): Boolean = {
+    // Assume the `filePath` always has a scheme, if not try using the local filesystem.
+    // If that doesn't work for some reasons, users need to configure it directly.
+    filePaths.exists(fp => cloudSchemes.contains(fp.getScheme))
+  }
+
+  def useMultiThreadReader(
+      coalescingEnabled: Boolean,
+      multiThreadEnabled: Boolean,
+      files: Array[String],
+      cloudSchemes: Set[String]): Boolean =
+  !coalescingEnabled || (multiThreadEnabled && hasPathInCloud(files, cloudSchemes))
+
+}
+
 /**
  * The base multi-file partition reader factory to create the cloud reading or
  * coalescing reading respectively.
@@ -210,39 +240,9 @@ abstract class MultiFilePartitionReaderFactoryBase(
   }
 
   /** for testing */
-  private[rapids] def useMultiThread(filePaths: Array[String]): Boolean = {
-    !canUseCoalesceFilesReader || (canUseMultiThreadReader && arePathsInCloud(filePaths))
-  }
-
-  private def resolveURI(path: String): URI = {
-    try {
-      val uri = new URI(path)
-      if (uri.getScheme() != null) {
-        return uri
-      }
-    } catch {
-      case _: URISyntaxException =>
-    }
-    new File(path).getAbsoluteFile().toURI()
-  }
-
-  // We expect the filePath here to always have a scheme on it,
-  // if it doesn't we try using the local filesystem. If that
-  // doesn't work for some reason user would need to configure
-  // it directly.
-  private def isCloudFileSystem(filePath: String): Boolean = {
-    val uri = resolveURI(filePath)
-    val scheme = uri.getScheme
-    if (allCloudSchemes.contains(scheme)) {
-      true
-    } else {
-      false
-    }
-  }
-
-  private def arePathsInCloud(filePaths: Array[String]): Boolean = {
-    filePaths.exists(isCloudFileSystem)
-  }
+  private[rapids] def useMultiThread(filePaths: Array[String]): Boolean =
+    MultiFileReaderUtils.useMultiThreadReader(
+      canUseCoalesceFilesReader, canUseMultiThreadReader, filePaths, allCloudSchemes)
 }
 
 /**
@@ -387,7 +387,7 @@ abstract class MultiFileCloudPartitionReaderBase(
 
   override def next(): Boolean = {
     withResource(new NvtxRange(getFileFormatShortName + " readBatch", NvtxColor.GREEN)) { _ =>
-      if (isInitted == false) {
+      if (!isInitted) {
         initAndStartReaders()
       }
       batch.foreach(_.close())

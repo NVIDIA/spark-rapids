@@ -590,6 +590,12 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           updatedPlan.canonicalized
           validateExecsInGpuPlan(updatedPlan, rapidsConf)
         }
+
+        if (rapidsConf.logQueryTransformations) {
+          logWarning(s"Transformed query:" +
+            s"\nOriginal Plan:\n$plan\nTransformed Plan:\n$updatedPlan")
+        }
+
         updatedPlan
       }
     } else {

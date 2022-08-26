@@ -287,7 +287,10 @@ def test_dpp_from_swizzled_hash_keys(spark_tmp_table_factory, aqe_enabled):
                   " PARTITIONED BY (dt date, hr string, mins string) STORED AS PARQUET")
         spark.sql("INSERT INTO {}(id,dt,hr,mins)".format(fact_table) +
                   " SELECT 'somevalue', to_date('2022-01-01'), '11', '59'")
-    with_cpu_session(setup_tables)
+    with_cpu_session(setup_tables, conf={
+        "hive.exec.dynamic.partition" : "true",
+        "hive.exec.dynamic.partition.mode" : "nonstrict"
+    })
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT COUNT(*) AS cnt FROM {} f".format(fact_table) +
                                  " LEFT JOIN (SELECT *, " +

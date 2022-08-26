@@ -14,7 +14,8 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
+from asserts import assert_cpu_and_gpu_are_equal_sql_with_capture, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, \
+    assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -29,6 +30,14 @@ def read_orc_df(data_path):
 
 def read_orc_sql(data_path):
     return lambda spark : spark.sql('select * from orc.`{}`'.format(data_path))
+
+# ORC has issues reading timestamps where it is off by 1 second if the timestamp is before
+# epoch in 1970 and the microsecond value is between 0 and 1000.
+# See https://github.com/rapidsai/cudf/issues/11525.
+def get_orc_timestamp_gen(nullable=True):
+    return TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc), nullable=nullable)
+
+orc_timestamp_gen = get_orc_timestamp_gen()
 
 # test with original orc file reader, the multi-file parallel reader for cloud
 original_orc_file_reader_conf = {'spark.rapids.sql.format.orc.reader.type': 'PERFILE'}
@@ -50,7 +59,7 @@ def test_basic_read(std_input_path, name, read_func, v1_enabled_list, orc_impl, 
             conf=all_confs)
 
 # ORC does not support negative scale for decimal. So here is "decimal_gens_no_neg".
-# Otherwsie it will get the below exception.
+# Otherwise it will get the below exception.
 # ...
 #E                   Caused by: java.lang.IllegalArgumentException: Missing integer at
 #   'struct<`_c0`:decimal(7,^-3),`_c1`:decimal(7,3),`_c2`:decimal(7,7),`_c3`:decimal(12,2)>'
@@ -59,8 +68,7 @@ def test_basic_read(std_input_path, name, read_func, v1_enabled_list, orc_impl, 
 # ...
 orc_basic_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-    TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
-                  ] + decimal_gens
+    orc_timestamp_gen] + decimal_gens
 
 orc_basic_struct_gen = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(orc_basic_gens)])
 
@@ -84,7 +92,7 @@ orc_struct_gens_sample = [orc_basic_struct_gen,
 
 orc_basic_map_gens = [simple_string_to_string_map_gen] + [MapGen(f(nullable=False), f()) for f in [
     BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen,
-    lambda nullable=True: TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc), nullable=nullable),
+    lambda nullable=True: get_orc_timestamp_gen(nullable),
     lambda nullable=True: DateGen(start=date(1590, 1, 1), nullable=nullable),
     lambda nullable=True: DecimalGen(precision=15, scale=1, nullable=nullable),
     lambda nullable=True: DecimalGen(precision=36, scale=5, nullable=nullable)]]
@@ -151,7 +159,7 @@ orc_pred_push_gens = [
         DateGen(start=date(1590, 1, 1)),
         # Once https://github.com/NVIDIA/spark-rapids/issues/140 is fixed replace this with
         # timestamp_gen 
-        TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc))]
+        orc_timestamp_gen]
 
 @pytest.mark.order(2)
 @pytest.mark.parametrize('orc_gen', orc_pred_push_gens, ids=idfn)
@@ -219,7 +227,7 @@ def test_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
     # we should go with a more standard set of generators
     orc_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-    TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))]
+    orc_timestamp_gen]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
     first_data_path = spark_tmp_path + '/ORC_DATA/key=0/key2=20'
     with_cpu_session(
@@ -286,7 +294,7 @@ def test_merge_schema_read(spark_tmp_path, v1_enabled_list, reader_confs):
     # we should go with a more standard set of generators
     orc_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
     string_gen, boolean_gen, DateGen(start=date(1590, 1, 1)),
-    TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))]
+    orc_timestamp_gen]
     first_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
     first_data_path = spark_tmp_path + '/ORC_DATA/key=0'
     with_cpu_session(
@@ -477,7 +485,26 @@ def test_read_struct_without_stream(spark_tmp_path):
             lambda spark : spark.read.orc(data_path))
 
 
-@pytest.mark.parametrize('orc_gen', flattened_orc_gens, ids=idfn)
+# There is an issue when writing timestamp: https://github.com/NVIDIA/spark-rapids/issues/6312
+# Thus, we exclude timestamp types from the tests here.
+# When the issue is resolved, remove all these `*_no_timestamp` generators and  use just `flattened_orc_gens`
+# for `orc_gen` parameter.
+orc_basic_gens_no_timestamp = [gen for gen in orc_basic_gens if not isinstance(gen, TimestampGen)]
+
+orc_array_gens_sample_no_timestamp = [ArrayGen(sub_gen) for sub_gen in orc_basic_gens_no_timestamp] + [
+    ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
+    ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10),
+    ArrayGen(ArrayGen(decimal_gen_64bit, max_length=10), max_length=10),
+    ArrayGen(StructGen([['child0', byte_gen], ['child1', string_gen], ['child2', float_gen]]))]
+
+orc_basic_struct_gen_no_timestamp = StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(orc_basic_gens_no_timestamp)])
+orc_struct_gens_sample_no_timestamp = [orc_basic_struct_gen_no_timestamp,
+    StructGen([['child0', byte_gen], ['child1', orc_basic_struct_gen_no_timestamp]]),
+    StructGen([['child0', ArrayGen(short_gen)], ['child1', double_gen]])]
+
+flattened_orc_gens_no_timestamp = orc_basic_gens + orc_array_gens_sample_no_timestamp + orc_struct_gens_sample_no_timestamp
+
+@pytest.mark.parametrize('orc_gen', flattened_orc_gens_no_timestamp, ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('case_sensitive', ["false", "true"])
@@ -663,6 +690,20 @@ def test_read_type_casting_integral(spark_tmp_path, offset, reader_confs, v1_ena
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(rs).orc(data_path),
         conf=all_confs)
+
+def test_orc_read_count(spark_tmp_path):
+    data_path = spark_tmp_path + '/ORC_DATA'
+    orc_gens = [int_gen, string_gen, double_gen]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(orc_gens)]
+    
+    with_cpu_session(lambda spark: gen_df(spark, gen_list).write.orc(data_path))
+
+    assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.orc(data_path))
+
+    # assert the spark plan of the equivalent SQL query contains no column in read schema
+    assert_cpu_and_gpu_are_equal_sql_with_capture(
+        lambda spark: spark.read.orc(data_path), "SELECT COUNT(*) FROM tab", "tab",
+        exist_classes=r'GpuFileGpuScan orc .* ReadSchema: struct<>')
 
 # The test_orc_varchar file was created with the Hive CLI like this:
 # CREATE TABLE test_orc_varchar(id int, name varchar(20)) STORED AS ORC LOCATION '...';

@@ -1068,6 +1068,16 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val REGEXP_MAX_STATE_MEMORY_BYTES = conf("spark.rapids.sql.regexp.maxStateMemoryBytes")
+    .doc("Specifies the maximum memory on GPU to be used for regular expressions." +
+      "The memory usage is an estimate based on an upper-bound approximation on the " +
+      "complexity of the regular expression. Note that the actual memory usage may " +
+      "still be higher than this estimate depending on the number of rows in the data" +
+      "column and the input strings themselves. It is recommended to not set this to " +
+      s"more than 3 times ${GPU_BATCH_SIZE_BYTES.key}")
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(Integer.MAX_VALUE)
+
   // INTERNAL TEST AND DEBUG CONFIGS
 
   val TEST_CONF = conf("spark.rapids.sql.test.enabled")
@@ -1092,6 +1102,12 @@ object RapidsConf {
     .stringConf
     .toSequence
     .createWithDefault(Nil)
+
+  val LOG_TRANSFORMATIONS = conf("spark.rapids.sql.debug.logTransformations")
+    .doc("When enabled, all query transformations will be logged.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
 
   val PARQUET_DEBUG_DUMP_PREFIX = conf("spark.rapids.sql.parquet.debug.dumpPrefix")
     .doc("A path prefix where Parquet split file data is dumped for debugging.")
@@ -1481,14 +1497,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val FORCE_SHIMCALLER_CLASSLOADER = conf("spark.rapids.force.caller.classloader")
-    .doc("Option to statically add shim's parallel world classloader URLs to " +
-      "the classloader of the ShimLoader class, typically Bootstrap classloader. This option" +
-      " uses reflection with setAccessible true on a classloader that is not created by Spark.")
-    .internal()
-    .booleanConf
-    .createWithDefault(value = true)
-
   val SPARK_GPU_RESOURCE_NAME = conf("spark.rapids.gpu.resourceName")
     .doc("The name of the Spark resource that represents a GPU that you want the plugin to use " +
       "if using custom resources with Spark.")
@@ -1546,7 +1554,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-22.08.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-22.10.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -1675,6 +1683,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val testingAllowedNonGpu: Seq[String] = get(TEST_ALLOWED_NONGPU)
 
   lazy val validateExecsInGpuPlan: Seq[String] = get(TEST_VALIDATE_EXECS_ONGPU)
+
+  lazy val logQueryTransformations: Boolean = get(LOG_TRANSFORMATIONS)
 
   lazy val rmmDebugLocation: String = get(RMM_DEBUG)
 
@@ -2023,6 +2033,16 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
 
   lazy val isRegExpEnabled: Boolean = get(ENABLE_REGEXP)
+
+  lazy val maxRegExpStateMemory: Long =  {
+    val size = get(REGEXP_MAX_STATE_MEMORY_BYTES) 
+    if (size > 3 * gpuTargetBatchSizeBytes) {
+      logWarning(s"${REGEXP_MAX_STATE_MEMORY_BYTES.key} is more than 3 times " +
+        s"${GPU_BATCH_SIZE_BYTES.key}. This may cause regular expression operations to " +
+        s"encounter GPU out of memory errors.")
+    }
+    size
+  }
 
   lazy val getSparkGpuResourceName: String = get(SPARK_GPU_RESOURCE_NAME)
 

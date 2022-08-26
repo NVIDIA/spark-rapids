@@ -56,6 +56,64 @@ object GpuJsonScan {
       scanMeta)
   }
 
+  def tagSupportOptions(
+      options: JSONOptionsInRead,
+      meta: RapidsMeta[_, _, _]): Unit = {
+
+    if (options.multiLine) {
+      meta.willNotWorkOnGpu("GpuJsonScan does not support multiLine")
+    }
+
+    // {"name": /* hello */ "Reynold Xin"} is not supported by CUDF
+    if (options.allowComments) {
+      meta.willNotWorkOnGpu("GpuJsonScan does not support allowComments")
+    }
+
+    // {name: 'Reynold Xin'} is not supported by CUDF
+    if (options.allowUnquotedFieldNames) {
+      meta.willNotWorkOnGpu("GpuJsonScan does not support allowUnquotedFieldNames")
+    }
+
+    // {'name': 'Reynold Xin'} is not supported by CUDF
+    // This is different because the default for this is true, but we don't support it so we lie...
+    if (options.parameters.get("allowSingleQuotes").map(_.toBoolean).getOrElse(false)) {
+      meta.willNotWorkOnGpu("GpuJsonScan does not support allowSingleQuotes")
+    }
+
+    // {"name": "Cazen Lee", "price": "\$10"} is not supported by CUDF
+    if (options.allowBackslashEscapingAnyCharacter) {
+      meta.willNotWorkOnGpu("GpuJsonScan does not support allowBackslashEscapingAnyCharacter")
+    }
+
+    // {"a":null, "b":1, "c":3.0}, Spark will drop column `a` if dropFieldIfAllNull is enabled.
+    if (options.dropFieldIfAllNull) {
+      meta.willNotWorkOnGpu("GpuJsonScan does not support dropFieldIfAllNull")
+    }
+
+    if (options.parseMode != PermissiveMode) {
+      meta.willNotWorkOnGpu("GpuJsonScan only supports Permissive JSON parsing")
+    }
+
+    if (options.lineSeparator.getOrElse("\n") != "\n") {
+      meta.willNotWorkOnGpu("GpuJsonScan only supports \"\\n\" as a line separator")
+    }
+
+    options.encoding.foreach(enc =>
+      if (enc != StandardCharsets.UTF_8.name() && enc != StandardCharsets.US_ASCII.name()) {
+        meta.willNotWorkOnGpu("GpuJsonScan only supports UTF8 or US-ASCII encoded data")
+      })
+  }
+
+  def tagJsonToStructsSupport(options:Map[String, String],
+      meta: RapidsMeta[_, _, _]): Unit = {
+    val parsedOptions = new JSONOptionsInRead(
+      options,
+      SQLConf.get.sessionLocalTimeZone,
+      SQLConf.get.columnNameOfCorruptRecord)
+
+    tagSupportOptions(parsedOptions, meta)
+  }
+
   def tagSupport(
       sparkSession: SparkSession,
       dataSchema: StructType,
@@ -70,57 +128,17 @@ object GpuJsonScan {
 
     if (!meta.conf.isJsonEnabled) {
       meta.willNotWorkOnGpu("JSON input and output has been disabled. To enable set " +
-        s"${RapidsConf.ENABLE_JSON} to true")
+          s"${RapidsConf.ENABLE_JSON} to true")
     }
 
     if (!meta.conf.isJsonReadEnabled) {
       meta.willNotWorkOnGpu("JSON input has been disabled. To enable set " +
-        s"${RapidsConf.ENABLE_JSON_READ} to true. Please note that, currently json reader does " +
-        s"not support column prune, so user must specify the full schema or just let spark to " +
-        s"infer the schema")
+          s"${RapidsConf.ENABLE_JSON_READ} to true. Please note that, currently json reader does " +
+          s"not support column prune, so user must specify the full schema or just let spark to " +
+          s"infer the schema")
     }
 
-    if (parsedOptions.multiLine) {
-      meta.willNotWorkOnGpu("GpuJsonScan does not support multiLine")
-    }
-
-    // {"name": /* hello */ "Reynold Xin"} is not supported by CUDF
-    if (parsedOptions.allowComments) {
-      meta.willNotWorkOnGpu("GpuJsonScan does not support allowComments")
-    }
-
-    // {name: 'Reynold Xin'} is not supported by CUDF
-    if (parsedOptions.allowUnquotedFieldNames) {
-      meta.willNotWorkOnGpu("GpuJsonScan does not support allowUnquotedFieldNames")
-    }
-
-    // {'name': 'Reynold Xin'} is not supported by CUDF
-    if (options.get("allowSingleQuotes").map(_.toBoolean).getOrElse(false)) {
-      meta.willNotWorkOnGpu("GpuJsonScan does not support allowSingleQuotes")
-    }
-
-    // {"name": "Cazen Lee", "price": "\$10"} is not supported by CUDF
-    if (parsedOptions.allowBackslashEscapingAnyCharacter) {
-      meta.willNotWorkOnGpu("GpuJsonScan does not support allowBackslashEscapingAnyCharacter")
-    }
-
-    // {"a":null, "b":1, "c":3.0}, Spark will drop column `a` if dropFieldIfAllNull is enabled.
-    if (parsedOptions.dropFieldIfAllNull) {
-      meta.willNotWorkOnGpu("GpuJsonScan does not support dropFieldIfAllNull")
-    }
-
-    if (parsedOptions.parseMode != PermissiveMode) {
-      meta.willNotWorkOnGpu("GpuJsonScan only supports Permissive JSON parsing")
-    }
-
-    if (parsedOptions.lineSeparator.getOrElse("\n") != "\n") {
-      meta.willNotWorkOnGpu("GpuJsonScan only supports \"\\n\" as a line separator")
-    }
-
-    parsedOptions.encoding.foreach(enc =>
-      if (enc != StandardCharsets.UTF_8.name() && enc != StandardCharsets.US_ASCII.name()) {
-      meta.willNotWorkOnGpu("GpuJsonScan only supports UTF8 or US-ASCII encoded data")
-    })
+    tagSupportOptions(parsedOptions, meta)
 
     val types = readSchema.map(_.dataType)
     if (types.contains(DateType)) {
@@ -136,17 +154,17 @@ object GpuJsonScan {
 
     if (!meta.conf.isJsonFloatReadEnabled && types.contains(FloatType)) {
       meta.willNotWorkOnGpu("JSON reading is not 100% compatible when reading floats. " +
-        s"To enable it please set ${RapidsConf.ENABLE_READ_JSON_FLOATS} to true.")
+          s"To enable it please set ${RapidsConf.ENABLE_READ_JSON_FLOATS} to true.")
     }
 
     if (!meta.conf.isJsonDoubleReadEnabled && types.contains(DoubleType)) {
       meta.willNotWorkOnGpu("JSON reading is not 100% compatible when reading doubles. " +
-        s"To enable it please set ${RapidsConf.ENABLE_READ_JSON_DOUBLES} to true.")
+          s"To enable it please set ${RapidsConf.ENABLE_READ_JSON_DOUBLES} to true.")
     }
 
     if (!meta.conf.isJsonDecimalReadEnabled && types.exists(_.isInstanceOf[DecimalType])) {
       meta.willNotWorkOnGpu("JSON reading is not 100% compatible when reading decimals. " +
-        s"To enable it please set ${RapidsConf.ENABLE_READ_JSON_DECIMALS} to true.")
+          s"To enable it please set ${RapidsConf.ENABLE_READ_JSON_DECIMALS} to true.")
     }
 
     dataSchema.getFieldIndex(parsedOptions.columnNameOfCorruptRecord).foreach { corruptFieldIndex =>
