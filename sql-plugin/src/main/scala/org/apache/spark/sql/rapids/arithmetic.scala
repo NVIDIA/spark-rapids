@@ -897,16 +897,18 @@ case class GpuDecimalDivide(
       }
     }
     val retCol = withResource(retTab) { retTab =>
+      val overflowed = retTab.getColumn(0)
+      val quotient = retTab.getColumn(1)
       if (failOnError) {
-        withResource(retTab.getColumn(0).any()) { anyOverflow =>
+        withResource(overflowed.any()) { anyOverflow =>
           if (anyOverflow.isValid && anyOverflow.getBoolean) {
             throw new ArithmeticException(GpuCast.INVALID_INPUT_MESSAGE)
           }
         }
-        retTab.getColumn(1).incRefCount()
+        quotient.incRefCount()
       } else {
         withResource(GpuScalar.from(null, dataType)) { nullVal =>
-          retTab.getColumn(0).ifElse(nullVal, retTab.getColumn(1))
+          overflowed.ifElse(nullVal, quotient)
         }
       }
     }
