@@ -18,6 +18,8 @@ package org.apache.spark.sql.rapids.execution.python
 import java.io.DataOutputStream
 import java.net.Socket
 
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import org.apache.arrow.vector.VectorSchemaRoot
@@ -35,7 +37,8 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
 
 /**
- * Similar to `PythonUDFRunner`, but exchange data with Python worker via Arrow stream.
+ * Similar to `GpuArrowPythonRunner`, but exchange CUDA IPC meta data with Python worker
+ * via Arrow stream instead of the whole real data.
  */
 class GpuArrowCudaIpcPythonRunner(
     funcs: Seq[ChainedPythonFunctions],
@@ -52,6 +55,8 @@ class GpuArrowCudaIpcPythonRunner(
   extends GpuArrowPythonRunner(funcs, evalType, argOffsets, pythonInSchema,
     timeZoneId, conf, batchSize, semWait, onDataWriteFinished,
     pythonOutSchema, minReadTargetBatchSize) {
+
+  private val toBeClosed: ArrayBuffer[AutoCloseable] = ArrayBuffer.empty[AutoCloseable]
 
   protected override def newWriterThread(
       env: SparkEnv,
@@ -88,6 +93,8 @@ class GpuArrowCudaIpcPythonRunner(
 
         val ipcNames = pythonInSchema.names
 
+        context.addTaskCompletionListener[Unit](_ => toBeClosed.foreach(_.close()))
+
         Utils.tryWithSafeFinally {
           val arrowWriter = ArrowWriter.create(root)
           val writer = new ArrowStreamWriter(root, null, dataOut)
@@ -104,6 +111,10 @@ class GpuArrowCudaIpcPythonRunner(
               arrowWriter.finish()
               writer.writeBatch()
               arrowWriter.reset()
+              // TODO what if exception happens in the second iterator, we already put the first
+              // ColumnBatch into the toBeClosed? We should not use Utils.tryWithSafeFinally,
+              // instead, we should use try {} catch {} finally {}
+              toBeClosed.append(table)
             }
           }
           // end writes footer to the output stream and doesn't clean any resources.
