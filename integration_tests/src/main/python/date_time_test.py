@@ -219,14 +219,14 @@ def test_to_unix_timestamp(data_gen, ansi_enabled):
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
 def test_from_utc_timestamp(data_gen, time_zone):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen).selectExpr("from_utc_timestamp(a, '{}')".format(time_zone)))
+        lambda spark : unary_op_df(spark, data_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)))
 
 @allow_non_gpu('ProjectExec, FromUTCTimestamp')
 @pytest.mark.parametrize('time_zone', ["PST", "MST", "EST", "VST", "NST", "AST"], ids=idfn)
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
 def test_from_utc_timestamp_fallback(data_gen, time_zone):
     assert_gpu_fallback_collect(
-        lambda spark : unary_op_df(spark, data_gen).selectExpr("from_utc_timestamp(a, '{}')".format(time_zone)),
+        lambda spark : unary_op_df(spark, data_gen).select(f.from_utc_timestamp(f.col('a'), time_zone)),
     'ProjectExec')
 
 
