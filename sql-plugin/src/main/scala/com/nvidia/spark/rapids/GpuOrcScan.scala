@@ -22,20 +22,18 @@ import java.nio.ByteBuffer
 import java.nio.channels.{Channels, WritableByteChannel}
 import java.util
 import java.util.concurrent.Callable
-
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
 import scala.collection.mutable
 import scala.language.implicitConversions
 import scala.math.max
-
 import ai.rapids.cudf._
 import com.google.protobuf.CodedOutputStream
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.SchemaUtils._
-import com.nvidia.spark.rapids.shims.{OrcReadingShims, OrcShims, ShimFilePartitionReaderFactory}
+import com.nvidia.spark.rapids.shims.{OrcCastingShims, OrcReadingShims, OrcShims, ShimFilePartitionReaderFactory}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.hive.common.io.DiskRangeList
@@ -43,7 +41,6 @@ import org.apache.orc.{CompressionKind, DataReader, OrcConf, OrcFile, OrcProto, 
 import org.apache.orc.impl._
 import org.apache.orc.impl.RecordReaderImpl.SargApplier
 import org.apache.orc.mapred.OrcInputFormat
-
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
@@ -228,36 +225,10 @@ object GpuOrcScan extends Arm {
       DType.FLOAT32 | DType.FLOAT64 | DType.STRING) =>
         col.castTo(toDt)
 
-      // {bool, integer} to timestamp(micro seconds)
-      case (DType.BOOL8 | DType.INT8 | DType.INT16 | DType.INT32, DType.TIMESTAMP_MICROSECONDS) =>
-        // cuDF requires casting to a long first.
-        withResource(col.castTo(DType.INT64)) { longs =>
-          // In CPU, ORC assumes the integer value is in seconds, and returns timestamp in
-          // micro seconds.
-          withResource(Scalar.fromLong(1000000L)) { value =>
-            withResource(longs.mul(value)) { microSeconds =>
-              microSeconds.castTo(DType.TIMESTAMP_MICROSECONDS)
-            }
-          }
-        }
-
-      // int64 to timestamp
-      case (DType.INT64, DType.TIMESTAMP_MICROSECONDS) =>
-        // We need overflow checking here, since max value of INT64 is about 9 * 1e18, and convert
-        // INT64 to micro seconds(also a INT64 actually), we need multiply 1e6, it may cause long
-        // integer-overflow.
-        // In CPU code of ORC casting, its conversion is 'integer -> milliseconds -> microseconds'
-        withResource(Scalar.fromLong(1000L)) { thousand =>
-          withResource(col.mul(thousand)) { milliSeconds =>
-            // If these two 'testLongMultiplicationOverflow' throw no exception, it means no
-            // Long-overflow when casting 'col' to TIMESTAMP_MICROSECONDS.
-            testLongMultiplicationOverflow(milliSeconds.max().getLong, 1000L)
-            testLongMultiplicationOverflow(milliSeconds.min().getLong, 1000L)
-            withResource(milliSeconds.mul(thousand)) { microSeconds =>
-              microSeconds.castTo(DType.TIMESTAMP_MICROSECONDS)
-            }
-          }
-        }
+      // {bool, integer types} to timestamp(micro seconds)
+      case (DType.BOOL8 | DType.INT8 | DType.INT16 | DType.INT32 | DType.INT64,
+      DType.TIMESTAMP_MICROSECONDS) =>
+        OrcCastingShims.castIntegerToTimestamp(col, fromDt)
 
       // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
       case (f, t) =>

@@ -67,13 +67,13 @@ def test_casting_from_integer(spark_tmp_path, to_type):
             schema_str.format(*([to_type] * len(data_gen)))).orc(orc_path)
     )
 
-@pytest.mark.parametrize('overflow_long_gen', [LongGen(min_val=int(1e13)),
-                                               LongGen(max_val=int(-1e13))])
+@pytest.mark.parametrize('overflow_long_gen', [LongGen(min_val=int(1e16)),
+                                               LongGen(max_val=int(-1e16))])
 @pytest.mark.parametrize('to_type', ['timestamp'])
 def test_casting_from_overflow_long(spark_tmp_path, overflow_long_gen,to_type):
     # Timestamp(micro-seconds) is actually type of int64, when casting long(int64) to timestamp,
-    # we need to multiply 1e6, and it may cause overflow. This function aims to test whether if
-    # 'ArithmeticException' is caught.
+    # we need to multiply 1e6 (or 1e3), and it may cause overflow. This function aims to test
+    # whether if 'ArithmeticException' is caught.
     orc_path = spark_tmp_path + '/orc_cast_overflow_long'
     create_orc([('long_column', overflow_long_gen)], orc_path)
     schema_str = "long_column {}".format(to_type)
