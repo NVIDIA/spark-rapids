@@ -676,8 +676,7 @@ trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging
    */
   protected def readPartFile(ctx: OrcPartitionReaderContext, stripes: Seq[OrcOutputStripe]):
       (HostMemoryBuffer, Long) = {
-    withResource(new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
-      metrics("bufferTime"))) { _ =>
+    withResource(new NvtxRange("Buffer file split", NvtxColor.YELLOW)) { _ =>
       if (stripes.isEmpty) {
         return (null, 0L)
       }
@@ -831,7 +830,9 @@ class GpuOrcPartitionReader(
           Some(new ColumnarBatch(nullColumns.toArray, numRows))
         }
       } else {
-        val (dataBuffer, dataSize) = readPartFile(ctx, currentStripes)
+        val (dataBuffer, dataSize) = metrics(BUFFER_TIME).ns {
+          readPartFile(ctx, currentStripes)
+        }
         decodeToBatch(dataBuffer, dataSize, ctx.updatedReadSchema, ctx.requestedMapping,
           isCaseSensitive, Array(partFile))
       }

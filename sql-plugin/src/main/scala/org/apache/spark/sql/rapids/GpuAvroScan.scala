@@ -28,7 +28,7 @@ import scala.math.max
 
 import ai.rapids.cudf.{AvroOptions => CudfAvroOptions, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetric.{GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, READ_FS_TIME, SEMAPHORE_WAIT_TIME, WRITE_BUFFER_TIME}
+import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, READ_FS_TIME, SEMAPHORE_WAIT_TIME, WRITE_BUFFER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.avro.Schema
@@ -399,8 +399,7 @@ trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase
       blocks: Seq[BlockInfo],
       headerSize: Long,
       conf: Configuration): (HostMemoryBuffer, Long) = {
-    withResource(new NvtxWithMetrics("Avro buffer file split", NvtxColor.YELLOW,
-        metrics("bufferTime"))) { _ =>
+    withResource(new NvtxRange("Avro buffer file split", NvtxColor.YELLOW)) { _ =>
       if (blocks.isEmpty) {
         // No need to check the header here since it can not be null when blocks is not empty.
         return (null, 0L)
@@ -559,8 +558,10 @@ class GpuAvroPartitionReader(
         if (currentChunkedBlocks.isEmpty) {
           None
         } else {
-          val (dataBuffer, dataSize) = readPartFile(partFilePath, currentChunkedBlocks,
-            blockMeta.headerSize, conf)
+          val (dataBuffer, dataSize) = metrics(BUFFER_TIME).ns {
+            readPartFile(partFilePath, currentChunkedBlocks,
+              blockMeta.headerSize, conf)
+          }
           sendToGpu(dataBuffer, dataSize, Array(partFile))
         }
       }
