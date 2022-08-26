@@ -882,6 +882,8 @@ Casting from string to timestamp currently has the following limitations.
 | `"yyyy-[M]M "`                                                      | Yes               |
 | `"yyyy-[M]M-[d]d"`                                                  | Yes               |
 | `"yyyy-[M]M-[d]d "`                                                 | Yes               |
+| `"yyyy-[M]M-[d]dT[h]h:[m]m:[s]s[zone_id]"` | Partial [\[1\]](#Footnote1)       |
+| `"yyyy-[M]M-[d]d [h]h:[m]m:[s]s[zone_id]"` | Partial [\[1\]](#Footnote1)       |
 | `"yyyy-[M]M-[d]dT[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"` | Partial [\[1\]](#Footnote1)       |
 | `"yyyy-[M]M-[d]d [h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"` | Partial [\[1\]](#Footnote1)       |
 | `"[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"`                | Partial [\[1\]](#Footnote1)       |
@@ -892,8 +894,8 @@ Casting from string to timestamp currently has the following limitations.
 | `"tomorrow"`                                                        | Yes               |
 | `"yesterday"`                                                       | Yes               |
 
-- <a name="Footnote1"></a>[1] The timestamp portion must have 6 digits for milliseconds.
- Only timezone 'Z' (UTC) is supported. Casting unsupported formats will result in null values.
+- <a name="Footnote1"></a>[1] Leap seconds are not supported. If a zone_id is provided then only
+ timezone 'Z' (UTC) is supported. Casting unsupported formats will result in null values.
 
 Spark is very lenient when casting from string to timestamp because all date and time components
 are optional, meaning that input values such as `T`, `T2`, `:`, `::`, `1:`, `:1`, and `::1`
