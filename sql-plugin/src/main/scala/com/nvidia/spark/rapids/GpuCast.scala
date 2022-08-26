@@ -170,7 +170,8 @@ object GpuCast extends Arm {
   private val TIMESTAMP_REGEX_YYYY = "\\A\\d{4}[ ]?\\Z"
   private val TIMESTAMP_REGEX_FULL =
     "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}[ T]?(\\d{1,2}:\\d{1,2}:([0-5]\\d|\\d)(\\.\\d{0,6})?Z?)\\Z"
-  private val TIMESTAMP_REGEX_NO_DATE = "\\A[T]?(\\d{1,2}:\\d{1,2}:\\d{1,2}(\\.\\d{0,6})?Z?)\\Z"
+  private val TIMESTAMP_REGEX_NO_DATE =
+    "\\A[T]?(\\d{1,2}:\\d{1,2}:([0-5]\\d|\\d)(\\.\\d{0,6})?Z?)\\Z"
 
   private val BIG_DECIMAL_LONG_MIN = BigDecimal(Long.MinValue)
   private val BIG_DECIMAL_LONG_MAX = BigDecimal(Long.MaxValue)
