@@ -1316,6 +1316,7 @@ object GpuCast extends Arm {
     val cudfFormat1 = "%Y-%m-%d %H:%M:%S.%f"
     val cudfFormat2 = "%Y-%m-%dT%H:%M:%S.%f"
     val cudfFormat3 = "%Y-%m-%d %H:%M:%S"
+    val cudfFormat4 = "%Y-%m-%dT%H:%M:%S"
 
     withResource(orElse) { orElse =>
 
@@ -1323,8 +1324,12 @@ object GpuCast extends Arm {
       val isCudfMatch = withResource(input.isTimestamp(cudfFormat1)) { isTimestamp1 =>
         withResource(input.isTimestamp(cudfFormat2)) { isTimestamp2 =>
           withResource(input.isTimestamp(cudfFormat3)) { isTimestamp3 =>
-            withResource(isTimestamp1.or(isTimestamp2)) { isTimestamp1Or2 =>
-              isTimestamp1Or2.or(isTimestamp3)
+            withResource(input.isTimestamp(cudfFormat4)) { isTimestamp4 =>
+              withResource(isTimestamp1.or(isTimestamp2)) { isTimestamp12 =>
+                withResource(isTimestamp12.or(isTimestamp3)) { isTimestamp123 =>
+                  isTimestamp123.or(isTimestamp4)
+                }
+              }
             }
           }
         }
