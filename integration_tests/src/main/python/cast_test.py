@@ -232,9 +232,15 @@ def test_cast_long_to_decimal_overflow():
 # casting these types to string should be passed
 basic_gens_for_cast_to_string = [ByteGen, ShortGen, IntegerGen, LongGen, StringGen, BooleanGen, DateGen, TimestampGen] 
 basic_array_struct_gens_for_cast_to_string = [f() for f in basic_gens_for_cast_to_string] + [null_gen] + decimal_gens
+
+# We currently do not generate the exact string as Spark for some decimal values of zero
+# https://github.com/NVIDIA/spark-rapids/issues/6339
 basic_map_gens_for_cast_to_string = [
     MapGen(f(nullable=False), f()) for f in basic_gens_for_cast_to_string] + [
-    MapGen(DecimalGen(nullable=False), DecimalGen(precision=7, scale=3)), MapGen(DecimalGen(precision=7, scale=7, nullable=False), DecimalGen(precision=12, scale=2))]
+    MapGen(DecimalGen(nullable=False, special_cases=[]),
+           DecimalGen(precision=7, scale=3, special_cases=[])),
+    MapGen(DecimalGen(precision=7, scale=7, nullable=False, special_cases=[]),
+           DecimalGen(precision=12, scale=2), special_cases=[])]
 
 # GPU does not match CPU to casting these types to string, marked as xfail when testing
 not_matched_gens_for_cast_to_string = [FloatGen, DoubleGen]

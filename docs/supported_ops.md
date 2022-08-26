@@ -10126,7 +10126,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td>S</td>
+<td><em>PS<br/>decimals with precision 38 are not supported</em></td>
 <td> </td>
 <td> </td>
 <td> </td>

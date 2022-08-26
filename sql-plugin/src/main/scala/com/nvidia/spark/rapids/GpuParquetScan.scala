@@ -765,10 +765,18 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
           }
         }
       case array: ArrayType =>
-        val fileChild = fileType.asGroupType().getType(0)
-          .asGroupType().getType(0)
-        checkSchemaCompat(fileChild, array.elementType, errorCallback, isCaseSensitive, useFieldId,
-          rootFileType, rootReadType)
+        if (fileType.isPrimitive) {
+          if (fileType.getRepetition == Type.Repetition.REPEATED) {
+            checkSchemaCompat(fileType, array.elementType, errorCallback, isCaseSensitive,
+              useFieldId, rootFileType, rootReadType)
+          } else {
+            errorCallback(fileType, readType)
+          }
+        } else {
+          val fileChild = fileType.asGroupType().getType(0).asGroupType().getType(0)
+          checkSchemaCompat(fileChild, array.elementType, errorCallback, isCaseSensitive,
+            useFieldId, rootFileType, rootReadType)
+        }
 
       case map: MapType =>
         val parquetMap = fileType.asGroupType().getType(0).asGroupType()
