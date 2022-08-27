@@ -132,11 +132,15 @@ def test_cast_string_date_non_ansi():
         lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
         conf={'spark.rapids.sql.hasExtendedYearValues': 'false'})
 
-def test_cast_string_ts_valid_format():
+@pytest.mark.parametrize('data_gen', [StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2}'),
+                                      StringGen('[0-9]{1,4}-[0-3][0-9]-[0-5][0-9][ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]'),
+                                      StringGen('[0-9]{1,4}-[0-3][0-9]-[0-5][0-9][ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9].[0-9]{0,6}Z?')],
+                        ids=idfn)
+def test_cast_string_ts_valid_format(data_gen):
     # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
     # This provides values that are valid in all of those formats.
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2}')).select(f.col('a').cast(TimestampType())),
+            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(TimestampType())),
             conf = {'spark.rapids.sql.hasExtendedYearValues': 'false',
                 'spark.rapids.sql.castStringToTimestamp.enabled': 'true'})
 
@@ -228,9 +232,15 @@ def test_cast_long_to_decimal_overflow():
 # casting these types to string should be passed
 basic_gens_for_cast_to_string = [ByteGen, ShortGen, IntegerGen, LongGen, StringGen, BooleanGen, DateGen, TimestampGen] 
 basic_array_struct_gens_for_cast_to_string = [f() for f in basic_gens_for_cast_to_string] + [null_gen] + decimal_gens
+
+# We currently do not generate the exact string as Spark for some decimal values of zero
+# https://github.com/NVIDIA/spark-rapids/issues/6339
 basic_map_gens_for_cast_to_string = [
     MapGen(f(nullable=False), f()) for f in basic_gens_for_cast_to_string] + [
-    MapGen(DecimalGen(nullable=False), DecimalGen(precision=7, scale=3)), MapGen(DecimalGen(precision=7, scale=7, nullable=False), DecimalGen(precision=12, scale=2))]
+    MapGen(DecimalGen(nullable=False, special_cases=[]),
+           DecimalGen(precision=7, scale=3, special_cases=[])),
+    MapGen(DecimalGen(precision=7, scale=7, nullable=False, special_cases=[]),
+           DecimalGen(precision=12, scale=2), special_cases=[])]
 
 # GPU does not match CPU to casting these types to string, marked as xfail when testing
 not_matched_gens_for_cast_to_string = [FloatGen, DoubleGen]

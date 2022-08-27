@@ -48,9 +48,7 @@ mvn_verify() {
     $MVN_INSTALL_CMD -DskipTests -Dbuildver=313
     [[ $BUILD_MAINTENANCE_VERSION_SNAPSHOTS == "true" ]] && $MVN_INSTALL_CMD -Dbuildver=314
 
-    # don't skip tests
-    env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=320 clean install $MVN_BUILD_ARGS \
-      -Dpytest.TEST_TAGS='' -pl '!tools'
+    $MVN_INSTALL_CMD -DskipTests -Dbuildver=320
     # enable UTF-8 for regular expression tests
     env -u SPARK_HOME LC_ALL="en_US.UTF-8" $MVN_CMD $MVN_URM_MIRROR -Dbuildver=320 test $MVN_BUILD_ARGS \
       -Dpytest.TEST_TAGS='' -pl '!tools' \
@@ -130,15 +128,17 @@ ci_2() {
     $MVN_CMD -U -B $MVN_URM_MIRROR clean package $MVN_BUILD_ARGS -DskipTests=true
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
-    export TEST_PARALLEL=4
-    # separate process to avoid OOM kill
-    TEST='conditionals_test or window_function_test' ./integration_tests/run_pyspark_from_build.sh
-    TEST_PARALLEL=5 TEST='struct_test or time_window_test' ./integration_tests/run_pyspark_from_build.sh
-    TEST='not conditionals_test and not window_function_test and not struct_test and not time_window_test' \
-      ./integration_tests/run_pyspark_from_build.sh
+    export TEST_PARALLEL=5
+    ./integration_tests/run_pyspark_from_build.sh
+    # enable avro test separately
     INCLUDE_SPARK_AVRO_JAR=true TEST='avro_test.py' ./integration_tests/run_pyspark_from_build.sh
     # export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled
     LC_ALL="en_US.UTF-8" TEST="regexp_test.py" ./integration_tests/run_pyspark_from_build.sh
+
+    # put some mvn tests here to balance durations of parallel stages
+    echo "Run mvn package..."
+    env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=320 clean package $MVN_BUILD_ARGS \
+      -Dpytest.TEST_TAGS='' -pl '!tools'
 }
 
 

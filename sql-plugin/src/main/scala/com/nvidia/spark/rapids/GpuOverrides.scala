@@ -996,6 +996,8 @@ object GpuOverrides extends Logging {
             // Here we try to strip out the extra casts, etc to get to as close to the original
             // query as possible. This lets us then calculate what CUDF needs to get the correct
             // answer, which in some cases is a lot smaller.
+            // For multiply we can support all of the types. For divide we still have to fall back
+            // to the CPU in some cases.
             case _: Divide =>
               val intermediatePrecision =
                 GpuDecimalDivide.nonRoundedIntermediateArgPrecision(lhsDecimalType,
@@ -1009,21 +1011,6 @@ object GpuOverrides extends Logging {
                 } else {
                   logWarning("Decimal overflow guarantees disabled for " +
                       s"${lhs.dataType} / ${rhs.dataType} produces ${a.dataType} with an " +
-                      s"intermediate precision of $intermediatePrecision")
-                }
-              }
-            case _: Multiply =>
-              val intermediatePrecision =
-                GpuDecimalMultiply.nonRoundedIntermediatePrecision(lhsDecimalType,
-                  rhsDecimalType, a.dataType)
-              if (intermediatePrecision > DType.DECIMAL128_MAX_PRECISION) {
-                if (conf.needDecimalGuarantees) {
-                  binExpr.willNotWorkOnGpu(s"the intermediate precision of " +
-                      s"$intermediatePrecision that is required to guarantee no overflow issues " +
-                      s"for this multiply is too large to be supported on the GPU")
-                } else {
-                  logWarning("Decimal overflow guarantees disabled for " +
-                      s"${lhs.dataType} * ${rhs.dataType} produces ${a.dataType} with an " +
                       s"intermediate precision of $intermediatePrecision")
                 }
               }
@@ -1042,7 +1029,7 @@ object GpuOverrides extends Logging {
                 GpuDecimalMultiply.nonRoundedIntermediatePrecision(lhsDecimalType,
                   rhsDecimalType, a.dataType)
               GpuDecimalMultiply(lhs.convertToGpu(), rhs.convertToGpu(), wrapped.dataType,
-                needsExtraOverflowChecks = intermediatePrecision > DType.DECIMAL128_MAX_PRECISION)
+                useLongMultiply = intermediatePrecision > DType.DECIMAL128_MAX_PRECISION)
             case _ =>
               GpuCheckOverflow(childExprs.head.convertToGpu(),
                 wrapped.dataType, wrapped.nullOnOverflow)
@@ -1858,12 +1845,30 @@ object GpuOverrides extends Logging {
           // passing the already converted strf string for a little optimization
           GpuFromUnixTime(lhs, rhs, strfFormat)
       }),
+    expr[FromUTCTimestamp](
+      "Render the input UTC timestamp in the input timezone",
+      ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+        ("timestamp", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+        ("timezone", TypeSig.lit(TypeEnum.STRING)
+          .withPsNote(TypeEnum.STRING, "Only timezones equivalent to UTC are supported"),
+          TypeSig.lit(TypeEnum.STRING))),
+      (a, conf, p, r) => new FromUTCTimestampExprMeta(a, conf, p, r)
+    ),
     expr[Pmod](
       "Pmod",
       ExprChecks.binaryProject(TypeSig.gpuNumeric, TypeSig.cpuNumeric,
-        ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
+        ("lhs", TypeSig.gpuNumeric.withPsNote(TypeEnum.DECIMAL,
+          s"decimals with precision ${DecimalType.MAX_PRECISION} are not supported"),
+            TypeSig.cpuNumeric),
         ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
       (a, conf, p, r) => new BinaryExprMeta[Pmod](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          a.dataType match {
+            case dt: DecimalType if dt.precision == DecimalType.MAX_PRECISION =>
+              willNotWorkOnGpu("pmod at maximum decimal precision is not supported")
+            case _ =>
+          }
+        }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuPmod(lhs, rhs)
       }),
@@ -2988,7 +2993,7 @@ object GpuOverrides extends Logging {
         "the older versions of Spark in this instance and handle NaNs the same as 3.1.3+"),
     expr[ArraysOverlap](
       "Returns true if a1 contains at least a non-null element present also in a2. If the arrays " +
-      "have no common element and they are both non-empty and either of them contains a null " + 
+      "have no common element and they are both non-empty and either of them contains a null " +
       "element null is returned, false otherwise.",
       ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("array1",
@@ -3199,10 +3204,6 @@ object GpuOverrides extends Logging {
       }),
     expr[MapConcat](
       "Returns the union of all the given maps",
-      // Currently, GpuMapConcat supports nested values but not nested keys.
-      // We will add the nested key support after
-      // cuDF can fully support nested types in lists::drop_list_duplicates.
-      // Issue link: https://github.com/rapidsai/cudf/issues/11093
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
           TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         TypeSig.MAP.nested(TypeSig.all),
@@ -3211,13 +3212,6 @@ object GpuOverrides extends Logging {
           TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
           TypeSig.MAP.nested(TypeSig.all)))),
       (a, conf, p, r) => new ComplexTypeMergingExprMeta[MapConcat](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          a.dataType.keyType match {
-            case MapType(_,_,_) | ArrayType(_,_) | StructType(_) => willNotWorkOnGpu(
-              s"GpuMapConcat does not currently support the key type ${a.dataType.keyType}.")
-            case _ =>
-          }
-        }
         override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuMapConcat(child)
       }),
     expr[ConcatWs](
@@ -3416,7 +3410,7 @@ object GpuOverrides extends Logging {
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-              TypeSig.NULL + 
+              TypeSig.NULL +
               TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Support for structs containing " +
               s"float/double array columns requires ${RapidsConf.HAS_NANS} to be set to false") +
               TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Support for arrays of arrays of " +
@@ -3426,7 +3420,7 @@ object GpuOverrides extends Logging {
 
         private def isNestedArrayType(dt: DataType): Boolean = {
           dt match {
-            case StructType(fields) => 
+            case StructType(fields) =>
               fields.exists { field =>
                 field.dataType match {
                   case sdt: StructType => isNestedArrayType(sdt)

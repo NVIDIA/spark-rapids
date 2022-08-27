@@ -12,34 +12,89 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import os
+import re
+import sys
 
-try:
-    import pyspark
-except ImportError as error:
-    import findspark
-    findspark.init()
-    import pyspark
+logging.basicConfig(
+    format="%(asctime)s %(levelname)-8s %(message)s",
+    level=logging.INFO,
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 _CONF_ENV_PREFIX = 'PYSP_TEST_'
 _EXECUTOR_ENV_PREFIX = 'spark_executorEnv_'
 
 def env_for_conf(spark_conf_name):
-    return _CONF_ENV_PREFIX + spark_conf_name.replace('.', '_')
+    # escape underscores
+    escaped_conf = spark_conf_name.replace('_', r'__')
+    return _CONF_ENV_PREFIX + escaped_conf.replace('.', '_')
 
 def conf_for_env(env_name):
     conf_key = env_name[len(_CONF_ENV_PREFIX):]
     if conf_key.startswith(_EXECUTOR_ENV_PREFIX):
         res = _EXECUTOR_ENV_PREFIX.replace('_', '.') + conf_key[len(_EXECUTOR_ENV_PREFIX):]
     else:
-        res = conf_key.replace('_', '.')
+        # replace standalone underscores
+        res1 = re.sub(r'(?<!_)_(?!_)', '.', conf_key)
+        # unescape: remove duplicate underscores
+        res = res1.replace('__', '_')
     return res
 
 _DRIVER_ENV = env_for_conf('spark.driver.extraJavaOptions')
+_SPARK_JARS = env_for_conf("spark.jars")
+_SPARK_JARS_PACKAGES = env_for_conf("spark.jars.packages")
+spark_jars_env = {
+    _SPARK_JARS,
+    _SPARK_JARS_PACKAGES
+}
+
+def findspark_init():
+    import findspark
+    findspark.init()
+    logging.info("Checking if add_jars/packages to findspark required")
+    spark_jars = os.getenv(_SPARK_JARS)
+    spark_jars_packages = os.getenv(_SPARK_JARS_PACKAGES)
+    if spark_jars is not None:
+        logging.info(f"Adding to findspark jars: {spark_jars}")
+        findspark.add_jars(spark_jars)
+
+    if spark_jars_packages is not None:
+        logging.info(f"Adding to findspark packages: {spark_jars_packages}")
+        findspark.add_packages(spark_jars_packages)
+
+def running_with_xdist(session, is_worker):
+    try:
+        import xdist
+        return xdist.is_xdist_worker(session) if is_worker\
+            else xdist.is_xdist_master(session)
+    except ImportError:
+        return False
 
 
-def _spark__init():
-    #Force the RapidsPlugin to be enabled, so it blows up if the classpath is not set properly
+def pyspark_ready():
+    try:
+        import pyspark
+        return True
+    except ImportError:
+        return False
+
+
+def pytest_sessionstart(session):
+    if running_with_xdist(session, is_worker = True):
+        logging.info("Initializing findspark because running with xdist worker")
+        findspark_init()
+    elif running_with_xdist(session, is_worker = False):
+        logging.info("Skipping findspark init because on xdist master")
+        return
+    elif not pyspark_ready():
+        logging.info("Initializing findspark because pyspark unimportable on a standalone Pytest instance")
+        findspark_init()
+
+    import pyspark
+
+    # Force the RapidsPlugin to be enabled, so it blows up if the classpath is not set properly
     # DO NOT SET ANY OTHER CONFIGS HERE!!!
     # due to bugs in pyspark/pytest it looks like any configs set here
     # can be reset in the middle of a test if specific operations are done (some types of cast etc)
@@ -49,7 +104,7 @@ def _spark__init():
             .config('spark.sql.queryExecutionListeners', 'com.nvidia.spark.rapids.ExecutionPlanCaptureCallback')
 
     for key, value in os.environ.items():
-        if key.startswith(_CONF_ENV_PREFIX) and key != _DRIVER_ENV:
+        if key.startswith(_CONF_ENV_PREFIX) and key != _DRIVER_ENV and key not in spark_jars_env:
             _sb.config(conf_for_env(key), value)
 
     driver_opts = os.environ.get(_DRIVER_ENV, "")
@@ -68,7 +123,8 @@ def _spark__init():
     #TODO catch the ClassNotFound error that happens if the classpath is not set up properly and
     # make it a better error message
     _s.sparkContext.setLogLevel("WARN")
-    return _s
+    global _spark
+    _spark = _s
 
 
 def _handle_derby_dir(sb, driver_opts, wid):
@@ -82,9 +138,10 @@ def _handle_event_log_dir(sb, wid):
     if os.environ.get('SPARK_EVENTLOG_ENABLED', str(True)).lower() in [
         str(False).lower(), 'off', '0'
     ]:
-        print('Automatic configuration for spark event log disabled')
+        logging.info('Automatic configuration for spark event log disabled')
         return
 
+    import pyspark
     spark_conf = pyspark.SparkConf()
     master_url = os.environ.get(env_for_conf('spark.master'),
                                 spark_conf.get("spark.master", 'local'))
@@ -93,14 +150,14 @@ def _handle_event_log_dir(sb, wid):
     event_log_codec = os.environ.get(env_for_conf('spark.eventLog.compression.codec'), 'zstd')
 
     if not master_url.startswith('local') or event_log_config != str(False).lower():
-        print("SPARK_EVENTLOG_ENABLED is ignored for non-local Spark master and when "
+        logging.info("SPARK_EVENTLOG_ENABLED is ignored for non-local Spark master and when "
               "it's pre-configured by the user")
         return
     d = "./eventlog_{}".format(wid)
     if not os.path.exists(d):
         os.makedirs(d)
 
-    print('Spark event logs will appear under {}. Set the environmnet variable '
+    logging.info('Spark event logs will appear under {}. Set the environmnet variable '
           'SPARK_EVENTLOG_ENABLED=false if you want to disable it'.format(d))
 
     sb\
@@ -108,9 +165,6 @@ def _handle_event_log_dir(sb, wid):
         .config('spark.eventLog.compress', True) \
         .config('spark.eventLog.enabled', True) \
         .config('spark.eventLog.compression.codec', event_log_codec)
-
-
-_spark = _spark__init()
 
 def get_spark_i_know_what_i_am_doing():
     """
