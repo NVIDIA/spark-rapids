@@ -58,6 +58,7 @@
             312db,
             321db
         </databricks.buildvers>
+        <dist.jar.name>${project.build.directory}/${project.build.finalName}-${cuda.version}.jar</dist.jar.name>
     </properties>
     <profiles>
         <profile>
@@ -331,7 +332,8 @@
                         <configuration>
                             <target>
                                 <zip update="true" basedir="${project.build.directory}/extra-resources"
-                                    destfile="${project.build.directory}/${project.build.finalName}-${cuda.version}.jar"/>
+                                    compress="${dist.jar.compress}"
+                                    destfile="${dist.jar.name}"/>
                             </target>
                         </configuration>
                     </execution>
@@ -446,6 +448,30 @@
                                     <overWrite>true</overWrite>
                                 </artifactItem>
                             </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-install-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>default-install</id>
+                        <phase>none</phase>
+                    </execution>
+                    <execution>
+                        <id>install-parallel-worlds-jar</id>
+                        <phase>install</phase>
+                        <goals>
+                            <goal>install-file</goal>
+                        </goals>
+                        <configuration>
+                            <version>${project.version}</version>
+                            <groupId>${project.groupId}</groupId>
+                            <artifactId>${project.artifactId}</artifactId>
+                            <file>${dist.jar.name}</file>
+                            <packaging>jar</packaging>
                         </configuration>
                     </execution>
                 </executions>
