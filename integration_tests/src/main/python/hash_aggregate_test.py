@@ -1817,7 +1817,7 @@ def test_groupby_std_variance_partial_replace_fallback(data_gen,
 # test min max on single level structure
 #
 gens_for_max_min = [byte_gen, short_gen, int_gen, long_gen,
-    FloatGen(no_nans = True), DoubleGen(no_nans = True),
+    float_gen, double_gen,
     string_gen, boolean_gen,
     date_gen, timestamp_gen,
     DecimalGen(precision=12, scale=2),
