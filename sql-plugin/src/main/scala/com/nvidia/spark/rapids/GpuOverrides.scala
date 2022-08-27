@@ -1845,6 +1845,15 @@ object GpuOverrides extends Logging {
           // passing the already converted strf string for a little optimization
           GpuFromUnixTime(lhs, rhs, strfFormat)
       }),
+    expr[FromUTCTimestamp](
+      "Render the input UTC timestamp in the input timezone",
+      ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+        ("timestamp", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+        ("timezone", TypeSig.lit(TypeEnum.STRING)
+          .withPsNote(TypeEnum.STRING, "Only timezones equivalent to UTC are supported"),
+          TypeSig.lit(TypeEnum.STRING))),
+      (a, conf, p, r) => new FromUTCTimestampExprMeta(a, conf, p, r)
+    ),
     expr[Pmod](
       "Pmod",
       ExprChecks.binaryProject(TypeSig.gpuNumeric, TypeSig.cpuNumeric,
@@ -2991,7 +3000,7 @@ object GpuOverrides extends Logging {
         "the older versions of Spark in this instance and handle NaNs the same as 3.1.3+"),
     expr[ArraysOverlap](
       "Returns true if a1 contains at least a non-null element present also in a2. If the arrays " +
-      "have no common element and they are both non-empty and either of them contains a null " + 
+      "have no common element and they are both non-empty and either of them contains a null " +
       "element null is returned, false otherwise.",
       ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("array1",
@@ -3408,7 +3417,7 @@ object GpuOverrides extends Logging {
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-              TypeSig.NULL + 
+              TypeSig.NULL +
               TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Support for structs containing " +
               s"float/double array columns requires ${RapidsConf.HAS_NANS} to be set to false") +
               TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Support for arrays of arrays of " +
@@ -3418,7 +3427,7 @@ object GpuOverrides extends Logging {
 
         private def isNestedArrayType(dt: DataType): Boolean = {
           dt match {
-            case StructType(fields) => 
+            case StructType(fields) =>
               fields.exists { field =>
                 field.dataType match {
                   case sdt: StructType => isNestedArrayType(sdt)
