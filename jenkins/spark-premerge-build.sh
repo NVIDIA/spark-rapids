@@ -37,29 +37,40 @@ mvn_verify() {
     # file size check for pull request. The size of a committed file should be less than 1.5MiB
     pre-commit run check-added-large-files --from-ref $BASE_REF --to-ref HEAD
 
-    # build the Spark 2.x explain jar
+    # Get Spark versions
+    SPARK_VERSIONS_SNAPSHOTS_STR=$(mvn -B help:evaluate -q -pl dist -Psnapshots -Dexpression=included_buildvers -DforceStdout)
+    SPARK_VERSIONS_NOSNAPSHOTS_STR=$(mvn -B help:evaluate -q -pl dist -PnoSnapshots -Dexpression=included_buildvers -DforceStdout)
+    SPARK_VERSIONS_SNAPSHOTS_STR=$(echo $SPARK_VERSIONS_SNAPSHOTS_STR)
+    SPARK_VERSIONS_NOSNAPSHOTS_STR=$(echo $SPARK_VERSIONS_NOSNAPSHOTS_STR)
+    oldIFS=$IFS
+    IFS=$', ' <<< $SPARK_VERSIONS_SNAPSHOTS_STR read -r -a SPARK_SHIM_VERSIONS
+    IFS=$', ' <<< $SPARK_VERSIONS_NOSNAPSHOTS_STR read -r -a SPARK_SHIM_VERSIONS_NOSNAPSHOTS
+    IFS=$oldIFS
+    SPARK_SHIM_VERSIONS_TEST=("311" "320" "330")
+    build the Spark 2.x explain jar
     env -u SPARK_HOME $MVN_CMD -B $MVN_URM_MIRROR -Dbuildver=24X clean install -DskipTests
 
     MVN_INSTALL_CMD="env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR clean install $MVN_BUILD_ARGS -DskipTests -pl aggregator -am"
-    # build all the versions but only run unit tests on one 3.1.X version (base version covers this), one 3.2.X and one 3.3.X version.
     # All others shims test should be covered in nightly pipelines
-    $MVN_INSTALL_CMD -DskipTests -Dbuildver=321cdh
-    $MVN_INSTALL_CMD -DskipTests -Dbuildver=312
-    $MVN_INSTALL_CMD -DskipTests -Dbuildver=313
-    [[ $BUILD_MAINTENANCE_VERSION_SNAPSHOTS == "true" ]] && $MVN_INSTALL_CMD -Dbuildver=314
-
-    # don't skip tests
-    env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=320 clean install $MVN_BUILD_ARGS \
-      -Dpytest.TEST_TAGS='' -pl '!tools'
+    for version in ${SPARK_SHIM_VERSIONS[*]}
+    do
+        echo "spark version: $version"
+        # build and run unit tests on one 3.1.X version (base version covers this), one 3.2.X and one 3.3.X version
+        if [[ "${TEST_SPARK_SHIM_VERSIONS[*]}" =~ "$version" ]]; then
+            env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS \ 
+            -Dpytest.TEST_TAGS='' -pl '!tools'
+        # build nosnapshot versions
+        elif [[ "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS}" =~ "$verions" ]]; then
+            $MVN_INSTALL_CMD -DskipTests -Dbuildver=$version
+        # build snapshot versions
+        else
+            [[ $BUILD_MAINTENANCE_VERSION_SNAPSHOTS == "true" ]] && $MVN_INSTALL_CMD -Dbuildver=$version
+        fi
+    done
     # enable UTF-8 for regular expression tests
     env -u SPARK_HOME LC_ALL="en_US.UTF-8" $MVN_CMD $MVN_URM_MIRROR -Dbuildver=320 test $MVN_BUILD_ARGS \
       -Dpytest.TEST_TAGS='' -pl '!tools' \
       -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
-    $MVN_INSTALL_CMD -DskipTests -Dbuildver=321
-    $MVN_INSTALL_CMD -DskipTests -Dbuildver=322
-    env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=330 clean install $MVN_BUILD_ARGS \
-      -Dpytest.TEST_TAGS='' -pl '!tools'
-    [[ $BUILD_MAINTENANCE_VERSION_SNAPSHOTS == "true" ]] && $MVN_INSTALL_CMD -DskipTests -Dbuildver=331
     # TODO: move it to BUILD_MAINTENANCE_VERSION_SNAPSHOTS when we resolve all spark340 build issues
     [[ $BUILD_FEATURE_VERSION_SNAPSHOTS == "true" ]] && $MVN_INSTALL_CMD -DskipTests -Dbuildver=340
 
