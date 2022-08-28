@@ -531,7 +531,7 @@ object GpuCast extends Arm {
               castStringToFloats(trimmed, ansiMode,
                 GpuColumnVector.getNonNestedRapidsType(toDataType))
             case ByteType | ShortType | IntegerType | LongType =>
-              castStringToInts(trimmed, ansiMode,
+              com.nvidia.spark.rapids.jni.CastStrings.stringToInteger(trimmed, ansiMode,
                 GpuColumnVector.getNonNestedRapidsType(toDataType))
           }
         }
