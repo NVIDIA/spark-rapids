@@ -354,6 +354,13 @@ def test_hash_grpby_sum_count_action(data_gen):
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b'))
     )
 
+@allow_non_gpu("ShuffleExchangeExec", "HashAggregateExec")
+@pytest.mark.parametrize('data_gen', [_grpkey_nested_structs_with_array_child], ids=idfn)
+def test_hash_grpby_sum_count_action_fallback(data_gen):
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b')),
+        'ShuffleExchangeExec')
+
 @pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
 def test_hash_reduction_sum_count_action(data_gen):
     assert_gpu_and_cpu_row_counts_equal(
