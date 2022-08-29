@@ -196,10 +196,6 @@ object GpuOrcScan extends Arm {
   private lazy val FLOAT_REGEX = startRegex +
     s"(($floatRegex1)|($floatRegex2)|($floatRegex3)|($INF)|($NaN))" + endRegex
 
-  /**
-   * Regex pattern to match date strings, like "YYYY-MM-DD".
-   */
-  private lazy val DATE_REGEX = startRegex + "\\d{4}\\-\\d{2}\\-\\d{2}" + endRegex
 
   /**
    * Cast the input column to the target type, and replace overflow rows with nulls.
@@ -287,12 +283,7 @@ object GpuOrcScan extends Arm {
       // string -> date
       case (DType.STRING, DType.TIMESTAMP_DAYS) =>
         val format = "%Y-%m-%d"
-        val isValid = withResource(col.matchesRe(DATE_REGEX)) { isMatched =>
-          withResource(col.isTimestamp(format)) { validDate =>
-            isMatched.and(validDate)
-          }
-        }
-        withResource(isValid) { _ =>
+        withResource(col.isTimestamp(format)) { isValid =>
           withResource(col.copyWithBooleanColumnAsValidity(isValid)) { replcaedNulls =>
             replcaedNulls.asTimestampDays(format)
           }

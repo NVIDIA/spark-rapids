@@ -80,9 +80,10 @@ def test_casting_string_to_float(spark_tmp_path, to_type):
 
 
 '''
-FIXME
-There is a strange case, if input string is "9808-02-30", intuitively, we should return null.
-However, CPU spark output 9808-02-39. Need to figure whether if it's a bug or a feature.
+FIXME & TODO
+1. There is a strange case, if input string is "9808-02-30", intuitively, we should return null.
+However, CPU spark output 9808-02-29. Need to figure whether if it's a bug or a feature.
+2. For all 'random' callings, add seed for them.
 '''
 def test_casting_string_to_date(spark_tmp_path):
     orc_path = spark_tmp_path + '/orc_cast_string_to_date'
