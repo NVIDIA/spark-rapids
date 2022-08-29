@@ -4470,7 +4470,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         val found = rdd.inputRDD != null &&
           rdd.inputRDD.name != null &&
           (rdd.inputRDD.name.startsWith("Delta Table State")
-            && rdd.inputRDD.name.startsWith("Delta Table Checkpoint")) &&
+            || rdd.inputRDD.name.startsWith("Delta Table Checkpoint")) &&
           rdd.inputRDD.name.endsWith("/_delta_log")
         if (found) {
           logDebug(s"Fallback for RDDScanExec delta log: $rdd")
