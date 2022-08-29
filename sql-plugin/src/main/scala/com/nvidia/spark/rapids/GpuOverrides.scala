@@ -4433,12 +4433,15 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   }
 
   /**
-   *  Determine whether query is running against Delta Lake _delta_log JSON files or
-   *  if Delta is doing stats collection that ends up hardcoding the use of AQE,
+   *  Determine whether query is running against Delta Lake _delta_log JSON or checkpoint
+   *  files or if Delta is doing stats collection that ends up hardcoding the use of AQE,
    *  even though the AQE setting is disabled. To protect against the latter, we
    *  check for a ScalaUDF using a tahoe.Snapshot function and if we ever see
    *  an AdaptiveSparkPlan on a Spark version we don't expect, fallback to the
    *  CPU for those plans.
+   *  Note that the Delta Lake delta log checkpoint parquet files are just inefficient
+   *  to have to copy the data to GPU and then back off so have the entire plan fallback
+   *  to CPU.
    */
   def isDeltaLakeMetadataQuery(plan: SparkPlan): Boolean = {
     val deltaLogScans = PlanUtils.findOperators(plan, {
@@ -4449,16 +4452,18 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
       case f: FileSourceScanExec =>
         // example filename: "file:/tmp/delta-table/_delta_log/00000000000000000000.json"
         val found = f.relation.inputFiles.exists(name =>
-          name.contains("/_delta_log/") && name.endsWith(".json"))
+          name.contains("/_delta_log/") && (name.endsWith(".json") || name.contains("checkpoint.parquet"))
         if (found) {
           logDebug(s"Fallback for FileSourceScanExec delta log: $f")
         }
         found
       case rdd: RDDScanExec =>
-        // example rdd name: "Delta Table State #1 - file:///tmp/delta-table/_delta_log"
+        // example rdd name: "Delta Table State #1 - file:///tmp/delta-table/_delta_log" or
+        // "Scan ExistingRDD Delta Table Checkpoint with Stats #1 - file:///tmp/delta-table/_delta_log"
         val found = rdd.inputRDD != null &&
           rdd.inputRDD.name != null &&
-          rdd.inputRDD.name.startsWith("Delta Table State") &&
+          (rdd.inputRDD.name.startsWith("Delta Table State")
+            && rdd.inputRDD.name.startsWith("Delta Table Checkpoint")) &&
           rdd.inputRDD.name.endsWith("/_delta_log")
         if (found) {
           logDebug(s"Fallback for RDDScanExec delta log: $rdd")
