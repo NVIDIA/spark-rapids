@@ -25,6 +25,7 @@ import scala.util.control.NonFatal
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
 import com.nvidia.spark.rapids.shims.{AQEUtils, GpuBatchScanExec, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
+import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
@@ -4450,10 +4451,13 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         logDebug(s"Fallback for FileSourceScanExec with _databricks_internal: $f")
         true
       case f: FileSourceScanExec =>
-        // example filename: "file:/tmp/delta-table/_delta_log/00000000000000000000.json"
+        // example filename: "file:/tmp/delta-table/_delta_log/00000000000000000000.json" or
+        // file:/tmp/delta-table/_delta_log/000.checkpoint.1111.parquet or
+        // file:/tmp/delta-table/_delta_log/checkpoint.parquet
         val found = f.relation.inputFiles.exists{ name =>
           name.contains("/_delta_log/") &&
-          (name.endsWith(".json") || name.contains("checkpoint.parquet"))
+          (name.endsWith(".json") ||
+            (name.endsWith(".parquet") && new Path(name).getName().contains("checkpoint")))
         }
         if (found) {
           logDebug(s"Fallback for FileSourceScanExec delta log: $f")
