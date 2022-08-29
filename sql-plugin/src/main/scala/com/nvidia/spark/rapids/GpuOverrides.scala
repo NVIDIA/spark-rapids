@@ -1680,9 +1680,7 @@ object GpuOverrides extends Logging {
       }),
     expr[KnownFloatingPointNormalized](
       "Tag to prevent redundant normalization",
-      ExprChecks.unaryProjectInputMatchesOutput(
-        (TypeSig.DOUBLE + TypeSig.FLOAT + TypeSig.ARRAY + TypeSig.commonCudfTypes).nested(),
-        (TypeSig.DOUBLE + TypeSig.FLOAT + TypeSig.ARRAY + TypeSig.commonCudfTypes).nested()),
+      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.all, TypeSig.all),
       (a, conf, p, r) => new UnaryExprMeta[KnownFloatingPointNormalized](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuKnownFloatingPointNormalized(child)
