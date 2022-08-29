@@ -361,11 +361,10 @@ object GpuOrcScan extends Arm {
         // null. We followed the CPU code here.
         withResource(milliSeconds) { _ =>
           // Test whether if there is long-overflow
-          // If milliSeconds.max() > LONG_MAX, then milliSeconds.max().getDouble.toLong will return
-          // LONG_MAX. If milliSeconds.max() * 1000 > LONG_MAX, then 'Math.multiplyExact' will
+          // If milliSeconds.max() * 1000 > LONG_MAX, then 'Math.multiplyExact' will
           // throw an exception (as CPU code does).
           if (milliSeconds.max() != null) {
-            Math.multiplyExact(milliSeconds.max().getDouble.toLong, 1000L)
+            testLongMultiplicationOverflow(milliSeconds.max().getDouble.toLong, 1000L)
           }
           withResource(milliSeconds.mul(Scalar.fromDouble(1000.0))) { microSeconds =>
             withResource(microSeconds.castTo(DType.INT64)) { longVec =>
