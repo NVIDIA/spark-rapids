@@ -51,12 +51,14 @@ parquet_basic_gen =[byte_gen, short_gen, int_gen, long_gen, float_gen, double_ge
                     string_gen, boolean_gen, date_gen,
                     # we are limiting TimestampGen to avoid overflowing the INT96 value
                     # see https://github.com/rapidsai/cudf/issues/8070
-                    limited_timestamp()]
+                    limited_timestamp(), binary_gen]
 
 parquet_basic_map_gens = [MapGen(f(nullable=False), f()) for f in [
     BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DateGen,
     limited_timestamp]] + [simple_string_to_string_map_gen,
-                           MapGen(DecimalGen(20, 2, nullable=False), decimal_gen_128bit)]
+                           MapGen(DecimalGen(20, 2, nullable=False), decimal_gen_128bit),
+                           # python is not happy with binary values being keys of a map
+                           MapGen(StringGen("a{1,5}", nullable=False), binary_gen)]
 
 parquet_struct_gen_no_maps = [
     StructGen([['child' + str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_basic_gen)]),
@@ -81,7 +83,7 @@ parquet_map_gens_sample = parquet_basic_map_gens + [MapGen(StringGen(pattern='ke
 parquet_map_gens = parquet_map_gens_sample + [
     MapGen(StructGen([['child0', StringGen()], ['child1', StringGen()]], nullable=False), FloatGen()),
     MapGen(StructGen([['child0', StringGen(nullable=True)]], nullable=False), StringGen())]
-parquet_write_gens_list = [parquet_basic_gen, decimal_gens] +  [ [single_gen] for single_gen in parquet_struct_gen + parquet_array_gen + parquet_map_gens]
+parquet_write_gens_list = [[binary_gen], parquet_basic_gen, decimal_gens] +  [ [single_gen] for single_gen in parquet_struct_gen + parquet_array_gen + parquet_map_gens]
 parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
@@ -95,12 +97,33 @@ def test_write_round_trip(spark_tmp_path, parquet_gens):
             data_path,
             conf=writer_confs)
 
+# `TIMESTAMP_MILLIS` can't be handled correctly when the input is of nested types containing timestamp.
+# See issue https://github.com/NVIDIA/spark-rapids/issues/6302.
+# Thus, we exclude `TIMESTAMP_MILLIS` from the tests here.
+# When the issue is resolved, unify this test with the test below.
+parquet_ts_write_options_no_millis = ['INT96', 'TIMESTAMP_MICROS']
 @pytest.mark.parametrize('parquet_gens', [[
     limited_timestamp(),
     ArrayGen(limited_timestamp(), max_length=10),
     MapGen(limited_timestamp(nullable=False), limited_timestamp())]], ids=idfn)
+@pytest.mark.parametrize('ts_type', parquet_ts_write_options_no_millis)
+def test_timestamp_write_round_trip_no_millis(spark_tmp_path, parquet_gens, ts_type):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    all_confs = copy_and_update(writer_confs, {'spark.sql.parquet.outputTimestampType': ts_type})
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        conf=all_confs)
+
+# `TIMESTAMP_MILLIS` can't be handled correctly when the input is of nested types containing timestamp.
+# See issue https://github.com/NVIDIA/spark-rapids/issues/6302.
+# Thus, we exclude nested types contaning timestamp from the tests here.
+# When the issue is resolved, unify this test with the test above.
+@pytest.mark.parametrize('parquet_gens', [[limited_timestamp()]], ids=idfn)
 @pytest.mark.parametrize('ts_type', parquet_ts_write_options)
-def test_timestamp_write_round_trip(spark_tmp_path, parquet_gens, ts_type):
+def test_timestamp_write_round_trip_no_nested_timestamp(spark_tmp_path, parquet_gens, ts_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = copy_and_update(writer_confs, {'spark.sql.parquet.outputTimestampType': ts_type})

@@ -423,7 +423,19 @@ case class GpuSortArray(base: Expression, ascendingOrder: Expression)
   }
 }
 
-case class GpuArrayMin(child: Expression) extends GpuUnaryExpression with ImplicitCastInputTypes {
+object GpuArrayMin {
+  def apply(child: Expression): GpuArrayMin = {
+    child.dataType match {
+      case ArrayType(FloatType | DoubleType, _) => GpuFloatArrayMin(child)
+      case ArrayType(_, _) => GpuBasicArrayMin(child)
+      case _ => throw new IllegalStateException(s"array_min accepts only arrays.")
+    }
+  }
+}
+
+abstract class GpuArrayMin(child: Expression) extends GpuUnaryExpression 
+  with ImplicitCastInputTypes 
+  with Serializable {
 
   override def nullable: Boolean = true
 
@@ -440,7 +452,104 @@ case class GpuArrayMin(child: Expression) extends GpuUnaryExpression with Implic
     input.getBase.listReduce(SegmentedReductionAggregation.min())
 }
 
-case class GpuArrayMax(child: Expression) extends GpuUnaryExpression with ImplicitCastInputTypes {
+/** ArrayMin without `Nan` handling */
+case class GpuBasicArrayMin(child: Expression) extends GpuArrayMin(child)
+
+/** ArrayMin for FloatType and DoubleType to handle `Nan`s.
+ *
+ * In Spark, `Nan` is the max float value, however in cuDF, the calculation
+ * involving `Nan` is undefined.
+ * We design a workaround method here to match the Spark's behaviour.
+ * The high level idea is:
+ *   if one list contains only `Nan`s or `null`s
+ *   then
+       if the list contains `Nan`
+ *     then return `Nan`
+ *     else return null
+ *   else
+ *     replace all `Nan`s with nulls;
+ *     use cuDF kernel to find the min value
+ */
+case class GpuFloatArrayMin(child: Expression) extends GpuArrayMin(child) {
+    @transient override lazy val dataType: DataType = child.dataType match {
+    case ArrayType(FloatType, _) => FloatType
+    case ArrayType(DoubleType, _) => DoubleType
+    case _ => throw new IllegalStateException(
+      s"GpuFloatArrayMin accepts only float array and double array."
+    )
+  }
+
+  protected def getNanScalar: Scalar = dataType match {
+    case FloatType => Scalar.fromFloat(Float.NaN)
+    case DoubleType => Scalar.fromDouble(Double.NaN)
+    case t => throw new IllegalStateException(s"dataType $t is not FloatType or DoubleType")
+  }
+
+  protected def getNullScalar: Scalar = dataType match {
+    case FloatType => Scalar.fromNull(DType.FLOAT32)
+    case DoubleType => Scalar.fromNull(DType.FLOAT64)
+    case t => throw new IllegalStateException(s"dataType $t is not FloatType or DoubleType")
+  }
+
+  override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
+    val listAll = SegmentedReductionAggregation.all()
+    val listAny = SegmentedReductionAggregation.max()
+    val base = input.getBase()
+
+    withResource(base.getChildColumnView(0)) { child =>
+      withResource(child.isNan()){ childIsNan =>
+        // if all values in each list are nans or nulls
+        val allNanOrNull = {
+          val childIsNanOrNull = withResource(child.isNull()) {_.or(childIsNan)}
+          val nanOrNullList = withResource(childIsNanOrNull) {base.replaceListChild(_)}
+          withResource(nanOrNullList) {_.listReduce(listAll)}
+        }
+        withResource(allNanOrNull){ allNanOrNull =>
+          // return nan if the list contains nan, else return null
+          val trueOption = {
+            val anyNan = withResource(base.replaceListChild(childIsNan)) {
+              _.listReduce(listAny)
+            }
+            withResource(anyNan) { anyNan =>
+              withResource(getNanScalar) { nanScalar =>
+                withResource(getNullScalar) { nullScalar =>
+                  anyNan.ifElse(nanScalar, nullScalar)
+                }
+              }
+            }
+          }
+          withResource(trueOption){ trueOption =>
+            // replace all nans to nulls, and then find the min value.
+            val falseOption = withResource(child.nansToNulls()) { nanToNullChild =>
+              withResource(base.replaceListChild(nanToNullChild)) { nanToNullList =>
+                nanToNullList.listReduce(SegmentedReductionAggregation.min())
+              }
+            }
+            // if a list contains values other than nan or null
+            // return `trueOption`, else return `falseOption`.
+            withResource(falseOption){ falseOption =>
+              allNanOrNull.ifElse(trueOption, falseOption)
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+object GpuArrayMax {
+  def apply(child: Expression): GpuArrayMax = {
+    child.dataType match {
+      case ArrayType(FloatType | DoubleType, _) => GpuFloatArrayMax(child)
+      case ArrayType(_, _) => GpuBasicArrayMax(child)
+      case _ => throw new IllegalStateException(s"array_max accepts only arrays.")
+    }
+  }
+}
+
+abstract class GpuArrayMax(child: Expression) extends GpuUnaryExpression
+  with ImplicitCastInputTypes
+  with Serializable{
 
   override def nullable: Boolean = true
 
@@ -455,6 +564,44 @@ case class GpuArrayMax(child: Expression) extends GpuUnaryExpression with Implic
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector =
     input.getBase.listReduce(SegmentedReductionAggregation.max())
+}
+
+/** ArrayMax without `NaN` handling */
+case class GpuBasicArrayMax(child: Expression) extends GpuArrayMax(child)
+
+/** ArrayMax for FloatType and DoubleType to handle `Nan`s.
+ *
+ * In Spark, `Nan` is the max float value, however in cuDF, the calculation
+ * involving `Nan` is undefined.
+ * We design a workaround method here to match the Spark's behaviour.
+ * The high level idea is that, we firstly check if each list contains `Nan`.
+ * If it is, the max value is `Nan`, else we use the cuDF kernel to
+ * calculate the max value.
+ */
+case class GpuFloatArrayMax(child: Expression) extends GpuArrayMax(child){
+  @transient override lazy val dataType: DataType = child.dataType match {
+    case ArrayType(FloatType, _) => FloatType
+    case ArrayType(DoubleType, _) => DoubleType
+    case _ => throw new IllegalStateException(
+      s"GpuFloatArrayMax accepts only float array and double array."
+    )
+  }
+
+  protected def getNanSalar: Scalar = dataType match {
+    case FloatType => Scalar.fromFloat(Float.NaN)
+    case DoubleType => Scalar.fromDouble(Double.NaN)
+    case t => throw new IllegalStateException(s"dataType $t is not FloatType or DoubleType")
+  }
+
+  override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
+    withResource(getNanSalar){nan =>
+      withResource(input.getBase().listContains(nan)){hasNan =>
+        withResource(input.getBase().listReduce(SegmentedReductionAggregation.max())) {max =>
+          hasNan.ifElse(nan, max)
+        }
+      }
+    }
+  }
 }
 
 case class GpuArrayRepeat(left: Expression, right: Expression) extends GpuBinaryExpression {

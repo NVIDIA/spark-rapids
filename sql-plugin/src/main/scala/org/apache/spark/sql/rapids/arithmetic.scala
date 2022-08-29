@@ -394,7 +394,7 @@ case class GpuDecimalMultiply(
     left: Expression,
     right: Expression,
     dataType: DecimalType,
-    needsExtraOverflowChecks: Boolean = false,
+    useLongMultiply: Boolean = false,
     failOnError: Boolean = SQLConf.get.ansiEnabled) extends
     ShimExpression with GpuExpression {
 
@@ -409,7 +409,7 @@ case class GpuDecimalMultiply(
   private[this] lazy val intermediateResultType =
     GpuDecimalMultiply.intermediateResultType(lhsType, rhsType, dataType)
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  def regularMultiply(batch: ColumnarBatch): Any = {
     val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
       GpuCast.doCast(lhs.getBase, lhs.dataType(), intermediateLhsType, ansiMode = failOnError,
         legacyCastToString = false, stringToDateAnsiModeEnabled = false)
@@ -422,7 +422,7 @@ case class GpuDecimalMultiply(
       withResource(castRhs) { castRhs =>
         withResource(castLhs.mul(castRhs,
           GpuColumnVector.getNonNestedRapidsType(intermediateResultType))) { mult =>
-          if (needsExtraOverflowChecks) {
+          if (useLongMultiply) {
             withResource(GpuDecimalMultiply.checkForOverflow(castLhs, castRhs)) { wouldOverflow =>
               if (failOnError) {
                 withResource(wouldOverflow.any()) { anyOverflow =>
@@ -447,6 +447,43 @@ case class GpuDecimalMultiply(
       GpuColumnVector.from(GpuCast.doCast(ret, intermediateResultType, dataType,
         ansiMode = failOnError, legacyCastToString = false, stringToDateAnsiModeEnabled = false),
         dataType)
+    }
+  }
+
+  def longMultiply(batch: ColumnarBatch): Any = {
+    val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
+      lhs.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL128, lhs.getBase.getType.getScale))
+    }
+    val retTab = withResource(castLhs) { castLhs =>
+      val castRhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(right, batch)) { rhs =>
+        rhs.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL128, rhs.getBase.getType.getScale))
+      }
+      withResource(castRhs) { castRhs =>
+        com.nvidia.spark.rapids.jni.DecimalUtils.multiply128(castLhs, castRhs, -dataType.scale)
+      }
+    }
+    val retCol = withResource(retTab) { retTab =>
+      if (failOnError) {
+        withResource(retTab.getColumn(0).any()) { anyOverflow =>
+          if (anyOverflow.isValid && anyOverflow.getBoolean) {
+            throw new ArithmeticException(GpuCast.INVALID_INPUT_MESSAGE)
+          }
+        }
+        retTab.getColumn(1).incRefCount()
+      } else {
+        withResource(GpuScalar.from(null, dataType)) { nullVal =>
+          retTab.getColumn(0).ifElse(nullVal, retTab.getColumn(1))
+        }
+      }
+    }
+    GpuColumnVector.from(retCol, dataType)
+  }
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    if (useLongMultiply) {
+      longMultiply(batch)
+    } else {
+      regularMultiply(batch)
     }
   }
 

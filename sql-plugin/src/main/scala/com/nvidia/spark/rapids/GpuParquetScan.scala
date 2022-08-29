@@ -63,7 +63,6 @@ import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{DataSourceUtils, PartitionedFile, PartitioningAwareFileIndex, SchemaColumnConvertNotSupportedException}
-import org.apache.spark.sql.execution.datasources.parquet.SparkToParquetSchemaConverter
 import org.apache.spark.sql.execution.datasources.v2.FileScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.internal.SQLConf
@@ -766,10 +765,18 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
           }
         }
       case array: ArrayType =>
-        val fileChild = fileType.asGroupType().getType(0)
-          .asGroupType().getType(0)
-        checkSchemaCompat(fileChild, array.elementType, errorCallback, isCaseSensitive, useFieldId,
-          rootFileType, rootReadType)
+        if (fileType.isPrimitive) {
+          if (fileType.getRepetition == Type.Repetition.REPEATED) {
+            checkSchemaCompat(fileType, array.elementType, errorCallback, isCaseSensitive,
+              useFieldId, rootFileType, rootReadType)
+          } else {
+            errorCallback(fileType, readType)
+          }
+        } else {
+          val fileChild = fileType.asGroupType().getType(0).asGroupType().getType(0)
+          checkSchemaCompat(fileChild, array.elementType, errorCallback, isCaseSensitive,
+            useFieldId, rootFileType, rootReadType)
+        }
 
       case map: MapType =>
         val parquetMap = fileType.asGroupType().getType(0).asGroupType()
@@ -977,6 +984,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       files: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
     val clippedBlocks = ArrayBuffer[ParquetSingleDataBlockMeta]()
+    val currentTime = System.nanoTime()
     files.map { file =>
       val singleFileInfo = try {
         filterHandler.filterBlocks(footerReadType, file, conf, filters, readDataSchema)
@@ -1003,6 +1011,9 @@ case class GpuParquetMultiFilePartitionReaderFactory(
           ParquetSchemaWrapper(singleFileInfo.schema),
           ParquetExtraInfo(singleFileInfo.isCorrectedRebaseMode,
             singleFileInfo.isCorrectedInt96RebaseMode, singleFileInfo.hasInt96Timestamps)))
+    }
+    metrics.get("scanTime").foreach {
+      _ += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - currentTime)
     }
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks,
       isCaseSensitive, readDataSchema, debugDumpPrefix,
@@ -1331,14 +1342,13 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
    *
    * @param isCaseSensitive if it is case sensitive
    * @param useFieldId if enabled `spark.sql.parquet.fieldId.read.enabled`
-   * @return a sequence of tuple of (column names, column dataType) following the order of
-   *         readDataSchema
+   * @return a sequence of tuple of column names following the order of readDataSchema
    */
-  protected def toCudfColumnNamesAndDataTypes(
+  protected def toCudfColumnNames(
       readDataSchema: StructType,
       fileSchema: MessageType,
       isCaseSensitive: Boolean,
-      useFieldId: Boolean): Seq[(String, StructField)] = {
+      useFieldId: Boolean): Seq[String] = {
 
     // map from field ID to the parquet column name
     val fieldIdToNameMap = ParquetSchemaClipShims.fieldIdToNameMap(useFieldId, fileSchema)
@@ -1374,37 +1384,32 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       clippedReadFields.map { f =>
         if (useFieldId && ParquetSchemaClipShims.hasFieldId(f)) {
           // find the parquet column name
-          (fieldIdToNameMap(ParquetSchemaClipShims.getFieldId(f)), f)
+          fieldIdToNameMap(ParquetSchemaClipShims.getFieldId(f))
         } else {
-          (m.get(f.name).getOrElse(f.name), f)
+          m.get(f.name).getOrElse(f.name)
         }
       }
     } else {
       clippedReadFields.map { f =>
         if (useFieldId && ParquetSchemaClipShims.hasFieldId(f)) {
-          (fieldIdToNameMap(ParquetSchemaClipShims.getFieldId(f)), f)
+          fieldIdToNameMap(ParquetSchemaClipShims.getFieldId(f))
         } else {
-          (f.name, f)
+          f.name
         }
       }
     }
   }
 
-  val sparkToParquetSchema = new SparkToParquetSchemaConverter()
   def getParquetOptions(
       readDataSchema: StructType,
       clippedSchema: MessageType,
       useFieldId: Boolean): ParquetOptions = {
-    val includeColumns = toCudfColumnNamesAndDataTypes(readDataSchema, clippedSchema,
+    val includeColumns = toCudfColumnNames(readDataSchema, clippedSchema,
       isSchemaCaseSensitive, useFieldId)
-    val builder = ParquetOptions.builder().withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
-    includeColumns.foreach { t =>
-      builder.includeColumn(t._1,
-        t._2.dataType == BinaryType &&
-            sparkToParquetSchema.convertField(t._2).asPrimitiveType().getPrimitiveTypeName
-                == PrimitiveTypeName.BINARY)
-    }
-    builder.build()
+    ParquetOptions.builder()
+        .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
+        .includeColumn(includeColumns : _*)
+        .build()
   }
 }
 

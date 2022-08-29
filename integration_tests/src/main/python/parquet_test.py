@@ -145,9 +145,14 @@ def test_parquet_read_round_trip_binary(std_input_path, read_func, binary_as_str
 
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('binary_as_string', [True, False])
-def test_binary_df_read(spark_tmp_path, binary_as_string, read_func):
+@pytest.mark.parametrize('data_gen', [binary_gen,
+    ArrayGen(binary_gen),
+    StructGen([('a_1', binary_gen), ('a_2', string_gen)]),
+    StructGen([('a_1', ArrayGen(binary_gen))]),
+    MapGen(ByteGen(nullable=False), binary_gen)], ids=idfn)
+def test_binary_df_read(spark_tmp_path, binary_as_string, read_func, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    with_cpu_session(lambda spark: unary_op_df(spark, StringGen()).selectExpr("cast(a as binary)").write.parquet(data_path))
+    with_cpu_session(lambda spark: unary_op_df(spark, data_gen).write.parquet(data_path))
     all_confs = {
         'spark.sql.parquet.binaryAsString': binary_as_string,
         # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU

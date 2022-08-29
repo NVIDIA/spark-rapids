@@ -19,8 +19,11 @@ set -ex
 
 LOCAL_JAR_PATH=${LOCAL_JAR_PATH:-''}
 SPARK_CONF=${SPARK_CONF:-''}
-BASE_SPARK_VER=${BASE_SPARK_VER:-'3.1.2'}
-[[ -z $SPARK_SHIM_VER ]] && export SPARK_SHIM_VER=spark${BASE_SPARK_VER//.}db
+BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-'3.1.2'}
+[[ -z $SPARK_SHIM_VER ]] && export SPARK_SHIM_VER=spark${BASE_SPARK_VERSION//.}db
+
+# install required packages
+sudo apt -y install zip unzip
 
 # Try to use "cudf-udf" conda environment for the python cudf-udf tests.
 if [ -d "/databricks/conda/envs/cudf-udf" ]; then
@@ -34,7 +37,7 @@ export SPARK_HOME=/databricks/spark
 # change to not point at databricks confs so we don't conflict with their settings
 export SPARK_CONF_DIR=$PWD
 export PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/pyspark/:$SPARK_HOME/python/lib/py4j-0.10.9-src.zip
-if [[ $BASE_SPARK_VER == "3.2.1" ]]
+if [[ $BASE_SPARK_VERSION == "3.2.1" ]]
 then
   # Databricks Koalas can conflict with the actual Pandas version, so put site packages first
   export PYTHONPATH=/databricks/python3/lib/python3.8/site-packages:$PYTHONPATH
@@ -65,7 +68,7 @@ if [ -n "$SPARK_CONF" ]; then
 fi
 
 IS_SPARK_311_OR_LATER=0
-[[ "$(printf '%s\n' "3.1.1" "$BASE_SPARK_VER" | sort -V | head -n1)" = "3.1.1" ]] && IS_SPARK_311_OR_LATER=1
+[[ "$(printf '%s\n' "3.1.1" "$BASE_SPARK_VERSION" | sort -V | head -n1)" = "3.1.1" ]] && IS_SPARK_311_OR_LATER=1
 
 
 # TEST_MODE
@@ -78,12 +81,11 @@ TEST_TYPE="nightly"
 PCBS_CONF="com.nvidia.spark.ParquetCachedBatchSerializer"
 
 ICEBERG_VERSION=${ICEBERG_VERSION:-0.13.2}
-ICEBERG_SPARK_VER=$(echo $BASE_SPARK_VER | cut -d. -f1,2)
+ICEBERG_SPARK_VER=$(echo $BASE_SPARK_VERSION | cut -d. -f1,2)
 # Classloader config is here to work around classloader issues with
 # --packages in distributed setups, should be fixed by
 # https://github.com/NVIDIA/spark-rapids/pull/5646
-ICEBERG_CONFS="--conf spark.rapids.force.caller.classloader=false \
- --packages org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_2.12:${ICEBERG_VERSION} \
+ICEBERG_CONFS="--packages org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_2.12:${ICEBERG_VERSION} \
  --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
  --conf spark.sql.catalog.spark_catalog=org.apache.iceberg.spark.SparkSessionCatalog \
  --conf spark.sql.catalog.spark_catalog.type=hadoop \
