@@ -21,13 +21,14 @@ import java.net.URI
 import com.nvidia.spark.rapids.shims.{ShimUnaryCommand, ShimUnaryExecNode}
 import org.apache.hadoop.conf.Configuration
 
+import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{Row, SaveMode, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.command.DataWritingCommand
-import org.apache.spark.sql.execution.metric.SQLMetric
+import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
@@ -86,6 +87,22 @@ object GpuDataWritingCommand {
               s"set '$allowNonEmptyLocationInCTASKey' to true.")
       }
     }
+  }
+
+  /**
+   * When execute CTAS operators, the write can be delegated to a sub-command
+   * and we need to propagate the metrics from that sub-command to the
+   * parent command.
+   * Derived from Spark's DataWritingCommand.propagateMetrics
+   */
+  def propogateMetrics(
+      sparkContext: SparkContext,
+      command: GpuDataWritingCommand,
+      metrics: Map[String, SQLMetric]): Unit = {
+    command.metrics.foreach { case (key, metric) => metrics(key).set(metric.value) }
+    SQLMetrics.postDriverMetricUpdates(sparkContext,
+      sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY),
+      metrics.values.toSeq)
   }
 }
 
