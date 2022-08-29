@@ -929,6 +929,10 @@ case class GpuDecimalDivide(
 }
 
 object GpuDecimalDivide {
+  // This comes from DecimalType.MINIMUM_ADJUSTED_SCALE, but for some reason it is gone
+  // in databricks so we have it here.
+  private val MINIMUM_ADJUSTED_SCALE = 6
+
   def calcOrigSparkOutputType(lhs: DecimalType, rhs: DecimalType): DecimalType = {
     // This comes almost directly from Spark unchanged
     val allowPrecisionLoss = SQLConf.get.decimalOperationsAllowPrecisionLoss
@@ -940,7 +944,7 @@ object GpuDecimalDivide {
       // Precision: p1 - s1 + s2 + max(6, s1 + p2 + 1)
       // Scale: max(6, s1 + p2 + 1)
       val intDig = p1 - s1 + s2
-      val scale = math.max(DecimalType.MINIMUM_ADJUSTED_SCALE, s1 + p2 + 1)
+      val scale = math.max(MINIMUM_ADJUSTED_SCALE, s1 + p2 + 1)
       val prec = intDig + scale
       DecimalType.adjustPrecisionScale(prec, scale)
     } else {
