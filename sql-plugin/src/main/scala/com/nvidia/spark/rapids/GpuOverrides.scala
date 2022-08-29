@@ -4433,8 +4433,8 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   }
 
   /**
-   *  Determine whether query is running against Delta Lake _delta_log JSON files
-   *  or if Delta is doing stats collection that ends up hardcoding the use of AQE,
+   *  Determine whether query is running against Delta Lake _delta_log JSON files or
+   *  if Delta is doing stats collection that ends up hardcoding the use of AQE,
    *  even though the AQE setting is disabled. To protect against the latter, we
    *  check for a ScalaUDF using a tahoe.Snapshot function and if we ever see
    *  an AdaptiveSparkPlan on a Spark version we don't expect, fallback to the
