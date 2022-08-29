@@ -47,7 +47,8 @@ mvn_verify() {
     IFS=$', ' <<< $SPARK_VERSIONS_NOSNAPSHOTS_STR read -r -a SPARK_SHIM_VERSIONS_NOSNAPSHOTS
     IFS=$oldIFS
     SPARK_SHIM_VERSIONS_TEST=("311" "320" "330")
-    build the Spark 2.x explain jar
+
+    # build the Spark 2.x explain jar
     env -u SPARK_HOME $MVN_CMD -B $MVN_URM_MIRROR -Dbuildver=24X clean install -DskipTests
 
     MVN_INSTALL_CMD="env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR clean install $MVN_BUILD_ARGS -DskipTests -pl aggregator -am"
