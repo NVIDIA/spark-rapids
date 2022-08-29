@@ -48,10 +48,13 @@ _decimal_gen_38_0 = DecimalGen(precision=38, scale=0)
 _decimal_gen_38_10 = DecimalGen(precision=38, scale=10)
 _decimal_gen_38_neg10 = DecimalGen(precision=38, scale=-10)
 
-_arith_data_gens_diff_precision_scale_and_no_neg_scale = [
+_arith_data_gens_diff_precision_scale_and_no_neg_scale_no_38_0 = [
     decimal_gen_32bit, decimal_gen_64bit, _decimal_gen_18_0, decimal_gen_128bit,
-    _decimal_gen_30_2, _decimal_gen_36_5, _decimal_gen_38_0, _decimal_gen_38_10
+    _decimal_gen_30_2, _decimal_gen_36_5, _decimal_gen_38_10
 ]
+
+_arith_data_gens_diff_precision_scale_and_no_neg_scale = \
+    _arith_data_gens_diff_precision_scale_and_no_neg_scale_no_38_0 + [_decimal_gen_38_0]
 
 _arith_decimal_gens_no_neg_scale = _arith_data_gens_diff_precision_scale_and_no_neg_scale + [_decimal_gen_7_7]
 
@@ -62,6 +65,12 @@ _arith_decimal_gens = _arith_decimal_gens_no_neg_scale + [
 _arith_data_gens = numeric_gens + _arith_decimal_gens
 
 _arith_data_gens_no_neg_scale = numeric_gens + _arith_decimal_gens_no_neg_scale
+
+_arith_decimal_gens_no_neg_scale_38_0_overflow = \
+    _arith_data_gens_diff_precision_scale_and_no_neg_scale_no_38_0 + [
+        _decimal_gen_7_7,
+        pytest.param(_decimal_gen_38_0, marks=pytest.mark.skipif(
+            is_spark_330_or_later(), reason='This case overflows in Spark 3.3.0+'))]
 
 def _get_overflow_df(spark, data, data_type, expr):
     return spark.createDataFrame(
@@ -458,7 +467,7 @@ def test_floor_scale_zero(data_gen):
 
 @pytest.mark.skipif(is_before_spark_330(), reason='scale parameter in Floor function is not supported before Spark 3.3.0')
 @allow_non_gpu('ProjectExec')
-@pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale, ids=idfn)
+@pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale_38_0_overflow, ids=idfn)
 def test_floor_scale_nonzero(data_gen):
     assert_gpu_fallback_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a, -1)'), 'RoundFloor')
@@ -529,7 +538,7 @@ def test_shift_right_unsigned(data_gen):
                 'shiftrightunsigned(a, cast(null as INT))',
                 'shiftrightunsigned(a, b)'))
 
-_arith_data_gens_for_round = numeric_gens +  _arith_decimal_gens_no_neg_scale + [
+_arith_data_gens_for_round = numeric_gens + _arith_decimal_gens_no_neg_scale_38_0_overflow + [
     decimal_gen_32bit_neg_scale,
     DecimalGen(precision=15, scale=-8),
     DecimalGen(precision=30, scale=-5),
