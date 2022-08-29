@@ -3744,7 +3744,7 @@ object GpuOverrides extends Logging {
               })
           )
           if (arrayWithStructsHashing) {
-            willNotWorkOnGpu(s"GPU does not currently support the operator")
+            willNotWorkOnGpu("hashing arrays with structs is not supported")
           }
         }
 
