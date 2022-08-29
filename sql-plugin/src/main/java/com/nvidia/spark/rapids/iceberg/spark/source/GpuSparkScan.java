@@ -198,15 +198,17 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
     private final scala.collection.immutable.Set<String> allCloudSchemes;
     private final boolean canUseParquetMultiThread;
     private final boolean canUseParquetCoalescing;
+    private final boolean isParquetPerFileReadEnabled;
 
     public ReaderFactory(scala.collection.immutable.Map<String, GpuMetric> metrics,
                          RapidsConf rapidsConf, boolean queryUsesInputFile) {
       this.metrics = metrics;
       this.allCloudSchemes = rapidsConf.getCloudSchemes().toSet();
+      this.isParquetPerFileReadEnabled = rapidsConf.isParquetPerFileReadEnabled();
       this.canUseParquetMultiThread = rapidsConf.isParquetMultiThreadReadEnabled();
       // Here ignores the "ignoreCorruptFiles" comparing to the code in
       // "GpuParquetMultiFilePartitionReaderFactory", since "ignoreCorruptFiles" is
-      // always false for Iceberg.
+      // not honored by Iceberg.
       this.canUseParquetCoalescing = rapidsConf.isParquetCoalesceFileReadEnabled() &&
           !queryUsesInputFile;
     }
@@ -249,6 +251,7 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
      */
     private scala.Tuple3<Boolean, Boolean, FileFormat> multiFileReadCheck(ReadTask readTask) {
       Collection<FileScanTask> scans = readTask.files();
+      boolean isSingleFormat = false, isPerFileReadEnabled = false;
       boolean canUseMultiThread = false, canUseCoalescing = false;
       FileFormat ff = null;
       // Require all the files in a partition have the same file format.
@@ -256,9 +259,11 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
         // Now only Parquet is supported.
         canUseMultiThread = canUseParquetMultiThread;
         canUseCoalescing = canUseParquetCoalescing;
+        isPerFileReadEnabled = isParquetPerFileReadEnabled;
+        isSingleFormat = true;
         ff = FileFormat.PARQUET;
       }
-      boolean canAccelerateRead = canUseMultiThread || canUseCoalescing;
+      boolean canAccelerateRead = !isPerFileReadEnabled && isSingleFormat;
       String[] files = scans.stream().map(f -> f.file().path().toString())
           .toArray(String[]::new);
       // Get the final decision for the subtype of the Rapids reader.

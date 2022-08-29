@@ -537,3 +537,19 @@ def test_iceberg_v2_delete_unsupported(spark_tmp_table_factory, reader_type):
             lambda spark : spark.sql("SELECT * FROM {}".format(table)).collect(),
             conf={'spark.rapids.sql.format.parquet.reader.type': reader_type}),
         "UnsupportedOperationException: Delete filter is not supported")
+
+
+@iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+def test_iceberg_parquet_read_with_input_file(spark_tmp_table_factory, reader_type):
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = binary_op_df(spark, long_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} USING ICEBERG AS SELECT * FROM {}".format(table, tmpview))
+    with_cpu_session(setup_iceberg_table)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT *, input_file_name() FROM {}".format(table)),
+        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})

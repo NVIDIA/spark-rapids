@@ -746,15 +746,16 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * A callback to finalize the output batch. The batch returned will be the final
    * output batch of the reader's "get" method.
    *
-   * @param batch the batch after decoding, adding partitioned columns. Users need to
-   *              close it if no longer used.
+   * @param batch the batch after decoding, adding partitioned columns.
    * @param extraInfo the corresponding extra information of the input batch.
    * @return the finalized columnar batch.
    */
   protected def finalizeOutputBatch(
       batch: ColumnarBatch,
       extraInfo: ExtraInfo): ColumnarBatch = {
-    batch
+    // Equivalent to return the input batch directly.
+    val cols = GpuColumnVector.extractColumns(batch).toSeq.safeMap(_.incRefCount())
+    new ColumnarBatch(cols.toArray, batch.numRows)
   }
 
   override def next(): Boolean = {
@@ -812,7 +813,9 @@ abstract class MultiFileCoalescingPartitionReaderBase(
           table.foreach(_.close())
         }
       }
-      retBatch.map(b => finalizeOutputBatch(b, currentChunkMeta.extraInfo))
+      withResource(retBatch) { _ =>
+        retBatch.map(b => finalizeOutputBatch(b, currentChunkMeta.extraInfo))
+      }
     }
   }
 

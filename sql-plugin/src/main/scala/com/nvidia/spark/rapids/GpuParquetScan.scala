@@ -1010,7 +1010,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
           file.partitionValues,
           ParquetSchemaWrapper(singleFileInfo.schema),
           singleFileInfo.readSchema,
-          ParquetExtraInfo(singleFileInfo.isCorrectedRebaseMode,
+          new ParquetExtraInfo(singleFileInfo.isCorrectedRebaseMode,
             singleFileInfo.isCorrectedInt96RebaseMode, singleFileInfo.hasInt96Timestamps)))
     }
     metrics.get("scanTime").foreach {
@@ -1426,8 +1426,8 @@ private case class ParquetDataBlock(dataBlock: BlockMetaData) extends DataBlockB
 }
 
 /** Parquet extra information containing isCorrectedRebaseMode */
-case class ParquetExtraInfo(isCorrectedRebaseMode: Boolean,
-    isCorrectedInt96RebaseMode: Boolean, hasInt96Timestamps: Boolean) extends ExtraInfo
+class ParquetExtraInfo(val isCorrectedRebaseMode: Boolean,
+    val isCorrectedInt96RebaseMode: Boolean, val hasInt96Timestamps: Boolean) extends ExtraInfo
 
 // contains meta about a single block in a file
 private case class ParquetSingleDataBlockMeta(

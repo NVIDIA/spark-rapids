@@ -403,7 +403,8 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
           // do not coalesce.
           // Will try to figure out if it is possible to merge and add different
           // partition values correctly in the future, to allow coalescing even
-          // partition values differ but with the same partition schema.
+          // partition values differ but with the same partition schema,
+          // tracked by https://github.com/NVIDIA/spark-rapids/issues/6423.
           IcebergParquetExtraInfo curEInfo =
               (IcebergParquetExtraInfo)currentBlockInfo.extraInfo();
           IcebergParquetExtraInfo nextEInfo =
@@ -417,14 +418,12 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
 
         @Override
         public ColumnarBatch finalizeOutputBatch(ColumnarBatch batch, ExtraInfo extraInfo) {
-          try(ColumnarBatch input = batch) {
-            Map<Integer, ?> idToConsts = ((IcebergParquetExtraInfo)extraInfo).idToConstant();
-            Schema expectedSchema = ((IcebergParquetExtraInfo)extraInfo).expectedSchema();
-            return GpuIcebergReader.addUpcastsIfNeeded(
-                GpuIcebergReader.addConstantColumns(input, expectedSchema, idToConsts),
-                expectedSchema);
-          }
-        } // end of finalizeOutputBatch
+          Map<Integer, ?> idToConsts = ((IcebergParquetExtraInfo)extraInfo).idToConstant();
+          Schema expectedSchema = ((IcebergParquetExtraInfo)extraInfo).expectedSchema();
+          return GpuIcebergReader.addUpcastsIfNeeded(
+              GpuIcebergReader.addConstantColumns(batch, expectedSchema, idToConsts),
+              expectedSchema);
+        }
 
         private boolean samePartitionSpec(IcebergParquetExtraInfo curEInfo,
             IcebergParquetExtraInfo nextEInfo) {
