@@ -28,24 +28,23 @@ def create_orc(data_gen_list, data_path):
     )
 
 
-int_gens = [boolean_gen] + integral_gens
-@pytest.mark.parametrize('offset', list(range(1, len(int_gens))), ids=idfn)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
-def test_read_type_casting_integral(spark_tmp_path, offset, reader_confs, v1_enabled_list):
+@pytest.mark.parametrize('to_type', ['boolean', 'tinyint', 'smallint', 'int', 'bigint'])
+def test_casting_among_integer_types(spark_tmp_path, reader_confs, v1_enabled_list, to_type):
     # cast integral types to another integral types
+    int_gens = [boolean_gen] + integral_gens
     gen_list = [('c' + str(i), gen) for i, gen in enumerate(int_gens)]
     data_path = spark_tmp_path + '/ORC_DATA'
     create_orc(gen_list, data_path)
 
-    # build the read schema by a left shift of int_gens
-    shifted_int_gens = int_gens[offset:] + int_gens[:offset]
-    rs_gen_list = [('c' + str(i), gen) for i, gen in enumerate(shifted_int_gens)]
-    rs = StructGen(rs_gen_list, nullable=False).data_type
+    # generate schema string like "c0 to_type, c1 to_type, ..., c4 to_type"
+    schema_str = " {}, ".join([x[0] for x in gen_list]) + " {}"
+    schema_str = schema_str.format(*([to_type] * len(gen_list)))
     all_confs = copy_and_update(reader_confs,
                                 {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.schema(rs).orc(data_path),
+        lambda spark: spark.read.schema(schema_str).orc(data_path),
         conf=all_confs)
 
 
