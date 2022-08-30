@@ -4407,6 +4407,9 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
    *  check for a ScalaUDF using a tahoe.Snapshot function and if we ever see
    *  an AdaptiveSparkPlan on a Spark version we don't expect, fallback to the
    *  CPU for those plans.
+   *  Note that the Delta Lake delta log checkpoint parquet files are just inefficient
+   *  to have to copy the data to GPU and then back off after it does the scan on
+   *  Delta Table Checkpoint, so have the entire plan fallback to CPU at that point.
    */
   def isDeltaLakeMetadataQuery(plan: SparkPlan): Boolean = {
     val deltaLogScans = PlanUtils.findOperators(plan, {
@@ -4416,17 +4419,21 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         true
       case f: FileSourceScanExec =>
         // example filename: "file:/tmp/delta-table/_delta_log/00000000000000000000.json"
-        val found = f.relation.inputFiles.exists(name =>
-          name.contains("/_delta_log/") && name.endsWith(".json"))
+        val found = f.relation.inputFiles.exists { name =>
+          name.contains("/_delta_log/") && name.endsWith(".json")
+        }
         if (found) {
           logDebug(s"Fallback for FileSourceScanExec delta log: $f")
         }
         found
       case rdd: RDDScanExec =>
-        // example rdd name: "Delta Table State #1 - file:///tmp/delta-table/_delta_log"
+        // example rdd name: "Delta Table State #1 - file:///tmp/delta-table/_delta_log" or
+        // "Scan ExistingRDD Delta Table Checkpoint with Stats #1 -
+        // file:///tmp/delta-table/_delta_log"
         val found = rdd.inputRDD != null &&
           rdd.inputRDD.name != null &&
-          rdd.inputRDD.name.startsWith("Delta Table State") &&
+          (rdd.inputRDD.name.startsWith("Delta Table State")
+            || rdd.inputRDD.name.startsWith("Delta Table Checkpoint")) &&
           rdd.inputRDD.name.endsWith("/_delta_log")
         if (found) {
           logDebug(s"Fallback for RDDScanExec delta log: $rdd")
