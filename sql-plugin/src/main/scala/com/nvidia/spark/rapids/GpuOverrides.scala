@@ -985,40 +985,18 @@ object GpuOverrides extends Logging {
         private[this] lazy val rhsDecimalType =
           DecimalUtil.asDecimalType(rhs.wrapped.asInstanceOf[Expression].dataType)
 
-        override def tagExprForGpu(): Unit = {
-          a.child match {
-            // Division and Multiplication of Decimal types is a little odd. Spark will cast the
-            // inputs to a common wider value where the scale is the max of the two input scales,
-            // and the precision is max of the two input non-scale portions + the new scale. Then it
-            // will do the divide or multiply as a BigDecimal value but lie about the return type.
-            // Finally here in CheckOverflow it will reset the scale and check the precision so that
-            // Spark knows it fits in the final desired result.
-            // Here we try to strip out the extra casts, etc to get to as close to the original
-            // query as possible. This lets us then calculate what CUDF needs to get the correct
-            // answer, which in some cases is a lot smaller.
-            // For multiply we can support all of the types. For divide we still have to fall back
-            // to the CPU in some cases.
-            case _: Divide =>
-              val intermediatePrecision =
-                GpuDecimalDivide.nonRoundedIntermediateArgPrecision(lhsDecimalType,
-                  rhsDecimalType, a.dataType)
-
-              if (intermediatePrecision > DType.DECIMAL128_MAX_PRECISION) {
-                if (conf.needDecimalGuarantees) {
-                  binExpr.willNotWorkOnGpu(s"the intermediate precision of " +
-                      s"$intermediatePrecision that is required to guarantee no overflow issues " +
-                      s"for this divide is too large to be supported on the GPU")
-                } else {
-                  logWarning("Decimal overflow guarantees disabled for " +
-                      s"${lhs.dataType} / ${rhs.dataType} produces ${a.dataType} with an " +
-                      s"intermediate precision of $intermediatePrecision")
-                }
-              }
-            case _ => // NOOP
-          }
-        }
-
         override def convertToGpu(): GpuExpression = {
+          // Prior to Spark 3.4.0
+          // Division and Multiplication of Decimal types is a little odd. Spark will cast the
+          // inputs to a common wider value where the scale is the max of the two input scales,
+          // and the precision is max of the two input non-scale portions + the new scale. Then it
+          // will do the divide or multiply as a BigDecimal value but lie about the return type.
+          // Finally here in CheckOverflow it will reset the scale and check the precision so that
+          // Spark knows it fits in the final desired result.
+          // Here we try to strip out the extra casts, etc to get to as close to the original
+          // query as possible. This lets us then calculate what CUDF needs to get the correct
+          // answer, which in some cases is a lot smaller.
+
           a.child match {
             case _: Divide =>
               // GpuDecimalDivide includes the overflow check in it.
@@ -2135,10 +2113,7 @@ object GpuOverrides extends Logging {
     expr[Divide](
       "Division",
       ExprChecks.binaryProject(
-        TypeSig.DOUBLE + TypeSig.DECIMAL_128 +
-            TypeSig.psNote(TypeEnum.DECIMAL,
-              "Because of Spark's inner workings the full range of decimal precision " +
-                  "(even for 128-bit values) is not supported."),
+        TypeSig.DOUBLE + TypeSig.DECIMAL_128,
         TypeSig.DOUBLE + TypeSig.DECIMAL_128,
         ("lhs", TypeSig.DOUBLE + TypeSig.DECIMAL_128,
             TypeSig.DOUBLE + TypeSig.DECIMAL_128),

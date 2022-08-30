@@ -1461,11 +1461,20 @@ abstract class GpuDecimalAverage(child: Expression, sumDataType: DecimalType)
           sumDataType, nullOnOverflow = true),
     mergeCount.attr)
 
+  // This is here to be bug for bug compatible with Spark. They round in the divide and then cast
+  // the result to the final value. This loses some data in many cases and we need to be able to
+  // match that. This bug appears to have been fixed in Spark 3.4.0.
+  lazy val intermediateSparkDivideType = GpuDecimalDivide.calcOrigSparkOutputType(sumDataType,
+    DecimalType.LongDecimal)
+
   // NOTE: this sets `failOnErrorOverride=false` in `GpuDivide` to force it not to throw
   // divide-by-zero exceptions, even when ansi mode is enabled in Spark.
   // This is to conform with Spark's behavior in the Average aggregate function.
-  override lazy val evaluateExpression: Expression =
-      GpuDecimalDivide(sum, count, dataType, failOnError = false)
+  override lazy val evaluateExpression: Expression = {
+    GpuCast(
+      GpuDecimalDivide(sum, count, intermediateSparkDivideType, failOnError = false),
+      dataType)
+  }
 
   // Window
   // Replace average with SUM/COUNT. This lets us run average in running window mode without
@@ -1473,7 +1482,9 @@ abstract class GpuDecimalAverage(child: Expression, sumDataType: DecimalType)
   override def windowReplacement(spec: GpuWindowSpecDefinition): Expression = {
     val count = GpuWindowExpression(GpuCount(Seq(child)), spec)
     val sum = GpuWindowExpression(GpuSum(child, sumDataType, failOnErrorOverride = false), spec)
-    GpuDecimalDivide(sum, count, dataType, failOnError = false)
+    GpuCast(
+      GpuDecimalDivide(sum, count, intermediateSparkDivideType, failOnError = false),
+      dataType)
   }
 
   override val dataType: DecimalType = child.dataType match {
