@@ -34,8 +34,13 @@ when using the plugin. Queries may still see significant speedups even with AQE 
    See [issue-1059](https://github.com/NVIDIA/spark-rapids/issues/1059) for more detail. 
 
 2. Dynamic partition pruning(DPP) does not work.  This results in poor performance for queries which
-   would normally benefit from DPP.  See
-   [issue-3143](https://github.com/NVIDIA/spark-rapids/issues/3143) for more detail.
+   would normally benefit from DPP.   With DPP on, queries may fail on Databricks when using the plugin.
+
+   ```bash 
+   spark.sql.optimizer.dynamicPartitionPruning.enabled false
+   ```   
+   
+   See [issue-3143](https://github.com/NVIDIA/spark-rapids/issues/3143) for more detail.
 
 3. When selecting GPU nodes, Databricks requires the driver node to be a GPU node.  Outside of
    Databricks the plugin can operate with the driver as a CPU node and workers as GPU nodes.
@@ -138,6 +143,7 @@ cluster.
     spark.locality.wait 0s
     spark.databricks.delta.optimizeWrite.enabled false
     spark.sql.adaptive.enabled false
+    spark.sql.optimizer.dynamicPartitionPruning.enabled false
     spark.rapids.sql.concurrentGpuTasks 2
     ```
 
@@ -156,17 +162,16 @@ cluster.
     ```bash
     spark.rapids.sql.python.gpu.enabled true
     spark.python.daemon.module rapids.daemon_databricks
-    spark.executorEnv.PYTHONPATH /databricks/jars/rapids-4-spark_2.12-22.06.0.jar:/databricks/spark/python
+    spark.executorEnv.PYTHONPATH /databricks/jars/rapids-4-spark_2.12-22.08.0.jar:/databricks/spark/python
     ```
 
 7. Once you’ve added the Spark config, click “Confirm and Restart”.
 8. Once the cluster comes back up, it is now enabled for GPU-accelerated Spark.
 
 ## Import the GPU Mortgage Example Notebook
-Import the example [notebook](../demo/gpu-mortgage_accelerated.ipynb) from the repo into your
-workspace, then open the notebook.  Modify the first cell to point to your workspace, and download a
-larger dataset if needed. You can find the links to the datasets at
-[docs.rapids.ai](https://docs.rapids.ai/datasets/mortgage-data).
+Import the example [notebook](../demo/Databricks/Mortgage-ETL-db.ipynb) from the repo into your
+workspace, then open the notebook. Please find this [instruction](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-22.08/docs/get-started/xgboost-examples/dataset/mortgage.md)
+to download the dataset.
 
 ```bash
 %sh

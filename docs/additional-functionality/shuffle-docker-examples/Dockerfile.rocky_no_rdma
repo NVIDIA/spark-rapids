@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2021-2022, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,25 +13,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Sample Dockerfile to install UCX in a CentosOS 7 image 
+# Sample Dockerfile to install UCX in a Rocky Linux 8 image.
 #
 # The parameters are: 
 #   - CUDA_VER: 11.5.1 by default
 #   - UCX_VER and UCX_CUDA_VER: these are used to pick a package matching a specific UCX version and
 #                               CUDA runtime from the UCX github repo.
 #                               See: https://github.com/openucx/ucx/releases/
+#   - ROCKY_VER: Rocky Linux OS version
 
 ARG CUDA_VER=11.5.1
 ARG UCX_VER=1.12.1
 ARG UCX_CUDA_VER=11
-
-FROM nvidia/cuda:${CUDA_VER}-runtime-centos7
+ARG CUDA_VER=11.5.1
+ARG ROCKY_VER=8
+FROM nvidia/cuda:${CUDA_VER}-runtime-rockylinux${ROCKY_VER}
 ARG UCX_VER
 ARG UCX_CUDA_VER
 
 RUN yum update -y && yum install -y wget bzip2
-RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-v$UCX_VER-centos7-mofed5-cuda$UCX_CUDA_VER.tar.bz2
+RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-v$UCX_VER-centos8-mofed5-cuda$UCX_CUDA_VER.tar.bz2
 RUN cd /tmp && tar -xvf *.bz2 && \
-  yum install -y ucx-$UCX_VER-1.el7.x86_64.rpm && \
-  yum install -y ucx-cuda-$UCX_VER-1.el7.x86_64.rpm && \
+  yum install -y ucx-$UCX_VER-1.el8.x86_64.rpm && \
+  yum install -y ucx-cuda-$UCX_VER-1.el8.x86_64.rpm && \
   rm -rf /tmp/*.rpm
