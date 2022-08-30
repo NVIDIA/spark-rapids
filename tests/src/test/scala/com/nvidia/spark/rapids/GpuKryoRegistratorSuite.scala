@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,16 +20,16 @@ import org.scalatest.{BeforeAndAfter, FunSuite}
 
 import org.apache.spark.{SparkConf, SparkEnv}
 import org.apache.spark.serializer.KryoSerializer
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.rapids.execution.UnshimmedTrampolineUtil
 
 class GpuKryoRegistratorSuite extends FunSuite with BeforeAndAfter {
 
   before {
-    TrampolineUtil.cleanupAnyExistingSession()
+    UnshimmedTrampolineUtil.cleanupAnyExistingSession()
   }
 
   after {
-    TrampolineUtil.cleanupAnyExistingSession()
+    UnshimmedTrampolineUtil.cleanupAnyExistingSession()
   }
 
   test("GpuKryoRegistrator") {

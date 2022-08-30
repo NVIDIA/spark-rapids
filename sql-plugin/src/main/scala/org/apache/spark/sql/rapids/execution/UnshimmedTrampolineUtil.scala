@@ -16,8 +16,12 @@
 
 package org.apache.spark.sql.rapids.execution
 
+import org.apache.spark.sql.SparkSession
+
 object UnshimmedTrampolineUtil {
     def sparkClassLoader: ClassLoader = {
         org.apache.spark.util.Utils.getContextOrSparkClassLoader
     }
+
+  def cleanupAnyExistingSession(): Unit = SparkSession.cleanupAnyExistingSession()
 }

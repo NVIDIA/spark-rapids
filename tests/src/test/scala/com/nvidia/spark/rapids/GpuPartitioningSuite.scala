@@ -24,7 +24,7 @@ import org.scalatest.FunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.rapids.{GpuShuffleEnv, RapidsDiskBlockManager}
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.rapids.execution.UnshimmedTrampolineUtil
 import org.apache.spark.sql.types.{DecimalType, DoubleType, IntegerType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -109,7 +109,7 @@ class GpuPartitioningSuite extends FunSuite with Arm {
   }
 
   test("GPU partition") {
-    TrampolineUtil.cleanupAnyExistingSession()
+    UnshimmedTrampolineUtil.cleanupAnyExistingSession()
     val conf = new SparkConf().set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "none")
     TestUtils.withGpuSparkSession(conf) { _ =>
       GpuShuffleEnv.init(new RapidsConf(conf), new RapidsDiskBlockManager(conf))

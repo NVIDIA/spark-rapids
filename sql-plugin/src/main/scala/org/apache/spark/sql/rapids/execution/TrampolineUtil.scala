@@ -24,7 +24,7 @@ import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.executor.InputMetrics
 import org.apache.spark.internal.config.EXECUTOR_ID
 import org.apache.spark.memory.TaskMemoryManager
-import org.apache.spark.sql.{AnalysisException, SparkSession}
+import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, IdentityBroadcastMode}
 import org.apache.spark.sql.execution.SparkPlan
@@ -92,9 +92,6 @@ object TrampolineUtil {
                                 cause: Throwable): SparkUpgradeException = {
     SparkUpgradeExceptionShims.newSparkUpgradeException(version, message, cause)
   }
-
-  /** Shuts down and cleans up any existing Spark session */
-  def cleanupAnyExistingSession(): Unit = SparkSession.cleanupAnyExistingSession()
 
   def asNullable(dt: DataType): DataType = dt.asNullable
 

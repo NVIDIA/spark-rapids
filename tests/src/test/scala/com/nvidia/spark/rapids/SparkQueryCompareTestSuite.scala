@@ -29,7 +29,7 @@ import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.rapids.execution.UnshimmedTrampolineUtil
 import org.apache.spark.sql.types._
 
 object TestResourceFinder {
@@ -66,7 +66,7 @@ object SparkSessionHolder extends Logging {
   }
 
   private def createSparkSession(): SparkSession = {
-    TrampolineUtil.cleanupAnyExistingSession()
+    UnshimmedTrampolineUtil.cleanupAnyExistingSession()
 
     // Timezone is fixed to UTC to allow timestamps to work by default
     TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
@@ -257,7 +257,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     conf.setIfMissing("spark.sql.shuffle.partitions", "2")
 
     // force a new session to avoid accidentally capturing a late callback from a previous query
-    TrampolineUtil.cleanupAnyExistingSession()
+    UnshimmedTrampolineUtil.cleanupAnyExistingSession()
     ExecutionPlanCaptureCallback.startCapture()
     var cpuPlan: Option[SparkPlan] = null
       try {
@@ -308,7 +308,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     conf.setIfMissing("spark.sql.shuffle.partitions", "2")
 
     // force a new session to avoid accidentally capturing a late callback from a previous query
-    TrampolineUtil.cleanupAnyExistingSession()
+    UnshimmedTrampolineUtil.cleanupAnyExistingSession()
     ExecutionPlanCaptureCallback.startCapture()
     var cpuPlan: Option[SparkPlan] = null
     val fromCpu =
