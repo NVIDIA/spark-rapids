@@ -407,13 +407,38 @@ case class GpuSortArray(base: Expression, ascendingOrder: Expression)
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): cudf.ColumnVector = {
     val isDescending = isDescendingOrder(rhs)
-    lhs.getBase.listSortRows(isDescending, true)
+    val base = lhs.getBase()
+    dataType match {
+      case ArrayType(FloatType | DoubleType, _) =>
+        withResource(base.getChildColumnView(0)) {child =>
+          withResource(child.normalizeNANsAndZeros()) {normalizedChild =>
+            withResource(base.replaceListChild(normalizedChild)) {normalizedList =>
+              normalizedList.listSortRows(isDescending, true)
+            }
+          }
+        }
+      case _ =>
+        base.listSortRows(isDescending, true)
+    }
+
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): cudf.ColumnVector = {
     val isDescending = isDescendingOrder(rhs)
     withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { cv =>
-      cv.getBase.listSortRows(isDescending, true)
+      val base = cv.getBase()
+      dataType match {
+        case ArrayType(FloatType | DoubleType, _) =>
+          withResource(base.getChildColumnView(0)) {child =>
+            withResource(child.normalizeNANsAndZeros()) {normalizedChild =>
+              withResource(base.replaceListChild(normalizedChild)) {normalizedList =>
+                normalizedList.listSortRows(isDescending, true)
+              }
+            }
+          }
+        case _ =>
+          base.listSortRows(isDescending, true)
+      }
     }
   }
 

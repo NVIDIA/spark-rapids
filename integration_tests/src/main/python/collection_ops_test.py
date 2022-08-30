@@ -149,6 +149,18 @@ def test_sort_array_lit(data_gen):
             f.sort_array(f.lit(array_lit), True),
             f.sort_array(f.lit(array_lit), False)))
 
+def test_sort_array_normalize_nans():
+    bytes1 = struct.pack('L', 0x7ff83cec2c05b870)
+    bytes2 = struct.pack('L', 0xfff5101d3f1cd31b)
+    bytes3 = struct.pack('L', 0x7c22453f18c407a8)
+    nan1 = struct.unpack('d', bytes1)[0]
+    nan2 = struct.unpack('d', bytes2)[0]
+    other = struct.unpack('d', bytes3)[0]
+    data = [([nan2] + [other for _ in range(256)] + [nan1],)]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame(data).selectExpr('sort_array(_1)')
+    )
+
 # For functionality test, the sequence length in each row should be limited,
 # to avoid the exception as below,
 #     "Too long sequence: 2147483745. Should be <= 2147483632"
