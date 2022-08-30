@@ -5442,7 +5442,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>Because of Spark's inner workings the full range of decimal precision (even for 128-bit values) is not supported.</em></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -16554,8 +16554,8 @@ are limited.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td><em>PS<br/>Input must not contain NaNs and spark.rapids.sql.hasNans must be false.</em></td>
-<td><em>PS<br/>Input must not contain NaNs and spark.rapids.sql.hasNans must be false.</em></td>
+<td>S</td>
+<td>S</td>
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
@@ -16597,8 +16597,8 @@ are limited.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td><em>PS<br/>Input must not contain NaNs and spark.rapids.sql.hasNans must be false.</em></td>
-<td><em>PS<br/>Input must not contain NaNs and spark.rapids.sql.hasNans must be false.</em></td>
+<td>S</td>
+<td>S</td>
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
@@ -16640,8 +16640,8 @@ are limited.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td><em>PS<br/>Input must not contain NaNs and spark.rapids.sql.hasNans must be false.</em></td>
-<td><em>PS<br/>Input must not contain NaNs and spark.rapids.sql.hasNans must be false.</em></td>
+<td>S</td>
+<td>S</td>
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
