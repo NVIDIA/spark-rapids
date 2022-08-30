@@ -97,14 +97,6 @@ mvn_verify() {
 
     # Triggering here until we change the jenkins file
     rapids_shuffle_smoke_test
-
-    # non-caller classloader smoke test in pseudo-distributed
-    # standalone cluster
-    echo "Running test_cartesian_join_special_case_count with spark.rapids.force.caller.classloader=false"
-    PYSP_TEST_spark_rapids_force_caller_classloader=false \
-        NUM_LOCAL_EXECS=1 \
-        TEST_PARALLEL=0 \
-        ./integration_tests/run_pyspark_from_build.sh -k 'test_cartesian_join_special_case_count[100]'
 }
 
 rapids_shuffle_smoke_test() {
@@ -150,15 +142,17 @@ ci_2() {
     $MVN_CMD -U -B $MVN_URM_MIRROR clean package $MVN_BUILD_ARGS -DskipTests=true
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
-    export TEST_PARALLEL=4
-    # separate process to avoid OOM kill
-    TEST='conditionals_test or window_function_test' ./integration_tests/run_pyspark_from_build.sh
-    TEST_PARALLEL=5 TEST='struct_test or time_window_test' ./integration_tests/run_pyspark_from_build.sh
-    TEST='not conditionals_test and not window_function_test and not struct_test and not time_window_test' \
-      ./integration_tests/run_pyspark_from_build.sh
+    export TEST_PARALLEL=5
+    ./integration_tests/run_pyspark_from_build.sh
+    # enable avro test separately
     INCLUDE_SPARK_AVRO_JAR=true TEST='avro_test.py' ./integration_tests/run_pyspark_from_build.sh
     # export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled
     LC_ALL="en_US.UTF-8" TEST="regexp_test.py" ./integration_tests/run_pyspark_from_build.sh
+
+    # put some mvn tests here to balance durations of parallel stages
+    echo "Run mvn package..."
+    env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=320 clean package $MVN_BUILD_ARGS \
+      -Dpytest.TEST_TAGS='' -pl '!tools'
 }
 
 

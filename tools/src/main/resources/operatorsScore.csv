@@ -103,6 +103,7 @@ Explode,4
 Expm1,4
 First,4
 Floor,4
+FromUTCTimestamp,4
 FromUnixTime,4
 GetArrayItem,4
 GetArrayStructFields,4

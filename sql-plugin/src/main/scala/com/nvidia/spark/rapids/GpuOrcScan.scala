@@ -21,7 +21,7 @@ import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.channels.{Channels, WritableByteChannel}
 import java.util
-import java.util.concurrent.Callable
+import java.util.concurrent.{Callable, TimeUnit}
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -316,6 +316,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
     // we must split the different compress files into different ColumnarBatch.
     // So here try the best to group the same compression files together before hand.
     val compressionAndStripes = LinkedHashMap[CompressionKind, ArrayBuffer[OrcSingleStripeMeta]]()
+    val currentTime = System.nanoTime()
     files.map { file =>
       val orcPartitionReaderContext = filterHandler.filterStripes(file, dataSchema,
         readDataSchema, partitionSchema)
@@ -328,6 +329,9 @@ case class GpuOrcMultiFilePartitionReaderFactory(
             file.partitionValues,
             OrcSchemaWrapper(orcPartitionReaderContext.updatedReadSchema),
             OrcExtraInfo(orcPartitionReaderContext.requestedMapping)))
+    }
+    metrics.get("scanTime").foreach {
+      _ += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - currentTime)
     }
     val clippedStripes = compressionAndStripes.values.flatten.toSeq
     new MultiFileOrcPartitionReader(conf, files, clippedStripes, readDataSchema, debugDumpPrefix,

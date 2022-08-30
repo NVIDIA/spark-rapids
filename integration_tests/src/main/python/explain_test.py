@@ -20,6 +20,9 @@ from pyspark.sql.functions import *
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, with_gpu_session
 
+# mark this test as ci_1 for mvn verify sanity check in pre-merge CI
+pytestmark = pytest.mark.premerge_ci_1
+
 def create_df(spark, data_gen, left_length, right_length):
     left = binary_op_df(spark, data_gen, length=left_length)
     right = binary_op_df(spark, data_gen, length=right_length).withColumnRenamed("a", "r_a")\

@@ -1019,10 +1019,6 @@ abstract class GpuDecimalSum(
     Seq(updateSum, updateIsEmpty)
   }
 
-  override lazy val postUpdate: Seq[Expression] = {
-    Seq(GpuCheckOverflow(updateSum.attr, dt, !failOnErrorOverride), updateIsEmpty.attr)
-  }
-
   // Used for Decimal overflow detection
   protected lazy val isEmpty: AttributeReference = AttributeReference("isEmpty", BooleanType)()
   override lazy val aggBufferAttributes: Seq[AttributeReference] = {
@@ -1045,10 +1041,7 @@ abstract class GpuDecimalSum(
 
   override lazy val postMerge: Seq[Expression] = {
     Seq(
-      GpuCheckOverflow(GpuIf(mergeIsOverflow.attr,
-        GpuLiteral.create(null, dt),
-        mergeSum.attr),
-        dt, !failOnErrorOverride),
+      GpuIf(mergeIsOverflow.attr, GpuLiteral.create(null, dt), mergeSum.attr),
       mergeIsEmpty.attr)
   }
 
@@ -1140,8 +1133,9 @@ case class GpuDecimal128Sum(
   override lazy val updateAggregates: Seq[CudfAggregate] = updateSumChunks :+ updateIsEmpty
 
   override lazy val postUpdate: Seq[Expression] = {
-    val assembleExpr = GpuAssembleSumChunks(updateSumChunks.map(_.attr), dt, !failOnErrorOverride)
-    Seq(GpuCheckOverflow(assembleExpr, dt, !failOnErrorOverride), updateIsEmpty.attr)
+    Seq(
+      GpuAssembleSumChunks(updateSumChunks.map(_.attr), dt, !failOnErrorOverride),
+      updateIsEmpty.attr)
   }
 
   override lazy val preMerge: Seq[Expression] = {
@@ -1165,10 +1159,7 @@ case class GpuDecimal128Sum(
   override lazy val postMerge: Seq[Expression] = {
     val assembleExpr = GpuAssembleSumChunks(mergeSumChunks.map(_.attr), dt, !failOnErrorOverride)
     Seq(
-      GpuCheckOverflow(GpuIf(mergeIsOverflow.attr,
-        GpuLiteral.create(null, dt),
-        assembleExpr),
-        dt, !failOnErrorOverride),
+      GpuIf(mergeIsOverflow.attr, GpuLiteral.create(null, dt), assembleExpr),
       mergeIsEmpty.attr)
   }
 

@@ -50,9 +50,8 @@ def test_eq_for_interval():
     data_gens = [DayTimeIntervalGen()]
     for data_gen in data_gens:
         test_func(data_gen)
-    
 
-@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
+@pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen + struct_gens_sample_with_decimal128_no_list, ids=idfn)
 def test_eq_ns(data_gen):
     (s1, s2) = gen_scalars(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen))
     data_type = data_gen.data_type
@@ -169,7 +168,6 @@ def test_lte_for_interval():
     data_gens = [DayTimeIntervalGen()]
     for data_gen in data_gens:
         test_func(data_gen)
-
 
 @pytest.mark.parametrize('data_gen', orderable_gens, ids=idfn)
 def test_gt(data_gen):

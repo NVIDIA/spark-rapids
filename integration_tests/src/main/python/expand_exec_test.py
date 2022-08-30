@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,7 +19,9 @@ import pyspark.sql.functions as f
 from marks import ignore_order
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
-@ignore_order
+# Many Spark versions have issues sorting large decimals,
+# see https://issues.apache.org/jira/browse/SPARK-40089.
+@ignore_order(local=True)
 def test_expand_exec(data_gen):
     def op_df(spark, length=2048, seed=0):
         return gen_df(spark, StructGen([

@@ -441,7 +441,7 @@ def test_running_float_sum_no_part(batch_size):
 # to allow for duplication in the ordering, because there will be no other columns. This means that if you swtich
 # rows it does not matter because the only time rows are switched is when the rows are exactly the same.
 @pytest.mark.parametrize('data_gen',
-                         all_basic_gens_no_nans + [decimal_gen_32bit, decimal_gen_128bit],
+                         all_basic_gens_no_nans + [decimal_gen_32bit, orderable_decimal_gen_128bit],
                          ids=meta_idfn('data:'))
 def test_window_running_rank_no_part(data_gen):
     # Keep the batch size small. We have tested these with operators with exact inputs already, this is mostly

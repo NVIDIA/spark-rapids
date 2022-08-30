@@ -14,26 +14,10 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package org.apache.spark.sql.rapids.execution
 
-import org.apache.spark.sql.functions.map_concat
-
-class CollectionOpSuite extends SparkQueryCompareTestSuite {
-  testSparkResultsAreEqual(
-    "MapConcat with Array keys",
-    ArrayKeyMapDF) {
-    frame => {
-      import frame.sparkSession.implicits._
-      frame.select(map_concat($"col1", $"col2"))
+object UnshimmedTrampolineUtil {
+    def sparkClassLoader: ClassLoader = {
+        org.apache.spark.util.Utils.getContextOrSparkClassLoader
     }
-  }
-
-   testSparkResultsAreEqual(
-    "MapConcat with Struct keys",
-    StructKeyMapDF) {
-    frame => {
-      import frame.sparkSession.implicits._
-      frame.select(map_concat($"col1", $"col2"))
-    }
-  }
 }

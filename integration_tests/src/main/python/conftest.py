@@ -15,8 +15,15 @@
 import os
 import pytest
 import random
-from spark_init_internal import get_spark_i_know_what_i_am_doing
-from pyspark.sql.dataframe import DataFrame
+
+# TODO redo _spark stuff using fixtures
+#
+# Don't import pyspark / _spark directly in conftest globally
+# import as a plugin to do a lazy per-pytest-session initialization
+#
+pytest_plugins = [
+    'spark_init_internal'
+]
 
 _approximate_float_args = None
 
@@ -186,6 +193,10 @@ def pytest_runtest_setup(item):
         elif is_databricks_runtime():
             pytest.skip('Iceberg tests skipped on Databricks')
 
+    if item.get_closest_marker('delta_lake'):
+        if not item.config.getoption('delta_lake'):
+            pytest.skip('delta lake tests not configured to run')
+
 def pytest_configure(config):
     global _runtime_env
     _runtime_env = config.getoption('runtime_env')
@@ -248,6 +259,7 @@ def get_worker_id(request):
 
 @pytest.fixture
 def spark_tmp_path(request):
+    from spark_init_internal import get_spark_i_know_what_i_am_doing
     debug = request.config.getoption('debug_tmp_path')
     ret = request.config.getoption('tmp_path')
     if ret is None:
@@ -278,6 +290,7 @@ class TmpTableFactory:
 
 @pytest.fixture
 def spark_tmp_table_factory(request):
+    from spark_init_internal import get_spark_i_know_what_i_am_doing
     worker_id = get_worker_id(request)
     table_id = random.getrandbits(31)
     base_id = f'tmp_table_{worker_id}_{table_id}'
@@ -296,6 +309,7 @@ def _get_jvm(spark):
     return spark.sparkContext._jvm
 
 def spark_jvm():
+    from spark_init_internal import get_spark_i_know_what_i_am_doing
     return _get_jvm(get_spark_i_know_what_i_am_doing())
 
 class MortgageRunner:
@@ -305,6 +319,7 @@ class MortgageRunner:
     self.mortgage_perf_path = mortgage_perf_path
 
   def do_test_query(self, spark):
+    from pyspark.sql.dataframe import DataFrame
     jvm_session = _get_jvm_session(spark)
     jvm = _get_jvm(spark)
     acq = self.mortgage_acq_path
@@ -320,7 +335,7 @@ class MortgageRunner:
         raise AssertionError('Not Supported Format {}'.format(self.mortgage_format))
 
     return DataFrame(df, spark.getActiveSession())
-   
+
 @pytest.fixture(scope="session")
 def mortgage(request):
     mortgage_format = request.config.getoption("mortgage_format")

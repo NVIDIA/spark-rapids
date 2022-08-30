@@ -27,11 +27,16 @@ from datetime import timedelta
 # No overflow gens here because we just focus on verifying the fallback to CPU when
 # enabling ANSI mode. But overflows will fail the tests because CPU runs raise
 # exceptions.
-_no_overflow_multiply_gens = [
+_no_overflow_multiply_gens_for_fallback = [
     ByteGen(min_val = 1, max_val = 10, special_cases=[]),
     ShortGen(min_val = 1, max_val = 100, special_cases=[]),
     IntegerGen(min_val = 1, max_val = 1000, special_cases=[]),
     LongGen(min_val = 1, max_val = 3000, special_cases=[])]
+
+
+_no_overflow_multiply_gens = _no_overflow_multiply_gens_for_fallback + [
+    DecimalGen(10, 0),
+    DecimalGen(19, 0)]
 
 _decimal_gen_7_7 = DecimalGen(precision=7, scale=7)
 _decimal_gen_18_0 = DecimalGen(precision=18, scale=0)
@@ -43,10 +48,13 @@ _decimal_gen_38_0 = DecimalGen(precision=38, scale=0)
 _decimal_gen_38_10 = DecimalGen(precision=38, scale=10)
 _decimal_gen_38_neg10 = DecimalGen(precision=38, scale=-10)
 
-_arith_data_gens_diff_precision_scale_and_no_neg_scale = [
+_arith_data_gens_diff_precision_scale_and_no_neg_scale_no_38_0 = [
     decimal_gen_32bit, decimal_gen_64bit, _decimal_gen_18_0, decimal_gen_128bit,
-    _decimal_gen_30_2, _decimal_gen_36_5, _decimal_gen_38_0, _decimal_gen_38_10
+    _decimal_gen_30_2, _decimal_gen_36_5, _decimal_gen_38_10
 ]
+
+_arith_data_gens_diff_precision_scale_and_no_neg_scale = \
+    _arith_data_gens_diff_precision_scale_and_no_neg_scale_no_38_0 + [_decimal_gen_38_0]
 
 _arith_decimal_gens_no_neg_scale = _arith_data_gens_diff_precision_scale_and_no_neg_scale + [_decimal_gen_7_7]
 
@@ -57,6 +65,12 @@ _arith_decimal_gens = _arith_decimal_gens_no_neg_scale + [
 _arith_data_gens = numeric_gens + _arith_decimal_gens
 
 _arith_data_gens_no_neg_scale = numeric_gens + _arith_decimal_gens_no_neg_scale
+
+_arith_decimal_gens_no_neg_scale_38_0_overflow = \
+    _arith_data_gens_diff_precision_scale_and_no_neg_scale_no_38_0 + [
+        _decimal_gen_7_7,
+        pytest.param(_decimal_gen_38_0, marks=pytest.mark.skipif(
+            is_spark_330_or_later(), reason='This case overflows in Spark 3.3.0+'))]
 
 def _get_overflow_df(spark, data, data_type, expr):
     return spark.createDataFrame(
@@ -114,19 +128,24 @@ def test_subtraction_ansi_no_overflow(data_gen):
 
 @pytest.mark.parametrize('data_gen', numeric_gens + [
     decimal_gen_32bit_neg_scale, decimal_gen_32bit, _decimal_gen_7_7,
-    DecimalGen(precision=8, scale=8), decimal_gen_64bit, _decimal_gen_18_3], ids=idfn)
+    DecimalGen(precision=8, scale=8), decimal_gen_64bit, _decimal_gen_18_3,
+    _decimal_gen_38_10,
+    _decimal_gen_38_neg10
+    ], ids=idfn)
 def test_multiplication(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).select(
+                f.col('a'), f.col('b'),
                 f.col('a') * f.lit(100).cast(data_type),
                 f.lit(-12).cast(data_type) * f.col('b'),
                 f.lit(None).cast(data_type) * f.col('a'),
                 f.col('b') * f.lit(None).cast(data_type),
-                f.col('a') * f.col('b')))
+                f.col('a') * f.col('b')
+                ))
 
 @allow_non_gpu('ProjectExec', 'Alias', 'Multiply', 'Cast')
-@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens_for_fallback, ids=idfn)
 def test_multiplication_fallback_when_ansi_enabled(data_gen):
     assert_gpu_fallback_collect(
             lambda spark : binary_op_df(spark, data_gen).select(
@@ -134,7 +153,7 @@ def test_multiplication_fallback_when_ansi_enabled(data_gen):
             'Multiply',
             conf=ansi_enabled_conf)
 
-@pytest.mark.parametrize('data_gen', [float_gen, double_gen, decimal_gen_32bit], ids=idfn)
+@pytest.mark.parametrize('data_gen', [float_gen, double_gen, decimal_gen_32bit, DecimalGen(19, 0)], ids=idfn)
 def test_multiplication_ansi_enabled(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -143,8 +162,18 @@ def test_multiplication_ansi_enabled(data_gen):
                 f.col('a') * f.col('b')),
             conf=ansi_enabled_conf)
 
-@pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(3, -2), DecimalGen(16, 7)], ids=idfn)
-@pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 3), DecimalGen(10, -2), DecimalGen(15, 3)], ids=idfn)
+def test_multiplication_ansi_overflow():
+    exception_str = 'ArithmeticException'
+    assert_gpu_and_cpu_error(
+        lambda spark : unary_op_df(spark, DecimalGen(38, 0)).selectExpr("a * " + "9"*38 + " as ret").collect(),
+        ansi_enabled_conf,
+        exception_str)
+
+@pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3),
+    DecimalGen(4, 2), DecimalGen(3, -2), DecimalGen(16, 7), DecimalGen(19, 0),
+    DecimalGen(30, 10)], ids=idfn)
+@pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 3), DecimalGen(10, -2), DecimalGen(15, 3),
+    DecimalGen(30, 12), DecimalGen(3, -3), DecimalGen(27, 7), DecimalGen(20, -3)], ids=idfn)
 def test_multiplication_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, lhs, rhs).select(
@@ -212,22 +241,6 @@ def test_decimal_division_mixed_no_overflow_guarantees(lhs, lhs_type, rhs, rhs_t
                     .select(f.col('lhs'), f.col('rhs'), f.col('lhs') / f.col('rhs')),
             conf={'spark.rapids.sql.decimalOverflowGuarantees': 'false'})
 
-@ignore_order
-@pytest.mark.parametrize('rhs,rhs_type', [
-    (DecimalGen(15, 3), DecimalType(30, 10)),
-    (DecimalGen(10, 2), DecimalType(28, 9))], ids=idfn)
-@pytest.mark.parametrize('lhs,lhs_type', [
-    (DecimalGen(10, 3), DecimalType(27, 7)),
-    (DecimalGen(3, -3), DecimalType(20, -3))], ids=idfn)
-def test_decimal_multiplication_mixed_no_overflow_guarantees(lhs, lhs_type, rhs, rhs_type):
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : two_col_df(spark, lhs, rhs)\
-                    .withColumn('lhs', f.col('a').cast(lhs_type))\
-                    .withColumn('rhs', f.col('b').cast(rhs_type))\
-                    .repartition(1)\
-                    .select(f.col('lhs'), f.col('rhs'), f.col('lhs') * f.col('rhs')),
-            conf={'spark.rapids.sql.decimalOverflowGuarantees': 'false'})
-
 @pytest.mark.parametrize('data_gen', integral_gens + [
     decimal_gen_32bit, decimal_gen_64bit, _decimal_gen_7_7, _decimal_gen_18_3, _decimal_gen_30_2,
     _decimal_gen_36_5, _decimal_gen_38_0], ids=idfn)
@@ -259,7 +272,14 @@ def test_mod(data_gen):
                 f.col('b') % f.lit(None).cast(data_type),
                 f.col('a') % f.col('b')))
 
-@pytest.mark.parametrize('data_gen', _arith_data_gens_no_neg_scale, ids=idfn)
+# pmod currently falls back for Decimal(precision=38)
+# https://github.com/NVIDIA/spark-rapids/issues/6336
+_pmod_gens = numeric_gens + [ decimal_gen_32bit, decimal_gen_64bit, _decimal_gen_18_0, decimal_gen_128bit,
+                              _decimal_gen_30_2, _decimal_gen_36_5,
+                              DecimalGen(precision=37, scale=0), DecimalGen(precision=37, scale=10),
+                              _decimal_gen_7_7]
+
+@pytest.mark.parametrize('data_gen', _pmod_gens, ids=idfn)
 def test_pmod(data_gen):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
@@ -270,6 +290,19 @@ def test_pmod(data_gen):
                 'pmod(b, cast(null as {}))'.format(string_type),
                 'pmod(a, b)'))
 
+@allow_non_gpu("ProjectExec", "Pmod")
+@pytest.mark.parametrize('data_gen', [_decimal_gen_38_0, _decimal_gen_38_10], ids=idfn)
+def test_pmod_fallback(data_gen):
+    string_type = to_cast_string(data_gen.data_type)
+    assert_gpu_fallback_collect(
+        lambda spark : binary_op_df(spark, data_gen).selectExpr(
+            'pmod(a, cast(100 as {}))'.format(string_type),
+            'pmod(cast(-12 as {}), b)'.format(string_type),
+            'pmod(cast(null as {}), a)'.format(string_type),
+            'pmod(b, cast(null as {}))'.format(string_type),
+            'pmod(a, b)'),
+        "Pmod")
+
 # test pmod(Long.MinValue, -1) = 0 and Long.MinValue % -1 = 0, should not throw
 def test_mod_pmod_long_min_value():
     assert_gpu_and_cpu_are_equal_collect(
@@ -278,7 +311,10 @@ def test_mod_pmod_long_min_value():
             'a % -1L'),
         ansi_enabled_conf)
 
-@pytest.mark.parametrize('data_gen', _arith_data_gens_diff_precision_scale_and_no_neg_scale, ids=idfn)
+# pmod currently falls back for Decimal(precision=38)
+# https://github.com/NVIDIA/spark-rapids/issues/6336
+@pytest.mark.parametrize('data_gen', [decimal_gen_32bit, decimal_gen_64bit, _decimal_gen_18_0,
+                                      decimal_gen_128bit, _decimal_gen_30_2, _decimal_gen_36_5], ids=idfn)
 @pytest.mark.parametrize('overflow_exp', [
     'pmod(a, cast(0 as {}))',
     'pmod(cast(-12 as {}), cast(0 as {}))',
@@ -314,7 +350,7 @@ def test_cast_neg_to_decimal_err():
         ansi_enabled_conf,
         exception_type + exception_content)
 
-@pytest.mark.parametrize('data_gen', _arith_data_gens_no_neg_scale, ids=idfn)
+@pytest.mark.parametrize('data_gen', _pmod_gens, ids=idfn)
 def test_mod_pmod_by_zero_not_ansi(data_gen):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
@@ -431,7 +467,7 @@ def test_floor_scale_zero(data_gen):
 
 @pytest.mark.skipif(is_before_spark_330(), reason='scale parameter in Floor function is not supported before Spark 3.3.0')
 @allow_non_gpu('ProjectExec')
-@pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale, ids=idfn)
+@pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale_38_0_overflow, ids=idfn)
 def test_floor_scale_nonzero(data_gen):
     assert_gpu_fallback_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a, -1)'), 'RoundFloor')
@@ -502,7 +538,7 @@ def test_shift_right_unsigned(data_gen):
                 'shiftrightunsigned(a, cast(null as INT))',
                 'shiftrightunsigned(a, b)'))
 
-_arith_data_gens_for_round = numeric_gens +  _arith_decimal_gens_no_neg_scale + [
+_arith_data_gens_for_round = numeric_gens + _arith_decimal_gens_no_neg_scale_38_0_overflow + [
     decimal_gen_32bit_neg_scale,
     DecimalGen(precision=15, scale=-8),
     DecimalGen(precision=30, scale=-5),
@@ -1050,16 +1086,15 @@ def test_unary_positive_day_time_interval():
         lambda spark: unary_op_df(spark, DayTimeIntervalGen()).selectExpr('+a'))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [DoubleGen(min_exp=-3, max_exp=5, special_cases=[0.0])], ids=idfn)
+@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens_for_fallback + [DoubleGen(min_exp=-3, max_exp=5, special_cases=[0.0])], ids=idfn)
 def test_day_time_interval_multiply_number(data_gen):
     gen_list = [('_c1', DayTimeIntervalGen(min_value=timedelta(seconds=-20 * 86400), max_value=timedelta(seconds=20 * 86400))),
                 ('_c2', data_gen)]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen_list).selectExpr("_c1 * _c2"))
 
-
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [DoubleGen(min_exp=0, max_exp=5, special_cases=[])], ids=idfn)
+@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens_for_fallback + [DoubleGen(min_exp=0, max_exp=5, special_cases=[])], ids=idfn)
 def test_day_time_interval_division_number_no_overflow1(data_gen):
     gen_list = [('_c1', DayTimeIntervalGen(min_value=timedelta(seconds=-5000 * 365 * 86400), max_value=timedelta(seconds=5000 * 365 * 86400))),
                 ('_c2', data_gen)]
@@ -1068,7 +1103,7 @@ def test_day_time_interval_division_number_no_overflow1(data_gen):
         lambda spark: gen_df(spark, gen_list).selectExpr("_c1 / case when _c2 = 0 then cast(1 as {}) else _c2 end".format(to_cast_string(data_gen.data_type))))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
-@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens + [DoubleGen(min_exp=-5, max_exp=0, special_cases=[])], ids=idfn)
+@pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens_for_fallback + [DoubleGen(min_exp=-5, max_exp=0, special_cases=[])], ids=idfn)
 def test_day_time_interval_division_number_no_overflow2(data_gen):
     gen_list = [('_c1', DayTimeIntervalGen(min_value=timedelta(seconds=-20 * 86400), max_value=timedelta(seconds=20 * 86400))),
                 ('_c2', data_gen)]
