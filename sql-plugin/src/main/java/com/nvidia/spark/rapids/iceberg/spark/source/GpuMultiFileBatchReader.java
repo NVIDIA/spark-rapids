@@ -199,7 +199,6 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
     }
   }
 
-  /** (Extending a Scala case class seems a little tricky but OK until finding a better way) */
   static class IcebergParquetExtraInfo extends ParquetExtraInfo {
     private final Map<Integer, ?> idToConstant;
     private final Schema expectedSchema;

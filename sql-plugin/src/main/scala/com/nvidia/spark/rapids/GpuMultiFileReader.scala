@@ -753,9 +753,8 @@ abstract class MultiFileCoalescingPartitionReaderBase(
   protected def finalizeOutputBatch(
       batch: ColumnarBatch,
       extraInfo: ExtraInfo): ColumnarBatch = {
-    // Equivalent to return the input batch directly.
-    val cols = GpuColumnVector.extractColumns(batch).toSeq.safeMap(_.incRefCount())
-    new ColumnarBatch(cols.toArray, batch.numRows)
+    // Equivalent to returning the input batch directly.
+    GpuColumnVector.incRefCounts(batch)
   }
 
   override def next(): Boolean = {
