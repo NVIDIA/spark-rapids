@@ -513,8 +513,10 @@ object GpuCast extends Arm {
         }
       case (FloatType | DoubleType, StringType) =>
         castFloatingTypeToString(input)
-      case (StringType, BooleanType | ByteType | ShortType | IntegerType | LongType | FloatType
-                        | DoubleType | DateType | TimestampType) =>
+      case (StringType, ByteType | ShortType | IntegerType | LongType ) =>
+        com.nvidia.spark.rapids.jni.CastStrings.toInteger(input, ansiMode,
+          GpuColumnVector.getNonNestedRapidsType(toDataType))
+      case (StringType, BooleanType | FloatType | DoubleType | DateType | TimestampType) =>
         withResource(input.strip()) { trimmed =>
           toDataType match {
             case BooleanType =>
@@ -529,9 +531,6 @@ object GpuCast extends Arm {
               castStringToTimestamp(trimmed, ansiMode)
             case FloatType | DoubleType =>
               castStringToFloats(trimmed, ansiMode,
-                GpuColumnVector.getNonNestedRapidsType(toDataType))
-            case ByteType | ShortType | IntegerType | LongType =>
-              com.nvidia.spark.rapids.jni.CastStrings.stringToInteger(trimmed, ansiMode,
                 GpuColumnVector.getNonNestedRapidsType(toDataType))
           }
         }
@@ -1037,30 +1036,6 @@ object GpuCast extends Arm {
                 }
               }
             }
-          }
-        }
-      }
-    }
-  }
-
-  def castStringToInts(
-      input: ColumnVector,
-      ansiEnabled: Boolean,
-      dType: DType): ColumnVector = {
-
-    withResource(GpuCast.sanitizeStringToIntegralType(input, ansiEnabled)) { sanitized =>
-      withResource(sanitized.isInteger(dType)) { isInt =>
-        if (ansiEnabled) {
-          withResource(isInt.all()) { allInts =>
-            // Check that all non-null values are valid integers.
-            if (allInts.isValid && !allInts.getBoolean) {
-              throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
-            }
-          }
-        }
-        withResource(sanitized.castTo(dType)) { parsedInt =>
-          withResource(Scalar.fromNull(dType)) { nullVal =>
-            isInt.ifElse(parsedInt, nullVal)
           }
         }
       }
