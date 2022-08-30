@@ -1524,6 +1524,11 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(value = true)
 
+  val FILTER_PARALLEL = conf("spark.rapids.sql.reader.filterParallel")
+    .doc("")
+    .booleanConf
+    .createWithDefault(value = false)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
