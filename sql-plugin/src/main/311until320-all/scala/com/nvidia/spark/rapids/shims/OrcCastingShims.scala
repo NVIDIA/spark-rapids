@@ -29,32 +29,32 @@ object OrcCastingShims {
   def castIntegerToTimestamp(col: ColumnView, fromType: DType): ColumnView = {
     fromType match {
       case DType.BOOL8 | DType.INT8 | DType.INT16 | DType.INT32 =>
-        // From spark330, spark consider the integers as seconds.
+        // From spark311 until spark314 (not include it), spark consider the integers as
+        // milli-seconds.
+        // cuDF requires casting to Long first, then we can cast Long to Timestamp(in microseconds)
+        // In CPU code of ORC casting, its conversion is 'integer -> milliseconds -> microseconds'
         withResource(col.castTo(DType.INT64)) { longs =>
-          // In CPU, ORC assumes the integer value is in seconds, and returns timestamp in
-          // micro seconds, so we need to multiply 1e6 here.
-          withResource(Scalar.fromLong(1000000L)) { value =>
-            withResource(longs.mul(value)) { microSeconds =>
-              microSeconds.castTo(DType.TIMESTAMP_MICROSECONDS)
+          withResource(Scalar.fromLong(1000L)) { thousand =>
+            withResource(longs.mul(thousand)) { milliSeconds =>
+              milliSeconds.castTo(DType.TIMESTAMP_MICROSECONDS)
             }
           }
         }
-
       case DType.INT64 =>
-        // In CPU code of ORC casting, its conversion is 'integer -> milliseconds -> microseconds'
+        // We need overflow checking here, since max value of INT64 is about 9 * 1e18, and convert
+        // INT64 to milliseconds(also a INT64 actually), we need multiply 1000, it may cause long
+        // integer-overflow.
+        // If these two 'testLongMultiplicationOverflow' throw no exception, it means no
+        // Long-overflow when casting 'col' to TIMESTAMP_MICROSECONDS.
+        if (col.max() != null) {
+          testLongMultiplicationOverflow(col.max().getLong, 1000L)
+        }
+        if (col.min() != null) {
+          testLongMultiplicationOverflow(col.min().getLong, 1000L)
+        }
         withResource(Scalar.fromLong(1000L)) { thousand =>
           withResource(col.mul(thousand)) { milliSeconds =>
-            // We need to check long-overflow here. If milliseconds can not convert to
-            // micorseconds, then testLongMultiplicationOverflow will throw exception.
-            if (milliSeconds.max() != null) {
-              testLongMultiplicationOverflow(milliSeconds.max().getLong, 1000L)
-            }
-            if (milliSeconds.min() != null) {
-              testLongMultiplicationOverflow(milliSeconds.min().getLong, 1000L)
-            }
-            withResource(milliSeconds.mul(thousand)) { microSeconds =>
-              microSeconds.castTo(DType.TIMESTAMP_MICROSECONDS)
-            }
+            milliSeconds.castTo(DType.TIMESTAMP_MICROSECONDS)
           }
         }
     }
