@@ -58,7 +58,7 @@
             312db,
             321db
         </databricks.buildvers>
-        <dist.jar.name>${project.build.directory}/${project.build.finalName}.jar</dist.jar.name>
+        <dist.jar.name>${project.build.directory}/${project.build.finalName}-${cuda.version}.jar</dist.jar.name>
     </properties>
     <profiles>
         <profile>
