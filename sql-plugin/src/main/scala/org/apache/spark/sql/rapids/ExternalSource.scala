@@ -137,8 +137,7 @@ object ExternalSource extends Logging {
     if (hasSparkAvroJar && avroProvider.isSupportedScan(scan)) {
       avroProvider.copyScanWithInputFileTrue(scan)
     } else if (hasIcebergJar && icebergProvider.isSupportedScan(scan)) {
-      // Iceberg does not yet support a coalescing reader, so nothing to change
-      scan
+      icebergProvider.copyScanWithInputFileTrue(scan)
     } else {
       throw new RuntimeException(s"Unsupported scan type: ${scan.getClass.getSimpleName}")
     }

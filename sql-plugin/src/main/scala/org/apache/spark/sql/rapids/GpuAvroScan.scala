@@ -270,6 +270,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
             AvroDataBlock(block),
             file.partitionValues,
             AvroSchemaWrapper(SchemaConverters.toAvroType(readDataSchema)),
+            readDataSchema,
             AvroExtraInfo()))
       if (singleFileInfo.blocks.nonEmpty) {
         // No need to check the header since it can not be null when blocks is not empty here.
@@ -831,7 +832,7 @@ class GpuMultiFileAvroPartitionReader(
     override val debugDumpPrefix: Option[String],
     execMetrics: Map[String, GpuMetric],
     mapPathHeader: Map[Path, Header])
-  extends MultiFileCoalescingPartitionReaderBase(conf, clippedBlocks, readDataSchema,
+  extends MultiFileCoalescingPartitionReaderBase(conf, clippedBlocks,
     partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads,
     execMetrics) with GpuAvroReaderBase {
 
@@ -890,7 +891,7 @@ class GpuMultiFileAvroPartitionReader(
   }
 
   override def readBufferToTable(dataBuffer: HostMemoryBuffer, dataSize: Long,
-      clippedSchema: SchemaBase, extraInfo: ExtraInfo): Table = {
+      clippedSchema: SchemaBase,  readSchema: StructType, extraInfo: ExtraInfo): Table = {
     sendToGpuUnchecked(dataBuffer, dataSize, splits)
   }
 
@@ -1017,6 +1018,7 @@ case class AvroSingleDataBlockInfo(
   dataBlock: AvroDataBlock,
   partitionValues: InternalRow,
   schema: AvroSchemaWrapper,
+  readSchema: StructType,
   extraInfo: AvroExtraInfo) extends SingleDataBlockInfo
 
 case class AvroBatchContext(
