@@ -870,7 +870,10 @@ object RapidsConf {
       "from the target schemas (schemas of the reader), we need to handle the castings from " +
       "source type to target type. Since float/double numbers in GPU have different precision " +
       "with CPU, when casting float/double to string, the result of GPU is different from " +
-      "result of CPU spark.")
+      "result of CPU spark. Its default value is `true` (this means the strings result will " +
+      "differ from result of CPU). If it's set `false` explicitly and there exists casting " +
+      "from float/double to string in the job, then such behavior will cause an exception, " +
+      "and the job will fail.")
     .booleanConf
     .createWithDefault(true)
 
