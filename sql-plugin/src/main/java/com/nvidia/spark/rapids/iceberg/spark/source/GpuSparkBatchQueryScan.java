@@ -106,7 +106,9 @@ public class GpuSparkBatchQueryScan extends GpuSparkScan implements ShimSupports
       // No TableScan instance, so try to build one now
       scan = buildScan(cpuInstance, table, readConf, expectedSchema, filters);
     }
-    return new GpuSparkBatchQueryScan(SparkSession.active(), table, scan, readConf, expectedSchema, filters, rapidsConf);
+    return new GpuSparkBatchQueryScan(SparkSession.active(), table, scan, readConf, expectedSchema, filters, rapidsConf,
+        false // queryUsesInputFile
+    );
   }
 
   // Try to build an Iceberg TableScan when one was not found in the CPU instance.
@@ -165,9 +167,10 @@ public class GpuSparkBatchQueryScan extends GpuSparkScan implements ShimSupports
   }
 
   GpuSparkBatchQueryScan(SparkSession spark, Table table, TableScan scan, SparkReadConf readConf,
-                         Schema expectedSchema, List<Expression> filters, RapidsConf rapidsConf) {
+                         Schema expectedSchema, List<Expression> filters, RapidsConf rapidsConf,
+                         boolean queryUsesInputFile) {
 
-    super(spark, table, readConf, expectedSchema, filters, rapidsConf);
+    super(spark, table, readConf, expectedSchema, filters, rapidsConf, queryUsesInputFile);
 
     this.scan = scan;
     this.snapshotId = readConf.snapshotId();
@@ -346,14 +349,15 @@ public class GpuSparkBatchQueryScan extends GpuSparkScan implements ShimSupports
         Objects.equals(snapshotId, that.snapshotId) &&
         Objects.equals(startSnapshotId, that.startSnapshotId) &&
         Objects.equals(endSnapshotId, that.endSnapshotId) &&
-        Objects.equals(asOfTimestamp, that.asOfTimestamp);
+        Objects.equals(asOfTimestamp, that.asOfTimestamp) &&
+        queryUsesInputFile() == that.queryUsesInputFile();
   }
 
   @Override
   public int hashCode() {
     return Objects.hash(
         table().name(), readSchema(), filterExpressions().toString(), runtimeFilterExpressions.toString(),
-        snapshotId, startSnapshotId, endSnapshotId, asOfTimestamp);
+        snapshotId, startSnapshotId, endSnapshotId, asOfTimestamp, queryUsesInputFile());
   }
 
   @Override
@@ -361,5 +365,13 @@ public class GpuSparkBatchQueryScan extends GpuSparkScan implements ShimSupports
     return String.format(
         "IcebergScan(table=%s, type=%s, filters=%s, runtimeFilters=%s, caseSensitive=%s)",
         table(), expectedSchema().asStruct(), filterExpressions(), runtimeFilterExpressions, caseSensitive());
+  }
+
+  /** Return a copy of "this" but with "queryUsesInputFile = true" */
+  public GpuSparkBatchQueryScan copyWithInputFileTrue() {
+    return new GpuSparkBatchQueryScan(SparkSession.active(), table(), this.scan, readConf(),
+        expectedSchema(), filterExpressions(), rapidsConf(),
+        true // queryUsesInputFile
+    );
   }
 }

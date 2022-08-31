@@ -515,6 +515,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
             OrcDataStripe(OrcStripeWithMeta(block, orcPartitionReaderContext)),
             file.partitionValues,
             OrcSchemaWrapper(orcPartitionReaderContext.updatedReadSchema),
+            readDataSchema,
             OrcExtraInfo(orcPartitionReaderContext.requestedMapping)))
     }
     metrics.get("scanTime").foreach {
@@ -1788,6 +1789,7 @@ private case class OrcSingleStripeMeta(
   dataBlock: OrcDataStripe, // Orc stripe information with the OrcPartitionReaderContext
   partitionValues: InternalRow, // partitioned values
   schema: OrcSchemaWrapper, // Orc schema
+  readSchema: StructType, // Orc read schema
   extraInfo: OrcExtraInfo // Orc ExtraInfo containing the requested column ids
 ) extends SingleDataBlockInfo
 
@@ -1818,7 +1820,7 @@ class MultiFileOrcPartitionReader(
     partitionSchema: StructType,
     numThreads: Int,
     isCaseSensitive: Boolean)
-  extends MultiFileCoalescingPartitionReaderBase(conf, clippedStripes, readDataSchema,
+  extends MultiFileCoalescingPartitionReaderBase(conf, clippedStripes,
     partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads, execMetrics)
     with OrcCommonFunctions {
 
@@ -2060,6 +2062,7 @@ class MultiFileOrcPartitionReader(
       dataBuffer: HostMemoryBuffer,
       dataSize: Long,
       clippedSchema: SchemaBase,
+      readSchema: StructType,
       extraInfo: ExtraInfo): Table =
     decodeToTable(dataBuffer, dataSize, clippedSchema, extraInfo.requestedMapping,
       isCaseSensitive, files)
