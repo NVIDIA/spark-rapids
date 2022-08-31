@@ -22,15 +22,14 @@ from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan
 from spark_session import with_cpu_session, with_spark_session
 
-# Mark all tests in current file as premerge_ci_1 in order to be run in first k8s pod for parallel build premerge job
-pytestmark = [pytest.mark.premerge_ci_1, pytest.mark.nightly_resource_consuming_test]
+pytestmark = [pytest.mark.nightly_resource_consuming_test]
 
 all_join_types = ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter']
 
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            BooleanGen(), DateGen(), TimestampGen(), null_gen,
            pytest.param(FloatGen(), marks=[incompat]),
-           pytest.param(DoubleGen(), marks=[incompat])] + decimal_gens
+           pytest.param(DoubleGen(), marks=[incompat])] + orderable_decimal_gens
 
 all_gen_no_nulls = [StringGen(nullable=False), ByteGen(nullable=False),
         ShortGen(nullable=False), IntegerGen(nullable=False), LongGen(nullable=False),
@@ -73,7 +72,8 @@ join_no_ast_gen = [
 # Types to use when running joins on small batches. Small batch joins can take a long time
 # to run and are mostly redundant with the normal batch size test, so we only run these on a
 # set of representative types rather than all types.
-join_small_batch_gens = [ StringGen(), IntegerGen(), decimal_gen_128bit ]
+
+join_small_batch_gens = [ StringGen(), IntegerGen(), orderable_decimal_gen_128bit ]
 cartesian_join_small_batch_gens = join_small_batch_gens + [basic_struct_gen, ArrayGen(string_gen)]
 
 _sortmerge_join_conf = {'spark.sql.autoBroadcastJoinThreshold': '-1',
