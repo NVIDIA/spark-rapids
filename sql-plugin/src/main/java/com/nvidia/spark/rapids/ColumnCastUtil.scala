@@ -21,8 +21,7 @@ import java.util.Optional
 import scala.collection.mutable.{ArrayBuffer, ArrayBuilder}
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType}
-
-import org.apache.spark.sql.types.{ArrayType, DataType, StructType, MapType, StructField}
+import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StructField, StructType}
 
 /**
  * This class casts a column to another column if the predicate passed resolves to true.
@@ -43,16 +42,17 @@ object ColumnCastUtil extends Arm {
    * everything in the returned collection of AutoCloseable values.
    *
    * @param cv the view to be updated
+   * @param dt the Spark's data type of the input view (if applicable)
    * @param convert the partial function used to convert the data. If this matches and returns
    *                a updated view this function takes ownership of that view.
    * @return None if there were no changes to the view or the updated view along with anything else
    *         that needs to be closed.
    */
-  def deepTransformView(cv: ColumnView)
-      (convert: PartialFunction[ColumnView, ColumnView]):
+  def deepTransformView(cv: ColumnView, dt: Option[DataType] = None)
+      (convert: PartialFunction[(ColumnView, Option[DataType]), ColumnView]):
   (Option[ColumnView], ArrayBuffer[AutoCloseable]) = {
     closeOnExcept(ArrayBuffer.empty[AutoCloseable]) { needsClosing =>
-      val updated = convert.lift(cv)
+      val updated = convert.lift((cv, dt))
       needsClosing ++= updated
 
       updated match {
@@ -113,13 +113,14 @@ object ColumnCastUtil extends Arm {
    * A lot of caution needs to be taken when using this method because of ownership of the data.
    *
    * @param cv the vector to be updated
+   * @param dt the Spark's data type of the input vector (if applicable)
    * @param convert the partial function used to convert the data. If this matches and returns
    *                a updated view this function takes ownership of that view.
    * @return the updated vector
    */
-  def deepTransform(cv: ColumnVector)
-      (convert: PartialFunction[ColumnView, ColumnView]): ColumnVector = {
-    val (retView, needsClosed) = deepTransformView(cv)(convert)
+  def deepTransform(cv: ColumnVector, dt: Option[DataType] = None)
+      (convert: PartialFunction[(ColumnView, Option[DataType]), ColumnView]): ColumnVector = {
+    val (retView, needsClosed) = deepTransformView(cv, dt)(convert)
     withResource(needsClosed) { _ =>
       retView match {
         case Some(updated) =>
@@ -195,7 +196,7 @@ object ColumnCastUtil extends Arm {
           // map is list of structure
           val struct = cv.getChildColumnView(0)
           toClose += struct
-          
+
           if(cv.getType != DType.LIST || struct.getType != DType.STRUCT) {
             throw new IllegalStateException("Map should be List(Structure) in column view")
           }
