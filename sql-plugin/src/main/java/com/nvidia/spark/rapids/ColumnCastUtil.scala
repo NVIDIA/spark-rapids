@@ -21,6 +21,7 @@ import java.util.Optional
 import scala.collection.mutable.{ArrayBuffer, ArrayBuilder}
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType}
+
 import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StructField, StructType}
 
 /**
