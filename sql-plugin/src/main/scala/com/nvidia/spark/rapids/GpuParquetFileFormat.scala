@@ -294,41 +294,38 @@ class GpuParquetWriter(
     }
   }
 
-  /**
-   * Persists a columnar batch. Invoked on the executor side. When writing to dynamically
-   * partitioned tables, dynamic partition columns are not included in columns to be written.
-   * NOTE: It is the writer's responsibility to close the batch.
-   */
-  override def write(batch: ColumnarBatch,
-     statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
-    val outputMillis = outputTimestampType == ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString
-    val newBatch =
-      new ColumnarBatch(GpuColumnVector.extractColumns(batch).map {
-        cv => {
-          cv.dataType() match {
-            case DataTypes.TimestampType if outputMillis =>
-              new GpuColumnVector(DataTypes.TimestampType, withResource(cv.getBase()) { v =>
-                v.castTo(DType.TIMESTAMP_MILLISECONDS)
-              })
-            case DataTypes.TimestampType
-              if outputTimestampType == ParquetOutputTimestampType.INT96.toString =>
-              withResource(Scalar.fromLong(Long.MaxValue / 1000)) { upper =>
-                withResource(Scalar.fromLong(Long.MinValue / 1000)) { lower =>
-                  withResource(cv.getBase().bitCastTo(DType.INT64)) { int64 =>
-                    withResource(int64.greaterOrEqualTo(upper)) { a =>
-                      withResource(int64.lessOrEqualTo(lower)) { b =>
-                        withResource(a.or(b)) { aOrB =>
-                          withResource(aOrB.any()) { any =>
-                            if (any.isValid && any.getBoolean) {
-                              // its the writer's responsibility to close the batch
-                              batch.close()
-                              throw new IllegalArgumentException("INT96 column contains one " +
-                                "or more values that can overflow and will result in data " +
-                                "corruption. Please set " +
-                                "`spark.rapids.sql.format.parquet.writer.int96.enabled` to false" +
-                                " so we can fallback on CPU for writing parquet but still take " +
-                                "advantage of parquet read on the GPU.")
-                            }
+  private def deepTransformColumn(gpuCV: GpuColumnVector): ColumnVector = {
+    ColumnCastUtil.deepTransform(gpuCV.getBase, Some(gpuCV.dataType())) {
+      // Timestamp types are checked and transformed for all nested columns.
+      case (cv, _) if cv.getType.isTimestampType =>
+        val typeMillis = ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString
+        val typeInt96  = ParquetOutputTimestampType.INT96.toString
+
+        outputTimestampType match {
+          case `typeMillis` =>
+            if (cv.getType != DType.TIMESTAMP_MILLISECONDS) {
+              withResource(cv) { v => v.castTo(DType.TIMESTAMP_MILLISECONDS) }
+            } else {
+              cv /* the input is unchanged */
+            }
+
+          case `typeInt96` =>
+            withResource(Scalar.fromLong(Long.MaxValue / 1000)) { upper =>
+              withResource(Scalar.fromLong(Long.MinValue / 1000)) { lower =>
+                withResource(cv.bitCastTo(DType.INT64)) { int64 =>
+                  withResource(int64.greaterOrEqualTo(upper)) { a =>
+                    withResource(int64.lessOrEqualTo(lower)) { b =>
+                      withResource(a.or(b)) { aOrB =>
+                        withResource(aOrB.any()) { any =>
+                          if (any.isValid && any.getBoolean) {
+                            // Its the writer's responsibility to close the batch.
+                            // Thus, this exception must be caught.
+                            throw new IllegalArgumentException("INT96 column contains one " +
+                              "or more values that can overflow and will result in data " +
+                              "corruption. Please set " +
+                              "`spark.rapids.sql.format.parquet.writer.int96.enabled` to false" +
+                              " so we can fallback on CPU for writing parquet but still take " +
+                              "advantage of parquet read on the GPU.")
                           }
                         }
                       }
@@ -336,20 +333,50 @@ class GpuParquetWriter(
                   }
                 }
               }
-              cv
-            case d: DecimalType if d.precision <= Decimal.MAX_INT_DIGITS =>
-              // There is a bug in Spark that causes a problem if we write Decimals with
-              // precision < 10 as Decimal64.
-              // https://issues.apache.org/jira/browse/SPARK-34167
-              new GpuColumnVector(d, withResource(cv.getBase()) { v =>
-                v.castTo(DType.create(DType.DTypeEnum.DECIMAL32, -d.scale))
-              })
-            case _ => cv
-          }
-        }
-      })
+            }
+            cv /* the input is unchanged */
 
-    super.write(newBatch, statsTrackers)
+          // Here the value of `outputTimestampType` should be `TIMESTAMP_MICROS`.
+          case _ => cv /* the input is unchanged */
+        }
+
+      // Decimal types are checked and transformed only for the top level column because we don't
+      // have access to Spark's data type of the nested column.
+      case (cv, dtOpt) if dtOpt.isDefined && dtOpt.get == DecimalType =>
+        val d = dtOpt.get.asInstanceOf[DecimalType]
+        // There is a bug in Spark that causes a problem if we write Decimals with
+        // precision < 10 as Decimal64.
+        // https://issues.apache.org/jira/browse/SPARK-34167
+        if (d.precision <= Decimal.MAX_INT_DIGITS) {
+          withResource(cv) { v => v.castTo(DType.create(DType.DTypeEnum.DECIMAL32, -d.scale)) }
+        } else if (d.precision <= Decimal.MAX_LONG_DIGITS) {
+          withResource(cv) { v => v.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -d.scale)) }
+        } else {
+          // Here, decimal should be in DECIMAL128 so the input will be unchanged.
+          cv
+        }
+
+      // For all other types: The input is unchanged.
+      case (cv, _) => cv
+    }
+  }
+
+  /**
+   * Persists a columnar batch. Invoked on the executor side. When writing to dynamically
+   * partitioned tables, dynamic partition columns are not included in columns to be written.
+   * NOTE: It is the writer's responsibility to close the batch.
+   */
+  override def write(batch: ColumnarBatch,
+                     statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
+    try {
+      val newBatch = new ColumnarBatch(GpuColumnVector.extractColumns(batch).map {
+        cv => GpuColumnVector.from(deepTransformColumn(cv), cv.dataType())
+      })
+      super.write(newBatch, statsTrackers)
+    }
+    catch {
+      case _: Throwable => batch.close()
+    }
   }
 
   override val tableWriter: TableWriter = {
