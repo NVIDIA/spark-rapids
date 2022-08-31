@@ -195,9 +195,6 @@ run_iceberg_tests() {
 
   # Iceberg does not support Spark 3.3+ yet
   if [[ "$ICEBERG_SPARK_VER" < "3.3" ]]; then
-    # Classloader config is here to work around classloader issues with
-    # --packages in distributed setups, should be fixed by
-    # https://github.com/NVIDIA/spark-rapids/pull/5646
     SPARK_SUBMIT_FLAGS="$BASE_SPARK_SUBMIT_ARGS $SEQ_CONF \
       --packages org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_2.12:${ICEBERG_VERSION} \
       --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \

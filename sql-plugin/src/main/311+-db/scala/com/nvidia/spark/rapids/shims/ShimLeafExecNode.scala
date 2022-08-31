@@ -16,9 +16,9 @@
 
 package com.nvidia.spark.rapids.shims
 
+import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.execution.LeafExecNode
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
-import org.apache.spark.sql.catalyst.plans.logical.Statistics
 
 trait ShimLeafExecNode extends LeafExecNode {
   override def computeStats(): Statistics = {

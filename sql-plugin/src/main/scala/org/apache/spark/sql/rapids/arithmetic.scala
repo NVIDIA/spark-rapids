@@ -394,7 +394,7 @@ case class GpuDecimalMultiply(
     left: Expression,
     right: Expression,
     dataType: DecimalType,
-    needsExtraOverflowChecks: Boolean = false,
+    useLongMultiply: Boolean = false,
     failOnError: Boolean = SQLConf.get.ansiEnabled) extends
     ShimExpression with GpuExpression {
 
@@ -409,7 +409,7 @@ case class GpuDecimalMultiply(
   private[this] lazy val intermediateResultType =
     GpuDecimalMultiply.intermediateResultType(lhsType, rhsType, dataType)
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  def regularMultiply(batch: ColumnarBatch): Any = {
     val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
       GpuCast.doCast(lhs.getBase, lhs.dataType(), intermediateLhsType, ansiMode = failOnError,
         legacyCastToString = false, stringToDateAnsiModeEnabled = false)
@@ -422,7 +422,7 @@ case class GpuDecimalMultiply(
       withResource(castRhs) { castRhs =>
         withResource(castLhs.mul(castRhs,
           GpuColumnVector.getNonNestedRapidsType(intermediateResultType))) { mult =>
-          if (needsExtraOverflowChecks) {
+          if (useLongMultiply) {
             withResource(GpuDecimalMultiply.checkForOverflow(castLhs, castRhs)) { wouldOverflow =>
               if (failOnError) {
                 withResource(wouldOverflow.any()) { anyOverflow =>
@@ -447,6 +447,43 @@ case class GpuDecimalMultiply(
       GpuColumnVector.from(GpuCast.doCast(ret, intermediateResultType, dataType,
         ansiMode = failOnError, legacyCastToString = false, stringToDateAnsiModeEnabled = false),
         dataType)
+    }
+  }
+
+  def longMultiply(batch: ColumnarBatch): Any = {
+    val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
+      lhs.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL128, lhs.getBase.getType.getScale))
+    }
+    val retTab = withResource(castLhs) { castLhs =>
+      val castRhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(right, batch)) { rhs =>
+        rhs.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL128, rhs.getBase.getType.getScale))
+      }
+      withResource(castRhs) { castRhs =>
+        com.nvidia.spark.rapids.jni.DecimalUtils.multiply128(castLhs, castRhs, -dataType.scale)
+      }
+    }
+    val retCol = withResource(retTab) { retTab =>
+      if (failOnError) {
+        withResource(retTab.getColumn(0).any()) { anyOverflow =>
+          if (anyOverflow.isValid && anyOverflow.getBoolean) {
+            throw new ArithmeticException(GpuCast.INVALID_INPUT_MESSAGE)
+          }
+        }
+        retTab.getColumn(1).incRefCount()
+      } else {
+        withResource(GpuScalar.from(null, dataType)) { nullVal =>
+          retTab.getColumn(0).ifElse(nullVal, retTab.getColumn(1))
+        }
+      }
+    }
+    GpuColumnVector.from(retCol, dataType)
+  }
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    if (useLongMultiply) {
+      longMultiply(batch)
+    } else {
+      regularMultiply(batch)
     }
   }
 
@@ -778,6 +815,9 @@ case class GpuDecimalDivide(
     failOnError: Boolean = SQLConf.get.ansiEnabled) extends
     ShimExpression with GpuExpression {
 
+  // For all decimal128 output we will use the long division version.
+  protected lazy val useLongDivision: Boolean = dataType.precision > Decimal.MAX_LONG_DIGITS
+
   override def toString: String = s"($left / $right)"
 
   override def sql: String = s"(${left.sql} / ${right.sql})"
@@ -815,7 +855,7 @@ case class GpuDecimalDivide(
     }
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  def regularDivide(batch: ColumnarBatch): Any = {
     val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
       GpuCast.doCast(lhs.getBase, lhs.dataType(), intermediateLhsType, ansiMode = failOnError,
         legacyCastToString = false, stringToDateAnsiModeEnabled = false)
@@ -842,12 +882,83 @@ case class GpuDecimalDivide(
     }
   }
 
+  def longDivide(batch: ColumnarBatch): Any = {
+    val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
+      lhs.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL128, lhs.getBase.getType.getScale))
+    }
+    val retTab = withResource(castLhs) { castLhs =>
+      val castRhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(right, batch)) { rhs =>
+        withResource(divByZeroFixes(rhs.getBase)) { fixed =>
+          fixed.castTo(DType.create(DType.DTypeEnum.DECIMAL128, fixed.getType.getScale))
+        }
+      }
+      withResource(castRhs) { castRhs =>
+        com.nvidia.spark.rapids.jni.DecimalUtils.divide128(castLhs, castRhs, -dataType.scale)
+      }
+    }
+    val retCol = withResource(retTab) { retTab =>
+      val overflowed = retTab.getColumn(0)
+      val quotient = retTab.getColumn(1)
+      if (failOnError) {
+        withResource(overflowed.any()) { anyOverflow =>
+          if (anyOverflow.isValid && anyOverflow.getBoolean) {
+            throw new ArithmeticException(GpuCast.INVALID_INPUT_MESSAGE)
+          }
+        }
+        quotient.incRefCount()
+      } else {
+        withResource(GpuScalar.from(null, dataType)) { nullVal =>
+          overflowed.ifElse(nullVal, quotient)
+        }
+      }
+    }
+    GpuColumnVector.from(retCol, dataType)
+  }
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    if (useLongDivision) {
+      longDivide(batch)
+    } else {
+      regularDivide(batch)
+    }
+  }
+
   override def nullable: Boolean = true
 
   override def children: Seq[Expression] = Seq(left, right)
 }
 
 object GpuDecimalDivide {
+  // This comes from DecimalType.MINIMUM_ADJUSTED_SCALE, but for some reason it is gone
+  // in databricks so we have it here.
+  private val MINIMUM_ADJUSTED_SCALE = 6
+
+  def calcOrigSparkOutputType(lhs: DecimalType, rhs: DecimalType): DecimalType = {
+    // This comes almost directly from Spark unchanged
+    val allowPrecisionLoss = SQLConf.get.decimalOperationsAllowPrecisionLoss
+    val p1 = lhs.precision
+    val s1 = lhs.scale
+    val p2 = rhs.precision
+    val s2 = rhs.scale
+    if (allowPrecisionLoss) {
+      // Precision: p1 - s1 + s2 + max(6, s1 + p2 + 1)
+      // Scale: max(6, s1 + p2 + 1)
+      val intDig = p1 - s1 + s2
+      val scale = math.max(MINIMUM_ADJUSTED_SCALE, s1 + p2 + 1)
+      val prec = intDig + scale
+      DecimalType.adjustPrecisionScale(prec, scale)
+    } else {
+      var intDig = math.min(DecimalType.MAX_SCALE, p1 - s1 + s2)
+      var decDig = math.min(DecimalType.MAX_SCALE, math.max(6, s1 + p2 + 1))
+      val diff = (intDig + decDig) - DecimalType.MAX_SCALE
+      if (diff > 0) {
+        decDig -= diff / 2 + 1
+        intDig = DecimalType.MAX_SCALE - decDig
+      }
+      DecimalType.bounded(intDig + decDig, decDig)
+    }
+  }
+
   // For Spark the final desired output is
   // new_scale = max(6, lhs.scale + rhs.precision + 1)
   // new_precision = lhs.precision - lhs.scale + rhs.scale + new_scale
