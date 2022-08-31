@@ -327,7 +327,6 @@ def test_parquet_write_encryption_option_fallback(spark_tmp_path, spark_tmp_tabl
 def test_parquet_write_encryption_runtimeconfig_fallback(spark_tmp_path, write_options):
     gen = IntegerGen()
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    with_cpu_session(lambda spark: print("FOOTER CONF: ", spark.sparkContext._jsc.hadoopConfiguration().get("parquet.encryption.footer.key", "NOT HERE")))
     assert_gpu_fallback_write(
         lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.parquet(path),
         lambda spark, path: spark.read.parquet(path),
