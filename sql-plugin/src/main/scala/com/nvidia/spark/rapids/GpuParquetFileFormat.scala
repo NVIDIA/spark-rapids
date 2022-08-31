@@ -306,7 +306,7 @@ class GpuParquetWriter(
             if (cv.getType != DType.TIMESTAMP_MILLISECONDS) {
               withResource(cv) { v => v.castTo(DType.TIMESTAMP_MILLISECONDS) }
             } else {
-              cv /* the input is unchanged */
+              withResource(cv) { v => v } /* the input is unchanged */
             }
 
           case `typeInt96` =>
@@ -334,10 +334,10 @@ class GpuParquetWriter(
                 }
               }
             }
-            cv /* the input is unchanged */
+            withResource(cv) { v => v } /* the input is unchanged */
 
           // Here the value of `outputTimestampType` should be `TIMESTAMP_MICROS`.
-          case _ => cv /* the input is unchanged */
+          case _ => withResource(cv) { v => v } /* the input is unchanged */
         }
 
       // Decimal types are checked and transformed only for the top level column because we don't
@@ -353,11 +353,11 @@ class GpuParquetWriter(
           withResource(cv) { v => v.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -d.scale)) }
         } else {
           // Here, decimal should be in DECIMAL128 so the input will be unchanged.
-          cv
+          withResource(cv) { v => v } /* the input is unchanged */
         }
 
       // For all other types: The input is unchanged.
-      case (cv, _) => cv
+      case (cv, _) => withResource(cv) { v => v } /* the input is unchanged */
     }
   }
 
@@ -370,7 +370,7 @@ class GpuParquetWriter(
                      statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
     try {
       val newBatch = new ColumnarBatch(GpuColumnVector.extractColumns(batch).map {
-        cv => GpuColumnVector.from(deepTransformColumn(cv), cv.dataType())
+        cv => withResource(deepTransformColumn(cv)) { v => GpuColumnVector.from(v, cv.dataType()) }
       })
       super.write(newBatch, statsTrackers)
     }
