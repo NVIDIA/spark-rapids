@@ -228,7 +228,7 @@ def test_hash_repartition_exact_fallback(gen, num_parts):
             .selectExpr('*'), "ShuffleExchangeExec")
 
 @ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
-@pytest.mark.parametrize('num_parts', [2, 10, 17, 19, 32], ids=idfn)
+@pytest.mark.parametrize('num_parts', [1, 2, 10, 17, 19, 32], ids=idfn)
 @pytest.mark.parametrize('gen', [
     ([('a', boolean_gen)], ['a']),
     ([('a', byte_gen)], ['a']), 
