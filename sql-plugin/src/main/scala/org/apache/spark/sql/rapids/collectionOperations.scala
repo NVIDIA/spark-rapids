@@ -420,7 +420,6 @@ case class GpuSortArray(base: Expression, ascendingOrder: Expression)
       case _ =>
         base.listSortRows(isDescending, true)
     }
-
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): cudf.ColumnVector = {
