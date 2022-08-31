@@ -21,7 +21,7 @@ import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.channels.{Channels, WritableByteChannel}
 import java.util
-import java.util.concurrent.Callable
+import java.util.concurrent.{Callable, TimeUnit}
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -35,7 +35,7 @@ import com.google.protobuf.CodedOutputStream
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.SchemaUtils._
-import com.nvidia.spark.rapids.shims.{OrcReadingShims, OrcShims, ShimFilePartitionReaderFactory}
+import com.nvidia.spark.rapids.shims.{OrcCastingShims, OrcReadingShims, OrcShims, ShimFilePartitionReaderFactory}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.hive.common.io.DiskRangeList
@@ -243,6 +243,27 @@ object GpuOrcScan extends Arm {
           downCastAnyInteger(col, toDt)
         }
 
+      // bool to float, double(float64)
+      case (DType.BOOL8, DType.FLOAT32 | DType.FLOAT64) =>
+        col.castTo(toDt)
+
+      // bool to string
+      case (DType.BOOL8, DType.STRING) =>
+        withResource(col.castTo(toDt)) { casted =>
+          // cuDF produces "ture"/"false" while CPU outputs "TRUE"/"FALSE".
+          casted.upper()
+        }
+
+      // integer to float, double(float64), string
+      case (DType.INT8 | DType.INT16 | DType.INT32 | DType.INT64,
+      DType.FLOAT32 | DType.FLOAT64 | DType.STRING) =>
+        col.castTo(toDt)
+
+      // {bool, integer types} to timestamp(micro seconds)
+      case (DType.BOOL8 | DType.INT8 | DType.INT16 | DType.INT32 | DType.INT64,
+      DType.TIMESTAMP_MICROSECONDS) =>
+        OrcCastingShims.castIntegerToTimestamp(col, fromDt)
+
       // string to integral types
       // Follow the CPU ORC conversion.
       //     First convert string to long,
@@ -288,6 +309,7 @@ object GpuOrcScan extends Arm {
             replcaedNulls.asTimestampDays(format)
           }
         }
+
       // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
       case (f, t) =>
         throw new QueryExecutionException(s"Unsupported type casting: $f -> $t")
@@ -308,24 +330,38 @@ object GpuOrcScan extends Arm {
       // Align with what CPU does.
       return false
     }
+    val toType = to.getCategory
     from.getCategory match {
       case BOOLEAN | BYTE | SHORT | INT | LONG =>
-        to.getCategory match {
-          case BOOLEAN | BYTE | SHORT | INT | LONG => true
+        toType match {
+          case BOOLEAN | BYTE | SHORT | INT | LONG | FLOAT | DOUBLE | STRING |
+               TIMESTAMP => true
+          // BINARY and DATE are not supported by design.
+          // The 'to' type (aka read schema) is from Spark, and VARCHAR and CHAR will
+          // be replaced by STRING. Meanwhile, cuDF doesn't support them as output
+          // types, and also replaces them with STRING.
+          // TIMESTAMP_INSTANT is not supported by cuDF.
           case _ => false
         }
       case VARCHAR =>
-        to.getCategory == STRING
-
+        toType == STRING
       case STRING =>
-        to.getCategory match {
+        toType match {
           case BOOLEAN | BYTE | SHORT | INT | LONG | FLOAT | DOUBLE | DATE | TIMESTAMP => true
           case _ => false
         }
-      // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
       case _ =>
         false
     }
+  }
+
+  /**
+   * Test whether if a * b will cause Long-overflow.
+   * In Math.multiplyExact, if there is an integer-overflow, then it will throw an
+   * ArithmeticException.
+   */
+  def testLongMultiplicationOverflow(a: Long, b: Long) = {
+    Math.multiplyExact(a, b)
   }
 }
 
@@ -399,6 +435,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
     // we must split the different compress files into different ColumnarBatch.
     // So here try the best to group the same compression files together before hand.
     val compressionAndStripes = LinkedHashMap[CompressionKind, ArrayBuffer[OrcSingleStripeMeta]]()
+    val currentTime = System.nanoTime()
     files.map { file =>
       val orcPartitionReaderContext = filterHandler.filterStripes(file, dataSchema,
         readDataSchema, partitionSchema)
@@ -410,7 +447,11 @@ case class GpuOrcMultiFilePartitionReaderFactory(
             OrcDataStripe(OrcStripeWithMeta(block, orcPartitionReaderContext)),
             file.partitionValues,
             OrcSchemaWrapper(orcPartitionReaderContext.updatedReadSchema),
+            readDataSchema,
             OrcExtraInfo(orcPartitionReaderContext.requestedMapping)))
+    }
+    metrics.get("scanTime").foreach {
+      _ += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - currentTime)
     }
     val clippedStripes = compressionAndStripes.values.flatten.toSeq
     new MultiFileOrcPartitionReader(conf, files, clippedStripes, readDataSchema, debugDumpPrefix,
@@ -1672,6 +1713,7 @@ private case class OrcSingleStripeMeta(
   dataBlock: OrcDataStripe, // Orc stripe information with the OrcPartitionReaderContext
   partitionValues: InternalRow, // partitioned values
   schema: OrcSchemaWrapper, // Orc schema
+  readSchema: StructType, // Orc read schema
   extraInfo: OrcExtraInfo // Orc ExtraInfo containing the requested column ids
 ) extends SingleDataBlockInfo
 
@@ -1702,7 +1744,7 @@ class MultiFileOrcPartitionReader(
     partitionSchema: StructType,
     numThreads: Int,
     isCaseSensitive: Boolean)
-  extends MultiFileCoalescingPartitionReaderBase(conf, clippedStripes, readDataSchema,
+  extends MultiFileCoalescingPartitionReaderBase(conf, clippedStripes,
     partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads, execMetrics)
     with OrcCommonFunctions {
 
@@ -1944,6 +1986,7 @@ class MultiFileOrcPartitionReader(
       dataBuffer: HostMemoryBuffer,
       dataSize: Long,
       clippedSchema: SchemaBase,
+      readSchema: StructType,
       extraInfo: ExtraInfo): Table =
     decodeToTable(dataBuffer, dataSize, clippedSchema, extraInfo.requestedMapping,
       isCaseSensitive, files)

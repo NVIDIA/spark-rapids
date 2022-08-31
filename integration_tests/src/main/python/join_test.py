@@ -22,15 +22,14 @@ from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan
 from spark_session import with_cpu_session, with_spark_session
 
-# Mark all tests in current file as premerge_ci_1 in order to be run in first k8s pod for parallel build premerge job
-pytestmark = [pytest.mark.premerge_ci_1, pytest.mark.nightly_resource_consuming_test]
+pytestmark = [pytest.mark.nightly_resource_consuming_test]
 
 all_join_types = ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter']
 
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            BooleanGen(), DateGen(), TimestampGen(), null_gen,
            pytest.param(FloatGen(), marks=[incompat]),
-           pytest.param(DoubleGen(), marks=[incompat])] + decimal_gens
+           pytest.param(DoubleGen(), marks=[incompat])] + orderable_decimal_gens
 
 all_gen_no_nulls = [StringGen(nullable=False), ByteGen(nullable=False),
         ShortGen(nullable=False), IntegerGen(nullable=False), LongGen(nullable=False),
@@ -57,7 +56,7 @@ nested_2d_struct_gens = StructGen([['child0', basic_struct_gen]], nullable=False
 nested_3d_struct_gens = StructGen([['child0', nested_2d_struct_gens]], nullable=False)
 struct_gens = [basic_struct_gen, basic_struct_gen_with_no_null_child, nested_2d_struct_gens, nested_3d_struct_gens]
 
-basic_nested_gens = single_level_array_gens + map_string_string_gen + [all_basic_struct_gen]
+basic_nested_gens = single_level_array_gens + map_string_string_gen + [all_basic_struct_gen, binary_gen]
 
 # data types supported by AST expressions in joins
 join_ast_gen = [
@@ -73,7 +72,8 @@ join_no_ast_gen = [
 # Types to use when running joins on small batches. Small batch joins can take a long time
 # to run and are mostly redundant with the normal batch size test, so we only run these on a
 # set of representative types rather than all types.
-join_small_batch_gens = [ StringGen(), IntegerGen(), decimal_gen_128bit ]
+
+join_small_batch_gens = [ StringGen(), IntegerGen(), orderable_decimal_gen_128bit ]
 cartesian_join_small_batch_gens = join_small_batch_gens + [basic_struct_gen, ArrayGen(string_gen)]
 
 _sortmerge_join_conf = {'spark.sql.autoBroadcastJoinThreshold': '-1',
@@ -194,7 +194,7 @@ def test_sortmerge_join_ridealong(data_gen, join_type):
 @allow_non_gpu('SortMergeJoinExec', 'SortExec', 'KnownFloatingPointNormalized', 'ArrayTransform', 'LambdaFunction',
         'NamedLambdaVariable', 'NormalizeNaNAndZero', 'ShuffleExchangeExec', 'HashPartitioning')
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', single_level_array_gens + [binary_gen], ids=idfn)
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
 def test_sortmerge_join_wrong_key_fallback(data_gen, join_type):
     def do_join(spark):
@@ -437,7 +437,7 @@ def test_left_broadcast_nested_loop_join_condition_missing(data_gen, join_type):
         return broadcast(left).join(right, how=join_type).distinct()
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
-@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens + [binary_gen], ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_right_broadcast_nested_loop_join_condition_missing_count(data_gen, join_type):
     def do_join(spark):
@@ -445,7 +445,7 @@ def test_right_broadcast_nested_loop_join_condition_missing_count(data_gen, join
         return left.join(broadcast(right), how=join_type).selectExpr('COUNT(*)')
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
-@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gen + single_level_array_gens + [binary_gen], ids=idfn)
 @pytest.mark.parametrize('join_type', ['Right'], ids=idfn)
 def test_left_broadcast_nested_loop_join_condition_missing_count(data_gen, join_type):
     def do_join(spark):

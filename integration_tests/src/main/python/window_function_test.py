@@ -135,22 +135,20 @@ lead_lag_data_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
             ['child_string', StringGen()]
         ])]
 
-all_basic_gens_no_nans = [byte_gen, short_gen, int_gen, long_gen, 
-        FloatGen(no_nans=True, special_cases=[]), DoubleGen(no_nans=True, special_cases=[]),
-        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
-
 _no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                        'spark.rapids.sql.hasNans': 'false',
                        'spark.rapids.sql.castStringToFloat.enabled': 'true'
                       }
 
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
-def test_float_window_max_with_nan(data_gen):
+@pytest.mark.parametrize('data_gen', [SetValuesGen(t, [math.nan, None]) for t in [FloatType(), DoubleType()]], ids=idfn)
+def test_float_window_min_max_all_nans(data_gen):
   w = Window().partitionBy('a')
   assert_gpu_and_cpu_are_equal_collect(
       lambda spark: two_col_df(spark, byte_gen, data_gen)
-          .withColumn("max_b", f.max('a').over(w)))
+          .withColumn("min_b", f.min('a').over(w))
+          .withColumn("max_b", f.max('a').over(w))
+  )
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', [decimal_gen_128bit], ids=idfn)
@@ -385,10 +383,9 @@ def test_window_aggs_for_rows(data_gen, batch_size):
 # specially, but it only works if all of the aggregations can support this.
 # the order returned should be consistent because the data ends up in a single task (no partitioning)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches 
-@pytest.mark.parametrize('b_gen', all_basic_gens_no_nans + [decimal_gen_32bit, decimal_gen_128bit], ids=meta_idfn('data:'))
+@pytest.mark.parametrize('b_gen', all_basic_gens + [decimal_gen_32bit, decimal_gen_128bit], ids=meta_idfn('data:'))
 def test_window_running_no_part(b_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
-            'spark.rapids.sql.hasNans': False,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
     query_parts = ['row_number() over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as row_num',
             'rank() over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as rank_val',
@@ -441,7 +438,7 @@ def test_running_float_sum_no_part(batch_size):
 # to allow for duplication in the ordering, because there will be no other columns. This means that if you swtich
 # rows it does not matter because the only time rows are switched is when the rows are exactly the same.
 @pytest.mark.parametrize('data_gen',
-                         all_basic_gens_no_nans + [decimal_gen_32bit, decimal_gen_128bit],
+                         all_basic_gens + [decimal_gen_32bit, orderable_decimal_gen_128bit],
                          ids=meta_idfn('data:'))
 def test_window_running_rank_no_part(data_gen):
     # Keep the batch size small. We have tested these with operators with exact inputs already, this is mostly
@@ -495,10 +492,9 @@ def test_window_running_rank(data_gen):
 @ignore_order(local=True)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize('b_gen, c_gen', [(long_gen, x) for x in running_part_and_order_gens] +
-        [(x, long_gen) for x in all_basic_gens_no_nans + [decimal_gen_32bit]], ids=idfn)
+        [(x, long_gen) for x in all_basic_gens + [decimal_gen_32bit]], ids=idfn)
 def test_window_running(b_gen, c_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
-            'spark.rapids.sql.hasNans': False,
             'spark.rapids.sql.variableFloatAgg.enabled': True,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
     query_parts = ['b', 'a', 'row_number() over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as row_num',

@@ -161,7 +161,7 @@ shift
 done
 
 # include options to mvn command
-export MVN="mvn ${MVN_OPT}"
+export MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 ${MVN_OPT}"
 
 DIST_PROFILE=${DIST_PROFILE:-"noSnapshots"}
 [[ "$MODULE" != "" ]] && MODULE_OPT="--projects $MODULE --also-make" || MODULE_OPT=""
