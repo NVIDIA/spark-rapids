@@ -216,7 +216,7 @@ def test_round_robin_sort_fallback(data_gen):
 
 @allow_non_gpu("ProjectExec", "ShuffleExchangeExec")
 @ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
-@pytest.mark.parametrize('num_parts', [1, 2, 10, 17, 19, 32], ids=idfn)
+@pytest.mark.parametrize('num_parts', [2, 10, 17, 19, 32], ids=idfn)
 @pytest.mark.parametrize('gen', [([('ag', ArrayGen(StructGen([('b1', long_gen)])))], ['ag'])], ids=idfn)
 def test_hash_repartition_exact_fallback(gen, num_parts):
     data_gen = gen[0]
