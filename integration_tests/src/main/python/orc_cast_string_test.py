@@ -19,11 +19,10 @@ from data_gen import *
 from pyspark.sql.types import *
 from spark_session import with_cpu_session
 
-# Set a seed for the following random generator
-random.seed(31415926535)
 
 @pytest.mark.parametrize('to_type', ['boolean', 'tinyint', 'smallint', 'int', 'bigint'])
 def test_casting_string_to_integers(spark_tmp_path, to_type):
+    random.seed(31415926535)
     orc_path = spark_tmp_path + '/orc_cast_string_to_int'
     normal_cases = []
     length = 2048
@@ -53,6 +52,7 @@ def test_casting_string_to_integers(spark_tmp_path, to_type):
 @pytest.mark.approximate_float
 @pytest.mark.parametrize('to_type', ['float', 'double'])
 def test_casting_string_to_float(spark_tmp_path, to_type):
+    random.seed(31415926535)
     orc_path = spark_tmp_path + '/orc_cast_string_to_float'
     # INF and NaN are case-sensitive
     normal_cases = [
@@ -88,6 +88,7 @@ There is a strange case, if input string is "9808-02-30", intuitively, we should
 However, CPU spark output 9808-02-29. Need to figure whether if it's a bug or a feature.
 '''
 def test_casting_string_to_date(spark_tmp_path):
+    random.seed(31415926535)
     orc_path = spark_tmp_path + '/orc_cast_string_to_date'
     length = 2048
     normal_cases = []
