@@ -294,8 +294,8 @@ class GpuParquetWriter(
     }
   }
 
-  private def deepTransformColumn(gpuCV: GpuColumnVector): ColumnVector = {
-    ColumnCastUtil.deepTransform(gpuCV.getBase, Some(gpuCV.dataType())) {
+  private def deepTransformColumn(cv: ColumnVector, dt: DataType): ColumnVector = {
+    ColumnCastUtil.deepTransform(cv, Some(dt)) {
       // Timestamp types are checked and transformed for all nested columns.
       case (cv, _) if cv.getType.isTimestampType =>
         val typeMillis = ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString
@@ -304,7 +304,7 @@ class GpuParquetWriter(
         outputTimestampType match {
           case `typeMillis` =>
             if (cv.getType != DType.TIMESTAMP_MILLISECONDS) {
-              withResource(cv) { v => v.castTo(DType.TIMESTAMP_MILLISECONDS) }
+              cv.castTo(DType.TIMESTAMP_MILLISECONDS)
             } else {
               cv /* the input is unchanged */
             }
@@ -348,9 +348,9 @@ class GpuParquetWriter(
         // precision < 10 as Decimal64.
         // https://issues.apache.org/jira/browse/SPARK-34167
         if (d.precision <= Decimal.MAX_INT_DIGITS) {
-          withResource(cv) { v => v.castTo(DType.create(DType.DTypeEnum.DECIMAL32, -d.scale)) }
+          cv.castTo(DType.create(DType.DTypeEnum.DECIMAL32, -d.scale))
         } else if (d.precision <= Decimal.MAX_LONG_DIGITS) {
-          withResource(cv) { v => v.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -d.scale)) }
+          cv.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -d.scale))
         } else {
           // Here, decimal should be in DECIMAL128 so the input will be unchanged.
           cv
@@ -370,7 +370,9 @@ class GpuParquetWriter(
                      statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
     try {
       val newBatch = new ColumnarBatch(GpuColumnVector.extractColumns(batch).map {
-        cv => withResource(deepTransformColumn(cv)) { v => GpuColumnVector.from(v, cv.dataType()) }
+        cv => withResource(deepTransformColumn(cv.getBase, cv.dataType)) {
+          v => GpuColumnVector.from(v, cv.dataType())
+        }
       })
       super.write(newBatch, statsTrackers)
     }
