@@ -306,7 +306,7 @@ class GpuParquetWriter(
             if (cv.getType != DType.TIMESTAMP_MILLISECONDS) {
               withResource(cv) { v => v.castTo(DType.TIMESTAMP_MILLISECONDS) }
             } else {
-              withResource(cv) { v => v } /* the input is unchanged */
+              cv /* the input is unchanged */
             }
 
           case `typeInt96` =>
@@ -334,10 +334,10 @@ class GpuParquetWriter(
                 }
               }
             }
-            withResource(cv) { v => v } /* the input is unchanged */
+            cv /* the input is unchanged */
 
           // Here the value of `outputTimestampType` should be `TIMESTAMP_MICROS`.
-          case _ => withResource(cv) { v => v } /* the input is unchanged */
+          case _ => cv /* the input is unchanged */
         }
 
       // Decimal types are checked and transformed only for the top level column because we don't
@@ -353,11 +353,11 @@ class GpuParquetWriter(
           withResource(cv) { v => v.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -d.scale)) }
         } else {
           // Here, decimal should be in DECIMAL128 so the input will be unchanged.
-          withResource(cv) { v => v } /* the input is unchanged */
+          cv
         }
 
       // For all other types: The input is unchanged.
-      case (cv, _) => withResource(cv) { v => v } /* the input is unchanged */
+      case (cv, _) => cv
     }
   }
 
