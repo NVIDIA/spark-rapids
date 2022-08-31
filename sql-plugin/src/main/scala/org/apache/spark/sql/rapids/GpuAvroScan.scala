@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import java.io.{FileNotFoundException, IOException, OutputStream}
 import java.net.URI
-import java.util.concurrent.Callable
+import java.util.concurrent.{Callable, TimeUnit}
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters.{asScalaBufferConverter, mapAsScalaMapConverter}
@@ -248,6 +248,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
     val clippedBlocks = ArrayBuffer[AvroSingleDataBlockInfo]()
     val mapPathHeader = LinkedHashMap[Path, Header]()
     val filterHandler = AvroFileFilterHandler(conf, options)
+    val currentTime = System.nanoTime()
     files.foreach { file =>
       val singleFileInfo = try {
         filterHandler.filterBlocks(file)
@@ -269,11 +270,15 @@ case class GpuAvroMultiFilePartitionReaderFactory(
             AvroDataBlock(block),
             file.partitionValues,
             AvroSchemaWrapper(SchemaConverters.toAvroType(readDataSchema)),
+            readDataSchema,
             AvroExtraInfo()))
       if (singleFileInfo.blocks.nonEmpty) {
         // No need to check the header since it can not be null when blocks is not empty here.
         mapPathHeader.put(fPath, singleFileInfo.header)
       }
+    }
+    metrics.get("scanTime").foreach {
+      _ += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - currentTime)
     }
     new GpuMultiFileAvroPartitionReader(conf, files, clippedBlocks, readDataSchema,
       partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads,
@@ -827,7 +832,7 @@ class GpuMultiFileAvroPartitionReader(
     override val debugDumpPrefix: Option[String],
     execMetrics: Map[String, GpuMetric],
     mapPathHeader: Map[Path, Header])
-  extends MultiFileCoalescingPartitionReaderBase(conf, clippedBlocks, readDataSchema,
+  extends MultiFileCoalescingPartitionReaderBase(conf, clippedBlocks,
     partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads,
     execMetrics) with GpuAvroReaderBase {
 
@@ -886,7 +891,7 @@ class GpuMultiFileAvroPartitionReader(
   }
 
   override def readBufferToTable(dataBuffer: HostMemoryBuffer, dataSize: Long,
-      clippedSchema: SchemaBase, extraInfo: ExtraInfo): Table = {
+      clippedSchema: SchemaBase,  readSchema: StructType, extraInfo: ExtraInfo): Table = {
     sendToGpuUnchecked(dataBuffer, dataSize, splits)
   }
 
@@ -1013,6 +1018,7 @@ case class AvroSingleDataBlockInfo(
   dataBlock: AvroDataBlock,
   partitionValues: InternalRow,
   schema: AvroSchemaWrapper,
+  readSchema: StructType,
   extraInfo: AvroExtraInfo) extends SingleDataBlockInfo
 
 case class AvroBatchContext(

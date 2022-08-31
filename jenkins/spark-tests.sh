@@ -110,7 +110,11 @@ export SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-bin-hadoop3.2"
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
     rm -f $SPARK_HOME.tgz
-export PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/pyspark/:$SPARK_HOME/python/lib/py4j-0.10.9-src.zip
+# copy python path libs to container /tmp instead of workspace to avoid ephemeral PVC issue
+TMP_PYTHON=/tmp/$(date +"%Y%m%d")
+rm -rf $TMP_PYTHON && cp -r $SPARK_HOME/python $TMP_PYTHON
+export PYTHONPATH=$TMP_PYTHON/python:$TMP_PYTHON/python/pyspark/:$TMP_PYTHON/python/lib/py4j-0.10.9-src.zip
+
 # Extract 'value' from conda config string 'key: value'
 CONDA_ROOT=`conda config --show root_prefix | cut -d ' ' -f2`
 PYTHON_VER=`conda config --show default_python | cut -d ' ' -f2`
@@ -195,9 +199,6 @@ run_iceberg_tests() {
 
   # Iceberg does not support Spark 3.3+ yet
   if [[ "$ICEBERG_SPARK_VER" < "3.3" ]]; then
-    # Classloader config is here to work around classloader issues with
-    # --packages in distributed setups, should be fixed by
-    # https://github.com/NVIDIA/spark-rapids/pull/5646
     SPARK_SUBMIT_FLAGS="$BASE_SPARK_SUBMIT_ARGS $SEQ_CONF \
       --packages org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_2.12:${ICEBERG_VERSION} \
       --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \

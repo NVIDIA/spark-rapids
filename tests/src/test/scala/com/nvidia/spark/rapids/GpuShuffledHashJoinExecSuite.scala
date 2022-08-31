@@ -206,7 +206,7 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
 
   test("test a SerializedTableColumn") {
     TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-      closeOnExcept(ColumnVector.fromInts(1, 2, 3, 4, 5)) { cudfCol =>
+      withResource(ColumnVector.fromInts(1, 2, 3, 4, 5)) { cudfCol =>
         val cv = GpuColumnVector.from(cudfCol, IntegerType)
         val batch = new ColumnarBatch(Seq(cv).toArray, 5)
         withResource(GpuColumnVector.from(batch)) { tbl =>
@@ -242,7 +242,7 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
 
   test("test two batches, going over the limit") {
     TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-      closeOnExcept(ColumnVector.fromInts(1, 2, 3, 4, 5)) { cudfCol =>
+      withResource(ColumnVector.fromInts(1, 2, 3, 4, 5)) { cudfCol =>
         val cv = GpuColumnVector.from(cudfCol, IntegerType)
         val batch = new ColumnarBatch(Seq(cv).toArray, 5)
         withResource(GpuColumnVector.from(batch)) { tbl =>
@@ -281,7 +281,7 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
 
   test("test two batches, stating within the limit") {
     TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-      closeOnExcept(ColumnVector.fromInts(1, 2, 3, 4, 5)) { cudfCol =>
+      withResource(ColumnVector.fromInts(1, 2, 3, 4, 5)) { cudfCol =>
         val cv = GpuColumnVector.from(cudfCol, IntegerType)
         val batch = new ColumnarBatch(Seq(cv).toArray, 5)
         withResource(GpuColumnVector.from(batch)) { tbl =>
