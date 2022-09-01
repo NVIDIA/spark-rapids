@@ -163,10 +163,14 @@ def test_sort_array_normalize_nans():
     nan1 = struct.unpack('d', bytes1)[0]
     nan2 = struct.unpack('d', bytes2)[0]
     other = struct.unpack('d', bytes3)[0]
-    data = [([nan2] + [other for _ in range(256)] + [nan1],)]
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.createDataFrame(data).selectExpr('sort_array(_1, true)', 'sort_array(_1, false)')
-    )
+
+    data1 = [([nan2] + [other for _ in range(256)] + [nan1],)]
+    # array of struct
+    data2 = [([(nan2, nan1)] + [(other, nan2) for _ in range(256)] + [(nan1, nan2)],)]
+    for data in [data1, data2]:
+        assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: spark.createDataFrame(data).selectExpr('sort_array(_1, true)', 'sort_array(_1, false)')
+        )
 
 # For functionality test, the sequence length in each row should be limited,
 # to avoid the exception as below,
