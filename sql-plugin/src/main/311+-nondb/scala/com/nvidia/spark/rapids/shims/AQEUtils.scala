@@ -27,4 +27,6 @@ object AQEUtils {
   }
 
   def isAdaptiveExecutionSupportedInSparkVersion: Boolean = true
+
+  def isGPUShuffleSupportedInAdaptiveExecution: Boolean = true
 }

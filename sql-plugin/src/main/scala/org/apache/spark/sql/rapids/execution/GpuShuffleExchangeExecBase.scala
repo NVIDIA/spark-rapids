@@ -21,7 +21,7 @@ import scala.concurrent.Future
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, GpuRangePartitioning, ShimUnaryExecNode, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{AQEUtils, GpuHashPartitioning, GpuRangePartitioning, ShimUnaryExecNode, SparkShimImpl}
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
@@ -104,6 +104,13 @@ class GpuShuffleMeta(
     if (wrapped.getTagValue(GpuShuffleMeta.availableRuntimeDataTransition).isEmpty) {
       wrapped.setTagValue(GpuShuffleMeta.availableRuntimeDataTransition,
         availableRuntimeDataTransition)
+    }
+
+    // Check if AQE is enabled and if we can use GPU shuffle or not based on our environment
+    if (SQLConf.get.adaptiveExecutionEnabled &&
+        !AQEUtils.isGPUShuffleSupportedInAdaptiveExecution) {
+      willNotWorkOnGpu("current Spark version does not support GPU shuffle when adaptive " +
+          "execution is enabled")
     }
   }
 

@@ -28,6 +28,9 @@ object AQEUtils {
     ShuffleQueryStageExec(sqse.id, reusedExchange, sqse.originalPlan)
   }
 
-  // currently we don't support AQE on Databricks
-  def isAdaptiveExecutionSupportedInSparkVersion: Boolean = false
+  def isAdaptiveExecutionSupportedInSparkVersion: Boolean = true
+
+  // GPU Shuffle in some Databricks creates some incorrect references when AQE is enabled
+  // so disable it for now.
+  def isGPUShuffleSupportedInAdaptiveExecution: Boolean = false
 }

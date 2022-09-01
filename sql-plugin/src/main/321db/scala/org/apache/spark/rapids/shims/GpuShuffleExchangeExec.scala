@@ -15,36 +15,26 @@
  */
 package org.apache.spark.rapids.shims
 
-import scala.concurrent.Future
-
 import com.nvidia.spark.rapids.GpuPartitioning
 
-import org.apache.spark.MapOutputStatistics
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{ShufflePartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.exchange.{ShuffleExchangeLike, ShuffleOrigin}
-import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBase, ShuffledBatchRDD}
+import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBaseWithMetrics, ShuffledBatchRDD}
 
 case class GpuShuffleExchangeExec(
     gpuOutputPartitioning: GpuPartitioning,
     child: SparkPlan,
     shuffleOrigin: ShuffleOrigin)(
     cpuOutputPartitioning: Partitioning)
-  extends GpuShuffleExchangeExecBase(gpuOutputPartitioning, child) with ShuffleExchangeLike {
+  extends GpuShuffleExchangeExecBaseWithMetrics(gpuOutputPartitioning, child)
+      with ShuffleExchangeLike {
 
   override def otherCopyArgs: Seq[AnyRef] = cpuOutputPartitioning :: Nil
 
   override val outputPartitioning: Partitioning = cpuOutputPartitioning
-
-  // 'mapOutputStatisticsFuture' is only needed when enable AQE.
-  override def mapOutputStatisticsFuture: Future[MapOutputStatistics] =
-    if (inputBatchRDD.getNumPartitions == 0) {
-      Future.successful(null)
-    } else {
-      sparkContext.submitMapStage(shuffleDependencyColumnar)
-    }
 
   override def numMappers: Int = shuffleDependencyColumnar.rdd.getNumPartitions
 
