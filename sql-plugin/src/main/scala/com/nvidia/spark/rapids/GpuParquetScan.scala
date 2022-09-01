@@ -980,7 +980,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId)
   }
 
-  private def filterBlockForCoalescingReader(
+  private def filterBlocksForCoalescingReader(
       footerReadType: ParquetFooterReaderType.Value,
       file: PartitionedFile,
       conf: Configuration,
@@ -1000,7 +1000,6 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       case e: FileNotFoundException if !ignoreMissingFiles => throw e
       // If ignoreMissingFiles=true, this case will never be reached. But it's ok
       // to leave this branch here.
-      // TODO - do we need to actually throw from thread and fail?
       case e@(_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
         logWarning(
           s"Skipped the rest of the content in the corrupted file: ${file.filePath}", e)
@@ -1022,7 +1021,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       TrampolineUtil.setTaskContext(taskContext)
       try {
         files.map { file =>
-          filterBlockForCoalescingReader(footerReadType, file, conf, filters, readDataSchema)
+          filterBlocksForCoalescingReader(footerReadType, file, conf, filters, readDataSchema)
         }
       } finally {
         TrampolineUtil.unsetTaskContext()
@@ -1074,10 +1073,11 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       }
     } else {
       files.map { file =>
-        val metaAndFile = filterBlockForCoalescingReader(footerReadType, file, conf,
+        val metaAndFile = filterBlocksForCoalescingReader(footerReadType, file, conf,
           filters, readDataSchema)
         addBlockMeta(metaAndFile)
       }
+    }
     metrics.get("scanTime").foreach {
       _ += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime)
     }
