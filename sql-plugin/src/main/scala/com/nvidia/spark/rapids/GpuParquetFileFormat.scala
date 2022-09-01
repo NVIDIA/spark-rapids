@@ -309,7 +309,9 @@ class GpuParquetWriter(
   private def deepTransformColumn(cv: ColumnVector, dt: DataType): ColumnVector = {
     ColumnCastUtil.deepTransform(cv, Some(dt)) {
       // Timestamp types are checked and transformed for all nested columns.
-      case (cv, _) if cv.getType.isTimestampType =>
+      // Note that cudf's `isTimestampType` returns `true` for `TIMESTAMP_DAYS`, which is not
+      // included in Spark's `TimestampType`.
+      case (cv, _) if cv.getType.isTimestampType && cv.getType != DType.TIMESTAMP_DAYS =>
         val typeMillis = ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString
         val typeInt96 = ParquetOutputTimestampType.INT96.toString
 
