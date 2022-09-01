@@ -310,8 +310,6 @@ class GpuParquetWriter(
     ColumnCastUtil.deepTransform(cv, Some(dt)) {
       // Timestamp types are checked and transformed for all nested columns.
       case (cv, _) if cv.getType.isTimestampType =>
-        println("is timestamp")
-
         val typeMillis = ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString
         val typeInt96 = ParquetOutputTimestampType.INT96.toString
 
