@@ -763,8 +763,8 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
             case _ => fail(s"the escape character is not allowed to precede '$c'")
           }
         case c if c == escapeChar => fail("it is not allowed to end with the escape character")
-        case '_' => out ++= "(.|\n)"
-        case '%' => out ++= "(.|\n)*"
+        case '_' => out ++= "(?:.|\n)"
+        case '%' => out ++= "(?:.|\n)*"
         case c => out ++= cudfQuote(c)
       }
     }

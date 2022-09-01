@@ -1088,18 +1088,17 @@ case class GpuParquetMultiFilePartitionReaderFactory(
           ParquetDataBlock(block),
           file.partitionValues,
           ParquetSchemaWrapper(singleFileInfo.schema),
-          ParquetExtraInfo(singleFileInfo.isCorrectedRebaseMode,
+          singleFileInfo.readSchema,
+          new ParquetExtraInfo(singleFileInfo.isCorrectedRebaseMode,
             singleFileInfo.isCorrectedInt96RebaseMode, singleFileInfo.hasInt96Timestamps)))
     }
     }
     metrics.get("scanTime").foreach {
       _ += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - currentTime)
     }
-    new MultiFileParquetPartitionReader(conf, files, clippedBlocks,
-      isCaseSensitive, readDataSchema, debugDumpPrefix,
-      maxReadBatchSizeRows, maxReadBatchSizeBytes, metrics,
-      partitionSchema, numThreads, ignoreMissingFiles, ignoreCorruptFiles,
-      readUseFieldId)
+    new MultiFileParquetPartitionReader(conf, files, clippedBlocks, isCaseSensitive,
+      debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes, metrics,
+      partitionSchema, numThreads, ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId)
   }
 
   /**
@@ -1507,8 +1506,8 @@ private case class ParquetDataBlock(dataBlock: BlockMetaData) extends DataBlockB
 }
 
 /** Parquet extra information containing isCorrectedRebaseMode */
-case class ParquetExtraInfo(isCorrectedRebaseMode: Boolean,
-    isCorrectedInt96RebaseMode: Boolean, hasInt96Timestamps: Boolean) extends ExtraInfo
+class ParquetExtraInfo(val isCorrectedRebaseMode: Boolean,
+    val isCorrectedInt96RebaseMode: Boolean, val hasInt96Timestamps: Boolean) extends ExtraInfo
 
 // contains meta about a single block in a file
 private case class ParquetSingleDataBlockMeta(
@@ -1516,6 +1515,7 @@ private case class ParquetSingleDataBlockMeta(
   dataBlock: ParquetDataBlock,
   partitionValues: InternalRow,
   schema: ParquetSchemaWrapper,
+  readSchema: StructType,
   extraInfo: ParquetExtraInfo) extends SingleDataBlockInfo
 
 /**
@@ -1532,7 +1532,6 @@ private case class ParquetSingleDataBlockMeta(
  * @param clippedBlocks the block metadata from the original Parquet file that has been clipped
  *                      to only contain the column chunks to be read
  * @param isSchemaCaseSensitive whether schema is case sensitive
- * @param readDataSchema the Spark schema describing what will be read
  * @param debugDumpPrefix a path prefix to use for dumping the fabricated Parquet data or null
  * @param maxReadBatchSizeRows soft limit on the maximum number of rows the reader reads per batch
  * @param maxReadBatchSizeBytes soft limit on the maximum number of bytes the reader reads per batch
@@ -1547,7 +1546,6 @@ class MultiFileParquetPartitionReader(
     splits: Array[PartitionedFile],
     clippedBlocks: Seq[ParquetSingleDataBlockMeta],
     override val isSchemaCaseSensitive: Boolean,
-    readDataSchema: StructType,
     debugDumpPrefix: String,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
@@ -1557,7 +1555,7 @@ class MultiFileParquetPartitionReader(
     ignoreMissingFiles: Boolean,
     ignoreCorruptFiles: Boolean,
     useFieldId: Boolean)
-  extends MultiFileCoalescingPartitionReaderBase(conf, clippedBlocks, readDataSchema,
+  extends MultiFileCoalescingPartitionReaderBase(conf, clippedBlocks,
     partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads, execMetrics)
   with ParquetPartitionReaderBase {
 
@@ -1569,7 +1567,7 @@ class MultiFileParquetPartitionReader(
     block.asInstanceOf[ParquetDataBlock].dataBlock
 
   implicit def toDataBlockBase(blocks: Seq[BlockMetaData]): Seq[DataBlockBase] =
-    blocks.map(ParquetDataBlock(_))
+    blocks.map(ParquetDataBlock)
 
   implicit def toBlockMetaDataSeq(blocks: Seq[DataBlockBase]): Seq[BlockMetaData] =
     blocks.map(_.asInstanceOf[ParquetDataBlock].dataBlock)
@@ -1665,7 +1663,7 @@ class MultiFileParquetPartitionReader(
   override final def getFileFormatShortName: String = "Parquet"
 
   override def readBufferToTable(dataBuffer: HostMemoryBuffer, dataSize: Long,
-      clippedSchema: SchemaBase, extraInfo: ExtraInfo): Table = {
+      clippedSchema: SchemaBase, readDataSchema: StructType, extraInfo: ExtraInfo): Table = {
 
     // Dump parquet data into a file
     dumpDataToFile(dataBuffer, dataSize, splits, Option(debugDumpPrefix), Some("parquet"))
@@ -1748,7 +1746,7 @@ class MultiFileParquetPartitionReader(
  *                            processed on the GPU. This affects the amount of host memory used.
  * @param ignoreMissingFiles Whether to ignore missing files
  * @param ignoreCorruptFiles Whether to ignore corrupt files
- * @param useFieldId Whether to ignore corrupt files
+ * @param useFieldId Whether to use field id for column matching
  */
 class MultiFileCloudParquetPartitionReader(
     override val conf: Configuration,
@@ -1935,8 +1933,7 @@ class MultiFileCloudParquetPartitionReader(
         val (hostBuffer, size) = memBuffersAndSize.head
         val nextBatch = readBufferToTable(buffer.isCorrectRebaseMode,
           buffer.isCorrectInt96RebaseMode, buffer.hasInt96Timestamps, buffer.clippedSchema,
-          buffer.readSchema, buffer.partitionedFile.partitionValues,
-          hostBuffer, size, buffer.partitionedFile.filePath)
+          buffer.readSchema, buffer.partitionedFile, hostBuffer, size)
         if (memBuffersAndSize.length > 1) {
           val updatedBuffers = memBuffersAndSize.drop(1)
           currentFileHostBuffers = Some(buffer.copy(memBuffersAndSizes = updatedBuffers))
@@ -1954,10 +1951,9 @@ class MultiFileCloudParquetPartitionReader(
       hasInt96Timestamps: Boolean,
       clippedSchema: MessageType,
       readDataSchema: StructType,
-      partValues: InternalRow,
+      partedFile: PartitionedFile,
       hostBuffer: HostMemoryBuffer,
-      dataSize: Long,
-      fileName: String): Option[ColumnarBatch] = {
+      dataSize: Long): Option[ColumnarBatch] = {
     val table = withResource(hostBuffer) { _ =>
 
       // Dump parquet data into a file
@@ -1977,7 +1973,7 @@ class MultiFileCloudParquetPartitionReader(
         maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
         if (readDataSchema.length < table.getNumberOfColumns) {
           throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
-              s"but read ${table.getNumberOfColumns} from $fileName")
+              s"but read ${table.getNumberOfColumns} from ${partedFile.filePath}")
         }
       }
       metrics(NUM_OUTPUT_BATCHES) += 1
@@ -1992,7 +1988,7 @@ class MultiFileCloudParquetPartitionReader(
       }
       // we have to add partition values here for this batch, we already verified that
       // its not different for all the blocks in this batch
-      addPartitionValues(maybeBatch, partValues, partitionSchema)
+      addPartitionValues(maybeBatch, partedFile.partitionValues, partitionSchema)
     } finally {
       table.foreach(_.close())
     }
