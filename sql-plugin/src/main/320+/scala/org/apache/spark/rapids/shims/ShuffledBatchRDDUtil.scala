@@ -67,7 +67,11 @@ object ShuffledBatchRDDUtil {
           context,
           sqlMetricsReporter)
         val blocksByAddress = SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(
-          dependency.shuffleHandle.shuffleId, 0, Int.MaxValue, startReducerIndex, endReducerIndex)
+          dependency.shuffleHandle.shuffleId, 
+          0, 
+          Int.MaxValue, 
+          startReducerIndex, 
+          endReducerIndex)
         val partitionSize = blocksByAddress.flatMap(_._2).map(_._2).sum
         (reader, partitionSize)
 
@@ -81,7 +85,10 @@ object ShuffledBatchRDDUtil {
           context,
           sqlMetricsReporter)
         val blocksByAddress = SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(
-          dependency.shuffleHandle.shuffleId, 0, Int.MaxValue, reducerIndex,
+          dependency.shuffleHandle.shuffleId, 
+          startMapIndex, 
+          endMapIndex, 
+          reducerIndex,
           reducerIndex + 1)
         val partitionSize = blocksByAddress.flatMap(_._2)
             .filter(tuple => tuple._3 >= startMapIndex && tuple._3 < endMapIndex)
@@ -97,7 +104,11 @@ object ShuffledBatchRDDUtil {
           context,
           sqlMetricsReporter)
         val blocksByAddress = SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(
-          dependency.shuffleHandle.shuffleId, 0, Int.MaxValue, startReducerIndex, endReducerIndex)
+          dependency.shuffleHandle.shuffleId,
+          mapIndex, 
+          mapIndex + 1, 
+          startReducerIndex, 
+          endReducerIndex)
         val partitionSize = blocksByAddress.flatMap(_._2)
             .filter(_._3 == mapIndex)
             .map(_._2).sum
@@ -112,7 +123,11 @@ object ShuffledBatchRDDUtil {
           context,
           sqlMetricsReporter)
         val blocksByAddress = SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(
-          dependency.shuffleHandle.shuffleId, startMapIndex, endMapIndex, 0, numReducers)
+          dependency.shuffleHandle.shuffleId, 
+          startMapIndex, 
+          endMapIndex, 
+          0, 
+          numReducers)
         val partitionSize = blocksByAddress.flatMap(_._2)
             .filter(tuple => tuple._3 >= startMapIndex && tuple._3 < endMapIndex)
             .map(_._2).sum
