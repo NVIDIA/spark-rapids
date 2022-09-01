@@ -1,4 +1,4 @@
-!/bin/bash
+#!/bin/bash
 # Copyright (c) 2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,9 +15,9 @@
 
 set -ex
 
-REPO_BASE=${REPO_BASE:-"navkumar82"}
+REPO_BASE=${REPO_BASE:-"nvidia"}
 TAG_NAME=${TAG_NAME:-"rapids-4-spark-databricks"}
-VERSION=${VERSION:-"22.10.0"}
+VERSION=${VERSION:-"22.08.0"}
 TAG_VERSION=${TAG_VERSION:-$VERSION}
 CUDA_VERSION=${CUDA_VERSION:-"11.3.1"}
 CUDA_MAJOR=${CUDA_VERSION%.*}

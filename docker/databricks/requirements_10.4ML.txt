@@ -163,7 +163,7 @@ pyodbc==4.0.30
 pyparsing==2.4.7
 pyrsistent==0.17.3
 pystan==2.19.1.1
-python-apt==2.0.0+ubuntu0.20.4.7
+python-apt
 python-dateutil==2.8.1
 python-editor==1.0.4
 python-engineio==4.3.0

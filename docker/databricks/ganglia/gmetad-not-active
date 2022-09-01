@@ -1,0 +1,10 @@
+\n\
+check process gmetad with pidfile /var/run/gmetad.pid\n\
+      start program = "/usr/sbin/service gmetad start"\n\
+      stop program = "/usr/sbin/service gmetad stop"\n\
+      if memory usage > 500 MB for 3 cycles then restart\n\
+\n\
+check process apache2 with pidfile /var/run/apache2/apache2.pid\n\
+      start program = "/usr/sbin/service apache2 start"\n\
+      stop program = "/usr/sbin/service apache2 stop"\n\
+      if memory usage > 500 MB for 3 cycles then restart\n\

@@ -52,7 +52,7 @@ RUN set -ex && \
         # Install Python libraries for Databricks environment
         && /databricks/python3/bin/pip cache purge && \
     mkdir -p /databricks/jars && \
-    apt-get -y purge --autoremove software-properties-common cuda-cudart-dev-${CUDA_MAJOR} cuda-cupti-dev-${CUDA_MAJOR}
+    apt-get -y purge --autoremove software-properties-common cuda-cudart-dev-${CUDA_MAJOR} cuda-cupti-dev-${CUDA_MAJOR} \
                cuda-driver-dev-${CUDA_MAJOR} cuda-nvcc-${CUDA_MAJOR} cuda-thrust-${CUDA_MAJOR} \
                python3.8-dev libpq-dev libcairo2-dev build-essential unattended-upgrades cmake ccache openmpi-bin \
                linux-headers-5.4.0-117 linux-headers-5.4.0-117-generic linux-headers-generic libopenmpi-dev unixodbc-dev \
