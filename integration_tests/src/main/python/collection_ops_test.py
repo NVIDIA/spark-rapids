@@ -165,7 +165,7 @@ def test_sort_array_normalize_nans():
     other = struct.unpack('d', bytes3)[0]
     data = [([nan2] + [other for _ in range(256)] + [nan1],)]
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.createDataFrame(data).selectExpr('sort_array(_1)')
+        lambda spark: spark.createDataFrame(data).selectExpr('sort_array(_1, true)', 'sort_array(_1, false)')
     )
 
 # For functionality test, the sequence length in each row should be limited,
