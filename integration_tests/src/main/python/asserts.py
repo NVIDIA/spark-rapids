@@ -276,7 +276,13 @@ def assert_gpu_and_cpu_writes_are_equal_iterator(write_func, read_func, base_pat
     """
     _assert_gpu_and_cpu_writes_are_equal(write_func, read_func, base_path, 'ITERATOR', conf=conf)
 
-def _assert_gpu_and_cpu_sql_writes_are_equal(table_name_factory, write_sql_func, mode, conf={}):
+def assert_gpu_and_cpu_sql_writes_are_equal_collect(table_name_factory, write_sql_func, conf={}):
+    """
+    Assert when running SQL text from write_sql_func on both the CPU and the GPU and reading
+    both resulting tables on the CPU that the results are equal.
+    In this case the data is collected back to the driver and compared here, so be
+    careful about the amount of data returned.
+    """
     conf = _prep_incompat_conf(conf)
 
     print('### CPU RUN ###')
@@ -296,6 +302,7 @@ def _assert_gpu_and_cpu_sql_writes_are_equal(table_name_factory, write_sql_func,
     print('### WRITE: GPU TOOK {} CPU TOOK {} ###'.format(
         gpu_end - gpu_start, cpu_end - cpu_start))
 
+    mode = "COLLECT"
     (cpu_bring_back, cpu_collect_type) = _prep_func_for_compare(
         lambda spark: spark.sql("SELECT * FROM {}".format(cpu_table)), mode)
     (gpu_bring_back, gpu_collect_type) = _prep_func_for_compare(
@@ -308,24 +315,6 @@ def _assert_gpu_and_cpu_sql_writes_are_equal(table_name_factory, write_sql_func,
         from_gpu.sort(key=_RowCmp)
 
     assert_equal(from_cpu, from_gpu)
-
-def assert_gpu_and_cpu_sql_writes_are_equal_collect(table_name_factory, write_sql_func, conf={}):
-    """
-    Assert when running SQL text from write_sql_func on both the CPU and the GPU and reading
-    both resulting tables on the CPU that the results are equal.
-    In this case the data is collected back to the driver and compared here, so be
-    careful about the amount of data returned.
-    """
-    _assert_gpu_and_cpu_sql_writes_are_equal(table_name_factory, write_sql_func, 'COLLECT', conf=conf)
-
-def assert_gpu_and_cpu_sql_writes_are_equal_iterator(table_name_factory, write_sql_func, conf={}):
-    """
-    Assert when running SQL text from write_sql_func on both the CPU and the GPU and reading
-    both resulting tables on the CPU that the results are equal.
-    In this case the data is pulled back to the driver in chunks and compared here
-    so any amount of data can work, just be careful about how long it might take.
-    """
-    _assert_gpu_and_cpu_sql_writes_are_equal(table_name_factory, write_sql_func, 'ITERATOR', conf=conf)
 
 def assert_gpu_fallback_write(write_func,
         read_func,
