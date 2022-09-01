@@ -149,7 +149,14 @@ def test_sort_array_lit(data_gen):
             f.sort_array(f.lit(array_lit), True),
             f.sort_array(f.lit(array_lit), False)))
 
+
 def test_sort_array_normalize_nans():
+    """
+    When the average length of array is > 100,
+    and there are `-Nan`s in the data, the sorting order
+    of `Nan` is inconsistent in cuDF (https://github.com/rapidsai/cudf/issues/11630).
+    `GpuSortArray` fixes the inconsistency by normalizing `Nan`s.
+    """
     bytes1 = struct.pack('L', 0x7ff83cec2c05b870)
     bytes2 = struct.pack('L', 0xfff5101d3f1cd31b)
     bytes3 = struct.pack('L', 0x7c22453f18c407a8)

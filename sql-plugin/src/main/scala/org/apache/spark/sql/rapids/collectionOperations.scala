@@ -409,6 +409,11 @@ case class GpuSortArray(base: Expression, ascendingOrder: Expression)
     val isDescending = isDescendingOrder(rhs)
     val base = lhs.getBase()
     dataType match {
+      // When the average length of array is > 100
+      // and there are `-Nan`s in the data, the sort ordering
+      // of `Nan`s is inconsistent. So we need to normalize the data
+      // before sorting. This workaround can be removed after
+      // solving https://github.com/rapidsai/cudf/issues/11630
       case ArrayType(FloatType | DoubleType, _) =>
         withResource(base.getChildColumnView(0)) {child =>
           withResource(child.normalizeNANsAndZeros()) {normalizedChild =>
