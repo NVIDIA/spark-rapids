@@ -298,16 +298,14 @@ class GpuParquetWriter(
     ColumnCastUtil.deepTransform(cv, Some(dt)) {
       // Timestamp types are checked and transformed for all nested columns.
       case (cv, _) if cv.getType.isTimestampType =>
+        println("is timestamp")
+
         val typeMillis = ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString
-        val typeInt96  = ParquetOutputTimestampType.INT96.toString
+        val typeInt96 = ParquetOutputTimestampType.INT96.toString
 
         outputTimestampType match {
-          case `typeMillis` =>
-            if (cv.getType != DType.TIMESTAMP_MILLISECONDS) {
-              cv.castTo(DType.TIMESTAMP_MILLISECONDS)
-            } else {
-              cv /* the input is unchanged */
-            }
+          case `typeMillis` if cv.getType != DType.TIMESTAMP_MILLISECONDS =>
+            cv.castTo(DType.TIMESTAMP_MILLISECONDS)
 
           case `typeInt96` =>
             withResource(Scalar.fromLong(Long.MaxValue / 1000)) { upper =>
@@ -318,8 +316,8 @@ class GpuParquetWriter(
                       withResource(a.or(b)) { aOrB =>
                         withResource(aOrB.any()) { any =>
                           if (any.isValid && any.getBoolean) {
-                            // Its the writer's responsibility to close the batch.
-                            // Thus, this exception must be caught.
+                            // Its the writer's responsibility to close the input batch when this
+                            // exception is thrown.
                             throw new IllegalArgumentException("INT96 column contains one " +
                               "or more values that can overflow and will result in data " +
                               "corruption. Please set " +
@@ -334,10 +332,10 @@ class GpuParquetWriter(
                 }
               }
             }
-            cv /* the input is unchanged */
+            cv.copyToColumnVector() /* the input is unchanged */
 
-          // Here the value of `outputTimestampType` should be `TIMESTAMP_MICROS`.
-          case _ => cv /* the input is unchanged */
+          // Here the value of `outputTimestampType` should be `TIMESTAMP_MICROS`
+          case _ => cv.copyToColumnVector() /* the input is unchanged */
         }
 
       // Decimal types are checked and transformed only for the top level column because we don't
@@ -353,11 +351,8 @@ class GpuParquetWriter(
           cv.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -d.scale))
         } else {
           // Here, decimal should be in DECIMAL128 so the input will be unchanged.
-          cv
+          cv.copyToColumnVector()
         }
-
-      // For all other types: The input is unchanged.
-      case (cv, _) => cv
     }
   }
 
@@ -368,17 +363,19 @@ class GpuParquetWriter(
    */
   override def write(batch: ColumnarBatch,
                      statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
-    try {
-      val newBatch = new ColumnarBatch(GpuColumnVector.extractColumns(batch).map {
-        cv => withResource(deepTransformColumn(cv.getBase, cv.dataType)) {
-          v => GpuColumnVector.from(v, cv.dataType())
+    val newBatch = new ColumnarBatch(GpuColumnVector.extractColumns(batch).map {
+      cv =>
+        try {
+          new GpuColumnVector(cv.dataType(),
+            withResource(cv.getBase) { v => deepTransformColumn(v, cv.dataType) })
+        } catch {
+          case e: Throwable =>
+            batch.close()
+            throw e
         }
-      })
-      super.write(newBatch, statsTrackers)
-    }
-    catch {
-      case _: Throwable => batch.close()
-    }
+    })
+
+    super.write(newBatch, statsTrackers)
   }
 
   override val tableWriter: TableWriter = {
