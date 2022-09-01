@@ -735,10 +735,7 @@ def test_sortmerge_join_struct_as_key_fallback(data_gen, join_type):
 
 # Regression test for https://github.com/NVIDIA/spark-rapids/issues/3775
 @ignore_order(local=True)
-@pytest.mark.parametrize("aqe_enabled", ["true", "false"])
-@allow_non_gpu("ShuffleExchangeExec")
-def test_struct_self_join(spark_tmp_table_factory, aqe_enabled):
-    conf = {'spark.sql.adaptive.enabled': aqe_enabled}
+def test_struct_self_join(spark_tmp_table_factory):
     def do_join(spark):
         data = [
             (("Adam ", "", "Green"), "1", "M", 1000),
@@ -765,7 +762,7 @@ def test_struct_self_join(spark_tmp_table_factory, aqe_enabled):
         resultdf.createOrReplaceTempView(resultdf_name)
         return spark.sql("select a.* from {} a, {} b where a.name=b.name".format(
             resultdf_name, resultdf_name))
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
+    assert_gpu_and_cpu_are_equal_collect(do_join)
 
 # ExistenceJoin occurs in the context of existential subqueries (which is rewritten to SemiJoin) if
 # there is an additional condition that may qualify left records even though they don't have
