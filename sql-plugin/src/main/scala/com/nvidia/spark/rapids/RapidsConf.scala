@@ -1524,10 +1524,16 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(value = true)
 
-  val FILTER_PARALLEL = conf("spark.rapids.sql.reader.filterParallel")
-    .doc("")
-    .booleanConf
-    .createWithDefault(value = false)
+  val NUM_FILES_FILTER_PARALLEL = conf("spark.rapids.sql.coalescing.reader.numFilterParallel")
+    .doc("This controls the number of files the coalescing reader will run " +
+      "in each thread when it filters blocks for reading. If this value is greater than zero " +
+      "the files will be filtered in a multithreaded manner where each thread filters " +
+      "the number of files set by this config. If this is set to zero the files are " +
+      "filtered serially. This uses the same thread pool as the multithreaded reader, " +
+      s"see $MULTITHREAD_READ_NUM_THREADS. Note that filtering multithreaded " +
+      "is useful with Alluxio.")
+    .integerConf
+    .createWithDefault(value = 0)
 
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
@@ -1821,6 +1827,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     }
     values.max
   }
+
+  lazy val numFilesFilterParallel: Int = get(NUM_FILES_FILTER_PARALLEL)
 
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 

@@ -345,7 +345,7 @@ case class ParquetFileInfoWithBlockMeta(filePath: Path, blocks: Seq[BlockMetaDat
     isCorrectedInt96RebaseMode: Boolean, isCorrectedRebaseMode: Boolean,
     hasInt96Timestamps: Boolean)
 
-private case class BlockMetaWithFilePart(meta: ParquetFileInfoWithBlockMeta, file: PartitionedFile)
+private case class BlockMetaWithPartFile(meta: ParquetFileInfoWithBlockMeta, file: PartitionedFile)
 
 /**
  * A parquet compatible stream that allows reading from a HostMemoryBuffer to Parquet.
@@ -613,7 +613,10 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       filters: Array[Filter],
       readDataSchema: StructType,
       metrics:  Map[String, GpuMetric]): ParquetFileInfoWithBlockMeta = {
-    withResource(new NvtxWithMetrics("filterBlocks", NvtxColor.PURPLE, metrics("filterTime"))) { _ =>
+    // note that depending on which reader is used the filterTime may not be wall clock
+    // since the multi-threaded could read in parallel
+    withResource(new NvtxWithMetrics("filterBlocks", NvtxColor.PURPLE,
+      metrics("filterTime"))) { _ =>
       val filePath = new Path(new URI(file.filePath))
       // Make sure we aren't trying to read encrypted files. For now, remove the related
       // parquet confs from the hadoop configuration and try to catch the resulting
@@ -948,7 +951,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
   private val filterHandler = GpuParquetFileFilterHandler(sqlConf)
   private val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
-  private val filterParallel = rapidsConf.get(RapidsConf.FILTER_PARALLEL)
+  private val filterParallel = rapidsConf.numFilesFilterParallel
 
   // we can't use the coalescing files reader when InputFileName, InputFileBlockStart,
   // or InputFileBlockLength because we are combining all the files into a single buffer
@@ -977,40 +980,49 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId)
   }
 
-  private class ReadBatchRunner2(
+  private def filterBlockForCoalescingReader(
+      footerReadType: ParquetFooterReaderType.Value,
+      file: PartitionedFile,
+      conf: Configuration,
+      filters: Array[Filter],
+      readDataSchema: StructType): BlockMetaWithPartFile = {
+    try {
+      val meta = filterHandler.filterBlocks(footerReadType, file, conf, filters,
+        readDataSchema, metrics)
+      BlockMetaWithPartFile(meta, file)
+    } catch {
+      case e: FileNotFoundException if ignoreMissingFiles =>
+        logWarning(s"Skipped missing file: ${file.filePath}", e)
+        val meta = ParquetFileInfoWithBlockMeta(new Path(new URI(file.filePath)), Seq.empty,
+          file.partitionValues, null, null, false, false, false)
+        BlockMetaWithPartFile(meta, file)
+      // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
+      case e: FileNotFoundException if !ignoreMissingFiles => throw e
+      // If ignoreMissingFiles=true, this case will never be reached. But it's ok
+      // to leave this branch here.
+      // TODO - do we need to actually throw from thread and fail?
+      case e@(_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
+        logWarning(
+          s"Skipped the rest of the content in the corrupted file: ${file.filePath}", e)
+        val meta = ParquetFileInfoWithBlockMeta(new Path(new URI(file.filePath)), Seq.empty,
+          file.partitionValues, null, null, false, false, false)
+        BlockMetaWithPartFile(meta, file)
+    }
+  }
+
+  private class CoalescingFilterRunner(
       footerReadType: ParquetFooterReaderType.Value,
       taskContext: TaskContext,
       files: Array[PartitionedFile],
       conf: Configuration,
       filters: Array[Filter],
-      readDataSchema: StructType) extends Callable[Array[BlockMetaWithFilePart]] with Logging {
+      readDataSchema: StructType) extends Callable[Array[BlockMetaWithPartFile]] with Logging {
 
-    override def call(): Array[BlockMetaWithFilePart] = {
+    override def call(): Array[BlockMetaWithPartFile] = {
       TrampolineUtil.setTaskContext(taskContext)
       try {
         files.map { file =>
-          try {
-            val meta = filterHandler.filterBlocks(footerReadType, file, conf, filters,
-              readDataSchema, metrics)
-            BlockMetaWithFilePart(meta, file)
-          } catch {
-            case e: FileNotFoundException if ignoreMissingFiles =>
-              logWarning(s"Skipped missing file: ${file.filePath}", e)
-              val meta = ParquetFileInfoWithBlockMeta(new Path(new URI(file.filePath)), Seq.empty,
-                file.partitionValues, null, null, false, false, false)
-              BlockMetaWithFilePart(meta, file)
-            // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
-            case e: FileNotFoundException if !ignoreMissingFiles => throw e
-            // If ignoreMissingFiles=true, this case will never be reached. But it's ok
-            // to leave this branch here.
-            // TODO - do we need to actually throw from thread and fail?
-            case e@(_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
-              logWarning(
-                s"Skipped the rest of the content in the corrupted file: ${file.filePath}", e)
-              val meta = ParquetFileInfoWithBlockMeta(new Path(new URI(file.filePath)), Seq.empty,
-                file.partitionValues, null, null, false, false, false)
-              BlockMetaWithFilePart(meta, file)
-          }
+          filterBlockForCoalescingReader(footerReadType, file, conf, filters, readDataSchema)
         }
       } finally {
         TrampolineUtil.unsetTaskContext()
@@ -1029,72 +1041,45 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       files: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
     val clippedBlocks = ArrayBuffer[ParquetSingleDataBlockMeta]()
-    val tc = TaskContext.get()
+    val startTime = System.nanoTime()
 
-    val tasks = new java.util.ArrayList[Future[Array[BlockMetaWithFilePart]]]()
-    val currentTime = System.nanoTime()
-
-    // TODO - may want to limit
-    // val limit = math.min(maxNumFileProcessed, files.length)
-
-    if (files.length > 4 && filterParallel) {
-      logWarning(s" number of files is: ${files.length}, running parallel")
-      // TODO - just hardcode to try 5
-      files.sliding(2, 2).foreach { fileGroup =>
-        // Add these in the order as we got them so that we can make sure
-        // we process them in the same order as CPU would.
-        val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
-        tasks.add(threadPool.submit(
-          new ReadBatchRunner2(footerReadType, tc, fileGroup, conf, filters, readDataSchema)))
-      }
-      for (future <- tasks.asScala) {
-        val fileBlockMetaArray = future.get()
-        fileBlockMetaArray.foreach { metaAndFile =>
-          val singleFileInfo = metaAndFile.meta
-          val file = metaAndFile.file
-          clippedBlocks ++= singleFileInfo.blocks.map(block =>
-            ParquetSingleDataBlockMeta(
-              singleFileInfo.filePath,
-              ParquetDataBlock(block),
-              file.partitionValues,
-              ParquetSchemaWrapper(singleFileInfo.schema),
-              ParquetExtraInfo(singleFileInfo.isCorrectedRebaseMode,
-                singleFileInfo.isCorrectedInt96RebaseMode, singleFileInfo.hasInt96Timestamps)))
-        }
-      }
-    } else {
-
-    files.map { file =>
-      val singleFileInfo = try {
-        filterHandler.filterBlocks(footerReadType, file, conf, filters, readDataSchema, metrics)
-      } catch {
-        case e: FileNotFoundException if ignoreMissingFiles =>
-          logWarning(s"Skipped missing file: ${file.filePath}", e)
-          ParquetFileInfoWithBlockMeta(new Path(new URI(file.filePath)), Seq.empty,
-            file.partitionValues, null, null, false, false, false)
-        // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
-        case e: FileNotFoundException if !ignoreMissingFiles => throw e
-        // If ignoreMissingFiles=true, this case will never be reached. But it's ok
-        // to leave this branch here.
-        case e@(_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
-          logWarning(
-            s"Skipped the rest of the content in the corrupted file: ${file.filePath}", e)
-          ParquetFileInfoWithBlockMeta(new Path(new URI(file.filePath)), Seq.empty,
-            file.partitionValues, null, null, false, false, false)
-      }
+    def addBlockMeta(metaAndFile: BlockMetaWithPartFile): Unit = {
+      val singleFileInfo = metaAndFile.meta
       clippedBlocks ++= singleFileInfo.blocks.map(block =>
         ParquetSingleDataBlockMeta(
           singleFileInfo.filePath,
           ParquetDataBlock(block),
-          file.partitionValues,
+          metaAndFile.file.partitionValues,
           ParquetSchemaWrapper(singleFileInfo.schema),
           singleFileInfo.readSchema,
           new ParquetExtraInfo(singleFileInfo.isCorrectedRebaseMode,
-            singleFileInfo.isCorrectedInt96RebaseMode, singleFileInfo.hasInt96Timestamps)))
+            singleFileInfo.isCorrectedInt96RebaseMode,
+            singleFileInfo.hasInt96Timestamps)))
     }
-    }
+
+    if (filterParallel > 0) {
+      val tc = TaskContext.get()
+      val tasks = new java.util.ArrayList[Future[Array[BlockMetaWithPartFile]]]()
+      logDebug(s" number of files is: ${files.length}, running filter in parallel")
+      files.sliding(filterParallel, filterParallel).foreach { fileGroup =>
+        val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
+        tasks.add(threadPool.submit(
+          new CoalescingFilterRunner(footerReadType, tc, fileGroup, conf, filters, readDataSchema)))
+      }
+      for (future <- tasks.asScala) {
+        val fileBlockMetaArray = future.get()
+        fileBlockMetaArray.foreach { metaAndFile =>
+          addBlockMeta(metaAndFile)
+        }
+      }
+    } else {
+      files.map { file =>
+        val metaAndFile = filterBlockForCoalescingReader(footerReadType, file, conf,
+          filters, readDataSchema)
+        addBlockMeta(metaAndFile)
+      }
     metrics.get("scanTime").foreach {
-      _ += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - currentTime)
+      _ += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime)
     }
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks, isCaseSensitive,
       debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes, metrics,
