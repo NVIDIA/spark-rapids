@@ -1645,9 +1645,7 @@ object GpuOverrides extends Logging {
       }),
     expr[KnownFloatingPointNormalized](
       "Tag to prevent redundant normalization",
-      ExprChecks.unaryProjectInputMatchesOutput(
-        TypeSig.DOUBLE + TypeSig.FLOAT,
-        TypeSig.DOUBLE + TypeSig.FLOAT),
+      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.all, TypeSig.all),
       (a, conf, p, r) => new UnaryExprMeta[KnownFloatingPointNormalized](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuKnownFloatingPointNormalized(child)
@@ -3692,10 +3690,25 @@ object GpuOverrides extends Logging {
       // This needs to match what murmur3 supports.
       PartChecks(RepeatingParamCheck("hash_key",
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-            TypeSig.STRUCT).nested(), TypeSig.all)),
+            TypeSig.STRUCT + TypeSig.ARRAY).nested(),
+        TypeSig.all)
+      ),
       (hp, conf, p, r) => new PartMeta[HashPartitioning](hp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =
           hp.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+        override def tagPartForGpu(): Unit = {
+          val arrayWithStructsHashing = hp.expressions.exists(e =>
+            TrampolineUtil.dataTypeExistsRecursively(e.dataType,
+              dt => dt match {
+                case ArrayType(_: StructType, _) => true
+                case _ => false
+              })
+          )
+          if (arrayWithStructsHashing) {
+            willNotWorkOnGpu("hashing arrays with structs is not supported")
+          }
+        }
 
         override def convertToGpu(): GpuPartitioning =
           GpuHashPartitioning(childExprs.map(_.convertToGpu()), hp.numPartitions)
@@ -3912,7 +3925,7 @@ object GpuOverrides extends Logging {
           .withPsNote(TypeEnum.STRUCT, "Round-robin partitioning is not supported for nested " +
               s"structs if ${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
           .withPsNote(
-            Seq(TypeEnum.ARRAY, TypeEnum.MAP),
+            Seq(TypeEnum.MAP),
             "Round-robin partitioning is not supported if " +
               s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true"),
         TypeSig.all),
@@ -3974,10 +3987,12 @@ object GpuOverrides extends Logging {
       "The backend for hash based aggregations",
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-          TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
+            TypeSig.MAP + TypeSig.STRUCT + TypeSig.ARRAY)
             .nested()
-            .withPsNote(Seq(TypeEnum.ARRAY, TypeEnum.MAP),
+            .withPsNote(TypeEnum.MAP,
               "not allowed for grouping expressions")
+            .withPsNote(TypeEnum.ARRAY,
+              "not allowed for grouping expressions if containing Struct as child")
             .withPsNote(TypeEnum.STRUCT,
               "not allowed for grouping expressions if containing Array or Map as child"),
         TypeSig.all),
