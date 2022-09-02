@@ -191,7 +191,7 @@ def test_sortmerge_join_ridealong(data_gen, join_type):
 
 # For floating point values the normalization is done using a higher order function. We could probably work around this
 # for now it falls back to the CPU
-@allow_non_gpu('SortMergeJoinExec', 'SortExec', 'KnownFloatingPointNormalized', 'ArrayTransform', 'LambdaFunction',
+@allow_non_gpu('SortMergeJoinExec', 'SortExec', 'ArrayTransform', 'LambdaFunction',
         'NamedLambdaVariable', 'NormalizeNaNAndZero', 'ShuffleExchangeExec', 'HashPartitioning')
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', single_level_array_gens + [binary_gen], ids=idfn)
@@ -728,7 +728,7 @@ def test_sortmerge_join_struct_with_floats_key(data_gen, join_type):
         return left.join(right, left.a == right.r_a, join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_sortmerge_join_conf)
 
-@allow_non_gpu('SortMergeJoinExec', 'SortExec', 'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'CreateNamedStruct',
+@allow_non_gpu('SortMergeJoinExec', 'SortExec', 'NormalizeNaNAndZero', 'CreateNamedStruct',
         'GetStructField', 'Literal', 'If', 'IsNull', 'ShuffleExchangeExec', 'HashPartitioning')
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', struct_gens, ids=idfn)
