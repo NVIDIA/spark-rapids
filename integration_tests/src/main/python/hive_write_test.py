@@ -55,7 +55,7 @@ _write_gens = [_basic_gens, _struct_gens, _array_gens, _map_gens]
 
 # There appears to be a race when computing tasks for writing, order can be different even on CPU
 @ignore_order(local=True)
-@pytest.mark.skip_if(not is_hive_available(), "Hive is missing")
+@pytest.mark.skipif(not is_hive_available(), reason="Hive is missing")
 @pytest.mark.parametrize("gens", _write_gens, ids=idfn)
 @pytest.mark.parametrize("storage", ["PARQUET", "nativeorc", "hiveorc"])
 def test_optimized_hive_ctas_basic(gens, storage, spark_tmp_table_factory):
@@ -79,7 +79,7 @@ def test_optimized_hive_ctas_basic(gens, storage, spark_tmp_table_factory):
     assert_gpu_and_cpu_sql_writes_are_equal_collect(spark_tmp_table_factory, do_write, conf=conf)
 
 @allow_non_gpu("DataWritingCommandExec")
-@pytest.mark.skip_if(not is_hive_available(), "Hive is missing")
+@pytest.mark.skipif(not is_hive_available(), reason="Hive is missing")
 @pytest.mark.parametrize("gens", [_basic_gens], ids=idfn)
 @pytest.mark.parametrize("storage_with_confs", [
     ("PARQUET", {"spark.sql.legacy.parquet.datetimeRebaseModeInWrite": "LEGACY",
@@ -100,7 +100,7 @@ def test_optimized_hive_ctas_configs_fallback(gens, storage_with_confs, spark_tm
         "DataWritingCommandExec", conf=confs)
 
 @allow_non_gpu("DataWritingCommandExec")
-@pytest.mark.skip_if(not is_hive_available(), "Hive is missing")
+@pytest.mark.skipif(not is_hive_available(), reason="Hive is missing")
 @pytest.mark.parametrize("gens", [_basic_gens], ids=idfn)
 @pytest.mark.parametrize("storage_with_opts", [
     ("PARQUET", {"parquet.encryption.footer.key": "k1",
@@ -118,8 +118,8 @@ def test_optimized_hive_ctas_options_fallback(gens, storage_with_opts, spark_tmp
         "DataWritingCommandExec")
 
 @allow_non_gpu("DataWritingCommandExec")
-@pytest.mark.skip_if(not (is_hive_available() and is_spark_330_or_later()),
-                     "Requires Hive and Spark 3.3+ to write bucketed Hive tables")
+@pytest.mark.skipif(not (is_hive_available() and is_spark_330_or_later()),
+                     reason="Requires Hive and Spark 3.3+ to write bucketed Hive tables")
 @pytest.mark.parametrize("gens", [_basic_gens], ids=idfn)
 @pytest.mark.parametrize("storage", ["PARQUET", "ORC"], ids=idfn)
 def test_optimized_hive_bucketed_fallback(gens, storage, spark_tmp_table_factory):
