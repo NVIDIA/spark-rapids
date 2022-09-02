@@ -140,7 +140,7 @@ cluster.
     spark.plugins com.nvidia.spark.SQLPlugin
     spark.task.resource.gpu.amount 0.1
     spark.rapids.memory.pinnedPool.size 2G
-    spark.locality.wait 0s
+    spark.locality.wait 3s
     spark.databricks.delta.optimizeWrite.enabled false
     spark.sql.adaptive.enabled false
     spark.sql.optimizer.dynamicPartitionPruning.enabled false

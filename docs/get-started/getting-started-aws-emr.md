@@ -145,7 +145,7 @@ default settings:
         "spark.task.resource.gpu.amount":"0.125",
         "spark.rapids.memory.pinnedPool.size":"2G",
         "spark.executor.memoryOverhead":"2G",
-        "spark.locality.wait":"0s",
+        "spark.locality.wait":"3s",
         "spark.sql.files.maxPartitionBytes":"256m",
         "spark.sql.adaptive.enabled":"false"
         }
