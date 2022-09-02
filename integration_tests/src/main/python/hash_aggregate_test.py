@@ -218,9 +218,7 @@ _no_overflow_ansi_gens = [
 
 _decimal_gen_36_5 = DecimalGen(precision=36, scale=5)
 _decimal_gen_36_neg5 = DecimalGen(precision=36, scale=-5)
-_decimal_gen_38_0 = DecimalGen(precision=38, scale=0)
 _decimal_gen_38_10 = DecimalGen(precision=38, scale=10)
-_decimal_gen_38_neg10 = DecimalGen(precision=38, scale=-10)
 
 
 def get_params(init_list, marked_params=[]):
@@ -303,15 +301,22 @@ _grpkey_short_very_big_neg_scale_decimals = [
     ('b', _decimal_gen_36_neg5),
     ('c', _decimal_gen_36_neg5)]
 
-_grpkey_short_full_decimals = [
-    ('a', RepeatSeqGen(short_gen, length=50)),
-    ('b', _decimal_gen_38_0),
-    ('c', _decimal_gen_38_0)]
+# Only use negative values to avoid the potential to hover around an overflow
+# as values are added and subtracted during the sum. Non-deterministic ordering
+# of values from shuffle cannot guarantee overflow calculation is predictable
+# when the sum can move in both directions as new partitions are aggregated.
+_decimal_gen_sum_38_0 = DecimalGen(precision=38, scale=0, avoid_positive_values=True)
+_decimal_gen_sum_38_neg10 = DecimalGen(precision=38, scale=-10, avoid_positive_values=True)
 
-_grpkey_short_full_neg_scale_decimals = [
+_grpkey_short_sum_full_decimals = [
     ('a', RepeatSeqGen(short_gen, length=50)),
-    ('b', _decimal_gen_38_neg10),
-    ('c', _decimal_gen_38_neg10)]
+    ('b', _decimal_gen_sum_38_0),
+    ('c', _decimal_gen_sum_38_0)]
+
+_grpkey_short_sum_full_neg_scale_decimals = [
+    ('a', RepeatSeqGen(short_gen, length=50)),
+    ('b', _decimal_gen_sum_38_neg10),
+    ('c', _decimal_gen_sum_38_neg10)]
 
 
 _init_list_no_nans_with_decimal = _init_list_no_nans + [
@@ -327,9 +332,6 @@ _init_list_with_nans_and_no_nans_with_decimalbig = _init_list_with_nans_and_no_n
     _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, 
     _grpkey_short_very_big_neg_scale_decimals]
 
-
-_init_list_full_decimal = [_grpkey_short_full_decimals, 
-    _grpkey_short_full_neg_scale_decimals]
 
 #Any smaller precision takes way too long to process on the CPU
 # or results in using too much memory on the GPU
@@ -386,7 +388,7 @@ def test_hash_grpby_sum(data_gen, conf):
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_full_decimal, ids=idfn)
+@pytest.mark.parametrize('data_gen', [_grpkey_short_sum_full_decimals, _grpkey_short_sum_full_neg_scale_decimals], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_sum_full_decimal(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
@@ -418,7 +420,7 @@ def test_hash_reduction_sum_full_decimal(data_gen, conf):
 @ignore_order
 @incompat
 @pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans + [_grpkey_short_mid_decimals, 
-    _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, _grpkey_short_full_decimals], ids=idfn)
+    _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, _grpkey_short_sum_full_decimals], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_avg(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
