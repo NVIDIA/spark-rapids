@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_sql_writes_are_equal_collect, assert_gpu_
 from data_gen import *
 from datetime import date, datetime, timezone
 from marks import *
-from spark_session import with_cpu_session
+from spark_session import is_hive_available, with_cpu_session
 
 # Using positive timestamps to work around a cudf ORC bug
 # https://github.com/rapidsai/cudf/issues/11525
@@ -55,6 +55,7 @@ _write_gens = [_basic_gens, _struct_gens, _array_gens, _map_gens]
 
 # There appears to be a race when computing tasks for writing, order can be different even on CPU
 @ignore_order(local=True)
+@pytest.mark.skip_if(not is_hive_available(), "Hive is missing")
 @pytest.mark.parametrize("gens", _write_gens, ids=idfn)
 @pytest.mark.parametrize("storage", ["PARQUET", "nativeorc", "hiveorc"])
 def test_optimized_hive_ctas_basic(gens, storage, spark_tmp_table_factory):
@@ -78,6 +79,7 @@ def test_optimized_hive_ctas_basic(gens, storage, spark_tmp_table_factory):
     assert_gpu_and_cpu_sql_writes_are_equal_collect(spark_tmp_table_factory, do_write, conf=conf)
 
 @allow_non_gpu("DataWritingCommandExec")
+@pytest.mark.skip_if(not is_hive_available(), "Hive is missing")
 @pytest.mark.parametrize("gens", [_basic_gens], ids=idfn)
 @pytest.mark.parametrize("storage_with_confs", [
     ("PARQUET", {"spark.sql.legacy.parquet.datetimeRebaseModeInWrite": "LEGACY",
@@ -98,6 +100,7 @@ def test_optimized_hive_ctas_configs_fallback(gens, storage_with_confs, spark_tm
         "DataWritingCommandExec", conf=confs)
 
 @allow_non_gpu("DataWritingCommandExec")
+@pytest.mark.skip_if(not is_hive_available(), "Hive is missing")
 @pytest.mark.parametrize("gens", [_basic_gens], ids=idfn)
 @pytest.mark.parametrize("storage_with_opts", [
     ("PARQUET", {"parquet.encryption.footer.key": "k1",

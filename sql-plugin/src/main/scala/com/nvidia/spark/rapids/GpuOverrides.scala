@@ -56,7 +56,6 @@ import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ENSURE_RE
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExec
-import org.apache.spark.sql.hive.execution.OptimizedCreateHiveTableAsSelectCommand
 import org.apache.spark.sql.hive.rapids.GpuHiveOverrides
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
@@ -3743,18 +3742,19 @@ object GpuOverrides extends Logging {
       .map(r => r.wrap(writeCmd, conf, parent, r).asInstanceOf[DataWritingCommandMeta[INPUT]])
       .getOrElse(new RuleNotFoundDataWritingCommandMeta(writeCmd, conf, parent))
 
-  val dataWriteCmds: Map[Class[_ <: DataWritingCommand],
+  val commonDataWriteCmds: Map[Class[_ <: DataWritingCommand],
       DataWritingCommandRule[_ <: DataWritingCommand]] = Seq(
     dataWriteCmd[InsertIntoHadoopFsRelationCommand](
       "Write to Hadoop filesystem",
       (a, conf, p, r) => new InsertIntoHadoopFsRelationCommandMeta(a, conf, p, r)),
     dataWriteCmd[CreateDataSourceTableAsSelectCommand](
       "Create table with select command",
-      (a, conf, p, r) => new CreateDataSourceTableAsSelectCommandMeta(a, conf, p, r)),
-    dataWriteCmd[OptimizedCreateHiveTableAsSelectCommand](
-      "Create a Hive table from a query result using Spark data source APIs",
-      (a, conf, p, r) => new OptimizedCreateHiveTableAsSelectCommandMeta(a, conf, p, r))
+      (a, conf, p, r) => new CreateDataSourceTableAsSelectCommandMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
+
+  val dataWriteCmds: Map[Class[_ <: DataWritingCommand],
+      DataWritingCommandRule[_ <: DataWritingCommand]] =
+    commonDataWriteCmds ++ GpuHiveOverrides.dataWriteCmds
 
   def wrapPlan[INPUT <: SparkPlan](
       plan: INPUT,
