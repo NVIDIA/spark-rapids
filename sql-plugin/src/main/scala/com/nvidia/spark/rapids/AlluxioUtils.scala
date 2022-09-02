@@ -22,22 +22,24 @@ import java.util.Properties
 import scala.io.{BufferedSource, Source}
 import scala.sys.process.{Process, ProcessLogger}
 
-import org.apache.hadoop.fs.Path
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.{FileStatus, LocatedFileStatus, Path}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{Expression, PlanExpression}
-import org.apache.spark.sql.execution.datasources.{CatalogFileIndex, FileIndex, HadoopFsRelation, InMemoryFileIndex, PartitioningAwareFileIndex, PartitionSpec}
+import org.apache.spark.sql.execution.datasources.{CatalogFileIndex, FileIndex, HadoopFsRelation, InMemoryFileIndex, PartitioningAwareFileIndex, PartitionDirectory, PartitionSpec}
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 
 object AlluxioUtils extends Logging {
   private val checkedAlluxioPath = scala.collection.mutable.HashSet[String]()
 
-  private def checkAlluxioMounted(sparkSession: SparkSession, alluxio_path: String): Unit = {
+  private def checkAlluxioMounted(hadoopConfiguration: Configuration,
+      alluxio_path: String): Unit = {
     this.synchronized {
       if (!checkedAlluxioPath.contains(alluxio_path)) {
         val path = new Path(alluxio_path)
-        val fs = path.getFileSystem(sparkSession.sparkContext.hadoopConfiguration)
+        val fs = path.getFileSystem(hadoopConfiguration)
         if (!fs.exists(path)) {
           throw new FileNotFoundException(
             s"Alluxio path $alluxio_path does not exist, maybe forgot to mount it")
@@ -184,18 +186,19 @@ object AlluxioUtils extends Logging {
     }
   }
 
-  // first try to get fs.s3a.access.key from spark config
+ // first try to get fs.s3a.access.key from spark config
   // second try to get from environment variables
-  private def getKeyAndSecret(relation: HadoopFsRelation) : (Option[String], Option[String]) = {
+  private def getKeyAndSecret(hadoopConfiguration: Configuration,
+      sparkConf: SparkConf) : (Option[String], Option[String]) = {
     val hadoopAccessKey =
-      relation.sparkSession.sparkContext.hadoopConfiguration.get("fs.s3a.access.key")
+      hadoopConfiguration.get("fs.s3a.access.key")
     val hadoopSecretKey =
-      relation.sparkSession.sparkContext.hadoopConfiguration.get("fs.s3a.secret.key")
+      hadoopConfiguration.get("fs.s3a.secret.key")
     if (hadoopAccessKey != null && hadoopSecretKey != null) {
       (Some(hadoopAccessKey), Some(hadoopSecretKey))
     } else {
-      val accessKey = relation.sparkSession.conf.getOption("spark.hadoop.fs.s3a.access.key")
-      val secretKey = relation.sparkSession.conf.getOption("spark.hadoop.fs.s3a.secret.key")
+      val accessKey = sparkConf.getOption("spark.hadoop.fs.s3a.access.key")
+      val secretKey = sparkConf.getOption("spark.hadoop.fs.s3a.secret.key")
       if (accessKey.isDefined && secretKey.isDefined) {
         (accessKey, secretKey)
       } else {
@@ -204,6 +207,13 @@ object AlluxioUtils extends Logging {
         (envAccessKey, envSecretKey)
       }
     }
+  }
+
+  // first try to get fs.s3a.access.key from spark config
+  // second try to get from environment variables
+  private def getKeyAndSecret(relation: HadoopFsRelation) : (Option[String], Option[String]) = {
+    val hadoopConf = relation.sparkSession.sparkContext.hadoopConfiguration
+    getKeyAndSecret(hadoopConf, relation.sparkSession.conf)
   }
 
   private def genFuncForPathReplacement(replaceMapOption: Option[Map[String, String]]
@@ -228,8 +238,30 @@ object AlluxioUtils extends Logging {
     }
   }
 
+  private def genFuncForAutoMountReplacementConfs(conf: RapidsConf, sparkConf: SparkConf,
+      hadoopConf: Configuration, alluxioBucketRegex: String) : Option[Path => Path] = {
+    Some((f: Path) => {
+      val pathStr = f.toString
+      if (pathStr.matches(alluxioBucketRegex)) {
+        initAlluxioInfo(conf)
+        val (access_key, secret_key) = getKeyAndSecret(hadoopConf, sparkConf)
+
+        val (scheme, bucket) = getSchemeAndBucketFromPath(pathStr)
+        autoMountBucket(scheme, bucket, access_key, secret_key)
+
+        // replace s3://foo/.. to alluxio://alluxioMasterHost/foo/...
+        val newPath = new Path(pathStr.replaceFirst(
+          scheme + ":/", "alluxio://" + alluxioMasterHost.get))
+        logDebug(s"Replace $pathStr to ${newPath.toString}")
+        newPath
+      } else {
+        f
+      }
+    })
+  }
+
   private def genFuncForAutoMountReplacement(conf: RapidsConf, relation: HadoopFsRelation,
-                                             alluxioBucketRegex: String) : Option[Path => Path] = {
+      alluxioBucketRegex: String) : Option[Path => Path] = {
     Some((f: Path) => {
       val pathStr = f.toString
       if (pathStr.matches(alluxioBucketRegex)) {
