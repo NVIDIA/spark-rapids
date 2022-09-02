@@ -280,6 +280,60 @@ object GpuOrcScan extends Arm {
   def testLongMultiplicationOverflow(a: Long, b: Long) = {
     Math.multiplyExact(a, b)
   }
+
+
+  /**
+   * Convert the integer vector into timestamp(microseconds) vector.
+   * @param col The integer columnar vector.
+   * @param colType Specific integer type, it should be BOOL/INT8/INT16/INT32/INT64.
+   * @param asSeconds True if consider the integers as seconds, otherwise we consider them
+   *                  as milliseconds. This parameter is determined by the shims.
+   * @return A timestamp vector.
+   */
+  def castIntegersToTimestamp(col: ColumnView, colType: DType,
+                              asSeconds: Boolean = true): ColumnVector = {
+    assert(colType == DType.BOOL8 || colType == DType.INT8 || colType == DType.INT16
+      || colType == DType.INT32 || colType == DType.INT64)
+
+    colType match {
+      case DType.BOOL8 | DType.INT8 | DType.INT16 | DType.INT32 =>
+        // Convert seconds to microseconds, we need to multiply 1e36
+        // Convert milliseconds to microseconds, we need to multiply 1e3
+        // integers * value => microseconds
+        val value = if (asSeconds) { 1000000 } else { 1000 }
+
+        // cuDF requires casting to Long first, then we can cast Long to Timestamp(in microseconds)
+        withResource(col.castTo(DType.INT64)) { longs =>
+          withResource(Scalar.fromLong(value)) { k =>
+            withResource(longs.mul(k)) { milliSeconds =>
+              milliSeconds.castTo(DType.TIMESTAMP_MICROSECONDS)
+            }
+          }
+        }
+      case DType.INT64 =>
+        // In CPU code of ORC casting, if the integers are consider as seconds, then the conversion
+        // is 'integer -> milliseconds -> microseconds'
+        val milliseconds = if (asSeconds) {
+          withResource(Scalar.fromLong(1000L)) { thousand => col.mul(thousand) }
+        } else {
+          col.copyToColumnVector()
+        }
+        withResource(milliseconds) { _ =>
+          // Check long-multiplication overflow
+          if (milliseconds.max() != null) {
+            testLongMultiplicationOverflow(milliseconds.max().getLong, 1000L)
+          }
+          if (milliseconds.min() != null) {
+            testLongMultiplicationOverflow(milliseconds.min().getLong, 1000L)
+          }
+          withResource(Scalar.fromLong(1000L)) { thousand =>
+            withResource(milliseconds.mul(thousand)) { microseconds =>
+              microseconds.castTo(DType.TIMESTAMP_MICROSECONDS)
+            }
+          }
+        }
+    }
+  }
 }
 
 /**
