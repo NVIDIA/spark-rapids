@@ -254,7 +254,7 @@ _excluded_operators_marker = pytest.mark.allow_non_gpu(
     'HashAggregateExec', 'AggregateExpression', 'UnscaledValue', 'MakeDecimal',
     'AttributeReference', 'Alias', 'Sum', 'Count', 'Max', 'Min', 'Average', 'Cast',
     'StddevPop', 'StddevSamp', 'VariancePop', 'VarianceSamp',
-    'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
+    'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
     'EqualTo', 'First', 'SortAggregateExec', 'Coalesce', 'IsNull', 'EqualNullSafe',
     'PivotFirst', 'GetArrayItem', 'ShuffleExchangeExec', 'HashPartitioning')
 
@@ -433,7 +433,7 @@ def test_hash_grpby_avg(data_gen, conf):
 @pytest.mark.allow_non_gpu(
     'HashAggregateExec', 'AggregateExpression',
     'AttributeReference', 'Alias', 'Sum', 'Count', 'Max', 'Min', 'Average', 'Cast',
-    'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
+    'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
     'EqualTo', 'First', 'SortAggregateExec')
 @pytest.mark.parametrize('data_gen', [
     StructGen(children=[('a', int_gen), ('b', int_gen)],nullable=False,
@@ -546,8 +546,7 @@ def test_hash_reduction_pivot_with_nans(data_gen, conf):
 @approximate_float
 @ignore_order(local=True)
 @allow_non_gpu('HashAggregateExec', 'PivotFirst', 'AggregateExpression', 'Alias', 'GetArrayItem',
-        'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'KnownFloatingPointNormalized',
-        'NormalizeNaNAndZero')
+        'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'NormalizeNaNAndZero')
 @incompat
 @pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nulls_and_nans], ids=idfn)
 def test_hash_pivot_groupby_duplicates_fallback(data_gen):
@@ -1788,7 +1787,7 @@ def test_groupby_std_variance_nulls(data_gen, conf, ansi_enabled):
 
 @ignore_order(local=True)
 @approximate_float
-@allow_non_gpu('KnownFloatingPointNormalized', 'NormalizeNaNAndZero',
+@allow_non_gpu('NormalizeNaNAndZero',
                'HashAggregateExec', 'SortAggregateExec',
                'Cast',
                'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
