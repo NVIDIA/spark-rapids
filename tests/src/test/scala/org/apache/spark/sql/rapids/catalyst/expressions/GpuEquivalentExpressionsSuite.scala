@@ -147,6 +147,28 @@ class GpuEquivalentExpressionsSuite extends FunSuite with Logging {
       Seq(mul, mul2, sqrt, sum))
   }
 
+  test("Get Expression Tiers - simple example") {
+    // Set up the expressions
+    //   one + two,
+    //   (one + two) + three
+    //   ((one + two) + three) + four
+    val one = AttributeReference("one", IntegerType)()
+    val two = AttributeReference("two", IntegerType)()
+    val three = AttributeReference("three", IntegerType)()
+    val four = AttributeReference("four", IntegerType)()
+    val add1 = GpuAdd(one, two, false)
+    val add2 = GpuAdd(add1, three, false)
+    val add3 = GpuAdd(add2, four, false)
+
+    // (one + two), ((one + two) + three) are both subs
+    val initialExprs = Seq(add1, add2, add3)
+    val inputAttrs = AttributeSeq(Seq(one, two, three, four))
+    validateExpressionTiers(initialExprs, inputAttrs,
+      Seq(add1, add2), //subexpressions
+      Seq(), // no unchanged
+      Seq(add1, add2, add3)) // all original expressions are updated
+  }
+
   test("Gpu Expression equivalence - non deterministic") {
     val sum = GpuAdd(GpuMonotonicallyIncreasingID(), GpuMonotonicallyIncreasingID(), false)
     val equivalence = new GpuEquivalentExpressions

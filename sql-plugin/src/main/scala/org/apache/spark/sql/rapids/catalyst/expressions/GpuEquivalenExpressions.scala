@@ -210,8 +210,9 @@ class GpuEquivalentExpressions {
   /**
    * Returns the state of the given expression in the `equivalenceMap`. Returns None if there is no
    * equivalent expressions.
+   * Exposed for testing.
    */
-  def getExprState(e: Expression): Option[GpuExpressionStats] = {
+  private[sql] def getExprState(e: Expression): Option[GpuExpressionStats] = {
     equivalenceMap.get(GpuExpressionEquals(e))
   }
 
@@ -278,9 +279,6 @@ object GpuEquivalentExpressions extends Logging {
   def getExprTiers(expressions : Seq[Expression]): Seq[Seq[Expression]] = {
     def recurse(exprs: Seq[Expression], startIdx: Int): Seq[Seq[Expression]] = {
       val equivalentExpressions = new GpuEquivalentExpressions
-
-      // Filter out some expressions that we know are problematic
-      // This won't be necessary if we replace EquivalentExpressions
       exprs.foreach(equivalentExpressions.addExprTree(_))
       val commonExprs = equivalentExpressions.getCommonSubexpressions
 
