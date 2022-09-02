@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_sql_writes_are_equal_collect, assert_gpu_
 from data_gen import *
 from datetime import date, datetime, timezone
 from marks import *
-from spark_session import is_hive_available, with_cpu_session
+from spark_session import is_hive_available, is_spark_330_or_later, with_cpu_session
 
 # Using positive timestamps to work around a cudf ORC bug
 # https://github.com/rapidsai/cudf/issues/11525
@@ -115,4 +115,19 @@ def test_optimized_hive_ctas_options_fallback(gens, storage_with_opts, spark_tmp
     assert_gpu_fallback_collect(
         lambda spark: spark.sql("CREATE TABLE {} OPTIONS ({}) STORED AS {} AS SELECT * FROM {}".format(
             spark_tmp_table_factory.get(), opts_string, storage, data_table)),
+        "DataWritingCommandExec")
+
+@allow_non_gpu("DataWritingCommandExec")
+@pytest.mark.skip_if(not (is_hive_available() and is_spark_330_or_later()),
+                     "Requires Hive and Spark 3.3+ to write bucketed Hive tables")
+@pytest.mark.parametrize("gens", [_basic_gens], ids=idfn)
+@pytest.mark.parametrize("storage", ["PARQUET", "ORC"], ids=idfn)
+def test_optimized_hive_bucketed_fallback(gens, storage, spark_tmp_table_factory):
+    in_table = spark_tmp_table_factory.get()
+    with_cpu_session(lambda spark: three_col_df(spark, int_gen, int_gen, int_gen).createOrReplaceTempView(in_table))
+    assert_gpu_fallback_collect(
+        lambda spark: spark.sql(
+            """CREATE TABLE {} STORED AS {}
+            CLUSTERED BY (b) INTO 3 BUCKETS
+            AS SELECT * FROM {}""".format(spark_tmp_table_factory.get(), storage, in_table)),
         "DataWritingCommandExec")
