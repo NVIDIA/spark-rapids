@@ -613,8 +613,8 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       filters: Array[Filter],
       readDataSchema: StructType,
       metrics:  Map[String, GpuMetric]): ParquetFileInfoWithBlockMeta = {
-    // note that depending on which reader is used the filterTime may not be wall clock
-    // since the multi-threaded could read in parallel
+    // note that depending on which reader is used, the filterTime may not be wall clock
+    // since the multithreaded reader could read in parallel
     withResource(new NvtxWithMetrics("filterBlocks", NvtxColor.PURPLE,
       metrics("filterTime"))) { _ =>
       val filePath = new Path(new URI(file.filePath))
@@ -1059,7 +1059,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     if (numFilesFilterParallel > 0) {
       val tc = TaskContext.get()
       val tasks = new java.util.ArrayList[Future[Array[BlockMetaWithPartFile]]]()
-      logDebug("Using parallel threads to do filter with Coalescing reader, " +
+      logDebug("Using parallel threads to do the filter with the Coalescing reader, " +
         s"$numFilesFilterParallel files per thread")
       files.sliding(numFilesFilterParallel, numFilesFilterParallel).foreach { fileGroup =>
         val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
