@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_py4j_exception
 from data_gen import *
 from spark_session import is_before_spark_320, is_before_spark_330, is_databricks91_or_later, with_gpu_session
-from marks import allow_non_gpu, approximate_float, ignore_order
+from marks import allow_non_gpu, approximate_float
 from pyspark.sql.types import *
 from spark_init_internal import spark_version
 from datetime import datetime
@@ -395,12 +395,12 @@ def test_cast_float_to_timestamp_ansi_overflow(type, invalid_value):
         return df.select(f.col('value').cast(TimestampType())).collect()
     assert_gpu_and_cpu_error(fun, {"spark.sql.ansi.enabled": True}, "ArithmeticException")
 
-@ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_330(), reason='330+ throws exception in ANSI mode')
 def test_cast_float_to_timestamp_side_effect():
     def getDf(spark):
-        return spark.createDataFrame([(True, float(LONG_MAX) + 100), (False, float(1))],
-                                     "c_b boolean, c_f float").repartition(1)
+        data = [(True, float(LONG_MAX) + 100), (False, float(1))]
+        distData = spark.sparkContext.parallelize(data, 1)
+        return spark.createDataFrame(distData, "c_b boolean, c_f float")
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: getDf(spark).selectExpr("if(c_b, cast(0 as timestamp), cast(c_f as timestamp))"),
         conf=ansi_enabled_conf)
