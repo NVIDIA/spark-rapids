@@ -131,7 +131,7 @@ else
         # Account for intra-Spark parallelism
         numGpuJVM=1
         if [[ "$NUM_LOCAL_EXECS" != "" ]]; then
-            numGpuJVM = $NUM_LOCAL_EXECS
+            numGpuJVM=$NUM_LOCAL_EXECS
         elif [[ "$PYSP_TEST_spark_cores_max" != "" && "$PYSP_TEST_spark_executor_cores" != "" ]]; then
             numGpuJVM=$(( $PYSP_TEST_spark_cores_max /  $PYSP_TEST_spark_executor_cores ))
         fi
