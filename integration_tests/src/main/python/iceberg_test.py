@@ -35,6 +35,9 @@ iceberg_gens_list = [
      ArrayGen(StructGen([['child0', string_gen], ['child1', double_gen], ['child2', int_gen]]))
     ] + iceberg_map_gens + decimal_gens ]
 
+rapids_reader_types = ['PERFILE', 'MULTITHREADED', 'COALESCING']
+
+
 @allow_non_gpu("BatchScanExec")
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
@@ -53,7 +56,7 @@ def test_iceberg_fallback_not_unsafe_row(spark_tmp_table_factory):
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320() or is_databricks_runtime(),
                     reason="AQE+DPP not supported until Spark 3.2.0+ and AQE+DPP not supported on Databricks")
-@pytest.mark.parametrize('reader_type', ['PERFILE', 'MULTITHREADED'])
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_aqe_dpp(spark_tmp_table_factory, reader_type):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -72,7 +75,7 @@ def test_iceberg_aqe_dpp(spark_tmp_table_factory, reader_type):
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize("data_gens", iceberg_gens_list, ids=idfn)
-@pytest.mark.parametrize('reader_type', ['PERFILE', 'MULTITHREADED'])
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_parquet_read_round_trip(spark_tmp_table_factory, data_gens, reader_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
     table = spark_tmp_table_factory.get()
@@ -89,7 +92,7 @@ def test_iceberg_parquet_read_round_trip(spark_tmp_table_factory, data_gens, rea
 @iceberg
 @pytest.mark.parametrize("data_gens", [[long_gen]], ids=idfn)
 @pytest.mark.parametrize("iceberg_format", ["orc", "avro"], ids=idfn)
-@pytest.mark.parametrize('reader_type', ['PERFILE', 'MULTITHREADED'])
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_unsupported_formats(spark_tmp_table_factory, data_gens, iceberg_format, reader_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
     table = spark_tmp_table_factory.get()
@@ -136,7 +139,7 @@ def test_iceberg_read_fallback(spark_tmp_table_factory, disable_conf):
                  marks=pytest.mark.skipif(is_before_spark_320(),
                                           reason="Hadoop with Spark 3.1.x does not support lz4 by default")),
     ("zstd", None)], ids=idfn)
-@pytest.mark.parametrize('reader_type', ['PERFILE', 'MULTITHREADED'])
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_read_parquet_compression_codec(spark_tmp_table_factory, codec_info, reader_type):
     codec, error_msg = codec_info
     table = spark_tmp_table_factory.get()
@@ -160,7 +163,7 @@ def test_iceberg_read_parquet_compression_codec(spark_tmp_table_factory, codec_i
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize("key_gen", [int_gen, long_gen, string_gen, boolean_gen, date_gen, timestamp_gen, decimal_gen_64bit], ids=idfn)
-@pytest.mark.parametrize('reader_type', ['PERFILE', 'MULTITHREADED'])
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_read_partition_key(spark_tmp_table_factory, key_gen, reader_type):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -176,7 +179,7 @@ def test_iceberg_read_partition_key(spark_tmp_table_factory, key_gen, reader_typ
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
-@pytest.mark.parametrize('reader_type', ['PERFILE', 'MULTITHREADED'])
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_input_meta(spark_tmp_table_factory, reader_type):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -194,7 +197,7 @@ def test_iceberg_input_meta(spark_tmp_table_factory, reader_type):
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
-@pytest.mark.parametrize('reader_type', ['PERFILE', 'MULTITHREADED'])
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_disorder_read_schema(spark_tmp_table_factory, reader_type):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -274,7 +277,7 @@ def test_iceberg_read_metadata_count(spark_tmp_table_factory):
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.skipif(is_before_spark_320(), reason="Spark 3.1.x has a catalog bug precluding scope prefix in table names")
-@pytest.mark.parametrize('reader_type', ['PERFILE', 'MULTITHREADED'])
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_read_timetravel(spark_tmp_table_factory, reader_type):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -298,7 +301,7 @@ def test_iceberg_read_timetravel(spark_tmp_table_factory, reader_type):
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.skipif(is_before_spark_320(), reason="Spark 3.1.x has a catalog bug precluding scope prefix in table names")
-@pytest.mark.parametrize('reader_type', ['PERFILE', 'MULTITHREADED'])
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_incremental_read(spark_tmp_table_factory, reader_type):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -328,7 +331,7 @@ def test_iceberg_incremental_read(spark_tmp_table_factory, reader_type):
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
-@pytest.mark.parametrize('reader_type', ['PERFILE', 'MULTITHREADED'])
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_reorder_columns(spark_tmp_table_factory, reader_type):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -349,7 +352,7 @@ def test_iceberg_reorder_columns(spark_tmp_table_factory, reader_type):
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
-@pytest.mark.parametrize('reader_type', ['PERFILE', 'MULTITHREADED'])
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_rename_column(spark_tmp_table_factory, reader_type):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -370,7 +373,7 @@ def test_iceberg_rename_column(spark_tmp_table_factory, reader_type):
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
-@pytest.mark.parametrize('reader_type', ['PERFILE', 'MULTITHREADED'])
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_column_names_swapped(spark_tmp_table_factory, reader_type):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -393,7 +396,7 @@ def test_iceberg_column_names_swapped(spark_tmp_table_factory, reader_type):
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
-@pytest.mark.parametrize('reader_type', ['PERFILE', 'MULTITHREADED'])
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_alter_column_type(spark_tmp_table_factory, reader_type):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -416,7 +419,7 @@ def test_iceberg_alter_column_type(spark_tmp_table_factory, reader_type):
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
-@pytest.mark.parametrize('reader_type', ['PERFILE', 'MULTITHREADED'])
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_add_column(spark_tmp_table_factory, reader_type):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -437,7 +440,7 @@ def test_iceberg_add_column(spark_tmp_table_factory, reader_type):
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
-@pytest.mark.parametrize('reader_type', ['PERFILE', 'MULTITHREADED'])
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_remove_column(spark_tmp_table_factory, reader_type):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -458,7 +461,7 @@ def test_iceberg_remove_column(spark_tmp_table_factory, reader_type):
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
-@pytest.mark.parametrize('reader_type', ['PERFILE', 'MULTITHREADED'])
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_add_partition_field(spark_tmp_table_factory, reader_type):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -479,7 +482,7 @@ def test_iceberg_add_partition_field(spark_tmp_table_factory, reader_type):
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
-@pytest.mark.parametrize('reader_type', ['PERFILE', 'MULTITHREADED'])
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_drop_partition_field(spark_tmp_table_factory, reader_type):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -500,7 +503,7 @@ def test_iceberg_drop_partition_field(spark_tmp_table_factory, reader_type):
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
-@pytest.mark.parametrize('reader_type', ['PERFILE', 'MULTITHREADED'])
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_v1_delete(spark_tmp_table_factory, reader_type):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -517,7 +520,7 @@ def test_iceberg_v1_delete(spark_tmp_table_factory, reader_type):
 
 @iceberg
 @pytest.mark.skipif(is_before_spark_320(), reason="merge-on-read not supported on Spark 3.1.x")
-@pytest.mark.parametrize('reader_type', ['PERFILE', 'MULTITHREADED'])
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_v2_delete_unsupported(spark_tmp_table_factory, reader_type):
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
@@ -534,3 +537,19 @@ def test_iceberg_v2_delete_unsupported(spark_tmp_table_factory, reader_type):
             lambda spark : spark.sql("SELECT * FROM {}".format(table)).collect(),
             conf={'spark.rapids.sql.format.parquet.reader.type': reader_type}),
         "UnsupportedOperationException: Delete filter is not supported")
+
+
+@iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+def test_iceberg_parquet_read_with_input_file(spark_tmp_table_factory, reader_type):
+    table = spark_tmp_table_factory.get()
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = binary_op_df(spark, long_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql("CREATE TABLE {} USING ICEBERG AS SELECT * FROM {}".format(table, tmpview))
+    with_cpu_session(setup_iceberg_table)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.sql("SELECT *, input_file_name() FROM {}".format(table)),
+        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})

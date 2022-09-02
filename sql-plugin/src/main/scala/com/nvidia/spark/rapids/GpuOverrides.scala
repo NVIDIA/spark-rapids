@@ -985,40 +985,18 @@ object GpuOverrides extends Logging {
         private[this] lazy val rhsDecimalType =
           DecimalUtil.asDecimalType(rhs.wrapped.asInstanceOf[Expression].dataType)
 
-        override def tagExprForGpu(): Unit = {
-          a.child match {
-            // Division and Multiplication of Decimal types is a little odd. Spark will cast the
-            // inputs to a common wider value where the scale is the max of the two input scales,
-            // and the precision is max of the two input non-scale portions + the new scale. Then it
-            // will do the divide or multiply as a BigDecimal value but lie about the return type.
-            // Finally here in CheckOverflow it will reset the scale and check the precision so that
-            // Spark knows it fits in the final desired result.
-            // Here we try to strip out the extra casts, etc to get to as close to the original
-            // query as possible. This lets us then calculate what CUDF needs to get the correct
-            // answer, which in some cases is a lot smaller.
-            // For multiply we can support all of the types. For divide we still have to fall back
-            // to the CPU in some cases.
-            case _: Divide =>
-              val intermediatePrecision =
-                GpuDecimalDivide.nonRoundedIntermediateArgPrecision(lhsDecimalType,
-                  rhsDecimalType, a.dataType)
-
-              if (intermediatePrecision > DType.DECIMAL128_MAX_PRECISION) {
-                if (conf.needDecimalGuarantees) {
-                  binExpr.willNotWorkOnGpu(s"the intermediate precision of " +
-                      s"$intermediatePrecision that is required to guarantee no overflow issues " +
-                      s"for this divide is too large to be supported on the GPU")
-                } else {
-                  logWarning("Decimal overflow guarantees disabled for " +
-                      s"${lhs.dataType} / ${rhs.dataType} produces ${a.dataType} with an " +
-                      s"intermediate precision of $intermediatePrecision")
-                }
-              }
-            case _ => // NOOP
-          }
-        }
-
         override def convertToGpu(): GpuExpression = {
+          // Prior to Spark 3.4.0
+          // Division and Multiplication of Decimal types is a little odd. Spark will cast the
+          // inputs to a common wider value where the scale is the max of the two input scales,
+          // and the precision is max of the two input non-scale portions + the new scale. Then it
+          // will do the divide or multiply as a BigDecimal value but lie about the return type.
+          // Finally here in CheckOverflow it will reset the scale and check the precision so that
+          // Spark knows it fits in the final desired result.
+          // Here we try to strip out the extra casts, etc to get to as close to the original
+          // query as possible. This lets us then calculate what CUDF needs to get the correct
+          // answer, which in some cases is a lot smaller.
+
           a.child match {
             case _: Divide =>
               // GpuDecimalDivide includes the overflow check in it.
@@ -1667,9 +1645,7 @@ object GpuOverrides extends Logging {
       }),
     expr[KnownFloatingPointNormalized](
       "Tag to prevent redundant normalization",
-      ExprChecks.unaryProjectInputMatchesOutput(
-        TypeSig.DOUBLE + TypeSig.FLOAT,
-        TypeSig.DOUBLE + TypeSig.FLOAT),
+      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.all, TypeSig.all),
       (a, conf, p, r) => new UnaryExprMeta[KnownFloatingPointNormalized](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuKnownFloatingPointNormalized(child)
@@ -1845,12 +1821,30 @@ object GpuOverrides extends Logging {
           // passing the already converted strf string for a little optimization
           GpuFromUnixTime(lhs, rhs, strfFormat)
       }),
+    expr[FromUTCTimestamp](
+      "Render the input UTC timestamp in the input timezone",
+      ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+        ("timestamp", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+        ("timezone", TypeSig.lit(TypeEnum.STRING)
+          .withPsNote(TypeEnum.STRING, "Only timezones equivalent to UTC are supported"),
+          TypeSig.lit(TypeEnum.STRING))),
+      (a, conf, p, r) => new FromUTCTimestampExprMeta(a, conf, p, r)
+    ),
     expr[Pmod](
       "Pmod",
       ExprChecks.binaryProject(TypeSig.gpuNumeric, TypeSig.cpuNumeric,
-        ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
+        ("lhs", TypeSig.gpuNumeric.withPsNote(TypeEnum.DECIMAL,
+          s"decimals with precision ${DecimalType.MAX_PRECISION} are not supported"),
+            TypeSig.cpuNumeric),
         ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
       (a, conf, p, r) => new BinaryExprMeta[Pmod](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          a.dataType match {
+            case dt: DecimalType if dt.precision == DecimalType.MAX_PRECISION =>
+              willNotWorkOnGpu("pmod at maximum decimal precision is not supported")
+            case _ =>
+          }
+        }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuPmod(lhs, rhs)
       }),
@@ -2117,10 +2111,7 @@ object GpuOverrides extends Logging {
     expr[Divide](
       "Division",
       ExprChecks.binaryProject(
-        TypeSig.DOUBLE + TypeSig.DECIMAL_128 +
-            TypeSig.psNote(TypeEnum.DECIMAL,
-              "Because of Spark's inner workings the full range of decimal precision " +
-                  "(even for 128-bit values) is not supported."),
+        TypeSig.DOUBLE + TypeSig.DECIMAL_128,
         TypeSig.DOUBLE + TypeSig.DECIMAL_128,
         ("lhs", TypeSig.DOUBLE + TypeSig.DECIMAL_128,
             TypeSig.DOUBLE + TypeSig.DECIMAL_128),
@@ -2300,23 +2291,16 @@ object GpuOverrides extends Logging {
           TypeSig.orderable,
           Seq(ParamCheck("input",
             (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT)
-              .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-              .withPsNote(Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
+              .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
             TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
             (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
             TypeSig.orderable,
             Seq(ParamCheck("input",
-              (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-                .withPsNote(Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
+              (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
               TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts),
       (a, conf, p, r) => new AggExprMeta[Min](a, conf, p, r) {
-        override def tagAggForGpu(): Unit = {
-          val dataType = a.child.dataType
-          checkAndTagFloatNanAgg("Min", dataType, conf, this)
-        }
-
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuMin(childExprs.head)
 
@@ -2982,7 +2966,7 @@ object GpuOverrides extends Logging {
         "the older versions of Spark in this instance and handle NaNs the same as 3.1.3+"),
     expr[ArraysOverlap](
       "Returns true if a1 contains at least a non-null element present also in a2. If the arrays " +
-      "have no common element and they are both non-empty and either of them contains a null " + 
+      "have no common element and they are both non-empty and either of them contains a null " +
       "element null is returned, false otherwise.",
       ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("array1",
@@ -3193,10 +3177,6 @@ object GpuOverrides extends Logging {
       }),
     expr[MapConcat](
       "Returns the union of all the given maps",
-      // Currently, GpuMapConcat supports nested values but not nested keys.
-      // We will add the nested key support after
-      // cuDF can fully support nested types in lists::drop_list_duplicates.
-      // Issue link: https://github.com/rapidsai/cudf/issues/11093
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
           TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
         TypeSig.MAP.nested(TypeSig.all),
@@ -3205,13 +3185,6 @@ object GpuOverrides extends Logging {
           TypeSig.NULL + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
           TypeSig.MAP.nested(TypeSig.all)))),
       (a, conf, p, r) => new ComplexTypeMergingExprMeta[MapConcat](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          a.dataType.keyType match {
-            case MapType(_,_,_) | ArrayType(_,_) | StructType(_) => willNotWorkOnGpu(
-              s"GpuMapConcat does not currently support the key type ${a.dataType.keyType}.")
-            case _ =>
-          }
-        }
         override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuMapConcat(child)
       }),
     expr[ConcatWs](
@@ -3418,7 +3391,7 @@ object GpuOverrides extends Logging {
 
         private def isNestedArrayType(dt: DataType): Boolean = {
           dt match {
-            case StructType(fields) => 
+            case StructType(fields) =>
               fields.exists { field =>
                 field.dataType match {
                   case sdt: StructType => isNestedArrayType(sdt)
@@ -3710,10 +3683,25 @@ object GpuOverrides extends Logging {
       // This needs to match what murmur3 supports.
       PartChecks(RepeatingParamCheck("hash_key",
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-            TypeSig.STRUCT).nested(), TypeSig.all)),
+            TypeSig.STRUCT + TypeSig.ARRAY).nested(),
+        TypeSig.all)
+      ),
       (hp, conf, p, r) => new PartMeta[HashPartitioning](hp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =
           hp.expressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+        override def tagPartForGpu(): Unit = {
+          val arrayWithStructsHashing = hp.expressions.exists(e =>
+            TrampolineUtil.dataTypeExistsRecursively(e.dataType,
+              dt => dt match {
+                case ArrayType(_: StructType, _) => true
+                case _ => false
+              })
+          )
+          if (arrayWithStructsHashing) {
+            willNotWorkOnGpu("hashing arrays with structs is not supported")
+          }
+        }
 
         override def convertToGpu(): GpuPartitioning =
           GpuHashPartitioning(childExprs.map(_.convertToGpu()), hp.numPartitions)
@@ -3930,7 +3918,7 @@ object GpuOverrides extends Logging {
           .withPsNote(TypeEnum.STRUCT, "Round-robin partitioning is not supported for nested " +
               s"structs if ${SQLConf.SORT_BEFORE_REPARTITION.key} is true")
           .withPsNote(
-            Seq(TypeEnum.ARRAY, TypeEnum.MAP),
+            Seq(TypeEnum.MAP),
             "Round-robin partitioning is not supported if " +
               s"${SQLConf.SORT_BEFORE_REPARTITION.key} is true"),
         TypeSig.all),
@@ -3992,10 +3980,12 @@ object GpuOverrides extends Logging {
       "The backend for hash based aggregations",
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-          TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT)
+            TypeSig.MAP + TypeSig.STRUCT + TypeSig.ARRAY)
             .nested()
-            .withPsNote(Seq(TypeEnum.ARRAY, TypeEnum.MAP),
+            .withPsNote(TypeEnum.MAP,
               "not allowed for grouping expressions")
+            .withPsNote(TypeEnum.ARRAY,
+              "not allowed for grouping expressions if containing Struct as child")
             .withPsNote(TypeEnum.STRUCT,
               "not allowed for grouping expressions if containing Array or Map as child"),
         TypeSig.all),
@@ -4425,6 +4415,9 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
    *  check for a ScalaUDF using a tahoe.Snapshot function and if we ever see
    *  an AdaptiveSparkPlan on a Spark version we don't expect, fallback to the
    *  CPU for those plans.
+   *  Note that the Delta Lake delta log checkpoint parquet files are just inefficient
+   *  to have to copy the data to GPU and then back off after it does the scan on
+   *  Delta Table Checkpoint, so have the entire plan fallback to CPU at that point.
    */
   def isDeltaLakeMetadataQuery(plan: SparkPlan): Boolean = {
     val deltaLogScans = PlanUtils.findOperators(plan, {
@@ -4434,17 +4427,21 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         true
       case f: FileSourceScanExec =>
         // example filename: "file:/tmp/delta-table/_delta_log/00000000000000000000.json"
-        val found = f.relation.inputFiles.exists(name =>
-          name.contains("/_delta_log/") && name.endsWith(".json"))
+        val found = f.relation.inputFiles.exists { name =>
+          name.contains("/_delta_log/") && name.endsWith(".json")
+        }
         if (found) {
           logDebug(s"Fallback for FileSourceScanExec delta log: $f")
         }
         found
       case rdd: RDDScanExec =>
-        // example rdd name: "Delta Table State #1 - file:///tmp/delta-table/_delta_log"
+        // example rdd name: "Delta Table State #1 - file:///tmp/delta-table/_delta_log" or
+        // "Scan ExistingRDD Delta Table Checkpoint with Stats #1 -
+        // file:///tmp/delta-table/_delta_log"
         val found = rdd.inputRDD != null &&
           rdd.inputRDD.name != null &&
-          rdd.inputRDD.name.startsWith("Delta Table State") &&
+          (rdd.inputRDD.name.startsWith("Delta Table State")
+            || rdd.inputRDD.name.startsWith("Delta Table Checkpoint")) &&
           rdd.inputRDD.name.endsWith("/_delta_log")
         if (found) {
           logDebug(s"Fallback for RDDScanExec delta log: $rdd")
