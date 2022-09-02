@@ -1059,6 +1059,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     if (numFilesFilterParallel > 0) {
       val tc = TaskContext.get()
       val tasks = new java.util.ArrayList[Future[Array[BlockMetaWithPartFile]]]()
+      logDebug("Using parallel threads to do filter with Coalescing reader, " +
+        s"$numFilesFilterParallel files per thread")
       files.sliding(numFilesFilterParallel, numFilesFilterParallel).foreach { fileGroup =>
         val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
         tasks.add(threadPool.submit(

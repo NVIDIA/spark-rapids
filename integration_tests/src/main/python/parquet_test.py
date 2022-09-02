@@ -89,6 +89,29 @@ reader_opt_confs_no_native = [original_parquet_file_reader_conf, multithreaded_p
 
 reader_opt_confs = reader_opt_confs_native + reader_opt_confs_no_native
 
+
+@pytest.mark.parametrize('parquet_gens', [[byte_gen, short_gen, int_gen, long_gen]], ids=idfn)
+@pytest.mark.parametrize('read_func', [read_parquet_df])
+@pytest.mark.parametrize('reader_confs', [coalesce_parquet_file_reader_multithread_filter_conf])
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_parquet_read_coalescing_multiple_files(spark_tmp_path, parquet_gens, read_func, reader_confs, v1_enabled_list):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(
+            # high number of slices to that a single task reads more then 1 file
+            lambda spark : gen_df(spark, gen_list, num_slices=30).write.parquet(data_path),
+            conf=rebase_write_corrected_conf)
+    all_confs = copy_and_update(reader_confs, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
+        'spark.sql.legacy.parquet.int96RebaseModeInRead' : 'CORRECTED',
+        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+    # once https://github.com/NVIDIA/spark-rapids/issues/1126 is in we can remove spark.sql.legacy.parquet.datetimeRebaseModeInRead config which is a workaround
+    # for nested timestamp/date support
+    assert_gpu_and_cpu_are_equal_collect(read_func(data_path),
+            conf=all_confs)
+
+
 @pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
