@@ -17,7 +17,6 @@
 package org.apache.spark.rapids.shims
 
 import org.apache.spark.{MapOutputTrackerMaster, Partition, ShuffleDependency, SparkEnv, TaskContext}
-
 import org.apache.spark.shuffle.ShuffleReader
 import org.apache.spark.sql.execution.{CoalescedMapperPartitionSpec, CoalescedPartitionSpec, PartialMapperPartitionSpec, PartialReducerPartitionSpec}
 import org.apache.spark.sql.execution.metric.SQLShuffleReadMetricsReporter
