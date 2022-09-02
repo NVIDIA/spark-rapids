@@ -1092,7 +1092,7 @@ def test_first_last_reductions_nested_types(data_gen):
         lambda spark: unary_op_df(spark, data_gen).coalesce(1).selectExpr(
             'first(a)', 'last(a)', 'first(a, true)', 'last(a, true)'))
 
-@pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
 def test_generic_reductions(data_gen):
     local_conf = copy_and_update(_no_nans_float_conf, {'spark.sql.legacy.allowParameterlessCount': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
@@ -1120,7 +1120,7 @@ def test_count(data_gen):
             'count(1)'),
         conf = {'spark.sql.legacy.allowParameterlessCount': 'true'})
 
-@pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
 def test_distinct_count_reductions(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).selectExpr(
@@ -1142,7 +1142,7 @@ def test_arithmetic_reductions(data_gen):
             conf = _no_nans_float_conf)
 
 @pytest.mark.parametrize('data_gen',
-                         non_nan_all_basic_gens + decimal_gens + _nested_gens,
+                         all_basic_gens + decimal_gens + _nested_gens,
                          ids=idfn)
 def test_collect_list_reductions(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
