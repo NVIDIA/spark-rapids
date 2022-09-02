@@ -64,7 +64,7 @@ object ColumnCastUtil extends Arm {
           cv.getType.getTypeId match {
             case DType.DTypeEnum.STRUCT =>
               withResource(ArrayBuffer.empty[ColumnView]) { tmpNeedsClosed =>
-                val childrenDt = if (dt.isDefined) {
+                val structFields = if (dt.isDefined) {
                   dt.get match {
                     case t: StructType => t.fields
                     case t => /* this should never be reach out */
@@ -79,8 +79,8 @@ object ColumnCastUtil extends Arm {
                 (0 until cv.getNumChildren).foreach { index =>
                   val child = cv.getChildColumnView(index)
                   tmpNeedsClosed += child
-                  val childDt = if (childrenDt.nonEmpty) {
-                    Some(childrenDt(index).dataType)
+                  val childDt = if (structFields.nonEmpty) {
+                    Some(structFields(index).dataType)
                   } else {
                     None
                   }
