@@ -267,7 +267,7 @@ case class GpuProjectAstExec(
  *   Input columns for tier 3: a, b, c, d, e, f, ref1, ref2, ref3
  *   Tier 3: (ref2 * e), (ref3 * f), (a + e), (c + f)
  */
- case class GpuTieredProject(val exprSets: Seq[Seq[GpuExpression]]) extends Arm with Logging {
+ case class GpuTieredProject(val exprSets: Seq[Seq[GpuExpression]]) extends Arm {
 
   @tailrec
   private def projectTier(boundExprs: Seq[Seq[GpuExpression]],

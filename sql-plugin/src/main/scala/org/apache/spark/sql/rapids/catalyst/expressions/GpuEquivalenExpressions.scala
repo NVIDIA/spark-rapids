@@ -19,12 +19,12 @@
  */
 package org.apache.spark.sql.rapids.catalyst.expressions
 
+import scala.annotation.tailrec
 import scala.collection.mutable
 
 import com.nvidia.spark.rapids.{GpuAlias, GpuCaseWhen, GpuCoalesce, GpuExpression, GpuIf, GpuLeafExpression, GpuUnevaluable}
 
 import org.apache.spark.TaskContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, CaseWhen, Coalesce, Expression, If, LeafExpression, PlanExpression}
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
 import org.apache.spark.sql.catalyst.expressions.objects.LambdaVariable
@@ -242,62 +242,100 @@ class GpuEquivalentExpressions {
   }
 }
 
-object GpuEquivalentExpressions extends Logging {
-  def logExprTree(expr : Expression): Unit = {
-    logWarning("nodeName: " + expr.nodeName + "\n" + expr.treeString)
-  }
-
-  def logExprs(title: String, exprs: Seq[Expression]): Unit = {
-    if (!exprs.isEmpty) {
-      logWarning("Start: " + title)
-      exprs.foreach(logExprTree)
-      logWarning("  End: " + title)
-    }
-  }
-
-  def logExprTiers(title: String, tiers: Seq[Seq[Expression]]): Unit = {
-    tiers.foreach(logExprs(title, _))
-  }
-
+object GpuEquivalentExpressions {
   /**
    * Recursively replaces expression with its proxy expression in `substitutionMap`.
    */
-  def replaceWithCommonRef(
+  private def replaceWithCommonRef(
       expr: Expression,
-      substitutionMap: Map[Expression, Expression]): Expression = {
+      substitutionMap: mutable.HashMap[Expression, Expression]): Expression = {
     expr match {
-      case e : AttributeReference => expr
+      case e: AttributeReference => e
       case _ =>
         substitutionMap.get(expr) match {
-          case Some(e) => e
+          case Some(attr) => attr
           case None => expr.mapChildren(replaceWithCommonRef(_, substitutionMap))
         }
     }
   }
 
-  // Given a set of expressions, recursively extract all of the common expressions
-  def getExprTiers(expressions : Seq[Expression]): Seq[Seq[Expression]] = {
-    def recurse(exprs: Seq[Expression], startIdx: Int): Seq[Seq[Expression]] = {
-      val equivalentExpressions = new GpuEquivalentExpressions
-      exprs.foreach(equivalentExpressions.addExprTree(_))
-      val commonExprs = equivalentExpressions.getCommonSubexpressions
+  /**
+   * Recursively calls getCommonSubexpressions to create tiers
+   * of expressions, where earlier tiers contain subexpressions
+   * for later tiers.
+   */
+  @tailrec
+  private def recurseCommonExpressions(exprs: Seq[Expression],
+      exprTiers: Seq[Seq[Expression]]): Seq[Seq[Expression]] = {
+    val equivalentExpressions = new GpuEquivalentExpressions
+    exprs.foreach(equivalentExpressions.addExprTree(_))
+    val commonExprs = equivalentExpressions.getCommonSubexpressions
+    if (commonExprs.isEmpty) {
+      exprTiers
+    } else {
+      recurseCommonExpressions(commonExprs, (Seq(commonExprs) ++ exprTiers))
+    }
+  }
 
-      if (commonExprs.isEmpty) {
-        Seq(exprs)
-      } else {
-        val newExprs = commonExprs.zipWithIndex.map {
-          case (e, i) =>
-            GpuAlias(e, s"tiered_input_${startIdx + i}")()
+  /**
+   * Applies substitutions to all expression tiers.
+   */
+  private def doSubstitutions(exprTiers: Seq[Seq[Expression]], currentTier: Seq[Expression],
+      substitutionMap: mutable.HashMap[Expression, Expression]): Seq[Seq[Expression]] = {
+    // Make substitutions in given tiers, filtering out matches from original current tier,
+    // but don't filter the last tier - it needs to match original size
+    val subTiers = exprTiers.dropRight(1)
+    val lastTier = exprTiers.last
+    val updatedSubTiers = subTiers.map {
+      t => t.filter(e => !currentTier.contains(e)).map(replaceWithCommonRef(_, substitutionMap))
+    }
+    val updatedLastTier = lastTier.map(replaceWithCommonRef(_, substitutionMap))
+    updatedSubTiers ++ Seq(updatedLastTier)
+  }
+
+  /**
+   * Apply subexpression substitutions to all tiers.
+   */
+  @tailrec
+  private def recurseUpdateTiers(exprTiers: Seq[Seq[Expression]],
+      updatedTiers: Seq[Seq[Expression]],
+      substitutionMap: mutable.HashMap[Expression, Expression],
+      startIndex: Int):Seq[Seq[Expression]] = {
+    exprTiers match {
+      case Nil => updatedTiers
+      case tier :: tail => {
+        // Last tier should already be updated.
+        if (tail.isEmpty) {
+          updatedTiers ++ Seq(tier)
+        } else {
+          // Replace expressions in this tier with GpuAlias
+          val aliasedTier = tier.zipWithIndex.map {
+            case (e, i) =>
+              GpuAlias(e, s"tiered_input_${startIndex + i}")()
+          }
+          // Add them to the map
+          tier.zip(aliasedTier).foreach {
+            case (expr, alias) => {
+              substitutionMap.get(expr) match {
+                case None => substitutionMap.put(expr, alias.toAttribute)
+                case Some(e) =>
+              }
+            }
+          }
+          val newUpdatedTiers = doSubstitutions(tail, tier, substitutionMap)
+          recurseUpdateTiers(newUpdatedTiers, updatedTiers ++ Seq(aliasedTier),
+            substitutionMap, startIndex + aliasedTier.size)
         }
-        val subMap = commonExprs.zip(newExprs).map {
-          case (e, r) => (e, r.toAttribute)
-        }.toMap[Expression, Expression]
-
-        val updatedExpressions = exprs.map(replaceWithCommonRef(_, subMap))
-        recurse(newExprs, startIdx + newExprs.size) ++ Seq(updatedExpressions)
       }
     }
-    recurse(expressions, 0)
+  }
+
+  def getExprTiers(expressions : Seq[Expression]): Seq[Seq[Expression]] = {
+    // Get tiers of common expressions
+    val expressionTiers = recurseCommonExpressions(expressions, Seq(expressions))
+    val substitutionMap = mutable.HashMap.empty[Expression, Expression]
+    // Update expression with common expressions from previous tiers
+    recurseUpdateTiers(expressionTiers, Seq.empty, substitutionMap, 0)
   }
 
   // Given expression tiers as created by getExprTiers and a set of input attributes,
@@ -351,4 +389,3 @@ case class GpuExpressionStats(expr: Expression)(var useCount: Int = 1) {
     tree.children.map(getHeight).reduceOption(_ max _).getOrElse(0) + 1
   }
 }
-
