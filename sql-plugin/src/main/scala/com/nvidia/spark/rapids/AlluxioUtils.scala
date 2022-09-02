@@ -209,13 +209,6 @@ object AlluxioUtils extends Logging {
     }
   }
 
-  // first try to get fs.s3a.access.key from spark config
-  // second try to get from environment variables
-  private def getKeyAndSecret(relation: HadoopFsRelation) : (Option[String], Option[String]) = {
-    val hadoopConf = relation.sparkSession.sparkContext.hadoopConfiguration
-    getKeyAndSecret(hadoopConf, relation.sparkSession.conf)
-  }
-
   private def genFuncForPathReplacement(replaceMapOption: Option[Map[String, String]]
                                        ) : Option[Path => Path] = {
     if (replaceMapOption.isDefined) {
@@ -238,7 +231,7 @@ object AlluxioUtils extends Logging {
     }
   }
 
-  private def genFuncForAutoMountReplacementConfs(conf: RapidsConf, sparkConf: SparkConf,
+  private def genFuncForAutoMountReplacement(conf: RapidsConf, sparkConf: SparkConf,
       hadoopConf: Configuration, alluxioBucketRegex: String) : Option[Path => Path] = {
     Some((f: Path) => {
       val pathStr = f.toString
@@ -260,26 +253,67 @@ object AlluxioUtils extends Logging {
     })
   }
 
-  private def genFuncForAutoMountReplacement(conf: RapidsConf, relation: HadoopFsRelation,
-      alluxioBucketRegex: String) : Option[Path => Path] = {
-    Some((f: Path) => {
-      val pathStr = f.toString
-      if (pathStr.matches(alluxioBucketRegex)) {
-        initAlluxioInfo(conf)
-        val (access_key, secret_key) = getKeyAndSecret(relation)
+  def replacePathIfNeededPathOnly(
+      conf: RapidsConf,
+      pd: PartitionDirectory,
+      hadoopConf: Configuration,
+      sparkConf: SparkConf): PartitionDirectory = {
 
-        val (scheme, bucket) = getSchemeAndBucketFromPath(pathStr)
-        autoMountBucket(scheme, bucket, access_key, secret_key)
+    val alluxioPathsReplace: Option[Seq[String]] = conf.getAlluxioPathsToReplace
+    val alluxioAutoMountEnabled = conf.getAlluxioAutoMountEnabled
+    val alluxioBucketRegex: String = conf.getAlluxioBucketRegex
 
-        // replace s3://foo/.. to alluxio://alluxioMasterHost/foo/...
-        val newPath = new Path(pathStr.replaceFirst(
-          scheme + ":/", "alluxio://" + alluxioMasterHost.get))
-        logDebug(s"Replace $pathStr to ${newPath.toString}")
-        newPath
-      } else {
-        f
+    // alluxioPathsReplace: Seq("key->value", "key1->value1")
+    // turn the rules to the Map with eg
+    // { s3://foo -> alluxio://0.1.2.3:19998/foo,
+    //   gs://bar -> alluxio://0.1.2.3:19998/bar }
+    val replaceMapOption = if (alluxioPathsReplace.isDefined) {
+      alluxioPathsReplace.map(rules => {
+        rules.map(rule => {
+          val split = rule.split("->")
+          if (split.size == 2) {
+            split(0).trim -> split(1).trim
+          } else {
+            throw new IllegalArgumentException(s"Invalid setting for " +
+              s"${RapidsConf.ALLUXIO_PATHS_REPLACE.key}")
+          }
+        }).toMap
+      })
+    } else {
+      None
+    }
+
+    val replaceFunc = if (replaceMapOption.isDefined) {
+      genFuncForPathReplacement(replaceMapOption)
+    } else if (alluxioAutoMountEnabled) {
+      genFuncForAutoMountReplacementConfs(conf, sparkConf, hadoopConf, alluxioBucketRegex)
+    } else {
+      None
+    }
+
+    if (replaceFunc.isDefined) {
+      val alluxPaths = pd.files.map { f =>
+        val replaced = replaceFunc.get(f.getPath)
+        // logWarning(s" path ${f.getPath} replaced is: $replaced")
+          new FileStatus(
+            f.length, f.isDir, f.blockReplication, f.blockSize, f.modificationTime,
+            replaced)
       }
-    })
+
+      // check the alluxio paths in root paths exist or not
+      // throw out an exception to stop the job when any of them is not mounted
+      if (replaceMapOption.isDefined) {
+        alluxPaths.map(_.getPath).foreach { rootPath =>
+          replaceMapOption.get.values.find(value => rootPath.toString.startsWith(value)).
+            foreach(matched =>
+              checkAlluxioMounted(hadoopConf, matched))
+        }
+        // logWarning("using allux paths " + alluxPaths.mkString(","))
+      } 
+      PartitionDirectory(pd.values, alluxPaths.toArray)
+    } else {
+      pd
+    }
   }
 
   def replacePathIfNeeded(
@@ -315,7 +349,9 @@ object AlluxioUtils extends Logging {
     val replaceFunc = if (replaceMapOption.isDefined) {
       genFuncForPathReplacement(replaceMapOption)
     } else if (alluxioAutoMountEnabled) {
-      genFuncForAutoMountReplacement(conf, relation, alluxioBucketRegex)
+      val hadoopConf = relation.sparkSession.sparkContext.hadoopConfiguration
+      val sparkConf = relation.sparkSession.conf)
+      genFuncForAutoMountReplacement(conf, sparkConf, hadoopConf, alluxioBucketRegex)
     } else {
       None
     }
