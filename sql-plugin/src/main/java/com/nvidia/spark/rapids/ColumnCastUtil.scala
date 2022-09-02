@@ -64,12 +64,27 @@ object ColumnCastUtil extends Arm {
           cv.getType.getTypeId match {
             case DType.DTypeEnum.STRUCT =>
               withResource(ArrayBuffer.empty[ColumnView]) { tmpNeedsClosed =>
+                val childrenDt = if (dt.isDefined) {
+                  dt.get match {
+                    case t: StructType => t.fields
+                    case t => /* this should never be reach out */
+                      throw new IllegalStateException("Invalid input DataType: " +
+                        s"Expect StructType but got ${t.toString}")
+                  }
+                } else {
+                  Array.empty[StructField]
+                }
                 var childrenUpdated = false
                 val newChildren = ArrayBuffer.empty[ColumnView]
                 (0 until cv.getNumChildren).foreach { index =>
                   val child = cv.getChildColumnView(index)
                   tmpNeedsClosed += child
-                  val (updatedChild, needsClosingChild) = deepTransformView(child)(convert)
+                  val childDt = if (childrenDt.nonEmpty) {
+                    Some(childrenDt(index).dataType)
+                  } else {
+                    None
+                  }
+                  val (updatedChild, needsClosingChild) = deepTransformView(child, childDt)(convert)
                   needsClosing ++= needsClosingChild
                   updatedChild match {
                     case Some(newChild) =>
@@ -90,8 +105,25 @@ object ColumnCastUtil extends Arm {
                 }
               }
             case DType.DTypeEnum.LIST =>
-              withResource(cv.getChildColumnView(0)) { dataView =>
-                val (updatedData, needsClosingData) = deepTransformView(dataView)(convert)
+              withResource(cv.getChildColumnView(0)) { child =>
+                // A ColumnView of LIST type may have data type is ArrayType or MapType in Spark.
+                // If it is a MapType, its child will be a column of type struct<key, value>.
+                // In such cases, we need to generate the corresponding Spark's data type
+                // for the child column as a StructType.
+                val childDt = if (dt.isDefined) {
+                  dt.get match {
+                    case t: ArrayType => Some(t.elementType)
+                    case t: MapType => Some(StructType(Array(
+                        StructField("key", t.keyType, nullable = false),
+                        StructField("value", t.valueType, nullable = t.valueContainsNull))))
+                    case t => /* this should never be reach out */
+                      throw new IllegalStateException("Invalid input DataType: " +
+                        s"Expect ArrayType or MapType but got ${t.toString}")
+                  }
+                } else {
+                  None
+                }
+                val (updatedData, needsClosingData) = deepTransformView(child, childDt)(convert)
                 needsClosing ++= needsClosingData
                 updatedData match {
                   case Some(updated) =>
