@@ -1094,12 +1094,6 @@ def test_count_distinct_with_nan_floats(data_gen):
 
 # REDUCTIONS
 
-non_nan_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
-        # nans and -0.0 cannot work because of nan support in min/max, -0.0 == 0.0 in cudf for distinct and
-        # Spark fixed ordering of 0.0 and -0.0 in Spark 3.1 in the ordering
-        FloatGen(no_nans=True, special_cases=[]), DoubleGen(no_nans=True, special_cases=[]),
-        string_gen, boolean_gen, date_gen, timestamp_gen]
-
 _nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
 
 @pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
@@ -1176,11 +1170,17 @@ def test_collect_list_reductions(data_gen):
         lambda spark: unary_op_df(spark, data_gen).coalesce(1).selectExpr('collect_list(a)'),
         conf=_no_nans_float_conf)
 
+_no_neg_zero_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
+        # -0.0 cannot work because of -0.0 == 0.0 in cudf for distinct and
+        # Spark fixed ordering of 0.0 and -0.0 in Spark 3.1 in the ordering
+        FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), DoubleGen(special_cases=[]),
+        string_gen, boolean_gen, date_gen, timestamp_gen]
+
 _struct_only_nested_gens = [all_basic_struct_gen,
                             StructGen([['child0', byte_gen], ['child1', all_basic_struct_gen]]),
                             StructGen([])]
 @pytest.mark.parametrize('data_gen',
-                         non_nan_all_basic_gens + decimal_gens + _struct_only_nested_gens,
+                         _no_neg_zero_all_basic_gens + decimal_gens + _struct_only_nested_gens,
                          ids=idfn)
 def test_collect_set_reductions(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
