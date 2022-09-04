@@ -298,9 +298,6 @@ object GpuOrcScan extends Arm {
     val asType = if (asSeconds) { DType.TIMESTAMP_SECONDS } else { DType.TIMESTAMP_MILLISECONDS }
     colType match {
       case DType.BOOL8 | DType.INT8 | DType.INT16 | DType.INT32 =>
-        // Convert seconds to microseconds, we need to multiply 1e36
-        // Convert milliseconds to microseconds, we need to multiply 1e3
-        // integers * value => microseconds
         // cuDF requires casting to Long first, then we can cast Long to Timestamp(in microseconds)
         withResource(col.castTo(DType.INT64)) { longs =>
           // bitCastTo will re-interpret the long values as 'asType', and it will zero-copy cast
@@ -309,23 +306,22 @@ object GpuOrcScan extends Arm {
         }
       case DType.INT64 =>
         // In CPU code of ORC casting, if the integers are consider as seconds, then the conversion
-        // is 'integer -> milliseconds -> microseconds'
-        val millisecondValues = if (asSeconds) {
-          // If consider 'col' as seconds, we need multiply 1000 to convert them into milliseconds
-          withResource(Scalar.fromLong(1000L)) { thousand => col.mul(thousand) }
+        // is 'integer -> milliseconds -> microseconds', and it checks the long-overflow when
+        // casting 'milliseconds -> microseconds', here we follow it.
+        val milliseconds = if (asSeconds) {
+          col.bitCastTo(DType.TIMESTAMP_SECONDS).castTo(DType.TIMESTAMP_MILLISECONDS)
         } else {
-          col.copyToColumnVector()
+          col.castTo(DType.TIMESTAMP_MILLISECONDS)
         }
-        withResource(millisecondValues) { _ =>
+        withResource(milliseconds) { _ =>
           // Check long-multiplication overflow
-          if (millisecondValues.max() != null) {
-            testLongMultiplicationOverflow(millisecondValues.max().getLong, 1000L)
+          if (milliseconds.max() != null) {
+            testLongMultiplicationOverflow(milliseconds.max().getLong, 1000L)
           }
-          if (millisecondValues.min() != null) {
-            testLongMultiplicationOverflow(millisecondValues.min().getLong, 1000L)
+          if (milliseconds.min() != null) {
+            testLongMultiplicationOverflow(milliseconds.min().getLong, 1000L)
           }
-          millisecondValues.bitCastTo(DType.TIMESTAMP_MILLISECONDS)
-            .castTo(DType.TIMESTAMP_MICROSECONDS)
+          milliseconds.castTo(DType.TIMESTAMP_MICROSECONDS)
         }
     }
   }
