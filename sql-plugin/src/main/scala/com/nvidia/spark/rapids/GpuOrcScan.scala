@@ -317,14 +317,14 @@ object GpuOrcScan extends Arm {
         }
         withResource(milliseconds) { _ =>
           // Check long-multiplication overflow
-          val maxValue = milliseconds.max()
-          val minValue = milliseconds.min()
-          withResource(Array(maxValue, minValue)) { _ =>
-            // If the elements in 'milliseconds' are all nulls, then 'maxValue' and 'minValue'
-            // will be null. We should check their validity.
+          withResource(milliseconds.max()) { maxValue =>
+            // If the elements in 'milliseconds' are all nulls, then 'maxValue' and 'minValue' will
+            // be null. We should check their validity.
             if (maxValue.isValid) {
               testLongMultiplicationOverflow(maxValue.getLong, DateTimeConstants.MICROS_PER_MILLIS)
             }
+          }
+          withResource(milliseconds.min()) { minValue =>
             if (minValue.isValid) {
               testLongMultiplicationOverflow(minValue.getLong, DateTimeConstants.MICROS_PER_MILLIS)
             }
