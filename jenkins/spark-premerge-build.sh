@@ -58,8 +58,8 @@ mvn_verify() {
         echo "spark version: $version"
         # build and run unit tests on one 3.1.X version (base version covers this), one 3.2.X and one 3.3.X version
         if [[ "${TEST_SPARK_SHIM_VERSIONS[*]}" =~ "$version" ]]; then
-            env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS \ 
-            -Dpytest.TEST_TAGS='' -pl '!tools'
+            env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS \
+              -Dpytest.TEST_TAGS='' -pl '!tools'
         # build nosnapshot versions
         elif [[ "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS}" =~ "$verions" ]]; then
             $MVN_INSTALL_CMD -DskipTests -Dbuildver=$version

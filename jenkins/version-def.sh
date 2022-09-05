@@ -17,6 +17,15 @@
 
 set -e
 
+PHASE_TYPE=regular
+
+if [[ $# -eq 1 ]]; then
+    PHASE_TYPE=$1
+elif [[ $# -gt 1 ]]; then
+    echo "ERROR: too many parameters are provided"
+    exit 1
+fi
+
 # Split abc=123 from $OVERWRITE_PARAMS
 # $OVERWRITE_PARAMS patten 'abc=123;def=456;'
 PRE_IFS=$IFS
@@ -48,9 +57,23 @@ SPARK_REPO=${SPARK_REPO:-"$URM_URL"}
 echo "CUDF_VER: $CUDF_VER, CUDA_CLASSIFIER: $CUDA_CLASSIFIER, PROJECT_VER: $PROJECT_VER \
     SPARK_VER: $SPARK_VER, SCALA_BINARY_VER: $SCALA_BINARY_VER"
 
+case $PHASE_TYPE in
 
-SPARK_SHIM_VERSIONS_STR=$(mvn -B help:evaluate -q -pl dist -PnoSnapshots -Dexpression=included_buildvers -DforceStdout)
+    regular)
+        SPARK_SHIM_VERSIONS_STR=$(mvn -B help:evaluate -q -pl dist -PnoSnapshots -Dexpression=included_buildvers -DforceStdout)
+        ;;
+
+    pre-release)    
+        SPARK_SHIM_VERSIONS_STR=$(mvn -B help:evaluate -q -pl dist -Psnapshots -Dexpression=included_buildvers -DforceStdout)
+        ;;
+
+    *)
+        SPARK_SHIM_VERSIONS_STR=$(mvn -B help:evaluate -q -pl dist -PnoSnapshots -Dexpression=included_buildvers -DforceStdout)
+        ;;
+esac
+
 SPARK_SHIM_VERSIONS_STR=$(echo $SPARK_SHIM_VERSIONS_STR)
+PRE_IFS=$IFS
 IFS=", " <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS
+IFS=$PRE_IFS
 SPARK_BASE_SHIM_VERSION=${SPARK_SHIM_VERSIONS[0]}
-
