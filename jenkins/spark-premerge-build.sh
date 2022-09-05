@@ -112,26 +112,24 @@ rapids_shuffle_smoke_test() {
     $SPARK_HOME/sbin/spark-daemon.sh start org.apache.spark.deploy.worker.Worker 1 $SPARK_MASTER
 
     invoke_shuffle_integration_test() {
-      SPECIFIC_SHUFFLE_FLAGS=$1
       PYSP_TEST_spark_master=$SPARK_MASTER \
-        TEST_PARALLEL=0 \
         PYSP_TEST_spark_cores_max=2 \
         PYSP_TEST_spark_executor_cores=1 \
         PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
         PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0 \
         PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=0.1 \
         PYSP_TEST_spark_rapids_memory_gpu_allocFraction=0.1 \
-        SPARK_SUBMIT_FLAGS=$SPECIFIC_SHUFFLE_FLAGS \
         ./integration_tests/run_pyspark_from_build.sh -m shuffle_test
     }
 
     # using UCX shuffle
-    invoke_shuffle_integration_test "--conf spark.executorEnv.UCX_ERROR_SIGNALS="
+    PYSP_TEST_spark_executorEnv_UCX_ERROR_SIGNALS="" \
+        invoke_shuffle_integration_test
 
     # using MULTITHREADED shuffle
-    invoke_shuffle_integration_test "\
-      --conf spark.rapids.shuffle.mode=MULTITHREADED \
-      --conf spark.rapids.shuffle.multiThreaded.writer.threads=2"
+    PYSP_TEST_spark_rapids_shuffle_mode=MULTITHREADED \
+    PYSP_TEST_spark_rapids_shuffle_multiThreaded_writer_threads=2 \
+        invoke_shuffle_integration_test
 
     $SPARK_HOME/sbin/spark-daemon.sh stop org.apache.spark.deploy.worker.Worker 1
     $SPARK_HOME/sbin/stop-master.sh
@@ -197,7 +195,10 @@ export SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-bin-hadoop3.2"
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
     rm -f $SPARK_HOME.tgz
-export PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/pyspark/:$SPARK_HOME/python/lib/py4j-0.10.9-src.zip
+# copy python path libs to container /tmp instead of workspace to avoid ephemeral PVC issue
+TMP_PYTHON=/tmp/$(date +"%Y%m%d")
+rm -rf $TMP_PYTHON && cp -r $SPARK_HOME/python $TMP_PYTHON
+export PYTHONPATH=$TMP_PYTHON/python:$TMP_PYTHON/python/pyspark/:$TMP_PYTHON/python/lib/py4j-0.10.9-src.zip
 
 case $BUILD_TYPE in
 

@@ -25,6 +25,8 @@ trait IcebergProvider {
   def isSupportedScan(scan: Scan): Boolean
 
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
+
+  def copyScanWithInputFileTrue(scan: Scan): Scan
 }
 
 object IcebergProvider {

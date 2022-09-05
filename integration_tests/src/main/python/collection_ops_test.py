@@ -149,6 +149,29 @@ def test_sort_array_lit(data_gen):
             f.sort_array(f.lit(array_lit), True),
             f.sort_array(f.lit(array_lit), False)))
 
+
+def test_sort_array_normalize_nans():
+    """
+    When the average length of array is > 100,
+    and there are `-Nan`s in the data, the sorting order
+    of `Nan` is inconsistent in cuDF (https://github.com/rapidsai/cudf/issues/11630).
+    `GpuSortArray` fixes the inconsistency by normalizing `Nan`s.
+    """
+    bytes1 = struct.pack('L', 0x7ff83cec2c05b870)
+    bytes2 = struct.pack('L', 0xfff5101d3f1cd31b)
+    bytes3 = struct.pack('L', 0x7c22453f18c407a8)
+    nan1 = struct.unpack('d', bytes1)[0]
+    nan2 = struct.unpack('d', bytes2)[0]
+    other = struct.unpack('d', bytes3)[0]
+
+    data1 = [([nan2] + [other for _ in range(256)] + [nan1],)]
+    # array of struct
+    data2 = [([(nan2, nan1)] + [(other, nan2) for _ in range(256)] + [(nan1, nan2)],)]
+    for data in [data1, data2]:
+        assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: spark.createDataFrame(data).selectExpr('sort_array(_1, true)', 'sort_array(_1, false)')
+        )
+
 # For functionality test, the sequence length in each row should be limited,
 # to avoid the exception as below,
 #     "Too long sequence: 2147483745. Should be <= 2147483632"
