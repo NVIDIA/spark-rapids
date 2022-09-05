@@ -135,10 +135,9 @@ lead_lag_data_gens = [long_gen, DoubleGen(special_cases=[]),
             ['child_string', StringGen()]
         ])]
 
-_no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
-                       'spark.rapids.sql.hasNans': 'false',
-                       'spark.rapids.sql.castStringToFloat.enabled': 'true'
-                      }
+_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
+                'spark.rapids.sql.castStringToFloat.enabled': 'true'
+                }
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', [SetValuesGen(t, [math.nan, None]) for t in [FloatType(), DoubleType()]], ids=idfn)
@@ -1016,7 +1015,7 @@ def test_window_aggs_for_rows_collect_set():
 @ignore_order(local=True)
 @allow_non_gpu("ProjectExec", "SortArray")
 def test_window_aggs_for_rows_collect_set_nested_array():
-    conf = copy_and_update(_no_nans_float_conf, {
+    conf = copy_and_update(_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
         "spark.rapids.sql.castDecimalToString.enabled": "true",
         "spark.rapids.sql.expression.SortArray": "false"
