@@ -59,19 +59,16 @@ echo "CUDF_VER: $CUDF_VER, CUDA_CLASSIFIER: $CUDA_CLASSIFIER, PROJECT_VER: $PROJ
 
 case $PHASE_TYPE in
 
-    regular)
-        SPARK_SHIM_VERSIONS_STR=$(mvn -B help:evaluate -q -pl dist -PnoSnapshots -Dexpression=included_buildvers -DforceStdout)
-        ;;
-
-    pre-release)    
-        SPARK_SHIM_VERSIONS_STR=$(mvn -B help:evaluate -q -pl dist -Psnapshots -Dexpression=included_buildvers -DforceStdout)
+    pre-release)
+        PROFILE_OPT="-Psnapshots" 
         ;;
 
     *)
-        SPARK_SHIM_VERSIONS_STR=$(mvn -B help:evaluate -q -pl dist -PnoSnapshots -Dexpression=included_buildvers -DforceStdout)
+        PROFILE_OPT="-PnoSnapshots" 
         ;;
 esac
 
+SPARK_SHIM_VERSIONS_STR=$(mvn -B help:evaluate -q -pl dist $PROFILE_OPT -Dexpression=included_buildvers -DforceStdout)
 SPARK_SHIM_VERSIONS_STR=$(echo $SPARK_SHIM_VERSIONS_STR)
 PRE_IFS=$IFS
 IFS=", " <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS
