@@ -50,7 +50,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
+import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, DateTimeConstants}
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
@@ -304,20 +304,30 @@ object GpuOrcScan extends Arm {
         withResource(col.castTo(DType.INT64)) { longs =>
           // bitCastTo will re-interpret the long values as 'timeUnit', and it will zero-copy cast
           // between types with the same underlying length.
-          longs.bitCastTo(timeUnit).castTo(DType.TIMESTAMP_MICROSECONDS)
+          withResource(longs.bitCastTo(timeUnit)) { timeView =>
+            timeView.castTo(DType.TIMESTAMP_MICROSECONDS)
+          }
         }
       case DType.INT64 =>
         // In CPU code of ORC casting, if the integers are consider as seconds, then the conversion
         // is 'integer -> milliseconds -> microseconds', and it checks the long-overflow when
         // casting 'milliseconds -> microseconds', here we follow it.
-        val milliseconds = col.bitCastTo(timeUnit).castTo(DType.TIMESTAMP_MILLISECONDS)
+        val milliseconds = withResource(col.bitCastTo(timeUnit)) { timeView =>
+          timeView.castTo(DType.TIMESTAMP_MILLISECONDS)
+        }
         withResource(milliseconds) { _ =>
           // Check long-multiplication overflow
-          if (milliseconds.max() != null) {
-            testLongMultiplicationOverflow(milliseconds.max().getLong, 1000L)
-          }
-          if (milliseconds.min() != null) {
-            testLongMultiplicationOverflow(milliseconds.min().getLong, 1000L)
+          val maxValue = milliseconds.max()
+          val minValue = milliseconds.min()
+          withResource(Array(maxValue, minValue)) { _ =>
+            // If the elements in 'milliseconds' are all nulls, then 'maxValue' and 'minValue'
+            // will be null. We should check their validity.
+            if (maxValue.isValid) {
+              testLongMultiplicationOverflow(maxValue.getLong, DateTimeConstants.MICROS_PER_MILLIS)
+            }
+            if (minValue.isValid) {
+              testLongMultiplicationOverflow(minValue.getLong, DateTimeConstants.MICROS_PER_MILLIS)
+            }
           }
           milliseconds.castTo(DType.TIMESTAMP_MICROSECONDS)
         }
