@@ -47,7 +47,6 @@ _default_conf = {
     'spark.rapids.sql.fast.sample': 'false',
     'spark.rapids.sql.hasExtendedYearValues': 'true',
     'spark.rapids.sql.hashOptimizeSort.enabled': 'false',
-    'spark.rapids.sql.hasNans': 'true',
     'spark.rapids.sql.improvedFloatOps.enabled': 'false',
     'spark.rapids.sql.improvedTimeOps.enabled': 'false',
     'spark.rapids.sql.incompatibleDateFormats.enabled': 'false',
