@@ -164,8 +164,8 @@ struct_gens_xfail = [
     _grpkey_floats_with_nulls_and_nans
 ]
 
-# List of schemas with no NaNs
-_init_list_no_nans = [
+# List of schemas
+_init_list = [
     _longs_with_nulls,
     _longs_with_no_nulls,
     _grpkey_longs_with_nulls,
@@ -173,16 +173,7 @@ _init_list_no_nans = [
     _grpkey_floats_with_nulls,
     _grpkey_strings_with_nulls,
     _grpkey_nulls,
-    _grpkey_strings_with_extra_nulls]
-
-# List of schemas with NaNs included
-_init_list_with_nans_and_no_nans = [
-    _longs_with_nulls,
-    _longs_with_no_nulls,
-    _grpkey_longs_with_nulls,
-    _grpkey_dbls_with_nulls,
-    _grpkey_floats_with_nulls,
-    _grpkey_strings_with_nulls,
+    _grpkey_strings_with_extra_nulls,
     _grpkey_floats_with_nulls_and_nans]
 
 # grouping decimals with nulls
@@ -194,7 +185,7 @@ _decimals_with_no_nulls = [
     ('b', DecimalGen(nullable=False)),
     ('c', DecimalGen(nullable=False))]
 
-_init_list_with_nans_and_no_nans_with_decimals = _init_list_with_nans_and_no_nans + [
+_init_list_with_decimals = _init_list + [
     _decimals_with_nulls, _decimals_with_no_nulls]
 
 # Used to test ANSI-mode fallback
@@ -295,16 +286,7 @@ _grpkey_short_full_neg_scale_decimals = [
     ('b', _decimal_gen_38_neg10),
     ('c', _decimal_gen_38_neg10)]
 
-
-_init_list_no_nans_with_decimal = _init_list_no_nans + [
-    _grpkey_small_decimals]
-
-_init_list_no_nans_with_decimalbig = _init_list_no_nans + [
-    _grpkey_small_decimals, _grpkey_big_decimals, _grpkey_short_mid_decimals,
-    _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, 
-    _grpkey_short_very_big_neg_scale_decimals]
-
-_init_list_with_nans_and_no_nans_with_decimalbig = _init_list_with_nans_and_no_nans + [
+_init_list_with_decimalbig = _init_list + [
     _grpkey_small_decimals, _grpkey_big_decimals, _grpkey_short_mid_decimals,
     _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, 
     _grpkey_short_very_big_neg_scale_decimals]
@@ -357,7 +339,7 @@ def test_computation_in_grpby_columns():
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimalbig, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_with_decimalbig, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_sum(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
@@ -399,7 +381,7 @@ def test_hash_reduction_sum_full_decimal(data_gen, conf):
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans + [_grpkey_short_mid_decimals, 
+@pytest.mark.parametrize('data_gen', _init_list + [_grpkey_short_mid_decimals, 
     _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, _grpkey_short_full_decimals], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_avg(data_gen, conf):
@@ -430,7 +412,7 @@ def test_hash_avg_nulls_partial_only(data_gen):
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimalbig, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_with_decimalbig, ids=idfn)
 def test_intersectAll(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : gen_df(spark, data_gen, length=100).intersectAll(gen_df(spark, data_gen, length=100)))
@@ -438,7 +420,7 @@ def test_intersectAll(data_gen):
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans_with_decimalbig, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_with_decimalbig, ids=idfn)
 def test_exceptAll(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : gen_df(spark, data_gen, length=100).exceptAll(gen_df(spark, data_gen, length=100).filter('a != b')))
@@ -456,7 +438,7 @@ _pivot_short_big_decimals = [
     ('b', _pivot_gen_128bit),
     ('c', decimal_gen_128bit)]
 
-_pivot_gens_with_decimals = _init_list_with_nans_and_no_nans + [
+_pivot_gens_with_decimals = _init_list + [
     _grpkey_small_decimals, _pivot_big_decimals, _grpkey_short_mid_decimals,
     _pivot_short_big_decimals, _grpkey_short_very_big_decimals,
     _grpkey_short_very_big_neg_scale_decimals]
@@ -476,7 +458,7 @@ def test_hash_grpby_pivot(data_gen, conf):
 @approximate_float
 @ignore_order(local=True)
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_multiple_grpby_pivot(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
@@ -489,7 +471,7 @@ def test_hash_multiple_grpby_pivot(data_gen, conf):
 @approximate_float
 @ignore_order(local=True)
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_reduction_pivot(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
@@ -875,7 +857,7 @@ def test_hash_groupby_typed_imperative_agg_without_gpu_implementation_fallback()
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_multiple_mode_query(data_gen, conf):
     print_params(data_gen)
@@ -897,7 +879,7 @@ def test_hash_multiple_mode_query(data_gen, conf):
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs),
     ids=idfn)
 def test_hash_multiple_mode_query_avg_distincts(data_gen, conf):
@@ -910,7 +892,7 @@ def test_hash_multiple_mode_query_avg_distincts(data_gen, conf):
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_query_multiple_distincts_with_non_distinct(data_gen, conf):
     local_conf = copy_and_update(conf, {'spark.sql.legacy.allowParameterlessCount': 'true'})
@@ -933,7 +915,7 @@ def test_hash_query_multiple_distincts_with_non_distinct(data_gen, conf):
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_query_max_with_multiple_distincts(data_gen, conf):
     local_conf = copy_and_update(conf, {'spark.sql.legacy.allowParameterlessCount': 'true'})
@@ -947,7 +929,7 @@ def test_hash_query_max_with_multiple_distincts(data_gen, conf):
         conf=local_conf)
 
 @ignore_order
-@pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_count_with_filter(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
@@ -959,7 +941,7 @@ def test_hash_count_with_filter(data_gen, conf):
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_no_nans + [_grpkey_short_mid_decimals, _grpkey_short_big_decimals], ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list + [_grpkey_short_mid_decimals, _grpkey_short_big_decimals], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_multiple_filters(data_gen, conf):
     assert_gpu_and_cpu_are_equal_sql(
@@ -1700,7 +1682,7 @@ def test_no_fallback_when_ansi_enabled(data_gen):
 @ignore_order(local=True)
 @approximate_float
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans_with_decimals, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_with_decimals, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_groupby_std_variance(data_gen, conf):
     local_conf = copy_and_update(conf, {
@@ -1751,7 +1733,7 @@ def test_groupby_std_variance_nulls(data_gen, conf, ansi_enabled):
                'SortArray', 'Alias', 'Literal', 'Count',
                'GpuToCpuCollectBufferTransition', 'CpuToGpuCollectBufferTransition',
                'AggregateExpression')
-@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 @pytest.mark.parametrize('replace_mode', _replace_modes_non_distinct, ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
