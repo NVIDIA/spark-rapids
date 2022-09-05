@@ -286,39 +286,31 @@ object GpuOrcScan extends Arm {
    * Convert the integer vector into timestamp(microseconds) vector.
    * @param col The integer columnar vector.
    * @param colType Specific integer type, it should be BOOL/INT8/INT16/INT32/INT64.
-   * @param timeUnit If timeUnit == TimeUnit.SECONDS then we consider the integers as seconds.
-   *                 If timeUnit == TimeUnit.MILLISECONDS then we consider the integers as
-   *                 milliseconds. This parameter is determined by the shims.
+   * @param timeUnit It should be one of {DType.TIMESTAMP_SECONDS, DType.TIMESTAMP_MILLISECONDS}.
+   *                 If timeUnit == SECONDS, then we consider the integers as seconds.
+   *                 If timeUnit == MILLISECONDS, then we consider the integers as milliseconds.
+   *                 This parameter is determined by the shims.
    * @return A timestamp vector.
    */
   def castIntegersToTimestamp(col: ColumnView, colType: DType,
-                              timeUnit: TimeUnit): ColumnVector = {
+                              timeUnit: DType): ColumnVector = {
     assert(colType == DType.BOOL8 || colType == DType.INT8 || colType == DType.INT16
       || colType == DType.INT32 || colType == DType.INT64)
-    assert(timeUnit == TimeUnit.SECONDS || timeUnit == TimeUnit.MILLISECONDS)
+    assert(timeUnit == DType.TIMESTAMP_SECONDS || timeUnit == DType.TIMESTAMP_MILLISECONDS)
 
     colType match {
       case DType.BOOL8 | DType.INT8 | DType.INT16 | DType.INT32 =>
-        val asType = if (timeUnit == TimeUnit.SECONDS) {
-          DType.TIMESTAMP_SECONDS
-        } else {
-          DType.TIMESTAMP_MILLISECONDS
-        }
         // cuDF requires casting to Long first, then we can cast Long to Timestamp(in microseconds)
         withResource(col.castTo(DType.INT64)) { longs =>
-          // bitCastTo will re-interpret the long values as 'asType', and it will zero-copy cast
+          // bitCastTo will re-interpret the long values as 'timeUnit', and it will zero-copy cast
           // between types with the same underlying length.
-          longs.bitCastTo(asType).castTo(DType.TIMESTAMP_MICROSECONDS)
+          longs.bitCastTo(timeUnit).castTo(DType.TIMESTAMP_MICROSECONDS)
         }
       case DType.INT64 =>
         // In CPU code of ORC casting, if the integers are consider as seconds, then the conversion
         // is 'integer -> milliseconds -> microseconds', and it checks the long-overflow when
         // casting 'milliseconds -> microseconds', here we follow it.
-        val milliseconds = if (timeUnit == TimeUnit.SECONDS) {
-          col.bitCastTo(DType.TIMESTAMP_SECONDS).castTo(DType.TIMESTAMP_MILLISECONDS)
-        } else {
-          col.castTo(DType.TIMESTAMP_MILLISECONDS)
-        }
+        val milliseconds = col.bitCastTo(timeUnit).castTo(DType.TIMESTAMP_MILLISECONDS)
         withResource(milliseconds) { _ =>
           // Check long-multiplication overflow
           if (milliseconds.max() != null) {
