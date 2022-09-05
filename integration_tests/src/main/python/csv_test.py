@@ -280,9 +280,9 @@ csv_supported_gens = [
         StringGen('[nN][aA][nN]'),
         StringGen('[+-]?[iI][nN][fF]([iI][nN][iI][tT][yY])?'),
         byte_gen, short_gen, int_gen, long_gen, boolean_gen, date_gen,
-        DoubleGen(no_nans=False),
+        double_gen,
         pytest.param(double_gen),
-        pytest.param(FloatGen(no_nans=False)),
+        pytest.param(float_gen),
         pytest.param(float_gen),
         TimestampGen()]
 
