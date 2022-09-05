@@ -544,9 +544,9 @@ _repeat_agg_column_for_collect_set_op = [
 
 # data generating for collect_set based-nested Struct[Array] types
 _repeat_agg_column_for_collect_set_op_nested = [
-    RepeatSeqGen(struct_array_gen_no_nans, length=15),
+    RepeatSeqGen(all_basic_struct_gen, length=15),
     RepeatSeqGen(StructGen([
-        ['c0', struct_array_gen_no_nans], ['c1', int_gen]]), length=15),
+        ['c0', all_basic_struct_gen], ['c1', int_gen]]), length=15),
     RepeatSeqGen(ArrayGen(all_basic_struct_gen_no_nan), length=15)]
 
 _array_of_array_gen = [RepeatSeqGen(ArrayGen(sub_gen), length=15) for sub_gen in single_level_array_gens_no_nan]
