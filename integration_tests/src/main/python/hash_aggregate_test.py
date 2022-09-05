@@ -220,8 +220,7 @@ def get_params(init_list, marked_params=[]):
     return list
 
 
-# Run these tests with in 3 modes, all on the GPU, only partial aggregates on GPU and
-# only final aggregates on the GPU with conf for spark.rapids.sql.hasNans set to false/true
+# Run these tests with in 3 modes, all on the GPU.
 _confs = [_float_conf, _float_smallbatch_conf, _float_conf_final, _float_conf_partial]
 
 # Pytest marker for list of operators allowed to run on the CPU,

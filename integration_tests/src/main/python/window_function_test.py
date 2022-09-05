@@ -554,8 +554,7 @@ def test_window_running_float_decimal_sum(batch_size):
 @pytest.mark.parametrize('c_gen', lead_lag_data_gens, ids=idfn)
 @pytest.mark.parametrize('a_b_gen', part_and_order_gens, ids=meta_idfn('partAndOrderBy:'))
 def test_multi_types_window_aggs_for_rows_lead_lag(a_b_gen, c_gen, batch_size):
-    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
-            'spark.rapids.sql.hasNans': False}
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
     data_gen = [
             ('a', RepeatSeqGen(a_b_gen, length=20)),
             ('b', a_b_gen),
@@ -612,7 +611,6 @@ lead_lag_struct_with_arrays_gen = [struct_with_arrays,
 @pytest.mark.parametrize('struct_gen', lead_lag_struct_with_arrays_gen, ids=idfn)
 @pytest.mark.parametrize('a_b_gen', part_and_order_gens, ids=meta_idfn('partAndOrderBy:'))
 def test_lead_lag_for_structs_with_arrays(a_b_gen, struct_gen):
-    conf = {'spark.rapids.sql.hasNans': False}
     data_gen = [
         ('a', RepeatSeqGen(a_b_gen, length=20)),
         ('b', IntegerGen(nullable=False, special_cases=[])),
@@ -630,7 +628,7 @@ def test_lead_lag_for_structs_with_arrays(a_b_gen, struct_gen):
             .withColumn('lead_5_c', f.lead('c', 5).over(base_window_spec)) \
             .withColumn('lag_1_c', f.lag('c', 1).over(base_window_spec))
 
-    assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
+    assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
 lead_lag_array_data_gens =\
@@ -698,7 +696,7 @@ def test_multi_types_window_aggs_for_rows(a_b_gen, c_gen):
                 .withColumn('dense_rank_val', f.dense_rank().over(baseWindowSpec)) \
                 .withColumn('percent_rank_val', f.percent_rank().over(baseWindowSpec)) \
                 .withColumn('row_num', f.row_number().over(baseWindowSpec))
-    assert_gpu_and_cpu_are_equal_collect(do_it, conf={'spark.rapids.sql.hasNans': 'false'})
+    assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
 @pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0 is IGNORE NULLS supported for lead and lag by Spark")
