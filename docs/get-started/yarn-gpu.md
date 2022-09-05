@@ -118,7 +118,7 @@ On all masters:
 sudo systemctl restart hadoop-yarn-resourcemanager.service
 ```
 
-Note: If `cgroup` is mounted on `tempfs`, after one node rebooted,
+Note: If `cgroup` is mounted on `tmpfs`, after one node rebooted,
 the cgroup directory permission get reverted, you can manually 
 update the cgroup permission:
 ```bash
