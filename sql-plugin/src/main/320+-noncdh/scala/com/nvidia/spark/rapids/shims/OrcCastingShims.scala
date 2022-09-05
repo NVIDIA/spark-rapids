@@ -19,10 +19,12 @@ package com.nvidia.spark.rapids.shims
 import ai.rapids.cudf.{ColumnView, DType}
 import com.nvidia.spark.rapids.GpuOrcScan
 
+import java.util.concurrent.TimeUnit
+
 object OrcCastingShims {
 
   def castIntegerToTimestamp(col: ColumnView, colType: DType): ColumnView = {
     // For spark >= 320 (except spark-321-cdh), they consider the integers in `col` as seconds
-    GpuOrcScan.castIntegersToTimestamp(col, colType, true)
+    GpuOrcScan.castIntegersToTimestamp(col, colType, TimeUnit.SECONDS)
   }
 }

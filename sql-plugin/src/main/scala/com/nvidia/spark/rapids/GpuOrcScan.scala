@@ -286,18 +286,24 @@ object GpuOrcScan extends Arm {
    * Convert the integer vector into timestamp(microseconds) vector.
    * @param col The integer columnar vector.
    * @param colType Specific integer type, it should be BOOL/INT8/INT16/INT32/INT64.
-   * @param asSeconds True if consider the integers as seconds, otherwise we consider them
-   *                  as milliseconds. This parameter is determined by the shims.
+   * @param timeUnit If timeUnit == TimeUnit.SECONDS then we consider the integers as seconds.
+   *                 If timeUnit == TimeUnit.MILLISECONDS then we consider the integers as
+   *                 milliseconds. This parameter is determined by the shims.
    * @return A timestamp vector.
    */
   def castIntegersToTimestamp(col: ColumnView, colType: DType,
-                              asSeconds: Boolean = true): ColumnVector = {
+                              timeUnit: TimeUnit): ColumnVector = {
     assert(colType == DType.BOOL8 || colType == DType.INT8 || colType == DType.INT16
       || colType == DType.INT32 || colType == DType.INT64)
+    assert(timeUnit == TimeUnit.SECONDS || timeUnit == TimeUnit.MILLISECONDS)
 
-    val asType = if (asSeconds) { DType.TIMESTAMP_SECONDS } else { DType.TIMESTAMP_MILLISECONDS }
     colType match {
       case DType.BOOL8 | DType.INT8 | DType.INT16 | DType.INT32 =>
+        val asType = if (timeUnit == TimeUnit.SECONDS) {
+          DType.TIMESTAMP_SECONDS
+        } else {
+          DType.TIMESTAMP_MILLISECONDS
+        }
         // cuDF requires casting to Long first, then we can cast Long to Timestamp(in microseconds)
         withResource(col.castTo(DType.INT64)) { longs =>
           // bitCastTo will re-interpret the long values as 'asType', and it will zero-copy cast
@@ -308,7 +314,7 @@ object GpuOrcScan extends Arm {
         // In CPU code of ORC casting, if the integers are consider as seconds, then the conversion
         // is 'integer -> milliseconds -> microseconds', and it checks the long-overflow when
         // casting 'milliseconds -> microseconds', here we follow it.
-        val milliseconds = if (asSeconds) {
+        val milliseconds = if (timeUnit == TimeUnit.SECONDS) {
           col.bitCastTo(DType.TIMESTAMP_SECONDS).castTo(DType.TIMESTAMP_MILLISECONDS)
         } else {
           col.castTo(DType.TIMESTAMP_MILLISECONDS)
