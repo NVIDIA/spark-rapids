@@ -365,3 +365,61 @@ This section will give some links about how to configure, tune Alluxio and some 
 - [Running Spark on Alluxio](https://docs.alluxio.io/os/user/stable/en/compute/Spark.html)
 - [Performance Tuning](https://docs.alluxio.io/os/user/stable/en/operation/Performance-Tuning.html )
 - [Alluxio troubleshooting](https://docs.alluxio.io/os/user/stable/en/operation/Troubleshooting.html)
+
+## Alluxio reliability
+### Auto start Alluxio master and workers  
+It's better to add the following crontab jobs to avoid unexpected closes on Alluxio master or workers.  
+Add a crontab job on the Alluxio maser node to automatically start Alluxio maser:  
+
+    ```bash
+    # try to start Alluxio master every minute
+    crontab -e
+    * * * * * ${ALLUXIO_HOME}/bin/alluxio-start.sh -N master > /tmp/cron-master.log 2>&1
+    ```
+
+Add a crontab job on the Alluxio worker node to automatically start Alluxio worker
+
+    ```bash
+    # try to start Alluxio worker every minute
+    crontab -e
+    * * * * * ${ALLUXIO_HOME}/bin/alluxio-start.sh -N worker > /tmp/cron-worker.log 2>&1
+    ```
+
+The `-N` in above commands means do not try to kill previous running processes before starting new ones. 
+
+### Auto fallback to external file system transparently if Alluxio workers have failures
+`alluxio.user.client.cache.timeout.duration` means:  
+The timeout duration for local cache I/O operations (reading/writing/deleting). When this property is a positive value,local cache operations after timing out will fail and fallback to external file system but transparent to applications; when this property is a negative value, this feature is disabled.
+The default value is -1 which means disable the fallback.  
+The following configures set the fallback time out to 10 seconds.
+```
+vi $SPARK_HOME/conf/spark-defaults.conf
+
+spark.driver.extraJavaOptions    -Dalluxio.user.client.cache.timeout.duration=10sec
+spark.executor.extraJavaOptions  -Dalluxio.user.client.cache.timeout.duration=10sec  
+```
+
+### Avoid long time response if master or workers have failures
+The default value of `alluxio.user.rpc.retry.max.duration` is 2 minutes.  
+If master is done the `alluxio.user.rpc.retry.max.duration` will cause at least 2 minutes waiting, it's also too long.
+The default value of `alluxio.user.block.read.retry.max.duration` is 5 minutes.
+If worker is done the `alluxio.user.block.read.retry.max.duration` will cause 5 minutes waiting, it's too long.
+
+See also:
+```
+alluxio.user.rpc.retry.max.duration
+alluxio.user.rpc.retry.base.sleep	
+alluxio.user.rpc.retry.base.sleep	
+
+alluxio.user.block.read.retry.max.duration	
+alluxio.user.block.read.retry.sleep.base	
+alluxio.user.block.read.retry.sleep.max	
+```
+Above configurations define the `ExponentialTimeBoundedRetry` retry policies and max durations, we can adjust them to appropriate values.  
+
+```
+vi $SPARK_HOME/conf/spark-defaults.conf
+
+spark.driver.extraJavaOptions    -Dalluxio.user.rpc.retry.max.duration=10sec -Dalluxio.user.block.read.retry.max.duration=10sec
+spark.executor.extraJavaOptions  -Dalluxio.user.rpc.retry.max.duration=10sec -Dalluxio.user.block.read.retry.max.duration=10sec
+```
