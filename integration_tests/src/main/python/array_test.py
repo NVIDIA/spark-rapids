@@ -16,7 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
-from marks import incompat, allow_non_gpu_databricks
+from marks import incompat
 from spark_session import is_before_spark_313, is_before_spark_330, is_spark_330_or_later, is_databricks104_or_later
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType

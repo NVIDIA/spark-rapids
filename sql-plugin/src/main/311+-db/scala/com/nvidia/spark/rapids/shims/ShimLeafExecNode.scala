@@ -21,6 +21,11 @@ import org.apache.spark.sql.execution.LeafExecNode
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 
 trait ShimLeafExecNode extends LeafExecNode {
+  // For AQE support in Databricks, all Exec nodes implement computeStats(). This is actually
+  // a recursive call to traverse the entire physical plan to aggregate this number. For the
+  // end of the computation, this means that all LeafExecNodes must implement this method to
+  // avoid a stack overflow. For now, based on feedback from Databricks, Long.MaxValue is 
+  // sufficient to satisfy this computation.
   override def computeStats(): Statistics = {
     Statistics(
       sizeInBytes = Long.MaxValue

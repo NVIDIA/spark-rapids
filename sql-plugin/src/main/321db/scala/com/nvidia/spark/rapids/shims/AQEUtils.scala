@@ -26,7 +26,6 @@ object AQEUtils extends Logging {
   /** Return a new QueryStageExec reuse instance with updated output attributes */
   def newReuseInstance(sqse: ShuffleQueryStageExec, newOutput: Seq[Attribute]): QueryStageExec = {
     val reusedExchange = ReusedExchangeExec(newOutput, sqse.shuffle)
-    logWarning(s"reusedExchange: $reusedExchange")
     ShuffleQueryStageExec(sqse.id, reusedExchange, sqse.originalPlan, sqse.isSparkExchange)
   }
 
