@@ -1043,7 +1043,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       files.grouped(numFilesFilterParallel).map { fileGroup =>
         threadPool.submit(
           new CoalescingFilterRunner(footerReadType, tc, fileGroup, conf, filters, readDataSchema))
-      }.toArray.map(_.get()).flatten
+      }.toArray.flatMap(_.get())
     } else {
       files.map { file =>
         filterBlocksForCoalescingReader(footerReadType, file, conf, filters, readDataSchema)
