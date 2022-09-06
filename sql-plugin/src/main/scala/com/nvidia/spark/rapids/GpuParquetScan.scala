@@ -1064,7 +1064,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     }
     val filterTime = System.nanoTime() - startTime
     metrics.get(FILTER_TIME).foreach {
-      _ += TimeUnit.NANOSECONDS.toMillis(filterTime)
+      _ += filterTime
     }
     metrics.get("scanTime").foreach {
       _ += TimeUnit.NANOSECONDS.toMillis(filterTime)
