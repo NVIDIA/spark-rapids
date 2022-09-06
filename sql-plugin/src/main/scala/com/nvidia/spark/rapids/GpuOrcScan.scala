@@ -405,7 +405,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
     // we must split the different compress files into different ColumnarBatch.
     // So here try the best to group the same compression files together before hand.
     val compressionAndStripes = LinkedHashMap[CompressionKind, ArrayBuffer[OrcSingleStripeMeta]]()
-    val currentTime = System.nanoTime()
+    val startTime = System.nanoTime()
     files.map { file =>
       val orcPartitionReaderContext = filterHandler.filterStripes(file, dataSchema,
         readDataSchema, partitionSchema)
@@ -420,8 +420,12 @@ case class GpuOrcMultiFilePartitionReaderFactory(
             readDataSchema,
             OrcExtraInfo(orcPartitionReaderContext.requestedMapping)))
     }
+    val filterTime = System.nanoTime() - startTime
+    metrics.get(FILTER_TIME).foreach {
+      _ += filterTime
+    }
     metrics.get("scanTime").foreach {
-      _ += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - currentTime)
+      _ += TimeUnit.NANOSECONDS.toMillis(filterTime)
     }
     val clippedStripes = compressionAndStripes.values.flatten.toSeq
     new MultiFileOrcPartitionReader(conf, files, clippedStripes, readDataSchema, debugDumpPrefix,
@@ -463,8 +467,12 @@ case class GpuOrcPartitionReaderFactory(
   }
 
   override def buildColumnarReader(partFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
+    val startTime = System.nanoTime()
     val ctx = filterHandler.filterStripes(partFile, dataSchema, readDataSchema,
       partitionSchema)
+    metrics.get(FILTER_TIME).foreach {
+      _ += (System.nanoTime() - startTime)
+    }
     if (ctx == null) {
       new EmptyPartitionReader[ColumnarBatch]
     } else {
