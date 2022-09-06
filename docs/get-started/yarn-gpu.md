@@ -125,14 +125,10 @@ cgroup permission can be updated as follows:
 chmod a+rwx -R /sys/fs/cgroup/cpu,cpuacct
 chmod a+rwx -R /sys/fs/cgroup/devices
 ```
-or the operation can be added in an init.d script:
-Create a cgroup.mount script
+or the operation can be added in the systemd scripts:
+Create mountCgroup scripts:
 ```bash
-sudo vim /etc/systemd/system/mountCgroup.service
-sudo chmod 777 /etc/systemd/system/mountCgroup.service
-```
-mountCgroup.service content:
-```bash
+sudo bash -c "cat >/etc/systemd/system/mountCgroup.service" <<EOF
 [Unit]
 Description=startup
 [Service]
@@ -140,17 +136,19 @@ ExecStart=/etc/mountCgroup.sh
 Type=oneshot
 [Install]
 WantedBy=multi-user.target
-```
-```bash
-sudo vim /etc/mountCgroup.sh
-sudo chmod 777 /etc/mountCgroup.sh
-```
-mountCgroup.sh content:
-```bash
+EOF
+
+sudo bash -c "cat >/etc/mountCgroup.sh" <<EOF
+#!/bin/sh
 chmod a+rwx -R /sys/fs/cgroup/cpu,cpuacct
 chmod a+rwx -R /sys/fs/cgroup/devices
+EOF
+
+sudo chmod 644 /etc/systemd/system/mountCgroup.service
+sudo chmod 777 /etc/mountCgroup.sh
 ```
-then start the mountCgroup service.
+
+then start the mountCgroup service:
 ```bash
 systemctl enable mountCgroup.service
 systemctl start mountCgroup.service
