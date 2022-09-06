@@ -111,15 +111,6 @@ a few operations that we cannot support to the same degree as Spark can on the C
 
 ### Decimal Sum Aggregation
 
-A number of fixes for overflow detection went into Spark 3.1.0. Please see
-[SPARK-28067](https://issues.apache.org/jira/browse/SPARK-28067) and
-[SPARK-32018](https://issues.apache.org/jira/browse/SPARK-32018) for more detailed information.
-Some of these fixes we were able to back port, but some of them require Spark 3.1.0 or above to
-fully be able to detect overflow in all cases. As such on versions of Spark older than 3.1.0 for
-large decimal values there is the possibility of data corruption in some corner cases. 
-This is true for both the CPU and GPU implementations, but there are fewer of these cases for the 
-GPU. If this concerns you, you should upgrade to Spark 3.1.0 or above. 
-
 When Apache Spark does a sum aggregation on decimal values it will store the result in a value
 with a precision that is the input precision + 10, but with a maximum precision of 38.
 For an input precision of 9 and above, Spark will do the aggregations as a Java `BigDecimal`
@@ -131,8 +122,13 @@ longer detected. Even then all the values would need to be either the largest or
 possible to be stored in the type for the overflow to cause data corruption.
 
 For the RAPIDS Accelerator we don't have direct access to unlimited precision for our calculations
-like the CPU does. For input values with a precision of 8 and below we follow Spark and process the
-data the same way, as a 64-bit value. For larger values we will do extra calculations looking at the
+like the CPU does, and the aggregations are processed in batches within each task. Therefore it is
+possible for the GPU to detect an intermediate overflow after aggregating a batch, e.g.: a sum
+aggregation on positive and negative values, where the accumulating sum value temporarily
+overflows but returns within bounds before the final cast back into a decimal with precision 38.
+
+For input values with a precision of 8 and below we follow Spark and process the data the
+same way, as a 64-bit value. For larger values we will do extra calculations looking at the
 higher order digits to be able to detect overflow in all cases. But because of this you may see
 some performance differences depending on the input precision used. The differences will show up
 when going from an input precision of 8 to 9 and again when going from an input precision of 28 to 29.
