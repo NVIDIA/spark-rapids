@@ -29,8 +29,4 @@ object AQEUtils {
   }
 
   def isAdaptiveExecutionSupportedInSparkVersion: Boolean = true
-
-  // GPU Shuffle in some Databricks creates some incorrect references when AQE is enabled
-  // so disable it for now.
-  def isGPUShuffleSupportedInAdaptiveExecution: Boolean = false
 }

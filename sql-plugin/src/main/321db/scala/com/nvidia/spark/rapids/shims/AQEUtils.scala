@@ -30,6 +30,4 @@ object AQEUtils extends Logging {
   }
 
   def isAdaptiveExecutionSupportedInSparkVersion: Boolean = true
-
-  def isGPUShuffleSupportedInAdaptiveExecution: Boolean = true
 }

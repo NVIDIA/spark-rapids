@@ -13,14 +13,12 @@
 # limitations under the License.
 
 import pytest
-from _pytest.mark.structures import ParameterSet
 from pyspark.sql.functions import when, col
 from pyspark.sql.types import *
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
-from conftest import is_databricks_runtime, is_emr_runtime
+from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
-from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan
-from spark_session import with_cpu_session, with_spark_session, is_databricks104_or_later, is_databricks91_or_later
+from marks import ignore_order, allow_non_gpu
+from spark_session import with_cpu_session
 
 _adaptive_conf = { "spark.sql.adaptive.enabled": "true" }
 
@@ -50,7 +48,6 @@ def create_skew_df(spark, length):
 
 
 @ignore_order(local=True)
-@pytest.mark.skipif(is_databricks91_or_later() and not is_databricks104_or_later(), reason="GPU shuffle only works on Apache Spark and Databricks 10.4 or later")
 def test_aqe_skew_join():
     def do_join(spark):
         left, right = create_skew_df(spark, 500)
@@ -61,19 +58,6 @@ def test_aqe_skew_join():
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_adaptive_conf)
 
 @ignore_order(local=True)
-@pytest.mark.skipif(not is_databricks_runtime() or is_databricks104_or_later(), reason="GPU shuffle only works on Apache Spark and Databricks 10.4 or later")
-@allow_non_gpu("ShuffleExchangeExec")
-def test_aqe_skew_join_db91():
-    def do_join(spark):
-        left, right = create_skew_df(spark, 500)
-        left.createOrReplaceTempView("skewData1")
-        right.createOrReplaceTempView("skewData2")
-        return spark.sql("SELECT * FROM skewData1 join skewData2 ON key1 = key2")
-
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_adaptive_conf)
-
-@ignore_order(local=True)
-@pytest.mark.skipif(is_databricks91_or_later() and not is_databricks104_or_later(), reason="GPU shuffle only works on Apache Spark and Databricks 10.4 or later")
 @pytest.mark.parametrize("data_gen", integral_gens, ids=idfn)
 def test_aqe_join_parquet(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -88,26 +72,8 @@ def test_aqe_join_parquet(spark_tmp_path, data_gen):
 
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=_adaptive_conf)
 
-@ignore_order(local=True)
-@pytest.mark.skipif(not is_databricks_runtime() or is_databricks104_or_later(), reason="GPU shuffle only works on Apache Spark and Databricks 10.4 or later")
-@allow_non_gpu("ShuffleExchangeExec")
-@pytest.mark.parametrize("data_gen", integral_gens, ids=idfn)
-def test_aqe_join_parquet_db91(spark_tmp_path, data_gen):
-    data_path = spark_tmp_path + '/PARQUET_DATA'
-    with_cpu_session(
-        lambda spark: unary_op_df(spark, data_gen).orderBy('a').write.parquet(data_path)
-    )
-
-    def do_it(spark):
-        spark.read.parquet(data_path).createOrReplaceTempView('df1')
-        spark.read.parquet(data_path).createOrReplaceTempView('df2')
-        return spark.sql("select count(*) from df1,df2 where df1.a = df2.a")
-
-    assert_gpu_and_cpu_are_equal_collect(do_it, conf=_adaptive_conf)
-
 
 @ignore_order(local=True)
-@pytest.mark.skipif(is_databricks91_or_later() and not is_databricks104_or_later(), reason="GPU shuffle only works on Apache Spark and Databricks 10.4 or later")
 @pytest.mark.parametrize("data_gen", integral_gens, ids=idfn)
 def test_aqe_join_parquet_batch(spark_tmp_path, data_gen):
     # force v2 source for parquet to use BatchScanExec
@@ -130,32 +96,6 @@ def test_aqe_join_parquet_batch(spark_tmp_path, data_gen):
 
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
 
-@ignore_order(local=True)
-@pytest.mark.skipif(not is_databricks_runtime() or is_databricks104_or_later(), reason="GPU shuffle only works on Apache Spark and Databricks 10.4 or later")
-@allow_non_gpu("ShuffleExchangeExec")
-@pytest.mark.parametrize("data_gen", integral_gens, ids=idfn)
-def test_aqe_join_parquet_batch_db91(spark_tmp_path, data_gen):
-    # force v2 source for parquet to use BatchScanExec
-    conf = copy_and_update(_adaptive_conf, {
-        "spark.sql.sources.useV1SourceList": ""
-    })
-
-    first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
-    with_cpu_session(
-            lambda spark : unary_op_df(spark, data_gen).write.parquet(first_data_path))
-    second_data_path = spark_tmp_path + '/PARQUET_DATA/key=1'
-    with_cpu_session(
-            lambda spark : unary_op_df(spark, data_gen).write.parquet(second_data_path))
-    data_path = spark_tmp_path + '/PARQUET_DATA'
-
-    def do_it(spark):
-        spark.read.parquet(data_path).createOrReplaceTempView('df1')
-        spark.read.parquet(data_path).createOrReplaceTempView('df2')
-        return spark.sql("select count(*) from df1,df2 where df1.a = df2.a")
-
-    assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
-
-
 @ignore_order
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['true', 'false'], ids=idfn)
@@ -175,41 +115,7 @@ def test_aqe_join_sum_window(data_gen, aqe_enabled):
     assert_gpu_and_cpu_are_equal_collect(do_it, conf = conf)
 
 @ignore_order(local=True)
-@pytest.mark.skipif(is_databricks91_or_later() and not is_databricks104_or_later(), reason="GPU shuffle only works on Apache Spark and Databricks 10.4 or later")
 def test_aqe_struct_self_join(spark_tmp_table_factory):
-    def do_join(spark):
-        data = [
-            (("Adam ", "", "Green"), "1", "M", 1000),
-            (("Bob ", "Middle", "Green"), "2", "M", 2000),
-            (("Cathy ", "", "Green"), "3", "F", 3000)
-        ]
-        schema = (StructType()
-                  .add("name", StructType()
-                       .add("firstname", StringType())
-                       .add("middlename", StringType())
-                       .add("lastname", StringType()))
-                  .add("id", StringType())
-                  .add("gender", StringType())
-                  .add("salary", IntegerType()))
-        df = spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
-        df_name = spark_tmp_table_factory.get()
-        df.createOrReplaceTempView(df_name)
-        resultdf = spark.sql(
-            "select struct(name, struct(name.firstname, name.lastname) as newname)" +
-            " as col,name from " + df_name + " union" +
-            " select struct(name, struct(name.firstname, name.lastname) as newname) as col,name" +
-            " from " + df_name)
-        resultdf_name = spark_tmp_table_factory.get()
-        resultdf.createOrReplaceTempView(resultdf_name)
-        return spark.sql("select a.* from {} a, {} b where a.name=b.name".format(
-            resultdf_name, resultdf_name))
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_adaptive_conf)
-
-
-@ignore_order(local=True)
-@pytest.mark.skipif(not is_databricks_runtime() or is_databricks104_or_later(), reason="GPU shuffle only works on Apache Spark and Databricks 10.4 or later")
-@allow_non_gpu("ShuffleExchangeExec")
-def test_aqe_struct_self_join_db91(spark_tmp_table_factory):
     def do_join(spark):
         data = [
             (("Adam ", "", "Green"), "1", "M", 1000),
