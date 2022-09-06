@@ -127,14 +127,20 @@ else
         HOST_MEM_PARALLEL=`cat /proc/meminfo | grep MemAvailable | awk '{print int($2 / (5 * 1024))}'`
         TMP_PARALLEL=$(( $GPU_MEM_PARALLEL > $CPU_CORES ? $CPU_CORES : $GPU_MEM_PARALLEL ))
         TMP_PARALLEL=$(( $TMP_PARALLEL > $HOST_MEM_PARALLEL ? $HOST_MEM_PARALLEL : $TMP_PARALLEL ))
-        if [[ $TMP_PARALLEL -gt 1 ]];
-        then
-            # We subtract 1 from the parallel number because xdist launches a process to
-            # control and monitor the other processes. It takes up one available parallel
-            # slot, even if it is not truly using all of the resources we give it.
-            TEST_PARALLEL=$(( $TMP_PARALLEL - 1 ))
-        else
+
+        # Account for intra-Spark parallelism
+        numGpuJVM=1
+        if [[ "$NUM_LOCAL_EXECS" != "" ]]; then
+            numGpuJVM=$NUM_LOCAL_EXECS
+        elif [[ "$PYSP_TEST_spark_cores_max" != "" && "$PYSP_TEST_spark_executor_cores" != "" ]]; then
+            numGpuJVM=$(( $PYSP_TEST_spark_cores_max /  $PYSP_TEST_spark_executor_cores ))
+        fi
+        TMP_PARALLEL=$(( $TMP_PARALLEL / $numGpuJVM ))
+
+        if  (( $TMP_PARALLEL <= 1 )); then
             TEST_PARALLEL=1
+        else
+            TEST_PARALLEL=$TMP_PARALLEL
         fi
 
         echo "AUTO DETECTED PARALLELISM OF $TEST_PARALLEL"

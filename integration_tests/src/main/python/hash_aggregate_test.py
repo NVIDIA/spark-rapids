@@ -218,9 +218,7 @@ _no_overflow_ansi_gens = [
 
 _decimal_gen_36_5 = DecimalGen(precision=36, scale=5)
 _decimal_gen_36_neg5 = DecimalGen(precision=36, scale=-5)
-_decimal_gen_38_0 = DecimalGen(precision=38, scale=0)
 _decimal_gen_38_10 = DecimalGen(precision=38, scale=10)
-_decimal_gen_38_neg10 = DecimalGen(precision=38, scale=-10)
 
 
 def get_params(init_list, marked_params=[]):
@@ -303,15 +301,22 @@ _grpkey_short_very_big_neg_scale_decimals = [
     ('b', _decimal_gen_36_neg5),
     ('c', _decimal_gen_36_neg5)]
 
-_grpkey_short_full_decimals = [
-    ('a', RepeatSeqGen(short_gen, length=50)),
-    ('b', _decimal_gen_38_0),
-    ('c', _decimal_gen_38_0)]
+# Only use negative values to avoid the potential to hover around an overflow
+# as values are added and subtracted during the sum. Non-deterministic ordering
+# of values from shuffle cannot guarantee overflow calculation is predictable
+# when the sum can move in both directions as new partitions are aggregated.
+_decimal_gen_sum_38_0 = DecimalGen(precision=38, scale=0, avoid_positive_values=True)
+_decimal_gen_sum_38_neg10 = DecimalGen(precision=38, scale=-10, avoid_positive_values=True)
 
-_grpkey_short_full_neg_scale_decimals = [
+_grpkey_short_sum_full_decimals = [
     ('a', RepeatSeqGen(short_gen, length=50)),
-    ('b', _decimal_gen_38_neg10),
-    ('c', _decimal_gen_38_neg10)]
+    ('b', _decimal_gen_sum_38_0),
+    ('c', _decimal_gen_sum_38_0)]
+
+_grpkey_short_sum_full_neg_scale_decimals = [
+    ('a', RepeatSeqGen(short_gen, length=50)),
+    ('b', _decimal_gen_sum_38_neg10),
+    ('c', _decimal_gen_sum_38_neg10)]
 
 
 _init_list_no_nans_with_decimal = _init_list_no_nans + [
@@ -327,9 +332,6 @@ _init_list_with_nans_and_no_nans_with_decimalbig = _init_list_with_nans_and_no_n
     _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, 
     _grpkey_short_very_big_neg_scale_decimals]
 
-
-_init_list_full_decimal = [_grpkey_short_full_decimals, 
-    _grpkey_short_full_neg_scale_decimals]
 
 #Any smaller precision takes way too long to process on the CPU
 # or results in using too much memory on the GPU
@@ -386,7 +388,7 @@ def test_hash_grpby_sum(data_gen, conf):
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_full_decimal, ids=idfn)
+@pytest.mark.parametrize('data_gen', [_grpkey_short_sum_full_decimals, _grpkey_short_sum_full_neg_scale_decimals], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_sum_full_decimal(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
@@ -418,7 +420,7 @@ def test_hash_reduction_sum_full_decimal(data_gen, conf):
 @ignore_order
 @incompat
 @pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans + [_grpkey_short_mid_decimals, 
-    _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, _grpkey_short_full_decimals], ids=idfn)
+    _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, _grpkey_short_sum_full_decimals], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_avg(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
@@ -1094,12 +1096,6 @@ def test_count_distinct_with_nan_floats(data_gen):
 
 # REDUCTIONS
 
-non_nan_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
-        # nans and -0.0 cannot work because of nan support in min/max, -0.0 == 0.0 in cudf for distinct and
-        # Spark fixed ordering of 0.0 and -0.0 in Spark 3.1 in the ordering
-        FloatGen(no_nans=True, special_cases=[]), DoubleGen(no_nans=True, special_cases=[]),
-        string_gen, boolean_gen, date_gen, timestamp_gen]
-
 _nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
 
 @pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
@@ -1176,11 +1172,17 @@ def test_collect_list_reductions(data_gen):
         lambda spark: unary_op_df(spark, data_gen).coalesce(1).selectExpr('collect_list(a)'),
         conf=_no_nans_float_conf)
 
+_no_neg_zero_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
+        # -0.0 cannot work because of -0.0 == 0.0 in cudf for distinct and
+        # Spark fixed ordering of 0.0 and -0.0 in Spark 3.1 in the ordering
+        FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), DoubleGen(special_cases=[]),
+        string_gen, boolean_gen, date_gen, timestamp_gen]
+
 _struct_only_nested_gens = [all_basic_struct_gen,
                             StructGen([['child0', byte_gen], ['child1', all_basic_struct_gen]]),
                             StructGen([])]
 @pytest.mark.parametrize('data_gen',
-                         non_nan_all_basic_gens + decimal_gens + _struct_only_nested_gens,
+                         _no_neg_zero_all_basic_gens + decimal_gens + _struct_only_nested_gens,
                          ids=idfn)
 def test_collect_set_reductions(data_gen):
     assert_gpu_and_cpu_are_equal_collect(

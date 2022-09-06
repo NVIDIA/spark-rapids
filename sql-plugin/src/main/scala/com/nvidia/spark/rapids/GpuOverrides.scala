@@ -3383,11 +3383,9 @@ object GpuOverrides extends Logging {
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-              TypeSig.NULL +
-              TypeSig.STRUCT.withPsNote(TypeEnum.STRUCT, "Support for structs containing " +
-              s"float/double array columns requires ${RapidsConf.HAS_NANS} to be set to false") +
-              TypeSig.ARRAY.withPsNote(TypeEnum.ARRAY, "Support for arrays of arrays of " +
-              s"floats/doubles requires ${RapidsConf.HAS_NANS} to be set to false")).nested(),
+              TypeSig.NULL + 
+              TypeSig.STRUCT +
+              TypeSig.ARRAY).nested(),
           TypeSig.all))),
       (c, conf, p, r) => new TypedImperativeAggExprMeta[CollectSet](c, conf, p, r) {
 
@@ -3406,11 +3404,6 @@ object GpuOverrides extends Logging {
           }
         }
 
-        override def tagAggForGpu(): Unit = {
-          if (isNestedArrayType(c.child.dataType)) {
-            checkAndTagFloatNanAgg("CollectSet", c.child.dataType, conf, this)
-          }
-        }
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
           GpuCollectSet(childExprs.head, c.mutableAggBufferOffset, c.inputAggBufferOffset)
 
@@ -3755,7 +3748,7 @@ object GpuOverrides extends Logging {
       .map(r => r.wrap(writeCmd, conf, parent, r).asInstanceOf[DataWritingCommandMeta[INPUT]])
       .getOrElse(new RuleNotFoundDataWritingCommandMeta(writeCmd, conf, parent))
 
-  val dataWriteCmds: Map[Class[_ <: DataWritingCommand],
+  val commonDataWriteCmds: Map[Class[_ <: DataWritingCommand],
       DataWritingCommandRule[_ <: DataWritingCommand]] = Seq(
     dataWriteCmd[InsertIntoHadoopFsRelationCommand](
       "Write to Hadoop filesystem",
@@ -3764,6 +3757,10 @@ object GpuOverrides extends Logging {
       "Create table with select command",
       (a, conf, p, r) => new CreateDataSourceTableAsSelectCommandMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
+
+  val dataWriteCmds: Map[Class[_ <: DataWritingCommand],
+      DataWritingCommandRule[_ <: DataWritingCommand]] =
+    commonDataWriteCmds ++ GpuHiveOverrides.dataWriteCmds
 
   def wrapPlan[INPUT <: SparkPlan](
       plan: INPUT,
