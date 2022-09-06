@@ -20,6 +20,7 @@
 # https://github.com/databricks/containers/blob/master/ubuntu/dbfsfuse/Dockerfile
 # https://github.com/databricks/containers/blob/master/ubuntu/standard/Dockerfile
 # https://github.com/databricks/containers/blob/master/experimental/ubuntu/ganglia/Dockerfile
+# https://github.com/dayananddevarapalli/containers/blob/main/webterminal/Dockerfile
 #############
 ARG CUDA_VERSION=11.3.1
 FROM nvidia/cuda:${CUDA_VERSION}-cudnn8-runtime-ubuntu20.04 as databricks
@@ -43,7 +44,7 @@ RUN set -ex && \
                cuda-nvcc-${CUDA_MAJOR} cuda-thrust-${CUDA_MAJOR} cuda-toolkit-${CUDA_MAJOR}-config-common cuda-toolkit-11-config-common \
                cuda-toolkit-config-common python3.8-dev libpq-dev libcairo2-dev build-essential unattended-upgrades cmake ccache \
                openmpi-bin linux-headers-5.4.0-117 linux-headers-5.4.0-117-generic linux-headers-generic libopenmpi-dev unixodbc-dev \
-               sysstat && \
+               sysstat ssh && \
     /var/lib/dpkg/info/ca-certificates-java.postinst configure && \
     # Initialize the default environment that Spark and notebooks will use
     virtualenv -p python3.8 --system-site-packages /databricks/python3 \
@@ -52,6 +53,12 @@ RUN set -ex && \
         # Install Python libraries for Databricks environment
         && /databricks/python3/bin/pip cache purge && \
     mkdir -p /databricks/jars && \
+    wget https://github.com/tsl0922/ttyd/releases/download/1.6.3/ttyd.x86_64 && \
+        mkdir -p /databricks/driver/logs && \
+        mkdir -p /databricks/spark/scripts/ttyd/ && \
+        mkdir -p /etc/monit/conf.d/ && \
+        mv ttyd.x86_64 /databricks/spark/scripts/ttyd/ttyd && \
+        export TTYD_BIN_FILE=/databricks/spark/scripts/ttyd/ttyd && \
     apt-get -y purge --autoremove software-properties-common cuda-cudart-dev-${CUDA_MAJOR} cuda-cupti-dev-${CUDA_MAJOR} \
                cuda-driver-dev-${CUDA_MAJOR} cuda-nvcc-${CUDA_MAJOR} cuda-thrust-${CUDA_MAJOR} \
                python3.8-dev libpq-dev libcairo2-dev build-essential unattended-upgrades cmake ccache openmpi-bin \
@@ -69,6 +76,17 @@ RUN set -ex && \
     # Create user "ubuntu"
     useradd --create-home --shell /bin/bash --groups sudo ubuntu
 
+#############
+# Set up webterminal ssh
+#############
+ENV TTYD_DIR=/databricks/spark/scripts/ttyd
+ENV TTYD_BIN_FILE=$TTYD_DIR/ttyd
+   
+COPY webterminal/setup_ttyd_daemon.sh $TTYD_DIR/setup_ttyd_daemon.sh
+COPY webterminal/stop_ttyd_daemon.sh $TTYD_DIR/stop_ttyd_daemon.sh
+COPY webterminal/start_ttyd_daemon.sh $TTYD_DIR/start_ttyd_daemon.sh
+COPY webterminal/webTerminalBashrc $TTYD_DIR/webTerminalBashrc
+COPY webterminal/ttyd-daemon-not-active /etc/monit/conf.d/ttyd-daemon-not-active
 
 #############
 # Set all env variables
@@ -88,6 +106,11 @@ COPY ${DRIVER_CONF_FILE} /databricks/driver/conf/00-custom-spark-driver-defaults
 
 WORKDIR /databricks/jars
 RUN wget $JAR_URL
+
+# add local monit shell script in the right location
+RUN mkdir -p /etc/init.d
+ADD scripts/monit /etc/init.d
+RUN chmod 775 /etc/init.d/monit
 
 WORKDIR /databricks
 
@@ -145,10 +168,6 @@ ADD ganglia/gconf/* /etc/ganglia/
 RUN mkdir -p /databricks/spark/scripts/ganglia/
 RUN mkdir -p /databricks/spark/scripts/
 ADD ganglia/start_spark_slave.sh /databricks/spark/scripts/start_spark_slave.sh
-# add local monit shell script in the right location
-RUN mkdir -p /etc/init.d
-ADD ganglia/monit /etc/init.d
-RUN chmod 775 /etc/init.d/monit
 
 FROM databricks-ganglia as databricks-alluxio
 
