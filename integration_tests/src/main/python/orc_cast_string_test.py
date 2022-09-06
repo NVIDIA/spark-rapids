@@ -82,26 +82,70 @@ def test_casting_string_to_float(spark_tmp_path, to_type):
     )
 
 
+
+def get_valid_date():
+    days_of_month = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    is_leap_year = lambda y: (y % 400 == 0) or (y % 4 == 0 and y % 100 != 0)
+    year, month = random.randint(0, 9999), random.randint(1, 12)
+    max_days = days_of_month[month] + (month == 2 and is_leap_year(year))
+    day = random.randint(1, max_days)
+    return '{}-{}-{}'.format(str(year).zfill(4), str(month).zfill(2), str(day).zfill(2))
+
+
+def get_valid_time():
+    time = [random.randint(0, 23), random.randint(0, 59), random.randint(0, 59)]
+    return '{}:{}:{}'.format(*([str(x).zfill(2) for x in time]))
+
+
 '''
 FIXME & TODO
 There is a strange case, if input string is "9808-02-30", intuitively, we should return null.
 However, CPU spark output 9808-02-29. Need to figure whether if it's a bug or a feature.
+See https://github.com/NVIDIA/spark-rapids/pull/6411#issuecomment-1232672847
 '''
 def test_casting_string_to_date(spark_tmp_path):
     random.seed(31415926535)
     orc_path = spark_tmp_path + '/orc_cast_string_to_date'
     length = 2048
-    normal_cases = []
-    for _ in range(0, length):
-        year = str(random.randint(0, 9999)).zfill(4)
-        month = str(random.randint(1, 12)).zfill(2)
-        day = str(random.randint(1, 31)).zfill(2)
-        normal_cases.append('{}-{}-{}'.format(year, month, day))
-    test_cases = [[x] for x in normal_cases]
+    # normal cases are all valid
+    normal_cases = [get_valid_date() for _ in range(0, length)]
+    special_cases = ["2020-01-32", "10000-01-01", "a-b-c", "19-01-01", "2022-1-1"]
+    test_cases = [[x] for x in normal_cases + special_cases]
     with_cpu_session(
         func=lambda spark: spark.createDataFrame(data=test_cases,
                                                  schema=["date_str"]).write.orc(orc_path)
     )
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema("date_str date").orc(orc_path)
+    )
+
+
+'''
+FIXME & TODO
+There exists same issue with string -> date.
+'''
+def test_casting_string_to_timestamp(spark_tmp_path):
+    random.seed(31415926535)
+    orc_path = spark_tmp_path + '/orc_cast_string_to_timestamp'
+    length = 1024
+    normal_cases = []
+    for _ in range(0, length):
+        normal_cases.append(get_valid_date() + " " + get_valid_time())
+
+    for _ in range(0, length):
+        normal_cases.append(get_valid_date() + " " + get_valid_time() + "." + str(random.randint(0, 999999)))
+
+    # invalid cases
+    special_cases = [
+        "2020-01-32 00:00:00", "2022-01-01 24:00:00", "2022-02-02 00:60:61",
+        "YYYY-mm-dd HH:MM:SS", "2022-01-01", "2022-01-01 12",
+        "19-01-01 00:12:34"
+    ]
+    test_cases = [[x] for x in normal_cases + special_cases]
+    with_cpu_session(
+        func=lambda spark: spark.createDataFrame(data=test_cases,
+                                                 schema=["ts_str"]).write.orc(orc_path)
+    )
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema("ts_str timestamp").orc(orc_path)
     )

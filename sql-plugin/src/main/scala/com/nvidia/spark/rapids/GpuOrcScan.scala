@@ -184,17 +184,30 @@ object GpuOrcScan extends Arm {
    * Regex pattern to match float/double strings, in which leading zeros are valid.
    * floatRegex1: The pattern to match "+.123", "-.123", ".123", "0123".
    * floatRegex2: The pattern to match  "+0123.456", "-0123.", "1.234".
+   *              There is at least one digit before the dot.
    * floatRegex3: The pattern to match "+01e-10", "1.0e10", "-03.14e015".
    * INF: The pattern to match "+Infinity", "-Infinity" or "Infinity".
    * NaN: The pattern to match "+NaN", "-NaN" or "NaN".
    */
   private lazy val floatRegex1 = signRegex + dotRegex + atLeastOneDigitRegex
   private lazy val floatRegex2 = signRegex + atLeastOneDigitRegex + dotRegex + digitRegex
-  private lazy val floatRegex3 = s"(($floatRegex1)|($floatRegex2))" + "([eE])" + integerRegex
+  private lazy val floatRegex3 = s"(($floatRegex1)|($floatRegex2))([eE])($integerRegex)"
   private lazy val INF = signRegex + "Infinity"
   private lazy val NaN = signRegex + "NaN"
-  private lazy val FLOAT_REGEX = startRegex +
-    s"(($floatRegex1)|($floatRegex2)|($floatRegex3)|($INF)|($NaN))" + endRegex
+  private lazy val FLOAT_REGEX =
+    s"$startRegex(($floatRegex1)|($floatRegex2)|($floatRegex3)|($INF)|($NaN))$endRegex"
+
+  /**
+   * Regex pattern to match date strings, like "YYYY-MM-DD".
+   */
+  private lazy val dateRegex = "\\d{4}\\-\\d{2}\\-\\d{2}";
+  private lazy val DATE_REGEX = startRegex + dateRegex + endRegex
+
+
+  /**
+   * Regex pattern to match timestamp string.
+   */
+  private lazy val TS_REGEX_YYYY_mm_dd_HH_MM_SS_MS = s"$startRegex$endRegex"
 
 
   /**
@@ -214,6 +227,13 @@ object GpuOrcScan extends Arm {
       withResource(overflowFlags) { _ =>
         casted.copyWithBooleanColumnAsValidity(overflowFlags)
       }
+    }
+  }
+
+  def castStringToMicroseconds(col: ColumnView, isMatched: ColumnVector,
+                               format: String): ColumnVector = {
+    withResource(col.copyWithBooleanColumnAsValidity(isMatched)) { replacedNulls =>
+      replacedNulls.asTimestampMicroseconds(format)
     }
   }
 
@@ -302,11 +322,47 @@ object GpuOrcScan extends Arm {
         }
 
       // string -> date
+      // The behavior in cuDF may differ from ORC reading in CPU. For example, if input is
+      // "2020-02-30", CPU outputs "2020-02-29", here we replace such strings with null.
       case (DType.STRING, DType.TIMESTAMP_DAYS) =>
         val format = "%Y-%m-%d"
-        withResource(col.isTimestamp(format)) { isValid =>
+        // DATE_REGEX will ignore cases like "22-01-01", "2022-1-31"
+        val isValid = withResource(col.matchesRe(DATE_REGEX)) { isMatched =>
+          withResource(col.isTimestamp(format)) { validDate =>
+            isMatched.and(validDate)
+          }
+        }
+        withResource(isValid) { _ =>
           withResource(col.copyWithBooleanColumnAsValidity(isValid)) { replcaedNulls =>
             replcaedNulls.asTimestampDays(format)
+          }
+        }
+
+      // string -> timestamp
+      case (DType.STRING, DType.TIMESTAMP_MICROSECONDS) =>
+        val minutesFormat = "%Y-%m-%d %H:%M"
+        val secondsFormat = s"${minutesFormat}:%S"
+        val millisecondsFormat = s"${secondsFormat}.%f"
+
+        // TODO: make a filter for cases like "22-01-01" via regex
+        val matchMinutes = col.isTimestamp(minutesFormat)
+        val matchSeconds = col.isTimestamp(secondsFormat)
+        val matchMilliseconds = col.isTimestamp(millisecondsFormat)
+
+        val fromMinutes = castStringToMicroseconds(col, matchMinutes, minutesFormat)
+        val fromSeconds = castStringToMicroseconds(col, matchSeconds, secondsFormat)
+        val fromMilliseconds = castStringToMicroseconds(col, matchMilliseconds,
+          millisecondsFormat)
+
+        withResource(Array(matchMinutes, matchSeconds, matchMilliseconds,
+          fromMinutes, fromSeconds, fromMilliseconds)) { _ =>
+          // It's equivalent to (fromMinutes | fromSeconds | fromMilliseconds).
+          withResource(Scalar.fromNull(DType.TIMESTAMP_MICROSECONDS)) { nulls =>
+            withResource(matchMinutes.ifElse(fromMinutes, nulls)) { result1 =>
+              withResource(matchSeconds.ifElse(fromSeconds, result1)) { result2 =>
+                matchMilliseconds.ifElse(fromMilliseconds, result2)
+              }
+            }
           }
         }
 
