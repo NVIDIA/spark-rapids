@@ -27,7 +27,7 @@ import scala.language.implicitConversions
 import scala.math.max
 
 import ai.rapids.cudf.{ColumnVector, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.GpuMetric.{NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, SEMAPHORE_WAIT_TIME}
+import com.nvidia.spark.rapids.GpuMetric.{FILTER_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, SEMAPHORE_WAIT_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
@@ -410,7 +410,12 @@ abstract class MultiFileCloudPartitionReaderBase(
         }
       } else {
         if (filesToRead > 0 && !isDone) {
-          val fileBufsAndMeta = tasks.poll.get()
+          // Note, filter time here includes the buffer time as well because
+          // those happen in the same background threads. This is as close to wall
+          // clock as we can get right now without further work.
+          val fileBufsAndMeta = metrics(FILTER_TIME).ns {
+            tasks.poll.get()
+          }
           filesToRead -= 1
           TrampolineUtil.incBytesRead(inputMetrics, fileBufsAndMeta.bytesRead)
           InputFileUtils.setInputFileBlock(

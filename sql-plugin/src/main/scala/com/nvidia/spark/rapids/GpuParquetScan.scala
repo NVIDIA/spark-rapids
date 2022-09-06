@@ -611,12 +611,8 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       file: PartitionedFile,
       conf : Configuration,
       filters: Array[Filter],
-      readDataSchema: StructType,
-      metrics:  Map[String, GpuMetric]): ParquetFileInfoWithBlockMeta = {
-    // note that depending on which reader is used, the filterTime may not be wall clock
-    // since the multithreaded reader could read in parallel
-    withResource(new NvtxWithMetrics("filterBlocks", NvtxColor.PURPLE,
-      metrics("filterTime"))) { _ =>
+      readDataSchema: StructType): ParquetFileInfoWithBlockMeta = {
+    withResource(new NvtxRange("filterBlocks", NvtxColor.PURPLE)) { _ =>
       val filePath = new Path(new URI(file.filePath))
       // Make sure we aren't trying to read encrypted files. For now, remove the related
       // parquet confs from the hadoop configuration and try to catch the resulting
@@ -972,7 +968,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       files: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
     val filterFunc = (file: PartitionedFile) => {
-      filterHandler.filterBlocks(footerReadType, file, conf, filters, readDataSchema, metrics)
+      filterHandler.filterBlocks(footerReadType, file, conf, filters, readDataSchema)
     }
     new MultiFileCloudParquetPartitionReader(conf, files, filterFunc, isCaseSensitive,
       debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes,
@@ -988,7 +984,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       readDataSchema: StructType): BlockMetaWithPartFile = {
     try {
       val meta = filterHandler.filterBlocks(footerReadType, file, conf, filters,
-        readDataSchema, metrics)
+        readDataSchema)
       BlockMetaWithPartFile(meta, file)
     } catch {
       case e: FileNotFoundException if ignoreMissingFiles =>
@@ -1041,8 +1037,19 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       conf: Configuration): PartitionReader[ColumnarBatch] = {
     val clippedBlocks = ArrayBuffer[ParquetSingleDataBlockMeta]()
     val startTime = System.nanoTime()
-
-    def addBlockMeta(metaAndFile: BlockMetaWithPartFile): Unit = {
+    val metaAndFilesArr = if (numFilesFilterParallel > 0) {
+      val tc = TaskContext.get()
+      val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
+      files.grouped(numFilesFilterParallel).map { fileGroup =>
+        threadPool.submit(
+          new CoalescingFilterRunner(footerReadType, tc, fileGroup, conf, filters, readDataSchema))
+      }.toArray.map(_.get()).flatten
+    } else {
+      files.map { file =>
+        filterBlocksForCoalescingReader(footerReadType, file, conf, filters, readDataSchema)
+      }
+    }
+    metaAndFilesArr.foreach { metaAndFile =>
       val singleFileInfo = metaAndFile.meta
       clippedBlocks ++= singleFileInfo.blocks.map(block =>
         ParquetSingleDataBlockMeta(
@@ -1055,32 +1062,12 @@ case class GpuParquetMultiFilePartitionReaderFactory(
             singleFileInfo.isCorrectedInt96RebaseMode,
             singleFileInfo.hasInt96Timestamps)))
     }
-
-    if (numFilesFilterParallel > 0) {
-      val tc = TaskContext.get()
-      val tasks = new java.util.ArrayList[Future[Array[BlockMetaWithPartFile]]]()
-      logDebug("Using parallel threads to do the filter with the Coalescing reader, " +
-        s"$numFilesFilterParallel files per thread")
-      files.grouped(numFilesFilterParallel).foreach { fileGroup =>
-        val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
-        tasks.add(threadPool.submit(
-          new CoalescingFilterRunner(footerReadType, tc, fileGroup, conf, filters, readDataSchema)))
-      }
-      for (future <- tasks.asScala) {
-        val fileBlockMetaArray = future.get()
-        fileBlockMetaArray.foreach { metaAndFile =>
-          addBlockMeta(metaAndFile)
-        }
-      }
-    } else {
-      files.map { file =>
-        val metaAndFile = filterBlocksForCoalescingReader(footerReadType, file, conf,
-          filters, readDataSchema)
-        addBlockMeta(metaAndFile)
-      }
+    val filterTime = System.nanoTime() - startTime
+    metrics.get(FILTER_TIME).foreach {
+      _ += TimeUnit.NANOSECONDS.toMillis(filterTime)
     }
     metrics.get("scanTime").foreach {
-      _ += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime)
+      _ += TimeUnit.NANOSECONDS.toMillis(filterTime)
     }
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks, isCaseSensitive,
       debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes, metrics,
@@ -1134,8 +1121,10 @@ case class GpuParquetPartitionReaderFactory(
   private def buildBaseColumnarParquetReader(
       file: PartitionedFile): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
-    val singleFileInfo = filterHandler.filterBlocks(footerReadType, file, conf, filters,
-      readDataSchema, metrics)
+    val singleFileInfo = metrics(FILTER_TIME).ns {
+      filterHandler.filterBlocks(footerReadType, file, conf, filters,
+        readDataSchema)
+    }
     new ParquetPartitionReader(conf, file, singleFileInfo.filePath, singleFileInfo.blocks,
       singleFileInfo.schema, isCaseSensitive, readDataSchema,
       debugDumpPrefix, maxReadBatchSizeRows,
