@@ -125,7 +125,7 @@ cgroup permission can be updated as follows:
 chmod a+rwx -R /sys/fs/cgroup/cpu,cpuacct
 chmod a+rwx -R /sys/fs/cgroup/devices
 ```
-or you can add the operation as init.d scripts:
+or the operation can be added in an init.d script:
 Create a cgroup.mount script
 ```bash
 sudo vim /etc/systemd/system/mountCgroup.service
