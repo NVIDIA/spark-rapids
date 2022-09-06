@@ -171,8 +171,10 @@ case class GpuAvroPartitionReaderFactory(
 
   override def buildColumnarReader(partFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
-    val blockMeta = metrics(FILTER_TIME).ns {
-      AvroFileFilterHandler(conf, avroOptions).filterBlocks(partFile)
+    val startTime = System.nanoTime()
+    val blockMeta = AvroFileFilterHandler(conf, avroOptions).filterBlocks(partFile)
+    metrics.get(FILTER_TIME).foreach {
+      _ += (System.nanoTime() - startTime)
     }
     val reader = new PartitionReaderWithBytesRead(new GpuAvroPartitionReader(conf, partFile,
       blockMeta, readDataSchema, debugDumpPrefix, maxReadBatchSizeRows,

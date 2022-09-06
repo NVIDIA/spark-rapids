@@ -413,8 +413,10 @@ abstract class MultiFileCloudPartitionReaderBase(
           // Filter time here includes the buffer time as well since those
           // happen in the same background threads. This is as close to wall
           // clock as we can get right now without further work.
-          val fileBufsAndMeta = metrics(FILTER_TIME).ns {
-              tasks.poll.get()
+          val startTime = System.nanoTime()
+          val fileBufsAndMeta = tasks.poll.get()
+          metrics.get(FILTER_TIME).foreach {
+            _ += (System.nanoTime() - startTime)
           }
           filesToRead -= 1
           TrampolineUtil.incBytesRead(inputMetrics, fileBufsAndMeta.bytesRead)

@@ -1121,9 +1121,11 @@ case class GpuParquetPartitionReaderFactory(
   private def buildBaseColumnarParquetReader(
       file: PartitionedFile): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
-    val singleFileInfo = metrics(FILTER_TIME).ns {
-      filterHandler.filterBlocks(footerReadType, file, conf, filters,
-        readDataSchema)
+    val startTime = System.nanoTime()
+    val singleFileInfo = filterHandler.filterBlocks(footerReadType, file, conf, filters,
+      readDataSchema)
+    metrics.get(FILTER_TIME).foreach {
+      _ += (System.nanoTime() - startTime)
     }
     new ParquetPartitionReader(conf, file, singleFileInfo.filePath, singleFileInfo.blocks,
       singleFileInfo.schema, isCaseSensitive, readDataSchema,

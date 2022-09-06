@@ -414,9 +414,11 @@ case class GpuOrcPartitionReaderFactory(
   }
 
   override def buildColumnarReader(partFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
-    val ctx = metrics(FILTER_TIME).ns {
-      filterHandler.filterStripes(partFile, dataSchema, readDataSchema,
-        partitionSchema)
+    val startTime = System.nanoTime()
+    val ctx = filterHandler.filterStripes(partFile, dataSchema, readDataSchema,
+      partitionSchema)
+    metrics.get(FILTER_TIME).foreach {
+      _ += (System.nanoTime() - startTime)
     }
     if (ctx == null) {
       new EmptyPartitionReader[ColumnarBatch]
