@@ -373,7 +373,7 @@ object GpuOrcScan extends Arm {
           withResource(Scalar.fromDouble(DateTimeConstants.MICROS_PER_MILLIS)) { thousand =>
             withResource(milliseconds.mul(thousand)) { microseconds =>
                 withResource(microseconds.castTo(DType.INT64)) { longVec =>
-                  longVec.bitCastTo(DType.TIMESTAMP_MICROSECONDS)
+                  longVec.castTo(DType.TIMESTAMP_MICROSECONDS)
                 }
             }
           }
