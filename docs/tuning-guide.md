@@ -124,7 +124,7 @@ Default value: `3s`
 This configuration setting controls how long Spark should wait to obtain a better locality for tasks.
 If your tasks are long and see poor locality, you can increase this value. If the data sets are small 
 and the cost of waiting will have less impact on the job's overall completion time, you can reduce this 
-value to get higher parallelization. In a cluster withhigh I/O bandwidth you can set it to 0 because it 
+value to get higher parallelization. In a cluster with high I/O bandwidth you can set it to 0 because it 
 will be faster to not wait when you can get the data across the network fast enough. 
 
 ## Number of Concurrent Tasks per GPU
