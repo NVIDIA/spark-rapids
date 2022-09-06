@@ -342,9 +342,10 @@ object GpuOrcScan extends Arm {
       case (DType.FLOAT32 | DType.FLOAT64, DType.TIMESTAMP_MICROSECONDS) =>
         // Follow the CPU ORC conversion.
         //     val doubleMillis = doubleValue * 1000,
-        //     val millis = Math.round(doubleMillis)
-        //     if (noOverflow) millis else null
-        val milliSeconds = withResource(Scalar.fromDouble(1000.0)) { thousand =>
+        //     val milliseconds = Math.round(doubleMillis)
+        //     if (noOverflow) { milliseconds } else { null }
+        val milliseconds = withResource(Scalar.fromDouble(DateTimeConstants.MILLIS_PER_SECOND)) {
+          thousand =>
           // ORC assumes value is in seconds
           withResource(col.mul(thousand, DType.FLOAT64)) { doubleMillis =>
             withResource(doubleMillis.round()) { millis =>
@@ -359,16 +360,21 @@ object GpuOrcScan extends Arm {
         // INT64-overflow.
         // In this step, ORC casting of CPU throw an exception rather than replace such values with
         // null. We followed the CPU code here.
-        withResource(milliSeconds) { _ =>
+        withResource(milliseconds) { _ =>
           // Test whether if there is long-overflow
           // If milliSeconds.max() * 1000 > LONG_MAX, then 'Math.multiplyExact' will
           // throw an exception (as CPU code does).
-          if (milliSeconds.max() != null) {
-            testLongMultiplicationOverflow(milliSeconds.max().getDouble.toLong, 1000L)
+          withResource(milliseconds.max()) { maxValue =>
+            if (maxValue.isValid) {
+              testLongMultiplicationOverflow(maxValue.getDouble.toLong,
+                DateTimeConstants.MICROS_PER_MILLIS)
+            }
           }
-          withResource(milliSeconds.mul(Scalar.fromDouble(1000.0))) { microSeconds =>
-            withResource(microSeconds.castTo(DType.INT64)) { longVec =>
-              longVec.castTo(DType.TIMESTAMP_MICROSECONDS)
+          withResource(Scalar.fromDouble(DateTimeConstants.MICROS_PER_MILLIS)) { thousand =>
+            withResource(milliseconds.mul(thousand)) { microseconds =>
+                withResource(microseconds.castTo(DType.INT64)) { longVec =>
+                  longVec.bitCastTo(DType.TIMESTAMP_MICROSECONDS)
+                }
             }
           }
         }
