@@ -33,6 +33,7 @@ trait ShimLeafExecNode extends LeafExecNode {
   }
 }
 
+// DataSourceV2ScanExecBase actually extends LeafExecNode, so we extend that shim as well here.
 trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase {
   override def computeStats(): Statistics = {
     Statistics(
