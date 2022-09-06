@@ -28,7 +28,7 @@ import scala.math.max
 
 import ai.rapids.cudf.{AvroOptions => CudfAvroOptions, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetric.{GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, READ_FS_TIME, SEMAPHORE_WAIT_TIME, WRITE_BUFFER_TIME}
+import com.nvidia.spark.rapids.GpuMetric.{FILTER_TIME, GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, READ_FS_TIME, SEMAPHORE_WAIT_TIME, WRITE_BUFFER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.avro.Schema
@@ -171,7 +171,9 @@ case class GpuAvroPartitionReaderFactory(
 
   override def buildColumnarReader(partFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
-    val blockMeta = AvroFileFilterHandler(conf, avroOptions).filterBlocks(partFile)
+    val blockMeta = metrics(FILTER_TIME).ns {
+      AvroFileFilterHandler(conf, avroOptions).filterBlocks(partFile)
+    }
     val reader = new PartitionReaderWithBytesRead(new GpuAvroPartitionReader(conf, partFile,
       blockMeta, readDataSchema, debugDumpPrefix, maxReadBatchSizeRows,
       maxReadBatchSizeBytes, metrics))
@@ -248,7 +250,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
     val clippedBlocks = ArrayBuffer[AvroSingleDataBlockInfo]()
     val mapPathHeader = LinkedHashMap[Path, Header]()
     val filterHandler = AvroFileFilterHandler(conf, options)
-    val currentTime = System.nanoTime()
+    val startTime = System.nanoTime()
     files.foreach { file =>
       val singleFileInfo = try {
         filterHandler.filterBlocks(file)
@@ -277,8 +279,12 @@ case class GpuAvroMultiFilePartitionReaderFactory(
         mapPathHeader.put(fPath, singleFileInfo.header)
       }
     }
+    val filterTime = System.nanoTime() - startTime
+    metrics.get(FILTER_TIME).foreach {
+      _ += filterTime
+    }
     metrics.get("scanTime").foreach {
-      _ += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - currentTime)
+      _ += TimeUnit.NANOSECONDS.toMillis(filterTime)
     }
     new GpuMultiFileAvroPartitionReader(conf, files, clippedBlocks, readDataSchema,
       partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, numThreads,
