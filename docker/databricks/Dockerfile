@@ -22,10 +22,10 @@
 # https://github.com/databricks/containers/blob/master/experimental/ubuntu/ganglia/Dockerfile
 # https://github.com/dayananddevarapalli/containers/blob/main/webterminal/Dockerfile
 #############
-ARG CUDA_VERSION=11.3.1
+ARG CUDA_VERSION=11.5.2
 FROM nvidia/cuda:${CUDA_VERSION}-cudnn8-runtime-ubuntu20.04 as databricks
 
-ARG CUDA_MAJOR=11-3
+ARG CUDA_MAJOR=11-5
 
 #############
 # Install all needed libs
