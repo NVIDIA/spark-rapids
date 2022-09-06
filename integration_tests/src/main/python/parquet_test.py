@@ -98,7 +98,7 @@ def test_parquet_read_coalescing_multiple_files(spark_tmp_path, parquet_gens, re
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
-            # high number of slices to that a single task reads more then 1 file
+            # high number of slices so that a single task reads more than 1 file
             lambda spark : gen_df(spark, gen_list, num_slices=30).write.parquet(data_path),
             conf=rebase_write_corrected_conf)
     all_confs = copy_and_update(reader_confs, {
