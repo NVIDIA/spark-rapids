@@ -128,6 +128,19 @@ _grpkey_floats_with_nulls_and_nans = [
     ('b', FloatGen(nullable=(True, 10.0), special_cases=[(float('nan'), 10.0)])),
     ('c', LongGen())]
 
+# grouping single-level lists
+_grpkey_list_with_non_nested_children = [[('a', RepeatSeqGen(ArrayGen(data_gen), length=3)),
+                                          ('b', IntegerGen())] for data_gen in all_basic_gens + decimal_gens]
+
+#grouping mutliple-level structs with arrays
+_grpkey_nested_structs_with_array_basic_child = [
+    ('a', RepeatSeqGen(StructGen([
+        ['aa', IntegerGen()],
+        ['ab', ArrayGen(IntegerGen())]]),
+        length=20)),
+    ('b', IntegerGen()),
+    ('c', NullGen())]
+
 _nan_zero_float_special_cases = [
     (float('nan'),  5.0),
     (NEG_FLOAT_NAN_MIN_VALUE, 5.0),
@@ -241,7 +254,7 @@ _excluded_operators_marker = pytest.mark.allow_non_gpu(
     'HashAggregateExec', 'AggregateExpression', 'UnscaledValue', 'MakeDecimal',
     'AttributeReference', 'Alias', 'Sum', 'Count', 'Max', 'Min', 'Average', 'Cast',
     'StddevPop', 'StddevSamp', 'VariancePop', 'VarianceSamp',
-    'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
+    'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
     'EqualTo', 'First', 'SortAggregateExec', 'Coalesce', 'IsNull', 'EqualNullSafe',
     'PivotFirst', 'GetArrayItem', 'ShuffleExchangeExec', 'HashPartitioning')
 
@@ -335,7 +348,7 @@ def test_hash_reduction_decimal_overflow_sum(precision):
         # some optimizations are conspiring against us.
         conf = {'spark.rapids.sql.batchSizeBytes': '128m'})
 
-@pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
+@pytest.mark.parametrize('data_gen', [_grpkey_nested_structs_with_array_basic_child,  _longs_with_nulls] + _grpkey_list_with_non_nested_children, ids=idfn)
 def test_hash_grpby_sum_count_action(data_gen):
     assert_gpu_and_cpu_row_counts_equal(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b'))
@@ -420,7 +433,7 @@ def test_hash_grpby_avg(data_gen, conf):
 @pytest.mark.allow_non_gpu(
     'HashAggregateExec', 'AggregateExpression',
     'AttributeReference', 'Alias', 'Sum', 'Count', 'Max', 'Min', 'Average', 'Cast',
-    'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
+    'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
     'EqualTo', 'First', 'SortAggregateExec')
 @pytest.mark.parametrize('data_gen', [
     StructGen(children=[('a', int_gen), ('b', int_gen)],nullable=False,
@@ -533,8 +546,7 @@ def test_hash_reduction_pivot_with_nans(data_gen, conf):
 @approximate_float
 @ignore_order(local=True)
 @allow_non_gpu('HashAggregateExec', 'PivotFirst', 'AggregateExpression', 'Alias', 'GetArrayItem',
-        'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'KnownFloatingPointNormalized',
-        'NormalizeNaNAndZero')
+        'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'NormalizeNaNAndZero')
 @incompat
 @pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nulls_and_nans], ids=idfn)
 def test_hash_pivot_groupby_duplicates_fallback(data_gen):
@@ -1082,12 +1094,6 @@ def test_count_distinct_with_nan_floats(data_gen):
 
 # REDUCTIONS
 
-non_nan_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
-        # nans and -0.0 cannot work because of nan support in min/max, -0.0 == 0.0 in cudf for distinct and
-        # Spark fixed ordering of 0.0 and -0.0 in Spark 3.1 in the ordering
-        FloatGen(no_nans=True, special_cases=[]), DoubleGen(no_nans=True, special_cases=[]),
-        string_gen, boolean_gen, date_gen, timestamp_gen]
-
 _nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
 
 @pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
@@ -1164,11 +1170,17 @@ def test_collect_list_reductions(data_gen):
         lambda spark: unary_op_df(spark, data_gen).coalesce(1).selectExpr('collect_list(a)'),
         conf=_no_nans_float_conf)
 
+_no_neg_zero_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
+        # -0.0 cannot work because of -0.0 == 0.0 in cudf for distinct and
+        # Spark fixed ordering of 0.0 and -0.0 in Spark 3.1 in the ordering
+        FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), DoubleGen(special_cases=[]),
+        string_gen, boolean_gen, date_gen, timestamp_gen]
+
 _struct_only_nested_gens = [all_basic_struct_gen,
                             StructGen([['child0', byte_gen], ['child1', all_basic_struct_gen]]),
                             StructGen([])]
 @pytest.mark.parametrize('data_gen',
-                         non_nan_all_basic_gens + decimal_gens + _struct_only_nested_gens,
+                         _no_neg_zero_all_basic_gens + decimal_gens + _struct_only_nested_gens,
                          ids=idfn)
 def test_collect_set_reductions(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -1775,7 +1787,7 @@ def test_groupby_std_variance_nulls(data_gen, conf, ansi_enabled):
 
 @ignore_order(local=True)
 @approximate_float
-@allow_non_gpu('KnownFloatingPointNormalized', 'NormalizeNaNAndZero',
+@allow_non_gpu('NormalizeNaNAndZero',
                'HashAggregateExec', 'SortAggregateExec',
                'Cast',
                'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
