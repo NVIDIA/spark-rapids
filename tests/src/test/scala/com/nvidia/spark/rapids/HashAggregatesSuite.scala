@@ -31,7 +31,6 @@ import org.apache.spark.sql.types.{DataType, DataTypes}
 class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   private def floatAggConf: SparkConf = enableCsvConf()
       .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")
-      .set(RapidsConf.HAS_NANS.key, "false")
 
   def replaceHashAggMode(mode: String, conf: SparkConf = new SparkConf()): SparkConf = {
     // configures whether Plugin will replace certain aggregate exec nodes
@@ -65,7 +64,6 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     if (batchSize > 0) {
       makeBatchedBytes(batchSize, conf)
     }
-    conf.set(RapidsConf.HAS_NANS.key, "false")
     conf.set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")
     testSparkResultsAreEqual(testName, df,
       conf = conf, repart = repart,
@@ -1109,12 +1107,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   private val nonFinalOnGpuConf = replaceHashAggMode(
     "partial|partialMerge|partial&partialMerge", enableCsvConf())
       .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")
-      .set(RapidsConf.HAS_NANS.key, "false")
   // GPU -> GPU -> GPU -> CPU
   private val nonPartialOnGpuConf = replaceHashAggMode(
     "final|partial&partialMerge|partialMerge", enableCsvConf())
       .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")
-      .set(RapidsConf.HAS_NANS.key, "false")
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqualWithCapture(
       "PartMerge:countDistinct:sum:partOnly",
@@ -1622,7 +1618,6 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     testName = "Test NormalizeNansAndZeros(Float)",
     floatWithDifferentKindsOfNansAndZeros,
     conf = enableCsvConf()
-      .set(RapidsConf.HAS_NANS.key, "false")
       .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
     frame => frame.groupBy(col("float")).agg(sum(col("int")))
   }
@@ -1631,7 +1626,6 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     testName = "Test NormalizeNansAndZeros(Double)",
     doubleWithDifferentKindsOfNansAndZeros,
     conf = enableCsvConf()
-      .set(RapidsConf.HAS_NANS.key, "false")
       .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
     frame => frame.groupBy(col("double")).agg(sum(col("int")))
   }

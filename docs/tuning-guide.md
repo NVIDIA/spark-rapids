@@ -286,10 +286,6 @@ from the main [columnar batch size](#columnar-batch-size) setting.  Some transco
 load CSV files then write Parquet files) need to lower this setting when using large task input
 partition sizes to avoid GPU out of memory errors.
 
-## Set hasNans flag to False
-If your data has float values but doesn't contain NaNs set [`spark.rapids.sql.hasNans`](configs.md#sql.hasNans) to 
-`false` to get the benefit of running on the GPU
-
 ## Metrics
 
 Custom Spark SQL Metrics are available which can help identify performance bottlenecks in a query.
