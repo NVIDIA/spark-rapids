@@ -16,13 +16,12 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 
 /** Utility methods for manipulating Catalyst classes involved in Adaptive Query Execution */
-object AQEUtils extends Logging {
+object AQEUtils {
   /** Return a new QueryStageExec reuse instance with updated output attributes */
   def newReuseInstance(sqse: ShuffleQueryStageExec, newOutput: Seq[Attribute]): QueryStageExec = {
     val reusedExchange = ReusedExchangeExec(newOutput, sqse.shuffle)

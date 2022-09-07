@@ -22,15 +22,6 @@ from spark_session import with_cpu_session
 
 _adaptive_conf = { "spark.sql.adaptive.enabled": "true" }
 
-# Dynamic switching of join strategies
-# Dynamic coalescing of shuffle partitions
-# Dynamically Handle Skew Joins
-
-_adaptive_coalese_conf = copy_and_update(_adaptive_conf, {
-    "spark.sql.adaptive.coalescePartitions.enabled": "true"
-})
-
-
 def create_skew_df(spark, length):
     root = spark.range(0, length)
     mid = length / 2
@@ -47,6 +38,8 @@ def create_skew_df(spark, length):
     return left, right
 
 
+# This replicates the skew join test from scala tests, and is here to test
+# the computeStats(...) implementation in GpuRangeExec
 @ignore_order(local=True)
 def test_aqe_skew_join():
     def do_join(spark):
@@ -57,6 +50,7 @@ def test_aqe_skew_join():
 
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_adaptive_conf)
 
+# Test the computeStats(...) implementation in GpuDataSourceScanExec
 @ignore_order(local=True)
 @pytest.mark.parametrize("data_gen", integral_gens, ids=idfn)
 def test_aqe_join_parquet(spark_tmp_path, data_gen):
@@ -73,6 +67,7 @@ def test_aqe_join_parquet(spark_tmp_path, data_gen):
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=_adaptive_conf)
 
 
+# Test the computeStats(...) implementation in GpuBatchScanExec
 @ignore_order(local=True)
 @pytest.mark.parametrize("data_gen", integral_gens, ids=idfn)
 def test_aqe_join_parquet_batch(spark_tmp_path, data_gen):
@@ -96,14 +91,15 @@ def test_aqe_join_parquet_batch(spark_tmp_path, data_gen):
 
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
 
+# Test the AQE optimization that sometimes drops children from the initial list of expressions that 
+# are still children of window expressions in GpuWindowExec
 @ignore_order
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
-@pytest.mark.parametrize('aqe_enabled', ['true', 'false'], ids=idfn)
 @allow_non_gpu('ShuffleExchangeExec')
-def test_aqe_join_sum_window(data_gen, aqe_enabled):
-    conf = {'spark.sql.adaptive.sql.enabled': aqe_enabled,
+def test_aqe_join_sum_window(data_gen):
+    conf = copy_and_update(_adaptive_conf, {
             'spark.rapids.sql.batchSizeBytes': '100',
-            'spark.rapids.sql.explain': 'NONE'}
+            'spark.rapids.sql.explain': 'NONE'})
 
     def do_it(spark):
         agg_table = gen_df(spark, StructGen([('a_1', LongRangeGen()), ('c', data_gen)], nullable=False))
@@ -114,6 +110,7 @@ def test_aqe_join_sum_window(data_gen, aqe_enabled):
 
     assert_gpu_and_cpu_are_equal_collect(do_it, conf = conf)
 
+# Test the map stage submission handling for GpuShuffleExchangeExec
 @ignore_order(local=True)
 def test_aqe_struct_self_join(spark_tmp_table_factory):
     def do_join(spark):
