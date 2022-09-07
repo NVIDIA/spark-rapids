@@ -27,7 +27,8 @@ import org.apache.hadoop.fs.{FileStatus, Path}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.RuntimeConfig
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
+import org.apache.spark.sql.catalyst.expressions.{Expression, PlanExpression}
 import org.apache.spark.sql.execution.datasources.{CatalogFileIndex, FileIndex, HadoopFsRelation, InMemoryFileIndex, PartitioningAwareFileIndex, PartitionDirectory, PartitionSpec}
 
 object AlluxioUtils extends Logging {
@@ -386,15 +387,14 @@ object AlluxioUtils extends Logging {
       // like Databricks where they have customer file index types.
       relation.location match {
         case pfi: PartitioningAwareFileIndex =>
-          logDebug("Handling PartitioningAwareFileIndex")
+          logWarning("Handling PartitioningAwareFileIndex")
           createNewFileIndexWithPathsReplaced(pfi.partitionSpec(), pfi.rootPaths)
         case cfi: CatalogFileIndex =>
-          logDebug("Handling CatalogFileIndex")
+          logWarning("Handling CatalogFileIndex")
           val memFI = cfi.filterPartitions(Nil)
           createNewFileIndexWithPathsReplaced(memFI.partitionSpec(), memFI.rootPaths)
         case _ => {
-          /*
-          logDebug(s"Handling file index type: ${relation.location.getClass}")
+          logWarning(s"Handling file index type: ${relation.location.getClass}")
 
           // With the base Spark FileIndex type we don't know how to modify it to
           // just replace the paths so we have to try to recompute.
@@ -417,7 +417,7 @@ object AlluxioUtils extends Logging {
           if (replaceMapOption.isDefined) {
             rootPaths.foreach { rootPath =>
               replaceMapOption.get.values.find(value => rootPath.toString.startsWith(value)).
-                foreach(matched => checkAlluxioMounted(relation.sparkSession, matched))
+                foreach(matched => checkAlluxioMounted(relation.sparkSession.sparkContext.hadoopConfiguration, matched))
             }
           }
 
@@ -440,8 +440,6 @@ object AlluxioUtils extends Logging {
             Option(relation.dataSchema),
             userSpecifiedPartitionSpec = Some(partitionSpec))
 
-           */
-          relation.location
         }
       }
     } else {
