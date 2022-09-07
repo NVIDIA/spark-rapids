@@ -37,33 +37,34 @@ mvn_verify() {
     # file size check for pull request. The size of a committed file should be less than 1.5MiB
     pre-commit run check-added-large-files --from-ref $BASE_REF --to-ref HEAD
 
-    # Get Spark versions
-    SPARK_VERSIONS_SNAPSHOTS_STR=$(mvn -B help:evaluate -q -pl dist -Psnapshots -Dexpression=included_buildvers -DforceStdout)
-    SPARK_VERSIONS_NOSNAPSHOTS_STR=$(mvn -B help:evaluate -q -pl dist -PnoSnapshots -Dexpression=included_buildvers -DforceStdout)
-    SPARK_VERSIONS_SNAPSHOTS_STR=$(echo $SPARK_VERSIONS_SNAPSHOTS_STR)
-    SPARK_VERSIONS_NOSNAPSHOTS_STR=$(echo $SPARK_VERSIONS_NOSNAPSHOTS_STR)
-    oldIFS=$IFS
-    IFS=$', ' <<< $SPARK_VERSIONS_SNAPSHOTS_STR read -r -a SPARK_SHIM_VERSIONS
-    IFS=$', ' <<< $SPARK_VERSIONS_NOSNAPSHOTS_STR read -r -a SPARK_SHIM_VERSIONS_NOSNAPSHOTS
-    IFS=$oldIFS
-    SPARK_SHIM_VERSIONS_TEST=("311" "320" "330")
+    # Get Spark shim versions
+    . $(dirname "$0")/common.sh
+    # snapshots + noSnapshots
+    get_spark_shim_versions -Psnapshots
+    SPARK_SHIM_VERSIONS_ALL=("${SPARK_SHIM_VERSIONS[@]}")
+    # noSnapshots only
+    get_spark_shim_versions -PnoSnapshots
+    SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS[@]}")
+
+    # build and run unit tests on one 3.1.X version (base version covers this), one 3.2.X and one 3.3.X version
+    SPARK_SHIM_VERSIONS_TEST=($(for version in ${SPARK_SHIM_VERSIONS_ALL[@]}; do [[ $version != 31* ]] && echo $version; done | sort -n -k1.1,1.2 -u -s))
 
     # build the Spark 2.x explain jar
     env -u SPARK_HOME $MVN_CMD -B $MVN_URM_MIRROR -Dbuildver=24X clean install -DskipTests
 
     MVN_INSTALL_CMD="env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR clean install $MVN_BUILD_ARGS -DskipTests -pl aggregator -am"
     # All others shims test should be covered in nightly pipelines
-    for version in "${SPARK_SHIM_VERSIONS[@]}"
+    for version in "${SPARK_SHIM_VERSIONS_ALL[@]}"
     do
         echo "Spark version: $version"
-        # build and run unit tests on one 3.1.X version (base version covers this), one 3.2.X and one 3.3.X version
-        if [[ "${TEST_SPARK_SHIM_VERSIONS[*]}" =~ "$version" ]]; then
+        # build and run unit test
+        if [[ "${SPARK_SHIM_VERSIONS_TEST[@]}" =~ "$version" ]]; then
             env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS \
               -Dpytest.TEST_TAGS='' -pl '!tools'
-        # build nosnapshot versions
-        elif [[ "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS}" =~ "$version" ]]; then
+        # build only for nosnapshot versions
+        elif [[ "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]}" =~ "$version" ]]; then
             $MVN_INSTALL_CMD -DskipTests -Dbuildver=$version
-        # build snapshot versions
+        # build only for snapshot versions
         elif [[ $BUILD_MAINTENANCE_VERSION_SNAPSHOTS == "true" ]]; then
             $MVN_INSTALL_CMD -Dbuildver=$version
         fi
