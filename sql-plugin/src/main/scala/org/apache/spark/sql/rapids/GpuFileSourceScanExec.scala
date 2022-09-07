@@ -126,7 +126,7 @@ case class GpuFileSourceScanExec(
         val res = origRet.map { pd =>
           AlluxioUtils.replacePathIfNeededPathOnly(rapidsConf, pd,
             relation.sparkSession.sparkContext.hadoopConfiguration,
-            relation.sparkSession.sparkContext.conf)
+            relation.sparkSession.conf)
         }
         logWarning("replaced to: " + res.mkString(","))
         res
