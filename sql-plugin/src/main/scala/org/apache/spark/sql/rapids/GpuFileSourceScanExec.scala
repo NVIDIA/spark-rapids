@@ -84,6 +84,11 @@ case class GpuFileSourceScanExec(
     case _ => true // For others, default to PERFILE reader
   }
 
+  private val isAlluxioAlgoSelected = {
+    rapidsConf.getAlluxioReplacementAlgo == "SELECTION_TIME" &&
+      relation.fileFormat.isInstanceOf[ParquetFileFormat]
+  }
+
   override def otherCopyArgs: Seq[AnyRef] = Seq(rapidsConf)
 
   // All expressions are filter expressions used on the CPU.
@@ -116,21 +121,25 @@ case class GpuFileSourceScanExec(
       relation.location.listFiles(
         partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
 
-    val ret = relation.location match {
-      // case _: PartitioningAwareFileIndex =>
-      // origRet
-      // case _: CatalogFileIndex =>
-      //  origRet
-      case _ => {
-        logWarning(" going to replace: " + origRet.mkString(","))
-        val res = origRet.map { pd =>
-          AlluxioUtils.replacePathIfNeededPathOnly(rapidsConf, pd,
-            relation.sparkSession.sparkContext.hadoopConfiguration,
-            relation.sparkSession.conf)
+    val ret = if (isAlluxioAlgoSelected) {
+      relation.location match {
+        // case _: PartitioningAwareFileIndex =>
+        // origRet
+        // case _: CatalogFileIndex =>
+        //  origRet
+        case _ => {
+          logWarning(" going to replace: " + origRet.mkString(","))
+          val res = origRet.map { pd =>
+            AlluxioUtils.replacePathIfNeededPathOnly(rapidsConf, pd,
+              relation.sparkSession.sparkContext.hadoopConfiguration,
+              relation.sparkSession.conf)
+          }
+          logWarning("replaced to: " + res.mkString(","))
+          res
         }
-        logWarning("replaced to: " + res.mkString(","))
-        res
       }
+    } else {
+      origRet
     }
 
     setFilesNumAndSizeMetric(ret, true)

@@ -1358,6 +1358,12 @@ object RapidsConf {
     .toSequence
     .createWithDefault(Seq("su", "ubuntu", "-c", "/opt/alluxio-2.8.0/bin/alluxio"))
 
+  val ALLUXIO_REPLACEMENT_ALGO = conf("spark.rapids.alluxio.replacement.algo")
+    .doc("Algorithm used when replacing path with Alluxio path. CONVERT_TIME, " +
+      "SELECTION_TIME")
+    .stringConf
+    .createWithDefault("CONVERT_TIME")
+
   // USER FACING DEBUG CONFIGS
 
   val SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY =
@@ -2034,6 +2040,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val getAlluxioBucketRegex: String = get(ALLUXIO_BUCKET_REGEX)
 
   lazy val getAlluxioCmd: Seq[String] = get(ALLUXIO_CMD)
+
+  lazy val getAlluxioReplacementAlgo: String = get(ALLUXIO_REPLACEMENT_ALGO)
 
   lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
 

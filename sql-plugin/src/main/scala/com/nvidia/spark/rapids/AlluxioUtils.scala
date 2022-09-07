@@ -188,7 +188,7 @@ object AlluxioUtils extends Logging {
  // first try to get fs.s3a.access.key from spark config
   // second try to get from environment variables
   private def getKeyAndSecret(hadoopConfiguration: Configuration,
-      sparkConf: RuntimeConfig) : (Option[String], Option[String]) = {
+      runtimeConf: RuntimeConfig) : (Option[String], Option[String]) = {
     val hadoopAccessKey =
       hadoopConfiguration.get("fs.s3a.access.key")
     val hadoopSecretKey =
@@ -196,8 +196,8 @@ object AlluxioUtils extends Logging {
     if (hadoopAccessKey != null && hadoopSecretKey != null) {
       (Some(hadoopAccessKey), Some(hadoopSecretKey))
     } else {
-      val accessKey = sparkConf.getOption("spark.hadoop.fs.s3a.access.key")
-      val secretKey = sparkConf.getOption("spark.hadoop.fs.s3a.secret.key")
+      val accessKey = runtimeConf.getOption("spark.hadoop.fs.s3a.access.key")
+      val secretKey = runtimeConf.getOption("spark.hadoop.fs.s3a.secret.key")
       if (accessKey.isDefined && secretKey.isDefined) {
         (accessKey, secretKey)
       } else {
@@ -230,13 +230,13 @@ object AlluxioUtils extends Logging {
     }
   }
 
-  private def genFuncForAutoMountReplacement(conf: RapidsConf, sparkConf: RuntimeConfig,
+  private def genFuncForAutoMountReplacement(conf: RapidsConf, runtimeConf: RuntimeConfig,
       hadoopConf: Configuration, alluxioBucketRegex: String) : Option[Path => Path] = {
     Some((f: Path) => {
       val pathStr = f.toString
       if (pathStr.matches(alluxioBucketRegex)) {
         initAlluxioInfo(conf)
-        val (access_key, secret_key) = getKeyAndSecret(hadoopConf, sparkConf)
+        val (access_key, secret_key) = getKeyAndSecret(hadoopConf, runtimeConf)
 
         val (scheme, bucket) = getSchemeAndBucketFromPath(pathStr)
         autoMountBucket(scheme, bucket, access_key, secret_key)
@@ -256,7 +256,7 @@ object AlluxioUtils extends Logging {
       conf: RapidsConf,
       pd: PartitionDirectory,
       hadoopConf: Configuration,
-      sparkConf: RuntimeConfig): PartitionDirectory = {
+      runtimeConf: RuntimeConfig): PartitionDirectory = {
 
     val alluxioPathsReplace: Option[Seq[String]] = conf.getAlluxioPathsToReplace
     val alluxioAutoMountEnabled = conf.getAlluxioAutoMountEnabled
@@ -285,7 +285,7 @@ object AlluxioUtils extends Logging {
     val replaceFunc = if (replaceMapOption.isDefined) {
       genFuncForPathReplacement(replaceMapOption)
     } else if (alluxioAutoMountEnabled) {
-      genFuncForAutoMountReplacement(conf, sparkConf, hadoopConf, alluxioBucketRegex)
+      genFuncForAutoMountReplacement(conf, runtimeConf, hadoopConf, alluxioBucketRegex)
     } else {
       None
     }
@@ -349,8 +349,8 @@ object AlluxioUtils extends Logging {
       genFuncForPathReplacement(replaceMapOption)
     } else if (alluxioAutoMountEnabled) {
       val hadoopConf = relation.sparkSession.sparkContext.hadoopConfiguration
-      val sparkConf = relation.sparkSession.conf
-      genFuncForAutoMountReplacement(conf, sparkConf, hadoopConf, alluxioBucketRegex)
+      val runtimeConf = relation.sparkSession.conf
+      genFuncForAutoMountReplacement(conf, runtimeConf, hadoopConf, alluxioBucketRegex)
     } else {
       None
     }
