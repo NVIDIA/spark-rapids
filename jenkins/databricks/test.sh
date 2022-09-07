@@ -76,6 +76,7 @@ IS_SPARK_311_OR_LATER=0
 # - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
 # - ICEBERG_ONLY: iceberg tests only
 # - DELTA_LAKE_ONLY: delta_lake tests only
+# - RAPIDS_SHUFFLE_ONLY: RAPIDS Shuffle Manager smoke test only
 TEST_MODE=${TEST_MODE:-'DEFAULT'}
 TEST_TYPE="nightly"
 PCBS_CONF="com.nvidia.spark.ParquetCachedBatchSerializer"
@@ -92,6 +93,23 @@ ICEBERG_CONFS="--packages org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPA
  --conf spark.sql.catalog.spark_catalog.warehouse=/tmp/spark-warehouse-$$"
 
 DELTA_LAKE_CONFS=""
+
+# Standalone cluster for the shuffle smoke test, this assumes a local
+# master process in this host
+invoke_shuffle_integration_test() {
+  export SPARK_MASTER_HOST=`hostname -I|awk '{print $1}'`
+  export SPARK_MASTER=spark://$SPARK_MASTER_HOST:7077
+  sudo $SPARK_HOME/sbin/spark-daemon.sh start org.apache.spark.deploy.worker.Worker 1 $SPARK_MASTER
+  PYSP_TEST_spark_master=$SPARK_MASTER \
+    PYSP_TEST_spark_cores_max=2 \
+    PYSP_TEST_spark_executor_cores=1 \
+    PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SPARK_SHIM_VER.RapidsShuffleManager \
+    PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0 \
+    PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=0.1 \
+    PYSP_TEST_spark_rapids_memory_gpu_allocFraction=0.1 \
+    ./integration_tests/run_pyspark_from_build.sh -m shuffle_test
+  sudo $SPARK_HOME/sbin/spark-daemon.sh stop org.apache.spark.deploy.worker.Worker 1
+}
 
 # Enable event log for qualification & profiling tools testing
 export PYSP_TEST_spark_eventLog_enabled=true
@@ -152,5 +170,13 @@ else
         ## Run Delta Lake tests
         SPARK_SUBMIT_FLAGS="$SPARK_CONF $DELTA_LAKE_CONFS" TEST_PARALLEL=1 \
             bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m "delta_lake" --delta_lake --test_type=$TEST_TYPE
+    fi
+
+    if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "RAPIDS_SHUFFLE_ONLY" ]]; then
+       # using MULTITHREADED shuffle
+       PYSP_TEST_spark_rapids_shuffle_mode=MULTITHREADED \
+       PYSP_TEST_spark_rapids_shuffle_multiThreaded_writer_threads=2 \
+       PYSP_TEST_spark_rapids_shuffle_multiThreaded_reader_threads=2 \
+           invoke_shuffle_integration_test
     fi
 fi
