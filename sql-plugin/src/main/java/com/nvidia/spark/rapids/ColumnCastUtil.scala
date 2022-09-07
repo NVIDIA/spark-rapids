@@ -63,15 +63,12 @@ object ColumnCastUtil extends Arm {
           cv.getType.getTypeId match {
             case DType.DTypeEnum.STRUCT =>
               withResource(ArrayBuffer.empty[ColumnView]) { tmpNeedsClosed =>
-                val structFields = if (dt.isDefined) {
-                  dt.get match {
-                    case t: StructType => t.fields
-                    case t => /* this should never be reach out */
-                      throw new IllegalStateException("Invalid input DataType: " +
-                        s"Expect StructType but got ${t.toString}")
-                  }
-                } else {
-                  Array.empty[StructField]
+                val structFields = dt match {
+                  case None => Array.empty[StructField]
+                  case Some(t: StructType) => t.fields
+                  case Some(t) => /* this should never be reach out */
+                    throw new IllegalStateException("Invalid input DataType: " +
+                      s"Expect StructType but got ${t.toString}")
                 }
                 var childrenUpdated = false
                 val newChildren = ArrayBuffer.empty[ColumnView]
@@ -109,19 +106,16 @@ object ColumnCastUtil extends Arm {
                 // If it is a MapType, its child will be a column of type struct<key, value>.
                 // In such cases, we need to generate the corresponding Spark's data type
                 // for the child column as a StructType.
-                val childDt = if (dt.isDefined) {
-                  dt.get match {
-                    case t: ArrayType => Some(t.elementType)
-                    case t: MapType => Some(StructType(Array(
-                        StructField("key", t.keyType, nullable = false),
-                        StructField("value", t.valueType, nullable = t.valueContainsNull))))
-                    case _: BinaryType => Some(ByteType)
-                    case t => /* this should never be reach out */
-                      throw new IllegalStateException("Invalid input DataType: " +
-                        s"Expect ArrayType/MapType/BinaryType  but got ${t.toString}")
-                  }
-                } else {
-                  None
+                val childDt = dt match {
+                  case None => None
+                  case Some(t: ArrayType) => Some(t.elementType)
+                  case Some(_: BinaryType) => Some(ByteType)
+                  case Some(t: MapType) => Some(StructType(Array(
+                    StructField("key", t.keyType, nullable = false),
+                    StructField("value", t.valueType, nullable = t.valueContainsNull))))
+                  case Some(t) => /* this should never be reach out */
+                    throw new IllegalStateException("Invalid input DataType: " +
+                      s"Expect ArrayType/MapType/BinaryType  but got ${t.toString}")
                 }
                 val (updatedData, needsClosingData) = deepTransformView(child, childDt)(convert)
                 needsClosing ++= needsClosingData
