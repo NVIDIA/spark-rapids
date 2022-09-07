@@ -23,7 +23,7 @@ if [[ $# -eq 1 ]]; then
     BUILD_TYPE=$1
 
 elif [[ $# -gt 1 ]]; then
-    echo "ERROR: too many parameters are provided"
+    >&2 echo "ERROR: too many parameters are provided"
     exit 1
 fi
 
@@ -53,19 +53,19 @@ mvn_verify() {
 
     MVN_INSTALL_CMD="env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR clean install $MVN_BUILD_ARGS -DskipTests -pl aggregator -am"
     # All others shims test should be covered in nightly pipelines
-    for version in ${SPARK_SHIM_VERSIONS[*]}
+    for version in "${SPARK_SHIM_VERSIONS[@]}"
     do
-        echo "spark version: $version"
+        echo "Spark version: $version"
         # build and run unit tests on one 3.1.X version (base version covers this), one 3.2.X and one 3.3.X version
         if [[ "${TEST_SPARK_SHIM_VERSIONS[*]}" =~ "$version" ]]; then
             env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS \
               -Dpytest.TEST_TAGS='' -pl '!tools'
         # build nosnapshot versions
-        elif [[ "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS}" =~ "$verions" ]]; then
+        elif [[ "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS}" =~ "$version" ]]; then
             $MVN_INSTALL_CMD -DskipTests -Dbuildver=$version
         # build snapshot versions
-        else
-            [[ $BUILD_MAINTENANCE_VERSION_SNAPSHOTS == "true" ]] && $MVN_INSTALL_CMD -Dbuildver=$version
+        elif [[ $BUILD_MAINTENANCE_VERSION_SNAPSHOTS == "true" ]]; then
+            $MVN_INSTALL_CMD -Dbuildver=$version
         fi
     done
     # enable UTF-8 for regular expression tests

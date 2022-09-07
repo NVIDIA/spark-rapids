@@ -17,12 +17,15 @@
 
 set -e
 
+# PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
+# regular: noSnapshots + snapshots
+# pre-release: noSnapshots only
 PHASE_TYPE=regular
 
 if [[ $# -eq 1 ]]; then
     PHASE_TYPE=$1
 elif [[ $# -gt 1 ]]; then
-    echo "ERROR: too many parameters are provided"
+    >&2 echo "ERROR: too many parameters are provided"
     exit 1
 fi
 
