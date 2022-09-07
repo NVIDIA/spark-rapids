@@ -145,7 +145,7 @@ chmod a+rwx -R /sys/fs/cgroup/devices
 EOF
 
 sudo chmod 644 /etc/systemd/system/mountCgroup.service
-sudo chmod 777 /etc/mountCgroup.sh
+sudo chmod 655 /etc/mountCgroup.sh
 ```
 
 then start the mountCgroup service:
