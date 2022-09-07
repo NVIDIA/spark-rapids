@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf._
 import com.nvidia.spark.RebaseHelper
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, ParquetTimestampNTZShims, SparkShimImpl}
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}
 import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
@@ -375,18 +376,13 @@ class GpuParquetWriter(
    */
   override def write(batch: ColumnarBatch,
                      statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
-    val newBatch = new ColumnarBatch(GpuColumnVector.extractColumns(batch).map {
-      cv =>
-        try {
-          new GpuColumnVector(cv.dataType(),
-            withResource(cv.getBase) { v => deepTransformColumn(v, cv.dataType) })
-        } catch {
-          case e: Throwable =>
-            batch.close()
-            throw e
-        }
-    })
-
+    val newBatch = withResource(batch) { batch =>
+      val transformedCols = GpuColumnVector.extractColumns(batch).safeMap { cv =>
+        new GpuColumnVector(cv.dataType, deepTransformColumn(cv.getBase, cv.dataType))
+          .asInstanceOf[org.apache.spark.sql.vectorized.ColumnVector]
+      }
+      new ColumnarBatch(transformedCols)
+    }
     super.write(newBatch, statsTrackers)
   }
 
