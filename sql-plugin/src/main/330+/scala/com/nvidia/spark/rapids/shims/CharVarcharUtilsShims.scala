@@ -14,23 +14,14 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.iceberg
+package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{ScanRule, ShimLoader}
+import org.apache.spark.sql.catalyst.util.CharVarcharUtils
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.types.StructType
 
-import org.apache.spark.sql.connector.read.Scan
-
-/** Interfaces to avoid accessing the optional Apache Iceberg jars directly in common code. */
-trait IcebergProvider {
-  def isSupportedScan(scan: Scan): Boolean
-
-  def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
-
-  def copyScanWithInputFileTrue(scan: Scan): Scan
-}
-
-object IcebergProvider {
-  def apply(): IcebergProvider = ShimLoader.newIcebergProvider()
-
-  val cpuScanClassName: String = "org.apache.iceberg.spark.source.SparkBatchQueryScan"
+object CharVarcharUtilsShims {
+  def getRawSchema(schema: StructType, conf: SQLConf): StructType = {
+    CharVarcharUtils.getRawSchema(schema, conf)
+  }
 }

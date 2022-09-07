@@ -91,7 +91,6 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.rapids.sql.concurrentGpuTasks=1 \
        --driver-memory 10g \
        --conf spark.rapids.memory.pinnedPool.size=2G \
-       --conf spark.locality.wait=0s \
        --conf spark.sql.files.maxPartitionBytes=512m \
        --conf spark.plugins=com.nvidia.spark.SQLPlugin \
        --jars ${SPARK_RAPIDS_PLUGIN_JAR}
@@ -165,7 +164,6 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.executor.resource.gpu.amount=1 \
        --conf spark.task.resource.gpu.amount=0.25 \
        --conf spark.rapids.memory.pinnedPool.size=2G \
-       --conf spark.locality.wait=0s \
        --conf spark.sql.files.maxPartitionBytes=512m \
        --conf spark.plugins=com.nvidia.spark.SQLPlugin
 ```
@@ -219,7 +217,6 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.task.cpus=1 \
        --conf spark.task.resource.gpu.amount=0.25 \
        --conf spark.rapids.memory.pinnedPool.size=2G \
-       --conf spark.locality.wait=0s \
        --conf spark.sql.files.maxPartitionBytes=512m \
        --conf spark.plugins=com.nvidia.spark.SQLPlugin \
        --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
@@ -245,7 +242,6 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.task.cpus=1 \
        --conf spark.task.resource.gpu.amount=0.25 \
        --conf spark.rapids.memory.pinnedPool.size=2G \
-       --conf spark.locality.wait=0s \
        --conf spark.sql.files.maxPartitionBytes=512m \
        --conf spark.plugins=com.nvidia.spark.SQLPlugin \
        --conf spark.executor.resource.gpu.amount=1 \
@@ -282,7 +278,6 @@ $SPARK_HOME/bin/spark-shell \
        --conf spark.task.cpus=1 \
        --conf spark.task.resource.gpu.amount=0.25 \
        --conf spark.rapids.memory.pinnedPool.size=2G \
-       --conf spark.locality.wait=0s \
        --conf spark.sql.files.maxPartitionBytes=512m \
        --conf spark.plugins=com.nvidia.spark.SQLPlugin \
        --conf spark.resources.discoveryPlugin=com.nvidia.spark.ExclusiveModeGpuDiscoveryPlugin \
@@ -356,7 +351,6 @@ $SPARK_HOME/bin/spark-shell --master yarn \
   --executor-memory 20g \
   --conf spark.executor.memoryOverhead=10g \
   --conf spark.rapids.memory.pinnedPool.size=8G \
-  --conf spark.locality.wait=0s \
   --conf spark.sql.files.maxPartitionBytes=512m \
   --conf spark.executor.resource.gpu.discoveryScript=./getGpusResources.sh \
   --conf spark.task.resource.gpu.amount=0.166 \

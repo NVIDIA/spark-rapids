@@ -14,23 +14,16 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.iceberg
+package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{ScanRule, ShimLoader}
+import ai.rapids.cudf.{ColumnView, DType}
+import com.nvidia.spark.rapids.GpuOrcScan
 
-import org.apache.spark.sql.connector.read.Scan
 
-/** Interfaces to avoid accessing the optional Apache Iceberg jars directly in common code. */
-trait IcebergProvider {
-  def isSupportedScan(scan: Scan): Boolean
+object OrcCastingShims {
 
-  def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
-
-  def copyScanWithInputFileTrue(scan: Scan): Scan
-}
-
-object IcebergProvider {
-  def apply(): IcebergProvider = ShimLoader.newIcebergProvider()
-
-  val cpuScanClassName: String = "org.apache.iceberg.spark.source.SparkBatchQueryScan"
+  def castIntegerToTimestamp(col: ColumnView, colType: DType): ColumnView = {
+    // For spark >= 320 (except spark-321-cdh), they consider the integers in `col` as seconds
+    GpuOrcScan.castIntegersToTimestamp(col, colType, DType.TIMESTAMP_SECONDS)
+  }
 }
