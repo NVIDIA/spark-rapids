@@ -23,10 +23,10 @@ import scala.io.{BufferedSource, Source}
 import scala.sys.process.{Process, ProcessLogger}
 
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileStatus, LocatedFileStatus, Path}
+import org.apache.hadoop.fs.{FileStatus, Path}
 
+import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{Expression, PlanExpression}
 import org.apache.spark.sql.execution.datasources.{CatalogFileIndex, FileIndex, HadoopFsRelation, InMemoryFileIndex, PartitioningAwareFileIndex, PartitionDirectory, PartitionSpec}
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
@@ -286,7 +286,7 @@ object AlluxioUtils extends Logging {
     val replaceFunc = if (replaceMapOption.isDefined) {
       genFuncForPathReplacement(replaceMapOption)
     } else if (alluxioAutoMountEnabled) {
-      genFuncForAutoMountReplacementConfs(conf, sparkConf, hadoopConf, alluxioBucketRegex)
+      genFuncForAutoMountReplacement(conf, sparkConf, hadoopConf, alluxioBucketRegex)
     } else {
       None
     }
@@ -394,6 +394,7 @@ object AlluxioUtils extends Logging {
           val memFI = cfi.filterPartitions(Nil)
           createNewFileIndexWithPathsReplaced(memFI.partitionSpec(), memFI.rootPaths)
         case _ => {
+          /*
           logDebug(s"Handling file index type: ${relation.location.getClass}")
 
           // With the base Spark FileIndex type we don't know how to modify it to
@@ -439,6 +440,9 @@ object AlluxioUtils extends Logging {
             parameters,
             Option(relation.dataSchema),
             userSpecifiedPartitionSpec = Some(partitionSpec))
+
+           */
+          relation.location
         }
       }
     } else {
