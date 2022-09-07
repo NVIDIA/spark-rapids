@@ -21,8 +21,7 @@ import java.util.Optional
 import scala.collection.mutable.{ArrayBuffer, ArrayBuilder}
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType}
-
-import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StructField, StructType}
+import org.apache.spark.sql.types.{ArrayType, BinaryType, ByteType, DataType, MapType, StructField, StructType}
 
 /**
  * This class casts a column to another column if the predicate passed resolves to true.
@@ -116,9 +115,10 @@ object ColumnCastUtil extends Arm {
                     case t: MapType => Some(StructType(Array(
                         StructField("key", t.keyType, nullable = false),
                         StructField("value", t.valueType, nullable = t.valueContainsNull))))
+                    case _: BinaryType => Some(ByteType)
                     case t => /* this should never be reach out */
                       throw new IllegalStateException("Invalid input DataType: " +
-                        s"Expect ArrayType or MapType but got ${t.toString}")
+                        s"Expect ArrayType/MapType/BinaryType  but got ${t.toString}")
                   }
                 } else {
                   None
