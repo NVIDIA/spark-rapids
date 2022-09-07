@@ -247,7 +247,6 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     metrics.get("rapidsShuffleCombineTime")
   private val ioTimeMetric =
     metrics.get("rapidsShuffleWriteIoTime")
-  logInfo (s"At writer, I see metrics: ${metrics.keys.toArray.mkString(", ")}")
   private val dep: ShuffleDependency[K, V, V] = handle.dependency
   private val shuffleId = dep.shuffleId
   private val partitioner = dep.partitioner
