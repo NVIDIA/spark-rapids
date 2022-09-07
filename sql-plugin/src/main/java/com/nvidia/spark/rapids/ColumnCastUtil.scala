@@ -116,7 +116,7 @@ object ColumnCastUtil extends Arm {
                     StructField("value", t.valueType, nullable = t.valueContainsNull))))
                   case Some(t) => /* this should never be reach out */
                     throw new IllegalStateException("Invalid input DataType: " +
-                      s"Expect ArrayType/MapType/BinaryType  but got ${t.toString}")
+                      s"Expect ArrayType/BinaryType/MapType but got ${t.toString}")
                 }
                 val (updatedData, needsClosingData) = deepTransformView(child, childDt)(convert)
                 needsClosing ++= needsClosingData
