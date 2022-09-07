@@ -989,7 +989,7 @@ object GpuCast extends Arm {
     }
   }
 
-  private def castFloatingTypeToString(input: ColumnView): ColumnVector = {
+  private[rapids] def castFloatingTypeToString(input: ColumnView): ColumnVector = {
     withResource(input.castTo(DType.STRING)) { cudfCast =>
 
       // replace "e+" with "E"
