@@ -293,6 +293,8 @@ object AlluxioUtils extends Logging {
 
     if (replaceFunc.isDefined) {
       val alluxPaths = pd.files.map { f =>
+
+        logWarning("file is: " + f.getClass())
         val replaced = replaceFunc.get(f.getPath)
        logWarning(s" path ${f.getPath} replaced is: $replaced")
           new FileStatus(

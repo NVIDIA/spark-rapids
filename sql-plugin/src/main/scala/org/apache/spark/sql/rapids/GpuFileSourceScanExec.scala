@@ -117,9 +117,11 @@ case class GpuFileSourceScanExec(
   @transient lazy val selectedPartitions: Array[PartitionDirectory] = {
     val optimizerMetadataTimeNs = relation.location.metadataOpsTimeNs.getOrElse(0L)
     val startTime = System.nanoTime()
+    logWarning("starting list files")
     val origRet =
       relation.location.listFiles(
         partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
+    logWarning("list files took : " + (System.nanoTime() - startTime))
 
     val ret = if (isAlluxioAlgoSelected) {
       relation.location match {
@@ -537,6 +539,7 @@ case class GpuFileSourceScanExec(
     val openCostInBytes = fsRelation.sparkSession.sessionState.conf.filesOpenCostInBytes
     val maxSplitBytes =
       FilePartition.maxSplitBytes(fsRelation.sparkSession, selectedPartitions)
+    val startTime = System.nanoTime()
     logInfo(s"Planning scan with bin packing, max size: $maxSplitBytes bytes, " +
       s"open cost is considered as scanning $openCostInBytes bytes.")
 
@@ -556,6 +559,8 @@ case class GpuFileSourceScanExec(
         )
       }
     }.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
+    logWarning("done getting file splits, took: " + (System.nanoTime() - startTime) +
+      " partitioned files are: " + splitFiles.mkString(","))
 
     val partitions =
       FilePartition.getFilePartitions(relation.sparkSession, splitFiles, maxSplitBytes)
