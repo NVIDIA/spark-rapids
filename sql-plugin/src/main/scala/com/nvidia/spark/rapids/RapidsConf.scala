@@ -1301,13 +1301,19 @@ object RapidsConf {
 
   val SHUFFLE_MULTITHREADED_WRITER_THREADS =
     conf("spark.rapids.shuffle.multiThreaded.writer.threads")
-      .doc("The number of threads to use for writing shuffle blocks per executor.")
+      .doc("The number of threads to use for writing shuffle blocks per executor. There " +
+          "are two special values: " +
+          "0 = feature is disabled, falls back to Spark built-in shuffle writer; " +
+          "1 = our implementation of Spark's built-in shuffle writer with extra metrics. ")
       .integerConf
       .createWithDefault(20)
 
   val SHUFFLE_MULTITHREADED_READER_THREADS =
     conf("spark.rapids.shuffle.multiThreaded.reader.threads")
-        .doc("The number of threads to use for reading shuffle blocks per executor.")
+        .doc("The number of threads to use for reading shuffle blocks per executor. There " +
+            "are two special values: " +
+            "0 = feature is disabled, falls back to Spark built-in shuffle reader; " +
+            "1 = our implementation of Spark's built-in shuffle reader with extra metrics.")
         .integerConf
         .createWithDefault(20)
 
