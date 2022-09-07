@@ -27,7 +27,6 @@ import scala.collection.mutable
 import scala.collection.mutable.{ArrayBuffer, HashMap, HashSet, Queue}
 import scala.util.{Failure, Success}
 
-import io.netty.util.internal.OutOfDirectMemoryError
 import org.roaringbitmap.RoaringBitmap
 
 import org.apache.spark.{MapOutputTracker, SparkEnv, TaskContext}
@@ -315,7 +314,9 @@ final class RapidsShuffleBlockFetcherIterator(
             // Note that catching OOM and do something based on it is only a workaround for
             // handling the Netty OOM issue, which is not the best way towards memory management.
             // We can get rid of it when we find a way to manage Netty's memory precisely.
-            case _: OutOfDirectMemoryError
+            // NOTE: using OutOfMemoryError instead of OutOfDirectMemoryError due to the later being
+            // shaded in databricks.
+            case _: OutOfMemoryError
                 if blockOOMRetryCounts.getOrElseUpdate(blockId, 0) < maxAttemptsOnNettyOOM =>
               if (!isZombie) {
                 val failureTimes = blockOOMRetryCounts(blockId)
@@ -890,7 +891,9 @@ final class RapidsShuffleBlockFetcherIterator(
 
         case FailureFetchResult(blockId, mapIndex, address, e) =>
           var errorMsg: String = null
-          if (e.isInstanceOf[OutOfDirectMemoryError]) {
+          // NOTE: using OutOfMemoryError instead of OutOfDirectMemoryError due to the later being
+          // shaded in databricks.
+          if (e.isInstanceOf[OutOfMemoryError]) {
             errorMsg = s"Block $blockId fetch failed after $maxAttemptsOnNettyOOM " +
               s"retries due to Netty OOM"
             logError(errorMsg)
