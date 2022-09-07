@@ -350,7 +350,7 @@ object AlluxioUtils extends Logging {
       genFuncForPathReplacement(replaceMapOption)
     } else if (alluxioAutoMountEnabled) {
       val hadoopConf = relation.sparkSession.sparkContext.hadoopConfiguration
-      val sparkConf = relation.sparkSession.conf)
+      val sparkConf = relation.sparkSession.sparkContext.getConf
       genFuncForAutoMountReplacement(conf, sparkConf, hadoopConf, alluxioBucketRegex)
     } else {
       None
