@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids.shims.spark331
 
-import org.apache.spark.{SparkConf, SparkEnv}
+import org.apache.spark.SparkConf
 import org.apache.spark.shuffle._
 import org.apache.spark.sql.rapids.{ProxyRapidsShuffleInternalManagerBase, RapidsShuffleInternalManagerBase}
 
