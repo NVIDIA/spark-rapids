@@ -66,11 +66,6 @@ class RapidsShuffleThreadedReaderSuite
     RapidsShuffleInternalManagerBase.stopThreadPool()
   }
 
-  override def beforeAll(): Unit = {
-    // stop any active contexts before we go an fiddle with them
-    SparkContext.getActive.foreach(_.stop())
-  }
-
   /**
    * This test makes sure that, when data is read from a HashShuffleReader, the underlying
    * ManagedBuffers that contain the data are eventually released.
