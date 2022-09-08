@@ -36,28 +36,15 @@ mvn_verify() {
     BASE_REF=$(git --no-pager log --oneline -1 | awk '{ print $NF }')
     # file size check for pull request. The size of a committed file should be less than 1.5MiB
     pre-commit run check-added-large-files --from-ref $BASE_REF --to-ref HEAD
-
-    # Get Spark shim versions
-    . $(dirname "$0")/common.sh
-    # snapshots + noSnapshots
-    get_spark_shim_versions -Psnapshots
-    SPARK_SHIM_VERSIONS_ALL=("${SPARK_SHIM_VERSIONS[@]}")
-    # noSnapshots only
-    get_spark_shim_versions -PnoSnapshots
-    SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS[@]}")
-
-    # build and run unit tests on one 3.1.X version (base version covers this), one 3.2.X and one 3.3.X version
-    SPARK_SHIM_VERSIONS_TEST=($(for version in ${SPARK_SHIM_VERSIONS_ALL[@]}; do [[ $version != 31* ]] && echo $version; done | sort -n -k1.1,1.2 -u -s))
-
     # build the Spark 2.x explain jar
     env -u SPARK_HOME $MVN_CMD -B $MVN_URM_MIRROR -Dbuildver=24X clean install -DskipTests
 
     MVN_INSTALL_CMD="env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR clean install $MVN_BUILD_ARGS -DskipTests -pl aggregator -am"
-    # All others shims test should be covered in nightly pipelines
+
     for version in "${SPARK_SHIM_VERSIONS_ALL[@]}"
     do
         echo "Spark version: $version"
-        # build and run unit test
+        # build and run unit tests on one 3.1.X version, one 3.2.X and one 3.3.X version
         if [[ "${SPARK_SHIM_VERSIONS_TEST[@]}" =~ "$version" ]]; then
             env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS \
               -Dpytest.TEST_TAGS='' -pl '!tools'
@@ -69,6 +56,7 @@ mvn_verify() {
             $MVN_INSTALL_CMD -Dbuildver=$version
         fi
     done
+    
     # enable UTF-8 for regular expression tests
     env -u SPARK_HOME LC_ALL="en_US.UTF-8" $MVN_CMD $MVN_URM_MIRROR -Dbuildver=320 test $MVN_BUILD_ARGS \
       -Dpytest.TEST_TAGS='' -pl '!tools' \

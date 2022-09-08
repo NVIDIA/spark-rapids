@@ -60,8 +60,9 @@ SPARK_REPO=${SPARK_REPO:-"$URM_URL"}
 echo "CUDF_VER: $CUDF_VER, CUDA_CLASSIFIER: $CUDA_CLASSIFIER, PROJECT_VER: $PROJECT_VER \
     SPARK_VER: $SPARK_VER, SCALA_BINARY_VER: $SCALA_BINARY_VER"
 
+# Spark shim versions
+. $(dirname "$0")/common.sh
 case $PHASE_TYPE in
-
     pre-release)
         PROFILE_OPT="-Psnapshots" 
         ;;
@@ -70,7 +71,14 @@ case $PHASE_TYPE in
         PROFILE_OPT="-PnoSnapshots" 
         ;;
 esac
-
-. $(dirname "$0")/common.sh
+# base version
 get_spark_shim_versions $PROFILE_OPT
 SPARK_BASE_SHIM_VERSION=${SPARK_SHIM_VERSIONS[0]}
+# snapshots + noSnapshots
+get_spark_shim_versions -Psnapshots
+SPARK_SHIM_VERSIONS_ALL=("${SPARK_SHIM_VERSIONS[@]}")
+# noSnapshots only
+get_spark_shim_versions -PnoSnapshots
+SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS[@]}")
+# build and run unit tests on one 3.1.X version (base version covers this), one 3.2.X and one 3.3.X version
+SPARK_SHIM_VERSIONS_TEST=($(for version in ${SPARK_SHIM_VERSIONS_ALL[@]}; do [[ $version != ${SPARK_BASE_SHIM_VERSION: 0: 2}* ]] && echo $version; done | sort -n -k1.1,1.2 -u -s))
