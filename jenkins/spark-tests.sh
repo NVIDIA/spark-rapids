@@ -219,8 +219,7 @@ run_avro_tests() {
   # Workaround to avoid appending avro jar file by '--jars'
   rm -vf $LOCAL_JAR_PATH/spark-avro*.jar
 
-  SPARK_SUBMIT_FLAGS="$BASE_SPARK_SUBMIT_ARGS $SEQ_CONF" \
-    ./run_pyspark_from_build.sh -k avro
+  ./run_pyspark_from_build.sh -k avro
 }
 
 run_test_not_parallel() {
