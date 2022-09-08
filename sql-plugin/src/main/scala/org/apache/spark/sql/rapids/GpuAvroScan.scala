@@ -714,7 +714,6 @@ class GpuMultiFileCloudAvroPartitionReader(
      *     - post processing
      */
     private def doRead(): HostMemoryBuffersWithMetaDataBase = {
-      // avro does not filter and then buffer, it just buffers
       val bufferStartTime = System.nanoTime()
       val startingBytesRead = fileSystemBytesRead()
       var result: HostMemoryBuffersWithMetaDataBase = null
@@ -824,6 +823,7 @@ class GpuMultiFileCloudAvroPartitionReader(
         }
       } // end of withResource(reader)
       val bufferTime = System.nanoTime() - bufferStartTime
+      // multi-file avro scanner does not filter and then buffer, it just buffers
       result.setMetrics(0, bufferTime)
       result
     } // end of doRead
