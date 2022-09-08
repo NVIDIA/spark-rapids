@@ -367,25 +367,30 @@ This section will give some links about how to configure, tune Alluxio and some 
 - [Alluxio troubleshooting](https://docs.alluxio.io/os/user/stable/en/operation/Troubleshooting.html)
 
 ## Alluxio reliability
-### Auto start Alluxio master and workers  
-It's better to add the following crontab jobs to avoid unexpected closes on Alluxio master or workers.  
-Add a crontab job on the Alluxio maser node to automatically start Alluxio maser:  
+The properties mentioned in this section can be found in [Alluxio configuration](https://docs.alluxio.io/os/user/stable/en/reference/Properties-List.html)
+### Auto start Alluxio master and workers
+After installed Alluxio master and workers, use this [script](../../scripts/alluxio/alluxio-systemd.sh) to create systemd services and start master and workers.
+Commands are:
+```bash
+# create systemd service for master and start master on master node
+sudo sh -c 'ALLUXIO_HOME=/opt/alluxio-2.8.0 RUN_USER=ubuntu ./alluxio-systemd.sh master'
 
-    ```bash
-    # try to start Alluxio master every minute
-    crontab -e
-    * * * * * ${ALLUXIO_HOME}/bin/alluxio-start.sh -N master > /tmp/cron-master.log 2>&1
-    ```
+# create systemd service for worker and start worker on worker node
+sudo sh -c 'ALLUXIO_HOME=/opt/alluxio-2.8.0 RUN_USER=ubuntu ./alluxio-systemd.sh worker'
+```
+Please specify ALLUXIO_HOME and RUN_USER properties if you have different properties.
 
-Add a crontab job on the Alluxio worker node to automatically start Alluxio worker
-
-    ```bash
-    # try to start Alluxio worker every minute
-    crontab -e
-    * * * * * ${ALLUXIO_HOME}/bin/alluxio-start.sh -N worker > /tmp/cron-worker.log 2>&1
-    ```
-
-The `-N` in above commands means do not try to kill previous running processes before starting new ones. 
+Now, the master and workers can be automatically started if the host rebooted or the processes of master and workers are unexpected killed.
+If you want to stop the services, please do not use `kill`, use:
+```bash
+sudo systemctl stop alluxio-master.service
+sudo systemctl stop alluxio-worker.service
+```
+If you want to restart the services, please use:
+```bash
+sudo systemctl restart alluxio-master.service
+sudo systemctl restart alluxio-worker.service
+```
 
 ### Auto fallback to external file system transparently if Alluxio workers have failures
 `alluxio.user.client.cache.timeout.duration` means:  
