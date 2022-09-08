@@ -362,28 +362,28 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   }
 
   testCastFailsForBadInputs("ansi_cast string to byte (invalid values)", shortsAsStrings,
-    sparkConf) {
+    sparkConf, msg = GpuCast.INVALID_ROW_VALUE_MSG) {
     frame => testCastTo(DataTypes.ByteType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast string to short (invalid values)", intsAsStrings,
-    sparkConf) {
+    sparkConf, msg = GpuCast.INVALID_ROW_VALUE_MSG) {
     frame => testCastTo(DataTypes.ShortType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast string to long (invalid decimal values)",
     longsAsDecimalStrings,
-    sparkConf) {
+    sparkConf, msg = GpuCast.INVALID_ROW_VALUE_MSG) {
     frame => testCastTo(DataTypes.LongType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast string to int (invalid values)", longsAsStrings,
-    sparkConf) {
+    sparkConf, msg = GpuCast.INVALID_ROW_VALUE_MSG) {
     frame => testCastTo(DataTypes.IntegerType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast string to int (non-numeric values)", testStrings,
-    sparkConf) {
+    sparkConf, msg = GpuCast.INVALID_ROW_VALUE_MSG) {
     frame => testCastTo(DataTypes.IntegerType)(frame)
   }
 
