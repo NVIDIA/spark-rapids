@@ -27,7 +27,6 @@ spark.rapids.memory.pinnedPool.size=2G
 spark.executor.memoryOverhead=2G
 spark.plugins=com.nvidia.spark.SQLPlugin
 spark.executor.extraJavaOptions='-Dai.rapids.cudf.prefer-pinned=true'
-spark.locality.wait=0s
 spark.executor.resource.gpu.discoveryScript=/usr/lib/spark/scripts/gpu/getGpusResources.sh # this match the location of discovery script
 spark.sql.files.maxPartitionBytes=512m
 ```

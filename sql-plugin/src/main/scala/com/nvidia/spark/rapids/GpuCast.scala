@@ -169,8 +169,9 @@ object GpuCast extends Arm {
   private val TIMESTAMP_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{1,2}[ ]?\\Z"
   private val TIMESTAMP_REGEX_YYYY = "\\A\\d{4}[ ]?\\Z"
   private val TIMESTAMP_REGEX_FULL =
-    "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}[ T]?(\\d{1,2}:\\d{1,2}:\\d{1,2}\\.\\d{6}Z)\\Z"
-  private val TIMESTAMP_REGEX_NO_DATE = "\\A[T]?(\\d{1,2}:\\d{1,2}:\\d{1,2}\\.\\d{6}Z)\\Z"
+    "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}[ T]?(\\d{1,2}:\\d{1,2}:([0-5]\\d|\\d)(\\.\\d{0,6})?Z?)\\Z"
+  private val TIMESTAMP_REGEX_NO_DATE =
+    "\\A[T]?(\\d{1,2}:\\d{1,2}:([0-5]\\d|\\d)(\\.\\d{0,6})?Z?)\\Z"
 
   private val BIG_DECIMAL_LONG_MIN = BigDecimal(Long.MinValue)
   private val BIG_DECIMAL_LONG_MAX = BigDecimal(Long.MaxValue)
@@ -988,7 +989,7 @@ object GpuCast extends Arm {
     }
   }
 
-  private def castFloatingTypeToString(input: ColumnView): ColumnVector = {
+  private[rapids] def castFloatingTypeToString(input: ColumnView): ColumnVector = {
     withResource(input.castTo(DType.STRING)) { cudfCast =>
 
       // replace "e+" with "E"
@@ -1314,13 +1315,23 @@ object GpuCast extends Arm {
 
     val cudfFormat1 = "%Y-%m-%d %H:%M:%S.%f"
     val cudfFormat2 = "%Y-%m-%dT%H:%M:%S.%f"
+    val cudfFormat3 = "%Y-%m-%d %H:%M:%S"
+    val cudfFormat4 = "%Y-%m-%dT%H:%M:%S"
 
     withResource(orElse) { orElse =>
 
       // valid dates must match the regex and either of the cuDF formats
       val isCudfMatch = withResource(input.isTimestamp(cudfFormat1)) { isTimestamp1 =>
         withResource(input.isTimestamp(cudfFormat2)) { isTimestamp2 =>
-          isTimestamp1.or(isTimestamp2)
+          withResource(input.isTimestamp(cudfFormat3)) { isTimestamp3 =>
+            withResource(input.isTimestamp(cudfFormat4)) { isTimestamp4 =>
+              withResource(isTimestamp1.or(isTimestamp2)) { isTimestamp12 =>
+                withResource(isTimestamp12.or(isTimestamp3)) { isTimestamp123 =>
+                  isTimestamp123.or(isTimestamp4)
+                }
+              }
+            }
+          }
         }
       }
 

@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, Expression, Predicate}
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.{DataType, DoubleType, FloatType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuNvl extends Arm {
@@ -138,6 +138,26 @@ case class GpuIsNan(child: Expression) extends GpuUnaryExpression with Predicate
 
   override def doColumnar(input: GpuColumnVector): ColumnVector =
     input.getBase.isNan
+}
+
+/*
+ * Replace all `Nan`s in child to `null`s.
+ * The data type of child can only be FloatType or DoubleType.
+ *
+ * This class is used in `GpuFloatMin`.
+ */
+case class GpuNansToNulls(child: Expression) extends GpuUnaryExpression{
+
+  override def dataType: DataType = child.dataType match {
+    case FloatType => FloatType
+    case DoubleType => DoubleType
+    case t => throw new IllegalStateException(s"child type $t is not FloatType or DoubleType")
+  }
+
+  override protected def doColumnar(input: GpuColumnVector): ColumnVector =
+    input.getBase.nansToNulls
+
+  override def nullable = true
 }
 
 /**
