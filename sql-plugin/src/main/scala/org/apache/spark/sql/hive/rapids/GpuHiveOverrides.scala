@@ -16,12 +16,13 @@
 
 package org.apache.spark.sql.hive.rapids
 
-import com.nvidia.spark.rapids.{ExprRule, ShimLoader}
+import com.nvidia.spark.rapids.{DataWritingCommandRule, ExprRule, HiveProvider, ShimLoader}
 
 import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.execution.command.DataWritingCommand
 
 object GpuHiveOverrides {
-  def isSparkHiveAvailable: Boolean = {
+  val isSparkHiveAvailable: Boolean = {
     try {
       ShimLoader.loadClass("org.apache.spark.sql.hive.HiveSessionStateBuilder")
       ShimLoader.loadClass("org.apache.hadoop.hive.conf.HiveConf")
@@ -31,15 +32,29 @@ object GpuHiveOverrides {
     }
   }
 
-  /**
-   * Builds the rules that are specific to spark-hive Catalyst nodes. This will return an empty
-   * mapping if spark-hive is unavailable.
-   */
-  def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+  private lazy val hiveProvider: HiveProvider = {
     if (isSparkHiveAvailable) {
-      ShimLoader.newHiveProvider().getExprs
+      ShimLoader.newHiveProvider()
     } else {
-      Map.empty
+      new HiveProvider() {
+        override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
+            DataWritingCommandRule[_ <: DataWritingCommand]] = Map.empty
+        override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map.empty
+      }
     }
   }
+
+
+  /**
+   * Builds the data writing command rules that are specific to spark-hive Catalyst nodes.
+   * This will return an empty mapping if spark-hive is unavailable
+   */
+  def dataWriteCmds: Map[Class[_ <: DataWritingCommand],
+      DataWritingCommandRule[_ <: DataWritingCommand]] = hiveProvider.getDataWriteCmds
+
+  /**
+   * Builds the expression rules that are specific to spark-hive Catalyst nodes
+   * This will return an empty mapping if spark-hive is unavailable.
+   */
+  def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = hiveProvider.getExprs
 }

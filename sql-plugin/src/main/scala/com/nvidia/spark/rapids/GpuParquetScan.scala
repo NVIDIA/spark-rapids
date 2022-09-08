@@ -988,7 +988,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       readDataSchema: StructType): BlockMetaWithPartFile = {
     try {
       val meta = filterHandler.filterBlocks(footerReadType, file, conf, filters,
-        readDataSchema, metrics)
+        readDataSchema)
       BlockMetaWithPartFile(meta, file)
     } catch {
       case e: FileNotFoundException if ignoreMissingFiles =>
@@ -1041,8 +1041,19 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       conf: Configuration): PartitionReader[ColumnarBatch] = {
     val clippedBlocks = ArrayBuffer[ParquetSingleDataBlockMeta]()
     val startTime = System.nanoTime()
-
-    def addBlockMeta(metaAndFile: BlockMetaWithPartFile): Unit = {
+    val metaAndFilesArr = if (numFilesFilterParallel > 0) {
+      val tc = TaskContext.get()
+      val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
+      files.grouped(numFilesFilterParallel).map { fileGroup =>
+        threadPool.submit(
+          new CoalescingFilterRunner(footerReadType, tc, fileGroup, conf, filters, readDataSchema))
+      }.toArray.flatMap(_.get())
+    } else {
+      files.map { file =>
+        filterBlocksForCoalescingReader(footerReadType, file, conf, filters, readDataSchema)
+      }
+    }
+    metaAndFilesArr.foreach { metaAndFile =>
       val singleFileInfo = metaAndFile.meta
       clippedBlocks ++= singleFileInfo.blocks.map(block =>
         ParquetSingleDataBlockMeta(
@@ -1055,32 +1066,12 @@ case class GpuParquetMultiFilePartitionReaderFactory(
             singleFileInfo.isCorrectedInt96RebaseMode,
             singleFileInfo.hasInt96Timestamps)))
     }
-
-    if (numFilesFilterParallel > 0) {
-      val tc = TaskContext.get()
-      val tasks = new java.util.ArrayList[Future[Array[BlockMetaWithPartFile]]]()
-      logDebug("Using parallel threads to do the filter with the Coalescing reader, " +
-        s"$numFilesFilterParallel files per thread")
-      files.sliding(numFilesFilterParallel, numFilesFilterParallel).foreach { fileGroup =>
-        val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
-        tasks.add(threadPool.submit(
-          new CoalescingFilterRunner(footerReadType, tc, fileGroup, conf, filters, readDataSchema)))
-      }
-      for (future <- tasks.asScala) {
-        val fileBlockMetaArray = future.get()
-        fileBlockMetaArray.foreach { metaAndFile =>
-          addBlockMeta(metaAndFile)
-        }
-      }
-    } else {
-      files.map { file =>
-        val metaAndFile = filterBlocksForCoalescingReader(footerReadType, file, conf,
-          filters, readDataSchema)
-        addBlockMeta(metaAndFile)
-      }
+    val filterTime = System.nanoTime() - startTime
+    metrics.get(FILTER_TIME).foreach {
+      _ += filterTime
     }
     metrics.get("scanTime").foreach {
-      _ += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime)
+      _ += TimeUnit.NANOSECONDS.toMillis(filterTime)
     }
     new MultiFileParquetPartitionReader(conf, files, clippedBlocks, isCaseSensitive,
       debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes, metrics,
@@ -1134,8 +1125,13 @@ case class GpuParquetPartitionReaderFactory(
   private def buildBaseColumnarParquetReader(
       file: PartitionedFile): PartitionReader[ColumnarBatch] = {
     val conf = broadcastedConf.value.value
+    val startTime = System.nanoTime()
     val singleFileInfo = filterHandler.filterBlocks(footerReadType, file, conf, filters,
       readDataSchema, metrics)
+      readDataSchema)
+    metrics.get(FILTER_TIME).foreach {
+      _ += (System.nanoTime() - startTime)
+    }
     new ParquetPartitionReader(conf, file, singleFileInfo.filePath, singleFileInfo.blocks,
       singleFileInfo.schema, isCaseSensitive, readDataSchema,
       debugDumpPrefix, maxReadBatchSizeRows,

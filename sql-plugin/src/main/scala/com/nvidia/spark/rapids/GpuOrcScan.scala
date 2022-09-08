@@ -50,7 +50,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
+import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, DateTimeConstants}
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{PartitionedFile, PartitioningAwareFileIndex}
@@ -122,6 +122,7 @@ case class GpuOrcScan(
 }
 
 object GpuOrcScan extends Arm {
+
   def tagSupport(scanMeta: ScanMeta[OrcScan]): Unit = {
     val scan = scanMeta.wrapped
     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
@@ -187,6 +188,78 @@ object GpuOrcScan extends Arm {
   }
 
   /**
+   * Get the overflow flags in booleans.
+   * true means no overflow, while false means getting overflow.
+   *
+   * @param doubleMillis the input double column
+   * @param millis the long column casted from the doubleMillis
+   */
+  private def getOverflowFlags(doubleMillis: ColumnView, millis: ColumnView): ColumnView = {
+    // No overflow when
+    //     doubleMillis <= Long.MAX_VALUE &&
+    //     doubleMillis >= Long.MIN_VALUE &&
+    //     ((millis >= 0) == (doubleMillis >= 0))
+    val rangeCheck = withResource(Scalar.fromLong(Long.MaxValue)) { max =>
+      withResource(doubleMillis.lessOrEqualTo(max)) { upperCheck =>
+        withResource(Scalar.fromLong(Long.MinValue)) { min =>
+          withResource(doubleMillis.greaterOrEqualTo(min)) { lowerCheck =>
+            upperCheck.and(lowerCheck)
+          }
+        }
+      }
+    }
+    withResource(rangeCheck) { _ =>
+      val signCheck = withResource(Scalar.fromInt(0)) { zero =>
+        withResource(millis.greaterOrEqualTo(zero)) { longSign =>
+          withResource(doubleMillis.greaterOrEqualTo(zero)) { doubleSign =>
+            longSign.equalTo(doubleSign)
+          }
+        }
+      }
+      withResource(signCheck) { _ =>
+        rangeCheck.and(signCheck)
+      }
+    }
+  }
+
+  /**
+   * Borrowed from ORC "ConvertTreeReaderFactory"
+   * Scala does not support such numeric literal, so parse from string.
+   */
+  private val MIN_LONG_AS_DOUBLE = java.lang.Double.valueOf("-0x1p63")
+
+  /**
+   * We cannot store Long.MAX_VALUE as a double without losing precision. Instead, we store
+   * Long.MAX_VALUE + 1 == -Long.MIN_VALUE, and then offset all comparisons by 1.
+   */
+  private val MAX_LONG_AS_DOUBLE_PLUS_ONE = java.lang.Double.valueOf("0x1p63")
+
+  /**
+   * Return a boolean column indicates whether the rows in col can fix in a long.
+   * It assumes the input type is float or double.
+   */
+  private def doubleCanFitInLong(col: ColumnView): ColumnVector = {
+    // It is true when
+    //   (MIN_LONG_AS_DOUBLE - doubleValue < 1.0) &&
+    //   (doubleValue < MAX_LONG_AS_DOUBLE_PLUS_ONE)
+    val lowRet = withResource(Scalar.fromDouble(MIN_LONG_AS_DOUBLE)) { sMin =>
+      withResource(Scalar.fromDouble(1.0)) { sOne =>
+        withResource(sMin.sub(col)) { diff =>
+          diff.lessThan(sOne)
+        }
+      }
+    }
+    withResource(lowRet) { _ =>
+      withResource(Scalar.fromDouble(MAX_LONG_AS_DOUBLE_PLUS_ONE)) { sMax =>
+        withResource(col.lessThan(sMax)) { highRet =>
+          lowRet.and(highRet)
+        }
+      }
+    }
+  }
+
+
+  /**
    * Cast the column to the target type for ORC schema evolution.
    * It is designed to support all the cases that `canCast` returns true.
    * Both of the column type and target type should be primitive.
@@ -233,6 +306,79 @@ object GpuOrcScan extends Arm {
       DType.TIMESTAMP_MICROSECONDS) =>
         OrcCastingShims.castIntegerToTimestamp(col, fromDt)
 
+      // float to bool/integral
+      case (DType.FLOAT32 | DType.FLOAT64, DType.BOOL8 | DType.INT8 | DType.INT16 | DType.INT32
+                                           | DType.INT64) =>
+        // Follow the CPU ORC conversion:
+        //   First replace rows that cannot fit in long with nulls,
+        //   next convert to long,
+        //   then down cast long to the target integral type.
+        val longDoubles = withResource(doubleCanFitInLong(col)) { fitLongs =>
+          col.copyWithBooleanColumnAsValidity(fitLongs)
+        }
+        withResource(longDoubles) { _ =>
+          withResource(longDoubles.castTo(DType.INT64)) { longs =>
+            toDt match {
+              case DType.BOOL8 => longs.castTo(toDt)
+              case DType.INT64 => longs.incRefCount()
+              case _ => downCastAnyInteger(longs, toDt)
+            }
+          }
+        }
+
+      // float/double to double/float
+      case (DType.FLOAT32 | DType.FLOAT64, DType.FLOAT32 | DType.FLOAT64) =>
+        col.castTo(toDt)
+
+      // float/double to string
+      // cuDF keep 9 decimal numbers after the decimal point, and CPU keeps more than 10.
+      // So when casting float/double to string, the result of GPU is different from CPU.
+      // We let a conf 'spark.rapids.sql.format.orc.floatTypesToString.enable' to control it's
+      // enable or not.
+      case (DType.FLOAT32 | DType.FLOAT64, DType.STRING) =>
+        GpuCast.castFloatingTypeToString(col)
+
+      // float/double -> timestamp
+      case (DType.FLOAT32 | DType.FLOAT64, DType.TIMESTAMP_MICROSECONDS) =>
+        // Follow the CPU ORC conversion.
+        //     val doubleMillis = doubleValue * 1000,
+        //     val milliseconds = Math.round(doubleMillis)
+        //     if (noOverflow) { milliseconds } else { null }
+        val milliseconds = withResource(Scalar.fromDouble(DateTimeConstants.MILLIS_PER_SECOND)) {
+          thousand =>
+          // ORC assumes value is in seconds
+          withResource(col.mul(thousand, DType.FLOAT64)) { doubleMillis =>
+            withResource(doubleMillis.round()) { millis =>
+              withResource(getOverflowFlags(doubleMillis, millis)) { overflowFlags =>
+                millis.copyWithBooleanColumnAsValidity(overflowFlags)
+              }
+            }
+          }
+        }
+        // Cast milli-seconds to micro-seconds
+        // We need to pay attention that when convert (milliSeconds * 1000) to INT64, there may be
+        // INT64-overflow.
+        // In this step, ORC casting of CPU throw an exception rather than replace such values with
+        // null. We followed the CPU code here.
+        withResource(milliseconds) { _ =>
+          // Test whether if there is long-overflow
+          // If milliSeconds.max() * 1000 > LONG_MAX, then 'Math.multiplyExact' will
+          // throw an exception (as CPU code does).
+          withResource(milliseconds.max()) { maxValue =>
+            if (maxValue.isValid) {
+              testLongMultiplicationOverflow(maxValue.getDouble.toLong,
+                DateTimeConstants.MICROS_PER_MILLIS)
+            }
+          }
+          withResource(Scalar.fromDouble(DateTimeConstants.MICROS_PER_MILLIS)) { thousand =>
+            withResource(milliseconds.mul(thousand)) { microseconds =>
+                withResource(microseconds.castTo(DType.INT64)) { longVec =>
+                  longVec.castTo(DType.TIMESTAMP_MICROSECONDS)
+                }
+            }
+          }
+        }
+
       // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
       case (f, t) =>
         throw new QueryExecutionException(s"Unsupported type casting: $f -> $t")
@@ -246,7 +392,8 @@ object GpuOrcScan extends Arm {
    * but the ones between GPU supported types.
    * Each supported casting is implemented in "castColumnTo".
    */
-  def canCast(from: TypeDescription, to: TypeDescription): Boolean = {
+  def canCast(from: TypeDescription, to: TypeDescription,
+              isOrcFloatTypesToStringEnable: Boolean): Boolean = {
     import org.apache.orc.TypeDescription.Category._
     if (!to.getCategory.isPrimitive || !from.getCategory.isPrimitive) {
       // Don't convert from any to complex, or from complex to any.
@@ -268,7 +415,16 @@ object GpuOrcScan extends Arm {
         }
       case VARCHAR =>
         toType == STRING
-      case _ => false
+
+      case FLOAT | DOUBLE =>
+        toType match {
+          case BOOLEAN | BYTE | SHORT | INT | LONG | FLOAT | DOUBLE | TIMESTAMP => true
+          case STRING => isOrcFloatTypesToStringEnable
+          case _ => false
+        }
+      // TODO more types, tracked in https://github.com/NVIDIA/spark-rapids/issues/5895
+      case _ =>
+        false
     }
   }
 
@@ -279,6 +435,59 @@ object GpuOrcScan extends Arm {
    */
   def testLongMultiplicationOverflow(a: Long, b: Long) = {
     Math.multiplyExact(a, b)
+  }
+
+
+  /**
+   * Convert the integer vector into timestamp(microseconds) vector.
+   * @param col The integer columnar vector.
+   * @param colType Specific integer type, it should be BOOL/INT8/INT16/INT32/INT64.
+   * @param timeUnit It should be one of {DType.TIMESTAMP_SECONDS, DType.TIMESTAMP_MILLISECONDS}.
+   *                 If timeUnit == SECONDS, then we consider the integers as seconds.
+   *                 If timeUnit == MILLISECONDS, then we consider the integers as milliseconds.
+   *                 This parameter is determined by the shims.
+   * @return A timestamp vector.
+   */
+  def castIntegersToTimestamp(col: ColumnView, colType: DType,
+                              timeUnit: DType): ColumnVector = {
+    assert(colType == DType.BOOL8 || colType == DType.INT8 || colType == DType.INT16
+      || colType == DType.INT32 || colType == DType.INT64)
+    assert(timeUnit == DType.TIMESTAMP_SECONDS || timeUnit == DType.TIMESTAMP_MILLISECONDS)
+
+    colType match {
+      case DType.BOOL8 | DType.INT8 | DType.INT16 | DType.INT32 =>
+        // cuDF requires casting to Long first, then we can cast Long to Timestamp(in microseconds)
+        withResource(col.castTo(DType.INT64)) { longs =>
+          // bitCastTo will re-interpret the long values as 'timeUnit', and it will zero-copy cast
+          // between types with the same underlying length.
+          withResource(longs.bitCastTo(timeUnit)) { timeView =>
+            timeView.castTo(DType.TIMESTAMP_MICROSECONDS)
+          }
+        }
+      case DType.INT64 =>
+        // In CPU code of ORC casting, if the integers are consider as seconds, then the conversion
+        // is 'integer -> milliseconds -> microseconds', and it checks the long-overflow when
+        // casting 'milliseconds -> microseconds', here we follow it.
+        val milliseconds = withResource(col.bitCastTo(timeUnit)) { timeView =>
+          timeView.castTo(DType.TIMESTAMP_MILLISECONDS)
+        }
+        withResource(milliseconds) { _ =>
+          // Check long-multiplication overflow
+          withResource(milliseconds.max()) { maxValue =>
+            // If the elements in 'milliseconds' are all nulls, then 'maxValue' and 'minValue' will
+            // be null. We should check their validity.
+            if (maxValue.isValid) {
+              testLongMultiplicationOverflow(maxValue.getLong, DateTimeConstants.MICROS_PER_MILLIS)
+            }
+          }
+          withResource(milliseconds.min()) { minValue =>
+            if (minValue.isValid) {
+              testLongMultiplicationOverflow(minValue.getLong, DateTimeConstants.MICROS_PER_MILLIS)
+            }
+          }
+          milliseconds.castTo(DType.TIMESTAMP_MICROSECONDS)
+        }
+    }
   }
 }
 
@@ -313,7 +522,8 @@ case class GpuOrcMultiFilePartitionReaderFactory(
   private val debugDumpPrefix = Option(rapidsConf.orcDebugDumpPrefix)
   private val numThreads = rapidsConf.multiThreadReadNumThreads
   private val maxNumFileProcessed = rapidsConf.maxNumOrcFilesParallel
-  private val filterHandler = GpuOrcFileFilterHandler(sqlConf, broadcastedConf, filters)
+  private val filterHandler = GpuOrcFileFilterHandler(sqlConf, broadcastedConf, filters,
+    rapidsConf.isOrcFloatTypesToStringEnable)
   private val ignoreMissingFiles = sqlConf.ignoreMissingFiles
   private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
 
@@ -352,7 +562,7 @@ case class GpuOrcMultiFilePartitionReaderFactory(
     // we must split the different compress files into different ColumnarBatch.
     // So here try the best to group the same compression files together before hand.
     val compressionAndStripes = LinkedHashMap[CompressionKind, ArrayBuffer[OrcSingleStripeMeta]]()
-    val currentTime = System.nanoTime()
+    val startTime = System.nanoTime()
     files.map { file =>
       val orcPartitionReaderContext = filterHandler.filterStripes(file, dataSchema,
         readDataSchema, partitionSchema)
@@ -367,8 +577,12 @@ case class GpuOrcMultiFilePartitionReaderFactory(
             readDataSchema,
             OrcExtraInfo(orcPartitionReaderContext.requestedMapping)))
     }
+    val filterTime = System.nanoTime() - startTime
+    metrics.get(FILTER_TIME).foreach {
+      _ += filterTime
+    }
     metrics.get("scanTime").foreach {
-      _ += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - currentTime)
+      _ += TimeUnit.NANOSECONDS.toMillis(filterTime)
     }
     val clippedStripes = compressionAndStripes.values.flatten.toSeq
     new MultiFileOrcPartitionReader(conf, files, clippedStripes, readDataSchema, debugDumpPrefix,
@@ -401,7 +615,8 @@ case class GpuOrcPartitionReaderFactory(
   private val debugDumpPrefix = Option(rapidsConf.orcDebugDumpPrefix)
   private val maxReadBatchSizeRows: Integer = rapidsConf.maxReadBatchSizeRows
   private val maxReadBatchSizeBytes: Long = rapidsConf.maxReadBatchSizeBytes
-  private val filterHandler = GpuOrcFileFilterHandler(sqlConf, broadcastedConf, pushedFilters)
+  private val filterHandler = GpuOrcFileFilterHandler(sqlConf, broadcastedConf, pushedFilters,
+    rapidsConf.isOrcFloatTypesToStringEnable)
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
@@ -410,8 +625,12 @@ case class GpuOrcPartitionReaderFactory(
   }
 
   override def buildColumnarReader(partFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
+    val startTime = System.nanoTime()
     val ctx = filterHandler.filterStripes(partFile, dataSchema, readDataSchema,
       partitionSchema)
+    metrics.get(FILTER_TIME).foreach {
+      _ += (System.nanoTime() - startTime)
+    }
     if (ctx == null) {
       new EmptyPartitionReader[ColumnarBatch]
     } else {
@@ -932,7 +1151,8 @@ private object OrcTools extends Arm {
 private case class GpuOrcFileFilterHandler(
     @transient sqlConf: SQLConf,
     broadcastedConf: Broadcast[SerializableConfiguration],
-    pushedFilters: Array[Filter]) extends Arm {
+    pushedFilters: Array[Filter],
+    isOrcFloatTypesToStringEnable: Boolean) extends Arm {
 
   private[rapids] val isCaseSensitive = sqlConf.caseSensitiveAnalysis
 
@@ -1027,7 +1247,7 @@ private case class GpuOrcFileFilterHandler(
       val isCaseSensitive = readerOpts.getIsSchemaEvolutionCaseAware
 
       val (updatedReadSchema, fileIncluded) = checkSchemaCompatibility(orcReader.getSchema,
-        readerOpts.getSchema, isCaseSensitive)
+        readerOpts.getSchema, isCaseSensitive, isOrcFloatTypesToStringEnable)
       // GPU has its own read schema, so unset the reader include to read all the columns
       // specified by its read schema.
       readerOpts.include(null)
@@ -1207,11 +1427,13 @@ private case class GpuOrcFileFilterHandler(
     private def checkSchemaCompatibility(
         fileSchema: TypeDescription,
         readSchema: TypeDescription,
-        isCaseAware: Boolean): (TypeDescription, Array[Boolean]) = {
+        isCaseAware: Boolean,
+        isOrcFloatTypesToStringEnable: Boolean): (TypeDescription, Array[Boolean]) = {
       // all default to false
       val fileIncluded = new Array[Boolean](fileSchema.getMaximumId + 1)
       val isForcePos = OrcShims.forcePositionalEvolution(conf)
-      (checkTypeCompatibility(fileSchema, readSchema, isCaseAware, fileIncluded, isForcePos),
+      (checkTypeCompatibility(fileSchema, readSchema, isCaseAware, fileIncluded, isForcePos,
+        isOrcFloatTypesToStringEnable),
         fileIncluded)
     }
 
@@ -1225,7 +1447,8 @@ private case class GpuOrcFileFilterHandler(
         readType: TypeDescription,
         isCaseAware: Boolean,
         fileIncluded: Array[Boolean],
-        isForcePos: Boolean): TypeDescription = {
+        isForcePos: Boolean,
+        isOrcFloatTypesToStringEnable: Boolean): TypeDescription = {
       (fileType.getCategory, readType.getCategory) match {
         case (TypeDescription.Category.STRUCT, TypeDescription.Category.STRUCT) =>
           // Check for the top or nested struct types.
@@ -1253,7 +1476,7 @@ private case class GpuOrcFileFilterHandler(
             .zipWithIndex.foreach { case ((fileFieldName, fType), idx) =>
             getReadFieldType(fileFieldName, idx).foreach { case (rField, rType) =>
               val newChild = checkTypeCompatibility(fType, rType,
-                isCaseAware, fileIncluded, isForcePos)
+                isCaseAware, fileIncluded, isForcePos, isOrcFloatTypesToStringEnable)
               prunedReadSchema.addField(rField, newChild)
             }
           }
@@ -1263,19 +1486,22 @@ private case class GpuOrcFileFilterHandler(
         // for struct children.
         case (TypeDescription.Category.LIST, TypeDescription.Category.LIST) =>
           val newChild = checkTypeCompatibility(fileType.getChildren.get(0),
-            readType.getChildren.get(0), isCaseAware, fileIncluded, isForcePos)
+            readType.getChildren.get(0), isCaseAware, fileIncluded, isForcePos,
+            isOrcFloatTypesToStringEnable)
           fileIncluded(fileType.getId) = true
           TypeDescription.createList(newChild)
         case (TypeDescription.Category.MAP, TypeDescription.Category.MAP) =>
           val newKey = checkTypeCompatibility(fileType.getChildren.get(0),
-            readType.getChildren.get(0), isCaseAware, fileIncluded, isForcePos)
+            readType.getChildren.get(0), isCaseAware, fileIncluded, isForcePos,
+            isOrcFloatTypesToStringEnable)
           val newValue = checkTypeCompatibility(fileType.getChildren.get(1),
-            readType.getChildren.get(1), isCaseAware, fileIncluded, isForcePos)
+            readType.getChildren.get(1), isCaseAware, fileIncluded, isForcePos,
+            isOrcFloatTypesToStringEnable)
           fileIncluded(fileType.getId) = true
           TypeDescription.createMap(newKey, newValue)
         case (ft, rt) if ft.isPrimitive && rt.isPrimitive =>
           if (OrcShims.typeDescriptionEqual(fileType, readType) ||
-            GpuOrcScan.canCast(fileType, readType)) {
+            GpuOrcScan.canCast(fileType, readType, isOrcFloatTypesToStringEnable)) {
             // Since type casting is supported, here should return the file type.
             fileIncluded(fileType.getId) = true
             fileType.clone()
