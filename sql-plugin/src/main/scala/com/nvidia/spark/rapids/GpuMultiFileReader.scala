@@ -58,11 +58,13 @@ trait HostMemoryBuffersWithMetaDataBase {
   def memBuffersAndSizes: Array[(HostMemoryBuffer, Long)]
   // Total bytes read
   def bytesRead: Long
-  // Set metrics
-
+  // Percentage of time spent on filtering
   private var _filterTimePct: Double = 0L
+  // Percentage of time spent on buffering
   private var _bufferTimePct: Double = 0L
 
+  // Called by parquet/orc/avro scanners to set the amount of time (in nanoseconds)
+  // that filtering and buffering incurred in one of the scan runners.
   def setMetrics(filterTime: Long, bufferTime: Long): Unit = {
     val totalTime = filterTime + bufferTime
     _filterTimePct = filterTime.toDouble / totalTime
