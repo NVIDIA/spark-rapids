@@ -41,5 +41,6 @@ META-INF/NOTICE
 org/apache/spark/sql/rapids/execution/Unshimmed*
 org/apache/spark/sql/rapids/ProxyRapidsShuffleInternalManagerBase*
 org/apache/spark/sql/rapids/RapidsShuffleManagerLike*
+org/apache/spark/sql/vectorized/rapids/AccessibleArrowColumnVector*
 rapids/*.py
 rapids4spark-version-info.properties
