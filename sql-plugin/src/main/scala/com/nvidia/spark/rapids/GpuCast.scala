@@ -183,8 +183,6 @@ object GpuCast extends Arm {
 
   val INVALID_NUMBER_MSG: String = "At least one value is either null or is an invalid number"
 
-  val INVALID_ROW_VALUE_MSG: String = "Error casting data on row"
-
   def sanitizeStringToFloat(
       input: ColumnVector,
       ansiEnabled: Boolean): ColumnVector = {
