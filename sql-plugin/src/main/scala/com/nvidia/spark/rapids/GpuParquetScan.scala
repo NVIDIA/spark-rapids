@@ -611,12 +611,8 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       file: PartitionedFile,
       conf : Configuration,
       filters: Array[Filter],
-      readDataSchema: StructType,
-      metrics:  Map[String, GpuMetric]): ParquetFileInfoWithBlockMeta = {
-    // note that depending on which reader is used, the filterTime may not be wall clock
-    // since the multithreaded reader could read in parallel
-    withResource(new NvtxWithMetrics("filterBlocks", NvtxColor.PURPLE,
-      metrics("filterTime"))) { _ =>
+      readDataSchema: StructType): ParquetFileInfoWithBlockMeta = {
+    withResource(new NvtxRange("filterBlocks", NvtxColor.PURPLE)) { _ =>
       val filePath = new Path(new URI(file.filePath))
       // Make sure we aren't trying to read encrypted files. For now, remove the related
       // parquet confs from the hadoop configuration and try to catch the resulting
@@ -972,7 +968,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       files: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
     val filterFunc = (file: PartitionedFile) => {
-      filterHandler.filterBlocks(footerReadType, file, conf, filters, readDataSchema, metrics)
+      filterHandler.filterBlocks(footerReadType, file, conf, filters, readDataSchema)
     }
     new MultiFileCloudParquetPartitionReader(conf, files, filterFunc, isCaseSensitive,
       debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes,
@@ -1127,7 +1123,6 @@ case class GpuParquetPartitionReaderFactory(
     val conf = broadcastedConf.value.value
     val startTime = System.nanoTime()
     val singleFileInfo = filterHandler.filterBlocks(footerReadType, file, conf, filters,
-      readDataSchema, metrics)
       readDataSchema)
     metrics.get(FILTER_TIME).foreach {
       _ += (System.nanoTime() - startTime)
