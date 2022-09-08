@@ -126,9 +126,6 @@ object GpuOrcScan extends Arm {
   def tagSupport(scanMeta: ScanMeta[OrcScan]): Unit = {
     val scan = scanMeta.wrapped
     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
-    if (scan.options.getBoolean("mergeSchema", false)) {
-      scanMeta.willNotWorkOnGpu("mergeSchema and schema evolution is not supported yet")
-    }
     tagSupport(scan.sparkSession, schema, scanMeta)
   }
 
@@ -147,11 +144,6 @@ object GpuOrcScan extends Arm {
     }
 
     FileFormatChecks.tag(meta, schema, OrcFormatType, ReadFileOp)
-
-    if (sparkSession.conf
-      .getOption("spark.sql.orc.mergeSchema").exists(_.toBoolean)) {
-      meta.willNotWorkOnGpu("mergeSchema and schema evolution is not supported yet")
-    }
   }
 
   private lazy val numericLevels = Seq(
