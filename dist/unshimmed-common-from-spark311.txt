@@ -14,11 +14,15 @@ com/nvidia/spark/rapids/ExplainPlan$.class
 com/nvidia/spark/rapids/ExplainPlanBase.class
 com/nvidia/spark/rapids/format/*
 com/nvidia/spark/rapids/GpuKryoRegistrator*
+com/nvidia/spark/rapids/GpuMetric*
+com/nvidia/spark/rapids/NoopMetric*
+com/nvidia/spark/rapids/WrappedGpuMetric*
 com/nvidia/spark/rapids/GpuPackedTableColumn*
 com/nvidia/spark/rapids/HashedPriorityQueue*
 com/nvidia/spark/rapids/HiveProvider.class
 com/nvidia/spark/rapids/iceberg/IcebergProvider.class
 com/nvidia/spark/rapids/InternalRowToColumnarBatchIterator*
+com/nvidia/spark/rapids/PlanShims*
 com/nvidia/spark/rapids/PlanUtils*
 com/nvidia/spark/rapids/RapidsExecutorHeartbeatMsg*
 com/nvidia/spark/rapids/RapidsExecutorStartupMsg*
