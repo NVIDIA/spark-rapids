@@ -253,12 +253,8 @@ object AlluxioUtils extends Logging {
     })
   }
 
-  def replacePathIfNeededPathOnly(
-      conf: RapidsConf,
-      pd: PartitionDirectory,
-      hadoopConf: Configuration,
-      runtimeConf: RuntimeConfig): PartitionDirectory = {
-
+  private def getReplacementOptions(conf: RapidsConf, runtimeConf: RuntimeConfig,
+      hadoopConf: Configuration): (Option[Path => Path], Option[Map[String, String]]) = {
     val alluxioPathsReplace: Option[Seq[String]] = conf.getAlluxioPathsToReplace
     val alluxioAutoMountEnabled = conf.getAlluxioAutoMountEnabled
     val alluxioBucketRegex: String = conf.getAlluxioBucketRegex
@@ -290,18 +286,34 @@ object AlluxioUtils extends Logging {
     } else {
       None
     }
+    (replaceFunc, replaceMapOption)
+  }
 
+  def replacePathInPDIfNeeded(
+      conf: RapidsConf,
+      pd: PartitionDirectory,
+      hadoopConf: Configuration,
+      runtimeConf: RuntimeConfig): PartitionDirectory = {
+    val useOrigFileStats = conf.isAlluxioSelectTimeReuseFileStatus
+    val (replaceFunc, replaceMapOption) = getReplacementOptions(conf, runtimeConf, hadoopConf)
     if (replaceFunc.isDefined) {
       val alluxPaths = pd.files.map { f =>
-
-        logWarning("file is: " + f.getClass())
         val replaced = replaceFunc.get(f.getPath)
-       logWarning(s" path ${f.getPath} replaced is: $replaced")
-          new FileStatus(
-            f.length, f.isDir, f.blockReplication, f.blockSize, f.modificationTime,
-            replaced)
+        // Alluxio caches the entire file, so the size should be the same.
+        // Just hardcode block replication to 1 to make sure nothing weird happens but
+        // I haven't seen it used by splits. The modification time shouldn't be
+        // affected by Alluxio. Blocksize is also not used.
+        if (useOrigFileStats) {
+          new FileStatus(f.length, f.isDir, block_replication = 1, f.blockSize,
+            f.modificationTime, replaced)
+        } else {
+          val startTime = System.nanoTime()
+          val fs = replaced.getFileSystem(hadoopConf)
+          val fileStatus = fs.getFileStatus(replaced)
+          logWarning("time spent in getting new file status: " + System.nanoTime() - startTime)
+          fileStatus
+        }
       }
-
       // check the alluxio paths in root paths exist or not
       // throw out an exception to stop the job when any of them is not mounted
       if (replaceMapOption.isDefined) {
@@ -310,8 +322,7 @@ object AlluxioUtils extends Logging {
             foreach(matched =>
               checkAlluxioMounted(hadoopConf, matched))
         }
-        logWarning("using allux paths " + alluxPaths.mkString(","))
-      } 
+      }
       PartitionDirectory(pd.values, alluxPaths.toArray)
     } else {
       pd
@@ -323,40 +334,9 @@ object AlluxioUtils extends Logging {
       relation: HadoopFsRelation,
       partitionFilters: Seq[Expression],
       dataFilters: Seq[Expression]): FileIndex = {
-
-    val alluxioPathsReplace: Option[Seq[String]] = conf.getAlluxioPathsToReplace
-    val alluxioAutoMountEnabled = conf.getAlluxioAutoMountEnabled
-    val alluxioBucketRegex: String = conf.getAlluxioBucketRegex
-
-    // alluxioPathsReplace: Seq("key->value", "key1->value1")
-    // turn the rules to the Map with eg
-    // { s3://foo -> alluxio://0.1.2.3:19998/foo,
-    //   gs://bar -> alluxio://0.1.2.3:19998/bar }
-    val replaceMapOption = if (alluxioPathsReplace.isDefined) {
-      alluxioPathsReplace.map(rules => {
-        rules.map(rule => {
-          val split = rule.split("->")
-          if (split.size == 2) {
-            split(0).trim -> split(1).trim
-          } else {
-            throw new IllegalArgumentException(s"Invalid setting for " +
-              s"${RapidsConf.ALLUXIO_PATHS_REPLACE.key}")
-          }
-        }).toMap
-      })
-    } else {
-      None
-    }
-
-    val replaceFunc = if (replaceMapOption.isDefined) {
-      genFuncForPathReplacement(replaceMapOption)
-    } else if (alluxioAutoMountEnabled) {
-      val hadoopConf = relation.sparkSession.sparkContext.hadoopConfiguration
-      val runtimeConf = relation.sparkSession.conf
-      genFuncForAutoMountReplacement(conf, runtimeConf, hadoopConf, alluxioBucketRegex)
-    } else {
-      None
-    }
+    val hadoopConf = relation.sparkSession.sparkContext.hadoopConfiguration
+    val runtimeConf = relation.sparkSession.conf
+    val (replaceFunc, replaceMapOption) = getReplacementOptions(conf, runtimeConf, hadoopConf)
 
     if (replaceFunc.isDefined) {
       def replacePathsInPartitionSpec(spec: PartitionSpec): PartitionSpec = {
@@ -419,7 +399,7 @@ object AlluxioUtils extends Logging {
           if (replaceMapOption.isDefined) {
             rootPaths.foreach { rootPath =>
               replaceMapOption.get.values.find(value => rootPath.toString.startsWith(value)).
-                foreach(matched => checkAlluxioMounted(relation.sparkSession.sparkContext.hadoopConfiguration, matched))
+                foreach(matched => checkAlluxioMounted(hadoopConf, matched))
             }
           }
 
@@ -441,7 +421,6 @@ object AlluxioUtils extends Logging {
             parameters,
             Option(relation.dataSchema),
             userSpecifiedPartitionSpec = Some(partitionSpec))
-
         }
       }
     } else {

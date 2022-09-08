@@ -246,19 +246,23 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
 
-            val location = AlluxioUtils.replacePathIfNeeded(
-              conf,
-              wrapped.relation,
-              partitionFilters,
-              wrapped.dataFilters)
+            val newRelation = if (conf.isAlluxioReplacementAlgoConvertTime) {
+              val location = AlluxioUtils.replacePathIfNeeded(
+                conf,
+                wrapped.relation,
+                partitionFilters,
+                wrapped.dataFilters)
 
-            val newRelation = HadoopFsRelation(
-              location,
-              wrapped.relation.partitionSchema,
-              wrapped.relation.dataSchema,
-              wrapped.relation.bucketSpec,
-              GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
-              options)(sparkSession)
+              val newRelation = HadoopFsRelation(
+                location,
+                wrapped.relation.partitionSchema,
+                wrapped.relation.dataSchema,
+                wrapped.relation.bucketSpec,
+                GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
+                options)(sparkSession)
+            } else {
+              wrapped.relation
+            }
 
             GpuFileSourceScanExec(
               newRelation,

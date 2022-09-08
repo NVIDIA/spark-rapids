@@ -85,7 +85,10 @@ case class GpuFileSourceScanExec(
   }
 
   private val isAlluxioAlgoSelected = {
-    rapidsConf.getAlluxioReplacementAlgo == "SELECTION_TIME" &&
+    val alluxioPathsReplace = rapidsConf.getAlluxioPathsToReplace
+    val alluxioAutoMountEnabled = rapidsConf.getAlluxioAutoMountEnabled
+    (alluxioPathsReplace.isDefined || alluxioAutoMountEnabled) &&
+      rapidsConf.isAlluxioReplacementAlgoSelectTime &&
       relation.fileFormat.isInstanceOf[ParquetFileFormat]
   }
 
@@ -124,22 +127,14 @@ case class GpuFileSourceScanExec(
     logWarning("list files took : " + (System.nanoTime() - startTime))
 
     val ret = if (isAlluxioAlgoSelected) {
-      relation.location match {
-        // case _: PartitioningAwareFileIndex =>
-        // origRet
-        // case _: CatalogFileIndex =>
-        //  origRet
-        case _ => {
-          logWarning(" going to replace: " + origRet.mkString(","))
-          val res = origRet.map { pd =>
-            AlluxioUtils.replacePathIfNeededPathOnly(rapidsConf, pd,
-              relation.sparkSession.sparkContext.hadoopConfiguration,
-              relation.sparkSession.conf)
-          }
-          logWarning("replaced to: " + res.mkString(","))
-          res
-        }
+      logWarning(" going to replace: " + origRet.mkString(","))
+      val res = origRet.map { pd =>
+        AlluxioUtils.replacePathInPDIfNeeded(rapidsConf, pd,
+          relation.sparkSession.sparkContext.hadoopConfiguration,
+          relation.sparkSession.conf)
       }
+      logWarning("replaced to: " + res.mkString(","))
+      res
     } else {
       origRet
     }

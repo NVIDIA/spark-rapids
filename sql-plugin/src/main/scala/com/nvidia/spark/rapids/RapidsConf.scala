@@ -1359,10 +1359,21 @@ object RapidsConf {
     .createWithDefault(Seq("su", "ubuntu", "-c", "/opt/alluxio-2.8.0/bin/alluxio"))
 
   val ALLUXIO_REPLACEMENT_ALGO = conf("spark.rapids.alluxio.replacement.algo")
-    .doc("Algorithm used when replacing path with Alluxio path. CONVERT_TIME, " +
-      "SELECTION_TIME")
+    .doc("Algorithm used when replacing the path with the Alluxio path. CONVERT_TIME " +
+      "and SELECTION_TIME are the valid options. CONVERT_TIME indicates that we do it when " +
+      "we convert it to a GPU file read, this has extra overhead of creating an entirely new " +
+      "file index, which requires listing the files and getting all new file info from Alluxio. " +
+      "SELECTION_TIME indicates we do it when the file reader is selecting the partitions " +
+      "to process and just replaces the path without fetching the file information again.")
     .stringConf
-    .createWithDefault("CONVERT_TIME")
+    .checkValues(Set("CONVERT_TIME", "SELECTION_TIME"))
+    .createWithDefault("SELECTION_TIME")
+
+  val ALLUXIO_SELECT_REUSE_FILE_STATUS =  conf("spark.rapids.alluxio.select.reuse.fileStatus")
+    .doc("When the Alluxio replacement algorithm is SELECTION_TIME, whether to reuse " +
+      "the stats from the UFS file status or to do a fresh query to Alluxio to get he status.")
+    .booleanConf
+    .createWithDefault(true)
 
   // USER FACING DEBUG CONFIGS
 
@@ -2042,6 +2053,15 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val getAlluxioCmd: Seq[String] = get(ALLUXIO_CMD)
 
   lazy val getAlluxioReplacementAlgo: String = get(ALLUXIO_REPLACEMENT_ALGO)
+
+  lazy val isAlluxioReplacementAlgoSelectTime: Boolean =
+    get(ALLUXIO_REPLACEMENT_ALGO) == "SELECTION_TIME"
+
+  lazy val isAlluxioReplacementAlgoConvertTime: Boolean =
+    get(ALLUXIO_REPLACEMENT_ALGO) == "CONVERT_TIME"
+
+  lazy val isAlluxioSelectTimeReuseFileStatus: Boolean =
+    get(ALLUXIO_SELECT_REUSE_FILE_STATUS)
 
   lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
 
