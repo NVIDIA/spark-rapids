@@ -186,7 +186,7 @@ object AlluxioUtils extends Logging {
     }
   }
 
- // first try to get fs.s3a.access.key from spark config
+  // first try to get fs.s3a.access.key from spark config
   // second try to get from environment variables
   private def getKeyAndSecret(hadoopConfiguration: Configuration,
       runtimeConf: RuntimeConfig) : (Option[String], Option[String]) = {
@@ -294,7 +294,6 @@ object AlluxioUtils extends Logging {
       pd: PartitionDirectory,
       hadoopConf: Configuration,
       runtimeConf: RuntimeConfig): PartitionDirectory = {
-    val useOrigFileStats = conf.isAlluxioSelectTimeReuseFileStatus
     val (replaceFunc, replaceMapOption) = getReplacementOptions(conf, runtimeConf, hadoopConf)
     if (replaceFunc.isDefined) {
       val alluxPaths = pd.files.map { f =>
@@ -302,17 +301,11 @@ object AlluxioUtils extends Logging {
         // Alluxio caches the entire file, so the size should be the same.
         // Just hardcode block replication to 1 to make sure nothing weird happens but
         // I haven't seen it used by splits. The modification time shouldn't be
-        // affected by Alluxio. Blocksize is also not used.
-        if (useOrigFileStats) {
-          new FileStatus(f.length, f.isDir, block_replication = 1, f.blockSize,
-            f.modificationTime, replaced)
-        } else {
-          val startTime = System.nanoTime()
-          val fs = replaced.getFileSystem(hadoopConf)
-          val fileStatus = fs.getFileStatus(replaced)
-          logWarning("time spent in getting new file status: " + System.nanoTime() - startTime)
-          fileStatus
-        }
+        // affected by Alluxio. Blocksize is also not used. Note that we will not
+        // get new block locations with this so if Alluxio would return new ones
+        // this isn't going to get them. From my current experiments, Alluxio is not
+        // returning the block locations of the cached blocks anyway.
+        new FileStatus(f.length, f.isDir, 1, f.blockSize, f.modificationTime, replaced)
       }
       // check the alluxio paths in root paths exist or not
       // throw out an exception to stop the job when any of them is not mounted

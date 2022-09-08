@@ -253,7 +253,7 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
                 partitionFilters,
                 wrapped.dataFilters)
 
-              val newRelation = HadoopFsRelation(
+              HadoopFsRelation(
                 location,
                 wrapped.relation.partitionSchema,
                 wrapped.relation.dataSchema,

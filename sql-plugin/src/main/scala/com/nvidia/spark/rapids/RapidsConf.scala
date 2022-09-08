@@ -1367,13 +1367,7 @@ object RapidsConf {
       "to process and just replaces the path without fetching the file information again.")
     .stringConf
     .checkValues(Set("CONVERT_TIME", "SELECTION_TIME"))
-    .createWithDefault("SELECTION_TIME")
-
-  val ALLUXIO_SELECT_REUSE_FILE_STATUS =  conf("spark.rapids.alluxio.select.reuse.fileStatus")
-    .doc("When the Alluxio replacement algorithm is SELECTION_TIME, whether to reuse " +
-      "the stats from the UFS file status or to do a fresh query to Alluxio to get he status.")
-    .booleanConf
-    .createWithDefault(true)
+    .createWithDefault("CONVERT_TIME")
 
   // USER FACING DEBUG CONFIGS
 
@@ -2059,9 +2053,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isAlluxioReplacementAlgoConvertTime: Boolean =
     get(ALLUXIO_REPLACEMENT_ALGO) == "CONVERT_TIME"
-
-  lazy val isAlluxioSelectTimeReuseFileStatus: Boolean =
-    get(ALLUXIO_SELECT_REUSE_FILE_STATUS)
 
   lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
 

@@ -84,7 +84,7 @@ case class GpuFileSourceScanExec(
     case _ => true // For others, default to PERFILE reader
   }
 
-  private val isAlluxioAlgoSelected = {
+  private val isAlluxioAlgoSelectionTime = {
     val alluxioPathsReplace = rapidsConf.getAlluxioPathsToReplace
     val alluxioAutoMountEnabled = rapidsConf.getAlluxioAutoMountEnabled
     (alluxioPathsReplace.isDefined || alluxioAutoMountEnabled) &&
@@ -124,20 +124,17 @@ case class GpuFileSourceScanExec(
     val origRet =
       relation.location.listFiles(
         partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
-    logWarning("list files took : " + (System.nanoTime() - startTime))
-
-    val ret = if (isAlluxioAlgoSelected) {
-      logWarning(" going to replace: " + origRet.mkString(","))
+    val ret = if (isAlluxioAlgoSelectionTime) {
       val res = origRet.map { pd =>
         AlluxioUtils.replacePathInPDIfNeeded(rapidsConf, pd,
           relation.sparkSession.sparkContext.hadoopConfiguration,
           relation.sparkSession.conf)
       }
-      logWarning("replaced to: " + res.mkString(","))
       res
     } else {
       origRet
     }
+    logWarning("conversion time took : " + (System.nanoTime() - startTime))
 
     setFilesNumAndSizeMetric(ret, true)
     val timeTakenMs = NANOSECONDS.toMillis(

@@ -358,7 +358,7 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
                 partitionFilters,
                 wrapped.dataFilters)
 
-              val newRelation = HadoopFsRelation(
+              HadoopFsRelation(
                 location,
                 wrapped.relation.partitionSchema,
                 wrapped.relation.dataSchema,

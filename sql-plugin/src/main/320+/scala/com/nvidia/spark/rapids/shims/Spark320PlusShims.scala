@@ -389,7 +389,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
           partitionFilters,
           wrapped.dataFilters)
 
-        val newRelation = HadoopFsRelation(
+        HadoopFsRelation(
           location,
           wrapped.relation.partitionSchema,
           wrapped.relation.dataSchema,
