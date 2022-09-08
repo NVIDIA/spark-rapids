@@ -1803,48 +1803,55 @@ class MultiFileCloudParquetPartitionReader(
     private def doRead(): HostMemoryBuffersWithMetaDataBase = {
       val startingBytesRead = fileSystemBytesRead()
       val hostBuffers = new ArrayBuffer[(HostMemoryBuffer, Long)]
+      var filterTime = 0L
+      var bufferStartTime = 0L
+      var result: HostMemoryBuffersWithMetaDataBase = null
       try {
+        val filterStartTime = System.nanoTime()
         val fileBlockMeta = filterFunc(file)
+        filterTime = System.nanoTime() - filterStartTime
+        bufferStartTime = System.nanoTime()
         if (fileBlockMeta.blocks.isEmpty) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead
           // no blocks so return null buffer and size 0
-          return HostMemoryEmptyMetaData(file, 0, bytesRead,
-            fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
-            fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
-        }
-        blockChunkIter = fileBlockMeta.blocks.iterator.buffered
-        if (isDone) {
-          val bytesRead = fileSystemBytesRead() - startingBytesRead
-          // got close before finishing
-          HostMemoryEmptyMetaData(file, 0, bytesRead,
+          result = HostMemoryEmptyMetaData(file, 0, bytesRead,
             fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
             fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
         } else {
-          if (fileBlockMeta.schema.getFieldCount == 0) {
+          blockChunkIter = fileBlockMeta.blocks.iterator.buffered
+          if (isDone) {
             val bytesRead = fileSystemBytesRead() - startingBytesRead
-            val numRows = fileBlockMeta.blocks.map(_.getRowCount).sum.toInt
-            // overload size to be number of rows with null buffer
-            HostMemoryEmptyMetaData(file, numRows, bytesRead,
+            // got close before finishing
+           result = HostMemoryEmptyMetaData(file, 0, bytesRead,
               fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
               fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
           } else {
-            val filePath = new Path(new URI(file.filePath))
-            while (blockChunkIter.hasNext) {
-              val blocksToRead = populateCurrentBlockChunk(blockChunkIter,
-                maxReadBatchSizeRows, maxReadBatchSizeBytes, fileBlockMeta.readSchema)
-              hostBuffers += readPartFile(blocksToRead, fileBlockMeta.schema, filePath)
-            }
-            val bytesRead = fileSystemBytesRead() - startingBytesRead
-            if (isDone) {
-              // got close before finishing
-              hostBuffers.foreach(_._1.safeClose())
-              HostMemoryEmptyMetaData(file, 0, bytesRead,
+            if (fileBlockMeta.schema.getFieldCount == 0) {
+              val bytesRead = fileSystemBytesRead() - startingBytesRead
+              val numRows = fileBlockMeta.blocks.map(_.getRowCount).sum.toInt
+              // overload size to be number of rows with null buffer
+              result = HostMemoryEmptyMetaData(file, numRows, bytesRead,
                 fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
                 fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
             } else {
-              HostMemoryBuffersWithMetaData(file, hostBuffers.toArray, bytesRead,
-                fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
-                fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
+              val filePath = new Path(new URI(file.filePath))
+              while (blockChunkIter.hasNext) {
+                val blocksToRead = populateCurrentBlockChunk(blockChunkIter,
+                  maxReadBatchSizeRows, maxReadBatchSizeBytes, fileBlockMeta.readSchema)
+                hostBuffers += readPartFile(blocksToRead, fileBlockMeta.schema, filePath)
+              }
+              val bytesRead = fileSystemBytesRead() - startingBytesRead
+              if (isDone) {
+                // got close before finishing
+                hostBuffers.foreach(_._1.safeClose())
+                result = HostMemoryEmptyMetaData(file, 0, bytesRead,
+                  fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
+                  fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
+              } else {
+                result = HostMemoryBuffersWithMetaData(file, hostBuffers.toArray, bytesRead,
+                  fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
+                  fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
+              }
             }
           }
         }
@@ -1852,7 +1859,11 @@ class MultiFileCloudParquetPartitionReader(
         case e: Throwable =>
           hostBuffers.foreach(_._1.safeClose())
           throw e
+      } finally {
+        val bufferTime = bufferStartTime - System.nanoTime()
+        result.setMetrics(filterTime, bufferTime)
       }
+      result
     }
   }
 

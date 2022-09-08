@@ -58,6 +58,19 @@ trait HostMemoryBuffersWithMetaDataBase {
   def memBuffersAndSizes: Array[(HostMemoryBuffer, Long)]
   // Total bytes read
   def bytesRead: Long
+  // Set metrics
+
+  private var _filterTimePct: Double = 0L
+  private var _bufferTimePct: Double = 0L
+
+  def setMetrics(filterTime: Long, bufferTime: Long): Unit = {
+    val totalTime = filterTime + bufferTime
+    _filterTimePct = filterTime.toDouble / totalTime
+    _bufferTimePct = bufferTime.toDouble / totalTime
+  }
+
+  def getBufferTimePct: Double = _bufferTimePct
+  def getFilterTimePct: Double = _filterTimePct
 }
 
 // This is a common trait for all kind of file formats
@@ -413,15 +426,16 @@ abstract class MultiFileCloudPartitionReaderBase(
           // Filter time here includes the buffer time as well since those
           // happen in the same background threads. This is as close to wall
           // clock as we can get right now without further work.
-          val fileBufsAndMeta = metrics(BUFFER_TIME).ns {
-            val startTime = System.nanoTime()
-            tasks.poll.get()
-            val res = tasks.poll.get()
-            metrics.get(FILTER_TIME).foreach {
-              _ += (System.nanoTime() - startTime)
-            }
-            res
+          val startTime = System.nanoTime()
+          val fileBufsAndMeta = tasks.poll.get()
+          val blockedTime = System.nanoTime() - startTime
+          metrics.get(FILTER_TIME).foreach {
+            _ += (blockedTime * fileBufsAndMeta.getFilterTimePct).toLong
           }
+          metrics.get(BUFFER_TIME).foreach {
+            _ += (blockedTime * fileBufsAndMeta.getBufferTimePct).toLong
+          }
+
           filesToRead -= 1
           TrampolineUtil.incBytesRead(inputMetrics, fileBufsAndMeta.bytesRead)
           InputFileUtils.setInputFileBlock(

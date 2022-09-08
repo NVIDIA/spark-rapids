@@ -714,8 +714,10 @@ class GpuMultiFileCloudAvroPartitionReader(
      *     - post processing
      */
     private def doRead(): HostMemoryBuffersWithMetaDataBase = {
+      // avro does not filter and then buffer, it just buffers
+      val bufferStartTime = System.nanoTime()
       val startingBytesRead = fileSystemBytesRead()
-      withResource(AvroFileReader.openDataReader(partFile.filePath, config)) { reader =>
+      val res = withResource(AvroFileReader.openDataReader(partFile.filePath, config)) { reader =>
         // Go to the start of the first block after the start position
         reader.sync(partFile.start)
         if (!reader.hasNextBlock || isDone) {
@@ -819,6 +821,9 @@ class GpuMultiFileCloudAvroPartitionReader(
             throw e
         }
       } // end of withResource(reader)
+      val bufferTime = System.nanoTime() - bufferStartTime
+      res.setMetrics(0, bufferTime)
+      res
     } // end of doRead
   } // end of Class ReadBatchRunner
 
