@@ -42,10 +42,8 @@ jobs:
         id: noSnapshotVersionsStep
         run: |
           set -x
-          noSnapshotVersionsStr=$(mvn -B help:evaluate -q -pl dist -PnoSnapshots -Dexpression=included_buildvers -DforceStdout)
-          noSnapshotVersionsStr=$(echo $noSnapshotVersionsStr)
-          noSnapshotVersionsArr=($(IFS=", "; echo $noSnapshotVersionsStr))
-          tailNoSnapshotVersionsArr=(${noSnapshotVersionsArr[@]:1})
+          . $(dirname "$0")/../../jenkins/version-def.sh
+          tailNoSnapshotVersionsArr=("${TAIL_NOSNAPSHOTS_VERSIONS[@]}")
           svArrBody=$(printf ",{\"spark-version\":\"%s\"}" "${tailNoSnapshotVersionsArr[@]}")
           svArrBody=${svArrBody:1}
           svJsonStr=$(printf {\"include\":[%s]} $svArrBody)
