@@ -68,7 +68,7 @@ object GpuWindowUtil {
     case GpuLiteral(value, _: DayTimeIntervalType) =>
       var x = value.asInstanceOf[Long]
       if (x == Long.MinValue) x = Long.MaxValue
-      ParsedBoundary(isUnbounded = false, Math.abs(x))
+      ParsedBoundary(isUnbounded = false, Right(Math.abs(x)))
     case anything => throw new UnsupportedOperationException("Unsupported window frame" +
       s" expression $anything")
   }

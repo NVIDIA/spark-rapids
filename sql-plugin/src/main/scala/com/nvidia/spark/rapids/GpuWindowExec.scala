@@ -23,6 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{AggregationOverWindow, DType, GroupByOptions, GroupByScanAggregation, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanAggregation, ScanType, Table, WindowOptions}
+
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -494,7 +495,7 @@ case class BoundGpuWindowFunction(
   val dataType: DataType = windowFunc.dataType
 }
 
-case class ParsedBoundary(isUnbounded: Boolean, valueAsLong: Long)
+case class ParsedBoundary(isUnbounded: Boolean, value: Either[BigInt, Long])
 
 object GroupedAggregations extends Arm {
   /**
@@ -529,8 +530,8 @@ object GroupedAggregations extends Arm {
         val orderType = GpuColumnVector.getNonNestedRapidsType(orderExpr.dataType)
 
         val orderByIndex = orderPositions.head
-        val lower = getRangeBoundaryValue(frame.lower)
-        val upper = getRangeBoundaryValue(frame.upper)
+        val lower = getRangeBoundaryValue(frame.lower, orderType)
+        val upper = getRangeBoundaryValue(frame.upper, orderType)
 
         withResource(asScalarRangeBoundary(orderType, lower)) { preceding =>
           withResource(asScalarRangeBoundary(orderType, upper)) { following =>
@@ -604,47 +605,64 @@ object GroupedAggregations extends Arm {
     if (bound.isUnbounded) {
       None
     } else {
-      val value = bound.valueAsLong
+      val valueLong = bound.value.right // Used for all cases except DECIMAL128.
       val s = orderByType match {
-        case DType.INT8 => Scalar.fromByte(value.toByte)
-        case DType.INT16 => Scalar.fromShort(value.toShort)
-        case DType.INT32 => Scalar.fromInt(value.toInt)
-        case DType.INT64 => Scalar.fromLong(value)
+        case DType.INT8 => Scalar.fromByte(valueLong.get.toByte)
+        case DType.INT16 => Scalar.fromShort(valueLong.get.toShort)
+        case DType.INT32 => Scalar.fromInt(valueLong.get.toInt)
+        case DType.INT64 => Scalar.fromLong(valueLong.get)
         // Interval is not working for DateType
-        case DType.TIMESTAMP_DAYS => Scalar.durationFromLong(DType.DURATION_DAYS, value)
+        case DType.TIMESTAMP_DAYS => Scalar.durationFromLong(DType.DURATION_DAYS, valueLong.get)
         case DType.TIMESTAMP_MICROSECONDS =>
-          Scalar.durationFromLong(DType.DURATION_MICROSECONDS, value)
+          Scalar.durationFromLong(DType.DURATION_MICROSECONDS, valueLong.get)
+        case x if x.getTypeId == DType.DTypeEnum.DECIMAL32 =>
+          Scalar.fromDecimal(x.getScale, valueLong.get.toInt)
+        case x if x.getTypeId == DType.DTypeEnum.DECIMAL64 =>
+          Scalar.fromDecimal(x.getScale, valueLong.get)
+        case x if x.getTypeId == DType.DTypeEnum.DECIMAL128 =>
+          Scalar.fromDecimal(x.getScale, bound.value.left.get.underlying())
         case _ => throw new RuntimeException(s"Not supported order by type, Found $orderByType")
       }
       Some(s)
     }
   }
 
-  private def getRangeBoundaryValue(boundary: Expression): ParsedBoundary = boundary match {
+  private def getRangeBoundaryValue(boundary: Expression, orderByType: DType): ParsedBoundary =
+    boundary match {
     case special: GpuSpecialFrameBoundary =>
       val isUnBounded = special.isUnbounded
-      ParsedBoundary(isUnBounded, special.value)
+      val isDecimal128 = orderByType.getTypeId == DType.DTypeEnum.DECIMAL128
+      ParsedBoundary(isUnBounded, if (isDecimal128) Left(special.value) else Right(special.value))
     case GpuLiteral(ci: CalendarInterval, CalendarIntervalType) =>
       // Get the total microseconds for TIMESTAMP_MICROSECONDS
       var x = TimeUnit.DAYS.toMicros(ci.days) + ci.microseconds
       if (x == Long.MinValue) x = Long.MaxValue
-      ParsedBoundary(isUnbounded = false, Math.abs(x))
+      ParsedBoundary(isUnbounded = false, Right(Math.abs(x)))
     case GpuLiteral(value, ByteType) =>
       var x = value.asInstanceOf[Byte]
       if (x == Byte.MinValue) x = Byte.MaxValue
-      ParsedBoundary(isUnbounded = false, Math.abs(x))
+      ParsedBoundary(isUnbounded = false, Right(Math.abs(x)))
     case GpuLiteral(value, ShortType) =>
       var x = value.asInstanceOf[Short]
       if (x == Short.MinValue) x = Short.MaxValue
-      ParsedBoundary(isUnbounded = false, Math.abs(x))
+      ParsedBoundary(isUnbounded = false, Right(Math.abs(x)))
     case GpuLiteral(value, IntegerType) =>
       var x = value.asInstanceOf[Int]
       if (x == Int.MinValue) x = Int.MaxValue
-      ParsedBoundary(isUnbounded = false, Math.abs(x))
+      ParsedBoundary(isUnbounded = false, Right(Math.abs(x)))
     case GpuLiteral(value, LongType) =>
       var x = value.asInstanceOf[Long]
       if (x == Long.MinValue) x = Long.MaxValue
-      ParsedBoundary(isUnbounded = false, Math.abs(x))
+      ParsedBoundary(isUnbounded = false, Right(Math.abs(x)))
+    case GpuLiteral(value: Decimal, DecimalType()) =>
+      orderByType.getTypeId match {
+        case DType.DTypeEnum.DECIMAL32 | DType.DTypeEnum.DECIMAL64 =>
+          ParsedBoundary(isUnbounded = false, Right(Math.abs(value.toUnscaledLong)))
+        case DType.DTypeEnum.DECIMAL128 =>
+          ParsedBoundary(isUnbounded = false, Left(value.toJavaBigDecimal.unscaledValue().abs))
+        case anythingElse =>
+          throw new UnsupportedOperationException(s"Unexpected Decimal type: $anythingElse")
+      }
     case anything => GpuWindowUtil.getRangeBoundaryValue(anything)
   }
 }

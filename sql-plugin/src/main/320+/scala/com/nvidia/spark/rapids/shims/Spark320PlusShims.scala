@@ -209,10 +209,12 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         TypeSig.numericAndInterval,
         Seq(
           ParamCheck("lower",
-            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME,
+            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME
+              + TypeSig.DECIMAL_128,
             TypeSig.numericAndInterval),
           ParamCheck("upper",
-            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME,
+            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME
+              + TypeSig.DECIMAL_128,
             TypeSig.numericAndInterval))),
       (windowFrame, conf, p, r) => new GpuSpecifiedWindowFrameMeta(windowFrame, conf, p, r)),
     GpuOverrides.expr[WindowExpression](
