@@ -16,8 +16,9 @@
 
 package org.apache.spark.sql.rapids.shims
 
+import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.trees.Origin
-import org.apache.spark.sql.errors.QueryExecutionErrors
+import org.apache.spark.sql.errors.{QueryCompilationErrors, QueryExecutionErrors}
 import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
 
 object RapidsErrorUtils {
@@ -75,5 +76,9 @@ object RapidsErrorUtils {
       requiredFieldName: String, matchedFields: String): Throwable = {
     QueryExecutionErrors.foundDuplicateFieldInCaseInsensitiveModeError(
       requiredFieldName, matchedFields)
+  }
+
+  def tableIdentifierExistsError(tableIdentifier: TableIdentifier): Throwable = {
+    QueryCompilationErrors.tableIdentifierExistsError(tableIdentifier)
   }
 }

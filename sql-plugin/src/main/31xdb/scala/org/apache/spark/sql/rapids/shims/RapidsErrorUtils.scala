@@ -16,6 +16,8 @@
 
 package org.apache.spark.sql.rapids.shims
 
+import org.apache.spark.sql.AnalysisException
+import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.trees.Origin
 import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
 
@@ -69,5 +71,9 @@ object RapidsErrorUtils {
       requiredFieldName: String, matchedFields: String): Throwable = {
     new RuntimeException(s"""Found duplicate field(s) "$requiredFieldName": """ +
         s"$matchedFields in case-insensitive mode")
+  }
+
+  def tableIdentifierExistsError(tableIdentifier: TableIdentifier): Throwable = {
+    throw new AnalysisException(s"$tableIdentifier already exists.")
   }
 }

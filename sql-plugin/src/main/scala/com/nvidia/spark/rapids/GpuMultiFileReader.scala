@@ -27,7 +27,7 @@ import scala.language.implicitConversions
 import scala.math.max
 
 import ai.rapids.cudf.{ColumnVector, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, SEMAPHORE_WAIT_TIME}
+import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, SEMAPHORE_WAIT_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
@@ -410,8 +410,17 @@ abstract class MultiFileCloudPartitionReaderBase(
         }
       } else {
         if (filesToRead > 0 && !isDone) {
+          // Filter time here includes the buffer time as well since those
+          // happen in the same background threads. This is as close to wall
+          // clock as we can get right now without further work.
           val fileBufsAndMeta = metrics(BUFFER_TIME).ns {
+            val startTime = System.nanoTime()
             tasks.poll.get()
+            val res = tasks.poll.get()
+            metrics.get(FILTER_TIME).foreach {
+              _ += (System.nanoTime() - startTime)
+            }
+            res
           }
           filesToRead -= 1
           TrampolineUtil.incBytesRead(inputMetrics, fileBufsAndMeta.bytesRead)
@@ -543,6 +552,7 @@ trait SingleDataBlockInfo {
   def partitionValues: InternalRow // partition value
   def dataBlock: DataBlockBase // a single block info of a single file
   def schema: SchemaBase // schema information
+  def readSchema: StructType // read schema information
   def extraInfo: ExtraInfo // extra information
 }
 
@@ -580,8 +590,7 @@ class BatchContext(
  *
  * @param conf                  Configuration
  * @param clippedBlocks         the block metadata from the original file that has been
- *                                clipped to only contain the column chunks to be read
- * @param readDataSchema        the Spark schema describing what will be read
+ *                              clipped to only contain the column chunks to be read
  * @param partitionSchema       schema of partitions
  * @param maxReadBatchSizeRows  soft limit on the maximum number of rows the reader reads per batch
  * @param maxReadBatchSizeBytes soft limit on the maximum number of bytes the reader reads per batch
@@ -591,7 +600,6 @@ class BatchContext(
 abstract class MultiFileCoalescingPartitionReaderBase(
     conf: Configuration,
     clippedBlocks: Seq[SingleDataBlockInfo],
-    readDataSchema: StructType,
     partitionSchema: StructType,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
@@ -605,6 +613,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
 
   private case class CurrentChunkMeta(
     clippedSchema: SchemaBase,
+    readSchema: StructType,
     currentChunk: Seq[(Path, DataBlockBase)],
     numTotalRows: Long,
     rowsPerPartition: Array[Long],
@@ -690,11 +699,12 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * @param dataBuffer  the data which can be decoded in GPU
    * @param dataSize    data size
    * @param clippedSchema the clipped schema
+   * @param readSchema the expected schema
    * @param extraInfo the extra information for specific file format
    * @return Table
    */
   def readBufferToTable(dataBuffer: HostMemoryBuffer, dataSize: Long, clippedSchema: SchemaBase,
-    extraInfo: ExtraInfo): Table
+    readSchema: StructType, extraInfo: ExtraInfo): Table
 
   /**
    * Write a header for a specific file format. If there is no header for the file format,
@@ -743,6 +753,21 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     new BatchContext(chunkedBlocks, clippedSchema)
   }
 
+  /**
+   * A callback to finalize the output batch. The batch returned will be the final
+   * output batch of the reader's "get" method.
+   *
+   * @param batch the batch after decoding, adding partitioned columns.
+   * @param extraInfo the corresponding extra information of the input batch.
+   * @return the finalized columnar batch.
+   */
+  protected def finalizeOutputBatch(
+      batch: ColumnarBatch,
+      extraInfo: ExtraInfo): ColumnarBatch = {
+    // Equivalent to returning the input batch directly.
+    GpuColumnVector.incRefCounts(batch)
+  }
+
   override def next(): Boolean = {
     batch.foreach(_.close())
     batch = None
@@ -767,7 +792,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
   private def readBatch(): Option[ColumnarBatch] = {
     withResource(new NvtxRange(s"$getFileFormatShortName readBatch", NvtxColor.GREEN)) { _ =>
       val currentChunkMeta = populateCurrentBlockChunk()
-      if (currentChunkMeta.clippedSchema.fieldNames.isEmpty) {
+      val retBatch = if (currentChunkMeta.clippedSchema.fieldNames.isEmpty) {
         // not reading any data, so return a degenerate ColumnarBatch with the row count
         if (currentChunkMeta.numTotalRows == 0) {
           None
@@ -775,7 +800,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
           val rows = currentChunkMeta.numTotalRows.toInt
           // Someone is going to process this data, even if it is just a row count
           GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
-          val nullColumns = readDataSchema.safeMap(f =>
+          val nullColumns = currentChunkMeta.readSchema.safeMap(f =>
             GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
           val emptyBatch = new ColumnarBatch(nullColumns.toArray, rows)
           addAllPartitionValues(Some(emptyBatch), currentChunkMeta.allPartValues,
@@ -783,9 +808,9 @@ abstract class MultiFileCoalescingPartitionReaderBase(
         }
       } else {
         val table = readToTable(currentChunkMeta.currentChunk, currentChunkMeta.clippedSchema,
-          currentChunkMeta.extraInfo)
+          currentChunkMeta.readSchema, currentChunkMeta.extraInfo)
         try {
-          val colTypes = readDataSchema.fields.map(f => f.dataType)
+          val colTypes = currentChunkMeta.readSchema.fields.map(f => f.dataType)
           val maybeBatch = table.map(t => GpuColumnVector.from(t, colTypes))
           maybeBatch.foreach { batch =>
             logDebug(s"GPU batch size: ${GpuColumnVector.getTotalDeviceMemoryUsed(batch)} bytes")
@@ -798,12 +823,16 @@ abstract class MultiFileCoalescingPartitionReaderBase(
           table.foreach(_.close())
         }
       }
+      withResource(retBatch) { _ =>
+        retBatch.map(b => finalizeOutputBatch(b, currentChunkMeta.extraInfo))
+      }
     }
   }
 
   private def readToTable(
       currentChunkedBlocks: Seq[(Path, DataBlockBase)],
       clippedSchema: SchemaBase,
+      readDataSchema: StructType,
       extraInfo: ExtraInfo): Option[Table] = {
     if (currentChunkedBlocks.isEmpty) {
       return None
@@ -813,7 +842,8 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       if (dataSize == 0) {
         None
       } else {
-        val table = readBufferToTable(dataBuffer, dataSize, clippedSchema, extraInfo)
+        val table = readBufferToTable(dataBuffer, dataSize, clippedSchema, readDataSchema,
+          extraInfo)
         closeOnExcept(table) { _ =>
           maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
           if (readDataSchema.length < table.getNumberOfColumns) {
@@ -892,7 +922,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
         // Just ensure to close buffer when there is an exception
         closeOnExcept(buffer) { _ =>
           logWarning(s"The original estimated size $initTotalSize is too small, " +
-            s"reallocing and copying data to bigger buffer size: $bufferSize")
+            s"reallocating and copying data to bigger buffer size: $bufferSize")
         }
         // Copy the old buffer to a new allocated bigger buffer and close the old buffer
         buf = withResource(buffer) { _ =>
@@ -946,10 +976,11 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     var currentFile: Path = null
     var currentPartitionValues: InternalRow = null
     var currentClippedSchema: SchemaBase = null
+    var currentReadSchema: StructType = null
     val rowsPerPartition = new ArrayBuffer[Long]()
     var lastPartRows: Long = 0
     val allPartValues = new ArrayBuffer[InternalRow]()
-    var currrentDataBlock: SingleDataBlockInfo = null
+    var currentDataBlock: SingleDataBlockInfo = null
     var extraInfo: ExtraInfo = null
 
     @tailrec
@@ -957,11 +988,12 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       if (blockIterator.hasNext) {
         if (currentFile == null) {
           // first time of readNextBatch
-          currrentDataBlock = blockIterator.head
+          currentDataBlock = blockIterator.head
           currentFile = blockIterator.head.filePath
           currentPartitionValues = blockIterator.head.partitionValues
           allPartValues += currentPartitionValues
           currentClippedSchema = blockIterator.head.schema
+          currentReadSchema = blockIterator.head.readSchema
           extraInfo = blockIterator.head.extraInfo
         }
 
@@ -971,12 +1003,12 @@ abstract class MultiFileCoalescingPartitionReaderBase(
         }
 
         if (numRows == 0 || numRows + peekedRowCount <= maxReadBatchSizeRows) {
-          val estimatedBytes = GpuBatchUtils.estimateGpuMemory(readDataSchema, peekedRowCount)
+          val estimatedBytes = GpuBatchUtils.estimateGpuMemory(currentReadSchema, peekedRowCount)
           if (numBytes == 0 || numBytes + estimatedBytes <= maxReadBatchSizeBytes) {
             // only care to check if we are actually adding in the next chunk
             if (currentFile != blockIterator.head.filePath) {
               // check if need to split next data block into another ColumnarBatch
-              if (checkIfNeedToSplitDataBlock(currrentDataBlock, blockIterator.head)) {
+              if (checkIfNeedToSplitDataBlock(currentDataBlock, blockIterator.head)) {
                 logInfo(s"splitting ${blockIterator.head.filePath} into another batch!")
                 return
               }
@@ -994,7 +1026,8 @@ abstract class MultiFileCoalescingPartitionReaderBase(
               currentFile = blockIterator.head.filePath
               currentPartitionValues = blockIterator.head.partitionValues
               currentClippedSchema = blockIterator.head.schema
-              currrentDataBlock = blockIterator.head
+              currentReadSchema = blockIterator.head.readSchema
+              currentDataBlock = blockIterator.head
             }
 
             val nextBlock = blockIterator.next()
@@ -1013,7 +1046,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     logDebug(s"Loaded $numRows rows from ${getFileFormatShortName}. " +
       s"${getFileFormatShortName} bytes read: $numChunkBytes. Estimated GPU bytes: $numBytes. " +
       s"Number of different partitions: ${allPartValues.size}")
-    CurrentChunkMeta(currentClippedSchema, currentChunk,
+    CurrentChunkMeta(currentClippedSchema, currentReadSchema, currentChunk,
       numRows, rowsPerPartition.toArray, allPartValues.toArray, extraInfo)
   }
 

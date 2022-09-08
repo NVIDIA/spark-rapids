@@ -132,11 +132,15 @@ def test_cast_string_date_non_ansi():
         lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
         conf={'spark.rapids.sql.hasExtendedYearValues': 'false'})
 
-def test_cast_string_ts_valid_format():
+@pytest.mark.parametrize('data_gen', [StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2}'),
+                                      StringGen('[0-9]{1,4}-[0-3][0-9]-[0-5][0-9][ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]'),
+                                      StringGen('[0-9]{1,4}-[0-3][0-9]-[0-5][0-9][ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9].[0-9]{0,6}Z?')],
+                        ids=idfn)
+def test_cast_string_ts_valid_format(data_gen):
     # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
     # This provides values that are valid in all of those formats.
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2}')).select(f.col('a').cast(TimestampType())),
+            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(TimestampType())),
             conf = {'spark.rapids.sql.hasExtendedYearValues': 'false',
                 'spark.rapids.sql.castStringToTimestamp.enabled': 'true'})
 
@@ -394,8 +398,9 @@ def test_cast_float_to_timestamp_ansi_overflow(type, invalid_value):
 @pytest.mark.skipif(is_before_spark_330(), reason='330+ throws exception in ANSI mode')
 def test_cast_float_to_timestamp_side_effect():
     def getDf(spark):
-        return spark.createDataFrame([(True, float(LONG_MAX) + 100), (False, float(1))],
-                                     "c_b boolean, c_f float").repartition(1)
+        data = [(True, float(LONG_MAX) + 100), (False, float(1))]
+        distData = spark.sparkContext.parallelize(data, 1)
+        return spark.createDataFrame(distData, "c_b boolean, c_f float")
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: getDf(spark).selectExpr("if(c_b, cast(0 as timestamp), cast(c_f as timestamp))"),
         conf=ansi_enabled_conf)

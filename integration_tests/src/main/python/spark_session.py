@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import os
-from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime
+from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime, is_at_least_precommit_run
 from pyspark.sql import DataFrame
 from spark_init_internal import get_spark_i_know_what_i_am_doing, spark_version
 
@@ -197,3 +197,10 @@ def get_jvm_charset():
 
 def is_jvm_charset_utf8():
     return get_jvm_charset() == 'UTF-8'
+
+def is_hive_available():
+    # precommit and nightly runs are supposed to have Hive,
+    # so tests should fail if Hive is missing in those environments.
+    if is_at_least_precommit_run():
+        return True
+    return _spark.conf.get("spark.sql.catalogImplementation") == "hive"

@@ -17,17 +17,28 @@
 package org.apache.spark.sql.hive.rapids
 
 import com.nvidia.spark.RapidsUDF
-import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuOverrides, HiveProvider, RapidsConf, RepeatingParamCheck, TypeSig}
+import com.nvidia.spark.rapids.{DataWritingCommandRule, ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuOverrides, HiveProvider, OptimizedCreateHiveTableAsSelectCommandMeta, RapidsConf, RepeatingParamCheck, TypeSig}
 import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
 
 import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
+import org.apache.spark.sql.hive.execution.OptimizedCreateHiveTableAsSelectCommand
 
 class HiveProviderImpl extends HiveProvider {
 
   /**
-   * Builds the rules that are specific to spark-hive Catalyst nodes. This will return an empty
-   * mapping if spark-hive is unavailable.
+   * Builds the data writing command rules that are specific to spark-hive Catalyst nodes.
+   */
+  override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
+      DataWritingCommandRule[_ <: DataWritingCommand]] = Seq (
+    GpuOverrides.dataWriteCmd[OptimizedCreateHiveTableAsSelectCommand](
+      "Create a Hive table from a query result using Spark data source APIs",
+      (a, conf, p, r) => new OptimizedCreateHiveTableAsSelectCommandMeta(a, conf, p, r))
+  ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
+
+  /**
+   * Builds the expression rules that are specific to spark-hive Catalyst nodes.
    */
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     Seq(
