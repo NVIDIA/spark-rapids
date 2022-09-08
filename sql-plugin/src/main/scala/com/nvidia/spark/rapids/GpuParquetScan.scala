@@ -1859,10 +1859,9 @@ class MultiFileCloudParquetPartitionReader(
         case e: Throwable =>
           hostBuffers.foreach(_._1.safeClose())
           throw e
-      } finally {
-        val bufferTime = bufferStartTime - System.nanoTime()
-        result.setMetrics(filterTime, bufferTime)
       }
+      val bufferTime = bufferStartTime - System.nanoTime()
+      result.setMetrics(filterTime, bufferTime)
       result
     }
   }

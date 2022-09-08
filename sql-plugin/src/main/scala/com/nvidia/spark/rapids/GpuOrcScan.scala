@@ -1653,26 +1653,26 @@ class MultiFileCloudOrcPartitionReader(
         partitionSchema)
       val filterTime = System.nanoTime() - filterStartTime
       val bufferTimeStart = System.nanoTime()
-      var res: HostMemoryBuffersWithMetaDataBase = null
+      var result: HostMemoryBuffersWithMetaDataBase = null
       try {
         if (ctx == null || ctx.blockIterator.isEmpty) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead
           // no blocks so return null buffer and size 0
-          res = HostMemoryEmptyMetaData(partFile, 0, bytesRead,
+          result = HostMemoryEmptyMetaData(partFile, 0, bytesRead,
             ctx.updatedReadSchema, readDataSchema)
         } else {
           blockChunkIter = ctx.blockIterator
           if (isDone) {
             val bytesRead = fileSystemBytesRead() - startingBytesRead
             // got close before finishing
-            res = HostMemoryEmptyMetaData(
+            result = HostMemoryEmptyMetaData(
               partFile, 0, bytesRead, ctx.updatedReadSchema, readDataSchema)
           } else {
             if (ctx.updatedReadSchema.isEmpty) {
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               val numRows = ctx.blockIterator.map(_.infoBuilder.getNumberOfRows).sum.toInt
               // overload size to be number of rows with null buffer
-              res = HostMemoryEmptyMetaData(partFile, numRows, bytesRead,
+              result = HostMemoryEmptyMetaData(partFile, numRows, bytesRead,
                 ctx.updatedReadSchema, readDataSchema)
             } else {
               while (blockChunkIter.hasNext) {
@@ -1684,10 +1684,10 @@ class MultiFileCloudOrcPartitionReader(
               if (isDone) {
                 // got close before finishing
                 hostBuffers.foreach(_._1.safeClose())
-                res = HostMemoryEmptyMetaData(
+                result = HostMemoryEmptyMetaData(
                   partFile, 0, bytesRead, ctx.updatedReadSchema, readDataSchema)
               } else {
-                res = HostMemoryBuffersWithMetaData(partFile, hostBuffers.toArray, bytesRead,
+                result = HostMemoryBuffersWithMetaData(partFile, hostBuffers.toArray, bytesRead,
                   ctx.updatedReadSchema, ctx.requestedMapping)
               }
             }
@@ -1697,11 +1697,10 @@ class MultiFileCloudOrcPartitionReader(
         case e: Throwable =>
           hostBuffers.foreach(_._1.safeClose())
           throw e
-      } finally {
-        val bufferTime = System.nanoTime() - bufferTimeStart
-        res.setMetrics(filterTime, bufferTime)
       }
-      res
+      val bufferTime = System.nanoTime() - bufferTimeStart
+      result.setMetrics(filterTime, bufferTime)
+      result
     }
   }
 
