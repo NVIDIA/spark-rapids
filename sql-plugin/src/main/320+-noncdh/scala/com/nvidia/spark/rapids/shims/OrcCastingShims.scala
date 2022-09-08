@@ -14,26 +14,16 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.functions.map_concat
+import ai.rapids.cudf.{ColumnView, DType}
+import com.nvidia.spark.rapids.GpuOrcScan
 
-class CollectionOpSuite extends SparkQueryCompareTestSuite {
-  testSparkResultsAreEqual(
-    "MapConcat with Array keys",
-    ArrayKeyMapDF) {
-    frame => {
-      import frame.sparkSession.implicits._
-      frame.select(map_concat($"col1", $"col2"))
-    }
-  }
 
-   testSparkResultsAreEqual(
-    "MapConcat with Struct keys",
-    StructKeyMapDF) {
-    frame => {
-      import frame.sparkSession.implicits._
-      frame.select(map_concat($"col1", $"col2"))
-    }
+object OrcCastingShims {
+
+  def castIntegerToTimestamp(col: ColumnView, colType: DType): ColumnView = {
+    // For spark >= 320 (except spark-321-cdh), they consider the integers in `col` as seconds
+    GpuOrcScan.castIntegersToTimestamp(col, colType, DType.TIMESTAMP_SECONDS)
   }
 }

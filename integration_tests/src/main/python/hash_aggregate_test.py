@@ -128,6 +128,19 @@ _grpkey_floats_with_nulls_and_nans = [
     ('b', FloatGen(nullable=(True, 10.0), special_cases=[(float('nan'), 10.0)])),
     ('c', LongGen())]
 
+# grouping single-level lists
+_grpkey_list_with_non_nested_children = [[('a', RepeatSeqGen(ArrayGen(data_gen), length=3)),
+                                          ('b', IntegerGen())] for data_gen in all_basic_gens + decimal_gens]
+
+#grouping mutliple-level structs with arrays
+_grpkey_nested_structs_with_array_basic_child = [
+    ('a', RepeatSeqGen(StructGen([
+        ['aa', IntegerGen()],
+        ['ab', ArrayGen(IntegerGen())]]),
+        length=20)),
+    ('b', IntegerGen()),
+    ('c', NullGen())]
+
 _nan_zero_float_special_cases = [
     (float('nan'),  5.0),
     (NEG_FLOAT_NAN_MIN_VALUE, 5.0),
@@ -205,9 +218,7 @@ _no_overflow_ansi_gens = [
 
 _decimal_gen_36_5 = DecimalGen(precision=36, scale=5)
 _decimal_gen_36_neg5 = DecimalGen(precision=36, scale=-5)
-_decimal_gen_38_0 = DecimalGen(precision=38, scale=0)
 _decimal_gen_38_10 = DecimalGen(precision=38, scale=10)
-_decimal_gen_38_neg10 = DecimalGen(precision=38, scale=-10)
 
 
 def get_params(init_list, marked_params=[]):
@@ -241,7 +252,7 @@ _excluded_operators_marker = pytest.mark.allow_non_gpu(
     'HashAggregateExec', 'AggregateExpression', 'UnscaledValue', 'MakeDecimal',
     'AttributeReference', 'Alias', 'Sum', 'Count', 'Max', 'Min', 'Average', 'Cast',
     'StddevPop', 'StddevSamp', 'VariancePop', 'VarianceSamp',
-    'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
+    'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
     'EqualTo', 'First', 'SortAggregateExec', 'Coalesce', 'IsNull', 'EqualNullSafe',
     'PivotFirst', 'GetArrayItem', 'ShuffleExchangeExec', 'HashPartitioning')
 
@@ -290,15 +301,22 @@ _grpkey_short_very_big_neg_scale_decimals = [
     ('b', _decimal_gen_36_neg5),
     ('c', _decimal_gen_36_neg5)]
 
-_grpkey_short_full_decimals = [
-    ('a', RepeatSeqGen(short_gen, length=50)),
-    ('b', _decimal_gen_38_0),
-    ('c', _decimal_gen_38_0)]
+# Only use negative values to avoid the potential to hover around an overflow
+# as values are added and subtracted during the sum. Non-deterministic ordering
+# of values from shuffle cannot guarantee overflow calculation is predictable
+# when the sum can move in both directions as new partitions are aggregated.
+_decimal_gen_sum_38_0 = DecimalGen(precision=38, scale=0, avoid_positive_values=True)
+_decimal_gen_sum_38_neg10 = DecimalGen(precision=38, scale=-10, avoid_positive_values=True)
 
-_grpkey_short_full_neg_scale_decimals = [
+_grpkey_short_sum_full_decimals = [
     ('a', RepeatSeqGen(short_gen, length=50)),
-    ('b', _decimal_gen_38_neg10),
-    ('c', _decimal_gen_38_neg10)]
+    ('b', _decimal_gen_sum_38_0),
+    ('c', _decimal_gen_sum_38_0)]
+
+_grpkey_short_sum_full_neg_scale_decimals = [
+    ('a', RepeatSeqGen(short_gen, length=50)),
+    ('b', _decimal_gen_sum_38_neg10),
+    ('c', _decimal_gen_sum_38_neg10)]
 
 
 _init_list_no_nans_with_decimal = _init_list_no_nans + [
@@ -314,9 +332,6 @@ _init_list_with_nans_and_no_nans_with_decimalbig = _init_list_with_nans_and_no_n
     _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, 
     _grpkey_short_very_big_neg_scale_decimals]
 
-
-_init_list_full_decimal = [_grpkey_short_full_decimals, 
-    _grpkey_short_full_neg_scale_decimals]
 
 #Any smaller precision takes way too long to process on the CPU
 # or results in using too much memory on the GPU
@@ -335,7 +350,7 @@ def test_hash_reduction_decimal_overflow_sum(precision):
         # some optimizations are conspiring against us.
         conf = {'spark.rapids.sql.batchSizeBytes': '128m'})
 
-@pytest.mark.parametrize('data_gen', [_longs_with_nulls], ids=idfn)
+@pytest.mark.parametrize('data_gen', [_grpkey_nested_structs_with_array_basic_child,  _longs_with_nulls] + _grpkey_list_with_non_nested_children, ids=idfn)
 def test_hash_grpby_sum_count_action(data_gen):
     assert_gpu_and_cpu_row_counts_equal(
         lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.sum('b'))
@@ -373,7 +388,7 @@ def test_hash_grpby_sum(data_gen, conf):
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_full_decimal, ids=idfn)
+@pytest.mark.parametrize('data_gen', [_grpkey_short_sum_full_decimals, _grpkey_short_sum_full_neg_scale_decimals], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_sum_full_decimal(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
@@ -404,11 +419,12 @@ def test_hash_reduction_sum_full_decimal(data_gen, conf):
 @approximate_float
 @ignore_order
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans + [_grpkey_short_mid_decimals, _grpkey_short_big_decimals], ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans + [_grpkey_short_mid_decimals, 
+    _grpkey_short_big_decimals, _grpkey_short_very_big_decimals, _grpkey_short_sum_full_decimals], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_avg(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, data_gen, length=100).groupby('a').agg(f.avg('b')),
+        lambda spark: gen_df(spark, data_gen, length=200).groupby('a').agg(f.avg('b')),
         conf=conf
     )
 
@@ -419,7 +435,7 @@ def test_hash_grpby_avg(data_gen, conf):
 @pytest.mark.allow_non_gpu(
     'HashAggregateExec', 'AggregateExpression',
     'AttributeReference', 'Alias', 'Sum', 'Count', 'Max', 'Min', 'Average', 'Cast',
-    'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
+    'NormalizeNaNAndZero', 'GreaterThan', 'Literal', 'If',
     'EqualTo', 'First', 'SortAggregateExec')
 @pytest.mark.parametrize('data_gen', [
     StructGen(children=[('a', int_gen), ('b', int_gen)],nullable=False,
@@ -447,10 +463,27 @@ def test_exceptAll(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : gen_df(spark, data_gen, length=100).exceptAll(gen_df(spark, data_gen, length=100).filter('a != b')))
 
+# Spark fails to sort some decimal values due to overflow when calculating the sorting prefix.
+# See https://issues.apache.org/jira/browse/SPARK-40129
+# Since pivot orders by value, avoid generating these extreme values for this test.
+_pivot_gen_128bit = DecimalGen(precision=20, scale=2, special_cases=[])
+_pivot_big_decimals = [
+    ('a', RepeatSeqGen(DecimalGen(precision=32, scale=10, nullable=(True, 10.0)), length=50)),
+    ('b', _pivot_gen_128bit),
+    ('c', DecimalGen(precision=36, scale=5))]
+_pivot_short_big_decimals = [
+    ('a', RepeatSeqGen(short_gen, length=50)),
+    ('b', _pivot_gen_128bit),
+    ('c', decimal_gen_128bit)]
+
+_pivot_gens_with_decimals = _init_list_with_nans_and_no_nans + [
+    _grpkey_small_decimals, _pivot_big_decimals, _grpkey_short_mid_decimals,
+    _pivot_short_big_decimals, _grpkey_short_very_big_decimals,
+    _grpkey_short_very_big_neg_scale_decimals]
 @approximate_float
 @ignore_order(local=True)
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans_with_decimalbig, ids=idfn)
+@pytest.mark.parametrize('data_gen', _pivot_gens_with_decimals, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
 def test_hash_grpby_pivot(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
@@ -515,8 +548,7 @@ def test_hash_reduction_pivot_with_nans(data_gen, conf):
 @approximate_float
 @ignore_order(local=True)
 @allow_non_gpu('HashAggregateExec', 'PivotFirst', 'AggregateExpression', 'Alias', 'GetArrayItem',
-        'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'KnownFloatingPointNormalized',
-        'NormalizeNaNAndZero')
+        'Literal', 'ShuffleExchangeExec', 'HashPartitioning', 'NormalizeNaNAndZero')
 @incompat
 @pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nulls_and_nans], ids=idfn)
 def test_hash_pivot_groupby_duplicates_fallback(data_gen):
@@ -591,6 +623,8 @@ _gen_data_for_collect_set_op_nested = [[
     ('a', RepeatSeqGen(LongGen(), length=20)),
     ('b', value_gen)] for value_gen in _repeat_agg_column_for_collect_set_op_nested + _array_of_array_gen]
 
+_all_basic_gens_with_all_nans_cases = all_basic_gens + [SetValuesGen(t, [math.nan, None]) for t in [FloatType(), DoubleType()]]
+
 # very simple test for just a count on decimals 128 values until we can support more with them
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', [decimal_gen_128bit], ids=idfn)
@@ -624,18 +658,12 @@ def test_decimal128_min_max_group_by(data_gen):
             .agg(f.min('b'), f.max('b')))
 
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
-def test_float_max_reduction_with_nan(data_gen):
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, data_gen).selectExpr('max(a)'))
-
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', [float_gen, double_gen], ids=idfn)
-def test_float_max_group_by_with_nan(data_gen):
+@pytest.mark.parametrize('data_gen', _all_basic_gens_with_all_nans_cases, ids=idfn)
+def test_min_max_group_by(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: two_col_df(spark, byte_gen, data_gen)
             .groupby('a')
-            .agg(f.max('b')))
+            .agg(f.min('b'), f.max('b')))
 
 # to avoid ordering issues with collect_list we do it all in a single task
 @ignore_order(local=True)
@@ -1068,12 +1096,6 @@ def test_count_distinct_with_nan_floats(data_gen):
 
 # REDUCTIONS
 
-non_nan_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
-        # nans and -0.0 cannot work because of nan support in min/max, -0.0 == 0.0 in cudf for distinct and
-        # Spark fixed ordering of 0.0 and -0.0 in Spark 3.1 in the ordering
-        FloatGen(no_nans=True, special_cases=[]), DoubleGen(no_nans=True, special_cases=[]),
-        string_gen, boolean_gen, date_gen, timestamp_gen]
-
 _nested_gens = array_gens_sample + struct_gens_sample + map_gens_sample
 
 @pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
@@ -1092,7 +1114,7 @@ def test_first_last_reductions_nested_types(data_gen):
         lambda spark: unary_op_df(spark, data_gen).coalesce(1).selectExpr(
             'first(a)', 'last(a)', 'first(a, true)', 'last(a, true)'))
 
-@pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', _all_basic_gens_with_all_nans_cases, ids=idfn)
 def test_generic_reductions(data_gen):
     local_conf = copy_and_update(_no_nans_float_conf, {'spark.sql.legacy.allowParameterlessCount': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
@@ -1120,7 +1142,7 @@ def test_count(data_gen):
             'count(1)'),
         conf = {'spark.sql.legacy.allowParameterlessCount': 'true'})
 
-@pytest.mark.parametrize('data_gen', non_nan_all_basic_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
 def test_distinct_count_reductions(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).selectExpr(
@@ -1142,7 +1164,7 @@ def test_arithmetic_reductions(data_gen):
             conf = _no_nans_float_conf)
 
 @pytest.mark.parametrize('data_gen',
-                         non_nan_all_basic_gens + decimal_gens + _nested_gens,
+                         all_basic_gens + decimal_gens + _nested_gens,
                          ids=idfn)
 def test_collect_list_reductions(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -1150,11 +1172,17 @@ def test_collect_list_reductions(data_gen):
         lambda spark: unary_op_df(spark, data_gen).coalesce(1).selectExpr('collect_list(a)'),
         conf=_no_nans_float_conf)
 
+_no_neg_zero_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
+        # -0.0 cannot work because of -0.0 == 0.0 in cudf for distinct and
+        # Spark fixed ordering of 0.0 and -0.0 in Spark 3.1 in the ordering
+        FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), DoubleGen(special_cases=[]),
+        string_gen, boolean_gen, date_gen, timestamp_gen]
+
 _struct_only_nested_gens = [all_basic_struct_gen,
                             StructGen([['child0', byte_gen], ['child1', all_basic_struct_gen]]),
                             StructGen([])]
 @pytest.mark.parametrize('data_gen',
-                         non_nan_all_basic_gens + decimal_gens + _struct_only_nested_gens,
+                         _no_neg_zero_all_basic_gens + decimal_gens + _struct_only_nested_gens,
                          ids=idfn)
 def test_collect_set_reductions(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
@@ -1192,7 +1220,9 @@ def test_sorted_groupby_first_last(data_gen):
         lambda spark: agg_fn(gen_df(spark, gen_fn, num_slices=1)),
         conf = {'spark.sql.shuffle.partitions': '1'})
 
-@ignore_order
+# Spark has a sorting bug with decimals, see https://issues.apache.org/jira/browse/SPARK-40129.
+# Have pytest do the sorting rather than Spark as a workaround.
+@ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('count_func', [f.count, f.countDistinct])
 def test_agg_count(data_gen, count_func):
@@ -1759,7 +1789,7 @@ def test_groupby_std_variance_nulls(data_gen, conf, ansi_enabled):
 
 @ignore_order(local=True)
 @approximate_float
-@allow_non_gpu('KnownFloatingPointNormalized', 'NormalizeNaNAndZero',
+@allow_non_gpu('NormalizeNaNAndZero',
                'HashAggregateExec', 'SortAggregateExec',
                'Cast',
                'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
@@ -1802,7 +1832,7 @@ def test_groupby_std_variance_partial_replace_fallback(data_gen,
 # test min max on single level structure
 #
 gens_for_max_min = [byte_gen, short_gen, int_gen, long_gen,
-    FloatGen(no_nans = True), DoubleGen(no_nans = True),
+    float_gen, double_gen,
     string_gen, boolean_gen,
     date_gen, timestamp_gen,
     DecimalGen(precision=12, scale=2),

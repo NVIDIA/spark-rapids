@@ -14,26 +14,14 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.functions.map_concat
+import org.apache.spark.sql.catalyst.util.CharVarcharUtils
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.types.StructType
 
-class CollectionOpSuite extends SparkQueryCompareTestSuite {
-  testSparkResultsAreEqual(
-    "MapConcat with Array keys",
-    ArrayKeyMapDF) {
-    frame => {
-      import frame.sparkSession.implicits._
-      frame.select(map_concat($"col1", $"col2"))
-    }
-  }
-
-   testSparkResultsAreEqual(
-    "MapConcat with Struct keys",
-    StructKeyMapDF) {
-    frame => {
-      import frame.sparkSession.implicits._
-      frame.select(map_concat($"col1", $"col2"))
-    }
+object CharVarcharUtilsShims {
+  def getRawSchema(schema: StructType, conf: SQLConf): StructType = {
+    CharVarcharUtils.getRawSchema(schema, conf)
   }
 }

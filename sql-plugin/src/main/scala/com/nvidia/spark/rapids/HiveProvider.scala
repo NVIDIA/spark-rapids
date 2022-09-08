@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.execution.command.DataWritingCommand
 
 /**
  * The subclass of HiveProvider imports spark-hive classes. This file should not imports
@@ -24,5 +25,8 @@ import org.apache.spark.sql.catalyst.expressions.Expression
  * runtime. Details see: https://github.com/NVIDIA/spark-rapids/issues/5648
  */
 trait HiveProvider {
+  def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
+      DataWritingCommandRule[_ <: DataWritingCommand]]
+
   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
 }

@@ -21,7 +21,7 @@ from pyspark.sql import Row
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 import random
-from spark_session import is_tz_utc
+from spark_session import is_tz_utc, is_before_spark_340
 import sre_yield
 import struct
 from conftest import skip_unless_precommit_tests
@@ -215,17 +215,22 @@ class IntegerGen(DataGen):
 
 class DecimalGen(DataGen):
     """Generate Decimals, with some built in corner cases."""
-    def __init__(self, precision=None, scale=None, nullable=True, special_cases=[]):
+    def __init__(self, precision=None, scale=None, nullable=True, special_cases=None, avoid_positive_values=False):
         if precision is None:
             #Maximum number of decimal digits a Long can represent is 18
             precision = 18
             scale = 0
         DECIMAL_MIN = Decimal('-' + ('9' * precision) + 'e' + str(-scale))
         DECIMAL_MAX = Decimal(('9'* precision) + 'e' + str(-scale))
+        if special_cases is None:
+            special_cases = [DECIMAL_MIN, Decimal('0')]
+            if not avoid_positive_values:
+                special_cases.append(DECIMAL_MAX)
         super().__init__(DecimalType(precision, scale), nullable=nullable, special_cases=special_cases)
         self.scale = scale
         self.precision = precision
-        pattern = "[0-9]{1,"+ str(precision) + "}e" + str(-scale)
+        negative_pattern = "-" if avoid_positive_values else "-?"
+        pattern = negative_pattern + "[0-9]{1,"+ str(precision) + "}e" + str(-scale)
         self.base_strs = sre_yield.AllStrings(pattern, flags=0, charset=sre_yield.CHARSET, max_count=_MAX_CHOICES)
 
     def __repr__(self):
@@ -928,10 +933,18 @@ all_basic_gens = all_basic_gens_no_null + [null_gen]
 all_basic_gens_no_nan = [byte_gen, short_gen, int_gen, long_gen, FloatGen(no_nans=True), DoubleGen(no_nans=True),
         string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
 
+# Many Spark versions have issues sorting large decimals,
+# see https://issues.apache.org/jira/browse/SPARK-40089.
+orderable_decimal_gen_128bit = decimal_gen_128bit
+if is_before_spark_340():
+    orderable_decimal_gen_128bit = DecimalGen(precision=20, scale=2, special_cases=[])
+
+orderable_decimal_gens = [decimal_gen_32bit, decimal_gen_64bit, orderable_decimal_gen_128bit ]
+
 # TODO add in some array generators to this once that is supported for sorting
 # a selection of generators that should be orderable (sortable and compareable)
 orderable_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
-        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen] + decimal_gens
+        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen] + orderable_decimal_gens
 
 # TODO add in some array generators to this once that is supported for these operations
 # a selection of generators that can be compared for equality

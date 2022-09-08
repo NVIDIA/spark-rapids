@@ -14,26 +14,10 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.functions.map_concat
+import org.apache.spark.sql.execution.SparkPlan
 
-class CollectionOpSuite extends SparkQueryCompareTestSuite {
-  testSparkResultsAreEqual(
-    "MapConcat with Array keys",
-    ArrayKeyMapDF) {
-    frame => {
-      import frame.sparkSession.implicits._
-      frame.select(map_concat($"col1", $"col2"))
-    }
-  }
-
-   testSparkResultsAreEqual(
-    "MapConcat with Struct keys",
-    StructKeyMapDF) {
-    frame => {
-      import frame.sparkSession.implicits._
-      frame.select(map_concat($"col1", $"col2"))
-    }
-  }
+object PlanShims {
+  def extractExecutedPlan(plan: SparkPlan): SparkPlan = plan
 }

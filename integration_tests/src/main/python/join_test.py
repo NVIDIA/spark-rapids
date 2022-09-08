@@ -29,7 +29,7 @@ all_join_types = ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'Fu
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            BooleanGen(), DateGen(), TimestampGen(), null_gen,
            pytest.param(FloatGen(), marks=[incompat]),
-           pytest.param(DoubleGen(), marks=[incompat])] + decimal_gens
+           pytest.param(DoubleGen(), marks=[incompat])] + orderable_decimal_gens
 
 all_gen_no_nulls = [StringGen(nullable=False), ByteGen(nullable=False),
         ShortGen(nullable=False), IntegerGen(nullable=False), LongGen(nullable=False),
@@ -72,7 +72,8 @@ join_no_ast_gen = [
 # Types to use when running joins on small batches. Small batch joins can take a long time
 # to run and are mostly redundant with the normal batch size test, so we only run these on a
 # set of representative types rather than all types.
-join_small_batch_gens = [ StringGen(), IntegerGen(), decimal_gen_128bit ]
+
+join_small_batch_gens = [ StringGen(), IntegerGen(), orderable_decimal_gen_128bit ]
 cartesian_join_small_batch_gens = join_small_batch_gens + [basic_struct_gen, ArrayGen(string_gen)]
 
 _sortmerge_join_conf = {'spark.sql.autoBroadcastJoinThreshold': '-1',
@@ -190,7 +191,7 @@ def test_sortmerge_join_ridealong(data_gen, join_type):
 
 # For floating point values the normalization is done using a higher order function. We could probably work around this
 # for now it falls back to the CPU
-@allow_non_gpu('SortMergeJoinExec', 'SortExec', 'KnownFloatingPointNormalized', 'ArrayTransform', 'LambdaFunction',
+@allow_non_gpu('SortMergeJoinExec', 'SortExec', 'ArrayTransform', 'LambdaFunction',
         'NamedLambdaVariable', 'NormalizeNaNAndZero', 'ShuffleExchangeExec', 'HashPartitioning')
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', single_level_array_gens + [binary_gen], ids=idfn)
@@ -727,7 +728,7 @@ def test_sortmerge_join_struct_with_floats_key(data_gen, join_type):
         return left.join(right, left.a == right.r_a, join_type)
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_sortmerge_join_conf)
 
-@allow_non_gpu('SortMergeJoinExec', 'SortExec', 'KnownFloatingPointNormalized', 'NormalizeNaNAndZero', 'CreateNamedStruct',
+@allow_non_gpu('SortMergeJoinExec', 'SortExec', 'NormalizeNaNAndZero', 'CreateNamedStruct',
         'GetStructField', 'Literal', 'If', 'IsNull', 'ShuffleExchangeExec', 'HashPartitioning')
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', struct_gens, ids=idfn)

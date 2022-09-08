@@ -864,6 +864,19 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_ORC_FLOAT_TYPES_TO_STRING =
+    conf("spark.rapids.sql.format.orc.floatTypesToString.enable")
+    .doc("When reading an ORC file, the source data schemas(schemas of ORC file) may differ " +
+      "from the target schemas (schemas of the reader), we need to handle the castings from " +
+      "source type to target type. Since float/double numbers in GPU have different precision " +
+      "with CPU, when casting float/double to string, the result of GPU is different from " +
+      "result of CPU spark. Its default value is `true` (this means the strings result will " +
+      "differ from result of CPU). If it's set `false` explicitly and there exists casting " +
+      "from float/double to string in the job, then such behavior will cause an exception, " +
+      "and the job will fail.")
+    .booleanConf
+    .createWithDefault(true)
+
   val ORC_READER_TYPE = conf("spark.rapids.sql.format.orc.reader.type")
     .doc("Sets the ORC reader type. We support different types that are optimized for " +
       "different environments. The original Spark style reader can be selected by setting this " +
@@ -1524,6 +1537,17 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(value = true)
 
+  val NUM_FILES_FILTER_PARALLEL = conf("spark.rapids.sql.coalescing.reader.numFilterParallel")
+    .doc("This controls the number of files the coalescing reader will run " +
+      "in each thread when it filters blocks for reading. If this value is greater than zero " +
+      "the files will be filtered in a multithreaded manner where each thread filters " +
+      "the number of files set by this config. If this is set to zero the files are " +
+      "filtered serially. This uses the same thread pool as the multithreaded reader, " +
+      s"see $MULTITHREAD_READ_NUM_THREADS. Note that filtering multithreaded " +
+      "is useful with Alluxio.")
+    .integerConf
+    .createWithDefault(value = 0)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1817,6 +1841,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     values.max
   }
 
+  lazy val numFilesFilterParallel: Int = get(NUM_FILES_FILTER_PARALLEL)
+
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 
   lazy val isParquetInt96WriteEnabled: Boolean = get(ENABLE_PARQUET_INT96_WRITE)
@@ -1855,6 +1881,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isOrcReadEnabled: Boolean = get(ENABLE_ORC_READ)
 
   lazy val isOrcWriteEnabled: Boolean = get(ENABLE_ORC_WRITE)
+
+  lazy val isOrcFloatTypesToStringEnable: Boolean = get(ENABLE_ORC_FLOAT_TYPES_TO_STRING)
 
   lazy val isOrcPerFileReadEnabled: Boolean =
     RapidsReaderType.withName(get(ORC_READER_TYPE)) == RapidsReaderType.PERFILE
