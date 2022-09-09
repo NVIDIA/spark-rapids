@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import java.io.{ByteArrayOutputStream, InputStream}
 import java.nio.ByteBuffer
 
-import com.nvidia.spark.rapids.SparkSessionHolder
+import com.nvidia.spark.rapids.{Arm, GpuColumnarBatchSerializer, GpuColumnVector, NoopMetric, SparkSessionHolder}
 import org.mockito.ArgumentMatchers.{eq => meq}
 import org.mockito.Mockito.{mock, when}
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
@@ -27,7 +27,7 @@ import org.scalatest.{BeforeAndAfterAll, FunSuite}
 import org.apache.spark._
 import org.apache.spark.internal.config
 import org.apache.spark.network.buffer.{ManagedBuffer, NioManagedBuffer}
-import org.apache.spark.serializer.{JavaSerializer, SerializerManager}
+import org.apache.spark.serializer.SerializerManager
 import org.apache.spark.sql.rapids.shims.RapidsShuffleThreadedReader
 import org.apache.spark.storage.{BlockManager, BlockManagerId, ShuffleBlockId}
 
@@ -60,7 +60,7 @@ class RecordingManagedBuffer(underlyingBuffer: NioManagedBuffer) extends Managed
 }
 
 class RapidsShuffleThreadedReaderSuite
-    extends FunSuite with BeforeAndAfterAll {
+    extends FunSuite with BeforeAndAfterAll with Arm {
 
   override def afterAll(): Unit = {
     RapidsShuffleInternalManagerBase.stopThreadPool()
@@ -83,7 +83,7 @@ class RapidsShuffleThreadedReaderSuite
         val shuffleId = 22
         val numMaps = 6
         val keyValuePairsPerMap = 10
-        val serializer = new JavaSerializer(testConf)
+        val serializer = new GpuColumnarBatchSerializer(NoopMetric)
 
         // Make a mock BlockManager that will return RecordingManagedByteBuffers of data, so that we
         // can ensure retain() and release() are properly called.
@@ -93,9 +93,11 @@ class RapidsShuffleThreadedReaderSuite
         // from each mappers (all mappers return the same shuffle data).
         val byteOutputStream = new ByteArrayOutputStream()
         val serializationStream = serializer.newInstance().serializeStream(byteOutputStream)
-        (0 until keyValuePairsPerMap).foreach { i =>
-          serializationStream.writeKey(i)
-          serializationStream.writeValue(2 * i)
+        withResource(GpuColumnVector.emptyBatchFromTypes(Array.empty)) { emptyBatch =>
+          (0 until keyValuePairsPerMap).foreach { i =>
+            serializationStream.writeKey(i)
+            serializationStream.writeValue(GpuColumnVector.incRefCounts(emptyBatch))
+          }
         }
 
         // Setup the mocked BlockManager to return RecordingManagedBuffers.
@@ -129,7 +131,7 @@ class RapidsShuffleThreadedReaderSuite
 
         // Create a mocked shuffle handle to pass into HashShuffleReader.
         val shuffleHandle = {
-          val dependency = mock(classOf[ShuffleDependency[Int, Int, Int]])
+          val dependency = mock(classOf[GpuShuffleDependency[Int, Int, Int]])
           when(dependency.serializer).thenReturn(serializer)
           when(dependency.aggregator).thenReturn(None)
           when(dependency.keyOrdering).thenReturn(None)
@@ -153,6 +155,7 @@ class RapidsShuffleThreadedReaderSuite
           shuffleHandle,
           taskContext,
           metrics,
+          1024 * 1024,
           serializerManager,
           blockManager,
           mapOutputTracker = mapOutputTracker,

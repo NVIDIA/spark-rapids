@@ -30,7 +30,7 @@ import org.mockito.Mockito._
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, FunSuite}
 import org.scalatest.mockito.MockitoSugar
 
-import org.apache.spark.{HashPartitioner, ShuffleDependency, SparkConf, SparkException, TaskContext}
+import org.apache.spark.{HashPartitioner, SparkConf, SparkException, TaskContext}
 import org.apache.spark.executor.{ShuffleWriteMetrics, TaskMetrics}
 import org.apache.spark.internal.config
 import org.apache.spark.network.shuffle.checksum.ShuffleChecksumHelper
@@ -140,9 +140,10 @@ class RapidsShuffleThreadedWriterSuite extends FunSuite
   @Mock(answer = RETURNS_SMART_NULLS) private var diskBlockManager: DiskBlockManager = _
   @Mock(answer = RETURNS_SMART_NULLS) private var taskContext: TaskContext = _
   @Mock(answer = RETURNS_SMART_NULLS) private var blockResolver: TestIndexShuffleBlockResolver = _
-  @Mock(answer = RETURNS_SMART_NULLS) private var dependency: ShuffleDependency[Int, Int, Int] = _
   @Mock(answer = RETURNS_SMART_NULLS)
-    private var dependencyBad: ShuffleDependency[Int, BadSerializable, BadSerializable] = _
+    private var dependency: GpuShuffleDependency[Int, Int, Int] = _
+  @Mock(answer = RETURNS_SMART_NULLS)
+    private var dependencyBad: GpuShuffleDependency[Int, BadSerializable, BadSerializable] = _
 
   private var taskMetrics: TaskMetrics = _
   private var tempDir: File = _
