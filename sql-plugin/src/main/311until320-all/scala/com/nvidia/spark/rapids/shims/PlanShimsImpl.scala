@@ -16,11 +16,10 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.execution.{CommandResultExec, SparkPlan}
+import com.nvidia.spark.rapids.PlanShims
 
-object PlanShims {
-  def extractExecutedPlan(plan: SparkPlan): SparkPlan = plan match {
-    case p: CommandResultExec => p.commandPhysicalPlan
-    case _ => plan
-  }
+import org.apache.spark.sql.execution.SparkPlan
+
+class PlanShimsImpl extends PlanShims {
+  def extractExecutedPlan(plan: SparkPlan): SparkPlan = plan
 }

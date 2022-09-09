@@ -211,6 +211,16 @@ run_iceberg_tests() {
   fi
 }
 
+ # Test spark-avro with documented way of deploying at run time via --packages option from Maven
+run_avro_tests() {
+  export PYSP_TEST_spark_jars_packages="org.apache.spark:spark-avro_2.12:${SPARK_VER}"
+
+  # Workaround to avoid appending avro jar file by '--jars', which would be addressed by https://github.com/NVIDIA/spark-rapids/issues/6532
+  rm -vf $LOCAL_JAR_PATH/spark-avro*.jar
+
+  ./run_pyspark_from_build.sh -k avro
+}
+
 run_test_not_parallel() {
     local TEST=${1//\.py/}
     local LOG_FILE
@@ -237,6 +247,10 @@ run_test_not_parallel() {
 
       iceberg)
         run_iceberg_tests
+        ;;
+
+      avro)
+        run_avro_tests
         ;;
 
       *)
@@ -284,6 +298,7 @@ export -f get_tests_by_tags
 # - DEFAULT: all tests except cudf_udf tests
 # - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
 # - ICEBERG_ONLY: iceberg tests only
+# - AVRO_ONLY: avro tests only (with --packages option instead of --jars)
 # - DELTA_LAKE_ONLY: Delta Lake tests only
 TEST_MODE=${TEST_MODE:-'DEFAULT'}
 if [[ $TEST_MODE == "DEFAULT" ]]; then
@@ -345,6 +360,11 @@ fi
 # Iceberg tests
 if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
   run_test_not_parallel iceberg
+fi
+
+# avro tests
+if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "AVRO_ONLY" ]]; then
+  run_test_not_parallel avro
 fi
 
 popd

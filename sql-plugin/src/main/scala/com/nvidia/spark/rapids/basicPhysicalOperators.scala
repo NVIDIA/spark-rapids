@@ -254,6 +254,53 @@ case class GpuProjectAstExec(
 }
 
 /**
+ * Do projections in a tiered fashion, where earlier tiers contain sub-expressions that are
+ * referenced in later tiers.  Each tier adds columns to the original batch corresponding
+ * to the output of the sub-expressions.
+ * Example of how this is processed:
+ *   Original projection expressions:
+ *   (((a + b) + c) * e), (((a + b) + d) * f), (a + e), (c + f)
+ *   Input columns for tier 1: a, b, c, d, e, f  (original projection inputs)
+ *   Tier 1: (a + b) as ref1
+ *   Input columns for tier 2: a, b, c, d, e, f, ref1
+ *   Tier 2: (ref1 + c) as ref2, (ref1 + d) as ref3
+ *   Input columns for tier 3: a, b, c, d, e, f, ref1, ref2, ref3
+ *   Tier 3: (ref2 * e), (ref3 * f), (a + e), (c + f)
+ */
+ case class GpuTieredProject(val exprSets: Seq[Seq[GpuExpression]]) extends Arm {
+
+  @tailrec
+  private def projectTier(boundExprs: Seq[Seq[GpuExpression]],
+      cb: ColumnarBatch, doClose: Boolean): ColumnarBatch = {
+    boundExprs match {
+      case Nil => {
+        cb
+      }
+      case exprSet :: tail => {
+        val projectCb = withResource(new NvtxRange("project tier", NvtxColor.ORANGE)) { _ =>
+          closeOnExcept(GpuProjectExec.project(cb, exprSet)) { projectResult =>
+            projectResult
+          }
+        }
+        val nextCb = if (tail.isEmpty) {
+          projectCb
+        } else {
+          withResource(projectCb) { newCols =>
+            GpuColumnVector.combineColumns(cb, newCols)
+          }
+        }
+        if (doClose) cb.close()
+        projectTier(tail, nextCb, true)
+      }
+    }
+  }
+
+  def tieredProject(batch: ColumnarBatch): ColumnarBatch = {
+    projectTier(exprSets, batch, false)
+  }
+}
+
+/**
  * Run a filter on a batch.  The batch will be consumed.
  */
 object GpuFilter extends Arm {
