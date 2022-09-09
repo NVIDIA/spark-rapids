@@ -22,5 +22,5 @@ TPC-DS Like Bench q86,app-20210319163812-1778,3,Register input tables,0,0,0.0,0.
 TPC-DS Like Bench q86,app-20210319163812-1778,21,Register input tables,1,1,1.0,1.0,0.0,Not Recommended
 TPC-DS Like Bench q86,app-20210319163812-1778,15,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
 TPC-DS Like Bench q86,app-20210319163812-1778,6,Register input tables,0,0,0.0,0.0,0.0,Not Recommended
-TPC-DS Like Bench q86,app-20210319163812-1778,24,Benchmark Run: query=q86; iteration=0,9565,9565,3105.51,3.08,6459.48,Not Applicable
+TPC-DS Like Bench q86,app-20210319163812-1778,24,Benchmark Run: query=q86; iteration=0,9565,9565,2686.79,3.56,6878.2,Not Applicable
 TPC-DS Like Bench q86,app-20210319163812-1778,0,Register input tables,2,2,2.0,1.0,0.0,Not Recommended

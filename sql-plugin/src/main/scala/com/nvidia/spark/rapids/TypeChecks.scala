@@ -2265,12 +2265,12 @@ object SupportedOpsForTools {
     val header = Seq("CPUOperator", "Score")
     println(header.mkString(","))
     val operatorCustomSpeedUp =  Map(
-      ("BroadcastHashJoinExec", "3.0"),
-      ("ShuffleExchangeExec", "3.1"),
-      ("FilterExec", "2.4"),
-      ("HashAggregateExec", "3.4"),
-      ("SortExec", "5.2"),
-      ("SortMergeJoinExec", "14.1"),
+      ("BroadcastHashJoinExec", "5.1"),
+      ("ShuffleExchangeExec", "4.2"),
+      ("FilterExec", "2.8"),
+      ("HashAggregateExec", "4.5"),
+      ("SortExec", "8.0"),
+      ("SortMergeJoinExec", "22.7"),
       ("ArrowEvalPythonExec", "1.2"),
       ("AggregateInPandasExec", "1.2"),
       ("FlatMapGroupsInPandasExec", "1.2"),
