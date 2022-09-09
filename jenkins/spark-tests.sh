@@ -213,13 +213,16 @@ run_iceberg_tests() {
 
  # Test spark-avro with documented way of deploying at run time via --packages option from Maven
 run_avro_tests() {
-  unset TEST_PARALLEL  # Enable auto spark local parallel in run_pyspark_from_build.sh
   export PYSP_TEST_spark_jars_packages="org.apache.spark:spark-avro_2.12:${SPARK_VER}"
 
   # Workaround to avoid appending avro jar file by '--jars'
-  rm -vf $LOCAL_JAR_PATH/spark-avro*.jar
+  AVRO_JAR_FILE=`cd $LOCAL_JAR_PATH && ls spark-avro*.jar`
+  mv $LOCAL_JAR_PATH/$AVRO_JAR_FILE $LOCAL_JAR_PATH/$AVRO_JAR_FILE%
 
   ./run_pyspark_from_build.sh -k avro
+
+  # Restore avro jar file
+  mv $LOCAL_JAR_PATH/$AVRO_JAR_FILE% $LOCAL_JAR_PATH/$AVRO_JAR_FILE
 }
 
 run_test_not_parallel() {
