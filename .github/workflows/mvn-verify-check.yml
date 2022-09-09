@@ -42,7 +42,7 @@ jobs:
         id: noSnapshotVersionsStep
         run: |
           set -x
-          . $(dirname "$0")/../../jenkins/version-def.sh
+          . ./jenkins/version-def.sh
           tailNoSnapshotVersionsArr=("${TAIL_NOSNAPSHOTS_VERSIONS[@]}")
           svArrBody=$(printf ",{\"spark-version\":\"%s\"}" "${tailNoSnapshotVersionsArr[@]}")
           svArrBody=${svArrBody:1}
