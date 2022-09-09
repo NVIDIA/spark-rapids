@@ -338,6 +338,7 @@ def test_cache_daytimeinterval(enable_vectorized_conf):
 # NOTE: this test is here because the necessary cache configuration is only 
 # available when this test file is used
 @ignore_order(local=True)
+@allow_non_gpu("ShuffleExchangeExec")
 @pytest.mark.parametrize("data_gen", integral_gens, ids=idfn)
 def test_aqe_cache_join(data_gen):
     conf = {'spark.sql.adaptive.enabled': 'true'}
