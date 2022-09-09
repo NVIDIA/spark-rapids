@@ -180,30 +180,14 @@ set_alluxio_property alluxio.underfs.s3.default.mode 0755
 set_alluxio_property alluxio.worker.tieredstore.levels "1"
 set_alluxio_property alluxio.worker.data.server.domain.socket.address /local_disk0/alluxio_domain_socket
 set_alluxio_property alluxio.worker.data.server.domain.socket.as.uuid true
-#set_alluxio_property alluxio.worker.network.async.cache.manager.threads.max 16
 set_alluxio_property alluxio.worker.network.async.cache.manager.queue.max 4000
 set_alluxio_property alluxio.user.short.circuit.preferred true
 
-# set metrics properties
-#set_metrics_property sink.csv.class alluxio.metrics.sink.CsvSink
-#set_metrics_property sink.csv.period 5
-#set_metrics_property sink.csv.unit seconds
-#set_metrics_property sink.csv.directory /opt/alluxio-2.8.0/logs
-
-#set_alluxio_property alluxio.user.block.size.bytes.default 16M
-#set_alluxio_property alluxio.underfs.s3.threads.max 80
-
-#set_alluxio_property alluxio.job.worker.threadpool.size 30
 set_alluxio_property alluxio.job.worker.threadpool.size 20
 set_alluxio_property alluxio.worker.network.block.writer.threads.max 2048
 set_alluxio_property alluxio.worker.network.block.reader.threads.max 2048
-#set_alluxio_property alluxio.user.network.netty.worker.threads 30
 set_alluxio_property alluxio.master.ufs.block.location.cache.capacity 2000000
 set_alluxio_property alluxio.master.ufs.path.cache.capacity 200000
-
-#this default to number of cores on system, do we need to increase?
-#set_alluxio_property alluxio.master.metadata.sync.executor.pool.size
-#set_alluxio_property alluxio.master.rpc.executor.max.pool.size 1000
 
 sed -i "s/localhost/${DB_DRIVER_IP}/g" /opt/alluxio-${ALLUXIO_VERSION}/conf/masters
 

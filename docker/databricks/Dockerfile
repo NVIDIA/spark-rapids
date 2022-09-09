@@ -30,7 +30,8 @@ ARG CUDA_MAJOR=11-5
 #############
 # Install all needed libs
 #############
-COPY requirements_10.4ML.txt /tmp/requirements.txt
+ARG REQUIREMENTS=requirements_10.4ML.txt
+COPY $REQUIREMENTS /tmp/requirements.txt
 
 RUN set -ex && \ 
     apt-get -y update && \
@@ -101,11 +102,11 @@ ENV PATH=/usr/local/nvidia/bin:/databricks/python3/bin:/usr/local/sbin:/usr/loca
 # Spark RAPIDS configuration
 #############
 ARG DRIVER_CONF_FILE=00-custom-spark-driver-defaults.conf
-ARG JAR_URL=https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/22.08.0/rapids-4-spark_2.12-22.08.0.jar
+ARG JAR_URL=https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/22.10.0/rapids-4-spark_2.12-22.10.0.jar
 COPY ${DRIVER_CONF_FILE} /databricks/driver/conf/00-custom-spark-driver-defaults.conf
 
 WORKDIR /databricks/jars
-RUN wget $JAR_URL
+ADD $JAR_URL /databricks/jars
 
 # add local monit shell script in the right location
 RUN mkdir -p /etc/init.d
