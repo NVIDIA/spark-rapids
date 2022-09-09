@@ -34,7 +34,8 @@ import org.apache.spark.sql.execution.datasources.{CatalogFileIndex, FileIndex, 
 object AlluxioUtils extends Logging {
   private val checkedAlluxioPath = scala.collection.mutable.HashSet[String]()
 
-  private def checkAlluxioMounted(hadoopConfiguration: Configuration,
+  private def checkAlluxioMounted(
+      hadoopConfiguration: Configuration,
       alluxio_path: String): Unit = {
     this.synchronized {
       if (!checkedAlluxioPath.contains(alluxio_path)) {
@@ -153,9 +154,11 @@ object AlluxioUtils extends Logging {
   // path is like "s3://foo/test...", it mounts bucket "foo" by calling the alluxio CLI
   // And we'll append --option to set access_key and secret_key if existing.
   // Suppose the key doesn't exist when using like Databricks's instance profile
-  private def autoMountBucket(scheme: String, bucket: String,
-                                access_key: Option[String],
-                                secret_key: Option[String]): Unit = {
+  private def autoMountBucket(
+      scheme: String,
+      bucket: String,
+      access_key: Option[String],
+      secret_key: Option[String]): Unit = {
     // to match the output of alluxio fs mount, append / to remote_path
     // and add / before bucket name for absolute path in Alluxio
     val remote_path = scheme + "://" + bucket + "/"
@@ -188,7 +191,8 @@ object AlluxioUtils extends Logging {
 
   // first try to get fs.s3a.access.key from spark config
   // second try to get from environment variables
-  private def getKeyAndSecret(hadoopConfiguration: Configuration,
+  private def getKeyAndSecret(
+      hadoopConfiguration: Configuration,
       runtimeConf: RuntimeConfig) : (Option[String], Option[String]) = {
     val hadoopAccessKey =
       hadoopConfiguration.get("fs.s3a.access.key")
@@ -209,8 +213,8 @@ object AlluxioUtils extends Logging {
     }
   }
 
-  private def genFuncForPathReplacement(replaceMapOption: Option[Map[String, String]]
-                                       ) : Option[Path => Path] = {
+  private def genFuncForPathReplacement(
+      replaceMapOption: Option[Map[String, String]]): Option[Path => Path] = {
     if (replaceMapOption.isDefined) {
       Some((f: Path) => {
         val pathStr = f.toString
@@ -231,8 +235,11 @@ object AlluxioUtils extends Logging {
     }
   }
 
-  private def genFuncForAutoMountReplacement(conf: RapidsConf, runtimeConf: RuntimeConfig,
-      hadoopConf: Configuration, alluxioBucketRegex: String) : Option[Path => Path] = {
+  private def genFuncForAutoMountReplacement(
+      conf: RapidsConf,
+      runtimeConf: RuntimeConfig,
+      hadoopConf: Configuration,
+      alluxioBucketRegex: String) : Option[Path => Path] = {
     Some((f: Path) => {
       val pathStr = f.toString
       if (pathStr.matches(alluxioBucketRegex)) {
@@ -253,7 +260,9 @@ object AlluxioUtils extends Logging {
     })
   }
 
-  private def getReplacementOptions(conf: RapidsConf, runtimeConf: RuntimeConfig,
+  private def getReplacementOptions(
+      conf: RapidsConf,
+      runtimeConf: RuntimeConfig,
       hadoopConf: Configuration): (Option[Path => Path], Option[Map[String, String]]) = {
     val alluxioPathsReplace: Option[Seq[String]] = conf.getAlluxioPathsToReplace
     val alluxioAutoMountEnabled = conf.getAlluxioAutoMountEnabled
@@ -289,6 +298,9 @@ object AlluxioUtils extends Logging {
     (replaceFunc, replaceMapOption)
   }
 
+  // This function just replaces the path in the PartitionDirectory files
+  // and does not do a new file listing after replacing with alluxio://.
+  // This saves time but would not update block locations or other metadata.
   def replacePathInPDIfNeeded(
       conf: RapidsConf,
       pd: PartitionDirectory,
@@ -362,14 +374,14 @@ object AlluxioUtils extends Logging {
       // like Databricks where they have customer file index types.
       relation.location match {
         case pfi: PartitioningAwareFileIndex =>
-          logWarning("Handling PartitioningAwareFileIndex")
+          logDebug("Handling PartitioningAwareFileIndex")
           createNewFileIndexWithPathsReplaced(pfi.partitionSpec(), pfi.rootPaths)
         case cfi: CatalogFileIndex =>
-          logWarning("Handling CatalogFileIndex")
+          logDebug("Handling CatalogFileIndex")
           val memFI = cfi.filterPartitions(Nil)
           createNewFileIndexWithPathsReplaced(memFI.partitionSpec(), memFI.rootPaths)
         case _ => {
-          logWarning(s"Handling file index type: ${relation.location.getClass}")
+          logDebug(s"Handling file index type: ${relation.location.getClass}")
 
           // With the base Spark FileIndex type we don't know how to modify it to
           // just replace the paths so we have to try to recompute.

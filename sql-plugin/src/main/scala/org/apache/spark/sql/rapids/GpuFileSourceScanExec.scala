@@ -87,6 +87,7 @@ case class GpuFileSourceScanExec(
   private val isAlluxioAlgoSelectionTime = {
     val alluxioPathsReplace = rapidsConf.getAlluxioPathsToReplace
     val alluxioAutoMountEnabled = rapidsConf.getAlluxioAutoMountEnabled
+    // currently only support Alluxio replacement with Parquet files
     (alluxioPathsReplace.isDefined || alluxioAutoMountEnabled) &&
       rapidsConf.isAlluxioReplacementAlgoSelectTime &&
       relation.fileFormat.isInstanceOf[ParquetFileFormat]
@@ -120,7 +121,6 @@ case class GpuFileSourceScanExec(
   @transient lazy val selectedPartitions: Array[PartitionDirectory] = {
     val optimizerMetadataTimeNs = relation.location.metadataOpsTimeNs.getOrElse(0L)
     val startTime = System.nanoTime()
-    logWarning("starting list files")
     val origRet =
       relation.location.listFiles(
         partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
@@ -134,7 +134,8 @@ case class GpuFileSourceScanExec(
     } else {
       origRet
     }
-    logWarning("conversion time took : " + (System.nanoTime() - startTime))
+    logDebug(s"File listing and possibly replace with Alluxio path " +
+      s"took: ${System.nanoTime() - startTime}")
 
     setFilesNumAndSizeMetric(ret, true)
     val timeTakenMs = NANOSECONDS.toMillis(
