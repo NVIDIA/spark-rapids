@@ -44,7 +44,7 @@ mvn_verify() {
     for version in "${SPARK_SHIM_VERSIONS_ALL[@]}"
     do
         echo "Spark version: $version"
-        # build and run unit tests on one 3.1.X version, one 3.2.X and one 3.3.X version
+        # build and run unit tests on one specific version for each sub-version (e.g. 311, 320, 330)
         if [[ "${SPARK_SHIM_VERSIONS_TEST[@]}" =~ "$version" ]]; then
             env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS \
               -Dpytest.TEST_TAGS='' -pl '!tools'

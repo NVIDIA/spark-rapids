@@ -19,7 +19,5 @@ function get_spark_shim_versions() {
     PROFILE_OPT=$1
     SPARK_SHIM_VERSIONS_STR=$(mvn -B help:evaluate -q -pl dist $PROFILE_OPT -Dexpression=included_buildvers -DforceStdout)
     SPARK_SHIM_VERSIONS_STR=$(echo $SPARK_SHIM_VERSIONS_STR)
-    PRE_IFS=$IFS
     IFS=", " <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS
-    IFS=$PRE_IFS
 }
