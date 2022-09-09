@@ -35,7 +35,8 @@ case class GpuBringBackToHost(child: SparkPlan) extends ShimUnaryExecNode with G
   override def supportsColumnar: Boolean = true
 
   override protected def doExecute(): RDD[InternalRow] = {
-    child.execute()
+    val columnarToRow = GpuColumnarToRowExec(child)
+    columnarToRow.execute()
   }
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {

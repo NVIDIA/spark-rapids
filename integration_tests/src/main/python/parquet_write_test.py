@@ -306,7 +306,7 @@ def test_parquet_write_legacy_fallback(spark_tmp_path, ts_write, ts_rebase, spar
 @pytest.mark.parametrize('write_options', [{"parquet.encryption.footer.key": "k1"},
                                            {"parquet.encryption.column.keys": "k2:a"},
                                            {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
-def test_parquet_write_encryption_fallback(spark_tmp_path, spark_tmp_table_factory, write_options):
+def test_parquet_write_encryption_option_fallback(spark_tmp_path, spark_tmp_table_factory, write_options):
     def write_func(spark, path):
         writer = unary_op_df(spark, gen).coalesce(1).write
         for key in write_options:
@@ -319,6 +319,43 @@ def test_parquet_write_encryption_fallback(spark_tmp_path, spark_tmp_table_facto
         lambda spark, path: spark.read.parquet(path),
         data_path,
         'DataWritingCommandExec')
+
+@allow_non_gpu("DataWritingCommandExec")
+@pytest.mark.parametrize("write_options", [{"parquet.encryption.footer.key": "k1"},
+                                           {"parquet.encryption.column.keys": "k2:a"},
+                                           {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
+def test_parquet_write_encryption_runtimeconfig_fallback(spark_tmp_path, write_options):
+    gen = IntegerGen()
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    assert_gpu_fallback_write(
+        lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        "DataWritingCommandExec",
+        conf=write_options)
+
+@allow_non_gpu("DataWritingCommandExec")
+@pytest.mark.parametrize("write_options", [{"parquet.encryption.footer.key": "k1"},
+                                           {"parquet.encryption.column.keys": "k2:a"},
+                                           {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
+def test_parquet_write_encryption_hadoopconfig_fallback(spark_tmp_path, write_options):
+    gen = IntegerGen()
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    def setup_hadoop_confs(spark):
+        for k, v in write_options.items():
+            spark.sparkContext._jsc.hadoopConfiguration().set(k, v)
+    def reset_hadoop_confs(spark):
+        for k in write_options.keys():
+            spark.sparkContext._jsc.hadoopConfiguration().unset(k)
+    try:
+        with_cpu_session(setup_hadoop_confs)
+        assert_gpu_fallback_write(
+            lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.parquet(path),
+            lambda spark, path: spark.read.parquet(path),
+            data_path,
+            "DataWritingCommandExec")
+    finally:
+        with_cpu_session(reset_hadoop_confs)
 
 @allow_non_gpu('DataWritingCommandExec')
 # note that others should fail as well but requires you to load the libraries for them
