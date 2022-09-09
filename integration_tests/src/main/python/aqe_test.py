@@ -91,25 +91,6 @@ def test_aqe_join_parquet_batch(spark_tmp_path, data_gen):
 
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
 
-# Test the AQE optimization that sometimes drops children from the initial list of expressions that 
-# are still children of window expressions in GpuWindowExec
-@ignore_order
-@pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
-@allow_non_gpu('ShuffleExchangeExec')
-def test_aqe_join_sum_window(data_gen):
-    conf = copy_and_update(_adaptive_conf, {
-            'spark.rapids.sql.batchSizeBytes': '100',
-            'spark.rapids.sql.explain': 'NONE'})
-
-    def do_it(spark):
-        agg_table = gen_df(spark, StructGen([('a_1', LongRangeGen()), ('c', data_gen)], nullable=False))
-        part_table = gen_df(spark, StructGen([('a_2', LongRangeGen()), ('b', byte_gen)], nullable=False))
-        agg_table.createOrReplaceTempView("agg")
-        part_table.createOrReplaceTempView("part")
-        return spark.sql("select b, sum(c) as sum_c, sum(c)/sum(sum(c)) over (partition by b) as r_c from agg, part where a_1 = a_2 group by b order by b, r_c")
-
-    assert_gpu_and_cpu_are_equal_collect(do_it, conf = conf)
-
 # Test the map stage submission handling for GpuShuffleExchangeExec
 @ignore_order(local=True)
 def test_aqe_struct_self_join(spark_tmp_table_factory):

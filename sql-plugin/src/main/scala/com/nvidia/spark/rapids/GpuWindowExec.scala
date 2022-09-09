@@ -340,11 +340,8 @@ object GpuWindowExec extends Arm {
           case wf: GpuWindowFunction =>
             // All window functions, including those that are also aggregation functions, are
             // wrapped in a GpuWindowExpression, so dedup and save their children into the pre
-            // stage, replacing them with aliases. Also, sometimes children are not provided in the
-            // initial list of expressions after optimizations, so we add them here, and they will
-            // be deduped anyways in the other passes
-            val newChildren = wf.children.map(ce =>
-              extractAndSave(extractAndSave(ce, preProject, preDedupe), windowOps, windowDedupe))
+            // stage, replacing them with aliases.
+            val newChildren = wf.children.map(extractAndSave(_, preProject, preDedupe))
             wf.withNewChildren(newChildren)
           case wsc @ GpuWindowSpecDefinition(partitionSpec, orderSpec, _) =>
             // Extracts expressions from the partition spec and order spec to be sure that they
