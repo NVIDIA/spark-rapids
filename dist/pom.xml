@@ -58,6 +58,10 @@
             312db,
             321db
         </databricks.buildvers>
+        <premergeUT.buildvers>
+            320,
+            330
+        </premergeUT.buildvers>
         <dist.jar.name>${project.build.directory}/${project.build.finalName}-${cuda.version}.jar</dist.jar.name>
     </properties>
     <profiles>
@@ -75,6 +79,14 @@
             <properties>
                 <included_buildvers>
                     ${noSnapshot.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
+            <id>premergeUT</id>
+            <properties>
+                <included_buildvers>
+                    ${premergeUT.buildvers}
                 </included_buildvers>
             </properties>
         </profile>

@@ -80,7 +80,8 @@ SPARK_SHIM_VERSIONS_ALL=("${SPARK_SHIM_VERSIONS[@]}")
 # noSnapshots only
 get_spark_shim_versions -PnoSnapshots
 SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS[@]}")
-# build and run unit tests on one 3.1.X version (base version covers this), one 3.2.X and one 3.3.X version
-SPARK_SHIM_VERSIONS_TEST=($(for version in ${SPARK_SHIM_VERSIONS_ALL[@]}; do [[ $version != ${SPARK_BASE_SHIM_VERSION: 0: 2}* ]] && echo $version; done | sort -n -k1.1,1.2 -u -s))
+# build and run unit tests on one specific version for each sub-version (e.g. 311, 320, 330)
+get_spark_shim_versions -PpremergeUT
+SPARK_SHIM_VERSIONS_TEST=("${SPARK_SHIM_VERSIONS[@]}")
 # tail noSnapshots
 TAIL_NOSNAPSHOTS_VERSIONS=(${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]:1})
