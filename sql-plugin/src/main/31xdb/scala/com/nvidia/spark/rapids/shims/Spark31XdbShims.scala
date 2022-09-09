@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.shims
 
 import com.databricks.sql.execution.window.RunningWindowFunctionExec
 import com.nvidia.spark.rapids._
-import org.apache.hadoop.fs.FileStatus
+import org.apache.hadoop.fs.{FileStatus, Path}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -318,6 +318,22 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
 
   override def filesFromFileIndex(fileCatalog: PartitioningAwareFileIndex): Seq[FileStatus] = {
     fileCatalog.allFiles().map(_.toFileStatus)
+  }
+
+  override def alluxioReplacePathsPartitionDirectory(
+      pd: PartitionDirectory,
+      replaceFunc: Option[Path => Path]): Seq[FileStatus] = {
+    pd.files.map { f =>
+      val replaced = replaceFunc.get(f.getPath)
+      // Alluxio caches the entire file, so the size should be the same.
+      // Just hardcode block replication to 1 to make sure nothing weird happens but
+      // I haven't seen it used by splits. The modification time shouldn't be
+      // affected by Alluxio. Blocksize is also not used. Note that we will not
+      // get new block locations with this so if Alluxio would return new ones
+      // this isn't going to get them. From my current experiments, Alluxio is not
+      // returning the block locations of the cached blocks anyway.
+      new FileStatus(f.length, f.isDir, 1, f.blockSize, f.modificationTime, replaced)
+    }
   }
 
   override def isEmptyRelation(relation: Any): Boolean = false

@@ -22,14 +22,15 @@ import java.util.Properties
 import scala.io.{BufferedSource, Source}
 import scala.sys.process.{Process, ProcessLogger}
 
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileStatus, Path}
+import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.RuntimeConfig
-import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 import org.apache.spark.sql.catalyst.expressions.{Expression, PlanExpression}
-import org.apache.spark.sql.execution.datasources.{CatalogFileIndex, FileIndex, HadoopFsRelation, InMemoryFileIndex, PartitioningAwareFileIndex, PartitionDirectory, PartitionSpec}
+import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
+import org.apache.spark.sql.execution.datasources.{CatalogFileIndex, FileIndex, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitioningAwareFileIndex, PartitionSpec}
 
 object AlluxioUtils extends Logging {
   private val checkedAlluxioPath = scala.collection.mutable.HashSet[String]()
@@ -308,17 +309,7 @@ object AlluxioUtils extends Logging {
       runtimeConf: RuntimeConfig): PartitionDirectory = {
     val (replaceFunc, replaceMapOption) = getReplacementOptions(conf, runtimeConf, hadoopConf)
     if (replaceFunc.isDefined) {
-      val alluxPaths = pd.files.map { f =>
-        val replaced = replaceFunc.get(f.getPath)
-        // Alluxio caches the entire file, so the size should be the same.
-        // Just hardcode block replication to 1 to make sure nothing weird happens but
-        // I haven't seen it used by splits. The modification time shouldn't be
-        // affected by Alluxio. Blocksize is also not used. Note that we will not
-        // get new block locations with this so if Alluxio would return new ones
-        // this isn't going to get them. From my current experiments, Alluxio is not
-        // returning the block locations of the cached blocks anyway.
-        new FileStatus(f.length, f.isDir, 1, f.blockSize, f.modificationTime, replaced)
-      }
+      val alluxPaths = SparkShimImpl.alluxioReplacePathsPartitionDirectory(pd, replaceFunc)
       // check the alluxio paths in root paths exist or not
       // throw out an exception to stop the job when any of them is not mounted
       if (replaceMapOption.isDefined) {

@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.hadoop.fs.FileStatus
+import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.rdd.RDD
@@ -30,7 +30,7 @@ import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec}
 import org.apache.spark.sql.execution.command.RunnableCommand
-import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile, PartitioningAwareFileIndex}
+import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionDirectory, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.internal.SQLConf
@@ -113,6 +113,9 @@ trait SparkShims {
   def hasCastFloatTimestampUpcast: Boolean
 
   def filesFromFileIndex(fileCatalog: PartitioningAwareFileIndex): Seq[FileStatus]
+
+  def alluxioReplacePathsPartitionDirectory( pd: PartitionDirectory,
+    replaceFunc: Option[Path => Path]): Seq[FileStatus]
 
   def isEmptyRelation(relation: Any): Boolean
 
