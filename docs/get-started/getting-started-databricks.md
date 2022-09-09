@@ -130,6 +130,8 @@ cluster.
     executor with 1 GPU, which is limiting, especially on the reads and writes from Parquet.  Set
     this to 1/(number of cores per executor) which will allow multiple tasks to run in parallel just
     like the CPU side.  Having the value smaller is fine as well.
+    Note: Please set `spark.task.resource.gpu.amount` default to 1 for single-node Databricks cluster
+    because of Spark local mode.
 
 	There is an incompatibility between the Databricks specific implementation of adaptive query
     execution (AQE) and the spark-rapids plugin.  In order to mitigate this,
@@ -148,7 +150,7 @@ cluster.
 
     ![Spark Config](../img/Databricks/sparkconfig.png)
 
-   If running Pandas UDFs with GPU support from the plugin, at least three additional options
+    If running Pandas UDFs with GPU support from the plugin, at least three additional options
     as below are required. The `spark.python.daemon.module` option is to choose the right daemon module
     of python for Databricks. On Databricks, the python runtime requires different parameters than the
     Spark one, so a dedicated python deamon module `rapids.daemon_databricks` is created and should
