@@ -213,6 +213,14 @@ run_iceberg_tests() {
   fi
 }
 
+run_avro_tests() {
+  # Workaround to avoid appending avro jar file by '--jars',
+  # which would be addressed by https://github.com/NVIDIA/spark-rapids/issues/6532
+  rm -vf $LOCAL_JAR_PATH/spark-avro*.jar
+  PYSP_TEST_spark_jars_packages="org.apache.spark:spark-avro_2.12:${SPARK_VER}" \
+    ./run_pyspark_from_build.sh -k avro
+}
+
 # TEST_MODE
 # - DEFAULT: all tests except cudf_udf tests
 # - DELTA_LAKE_ONLY: Delta Lake tests only
@@ -235,6 +243,11 @@ fi
 # Iceberg tests
 if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
   run_iceberg_tests
+fi
+
+# Avro tests
+if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "AVRO_ONLY" ]]; then
+  run_avro_tests
 fi
 
 # cudf_udf test: this mostly depends on cudf-py, so we run it into an independent CI
