@@ -89,7 +89,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
   test("Cast from string to int using hand-picked values") {
     testCastStringTo(DataTypes.IntegerType, Seq(".--e-37602.n", "\r\r\t\n11.12380", "-.2", ".3",
-      ".", "+1.2", "\n123\n456\n", "1e+4"))
+      ".", "+1.2", "\n123\n456\n", "1e+4", "0.123", "321.123", ".\r123"))
   }
 
   test("Cast from string to int ANSI mode with mix of valid and invalid values") {
