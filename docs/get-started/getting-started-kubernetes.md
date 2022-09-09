@@ -108,7 +108,6 @@ $SPARK_HOME/bin/spark-submit \
      --conf spark.task.resource.gpu.amount=1 \
      --conf spark.rapids.memory.pinnedPool.size=2G \
      --conf spark.executor.memoryOverhead=3G \
-     --conf spark.locality.wait=0s \
      --conf spark.sql.files.maxPartitionBytes=512m \
      --conf spark.sql.shuffle.partitions=10 \
      --conf spark.plugins=com.nvidia.spark.SQLPlugin \
@@ -173,7 +172,6 @@ $SPARK_HOME/bin/spark-shell \
      --conf spark.task.resource.gpu.amount=1 \
      --conf spark.rapids.memory.pinnedPool.size=2G \
      --conf spark.executor.memoryOverhead=3G \
-     --conf spark.locality.wait=0s \
      --conf spark.sql.files.maxPartitionBytes=512m \
      --conf spark.sql.shuffle.partitions=10 \
      --conf spark.plugins=com.nvidia.spark.SQLPlugin \
@@ -240,7 +238,6 @@ $SPARK_HOME/bin/spark-submit \
      --conf spark.task.resource.gpu.amount=1 \
      --conf spark.rapids.memory.pinnedPool.size=2G \
      --conf spark.executor.memoryOverhead=3G \
-     --conf spark.locality.wait=0s \
      --conf spark.sql.files.maxPartitionBytes=512m \
      --conf spark.sql.shuffle.partitions=10 \
      --conf spark.plugins=com.nvidia.spark.SQLPlugin \
@@ -302,7 +299,6 @@ Using Spark Operator is another way to submit Spark Applications into a Kubernet
        "spark.executor.memory": "1g"
        "spark.rapids.memory.pinnedPool.size": "2g"
        "spark.executor.memoryOverhead": "3g"
-       "spark.locality.wait": "0s"
        "spark.sql.files.maxPartitionBytes": "512m"
        "spark.sql.shuffle.partitions": "10"
        "spark.plugins": "com.nvidia.spark.SQLPlugin"

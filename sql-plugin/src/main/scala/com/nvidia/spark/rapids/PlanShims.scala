@@ -16,17 +16,16 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.execution.command.DataWritingCommand
+import org.apache.spark.sql.execution.SparkPlan
 
-/**
- * The subclass of HiveProvider imports spark-hive classes. This file should not imports
- * spark-hive because `class not found` exception may throw if spark-hive does not exist at
- * runtime. Details see: https://github.com/NVIDIA/spark-rapids/issues/5648
- */
-trait HiveProvider {
-  def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
-      DataWritingCommandRule[_ <: DataWritingCommand]]
+trait PlanShims {
+  def extractExecutedPlan(plan: SparkPlan): SparkPlan
+}
 
-  def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
+object PlanShims {
+  private lazy val shims = ShimLoader.newPlanShims()
+
+  def extractExecutedPlan(plan: SparkPlan): SparkPlan = {
+    shims.extractExecutedPlan(plan)
+  }
 }

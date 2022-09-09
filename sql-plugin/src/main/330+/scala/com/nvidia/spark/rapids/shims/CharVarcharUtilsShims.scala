@@ -16,15 +16,12 @@
 
 package com.nvidia.spark.rapids.shims
 
-import ai.rapids.cudf.{ColumnView, DType}
-import com.nvidia.spark.rapids.GpuOrcScan
+import org.apache.spark.sql.catalyst.util.CharVarcharUtils
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.types.StructType
 
-
-object OrcCastingShims {
-
-  def castIntegerToTimestamp(col: ColumnView, colType: DType): ColumnView = {
-    // For 311 <= spark < 320 (including 311, 312, 313, 314), they consider the integer as
-    // milliseconds.
-    GpuOrcScan.castIntegersToTimestamp(col, colType, DType.TIMESTAMP_MILLISECONDS)
+object CharVarcharUtilsShims {
+  def getRawSchema(schema: StructType, conf: SQLConf): StructType = {
+    CharVarcharUtils.getRawSchema(schema, conf)
   }
 }

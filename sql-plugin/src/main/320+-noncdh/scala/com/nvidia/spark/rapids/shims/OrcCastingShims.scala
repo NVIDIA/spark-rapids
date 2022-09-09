@@ -23,8 +23,7 @@ import com.nvidia.spark.rapids.GpuOrcScan
 object OrcCastingShims {
 
   def castIntegerToTimestamp(col: ColumnView, colType: DType): ColumnView = {
-    // For 311 <= spark < 320 (including 311, 312, 313, 314), they consider the integer as
-    // milliseconds.
-    GpuOrcScan.castIntegersToTimestamp(col, colType, DType.TIMESTAMP_MILLISECONDS)
+    // For spark >= 320 (except spark-321-cdh), they consider the integers in `col` as seconds
+    GpuOrcScan.castIntegersToTimestamp(col, colType, DType.TIMESTAMP_SECONDS)
   }
 }
