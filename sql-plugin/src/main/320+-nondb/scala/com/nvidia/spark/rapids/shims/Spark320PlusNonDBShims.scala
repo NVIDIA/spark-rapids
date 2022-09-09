@@ -46,8 +46,8 @@ trait Spark320PlusNonDBShims extends SparkShims {
 
   override def alluxioReplacePathsPartitionDirectory(
       pd: PartitionDirectory,
-      replaceFunc: Option[Path => Path]): Seq[FileStatus] = {
-    pd.files.map { f =>
+      replaceFunc: Option[Path => Path]): (Seq[FileStatus], PartitionDirectory) = {
+    val updatedFileStatus = pd.files.map { f =>
       val replaced = replaceFunc.get(f.getPath)
       // Alluxio caches the entire file, so the size should be the same.
       // Just hardcode block replication to 1 to make sure nothing weird happens but
@@ -58,6 +58,7 @@ trait Spark320PlusNonDBShims extends SparkShims {
       // returning the block locations of the cached blocks anyway.
       new FileStatus(f.getLen, f.isDirectory, 1, f.getBlockSize, f.getModificationTime, replaced)
     }
+    (updatedFileStatus, PartitionDirectory(pd.values, updatedFileStatus))
   }
 
   def getWindowExpressions(winPy: WindowInPandasExec): Seq[NamedExpression] = winPy.windowExpression

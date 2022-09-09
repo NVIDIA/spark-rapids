@@ -309,7 +309,8 @@ object AlluxioUtils extends Logging {
       runtimeConf: RuntimeConfig): PartitionDirectory = {
     val (replaceFunc, replaceMapOption) = getReplacementOptions(conf, runtimeConf, hadoopConf)
     if (replaceFunc.isDefined) {
-      val alluxPaths = SparkShimImpl.alluxioReplacePathsPartitionDirectory(pd, replaceFunc)
+      val (alluxPaths, updatedPD) =
+        SparkShimImpl.alluxioReplacePathsPartitionDirectory(pd, replaceFunc)
       // check the alluxio paths in root paths exist or not
       // throw out an exception to stop the job when any of them is not mounted
       if (replaceMapOption.isDefined) {
@@ -319,7 +320,7 @@ object AlluxioUtils extends Logging {
               checkAlluxioMounted(hadoopConf, matched))
         }
       }
-      PartitionDirectory(pd.values, alluxPaths)
+      updatedPD
     } else {
       pd
     }

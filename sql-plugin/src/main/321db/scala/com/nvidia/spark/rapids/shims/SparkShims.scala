@@ -74,8 +74,8 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
 
   override def alluxioReplacePathsPartitionDirectory(
       pd: PartitionDirectory,
-      replaceFunc: Option[Path => Path]): Seq[FileStatus] = {
-    pd.files.map { f =>
+      replaceFunc: Option[Path => Path]): (Seq[FileStatus], PartitionDirectory) = {
+    val updatedFileStatus = pd.files.map { f =>
       val replaced = replaceFunc.get(f.getPath)
       // Alluxio caches the entire file, so the size should be the same.
       // Just hardcode block replication to 1 to make sure nothing weird happens but
@@ -86,6 +86,7 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
       // returning the block locations of the cached blocks anyway.
       new FileStatus(f.length, f.isDir, 1, f.blockSize, f.modificationTime, replaced)
     }
+    (updatedFileStatus, PartitionDirectory(pd.values, updatedFileStatus.toArray))
   }
 
   override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = null

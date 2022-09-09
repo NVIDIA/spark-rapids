@@ -115,7 +115,7 @@ trait SparkShims {
   def filesFromFileIndex(fileCatalog: PartitioningAwareFileIndex): Seq[FileStatus]
 
   def alluxioReplacePathsPartitionDirectory( pd: PartitionDirectory,
-    replaceFunc: Option[Path => Path]): Seq[FileStatus]
+    replaceFunc: Option[Path => Path]): (Seq[FileStatus], PartitionDirectory)
 
   def isEmptyRelation(relation: Any): Boolean
 
