@@ -368,8 +368,16 @@ This section will give some links about how to configure, tune Alluxio and some 
 
 ## Alluxio reliability
 The properties mentioned in this section can be found in [Alluxio configuration](https://docs.alluxio.io/os/user/stable/en/reference/Properties-List.html)
-### Auto start Alluxio master and workers
-After installed Alluxio master and workers, use this [script](../../scripts/alluxio/alluxio-systemd.sh) to create systemd services and start master and workers.
+### Auto start Alluxio masters and workers
+After installed Alluxio masters and workers, use this [script](../../scripts/alluxio/alluxio-systemd.sh) to create systemd services and start masters and workers.
+#### Prerequisites
+- Format Alluxio on masters: 
+    ```bash
+    $ ./bin/alluxio format
+    ```
+    Or you have executed `alluxio-start.sh master` which internally invoke `alluxio format`  
+- Close all the Alluxio masters and workers
+#### Create systemd services
 Commands are:
 ```bash
 # create systemd service for master and start master on master node
@@ -380,7 +388,7 @@ sudo sh -c 'ALLUXIO_HOME=/opt/alluxio-2.8.0 RUN_USER=ubuntu ./alluxio-systemd.sh
 ```
 Please specify ALLUXIO_HOME and RUN_USER properties if you have different properties.
 
-Now, the master and workers can be automatically started if the host rebooted or the processes of master and workers are unexpected killed.
+Now, the masters and workers can automatically start if the host rebooted or the processes of masters and workers are unexpected killed.
 If you want to stop the services, please do not use `kill`, use:
 ```bash
 sudo systemctl stop alluxio-master.service
@@ -392,39 +400,42 @@ sudo systemctl restart alluxio-master.service
 sudo systemctl restart alluxio-worker.service
 ```
 
-### Auto fallback to external file system transparently if Alluxio workers have failures
-`alluxio.user.client.cache.timeout.duration` means:  
-The timeout duration for local cache I/O operations (reading/writing/deleting). When this property is a positive value,local cache operations after timing out will fail and fallback to external file system but transparent to applications; when this property is a negative value, this feature is disabled.
-The default value is -1 which means disable the fallback.  
-The following configures set the fallback time out to 10 seconds.
-```
-vi $SPARK_HOME/conf/spark-defaults.conf
-
-spark.driver.extraJavaOptions    -Dalluxio.user.client.cache.timeout.duration=10sec
-spark.executor.extraJavaOptions  -Dalluxio.user.client.cache.timeout.duration=10sec  
-```
-
-### Avoid long time response if master or workers have failures
+### Avoid long time response if masters or workers have failures
 The default value of `alluxio.user.rpc.retry.max.duration` is 2 minutes.  
-If master is done the `alluxio.user.rpc.retry.max.duration` will cause at least 2 minutes waiting, it's also too long.
+If master is exited, the `alluxio.user.rpc.retry.max.duration` will cause at least 2 minutes waiting, it's too long.
 The default value of `alluxio.user.block.read.retry.max.duration` is 5 minutes.
-If worker is done the `alluxio.user.block.read.retry.max.duration` will cause 5 minutes waiting, it's too long.
+If worker is exited, the `alluxio.user.block.read.retry.max.duration` will cause 5 minutes waiting, it's too long.
 
 See also:
 ```
 alluxio.user.rpc.retry.max.duration
-alluxio.user.rpc.retry.base.sleep	
+alluxio.user.rpc.retry.max.sleep	
 alluxio.user.rpc.retry.base.sleep	
 
-alluxio.user.block.read.retry.max.duration	
-alluxio.user.block.read.retry.sleep.base	
-alluxio.user.block.read.retry.sleep.max	
+alluxio.user.block.read.retry.max.duration
+alluxio.user.block.read.retry.sleep.max		
+alluxio.user.block.read.retry.sleep.base 		
 ```
-Above configurations define the `ExponentialTimeBoundedRetry` retry policies and max durations, we can adjust them to appropriate values.  
+Above configurations define the `ExponentialTimeBoundedRetry` retry policies and `max durations`, we can adjust them to appropriate values.  
 
-```
+Set these properties on Spark because Spark invokes Alluxio client.
 vi $SPARK_HOME/conf/spark-defaults.conf
-
+```
 spark.driver.extraJavaOptions    -Dalluxio.user.rpc.retry.max.duration=10sec -Dalluxio.user.block.read.retry.max.duration=10sec
 spark.executor.extraJavaOptions  -Dalluxio.user.rpc.retry.max.duration=10sec -Dalluxio.user.block.read.retry.max.duration=10sec
 ```
+
+### Kick out dead worker early to avoid failures
+By default, `alluxio.master.worker.timeout` is 5min, this is the timeout between master and worker indicating a lost worker.  
+If the worker holding cache is killed but the elapsed time does not exceed the timeout,   
+the master still marks the worker as alive. The client will connect this dead worker to pull data, and will fail.  
+If the worker holding cache is killed and the elapsed time exceeds the timeout, the master marks the worker as lost.  
+In this case, if cluster has one alive worker, the client will query an alive worker  
+and the alive worker will pull data from external file system if it has no requested cache.
+
+To avoid failures when master marking an actual dead worker as alive, set the timeout to a reasonable value, like 1 minute.
+vi $ALLUXIO_HOME/conf/alluxio-site.properties
+```
+alluxio.master.worker.timeout=60sec
+```
+
