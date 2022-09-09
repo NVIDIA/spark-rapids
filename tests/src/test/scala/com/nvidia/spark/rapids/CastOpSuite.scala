@@ -987,30 +987,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  test("CAST string to integer - sanitize step") {
-    val testPairs: Seq[(String, String)] = Seq(
-      (null, null),
-      ("1e4", "1e4"),
-      ("123", "123"),
-      (".", "0"),
-      (".2", "0"),
-      ("-.2", "0"),
-      ("0.123", "0"),
-      ("321.123", "321"),
-      ("0.123\r123", null),
-      (".\r123", null)
-    )
-    val inputs = testPairs.map(_._1)
-    val expected = testPairs.map(_._2)
-    withResource(ColumnVector.fromStrings(inputs: _*)) { v =>
-      withResource(ColumnVector.fromStrings(expected: _*)) { expected =>
-        withResource(GpuCast.sanitizeStringToIntegralType(v, ansiEnabled = false)) { actual =>
-          CudfTestHelper.assertColumnsAreEqual(expected, actual)
-        }
-      }
-    }
-  }
-
   protected def testCastToDecimal(
     dataType: DataType,
     scale: Int,
