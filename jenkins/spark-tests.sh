@@ -215,14 +215,10 @@ run_iceberg_tests() {
 run_avro_tests() {
   export PYSP_TEST_spark_jars_packages="org.apache.spark:spark-avro_2.12:${SPARK_VER}"
 
-  # Workaround to avoid appending avro jar file by '--jars'
-  AVRO_JAR_FILE=`cd $LOCAL_JAR_PATH && ls spark-avro*.jar`
-  mv $LOCAL_JAR_PATH/$AVRO_JAR_FILE $LOCAL_JAR_PATH/$AVRO_JAR_FILE%
+  # Workaround to avoid appending avro jar file by '--jars', which would be addressed by https://github.com/NVIDIA/spark-rapids/issues/6532
+  rm -vf $LOCAL_JAR_PATH/spark-avro*.jar
 
   ./run_pyspark_from_build.sh -k avro
-
-  # Restore avro jar file
-  mv $LOCAL_JAR_PATH/$AVRO_JAR_FILE% $LOCAL_JAR_PATH/$AVRO_JAR_FILE
 }
 
 run_test_not_parallel() {
