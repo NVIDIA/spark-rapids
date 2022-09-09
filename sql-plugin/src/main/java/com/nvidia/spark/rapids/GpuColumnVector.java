@@ -1022,6 +1022,18 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
   }
 
+  /**
+   * Convert the table into host columns and return them, outside of a ColumnarBatch.
+   * @param colType the types of the columns.
+   */
+  public static RapidsHostColumnVector[] extractHostColumns(Table table, DataType[] colType) {
+    try (ColumnarBatch batch = from(table, colType)) {
+      return Arrays.stream(extractColumns(batch))
+          .map(GpuColumnVector::copyToHost)
+          .toArray(RapidsHostColumnVector[]::new);
+    }
+  }
+
   private final ai.rapids.cudf.ColumnVector cudfCv;
 
   /**

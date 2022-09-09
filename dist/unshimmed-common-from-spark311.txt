@@ -8,6 +8,7 @@ com/nvidia/spark/ParquetCachedBatchSerializer*
 com/nvidia/spark/RapidsUDF*
 com/nvidia/spark/SQLPlugin*
 com/nvidia/spark/rapids/ColumnarRdd*
+com/nvidia/spark/rapids/UnshimmedGpuColumnVector*
 com/nvidia/spark/rapids/ClouderaShimVersion*
 com/nvidia/spark/rapids/DatabricksShimVersion*
 com/nvidia/spark/rapids/ExecutionPlanCaptureCallback*
