@@ -29,8 +29,8 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.RuntimeConfig
 import org.apache.spark.sql.catalyst.expressions.{Expression, PlanExpression}
-import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 import org.apache.spark.sql.execution.datasources.{CatalogFileIndex, FileIndex, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitioningAwareFileIndex, PartitionSpec}
+import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 
 object AlluxioUtils extends Logging {
   private val checkedAlluxioPath = scala.collection.mutable.HashSet[String]()
@@ -319,7 +319,7 @@ object AlluxioUtils extends Logging {
               checkAlluxioMounted(hadoopConf, matched))
         }
       }
-      PartitionDirectory(pd.values, alluxPaths.toArray)
+      PartitionDirectory(pd.values, alluxPaths)
     } else {
       pd
     }
