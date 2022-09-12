@@ -89,7 +89,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
   test("Cast from string to int using hand-picked values") {
     testCastStringTo(DataTypes.IntegerType, Seq(".--e-37602.n", "\r\r\t\n11.12380", "-.2", ".3",
-      ".", "+1.2", "\n123\n456\n", "1e+4"))
+      ".", "+1.2", "\n123\n456\n", "1e+4", "0.123", "321.123", ".\r123"))
   }
 
   test("Cast from string to int ANSI mode with mix of valid and invalid values") {
@@ -981,30 +981,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
     withResource(ColumnVector.fromStrings(inputs: _*)) { v =>
       withResource(ColumnVector.fromStrings(expected: _*)) { expected =>
         withResource(GpuCast.sanitizeStringToFloat(v, ansiEnabled = false)) { actual =>
-          CudfTestHelper.assertColumnsAreEqual(expected, actual)
-        }
-      }
-    }
-  }
-
-  test("CAST string to integer - sanitize step") {
-    val testPairs: Seq[(String, String)] = Seq(
-      (null, null),
-      ("1e4", "1e4"),
-      ("123", "123"),
-      (".", "0"),
-      (".2", "0"),
-      ("-.2", "0"),
-      ("0.123", "0"),
-      ("321.123", "321"),
-      ("0.123\r123", null),
-      (".\r123", null)
-    )
-    val inputs = testPairs.map(_._1)
-    val expected = testPairs.map(_._2)
-    withResource(ColumnVector.fromStrings(inputs: _*)) { v =>
-      withResource(ColumnVector.fromStrings(expected: _*)) { expected =>
-        withResource(GpuCast.sanitizeStringToIntegralType(v, ansiEnabled = false)) { actual =>
           CudfTestHelper.assertColumnsAreEqual(expected, actual)
         }
       }

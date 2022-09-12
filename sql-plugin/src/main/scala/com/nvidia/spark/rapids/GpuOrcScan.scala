@@ -932,8 +932,7 @@ trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging
    */
   protected def readPartFile(ctx: OrcPartitionReaderContext, stripes: Seq[OrcOutputStripe]):
       (HostMemoryBuffer, Long) = {
-    withResource(new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
-      metrics("bufferTime"))) { _ =>
+    withResource(new NvtxRange("Buffer file split", NvtxColor.YELLOW)) { _ =>
       if (stripes.isEmpty) {
         return (null, 0L)
       }
@@ -1087,7 +1086,9 @@ class GpuOrcPartitionReader(
           Some(new ColumnarBatch(nullColumns.toArray, numRows))
         }
       } else {
-        val (dataBuffer, dataSize) = readPartFile(ctx, currentStripes)
+        val (dataBuffer, dataSize) = metrics(BUFFER_TIME).ns {
+          readPartFile(ctx, currentStripes)
+        }
         decodeToBatch(dataBuffer, dataSize, ctx.updatedReadSchema, ctx.requestedMapping,
           isCaseSensitive, Array(partFile))
       }
@@ -1647,41 +1648,47 @@ class MultiFileCloudOrcPartitionReader(
       val startingBytesRead = fileSystemBytesRead()
 
       val hostBuffers = new ArrayBuffer[(HostMemoryBuffer, Long)]
+      val filterStartTime = System.nanoTime()
       val ctx = filterHandler.filterStripes(partFile, dataSchema, readDataSchema,
         partitionSchema)
-      try {
+      val filterTime = System.nanoTime() - filterStartTime
+      val bufferTimeStart = System.nanoTime()
+      val result = try {
         if (ctx == null || ctx.blockIterator.isEmpty) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead
           // no blocks so return null buffer and size 0
-          return HostMemoryEmptyMetaData(partFile, 0, bytesRead,
+          HostMemoryEmptyMetaData(partFile, 0, bytesRead,
             ctx.updatedReadSchema, readDataSchema)
-        }
-        blockChunkIter = ctx.blockIterator
-        if (isDone) {
-          val bytesRead = fileSystemBytesRead() - startingBytesRead
-          // got close before finishing
-          HostMemoryEmptyMetaData(partFile, 0, bytesRead, ctx.updatedReadSchema, readDataSchema)
         } else {
-          if (ctx.updatedReadSchema.isEmpty) {
+          blockChunkIter = ctx.blockIterator
+          if (isDone) {
             val bytesRead = fileSystemBytesRead() - startingBytesRead
-            val numRows = ctx.blockIterator.map(_.infoBuilder.getNumberOfRows).sum.toInt
-            // overload size to be number of rows with null buffer
-            HostMemoryEmptyMetaData(partFile, numRows, bytesRead,
-              ctx.updatedReadSchema, readDataSchema)
+            // got close before finishing
+            HostMemoryEmptyMetaData(
+              partFile, 0, bytesRead, ctx.updatedReadSchema, readDataSchema)
           } else {
-            while (blockChunkIter.hasNext) {
-              val blocksToRead = populateCurrentBlockChunk(blockChunkIter, maxReadBatchSizeRows,
-                maxReadBatchSizeBytes)
-              hostBuffers += readPartFile(ctx, blocksToRead)
-            }
-            val bytesRead = fileSystemBytesRead() - startingBytesRead
-            if (isDone) {
-              // got close before finishing
-              hostBuffers.foreach(_._1.safeClose())
-              HostMemoryEmptyMetaData(partFile, 0, bytesRead, ctx.updatedReadSchema, readDataSchema)
+            if (ctx.updatedReadSchema.isEmpty) {
+              val bytesRead = fileSystemBytesRead() - startingBytesRead
+              val numRows = ctx.blockIterator.map(_.infoBuilder.getNumberOfRows).sum.toInt
+              // overload size to be number of rows with null buffer
+              HostMemoryEmptyMetaData(partFile, numRows, bytesRead,
+                ctx.updatedReadSchema, readDataSchema)
             } else {
-              HostMemoryBuffersWithMetaData(partFile, hostBuffers.toArray, bytesRead,
-                ctx.updatedReadSchema, ctx.requestedMapping)
+              while (blockChunkIter.hasNext) {
+                val blocksToRead = populateCurrentBlockChunk(blockChunkIter, maxReadBatchSizeRows,
+                  maxReadBatchSizeBytes)
+                hostBuffers += readPartFile(ctx, blocksToRead)
+              }
+              val bytesRead = fileSystemBytesRead() - startingBytesRead
+              if (isDone) {
+                // got close before finishing
+                hostBuffers.foreach(_._1.safeClose())
+                HostMemoryEmptyMetaData(
+                  partFile, 0, bytesRead, ctx.updatedReadSchema, readDataSchema)
+              } else {
+                HostMemoryBuffersWithMetaData(partFile, hostBuffers.toArray, bytesRead,
+                  ctx.updatedReadSchema, ctx.requestedMapping)
+              }
             }
           }
         }
@@ -1690,6 +1697,9 @@ class MultiFileCloudOrcPartitionReader(
           hostBuffers.foreach(_._1.safeClose())
           throw e
       }
+      val bufferTime = System.nanoTime() - bufferTimeStart
+      result.setMetrics(filterTime, bufferTime)
+      result
     }
   }
 
