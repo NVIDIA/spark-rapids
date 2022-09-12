@@ -39,7 +39,8 @@ case class GpuShuffleExchangeExec(
   override val outputPartitioning: Partitioning = cpuOutputPartitioning
 
   // 'mapOutputStatisticsFuture' is only needed when enable AQE.
-  override def doMapOutputStatisticsFuture: Future[MapOutputStatistics] = {
+  @transient
+  override lazy val doMapOutputStatisticsFuture: Future[MapOutputStatistics] = {
     if (inputBatchRDD.getNumPartitions == 0) {
       Future.successful(null)
     } else {
