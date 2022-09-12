@@ -751,7 +751,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val valuesDetailed = rowsDetailedOut(1).split(",")
     assert(headersDetailed.size == QualOutputWriter
       .getDetailedHeaderStringsAndSizes(Seq(qualApp.aggregateStats.get), false).keys.size)
-    assert(headersDetailed.size -2  == csvDetailedFields.size) // UnsupportedeExecs and UnsupportedExprs is not present in the file
+    //UnsupportedeExecs and UnsupportedExprs is not present in the file
+    assert(headersDetailed.size -2  == csvDetailedFields.size)
     assert(valuesDetailed.size - 1 == csvDetailedFields.size) // UnsupportedExprs is empty
     // check all headers exists
     for (ind <- 0 until csvDetailedFields.size) {
