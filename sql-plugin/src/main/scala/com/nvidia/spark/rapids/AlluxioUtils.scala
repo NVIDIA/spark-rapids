@@ -69,6 +69,15 @@ object AlluxioUtils extends Logging {
   private var alluxioHome: String = "/opt/alluxio-2.8.0"
   private var isInit: Boolean = false
 
+  def getAlluxioMasterAndPort: (String, String) = {
+    val buffered_source = Source.fromFile(alluxioHome + "/conf/alluxio-site.properties")
+    val prop : Properties = new Properties()
+    prop.load(buffered_source.bufferedReader())
+    val alluxio_master = prop.getProperty("alluxio.master.hostname")
+    val alluxio_port = prop.getProperty("alluxio.master.rpc.port", "19998")
+    (alluxio_master, alluxio_port)
+  }
+
   // Read out alluxio.master.hostname, alluxio.master.rpc.port
   // from Alluxio's conf alluxio-site.properties
   // We require an environment variable "ALLUXIO_HOME"
@@ -244,19 +253,21 @@ object AlluxioUtils extends Logging {
     }
   }
 
-  private def replaceSchemeWithAlluxio(file: String, scheme: String): String = {
+  private def replaceSchemeWithAlluxio(file: String, scheme: String, master: String): String = {
     // replace s3://foo/.. to alluxio://alluxioMasterHost/foo/...
     val newFile = file.replaceFirst(
-      scheme + ":/", ALLUXIO_SCHEME + alluxioMasterHost.get)
+      scheme + ":/", ALLUXIO_SCHEME + master)
     logDebug(s"Replace $file to ${newFile}")
     newFile
   }
 
-  private def genFuncForTaskTimeReplacement(alluxioBucketRegex: String) : Option[String => String] = {
+  private def genFuncForTaskTimeReplacement(
+      alluxioBucketRegex: String): Option[String => String] = {
     Some((pathStr: String) => {
       if (pathStr.matches(alluxioBucketRegex)) {
         val (scheme, _) = getSchemeAndBucketFromPath(pathStr)
-        replaceSchemeWithAlluxio(pathStr, scheme)
+        val (master, _) = getAlluxioMasterAndPort
+        replaceSchemeWithAlluxio(pathStr, scheme, master)
       } else {
         pathStr
       }
@@ -275,7 +286,7 @@ object AlluxioUtils extends Logging {
         val (access_key, secret_key) = getKeyAndSecret(hadoopConf, runtimeConf)
         val (scheme, bucket) = getSchemeAndBucketFromPath(pathStr)
         autoMountBucket(scheme, bucket, access_key, secret_key)
-        new Path(replaceSchemeWithAlluxio(pathStr, scheme))
+        new Path(replaceSchemeWithAlluxio(pathStr, scheme, alluxioMasterHost.get))
       } else {
         f
       }
