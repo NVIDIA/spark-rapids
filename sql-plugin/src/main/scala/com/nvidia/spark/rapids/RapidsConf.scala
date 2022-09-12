@@ -724,6 +724,12 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
+  val ENABLE_TIERED_PROJECT = conf("spark.rapids.sql.tiered.project.enabled")
+      .doc("Enable tiered project for aggregations.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   // FILE FORMATS
   val MULTITHREAD_READ_NUM_THREADS = conf("spark.rapids.sql.multiThreadedRead.numThreads")
       .doc("The maximum number of threads on each executor to use for reading small " +
@@ -1823,6 +1829,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastDecimalToStringEnabled: Boolean = get(ENABLE_CAST_DECIMAL_TO_STRING)
 
   lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
+
+  lazy val isTieredProjectEnabled: Boolean = get(ENABLE_TIERED_PROJECT)
 
   lazy val multiThreadReadNumThreads: Int = {
     // Use the largest value set among all the options.

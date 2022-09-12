@@ -416,7 +416,7 @@ case class GpuSortArray(base: Expression, ascendingOrder: Expression)
         // before sorting. This workaround can be removed after
         // solving https://github.com/rapidsai/cudf/issues/11630
         val normalizedChild = ColumnCastUtil.deepTransform(child) {
-          case cv if cv.getType == cudf.DType.FLOAT32 || cv.getType == cudf.DType.FLOAT64 =>
+          case (cv, _) if cv.getType == cudf.DType.FLOAT32 || cv.getType == cudf.DType.FLOAT64 =>
               cv.normalizeNANsAndZeros()
         }
         withResource(normalizedChild) {normalizedChild =>

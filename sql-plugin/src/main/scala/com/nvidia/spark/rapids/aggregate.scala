@@ -177,6 +177,7 @@ object AggregateModeInfo {
  * @param modeInfo identifies which aggregation modes are being used
  * @param metrics metrics that will be updated during aggregation
  * @param configuredTargetBatchSize user-specified value for the targeted input batch size
+ * @param useTieredProject user-specified option to enable tiered projections
  */
 class GpuHashAggregateIterator(
     cbIter: Iterator[ColumnarBatch],
@@ -187,7 +188,8 @@ class GpuHashAggregateIterator(
     resultExpressions: Seq[NamedExpression],
     modeInfo: AggregateModeInfo,
     metrics: GpuHashAggregateMetrics,
-    configuredTargetBatchSize: Long)
+    configuredTargetBatchSize: Long,
+    useTieredProject: Boolean)
     extends Iterator[ColumnarBatch] with Arm with AutoCloseable with Logging {
 
   // Partial mode:
@@ -278,7 +280,7 @@ class GpuHashAggregateIterator(
 
   /** Aggregate all input batches and place the results in the aggregatedBatches queue. */
   private def aggregateInputBatches(): Unit = {
-    val aggHelper = new AggHelper(forceMerge = false)
+    val aggHelper = new AggHelper(forceMerge = false, useTieredProject = useTieredProject)
     while (cbIter.hasNext) {
       withResource(cbIter.next()) { childBatch =>
         val isLastInputBatch = GpuColumnVector.isTaggedAsFinalBatch(childBatch)
@@ -383,7 +385,8 @@ class GpuHashAggregateIterator(
     wasBatchMerged
   }
 
-  private lazy val concatAndMergeHelper = new AggHelper(forceMerge = true)
+  private lazy val concatAndMergeHelper =
+    new AggHelper(forceMerge = true, useTieredProject = useTieredProject)
 
   /**
    * Concatenate batches together and perform a merge aggregation on the result. The input batches
@@ -465,7 +468,8 @@ class GpuHashAggregateIterator(
     new Iterator[ColumnarBatch] {
       override def hasNext: Boolean = keyBatchingIter.hasNext
 
-      private val mergeSortedHelper = new AggHelper(true, isSorted = true)
+      private val mergeSortedHelper =
+        new AggHelper(true, isSorted = true, useTieredProject = useTieredProject)
 
       override def next(): ColumnarBatch = {
         // batches coming out of the sort need to be merged
@@ -627,8 +631,10 @@ class GpuHashAggregateIterator(
    *                the merge steps for each aggregate function
    * @param isSorted - if the batch is sorted this is set to true and is passed to cuDF
    *                   as an optimization hint
+   * @param useTieredProject - if true, used tiered project for input projections
    */
-  class AggHelper(forceMerge: Boolean, isSorted: Boolean = false) {
+  class AggHelper(forceMerge: Boolean, isSorted: Boolean = false,
+      useTieredProject : Boolean = true) {
     // `CudfAggregate` instances to apply, either update or merge aggregates
     private val cudfAggregates = new mutable.ArrayBuffer[CudfAggregate]()
 
@@ -690,10 +696,16 @@ class GpuHashAggregateIterator(
     }
 
     // a bound expression that is applied before the cuDF aggregate
-    private val preStepBound = if (forceMerge) {
-      GpuBindReferences.bindGpuReferences(preStep.toList, aggBufferAttributes.toList)
+    private val preStepAttributes = if (forceMerge) {
+      aggBufferAttributes
     } else {
-      GpuBindReferences.bindGpuReferences(preStep, inputAttributes)
+      inputAttributes
+    }
+    private val (preStepBound, preStepBoundTiered) = if (useTieredProject) {
+      (None, Some(GpuBindReferences.bindGpuReferencesTiered(preStep.toList,
+        preStepAttributes.toList)))
+    } else {
+      (Some(GpuBindReferences.bindGpuReferences(preStep, preStepAttributes.toList)), None)
     }
 
     // a bound expression that is applied after the cuDF aggregate
@@ -708,7 +720,11 @@ class GpuHashAggregateIterator(
      */
     def preProcess(toAggregateBatch: ColumnarBatch): ColumnarBatch = {
       withResource(new NvtxRange("pre-process", NvtxColor.DARK_GREEN)) { _ =>
-        GpuProjectExec.project(toAggregateBatch, preStepBound)
+        if (useTieredProject) {
+          preStepBoundTiered.get.tieredProject(toAggregateBatch)
+        } else {
+          GpuProjectExec.project(toAggregateBatch, preStepBound.get)
+        }
       }
     }
 
@@ -990,7 +1006,8 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
       aggregateAttributes.map(_.convertToGpu().asInstanceOf[Attribute]),
       resultExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
       childPlans.head.convertIfNeeded(),
-      conf.gpuTargetBatchSizeBytes)
+      conf.gpuTargetBatchSizeBytes,
+      conf.isTieredProjectEnabled)
   }
 }
 
@@ -1071,7 +1088,8 @@ abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: BaseAggrega
         aggAttributes.map(_.convertToGpu().asInstanceOf[Attribute]),
         retExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
         childPlans.head.convertIfNeeded(),
-        conf.gpuTargetBatchSizeBytes)
+        conf.gpuTargetBatchSizeBytes,
+        conf.isTieredProjectEnabled)
     } else {
       super.convertToGpu()
     }
@@ -1384,6 +1402,7 @@ class GpuObjectHashAggregateExecMeta(
  *                          node should project)
  * @param child incoming plan (where we get input columns from)
  * @param configuredTargetBatchSize user-configured maximum device memory size of a batch
+ * @param configuredTieredProjectEnabled configurable optimization to use tiered projections
  */
 case class GpuHashAggregateExec(
     requiredChildDistributionExpressions: Option[Seq[Expression]],
@@ -1392,7 +1411,8 @@ case class GpuHashAggregateExec(
     aggregateAttributes: Seq[Attribute],
     resultExpressions: Seq[NamedExpression],
     child: SparkPlan,
-    configuredTargetBatchSize: Long) extends ShimUnaryExecNode with GpuExec with Arm {
+    configuredTargetBatchSize: Long,
+    configuredTieredProjectEnabled: Boolean) extends ShimUnaryExecNode with GpuExec with Arm {
 
   // lifted directly from `BaseAggregateExec.inputAttributes`, edited comment.
   def inputAttributes: Seq[Attribute] = {
@@ -1470,6 +1490,7 @@ case class GpuHashAggregateExec(
     val resultExprs = resultExpressions
     val modeInfo = AggregateModeInfo(uniqueModes)
     val targetBatchSize = configuredTargetBatchSize
+    val useTieredProject = configuredTieredProjectEnabled
 
     val rdd = child.executeColumnar()
 
@@ -1483,7 +1504,8 @@ case class GpuHashAggregateExec(
         resultExprs,
         modeInfo,
         aggMetrics,
-        targetBatchSize)
+        targetBatchSize,
+        useTieredProject)
     }
   }
 

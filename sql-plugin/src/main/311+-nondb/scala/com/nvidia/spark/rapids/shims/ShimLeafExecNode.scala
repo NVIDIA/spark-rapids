@@ -16,11 +16,9 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.execution.{CommandResultExec, SparkPlan}
+import org.apache.spark.sql.execution.LeafExecNode
+import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 
-object PlanShims {
-  def extractExecutedPlan(plan: SparkPlan): SparkPlan = plan match {
-    case p: CommandResultExec => p.commandPhysicalPlan
-    case _ => plan
-  }
-}
+trait ShimLeafExecNode extends LeafExecNode
+
+trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase
