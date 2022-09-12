@@ -78,8 +78,8 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
     val updatedFileStatus = pd.files.map { f =>
       val replaced = replaceFunc.get(f.getPath)
       // Alluxio caches the entire file, so the size should be the same.
-      // Just hardcode block replication to 1 to make sure nothing weird happens but
-      // I haven't seen it used by splits. The modification time shouldn't be
+      // Just hardcode block replication to 1 since we don't know what it really
+      // is in Alluxio and its not used by splits. The modification time shouldn't be
       // affected by Alluxio. Blocksize is also not used. Note that we will not
       // get new block locations with this so if Alluxio would return new ones
       // this isn't going to get them. From my current experiments, Alluxio is not
