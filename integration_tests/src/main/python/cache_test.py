@@ -333,3 +333,17 @@ def test_cache_daytimeinterval(enable_vectorized_conf):
         df.cache().count()
         return df.selectExpr("b", "a")
     assert_gpu_and_cpu_are_equal_collect(test_func, enable_vectorized_conf)
+
+# For AQE, test the computeStats(...) implementation in GpuInMemoryTableScanExec
+# NOTE: this test is here because the necessary cache configuration is only 
+# available when this test file is used
+@ignore_order(local=True)
+@allow_non_gpu("ShuffleExchangeExec", "ColumnarToRowExec")
+@pytest.mark.parametrize("data_gen", integral_gens, ids=idfn)
+def test_aqe_cache_join(data_gen):
+    conf = {'spark.sql.adaptive.enabled': 'true'}
+    def do_it(spark):
+        df1 = unary_op_df(spark, data_gen).orderBy('a').cache()
+        df2 = df1.alias('df2')
+        return df1.join(df2, df1.a == df2.a, 'Outer')
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
