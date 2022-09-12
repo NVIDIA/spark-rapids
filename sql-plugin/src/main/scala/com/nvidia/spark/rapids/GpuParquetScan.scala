@@ -1328,8 +1328,7 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       blocks: Seq[BlockMetaData],
       clippedSchema: MessageType,
       filePath: Path): (HostMemoryBuffer, Long) = {
-    withResource(new NvtxWithMetrics("Parquet buffer file split", NvtxColor.YELLOW,
-      metrics("bufferTime"))) { _ =>
+    withResource(new NvtxRange("Parquet buffer file split", NvtxColor.YELLOW)) { _ =>
       withResource(filePath.getFileSystem(conf).open(filePath)) { in =>
         val estTotalSize = calculateParquetOutputSize(blocks, clippedSchema, false)
         closeOnExcept(HostMemoryBuffer.allocate(estTotalSize)) { hmb =>
@@ -1804,48 +1803,54 @@ class MultiFileCloudParquetPartitionReader(
     private def doRead(): HostMemoryBuffersWithMetaDataBase = {
       val startingBytesRead = fileSystemBytesRead()
       val hostBuffers = new ArrayBuffer[(HostMemoryBuffer, Long)]
-      try {
+      var filterTime = 0L
+      var bufferStartTime = 0L
+      val result = try {
+        val filterStartTime = System.nanoTime()
         val fileBlockMeta = filterFunc(file)
+        filterTime = System.nanoTime() - filterStartTime
+        bufferStartTime = System.nanoTime()
         if (fileBlockMeta.blocks.isEmpty) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead
           // no blocks so return null buffer and size 0
-          return HostMemoryEmptyMetaData(file, 0, bytesRead,
-            fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
-            fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
-        }
-        blockChunkIter = fileBlockMeta.blocks.iterator.buffered
-        if (isDone) {
-          val bytesRead = fileSystemBytesRead() - startingBytesRead
-          // got close before finishing
           HostMemoryEmptyMetaData(file, 0, bytesRead,
             fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
             fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
         } else {
-          if (fileBlockMeta.schema.getFieldCount == 0) {
+          blockChunkIter = fileBlockMeta.blocks.iterator.buffered
+          if (isDone) {
             val bytesRead = fileSystemBytesRead() - startingBytesRead
-            val numRows = fileBlockMeta.blocks.map(_.getRowCount).sum.toInt
-            // overload size to be number of rows with null buffer
-            HostMemoryEmptyMetaData(file, numRows, bytesRead,
+            // got close before finishing
+            HostMemoryEmptyMetaData(file, 0, bytesRead,
               fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
               fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
           } else {
-            val filePath = new Path(new URI(file.filePath))
-            while (blockChunkIter.hasNext) {
-              val blocksToRead = populateCurrentBlockChunk(blockChunkIter,
-                maxReadBatchSizeRows, maxReadBatchSizeBytes, fileBlockMeta.readSchema)
-              hostBuffers += readPartFile(blocksToRead, fileBlockMeta.schema, filePath)
-            }
-            val bytesRead = fileSystemBytesRead() - startingBytesRead
-            if (isDone) {
-              // got close before finishing
-              hostBuffers.foreach(_._1.safeClose())
-              HostMemoryEmptyMetaData(file, 0, bytesRead,
+            if (fileBlockMeta.schema.getFieldCount == 0) {
+              val bytesRead = fileSystemBytesRead() - startingBytesRead
+              val numRows = fileBlockMeta.blocks.map(_.getRowCount).sum.toInt
+              // overload size to be number of rows with null buffer
+              HostMemoryEmptyMetaData(file, numRows, bytesRead,
                 fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
                 fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
             } else {
-              HostMemoryBuffersWithMetaData(file, hostBuffers.toArray, bytesRead,
-                fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
-                fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
+              val filePath = new Path(new URI(file.filePath))
+              while (blockChunkIter.hasNext) {
+                val blocksToRead = populateCurrentBlockChunk(blockChunkIter,
+                  maxReadBatchSizeRows, maxReadBatchSizeBytes, fileBlockMeta.readSchema)
+                hostBuffers += readPartFile(blocksToRead, fileBlockMeta.schema, filePath)
+              }
+              val bytesRead = fileSystemBytesRead() - startingBytesRead
+              if (isDone) {
+                // got close before finishing
+                hostBuffers.foreach(_._1.safeClose())
+                HostMemoryEmptyMetaData(file, 0, bytesRead,
+                  fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
+                  fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
+              } else {
+                HostMemoryBuffersWithMetaData(file, hostBuffers.toArray, bytesRead,
+                  fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
+                  fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
+              }
             }
           }
         }
@@ -1854,6 +1859,9 @@ class MultiFileCloudParquetPartitionReader(
           hostBuffers.foreach(_._1.safeClose())
           throw e
       }
+      val bufferTime = bufferStartTime - System.nanoTime()
+      result.setMetrics(filterTime, bufferTime)
+      result
     }
   }
 
@@ -2066,7 +2074,9 @@ class ParquetPartitionReader(
     if (currentChunkedBlocks.isEmpty) {
       return None
     }
-    val (dataBuffer, dataSize) = readPartFile(currentChunkedBlocks, clippedParquetSchema, filePath)
+    val (dataBuffer, dataSize) = metrics(BUFFER_TIME).ns {
+      readPartFile(currentChunkedBlocks, clippedParquetSchema, filePath)
+    }
     try {
       if (dataSize == 0) {
         None
