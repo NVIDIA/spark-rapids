@@ -43,10 +43,6 @@ object AlluxioUtils extends Logging {
     alluxioPathsReplace.isDefined || alluxioAutoMountEnabled
   }
 
-  def getOriginalFile(file: String, rapidsConf: RapidsConf): String = {
-    if (file.startsWith(ALLUXIO_SCHEME)
-  }
-
   private def checkAlluxioMounted(
       hadoopConfiguration: Configuration,
       alluxio_path: String): Unit = {

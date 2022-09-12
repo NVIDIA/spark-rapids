@@ -140,8 +140,9 @@ case class GpuFileSourceScanExec(
           relation.sparkSession.sparkContext.hadoopConfiguration,
           relation.sparkSession.conf)
       }
+      origRet
     } else {
-        origRet
+      origRet
     }
     logDebug(s"File listing and possibly replace with Alluxio path " +
       s"took: ${System.nanoTime() - startTime}")
