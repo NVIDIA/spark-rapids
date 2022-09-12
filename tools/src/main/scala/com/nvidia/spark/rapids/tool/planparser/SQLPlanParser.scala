@@ -186,7 +186,7 @@ object SQLPlanParser extends Logging {
           WindowInPandasExecParser(node, checker, sqlID).parse
         case _ =>
           new ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
-            isSupported = false, None)
+            isSupported = false, None, unsupportedExecs=node.name)
       }
       // check is the node has a dataset operations and if so change to not supported
       val ds = app.isDataSetOrRDDPlan(node.desc)
@@ -198,25 +198,18 @@ object SQLPlanParser extends Logging {
       }
       val stagesInNode = getStagesInSQLNode(node, app)
       val supported = execInfos.isSupported && !ds && !containsUDF
-      val unsupportedExec = if (!execInfos.isSupported && execInfos.speedupFactor == 1
+      // add Exec to the unsupported list if the speedup factor is 1 and all underlying expressions are supported.
+      val unSupportedExecs = if (!execInfos.isSupported && execInfos.speedupFactor == 1
         && execInfos.unsupportedExprs.length == 0 ) {
         execInfos.exec
       } else {
         ""
       }
-/*      if(unsupportedExec.length !=0 ) {
-        println(s" UNSUPPORTED EXEC IS $unsupportedExec")
-      }
-
-      val unsupportedExprs = execInfos.unsupportedExprs
-      if(unsupportedExprs.length !=0) {
-        println(s"UNSUPPORTED EXPRS ARE ")
-        unsupportedExprs.foreach(println)
-      }*/
+      val unSupportedExprs = execInfos.unsupportedExprs
 
       Seq(new ExecInfo(execInfos.sqlID, execInfos.exec, execInfos.expr, execInfos.speedupFactor,
         execInfos.duration, execInfos.nodeId, supported, execInfos.children,
-        stagesInNode, execInfos.shouldRemove, unsupportedExec))
+        stagesInNode, execInfos.shouldRemove, unSupportedExecs, unSupportedExprs))
     }
   }
 

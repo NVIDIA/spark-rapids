@@ -228,7 +228,9 @@ case class FormattedQualificationSummaryInfo(
     unsupportedSQLTaskDuration: Long,
     supportedSQLTaskDuration: Long,
     taskSpeedupFactor: Double,
-    endDurationEstimated: Boolean)
+    endDurationEstimated: Boolean,
+    unSupportedExecs: String,
+    unSupportedExprs: String)
 
 object QualOutputWriter {
   val NON_SQL_TASK_DURATION_STR = "NonSQL Task Duration"
@@ -272,6 +274,7 @@ object QualOutputWriter {
   val ESTIMATED_GPU_TIMESAVED = "Estimated GPU Time Saved"
   val STAGE_ESTIMATED_STR = "Stage Estimated"
   val UNSUPPORTED_EXECS = "Unsupported Execs"
+  val UNSUPPORTED_EXPRS = "Unsupported Expressions"
 
   val APP_DUR_STR_SIZE: Int = APP_DUR_STR.size
   val SQL_DUR_STR_SIZE: Int = SQL_DUR_STR.size
@@ -377,7 +380,9 @@ object QualOutputWriter {
       UNSUPPORTED_TASK_DURATION_STR -> UNSUPPORTED_TASK_DURATION_STR.size,
       SUPPORTED_SQL_TASK_DURATION_STR -> SUPPORTED_SQL_TASK_DURATION_STR.size,
       SPEEDUP_FACTOR_STR -> SPEEDUP_FACTOR_STR.size,
-      APP_DUR_ESTIMATED_STR -> APP_DUR_ESTIMATED_STR.size
+      APP_DUR_ESTIMATED_STR -> APP_DUR_ESTIMATED_STR.size,
+      UNSUPPORTED_EXECS -> UNSUPPORTED_EXECS.size,
+      UNSUPPORTED_EXPRS -> UNSUPPORTED_EXPRS.size
     )
     if (reportReadSchema) {
       detailedHeadersAndFields +=
@@ -390,6 +395,14 @@ object QualOutputWriter {
   private[qualification] def getSummaryHeaderStringsAndSizes(
       appInfos: Seq[QualificationSummaryInfo],
       appIdMaxSize: Int): LinkedHashMap[String, Int] = {
+    val unSupportedExecsSum = appInfos.map(_.planInfo.map(_.execInfo.map(
+      _.unsupportedExecs.size).sum).sum)
+    val unSupportedExecsSize = appInfos.map(_.planInfo.map(_.execInfo.map(
+      _.unsupportedExecs.size).sum).sum).size
+    val unSupportedExprsSum = appInfos.map(_.planInfo.map(_.execInfo.map(
+      _.unsupportedExprs.flatten.size).sum).sum)
+    val unSupportedExprsSize = appInfos.map(_.planInfo.map(_.execInfo.map(
+      _.unsupportedExprs.flatten.size).sum).sum).size
     LinkedHashMap[String, Int](
       APP_NAME_STR -> getMaxSizeForHeader(appInfos.map(_.appName.size), APP_NAME_STR),
       APP_ID_STR -> appIdMaxSize,
@@ -400,7 +413,10 @@ object QualOutputWriter {
       ESTIMATED_GPU_SPEEDUP -> ESTIMATED_GPU_SPEEDUP.size,
       ESTIMATED_GPU_TIMESAVED -> ESTIMATED_GPU_TIMESAVED.size,
       SPEEDUP_BUCKET_STR -> SPEEDUP_BUCKET_STR_SIZE,
-      UNSUPPORTED_EXECS -> getMaxSizeForHeader(appInfos.map(_.planInfo.map(_.execInfo.map(_.unsupportedExecs.size).sum).sum), UNSUPPORTED_EXECS)
+      UNSUPPORTED_EXECS -> getMaxSizeForHeader(unSupportedExecsSum.map(_ + unSupportedExecsSize),
+        UNSUPPORTED_EXECS),
+      UNSUPPORTED_EXPRS -> getMaxSizeForHeader(unSupportedExprsSum.map(_ + unSupportedExprsSize),
+        UNSUPPORTED_EXPRS)
     )
   }
 
@@ -421,7 +437,8 @@ object QualOutputWriter {
       ToolUtils.formatDoublePrecision(sumInfo.estimatedGpuTimeSaved) ->
         ESTIMATED_GPU_TIMESAVED.size,
       sumInfo.recommendation -> SPEEDUP_BUCKET_STR_SIZE,
-      sumInfo.unsupportedExecs -> UNSUPPORTED_EXECS.size
+      sumInfo.unsupportedExecs -> UNSUPPORTED_EXECS.size,
+      sumInfo.unsupportedExprs -> UNSUPPORTED_EXPRS.size
     )
     constructOutputRow(data, delimiter, prettyPrint)
   }
@@ -634,7 +651,9 @@ object QualOutputWriter {
       appInfo.unsupportedSQLTaskDuration,
       appInfo.supportedSQLTaskDuration,
       ToolUtils.truncateDoubleToTwoDecimal(appInfo.taskSpeedupFactor),
-      appInfo.endDurationEstimated
+      appInfo.endDurationEstimated,
+      appInfo.unSupportedExecs,
+      appInfo.unSupportedExprs
     )
   }
 
@@ -666,7 +685,9 @@ object QualOutputWriter {
       appInfo.unsupportedSQLTaskDuration.toString -> headersAndSizes(UNSUPPORTED_TASK_DURATION_STR),
       appInfo.supportedSQLTaskDuration.toString -> headersAndSizes(SUPPORTED_SQL_TASK_DURATION_STR),
       appInfo.taskSpeedupFactor.toString -> headersAndSizes(SPEEDUP_FACTOR_STR),
-      appInfo.endDurationEstimated.toString -> headersAndSizes(APP_DUR_ESTIMATED_STR)
+      appInfo.endDurationEstimated.toString -> headersAndSizes(APP_DUR_ESTIMATED_STR),
+      appInfo.unSupportedExecs.toString -> headersAndSizes(UNSUPPORTED_EXECS),
+      appInfo.unSupportedExprs.toString -> headersAndSizes(UNSUPPORTED_EXPRS)
     )
     if (reportReadSchema) {
       data += (stringIfempty(appInfo.readFileFormats) -> headersAndSizes(READ_SCHEMA_STR))

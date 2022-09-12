@@ -740,7 +740,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     assert(appInfo.nonEmpty)
     assert(headers.size ==
       QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(appInfo.get), 0).keys.size)
-    assert(values.size == headers.size)
+    assert(values.size == headers.size - 2) // unSupportedExecs and unSupportedExprs are empty
     // 3 should be the SQL DF Duration
     assert(headers(3).contains("SQL DF"))
     assert(values(3).toInt > 0)
@@ -751,8 +751,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val valuesDetailed = rowsDetailedOut(1).split(",")
     assert(headersDetailed.size == QualOutputWriter
       .getDetailedHeaderStringsAndSizes(Seq(qualApp.aggregateStats.get), false).keys.size)
-    assert(headersDetailed.size == csvDetailedFields.size)
-    assert(valuesDetailed.size == csvDetailedFields.size)
+    assert(headersDetailed.size -2  == csvDetailedFields.size) // UnsupportedeExecs and UnsupportedExprs is not present in the file
+    assert(valuesDetailed.size - 1 == csvDetailedFields.size) // UnsupportedExprs is empty
     // check all headers exists
     for (ind <- 0 until csvDetailedFields.size) {
       assert(csvDetailedHeader(ind).equals(headersDetailed(ind)))
@@ -822,7 +822,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(appInfo.nonEmpty)
         assert(headers.size ==
           QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(appInfo.get), 0).keys.size)
-        assert(values.size == headers.size)
+        assert(values.size == headers.size - 2) // UnsupportedExec and UnsupportedExprs are empty
         // 3 should be the SQL DF Duration
         assert(headers(3).contains("SQL DF"))
         assert(values(3).toInt > 0)

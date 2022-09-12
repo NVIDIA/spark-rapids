@@ -399,8 +399,15 @@ class QualificationAppInfo(
       // overhead or execs that didn't have associated stages
       val supportedSQLTaskDuration = calculateSQLSupportedTaskDuration(allStagesSummary)
       val taskSpeedupFactor = calculateSpeedupFactor(allStagesSummary)
-      val unsupportedExecs = origPlanInfos.map(_.execInfo.map(_.unsupportedExecs).mkString(";")).mkString(";")
-      // println(s"UNSUPPORTEDEXECS  is $unsupportedExecs")
+      // Get all the unsupported Execs from the plan and remove duplicates so that
+      // we print distinct execs
+      val unSupportedExecswithDuplicates = origPlanInfos.map(_.execInfo.map(
+        _.unsupportedExecs)).flatten.filter(_.nonEmpty)
+      val unSupportedExecs = unSupportedExecswithDuplicates.distinct.mkString(";").trim
+
+      val unSupportedExprswithDuplicates = origPlanInfos.map(_.execInfo.flatMap(
+        _.unsupportedExprs)).flatten.filter(_.nonEmpty)
+      val unSupportedExprs = unSupportedExprswithDuplicates.distinct.mkString(";").trim
 
       // get the ratio based on the Task durations that we will use for wall clock durations
       val estimatedGPURatio = if (sqlDataframeTaskDuration > 0) {
@@ -411,7 +418,7 @@ class QualificationAppInfo(
 
       val estimatedInfo = QualificationAppInfo.calculateEstimatedInfoSummary(estimatedGPURatio,
         sparkSQLDFWallClockDuration, appDuration, taskSpeedupFactor, appName, appId,
-        sqlIdsWithFailures.nonEmpty, unsupportedExecs)
+        sqlIdsWithFailures.nonEmpty)
 
       QualificationSummaryInfo(info.appName, appId, problems,
         executorCpuTimePercent, endDurationEstimated, sqlIdsWithFailures,
@@ -419,7 +426,8 @@ class QualificationAppInfo(
         allComplexTypes, nestedComplexTypes, longestSQLDuration, sqlDataframeTaskDuration,
         nonSQLTaskDuration, unsupportedSQLTaskDuration, supportedSQLTaskDuration,
         taskSpeedupFactor, info.sparkUser, info.startTime, origPlanInfos,
-        perSqlStageSummary.map(_.stageSum).flatten, estimatedInfo, perSqlInfos)
+        perSqlStageSummary.map(_.stageSum).flatten, estimatedInfo, perSqlInfos,
+        unSupportedExecs, unSupportedExprs)
     }
   }
 
@@ -480,7 +488,8 @@ case class EstimatedSummaryInfo(
     estimatedGpuSpeedup: Double, // app_duration / estimated_gpu_duration
     estimatedGpuTimeSaved: Double, // app_duration - estimated_gpu_duration
     recommendation: String,
-    unsupportedExecs: String)
+    unsupportedExecs: String,
+    unsupportedExprs: String)
 
 // Estimate based on wall clock times for each SQL query
 case class EstimatedPerSQLSummaryInfo(
@@ -544,7 +553,9 @@ case class QualificationSummaryInfo(
     planInfo: Seq[PlanInfo],
     stageInfo: Seq[StageQualSummaryInfo],
     estimatedInfo: EstimatedSummaryInfo,
-    perSQLEstimatedInfo: Option[Seq[EstimatedPerSQLSummaryInfo]])
+    perSQLEstimatedInfo: Option[Seq[EstimatedPerSQLSummaryInfo]],
+    unSupportedExecs: String,
+    unSupportedExprs:String)
 
 case class StageQualSummaryInfo(
     stageId: Int,
@@ -578,7 +589,8 @@ object QualificationAppInfo extends Logging {
   // Summarize and estimate based on wall clock times
   def calculateEstimatedInfoSummary(estimatedRatio: Double, sqlDataFrameDuration: Long,
       appDuration: Long, speedupFactor: Double, appName: String,
-      appId: String, hasFailures: Boolean, unsupportedExecs: String = ""): EstimatedSummaryInfo = {
+      appId: String, hasFailures: Boolean, unsupportedExecs: String = "",
+      unsupportedExprs: String = ""): EstimatedSummaryInfo = {
     val sqlDataFrameDurationToUse = if (sqlDataFrameDuration > appDuration) {
       // our app duration is shorter then our sql duration, estimate the sql duration down
       // to app duration
@@ -608,7 +620,8 @@ object QualificationAppInfo extends Logging {
       estimated_gpu_speedup,
       estimated_gpu_timesaved,
       recommendation,
-      unsupportedExecs)
+      unsupportedExecs,
+      unsupportedExprs)
   }
 
   def createApp(
