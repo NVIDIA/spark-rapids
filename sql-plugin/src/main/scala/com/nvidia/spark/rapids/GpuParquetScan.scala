@@ -1805,8 +1805,7 @@ class MultiFileCloudParquetPartitionReader(
       val hostBuffers = new ArrayBuffer[(HostMemoryBuffer, Long)]
       var filterTime = 0L
       var bufferStartTime = 0L
-      var result: HostMemoryBuffersWithMetaDataBase = null
-      try {
+      val result = try {
         val filterStartTime = System.nanoTime()
         val fileBlockMeta = filterFunc(file)
         filterTime = System.nanoTime() - filterStartTime
@@ -1814,7 +1813,7 @@ class MultiFileCloudParquetPartitionReader(
         if (fileBlockMeta.blocks.isEmpty) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead
           // no blocks so return null buffer and size 0
-          result = HostMemoryEmptyMetaData(file, 0, bytesRead,
+          HostMemoryEmptyMetaData(file, 0, bytesRead,
             fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
             fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
         } else {
@@ -1822,7 +1821,7 @@ class MultiFileCloudParquetPartitionReader(
           if (isDone) {
             val bytesRead = fileSystemBytesRead() - startingBytesRead
             // got close before finishing
-           result = HostMemoryEmptyMetaData(file, 0, bytesRead,
+            HostMemoryEmptyMetaData(file, 0, bytesRead,
               fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
               fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
           } else {
@@ -1830,7 +1829,7 @@ class MultiFileCloudParquetPartitionReader(
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               val numRows = fileBlockMeta.blocks.map(_.getRowCount).sum.toInt
               // overload size to be number of rows with null buffer
-              result = HostMemoryEmptyMetaData(file, numRows, bytesRead,
+              HostMemoryEmptyMetaData(file, numRows, bytesRead,
                 fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
                 fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
             } else {
@@ -1844,11 +1843,11 @@ class MultiFileCloudParquetPartitionReader(
               if (isDone) {
                 // got close before finishing
                 hostBuffers.foreach(_._1.safeClose())
-                result = HostMemoryEmptyMetaData(file, 0, bytesRead,
+                HostMemoryEmptyMetaData(file, 0, bytesRead,
                   fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
                   fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
               } else {
-                result = HostMemoryBuffersWithMetaData(file, hostBuffers.toArray, bytesRead,
+                HostMemoryBuffersWithMetaData(file, hostBuffers.toArray, bytesRead,
                   fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
                   fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
               }

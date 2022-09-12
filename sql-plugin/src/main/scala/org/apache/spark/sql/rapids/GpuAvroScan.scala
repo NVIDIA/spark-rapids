@@ -716,112 +716,112 @@ class GpuMultiFileCloudAvroPartitionReader(
     private def doRead(): HostMemoryBuffersWithMetaDataBase = {
       val bufferStartTime = System.nanoTime()
       val startingBytesRead = fileSystemBytesRead()
-      var result: HostMemoryBuffersWithMetaDataBase = null
-      withResource(AvroFileReader.openDataReader(partFile.filePath, config)) { reader =>
-        // Go to the start of the first block after the start position
-        reader.sync(partFile.start)
-        if (!reader.hasNextBlock || isDone) {
-          // no data or got close before finishing, return null buffer and zero size
-          result = createBufferAndMeta(Array((null, 0)), startingBytesRead)
-        } else {
-          val hostBuffers = new ArrayBuffer[(HostMemoryBuffer, Long)]
-          try {
-            val headerSize = reader.headerSize
-            var isBlockSizeEstimated = false
-            var estBlocksSize = 0L
-            var totalRowsNum = 0
-            var curBlock: MutableBlockInfo = null
-            while (reader.hasNextBlock && !reader.pastSync(stopPosition)) {
-              // Get the block metadata first
-              curBlock = reader.peekBlock(curBlock)
-              if (!isBlockSizeEstimated) {
-                // Initialize the estimated block total size.
-                // The AVRO file has no special section for block metadata, and collecting the
-                // block meta through the file is quite expensive for files in cloud. So we do
-                // not know the target buffer size ahead. Then we have to do an estimation.
-                //   "the estimated total block size = partFile.length + additional space"
-                // Letting "additional space = one block length * 1.2" is because we may
-                // move the start and stop positions when reading this split to keep the
-                // integrity of edge blocks.
-                // One worst case is the stop position is one byte after a block start,
-                // then we need to read the whole block into the current batch. And this block
-                // may be larger than the first block. So we preserve an additional space
-                // whose size is 'one block length * 1.2' to try to avoid reading it to a new
-                // batch.
-                estBlocksSize = partFile.length + (curBlock.blockSize * 1.2F).toLong
-                isBlockSizeEstimated = true
-              }
-
-              var estSizeToRead = if (estBlocksSize > maxReadBatchSizeBytes) {
-                maxReadBatchSizeBytes
-              } else if (estBlocksSize < curBlock.blockSize) {
-                // This may happen only for the last block.
-                logInfo("Less buffer is estimated, read the last block into a new batch.")
-                curBlock.blockSize
-              } else {
-                estBlocksSize
-              }
-              val optHmb = if (readDataSchema.nonEmpty) {
-                Some(HostMemoryBuffer.allocate(headerSize + estSizeToRead))
-              } else None
-              // Allocate the buffer for the header and blocks for a batch
-              closeOnExcept(optHmb) { _ =>
-                val optOut = optHmb.map { hmb =>
-                  val out = new HostMemoryOutputStream(hmb)
-                  // Write the header to the output stream
-                  AvroFileWriter(out).writeHeader(reader.header)
-                  out
+      val result =
+        withResource(AvroFileReader.openDataReader(partFile.filePath, config)) { reader =>
+          // Go to the start of the first block after the start position
+          reader.sync(partFile.start)
+          if (!reader.hasNextBlock || isDone) {
+            // no data or got close before finishing, return null buffer and zero size
+            createBufferAndMeta(Array((null, 0)), startingBytesRead)
+          } else {
+            val hostBuffers = new ArrayBuffer[(HostMemoryBuffer, Long)]
+            try {
+              val headerSize = reader.headerSize
+              var isBlockSizeEstimated = false
+              var estBlocksSize = 0L
+              var totalRowsNum = 0
+              var curBlock: MutableBlockInfo = null
+              while (reader.hasNextBlock && !reader.pastSync(stopPosition)) {
+                // Get the block metadata first
+                curBlock = reader.peekBlock(curBlock)
+                if (!isBlockSizeEstimated) {
+                  // Initialize the estimated block total size.
+                  // The AVRO file has no special section for block metadata, and collecting the
+                  // block meta through the file is quite expensive for files in cloud. So we do
+                  // not know the target buffer size ahead. Then we have to do an estimation.
+                  //   "the estimated total block size = partFile.length + additional space"
+                  // Letting "additional space = one block length * 1.2" is because we may
+                  // move the start and stop positions when reading this split to keep the
+                  // integrity of edge blocks.
+                  // One worst case is the stop position is one byte after a block start,
+                  // then we need to read the whole block into the current batch. And this block
+                  // may be larger than the first block. So we preserve an additional space
+                  // whose size is 'one block length * 1.2' to try to avoid reading it to a new
+                  // batch.
+                  estBlocksSize = partFile.length + (curBlock.blockSize * 1.2F).toLong
+                  isBlockSizeEstimated = true
                 }
-                // Read the block data to the output stream
-                var batchRowsNum: Int = 0
-                var batchSize: Long = 0
-                var hasNextBlock = true
-                do {
-                  if (optOut.nonEmpty) {
-                    reader.readNextRawBlock(optOut.get)
-                  } else {
-                    // skip the current block
-                    reader.skipCurrentBlock()
-                  }
-                  batchRowsNum += curBlock.count.toInt
-                  estSizeToRead -= curBlock.blockSize
-                  batchSize += curBlock.blockSize
-                  // Continue reading the next block into the current batch when
-                  //  - the next block exists, and
-                  //  - the remaining buffer is enough to hold the next block, and
-                  //  - the batch rows number does not go beyond the upper limit.
-                  hasNextBlock = reader.hasNextBlock && !reader.pastSync(stopPosition)
-                  if (hasNextBlock) {
-                    curBlock = reader.peekBlock(curBlock)
-                  }
-                } while (hasNextBlock && curBlock.blockSize <= estSizeToRead &&
-                    batchRowsNum <= maxReadBatchSizeRows)
 
-                // One batch is done
-                optOut.foreach(out => hostBuffers += ((optHmb.get, out.getPos)))
-                totalRowsNum += batchRowsNum
-                estBlocksSize -= batchSize
+                var estSizeToRead = if (estBlocksSize > maxReadBatchSizeBytes) {
+                  maxReadBatchSizeBytes
+                } else if (estBlocksSize < curBlock.blockSize) {
+                  // This may happen only for the last block.
+                  logInfo("Less buffer is estimated, read the last block into a new batch.")
+                  curBlock.blockSize
+                } else {
+                  estBlocksSize
+                }
+                val optHmb = if (readDataSchema.nonEmpty) {
+                  Some(HostMemoryBuffer.allocate(headerSize + estSizeToRead))
+                } else None
+                // Allocate the buffer for the header and blocks for a batch
+                closeOnExcept(optHmb) { _ =>
+                  val optOut = optHmb.map { hmb =>
+                    val out = new HostMemoryOutputStream(hmb)
+                    // Write the header to the output stream
+                    AvroFileWriter(out).writeHeader(reader.header)
+                    out
+                  }
+                  // Read the block data to the output stream
+                  var batchRowsNum: Int = 0
+                  var batchSize: Long = 0
+                  var hasNextBlock = true
+                  do {
+                    if (optOut.nonEmpty) {
+                      reader.readNextRawBlock(optOut.get)
+                    } else {
+                      // skip the current block
+                      reader.skipCurrentBlock()
+                    }
+                    batchRowsNum += curBlock.count.toInt
+                    estSizeToRead -= curBlock.blockSize
+                    batchSize += curBlock.blockSize
+                    // Continue reading the next block into the current batch when
+                    //  - the next block exists, and
+                    //  - the remaining buffer is enough to hold the next block, and
+                    //  - the batch rows number does not go beyond the upper limit.
+                    hasNextBlock = reader.hasNextBlock && !reader.pastSync(stopPosition)
+                    if (hasNextBlock) {
+                      curBlock = reader.peekBlock(curBlock)
+                    }
+                  } while (hasNextBlock && curBlock.blockSize <= estSizeToRead &&
+                      batchRowsNum <= maxReadBatchSizeRows)
+
+                  // One batch is done
+                  optOut.foreach(out => hostBuffers += ((optHmb.get, out.getPos)))
+                  totalRowsNum += batchRowsNum
+                  estBlocksSize -= batchSize
+                }
+              } // end of while
+
+              val bufAndSize: Array[(HostMemoryBuffer, Long)] = if (readDataSchema.isEmpty) {
+                hostBuffers.foreach(_._1.safeClose(new Exception))
+                Array((null, totalRowsNum))
+              } else if (isDone) {
+                // got close before finishing, return null buffer and zero size
+                hostBuffers.foreach(_._1.safeClose(new Exception))
+                Array((null, 0))
+              } else {
+                hostBuffers.toArray
               }
-            } // end of while
-
-            val bufAndSize: Array[(HostMemoryBuffer, Long)] = if (readDataSchema.isEmpty) {
-              hostBuffers.foreach(_._1.safeClose(new Exception))
-              Array((null, totalRowsNum))
-            } else if (isDone) {
-              // got close before finishing, return null buffer and zero size
-              hostBuffers.foreach(_._1.safeClose(new Exception))
-              Array((null, 0))
-            } else {
-              hostBuffers.toArray
+              createBufferAndMeta(bufAndSize, startingBytesRead)
+            } catch {
+              case e: Throwable =>
+                hostBuffers.foreach(_._1.safeClose(e))
+                throw e
             }
-            result = createBufferAndMeta(bufAndSize, startingBytesRead)
-          } catch {
-            case e: Throwable =>
-              hostBuffers.foreach(_._1.safeClose(e))
-              throw e
           }
-        }
-      } // end of withResource(reader)
+        } // end of withResource(reader)
       val bufferTime = System.nanoTime() - bufferStartTime
       // multi-file avro scanner does not filter and then buffer, it just buffers
       result.setMetrics(0, bufferTime)
