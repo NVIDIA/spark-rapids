@@ -33,7 +33,7 @@ import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 
-import org.apache.spark.TaskContext
+import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
@@ -54,6 +54,8 @@ import org.apache.spark.util.SerializableConfiguration
 trait HostMemoryBuffersWithMetaDataBase {
   // PartitionedFile to be read
   def partitionedFile: PartitionedFile
+  // Original PartitionedFile if path was replaced with Alluxio
+  def origPartitionedFile: Option[PartitionedFile] = None
   // An array of BlockChunk(HostMemoryBuffer and its data size) read from PartitionedFile
   def memBuffersAndSizes: Array[(HostMemoryBuffer, Long)]
   // Total bytes read
@@ -318,7 +320,7 @@ abstract class FilePartitionReaderBase(conf: Configuration, execMetrics: Map[Str
  */
 abstract class MultiFileCloudPartitionReaderBase(
     conf: Configuration,
-    files: Array[PartitionedFile],
+    origFiles: Array[PartitionedFile],
     numThreads: Int,
     maxNumFileProcessed: Int,
     filters: Array[Filter],
@@ -333,6 +335,20 @@ abstract class MultiFileCloudPartitionReaderBase(
   private[this] val inputMetrics = Option(TaskContext.get).map(_.taskMetrics().inputMetrics)
       .getOrElse(TrampolineUtil.newInputMetrics())
 
+  private val files: Array[(PartitionedFile, Option[PartitionedFile])] = updateFilesIfAlluxio
+
+  // assumes Alluxio directories already mounted at this point
+  private def updateFilesIfAlluxio: Array[(PartitionedFile, Option[PartitionedFile])] = {
+    // TODO - this might not be updated if dynamically set???
+    val rapidsConf = new RapidsConf(SparkEnv.get.conf)
+    if (rapidsConf.isAlluxioReplacementAlgoTaskTime) {
+      val alluxioBucketRegex: String = rapidsConf.getAlluxioBucketRegex
+      AlluxioUtils.replacePathInPartitionFileIfNeeded(alluxioBucketRegex, origFiles)
+    } else {
+      origFiles.map((_, None))
+    }
+  }
+
   private def initAndStartReaders(): Unit = {
     // limit the number we submit at once according to the config if set
     val limit = math.min(maxNumFileProcessed, files.length)
@@ -342,12 +358,12 @@ abstract class MultiFileCloudPartitionReaderBase(
       // Add these in the order as we got them so that we can make sure
       // we process them in the same order as CPU would.
       val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
-      tasks.add(threadPool.submit(getBatchRunner(tc, file, conf, filters)))
+      tasks.add(threadPool.submit(getBatchRunner(tc, file._1, file._2, conf, filters)))
     }
     // queue up any left to add once others finish
     for (i <- limit until files.length) {
       val file = files(i)
-      tasksToRun.enqueue(getBatchRunner(tc, file, conf, filters))
+      tasksToRun.enqueue(getBatchRunner(tc, file._1, file._2, conf, filters))
     }
     isInitted = true
     filesToRead = files.length
@@ -366,12 +382,13 @@ abstract class MultiFileCloudPartitionReaderBase(
   def getBatchRunner(
       tc: TaskContext,
       file: PartitionedFile,
+      origFile: Option[PartitionedFile],
       conf: Configuration,
       filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase]
 
   /**
    * Decode HostMemoryBuffers in GPU
-   * @param fileBufsAndMeta the file HostMemoryBuffer read from a PartitionedFile
+   * @param fileBufsAndMeta tgetBatchRunnerhe file HostMemoryBuffer read from a PartitionedFile
    * @return Option[ColumnarBatch] which has been decoded by GPU
    */
   def readBatch(
@@ -420,10 +437,14 @@ abstract class MultiFileCloudPartitionReaderBase(
           }
           filesToRead -= 1
           TrampolineUtil.incBytesRead(inputMetrics, fileBufsAndMeta.bytesRead)
+          // if we replaced the path with Alluxio, set it to the original filesystem file
+          // since Alluxio replacement is supposed to be transparent to the user
+          val inputFileToSet =
+            fileBufsAndMeta.origPartitionedFile.getOrElse(fileBufsAndMeta.partitionedFile)
           InputFileUtils.setInputFileBlock(
-            fileBufsAndMeta.partitionedFile.filePath,
-            fileBufsAndMeta.partitionedFile.start,
-            fileBufsAndMeta.partitionedFile.length)
+            inputFileToSet.filePath,
+            inputFileToSet.start,
+            inputFileToSet.length)
 
           if (getSizeOfHostBuffers(fileBufsAndMeta) == 0) {
             // if sizes are 0 means no rows and no data so skip to next file

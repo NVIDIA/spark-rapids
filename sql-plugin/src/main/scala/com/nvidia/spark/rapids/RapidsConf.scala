@@ -1386,8 +1386,8 @@ object RapidsConf {
       "to process and just replaces the path without fetching the file information again, this " +
       "is faster but doesn't update locality information if that were to work with Alluxio.")
     .stringConf
-    .checkValues(Set("CONVERT_TIME", "SELECTION_TIME"))
-    .createWithDefault("SELECTION_TIME")
+    .checkValues(Set("CONVERT_TIME", "SELECTION_TIME", "TASK_TIME"))
+    .createWithDefault("TASK_TIME")
 
   // USER FACING DEBUG CONFIGS
 
@@ -2077,6 +2077,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isAlluxioReplacementAlgoConvertTime: Boolean =
     get(ALLUXIO_REPLACEMENT_ALGO) == "CONVERT_TIME"
+
+  lazy val isAlluxioReplacementAlgoTaskTime: Boolean =
+    get(ALLUXIO_REPLACEMENT_ALGO) == "TASK_TIME"
 
   lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
 

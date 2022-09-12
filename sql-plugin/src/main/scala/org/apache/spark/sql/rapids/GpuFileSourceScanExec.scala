@@ -84,11 +84,15 @@ case class GpuFileSourceScanExec(
     case _ => true // For others, default to PERFILE reader
   }
 
-  private val isAlluxioAlgoSelectionTime = {
-    val alluxioPathsReplace = rapidsConf.getAlluxioPathsToReplace
+  private val isAlluxioAutoMountTaskTime = {
     val alluxioAutoMountEnabled = rapidsConf.getAlluxioAutoMountEnabled
+    alluxioAutoMountEnabled && rapidsConf.isAlluxioReplacementAlgoTaskTime &&
+      relation.fileFormat.isInstanceOf[ParquetFileFormat]
+  }
+
+  private val isAlluxioAlgoSelectionTime = {
     // currently only support Alluxio replacement with Parquet files
-    (alluxioPathsReplace.isDefined || alluxioAutoMountEnabled) &&
+    AlluxioUtils.isAlluxioPathReplacementEnabled(rapidsConf) &&
       rapidsConf.isAlluxioReplacementAlgoSelectTime &&
       relation.fileFormat.isInstanceOf[ParquetFileFormat]
   }
@@ -125,14 +129,19 @@ case class GpuFileSourceScanExec(
       relation.location.listFiles(
         partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
     val ret = if (isAlluxioAlgoSelectionTime) {
-      val res = origRet.map { pd =>
+      origRet.map { pd =>
         AlluxioUtils.replacePathInPDIfNeeded(rapidsConf, pd,
           relation.sparkSession.sparkContext.hadoopConfiguration,
           relation.sparkSession.conf)
       }
-      res
+    } else if (isAlluxioAutoMountTaskTime) {
+      origRet.map { pd =>
+        AlluxioUtils.autoMountIfNeeded(rapidsConf, pd,
+          relation.sparkSession.sparkContext.hadoopConfiguration,
+          relation.sparkSession.conf)
+      }
     } else {
-      origRet
+        origRet
     }
     logDebug(s"File listing and possibly replace with Alluxio path " +
       s"took: ${System.nanoTime() - startTime}")

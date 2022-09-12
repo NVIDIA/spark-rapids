@@ -26,14 +26,26 @@ import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
+import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.RuntimeConfig
 import org.apache.spark.sql.catalyst.expressions.{Expression, PlanExpression}
-import org.apache.spark.sql.execution.datasources.{CatalogFileIndex, FileIndex, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitioningAwareFileIndex, PartitionSpec}
+import org.apache.spark.sql.execution.datasources.{CatalogFileIndex, FileIndex, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionSpec, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 
 object AlluxioUtils extends Logging {
   private val checkedAlluxioPath = scala.collection.mutable.HashSet[String]()
+  private val ALLUXIO_SCHEME = "alluxio://"
+
+  def isAlluxioPathReplacementEnabled(rapidsConf: RapidsConf): Boolean = {
+    val alluxioPathsReplace = rapidsConf.getAlluxioPathsToReplace
+    val alluxioAutoMountEnabled = rapidsConf.getAlluxioAutoMountEnabled
+    alluxioPathsReplace.isDefined || alluxioAutoMountEnabled
+  }
+
+  def getOriginalFile(file: String, rapidsConf: RapidsConf): String = {
+    if (file.startsWith(ALLUXIO_SCHEME)
+  }
 
   private def checkAlluxioMounted(
       hadoopConfiguration: Configuration,
@@ -236,6 +248,25 @@ object AlluxioUtils extends Logging {
     }
   }
 
+  private def replaceSchemeWithAlluxio(file: String, scheme: String): String = {
+    // replace s3://foo/.. to alluxio://alluxioMasterHost/foo/...
+    val newFile = file.replaceFirst(
+      scheme + ":/", ALLUXIO_SCHEME + alluxioMasterHost.get)
+    logDebug(s"Replace $file to ${newFile}")
+    newFile
+  }
+
+  private def genFuncForTaskTimeReplacement(alluxioBucketRegex: String) : Option[String => String] = {
+    Some((pathStr: String) => {
+      if (pathStr.matches(alluxioBucketRegex)) {
+        val (scheme, _) = getSchemeAndBucketFromPath(pathStr)
+        replaceSchemeWithAlluxio(pathStr, scheme)
+      } else {
+        pathStr
+      }
+    })
+  }
+
   private def genFuncForAutoMountReplacement(
       conf: RapidsConf,
       runtimeConf: RuntimeConfig,
@@ -246,15 +277,9 @@ object AlluxioUtils extends Logging {
       if (pathStr.matches(alluxioBucketRegex)) {
         initAlluxioInfo(conf)
         val (access_key, secret_key) = getKeyAndSecret(hadoopConf, runtimeConf)
-
         val (scheme, bucket) = getSchemeAndBucketFromPath(pathStr)
         autoMountBucket(scheme, bucket, access_key, secret_key)
-
-        // replace s3://foo/.. to alluxio://alluxioMasterHost/foo/...
-        val newPath = new Path(pathStr.replaceFirst(
-          scheme + ":/", "alluxio://" + alluxioMasterHost.get))
-        logDebug(s"Replace $pathStr to ${newPath.toString}")
-        newPath
+        new Path(replaceSchemeWithAlluxio(pathStr, scheme))
       } else {
         f
       }
@@ -297,6 +322,39 @@ object AlluxioUtils extends Logging {
       None
     }
     (replaceFunc, replaceMapOption)
+  }
+
+  def replacePathInPartitionFileIfNeeded(
+      alluxioBucketRegex: String,
+      files: Array[PartitionedFile]): Array[(PartitionedFile, Option[PartitionedFile])] = {
+    val replaceFunc = genFuncForTaskTimeReplacement(alluxioBucketRegex)
+    if (replaceFunc.isDefined) {
+      files.map { file =>
+        val replaced = replaceFunc.get(file.filePath)
+        (PartitionedFile(file.partitionValues, replaced, file.start, file.length), Some(file))
+      }
+    } else {
+      files.map((_, None))
+    }
+  }
+
+  def autoMountIfNeeded(
+      conf: RapidsConf,
+      pd: PartitionDirectory,
+      hadoopConf: Configuration,
+      runtimeConf: RuntimeConfig): Unit = {
+    val alluxioAutoMountEnabled = conf.getAlluxioAutoMountEnabled
+    val alluxioBucketRegex: String = conf.getAlluxioBucketRegex
+    if (alluxioAutoMountEnabled) {
+      pd.files.map(_.getPath.toString).map { file =>
+        if (file.matches(alluxioBucketRegex)) {
+          initAlluxioInfo(conf)
+          val (access_key, secret_key) = getKeyAndSecret(hadoopConf, runtimeConf)
+          val (scheme, bucket) = getSchemeAndBucketFromPath(file)
+          autoMountBucket(scheme, bucket, access_key, secret_key)
+        }
+      }
+    }
   }
 
   // This function just replaces the path in the PartitionDirectory files
