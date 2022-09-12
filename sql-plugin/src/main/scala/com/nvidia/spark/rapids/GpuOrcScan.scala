@@ -1653,26 +1653,25 @@ class MultiFileCloudOrcPartitionReader(
         partitionSchema)
       val filterTime = System.nanoTime() - filterStartTime
       val bufferTimeStart = System.nanoTime()
-      var result: HostMemoryBuffersWithMetaDataBase = null
-      try {
+      val result = try {
         if (ctx == null || ctx.blockIterator.isEmpty) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead
           // no blocks so return null buffer and size 0
-          result = HostMemoryEmptyMetaData(partFile, 0, bytesRead,
+          HostMemoryEmptyMetaData(partFile, 0, bytesRead,
             ctx.updatedReadSchema, readDataSchema)
         } else {
           blockChunkIter = ctx.blockIterator
           if (isDone) {
             val bytesRead = fileSystemBytesRead() - startingBytesRead
             // got close before finishing
-            result = HostMemoryEmptyMetaData(
+            HostMemoryEmptyMetaData(
               partFile, 0, bytesRead, ctx.updatedReadSchema, readDataSchema)
           } else {
             if (ctx.updatedReadSchema.isEmpty) {
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               val numRows = ctx.blockIterator.map(_.infoBuilder.getNumberOfRows).sum.toInt
               // overload size to be number of rows with null buffer
-              result = HostMemoryEmptyMetaData(partFile, numRows, bytesRead,
+              HostMemoryEmptyMetaData(partFile, numRows, bytesRead,
                 ctx.updatedReadSchema, readDataSchema)
             } else {
               while (blockChunkIter.hasNext) {
@@ -1684,10 +1683,10 @@ class MultiFileCloudOrcPartitionReader(
               if (isDone) {
                 // got close before finishing
                 hostBuffers.foreach(_._1.safeClose())
-                result = HostMemoryEmptyMetaData(
+                HostMemoryEmptyMetaData(
                   partFile, 0, bytesRead, ctx.updatedReadSchema, readDataSchema)
               } else {
-                result = HostMemoryBuffersWithMetaData(partFile, hostBuffers.toArray, bytesRead,
+                HostMemoryBuffersWithMetaData(partFile, hostBuffers.toArray, bytesRead,
                   ctx.updatedReadSchema, ctx.requestedMapping)
               }
             }
