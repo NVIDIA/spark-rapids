@@ -35,7 +35,7 @@ def read_orc_sql(data_path):
 # epoch in 1970 and the microsecond value is between 0 and 1000.
 # See https://github.com/rapidsai/cudf/issues/11525.
 def get_orc_timestamp_gen(nullable=True):
-    return TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc), nullable=nullable)
+    return TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc), nullable=nullable)
 
 orc_timestamp_gen = get_orc_timestamp_gen()
 
