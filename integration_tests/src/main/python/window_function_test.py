@@ -911,7 +911,7 @@ def test_running_window_function_exec_for_all_aggs():
 # initial list of expressions that are still children of GpuWindowFunction in GpuWindowExec
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
-def test_join_sum_window(data_gen):
+def test_join_sum_window_of_window(data_gen):
     conf = { 'spark.rapids.sql.batchSizeBytes': '100',
             'spark.rapids.sql.explain': 'NONE'}
 
@@ -920,7 +920,7 @@ def test_join_sum_window(data_gen):
         part_table = gen_df(spark, StructGen([('a_2', LongRangeGen()), ('b', byte_gen)], nullable=False))
         agg_table.createOrReplaceTempView("agg")
         part_table.createOrReplaceTempView("part")
-        return spark.sql("select b, sum(c) as sum_c, sum(c)/sum(sum(c)) over (partition by b) as r_c from agg, part where a_1 = a_2 group by b order by b, r_c")
+        return spark.sql("select b, sum(c) as sum_c, (b + c)/sum(sum(c)) over (partition by b) as r_c from agg, part where a_1 = a_2 group by b, c order by b, r_c")
 
     assert_gpu_and_cpu_are_equal_collect(do_it, conf = conf)
 
