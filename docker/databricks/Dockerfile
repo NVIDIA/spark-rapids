@@ -53,13 +53,6 @@ RUN set -ex && \
         && /databricks/python3/bin/pip install --no-cache-dir -r /tmp/requirements.txt \
         # Install Python libraries for Databricks environment
         && /databricks/python3/bin/pip cache purge && \
-    mkdir -p /databricks/jars && \
-    wget https://github.com/tsl0922/ttyd/releases/download/1.6.3/ttyd.x86_64 && \
-        mkdir -p /databricks/driver/logs && \
-        mkdir -p /databricks/spark/scripts/ttyd/ && \
-        mkdir -p /etc/monit/conf.d/ && \
-        mv ttyd.x86_64 /databricks/spark/scripts/ttyd/ttyd && \
-        export TTYD_BIN_FILE=/databricks/spark/scripts/ttyd/ttyd && \
     apt-get -y purge --autoremove software-properties-common cuda-cudart-dev-${CUDA_MAJOR} cuda-cupti-dev-${CUDA_MAJOR} \
                cuda-driver-dev-${CUDA_MAJOR} cuda-nvcc-${CUDA_MAJOR} cuda-thrust-${CUDA_MAJOR} \
                python3.8-dev libpq-dev libcairo2-dev build-essential unattended-upgrades cmake ccache openmpi-bin \
@@ -76,18 +69,6 @@ RUN set -ex && \
     mv cuda.list cuda.list.disabled && \
     # Create user "ubuntu"
     useradd --create-home --shell /bin/bash --groups sudo ubuntu
-
-#############
-# Set up webterminal ssh
-#############
-ENV TTYD_DIR=/databricks/spark/scripts/ttyd
-ENV TTYD_BIN_FILE=$TTYD_DIR/ttyd
-   
-COPY webterminal/setup_ttyd_daemon.sh $TTYD_DIR/setup_ttyd_daemon.sh
-COPY webterminal/stop_ttyd_daemon.sh $TTYD_DIR/stop_ttyd_daemon.sh
-COPY webterminal/start_ttyd_daemon.sh $TTYD_DIR/start_ttyd_daemon.sh
-COPY webterminal/webTerminalBashrc $TTYD_DIR/webTerminalBashrc
-COPY webterminal/ttyd-daemon-not-active /etc/monit/conf.d/ttyd-daemon-not-active
 
 #############
 # Set all env variables
@@ -169,6 +150,25 @@ ADD ganglia/gconf/* /etc/ganglia/
 RUN mkdir -p /databricks/spark/scripts/ganglia/
 RUN mkdir -p /databricks/spark/scripts/
 ADD ganglia/start_spark_slave.sh /databricks/spark/scripts/start_spark_slave.sh
+
+#############
+# Set up webterminal ssh
+#############
+RUN wget https://github.com/tsl0922/ttyd/releases/download/1.6.3/ttyd.x86_64 && \
+        mkdir -p /databricks/driver/logs && \
+        mkdir -p /databricks/spark/scripts/ttyd/ && \
+        mkdir -p /etc/monit/conf.d/ && \
+        mv ttyd.x86_64 /databricks/spark/scripts/ttyd/ttyd && \
+        export TTYD_BIN_FILE=/databricks/spark/scripts/ttyd/ttyd
+
+ENV TTYD_DIR=/databricks/spark/scripts/ttyd
+ENV TTYD_BIN_FILE=$TTYD_DIR/ttyd
+   
+COPY webterminal/setup_ttyd_daemon.sh $TTYD_DIR/setup_ttyd_daemon.sh
+COPY webterminal/stop_ttyd_daemon.sh $TTYD_DIR/stop_ttyd_daemon.sh
+COPY webterminal/start_ttyd_daemon.sh $TTYD_DIR/start_ttyd_daemon.sh
+COPY webterminal/webTerminalBashrc $TTYD_DIR/webTerminalBashrc
+COPY webterminal/ttyd-daemon-not-active /etc/monit/conf.d/ttyd-daemon-not-active
 
 FROM databricks-ganglia as databricks-alluxio
 
