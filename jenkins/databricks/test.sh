@@ -98,7 +98,7 @@ export PYSP_TEST_spark_eventLog_enabled=true
 mkdir -p /tmp/spark-events
 
 ## limit parallelism to avoid OOM kill
-export TEST_PARALLEL=4
+export TEST_PARALLEL=1
 if [ -d "$LOCAL_JAR_PATH" ]; then
     if [[ $TEST_MODE == "DEFAULT" ]]; then
         ## Run tests with jars in the LOCAL_JAR_PATH dir downloading from the dependency repo
@@ -126,7 +126,7 @@ if [ -d "$LOCAL_JAR_PATH" ]; then
 else
     if [[ $TEST_MODE == "DEFAULT" ]]; then
         ## Run tests with jars building from the spark-rapids source code
-        bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE
+        bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE --capture=no
 
         ## Run cache tests
         if [[ "$IS_SPARK_311_OR_LATER" -eq "1" ]]; then

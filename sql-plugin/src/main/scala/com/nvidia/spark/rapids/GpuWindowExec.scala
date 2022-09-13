@@ -107,15 +107,20 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
   }
 
   override def convertToGpu(): GpuExec = {
-    logWarning(s"windowExpressions: $windowExpressions")
+    logWarning(s"windowExpressions: ${getInputWindowExpressions.map(_.asInstanceOf[NamedExpression])}")
     val resultColumnsOnly = getResultColumnsOnly
-    val gpuWindowExpressions = if (resultColumnsOnly) {
+    val inputExpressions = (inputFields).map(_.convertToGpu().asInstanceOf[NamedExpression]) 
+    val gpuWindowExpressions =
       windowExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression])
-    } else {
-      (inputFields ++ windowExpressions).map(_.convertToGpu().asInstanceOf[NamedExpression])
-    }
-
-    val (pre, windowOps, post) = GpuWindowExec.splitAndDedup(gpuWindowExpressions)
+    logWarning(s"inputExpressions: $inputExpressions")
+    logWarning(s"gpuWindowExpressions: $gpuWindowExpressions")
+    val (pre, windowOps, post) = GpuWindowExec.splitAndDedup(
+        inputExpressions,
+        gpuWindowExpressions,
+        resultColumnsOnly)
+    logWarning(s"pre: $pre")
+    logWarning(s"windowOps: $windowOps")
+    logWarning(s"post: $post")
     // Order is not important for pre. It is unbound and we are inserting it in.
     val isPreNeeded =
       (AttributeSet(pre.map(_.toAttribute)) -- windowExec.children.head.output).nonEmpty
@@ -194,7 +199,7 @@ class GpuWindowExecMeta(windowExec: WindowExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-    extends GpuBaseWindowExecMeta[WindowExec](windowExec, conf, parent, rule) {
+    extends GpuBaseWindowExecMeta[WindowExec](windowExec, conf, parent, rule) with Logging {
 
   /**
    * Fetches WindowExpressions in input `windowExec`, via reflection.
@@ -218,6 +223,7 @@ class GpuWindowExecMeta(windowExec: WindowExec,
     } catch {
       case _: NoSuchMethodException =>
         resultColumnsOnly = true
+        val methodNames = windowExec.getClass.getMethods().map(_.getName).toList
         val winExpr = windowExec.getClass.getMethod("projectList")
         winExpr.invoke(windowExec).asInstanceOf[Seq[NamedExpression]]
     }
@@ -232,7 +238,7 @@ class GpuWindowExecMeta(windowExec: WindowExec,
   override def getResultColumnsOnly: Boolean = resultColumnsOnly
 }
 
-object GpuWindowExec extends Arm {
+object GpuWindowExec extends Arm with Logging {
   /**
    * As a part of `splitAndDedup` the dedup part adds a layer of indirection. This attempts to
    * remove that layer of indirection.
@@ -311,7 +317,9 @@ object GpuWindowExec extends Arm {
    * window operations, so we are good.
    * @param exprs the input expressions to a GpuWindowExec
    */
-  def splitAndDedup(exprs: Seq[NamedExpression]):
+  def splitAndDedup(inputExprs: Seq[NamedExpression],
+      windowExprs: Seq[NamedExpression],
+      resultColumnsOnly: Boolean):
   (Seq[NamedExpression], Seq[NamedExpression], Seq[NamedExpression]) = {
     // This is based off of similar code in Apache Spark's `ExtractWindowExpressions.extract` but
     // has been highly modified
@@ -321,7 +329,19 @@ object GpuWindowExec extends Arm {
     val windowDedupe = mutable.HashMap[Expression, Attribute]()
     val postProject = ArrayBuffer[NamedExpression]()
 
-    exprs.foreach { expr =>
+    inputExprs.foreach { expr =>
+        if (resultColumnsOnly) {
+          extractAndSave(
+            extractAndSave(expr, preProject, preDedupe), windowOps, windowDedupe)
+              .asInstanceOf[NamedExpression]
+        } else {
+          postProject += extractAndSave(
+            extractAndSave(expr, preProject, preDedupe), windowOps, windowDedupe)
+              .asInstanceOf[NamedExpression]
+        }
+    }
+
+    windowExprs.foreach { expr =>
       if (hasGpuWindowFunction(expr)) {
         // First pass replace any operations that should be totally replaced.
         val replacePass = expr.transformDown {
