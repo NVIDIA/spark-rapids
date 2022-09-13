@@ -85,3 +85,5 @@ TAIL_NOSNAPSHOTS_VERSIONS=("${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]:1}")
 # build and run unit tests on one specific version for each sub-version (e.g. 320, 330)
 set_env_var_SPARK_SHIM_VERSIONS_ARR -PpremergeUT
 SPARK_SHIM_VERSIONS_TEST=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+
+echo "SPARK_BASE_SHIM_VERSION: $SPARK_BASE_SHIM_VERSION"
