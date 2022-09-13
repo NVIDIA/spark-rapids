@@ -1037,7 +1037,6 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     }
   }
 
-
   /**
    * Build the PartitionReader for coalescing reading
    *

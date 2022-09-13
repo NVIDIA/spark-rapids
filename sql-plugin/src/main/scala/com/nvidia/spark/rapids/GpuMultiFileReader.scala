@@ -404,7 +404,7 @@ abstract class MultiFileCloudPartitionReaderBase(
 
   /**
    * Decode HostMemoryBuffers in GPU
-   * @param fileBufsAndMeta tgetBatchRunnerhe file HostMemoryBuffer read from a PartitionedFile
+   * @param fileBufsAndMeta the file HostMemoryBuffer read from a PartitionedFile
    * @return Option[ColumnarBatch] which has been decoded by GPU
    */
   def readBatch(
