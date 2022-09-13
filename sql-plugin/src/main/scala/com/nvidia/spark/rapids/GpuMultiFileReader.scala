@@ -163,6 +163,8 @@ object MultiFileReaderUtils {
   private def hasPathInCloud(filePaths: Array[String], cloudSchemes: Set[String]): Boolean = {
     // Assume the `filePath` always has a scheme, if not try using the local filesystem.
     // If that doesn't work for some reasons, users need to configure it directly.
+    // If Alluxio is enabled and we do task time replacement we have to take that
+    // into account here so we pick the correct reader.
     filePaths.exists(fp => cloudSchemes.contains(fp.getScheme))
   }
 
@@ -170,9 +172,10 @@ object MultiFileReaderUtils {
       coalescingEnabled: Boolean,
       multiThreadEnabled: Boolean,
       files: Array[String],
-      cloudSchemes: Set[String]): Boolean =
-  !coalescingEnabled || (multiThreadEnabled && hasPathInCloud(files, cloudSchemes))
-
+      cloudSchemes: Set[String],
+      anyAlluxioMounted: Boolean = false): Boolean =
+  !coalescingEnabled || (multiThreadEnabled &&
+    (!anyAlluxioMounted && hasPathInCloud(files, cloudSchemes)))
 }
 
 /**
@@ -186,7 +189,8 @@ object MultiFileReaderUtils {
 abstract class MultiFilePartitionReaderFactoryBase(
     @transient sqlConf: SQLConf,
     broadcastedConf: Broadcast[SerializableConfiguration],
-    @transient rapidsConf: RapidsConf) extends PartitionReaderFactory with Arm with Logging {
+    @transient rapidsConf: RapidsConf,
+    anyAlluxioMounted: Boolean = false) extends PartitionReaderFactory with Arm with Logging {
 
   protected val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
   protected val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
@@ -245,6 +249,8 @@ abstract class MultiFilePartitionReaderFactoryBase(
     val filePaths = files.map(_.filePath)
     val conf = broadcastedConf.value.value
 
+    // with Alluxio we have to decide here if we are going to replace the paths to decide
+    // which reader we are going to use
     if (useMultiThread(filePaths)) {
       logInfo("Using the multi-threaded multi-file " + getFileFormatShortName + " reader, " +
         s"files: ${filePaths.mkString(",")} task attemptid: ${TaskContext.get.taskAttemptId()}")
@@ -258,8 +264,8 @@ abstract class MultiFilePartitionReaderFactoryBase(
 
   /** for testing */
   private[rapids] def useMultiThread(filePaths: Array[String]): Boolean =
-    MultiFileReaderUtils.useMultiThreadReader(
-      canUseCoalesceFilesReader, canUseMultiThreadReader, filePaths, allCloudSchemes)
+    MultiFileReaderUtils.useMultiThreadReader(canUseCoalesceFilesReader,
+      canUseMultiThreadReader, filePaths, allCloudSchemes, anyAlluxioMounted)
 }
 
 /**

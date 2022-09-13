@@ -369,7 +369,7 @@ object AlluxioUtils extends Logging {
       conf: RapidsConf,
       pd: PartitionDirectory,
       hadoopConf: Configuration,
-      runtimeConf: RuntimeConfig): Unit = {
+      runtimeConf: RuntimeConfig): Boolean = {
     val alluxioAutoMountEnabled = conf.getAlluxioAutoMountEnabled
     val alluxioBucketRegex: String = conf.getAlluxioBucketRegex
     if (alluxioAutoMountEnabled) {
@@ -379,8 +379,13 @@ object AlluxioUtils extends Logging {
           val (access_key, secret_key) = getKeyAndSecret(hadoopConf, runtimeConf)
           val (scheme, bucket) = getSchemeAndBucketFromPath(file)
           autoMountBucket(scheme, bucket, access_key, secret_key)
+          true
+        } else {
+          false
         }
-      }
+      }.contains(true)
+    } else {
+      false
     }
   }
 

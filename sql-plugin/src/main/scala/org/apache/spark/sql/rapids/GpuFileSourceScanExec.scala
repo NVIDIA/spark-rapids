@@ -76,6 +76,8 @@ case class GpuFileSourceScanExec(
     extends GpuDataSourceScanExec with GpuExec {
   import GpuMetric._
 
+  private var anyAlluxioMounted = false
+
   private val isPerFileReadEnabled = relation.fileFormat match {
     case _: ParquetFileFormat => rapidsConf.isParquetPerFileReadEnabled
     case _: OrcFileFormat => rapidsConf.isOrcPerFileReadEnabled
@@ -135,11 +137,11 @@ case class GpuFileSourceScanExec(
           relation.sparkSession.conf)
       }
     } else if (isAlluxioAutoMountTaskTime) {
-      origRet.map { pd =>
+      val anyAlluxioMounted = origRet.map { pd =>
         AlluxioUtils.autoMountIfNeeded(rapidsConf, pd,
           relation.sparkSession.sparkContext.hadoopConfiguration,
           relation.sparkSession.conf)
-      }
+      }.contains(true)
       origRet
     } else {
       origRet
@@ -602,7 +604,8 @@ case class GpuFileSourceScanExec(
           pushedDownFilters.toArray,
           rapidsConf,
           allMetrics,
-          queryUsesInputFile)
+          queryUsesInputFile,
+          anyAlluxioMounted)
       case _: OrcFileFormat =>
         GpuOrcMultiFilePartitionReaderFactory(
           sqlConf,
