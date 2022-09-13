@@ -44,7 +44,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       "(\\A|\\05)?"
     )
     for (pattern <- cudfInvalidPatterns) {
-      assertUnsupported(pattern, RegexFindMode, "invalid regex pattern: nothing to repeat")
+      assertUnsupported(pattern, RegexFindMode,
+        "cuDF does not support repetition on one side of a choice")
     }
   }
 
@@ -111,15 +112,16 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("cuDF unsupported choice cases") {
-    val input = Seq("cat", "dog")
     val patterns = Seq("c*|d*", "c*|dog", "[cat]{3}|dog")
     patterns.foreach(pattern => {
-      assertUnsupported(pattern, RegexFindMode, "invalid regex pattern: nothing to repeat")
+      assertUnsupported(pattern, RegexFindMode,
+        "cuDF does not support repetition on one side of a choice")
     })
   }
 
   test("sanity check: choice edge case 2") {
-    assertUnsupported("c+|d+", RegexFindMode, "invalid regex pattern: nothing to repeat")
+    assertUnsupported("c+|d+", RegexFindMode,
+      "cuDF does not support repetition on one side of a choice")
   }
 
   test("newline before $ in replace mode") {
@@ -149,8 +151,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     // note that we could choose to transpile and escape the '{' and '}' characters
     val patterns = Seq("{1,2}", "{1,}", "{1}")
     patterns.foreach(pattern => {
-      println(pattern)
-      assertUnsupported(pattern, RegexFindMode, 
+      assertUnsupported(pattern, RegexFindMode,
         "Token preceding '{' is not quantifiable near index 0")
         }
     )
