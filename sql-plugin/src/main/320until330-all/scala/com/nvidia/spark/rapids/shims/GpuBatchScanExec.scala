@@ -34,7 +34,7 @@ case class GpuBatchScanExec(
     output: Seq[AttributeReference],
     @transient scan: Scan,
     runtimeFilters: Seq[Expression] = Seq.empty)
-    extends DataSourceV2ScanExecBase with GpuBatchScanExecMetrics {
+    extends ShimDataSourceV2ScanExecBase with GpuBatchScanExecMetrics {
   @transient lazy val batch: Batch = scan.toBatch
 
   // All expressions are filter expressions used on the CPU.

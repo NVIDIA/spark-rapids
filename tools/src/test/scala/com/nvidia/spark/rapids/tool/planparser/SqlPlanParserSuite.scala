@@ -122,13 +122,13 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val allChildren = wholeStages.flatMap(_.children).flatten
         assert(allChildren.size == 10)
         val filters = allChildren.filter(_.exec == "Filter")
-        assertSizeAndSupported(2, filters, 2.4)
+        assertSizeAndSupported(2, filters, 2.8)
         val projects = allChildren.filter(_.exec == "Project")
         assertSizeAndSupported(2, projects)
         val sorts = allChildren.filter(_.exec == "Sort")
-        assertSizeAndSupported(3, sorts, 5.2)
+        assertSizeAndSupported(3, sorts, 8.0)
         val smj = allChildren.filter(_.exec == "SortMergeJoin")
-        assertSizeAndSupported(1, smj, 14.1)
+        assertSizeAndSupported(1, smj, 22.7)
       }
     }
   }
@@ -154,7 +154,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(wholeStages.forall(_.duration.nonEmpty))
         val allChildren = wholeStages.flatMap(_.children).flatten
         val hashAggregate = allChildren.filter(_.exec == "HashAggregate")
-        assertSizeAndSupported(2, hashAggregate, 3.4)
+        assertSizeAndSupported(2, hashAggregate, 4.5)
       }
     }
   }
@@ -264,7 +264,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     assert(stats.nonEmpty)
     val estimatedGpuSpeed = stats.get.estimatedInfo.estimatedGpuSpeedup
     val recommendation = stats.get.estimatedInfo.recommendation
-    assert (ToolUtils.truncateDoubleToTwoDecimal(estimatedGpuSpeed) == 1.11)
+    assert (ToolUtils.truncateDoubleToTwoDecimal(estimatedGpuSpeed) == 1.13)
     assert(recommendation.equals("Not Applicable"))
   }
 
@@ -304,7 +304,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val subqueryBroadcast = allExecInfo.filter(_.exec == "SubqueryBroadcast")
     assertSizeAndSupported(1, subqueryBroadcast.toSeq, expectedDur = Seq(Some(1175)))
     val exchanges = allExecInfo.filter(_.exec == "Exchange")
-    assertSizeAndSupported(2, exchanges.toSeq, 3.1, expectedDur = Seq(Some(15688), Some(8)))
+    assertSizeAndSupported(2, exchanges.toSeq, 4.2, expectedDur = Seq(Some(15688), Some(8)))
   }
 
   test("CustomShuffleReaderExec") {
@@ -422,7 +422,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       }
       val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
       val bhj = allExecInfo.filter(_.exec == "BroadcastHashJoin")
-      assertSizeAndSupported(1, bhj, 3.0)
+      assertSizeAndSupported(1, bhj, 5.1)
       val broadcastNestedJoin = allExecInfo.filter(_.exec == "BroadcastNestedLoopJoin")
       assertSizeAndSupported(1, broadcastNestedJoin)
       val shj = allExecInfo.filter(_.exec == "ShuffledHashJoin")
@@ -607,7 +607,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
         val sortExec = allExecInfo.filter(_.exec.contains("Sort"))
         assert(sortExec.size == 3)
-        assertSizeAndSupported(3, sortExec, 5.2)
+        assertSizeAndSupported(3, sortExec, 8.0)
       }
     }
   }
