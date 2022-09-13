@@ -690,8 +690,9 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
           // for our futures to finish. Either way, it's safe to block
           // here while we wait.
           waitTimeStart = System.nanoTime()
-          queued.take()
+          val res = queued.take()
           waitTime = System.nanoTime() - waitTimeStart
+          res
         }
 
         val uncompressedSize = result match {
