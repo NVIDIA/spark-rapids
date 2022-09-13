@@ -337,7 +337,7 @@ object ShimLoader extends Logging {
 
   def newOptimizerClass(className: String): Optimizer = {
     newInstanceOf[Optimizer](className)
-  } 
+  }
 
   // avoid cached constructors
   private def instantiateClass[T](cls: Class[T]): T = {
@@ -412,5 +412,9 @@ object ShimLoader extends Logging {
 
   def newPlanShims(): PlanShims = ShimLoader.newInstanceOf[PlanShims](
     "com.nvidia.spark.rapids.shims.PlanShimsImpl"
+  )
+
+  def newTypeShims(): GpuTypeShimsProvider = ShimLoader.newInstanceOf[GpuTypeShimsProvider](
+    "com.nvidia.spark.rapids.shims.GpuTypeShimsImpl"
   )
 }

@@ -19,7 +19,6 @@ package org.apache.spark.sql.rapids.execution
 import ai.rapids.cudf.{DecimalUtils, Table}
 import ai.rapids.cudf.HostColumnVector.ColumnBuilder
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging

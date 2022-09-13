@@ -190,7 +190,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   // RequireSingleBatch goal is intentionally not supported in this iterator
   assert(!goal.isInstanceOf[RequireSingleBatchLike])
 
-  var batchBuilder: GpuColumnVector.GpuColumnarBatchBuilderBase = _
+  var batchBuilder: GpuColumnarBatchBuilderBase = _
   var totalRows = 0
   var maxDeviceMemory: Long = 0
 
@@ -231,10 +231,10 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
       (batch.column(0).isInstanceOf[ArrowColumnVector] ||
         batch.column(0).isInstanceOf[AccessibleArrowColumnVector])) {
       logDebug("Using GpuArrowColumnarBatchBuilder")
-      batchBuilder = new GpuColumnVector.GpuArrowColumnarBatchBuilder(schema)
+      batchBuilder = new GpuArrowColumnarBatchBuilder(schema)
     } else {
       logDebug("Using GpuColumnarBatchBuilder")
-      batchBuilder = new GpuColumnVector.GpuColumnarBatchBuilder(schema, batchRowLimit)
+      batchBuilder = new GpuColumnarBatchBuilder(schema, batchRowLimit)
     }
     totalRows = 0
   }
