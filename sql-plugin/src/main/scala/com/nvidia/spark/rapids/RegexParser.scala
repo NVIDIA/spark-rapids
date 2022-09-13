@@ -824,16 +824,15 @@ class CudfRegexTranspiler(mode: RegexMode) {
     // There are differences between cuDF and Java handling of newlines
     // for negative character matches. The expression `[^a]` will match
     // `\r` in Java but not in cuDF, so we replace `[^a]` with
-    // `(?:\r|[^a])`. We also have to take into account whether any
+    // `(?:[\r]|[^a])`. We also have to take into account whether any
     // newline characters are included in the character range.
     //
     // Examples:
     //
-    // `[^a]`     => `(?:\r|[^a])`
+    // `[^a]`     => `(?:[\r]|[^a])`
     // `[^a\r]`   => `(?:[\n]|[^a])`
     // `[^a\n]`   => `(?:[\r]|[^a])`
     // `[^a\r\n]` => `[^a]`
-    // `[^\r\n]`  => `[^\r\n]`
 
     val distinctComponents = components.distinct
     val linefeedCharsInPattern = distinctComponents.flatMap {
@@ -859,10 +858,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     val onlyLinefeedChars = distinctComponents.length == linefeedCharsInPattern.length
     val negatedNewlines = Seq('\r').diff(linefeedCharsInPattern.distinct)
 
-    if (onlyLinefeedChars && linefeedCharsInPattern.length == 2) {
-      // special case for `[^\r\n]` and `[^\\r\\n]`
-      RegexCharacterClass(negated = true, ListBuffer(distinctComponents: _*))
-    } else if (negatedNewlines.isEmpty) {
+    if (negatedNewlines.isEmpty) {
       RegexCharacterClass(negated = true, ListBuffer(distinctComponents: _*))
     } else {
       RegexGroup(capture = false,

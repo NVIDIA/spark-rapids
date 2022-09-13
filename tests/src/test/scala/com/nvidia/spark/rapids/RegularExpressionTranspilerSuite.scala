@@ -30,6 +30,24 @@ import org.apache.spark.sql.types.DataTypes
 
 class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
+  test("") {
+    // these patterns compile in cuDF since https://github.com/rapidsai/cudf/pull/11654 was merged
+    // but we still reject them because we see failures in fuzz testing if we allow them
+    val cudfInvalidPatterns = Seq(
+      "\t+|a",
+      "(\t+|a)Dc$1",
+      "$|$[^\n]2]}|B",
+      "a^|b",
+      "w$|b",
+      "\n[^\r\n]x*|^3x",
+      "]*\\wWW$|zb",
+      "(\\A|\\05)?"
+    )
+    for (pattern <- cudfInvalidPatterns) {
+      assertUnsupported(pattern, RegexFindMode, "invalid regex pattern: nothing to repeat")
+    }
+  }
+
   test("transpiler detects invalid cuDF patterns") {
     // The purpose of this test is to document some examples of valid Java regular expressions
     // that fail to compile in cuDF and to check that the transpiler detects these correctly.
@@ -92,21 +110,16 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
-  ignore("cuDF unsupported choice cases") {
+  test("cuDF unsupported choice cases") {
     val input = Seq("cat", "dog")
     val patterns = Seq("c*|d*", "c*|dog", "[cat]{3}|dog")
     patterns.foreach(pattern => {
-      val e = intercept[CudfException] {
-        gpuContains(pattern, input)
-      }
-      assert(e.getMessage.contains("invalid regex pattern: nothing to repeat"))
+      assertUnsupported(pattern, RegexFindMode, "invalid regex pattern: nothing to repeat")
     })
   }
 
-  ignore("sanity check: choice edge case 2") {
-    assertThrows[CudfException] {
-      gpuContains("c+|d+", Seq("cat", "dog"))
-    }
+  test("sanity check: choice edge case 2") {
+    assertUnsupported("c+|d+", RegexFindMode, "invalid regex pattern: nothing to repeat")
   }
 
   test("newline before $ in replace mode") {
