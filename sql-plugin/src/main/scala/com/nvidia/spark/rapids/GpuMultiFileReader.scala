@@ -163,11 +163,11 @@ object MultiFileReaderUtils {
   private def hasPathInCloud(filePaths: Array[String], cloudSchemes: Set[String]): Boolean = {
     // Assume the `filePath` always has a scheme, if not try using the local filesystem.
     // If that doesn't work for some reasons, users need to configure it directly.
-    // If Alluxio is enabled and we do task time replacement we have to take that
-    // into account here so we pick the correct reader.
     filePaths.exists(fp => cloudSchemes.contains(fp.getScheme))
   }
 
+  // If Alluxio is enabled and we do task time replacement we have to take that
+  // into account here so we pick the correct reader.
   def useMultiThreadReader(
       coalescingEnabled: Boolean,
       multiThreadEnabled: Boolean,

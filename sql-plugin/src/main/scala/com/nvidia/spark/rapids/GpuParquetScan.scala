@@ -121,7 +121,7 @@ case class GpuParquetScan(
     } else {
       GpuParquetMultiFilePartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics,
-        queryUsesInputFile)
+        queryUsesInputFile, false)
     }
   }
 
@@ -936,7 +936,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     metrics: Map[String, GpuMetric],
     queryUsesInputFile: Boolean,
     anyAlluxioMounted: Boolean)
-  extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf, rapidsConf, anyAlluxioMounted) {
+  extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf,
+    rapidsConf, anyAlluxioMounted) {
 
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
