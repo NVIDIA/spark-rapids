@@ -36,7 +36,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val cudfInvalidPatterns = Seq(
       "\t+|a",
       "(\t+|a)Dc$1",
-      "$|$[^\n]2]}|B",
       "a^|b",
       "w$|b",
       "\n[^\r\n]x*|^3x",
@@ -46,6 +45,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     for (pattern <- cudfInvalidPatterns) {
       assertUnsupported(pattern, RegexFindMode,
         "cuDF does not support repetition on one side of a choice")
+    }
+    val cudfInvalidPatterns2 = Seq(
+      "$|$[^\n]2]}|B"
+    )
+    for (pattern <- cudfInvalidPatterns2) {
+      assertUnsupported(pattern, RegexFindMode,
+        "End of line/string anchor is not supported in this context")
     }
   }
 
