@@ -350,20 +350,8 @@ abstract class MultiFileCloudPartitionReaderBase(
   private[this] val inputMetrics = Option(TaskContext.get).map(_.taskMetrics().inputMetrics)
       .getOrElse(TrampolineUtil.newInputMetrics())
 
-  private val files: Array[(PartitionedFile, Option[PartitionedFile])] = updateFilesIfAlluxio
-  logWarning(s"per file replaced file with ${files.mkString(",")}")
-
-  // assumes Alluxio directories already mounted at this point
-  private def updateFilesIfAlluxio: Array[(PartitionedFile, Option[PartitionedFile])] = {
-    // TODO - this might not be updated if dynamically set???
-    val rapidsConf = new RapidsConf(SparkEnv.get.conf)
-    if (rapidsConf.isAlluxioReplacementAlgoTaskTime) {
-      val alluxioBucketRegex: String = rapidsConf.getAlluxioBucketRegex
-      AlluxioUtils.replacePathInPartitionFileIfNeeded(alluxioBucketRegex, origFiles)
-    } else {
-      origFiles.map((_, None))
-    }
-  }
+  private val files: Array[(PartitionedFile, Option[PartitionedFile])] =
+    AlluxioUtils.updateFilesTaskTimeIfAlluxio(origFiles,  new RapidsConf(SparkEnv.get.conf))
 
   private def initAndStartReaders(): Unit = {
     // limit the number we submit at once according to the config if set

@@ -1025,16 +1025,9 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     }
   }
 
-  // assumes Alluxio directories already mounted at this point
   private def updateFilesIfAlluxio(files: Array[PartitionedFile]): Array[PartitionedFile] = {
-    // TODO - this might not be updated if dynamically set???
     val rapidsConf = new RapidsConf(SparkEnv.get.conf)
-    if (rapidsConf.isAlluxioReplacementAlgoTaskTime) {
-      val alluxioBucketRegex: String = rapidsConf.getAlluxioBucketRegex
-      AlluxioUtils.replacePathInPartitionFileIfNeeded(alluxioBucketRegex, files).map(_._1)
-    } else {
-      files
-    }
+    AlluxioUtils.updateFilesTaskTimeIfAlluxio(files, rapidsConf).map(_._1)
   }
 
   /**
@@ -1048,8 +1041,6 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       origFiles: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
     val files = updateFilesIfAlluxio(origFiles)
-    logWarning(s"per file replaced file with ${files.mkString(",")}")
-
     val clippedBlocks = ArrayBuffer[ParquetSingleDataBlockMeta]()
     val startTime = System.nanoTime()
     val metaAndFilesArr = if (numFilesFilterParallel > 0) {
@@ -1128,16 +1119,8 @@ case class GpuParquetPartitionReaderFactory(
   }
 
   private def updateFilesIfAlluxio(file: PartitionedFile): PartitionedFile = {
-    // TODO - this might not be updated if dynamically set???
     val rapidsConf = new RapidsConf(SparkEnv.get.conf)
-    if (rapidsConf.isAlluxioReplacementAlgoTaskTime) {
-      val alluxioBucketRegex: String = rapidsConf.getAlluxioBucketRegex
-      val replaced =
-        AlluxioUtils.replacePathInPartitionFileIfNeeded(alluxioBucketRegex, Array(file))
-      replaced.head._1
-    } else {
-      file
-    }
+    AlluxioUtils.updateFilesTaskTimeIfAlluxio(Array(file), rapidsConf).head._1
   }
 
   override def buildColumnarReader(
@@ -1146,7 +1129,6 @@ case class GpuParquetPartitionReaderFactory(
     // file name reported as the original one
     // assumes Alluxio directories already mounted at this point
     val partitionedFile = updateFilesIfAlluxio(origPartitionedFile)
-    logWarning(s"per file replaced file with $partitionedFile")
     val reader = new PartitionReaderWithBytesRead(buildBaseColumnarParquetReader(partitionedFile))
     ColumnarPartitionReaderWithPartitionValues.newReader(partitionedFile, reader, partitionSchema)
   }

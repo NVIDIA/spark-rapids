@@ -68,6 +68,7 @@ object AlluxioUtils extends Logging {
   private var alluxioHome: String = "/opt/alluxio-2.8.0"
   private var isInit: Boolean = false
 
+  // Default to read from /opt/alluxio-2.8.0 if not setting ALLUXIO_HOME
   def getAlluxioMasterAndPort: (String, String) = {
     val buffered_source = Source.fromFile(alluxioHome + "/conf/alluxio-site.properties")
     val prop : Properties = new Properties()
@@ -87,16 +88,13 @@ object AlluxioUtils extends Logging {
       alluxioCmd = conf.getAlluxioCmd
 
       if (!isInit) {
-        // Default to read from /opt/alluxio-2.8.0 if not setting ALLUXIO_HOME
         var alluxio_port: String = null
         var alluxio_master: String = null
         var buffered_source: BufferedSource = null
         try {
-          buffered_source = Source.fromFile(alluxioHome + "/conf/alluxio-site.properties")
-          val prop : Properties = new Properties()
-          prop.load(buffered_source.bufferedReader())
-          alluxio_master = prop.getProperty("alluxio.master.hostname")
-          alluxio_port = prop.getProperty("alluxio.master.rpc.port", "19998")
+          val (master, port) = getAlluxioMasterAndPort
+          alluxio_port = port
+          alluxio_master = master
         } catch {
           case e: FileNotFoundException =>
             throw new RuntimeException(s"Not found Alluxio config in " +
@@ -260,15 +258,18 @@ object AlluxioUtils extends Logging {
     newFile
   }
 
+  // Replaces the file name with Alluxio one if it matches the regex.
+  // Returns a tuple with the file path and whether or not it replaced the
+  // scheme with the Alluxio one.
   private def genFuncForTaskTimeReplacement(
-      alluxioBucketRegex: String): Option[String => String] = {
+      alluxioBucketRegex: String): Option[String => (String, Boolean)] = {
     Some((pathStr: String) => {
       if (pathStr.matches(alluxioBucketRegex)) {
         val (scheme, _) = getSchemeAndBucketFromPath(pathStr)
         val (master, port) = getAlluxioMasterAndPort
-        replaceSchemeWithAlluxio(pathStr, scheme, master + ":" + port)
+        (replaceSchemeWithAlluxio(pathStr, scheme, master + ":" + port), true)
       } else {
-        pathStr
+        (pathStr, false)
       }
     })
   }
@@ -330,14 +331,33 @@ object AlluxioUtils extends Logging {
     (replaceFunc, replaceMapOption)
   }
 
-  def replacePathInPartitionFileIfNeeded(
+  // assumes Alluxio directories already mounted at this point
+  def updateFilesTaskTimeIfAlluxio(origFiles: Array[PartitionedFile],
+      rapidsConf: RapidsConf): Array[(PartitionedFile, Option[PartitionedFile])] = {
+    // TODO - this might not be updated if dynamically set???
+    if (rapidsConf.isAlluxioReplacementAlgoTaskTime) {
+      val alluxioBucketRegex: String = rapidsConf.getAlluxioBucketRegex
+      replacePathInPartitionFileTaskTimeIfNeeded(alluxioBucketRegex, origFiles)
+    } else {
+      origFiles.map((_, None))
+    }
+  }
+
+  // Replaces the path if needed and returns the replaced path and optionally the
+  // original file if it replaced the scheme with an Alluxio scheme.
+  def replacePathInPartitionFileTaskTimeIfNeeded(
       alluxioBucketRegex: String,
       files: Array[PartitionedFile]): Array[(PartitionedFile, Option[PartitionedFile])] = {
     val replaceFunc = genFuncForTaskTimeReplacement(alluxioBucketRegex)
     if (replaceFunc.isDefined) {
       files.map { file =>
-        val replaced = replaceFunc.get(file.filePath)
-        (PartitionedFile(file.partitionValues, replaced, file.start, file.length), Some(file))
+        val (replacedFile, didReplace) = replaceFunc.get(file.filePath)
+        if (didReplace) {
+          logDebug(s"Task Time replaced ${file.filePath} with $replacedFile")
+          (PartitionedFile(file.partitionValues, replacedFile, file.start, file.length), Some(file))
+        } else {
+          (file, None)
+        }
       }
     } else {
       files.map((_, None))
