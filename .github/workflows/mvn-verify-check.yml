@@ -48,7 +48,7 @@ jobs:
           svArrBody=$(printf ",{\"spark-version\":\"%s\"}" "${tailNoSnapshotVersionsArr[@]}")
           svArrBody=${svArrBody:1}
           svJsonStr=$(printf {\"include\":[%s]} $svArrBody)
-          echo ::set-output name=headVersion::${noSnapshotVersionsArr[0]}
+          echo ::set-output name=headVersion::$SPARK_BASE_SHIM_VERSION
           echo ::set-output name=tailVersions::$svJsonStr
 
   package-aggregator:
