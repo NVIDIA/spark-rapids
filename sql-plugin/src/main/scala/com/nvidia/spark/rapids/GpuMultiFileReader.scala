@@ -356,12 +356,14 @@ abstract class MultiFileCloudPartitionReaderBase(
   private def updateFilesIfAlluxio: Array[(PartitionedFile, Option[PartitionedFile])] = {
     // TODO - this might not be updated if dynamically set???
     val rapidsConf = new RapidsConf(SparkEnv.get.conf)
-    if (rapidsConf.isAlluxioReplacementAlgoTaskTime) {
+    val ret = if (rapidsConf.isAlluxioReplacementAlgoTaskTime) {
       val alluxioBucketRegex: String = rapidsConf.getAlluxioBucketRegex
       AlluxioUtils.replacePathInPartitionFileIfNeeded(alluxioBucketRegex, origFiles)
     } else {
       origFiles.map((_, None))
     }
+    logWarning(s"per file replaced file with ${ret.mkString(",")}")
+    ret
   }
 
   private def initAndStartReaders(): Unit = {
