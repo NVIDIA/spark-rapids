@@ -62,12 +62,8 @@ echo "CUDF_VER: $CUDF_VER, CUDA_CLASSIFIER: $CUDA_CLASSIFIER, PROJECT_VER: $PROJ
 
 # Spark shim versions
 # SCRIPT_PATH is to avoid losing script path in wrapper calling. It should be exported if wrapper call existed.
-if [ $SCRIPT_PATH ]; then
-    SCRIPT_PATH=${SCRIPT_PATH:-$(pwd -P)/}
-    . $SCRIPT_PATH/common.sh
-else
-    . $(dirname "$0")/common.sh
-fi
+SCRIPT_PATH=${SCRIPT_PATH:-$(pwd -P)/jenkins}
+. $SCRIPT_PATH/common.sh
 # Psnapshots: snapshots + noSnapshots
 set_env_var_SPARK_SHIM_VERSIONS_ARR -Psnapshots
 SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")

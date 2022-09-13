@@ -42,8 +42,8 @@ jobs:
         id: noSnapshotVersionsStep
         run: |
           set -x
+          # SCRIPT_PATH is to avoid losing script path for wrapper calling common.sh in version-def.sh
           export SCRIPT_PATH=$(pwd -P)/jenkins
-          echo $SCRIPT_PATH
           . jenkins/version-def.sh
           svArrBody=$(printf ",{\"spark-version\":\"%s\"}" "${TAIL_NOSNAPSHOTS_VERSIONS[@]}")
           svArrBody=${svArrBody:1}
