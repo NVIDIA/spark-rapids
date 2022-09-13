@@ -33,25 +33,17 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test("") {
     // these patterns compile in cuDF since https://github.com/rapidsai/cudf/pull/11654 was merged
     // but we still reject them because we see failures in fuzz testing if we allow them
-    val cudfInvalidPatterns = Seq(
-      "\t+|a",
-      "(\t+|a)Dc$1",
-      "a^|b",
-      "w$|b",
-      "\n[^\r\n]x*|^3x",
-      "]*\\wWW$|zb",
-      "(\\A|\\05)?"
-    )
-    for (pattern <- cudfInvalidPatterns) {
+    for (pattern <- Seq("\t+|a", "(\t+|a)Dc$1", "\n[^\r\n]x*|^3x")) {
       assertUnsupported(pattern, RegexFindMode,
         "cuDF does not support repetition on one side of a choice")
     }
-    val cudfInvalidPatterns2 = Seq(
-      "$|$[^\n]2]}|B"
-    )
-    for (pattern <- cudfInvalidPatterns2) {
+    for (pattern <- Seq("$|$[^\n]2]}|B")) {
       assertUnsupported(pattern, RegexFindMode,
         "End of line/string anchor is not supported in this context")
+    }
+    for (pattern <- Seq("a^|b", "w$|b", "]*\\wWW$|zb", "(\\A|\\05)?")) {
+      assertUnsupported(pattern, RegexFindMode,
+        "cuDF does not support terms ending with line anchors on one side of a choice")
     }
   }
 
