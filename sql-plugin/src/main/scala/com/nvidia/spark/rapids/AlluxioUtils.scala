@@ -335,7 +335,8 @@ object AlluxioUtils extends Logging {
   def updateFilesTaskTimeIfAlluxio(origFiles: Array[PartitionedFile],
       rapidsConf: RapidsConf): Array[(PartitionedFile, Option[PartitionedFile])] = {
     // TODO - this might not be updated if dynamically set???
-    if (rapidsConf.isAlluxioReplacementAlgoTaskTime) {
+    if (AlluxioUtils.isAlluxioPathReplacementEnabled(rapidsConf) &&
+      rapidsConf.isAlluxioReplacementAlgoTaskTime) {
       val alluxioBucketRegex: String = rapidsConf.getAlluxioBucketRegex
       replacePathInPartitionFileTaskTimeIfNeeded(alluxioBucketRegex, origFiles)
     } else {
