@@ -37,15 +37,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     // random inputs.
     val cudfInvalidPatterns = Seq(
       "a*+",
-      "\t+|a",
-      "(\t+|a)Dc$1",
-      "(?d)",
-      "$|$[^\n]2]}|B",
-      "a^|b",
-      "w$|b",
-      "\n[^\r\n]x*|^3x",
-      "]*\\wWW$|zb",
-      "(\\A|\\05)?"
+      "(?d)"
     )
     // data is not relevant because we are checking for compilation errors
     val inputs = Seq("a")
@@ -87,7 +79,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test("cuDF does not support choice with repetition") {
     val patterns = Seq("b+|^\t")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode, 
+      assertUnsupported(pattern, RegexFindMode,
         "cuDF does not support repetition on one side of a choice")
     )
   }
@@ -100,7 +92,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
-  test("cuDF unsupported choice cases") {
+  ignore("cuDF unsupported choice cases") {
     val input = Seq("cat", "dog")
     val patterns = Seq("c*|d*", "c*|dog", "[cat]{3}|dog")
     patterns.foreach(pattern => {
@@ -111,7 +103,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     })
   }
 
-  test("sanity check: choice edge case 2") {
+  ignore("sanity check: choice edge case 2") {
     assertThrows[CudfException] {
       gpuContains("c+|d+", Seq("cat", "dog"))
     }
@@ -142,10 +134,12 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("cuDF does not support quantifier syntax when not quantifying anything") {
     // note that we could choose to transpile and escape the '{' and '}' characters
-    val patterns = Seq("{1,2}", "{1,}", "{1}", "{2,1}")
-    patterns.foreach(pattern =>
+    val patterns = Seq("{1,2}", "{1,}", "{1}")
+    patterns.foreach(pattern => {
+      println(pattern)
       assertUnsupported(pattern, RegexFindMode, 
         "Token preceding '{' is not quantifiable near index 0")
+        }
     )
   }
 
@@ -376,7 +370,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("transpile character class unescaped range symbol") {
     val patterns = Seq("a[-b]", "a[+-]", "a[-+]", "a[-]", "a[^-]")
-    val expected = Seq(raw"a[\-b]", raw"a[+\-]", raw"a[\-+]", raw"a[\-]", "a(?:[\r\n]|[^\\-])")
+    val expected = Seq(raw"a[\-b]", raw"a[+\-]", raw"a[\-+]", raw"a[\-]", "a(?:[\r]|[^\\-])")
     val transpiler = new CudfRegexTranspiler(RegexFindMode)
     val transpiled = patterns.map(transpiler.transpile(_, None)._1)
     assert(transpiled === expected)
