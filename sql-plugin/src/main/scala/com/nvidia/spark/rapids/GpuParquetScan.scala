@@ -53,7 +53,7 @@ import org.apache.parquet.io.{InputFile, SeekableInputStream}
 import org.apache.parquet.schema.{DecimalMetadata, GroupType, MessageType, OriginalType, PrimitiveType, Type}
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
 
-import org.apache.spark.TaskContext
+import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
@@ -1025,6 +1025,19 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     }
   }
 
+  // assumes Alluxio directories already mounted at this point
+  private def updateFilesIfAlluxio(files: Array[PartitionedFile]): Array[PartitionedFile] = {
+    // TODO - this might not be updated if dynamically set???
+    val rapidsConf = new RapidsConf(SparkEnv.get.conf)
+    if (rapidsConf.isAlluxioReplacementAlgoTaskTime) {
+      val alluxioBucketRegex: String = rapidsConf.getAlluxioBucketRegex
+      AlluxioUtils.replacePathInPartitionFileIfNeeded(alluxioBucketRegex, files).map(_._1)
+    } else {
+      files
+    }
+  }
+
+
   /**
    * Build the PartitionReader for coalescing reading
    *
@@ -1033,8 +1046,9 @@ case class GpuParquetMultiFilePartitionReaderFactory(
    * @return coalescing reading PartitionReader
    */
   override def buildBaseColumnarReaderForCoalescing(
-      files: Array[PartitionedFile],
+      origFiles: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
+    val files = updateFilesIfAlluxio(origFiles)
     val clippedBlocks = ArrayBuffer[ParquetSingleDataBlockMeta]()
     val startTime = System.nanoTime()
     val metaAndFilesArr = if (numFilesFilterParallel > 0) {
