@@ -2078,12 +2078,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isAlluxioReplacementAlgoConvertTime: Boolean =
     get(ALLUXIO_REPLACEMENT_ALGO) == "CONVERT_TIME"
 
-<<<<<<< HEAD
   lazy val isAlluxioReplacementAlgoTaskTime: Boolean =
     get(ALLUXIO_REPLACEMENT_ALGO) == "TASK_TIME"
 
-=======
->>>>>>> origin/branch-22.10
   lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
 
   lazy val isRangeWindowByteEnabled: Boolean = get(ENABLE_RANGE_WINDOW_BYTES)
