@@ -61,7 +61,13 @@ echo "CUDF_VER: $CUDF_VER, CUDA_CLASSIFIER: $CUDA_CLASSIFIER, PROJECT_VER: $PROJ
     SPARK_VER: $SPARK_VER, SCALA_BINARY_VER: $SCALA_BINARY_VER"
 
 # Spark shim versions
-. $(dirname "$0")/common.sh
+if [ $SCRIPT_PATH ]; then
+    SCRIPT_PATH=${SCRIPT_PATH:-$(pwd -P)/}
+    echo $SCRIPT_PATH
+    . $SCRIPT_PATH/common.sh
+else
+    . $(dirname "$0")/common.sh
+fi
 # Psnapshots: snapshots + noSnapshots
 set_env_var_SPARK_SHIM_VERSIONS_ARR -Psnapshots
 SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")

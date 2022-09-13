@@ -42,6 +42,7 @@ jobs:
         id: noSnapshotVersionsStep
         run: |
           set -x
+          export SCRIPT_PATH=$(pwd -P)/jenkins
           . jenkins/version-def.sh
           echo $SPARK_BASE_SHIM_VERSION
           svArrBody=$(printf ",{\"spark-version\":\"%s\"}" "${TAIL_NOSNAPSHOTS_VERSIONS[@]}")
