@@ -173,7 +173,7 @@ if [[ $PARALLEL_TEST == "true" ]]; then
 else
   export PYSP_TEST_spark_cores_max=6
   export PYSP_TEST_spark_executor_memory=16g
-  export TEST_PARALLEL=1
+  export TEST_PARALLEL=0
 fi
 
 export SCRIPT_PATH="$(pwd -P)"
