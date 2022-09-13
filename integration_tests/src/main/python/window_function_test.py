@@ -819,6 +819,7 @@ def test_window_aggregations_for_decimal_ranges(data_gen):
 
     Since this test is for the order-by column type, and not for each specific windowing aggregation,
     we use COUNT(1) throughout the test, for different window widths and ordering.
+    Some other aggregation functions are thrown in for variety.
     """
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: gen_df(spark, data_gen, length=2048),
@@ -831,7 +832,12 @@ def test_window_aggregations_for_decimal_ranges(data_gen):
         ' COUNT(1) OVER (PARTITION BY a ORDER BY b DESC RANGE BETWEEN 10.2345 PRECEDING AND 6.7890 FOLLOWING), '
         ' COUNT(1) OVER (PARTITION BY a ORDER BY b DESC), '
         ' COUNT(1) OVER (PARTITION BY a ORDER BY b DESC RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
-        ' COUNT(1) OVER (PARTITION BY a ORDER BY b DESC RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b DESC RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING),'
+        ' COUNT(c) OVER (PARTITION BY a ORDER BY b RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+        ' SUM(c)   OVER (PARTITION BY a ORDER BY b RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+        ' MIN(c)   OVER (PARTITION BY a ORDER BY b RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+        ' MAX(c)   OVER (PARTITION BY a ORDER BY b RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+        ' RANK()   OVER (PARTITION BY a ORDER BY b) '
         'FROM window_agg_table',
         conf={})
 
