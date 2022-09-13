@@ -97,33 +97,12 @@ def test_write_round_trip(spark_tmp_path, parquet_gens):
             data_path,
             conf=writer_confs)
 
-# `TIMESTAMP_MILLIS` can't be handled correctly when the input is of nested types containing timestamp.
-# See issue https://github.com/NVIDIA/spark-rapids/issues/6302.
-# Thus, we exclude `TIMESTAMP_MILLIS` from the tests here.
-# When the issue is resolved, unify this test with the test below.
-parquet_ts_write_options_no_millis = ['INT96', 'TIMESTAMP_MICROS']
 @pytest.mark.parametrize('parquet_gens', [[
     limited_timestamp(),
     ArrayGen(limited_timestamp(), max_length=10),
     MapGen(limited_timestamp(nullable=False), limited_timestamp())]], ids=idfn)
-@pytest.mark.parametrize('ts_type', parquet_ts_write_options_no_millis)
-def test_timestamp_write_round_trip_no_millis(spark_tmp_path, parquet_gens, ts_type):
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
-    data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs = copy_and_update(writer_confs, {'spark.sql.parquet.outputTimestampType': ts_type})
-    assert_gpu_and_cpu_writes_are_equal_collect(
-        lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.parquet(path),
-        lambda spark, path: spark.read.parquet(path),
-        data_path,
-        conf=all_confs)
-
-# `TIMESTAMP_MILLIS` can't be handled correctly when the input is of nested types containing timestamp.
-# See issue https://github.com/NVIDIA/spark-rapids/issues/6302.
-# Thus, we exclude nested types contaning timestamp from the tests here.
-# When the issue is resolved, unify this test with the test above.
-@pytest.mark.parametrize('parquet_gens', [[limited_timestamp()]], ids=idfn)
 @pytest.mark.parametrize('ts_type', parquet_ts_write_options)
-def test_timestamp_write_round_trip_no_nested_timestamp(spark_tmp_path, parquet_gens, ts_type):
+def test_timestamp_write_round_trip(spark_tmp_path, parquet_gens, ts_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = copy_and_update(writer_confs, {'spark.sql.parquet.outputTimestampType': ts_type})
@@ -306,7 +285,7 @@ def test_parquet_write_legacy_fallback(spark_tmp_path, ts_write, ts_rebase, spar
 @pytest.mark.parametrize('write_options', [{"parquet.encryption.footer.key": "k1"},
                                            {"parquet.encryption.column.keys": "k2:a"},
                                            {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
-def test_parquet_write_encryption_fallback(spark_tmp_path, spark_tmp_table_factory, write_options):
+def test_parquet_write_encryption_option_fallback(spark_tmp_path, spark_tmp_table_factory, write_options):
     def write_func(spark, path):
         writer = unary_op_df(spark, gen).coalesce(1).write
         for key in write_options:
@@ -319,6 +298,43 @@ def test_parquet_write_encryption_fallback(spark_tmp_path, spark_tmp_table_facto
         lambda spark, path: spark.read.parquet(path),
         data_path,
         'DataWritingCommandExec')
+
+@allow_non_gpu("DataWritingCommandExec")
+@pytest.mark.parametrize("write_options", [{"parquet.encryption.footer.key": "k1"},
+                                           {"parquet.encryption.column.keys": "k2:a"},
+                                           {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
+def test_parquet_write_encryption_runtimeconfig_fallback(spark_tmp_path, write_options):
+    gen = IntegerGen()
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    assert_gpu_fallback_write(
+        lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        "DataWritingCommandExec",
+        conf=write_options)
+
+@allow_non_gpu("DataWritingCommandExec")
+@pytest.mark.parametrize("write_options", [{"parquet.encryption.footer.key": "k1"},
+                                           {"parquet.encryption.column.keys": "k2:a"},
+                                           {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
+def test_parquet_write_encryption_hadoopconfig_fallback(spark_tmp_path, write_options):
+    gen = IntegerGen()
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    def setup_hadoop_confs(spark):
+        for k, v in write_options.items():
+            spark.sparkContext._jsc.hadoopConfiguration().set(k, v)
+    def reset_hadoop_confs(spark):
+        for k in write_options.keys():
+            spark.sparkContext._jsc.hadoopConfiguration().unset(k)
+    try:
+        with_cpu_session(setup_hadoop_confs)
+        assert_gpu_fallback_write(
+            lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.parquet(path),
+            lambda spark, path: spark.read.parquet(path),
+            data_path,
+            "DataWritingCommandExec")
+    finally:
+        with_cpu_session(reset_hadoop_confs)
 
 @allow_non_gpu('DataWritingCommandExec')
 # note that others should fail as well but requires you to load the libraries for them

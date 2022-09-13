@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.mutable.HashMap
 
-import com.nvidia.spark.rapids.{GpuExec, GpuMetric, GpuOrcMultiFilePartitionReaderFactory, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, SparkPlanMeta}
+import com.nvidia.spark.rapids.{AlluxioUtils, GpuExec, GpuMetric, GpuOrcMultiFilePartitionReaderFactory, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, SparkPlanMeta}
 import com.nvidia.spark.rapids.shims.{GpuDataSourceRDD, SparkShimImpl}
 import org.apache.hadoop.fs.Path
 
@@ -84,6 +84,15 @@ case class GpuFileSourceScanExec(
     case _ => true // For others, default to PERFILE reader
   }
 
+  private val isAlluxioAlgoSelectionTime = {
+    val alluxioPathsReplace = rapidsConf.getAlluxioPathsToReplace
+    val alluxioAutoMountEnabled = rapidsConf.getAlluxioAutoMountEnabled
+    // currently only support Alluxio replacement with Parquet files
+    (alluxioPathsReplace.isDefined || alluxioAutoMountEnabled) &&
+      rapidsConf.isAlluxioReplacementAlgoSelectTime &&
+      relation.fileFormat.isInstanceOf[ParquetFileFormat]
+  }
+
   override def otherCopyArgs: Seq[AnyRef] = Seq(rapidsConf)
 
   // All expressions are filter expressions used on the CPU.
@@ -112,9 +121,22 @@ case class GpuFileSourceScanExec(
   @transient lazy val selectedPartitions: Array[PartitionDirectory] = {
     val optimizerMetadataTimeNs = relation.location.metadataOpsTimeNs.getOrElse(0L)
     val startTime = System.nanoTime()
-    val ret =
+    val origRet =
       relation.location.listFiles(
         partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
+    val ret = if (isAlluxioAlgoSelectionTime) {
+      val res = origRet.map { pd =>
+        AlluxioUtils.replacePathInPDIfNeeded(rapidsConf, pd,
+          relation.sparkSession.sparkContext.hadoopConfiguration,
+          relation.sparkSession.conf)
+      }
+      res
+    } else {
+      origRet
+    }
+    logDebug(s"File listing and possibly replace with Alluxio path " +
+      s"took: ${System.nanoTime() - startTime}")
+
     setFilesNumAndSizeMetric(ret, true)
     val timeTakenMs = NANOSECONDS.toMillis(
       (System.nanoTime() - startTime) + optimizerMetadataTimeNs)
@@ -378,6 +400,7 @@ case class GpuFileSourceScanExec(
     "filesSize" -> createSizeMetric(ESSENTIAL_LEVEL, "size of files read"),
     GPU_DECODE_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_DECODE_TIME),
     BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUFFER_TIME),
+    FILTER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME),
     PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY)
   ) ++ {
     relation.fileFormat match {

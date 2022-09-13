@@ -290,7 +290,10 @@ object IntervalUtils extends Arm {
       case pCv: ColumnVector => pCv.castTo(dT)
       case pS: Scalar => Scalar.fromDecimal(-1, new BigInteger((getLong(pS) * 10L).toString))
     }
-    withResource(leftDecimal.div(q, dT)) { t =>
+    val t = withResource(leftDecimal) { leftDecimal =>
+      leftDecimal.div(q, dT)
+    }
+    withResource(t) { t =>
       t.round(RoundMode.HALF_UP)
     }
   }

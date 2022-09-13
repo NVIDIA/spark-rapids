@@ -174,7 +174,7 @@ print_banner()
 
 set_rapids_jars_from_work_dir()
 {
-  rapids_tools_jar_file=( "$( find "${MODULE_PATH}" -type f \( -iname "rapids-4-spark-tools_*.jar" ! -iname "*tests.jar" ! -iname "original-rapids-4*.jar" \) )" )
+  rapids_tools_jar_file=( "$( find "${MODULE_PATH}" -type f \( -iname "rapids-4-spark-tools_*.jar" ! -iname "*tests.jar" ! -iname "original-rapids-4*.jar" ! -iname "*javadoc.jar" \) )" )
   # get the parent directory
   rapids_jar_home="$(dirname "${rapids_tools_jar_file}")"
 }

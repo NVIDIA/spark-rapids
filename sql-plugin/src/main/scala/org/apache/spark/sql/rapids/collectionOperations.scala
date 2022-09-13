@@ -407,13 +407,30 @@ case class GpuSortArray(base: Expression, ascendingOrder: Expression)
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): cudf.ColumnVector = {
     val isDescending = isDescendingOrder(rhs)
-    lhs.getBase.listSortRows(isDescending, true)
+    val base = lhs.getBase()
+    withResource(base.getChildColumnView(0)) {child =>
+      withResource(child.copyToColumnVector()) {child =>
+        // When the average length of array is > 100
+        // and there are `-Nan`s in the data, the sort ordering
+        // of `Nan`s is inconsistent. So we need to normalize the data
+        // before sorting. This workaround can be removed after
+        // solving https://github.com/rapidsai/cudf/issues/11630
+        val normalizedChild = ColumnCastUtil.deepTransform(child) {
+          case (cv, _) if cv.getType == cudf.DType.FLOAT32 || cv.getType == cudf.DType.FLOAT64 =>
+              cv.normalizeNANsAndZeros()
+        }
+        withResource(normalizedChild) {normalizedChild =>
+          withResource(base.replaceListChild(normalizedChild)) {normalizedList =>
+            normalizedList.listSortRows(isDescending, true)
+          }
+        }
+      }
+    }
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): cudf.ColumnVector = {
-    val isDescending = isDescendingOrder(rhs)
     withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { cv =>
-      cv.getBase.listSortRows(isDescending, true)
+      doColumnar(cv, rhs)
     }
   }
 

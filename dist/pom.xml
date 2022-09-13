@@ -58,6 +58,7 @@
             312db,
             321db
         </databricks.buildvers>
+        <dist.jar.name>${project.build.directory}/${project.build.finalName}-${cuda.version}.jar</dist.jar.name>
     </properties>
     <profiles>
         <profile>
@@ -331,7 +332,8 @@
                         <configuration>
                             <target>
                                 <zip update="true" basedir="${project.build.directory}/extra-resources"
-                                    destfile="${project.build.directory}/${project.build.finalName}-${cuda.version}.jar"/>
+                                    compress="${dist.jar.compress}"
+                                    destfile="${dist.jar.name}"/>
                             </target>
                         </configuration>
                     </execution>
@@ -446,6 +448,65 @@
                                     <overWrite>true</overWrite>
                                 </artifactItem>
                             </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-install-plugin</artifactId>
+                <version>3.0.1</version>
+                <executions>
+                    <execution>
+                        <id>default-install</id>
+                        <phase>none</phase>
+                    </execution>
+                    <execution>
+                        <id>install-parallel-worlds-jar</id>
+                        <phase>install</phase>
+                        <goals>
+                            <goal>install-file</goal>
+                        </goals>
+                        <configuration>
+                            <file>${dist.jar.name}</file>
+                            <artifactId>${project.artifactId}</artifactId>
+                            <classifier>${cuda.version}</classifier>
+                            <groupId>${project.groupId}</groupId>
+                            <version>${project.version}</version>
+                            <packaging>jar</packaging>
+                            <!-- pomFile will be taken from META-INF in jar
+                            https://github.com/apache/maven-install-plugin/blob/9f77fb95ab2a95b1d8d0c34c39c6f088f9f690ab/src/main/java/org/apache/maven/plugins/install/InstallFileMojo.java#L309
+                            -->
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <version>3.0.0</version>
+                <executions>
+                    <execution>
+                        <id>default-deploy</id>
+                        <phase>none</phase>
+                    </execution>
+                    <execution>
+                        <id>deploy-parallel-worlds-jar</id>
+                        <phase>deploy</phase>
+                        <goals>
+                            <goal>deploy-file</goal>
+                        </goals>
+                        <configuration>
+                            <file>${dist.jar.name}</file>
+                            <url>file://${java.io.tmpdir}/m2-repo</url>
+                            <artifactId>${project.artifactId}</artifactId>
+                            <classifier>${cuda.version}</classifier>
+                            <groupId>${project.groupId}</groupId>
+                            <packaging>jar</packaging>
+                            <!-- pomFile will be taken from META-INF in jar
+                            https://github.com/apache/maven-deploy-plugin/blob/4a72d8e9778c1878058435bdb919d40d65c879dd/src/main/java/org/apache/maven/plugins/deploy/DeployFileMojo.java#L186
+                            -->
+                            <version>${project.version}</version>
                         </configuration>
                     </execution>
                 </executions>

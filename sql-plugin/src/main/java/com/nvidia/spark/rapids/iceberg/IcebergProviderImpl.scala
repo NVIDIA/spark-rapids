@@ -66,4 +66,11 @@ class IcebergProviderImpl extends IcebergProvider {
       ClassTag(cpuIcebergScanClass))
     ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
   }
+
+  override def copyScanWithInputFileTrue(scan: Scan): Scan = scan match {
+    case icebergBatchScan: GpuSparkBatchQueryScan =>
+      icebergBatchScan.copyWithInputFileTrue();
+    case _ =>
+      throw new RuntimeException(s"Unsupported scan type: ${scan.getClass.getSimpleName}")
+  }
 }
