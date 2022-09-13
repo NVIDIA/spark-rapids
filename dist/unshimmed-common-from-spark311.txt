@@ -12,9 +12,7 @@ com/nvidia/spark/rapids/ExplainPlanBase.class
 com/nvidia/spark/rapids/GpuColumnVector.class
 com/nvidia/spark/rapids/GpuColumnVectorBase.class
 com/nvidia/spark/rapids/GpuKryoRegistrator*
-com/nvidia/spark/rapids/GpuScalar.class
-com/nvidia/spark/rapids/GpuUnsignedIntegerType.class
-com/nvidia/spark/rapids/GpuUnsignedLongType.class
+com/nvidia/spark/rapids/GpuTypeShimsProvider.class
 com/nvidia/spark/rapids/PlanUtils*
 com/nvidia/spark/rapids/RapidsExecutorHeartbeatMsg*
 com/nvidia/spark/rapids/RapidsExecutorStartupMsg*
@@ -29,7 +27,6 @@ com/nvidia/spark/rapids/SparkShims*
 com/nvidia/spark/rapids/SparkShimServiceProvider*
 com/nvidia/spark/rapids/SparkShimVersion*
 com/nvidia/spark/rapids/SQLExecPlugin*
-com/nvidia/spark/rapids/WithTableBuffer.class
 com/nvidia/spark/RapidsUDF*
 com/nvidia/spark/SQLPlugin*
 com/nvidia/spark/udf/Plugin*

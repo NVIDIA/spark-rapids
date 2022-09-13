@@ -17,7 +17,7 @@ package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{DType, Scalar}
-import com.nvidia.spark.rapids.{ColumnarCopyHelper, TypeSig}
+import com.nvidia.spark.rapids.{ColumnarCopyHelper, GpuTypeShimsProvider, TypeSig}
 import com.nvidia.spark.rapids.GpuRowToColumnConverter.{IntConverter, LongConverter, NotNullIntConverter, NotNullLongConverter, TypeConverter}
 
 import org.apache.spark.sql.types.{DataType, DayTimeIntervalType, YearMonthIntervalType}
@@ -238,4 +238,9 @@ object GpuTypeShims {
    * throws exception if floor(float value)  > Long.Max when cast(float as timestamp)
    */
   def hasSideEffectsIfCastFloatToTimestamp: Boolean = true
+}
+
+class GpuTypeShimsImpl extends GpuTypeShimsProvider {
+  def toRapidsOrNull(t: DataType): ai.rapids.cudf.DType =
+    GpuTypeShims.toRapidsOrNull(t)
 }

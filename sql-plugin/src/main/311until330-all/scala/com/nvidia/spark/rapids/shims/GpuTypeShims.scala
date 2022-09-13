@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.shims
 import ai.rapids.cudf
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.GpuRowToColumnConverter.TypeConverter
+import com.nvidia.spark.rapids.GpuTypeShimsProvider
 import com.nvidia.spark.rapids.TypeSig
 
 import org.apache.spark.sql.types.DataType
@@ -138,4 +139,9 @@ object GpuTypeShims {
   def hasSideEffectsIfCastIntToDayTime(dt: DataType): Boolean = false
 
   def hasSideEffectsIfCastFloatToTimestamp: Boolean = false
+}
+
+class GpuTypeShimsImpl extends GpuTypeShimsProvider {
+  def toRapidsOrNull(t: DataType): ai.rapids.cudf.DType =
+    GpuTypeShims.toRapidsOrNull(t)
 }

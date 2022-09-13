@@ -26,7 +26,6 @@ import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 import ai.rapids.cudf._
 import ai.rapids.cudf.ParquetWriterOptions.StatisticsFrequency
 import com.nvidia.spark.GpuCachedBatchSerializer
-import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{ParquetFieldIdShims, SparkShimImpl}
 import org.apache.commons.io.output.ByteArrayOutputStream
@@ -551,7 +550,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       })
       cbRdd.mapPartitions(iter => CloseableColumnBatchIterator(iter))
     } else {
-      val origSelectedAttributesWithUnambiguousNames = 
+      val origSelectedAttributesWithUnambiguousNames =
         sanitizeColumnNames(newSelectedAttributes, selectedSchemaWithNames)
       val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf.getAllConfs)
       input.mapPartitions {
