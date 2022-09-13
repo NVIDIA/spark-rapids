@@ -30,7 +30,7 @@ import org.apache.spark.sql.types.DataTypes
 
 class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
-  test("") {
+  test("transpiler detects invalid cuDF patterns that cuDF now supports") {
     // these patterns compile in cuDF since https://github.com/rapidsai/cudf/pull/11654 was merged
     // but we still reject them because we see failures in fuzz testing if we allow them
     for (pattern <- Seq("\t+|a", "(\t+|a)Dc$1", "\n[^\r\n]x*|^3x")) {
