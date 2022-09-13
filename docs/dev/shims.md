@@ -136,43 +136,86 @@ code should be refactored until all discrepancies are shimmed away.
 1. The transitive closure of the classes compile-time-referenced by `A` should
 have the property above.
 
-JDK ships the `jdeps` tool that can help to determine the transitive closure of
-a class among other things. Note that `jdeps` has improved significantly in since
-it was introduced. The example below uses `jdeps` from a JDK11 install, and
-not JDK8 currently used for building spark-rapids.
+JDK ships the `jdeps` tool that can help analyze static dependencies of
+a class. Unfortunately, it does not compute the transitive closure (recursive)
+at the class granularity. Thus you need additional tools such as
+`[Graphviz tool](https://graphviz.org/)` used here.
 
 As an example, in Pull Request #6521 `com.nvidia.spark.rapids.GpuColumnVector`
-is being externalized.
+is being externalized, and we need to figure out if it transitively loads
+a class from a parallel world which will generate a NoClassDefFoundError at
+run time.
 
-To figure out its transitive closure using `jdeps`
-execute:
+To figure out the transitive closure of a class we first need to build
+the `dist` module. While iterating on the PR, it should be sufficient
+to build against the lowest and highest versions of the supported Spark version
+range.
 
 ```Bash
-mvn clean compile -pl sql-plugin -am
+ ./build/buildall --parallel=4  --profile=311,330 --module=dist
 ```
-to make sure there is the bytecode to analyze
 
-Determine the classpath of the Maven module containing the class:
+However, before submitting the PR execute the full build `--profile=noSnapshots`.
+
+Then switch to the parallel-world build dir.
+```
+cd dist/target/parallel-world/
+```
+
+Execute `jdeps` against `spark3xx-common` and an exactly one parallel world such
+as `spark330`
 ```Bash
-mvn dependency:build-classpath -pl sql-plugin -am -Dmdep.outputFile=/tmp/jdeps.classpath
+$JAVA_HOME/bin/jdeps -v \
+  -dotoutput /tmp/jdeps3 \
+  -regex '(com|org)\..*\.rapids\..*' \
+  spark3xx-common spark330
 ```
 
-Execute `jdeps` checking GpuColumnarVector and its nested classes.
+Looking at the output file `/tmp/jdeps3/spark3xx-common.dot`, unfortunately you
+see that jdeps does not label the source class node but labels the targets
+class node of an edge. Thus the graph is incorrect as it breaks paths if a node
+has both incoming and outgoing edges.
+
 ```Bash
-$JAVA11_HOME/bin/jdeps \
-  --multi-release base \
-  -cp $(< /tmp/jdeps.classpath):sql-plugin/target/spark311/classes \
-  -verbose:class \
-  --recursive \
-  -include 'com.nvidia.spark.rapids.GpuColumnVector(\$.*)?' \
-  -e '[com|org].*rapids.*' \
-  sql-plugin/target/spark311/classes/com/nvidia/spark/rapids/GpuColumnVector.class \
-  sql-plugin/target/spark311/classes/com/nvidia/spark/rapids/GpuColumnVector\$*.class \
-  > /tmp/jdeps.out
+grep 'com.nvidia.spark.rapids.GpuFilterExec\$' spark3xx-common.dot
+   "com.nvidia.spark.rapids.GpuFilterExec$"           -> "com.nvidia.spark.rapids.GpuFilterExec (spark330)";
+   "com.nvidia.spark.rapids.GpuOverrides$$anon$204"   -> "com.nvidia.spark.rapids.GpuFilterExec$ (spark3xx-common)";
 ```
 
-After filtering circular references
+`spark3xx-common.dot` does not have `(spark330)`-labeled source nodes by construction.
+and thus it is ok to retain this label for target nodes. Moreover, it is going
+to be handy to determine when the transitive closure includes shimmed classes
+that you are trying to prevent.
 
+The following command lists all classes in the spark330 Shim reachable
+(dist != inf) from GpuColumnVector.
+```Bash
+< spark3xx-common.dot sed 's/ (spark3xx-common)//' | \
+  dijkstra -d -a com.nvidia.spark.rapids.GpuColumnVector | \
+  grep -v -- '->' | grep -v dist=inf | grep spark330
+        "org.apache.spark.sql.rapids.execution.TrampolineUtil$ (spark330)"      [dist=7.000];
+        "com.nvidia.spark.rapids.GpuScalar$ (spark330)" [dist=2.000];
+        "com.nvidia.spark.rapids.GpuCast (spark330)"    [dist=7.000];
+        "com.nvidia.spark.rapids.HostColumnarToGpu (spark330)"  [dist=2.000];
+        "com.nvidia.spark.rapids.GpuInSet (spark330)"   [dist=7.000];
+        "org.apache.spark.sql.rapids.GpuAdd (spark330)" [dist=7.000];
+        "org.apache.spark.sql.rapids.GpuAnd (spark330)" [dist=7.000];
+        "org.apache.spark.sql.rapids.GpuBitwiseAnd (spark330)"  [dist=7.000];
+        "org.apache.spark.sql.rapids.GpuBitwiseOr (spark330)"   [dist=7.000];
+        "org.apache.spark.sql.rapids.GpuBitwiseXor (spark330)"  [dist=7.000];
+        "org.apache.spark.sql.rapids.GpuEqualNullSafe (spark330)"       [dist=7.000];
+        "org.apache.spark.sql.rapids.GpuEqualTo (spark330)"     [dist=7.000];
+        "org.apache.spark.sql.rapids.GpuGetStructField (spark330)"      [dist=7.000];
+        "org.apache.spark.sql.rapids.GpuGreaterThan (spark330)" [dist=7.000];
+        "org.apache.spark.sql.rapids.GpuGreaterThanOrEqual (spark330)"  [dist=7.000];
+        "org.apache.spark.sql.rapids.GpuGreatest (spark330)"    [dist=7.000];
+        "org.apache.spark.sql.rapids.GpuLeast (spark330)"       [dist=7.000];
+        "org.apache.spark.sql.rapids.GpuLessThan (spark330)"    [dist=7.000];
+        "org.apache.spark.sql.rapids.GpuLessThanOrEqual (spark330)"     [dist=7.000];
+        "org.apache.spark.sql.rapids.GpuMultiply (spark330)"    [dist=7.000];
+        "org.apache.spark.sql.rapids.GpuNot (spark330)" [dist=7.000];
+        "org.apache.spark.sql.rapids.GpuOr (spark330)"  [dist=7.000];
+        "org.apache.spark.rapids.shims.storage.ShimDiskBlockManager (spark330)" [dist=5.000];
+```
 
-
-
+Focus on the nodes with lowest distance to eliminate dependency on the shim.
