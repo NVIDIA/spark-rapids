@@ -41,10 +41,10 @@ mvn_verify() {
 
     MVN_INSTALL_CMD="env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR clean install $MVN_BUILD_ARGS -DskipTests -pl aggregator -am"
 
-    for version in "${SPARK_SHIM_VERSIONS_ALL[@]}"
+    for version in "${SPARK_SHIM_VERSIONS_SNAPSHOTS[@]}"
     do
         echo "Spark version: $version"
-        # build and run unit tests on one specific version for each sub-version (e.g. 311, 320, 330)
+        # build and run unit tests on one specific version for each sub-version (e.g. 320, 330) except base version
         if [[ "${SPARK_SHIM_VERSIONS_TEST[@]}" =~ "$version" ]]; then
             env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS \
               -Dpytest.TEST_TAGS='' -pl '!tools'

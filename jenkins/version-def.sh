@@ -62,26 +62,26 @@ echo "CUDF_VER: $CUDF_VER, CUDA_CLASSIFIER: $CUDA_CLASSIFIER, PROJECT_VER: $PROJ
 
 # Spark shim versions
 . $(dirname "$0")/common.sh
+# Psnapshots: snapshots + noSnapshots
+set_env_var_SPARK_SHIM_VERSIONS_ARR -Psnapshots
+SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+# PnoSnapshots: noSnapshots only
+set_env_var_SPARK_SHIM_VERSIONS_ARR -PnoSnapshots
+SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+# Spark shim versions list based on given profile option (snapshots or noSnapshots)
 case $PHASE_TYPE in
     pre-release)
-        PROFILE_OPT="-Psnapshots" 
+        SPARK_SHIM_VERSIONS=("${SPARK_SHIM_VERSIONS_SNAPSHOTS[@]}")
         ;;
 
     *)
-        PROFILE_OPT="-PnoSnapshots" 
+        SPARK_SHIM_VERSIONS=("${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]}")
         ;;
 esac
 # base version
-get_spark_shim_versions $PROFILE_OPT
 SPARK_BASE_SHIM_VERSION=${SPARK_SHIM_VERSIONS[0]}
-# snapshots + noSnapshots
-get_spark_shim_versions -Psnapshots
-SPARK_SHIM_VERSIONS_ALL=("${SPARK_SHIM_VERSIONS[@]}")
-# noSnapshots only
-get_spark_shim_versions -PnoSnapshots
-SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS[@]}")
-# build and run unit tests on one specific version for each sub-version (e.g. 311, 320, 330)
-get_spark_shim_versions -PpremergeUT
-SPARK_SHIM_VERSIONS_TEST=("${SPARK_SHIM_VERSIONS[@]}")
 # tail noSnapshots
 TAIL_NOSNAPSHOTS_VERSIONS=("${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]:1}")
+# build and run unit tests on one specific version for each sub-version (e.g. 320, 330)
+set_env_var_SPARK_SHIM_VERSIONS_ARR -PpremergeUT
+SPARK_SHIM_VERSIONS_TEST=("${SPARK_SHIM_VERSIONS_ARR[@]}")

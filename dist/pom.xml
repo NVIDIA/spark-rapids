@@ -58,6 +58,11 @@
             312db,
             321db
         </databricks.buildvers>
+        <!--
+          build and run unit tests on one specific version for each sub-version (e.g. 311, 320, 330)
+          base shim version (311 currently) should be covered in default mvn verify command of premerge script, 
+          so base shim version is removed from the premergeUT list
+        -->
         <premergeUT.buildvers>
             320,
             330
