@@ -754,12 +754,10 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
       // If fetcherIterator is not exhausted, we try and get as many
       // ready results.
       if (!pendingIts.isEmpty) {
-        logInfo(s"Have ${pendingIts.size} pending")
         var continue = true
         var i = 0
         while(pendingIts.size() > 0 && continue) {
           val blockState = pendingIts.peek()
-          logInfo(s"Ix=$i Now handing ${blockState.bytesDeserializedSoFar}")
           i = i + 1
           // check if we can handle the head batch now
           if (limiter.acquire(blockState.getNextBatchSize)) {
