@@ -409,4 +409,8 @@ object ShimLoader extends Logging {
 
   def newIcebergProvider(): IcebergProvider = ShimLoader.newInstanceOf[IcebergProvider](
     "com.nvidia.spark.rapids.iceberg.IcebergProviderImpl")
+
+  def newPlanShims(): PlanShims = ShimLoader.newInstanceOf[PlanShims](
+    "com.nvidia.spark.rapids.shims.PlanShimsImpl"
+  )
 }

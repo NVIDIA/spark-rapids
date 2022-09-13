@@ -27,7 +27,6 @@ import scala.util.matching.Regex
 
 import ai.rapids.cudf.{CudaException, CudaFatalException, CudfException, MemoryCleaner}
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
-import com.nvidia.spark.rapids.shims.PlanShims
 
 import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskFailedReason}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}

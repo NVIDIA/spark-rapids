@@ -16,8 +16,10 @@
 
 package com.nvidia.spark.rapids.shims
 
+import com.nvidia.spark.rapids.PlanShims
+
 import org.apache.spark.sql.execution.SparkPlan
 
-object PlanShims {
+class PlanShimsImpl extends PlanShims {
   def extractExecutedPlan(plan: SparkPlan): SparkPlan = plan
 }

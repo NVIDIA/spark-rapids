@@ -34,6 +34,8 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
 
   import CastOpSuite._
 
+  val INVALID_ROW_VALUE_MSG: String = "Error casting data on row"
+
   private val sparkConf = new SparkConf()
     .set("spark.sql.ansi.enabled", "true")
     .set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
@@ -362,28 +364,28 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   }
 
   testCastFailsForBadInputs("ansi_cast string to byte (invalid values)", shortsAsStrings,
-    sparkConf) {
+    sparkConf, msg = INVALID_ROW_VALUE_MSG) {
     frame => testCastTo(DataTypes.ByteType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast string to short (invalid values)", intsAsStrings,
-    sparkConf) {
+    sparkConf, msg = INVALID_ROW_VALUE_MSG) {
     frame => testCastTo(DataTypes.ShortType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast string to long (invalid decimal values)",
     longsAsDecimalStrings,
-    sparkConf) {
+    sparkConf, msg = INVALID_ROW_VALUE_MSG) {
     frame => testCastTo(DataTypes.LongType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast string to int (invalid values)", longsAsStrings,
-    sparkConf) {
+    sparkConf, msg = INVALID_ROW_VALUE_MSG) {
     frame => testCastTo(DataTypes.IntegerType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast string to int (non-numeric values)", testStrings,
-    sparkConf) {
+    sparkConf, msg = INVALID_ROW_VALUE_MSG) {
     frame => testCastTo(DataTypes.IntegerType)(frame)
   }
 
