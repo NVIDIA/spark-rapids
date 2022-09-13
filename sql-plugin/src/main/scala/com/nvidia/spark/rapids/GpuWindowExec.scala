@@ -107,10 +107,13 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
   }
 
   override def convertToGpu(): GpuExec = {
+    // resultColumnsOnly specifies that we should only return the values of result columns for 
+    // this WindowExec (applies to some Spark distributions that use `projectList` and combine
+    // ProjectExec with WindowExec)
     val resultColumnsOnly = getResultColumnsOnly
     // Keep the converted input fields and input window expressions separate 
     // to handle the resultColumnsOnly case in GpuWindowExec.splitAndDedup
-    val inputFieldExpressions = (inputFields).map(_.convertToGpu().asInstanceOf[NamedExpression]) 
+    val inputFieldExpressions = inputFields.map(_.convertToGpu().asInstanceOf[NamedExpression])
     val gpuWindowExpressions = windowExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression])
     val (pre, windowOps, post) = GpuWindowExec.splitAndDedup(
         inputFieldExpressions,
@@ -123,6 +126,10 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
     // might not be needed. Here we want to maintain order, just to match Spark as closely
     // as possible
     val remappedWindowOps = GpuWindowExec.remapAttributes(windowOps, post)
+    // isPostNeeded is determined when there is a difference between the output of the WindowExec
+    // computation and the output ultimately desired by this WindowExec or whether an additional
+    // post computation is needed. Ultimately this is used to add an additional ProjectExec 
+    // if that is needed to return the correct output
     val isPostNeeded = remappedWindowOps.length != post.length ||
         remappedWindowOps.zip(post).exists {
           case (w, p) => w.exprId != p.exprId
@@ -333,15 +340,16 @@ object GpuWindowExec extends Arm with Logging {
     // all of these should pass at least to pre and window stages
     inputFieldExprs.foreach { expr =>
         // If the Spark distribution only wants to output result columns (ie, ones that
-        // use projectList), // then pass the input field to pre and window stages, but 
-        // do not pass to the // post project stage (as those are specifically given in 
+        // use projectList), then pass the input field to pre and window stages, but
+        // do not pass to the post project stage (as those are specifically given in
         // the projectList set)
         if (resultColumnsOnly) {
           extractAndSave(
             extractAndSave(expr, preProject, preDedupe), windowOps, windowDedupe)
               .asInstanceOf[NamedExpression]
         } else {
-          // Pass the input fields to all the phases with deduping
+          // If the WindowExec returns everything, then pass the input fields through all the
+          // phases (with deduping)
           postProject += extractAndSave(
             extractAndSave(expr, preProject, preDedupe), windowOps, windowDedupe)
               .asInstanceOf[NamedExpression]

@@ -913,7 +913,7 @@ def test_running_window_function_exec_for_all_aggs():
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_join_sum_window_of_window(data_gen):
-    conf = { 'spark.rapids.sql.batchSizeBytes': '100',
+    conf = {'spark.rapids.sql.batchSizeBytes': '100',
             'spark.rapids.sql.explain': 'NONE'}
 
     def do_it(spark):
