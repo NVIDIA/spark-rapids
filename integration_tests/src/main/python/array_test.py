@@ -332,8 +332,7 @@ def test_array_min_max_all_nulls(data_gen):
 def test_array_concat_decimal(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : debug_df(unary_op_df(spark, ArrayGen(data_gen)).selectExpr(
-            'concat(a, a)')),
-        conf=no_nans_conf)
+            'concat(a, a)')))
 
 @pytest.mark.parametrize('data_gen', orderable_gens + nested_gens_sample, ids=idfn)
 def test_array_repeat_with_count_column(data_gen):
