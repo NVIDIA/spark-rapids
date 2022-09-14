@@ -69,12 +69,6 @@ worked with plain Spark. Starting from 22.06 this is behavior is enabled by defa
 the config
 [`spark.rapids.sql.variableFloatAgg.enabled`](configs.md#sql.variableFloatAgg.enabled).
 
-In the case of a distinct count on `NaN` values, prior to Spark 3.1.0, the issue only shows up if
- you have different `NaN` values. There are several different binary values that are all considered
- to be `NaN` by floating point. The plugin treats all of these as the same value, where as Spark
- treats them all as different values. Because this is considered to be rare we do not disable
- distinct count for floating point values.
-
 ### `0.0` vs `-0.0`
 
 Floating point allows zero to be encoded as `0.0` and `-0.0`, but the IEEE standard says that they
