@@ -225,7 +225,6 @@ class GpuWindowExecMeta(windowExec: WindowExec,
     } catch {
       case _: NoSuchMethodException =>
         resultColumnsOnly = true
-        val methodNames = windowExec.getClass.getMethods().map(_.getName).toList
         val winExpr = windowExec.getClass.getMethod("projectList")
         winExpr.invoke(windowExec).asInstanceOf[Seq[NamedExpression]]
     }
