@@ -726,28 +726,22 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
     private def deserializeTask(blockState: BlockState): Unit = {
       val slot = RapidsShuffleInternalManagerBase.getNextReaderSlot
       futures += RapidsShuffleInternalManagerBase.queueReadTask(slot, () => {
-        try {
-          var currentBatchSize = blockState.getNextBatchSize
-          var didFit = true
-          val batchIter = blockState.batchIter
-          while (batchIter.hasNext && didFit) {
-            val batch = batchIter.next()
-            queued.offer(batch)
-            blockState.addDeserializedBytes(currentBatchSize)
-            limiter.release(currentBatchSize)
-            // peek at the next batch
-            currentBatchSize = blockState.getNextBatchSize
-            didFit = limiter.acquire(currentBatchSize)
-          }
-          if (!didFit) {
-            Some(blockState)
-          } else {
-            None // no further batches
-          }
-        } catch {
-          case t: Throwable =>
-            logError("Error in runIt", t)
-            throw t
+        var currentBatchSize = blockState.getNextBatchSize
+        var didFit = true
+        val batchIter = blockState.batchIter
+        while (batchIter.hasNext && didFit) {
+          val batch = batchIter.next()
+          queued.offer(batch)
+          blockState.addDeserializedBytes(currentBatchSize)
+          limiter.release(currentBatchSize)
+          // peek at the next batch
+          currentBatchSize = blockState.getNextBatchSize
+          didFit = limiter.acquire(currentBatchSize)
+        }
+        if (!didFit) {
+          Some(blockState)
+        } else {
+          None // no further batches
         }
       })
     }
