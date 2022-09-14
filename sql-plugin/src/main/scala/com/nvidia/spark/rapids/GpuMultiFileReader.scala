@@ -338,6 +338,8 @@ abstract class FilePartitionReaderBase(conf: Configuration, execMetrics: Map[Str
  * @param filters push down filters
  * @param execMetrics the metrics
  * @param ignoreCorruptFiles Whether to ignore corrupt files when GPU failed to decode the files
+ * @param alluxioRegexTaskTime Whether alluxio replacement algorithm is set to task time and if it
+ *                             is, then it contains the Alluxio replacement regex
  */
 abstract class MultiFileCloudPartitionReaderBase(
     conf: Configuration,
@@ -346,7 +348,9 @@ abstract class MultiFileCloudPartitionReaderBase(
     maxNumFileProcessed: Int,
     filters: Array[Filter],
     execMetrics: Map[String, GpuMetric],
-    ignoreCorruptFiles: Boolean = false) extends FilePartitionReaderBase(conf, execMetrics) {
+    ignoreCorruptFiles: Boolean = false,
+    alluxioRegexTaskTime: Option[String] = None)
+  extends FilePartitionReaderBase(conf, execMetrics) {
 
   private var filesToRead = 0
   protected var currentFileHostBuffers: Option[HostMemoryBuffersWithMetaDataBase] = None
@@ -357,7 +361,7 @@ abstract class MultiFileCloudPartitionReaderBase(
       .getOrElse(TrampolineUtil.newInputMetrics())
 
   private val files: Array[(PartitionedFile, Option[PartitionedFile])] =
-    AlluxioUtils.updateFilesTaskTimeIfAlluxio(origFiles,  new RapidsConf(SparkEnv.get.conf))
+    AlluxioUtils.updateFilesTaskTimeIfAlluxio(origFiles,  alluxioRegexTaskTime)
 
   private def initAndStartReaders(): Unit = {
     // limit the number we submit at once according to the config if set

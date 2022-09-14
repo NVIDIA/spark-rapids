@@ -28,5 +28,5 @@ object AQEUtils {
     ShuffleQueryStageExec(sqse.id, reusedExchange, sqse.originalPlan)
   }
 
-  def isAdaptiveExecutionSupportedInSparkVersion: Boolean = true
+  def isAdaptiveExecutionSupportedInSparkVersion(conf: RapidsConf): Boolean = true
 }
