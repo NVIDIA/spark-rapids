@@ -19,9 +19,9 @@ REPO_BASE=${REPO_BASE:-"nvidia"}
 TAG_NAME=${TAG_NAME:-"rapids-4-spark-databricks"}
 VERSION=${VERSION:-"22.10.0"}
 TAG_VERSION=${TAG_VERSION:-$VERSION}
-CUDA_VERSION=${CUDA_VERSION:-"11.5.2"}
-CUDA_MAJOR=${CUDA_VERSION%.*}
-CUDA_MAJOR=${CUDA_MAJOR/./-}
+CUDA_VERSION=${CUDA_VERSION:-"11.5.1"}
+CUDA_PKG_VERSION=${CUDA_VERSION%.*}
+CUDA_PKG_VERSION=${CUDA_PKG_VERSION/./-}
 
 DOCKERFILE=${DOCKERFILE:-"Dockerfile"} 
 BASE_JAR_URL=${BASE_JAR_URL:-"https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12"}
@@ -31,13 +31,14 @@ JAR_FILE=${JAR_FILE:-"rapids-4-spark_2.12-${JAR_VERSION}-cuda11.jar"}
 JAR_URL=${JAR_URL:-"${BASE_JAR_URL}/${VERSION}/${JAR_FILE}"}
 
 DRIVER_CONF_FILE=${DRIVER_CONF_FILE:-"00-custom-spark-driver-defaults-alluxio.conf"}
-REQUIREMENTS="requirements_10.4ML.txt"
+DATABRICKS_RUNTIME_VERSION=${DATABRICKS_RUNTIME_VERSION:-"10.4"}
+REQUIREMENTS="requirements_${DATABRICKS_RUNTIME_VERSION}ML.txt"
 
-STAGE="databricks-alluxio"
+STAGE=${STAGE:-"databricks-alluxio"}
 
 docker build \
   --build-arg CUDA_VERSION=${CUDA_VERSION} \
-  --build-arg CUDA_MAJOR=${CUDA_MAJOR} \
+  --build-arg CUDA_PKG_VERSION=${CUDA_PKG_VERSION} \
   --build-arg JAR_URL=${JAR_URL} \
   --build-arg REQUIREMENTS=${REQUIREMENTS} \
   --build-arg DRIVER_CONF_FILE=${DRIVER_CONF_FILE} \

@@ -25,24 +25,31 @@
 ARG CUDA_VERSION=11.5.2
 FROM nvidia/cuda:${CUDA_VERSION}-cudnn8-runtime-ubuntu20.04 as databricks
 
-ARG CUDA_MAJOR=11-5
+ARG CUDA_PKG_VERSION=11-5
 
 #############
 # Install all needed libs
 #############
 ARG REQUIREMENTS=requirements_10.4ML.txt
-COPY $REQUIREMENTS /tmp/requirements.txt
+COPY ${REQUIREMENTS} /tmp/requirements.txt
 
 RUN set -ex && \ 
+    cd /etc/apt/sources.list.d && \
+    mv cuda.list cuda.list.disabled && \
+    apt-get -y update && \
+    apt-get -y install wget && \
+    wget -qO - https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1604/x86_64/3bf863cc.pub | apt-key add - && \
+    cd /etc/apt/sources.list.d && \
+    mv cuda.list.disabled cuda.list && \
     apt-get -y update && \
     apt-get -y upgrade && \
     apt-get install -y software-properties-common && \
     add-apt-repository ppa:deadsnakes/ppa -y && \
-    apt-get -y install python3.8 virtualenv python3-filelock libcairo2 cuda-cupti-${CUDA_MAJOR} \
-               cuda-toolkit-${CUDA_MAJOR}-config-common cuda-toolkit-11-config-common cuda-toolkit-config-common \
-               openjdk-8-jdk-headless iproute2 bash sudo coreutils procps wget gpg fuse openssh-server && \
-    apt-get -y install cuda-cudart-dev-${CUDA_MAJOR} cuda-cupti-dev-${CUDA_MAJOR} cuda-driver-dev-${CUDA_MAJOR} \
-               cuda-nvcc-${CUDA_MAJOR} cuda-thrust-${CUDA_MAJOR} cuda-toolkit-${CUDA_MAJOR}-config-common cuda-toolkit-11-config-common \
+    apt-get -y install python3.8 virtualenv python3-filelock libcairo2 cuda-cupti-${CUDA_PKG_VERSION} \
+               cuda-toolkit-${CUDA_PKG_VERSION}-config-common cuda-toolkit-11-config-common cuda-toolkit-config-common \
+               openjdk-8-jdk-headless iproute2 bash sudo coreutils procps gpg fuse openssh-server && \
+    apt-get -y install cuda-cudart-dev-${CUDA_PKG_VERSION} cuda-cupti-dev-${CUDA_PKG_VERSION} cuda-driver-dev-${CUDA_PKG_VERSION} \
+               cuda-nvcc-${CUDA_PKG_VERSION} cuda-thrust-${CUDA_PKG_VERSION} cuda-toolkit-${CUDA_PKG_VERSION}-config-common cuda-toolkit-11-config-common \
                cuda-toolkit-config-common python3.8-dev libpq-dev libcairo2-dev build-essential unattended-upgrades cmake ccache \
                openmpi-bin linux-headers-5.4.0-117 linux-headers-5.4.0-117-generic linux-headers-generic libopenmpi-dev unixodbc-dev \
                sysstat ssh && \
@@ -53,13 +60,14 @@ RUN set -ex && \
         && /databricks/python3/bin/pip install --no-cache-dir -r /tmp/requirements.txt \
         # Install Python libraries for Databricks environment
         && /databricks/python3/bin/pip cache purge && \
-    apt-get -y purge --autoremove software-properties-common cuda-cudart-dev-${CUDA_MAJOR} cuda-cupti-dev-${CUDA_MAJOR} \
-               cuda-driver-dev-${CUDA_MAJOR} cuda-nvcc-${CUDA_MAJOR} cuda-thrust-${CUDA_MAJOR} \
+    apt-get -y purge --autoremove software-properties-common cuda-cudart-dev-${CUDA_PKG_VERSION} cuda-cupti-dev-${CUDA_PKG_VERSION} \
+               cuda-driver-dev-${CUDA_PKG_VERSION} cuda-nvcc-${CUDA_PKG_VERSION} cuda-thrust-${CUDA_PKG_VERSION} \
                python3.8-dev libpq-dev libcairo2-dev build-essential unattended-upgrades cmake ccache openmpi-bin \
                linux-headers-5.4.0-117 linux-headers-5.4.0-117-generic linux-headers-generic libopenmpi-dev unixodbc-dev \
                virtualenv python3-virtualenv && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+    mkdir -p /databricks/jars && \
     mkdir -p /mnt/driver-daemon && \
     #############
     # Disable NVIDIA repos to prevent accidental upgrades.
@@ -73,11 +81,14 @@ RUN set -ex && \
 #############
 # Set all env variables
 #############
+ARG DATABRICKS_RUNTIME_VERSION=10.4
 ENV PYSPARK_PYTHON=/databricks/python3/bin/python3
-ENV DATABRICKS_RUNTIME_VERSION=10.4
+ENV DATABRICKS_RUNTIME_VERSION=${DATABRICKS_RUNTIME_VERSION}
 ENV LANG=C.UTF-8
 ENV USER=ubuntu
 ENV PATH=/usr/local/nvidia/bin:/databricks/python3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin
+
+FROM databricks as databricks-plugin
 
 #############
 # Spark RAPIDS configuration
@@ -89,17 +100,12 @@ COPY ${DRIVER_CONF_FILE} /databricks/driver/conf/00-custom-spark-driver-defaults
 WORKDIR /databricks/jars
 ADD $JAR_URL /databricks/jars
 
-# add local monit shell script in the right location
-RUN mkdir -p /etc/init.d
-ADD scripts/monit /etc/init.d
-RUN chmod 775 /etc/init.d/monit
-
 WORKDIR /databricks
 
 #############
 # Setup Ganglia
 #############
-FROM databricks as databricks-ganglia
+FROM databricks-plugin as databricks-ganglia
 
 WORKDIR /databricks
 ENV DEBIAN_FRONTEND=noninteractive
@@ -151,9 +157,16 @@ RUN mkdir -p /databricks/spark/scripts/ganglia/
 RUN mkdir -p /databricks/spark/scripts/
 ADD ganglia/start_spark_slave.sh /databricks/spark/scripts/start_spark_slave.sh
 
+# add local monit shell script in the right location
+RUN mkdir -p /etc/init.d
+ADD scripts/monit /etc/init.d
+RUN chmod 775 /etc/init.d/monit
+
 #############
 # Set up webterminal ssh
 #############
+FROM databricks-ganglia as databricks-webterminal
+
 RUN wget https://github.com/tsl0922/ttyd/releases/download/1.6.3/ttyd.x86_64 && \
         mkdir -p /databricks/driver/logs && \
         mkdir -p /databricks/spark/scripts/ttyd/ && \
@@ -170,7 +183,7 @@ COPY webterminal/start_ttyd_daemon.sh $TTYD_DIR/start_ttyd_daemon.sh
 COPY webterminal/webTerminalBashrc $TTYD_DIR/webTerminalBashrc
 COPY webterminal/ttyd-daemon-not-active /etc/monit/conf.d/ttyd-daemon-not-active
 
-FROM databricks-ganglia as databricks-alluxio
+FROM databricks-webterminal as databricks-alluxio
 
 #############
 # Setup Alluxio
