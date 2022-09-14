@@ -23,7 +23,7 @@ import ai.rapids.cudf.Table
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnVector
 
-object UnshimmedGpuColumnVector {
+object GpuColumnVectorUtils {
   lazy val extractHostColumnsMethod: Method = ShimLoader.loadGpuColumnVector()
     .getDeclaredMethod("extractHostColumns", classOf[Table], classOf[Array[DataType]])
 

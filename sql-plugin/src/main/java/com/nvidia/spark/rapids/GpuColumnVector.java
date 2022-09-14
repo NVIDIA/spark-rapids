@@ -1028,9 +1028,21 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    */
   public static RapidsHostColumnVector[] extractHostColumns(Table table, DataType[] colType) {
     try (ColumnarBatch batch = from(table, colType)) {
-      return Arrays.stream(extractColumns(batch))
-          .map(GpuColumnVector::copyToHost)
-          .toArray(RapidsHostColumnVector[]::new);
+      GpuColumnVector[] gpuCols = extractColumns(batch);
+      RapidsHostColumnVector[] hostCols = new RapidsHostColumnVector[gpuCols.length];
+      try {
+        for (int i = 0; i < gpuCols.length; i++) {
+          hostCols[i] = gpuCols[i].copyToHost();
+        }
+      } catch (Exception e) {
+        for (RapidsHostColumnVector hostCol : hostCols) {
+          if (hostCol != null) {
+            hostCol.close();
+          }
+        }
+        throw e;
+      }
+      return hostCols;
     }
   }
 
