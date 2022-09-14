@@ -399,15 +399,12 @@ class QualificationAppInfo(
       // overhead or execs that didn't have associated stages
       val supportedSQLTaskDuration = calculateSQLSupportedTaskDuration(allStagesSummary)
       val taskSpeedupFactor = calculateSpeedupFactor(allStagesSummary)
-      // Get all the unsupported Execs from the plan and remove duplicates so that
-      // we print distinct execs
-      val unSupportedExecswithDuplicates = origPlanInfos.map(_.execInfo.map(
-        _.unsupportedExecs)).flatten.filter(_.nonEmpty)
-      val unSupportedExecs = unSupportedExecswithDuplicates.distinct.mkString(";").trim
-
-      val unSupportedExprswithDuplicates = origPlanInfos.map(_.execInfo.flatMap(
-        _.unsupportedExprs)).flatten.filter(_.nonEmpty)
-      val unSupportedExprs = unSupportedExprswithDuplicates.distinct.mkString(";").trim
+      // Get all the unsupported Execs from the plan
+      val unSupportedExecs = origPlanInfos.map(_.execInfo.map(
+        _.unsupportedExecs)).flatten.filter(_.nonEmpty).toSet.mkString(";").trim
+      // Get all the unsupported Expressions from the plan
+      val unSupportedExprs = origPlanInfos.map(_.execInfo.flatMap(
+        _.unsupportedExprs)).flatten.filter(_.nonEmpty).toSet.mkString(";").trim
 
       // get the ratio based on the Task durations that we will use for wall clock durations
       val estimatedGPURatio = if (sqlDataframeTaskDuration > 0) {
@@ -555,7 +552,7 @@ case class QualificationSummaryInfo(
     estimatedInfo: EstimatedSummaryInfo,
     perSQLEstimatedInfo: Option[Seq[EstimatedPerSQLSummaryInfo]],
     unSupportedExecs: String,
-    unSupportedExprs:String)
+    unSupportedExprs: String)
 
 case class StageQualSummaryInfo(
     stageId: Int,

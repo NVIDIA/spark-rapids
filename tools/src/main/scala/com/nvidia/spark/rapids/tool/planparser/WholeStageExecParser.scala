@@ -46,7 +46,7 @@ case class WholeStageExecParser(
     // as supported
     val anySupported = childNodes.exists(_.isSupported == true)
     val unSupportedExecsArray = childNodes.filter(_.unsupportedExecs.nonEmpty).map(
-      x => x.exec)//.toArray
+      x => x.exec)
     val unSupportedExecs = unSupportedExecsArray.mkString(";")
     val unSupportedExprsArray = childNodes.filter(_.unsupportedExprs.length > 0 ).map(
       x => x.unsupportedExprs).flatten.toArray

@@ -397,12 +397,10 @@ object QualOutputWriter {
       appIdMaxSize: Int): LinkedHashMap[String, Int] = {
     val unSupportedExecsSum = appInfos.map(_.planInfo.map(_.execInfo.map(
       _.unsupportedExecs.size).sum).sum)
-    val unSupportedExecsSize = appInfos.map(_.planInfo.map(_.execInfo.map(
-      _.unsupportedExecs.size).sum).sum).size
+    val unSupportedExecsSize = unSupportedExecsSum.size
     val unSupportedExprsSum = appInfos.map(_.planInfo.map(_.execInfo.map(
       _.unsupportedExprs.flatten.size).sum).sum)
-    val unSupportedExprsSize = appInfos.map(_.planInfo.map(_.execInfo.map(
-      _.unsupportedExprs.flatten.size).sum).sum).size
+    val unSupportedExprsSize = unSupportedExprsSum.size
     LinkedHashMap[String, Int](
       APP_NAME_STR -> getMaxSizeForHeader(appInfos.map(_.appName.size), APP_NAME_STR),
       APP_ID_STR -> appIdMaxSize,

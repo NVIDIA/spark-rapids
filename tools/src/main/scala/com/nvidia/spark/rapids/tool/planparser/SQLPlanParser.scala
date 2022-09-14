@@ -198,19 +198,15 @@ object SQLPlanParser extends Logging {
       }
       val stagesInNode = getStagesInSQLNode(node, app)
       val supported = execInfos.isSupported && !ds && !containsUDF
-      // add Exec to the unsupported list if the speedup factor is 1 and all underlying
-      // expressions are supported.
-      val unSupportedExecs = if (!execInfos.isSupported && execInfos.speedupFactor == 1
-        && execInfos.unsupportedExprs.length == 0 ) {
+      val unSupportedExecs = if (!execInfos.isSupported) {
         execInfos.exec
       } else {
         ""
       }
-      val unSupportedExprs = execInfos.unsupportedExprs
 
       Seq(new ExecInfo(execInfos.sqlID, execInfos.exec, execInfos.expr, execInfos.speedupFactor,
         execInfos.duration, execInfos.nodeId, supported, execInfos.children,
-        stagesInNode, execInfos.shouldRemove, unSupportedExecs, unSupportedExprs))
+        stagesInNode, execInfos.shouldRemove, unSupportedExecs, execInfos.unsupportedExprs))
     }
   }
 

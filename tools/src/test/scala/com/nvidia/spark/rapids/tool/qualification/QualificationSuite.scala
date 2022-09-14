@@ -740,7 +740,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     assert(appInfo.nonEmpty)
     assert(headers.size ==
       QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(appInfo.get), 0).keys.size)
-    assert(values.size == headers.size - 2) // unSupportedExecs and unSupportedExprs are empty
+    assert(values.size == headers.size - 1) // unSupportedExpr is empty
     // 3 should be the SQL DF Duration
     assert(headers(3).contains("SQL DF"))
     assert(values(3).toInt > 0)
@@ -823,7 +823,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(appInfo.nonEmpty)
         assert(headers.size ==
           QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(appInfo.get), 0).keys.size)
-        assert(values.size == headers.size - 2) // UnsupportedExec and UnsupportedExprs are empty
+        assert(values.size == headers.size - 1) // UnsupportedExpr is empty
         // 3 should be the SQL DF Duration
         assert(headers(3).contains("SQL DF"))
         assert(values(3).toInt > 0)
