@@ -86,8 +86,10 @@ case $PHASE_TYPE in
 esac
 # base version
 SPARK_BASE_SHIM_VERSION=${SPARK_SHIM_VERSIONS[0]}
+# tail snapshots
+SPARK_SHIM_VERSIONS_SNAPSHOTS_TAIL=("${SPARK_SHIM_VERSIONS_SNAPSHOTS[@]:1}")
 # tail noSnapshots
-TAIL_NOSNAPSHOTS_VERSIONS=("${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]:1}")
+SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL=("${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]:1}")
 # build and run unit tests on one specific version for each sub-version (e.g. 320, 330)
 # separate the versions to two parts (premergeUT1, premergeUT2) for balancing the duration
 set_env_var_SPARK_SHIM_VERSIONS_ARR -PpremergeUT1

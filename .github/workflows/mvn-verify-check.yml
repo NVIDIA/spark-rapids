@@ -43,7 +43,7 @@ jobs:
         run: |
           set -x
           . jenkins/version-def.sh
-          svArrBody=$(printf ",{\"spark-version\":\"%s\"}" "${TAIL_NOSNAPSHOTS_VERSIONS[@]}")
+          svArrBody=$(printf ",{\"spark-version\":\"%s\"}" "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}")
           svArrBody=${svArrBody:1}
           svJsonStr=$(printf {\"include\":[%s]} $svArrBody)
           echo ::set-output name=headVersion::$SPARK_BASE_SHIM_VERSION
