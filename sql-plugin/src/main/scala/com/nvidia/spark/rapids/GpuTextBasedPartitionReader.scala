@@ -102,8 +102,7 @@ abstract class GpuTextBasedPartitionReader(
   }
 
   private def readPartFile(): (HostMemoryBuffer, Long) = {
-    withResource(new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
-      metrics("bufferTime"))) { _ =>
+    withResource(new NvtxRange("Buffer file split", NvtxColor.YELLOW)) { _ =>
       isFirstChunkForIterator = false
       val separator = lineSeparatorInRead.getOrElse(Array('\n'.toByte))
       var succeeded = false
@@ -159,7 +158,9 @@ abstract class GpuTextBasedPartitionReader(
   }
 
   private def readToTable(isFirstChunk: Boolean): Option[Table] = {
-    val (dataBuffer, dataSize) = readPartFile()
+    val (dataBuffer, dataSize) = metrics(BUFFER_TIME).ns {
+      readPartFile()
+    }
     try {
       if (dataSize == 0) {
         None
