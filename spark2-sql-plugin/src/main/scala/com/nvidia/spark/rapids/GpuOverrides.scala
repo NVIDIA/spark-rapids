@@ -1078,11 +1078,13 @@ object GpuOverrides extends Logging {
       ExprChecks.mathUnaryWithAst,
       (a, conf, p, r) => new UnaryAstExprMeta[Acos](a, conf, p, r) {
       }),
+    // Acosh is not supported in spark 2.x
     expr[Asin](
       "Inverse sine",
       ExprChecks.mathUnaryWithAst,
       (a, conf, p, r) => new UnaryAstExprMeta[Asin](a, conf, p, r) {
       }),
+    // Asinh is not supported in spark 2.x
     expr[Sqrt](
       "Square root",
       ExprChecks.mathUnaryWithAst,
@@ -1295,6 +1297,7 @@ object GpuOverrides extends Logging {
       ExprChecks.mathUnaryWithAst,
       (a, conf, p, r) => new UnaryAstExprMeta[Atan](a, conf, p, r) {
       }),
+    // Atanh is not supported in spark 2.x
     expr[Cos](
       "Cosine",
       ExprChecks.mathUnaryWithAst,
@@ -1373,6 +1376,8 @@ object GpuOverrides extends Logging {
       ExprChecks.mathUnaryWithAst,
       (a, conf, p, r) => new UnaryAstExprMeta[Tan](a, conf, p, r) {
       }),
+    // NormalizeNaNAndZero is not supported in spark 2.x
+    // KnownFloatingPointNormalized is not supported in spark 2.x
     expr[KnownNotNull](
       "Tag an expression as known to not be null",
       ExprChecks.unaryProjectInputMatchesOutput(
@@ -1405,6 +1410,7 @@ object GpuOverrides extends Logging {
         }
 
     }),
+    // DateAddInterval is not supported in spark 2.x
     expr[DateFormatClass](
       "Converts timestamp to a value of string in the format specified by the date format",
       ExprChecks.binaryProject(TypeSig.STRING, TypeSig.STRING,
@@ -1482,6 +1488,15 @@ object GpuOverrides extends Logging {
             TypeSig.STRING)),
       (a, conf, p, r) => new UnixTimeExprMeta[FromUnixTime](a, conf, p, r) {
       }),
+    expr[FromUTCTimestamp](
+      "Render the input UTC timestamp in the input timezone",
+      ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+        ("timestamp", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+        ("timezone", TypeSig.lit(TypeEnum.STRING)
+          .withPsNote(TypeEnum.STRING, "Only timezones equivalent to UTC are supported"),
+          TypeSig.lit(TypeEnum.STRING))),
+      (a, conf, p, r) => new FromUTCTimestampExprMeta(a, conf, p, r)
+    ),
     expr[Pmod](
       "Pmod",
       ExprChecks.binaryProject(TypeSig.gpuNumeric, TypeSig.cpuNumeric,
@@ -1704,6 +1719,7 @@ object GpuOverrides extends Logging {
             TypeSig.DOUBLE + TypeSig.DECIMAL_128)),
       (a, conf, p, r) => new BinaryExprMeta[Divide](a, conf, p, r) {
       }),
+    // IntegralDivide is not supported in spark 2.x
     expr[Remainder](
       "Remainder or modulo",
       ExprChecks.binaryProject(
@@ -2129,6 +2145,7 @@ object GpuOverrides extends Logging {
         TypeSig.MAP.nested(TypeSig.all)),
       (in, conf, p, r) => new UnaryExprMeta[MapValues](in, conf, p, r) {
       }),
+    // MapEntries is not supported in spark 2.x
     expr[StringToMap](
       "Creates a map after splitting the input string into pairs of key-value strings",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.STRING),
@@ -2348,6 +2365,8 @@ object GpuOverrides extends Logging {
         "3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were " +
         "not treated as being equal. We have chosen to break with compatibility for " +
         "the older versions of Spark in this instance and handle NaNs the same as 3.1.3+"),
+    // TransformKeys is not supported in Spark 2.x
+    // TransformValues is not supported in Spark 2.x
     // spark 2.x doesn't have MapFilter
     expr[StringLocate](
       "Substring search operator",

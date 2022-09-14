@@ -105,3 +105,28 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
     }
   }
 }
+
+class FromUTCTimestampExprMeta(
+    expr: FromUTCTimestamp,
+    override val conf: RapidsConf,
+    override val parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends BinaryExprMeta[FromUTCTimestamp](expr, conf, parent, rule) {
+
+  override def tagExprForGpu(): Unit = {
+    extractStringLit(expr.right) match {
+      case None =>
+        willNotWorkOnGpu("timezone input must be a literal string")
+      case Some(timezoneShortID) =>
+        if (timezoneShortID != null) {
+          val utc = ZoneId.of("UTC").normalized
+          // This is copied from Spark, to convert `(+|-)h:mm` into `(+|-)0h:mm`.
+          val timezone = ZoneId.of(timezoneShortID.replaceFirst("(\\+|\\-)(\\d):", "$10$2:"),
+            ZoneId.SHORT_IDS).normalized
+
+          if (timezone != utc) {
+            willNotWorkOnGpu("only timezones equivalent to UTC are supported")
+          }
+        }
+    }
+  }
