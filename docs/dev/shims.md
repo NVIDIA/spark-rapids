@@ -243,3 +243,21 @@ $ dijkstra -d -p "org.apache.spark.sql.rapids.RegexReplace (spark3xx-common)"  m
         "org.apache.spark.sql.rapids.RegexReplace$ (spark3xx-common)"   [dist=1.000,
 ```
 because it is self-contained.
+
+### Estimating the scope of the task
+
+Dealing with a single class at a time may quickly turn into a tedious task.
+You can look at the bigger picture by generating clusters of the strongly
+connected components using `sccmap`
+
+```
+sccmap -d -s merged.dot
+2440 nodes, 11897 edges, 637 strong components
+```
+
+Review the clusters in the output of `sccmap -d merged.dot`. Find the cluster containing
+your class and how it is connected to the rest of the clusters in the definition of the digraph
+`scc_map`.
+
+This mechanism can also be used as a guidance for refactoring the code in a more self-contained
+packages.
