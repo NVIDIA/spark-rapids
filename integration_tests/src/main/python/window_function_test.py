@@ -913,14 +913,13 @@ def test_running_window_function_exec_for_all_aggs():
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_join_sum_window_of_window(data_gen):
-    conf = {'spark.rapids.sql.batchSizeBytes': '100',
-            'spark.rapids.sql.explain': 'NONE'}
-
     def do_it(spark):
         agg_table = gen_df(spark, StructGen([('a_1', LongRangeGen()), ('c', data_gen)], nullable=False))
         part_table = gen_df(spark, StructGen([('a_2', LongRangeGen()), ('b', byte_gen)], nullable=False))
         agg_table.createOrReplaceTempView("agg")
         part_table.createOrReplaceTempView("part")
+        # Note that if we include `c` in the select clause here (the output projection), the bug described
+        # in https://github.com/NVIDIA/spark-rapids/issues/6531 does not manifest
         return spark.sql("""
         select
             b,
@@ -932,7 +931,7 @@ def test_join_sum_window_of_window(data_gen):
         group by b, c
         order by b, ratio_sum, ratio_bc""")
 
-    assert_gpu_and_cpu_are_equal_collect(do_it, conf = conf)
+    assert_gpu_and_cpu_are_equal_collect(do_it)
 
 # Generates some repeated values to test the deduplication of GpuCollectSet.
 # And GpuCollectSet does not yet support struct type.

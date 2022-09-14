@@ -239,7 +239,7 @@ class GpuWindowExecMeta(windowExec: WindowExec,
   override def getResultColumnsOnly: Boolean = resultColumnsOnly
 }
 
-object GpuWindowExec extends Arm with Logging {
+object GpuWindowExec extends Arm {
   /**
    * As a part of `splitAndDedup` the dedup part adds a layer of indirection. This attempts to
    * remove that layer of indirection.
