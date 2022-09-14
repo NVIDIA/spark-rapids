@@ -665,11 +665,12 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
         } else {
           var waitTimeStart: Long = 0L
           popFetchedIfAvailable()
+          waitTime = 0L
           if (futures.nonEmpty) {
             withResource(new NvtxRange("BatchWait", NvtxColor.CYAN)) { _ =>
               waitTimeStart = System.nanoTime()
               val pending = futures.dequeue().get // wait for one future
-              waitTime = System.nanoTime() - waitTimeStart
+              waitTime += System.nanoTime() - waitTimeStart
 
               // if the future returned a block state, we have more work to do
               pending match {
@@ -691,7 +692,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
           // here while we wait.
           waitTimeStart = System.nanoTime()
           val res = queued.take()
-          waitTime = System.nanoTime() - waitTimeStart
+          waitTime += System.nanoTime() - waitTimeStart
           res
         }
 
@@ -799,7 +800,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
               // get the next known batch size (there could be multiple batches)
               if (limiter.acquire(blockState.getNextBatchSize)) {
                 // we can fit at least the first batch in this block
-                // kick of a deserialization task
+                // kick off a deserialization task
                 deserializeTask(blockState)
               } else {
                 // first batch didn't fit, put iterator aside and stop asking for results

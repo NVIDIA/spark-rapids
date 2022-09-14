@@ -33,9 +33,9 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class SerializedBatchIterator(dIn: DataInputStream)
   extends Iterator[(Int, ColumnarBatch)] with Arm {
-  var nextHeader: Option[SerializedTableHeader] = None
-  var toBeReturned: Option[ColumnarBatch] = None
-  var streamClosed: Boolean = false
+  private[this] var nextHeader: Option[SerializedTableHeader] = None
+  private[this] var toBeReturned: Option[ColumnarBatch] = None
+  private[this] var streamClosed: Boolean = false
 
   Option(TaskContext.get()).foreach {
     _.addTaskCompletionListener[Unit]((_: TaskContext) => {
