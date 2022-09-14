@@ -717,6 +717,12 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
+  val ENABLE_TIERED_PROJECT = conf("spark.rapids.sql.tiered.project.enabled")
+      .doc("Enable tiered project for aggregations.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   // FILE FORMATS
   val MULTITHREAD_READ_NUM_THREADS = conf("spark.rapids.sql.multiThreadedRead.numThreads")
       .doc("The maximum number of threads on each executor to use for reading small " +
@@ -854,6 +860,19 @@ object RapidsConf {
 
   val ENABLE_ORC_WRITE = conf("spark.rapids.sql.format.orc.write.enabled")
     .doc("When set to false disables orc output acceleration")
+    .booleanConf
+    .createWithDefault(true)
+
+  val ENABLE_ORC_FLOAT_TYPES_TO_STRING =
+    conf("spark.rapids.sql.format.orc.floatTypesToString.enable")
+    .doc("When reading an ORC file, the source data schemas(schemas of ORC file) may differ " +
+      "from the target schemas (schemas of the reader), we need to handle the castings from " +
+      "source type to target type. Since float/double numbers in GPU have different precision " +
+      "with CPU, when casting float/double to string, the result of GPU is different from " +
+      "result of CPU spark. Its default value is `true` (this means the strings result will " +
+      "differ from result of CPU). If it's set `false` explicitly and there exists casting " +
+      "from float/double to string in the job, then such behavior will cause an exception, " +
+      "and the job will fail.")
     .booleanConf
     .createWithDefault(true)
 
@@ -1351,6 +1370,18 @@ object RapidsConf {
     .toSequence
     .createWithDefault(Seq("su", "ubuntu", "-c", "/opt/alluxio-2.8.0/bin/alluxio"))
 
+  val ALLUXIO_REPLACEMENT_ALGO = conf("spark.rapids.alluxio.replacement.algo")
+    .doc("The algorithm used when replacing the UFS path with the Alluxio path. CONVERT_TIME " +
+      "and SELECTION_TIME are the valid options. CONVERT_TIME indicates that we do it when " +
+      "we convert it to a GPU file read, this has extra overhead of creating an entirely new " +
+      "file index, which requires listing the files and getting all new file info from Alluxio. " +
+      "SELECTION_TIME indicates we do it when the file reader is selecting the partitions " +
+      "to process and just replaces the path without fetching the file information again, this " +
+      "is faster but doesn't update locality information if that were to work with Alluxio.")
+    .stringConf
+    .checkValues(Set("CONVERT_TIME", "SELECTION_TIME"))
+    .createWithDefault("SELECTION_TIME")
+
   // USER FACING DEBUG CONFIGS
 
   val SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY =
@@ -1802,6 +1833,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
 
+  lazy val isTieredProjectEnabled: Boolean = get(ENABLE_TIERED_PROJECT)
+
   lazy val multiThreadReadNumThreads: Int = {
     // Use the largest value set among all the options.
     val deprecatedConfs = Seq(
@@ -1859,6 +1892,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isOrcReadEnabled: Boolean = get(ENABLE_ORC_READ)
 
   lazy val isOrcWriteEnabled: Boolean = get(ENABLE_ORC_WRITE)
+
+  lazy val isOrcFloatTypesToStringEnable: Boolean = get(ENABLE_ORC_FLOAT_TYPES_TO_STRING)
 
   lazy val isOrcPerFileReadEnabled: Boolean =
     RapidsReaderType.withName(get(ORC_READER_TYPE)) == RapidsReaderType.PERFILE
@@ -2025,6 +2060,14 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val getAlluxioBucketRegex: String = get(ALLUXIO_BUCKET_REGEX)
 
   lazy val getAlluxioCmd: Seq[String] = get(ALLUXIO_CMD)
+
+  lazy val getAlluxioReplacementAlgo: String = get(ALLUXIO_REPLACEMENT_ALGO)
+
+  lazy val isAlluxioReplacementAlgoSelectTime: Boolean =
+    get(ALLUXIO_REPLACEMENT_ALGO) == "SELECTION_TIME"
+
+  lazy val isAlluxioReplacementAlgoConvertTime: Boolean =
+    get(ALLUXIO_REPLACEMENT_ALGO) == "CONVERT_TIME"
 
   lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
 

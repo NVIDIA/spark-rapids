@@ -246,68 +246,6 @@ object GpuCast extends Arm {
     }
   }
 
-  def sanitizeStringToIntegralType(input: ColumnVector, ansiEnabled: Boolean): ColumnVector = {
-    // Convert any strings containing whitespace to null values. The input is assumed to already
-    // have been stripped of leading and trailing whitespace
-    val sanitized = withResource(input.containsRe("\\s")) { hasWhitespace =>
-      withResource(hasWhitespace.any()) { any =>
-        if (any.isValid && any.getBoolean) {
-          if (ansiEnabled) {
-            throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
-          } else {
-            withResource(GpuScalar.from(null, DataTypes.StringType)) { nullVal =>
-              hasWhitespace.ifElse(nullVal, input)
-            }
-          }
-        } else {
-          input.incRefCount()
-        }
-      }
-    }
-
-    withResource(sanitized) { _ =>
-      if (ansiEnabled) {
-        // ansi mode only supports simple integers, so no exponents or decimal places
-        val regex = "^[+\\-]?[0-9]+$"
-        withResource(sanitized.matchesRe(regex)) { isInt =>
-          withResource(isInt.all()) { allInts =>
-            // Check that all non-null values are valid integers.
-            if (allInts.isValid && !allInts.getBoolean) {
-              throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
-            }
-          }
-          sanitized.incRefCount()
-        }
-      } else {
-        // truncate strings that represent decimals to just look at the string before the dot
-        withResource(Scalar.fromString(".")) { dot =>
-          withResource(sanitized.stringContains(dot)) { hasDot =>
-            // only do the decimal sanitization if any strings do contain dot
-            withResource(hasDot.any(DType.BOOL8)) { anyDot =>
-              if (anyDot.getBoolean) {
-                // Special handling for strings that have no numeric value before the dot, such
-                // as "." and ".1" because extractsRe returns null for the capture group
-                // for these values and it also returns null for invalid inputs so we need this
-                // explicit check
-                withResource(sanitized.matchesRe("^[+\\-]?\\.[0-9]*$")) { startsWithDot =>
-                  withResource(sanitized.extractRe("^([+\\-]?[0-9]*)\\.[0-9]*$")) { table =>
-                    withResource(Scalar.fromString("0")) { zero =>
-                      withResource(startsWithDot.ifElse(zero, table.getColumn(0))) {
-                        decimal => hasDot.ifElse(decimal, sanitized)
-                      }
-                    }
-                  }
-                }
-              } else {
-                sanitized.incRefCount()
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
   def doCast(
       input: ColumnView,
       fromDataType: DataType,
@@ -513,8 +451,10 @@ object GpuCast extends Arm {
         }
       case (FloatType | DoubleType, StringType) =>
         castFloatingTypeToString(input)
-      case (StringType, BooleanType | ByteType | ShortType | IntegerType | LongType | FloatType
-                        | DoubleType | DateType | TimestampType) =>
+      case (StringType, ByteType | ShortType | IntegerType | LongType ) =>
+        com.nvidia.spark.rapids.jni.CastStrings.toInteger(input, ansiMode,
+          GpuColumnVector.getNonNestedRapidsType(toDataType))
+      case (StringType, BooleanType | FloatType | DoubleType | DateType | TimestampType) =>
         withResource(input.strip()) { trimmed =>
           toDataType match {
             case BooleanType =>
@@ -529,9 +469,6 @@ object GpuCast extends Arm {
               castStringToTimestamp(trimmed, ansiMode)
             case FloatType | DoubleType =>
               castStringToFloats(trimmed, ansiMode,
-                GpuColumnVector.getNonNestedRapidsType(toDataType))
-            case ByteType | ShortType | IntegerType | LongType =>
-              castStringToInts(trimmed, ansiMode,
                 GpuColumnVector.getNonNestedRapidsType(toDataType))
           }
         }
@@ -989,7 +926,7 @@ object GpuCast extends Arm {
     }
   }
 
-  private def castFloatingTypeToString(input: ColumnView): ColumnVector = {
+  private[rapids] def castFloatingTypeToString(input: ColumnView): ColumnVector = {
     withResource(input.castTo(DType.STRING)) { cudfCast =>
 
       // replace "e+" with "E"
@@ -1037,30 +974,6 @@ object GpuCast extends Arm {
                 }
               }
             }
-          }
-        }
-      }
-    }
-  }
-
-  def castStringToInts(
-      input: ColumnVector,
-      ansiEnabled: Boolean,
-      dType: DType): ColumnVector = {
-
-    withResource(GpuCast.sanitizeStringToIntegralType(input, ansiEnabled)) { sanitized =>
-      withResource(sanitized.isInteger(dType)) { isInt =>
-        if (ansiEnabled) {
-          withResource(isInt.all()) { allInts =>
-            // Check that all non-null values are valid integers.
-            if (allInts.isValid && !allInts.getBoolean) {
-              throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
-            }
-          }
-        }
-        withResource(sanitized.castTo(dType)) { parsedInt =>
-          withResource(Scalar.fromNull(dType)) { nullVal =>
-            isInt.ifElse(parsedInt, nullVal)
           }
         }
       }
