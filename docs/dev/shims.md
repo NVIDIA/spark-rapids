@@ -131,7 +131,7 @@ module artifact `rapids-4-spark_2.12`.
 This has two pre-requisites:
 1. The .class file with the bytecode is bitwise-identical among the currently
 supported Spark versions. To verify this you can inspect the dist jar and check
-if the class file is under `spark3xx-common` jar entry. If this is not case the
+if the class file is under `spark3xx-common` jar entry. If this is not the case then
 code should be refactored until all discrepancies are shimmed away.
 1. The transitive closure of the classes compile-time-referenced by `A` should
 have the property above.
