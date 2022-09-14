@@ -130,8 +130,8 @@ cluster.
     executor with 1 GPU, which is limiting, especially on the reads and writes from Parquet.  Set
     this to 1/(number of cores per executor) which will allow multiple tasks to run in parallel just
     like the CPU side.  Having the value smaller is fine as well.
-    Note: Please remove `spark.task.resource.gpu.amount` config for single-node Databricks cluster
-    because Spark local mode does not support GPU scheduling.
+    Note: Please remove the `spark.task.resource.gpu.amount` config for a single-node Databricks 
+    cluster because Spark local mode does not support GPU scheduling.
 
 	There is an incompatibility between the Databricks specific implementation of adaptive query
     execution (AQE) and the spark-rapids plugin.  In order to mitigate this,
