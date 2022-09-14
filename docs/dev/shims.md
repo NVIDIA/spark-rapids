@@ -178,7 +178,7 @@ $JAVA_HOME/bin/jdeps -v \
   public spark3xx-common spark330
 ```
 
-This will produce three DOT files for each "archive" with directed edges for am
+This will produce three DOT files for each "archive" with directed edges for
 a class in the archive to a class either in this or another archive.
 
 Looking at an output file, e.g. `/tmp/jdeps330/spark3xx-common.dot`,
