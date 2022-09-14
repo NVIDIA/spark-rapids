@@ -635,27 +635,27 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
       if (fallbackIter != null) {
         fallbackIter.hasNext
       } else {
-        !pendingIts.isEmpty ||
+        pendingIts.nonEmpty ||
           fetcherIterator.hasNext || futures.nonEmpty || queued.size() > 0
       }
     }
 
-    case class BlockState(blockId: BlockId, batchIter: SerializedBatchIterator) {
-      private var _bytesDeserializedSoFar: Long = 0L
-      def getNextBatchSize: Long = batchIter.tryReadNextHeader().getOrElse(0L)
-      def addDeserializedBytes(deserBytes: Long): Unit = synchronized {
-        _bytesDeserializedSoFar += deserBytes
-      }
+    case class BlockState(blockId: BlockId, batchIter: SerializedBatchIterator)
+      extends Iterator[(Any, Any)] {
+      private var nextBatchSize = batchIter.tryReadNextHeader().getOrElse(0L)
 
-      def bytesDeserializedSoFar: Long = synchronized {
-        _bytesDeserializedSoFar
+      def getNextBatchSize: Long = nextBatchSize
+
+      override def hasNext: Boolean = batchIter.hasNext
+
+      override def next(): (Any, Any) = {
+        val nextBatch = batchIter.next()
+        nextBatchSize = batchIter.tryReadNextHeader().getOrElse(0L)
+        nextBatch
       }
     }
 
-    private val pendingIts =
-      new HashedPriorityQueue[BlockState]((b1: BlockState, b2: BlockState) => {
-        java.lang.Long.compare(b1.bytesDeserializedSoFar, b2.bytesDeserializedSoFar)
-      })
+    private val pendingIts = new ArrayBuffer[BlockState]()
 
     override def next(): (Any, Any) = {
       require(hasNext, "called next on an empty iterator")
@@ -674,8 +674,8 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
 
               // if the future returned a block state, we have more work to do
               pending match {
-                case Some(BlockState(blockId, batchIter)) =>
-                  pendingIts.offer(BlockState(blockId, batchIter))
+                case Some(leftOver@BlockState(_, _)) =>
+                  pendingIts.append(leftOver)
                 case _ => // done
               }
             }
@@ -728,11 +728,9 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
       futures += RapidsShuffleInternalManagerBase.queueReadTask(slot, () => {
         var currentBatchSize = blockState.getNextBatchSize
         var didFit = true
-        val batchIter = blockState.batchIter
-        while (batchIter.hasNext && didFit) {
-          val batch = batchIter.next()
+        while (blockState.hasNext && didFit) {
+          val batch = blockState.next()
           queued.offer(batch)
-          blockState.addDeserializedBytes(currentBatchSize)
           limiter.release(currentBatchSize)
           // peek at the next batch
           currentBatchSize = blockState.getNextBatchSize
@@ -749,16 +747,14 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
     private def popFetchedIfAvailable(): Unit = {
       // If fetcherIterator is not exhausted, we try and get as many
       // ready results.
-      if (!pendingIts.isEmpty) {
+      if (pendingIts.nonEmpty) {
         var continue = true
-        var i = 0
-        while(pendingIts.size() > 0 && continue) {
-          val blockState = pendingIts.peek()
-          i = i + 1
+        while(pendingIts.nonEmpty && continue) {
+          val blockState = pendingIts(0)
           // check if we can handle the head batch now
           if (limiter.acquire(blockState.getNextBatchSize)) {
             // kick off deserialization task
-            pendingIts.remove(blockState)
+            pendingIts.remove(0)
             deserializeTask(blockState)
           } else {
             continue = false
@@ -799,7 +795,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
               } else {
                 // first batch didn't fit, put iterator aside and stop asking for results
                 // from the fetcher
-                pendingIts.offer(blockState)
+                pendingIts.append(blockState)
                 didFit = false
               }
             }
