@@ -37,10 +37,9 @@ case class HashAggregateExecParser(
     val maxDuration = SQLPlanParser.getTotalDuration(accumId, app)
     val exprString = node.desc.replaceFirst("HashAggregate", "")
     val expressions = SQLPlanParser.parseAggregateExpressions(exprString)
-    val isAllExprsSupported = expressions.forall(expr => checker.isExprSupported(expr))
     val notSupportedExprs = expressions.filter(expr => !checker.isExprSupported(expr))
     val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName) &&
-        isAllExprsSupported) {
+        notSupportedExprs.size == 0) {
       (checker.getSpeedupFactor(fullExecName), true)
     } else {
       (1.0, false)
