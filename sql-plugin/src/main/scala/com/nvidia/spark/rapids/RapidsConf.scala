@@ -1080,8 +1080,7 @@ object RapidsConf {
 
   val ENABLE_RANGE_WINDOW_DECIMAL: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.window.range.decimal.enabled")
-    .doc("Support for DECIMAL in range based window functions is tentative. " +
-      "When set to false disables the range window acceleration for the " +
+    .doc("When set to false, this disables the range window acceleration for the " +
       "DECIMAL type order-by column")
     .booleanConf
     .createWithDefault(true)

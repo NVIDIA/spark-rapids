@@ -133,8 +133,8 @@ abstract class GpuWindowExpressionMetaBase(
                       s"long and the range value calculated has overflow. " +
                       s"To enable it please set ${RapidsConf.ENABLE_RANGE_WINDOW_LONG} to true.")
                   case DecimalType() => if (!conf.isRangeWindowDecimalEnabled) willNotWorkOnGpu(
-                    s"Range window frame support for DECIMAL order by type is tentative. " +
-                      s"To enable it please set ${RapidsConf.ENABLE_RANGE_WINDOW_DECIMAL} to true.")
+                      s"To enable DECIMAL order by columns with Range window frames, " +
+                      s"please set ${RapidsConf.ENABLE_RANGE_WINDOW_DECIMAL} to true.")
                   case _ => // never reach here
                 }
               }
