@@ -1517,7 +1517,7 @@ class FixerPair(op: GpuUnboundToUnboundWindowWithFixer) extends AutoCloseable {
       column: cudf.ColumnVector): cudf.ColumnVector =
     fixing.fixUp(samePartitionMask, column)
 
-  def swap: Unit = {
+  def swap(): Unit = {
     val tmp = fixing
     tmp.reset()
     fixing = collecting
@@ -1583,6 +1583,9 @@ class GpuCachedDoublePassWindowIterator(
 
       readyForPostProcessing.foreach(_.close())
       readyForPostProcessing = mutable.Queue[SpillableColumnarBatch]()
+
+      waitingForFirstPass.foreach(_.close())
+      waitingForFirstPass = None
     }
   }
 
@@ -1631,13 +1634,16 @@ class GpuCachedDoublePassWindowIterator(
 
   def swapFirstPassIsReadyForPost(): Unit = {
     // Swap the caching so it is ready to be used for updating
-    fixerIndexMap.values.foreach(_.swap)
+    fixerIndexMap.values.foreach(_.swap())
 
     // Swap the parts so we know what mask to use for updating
+    lastPartsProcessing.foreach(_.close())
     lastPartsProcessing = lastPartsCaching
     lastPartsCaching = Array.empty
 
     // Swap the queues so we are ready to dequeue the data
+    // Before we swap this must be empty, or we are dropping data...
+    assert(readyForPostProcessing.isEmpty)
     readyForPostProcessing = firstPassProcessed
     firstPassProcessed = mutable.Queue[SpillableColumnarBatch]()
   }
