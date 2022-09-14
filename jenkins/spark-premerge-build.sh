@@ -45,7 +45,8 @@ mvn_verify() {
     do
         echo "Spark version: $version"
         # build and run unit tests on one specific version for each sub-version (e.g. 320, 330) except base version
-        if [[ "${SPARK_SHIM_VERSIONS_TEST[@]}" =~ "$version" ]]; then
+        # separate the versions to two ci stages (mvn_verify, ci_2) for balancing the duration
+        if [[ "${SPARK_SHIM_VERSIONS_PREMERGE_UT_1[@]}" =~ "$version" ]]; then
             env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS \
               -Dpytest.TEST_TAGS='' -pl '!tools'
         # build only for nosnapshot versions
@@ -138,8 +139,11 @@ ci_2() {
 
     # put some mvn tests here to balance durations of parallel stages
     echo "Run mvn package..."
-    env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=320 clean package $MVN_BUILD_ARGS \
-      -Dpytest.TEST_TAGS='' -pl '!tools'
+    for version in "${SPARK_SHIM_VERSIONS_PREMERGE_UT_2[@]}"
+    do
+        env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean package $MVN_BUILD_ARGS \
+          -Dpytest.TEST_TAGS='' -pl '!tools'
+    done
 }
 
 

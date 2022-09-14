@@ -61,9 +61,13 @@ echo "CUDF_VER: $CUDF_VER, CUDA_CLASSIFIER: $CUDA_CLASSIFIER, PROJECT_VER: $PROJ
     SPARK_VER: $SPARK_VER, SCALA_BINARY_VER: $SCALA_BINARY_VER"
 
 # Spark shim versions
-# SCRIPT_PATH is to avoid losing script path in wrapper calling. It should be exported if wrapper call existed.
-SCRIPT_PATH=${SCRIPT_PATH:-$(pwd -P)/jenkins}
-. $SCRIPT_PATH/common.sh
+# get Spark shim versions from pom
+function set_env_var_SPARK_SHIM_VERSIONS_ARR() {
+    PROFILE_OPT=$1
+    SPARK_SHIM_VERSIONS_STR=$(mvn -B help:evaluate -q -pl dist $PROFILE_OPT -Dexpression=included_buildvers -DforceStdout)
+    SPARK_SHIM_VERSIONS_STR=$(echo $SPARK_SHIM_VERSIONS_STR)
+    IFS=", " <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS_ARR
+}
 # Psnapshots: snapshots + noSnapshots
 set_env_var_SPARK_SHIM_VERSIONS_ARR -Psnapshots
 SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
@@ -85,7 +89,10 @@ SPARK_BASE_SHIM_VERSION=${SPARK_SHIM_VERSIONS[0]}
 # tail noSnapshots
 TAIL_NOSNAPSHOTS_VERSIONS=("${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]:1}")
 # build and run unit tests on one specific version for each sub-version (e.g. 320, 330)
-set_env_var_SPARK_SHIM_VERSIONS_ARR -PpremergeUT
-SPARK_SHIM_VERSIONS_TEST=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+# separate the versions to two parts (premergeUT1, premergeUT2) for balancing the duration
+set_env_var_SPARK_SHIM_VERSIONS_ARR -PpremergeUT1
+SPARK_SHIM_VERSIONS_PREMERGE_UT_1=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+set_env_var_SPARK_SHIM_VERSIONS_ARR -PpremergeUT2
+SPARK_SHIM_VERSIONS_PREMERGE_UT_2=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 
 echo "SPARK_BASE_SHIM_VERSION: $SPARK_BASE_SHIM_VERSION"
