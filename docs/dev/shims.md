@@ -139,7 +139,7 @@ have the property above.
 JDK ships the `jdeps` tool that can help analyze static dependencies of
 a class. Unfortunately, it does not compute the transitive closure (recursive)
 at the class granularity. Thus you need additional tools such as
-`[Graphviz tool](https://graphviz.org/)` used here.
+the `[Graphviz tool](https://graphviz.org/)` used here.
 
 To figure out the transitive closure of a class we first need to build
 the `dist` module. While iterating on the PR, it should be sufficient
