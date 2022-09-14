@@ -16,11 +16,13 @@
 
 package org.apache.spark.sql.rapids
 
+import java.time.ZoneId
+
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.DateUtils.TimestampFormatConversionException
 import com.nvidia.spark.rapids.GpuOverrides.extractStringLit
 
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, TimeZoneAwareExpression}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, TimeZoneAwareExpression, FromUTCTimestamp}
 import org.apache.spark.sql.types._
 
 case class ParseFormatMeta(separator: Option[Char], isTimestamp: Boolean, validRegex: String)
@@ -109,7 +111,7 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
 class FromUTCTimestampExprMeta(
     expr: FromUTCTimestamp,
     override val conf: RapidsConf,
-    override val parent: Option[RapidsMeta[_, _, _]],
+    override val parent: Option[RapidsMeta[_, _]],
     rule: DataFromReplacementRule)
   extends BinaryExprMeta[FromUTCTimestamp](expr, conf, parent, rule) {
 
@@ -130,3 +132,4 @@ class FromUTCTimestampExprMeta(
         }
     }
   }
+}
