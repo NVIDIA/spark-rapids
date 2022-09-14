@@ -31,9 +31,8 @@ def read_orc_df(data_path):
 def read_orc_sql(data_path):
     return lambda spark : spark.sql('select * from orc.`{}`'.format(data_path))
 
-# ORC has issues reading timestamps where it is off by 1 second if the timestamp is before
-# epoch in 1970 and the microsecond value is between 0 and 1000.
-# See https://github.com/rapidsai/cudf/issues/11525.
+# Once https://github.com/NVIDIA/spark-rapids/issues/131-140 are fixed
+# we should remove this and use timestamp_gen.
 def get_orc_timestamp_gen(nullable=True):
     return TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc), nullable=nullable)
 
