@@ -4,6 +4,7 @@ title: Shim Development
 nav_order: 4
 parent: Developer Overview
 ---
+
 # Shim Development
 
 RAPIDS Accelerator For Apache Spark supports multiple feature version lines of
@@ -25,9 +26,11 @@ In the following we provide recipes for typical scenarios addressed by the Shim 
 
 It's among the easiest issues to resolve. We define a method in SparkShims
 trait covering a superset of parameters from all versions and call it
-```
+
+```Scala
 SparkShimImpl.methodWithDiscrepancies(p_1, ..., p_n)
 ```
+
 instead of referencing it directly. Shim implementations (SparkShimImpl) are in charge of dispatching it further
 to correct version-dependent methods. Moreover, unlike in the below sections
 conflicts between versions are easily avoided by using different package or class names
@@ -36,6 +39,7 @@ for conflicting Shim implementations.
 ## Base Classes/Traits Changes
 
 ### Compile-time issues
+
 Upstream base classes we derive from might be incompatible in the sense that one version
 requires us to implement/override the method `M` whereas the other prohibits it by marking
 the base implementation `final`, E.g. `org.apache.spark.sql.catalyst.trees.TreeNode` changes
@@ -43,6 +47,7 @@ between Spark 3.1.x and Spark 3.2.x. So instead of deriving from such classes di
 inject an intermediate trait e.g. `com.nvidia.spark.rapids.shims.ShimExpression` that
 has a varying source code depending on the Spark version we compile against to overcome this
 issue as you can see e.g., comparing TreeNode:
+
 1. [ShimExpression For 3.1.x](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/pre320-treenode/scala/com/nvidia/spark/rapids/shims/TreeNode.scala#L23)
 2. [ShimExpression For 3.2.x](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/post320-treenode/scala/com/nvidia/spark/rapids/shims/TreeNode.scala#L23)
 
@@ -61,14 +66,16 @@ Spark runtime uses mutable classloaders we can alter after detecting the runtime
 Using JarURLConnection URLs we create a Parallel World of the current version within the jar, e.g.:
 
 Spark 3.0.2's URLs:
-```
+
+```text
 jar:file:/home/spark/rapids-4-spark_2.12-22.10.0.jar!/
 jar:file:/home/spark/rapids-4-spark_2.12-22.10.0.jar!/spark3xx-common/
 jar:file:/home/spark/rapids-4-spark_2.12-22.10.0.jar!/spark302/
 ```
 
 Spark 3.2.0's URLs :
-```
+
+```text
 jar:file:/home/spark/rapids-4-spark_2.12-22.10.0.jar!/
 jar:file:/home/spark/rapids-4-spark_2.12-22.10.0.jar!/spark3xx-common/
 jar:file:/home/spark/rapids-4-spark_2.12-22.10.0.jar!/spark320/
@@ -115,9 +122,11 @@ For examples see:
 2. `class ExclusiveModeGpuDiscoveryPlugin`
 
 Note that we currently have to manually code up the delegation methods to the tune of:
-```
+
+```Scala
   def method(x: SomeThing) = self.method(x)
 ```
+
 This could be automatically generated with a simple tool processing the `scalap` output or Scala macros at
 build/compile time. Pull requests are welcome.
 
@@ -129,6 +138,7 @@ as a dependency for Maven modules/projects dependencies depending on the `dist`
 module artifact `rapids-4-spark_2.12`.
 
 This has two pre-requisites:
+
 1. The .class file with the bytecode is bitwise-identical among the currently
 supported Spark versions. To verify this you can inspect the dist jar and check
 if the class file is under `spark3xx-common` jar entry. If this is not the case then
@@ -146,21 +156,22 @@ the `dist` module. While iterating on the PR, it should be sufficient
 to build against the lowest and highest versions of the supported Spark version
 range. As of the time of this writing:
 
-```Bash
- ./build/buildall --parallel=4  --profile=311,330 --module=dist
+```bash
+./build/buildall --parallel=4  --profile=311,330 --module=dist
 ```
 
 However, before submitting the PR execute the full build `--profile=noSnapshots`.
 
 Then switch to the parallel-world build dir.
-```
+
+```bash
 cd dist/target/parallel-world/
 ```
 
 Move the current externalized classes (outside the spark3* parallel worlds) to
 a dedicated directory, say `public`.
 
-```
+```bash
 mv org com ai public/
 ```
 
@@ -168,11 +179,11 @@ mv org com ai public/
 and you will see the dependencies of `public` classes. By design `public` classes
 should have only edges only to other `public` classes in the dist jar.
 
-
 Execute `jdeps` against `public`, `spark3xx-common` and an *exactly one* parallel
 world such as `spark330`
-```Bash
-$JAVA_HOME/bin/jdeps -v \
+
+```bash
+${JAVA_HOME}/bin/jdeps -v \
   -dotoutput /tmp/jdeps330 \
   -regex '(com|org)\..*\.rapids\..*' \
   public spark3xx-common spark330
@@ -186,8 +197,8 @@ unfortunately you see that jdeps does not label the source class node but labels
 the target class node of an edge. Thus the graph is incorrect as it breaks paths
 if a node has both incoming and outgoing edges.
 
-```Bash
-grep 'com.nvidia.spark.rapids.GpuFilterExec\$' spark3xx-common.dot
+```bash
+$ grep 'com.nvidia.spark.rapids.GpuFilterExec\$' spark3xx-common.dot
    "com.nvidia.spark.rapids.GpuFilterExec$"           -> "com.nvidia.spark.rapids.GpuFilterExec (spark330)";
    "com.nvidia.spark.rapids.GpuOverrides$$anon$204"   -> "com.nvidia.spark.rapids.GpuFilterExec$ (spark3xx-common)";
 ```
@@ -198,7 +209,7 @@ the original jdeps output for further analysis.
 Decorate source nodes from `<archive>.dot` with the `(<archive>)` label given
 that the source nodes are guaranteed to be from the `<archive>`.
 
-```Bash
+```bash
 sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (public)"\2/' \
   /tmp/jdeps330/public.dot > public.dot
 sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (spark3xx-common)"\2/' \
@@ -210,8 +221,9 @@ sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (spark330)"\2/' \
 Next you need to union edges of all three graphs into a single graph to be able
 to analyze cross-archive paths.
 
-```Bash
-cat public.dot spark3xx-common.dot spark330.dot | tr '\n' '\r' | \
+```bash
+cat public.dot spark3xx-common.dot spark330.dot | \
+  tr '\n' '\r' | \
   sed 's/}\rdigraph "[^"]*" {\r//g' | \
   tr '\r' '\n' > merged.dot
 ```
@@ -229,19 +241,23 @@ Focus on the nodes with lowest distance to eliminate dependency on the shim.
 
 GpuTypeColumnVector needs refactoring prior externalization as of the time
 of this writing:
-```
-dijkstra -d -p "com.nvidia.spark.rapids.GpuColumnVector (spark3xx-common)" merged.dot | \
+
+```bash
+$ dijkstra -d -p "com.nvidia.spark.rapids.GpuColumnVector (spark3xx-common)" merged.dot | \
   grep '\[dist=' | grep '(spark330)'
         "org.apache.spark.sql.rapids.GpuFileSourceScanExec (spark330)"  [dist=5.000,
         "com.nvidia.spark.rapids.GpuExec (spark330)"    [dist=3.000,
 ...
+```
 
 RegexReplace could be externalized safely:
-```
+
+```bash
 $ dijkstra -d -p "org.apache.spark.sql.rapids.RegexReplace (spark3xx-common)"  merged.dot | grep '\[dist='
         "org.apache.spark.sql.rapids.RegexReplace (spark3xx-common)"    [dist=0.000];
         "org.apache.spark.sql.rapids.RegexReplace$ (spark3xx-common)"   [dist=1.000,
 ```
+
 because it is self-contained.
 
 ### Estimating the scope of the task
@@ -250,8 +266,8 @@ Dealing with a single class at a time may quickly turn into a tedious task.
 You can look at the bigger picture by generating clusters of the strongly
 connected components using `sccmap`
 
-```
-sccmap -d -s merged.dot
+```bash
+$ sccmap -d -s merged.dot
 2440 nodes, 11897 edges, 637 strong components
 ```
 
