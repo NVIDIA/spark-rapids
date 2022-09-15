@@ -25,7 +25,7 @@ In the following we provide recipes for typical scenarios addressed by the Shim 
 
 It's among the easiest issues to resolve. We define a method in SparkShims
 trait covering a superset of parameters from all versions and call it
-```
+```Scala
 SparkShimImpl.methodWithDiscrepancies(p_1, ..., p_n)
 ```
 instead of referencing it directly. Shim implementations (SparkShimImpl) are in charge of dispatching it further
@@ -115,7 +115,7 @@ For examples see:
 2. `class ExclusiveModeGpuDiscoveryPlugin`
 
 Note that we currently have to manually code up the delegation methods to the tune of:
-```
+```Scala
   def method(x: SomeThing) = self.method(x)
 ```
 This could be automatically generated with a simple tool processing the `scalap` output or Scala macros at
@@ -146,33 +146,32 @@ the `dist` module. While iterating on the PR, it should be sufficient
 to build against the lowest and highest versions of the supported Spark version
 range. As of the time of this writing:
 
-```Bash
- ./build/buildall --parallel=4  --profile=311,330 --module=dist
+```bash
+$ ./build/buildall --parallel=4  --profile=311,330 --module=dist
 ```
 
 However, before submitting the PR execute the full build `--profile=noSnapshots`.
 
 Then switch to the parallel-world build dir.
-```
-cd dist/target/parallel-world/
+```bash
+$ cd dist/target/parallel-world/
 ```
 
 Move the current externalized classes (outside the spark3* parallel worlds) to
 a dedicated directory, say `public`.
 
-```
-mv org com ai public/
+```bash
+$ mv org com ai public/
 ```
 
 `jdeps` can now treat public classes as a separate archive
 and you will see the dependencies of `public` classes. By design `public` classes
 should have only edges only to other `public` classes in the dist jar.
 
-
 Execute `jdeps` against `public`, `spark3xx-common` and an *exactly one* parallel
 world such as `spark330`
-```Bash
-$JAVA_HOME/bin/jdeps -v \
+```bash
+$ ${JAVA_HOME}/bin/jdeps -v \
   -dotoutput /tmp/jdeps330 \
   -regex '(com|org)\..*\.rapids\..*' \
   public spark3xx-common spark330
@@ -186,8 +185,8 @@ unfortunately you see that jdeps does not label the source class node but labels
 the target class node of an edge. Thus the graph is incorrect as it breaks paths
 if a node has both incoming and outgoing edges.
 
-```Bash
-grep 'com.nvidia.spark.rapids.GpuFilterExec\$' spark3xx-common.dot
+```bash
+$ grep 'com.nvidia.spark.rapids.GpuFilterExec\$' spark3xx-common.dot
    "com.nvidia.spark.rapids.GpuFilterExec$"           -> "com.nvidia.spark.rapids.GpuFilterExec (spark330)";
    "com.nvidia.spark.rapids.GpuOverrides$$anon$204"   -> "com.nvidia.spark.rapids.GpuFilterExec$ (spark3xx-common)";
 ```
@@ -198,20 +197,21 @@ the original jdeps output for further analysis.
 Decorate source nodes from `<archive>.dot` with the `(<archive>)` label given
 that the source nodes are guaranteed to be from the `<archive>`.
 
-```Bash
-sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (public)"\2/' \
+```bash
+$ sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (public)"\2/' \
   /tmp/jdeps330/public.dot > public.dot
-sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (spark3xx-common)"\2/' \
+$ sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (spark3xx-common)"\2/' \
   /tmp/jdeps330/spark3xx-common.dot > spark3xx-common.dot
-sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (spark330)"\2/' \
+$ sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (spark330)"\2/' \
   /tmp/jdeps330/spark330.dot > spark330.dot
 ```
 
 Next you need to union edges of all three graphs into a single graph to be able
 to analyze cross-archive paths.
 
-```Bash
-cat public.dot spark3xx-common.dot spark330.dot | tr '\n' '\r' | \
+```bash
+$ cat public.dot spark3xx-common.dot spark330.dot | \
+  tr '\n' '\r' | \
   sed 's/}\rdigraph "[^"]*" {\r//g' | \
   tr '\r' '\n' > merged.dot
 ```
@@ -229,8 +229,8 @@ Focus on the nodes with lowest distance to eliminate dependency on the shim.
 
 GpuTypeColumnVector needs refactoring prior externalization as of the time
 of this writing:
-```
-dijkstra -d -p "com.nvidia.spark.rapids.GpuColumnVector (spark3xx-common)" merged.dot | \
+```bash
+$ dijkstra -d -p "com.nvidia.spark.rapids.GpuColumnVector (spark3xx-common)" merged.dot | \
   grep '\[dist=' | grep '(spark330)'
         "org.apache.spark.sql.rapids.GpuFileSourceScanExec (spark330)"  [dist=5.000,
         "com.nvidia.spark.rapids.GpuExec (spark330)"    [dist=3.000,
@@ -238,7 +238,7 @@ dijkstra -d -p "com.nvidia.spark.rapids.GpuColumnVector (spark3xx-common)" merge
 ```bash
 
 RegexReplace could be externalized safely:
-```
+```bash
 $ dijkstra -d -p "org.apache.spark.sql.rapids.RegexReplace (spark3xx-common)"  merged.dot | grep '\[dist='
         "org.apache.spark.sql.rapids.RegexReplace (spark3xx-common)"    [dist=0.000];
         "org.apache.spark.sql.rapids.RegexReplace$ (spark3xx-common)"   [dist=1.000,
@@ -251,8 +251,8 @@ Dealing with a single class at a time may quickly turn into a tedious task.
 You can look at the bigger picture by generating clusters of the strongly
 connected components using `sccmap`
 
-```
-sccmap -d -s merged.dot
+```bash
+$ sccmap -d -s merged.dot
 2440 nodes, 11897 edges, 637 strong components
 ```
 
