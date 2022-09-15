@@ -655,7 +655,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
       }
     }
 
-    private val pendingIts = new ArrayBuffer[BlockState]()
+    private val pendingIts = new mutable.Queue[BlockState]()
 
     override def next(): (Any, Any) = {
       require(hasNext, "called next on an empty iterator")
@@ -675,13 +675,13 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
               // if the future returned a block state, we have more work to do
               pending match {
                 case Some(leftOver@BlockState(_, _)) =>
-                  pendingIts.append(leftOver)
+                  pendingIts.enqueue(leftOver)
                 case _ => // done
               }
             }
           }
 
-          if (!pendingIts.isEmpty) {
+          if (pendingIts.nonEmpty) {
             // if we had pending iterators, we should try to see if now one can be handled
             popFetchedIfAvailable()
           }
@@ -750,11 +750,11 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
       if (pendingIts.nonEmpty) {
         var continue = true
         while(pendingIts.nonEmpty && continue) {
-          val blockState = pendingIts(0)
+          val blockState = pendingIts.head
           // check if we can handle the head batch now
           if (limiter.acquire(blockState.getNextBatchSize)) {
             // kick off deserialization task
-            pendingIts.remove(0)
+            pendingIts.dequeue()
             deserializeTask(blockState)
           } else {
             continue = false
@@ -795,7 +795,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
               } else {
                 // first batch didn't fit, put iterator aside and stop asking for results
                 // from the fetcher
-                pendingIts.append(blockState)
+                pendingIts.enqueue(blockState)
                 didFit = false
               }
             }
