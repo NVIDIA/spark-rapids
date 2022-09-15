@@ -25,9 +25,11 @@ In the following we provide recipes for typical scenarios addressed by the Shim 
 
 It's among the easiest issues to resolve. We define a method in SparkShims
 trait covering a superset of parameters from all versions and call it
+
 ```Scala
 SparkShimImpl.methodWithDiscrepancies(p_1, ..., p_n)
 ```
+
 instead of referencing it directly. Shim implementations (SparkShimImpl) are in charge of dispatching it further
 to correct version-dependent methods. Moreover, unlike in the below sections
 conflicts between versions are easily avoided by using different package or class names
@@ -36,6 +38,7 @@ for conflicting Shim implementations.
 ## Base Classes/Traits Changes
 
 ### Compile-time issues
+
 Upstream base classes we derive from might be incompatible in the sense that one version
 requires us to implement/override the method `M` whereas the other prohibits it by marking
 the base implementation `final`, E.g. `org.apache.spark.sql.catalyst.trees.TreeNode` changes
@@ -43,6 +46,7 @@ between Spark 3.1.x and Spark 3.2.x. So instead of deriving from such classes di
 inject an intermediate trait e.g. `com.nvidia.spark.rapids.shims.ShimExpression` that
 has a varying source code depending on the Spark version we compile against to overcome this
 issue as you can see e.g., comparing TreeNode:
+
 1. [ShimExpression For 3.1.x](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/pre320-treenode/scala/com/nvidia/spark/rapids/shims/TreeNode.scala#L23)
 2. [ShimExpression For 3.2.x](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/post320-treenode/scala/com/nvidia/spark/rapids/shims/TreeNode.scala#L23)
 
@@ -61,6 +65,7 @@ Spark runtime uses mutable classloaders we can alter after detecting the runtime
 Using JarURLConnection URLs we create a Parallel World of the current version within the jar, e.g.:
 
 Spark 3.0.2's URLs:
+
 ```
 jar:file:/home/spark/rapids-4-spark_2.12-22.10.0.jar!/
 jar:file:/home/spark/rapids-4-spark_2.12-22.10.0.jar!/spark3xx-common/
@@ -68,6 +73,7 @@ jar:file:/home/spark/rapids-4-spark_2.12-22.10.0.jar!/spark302/
 ```
 
 Spark 3.2.0's URLs :
+
 ```
 jar:file:/home/spark/rapids-4-spark_2.12-22.10.0.jar!/
 jar:file:/home/spark/rapids-4-spark_2.12-22.10.0.jar!/spark3xx-common/
@@ -115,9 +121,11 @@ For examples see:
 2. `class ExclusiveModeGpuDiscoveryPlugin`
 
 Note that we currently have to manually code up the delegation methods to the tune of:
+
 ```Scala
   def method(x: SomeThing) = self.method(x)
 ```
+
 This could be automatically generated with a simple tool processing the `scalap` output or Scala macros at
 build/compile time. Pull requests are welcome.
 
@@ -129,6 +137,7 @@ as a dependency for Maven modules/projects dependencies depending on the `dist`
 module artifact `rapids-4-spark_2.12`.
 
 This has two pre-requisites:
+
 1. The .class file with the bytecode is bitwise-identical among the currently
 supported Spark versions. To verify this you can inspect the dist jar and check
 if the class file is under `spark3xx-common` jar entry. If this is not the case then
@@ -153,6 +162,7 @@ $ ./build/buildall --parallel=4  --profile=311,330 --module=dist
 However, before submitting the PR execute the full build `--profile=noSnapshots`.
 
 Then switch to the parallel-world build dir.
+
 ```bash
 $ cd dist/target/parallel-world/
 ```
@@ -170,6 +180,7 @@ should have only edges only to other `public` classes in the dist jar.
 
 Execute `jdeps` against `public`, `spark3xx-common` and an *exactly one* parallel
 world such as `spark330`
+
 ```bash
 $ ${JAVA_HOME}/bin/jdeps -v \
   -dotoutput /tmp/jdeps330 \
@@ -229,6 +240,7 @@ Focus on the nodes with lowest distance to eliminate dependency on the shim.
 
 GpuTypeColumnVector needs refactoring prior externalization as of the time
 of this writing:
+
 ```bash
 $ dijkstra -d -p "com.nvidia.spark.rapids.GpuColumnVector (spark3xx-common)" merged.dot | \
   grep '\[dist=' | grep '(spark330)'
@@ -238,11 +250,13 @@ $ dijkstra -d -p "com.nvidia.spark.rapids.GpuColumnVector (spark3xx-common)" mer
 ```
 
 RegexReplace could be externalized safely:
+
 ```bash
 $ dijkstra -d -p "org.apache.spark.sql.rapids.RegexReplace (spark3xx-common)"  merged.dot | grep '\[dist='
         "org.apache.spark.sql.rapids.RegexReplace (spark3xx-common)"    [dist=0.000];
         "org.apache.spark.sql.rapids.RegexReplace$ (spark3xx-common)"   [dist=1.000,
 ```
+
 because it is self-contained.
 
 ### Estimating the scope of the task
