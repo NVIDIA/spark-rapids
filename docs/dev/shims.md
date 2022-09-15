@@ -183,7 +183,7 @@ Execute `jdeps` against `public`, `spark3xx-common` and an *exactly one* paralle
 world such as `spark330`
 
 ```bash
-$ ${JAVA_HOME}/bin/jdeps -v \
+${JAVA_HOME}/bin/jdeps -v \
   -dotoutput /tmp/jdeps330 \
   -regex '(com|org)\..*\.rapids\..*' \
   public spark3xx-common spark330
@@ -210,11 +210,11 @@ Decorate source nodes from `<archive>.dot` with the `(<archive>)` label given
 that the source nodes are guaranteed to be from the `<archive>`.
 
 ```bash
-$ sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (public)"\2/' \
+sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (public)"\2/' \
   /tmp/jdeps330/public.dot > public.dot
-$ sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (spark3xx-common)"\2/' \
+sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (spark3xx-common)"\2/' \
   /tmp/jdeps330/spark3xx-common.dot > spark3xx-common.dot
-$ sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (spark330)"\2/' \
+sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (spark330)"\2/' \
   /tmp/jdeps330/spark330.dot > spark330.dot
 ```
 
@@ -222,7 +222,7 @@ Next you need to union edges of all three graphs into a single graph to be able
 to analyze cross-archive paths.
 
 ```bash
-$ cat public.dot spark3xx-common.dot spark330.dot | \
+cat public.dot spark3xx-common.dot spark330.dot | \
   tr '\n' '\r' | \
   sed 's/}\rdigraph "[^"]*" {\r//g' | \
   tr '\r' '\n' > merged.dot
