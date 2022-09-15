@@ -4,6 +4,7 @@ title: Shim Development
 nav_order: 4
 parent: Developer Overview
 ---
+
 # Shim Development
 
 RAPIDS Accelerator For Apache Spark supports multiple feature version lines of
@@ -66,7 +67,7 @@ Using JarURLConnection URLs we create a Parallel World of the current version wi
 
 Spark 3.0.2's URLs:
 
-```
+```text
 jar:file:/home/spark/rapids-4-spark_2.12-22.10.0.jar!/
 jar:file:/home/spark/rapids-4-spark_2.12-22.10.0.jar!/spark3xx-common/
 jar:file:/home/spark/rapids-4-spark_2.12-22.10.0.jar!/spark302/
@@ -74,7 +75,7 @@ jar:file:/home/spark/rapids-4-spark_2.12-22.10.0.jar!/spark302/
 
 Spark 3.2.0's URLs :
 
-```
+```text
 jar:file:/home/spark/rapids-4-spark_2.12-22.10.0.jar!/
 jar:file:/home/spark/rapids-4-spark_2.12-22.10.0.jar!/spark3xx-common/
 jar:file:/home/spark/rapids-4-spark_2.12-22.10.0.jar!/spark320/
@@ -156,7 +157,7 @@ to build against the lowest and highest versions of the supported Spark version
 range. As of the time of this writing:
 
 ```bash
-$ ./build/buildall --parallel=4  --profile=311,330 --module=dist
+./build/buildall --parallel=4  --profile=311,330 --module=dist
 ```
 
 However, before submitting the PR execute the full build `--profile=noSnapshots`.
@@ -164,14 +165,14 @@ However, before submitting the PR execute the full build `--profile=noSnapshots`
 Then switch to the parallel-world build dir.
 
 ```bash
-$ cd dist/target/parallel-world/
+cd dist/target/parallel-world/
 ```
 
 Move the current externalized classes (outside the spark3* parallel worlds) to
 a dedicated directory, say `public`.
 
 ```bash
-$ mv org com ai public/
+mv org com ai public/
 ```
 
 `jdeps` can now treat public classes as a separate archive
