@@ -603,21 +603,6 @@ object GpuOverrides extends Logging {
     }
   }
 
-  def checkAndTagFloatNanAgg(
-      op: String,
-      dataType: DataType,
-      conf: RapidsConf,
-      meta: RapidsMeta[_,_]): Unit = {
-    if (conf.hasNans && isOrContainsFloatingPoint(dataType)) {
-      meta.willNotWorkOnGpu(s"$op aggregation on floating point columns that can contain NaNs " +
-          "will compute incorrect results. If it is known that there are no NaNs, set " +
-          s" ${RapidsConf.HAS_NANS} to false.")
-    }
-  }
-
-  private val nanAggPsNote = "Input must not contain NaNs and" +
-      s" ${RapidsConf.HAS_NANS} must be false."
-
   def expr[INPUT <: Expression](
       desc: String,
       pluginChecks: ExprChecks,
@@ -1777,8 +1762,7 @@ object GpuOverrides extends Logging {
         TypeSig.all,
         Seq(ParamCheck(
           "pivotColumn",
-          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128)
-              .withPsNote(Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128),
           TypeSig.all),
           ParamCheck("valueColumn",
           TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128,
@@ -1815,22 +1799,16 @@ object GpuOverrides extends Logging {
           TypeSig.orderable,
           Seq(ParamCheck("input",
             (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT)
-              .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-              .withPsNote(Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
+              .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
             TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
             (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
             TypeSig.orderable,
             Seq(ParamCheck("input",
-              (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-                .withPsNote(Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
+              (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
               TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts),
       (max, conf, p, r) => new AggExprMeta[Max](max, conf, p, r) {
-        override def tagAggForGpu(): Unit = {
-          val dataType = max.child.dataType
-          checkAndTagFloatNanAgg("Max", dataType, conf, this)
-        }
       }),
     expr[Min](
       "Min aggregate operator",
@@ -1842,22 +1820,16 @@ object GpuOverrides extends Logging {
           TypeSig.orderable,
           Seq(ParamCheck("input",
             (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL + TypeSig.STRUCT)
-              .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-              .withPsNote(Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
+              .nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
             TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts
           ++
           ExprChecks.windowOnly(
             (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
             TypeSig.orderable,
             Seq(ParamCheck("input",
-              (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-                .withPsNote(Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
+              (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
               TypeSig.orderable))).asInstanceOf[ExprChecksImpl].contexts),
       (a, conf, p, r) => new AggExprMeta[Min](a, conf, p, r) {
-        override def tagAggForGpu(): Unit = {
-          val dataType = a.child.dataType
-          checkAndTagFloatNanAgg("Min", dataType, conf, this)
-        }
       }),
     expr[Sum](
       "Sum aggregate operator",
@@ -2169,27 +2141,18 @@ object GpuOverrides extends Logging {
       ExprChecks.unaryProject(
         TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL,
         TypeSig.orderable,
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-            .withPsNote(Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
         TypeSig.ARRAY.nested(TypeSig.orderable)),
       (in, conf, p, r) => new UnaryExprMeta[ArrayMin](in, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          checkAndTagFloatNanAgg("Min", in.dataType, conf, this)
-        }
       }),
     expr[ArrayMax](
       "Returns the maximum value in the array",
       ExprChecks.unaryProject(
         TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL,
         TypeSig.orderable,
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL)
-            .withPsNote(Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
         TypeSig.ARRAY.nested(TypeSig.orderable)),
       (in, conf, p, r) => new UnaryExprMeta[ArrayMax](in, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          checkAndTagFloatNanAgg("Max", in.dataType, conf, this)
-        }
-
       }),
     expr[ArrayRepeat](
       "Returns the array containing the given input value (left) count (right) times",

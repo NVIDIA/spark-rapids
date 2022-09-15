@@ -584,13 +584,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val HAS_NANS = conf("spark.rapids.sql.hasNans")
-    .doc("Config to indicate if your data has NaN's. Cudf doesn't " +
-      "currently support NaN's properly so you can get corrupt data if you have NaN's in your " +
-      "data and it runs on the GPU.")
-    .booleanConf
-    .createWithDefault(true)
-
   val NEED_DECIMAL_OVERFLOW_GUARANTEES = conf("spark.rapids.sql.decimalOverflowGuarantees")
       .doc("FOR TESTING ONLY. DO NOT USE IN PRODUCTION. Please see the decimal section of " +
           "the compatibility documents for more information on this config.")
@@ -1773,8 +1766,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isGdsSpillEnabled: Boolean = get(GDS_SPILL)
 
   lazy val gdsSpillBatchWriteBufferSize: Long = get(GDS_SPILL_BATCH_WRITE_BUFFER_SIZE)
-
-  lazy val hasNans: Boolean = get(HAS_NANS)
 
   lazy val needDecimalGuarantees: Boolean = get(NEED_DECIMAL_OVERFLOW_GUARANTEES)
 

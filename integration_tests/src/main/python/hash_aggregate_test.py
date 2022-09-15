@@ -28,29 +28,17 @@ from spark_session import is_databricks104_or_later, with_cpu_session
 
 pytestmark = pytest.mark.nightly_resource_consuming_test
 
-_no_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
-                       'spark.rapids.sql.hasNans': 'false',
+_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
                        'spark.rapids.sql.castStringToFloat.enabled': 'true'
                       }
 
-_no_nans_float_smallbatch_conf = copy_and_update(_no_nans_float_conf,
+_float_smallbatch_conf = copy_and_update(_float_conf,
         {'spark.rapids.sql.batchSizeBytes' : '250'})
 
-_no_nans_float_conf_partial = copy_and_update(_no_nans_float_conf,
+_float_conf_partial = copy_and_update(_float_conf,
         {'spark.rapids.sql.hashAgg.replaceMode': 'partial'})
 
-_no_nans_float_conf_final = copy_and_update(_no_nans_float_conf,
-        {'spark.rapids.sql.hashAgg.replaceMode': 'final'})
-
-_nans_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
-                    'spark.rapids.sql.hasNans': 'true',
-                    'spark.rapids.sql.castStringToFloat.enabled': 'true'
-                   }
-
-_nans_float_conf_partial = copy_and_update(_nans_float_conf,
-        {'spark.rapids.sql.hashAgg.replaceMode': 'partial'})
-
-_nans_float_conf_final = copy_and_update(_nans_float_conf,
+_float_conf_final = copy_and_update(_float_conf,
         {'spark.rapids.sql.hashAgg.replaceMode': 'final'})
 
 # The input lists or schemas that are used by StructGen.
@@ -239,10 +227,8 @@ def get_params(init_list, marked_params=[]):
     return list
 
 
-# Run these tests with in 3 modes, all on the GPU, only partial aggregates on GPU and
-# only final aggregates on the GPU with conf for spark.rapids.sql.hasNans set to false/true
-_confs = [_no_nans_float_conf, _no_nans_float_smallbatch_conf, _no_nans_float_conf_final, _no_nans_float_conf_partial]
-_confs_with_nans = [_nans_float_conf, _nans_float_conf_partial, _nans_float_conf_final]
+# Run these tests with in 4 modes, all on the GPU
+_confs = [_float_conf, _float_smallbatch_conf, _float_conf_final, _float_conf_partial]
 
 # Pytest marker for list of operators allowed to run on the CPU,
 # esp. useful in partial and final only modes.
@@ -257,14 +243,9 @@ _excluded_operators_marker = pytest.mark.allow_non_gpu(
     'PivotFirst', 'GetArrayItem', 'ShuffleExchangeExec', 'HashPartitioning')
 
 params_markers_for_confs = [
-    (_no_nans_float_conf_partial, [_excluded_operators_marker]),
-    (_no_nans_float_conf_final, [_excluded_operators_marker])
-]
-
-params_markers_for_confs_nans = [
-    (_nans_float_conf_partial, [_excluded_operators_marker]),
-    (_nans_float_conf_final, [_excluded_operators_marker]),
-    (_nans_float_conf, [_excluded_operators_marker])
+    (_float_conf_partial, [_excluded_operators_marker]),
+    (_float_conf_final, [_excluded_operators_marker]),
+    (_float_conf, [_excluded_operators_marker])
 ]
 
 _grpkey_small_decimals = [
@@ -399,7 +380,7 @@ def test_hash_grpby_sum_full_decimal(data_gen, conf):
 @ignore_order
 @incompat
 @pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens + [DecimalGen(precision=36, scale=5)], ids=idfn)
-@pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_reduction_sum(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen, length=100).selectExpr("SUM(a)"),
@@ -410,7 +391,7 @@ def test_hash_reduction_sum(data_gen, conf):
 @incompat
 @pytest.mark.parametrize('data_gen', numeric_gens + decimal_gens + [
     DecimalGen(precision=38, scale=0), DecimalGen(precision=38, scale=-10)], ids=idfn)
-@pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_reduction_sum_full_decimal(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen, length=100).selectExpr("SUM(a)"),
@@ -444,7 +425,7 @@ def test_hash_grpby_avg(data_gen, conf):
 def test_hash_avg_nulls_partial_only(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=2).agg(f.avg('b')),
-        conf=_no_nans_float_conf_partial
+        conf=_float_conf_partial
     )
 
 @approximate_float
@@ -484,7 +465,7 @@ _pivot_gens_with_decimals = _init_list_with_nans_and_no_nans + [
 @ignore_order(local=True)
 @incompat
 @pytest.mark.parametrize('data_gen', _pivot_gens_with_decimals, ids=idfn)
-@pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_pivot(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -497,7 +478,7 @@ def test_hash_grpby_pivot(data_gen, conf):
 @ignore_order(local=True)
 @incompat
 @pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
-@pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_grpby_pivot_without_nans(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -510,7 +491,7 @@ def test_hash_grpby_pivot_without_nans(data_gen, conf):
 @ignore_order(local=True)
 @incompat
 @pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
-@pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_multiple_grpby_pivot(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -523,7 +504,7 @@ def test_hash_multiple_grpby_pivot(data_gen, conf):
 @ignore_order(local=True)
 @incompat
 @pytest.mark.parametrize('data_gen', _init_list_no_nans, ids=idfn)
-@pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_reduction_pivot_without_nans(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -536,7 +517,7 @@ def test_hash_reduction_pivot_without_nans(data_gen, conf):
 @ignore_order(local=True)
 @incompat
 @pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
-@pytest.mark.parametrize('conf', get_params(_confs_with_nans, params_markers_for_confs_nans), ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_hash_reduction_pivot_with_nans(data_gen, conf):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=100)
@@ -559,7 +540,7 @@ def test_hash_pivot_groupby_duplicates_fallback(data_gen):
             .pivot('b', ['10.0', '10.0'])
             .agg(f.sum('c')),
         "PivotFirst",
-        conf=_nans_float_conf)
+        conf=_float_conf)
 
 _repeat_agg_column_for_collect_op = [
     RepeatSeqGen(BooleanGen(), length=15),
@@ -702,7 +683,7 @@ def test_hash_groupby_collect_set_on_nested_type(data_gen):
 @allow_non_gpu("ProjectExec", "SortArray")
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_nested, ids=idfn)
 def test_hash_groupby_collect_set_on_nested_array_type(data_gen):
-    conf = copy_and_update(_no_nans_float_conf, {
+    conf = copy_and_update(_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
         "spark.rapids.sql.castDecimalToString.enabled": "true",
         "spark.rapids.sql.expression.SortArray": "false"
@@ -744,7 +725,7 @@ def test_hash_reduction_collect_set_on_nested_type(data_gen):
 @allow_non_gpu("ProjectExec", "SortArray")
 @pytest.mark.parametrize('data_gen', _gen_data_for_collect_set_op_nested, ids=idfn)
 def test_hash_reduction_collect_set_on_nested_array_type(data_gen):
-    conf = copy_and_update(_no_nans_float_conf, {
+    conf = copy_and_update(_float_conf, {
         "spark.rapids.sql.castFloatToString.enabled": "true",
         "spark.rapids.sql.castDecimalToString.enabled": "true",
         "spark.rapids.sql.expression.SortArray": "false"
@@ -1022,7 +1003,7 @@ def test_hash_multiple_filters(data_gen, conf):
 @pytest.mark.parametrize('data_gen', [_grpkey_floats_with_nan_zero_grouping_keys,
                                       _grpkey_doubles_with_nan_zero_grouping_keys], ids=idfn)
 def test_hash_agg_with_nan_keys(data_gen):
-    local_conf = copy_and_update(_no_nans_float_conf, {'spark.sql.legacy.allowParameterlessCount': 'true'})
+    local_conf = copy_and_update(_float_conf, {'spark.sql.legacy.allowParameterlessCount': 'true'})
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, data_gen, length=1024),
         "hash_agg_table",
@@ -1042,7 +1023,7 @@ def test_hash_agg_with_nan_keys(data_gen):
 @pytest.mark.parametrize('data_gen',  [_grpkey_structs_with_non_nested_children,
                                        _grpkey_nested_structs], ids=idfn)
 def test_hash_agg_with_struct_keys(data_gen):
-    local_conf = copy_and_update(_no_nans_float_conf, {'spark.sql.legacy.allowParameterlessCount': 'true'})
+    local_conf = copy_and_update(_float_conf, {'spark.sql.legacy.allowParameterlessCount': 'true'})
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, data_gen, length=1024),
         "hash_agg_table",
@@ -1064,7 +1045,7 @@ def test_hash_agg_with_struct_keys(data_gen):
                'ShuffleExchangeExec', 'HashPartitioning')
 @pytest.mark.parametrize('data_gen',  [_grpkey_nested_structs_with_array_child], ids=idfn)
 def test_hash_agg_with_struct_of_array_fallback(data_gen):
-    local_conf = copy_and_update(_no_nans_float_conf, {'spark.sql.legacy.allowParameterlessCount': 'true'})
+    local_conf = copy_and_update(_float_conf, {'spark.sql.legacy.allowParameterlessCount': 'true'})
     assert_cpu_and_gpu_are_equal_sql_with_capture(
         lambda spark : gen_df(spark, data_gen, length=100),
         'select a, '
@@ -1090,7 +1071,7 @@ def test_count_distinct_with_nan_floats(data_gen):
         lambda spark : gen_df(spark, data_gen, length=1024),
         "hash_agg_table",
         'select a, count(distinct b) as count_distinct_bees from hash_agg_table group by a',
-        _no_nans_float_conf)
+        _float_conf)
 
 # TODO: Literal tests
 
@@ -1116,7 +1097,7 @@ def test_first_last_reductions_nested_types(data_gen):
 
 @pytest.mark.parametrize('data_gen', _all_basic_gens_with_all_nans_cases, ids=idfn)
 def test_generic_reductions(data_gen):
-    local_conf = copy_and_update(_no_nans_float_conf, {'spark.sql.legacy.allowParameterlessCount': 'true'})
+    local_conf = copy_and_update(_float_conf, {'spark.sql.legacy.allowParameterlessCount': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
         # Coalesce and sort are to make sure that first and last, which are non-deterministic
         # become deterministic
@@ -1161,7 +1142,7 @@ def test_arithmetic_reductions(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr(
                 'sum(a)',
                 'avg(a)'),
-            conf = _no_nans_float_conf)
+            conf = _float_conf)
 
 @pytest.mark.parametrize('data_gen',
                          all_basic_gens + decimal_gens + _nested_gens,
@@ -1170,7 +1151,7 @@ def test_collect_list_reductions(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         # coalescing because collect_list is not deterministic
         lambda spark: unary_op_df(spark, data_gen).coalesce(1).selectExpr('collect_list(a)'),
-        conf=_no_nans_float_conf)
+        conf=_float_conf)
 
 _no_neg_zero_all_basic_gens = [byte_gen, short_gen, int_gen, long_gen,
         # -0.0 cannot work because of -0.0 == 0.0 in cudf for distinct and
@@ -1187,7 +1168,7 @@ _struct_only_nested_gens = [all_basic_struct_gen,
 def test_collect_set_reductions(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).selectExpr('sort_array(collect_set(a))'),
-        conf=_no_nans_float_conf)
+        conf=_float_conf)
 
 def test_collect_empty():
     assert_gpu_and_cpu_are_equal_collect(
@@ -1852,21 +1833,21 @@ def test_min_max_for_single_level_struct(data_gen):
         lambda spark : gen_df(spark, df_gen),
         "hash_agg_table",
         'select b, max(a) from hash_agg_table group by b',
-        _no_nans_float_conf)
+        _float_conf)
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, df_gen),
         "hash_agg_table",
         'select max(a) from hash_agg_table',
-        _no_nans_float_conf)
+        _float_conf)
 
     # test min
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, df_gen, length=1024),
         "hash_agg_table",
         'select b, min(a) from hash_agg_table group by b',
-        _no_nans_float_conf)
+        _float_conf)
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, df_gen, length=1024),
         "hash_agg_table",
         'select min(a) from hash_agg_table',
-        _no_nans_float_conf)
+        _float_conf)
