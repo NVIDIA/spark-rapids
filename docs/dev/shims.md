@@ -235,7 +235,7 @@ $ dijkstra -d -p "com.nvidia.spark.rapids.GpuColumnVector (spark3xx-common)" mer
         "org.apache.spark.sql.rapids.GpuFileSourceScanExec (spark330)"  [dist=5.000,
         "com.nvidia.spark.rapids.GpuExec (spark330)"    [dist=3.000,
 ...
-```bash
+```
 
 RegexReplace could be externalized safely:
 ```bash
