@@ -300,12 +300,18 @@ object GpuShuffleExchangeExecBase {
                 batch.close()
                 batch = iter.next()
               }
-              partitioned = getParts(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
-              partitioned.foreach(batches => {
-                metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
-              })
-              metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
-              at = 0
+              // Get a non-empty batch or the last batch. So still need to
+              // check if it is empty for the later case.
+              if (batch.numRows > 0) {
+                partitioned = getParts(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
+                partitioned.foreach(batches => {
+                  metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
+                })
+                metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
+                at = 0
+              } else {
+                batch.close()
+              }
             }
           }
 
