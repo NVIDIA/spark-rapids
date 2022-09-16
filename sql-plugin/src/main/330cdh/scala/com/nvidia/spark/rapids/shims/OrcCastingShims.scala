@@ -16,8 +16,14 @@
 
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids._
+import ai.rapids.cudf.{ColumnView, DType}
+import com.nvidia.spark.rapids.GpuOrcScan
 
-object SparkShimImpl extends Spark330PlusShims with Spark320until340Shims {
-  override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
+
+object OrcCastingShims {
+
+  def castIntegerToTimestamp(col: ColumnView, colType: DType): ColumnView = {
+    // For spark-321cdh, it consider the integers in `col` as milliseconds
+    GpuOrcScan.castIntegersToTimestamp(col, colType, DType.TIMESTAMP_MILLISECONDS)
+  }
 }

@@ -14,10 +14,13 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims;
 
-import com.nvidia.spark.rapids._
+import org.apache.spark.sql.connector.read.SupportsRuntimeFiltering;
 
-object SparkShimImpl extends Spark330PlusShims with Spark320until340Shims {
-  override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
+/**
+ * Shim interface for Apache Spark's SupportsRuntimeFiltering interface
+ * which was added in Spark 3.2.0.
+ */
+public interface ShimSupportsRuntimeFiltering extends SupportsRuntimeFiltering {
 }

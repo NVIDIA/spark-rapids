@@ -841,6 +841,7 @@
                                         <source>${project.basedir}/src/main/321+/scala</source>
                                         <source>${project.basedir}/src/main/330until340/scala</source>
                                         <source>${project.basedir}/src/main/330+/scala</source>
+                                        <source>${project.basedir}/src/main/330+-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/post320-treenode/scala</source>
                                     </sources>
                                 </configuration>
@@ -963,8 +964,11 @@
                                         <source>${project.basedir}/src/main/330cdh/scala</source>
                                         <source>${project.basedir}/src/main/311+-nondb/scala</source>
                                         <source>${project.basedir}/src/main/320+/scala</source>
+                                        <source>${project.basedir}/src/main/311until340-all/scala</source>
                                         <source>${project.basedir}/src/main/320+-nondb/scala</source>
+                                        <source>${project.basedir}/src/main/320until340-all/scala</source>
                                         <source>${project.basedir}/src/main/321+/scala</source>
+                                        <source>${project.basedir}/src/main/330until340/scala</source>
                                         <source>${project.basedir}/src/main/330+/scala</source>
                                         <source>${project.basedir}/src/main/post320-treenode/scala</source>
                                     </sources>
@@ -988,6 +992,12 @@
                 <repository>
                     <id>cloudera-repo</id>
                     <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+                    <releases>
+                        <enabled>false</enabled>
+                    </releases>
+                    <snapshots>
+                        <enabled>true</enabled>
+                    </snapshots>
                 </repository>
             </repositories>
             <modules>
@@ -1095,7 +1105,7 @@
         <spark330.version>3.3.0</spark330.version>
         <spark331.version>3.3.1-SNAPSHOT</spark331.version>
         <spark340.version>3.4.0-SNAPSHOT</spark340.version>
-        <spark330cdh.version>3.3.0.3.3.7180.0-SNAPSHOT</spark330cdh.version>
+        <spark330cdh.version>3.3.0.3.3.7180.0-274</spark330cdh.version>
         <mockito.version>3.6.0</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
         <maven.jar.plugin.version>3.2.0</maven.jar.plugin.version>
