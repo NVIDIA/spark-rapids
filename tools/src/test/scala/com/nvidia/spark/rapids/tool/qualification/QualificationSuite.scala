@@ -28,7 +28,7 @@ import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
 import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
-import org.apache.spark.sql.functions.{desc,udf}
+import org.apache.spark.sql.functions.{desc, hex, udf}
 import org.apache.spark.sql.rapids.tool.{AppBase, AppFilterImpl, ToolUtils}
 import org.apache.spark.sql.rapids.tool.qualification.{QualificationAppInfo, QualificationSummaryInfo}
 import org.apache.spark.sql.types._
@@ -709,6 +709,34 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(sumInfo.head.executorCpuTimePercent === listenerCpuTimePercent)
       }
     }
+  }
+
+  test("running qualification print unsupported Execs and Exprs") {
+    val qualApp = new RunningQualificationApp()
+    ToolTestUtils.runAndCollect("streaming") { spark =>
+      val listener = qualApp.getEventListener
+      spark.sparkContext.addSparkListener(listener)
+      import spark.implicits._
+      val df1 = spark.sparkContext.parallelize(List(10, 20, 30, 40)).toDF
+      df1.filter(hex($"value") === "A") // hex is not supported in GPU yet.
+    }
+    val sumOut = qualApp.getSummary()
+    val detailedOut = qualApp.getDetailed()
+    assert(sumOut.nonEmpty)
+    assert(sumOut.startsWith("|") && sumOut.endsWith("|\n"))
+    assert(detailedOut.nonEmpty)
+    assert(detailedOut.startsWith("|") && detailedOut.endsWith("|\n"))
+
+    val csvSumOut = qualApp.getSummary(",", false)
+    val rowsSumOut = csvSumOut.split("\n")
+    val headers = rowsSumOut(0).split(",")
+    val values = rowsSumOut(1).split(",")
+    val expectedExecs = "Filter;SerializeFromObject;Scan" // Unsupported Execs
+    val expectedExprs = "hex" //Unsupported Exprs
+    val unsupportedExecs = values(values.length - 2) // index of unsupportedExecs
+    val unsupportedExprs = values(values.length - 1) // index of unsupportedExprs
+    assert(expectedExecs == unsupportedExecs)
+    assert(expectedExprs == unsupportedExprs)
   }
 
   test("running qualification app join") {

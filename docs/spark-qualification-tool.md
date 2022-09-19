@@ -458,6 +458,9 @@ The report represents the entire app execution, including unsupported operators 
 23. _App Duration Estimated_: True or False indicates if we had to estimate the application duration.
     If we had to estimate it, the value will be `True` and it means the event log was missing the application finished
     event, so we will use the last job or sql execution time we find as the end time used to calculate the duration.
+24. _Unsupported Execs_: reports all the execs that are not supported by GPU in this application. Note that an Exec name  may be
+    printed in this column if all the expressions within this Exec is not supported by GPU.
+25. _Unsupported_Expressions_: reports all expressions not supported by GPU in this application.
 24. _Read Schema_: shows the datatypes and read formats. This field is only listed when the argument `--report-read-schema`
     is passed to the CLI.
 
@@ -707,16 +710,16 @@ Note: the duration(s) reported are in milliseconds.
 Sample output in text:
 
 ```
-+------------+--------------+----------+----------+-------------+-----------+-----------+-----------+--------------------+
-|  App Name  |    App ID    |    App   |  SQL DF  |     GPU     | Estimated | Estimated | Estimated |  Recommendation    |
-|            |              | Duration | Duration | Opportunity |    GPU    |    GPU    |    GPU    |                    |
-|            |              |          |          |             |  Duration |  Speedup  |    Time   |                    |
-|            |              |          |          |             |           |           |   Saved   |                    |
-+============+==============+==========+==========+=============+===========+===========+===========+====================+
-| appName-01 | app-ID-01-01 |    898429|    879422|       879422|  273911.92|       3.27|  624517.06|Strongly Recommended|
-+------------+--------------+----------+----------+-------------+-----------+-----------+-----------+--------------------+
-| appName-02 | app-ID-02-01 |      9684|      1353|         1353|    8890.09|       1.08|      793.9|     Not Recommended|
-+------------+--------------+----------+----------+-------------+-----------+-----------+-----------+--------------------+
++------------+--------------+----------+----------+-------------+-----------+-----------+-----------+--------------------+-------------------------------------------------------+
+|  App Name  |    App ID    |    App   |  SQL DF  |     GPU     | Estimated | Estimated | Estimated |  Recommendation    |      Unsupported Execs        |Unsupported Expressions|
+|            |              | Duration | Duration | Opportunity |    GPU    |    GPU    |    GPU    |                    |                               |                       |
+|            |              |          |          |             |  Duration |  Speedup  |    Time   |                    |                               |                       |
+|            |              |          |          |             |           |           |   Saved   |                    |                               |                       |
++============+==============+==========+==========+=============+===========+===========+===========+====================+=======================================================+
+| appName-01 | app-ID-01-01 |    898429|    879422|       879422|  273911.92|       3.27|  624517.06|Strongly Recommended|                               |                       |
++------------+--------------+----------+----------+-------------+-----------+-----------+-----------+--------------------+-------------------------------------------------------+
+| appName-02 | app-ID-02-01 |      9684|      1353|         1353|    8890.09|       1.08|      793.9|     Not Recommended|Filter;SerializeFromObject;Scan|           hex         |
++------------+--------------+----------+----------+-------------+-----------+-----------+-----------+--------------------+-------------------------------------------------------+
 ```
 
 In the above example, two application event logs were analyzed. “app-ID-01-01” is "_Strongly Recommended_"
