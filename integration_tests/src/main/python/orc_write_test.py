@@ -41,7 +41,9 @@ orc_write_array_gens_sample = [ArrayGen(sub_gen) for sub_gen in orc_write_basic_
 
 orc_write_basic_map_gens = [simple_string_to_string_map_gen] + [MapGen(f(nullable=False), f()) for f in [
     BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen,
-    lambda nullable=True: TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc), nullable=nullable),
+    # Using timestamps from 1970 to work around a cudf ORC bug
+    # https://github.com/NVIDIA/spark-rapids/issues/140.
+    lambda nullable=True: TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc), nullable=nullable),
     lambda nullable=True: DateGen(start=date(1590, 1, 1), nullable=nullable),
     lambda nullable=True: DecimalGen(precision=15, scale=1, nullable=nullable),
     lambda nullable=True: DecimalGen(precision=36, scale=5, nullable=nullable)]]
