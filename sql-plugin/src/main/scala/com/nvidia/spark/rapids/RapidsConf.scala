@@ -1071,6 +1071,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_RANGE_WINDOW_DECIMAL: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.window.range.decimal.enabled")
+    .doc("When set to false, this disables the range window acceleration for the " +
+      "DECIMAL type order-by column")
+    .booleanConf
+    .createWithDefault(true)
+
   val ENABLE_REGEXP = conf("spark.rapids.sql.regexp.enabled")
     .doc("Specifies whether supported regular expressions will be evaluated on the GPU. " +
       "Unsupported expressions will fall back to CPU. However, there are some known edge cases " +
@@ -2078,6 +2085,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowIntEnabled: Boolean = get(ENABLE_RANGE_WINDOW_INT)
 
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
+
+  lazy val isRangeWindowDecimalEnabled: Boolean = get(ENABLE_RANGE_WINDOW_DECIMAL)
 
   lazy val isRegExpEnabled: Boolean = get(ENABLE_REGEXP)
 
