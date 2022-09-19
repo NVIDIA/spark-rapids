@@ -370,7 +370,7 @@ abstract class MultiFileCloudPartitionReaderBase(
       if (alluxioReplacementTaskTime) {
         AlluxioUtils.updateFilesTaskTimeIfAlluxio(origFiles, alluxionPathReplacementMap)
       } else {
-        // was done at CONVERT_TIME, Need to recalculate the original path to set for
+        // was done at CONVERT_TIME, need to recalculate the original path to set for
         // input_file_name
         AlluxioUtils.getOrigPathFromReplaced(origFiles, alluxionPathReplacementMap.get)
       }

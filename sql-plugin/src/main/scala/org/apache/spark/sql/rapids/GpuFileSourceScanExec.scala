@@ -76,6 +76,8 @@ case class GpuFileSourceScanExec(
     extends GpuDataSourceScanExec with GpuExec {
   import GpuMetric._
 
+  private val isAlluxioReplacementTaskTime = rapidsConf.isAlluxioReplacementAlgoTaskTime
+
   // this is set only when we either explicitly replaced a path for CONVERT_TIME
   // or when TASK_TIME if one of the paths will be replaced
   private var alluxionPathReplacementMap: Option[Map[String, String]] = None
@@ -577,12 +579,22 @@ case class GpuFileSourceScanExec(
 
     if (isPerFileReadEnabled) {
       logInfo("Using the original per file parquet reader")
-      // TODO - this is weird, if we are using the CONVERT_TIME alluxio replacement, here we are actually
-      // to change and file partitions should be the original paths, not hte Alluxio ones so
-      // that input_file_name shows up properly,then in the PartitionReaderFactory it handles
+      // this is weird, if we are using the CONVERT_TIME alluxio replacement, here we are going
+      // to change the file partitions to be the original paths, not the Alluxio ones so
+      // that input_file_name shows up properly, then in the PartitionReaderFactory it handles
       // really using the Alluxio path
-      if ()
-      SparkShimImpl.getFileScanRDD(relation.sparkSession, readFile.get, partitions,
+      val partsToUse = if (isAlluxioReplacementTaskTime || !alluxionPathReplacementMap.isDefined) {
+        partitions
+      } else {
+        partitions.map { partition =>
+          val fileAndOrig = AlluxioUtils.getOrigPathFromReplaced(partition.files,
+            alluxionPathReplacementMap.get)
+          // if the filename was replaced get the original, otherwise just the filename here
+          val origFiles = fileAndOrig.map( x => x._2.getOrElse(x._1))
+          FilePartition(partition.index, origFiles)
+        }
+      }
+      SparkShimImpl.getFileScanRDD(relation.sparkSession, readFile.get, partsToUse,
         requiredSchema)
     } else {
       // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code

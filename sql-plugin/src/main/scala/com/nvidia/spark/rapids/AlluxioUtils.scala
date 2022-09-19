@@ -438,12 +438,10 @@ object AlluxioUtils extends Logging {
     }
   }
 
-  // reverse the replacePathIfNeeded
-  def getOrigPathFromReplaced(
-      pfs: Array[PartitionedFile],
+  // reverse the replacePathIfNeeded, returns a tuple of the file passed in and then if it
+  // was replaced the original file
+  def getOrigPathFromReplaced(pfs: Array[PartitionedFile],
       pathsToReplace: Map[String,String]): Array[(PartitionedFile, Option[PartitionedFile])] = {
-    // pathsToReplace can't contain the regex in this case because we have to know exactly what
-    // to put back
     pfs.map { pf =>
       val file = pf.filePath
       // pathsToReplace contain strings of exact paths to replace
