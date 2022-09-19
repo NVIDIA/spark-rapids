@@ -173,9 +173,9 @@ object MultiFileReaderUtils {
       multiThreadEnabled: Boolean,
       files: Array[String],
       cloudSchemes: Set[String],
-      anyAlluxioMounted: Boolean = false): Boolean =
+      anyAlluxioPathsReplaced: Boolean = false): Boolean =
   !coalescingEnabled || (multiThreadEnabled &&
-    (!anyAlluxioMounted && hasPathInCloud(files, cloudSchemes)))
+    (!anyAlluxioPathsReplaced && hasPathInCloud(files, cloudSchemes)))
 }
 
 /**
@@ -190,7 +190,8 @@ abstract class MultiFilePartitionReaderFactoryBase(
     @transient sqlConf: SQLConf,
     broadcastedConf: Broadcast[SerializableConfiguration],
     @transient rapidsConf: RapidsConf,
-    anyAlluxioMounted: Boolean = false) extends PartitionReaderFactory with Arm with Logging {
+    alluxionPathReplacementMap: Option[Map[String, String]] = None)
+  extends PartitionReaderFactory with Arm with Logging {
 
   protected val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
   protected val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
@@ -265,7 +266,7 @@ abstract class MultiFilePartitionReaderFactoryBase(
   /** for testing */
   private[rapids] def useMultiThread(filePaths: Array[String]): Boolean =
     MultiFileReaderUtils.useMultiThreadReader(canUseCoalesceFilesReader,
-      canUseMultiThreadReader, filePaths, allCloudSchemes, anyAlluxioMounted)
+      canUseMultiThreadReader, filePaths, allCloudSchemes, alluxionPathReplacementMap.isDefined)
 }
 
 /**
@@ -349,7 +350,8 @@ abstract class MultiFileCloudPartitionReaderBase(
     filters: Array[Filter],
     execMetrics: Map[String, GpuMetric],
     ignoreCorruptFiles: Boolean = false,
-    alluxioRegexTaskTime: Option[String] = None)
+    alluxionPathReplacementMap: Option[Map[String, String]] = None,
+    alluxioReplacementTaskTime: Boolean = false)
   extends FilePartitionReaderBase(conf, execMetrics) {
 
   private var filesToRead = 0
@@ -360,8 +362,22 @@ abstract class MultiFileCloudPartitionReaderBase(
   private[this] val inputMetrics = Option(TaskContext.get).map(_.taskMetrics().inputMetrics)
       .getOrElse(TrampolineUtil.newInputMetrics())
 
-  private val files: Array[(PartitionedFile, Option[PartitionedFile])] =
-    AlluxioUtils.updateFilesTaskTimeIfAlluxio(origFiles,  alluxioRegexTaskTime)
+  // contains the actual file path to read and then an optional one if its ready from
+  // Alluxio transparent to the user so that we return the original non-Alluxio one for
+  // input_file_name
+  private val files: Array[(PartitionedFile, Option[PartitionedFile])] = {
+    if (alluxionPathReplacementMap.isDefined) {
+      if (alluxioReplacementTaskTime) {
+        AlluxioUtils.updateFilesTaskTimeIfAlluxio(origFiles, alluxionPathReplacementMap)
+      } else {
+        // was done at CONVERT_TIME, Need to recalculate the original path to set for
+        // input_file_name
+        AlluxioUtils.getOrigPathFromReplaced(origFiles, alluxionPathReplacementMap.get)
+      }
+    } else {
+      origFiles.map((_, None))
+    }
+  }
 
   private def initAndStartReaders(): Unit = {
     // limit the number we submit at once according to the config if set

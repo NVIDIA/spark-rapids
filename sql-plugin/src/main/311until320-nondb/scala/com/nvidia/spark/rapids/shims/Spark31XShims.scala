@@ -71,23 +71,6 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
     fileIndex.allFiles()
   }
 
-  override def alluxioReplacePathsPartitionDirectory(
-      pd: PartitionDirectory,
-      replaceFunc: Option[Path => Path]): (Seq[FileStatus], PartitionDirectory) = {
-    val updatedFileStatus = pd.files.map { f =>
-      val replaced = replaceFunc.get(f.getPath)
-      // Alluxio caches the entire file, so the size should be the same.
-      // Just hardcode block replication to 1 since we don't know what it really
-      // is in Alluxio and its not used by splits. The modification time shouldn't be
-      // affected by Alluxio. Blocksize is also not used. Note that we will not
-      // get new block locations with this so if Alluxio would return new ones
-      // this isn't going to get them. From my current experiments, Alluxio is not
-      // returning the block locations of the cached blocks anyway.
-      new FileStatus(f.getLen, f.isDirectory, 1, f.getBlockSize, f.getModificationTime, replaced)
-    }
-    (updatedFileStatus, PartitionDirectory(pd.values, updatedFileStatus))
-  }
-
   def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
     mode.transform(rows)
 
@@ -368,18 +351,8 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
 
-            val location = if (conf.isAlluxioReplacementAlgoConvertTime) {
-              AlluxioUtils.replacePathIfNeeded(
-                conf,
-                wrapped.relation,
-                partitionFilters,
-                wrapped.dataFilters)
-            } else {
-              wrapped.relation.location
-            }
-
             val newRelation = HadoopFsRelation(
-              location,
+              wrapped.relation.location,
               wrapped.relation.partitionSchema,
               wrapped.relation.dataSchema,
               wrapped.relation.bucketSpec,

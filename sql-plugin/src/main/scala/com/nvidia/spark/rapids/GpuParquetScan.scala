@@ -935,9 +935,9 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     @transient rapidsConf: RapidsConf,
     metrics: Map[String, GpuMetric],
     queryUsesInputFile: Boolean,
-    anyAlluxioMounted: Boolean)
+    alluxionPathReplacementMap: Option[Map[String, String]])
   extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf,
-    rapidsConf, anyAlluxioMounted) {
+    rapidsConf, alluxionPathReplacementMap) {
 
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
@@ -950,15 +950,13 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   private val filterHandler = GpuParquetFileFilterHandler(sqlConf)
   private val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
   private val numFilesFilterParallel = rapidsConf.numFilesFilterParallel
-  private val alluxioRegexTaskTime = if (rapidsConf.isAlluxioReplacementAlgoTaskTime) {
-    Some(rapidsConf.getAlluxioBucketRegex)
-  } else {
-    None
-  }
+  private val alluxioReplacementTaskTime = rapidsConf.isAlluxioReplacementAlgoTaskTime
 
-  // we can't use the coalescing files reader when InputFileName, InputFileBlockStart,
+  // We can't use the coalescing files reader when InputFileName, InputFileBlockStart,
   // or InputFileBlockLength because we are combining all the files into a single buffer
-  // and we don't know which file is associated with each row.
+  // and we don't know which file is associated with each row. If this changes we need to
+  // make sure the Alluxio path replacement also handles setting the input file name to
+  // the non-Alluxio path like the multi-threaded reader does.
   override val canUseCoalesceFilesReader: Boolean =
     rapidsConf.isParquetCoalesceFileReadEnabled && !(queryUsesInputFile || ignoreCorruptFiles)
 
@@ -980,7 +978,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     new MultiFileCloudParquetPartitionReader(conf, files, filterFunc, isCaseSensitive,
       debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       metrics, partitionSchema, numThreads, maxNumFileProcessed,
-      ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId, alluxioRegexTaskTime)
+      ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId, alluxionPathReplacementMap,
+      alluxioReplacementTaskTime)
   }
 
   private def filterBlocksForCoalescingReader(
@@ -1042,8 +1041,9 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   override def buildBaseColumnarReaderForCoalescing(
       origFiles: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
-    // update the file paths for Alluxio if needed
-    val files = AlluxioUtils.updateFilesTaskTimeIfAlluxio(files, alluxioRegexTaskTime).map(_._1)
+    // update the file paths for Alluxio if needed, the coalescing reader doesn't support
+    // input_file_name so no need to track what the non Alluxio file name is
+    val files = AlluxioUtils.updateFilesTaskTimeIfAlluxio(files, alluxionPathReplacementMap).map(_._1)
     val clippedBlocks = ArrayBuffer[ParquetSingleDataBlockMeta]()
     val startTime = System.nanoTime()
     val metaAndFilesArr = if (numFilesFilterParallel > 0) {
@@ -1114,11 +1114,6 @@ case class GpuParquetPartitionReaderFactory(
 
   private val filterHandler = GpuParquetFileFilterHandler(sqlConf)
   private val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
-  private val alluxioRegexTaskTime = if (rapidsConf.isAlluxioReplacementAlgoTaskTime) {
-    Some(rapidsConf.getAlluxioBucketRegex)
-  } else {
-    None
-  }
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
@@ -1130,8 +1125,7 @@ case class GpuParquetPartitionReaderFactory(
       origPartitionedFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
     // Replace the file path with Alluxio one if needed. Replacing at this point so we
     // leave the input file name reported as the original one.
-    val partitionedFile = AlluxioUtils.updateFilesTaskTimeIfAlluxio(Array(origPartitionedFile),
-      alluxioRegexTaskTime).head._1
+    val partitionedFile = AlluxioUtils.updateFilesTaskTimeIfAlluxio(Array(origPartitionedFile)).head._1
     val reader = new PartitionReaderWithBytesRead(buildBaseColumnarParquetReader(partitionedFile))
     ColumnarPartitionReaderWithPartitionValues.newReader(partitionedFile, reader, partitionSchema)
   }
@@ -1759,9 +1753,11 @@ class MultiFileCloudParquetPartitionReader(
     ignoreMissingFiles: Boolean,
     ignoreCorruptFiles: Boolean,
     useFieldId: Boolean,
-    alluxioRegexTaskTime: Option[String])
+    alluxionPathReplacementMap: Option[Map[String, String]],
+    alluxioReplacementTaskTime: Boolean)
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, null,
-    execMetrics, ignoreCorruptFiles, alluxioRegexTaskTime) with ParquetPartitionReaderBase {
+    execMetrics, ignoreCorruptFiles, alluxionPathReplacementMap, alluxioReplacementTaskTime)
+    with ParquetPartitionReaderBase {
 
   private case class HostMemoryEmptyMetaData(
       override val partitionedFile: PartitionedFile,
