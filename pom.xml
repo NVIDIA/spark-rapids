@@ -947,7 +947,7 @@
             <properties>
                 <spark.version>${spark330cdh.version}</spark.version>
                 <spark.test.version>${spark330cdh.version}</spark.test.version>
-                <parquet.hadoop.version>1.10.99.7.1.8.0-SNAPSHOT</parquet.hadoop.version>
+                <parquet.hadoop.version>1.10.99.7.1.8.0-801</parquet.hadoop.version>
             </properties>
             <build>
                 <plugins>
@@ -993,7 +993,7 @@
                     <id>cloudera-repo</id>
                     <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
                     <releases>
-                        <enabled>false</enabled>
+                        <enabled>true</enabled>
                     </releases>
                     <snapshots>
                         <enabled>true</enabled>

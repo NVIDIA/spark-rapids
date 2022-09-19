@@ -241,6 +241,9 @@
                     <value>330cdh</value>
                 </property>
             </activation>
+            <properties>
+                 <included_buildvers>${buildver}</included_buildvers>
+            </properties>
             <dependencies>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
