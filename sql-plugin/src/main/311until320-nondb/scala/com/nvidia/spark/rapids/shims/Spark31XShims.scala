@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.shims
 import scala.collection.mutable.ListBuffer
 
 import com.nvidia.spark.rapids._
-import org.apache.hadoop.fs.{FileStatus, Path}
+import org.apache.hadoop.fs.FileStatus
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
