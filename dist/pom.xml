@@ -70,6 +70,9 @@
         <premergeUT2.buildvers>
             330
         </premergeUT2.buildvers>
+        <premergeUTF8.buildvers>
+            320
+        </premergeUTF8.buildvers>
         <dist.jar.name>${project.build.directory}/${project.build.finalName}-${cuda.version}.jar</dist.jar.name>
     </properties>
     <profiles>
@@ -103,6 +106,14 @@
             <properties>
                 <included_buildvers>
                     ${premergeUT2.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
+            <id>premergeUTF8</id>
+            <properties>
+                <included_buildvers>
+                    ${premergeUTF8.buildvers}
                 </included_buildvers>
             </properties>
         </profile>
