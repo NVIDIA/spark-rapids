@@ -73,7 +73,7 @@ object GpuPartitioningUtils extends SQLConfHelper {
     val recursiveFileLookup = parameters.getOrElse("recursiveFileLookup", "false").toBoolean
 
     if (recursiveFileLookup) {
-      (PartitionSpec.emptySpec, Seq.empty)
+      (PartitionSpec.emptySpec, None)
     } else {
       val caseInsensitiveOptions = CaseInsensitiveMap(parameters)
       val timeZoneId = caseInsensitiveOptions.get(DateTimeUtils.TIMEZONE_OPTION)
