@@ -1037,7 +1037,11 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       } catch (Exception e) {
         for (RapidsHostColumnVector hostCol : hostCols) {
           if (hostCol != null) {
-            hostCol.close();
+            try {
+              hostCol.close();
+            } catch (Exception suppressed) {
+              e.addSuppressed(suppressed);
+            }
           }
         }
         throw e;
