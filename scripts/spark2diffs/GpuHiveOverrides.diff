@@ -2,22 +2,31 @@
 <  * Copyright (c) 2020-2022, NVIDIA CORPORATION.
 ---
 >  * Copyright (c) 2022, NVIDIA CORPORATION.
-19c19,21
-< import com.nvidia.spark.rapids.{ExprRule, ShimLoader}
+19c19
+< import com.nvidia.spark.rapids.{DataWritingCommandRule, ExprRule, HiveProvider, ShimLoader}
 ---
-> import com.nvidia.spark.RapidsUDF
-> import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuOverrides, RapidsConf, RepeatingParamCheck, TypeSig}
-> import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
-21a24
-> import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
-26,27c29,30
+> import com.nvidia.spark.rapids.{DataWritingCommandRule, ExprRule, HiveProvider}
+27,28c27,28
 <       ShimLoader.loadClass("org.apache.spark.sql.hive.HiveSessionStateBuilder")
 <       ShimLoader.loadClass("org.apache.hadoop.hive.conf.HiveConf")
 ---
 >       getClass().getClassLoader.loadClass("org.apache.spark.sql.hive.HiveSessionStateBuilder")
 >       getClass().getClassLoader.loadClass("org.apache.hadoop.hive.conf.HiveConf")
-40c43,44
-<       ShimLoader.newHiveProvider().getExprs
+37c37
+<       ShimLoader.newHiveProvider()
 ---
->       // don't use the ShimLoader for Spark 2.x
->       new HiveProviderImpl().getExprs
+>       new HiveProviderImpl()
+41c41
+<             DataWritingCommandRule[_ <: DataWritingCommand]] = Map.empty
+---
+>           DataWritingCommandRule[_ <: DataWritingCommand]] = Map.empty
+53c53
+<       DataWritingCommandRule[_ <: DataWritingCommand]] = hiveProvider.getDataWriteCmds
+---
+>     DataWritingCommandRule[_ <: DataWritingCommand]] = hiveProvider.getDataWriteCmds
+56,57c56,57
+<    * Builds the expression rules that are specific to spark-hive Catalyst nodes
+<    * This will return an empty mapping if spark-hive is unavailable.
+---
+>    * Builds the rules that are specific to spark-hive Catalyst nodes. This will return an empty
+>    * mapping if spark-hive is unavailable.

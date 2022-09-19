@@ -80,6 +80,11 @@ sed -n  '/abstract class UnixTimeExprMeta/,/sealed trait TimeParserPolicy/{/seal
 diff $tmp_dir/UnixTimeExprMeta_new.out $tmp_dir/UnixTimeExprMeta_old.out > $tmp_dir/UnixTimeExprMeta.newdiff || true
 diff -c spark2diffs/UnixTimeExprMeta.diff $tmp_dir/UnixTimeExprMeta.newdiff
 
+sed -n  '/class FromUTCTimestampExprMeta/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/datetimeExpressionsMeta.scala > $tmp_dir/FromUTCTimestampExprMeta_new.out
+sed -n  '/class FromUTCTimestampExprMeta/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/datetimeExpressions.scala > $tmp_dir/FromUTCTimestampExprMeta_old.out
+diff $tmp_dir/FromUTCTimestampExprMeta_new.out $tmp_dir/FromUTCTimestampExprMeta_old.out > $tmp_dir/FromUTCTimestampExprMeta.newdiff || true
+diff -c spark2diffs/FromUTCTimestampExprMeta.diff $tmp_dir/FromUTCTimestampExprMeta.newdiff
+
 sed -n  '/object GpuToTimestamp/,/abstract class UnixTimeExprMeta/{/abstract class UnixTimeExprMeta/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/datetimeExpressionsMeta.scala > $tmp_dir/GpuToTimestamp_new.out
 sed -n  '/object GpuToTimestamp/,/val REMOVE_WHITESPACE_FROM_MONTH_DAY/{/val REMOVE_WHITESPACE_FROM_MONTH_DAY/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/datetimeExpressions.scala > $tmp_dir/GpuToTimestamp_old.out
 diff $tmp_dir/GpuToTimestamp_new.out $tmp_dir/GpuToTimestamp_old.out > $tmp_dir/GpuToTimestamp.newdiff || true
@@ -98,6 +103,10 @@ sed -n  '/class GpuRegExpExtractMeta/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/ma
 sed -n  '/class GpuRegExpExtractMeta/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringFunctions.scala > $tmp_dir/GpuRegExpExtractMeta_old.out
 diff $tmp_dir/GpuRegExpExtractMeta_new.out $tmp_dir/GpuRegExpExtractMeta_old.out > $tmp_dir/GpuRegExpExtractMeta.newdiff || true
 diff -c spark2diffs/GpuRegExpExtractMeta.diff $tmp_dir/GpuRegExpExtractMeta.newdiff
+
+diff ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/RegexComplexityEstimator.scala ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/RegexComplexityEstimator.scala
+
+diff ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuBatchUtils.scala ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuBatchUtils.scala
 
 sed -n  '/class SubstringIndexMeta/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringMeta.scala > $tmp_dir/SubstringIndexMeta_new.out
 sed -n  '/class SubstringIndexMeta/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringFunctions.scala > $tmp_dir/SubstringIndexMeta_old.out

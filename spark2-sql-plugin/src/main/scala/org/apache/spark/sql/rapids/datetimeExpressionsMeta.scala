@@ -108,6 +108,7 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
   }
 }
 
+// sealed trait TimeParserPolicy for rundiffspark2.sh
 class FromUTCTimestampExprMeta(
     expr: FromUTCTimestamp,
     override val conf: RapidsConf,

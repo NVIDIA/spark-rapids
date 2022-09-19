@@ -32,7 +32,7 @@
 >     throw new UnsupportedOperationException(s"Converting to GPU for $t is not supported yet")
 >   }
 > 
-49a81,83
-> 
+50a82,84
 >   def csvRead(cv: cudf.ColumnVector, dt: DataType): cudf.ColumnVector =
 >     throw new RuntimeException(s"Not support type $dt.")
+> 

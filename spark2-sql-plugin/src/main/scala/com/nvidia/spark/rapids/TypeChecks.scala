@@ -360,8 +360,7 @@ final class TypeSig private(
       case DoubleType => check.contains(TypeEnum.DOUBLE)
       case DateType => check.contains(TypeEnum.DATE)
       case TimestampType if check.contains(TypeEnum.TIMESTAMP) =>
-          TypeChecks.areTimestampsSupported(ZoneId.systemDefault()) &&
-          TypeChecks.areTimestampsSupported(SQLConf.get.sessionLocalTimeZone)
+          TypeChecks.areTimestampsSupported()
       case StringType => check.contains(TypeEnum.STRING)
       case dt: DecimalType =>
           check.contains(TypeEnum.DECIMAL) &&
@@ -422,8 +421,7 @@ final class TypeSig private(
         basicNotSupportedMessage(dataType, TypeEnum.DATE, check, isChild)
       case TimestampType =>
         if (check.contains(TypeEnum.TIMESTAMP) &&
-            (!TypeChecks.areTimestampsSupported(ZoneId.systemDefault()) ||
-             !TypeChecks.areTimestampsSupported(SQLConf.get.sessionLocalTimeZone))) {
+            !TypeChecks.areTimestampsSupported()) {
           Seq(withChild(isChild, s"$dataType is not supported with timezone settings: (JVM:" +
               s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
               s" Set both of the timezones to UTC to enable $dataType support"))
@@ -776,6 +774,36 @@ abstract class TypeChecks[RET] {
     }.mkString(", ")
   }
 
+  /**
+   * Original log does not print enough info when timezone is not UTC, 
+   * here check again to add UTC info.
+   */
+  private def tagTimezoneInfoIfHasTimestampType(
+    unsupportedTypes: Map[DataType, Set[String]],
+    meta: RapidsMeta[_, _]
+    ): Unit = {
+    def checkTimestampType(dataType: DataType): Unit = dataType match {
+        case TimestampType if !TypeChecks.areTimestampsSupported() => {
+          meta.willNotWorkOnGpu(s"your timezone isn't in UTC (JVM:" +
+            s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
+            s" Set both of the timezones to UTC to enable TimestampType support")
+          return
+        }
+        case ArrayType(elementType, _) =>
+          checkTimestampType(elementType)
+        case MapType(keyType, valueType, _) =>
+          checkTimestampType(keyType)
+          checkTimestampType(valueType)
+        case StructType(fields) =>
+          fields.foreach(field => checkTimestampType(field.dataType))
+        case _ =>
+          // do nothing
+    }
+    unsupportedTypes.foreach { case (dataType, nameSet) =>
+      checkTimestampType(dataType)
+    }
+  }
+
   protected def tagUnsupportedTypes(
     meta: RapidsMeta[_, _],
     sig: TypeSig,
@@ -786,6 +814,8 @@ abstract class TypeChecks[RET] {
       .filterNot(attr => sig.isSupportedByPlugin(attr.dataType))
       .groupBy(_.dataType)
       .mapValues(_.map(_.name).toSet)
+
+    tagTimezoneInfoIfHasTimestampType(unsupportedTypes, meta)
 
     if (unsupportedTypes.nonEmpty) {
       meta.willNotWorkOnGpu(msgFormat.format(stringifyTypeAttributeMap(unsupportedTypes)))
@@ -816,6 +846,11 @@ object TypeChecks {
     // Spark 2.X doesn't have getZoneId
     val zoneId = getZoneId(zoneIdString)
     areTimestampsSupported(zoneId)
+  }
+
+  def areTimestampsSupported(): Boolean = {
+    areTimestampsSupported(ZoneId.systemDefault()) &&
+      areTimestampsSupported(SQLConf.get.sessionLocalTimeZone)
   }
 }
 
@@ -1132,7 +1167,7 @@ case class ExprChecksImpl(contexts: Map[ExpressionContext, ContextChecks])
  */
 object CaseWhenCheck extends ExprChecks {
   val check: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-    TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested()
+    TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP + TypeSig.BINARY).nested()
 
   val sparkSig: TypeSig = TypeSig.all
 
@@ -1263,7 +1298,7 @@ object CreateNamedStructCheck extends ExprChecks {
   val nameSig: TypeSig = TypeSig.lit(TypeEnum.STRING)
   val sparkNameSig: TypeSig = TypeSig.lit(TypeEnum.STRING)
   val valueSig: TypeSig = (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-      TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT).nested()
+      TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT + TypeSig.BINARY).nested()
   val sparkValueSig: TypeSig = TypeSig.all
   val resultSig: TypeSig = TypeSig.STRUCT.nested(valueSig)
   val sparkResultSig: TypeSig = TypeSig.STRUCT.nested(sparkValueSig)
@@ -1344,7 +1379,7 @@ class CastChecks extends ExprChecks {
   val sparkStringSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + DATE + CALENDAR + STRING +
       BINARY + GpuTypeShims.additionalTypesStringCanCastTo
 
-  val binaryChecks: TypeSig = none
+  val binaryChecks: TypeSig = BINARY
   val sparkBinarySig: TypeSig = STRING + BINARY
 
   val decimalChecks: TypeSig = gpuNumeric + STRING
