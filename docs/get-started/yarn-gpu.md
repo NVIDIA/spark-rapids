@@ -128,7 +128,8 @@ Update the cgroup permissions:
 chmod a+rwx -R /sys/fs/cgroup/cpu,cpuacct
 chmod a+rwx -R /sys/fs/cgroup/devices
 ```
-or the operation can be added in the systemd scripts:
+Or the operation can be added in the systemd scripts:
+
 Create mountCgroup scripts:
 ```bash
 sudo bash -c "cat >/etc/systemd/system/mountCgroup.service" <<EOF
