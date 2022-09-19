@@ -116,3 +116,43 @@ On all masters:
 ```bash
 sudo systemctl restart hadoop-yarn-resourcemanager.service
 ```
+
+Note: If `cgroup` is mounted on `tmpfs` and a node is rebooted,
+the cgroup directory permission gets reverted. Please check the 
+cgroup documentation for your platform for more details.
+Below is one example of how this can be handled:
+
+Update the cgroup permissions:
+```bash
+chmod a+rwx -R /sys/fs/cgroup/cpu,cpuacct
+chmod a+rwx -R /sys/fs/cgroup/devices
+```
+Or the operation can be added in the systemd scripts:
+
+Create mountCgroup scripts:
+```bash
+sudo bash -c "cat >/etc/systemd/system/mountCgroup.service" <<EOF
+[Unit]
+Description=startup
+[Service]
+ExecStart=/etc/mountCgroup.sh
+Type=oneshot
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo bash -c "cat >/etc/mountCgroup.sh" <<EOF
+#!/bin/sh
+chmod a+rwx -R /sys/fs/cgroup/cpu,cpuacct
+chmod a+rwx -R /sys/fs/cgroup/devices
+EOF
+
+sudo chmod 644 /etc/systemd/system/mountCgroup.service
+sudo chmod 655 /etc/mountCgroup.sh
+```
+
+Then start the mountCgroup service:
+```bash
+systemctl enable mountCgroup.service
+systemctl start mountCgroup.service
+```
