@@ -1415,8 +1415,11 @@ case class GpuPivotFirst(
   override def children: Seq[Expression] = pivotColumn :: valueColumn :: Nil
 }
 
-case class GpuCount(children: Seq[Expression]) extends GpuAggregateFunction
+case class GpuCount(children: Seq[Expression],
+    failOnError: Boolean = SQLConf.get.ansiEnabled)
+    extends GpuAggregateFunction
     with GpuBatchedRunningWindowWithFixer
+    with GpuUnboundToUnboundWindowWithFixer
     with GpuAggregateWindowFunction
     with GpuRunningWindowFunction {
   override lazy val initialValues: Seq[GpuLiteral] = Seq(GpuLiteral(0L, LongType))
@@ -1485,6 +1488,9 @@ case class GpuCount(children: Seq[Expression]) extends GpuAggregateFunction
 
   override def scanCombine(isRunningBatched: Boolean, cols: Seq[ColumnVector]): ColumnVector =
     cols.head.castTo(DType.INT64)
+
+  override def newUnboundedToUnboundedFixer: BatchedUnboundedToUnboundedWindowFixer =
+    new CountUnboundedToUnboundedFixer(failOnError)
 }
 
 object GpuAverage {

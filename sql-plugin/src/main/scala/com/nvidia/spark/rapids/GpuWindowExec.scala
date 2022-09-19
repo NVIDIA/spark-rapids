@@ -29,7 +29,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, CurrentRow, Expression, FrameType, NamedExpression, RangeFrame, RowFrame, SortOrder, UnboundedPreceding}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, CurrentRow, Expression, FrameType, NamedExpression, RangeFrame, RowFrame, SortOrder, UnboundedFollowing, UnboundedPreceding}
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.window.WindowExec
@@ -132,20 +132,9 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
       remappedWindowOps
     }
 
-    // When we support multiple ways to avoid batching the input data like with
-    // https://github.com/NVIDIA/spark-rapids/issues/1860 we should check if all of
-    // the operations fit into one of the supported groups and then split them up into
-    // multiple execs if they do, so that we can avoid batching on all of them.
-    val allBatchedRunning = fixedUpWindowOps.forall {
+    val allBatched = fixedUpWindowOps.forall {
       case GpuAlias(GpuWindowExpression(func, spec), _) =>
-        val isRunningFunc = func match {
-          case _: GpuBatchedRunningWindowWithFixer => true
-          case GpuAggregateExpression(_: GpuBatchedRunningWindowWithFixer, _, _, _ , _) => true
-          case _ => false
-        }
-        // Running windows are limited to row based queries with a few changes we could make this
-        // work for range based queries too https://github.com/NVIDIA/spark-rapids/issues/2708
-        isRunningFunc && GpuWindowExec.isRunningWindow(spec)
+        GpuWindowExec.isBatchedFunc(func, spec)
       case GpuAlias(_: AttributeReference, _) | _: AttributeReference =>
         // We allow pure result columns for running windows
         true
@@ -162,12 +151,14 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
       childPlans.head.convertIfNeeded()
     }
 
-    val windowExpr = if (allBatchedRunning) {
-      GpuRunningWindowExec(
-        fixedUpWindowOps,
+    val windowExpr = if (allBatched) {
+      val batchedOps = GpuWindowExec.splitBatchedOps(fixedUpWindowOps)
+      batchedOps.getWindowExec(
         partitionSpec.map(_.convertToGpu()),
         orderSpec.map(_.convertToGpu().asInstanceOf[SortOrder]),
-        input)(getPartitionSpecs, getOrderSpecs)
+        input,
+        getPartitionSpecs,
+        getOrderSpecs)
     } else {
       GpuWindowExec(
         fixedUpWindowOps,
@@ -231,10 +222,71 @@ class GpuWindowExecMeta(windowExec: WindowExec,
   override def getResultColumnsOnly: Boolean = resultColumnsOnly
 }
 
+case class BatchedOps(running: Seq[NamedExpression],
+    unboundedToUnbounded: Seq[NamedExpression],
+    passThrough: Seq[NamedExpression]) {
+  def getRunningExpressionsWithPassthrough: Seq[NamedExpression] =
+    passThrough ++ running
+
+  private def getRunningWindowExec(
+      gpuPartitionSpec: Seq[Expression],
+      gpuOrderSpec: Seq[SortOrder],
+      child: SparkPlan,
+      cpuPartitionSpec: Seq[Expression],
+      cpuOrderSpec: Seq[SortOrder]): GpuExec =
+    GpuRunningWindowExec(
+      getRunningExpressionsWithPassthrough,
+      gpuPartitionSpec,
+      gpuOrderSpec,
+      child)(cpuPartitionSpec, cpuOrderSpec)
+
+  private def getDoublePassWindowExec(
+      gpuPartitionSpec: Seq[Expression],
+      gpuOrderSpec: Seq[SortOrder],
+      child: SparkPlan,
+      cpuPartitionSpec: Seq[Expression],
+      cpuOrderSpec: Seq[SortOrder]): GpuExec =
+    GpuCachedDoublePassWindowExec(
+      getDoublePassExpressionsWithRunningAsPassthrough,
+      gpuPartitionSpec,
+      gpuOrderSpec,
+      child)(cpuPartitionSpec, cpuOrderSpec)
+
+  def getWindowExec(
+      gpuPartitionSpec: Seq[Expression],
+      gpuOrderSpec: Seq[SortOrder],
+      child: SparkPlan,
+      cpuPartitionSpec: Seq[Expression],
+      cpuOrderSpec: Seq[SortOrder]): GpuExec = {
+    // The order of these matter so we can pass the output of the first through the second one
+    if (hasRunning) {
+      val running = getRunningWindowExec(gpuPartitionSpec, gpuOrderSpec, child,
+        cpuPartitionSpec, cpuOrderSpec)
+      if (hasDoublePass) {
+        getDoublePassWindowExec(gpuPartitionSpec, gpuOrderSpec, running,
+          cpuPartitionSpec, cpuOrderSpec)
+      } else {
+        running
+      }
+    } else {
+      getDoublePassWindowExec(gpuPartitionSpec, gpuOrderSpec, child,
+        cpuPartitionSpec, cpuOrderSpec)
+    }
+  }
+
+  def hasRunning: Boolean = running.nonEmpty
+
+  def getDoublePassExpressionsWithRunningAsPassthrough: Seq[NamedExpression] =
+    passThrough ++ unboundedToUnbounded ++ running.map(_.toAttribute)
+
+  def hasDoublePass: Boolean = unboundedToUnbounded.nonEmpty
+}
+
 object GpuWindowExec extends Arm {
   /**
    * As a part of `splitAndDedup` the dedup part adds a layer of indirection. This attempts to
    * remove that layer of indirection.
+   *
    * @param windowOps the windowOps output of splitAndDedup
    * @param post the post output of splitAndDedup
    * @return a version of windowOps that has removed as many un-needed temp aliases as possible.
@@ -381,6 +433,60 @@ object GpuWindowExec extends Arm {
     GpuSpecialFrameBoundary(UnboundedPreceding), GpuLiteral(value, _))) if value == 0 => true
     case _ => false
   }
+
+  def isUnboundedToUnboundedWindow(spec: GpuWindowSpecDefinition): Boolean = spec match {
+    case GpuWindowSpecDefinition(_, _, GpuSpecifiedWindowFrame(_,
+    GpuSpecialFrameBoundary(UnboundedPreceding),
+    GpuSpecialFrameBoundary(UnboundedFollowing))) => true
+    case _ => false
+  }
+
+  def isBatchedRunningFunc(func: Expression, spec: GpuWindowSpecDefinition): Boolean = {
+    val isSpecOkay = isRunningWindow(spec)
+    val isFuncOkay = func match {
+      case _: GpuBatchedRunningWindowWithFixer => true
+      case GpuAggregateExpression(_: GpuBatchedRunningWindowWithFixer, _, _, _ , _) => true
+      case _ => false
+    }
+    isSpecOkay && isFuncOkay
+  }
+
+  def isBatchedUnboundedToUnboundedFunc(func: Expression, spec: GpuWindowSpecDefinition): Boolean =
+    func match {
+      case _: GpuUnboundToUnboundWindowWithFixer
+        if GpuWindowExec.isUnboundedToUnboundedWindow(spec) => true
+      case GpuAggregateExpression(_: GpuUnboundToUnboundWindowWithFixer, _, _, _ , _)
+        if GpuWindowExec.isUnboundedToUnboundedWindow(spec) => true
+      case _ => false
+    }
+
+  def isBatchedFunc(func: Expression, spec: GpuWindowSpecDefinition): Boolean =
+    isBatchedRunningFunc(func, spec) || isBatchedUnboundedToUnboundedFunc(func, spec)
+
+  def splitBatchedOps(windowOps: Seq[NamedExpression]): BatchedOps = {
+    val running = ArrayBuffer[NamedExpression]()
+    val doublePass = ArrayBuffer[NamedExpression]()
+    val passThrough = ArrayBuffer[NamedExpression]()
+    windowOps.foreach {
+      case expr@GpuAlias(GpuWindowExpression(func, spec), _) =>
+        if (isBatchedRunningFunc(func, spec)) {
+          running.append(expr)
+        } else if (isBatchedUnboundedToUnboundedFunc(func, spec)) {
+          doublePass.append(expr)
+        } else {
+          throw new IllegalArgumentException(
+            s"Found unexpected expression $expr in window exec ${expr.getClass}")
+        }
+      case expr@(GpuAlias(_: AttributeReference, _) | _: AttributeReference) =>
+        passThrough.append(expr)
+      case other =>
+        // This should only happen if we did something wrong in splitting/deduping
+        // the window expressions.
+        throw new IllegalArgumentException(
+          s"Found unexpected expression $other in window exec ${other.getClass}")
+    }
+    BatchedOps(running, doublePass, passThrough)
+  }
 }
 
 trait GpuWindowBaseExec extends ShimUnaryExecNode with GpuExec {
@@ -392,9 +498,17 @@ trait GpuWindowBaseExec extends ShimUnaryExecNode with GpuExec {
 
   import GpuMetric._
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME)
-  )
+  def needsSpillMetrics: Boolean = false
+
+  override lazy val additionalMetrics: Map[String, GpuMetric] = {
+    val required = Map(
+      OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
+    if (needsSpillMetrics) {
+      required ++ spillMetrics
+    } else {
+      required
+    }
+  }
 
   override def output: Seq[Attribute] = windowOps.map(_.toAttribute)
 
@@ -1108,8 +1222,8 @@ class GpuWindowIterator(
   }
 }
 
-object GpuRunningWindowIterator extends Arm {
-  private def cudfAnd(lhs: cudf.ColumnVector,
+object GpuBatchedWindowIterator extends Arm {
+  def cudfAnd(lhs: cudf.ColumnVector,
       rhs: cudf.ColumnVector): cudf.ColumnVector = {
     withResource(lhs) { lhs =>
       withResource(rhs) { rhs =>
@@ -1118,7 +1232,22 @@ object GpuRunningWindowIterator extends Arm {
     }
   }
 
-  private def arePartsEqual(
+  def areRowPartsEqual(
+      scalars: Seq[Scalar],
+      columns: Seq[cudf.ColumnVector],
+      indexes: Seq[Int]): Array[Boolean] = {
+    withResourceIfAllowed(arePartsEqual(scalars, columns)) {
+      case scala.util.Right(ret) => Seq.fill(indexes.length)(ret).toArray
+      case scala.util.Left(column) =>
+        indexes.map { index =>
+          withResource(column.getScalarElement(index)) { scalar =>
+            scalar.isValid && scalar.getBoolean
+          }
+        }.toArray
+    }
+  }
+
+  def arePartsEqual(
       scalars: Seq[Scalar],
       columns: Seq[cudf.ColumnVector]): Either[cudf.ColumnVector, Boolean] = {
     if (scalars.length != columns.length) {
@@ -1159,7 +1288,7 @@ object GpuRunningWindowIterator extends Arm {
     }
   }
 
-  private def areOrdersEqual(
+  def areOrdersEqual(
       scalars: Seq[Scalar],
       columns: Seq[cudf.ColumnVector],
       partsEqual: Either[cudf.ColumnVector, Boolean]): Either[cudf.ColumnVector, Boolean] = {
@@ -1185,7 +1314,7 @@ object GpuRunningWindowIterator extends Arm {
     }
   }
 
-  private def getScalarRow(index: Int, columns: Seq[cudf.ColumnVector]): Array[Scalar] =
+  def getScalarRow(index: Int, columns: Seq[cudf.ColumnVector]): Array[Scalar] =
     columns.map(_.getScalarElement(index)).toArray
 }
 
@@ -1205,7 +1334,7 @@ class GpuRunningWindowIterator(
     numOutputBatches: GpuMetric,
     numOutputRows: GpuMetric,
     opTime: GpuMetric) extends Iterator[ColumnarBatch] with BasicWindowCalc {
-  import GpuRunningWindowIterator._
+  import GpuBatchedWindowIterator._
   TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
   override def isRunningBatched: Boolean = true
@@ -1344,6 +1473,12 @@ class GpuRunningWindowIterator(
   }
 }
 
+/**
+ * This allows for batches of data to be processed without needing them to correspond to
+ * the partition by boundaries, but only for window operations that are unbounded preceding
+ * to current row (Running Window). This works because a small amount of data can be saved
+ * from a previous batch and used to update the current batch.
+ */
 case class GpuRunningWindowExec(
     windowOps: Seq[NamedExpression],
     gpuPartitionSpec: Seq[Expression],
@@ -1366,6 +1501,322 @@ case class GpuRunningWindowExec(
     child.executeColumnar().mapPartitions { iter =>
       new GpuRunningWindowIterator(iter, boundWindowOps, boundPartitionSpec, boundOrderSpec,
         output.map(_.dataType).toArray, numOutputBatches, numOutputRows, opTime)
+    }
+  }
+}
+
+class FixerPair(op: GpuUnboundToUnboundWindowWithFixer) extends AutoCloseable {
+  var fixing: BatchedUnboundedToUnboundedWindowFixer = op.newUnboundedToUnboundedFixer
+  var collecting: BatchedUnboundedToUnboundedWindowFixer = op.newUnboundedToUnboundedFixer
+
+  def updateState(scalar: Scalar): Unit = {
+    collecting.updateState(scalar)
+  }
+
+  def fixUp(samePartitionMask: Either[cudf.ColumnVector, Boolean],
+      column: cudf.ColumnVector): cudf.ColumnVector =
+    fixing.fixUp(samePartitionMask, column)
+
+  def swap(): Unit = {
+    val tmp = fixing
+    tmp.reset()
+    fixing = collecting
+    collecting = tmp
+  }
+
+  override def close(): Unit = {
+    fixing.close()
+    collecting.close()
+  }
+}
+
+/**
+ * An iterator that can do aggregations on window queries that need a small amount of
+ * information from all of the batches to update the result in a second pass. It does this by
+ * having the aggregations be instances of GpuUnboundToUnboundWindowWithFixer
+ * which can fix up the window output for unbounded to unbounded windows.
+ * Because of this there is no requirement about how the input data is batched, but it  must
+ * be sorted by both partitioning and ordering.
+ */
+class GpuCachedDoublePassWindowIterator(
+    input: Iterator[ColumnarBatch],
+    override val boundWindowOps: Seq[GpuExpression],
+    override val boundPartitionSpec: Seq[GpuExpression],
+    override val boundOrderSpec: Seq[SortOrder],
+    val outputTypes: Array[DataType],
+    numOutputBatches: GpuMetric,
+    numOutputRows: GpuMetric,
+    opTime: GpuMetric,
+    spillCallback: SpillCallback) extends Iterator[ColumnarBatch] with BasicWindowCalc {
+  import GpuBatchedWindowIterator._
+  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
+
+  override def isRunningBatched: Boolean = true
+
+  private var readyForPostProcessing = mutable.Queue[SpillableColumnarBatch]()
+  private var firstPassProcessed = mutable.Queue[SpillableColumnarBatch]()
+  // This should only ever be cached in between calls to `hasNext` and `next`.
+  // This is just to let us filter out empty batches.
+  private var waitingForFirstPass: Option[ColumnarBatch] = None
+  private var lastPartsCaching: Array[Scalar] = Array.empty
+  private var lastPartsProcessing: Array[Scalar] = Array.empty
+  private var isClosed: Boolean = false
+
+  private def saveLastPartsCaching(newLastParts: Array[Scalar]): Unit = {
+    lastPartsCaching.foreach(_.close())
+    lastPartsCaching = newLastParts
+  }
+
+  def close(): Unit = {
+    if (!isClosed) {
+      isClosed = true
+
+      fixerIndexMap.values.foreach(_.close())
+
+      saveLastPartsCaching(Array.empty)
+
+      lastPartsProcessing.foreach(_.close())
+      lastPartsProcessing = Array.empty
+
+      firstPassProcessed.foreach(_.close())
+      firstPassProcessed = mutable.Queue[SpillableColumnarBatch]()
+
+      readyForPostProcessing.foreach(_.close())
+      readyForPostProcessing = mutable.Queue[SpillableColumnarBatch]()
+
+      waitingForFirstPass.foreach(_.close())
+      waitingForFirstPass = None
+    }
+  }
+
+  private lazy val fixerIndexMap: Map[Int, FixerPair] =
+    boundWindowOps.zipWithIndex.flatMap {
+      case (GpuAlias(GpuWindowExpression(func, _), _), index) =>
+        func match {
+          case f: GpuUnboundToUnboundWindowWithFixer =>
+            Some((index, new FixerPair(f)))
+          case GpuAggregateExpression(f: GpuUnboundToUnboundWindowWithFixer, _, _, _, _) =>
+            Some((index, new FixerPair(f)))
+          case _ => None
+        }
+      case _ => None
+    }.toMap
+
+  // Do any post processing fixup for the batch before it is sent out the door
+  def postProcess(cb: ColumnarBatch): ColumnarBatch = {
+    val computedWindows = GpuColumnVector.extractBases(cb)
+    withResource(GpuProjectExec.project(cb, boundPartitionSpec)) { parts =>
+      val partColumns = GpuColumnVector.extractBases(parts)
+      withResourceIfAllowed(arePartsEqual(lastPartsProcessing, partColumns)) { samePartitionMask =>
+        withResource(ArrayBuffer[cudf.ColumnVector]()) { newColumns =>
+          boundWindowOps.indices.foreach { idx =>
+            val column = computedWindows(idx)
+            fixerIndexMap.get(idx) match {
+              case Some(fixer) =>
+                closeOnExcept(fixer.fixUp(samePartitionMask, column)) { finalOutput =>
+                  newColumns += finalOutput
+                }
+              case None =>
+                newColumns += column.incRefCount()
+            }
+          }
+          makeBatch(newColumns)
+        }
+      }
+    }
+  }
+
+  def makeBatch(columns: Seq[cudf.ColumnVector]): ColumnarBatch = {
+    withResource(new cudf.Table(columns: _*)) { table =>
+      GpuColumnVector.from(table, outputTypes)
+    }
+  }
+
+  def swapFirstPassIsReadyForPost(): Unit = {
+    // Swap the caching so it is ready to be used for updating
+    fixerIndexMap.values.foreach(_.swap())
+
+    // Swap the parts so we know what mask to use for updating
+    lastPartsProcessing.foreach(_.close())
+    lastPartsProcessing = lastPartsCaching
+    lastPartsCaching = Array.empty
+
+    // Swap the queues so we are ready to dequeue the data
+    // Before we swap this must be empty, or we are dropping data...
+    assert(readyForPostProcessing.isEmpty)
+    readyForPostProcessing = firstPassProcessed
+    firstPassProcessed = mutable.Queue[SpillableColumnarBatch]()
+  }
+
+  // The last batch was already processed so everything in processed needs to be moved to
+  // readyForPostProcessing
+  def lastBatch(): Unit = swapFirstPassIsReadyForPost()
+
+  private def cacheInFixers(computedWindows: Array[cudf.ColumnVector],
+      fixers: Map[Int, FixerPair],
+      rowIndex: Int): Unit =
+    fixers.foreach {
+      case (columnIndex, fixer) =>
+        val column = computedWindows(columnIndex)
+        withResource(column.getScalarElement(rowIndex)) { scalar =>
+          fixer.updateState(scalar)
+        }
+    }
+
+  def saveBatchForPostProcessing(batch: ColumnarBatch): Unit = {
+    firstPassProcessed += SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+      spillCallback)
+  }
+
+  def saveBatchForPostProcessing(basic: Array[cudf.ColumnVector]): Unit = {
+    closeOnExcept(makeBatch(basic)) { batch =>
+      saveBatchForPostProcessing(batch)
+    }
+  }
+
+  // Compute the window operation and cache/update caches as needed.
+  def firstPassComputeAndCache(cb: ColumnarBatch): Unit = {
+    val fixers = fixerIndexMap
+    val numRows = cb.numRows()
+    withResource(computeBasicWindow(cb)) { basic =>
+      withResource(GpuProjectExec.project(cb, boundPartitionSpec)) { parts =>
+        val partColumns = GpuColumnVector.extractBases(parts)
+
+        val firstLastEqual = areRowPartsEqual(lastPartsCaching, partColumns, Seq(0, numRows - 1))
+        val firstEqual = firstLastEqual(0)
+        val lastEqual = firstLastEqual(1)
+        if (firstEqual) {
+          // This batch is a continuation of the previous batch so we need to update the
+          // fixer with info from it.
+          // This assumes that the window is unbounded to unbounded. We will need to update
+          // APIs in the future and rename things if we want to support more than this.
+          cacheInFixers(basic, fixers, 0)
+        }
+
+        // If the last part entry in this batch does not match the last entry in the previous batch
+        // then we need to start post-processing the batches.
+        if (!lastEqual) {
+          // We swap the fixers and queues so we are ready to start on the next partition by group
+          swapFirstPassIsReadyForPost()
+          // Collect/Cache the needed info from the end of this batch
+          cacheInFixers(basic, fixers, numRows - 1)
+          saveLastPartsCaching(getScalarRow(numRows - 1, partColumns))
+
+          if (firstEqual) {
+            // Process the batch now, but it will only be for the first part of the batch
+            // the last part may need to be fixed again, so put it into the queue for
+            // when the next round finishes.
+            val processedBatch = withResource(makeBatch(basic)) { basicBatch =>
+              postProcess(basicBatch)
+            }
+            closeOnExcept(processedBatch) { processedBatch =>
+              saveBatchForPostProcessing(processedBatch)
+            }
+          } else {
+            // We split on a partition boundary, so just need to save it
+            saveBatchForPostProcessing(basic)
+          }
+        } else {
+          // No need to save the parts, it was equal...
+          saveBatchForPostProcessing(basic)
+        }
+      }
+    }
+  }
+
+  private def cacheBatchIfNeeded(): Unit = {
+    while (waitingForFirstPass.isEmpty && input.hasNext) {
+      closeOnExcept(input.next()) { cb =>
+        if (cb.numRows() > 0) {
+          waitingForFirstPass = Some(cb)
+        } else {
+          cb.close()
+        }
+      }
+    }
+  }
+
+  override def hasNext: Boolean = {
+    if (readyForPostProcessing.nonEmpty || firstPassProcessed.nonEmpty) {
+      true
+    } else {
+      cacheBatchIfNeeded()
+      waitingForFirstPass.isDefined
+    }
+  }
+
+  override def next(): ColumnarBatch = {
+    if (!hasNext) {
+      throw new NoSuchElementException()
+    }
+    while (readyForPostProcessing.isEmpty) {
+      // Keep reading and processing data until we have something to output
+      cacheBatchIfNeeded()
+      if (waitingForFirstPass.isEmpty) {
+        lastBatch()
+      } else {
+        withResource(waitingForFirstPass.get) { cb =>
+          waitingForFirstPass = None
+          withResource(
+            new NvtxWithMetrics("DoubleBatchedWindow_PRE", NvtxColor.CYAN, opTime)) { _ =>
+            firstPassComputeAndCache(cb)
+          }
+        }
+      }
+    }
+    val cb = withResource(readyForPostProcessing.dequeue()) { sb =>
+      sb.getColumnarBatch()
+    }
+    withResource(cb) { cb =>
+      val ret = withResource(
+        new NvtxWithMetrics("DoubleBatchedWindow_POST", NvtxColor.BLUE, opTime)) { _ =>
+        postProcess(cb)
+      }
+      numOutputBatches += 1
+      numOutputRows += ret.numRows()
+      ret
+    }
+  }
+}
+
+/**
+ * This allows for batches of data to be processed without needing them to correspond to
+ * the partition by boundaries. This is similar to GpuRunningWindowExec, but for operations
+ * that need a small amount of information from all of the batches associated with a partition
+ * instead of just the previous batch. It does this by processing a batch, collecting and
+ * updating a small cache of information about the last partition in the batch, and then putting
+ * that batch into a form that would let it be spilled if needed. A batch is released when the
+ * last partition key in the batch is fully processed. Before it is released it will be updated
+ * to include any information needed from the cached data.
+ *
+ * Currently this only works for unbounded to unbounded windows, but could be extended to more.
+ */
+case class GpuCachedDoublePassWindowExec(
+    windowOps: Seq[NamedExpression],
+    gpuPartitionSpec: Seq[Expression],
+    gpuOrderSpec: Seq[SortOrder],
+    child: SparkPlan)(
+    override val cpuPartitionSpec: Seq[Expression],
+    override val cpuOrderSpec: Seq[SortOrder]) extends GpuWindowBaseExec {
+
+  override def needsSpillMetrics: Boolean = true
+
+  override def otherCopyArgs: Seq[AnyRef] = cpuPartitionSpec :: cpuOrderSpec :: Nil
+
+  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val numOutputBatches = gpuLongMetric(GpuMetric.NUM_OUTPUT_BATCHES)
+    val numOutputRows = gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
+    val opTime = gpuLongMetric(GpuMetric.OP_TIME)
+    val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
+
+    val boundWindowOps = GpuBindReferences.bindGpuReferences(windowOps, child.output)
+    val boundPartitionSpec = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, child.output)
+    val boundOrderSpec = GpuBindReferences.bindReferences(gpuOrderSpec, child.output)
+
+    child.executeColumnar().mapPartitions { iter =>
+      new GpuCachedDoublePassWindowIterator(iter, boundWindowOps, boundPartitionSpec,
+        boundOrderSpec, output.map(_.dataType).toArray, numOutputBatches, numOutputRows, opTime,
+        spillCallback)
     }
   }
 }

@@ -699,6 +699,29 @@ def test_multi_types_window_aggs_for_rows(a_b_gen, c_gen):
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
+def test_percent_rank_no_part_multiple_batches():
+    data_gen = [('a', long_gen)]
+    # The goal of this is to have multiple batches so we can verify that the code
+    # is working properly, but not so large that it takes forever to run.
+    baseWindowSpec = Window.orderBy('a')
+
+    def do_it(spark):
+        return gen_df(spark, data_gen, length=8000) \
+                .withColumn('percent_rank_val', f.percent_rank().over(baseWindowSpec))
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf = {'spark.rapids.sql.batchSizeBytes': '100'})
+
+def test_percent_rank_single_part_multiple_batches():
+    data_gen = [('a', long_gen)]
+    # The goal of this is to have multiple batches so we can verify that the code
+    # is working properly, but not so large that it takes forever to run.
+    baseWindowSpec = Window.partitionBy('b').orderBy('a')
+
+    def do_it(spark):
+        return gen_df(spark, data_gen, length=8000) \
+                .withColumn('b', f.lit(1)) \
+                .withColumn('percent_rank_val', f.percent_rank().over(baseWindowSpec))
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf = {'spark.rapids.sql.batchSizeBytes': '100'})
+
 @pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0 is IGNORE NULLS supported for lead and lag by Spark")
 @allow_non_gpu('WindowExec', 'Alias', 'WindowExpression', 'Lead', 'Literal', 'WindowSpecDefinition', 'SpecifiedWindowFrame')
 @ignore_order(local=True)
