@@ -143,7 +143,7 @@ case class GpuFileSourceScanExec(
       alluxionPathReplacementMap = AlluxioUtils.autoMountIfNeeded(rapidsConf, pds,
         relationToUse.sparkSession.sparkContext.hadoopConfiguration,
         relationToUse.sparkSession.conf)
-    } else if (AlluxioUtils.isAlluxioPathsToReplaceTaskTime( rapidsConf, relationToUse.fileFormat)) {
+    } else if (AlluxioUtils.isAlluxioPathsToReplaceTaskTime(rapidsConf, relationToUse.fileFormat)) {
       // this is not ideal, here we check to see if we will replace any paths, which is an
       // extra iteration through paths
       alluxionPathReplacementMap = AlluxioUtils.checkIfNeedsReplaced(rapidsConf, pds)
@@ -197,7 +197,8 @@ case class GpuFileSourceScanExec(
 
   // exposed for testing
   lazy val bucketedScan: Boolean = {
-    if (relationToUse.sparkSession.sessionState.conf.bucketingEnabled && relationToUse.bucketSpec.isDefined
+    if (relationToUse.sparkSession.sessionState.conf.bucketingEnabled
+      && relationToUse.bucketSpec.isDefined
       && !disableBucketedScan) {
       val spec = relationToUse.bucketSpec.get
       val bucketColumns = spec.bucketColumnNames.flatMap(n => toAttribute(n))
@@ -269,7 +270,8 @@ case class GpuFileSourceScanExec(
 
   @transient
   private lazy val pushedDownFilters = {
-    val supportNestedPredicatePushdown = DataSourceUtils.supportNestedPredicatePushdown(relationToUse)
+    val supportNestedPredicatePushdown =
+      DataSourceUtils.supportNestedPredicatePushdown(relationToUse)
     dataFilters.flatMap(DataSourceStrategy.translateFilter(_, supportNestedPredicatePushdown))
   }
 
