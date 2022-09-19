@@ -207,42 +207,52 @@ case class GpuSubqueryBroadcastExec(
       // This will run in another thread. Set the execution id so that we can connect these jobs
       // with the correct execution.
       SQLExecution.withExecutionId(sparkSession, executionId) {
-        val beforeCollect = System.nanoTime()
-
-        val serBatch = child.executeBroadcast[SerializeConcatHostBuffersDeserializeBatch]()
-
-        // Creates projection to extract target field from Row, as what Spark does.
-        // Note that unlike Spark, the GPU broadcast data has not applied the key expressions from
-        // the HashedRelation, so that is applied here if necessary to ensure the proper values
-        // are being extracted. The CPU already has the key projections applied in the broadcast
-        // data and thus does not have similar logic here.
-        val broadcastModeProject = modeKeys.map { keyExprs =>
-          val keyExpr = keyExprs(index)
-          UnsafeProjection.create(keyExpr)
+        val broadcastBatch = child.executeBroadcast[Any]()
+        val result: Array[InternalRow] = broadcastBatch.value match {
+          case b: SerializeConcatHostBuffersDeserializeBatch => projectSerializedBatchToRows(b)
+          case b if SparkShimImpl.isEmptyRelation(b) => Array.empty
+          case b => throw new IllegalStateException(s"Unexpected broadcast type: ${b.getClass}")
         }
-
-        // Use the single output of the broadcast mode projection if it exists
-        val rowProjectIndex = if (broadcastModeProject.isDefined) 0 else index
-        val rowProject = UnsafeProjection.create(
-          BoundReference(rowProjectIndex, buildKeys(index).dataType, buildKeys(index).nullable))
-
-        // Deserializes the batch on the host. Then, transforms it to rows and performs row-wise
-        // projection. We should NOT run any device operation on the driver node.
-        val result = withResource(serBatch.value.hostBatches) { hostBatches =>
-          hostBatches.flatMap { cb =>
-            cb.rowIterator().asScala.map { row =>
-              val broadcastRow = broadcastModeProject.map(_(row)).getOrElse(row)
-              rowProject(broadcastRow).copy().asInstanceOf[InternalRow]
-            }
-          }
-        }
-
-        gpuLongMetric("dataSize") += serBatch.value.dataSize
-        gpuLongMetric(COLLECT_TIME) += System.nanoTime() - beforeCollect
 
         result
       }
     }(GpuSubqueryBroadcastExec.executionContext)
+  }
+
+  private def projectSerializedBatchToRows(
+      serBatch: SerializeConcatHostBuffersDeserializeBatch): Array[InternalRow] = {
+    val beforeCollect = System.nanoTime()
+
+    // Creates projection to extract target field from Row, as what Spark does.
+    // Note that unlike Spark, the GPU broadcast data has not applied the key expressions from
+    // the HashedRelation, so that is applied here if necessary to ensure the proper values
+    // are being extracted. The CPU already has the key projections applied in the broadcast
+    // data and thus does not have similar logic here.
+    val broadcastModeProject = modeKeys.map { keyExprs =>
+      val keyExpr = keyExprs(index)
+      UnsafeProjection.create(keyExpr)
+    }
+
+    // Use the single output of the broadcast mode projection if it exists
+    val rowProjectIndex = if (broadcastModeProject.isDefined) 0 else index
+    val rowProject = UnsafeProjection.create(
+      BoundReference(rowProjectIndex, buildKeys(index).dataType, buildKeys(index).nullable))
+
+    // Deserializes the batch on the host. Then, transforms it to rows and performs row-wise
+    // projection. We should NOT run any device operation on the driver node.
+    val result = withResource(serBatch.hostBatches) { hostBatches =>
+      hostBatches.flatMap { cb =>
+        cb.rowIterator().asScala.map { row =>
+          val broadcastRow = broadcastModeProject.map(_(row)).getOrElse(row)
+          rowProject(broadcastRow).copy().asInstanceOf[InternalRow]
+        }
+      }
+    }
+
+    gpuLongMetric("dataSize") += serBatch.dataSize
+    gpuLongMetric(COLLECT_TIME) += System.nanoTime() - beforeCollect
+
+    result
   }
 
   protected override def doExecute(): RDD[InternalRow] = {
