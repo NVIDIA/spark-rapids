@@ -323,7 +323,9 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
           numThreads, maxNumFileProcessed,
           false, // ignoreMissingFiles
           false, // ignoreCorruptFiles
-          false // useFieldId
+          false, // useFieldId
+          None, // alluxionPathReplacementMap
+          false // alluxioReplacementTaskTime
       );
     }
 
