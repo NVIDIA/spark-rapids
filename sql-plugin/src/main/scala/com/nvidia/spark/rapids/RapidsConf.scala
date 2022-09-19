@@ -584,13 +584,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val HAS_NANS = conf("spark.rapids.sql.hasNans")
-    .doc("Config to indicate if your data has NaN's. Cudf doesn't " +
-      "currently support NaN's properly so you can get corrupt data if you have NaN's in your " +
-      "data and it runs on the GPU.")
-    .booleanConf
-    .createWithDefault(true)
-
   val NEED_DECIMAL_OVERFLOW_GUARANTEES = conf("spark.rapids.sql.decimalOverflowGuarantees")
       .doc("FOR TESTING ONLY. DO NOT USE IN PRODUCTION. Please see the decimal section of " +
           "the compatibility documents for more information on this config.")
@@ -1377,6 +1370,18 @@ object RapidsConf {
     .toSequence
     .createWithDefault(Seq("su", "ubuntu", "-c", "/opt/alluxio-2.8.0/bin/alluxio"))
 
+  val ALLUXIO_REPLACEMENT_ALGO = conf("spark.rapids.alluxio.replacement.algo")
+    .doc("The algorithm used when replacing the UFS path with the Alluxio path. CONVERT_TIME " +
+      "and SELECTION_TIME are the valid options. CONVERT_TIME indicates that we do it when " +
+      "we convert it to a GPU file read, this has extra overhead of creating an entirely new " +
+      "file index, which requires listing the files and getting all new file info from Alluxio. " +
+      "SELECTION_TIME indicates we do it when the file reader is selecting the partitions " +
+      "to process and just replaces the path without fetching the file information again, this " +
+      "is faster but doesn't update locality information if that were to work with Alluxio.")
+    .stringConf
+    .checkValues(Set("CONVERT_TIME", "SELECTION_TIME"))
+    .createWithDefault("SELECTION_TIME")
+
   // USER FACING DEBUG CONFIGS
 
   val SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY =
@@ -1762,8 +1767,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val gdsSpillBatchWriteBufferSize: Long = get(GDS_SPILL_BATCH_WRITE_BUFFER_SIZE)
 
-  lazy val hasNans: Boolean = get(HAS_NANS)
-
   lazy val needDecimalGuarantees: Boolean = get(NEED_DECIMAL_OVERFLOW_GUARANTEES)
 
   lazy val gpuTargetBatchSizeBytes: Long = get(GPU_BATCH_SIZE_BYTES)
@@ -2057,6 +2060,14 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val getAlluxioBucketRegex: String = get(ALLUXIO_BUCKET_REGEX)
 
   lazy val getAlluxioCmd: Seq[String] = get(ALLUXIO_CMD)
+
+  lazy val getAlluxioReplacementAlgo: String = get(ALLUXIO_REPLACEMENT_ALGO)
+
+  lazy val isAlluxioReplacementAlgoSelectTime: Boolean =
+    get(ALLUXIO_REPLACEMENT_ALGO) == "SELECTION_TIME"
+
+  lazy val isAlluxioReplacementAlgoConvertTime: Boolean =
+    get(ALLUXIO_REPLACEMENT_ALGO) == "CONVERT_TIME"
 
   lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
 

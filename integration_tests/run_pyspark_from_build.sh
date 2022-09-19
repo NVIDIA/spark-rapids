@@ -168,8 +168,8 @@ else
 
     if [[ ${TEST_PARALLEL} -lt 2 ]];
     then
-        # With xdist 0 and 1 are the same parallelsm but
-        # 0 is more effecient
+        # With xdist 0 and 1 are the same parallelism but
+        # 0 is more efficient
         TEST_PARALLEL_OPTS=()
     else
         TEST_PARALLEL_OPTS=("-n" "$TEST_PARALLEL")

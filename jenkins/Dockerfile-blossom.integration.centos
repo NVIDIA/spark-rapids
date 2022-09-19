@@ -39,7 +39,7 @@ RUN if [ "$CENTOS_VER" == "8" ]; then\
 # Install jdk-8, jdk-11, maven, docker image
 RUN yum update -y && \
     yum install epel-release -y && \
-    yum install -y java-1.8.0-openjdk-devel java-11-openjdk-devel wget expect parallel rsync zip unzip
+    yum install -y java-1.8.0-openjdk-devel java-11-openjdk-devel wget expect rsync zip unzip
 
 # The default mvn verision is 3.0.5 on centos7 docker container.
 # The plugin: net.alchim31.maven requires a higher mvn version.
@@ -60,6 +60,8 @@ RUN export CUDA_VER=`echo ${CUDA_VER} | cut -d '.' -f 1,2` && \
     mamba install -y -c anaconda pytest requests && \
     mamba install -y -c conda-forge sre_yield && \
     conda clean -ay
+# install pytest plugins for xdist parallel run
+RUN python -m pip install findspark pytest-xdist pytest-order
 
 # Set default java as 1.8.0
 ENV JAVA_HOME "/usr/lib/jvm/java-1.8.0-openjdk"
