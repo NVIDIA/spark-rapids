@@ -153,16 +153,35 @@ class GpuSingleDirectoryDataWriter(
     var needToCloseBatch = true
     try {
       // TODO: This does not handle batch splitting to make sure maxRecordsPerFile is not exceeded.
-      if (description.maxRecordsPerFile > 0 && recordsInFile >= description.maxRecordsPerFile) {
-        fileCounter += 1
-        assert(fileCounter < MAX_FILE_COUNTER,
-          s"File counter $fileCounter is beyond max value $MAX_FILE_COUNTER")
-
-        newOutputWriter()
+      val table = GpuColumnVector.from(batch)
+      val numRows = table.getRowCount()
+      val maxRecordsPerFile = description.maxRecordsPerFile.toInt
+      val fillOldFile = recordsInFile < maxRecordsPerFile
+      val splitIndexes = (maxRecordsPerFile > 0, fillOldFile) match {
+        case (false, _) => IndexedSeq.empty
+        case (true, false) => (1 until (numRows / maxRecordsPerFile).toInt).map(i => i * maxRecordsPerFile)
+        case (true, true) => {
+          val filledUp = maxRecordsPerFile - recordsInFile.toInt
+          val remain = numRows - filledUp
+          (0 until (remain / maxRecordsPerFile).toInt).map(i => filledUp + i * maxRecordsPerFile)
+        }
       }
 
-      statsTrackers.foreach(_.newBatch(batch))
-      recordsInFile += batch.numRows
+      fileCounter += splitIndexes.length + 1 - (if (fillOldFile) 1 else 0)
+      assert(fileCounter < MAX_FILE_COUNTER,
+        s"File counter $fileCounter is beyond max value $MAX_FILE_COUNTER")
+
+      val tables = table.contiguousSplit(splitIndexes: _*)
+      val dataTypes = (0 until batch.numCols()).map(i => batch.column(i).dataType()).toArray
+
+      if (!fillOldFile) newOutputWriter()
+
+      tables.foreach(b => {
+        statsTrackers.foreach(_.newBatch(GpuColumnVector.from(b.getTable(),dataTypes)))
+        recordsInFile = (recordsInFile + b.getRowCount()) % maxRecordsPerFile
+        newOutputWriter()
+      })
+
       needToCloseBatch = false
     } finally {
       if (needToCloseBatch) {
