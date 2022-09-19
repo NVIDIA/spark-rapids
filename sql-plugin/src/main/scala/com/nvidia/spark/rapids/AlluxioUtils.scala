@@ -480,9 +480,9 @@ object AlluxioUtils extends Logging {
     val (location, allReplacedPrefixes) = if (replaceFunc.isDefined) {
       def replacePathsInPartitionSpec(spec: PartitionSpec): (PartitionSpec, Seq[String]) = {
         val partitionsWithPathsReplaced = spec.partitions.map { p =>
-          val (replacedPath, replacedPrefixes) = replaceFunc.get(p.path)
+          val (replacedPath, replacedPrefix) = replaceFunc.get(p.path)
           (org.apache.spark.sql.execution.datasources.PartitionPath(p.values, replacedPath),
-            replacedPrefixes)
+            replacedPrefix)
         }
         val paths = partitionsWithPathsReplaced.map(_._1)
         val replacedPrefixes = partitionsWithPathsReplaced.flatMap(_._2)

@@ -42,7 +42,9 @@ class GpuReadJsonFileFormat extends JsonFileFormat with GpuReadFileFormatWithMet
       filters: Seq[Filter],
       options: Map[String, String],
       hadoopConf: Configuration,
-      metrics: Map[String, GpuMetric]): PartitionedFile => Iterator[InternalRow] = {
+      metrics: Map[String, GpuMetric],
+      alluxionPathReplacementMap: Option[Map[String, String]] = None)
+  : PartitionedFile => Iterator[InternalRow] = {
     val sqlConf = sparkSession.sessionState.conf
     val broadcastedHadoopConf =
       sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))

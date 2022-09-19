@@ -1102,7 +1102,8 @@ case class GpuParquetPartitionReaderFactory(
     filters: Array[Filter],
     @transient rapidsConf: RapidsConf,
     metrics: Map[String, GpuMetric],
-    @transient params: Map[String, String])
+    @transient params: Map[String, String],
+    alluxionPathReplacementMap: Option[Map[String, String]])
   extends ShimFilePartitionReaderFactory(params) with Arm with Logging {
 
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
@@ -1114,6 +1115,7 @@ case class GpuParquetPartitionReaderFactory(
 
   private val filterHandler = GpuParquetFileFilterHandler(sqlConf)
   private val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
+  private val alluxioReplacementTaskTime = rapidsConf.isAlluxioReplacementAlgoTaskTime
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
@@ -1125,7 +1127,13 @@ case class GpuParquetPartitionReaderFactory(
       origPartitionedFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
     // Replace the file path with Alluxio one if needed. Replacing at this point so we
     // leave the input file name reported as the original one.
-    val partitionedFile = AlluxioUtils.updateFilesTaskTimeIfAlluxio(Array(origPartitionedFile)).head._1
+    val partitionedFile = if (alluxioReplacementTaskTime) {
+      AlluxioUtils.updateFilesTaskTimeIfAlluxio(Array(origPartitionedFile),
+        alluxionPathReplacementMap).head._1
+    } else {
+      // otherwise if using Alluxio, path was already replaced
+      origPartitionedFile
+    }
     val reader = new PartitionReaderWithBytesRead(buildBaseColumnarParquetReader(partitionedFile))
     ColumnarPartitionReaderWithPartitionValues.newReader(partitionedFile, reader, partitionSchema)
   }

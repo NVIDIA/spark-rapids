@@ -63,7 +63,7 @@ import org.apache.spark.util.collection.BitSet
  * @param disableBucketedScan Disable bucketed scan based on physical query plan.
  */
 case class GpuFileSourceScanExec(
-    @transient origRelation: HadoopFsRelation,
+    @transient relation: HadoopFsRelation,
     output: Seq[Attribute],
     requiredSchema: StructType,
     partitionFilters: Seq[Expression],
@@ -80,26 +80,26 @@ case class GpuFileSourceScanExec(
   // or when TASK_TIME if one of the paths will be replaced
   private var alluxionPathReplacementMap: Option[Map[String, String]] = None
 
-  private val relation = if (rapidsConf.isAlluxioReplacementAlgoConvertTime) {
+  private val relationToUse = if (rapidsConf.isAlluxioReplacementAlgoConvertTime) {
     val (fileIndex, alluxioPathsToReplaceMap) = AlluxioUtils.replacePathIfNeeded(
       rapidsConf,
-      origRelation,
+      relation,
       partitionFilters,
       dataFilters)
     // alluxioPathsToReplace is defined only when it replaced some paths
     alluxionPathReplacementMap = alluxioPathsToReplaceMap
     HadoopFsRelation(
       fileIndex,
-      origRelation.partitionSchema,
-      origRelation.dataSchema,
-      origRelation.bucketSpec,
-      origRelation.fileFormat,
-      origRelation.options)(sparkSession)
+      relation.partitionSchema,
+      relation.dataSchema,
+      relation.bucketSpec,
+      relation.fileFormat,
+      relation.options)(sparkSession)
   } else {
-    origRelation
+    relation
   }
 
-  private val isPerFileReadEnabled = relation.fileFormat match {
+  private val isPerFileReadEnabled = relationToUse.fileFormat match {
     case _: ParquetFileFormat => rapidsConf.isParquetPerFileReadEnabled
     case _: OrcFileFormat => rapidsConf.isOrcPerFileReadEnabled
     case ef if ExternalSource.isSupportedFormat(ef) =>
@@ -113,7 +113,7 @@ case class GpuFileSourceScanExec(
   override def gpuExpressions: Seq[Expression] = Nil
 
   override val nodeName: String = {
-    s"GpuScan $relation ${tableIdentifier.map(_.unquotedString).getOrElse("")}"
+    s"GpuScan $relationToUse ${tableIdentifier.map(_.unquotedString).getOrElse("")}"
   }
 
   private lazy val driverMetrics: HashMap[String, Long] = HashMap.empty
@@ -133,15 +133,15 @@ case class GpuFileSourceScanExec(
     e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
 
   @transient lazy val selectedPartitions: Array[PartitionDirectory] = {
-    val optimizerMetadataTimeNs = relation.location.metadataOpsTimeNs.getOrElse(0L)
+    val optimizerMetadataTimeNs = relationToUse.location.metadataOpsTimeNs.getOrElse(0L)
     val startTime = System.nanoTime()
-    val pds = relation.location.listFiles(
+    val pds = relationToUse.location.listFiles(
         partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
     if (AlluxioUtils.isAlluxioAutoMountTaskTime(rapidsConf, relation.fileFormat)) {
       alluxionPathReplacementMap = AlluxioUtils.autoMountIfNeeded(rapidsConf, pds,
-          relation.sparkSession.sparkContext.hadoopConfiguration,
-          relation.sparkSession.conf)
-    } else if (AlluxioUtils.isAlluxioPathsToReplaceTaskTime( rapidsConf, relation.fileFormat)) {
+        relationToUse.sparkSession.sparkContext.hadoopConfiguration,
+        relationToUse.sparkSession.conf)
+    } else if (AlluxioUtils.isAlluxioPathsToReplaceTaskTime( rapidsConf, relationToUse.fileFormat)) {
       // this is not ideal, here we check to see if we will replace any paths, which is an
       // extra iteration through paths
       alluxionPathReplacementMap = AlluxioUtils.checkIfNeedsReplaced(rapidsConf, pds)
@@ -166,7 +166,7 @@ case class GpuFileSourceScanExec(
       val startTime = System.nanoTime()
       // call the file index for the files matching all filters except dynamic partition filters
       val predicate = dynamicPartitionFilters.reduce(And)
-      val partitionColumns = relation.partitionSchema
+      val partitionColumns = relationToUse.partitionSchema
       val boundPredicate = Predicate.create(predicate.transform {
         case a: AttributeReference =>
           val index = partitionColumns.indexWhere(a.name == _.name)
@@ -195,9 +195,9 @@ case class GpuFileSourceScanExec(
 
   // exposed for testing
   lazy val bucketedScan: Boolean = {
-    if (relation.sparkSession.sessionState.conf.bucketingEnabled && relation.bucketSpec.isDefined
+    if (relationToUse.sparkSession.sessionState.conf.bucketingEnabled && relationToUse.bucketSpec.isDefined
       && !disableBucketedScan) {
-      val spec = relation.bucketSpec.get
+      val spec = relationToUse.bucketSpec.get
       val bucketColumns = spec.bucketColumnNames.flatMap(n => toAttribute(n))
       bucketColumns.size == spec.bucketColumnNames.size
     } else {
@@ -225,7 +225,7 @@ case class GpuFileSourceScanExec(
       // If sort columns are (col0, col1), then sort ordering would be considered as (col0)
       // If sort columns are (col1, col0), then sort ordering would be empty as per rule #2
       // above
-      val spec = relation.bucketSpec.get
+      val spec = relationToUse.bucketSpec.get
       val bucketColumns = spec.bucketColumnNames.flatMap(n => toAttribute(n))
       val numPartitions = optionalNumCoalescedBuckets.getOrElse(spec.numBuckets)
       val partitioning = HashPartitioning(bucketColumns, numPartitions)
@@ -267,19 +267,19 @@ case class GpuFileSourceScanExec(
 
   @transient
   private lazy val pushedDownFilters = {
-    val supportNestedPredicatePushdown = DataSourceUtils.supportNestedPredicatePushdown(relation)
+    val supportNestedPredicatePushdown = DataSourceUtils.supportNestedPredicatePushdown(relationToUse)
     dataFilters.flatMap(DataSourceStrategy.translateFilter(_, supportNestedPredicatePushdown))
   }
 
   override lazy val metadata: Map[String, String] = {
     def seqToString(seq: Seq[Any]) = seq.mkString("[", ", ", "]")
-    val location = relation.location
+    val location = relationToUse.location
     val locationDesc =
       location.getClass.getSimpleName +
         GpuDataSourceScanExec.buildLocationMetadata(location.rootPaths, maxMetadataValueLength)
     val metadata =
       Map(
-        "Format" -> relation.fileFormat.toString,
+        "Format" -> relationToUse.fileFormat.toString,
         "ReadSchema" -> requiredSchema.catalogString,
         "Batched" -> supportsColumnar.toString,
         "PartitionFilters" -> seqToString(partitionFilters),
@@ -289,7 +289,7 @@ case class GpuFileSourceScanExec(
 
 
 
-    relation.bucketSpec.map { spec =>
+    relationToUse.bucketSpec.map { spec =>
       val bucketedKey = "Bucketed"
       if (bucketedScan){
         val numSelectedBuckets = optionalBucketSet.map { b =>
@@ -302,7 +302,7 @@ case class GpuFileSourceScanExec(
           bucketedKey -> "true",
           "SelectedBucketsCount" -> (s"$numSelectedBuckets out of ${spec.numBuckets}" +
             optionalNumCoalescedBuckets.map { b => s" (Coalesced to $b)"}.getOrElse("")))
-      } else if (!relation.sparkSession.sessionState.conf.bucketingEnabled) {
+      } else if (!relationToUse.sparkSession.sessionState.conf.bucketingEnabled) {
         metadata + (bucketedKey -> "false (disabled by configuration)")
       } else if (disableBucketedScan) {
         metadata + (bucketedKey -> "false (disabled by query planner)")
@@ -321,7 +321,7 @@ case class GpuFileSourceScanExec(
       case (_, _) => false
     }.map {
       case (key, _) if (key.equals("Location")) =>
-        val location = relation.location
+        val location = relationToUse.location
         val numPaths = location.rootPaths.length
         val abbreviatedLocation = if (numPaths <= 1) {
           location.rootPaths.mkString("[", ", ", "]")
@@ -347,28 +347,29 @@ case class GpuFileSourceScanExec(
   lazy val inputRDD: RDD[InternalRow] = {
     val readFile: Option[(PartitionedFile) => Iterator[InternalRow]] =
       if (isPerFileReadEnabled) {
-        val fileFormat = relation.fileFormat.asInstanceOf[GpuReadFileFormatWithMetrics]
+        val fileFormat = relationToUse.fileFormat.asInstanceOf[GpuReadFileFormatWithMetrics]
         val reader = fileFormat.buildReaderWithPartitionValuesAndMetrics(
-          sparkSession = relation.sparkSession,
-          dataSchema = relation.dataSchema,
-          partitionSchema = relation.partitionSchema,
+          sparkSession = relationToUse.sparkSession,
+          dataSchema = relationToUse.dataSchema,
+          partitionSchema = relationToUse.partitionSchema,
           requiredSchema = requiredSchema,
           filters = pushedDownFilters,
-          options = relation.options,
+          options = relationToUse.options,
           hadoopConf =
-            relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options),
-          metrics = allMetrics)
+            relationToUse.sparkSession.sessionState.newHadoopConfWithOptions(relationToUse.options),
+          metrics = allMetrics,
+          alluxionPathReplacementMap)
         Some(reader)
       } else {
         None
       }
 
     val readRDD = if (bucketedScan) {
-      createBucketedReadRDD(relation.bucketSpec.get, readFile, dynamicallySelectedPartitions,
-        relation)
+      createBucketedReadRDD(relationToUse.bucketSpec.get, readFile, dynamicallySelectedPartitions,
+        relationToUse)
     } else {
       createNonBucketedReadRDD(readFile, dynamicallySelectedPartitions,
-        relation)
+        relationToUse)
     }
     sendDriverMetrics()
     readRDD
@@ -576,7 +577,11 @@ case class GpuFileSourceScanExec(
 
     if (isPerFileReadEnabled) {
       logInfo("Using the original per file parquet reader")
-      // TODO we likely need to copy FileScanRDD in order to set the input_file_name properly
+      // TODO - this is weird, if we are using the CONVERT_TIME alluxio replacement, here we are actually
+      // to change and file partitions should be the original paths, not hte Alluxio ones so
+      // that input_file_name shows up properly,then in the PartitionReaderFactory it handles
+      // really using the Alluxio path
+      if ()
       SparkShimImpl.getFileScanRDD(relation.sparkSession, readFile.get, partitions,
         requiredSchema)
     } else {

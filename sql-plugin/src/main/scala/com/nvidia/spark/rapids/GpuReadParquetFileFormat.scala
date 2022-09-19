@@ -40,7 +40,9 @@ class GpuReadParquetFileFormat extends ParquetFileFormat with GpuReadFileFormatW
       filters: Seq[Filter],
       options: Map[String, String],
       hadoopConf: Configuration,
-      metrics: Map[String, GpuMetric]): PartitionedFile => Iterator[InternalRow] = {
+      metrics: Map[String, GpuMetric],
+      alluxionPathReplacementMap: Option[Map[String, String]])
+  : PartitionedFile => Iterator[InternalRow] = {
     val sqlConf = sparkSession.sessionState.conf
     val broadcastedHadoopConf =
       sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
@@ -53,7 +55,8 @@ class GpuReadParquetFileFormat extends ParquetFileFormat with GpuReadFileFormatW
       filters.toArray,
       new RapidsConf(sqlConf),
       metrics,
-      options)
+      options,
+      alluxionPathReplacementMap)
     PartitionReaderIterator.buildReader(factory)
   }
 }
