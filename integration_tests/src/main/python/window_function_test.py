@@ -972,6 +972,32 @@ def test_running_window_function_exec_for_all_aggs():
         from window_collect_table
         ''')
 
+# Test the Databricks WindowExec which combines a WindowExec with a ProjectExec and provides the output
+# fields that we need to handle with an extra GpuProjectExec and we need the input expressions to compute
+# a window function of another window function case
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
+def test_join_sum_window_of_window(data_gen):
+    def do_it(spark):
+        agg_table = gen_df(spark, StructGen([('a_1', LongRangeGen()), ('c', data_gen)], nullable=False))
+        part_table = gen_df(spark, StructGen([('a_2', LongRangeGen()), ('b', byte_gen)], nullable=False))
+        agg_table.createOrReplaceTempView("agg")
+        part_table.createOrReplaceTempView("part")
+        # Note that if we include `c` in the select clause here (the output projection), the bug described
+        # in https://github.com/NVIDIA/spark-rapids/issues/6531 does not manifest
+        return spark.sql("""
+        select
+            b,
+            sum(c) as sum_c,
+            sum(c)/sum(sum(c)) over (partition by b) as ratio_sum,
+            (b + c)/sum(sum(c)) over (partition by b) as ratio_bc
+        from agg, part
+        where a_1 = a_2
+        group by b, c
+        order by b, ratio_sum, ratio_bc""")
+
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
 # Generates some repeated values to test the deduplication of GpuCollectSet.
 # And GpuCollectSet does not yet support struct type.
 _gen_data_for_collect_set = [
