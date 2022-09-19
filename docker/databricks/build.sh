@@ -40,6 +40,7 @@ docker build \
   --build-arg CUDA_VERSION=${CUDA_VERSION} \
   --build-arg CUDA_PKG_VERSION=${CUDA_PKG_VERSION} \
   --build-arg JAR_URL=${JAR_URL} \
+  --build-arg JAR_FILE=${JAR_FILE} \
   --build-arg REQUIREMENTS=${REQUIREMENTS} \
   --build-arg DRIVER_CONF_FILE=${DRIVER_CONF_FILE} \
   --target $STAGE \
