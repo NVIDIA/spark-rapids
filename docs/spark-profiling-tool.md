@@ -243,7 +243,6 @@ Compare Rapids Properties which are set explicitly:
 |spark.rapids.sql.concurrentGpuTasks        |null      |2         |
 |spark.rapids.sql.enabled                   |false     |true      |
 |spark.rapids.sql.explain                   |null      |NOT_ON_GPU|
-|spark.rapids.sql.hasNans                   |null      |FALSE     |
 |spark.rapids.sql.incompatibleOps.enabled   |null      |true      |
 +-------------------------------------------+----------+----------+
 ```
