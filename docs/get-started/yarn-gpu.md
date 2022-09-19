@@ -152,7 +152,7 @@ sudo chmod 644 /etc/systemd/system/mountCgroup.service
 sudo chmod 655 /etc/mountCgroup.sh
 ```
 
-then start the mountCgroup service:
+Then start the mountCgroup service:
 ```bash
 systemctl enable mountCgroup.service
 systemctl start mountCgroup.service
