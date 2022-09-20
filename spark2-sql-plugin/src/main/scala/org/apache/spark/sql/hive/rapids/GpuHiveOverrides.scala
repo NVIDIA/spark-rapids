@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,7 +38,7 @@ object GpuHiveOverrides {
     } else {
       new HiveProvider() {
         override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
-          DataWritingCommandRule[_ <: DataWritingCommand]] = Map.empty
+            DataWritingCommandRule[_ <: DataWritingCommand]] = Map.empty
         override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map.empty
       }
     }
@@ -50,7 +50,7 @@ object GpuHiveOverrides {
    * This will return an empty mapping if spark-hive is unavailable
    */
   def dataWriteCmds: Map[Class[_ <: DataWritingCommand],
-    DataWritingCommandRule[_ <: DataWritingCommand]] = hiveProvider.getDataWriteCmds
+      DataWritingCommandRule[_ <: DataWritingCommand]] = hiveProvider.getDataWriteCmds
 
   /**
    * Builds the rules that are specific to spark-hive Catalyst nodes. This will return an empty
