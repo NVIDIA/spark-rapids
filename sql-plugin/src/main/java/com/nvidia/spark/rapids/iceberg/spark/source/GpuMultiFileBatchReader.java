@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids.iceberg.spark.source;
 
-import scala.collection.JavaConverters.*;
-
 import com.nvidia.spark.rapids.*;
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter;
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquet;
@@ -326,7 +324,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
           false, // ignoreMissingFiles
           false, // ignoreCorruptFiles
           false, // useFieldId
-          Collections.emptyMap().asScala.toMap, // alluxioPathReplacementMap
+          scala.collection.immutable.Map$.MODULE$.empty(),  // alluxioPathReplacementMap
           false // alluxioReplacementTaskTime
       );
     }
