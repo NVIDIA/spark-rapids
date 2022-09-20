@@ -29,13 +29,13 @@ import org.apache.spark.sql.types.DataType
 
 // 330+ ORC shims
 object OrcShims {
-  // ORC Reader of the 321cdh Spark has no close method.
+  // ORC Reader of the cdh Spark has no close method.
   // The resource is closed internally.
   def withReader[V](r: Reader)(block: Reader => V): V = {
     block(r)
   }
 
-  // ORC Reader of the 321cdh Spark has no close method.
+  // ORC Reader of the cdh Spark has no close method.
   // The resource is closed internally.
   def closeReader(reader: Reader): Unit = {
   }

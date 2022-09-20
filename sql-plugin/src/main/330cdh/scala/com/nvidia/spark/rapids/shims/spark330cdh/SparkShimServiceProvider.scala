@@ -20,7 +20,7 @@ import com.nvidia.spark.rapids.{ClouderaShimVersion, ShimVersion}
 
 object SparkShimServiceProvider {
   val VERSION = ClouderaShimVersion(3, 3, 0, "3.3.7180")
-  // cdh version can have numbers after after 7170
+  // cdh version can have numbers after 7180
   val CDH_BASE_VERSION = "3.3.0.3.3.7180"
 }
 
