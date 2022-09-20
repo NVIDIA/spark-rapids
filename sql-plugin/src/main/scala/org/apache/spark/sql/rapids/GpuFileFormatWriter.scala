@@ -110,7 +110,7 @@ object GpuFileFormatWriter extends Logging {
       statsTrackers: Seq[ColumnarWriteJobStatsTracker],
       options: Map[String, String],
       useStableSort: Boolean,
-      concurrentWriterCacheSize: Long): Set[String] = {
+      concurrentWriterPartitionFlushSize: Long): Set[String] = {
 
     val job = Job.getInstance(hadoopConf)
     job.setOutputKeyClass(classOf[Void])
@@ -174,7 +174,7 @@ object GpuFileFormatWriter extends Logging {
       timeZoneId = caseInsensitiveOptions.get(DateTimeUtils.TIMEZONE_OPTION)
           .getOrElse(sparkSession.sessionState.conf.sessionLocalTimeZone),
       statsTrackers = statsTrackers,
-      concurrentWriterCacheSize = concurrentWriterCacheSize
+      concurrentWriterPartitionFlushSize = concurrentWriterPartitionFlushSize
     )
 
     // We should first sort by partition columns, then bucket id, and finally sorting columns.

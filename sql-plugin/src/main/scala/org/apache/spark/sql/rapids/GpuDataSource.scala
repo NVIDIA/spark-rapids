@@ -313,7 +313,7 @@ case class GpuDataSource(
       format: ColumnarFileFormat,
       mode: SaveMode,
       data: LogicalPlan, useStableSort: Boolean,
-      concurrentWriterCacheSize: Long): GpuInsertIntoHadoopFsRelationCommand = {
+      concurrentWriterPartitionFlushSize: Long): GpuInsertIntoHadoopFsRelationCommand = {
     // Don't glob path for the write path.  The contracts here are:
     //  1. Only one output path can be specified on the write path;
     //  2. Output path must be a legal HDFS style file system path;
@@ -353,7 +353,7 @@ case class GpuDataSource(
       fileIndex = fileIndex,
       outputColumnNames = data.output.map(_.name),
       useStableSort = useStableSort,
-      concurrentWriterCacheSize = concurrentWriterCacheSize)
+      concurrentWriterPartitionFlushSize = concurrentWriterPartitionFlushSize)
   }
 
   /**
@@ -377,7 +377,7 @@ case class GpuDataSource(
       outputColumnNames: Seq[String],
       physicalPlan: SparkPlan,
       useStableSort: Boolean,
-      concurrentWriterCacheSize: Long): BaseRelation = {
+      concurrentWriterPartitionFlushSize: Long): BaseRelation = {
     val outputColumns = DataWritingCommand.logicalPlanOutputWithNames(data, outputColumnNames)
     if (outputColumns.map(_.dataType).exists(_.isInstanceOf[CalendarIntervalType])) {
       throw new AnalysisException("Cannot save interval data type into external storage.")
@@ -385,7 +385,7 @@ case class GpuDataSource(
 
     // Only currently support ColumnarFileFormat
     val cmd = planForWritingFileFormat(gpuFileFormat, mode, data, useStableSort,
-      concurrentWriterCacheSize)
+      concurrentWriterPartitionFlushSize)
     val resolvedPartCols = cmd.partitionColumns.map { col =>
       // The partition columns created in `planForWritingFileFormat` should always be
       // `UnresolvedAttribute` with a single name part.

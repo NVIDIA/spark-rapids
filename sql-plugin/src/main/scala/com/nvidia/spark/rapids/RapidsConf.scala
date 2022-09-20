@@ -1559,13 +1559,16 @@ object RapidsConf {
     .integerConf
     .createWithDefault(value = 0)
 
-  val CONCURRENT_WRITER_CACHE_SIZE = conf("spark.rapids.sql.concurrentWriterCacheSize")
-      .doc("The size of the concurrent writer cache in bytes for each partition. " +
-          "If specified spark.sql.maxConcurrentOutputFileWriters, use concurrent writer to " +
-          "write data, concurrent writer flushes data when cache is full. Max value may get " +
-          "better performance but consume more GPU memory")
-      .bytesConf(ByteUnit.BYTE)
-      .createWithDefault(ByteUnit.MiB.toBytes(64))
+  val CONCURRENT_WRITER_PARTITION_FLUSH_SIZE =
+    conf("spark.rapids.sql.concurrentWriterPartitionFlushSize")
+        .doc("The flush size of the concurrent writer cache in bytes for each partition. " +
+            "If specified spark.sql.maxConcurrentOutputFileWriters, use concurrent writer to " +
+            "write data. Concurrent writer first caches data for each partition and begins to " +
+            "flush data if find one partition data is equal or greater than this size. " +
+            "Max value may get better performance but not always, because concurrent writer uses" +
+            "spillable cache and big value may cause more IO swaps")
+        .bytesConf(ByteUnit.BYTE)
+        .createWithDefault(ByteUnit.MiB.toBytes(64))
 
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
@@ -2107,7 +2110,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isDetectDeltaLogQueries: Boolean = get(DETECT_DELTA_LOG_QUERIES)
 
-  lazy val concurrentWriterCacheSize:Long = get(CONCURRENT_WRITER_CACHE_SIZE)
+  lazy val concurrentWriterPartitionFlushSize:Long = get(CONCURRENT_WRITER_PARTITION_FLUSH_SIZE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

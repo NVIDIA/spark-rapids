@@ -361,7 +361,7 @@ final class InsertIntoHadoopFsRelationCommandMeta(
       cmd.fileIndex,
       cmd.outputColumnNames,
       conf.stableSort,
-      conf.concurrentWriterCacheSize)
+      conf.concurrentWriterPartitionFlushSize)
   }
 }
 
@@ -412,7 +412,7 @@ final class CreateDataSourceTableAsSelectCommandMeta(
       origProvider,
       newProvider,
       conf.stableSort,
-      conf.concurrentWriterCacheSize)
+      conf.concurrentWriterPartitionFlushSize)
   }
 }
 

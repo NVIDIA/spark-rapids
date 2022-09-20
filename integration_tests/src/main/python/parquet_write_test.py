@@ -505,11 +505,13 @@ def test_write_daytime_interval(spark_tmp_path):
             data_path,
             conf=writer_confs)
 
+# def test_concurrent_single_writer():
+
 
 # TODO add tests
 # test_path='/home/chongg/local-disk/data/concurrent-partition-write-1-partition'
 test_path='/home/chongg/local-disk/data/concurrent-partition-write-2-partition-10000'
-# test_path='/home/chongg/local-disk/data/concurrent-partition-write'
+test_path='/home/chongg/local-disk/data/concurrent-partition-write'
 
 @pytest.mark.parametrize('is_stable_sort', ["false"])
 # concurrent writer mode
@@ -520,7 +522,8 @@ def test_my1(is_stable_sort):
                      .write.mode("overwrite").partitionBy('c1', 'c2').parquet("/tmp/my-parquet1"),
                      copy_and_update({"spark.rapids.sql.format.parquet.reader.type": "PERFILE"},
                                      {"spark.sql.files.maxPartitionBytes": "11000m"},
-                                     {"spark.sql.maxConcurrentOutputFileWriters": 100}
+                                     {"spark.sql.maxConcurrentOutputFileWriters": 100},
+                                     {"spark.rapids.sql.concurrentWriterPartitionFlushSize": 32 * 1024 * 1024}
                                      ))
     end = time.time()
     print("\n"  + "used time: " + str(end - start))
