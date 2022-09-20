@@ -786,7 +786,8 @@ class GpuDynamicPartitionDataConcurrentWriter(
 
             // update flag of fall back
             if (!fallBackToSortBased && concurrentWriters.size >= spec.maxWriters) {
-              // Note: fall back will be trigger
+              // Note: this is only to mark the flag, falling back to single writer
+              // will be effective in the next `write(cb: ColumnarBatch)`
               fallBackToSortBased = true
             }
             statsTrackers.foreach(_.newPartition())
