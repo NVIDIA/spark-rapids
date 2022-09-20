@@ -567,7 +567,7 @@ class GpuDynamicPartitionDataSingleWriter(
     // does not use `currentWriter`, single writer use `currentWriterStatus`
     assert(currentWriter == null)
 
-    if(currentWriterStatus != null) {
+    if (currentWriterStatus != null) {
       try {
         currentWriterStatus.outputWriter.close()
         statsTrackers.foreach(_.closeFile(currentWriterStatus.outputWriter.path()))
