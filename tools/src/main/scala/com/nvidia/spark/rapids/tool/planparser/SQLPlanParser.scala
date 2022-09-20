@@ -37,7 +37,6 @@ class ExecInfo(
     val children: Option[Seq[ExecInfo]], // only one level deep
     val stages: Set[Int] = Set.empty,
     val shouldRemove: Boolean = false,
-    val unsupportedExecs: String = "",
     val unsupportedExprs: Array[String] = Array.empty) {
   private def childrenToString = {
     val str = children.map { c =>
@@ -186,7 +185,7 @@ object SQLPlanParser extends Logging {
           WindowInPandasExecParser(node, checker, sqlID).parse
         case _ =>
           new ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
-            isSupported = false, None, unsupportedExecs=node.name)
+            isSupported = false, None)
       }
       // check is the node has a dataset operations and if so change to not supported
       val ds = app.isDataSetOrRDDPlan(node.desc)
@@ -198,15 +197,10 @@ object SQLPlanParser extends Logging {
       }
       val stagesInNode = getStagesInSQLNode(node, app)
       val supported = execInfos.isSupported && !ds && !containsUDF
-      val unSupportedExecs = if (!execInfos.isSupported) {
-        execInfos.exec
-      } else {
-        ""
-      }
 
       Seq(new ExecInfo(execInfos.sqlID, execInfos.exec, execInfos.expr, execInfos.speedupFactor,
         execInfos.duration, execInfos.nodeId, supported, execInfos.children,
-        stagesInNode, execInfos.shouldRemove, unSupportedExecs, execInfos.unsupportedExprs))
+        stagesInNode, execInfos.shouldRemove, execInfos.unsupportedExprs))
     }
   }
 

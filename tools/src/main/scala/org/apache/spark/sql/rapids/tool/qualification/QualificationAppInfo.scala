@@ -400,8 +400,15 @@ class QualificationAppInfo(
       val supportedSQLTaskDuration = calculateSQLSupportedTaskDuration(allStagesSummary)
       val taskSpeedupFactor = calculateSpeedupFactor(allStagesSummary)
       // Get all the unsupported Execs from the plan
-      val unSupportedExecs = origPlanInfos.map(_.execInfo.map(
-        _.unsupportedExecs)).flatten.filter(_.nonEmpty).toSet.mkString(";").trim
+      val unSupportedExecs = origPlanInfos.flatMap { p =>
+        // WholeStageCodeGen is excluded from the result.
+        val topLevelExecs = p.execInfo.filterNot(_.isSupported).filterNot(
+          x => x.exec.startsWith("WholeStage"))
+        val childrenExecs = p.execInfo.flatMap { e =>
+          e.children.map(x => x.filterNot(_.isSupported))
+        }.flatten
+        topLevelExecs ++ childrenExecs
+      }.map(_.exec).toSet.mkString(";").trim
       // Get all the unsupported Expressions from the plan
       val unSupportedExprs = origPlanInfos.map(_.execInfo.flatMap(
         _.unsupportedExprs)).flatten.filter(_.nonEmpty).toSet.mkString(";").trim

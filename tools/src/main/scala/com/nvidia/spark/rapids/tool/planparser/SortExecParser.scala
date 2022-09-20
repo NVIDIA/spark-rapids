@@ -32,9 +32,9 @@ case class SortExecParser(
     val duration = None
     val exprString = node.desc.replaceFirst("Sort ", "")
     val expressions = SQLPlanParser.parseSortExpressions(exprString)
-    val notSupportedExprs = expressions.filter(expr => !checker.isExprSupported(expr))
+    val notSupportedExprs = expressions.filterNot(expr => checker.isExprSupported(expr))
     val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName) &&
-        notSupportedExprs.size == 0) {
+        notSupportedExprs.isEmpty) {
       (checker.getSpeedupFactor(fullExecName), true)
     } else {
       (1.0, false)

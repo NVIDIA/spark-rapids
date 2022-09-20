@@ -731,7 +731,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val rowsSumOut = csvSumOut.split("\n")
     val headers = rowsSumOut(0).split(",")
     val values = rowsSumOut(1).split(",")
-    val expectedExecs = "Filter;SerializeFromObject;Scan" // Unsupported Execs
+    val expectedExecs = "Scan;Filter;SerializeFromObject" // Unsupported Execs
     val expectedExprs = "hex" //Unsupported Exprs
     val unsupportedExecs = values(values.length - 2) // index of unsupportedExecs
     val unsupportedExprs = values(values.length - 1) // index of unsupportedExprs

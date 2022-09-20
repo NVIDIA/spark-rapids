@@ -178,7 +178,16 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
       sums: Seq[QualificationSummaryInfo], estSum: Seq[EstimatedSummaryInfo],
       numOutputRows: Int): Unit = {
     val appIdMaxSize = QualOutputWriter.getAppIdSize(sums)
-    val headersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(sums, appIdMaxSize)
+    val unSupExecMaxSize = QualOutputWriter.getunSupportedMaxSize(
+      sums.map(_.unSupportedExecs.size),
+      QualOutputWriter.UNSUPPORTED_EXECS_MAX_SIZE,
+      QualOutputWriter.UNSUPPORTED_EXECS.size)
+    val unSupExprMaxSize = QualOutputWriter.getunSupportedMaxSize(
+      sums.map(_.unSupportedExprs.size),
+      QualOutputWriter.UNSUPPORTED_EXPRS_MAX_SIZE,
+      QualOutputWriter.UNSUPPORTED_EXPRS.size)
+    val headersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(sums, appIdMaxSize,
+      unSupExecMaxSize, unSupExprMaxSize)
     val entireHeader = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
       TEXT_DELIMITER, true)
     val sep = "=" * (entireHeader.size - 1)
@@ -195,7 +204,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
     val finalSums = estSum.take(numOutputRows)
     finalSums.foreach { sumInfo =>
       val wStr = QualOutputWriter.constructAppSummaryInfo(sumInfo, headersAndSizes,
-        appIdMaxSize, TEXT_DELIMITER, true)
+        appIdMaxSize, unSupExecMaxSize, unSupExprMaxSize, TEXT_DELIMITER, true)
       writer.write(wStr)
       if (printStdout) print(wStr)
     }
@@ -291,6 +300,24 @@ object QualOutputWriter {
   def getAppIdSize(sums: Seq[QualificationSummaryInfo]): Int = {
     val sizes = sums.map(_.appId.size)
     getMaxSizeForHeader(sizes, QualOutputWriter.APP_ID_STR)
+  }
+
+  def getunSupportedMaxSize(unSupExecs: Seq[Int], maxStringSize: Int, headerSize: Int): Int = {
+    val unSupportedExecsSize = unSupExecs.size
+    val unSupportedExecsMax = if (unSupExecs.nonEmpty) {
+      unSupExecs.max
+    } else {
+      0
+    }
+    // return maxString size if the unsupportedString exceeds maxStringSize
+    if (unSupportedExecsSize > 0 && unSupportedExecsMax > maxStringSize) {
+      maxStringSize
+    } else if (unSupportedExecsSize > 0 && unSupportedExecsMax < maxStringSize
+      && unSupportedExecsMax >= headerSize) {
+      unSupportedExecsMax
+    } else {
+      headerSize
+    }
   }
 
   def getSqlDescSize(sums: Seq[QualificationSummaryInfo], maxSQLDescLength: Int,
@@ -408,7 +435,9 @@ object QualOutputWriter {
 
   private[qualification] def getSummaryHeaderStringsAndSizes(
       appInfos: Seq[QualificationSummaryInfo],
-      appIdMaxSize: Int): LinkedHashMap[String, Int] = {
+      appIdMaxSize: Int,
+      unSupExecMaxSize: Int = UNSUPPORTED_EXECS_MAX_SIZE,
+      unSupExprMaxSize: Int = UNSUPPORTED_EXPRS_MAX_SIZE): LinkedHashMap[String, Int] = {
     LinkedHashMap[String, Int](
       APP_NAME_STR -> getMaxSizeForHeader(appInfos.map(_.appName.size), APP_NAME_STR),
       APP_ID_STR -> appIdMaxSize,
@@ -419,8 +448,8 @@ object QualOutputWriter {
       ESTIMATED_GPU_SPEEDUP -> ESTIMATED_GPU_SPEEDUP.size,
       ESTIMATED_GPU_TIMESAVED -> ESTIMATED_GPU_TIMESAVED.size,
       SPEEDUP_BUCKET_STR -> SPEEDUP_BUCKET_STR_SIZE,
-      UNSUPPORTED_EXECS -> UNSUPPORTED_EXECS_MAX_SIZE,
-      UNSUPPORTED_EXPRS -> UNSUPPORTED_EXPRS_MAX_SIZE
+      UNSUPPORTED_EXECS -> unSupExecMaxSize,
+      UNSUPPORTED_EXPRS -> unSupExprMaxSize
     )
   }
 
@@ -428,6 +457,8 @@ object QualOutputWriter {
       sumInfo: EstimatedSummaryInfo,
       headersAndSizes: LinkedHashMap[String, Int],
       appIdMaxSize: Int,
+      unSupExecMaxSize: Int,
+      unSupExprMaxSize: Int,
       delimiter: String,
       prettyPrint: Boolean): String = {
     val data = ListBuffer[(String, Int)](
@@ -441,8 +472,8 @@ object QualOutputWriter {
       ToolUtils.formatDoublePrecision(sumInfo.estimatedGpuTimeSaved) ->
         ESTIMATED_GPU_TIMESAVED.size,
       sumInfo.recommendation -> SPEEDUP_BUCKET_STR_SIZE,
-      sumInfo.unsupportedExecs -> UNSUPPORTED_EXECS_MAX_SIZE,
-      sumInfo.unsupportedExprs -> UNSUPPORTED_EXPRS_MAX_SIZE
+      sumInfo.unsupportedExecs -> unSupExecMaxSize,
+      sumInfo.unsupportedExprs -> unSupExprMaxSize
     )
     constructOutputRow(data, delimiter, prettyPrint)
   }
