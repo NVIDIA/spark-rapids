@@ -4393,7 +4393,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
    *  to have to copy the data to GPU and then back off after it does the scan on
    *  Delta Table Checkpoint, so have the entire plan fallback to CPU at that point.
    */
-  def isDeltaLakeMetadataQuery(plan: SparkPlan, conf: RapidsConf): Boolean = {
+  def isDeltaLakeMetadataQuery(plan: SparkPlan): Boolean = {
     val deltaLogScans = PlanUtils.findOperators(plan, {
       case f: FileSourceScanExec if f.requiredSchema.fields
          .exists(_.name.startsWith("_databricks_internal")) =>
@@ -4425,7 +4425,8 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         !AQEUtils.isAdaptiveExecutionSupportedInSparkVersion(plan.conf) =>
         logDebug(s"AdaptiveSparkPlanExec found on unsupported Spark Version: $aqe")
         true
-      case project: ProjectExec if !AQEUtils.isAdaptiveExecutionSupportedInSparkVersion(plan.conf) =>
+      case project: ProjectExec if
+        !AQEUtils.isAdaptiveExecutionSupportedInSparkVersion(plan.conf) =>
         val foundExprs = project.expressions.flatMap { e =>
           PlanUtils.findExpressions(e, {
             case udf: ScalaUDF =>
@@ -4450,7 +4451,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
 
   private def applyOverrides(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
     val wrap = GpuOverrides.wrapAndTagPlan(plan, conf)
-    if (conf.isDetectDeltaLogQueries && isDeltaLakeMetadataQuery(plan, conf)) {
+    if (conf.isDetectDeltaLogQueries && isDeltaLakeMetadataQuery(plan)) {
       wrap.entirePlanWillNotWork("Delta Lake metadata queries are not efficient on GPU")
     }
     val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
