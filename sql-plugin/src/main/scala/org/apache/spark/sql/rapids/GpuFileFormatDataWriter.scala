@@ -181,11 +181,11 @@ class GpuSingleDirectoryDataWriter(
         withResource(table.contiguousSplit(splitIndexes: _*)) {tabs =>
           tabs.foreach(b => {
             withResource(b.getTable()) {tab => 
-              withResource(GpuColumnVector.from(b.getTable(),dataTypes)) {bc => 
-                statsTrackers.foreach(_.newBatch(bc))            
-              }  
+              val bc = GpuColumnVector.from(tab, dataTypes)
+              statsTrackers.foreach(_.newBatch(bc))            
+              recordsInFile += b.getRowCount()
+              currentWriter.write(bc, statsTrackers)            
             }
-            recordsInFile += b.getRowCount()
             if (recordsInFile >= maxRecordsPerFile) {
               fileCounter += 1
               assert(fileCounter < MAX_FILE_COUNTER,
@@ -195,6 +195,7 @@ class GpuSingleDirectoryDataWriter(
             }
           })
         }
+        batch.close()
       }
 
       needToCloseBatch = false
@@ -203,9 +204,6 @@ class GpuSingleDirectoryDataWriter(
         batch.close()
       }
     }
-
-    // It is the responsibility of the writer to close the batch.
-    currentWriter.write(batch, statsTrackers)
   }
 }
 
@@ -433,9 +431,10 @@ class GpuDynamicPartitionDataWriter(
           withResource(table.contiguousSplit(splitIndexes: _*)) {tabs => 
             tabs.foreach(b => {
               withResource(b.getTable()) {tab => 
-                withResource(GpuColumnVector.from(b.getTable(),dataTypes)) {bc => 
-                  statsTrackers.foreach(_.newBatch(bc))            
-                }  
+                val bc = GpuColumnVector.from(tab, dataTypes)
+                statsTrackers.foreach(_.newBatch(bc))            
+                recordsInFile += b.getRowCount()
+                currentWriter.write(bc, statsTrackers)             
               }
               recordsInFile += b.getRowCount()
               if (recordsInFile >= maxRecordsPerFile) {
@@ -452,6 +451,7 @@ class GpuDynamicPartitionDataWriter(
           recordsInFile += batch.numRows
           currentWriter.write(batch, statsTrackers)
         }
+        batch.close()
       })
     } finally {
       if (needToCloseBatch) {
