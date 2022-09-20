@@ -20,9 +20,9 @@ from datetime import date, datetime, timezone
 from marks import *
 from spark_session import is_hive_available, is_spark_330_or_later, with_cpu_session
 
-# Using positive timestamps to work around a cudf ORC bug
-# https://github.com/rapidsai/cudf/issues/11525
-# Using a limited upper end for timestamps to avoid INT96 overflow on Parquet
+# Using timestamps from 1970 to work around a cudf ORC bug
+# https://github.com/NVIDIA/spark-rapids/issues/140.
+# Using a limited upper end for timestamps to avoid INT96 overflow on Parquet.
 def _restricted_timestamp(nullable=True):
     return TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc),
                         end=datetime(2262, 4, 11, tzinfo=timezone.utc),
