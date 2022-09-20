@@ -109,9 +109,12 @@ rapids_shuffle_smoke_test() {
     }
 
     # using UCX shuffle
-    # Disabled temporarily due to: https://github.com/NVIDIA/spark-rapids/issues/6572
-    # PYSP_TEST_spark_executorEnv_UCX_ERROR_SIGNALS="" \
-    #     invoke_shuffle_integration_test
+    # The UCX_TLS=^posix config is removing posix from the list of memory transports
+    # so that IPC regions are obtained using SysV API instead. This was done because of
+    # itermittent test failures. See: https://github.com/NVIDIA/spark-rapids/issues/6572
+    PYSP_TEST_spark_executorEnv_UCX_ERROR_SIGNALS="" \
+    PYSP_TEST_spark_executorEnv_UCX_TLS="^posix" \
+        invoke_shuffle_integration_test
 
     # using MULTITHREADED shuffle
     PYSP_TEST_spark_rapids_shuffle_mode=MULTITHREADED \
