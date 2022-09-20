@@ -1565,8 +1565,8 @@ object RapidsConf {
             "If specified spark.sql.maxConcurrentOutputFileWriters, use concurrent writer to " +
             "write data. Concurrent writer first caches data for each partition and begins to " +
             "flush data if find one partition data is equal or greater than this size. " +
-            "Max value may get better performance but not always, because concurrent writer uses" +
-            "spillable cache and big value may cause more IO swaps")
+            "Max value may get better performance but not always, because concurrent writer uses " +
+            "spillable cache and big value may cause more IO swaps.")
         .bytesConf(ByteUnit.BYTE)
         .createWithDefault(ByteUnit.MiB.toBytes(64))
 
