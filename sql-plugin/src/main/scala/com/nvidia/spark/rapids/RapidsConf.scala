@@ -584,13 +584,6 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val HAS_NANS = conf("spark.rapids.sql.hasNans")
-    .doc("Config to indicate if your data has NaN's. Cudf doesn't " +
-      "currently support NaN's properly so you can get corrupt data if you have NaN's in your " +
-      "data and it runs on the GPU.")
-    .booleanConf
-    .createWithDefault(true)
-
   val NEED_DECIMAL_OVERFLOW_GUARANTEES = conf("spark.rapids.sql.decimalOverflowGuarantees")
       .doc("FOR TESTING ONLY. DO NOT USE IN PRODUCTION. Please see the decimal section of " +
           "the compatibility documents for more information on this config.")
@@ -1078,6 +1071,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_RANGE_WINDOW_DECIMAL: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.window.range.decimal.enabled")
+    .doc("When set to false, this disables the range window acceleration for the " +
+      "DECIMAL type order-by column")
+    .booleanConf
+    .createWithDefault(true)
+
   val ENABLE_REGEXP = conf("spark.rapids.sql.regexp.enabled")
     .doc("Specifies whether supported regular expressions will be evaluated on the GPU. " +
       "Unsupported expressions will fall back to CPU. However, there are some known edge cases " +
@@ -1318,11 +1318,32 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(64 * 1024)
 
+  val SHUFFLE_MULTITHREADED_MAX_BYTES_IN_FLIGHT =
+    conf("spark.rapids.shuffle.multiThreaded.maxBytesInFlight")
+      .doc("The size limit, in bytes, that the RAPIDS shuffle manager configured in " +
+          "\"MULTITHREADED\" mode will allow to be deserialized concurrently.")
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(Integer.MAX_VALUE)
+
   val SHUFFLE_MULTITHREADED_WRITER_THREADS =
     conf("spark.rapids.shuffle.multiThreaded.writer.threads")
-      .doc("The number of threads to use for writing shuffle blocks per executor.")
+      .doc("The number of threads to use for writing shuffle blocks per executor in the " +
+          "RAPIDS shuffle manager configured in \"MULTITHREADED\" mode. " +
+          "There are two special values: " +
+          "0 = feature is disabled, falls back to Spark built-in shuffle writer; " +
+          "1 = our implementation of Spark's built-in shuffle writer with extra metrics.")
       .integerConf
       .createWithDefault(20)
+
+  val SHUFFLE_MULTITHREADED_READER_THREADS =
+    conf("spark.rapids.shuffle.multiThreaded.reader.threads")
+        .doc("The number of threads to use for reading shuffle blocks per executor in the " +
+            "RAPIDS shuffle manager configured in \"MULTITHREADED\" mode. " +
+            "There are two special values: " +
+            "0 = feature is disabled, falls back to Spark built-in shuffle reader; " +
+            "1 = our implementation of Spark's built-in shuffle reader with extra metrics.")
+        .integerConf
+        .createWithDefault(20)
 
   // ALLUXIO CONFIGS
 
@@ -1774,8 +1795,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val gdsSpillBatchWriteBufferSize: Long = get(GDS_SPILL_BATCH_WRITE_BUFFER_SIZE)
 
-  lazy val hasNans: Boolean = get(HAS_NANS)
-
   lazy val needDecimalGuarantees: Boolean = get(NEED_DECIMAL_OVERFLOW_GUARANTEES)
 
   lazy val gpuTargetBatchSizeBytes: Long = get(GPU_BATCH_SIZE_BYTES)
@@ -2009,7 +2028,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
 
+  lazy val shuffleMultiThreadedMaxBytesInFlight: Long =
+    get(SHUFFLE_MULTITHREADED_MAX_BYTES_IN_FLIGHT)
+
   lazy val shuffleMultiThreadedWriterThreads: Int = get(SHUFFLE_MULTITHREADED_WRITER_THREADS)
+
+  lazy val shuffleMultiThreadedReaderThreads: Int = get(SHUFFLE_MULTITHREADED_READER_THREADS)
 
   def isUCXShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode
@@ -2087,6 +2111,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRangeWindowIntEnabled: Boolean = get(ENABLE_RANGE_WINDOW_INT)
 
   lazy val isRangeWindowLongEnabled: Boolean = get(ENABLE_RANGE_WINDOW_LONG)
+
+  lazy val isRangeWindowDecimalEnabled: Boolean = get(ENABLE_RANGE_WINDOW_DECIMAL)
 
   lazy val isRegExpEnabled: Boolean = get(ENABLE_REGEXP)
 

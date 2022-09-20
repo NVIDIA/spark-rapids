@@ -1018,7 +1018,6 @@ map_gens_sample = all_basic_map_gens + [MapGen(StringGen(pattern='key_[0-9]', nu
 nested_gens_sample = array_gens_sample + struct_gens_sample_with_decimal128 + map_gens_sample + decimal_128_map_gens
 
 ansi_enabled_conf = {'spark.sql.ansi.enabled': 'true'}
-no_nans_conf = {'spark.rapids.sql.hasNans': 'false'}
 legacy_interval_enabled_conf = {'spark.sql.legacy.interval.enabled': 'true'}
 
 def copy_and_update(conf, *more_confs):

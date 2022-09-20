@@ -694,21 +694,6 @@ object GpuOverrides extends Logging {
     }
   }
 
-  def checkAndTagFloatNanAgg(
-      op: String,
-      dataType: DataType,
-      conf: RapidsConf,
-      meta: RapidsMeta[_,_,_]): Unit = {
-    if (conf.hasNans && isOrContainsFloatingPoint(dataType)) {
-      meta.willNotWorkOnGpu(s"$op aggregation on floating point columns that can contain NaNs " +
-          "will compute incorrect results. If it is known that there are no NaNs, set " +
-          s" ${RapidsConf.HAS_NANS} to false.")
-    }
-  }
-
-  private val nanAggPsNote = "Input must not contain NaNs and" +
-      s" ${RapidsConf.HAS_NANS} must be false."
-
   /**
    * Helper function specific to ANSI mode for the aggregate functions that should
    * fallback, since we don't have the same overflow checks that Spark provides in
@@ -1049,10 +1034,10 @@ object GpuOverrides extends Logging {
         TypeSig.numericAndInterval,
         Seq(
           ParamCheck("lower",
-            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral,
+            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL_128,
             TypeSig.numericAndInterval),
           ParamCheck("upper",
-            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral,
+            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL_128,
             TypeSig.numericAndInterval))),
       (windowFrame, conf, p, r) => new GpuSpecifiedWindowFrameMeta(windowFrame, conf, p, r) ),
     expr[WindowSpecDefinition](
@@ -2218,8 +2203,7 @@ object GpuOverrides extends Logging {
         TypeSig.all,
         Seq(ParamCheck(
           "pivotColumn",
-          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128)
-              .withPsNote(Seq(TypeEnum.DOUBLE, TypeEnum.FLOAT), nanAggPsNote),
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128),
           TypeSig.all),
           ParamCheck("valueColumn",
           TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128,
@@ -4437,10 +4421,12 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
           logDebug(s"Fallback for RDDScanExec delta log: $rdd")
         }
         found
-      case aqe: AdaptiveSparkPlanExec if !AQEUtils.isAdaptiveExecutionSupportedInSparkVersion =>
+      case aqe: AdaptiveSparkPlanExec if 
+        !AQEUtils.isAdaptiveExecutionSupportedInSparkVersion(plan.conf) =>
         logDebug(s"AdaptiveSparkPlanExec found on unsupported Spark Version: $aqe")
         true
-      case project: ProjectExec if !AQEUtils.isAdaptiveExecutionSupportedInSparkVersion =>
+      case project: ProjectExec if
+        !AQEUtils.isAdaptiveExecutionSupportedInSparkVersion(plan.conf) =>
         val foundExprs = project.expressions.flatMap { e =>
           PlanUtils.findExpressions(e, {
             case udf: ScalaUDF =>

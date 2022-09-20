@@ -413,4 +413,8 @@ object ShimLoader extends Logging {
   def newPlanShims(): PlanShims = ShimLoader.newInstanceOf[PlanShims](
     "com.nvidia.spark.rapids.shims.PlanShimsImpl"
   )
+  
+  def loadGpuColumnVector(): Class[_] = {
+    loadClass("com.nvidia.spark.rapids.GpuColumnVector")
+  }
 }
