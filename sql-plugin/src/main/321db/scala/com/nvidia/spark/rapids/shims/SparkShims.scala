@@ -139,8 +139,18 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
 
+            val (fi, alluxioPathsToReplaceMap) = if (conf.isAlluxioReplacementAlgoConvertTime) {
+              AlluxioUtils.replacePathIfNeeded(
+                conf,
+                wrapped.relation,
+                partitionFilters,
+                wrapped.dataFilters)
+            } else {
+              (wrapped.relation.location, None)
+            }
+
             val newRelation = HadoopFsRelation(
-              wrapped.relation.location,
+              fi,
               wrapped.relation.partitionSchema,
               wrapped.relation.dataSchema,
               wrapped.relation.bucketSpec,
@@ -157,7 +167,9 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
               None,
               wrapped.dataFilters,
               wrapped.tableIdentifier,
-              wrapped.disableBucketedScan)(conf)
+              wrapped.disableBucketedScan,
+              queryUsesInputFile = false,
+              alluxioPathsToReplaceMap)(conf)
           }
         }),
       GpuOverrides.exec[RunningWindowFunctionExec](
