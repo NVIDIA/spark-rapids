@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.RapidsConf
-
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.internal.SQLConf
