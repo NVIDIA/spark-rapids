@@ -33,6 +33,15 @@ import org.apache.spark.storage.BlockManagerId.SHUFFLE_MERGER_IDENTIFIER
 import org.apache.spark.storage.RapidsShuffleBlockFetcherIterator._
 
 /**
+ * Taken mostly verbatim from `PushBasedFetchHelper` because of the type 
+ * hierarchy (specific type for `iterator`).
+ *
+ *  Compare to https://github.com/apache/spark/blob/branch-3.2, and 
+ *  https://github.com/apache/spark/blob/branch-3.3: 
+ *   ./core/src/main/scala/org/apache/spark/storage/PushBasedFetchHelper.scala
+ */
+
+/**
  * Helper class for [[ShuffleBlockFetcherIterator]] that encapsulates all the push-based
  * functionality to fetch push-merged block meta and shuffle chunks.
  * A push-merged block contains multiple shuffle chunks where each shuffle chunk contains multiple

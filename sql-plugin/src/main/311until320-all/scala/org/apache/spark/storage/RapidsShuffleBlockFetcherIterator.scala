@@ -42,6 +42,9 @@ import org.apache.spark.util.{CompletionIterator, TaskCompletionListener, Utils}
  * Instead of this iterator owning the result and clearing it on `next`, the
  * `BufferReleasingInputStream` is in charge of that. This allows for multiple threads
  *  to consume different `BufferReleasingInputStream`s produced from this single iterator.
+ *
+ *  Compare to https://github.com/apache/spark/blob/branch-3.1: 
+ *   ./core/src/main/scala/org/apache/spark/storage/ShuffleBlockFetcherIterator.scala
  */
 
 /**
