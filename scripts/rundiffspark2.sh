@@ -108,6 +108,9 @@ diff ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/RegexComplexityEstimat
 
 diff ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuBatchUtils.scala ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuBatchUtils.scala
 
+diff ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOptimizedCreateHiveTableAsSelectCommand.scala ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOptimizedCreateHiveTableAsSelectCommand.scala > $tmp_dir/GpuOptimizedCreateHiveTableAsSelectCommand.newdiff || true
+diff -c spark2diffs/GpuOptimizedCreateHiveTableAsSelectCommand.diff $tmp_dir/GpuOptimizedCreateHiveTableAsSelectCommand.newdiff
+
 sed -n  '/class SubstringIndexMeta/,/^}/{/^}/!p}'  ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringMeta.scala > $tmp_dir/SubstringIndexMeta_new.out
 sed -n  '/class SubstringIndexMeta/,/override def convertToGpu/{/override def convertToGpu/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/stringFunctions.scala > $tmp_dir/SubstringIndexMeta_old.out
 diff $tmp_dir/SubstringIndexMeta_new.out $tmp_dir/SubstringIndexMeta_old.out > $tmp_dir/SubstringIndexMeta.newdiff || true
