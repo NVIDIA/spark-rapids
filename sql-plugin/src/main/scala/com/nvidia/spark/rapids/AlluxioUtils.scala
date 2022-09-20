@@ -119,7 +119,7 @@ object AlluxioUtils extends Logging {
           val alluxioBucketRegex: String = conf.getAlluxioBucketRegex
           // TODO - do we still need this since set later?
           alluxioPathsToReplaceMap =
-            Some(Map(alluxioBucketRegex -> (ALLUXIO_SCHEME + alluxioMasterHost.get)))
+            Some(Map(alluxioBucketRegex -> (ALLUXIO_SCHEME + alluxioMasterHost.get + "/")))
           // load mounted point by call Alluxio mount command.
           val (ret, output) = runAlluxioCmd("fs mount")
           if (ret == 0) {
@@ -244,8 +244,7 @@ object AlluxioUtils extends Logging {
 
   private def replaceSchemeWithAlluxio(file: String, scheme: String, masterPort: String): String = {
     // replace s3://foo/.. to alluxio://alluxioMasterHost/foo/...
-    val newFile = file.replaceFirst(
-      scheme + ":/", ALLUXIO_SCHEME + masterPort)
+    val newFile = file.replaceFirst(scheme + ":/", ALLUXIO_SCHEME + masterPort)
     logDebug(s"Replace $file to ${newFile}")
     newFile
   }
@@ -403,7 +402,7 @@ object AlluxioUtils extends Logging {
         }
       }
       if (replacedSchemes.nonEmpty) {
-        Some(replacedSchemes.map(_ -> (ALLUXIO_SCHEME + alluxioMasterHost.get)).toMap)
+        Some(replacedSchemes.map(_ -> (ALLUXIO_SCHEME + alluxioMasterHost.get + "/")).toMap)
       } else {
         None
       }
@@ -580,7 +579,7 @@ object AlluxioUtils extends Logging {
       // the exact schemes we replaced in order to set the input_file_name properly,
       // with the alluxio.pathsToReplace it already contains the exact paths
       if (conf.getAlluxioAutoMountEnabled) {
-        Some(allReplacedPrefixes.map(_ -> (ALLUXIO_SCHEME + alluxioMasterHost.get)).toMap)
+        Some(allReplacedPrefixes.map(_ -> (ALLUXIO_SCHEME + alluxioMasterHost.get + "/")).toMap)
       } else {
         alluxioPathsToReplaceMap
       }

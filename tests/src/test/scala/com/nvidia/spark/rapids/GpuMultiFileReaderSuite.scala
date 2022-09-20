@@ -34,7 +34,7 @@ class GpuMultiFileReaderSuite extends FunSuite with Arm {
     val membuffers = Array((HostMemoryBuffer.allocate(0), 0L))
     val multiFileReader = new MultiFileCloudPartitionReaderBase(
       conf,
-      origFiles = Array.empty,
+      inputFiles = Array.empty,
       numThreads = 1,
       maxNumFileProcessed = 1,
       filters = Array.empty,

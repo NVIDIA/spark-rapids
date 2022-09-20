@@ -339,13 +339,12 @@ abstract class FilePartitionReaderBase(conf: Configuration, execMetrics: Map[Str
  * @param filters push down filters
  * @param execMetrics the metrics
  * @param ignoreCorruptFiles Whether to ignore corrupt files when GPU failed to decode the files
- * @param alluxionPathReplacementMap Optional map containing mapping of DFS
- *                                   scheme to Alluxio scheme
+ * @param alluxionPathReplacementMap Map containing mapping of DFS scheme to Alluxio scheme
  * @param alluxioReplacementTaskTime Whether the Alluxio replacement algorithm is set to task time
  */
 abstract class MultiFileCloudPartitionReaderBase(
     conf: Configuration,
-    origFiles: Array[PartitionedFile],
+    inputFiles: Array[PartitionedFile],
     numThreads: Int,
     maxNumFileProcessed: Int,
     filters: Array[Filter],
@@ -369,14 +368,14 @@ abstract class MultiFileCloudPartitionReaderBase(
   private val files: Array[(PartitionedFile, Option[PartitionedFile])] = {
     if (alluxionPathReplacementMap.nonEmpty) {
       if (alluxioReplacementTaskTime) {
-        AlluxioUtils.updateFilesTaskTimeIfAlluxio(origFiles, Some(alluxionPathReplacementMap))
+        AlluxioUtils.updateFilesTaskTimeIfAlluxio(inputFiles, Some(alluxionPathReplacementMap))
       } else {
         // was done at CONVERT_TIME, need to recalculate the original path to set for
         // input_file_name
-        AlluxioUtils.getOrigPathFromReplaced(origFiles, alluxionPathReplacementMap)
+        AlluxioUtils.getOrigPathFromReplaced(inputFiles, alluxionPathReplacementMap)
       }
     } else {
-      origFiles.map((_, None))
+      inputFiles.map((_, None))
     }
   }
 
@@ -406,6 +405,7 @@ abstract class MultiFileCloudPartitionReaderBase(
    *
    * @param tc   task context to use
    * @param file file to be read
+   * @param origFile optional original unmodified file if replaced with Alluxio
    * @param conf the Configuration parameters
    * @param filters push down filters
    * @return Callable[HostMemoryBuffersWithMetaDataBase]
