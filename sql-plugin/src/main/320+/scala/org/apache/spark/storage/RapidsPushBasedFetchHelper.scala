@@ -1,12 +1,11 @@
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -31,6 +30,15 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.network.shuffle.{BlockStoreClient, MergedBlockMeta, MergedBlocksMetaListener}
 import org.apache.spark.storage.BlockManagerId.SHUFFLE_MERGER_IDENTIFIER
 import org.apache.spark.storage.RapidsShuffleBlockFetcherIterator._
+
+/**
+ * Taken mostly verbatim from `PushBasedFetchHelper` because of the type 
+ * hierarchy (specific type for `iterator`).
+ *
+ *  Compare to https://github.com/apache/spark/blob/branch-3.2, and 
+ *  https://github.com/apache/spark/blob/branch-3.3: 
+ *   ./core/src/main/scala/org/apache/spark/storage/PushBasedFetchHelper.scala
+ */
 
 /**
  * Helper class for [[ShuffleBlockFetcherIterator]] that encapsulates all the push-based
