@@ -167,7 +167,7 @@ object MultiFileReaderUtils {
   }
 
   // If Alluxio is enabled and we do task time replacement we have to take that
-  // into account here so we pick the correct reader.
+  // into account here so use the Coalescing reader instead of the MultiThreaded reader.
   def useMultiThreadReader(
       coalescingEnabled: Boolean,
       multiThreadEnabled: Boolean,
@@ -185,6 +185,8 @@ object MultiFileReaderUtils {
  * @param sqlConf         the SQLConf
  * @param broadcastedConf the Hadoop configuration
  * @param rapidsConf      the Rapids configuration
+ * @param alluxionPathReplacementMap Optional map containing mapping of DFS
+ *                                   scheme to Alluxio scheme
  */
 abstract class MultiFilePartitionReaderFactoryBase(
     @transient sqlConf: SQLConf,
@@ -250,8 +252,6 @@ abstract class MultiFilePartitionReaderFactoryBase(
     val filePaths = files.map(_.filePath)
     val conf = broadcastedConf.value.value
 
-    // with Alluxio we have to decide here if we are going to replace the paths to decide
-    // which reader we are going to use
     if (useMultiThread(filePaths)) {
       logInfo("Using the multi-threaded multi-file " + getFileFormatShortName + " reader, " +
         s"files: ${filePaths.mkString(",")} task attemptid: ${TaskContext.get.taskAttemptId()}")
@@ -339,8 +339,9 @@ abstract class FilePartitionReaderBase(conf: Configuration, execMetrics: Map[Str
  * @param filters push down filters
  * @param execMetrics the metrics
  * @param ignoreCorruptFiles Whether to ignore corrupt files when GPU failed to decode the files
- * @param alluxioRegexTaskTime Whether alluxio replacement algorithm is set to task time and if it
- *                             is, then it contains the Alluxio replacement regex
+ * @param alluxionPathReplacementMap Optional map containing mapping of DFS
+ *                                   scheme to Alluxio scheme
+ * @param alluxioReplacementTaskTime Whether the Alluxio replacement algorithm is set to task time
  */
 abstract class MultiFileCloudPartitionReaderBase(
     conf: Configuration,
@@ -362,9 +363,9 @@ abstract class MultiFileCloudPartitionReaderBase(
   private[this] val inputMetrics = Option(TaskContext.get).map(_.taskMetrics().inputMetrics)
       .getOrElse(TrampolineUtil.newInputMetrics())
 
-  // contains the actual file path to read and then an optional one if its ready from
-  // Alluxio transparent to the user so that we return the original non-Alluxio one for
-  // input_file_name
+  // Contains the actual file path to read from and then an optional original path if its read from
+  // Alluxio. To make it transparent to the user, we return the original non-Alluxio path
+  // for input_file_name.
   private val files: Array[(PartitionedFile, Option[PartitionedFile])] = {
     if (alluxionPathReplacementMap.nonEmpty) {
       if (alluxioReplacementTaskTime) {

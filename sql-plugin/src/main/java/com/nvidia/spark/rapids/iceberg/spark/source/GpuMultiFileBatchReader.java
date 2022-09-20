@@ -324,7 +324,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
           false, // ignoreMissingFiles
           false, // ignoreCorruptFiles
           false, // useFieldId
-          scala.collection.immutable.Map$.MODULE$.empty(),  // alluxioPathReplacementMap
+          scala.collection.immutable.Map$.MODULE$.empty(), // alluxioPathReplacementMap
           false // alluxioReplacementTaskTime
       );
     }
