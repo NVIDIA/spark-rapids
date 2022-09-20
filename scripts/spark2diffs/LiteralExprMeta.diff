@@ -2,6 +2,6 @@
 <     p: Option[RapidsMeta[_, _]],
 ---
 >     p: Option[RapidsMeta[_, _, _]],
-8a9,10
-> 
+9a10,11
 >   override def convertToGpu(): GpuExpression = GpuLiteral(lit.value, lit.dataType)
+> 

@@ -19,9 +19,7 @@
 >               .child.isInstanceOf[GpuBroadcastExchangeExec]
 >       case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExec]
 >       case _: GpuBroadcastExchangeExec => true
-29a38,52
->     }
->   }
+31a40,54
 > 
 >   def verifyBuildSideWasReplaced(buildSide: SparkPlan): Unit = {
 >     val buildSideOnGpu = buildSide match {
@@ -35,3 +33,5 @@
 >     }
 >     if (!buildSideOnGpu) {
 >       throw new IllegalStateException(s"the broadcast must be on the GPU too")
+>     }
+>   }

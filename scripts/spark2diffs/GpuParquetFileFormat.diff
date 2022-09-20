@@ -8,7 +8,7 @@
 >       schema: StructType): Option[GpuParquetFileFormat] = {
 8a9
 > 
-61,65c62
+73,77c74
 <     // Spark 2.x doesn't have the rebase mode because the changes of calendar type weren't made
 <     // so just skip the checks, since this is just explain only it would depend on how
 <     // they set when they get to 3.x. The default in 3.x is EXCEPTION which would be good
@@ -16,7 +16,7 @@
 <     /*
 ---
 > 
-87c84,89
+99c96,101
 <     */
 ---
 > 
@@ -25,12 +25,12 @@
 >     } else {
 >       None
 >     }
-90,91c92
+102,103c104
 <   // SPARK 2.X  - just return String rather then CompressionType
 <   def parseCompressionType(compressionType: String): Option[String] = {
 ---
 >   def parseCompressionType(compressionType: String): Option[CompressionType] = {
-93,94c94,95
+105,106c106,107
 <       case "NONE" | "UNCOMPRESSED" => Some("NONE")
 <       case "SNAPPY" => Some("SNAPPY")
 ---
