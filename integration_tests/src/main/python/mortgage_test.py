@@ -24,5 +24,4 @@ from marks import approximate_float, incompat, ignore_order, allow_non_gpu, limi
 @allow_non_gpu(any=True)
 def test_mortgage(mortgage):
   assert_gpu_and_cpu_are_equal_iterator(
-          lambda spark : mortgage.do_test_query(spark),
-          conf={'spark.rapids.sql.hasNans': 'false'})
+          lambda spark : mortgage.do_test_query(spark))

@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2020-2021, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ RUN apt-get update -y && \
 RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update -y && \
     DEBIAN_FRONTEND="noninteractive" apt-get install -y maven \
-    openjdk-8-jdk openjdk-11-jdk python3.8 python3.8-distutils python3-setuptools tzdata git wget parallel
+    openjdk-8-jdk openjdk-11-jdk python3.8 python3.8-distutils python3-setuptools tzdata git wget
 RUN python3.8 -m easy_install pip
 
 # Set default jdk as 1.8.0
@@ -58,6 +58,8 @@ RUN export CUDA_VER=`echo ${CUDA_VER} | cut -d '.' -f 1,2` && \
     mamba install -y -c anaconda pytest requests && \
     mamba install -y -c conda-forge sre_yield && \
     conda clean -ay
+# install pytest plugins for xdist parallel run
+RUN python -m pip install findspark pytest-xdist pytest-order
 
 RUN apt install -y inetutils-ping expect
 

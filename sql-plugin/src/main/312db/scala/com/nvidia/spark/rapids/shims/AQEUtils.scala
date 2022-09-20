@@ -16,11 +16,10 @@
 
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.RapidsConf
-
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
+import org.apache.spark.sql.internal.SQLConf
 
 /** Utility methods for manipulating Catalyst classes involved in Adaptive Query Execution */
 object AQEUtils {
@@ -30,5 +29,5 @@ object AQEUtils {
     ShuffleQueryStageExec(sqse.id, reusedExchange, sqse.originalPlan)
   }
 
-  def isAdaptiveExecutionSupportedInSparkVersion(conf: RapidsConf): Boolean = true
+  def isAdaptiveExecutionSupportedInSparkVersion(conf: SQLConf): Boolean = true
 }

@@ -12465,7 +12465,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td>S</td>
@@ -12486,7 +12486,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td>S</td>
@@ -16666,8 +16666,8 @@ are limited.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td><em>PS<br/>Input must not contain NaNs and spark.rapids.sql.hasNans must be false.</em></td>
-<td><em>PS<br/>Input must not contain NaNs and spark.rapids.sql.hasNans must be false.</em></td>
+<td>S</td>
+<td>S</td>
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>
@@ -16730,8 +16730,8 @@ are limited.
 <td>S</td>
 <td>S</td>
 <td>S</td>
-<td><em>PS<br/>Input must not contain NaNs and spark.rapids.sql.hasNans must be false.</em></td>
-<td><em>PS<br/>Input must not contain NaNs and spark.rapids.sql.hasNans must be false.</em></td>
+<td>S</td>
+<td>S</td>
 <td>S</td>
 <td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
 <td>S</td>

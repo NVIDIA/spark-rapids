@@ -125,13 +125,8 @@ export PYTHONPATH="$CONDA_ROOT/lib/python$PYTHON_VER/site-packages:$PYTHONPATH"
 
 echo "----------------------------START TEST------------------------------------"
 pushd $RAPIDS_INT_TESTS_HOME
-
-export TEST_PARALLEL=0  # disable spark local parallel in run_pyspark_from_build.sh
 export TEST_TYPE="nightly"
 export LOCAL_JAR_PATH=$ARTF_ROOT
-# test collect-only in advance to terminate earlier if ENV issue
-COLLECT_BASE_SPARK_SUBMIT_ARGS="$BASE_SPARK_SUBMIT_ARGS" # if passed custom params
-SPARK_SUBMIT_FLAGS="$COLLECT_BASE_SPARK_SUBMIT_ARGS" ./run_pyspark_from_build.sh --collect-only -qqq
 
 export SPARK_TASK_MAXFAILURES=1
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
@@ -139,39 +134,47 @@ export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 # if failed, we abort the test instantly, so the failed executor log should still be left there for debugging
 export SPARK_WORKER_OPTS="$SPARK_WORKER_OPTS -Dspark.worker.cleanup.enabled=true -Dspark.worker.cleanup.interval=120 -Dspark.worker.cleanup.appDataTtl=60"
 #stop and restart SPARK ETL
-stop-slave.sh
+stop-worker.sh
 stop-master.sh
 start-master.sh
-start-slave.sh spark://$HOSTNAME:7077
+start-worker.sh spark://$HOSTNAME:7077
 jps
 
-export BASE_SPARK_SUBMIT_ARGS="$BASE_SPARK_SUBMIT_ARGS \
---master spark://$HOSTNAME:7077 \
---conf spark.sql.shuffle.partitions=12 \
---conf spark.task.maxFailures=$SPARK_TASK_MAXFAILURES \
---conf spark.dynamicAllocation.enabled=false \
---conf spark.driver.extraJavaOptions=-Duser.timezone=UTC \
---conf spark.executor.extraJavaOptions=-Duser.timezone=UTC \
---conf spark.sql.session.timeZone=UTC"
+# BASE spark test configs
+export PYSP_TEST_spark_master=spark://$HOSTNAME:7077
+export PYSP_TEST_spark_sql_shuffle_partitions=12
+export PYSP_TEST_spark_task_maxFailures=$SPARK_TASK_MAXFAILURES
+export PYSP_TEST_spark_dynamicAllocation_enabled=false
+export PYSP_TEST_spark_driver_extraJavaOptions=-Duser.timezone=UTC
+export PYSP_TEST_spark_executor_extraJavaOptions=-Duser.timezone=UTC
+export PYSP_TEST_spark_sql_session_timeZone=UTC
 
-export SEQ_CONF="--executor-memory 16G \
---total-executor-cores 6"
+# PARALLEL or non-PARALLEL specific configs
+if [[ $PARALLEL_TEST == "true" ]]; then
+  export PYSP_TEST_spark_cores_max=1
+  export PYSP_TEST_spark_executor_memory=4g
+  export PYSP_TEST_spark_executor_cores=1
+  export PYSP_TEST_spark_task_cores=1
+  export PYSP_TEST_spark_rapids_sql_concurrentGpuTasks=1
+  export PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0
 
-export PARALLEL_CONF="--executor-memory 4G \
---total-executor-cores 1 \
---conf spark.executor.cores=1 \
---conf spark.task.cpus=1 \
---conf spark.rapids.sql.concurrentGpuTasks=1 \
---conf spark.rapids.memory.gpu.minAllocFraction=0"
+  if [[ "${PARALLELISM}" == "" ]]; then
+    PARALLELISM=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader | \
+      awk '{if (MAX < $1){ MAX = $1}} END {print int(MAX / (2 * 1024))}')
+  fi
+  # parallelism > 6 could slow down the whole process, so we have a limitation for it
+  # this is based on our CI gpu types, so we do not put it into the run_pyspark_from_build.sh
+  [[ ${PARALLELISM} -gt 6 ]] && PARALLELISM=6
+  MEMORY_FRACTION=$(python -c "print(1/($PARALLELISM + 0.1))")
 
-export CUDF_UDF_TEST_ARGS="--conf spark.rapids.memory.gpu.allocFraction=0.1 \
---conf spark.rapids.memory.gpu.minAllocFraction=0 \
---conf spark.rapids.python.memory.gpu.allocFraction=0.1 \
---conf spark.rapids.python.concurrentPythonWorkers=2 \
---conf spark.executorEnv.PYTHONPATH=${RAPIDS_PLUGIN_JAR} \
---conf spark.pyspark.python=/opt/conda/bin/python \
---py-files ${RAPIDS_PLUGIN_JAR}"
-
+  export TEST_PARALLEL=${PARALLELISM}
+  export PYSP_TEST_spark_rapids_memory_gpu_allocFraction=${MEMORY_FRACTION}
+  export PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=${MEMORY_FRACTION}
+else
+  export PYSP_TEST_spark_cores_max=6
+  export PYSP_TEST_spark_executor_memory=16g
+  export TEST_PARALLEL=0
+fi
 
 export SCRIPT_PATH="$(pwd -P)"
 export TARGET_DIR="$SCRIPT_PATH/target"
@@ -181,11 +184,11 @@ run_delta_lake_tests() {
   echo "run_delta_lake_tests SPARK_VER = $SPARK_VER"
   SPARK_321_PATTERN="(3\.2\.[1-9])"
   DELTA_LAKE_VER="1.2.1"
+
   if [[ $SPARK_VER =~ $SPARK_321_PATTERN ]]; then
-    SPARK_SUBMIT_FLAGS="$BASE_SPARK_SUBMIT_ARGS $SEQ_CONF \
-      --packages io.delta:delta-core_2.12:$DELTA_LAKE_VER \
-      --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
-      --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog" \
+    PYSP_TEST_spark_jars_packages="io.delta:delta-core_2.12:$DELTA_LAKE_VER" \
+      PYSP_TEST_spark_sql_extensions="io.delta.sql.DeltaSparkSessionExtension" \
+      PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.spark.sql.delta.catalog.DeltaCatalog" \
       ./run_pyspark_from_build.sh -m delta_lake --delta_lake
   else
     echo "Skipping Delta Lake tests. Delta Lake does not support Spark version $SPARK_VER"
@@ -199,174 +202,68 @@ run_iceberg_tests() {
 
   # Iceberg does not support Spark 3.3+ yet
   if [[ "$ICEBERG_SPARK_VER" < "3.3" ]]; then
-    SPARK_SUBMIT_FLAGS="$BASE_SPARK_SUBMIT_ARGS $SEQ_CONF \
-      --packages org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_2.12:${ICEBERG_VERSION} \
-      --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
-      --conf spark.sql.catalog.spark_catalog=org.apache.iceberg.spark.SparkSessionCatalog \
-      --conf spark.sql.catalog.spark_catalog.type=hadoop \
-      --conf spark.sql.catalog.spark_catalog.warehouse=/tmp/spark-warehouse-$$" \
+    PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_2.12:${ICEBERG_VERSION} \
+      PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
+      PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
+      PYSP_TEST_spark_sql_catalog_spark__catalog_type="hadoop" \
+      PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="/tmp/spark-warehouse-$RANDOM" \
       ./run_pyspark_from_build.sh -m iceberg --iceberg
   else
     echo "Skipping Iceberg tests. Iceberg does not support Spark $ICEBERG_SPARK_VER"
   fi
 }
 
- # Test spark-avro with documented way of deploying at run time via --packages option from Maven
 run_avro_tests() {
-  export PYSP_TEST_spark_jars_packages="org.apache.spark:spark-avro_2.12:${SPARK_VER}"
-
-  # Workaround to avoid appending avro jar file by '--jars', which would be addressed by https://github.com/NVIDIA/spark-rapids/issues/6532
+  # Workaround to avoid appending avro jar file by '--jars',
+  # which would be addressed by https://github.com/NVIDIA/spark-rapids/issues/6532
   rm -vf $LOCAL_JAR_PATH/spark-avro*.jar
-
-  ./run_pyspark_from_build.sh -k avro
+  PYSP_TEST_spark_jars_packages="org.apache.spark:spark-avro_2.12:${SPARK_VER}" \
+    ./run_pyspark_from_build.sh -k avro
 }
-
-run_test_not_parallel() {
-    local TEST=${1//\.py/}
-    local LOG_FILE
-    case $TEST in
-      all)
-        SPARK_SUBMIT_FLAGS="$BASE_SPARK_SUBMIT_ARGS $SEQ_CONF" \
-          ./run_pyspark_from_build.sh
-        ;;
-
-      cudf_udf_test)
-        SPARK_SUBMIT_FLAGS="$BASE_SPARK_SUBMIT_ARGS $SEQ_CONF $CUDF_UDF_TEST_ARGS" \
-          ./run_pyspark_from_build.sh -m cudf_udf --cudf_udf
-        ;;
-
-      cache_serializer)
-        SPARK_SUBMIT_FLAGS="$BASE_SPARK_SUBMIT_ARGS $SEQ_CONF \
-        --conf spark.sql.cache.serializer=com.nvidia.spark.ParquetCachedBatchSerializer" \
-          ./run_pyspark_from_build.sh -k cache_test
-        ;;
-
-      delta_lake)
-        run_delta_lake_tests
-        ;;
-
-      iceberg)
-        run_iceberg_tests
-        ;;
-
-      avro)
-        run_avro_tests
-        ;;
-
-      *)
-        echo -e "\n\n>>>>> $TEST...\n"
-        LOG_FILE="$TARGET_DIR/$TEST.log"
-        # set dedicated RUN_DIRs here to avoid conflict between parallel tests
-        RUN_DIR="$TARGET_DIR/run_dir_$TEST" \
-          SPARK_SUBMIT_FLAGS="$BASE_SPARK_SUBMIT_ARGS $PARALLEL_CONF $MEMORY_FRACTION_CONF" \
-          ./run_pyspark_from_build.sh -k $TEST >"$LOG_FILE" 2>&1
-
-        CODE="$?"
-        if [[ $CODE == "0" ]]; then
-          sed -n -e '/test session starts/,/deselected,/ p' "$LOG_FILE" || true
-        else
-          cat "$LOG_FILE" || true
-          cat /tmp/artifacts-build.info || true
-        fi
-        return $CODE
-        ;;
-    esac
-}
-export -f run_test_not_parallel
-
-get_cases_by_tags() {
-  local cases
-  local args=${2}
-  cases=$(TEST_TAGS="${1}" SPARK_SUBMIT_FLAGS="$COLLECT_BASE_SPARK_SUBMIT_ARGS" \
-           ./run_pyspark_from_build.sh "${args}" --collect-only -p no:warnings -qq 2>/dev/null \
-           | grep -oP '(?<=::).*?(?=\[)' | uniq | xargs)
-  echo "$cases"
-}
-export -f get_cases_by_tags
-
-get_tests_by_tags() {
-  local tests
-  local args=${2}
-  tests=$(TEST_TAGS="${1}" SPARK_SUBMIT_FLAGS="$COLLECT_BASE_SPARK_SUBMIT_ARGS" \
-           ./run_pyspark_from_build.sh "${args}" --collect-only -qqq -p no:warnings 2>/dev/null \
-           | grep -oP '(?<=python/).*?(?=.py)' | xargs)
-  echo "$tests"
-}
-export -f get_tests_by_tags
 
 # TEST_MODE
 # - DEFAULT: all tests except cudf_udf tests
-# - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
+# - DELTA_LAKE_ONLY: Delta Lake tests only
 # - ICEBERG_ONLY: iceberg tests only
 # - AVRO_ONLY: avro tests only (with --packages option instead of --jars)
-# - DELTA_LAKE_ONLY: Delta Lake tests only
+# - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
 TEST_MODE=${TEST_MODE:-'DEFAULT'}
 if [[ $TEST_MODE == "DEFAULT" ]]; then
-  # integration tests
-  if [[ $PARALLEL_TEST == "true" ]] && [ -x "$(command -v parallel)" ]; then
-    # separate run for special cases that require smaller parallelism
-    special_cases=$(get_cases_by_tags "nightly_resource_consuming_test \
-                                      and (nightly_gpu_mem_consuming_case or nightly_host_mem_consuming_case)")
-    # hardcode parallelism as 2 for special cases
-    export MEMORY_FRACTION_CONF="--conf spark.rapids.memory.gpu.allocFraction=0.45 \
-    --conf spark.rapids.memory.gpu.maxAllocFraction=0.45"
-    # --halt "now,fail=1": exit when the first job fail, and kill running jobs.
-    #                      we can set it to "never" and print failed ones after finish running all tests if needed
-    # --group: print stderr after test finished for better readability
-    parallel --group --halt "now,fail=1" -j2 run_test_not_parallel ::: ${special_cases}
+  ./run_pyspark_from_build.sh
 
-    resource_consuming_cases=$(get_cases_by_tags "nightly_resource_consuming_test \
-                                                and not nightly_gpu_mem_consuming_case \
-                                                and not nightly_host_mem_consuming_case")
-    other_tests=$(get_tests_by_tags "not nightly_resource_consuming_test")
-    tests=$(echo "${resource_consuming_cases} ${other_tests}" | tr ' ' '\n' | awk '!x[$0]++' | xargs)
-
-    if [[ "${PARALLELISM}" == "" ]]; then
-      PARALLELISM=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader | \
-                    awk '{if (MAX < $1){ MAX = $1}} END {print int(MAX / (2 * 1024))}')
-    fi
-    # parallelism > 7 could slow down the whole process, so we have a limitation for it
-    [[ ${PARALLELISM} -gt 7 ]] && PARALLELISM=7
-    MEMORY_FRACTION=$(python -c "print(1/($PARALLELISM + 0.1))")
-    export MEMORY_FRACTION_CONF="--conf spark.rapids.memory.gpu.allocFraction=${MEMORY_FRACTION} \
-    --conf spark.rapids.memory.gpu.maxAllocFraction=${MEMORY_FRACTION}"
-    parallel --group --halt "now,fail=1" -j"${PARALLELISM}" run_test_not_parallel ::: ${tests}
-  else
-    run_test_not_parallel all
-  fi
-
-  if [[ $PARALLEL_TEST == "true" ]] && [ -x "$(command -v parallel)" ]; then
-    cache_test_cases=$(get_cases_by_tags "" "-k cache_test")
-    # hardcode parallelism as 5
-    export MEMORY_FRACTION_CONF="--conf spark.rapids.memory.gpu.allocFraction=0.18 \
-    --conf spark.rapids.memory.gpu.maxAllocFraction=0.18 \
-    --conf spark.sql.cache.serializer=com.nvidia.spark.ParquetCachedBatchSerializer"
-    parallel --group --halt "now,fail=1" -j5 run_test_not_parallel ::: ${cache_test_cases}
-  else
-    run_test_not_parallel cache_serializer
-  fi
-fi
-
-# cudf_udf_test
-if [[ "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
-  run_test_not_parallel cudf_udf_test
+  # ParquetCachedBatchSerializer cache_test
+  PYSP_TEST_spark_sql_cache_serializer=com.nvidia.spark.ParquetCachedBatchSerializer \
+    ./run_pyspark_from_build.sh -k cache_test
 fi
 
 # Delta Lake tests
 if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "DELTA_LAKE_ONLY" ]]; then
-  run_test_not_parallel delta_lake
+  run_delta_lake_tests
 fi
 
 # Iceberg tests
 if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
-  run_test_not_parallel iceberg
+  run_iceberg_tests
 fi
 
-# avro tests
+# Avro tests
 if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "AVRO_ONLY" ]]; then
-  run_test_not_parallel avro
+  run_avro_tests
+fi
+
+# cudf_udf test: this mostly depends on cudf-py, so we run it into an independent CI
+if [[ "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
+  # hardcode config
+  [[ ${TEST_PARALLEL} -gt 2 ]] && export TEST_PARALLEL=2
+  PYSP_TEST_spark_rapids_memory_gpu_allocFraction=0.1 \
+    PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0 \
+    PYSP_TEST_spark_rapids_python_memory_gpu_allocFraction=0.1 \
+    PYSP_TEST_spark_rapids_python_concurrentPythonWorkers=2 \
+    PYSP_TEST_spark_executorEnv_PYTHONPATH=${RAPIDS_PLUGIN_JAR} \
+    PYSP_TEST_spark_python=${CONDA_ROOT}/bin/python \
+    ./run_pyspark_from_build.sh -m cudf_udf --cudf_udf
 fi
 
 popd
-stop-slave.sh
+stop-worker.sh
 stop-master.sh

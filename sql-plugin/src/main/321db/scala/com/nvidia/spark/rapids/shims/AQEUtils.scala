@@ -16,12 +16,14 @@
 
 package com.nvidia.spark.rapids.shims
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
+import org.apache.spark.sql.internal.SQLConf
 
 /** Utility methods for manipulating Catalyst classes involved in Adaptive Query Execution */
-object AQEUtils {
+object AQEUtils extends Logging {
   /** Return a new QueryStageExec reuse instance with updated output attributes */
   def newReuseInstance(sqse: ShuffleQueryStageExec, newOutput: Seq[Attribute]): QueryStageExec = {
     val reusedExchange = ReusedExchangeExec(newOutput, sqse.shuffle)
@@ -31,8 +33,8 @@ object AQEUtils {
   // Databricks 10.4 has an issue where if you turn off AQE it can still use it for
   // certain operations. This causes issues with the plugin so this is to work around
   // that.
-  def isAdaptiveExecutionSupportedInSparkVersion(conf: RapidsConf): Boolean = {
-    val res = conf.get("spark.sql.adaptive.enabled")
+  def isAdaptiveExecutionSupportedInSparkVersion(conf: SQLConf): Boolean = {
+    val res = conf.getConf(SQLConf.ADAPTIVE_EXECUTION_ENABLED)
     logWarning(s"in is adaptive on: $res ")
     res
   }

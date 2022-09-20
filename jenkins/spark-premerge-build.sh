@@ -109,8 +109,9 @@ rapids_shuffle_smoke_test() {
     }
 
     # using UCX shuffle
-    PYSP_TEST_spark_executorEnv_UCX_ERROR_SIGNALS="" \
-        invoke_shuffle_integration_test
+    # Disabled temporarily due to: https://github.com/NVIDIA/spark-rapids/issues/6572
+    # PYSP_TEST_spark_executorEnv_UCX_ERROR_SIGNALS="" \
+    #     invoke_shuffle_integration_test
 
     # using MULTITHREADED shuffle
     PYSP_TEST_spark_rapids_shuffle_mode=MULTITHREADED \
