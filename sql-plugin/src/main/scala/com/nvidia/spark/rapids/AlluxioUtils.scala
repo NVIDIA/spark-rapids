@@ -190,7 +190,7 @@ object AlluxioUtils extends Logging {
       secret_key: Option[String]): Unit = {
     // to match the output of alluxio fs mount, append / to remote_path
     // and add / before bucket name for absolute path in Alluxio
-    val remote_path = scheme + "://" + bucket + "/"
+    val remote_path = scheme + bucket + "/"
     val local_bucket = "/" + bucket
     this.synchronized {
       if (!mountedBuckets.contains(local_bucket)) {
