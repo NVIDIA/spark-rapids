@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.shims
 
+import com.nvidia.spark.rapids.RapidsConf
+
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
@@ -28,5 +30,5 @@ object AQEUtils {
     ShuffleQueryStageExec(sqse.id, reusedExchange, sqse.originalPlan)
   }
 
-  def isAdaptiveExecutionSupportedInSparkVersion: Boolean = true
+  def isAdaptiveExecutionSupportedInSparkVersion(conf: RapidsConf): Boolean = true
 }
