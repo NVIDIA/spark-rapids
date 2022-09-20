@@ -26,7 +26,6 @@ import ai.rapids.cudf.{AggregationOverWindow, DType, GroupByOptions, GroupByScan
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, CurrentRow, Expression, FrameType, NamedExpression, RangeFrame, RowFrame, SortOrder, UnboundedFollowing, UnboundedPreceding}
@@ -50,7 +49,7 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
                         conf: RapidsConf,
                         parent: Option[RapidsMeta[_, _, _]],
                         rule: DataFromReplacementRule)
-  extends SparkPlanMeta[WindowExecType](windowExec, conf, parent, rule) with Logging {
+  extends SparkPlanMeta[WindowExecType](windowExec, conf, parent, rule) {
 
   /**
    * Extracts window-expression from WindowExecType.
@@ -107,14 +106,18 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
   }
 
   override def convertToGpu(): GpuExec = {
+    // resultColumnsOnly specifies that we should only return the values of result columns for 
+    // this WindowExec (applies to some Spark distributions that use `projectList` and combine
+    // ProjectExec with WindowExec)
     val resultColumnsOnly = getResultColumnsOnly
-    val gpuWindowExpressions = if (resultColumnsOnly) {
-      windowExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression])
-    } else {
-      (inputFields ++ windowExpressions).map(_.convertToGpu().asInstanceOf[NamedExpression])
-    }
-
-    val (pre, windowOps, post) = GpuWindowExec.splitAndDedup(gpuWindowExpressions)
+    // Keep the converted input fields and input window expressions separate 
+    // to handle the resultColumnsOnly case in GpuWindowExec.splitAndDedup
+    val inputFieldExpressions = inputFields.map(_.convertToGpu().asInstanceOf[NamedExpression])
+    val gpuWindowExpressions = windowExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression])
+    val (pre, windowOps, post) = GpuWindowExec.splitAndDedup(
+        inputFieldExpressions,
+        gpuWindowExpressions,
+        resultColumnsOnly)
     // Order is not important for pre. It is unbound and we are inserting it in.
     val isPreNeeded =
       (AttributeSet(pre.map(_.toAttribute)) -- windowExec.children.head.output).nonEmpty
@@ -122,6 +125,10 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
     // might not be needed. Here we want to maintain order, just to match Spark as closely
     // as possible
     val remappedWindowOps = GpuWindowExec.remapAttributes(windowOps, post)
+    // isPostNeeded is determined when there is a difference between the output of the WindowExec
+    // computation and the output ultimately desired by this WindowExec or whether an additional
+    // post computation is needed. Ultimately this is used to add an additional ProjectExec 
+    // if that is needed to return the correct output
     val isPostNeeded = remappedWindowOps.length != post.length ||
         remappedWindowOps.zip(post).exists {
           case (w, p) => w.exprId != p.exprId
@@ -357,12 +364,19 @@ object GpuWindowExec extends Arm {
    * (_tmp1 - _tmp2) as result
    * </pre>
    *
-   * This assumes that there is not a window function of another window function, like
-   * `LAG(SUM(a), 2)` which appears to be something all distros split apart into separate
-   * window operations, so we are good.
-   * @param exprs the input expressions to a GpuWindowExec
+   * To handle special cases (like window function of another window function eg `LAG(SUM(a), 2)`, 
+   * distros should split apart those into separate window operations. However, we will not 
+   * see all of these in just the input window expressions of the WindowExec, so we process 
+   * both the input fields and input window expressions, and handle whether we *only* want result
+   * columns using the Post Project stage.
+   * @param inputFieldExprs the input fields converted to input expressions
+   * @param windowExprs the input window expressions to a GpuWindowExec
+   * @param resultColumnsOnly whether the output of the window operation only desires result
+   * columns or the output of all input expressions
    */
-  def splitAndDedup(exprs: Seq[NamedExpression]):
+  def splitAndDedup(inputFieldExprs: Seq[NamedExpression],
+      windowExprs: Seq[NamedExpression],
+      resultColumnsOnly: Boolean):
   (Seq[NamedExpression], Seq[NamedExpression], Seq[NamedExpression]) = {
     // This is based off of similar code in Apache Spark's `ExtractWindowExpressions.extract` but
     // has been highly modified
@@ -372,7 +386,28 @@ object GpuWindowExec extends Arm {
     val windowDedupe = mutable.HashMap[Expression, Attribute]()
     val postProject = ArrayBuffer[NamedExpression]()
 
-    exprs.foreach { expr =>
+    // Process input field expressions first. There are no window functions here, so
+    // all of these should pass at least to pre and window stages
+    inputFieldExprs.foreach { expr =>
+        // If the Spark distribution only wants to output result columns (ie, ones that
+        // use projectList), then pass the input field to pre and window stages, but
+        // do not pass to the post project stage (as those are specifically given in
+        // the projectList set)
+        if (resultColumnsOnly) {
+          extractAndSave(
+            extractAndSave(expr, preProject, preDedupe), windowOps, windowDedupe)
+              .asInstanceOf[NamedExpression]
+        } else {
+          // If the WindowExec returns everything, then pass the input fields through all the
+          // phases (with deduping)
+          postProject += extractAndSave(
+            extractAndSave(expr, preProject, preDedupe), windowOps, windowDedupe)
+              .asInstanceOf[NamedExpression]
+        }
+    }
+
+    // Now split and dedup the input window expressions
+    windowExprs.foreach { expr =>
       if (hasGpuWindowFunction(expr)) {
         // First pass replace any operations that should be totally replaced.
         val replacePass = expr.transformDown {
