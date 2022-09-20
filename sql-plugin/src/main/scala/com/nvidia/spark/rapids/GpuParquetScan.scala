@@ -1761,10 +1761,10 @@ class MultiFileCloudParquetPartitionReader(
     ignoreMissingFiles: Boolean,
     ignoreCorruptFiles: Boolean,
     useFieldId: Boolean,
-    alluxionPathReplacementMap: Option[Map[String, String]],
+    alluxioPathReplacementMap: Map[String, String]], // TODO - fix callers
     alluxioReplacementTaskTime: Boolean)
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, null,
-    execMetrics, ignoreCorruptFiles, alluxionPathReplacementMap, alluxioReplacementTaskTime)
+    execMetrics, ignoreCorruptFiles, alluxionPathReplacementMap, alluxioPathReplacementMap)
     with ParquetPartitionReaderBase {
 
   private case class HostMemoryEmptyMetaData(
