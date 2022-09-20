@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.iceberg.spark.source;
 
-import scala.collection.JavaConverters._
+import scala.collection.JavaConverters.*;
 
 import com.nvidia.spark.rapids.*;
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter;

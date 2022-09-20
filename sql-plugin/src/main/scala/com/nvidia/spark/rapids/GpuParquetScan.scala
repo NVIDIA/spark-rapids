@@ -978,8 +978,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     new MultiFileCloudParquetPartitionReader(conf, files, filterFunc, isCaseSensitive,
       debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       metrics, partitionSchema, numThreads, maxNumFileProcessed,
-      ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId, alluxionPathReplacementMap,
-      alluxioReplacementTaskTime)
+      ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId,
+      alluxionPathReplacementMap.getOrElse(Map.empty), alluxioReplacementTaskTime)
   }
 
   private def filterBlocksForCoalescingReader(
@@ -1761,10 +1761,10 @@ class MultiFileCloudParquetPartitionReader(
     ignoreMissingFiles: Boolean,
     ignoreCorruptFiles: Boolean,
     useFieldId: Boolean,
-    alluxioPathReplacementMap: Map[String, String]], // TODO - fix callers
+    alluxioPathReplacementMap: Map[String, String],
     alluxioReplacementTaskTime: Boolean)
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, null,
-    execMetrics, ignoreCorruptFiles, alluxionPathReplacementMap, alluxioPathReplacementMap)
+    execMetrics, ignoreCorruptFiles, alluxioPathReplacementMap, alluxioReplacementTaskTime)
     with ParquetPartitionReaderBase {
 
   private case class HostMemoryEmptyMetaData(

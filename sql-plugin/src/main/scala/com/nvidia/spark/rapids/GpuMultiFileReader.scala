@@ -350,7 +350,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     filters: Array[Filter],
     execMetrics: Map[String, GpuMetric],
     ignoreCorruptFiles: Boolean = false,
-    alluxionPathReplacementMap: Option[Map[String, String]] = None,
+    alluxionPathReplacementMap: Map[String, String] = Map.empty,
     alluxioReplacementTaskTime: Boolean = false)
   extends FilePartitionReaderBase(conf, execMetrics) {
 
@@ -366,13 +366,13 @@ abstract class MultiFileCloudPartitionReaderBase(
   // Alluxio transparent to the user so that we return the original non-Alluxio one for
   // input_file_name
   private val files: Array[(PartitionedFile, Option[PartitionedFile])] = {
-    if (alluxionPathReplacementMap.isDefined) {
+    if (alluxionPathReplacementMap.nonEmpty) {
       if (alluxioReplacementTaskTime) {
-        AlluxioUtils.updateFilesTaskTimeIfAlluxio(origFiles, alluxionPathReplacementMap)
+        AlluxioUtils.updateFilesTaskTimeIfAlluxio(origFiles, Some(alluxionPathReplacementMap))
       } else {
         // was done at CONVERT_TIME, need to recalculate the original path to set for
         // input_file_name
-        AlluxioUtils.getOrigPathFromReplaced(origFiles, alluxionPathReplacementMap.get)
+        AlluxioUtils.getOrigPathFromReplaced(origFiles, alluxionPathReplacementMap)
       }
     } else {
       origFiles.map((_, None))
