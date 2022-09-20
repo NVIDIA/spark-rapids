@@ -4425,7 +4425,8 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         !AQEUtils.isAdaptiveExecutionSupportedInSparkVersion(plan.conf) =>
         logDebug(s"AdaptiveSparkPlanExec found on unsupported Spark Version: $aqe")
         true
-      case project: ProjectExec if !AQEUtils.isAdaptiveExecutionSupportedInSparkVersion(plan.conf) =>
+      case project: ProjectExec if
+        !AQEUtils.isAdaptiveExecutionSupportedInSparkVersion(plan.conf) =>
         val foundExprs = project.expressions.flatMap { e =>
           PlanUtils.findExpressions(e, {
             case udf: ScalaUDF =>
