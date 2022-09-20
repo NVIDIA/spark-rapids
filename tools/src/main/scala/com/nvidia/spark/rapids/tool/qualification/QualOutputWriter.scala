@@ -282,6 +282,8 @@ object QualOutputWriter {
   val SPEEDUP_BUCKET_STR_SIZE: Int = QualificationAppInfo.STRONGLY_RECOMMENDED.size
   val LONGEST_SQL_DURATION_STR_SIZE: Int = LONGEST_SQL_DURATION_STR.size
   val GPU_OPPORTUNITY_STR_SIZE: Int = GPU_OPPORTUNITY_STR.size
+  val UNSUPPORTED_EXECS_MAX_SIZE: Int = 25
+  val UNSUPPORTED_EXPRS_MAX_SIZE: Int = 25
 
   val CSV_DELIMITER = ","
   val TEXT_DELIMITER = "|"
@@ -327,7 +329,8 @@ object QualOutputWriter {
     val lastEntry = strAndSizes.last
     strAndSizes.dropRight(1).foreach { case (str, strSize) =>
       if (prettyPrint) {
-        entireHeader.append(s"%${strSize}s${delimiter}".format(str))
+        val updatedString = stringLengthExceedsMax(str, strSize, delimiter)
+        entireHeader.append(updatedString)
       } else {
         entireHeader.append(s"${str}${delimiter}")
       }
@@ -335,7 +338,8 @@ object QualOutputWriter {
     // for the last element we don't want to print the delimiter at the end unless
     // pretty printing
     if (prettyPrint) {
-      entireHeader.append(s"%${lastEntry._2}s${delimiter}".format(lastEntry._1))
+      val updatedString = stringLengthExceedsMax(lastEntry._1, lastEntry._2, delimiter)
+      entireHeader.append(updatedString)
     } else {
       entireHeader.append(s"${lastEntry._1}")
     }
@@ -345,6 +349,16 @@ object QualOutputWriter {
 
   private def stringIfempty(str: String): String = {
     if (str.isEmpty) "\"\"" else str
+  }
+
+  private def stringLengthExceedsMax(str: String, strSize: Int, delimiter: String): String = {
+    val prettyPrintValue = if (str.size > strSize) {
+      val newStrSize = strSize - 3 // suffixing ... at the end
+      s"%${newStrSize}.${newStrSize}s...${delimiter}".format(str)
+    } else {
+      s"%${strSize}.${strSize}s${delimiter}".format(str)
+    }
+    prettyPrintValue
   }
 
   def getDetailedHeaderStringsAndSizes(appInfos: Seq[QualificationSummaryInfo],
@@ -395,12 +409,6 @@ object QualOutputWriter {
   private[qualification] def getSummaryHeaderStringsAndSizes(
       appInfos: Seq[QualificationSummaryInfo],
       appIdMaxSize: Int): LinkedHashMap[String, Int] = {
-    val unSupportedExecsSum = appInfos.map(_.planInfo.map(_.execInfo.map(
-      _.unsupportedExecs.size).sum).sum)
-    val unSupportedExecsSize = unSupportedExecsSum.size
-    val unSupportedExprsSum = appInfos.map(_.planInfo.map(_.execInfo.map(
-      _.unsupportedExprs.flatten.size).sum).sum)
-    val unSupportedExprsSize = unSupportedExprsSum.size
     LinkedHashMap[String, Int](
       APP_NAME_STR -> getMaxSizeForHeader(appInfos.map(_.appName.size), APP_NAME_STR),
       APP_ID_STR -> appIdMaxSize,
@@ -411,10 +419,8 @@ object QualOutputWriter {
       ESTIMATED_GPU_SPEEDUP -> ESTIMATED_GPU_SPEEDUP.size,
       ESTIMATED_GPU_TIMESAVED -> ESTIMATED_GPU_TIMESAVED.size,
       SPEEDUP_BUCKET_STR -> SPEEDUP_BUCKET_STR_SIZE,
-      UNSUPPORTED_EXECS -> getMaxSizeForHeader(unSupportedExecsSum.map(_ + unSupportedExecsSize),
-        UNSUPPORTED_EXECS),
-      UNSUPPORTED_EXPRS -> getMaxSizeForHeader(unSupportedExprsSum.map(_ + unSupportedExprsSize),
-        UNSUPPORTED_EXPRS)
+      UNSUPPORTED_EXECS -> UNSUPPORTED_EXECS_MAX_SIZE,
+      UNSUPPORTED_EXPRS -> UNSUPPORTED_EXPRS_MAX_SIZE
     )
   }
 
@@ -435,8 +441,8 @@ object QualOutputWriter {
       ToolUtils.formatDoublePrecision(sumInfo.estimatedGpuTimeSaved) ->
         ESTIMATED_GPU_TIMESAVED.size,
       sumInfo.recommendation -> SPEEDUP_BUCKET_STR_SIZE,
-      sumInfo.unsupportedExecs -> UNSUPPORTED_EXECS.size,
-      sumInfo.unsupportedExprs -> UNSUPPORTED_EXPRS.size
+      sumInfo.unsupportedExecs -> UNSUPPORTED_EXECS_MAX_SIZE,
+      sumInfo.unsupportedExprs -> UNSUPPORTED_EXPRS_MAX_SIZE
     )
     constructOutputRow(data, delimiter, prettyPrint)
   }
