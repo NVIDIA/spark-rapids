@@ -160,11 +160,13 @@ class GpuSingleDirectoryDataWriter(
         val splitIndexes = (maxRecordsPerFile > 0, fillOldFile) match {
           case (false, _) => IndexedSeq.empty
           case (true, false) =>
-            (1 until ((numRows + maxRecordsPerFile - 1) / maxRecordsPerFile).toInt).map(i => i * maxRecordsPerFile)
+            (1 until ((numRows + maxRecordsPerFile - 1) / maxRecordsPerFile).toInt)
+              .map(i => i * maxRecordsPerFile)
           case (true, true) => {
             val filledUp = maxRecordsPerFile - recordsInFile.toInt
             val remain = numRows - filledUp
-            (0 until ((remain + maxRecordsPerFile - 1) / maxRecordsPerFile).toInt).map(i => filledUp + i * maxRecordsPerFile)
+            (0 until ((remain + maxRecordsPerFile - 1) / maxRecordsPerFile).toInt)
+              .map(i => filledUp + i * maxRecordsPerFile)
           }
         }
 
@@ -405,11 +407,13 @@ class GpuDynamicPartitionDataWriter(
           val splitIndexes = (maxRecordsPerFile > 0, fillOldFile) match {
             case (false, _) => IndexedSeq.empty
             case (true, false) =>
-              (1 until ((numRows + maxRecordsPerFile - 1) / maxRecordsPerFile).toInt).map(i => i * maxRecordsPerFile)
+              (1 until ((numRows + maxRecordsPerFile - 1) / maxRecordsPerFile).toInt)
+                .map(i => i * maxRecordsPerFile)
             case (true, true) => {
               val filledUp = maxRecordsPerFile - recordsInFile.toInt
               val remain = numRows - filledUp
-              (0 until ((remain + maxRecordsPerFile - 1) / maxRecordsPerFile).toInt).map(i => filledUp + i * maxRecordsPerFile)
+              (0 until ((remain + maxRecordsPerFile - 1) / maxRecordsPerFile).toInt)
+                .map(i => filledUp + i * maxRecordsPerFile)
             }
           }
 
