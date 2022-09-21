@@ -58,7 +58,7 @@ trait AlluxioSuite extends SparkQueryCompareTestSuite with Arm {
    * @param multithreadedReadingExpected true: multithreaded reading, false: coalescing reading.
    * @param hasInputExpression if has input expression
    */
-  protected final def testReaderType(
+  protected final def testAlluxioPaths(
       conf: SparkConf,
       files: Array[String],
       expectedReaderType: RapidsReaderType,
@@ -74,6 +74,7 @@ trait AlluxioSuite extends SparkQueryCompareTestSuite with Arm {
         val df = if (hasInputExpression) rawDf.withColumn("input", input_file_name()) else rawDf
         val plans = df.queryExecution.executedPlan.collect {
           case plan: GpuBatchScanExec =>
+            // not supported with Alluxio yet
             checkReaderType(plan.readerFactory, files, expectedReaderType)
             plan
           case plan: GpuFileSourceScanExec =>

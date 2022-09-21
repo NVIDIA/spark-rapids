@@ -244,7 +244,7 @@ object AlluxioUtils extends Logging {
 
   private def replaceSchemeWithAlluxio(file: String, scheme: String, masterPort: String): String = {
     // replace s3://foo/.. to alluxio://alluxioMasterHost/foo/...
-    val newFile = file.replaceFirst(scheme + ":/", ALLUXIO_SCHEME + masterPort)
+    val newFile = file.replaceFirst(scheme, ALLUXIO_SCHEME + masterPort + "/")
     logDebug(s"Replace $file to ${newFile}")
     newFile
   }
