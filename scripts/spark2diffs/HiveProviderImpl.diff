@@ -32,7 +32,9 @@
 <                 childExprs.map(_.convertToGpu()))
 <             }
 <           }
-106,126d86
+104,124d84
+<             }
+<           }
 < 
 <           override def convertToGpu(): GpuExpression = {
 <             opRapidsFunc.map { _ =>
@@ -52,5 +54,3 @@
 <                 a.name,
 <                 a.funcWrapper,
 <                 childExprs.map(_.convertToGpu()))
-<             }
-<           }

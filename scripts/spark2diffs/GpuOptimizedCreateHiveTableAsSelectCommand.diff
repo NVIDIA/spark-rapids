@@ -131,7 +131,9 @@
 <     parent: Option[RapidsMeta[_, _]],
 ---
 >     parent: Option[RapidsMeta[_, _, _]],
-70a192,200
+68a190,198
+>   }
+> 
 >   override def convertToGpu(): GpuDataWritingCommand = {
 >     GpuOptimizedCreateHiveTableAsSelectCommand(
 >       wrapped.tableDesc,
@@ -139,5 +141,3 @@
 >       wrapped.outputColumnNames,
 >       wrapped.mode,
 >       cmd)
->   }
-> 
