@@ -511,7 +511,6 @@ class GpuDynamicPartitionDataSingleWriter(
             newWriter(partPath, None, currentWriterStatus.fileCounter)
         }
         statsTrackers.foreach(_.newBatch(batch))
-        currentWriterStatus.recordsInFile += batch.numRows
 
         if (savedStatus.isDefined && savedStatus.get.tableCaches.nonEmpty) {
           // convert caches seq to tables and close caches seq
@@ -530,8 +529,10 @@ class GpuDynamicPartitionDataSingleWriter(
           }
           // write concat table
           currentWriterStatus.outputWriter.write(concat, statsTrackers)
+          currentWriterStatus.recordsInFile += concat.numRows
         } else {
           currentWriterStatus.outputWriter.write(batch, statsTrackers)
+          currentWriterStatus.recordsInFile += batch.numRows
         }
       })
     } finally {
