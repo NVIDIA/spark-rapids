@@ -306,6 +306,7 @@ else
         unset PYSP_TEST_spark_driver_extraJavaOptions
         unset PYSP_TEST_spark_jars
         unset PYSP_TEST_spark_jars_packages
+        unset PYSP_TEST_spark_jars_repositories
         unset PYSP_TEST_spark_rapids_memory_gpu_allocSize
 
         exec "$SPARK_HOME"/bin/spark-submit "${jarOpts[@]}" \
