@@ -289,6 +289,10 @@ else
             jarOpts+=(--packages "${PYSP_TEST_spark_jars_packages}")
         fi
 
+        if [[ -n "$PYSP_TEST_spark_jars_repositories" ]]; then
+            jarOpts+=(--repositories "${PYSP_TEST_spark_jars_repositories}")
+        fi
+
         if [[ -n "$PYSP_TEST_spark_driver_extraClassPath" ]]; then
             jarOpts+=(--driver-class-path "${PYSP_TEST_spark_driver_extraClassPath}")
         fi
