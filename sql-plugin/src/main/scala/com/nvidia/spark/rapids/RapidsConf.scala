@@ -1565,10 +1565,15 @@ object RapidsConf {
             "If specified spark.sql.maxConcurrentOutputFileWriters, use concurrent writer to " +
             "write data. Concurrent writer first caches data for each partition and begins to " +
             "flush data if find one partition data is equal or greater than this size. " +
+            "The default value is 0 which means using " +
+            "Parquet `write.parquet.row-group-size-bytes` config value(default 128M)" +
+            "or use Orc `orc.stripe.size` config value(default 64M) " +
+            "or use 128M for other file types. " +
+            "If the value is greater than 0, will use this positive value." +
             "Max value may get better performance but not always, because concurrent writer uses " +
             "spillable cache and big value may cause more IO swaps.")
         .bytesConf(ByteUnit.BYTE)
-        .createWithDefault(ByteUnit.MiB.toBytes(64))
+        .createWithDefault(0L)
 
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")

@@ -19,7 +19,7 @@ from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_before_spark_320
 import pyspark.sql.functions as f
 import pyspark.sql.utils
 import random
@@ -505,51 +505,46 @@ def test_write_daytime_interval(spark_tmp_path):
             data_path,
             conf=writer_confs)
 
-# def test_concurrent_single_writer():
+
+# generate a df with c1 and c2 column have 25 combinations
+def get_25_partitions_df(spark):
+    schema = StructType([
+        StructField("c1", IntegerType()),
+        StructField("c2", IntegerType()),
+        StructField("c3", IntegerType())])
+    data = [[i, j, k] for i in range(0, 5) for j in range(0, 5) for k in range(0, 100)]
+    return spark.createDataFrame(data, schema)
 
 
-# TODO add tests
-# test_path='/home/chongg/local-disk/data/concurrent-partition-write-1-partition'
-test_path='/home/chongg/local-disk/data/concurrent-partition-write-2-partition-10000'
-test_path='/home/chongg/local-disk/data/concurrent-partition-write'
+@ignore_order
+@pytest.mark.skipif(is_before_spark_320(), reason="is only supported in Spark 320+")
+def test_concurrent_writer(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: get_25_partitions_df(spark)  # df has 25 partitions for (c1, c2)
+            .repartition(2)
+            .write.mode("overwrite").partitionBy('c1', 'c2').parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        copy_and_update(
+            # 26 > 25, will not fall back to single writer
+            {"spark.sql.maxConcurrentOutputFileWriters": 26}
+        ))
 
-@pytest.mark.parametrize('is_stable_sort', ["false"])
-# concurrent writer mode
-def test_my1(is_stable_sort):
-    import time
-    start = time.time()
-    with_gpu_session(lambda spark: spark.read.parquet(test_path)
-                     .write.mode("overwrite").partitionBy('c1', 'c2').parquet("/tmp/my-parquet1"),
-                     copy_and_update({"spark.rapids.sql.format.parquet.reader.type": "PERFILE"},
-                                     {"spark.sql.files.maxPartitionBytes": "11000m"},
-                                     {"spark.sql.maxConcurrentOutputFileWriters": 100},
-                                     {"spark.rapids.sql.concurrentWriterPartitionFlushSize": 32 * 1024 * 1024}
-                                     ))
-    end = time.time()
-    print("\n"  + "used time: " + str(end - start))
 
-@pytest.mark.parametrize('is_stable_sort', ["false"])
-# single writer mode
-def test_my2(is_stable_sort):
-    import time
-    start = time.time()
-    with_gpu_session(lambda spark: spark.read.parquet(test_path)
-                     .write.mode("overwrite").partitionBy('c1', 'c2').parquet("/tmp/my-parquet1"),
-                     copy_and_update({"spark.rapids.sql.format.parquet.reader.type": "PERFILE"},
-                                     {"spark.sql.files.maxPartitionBytes": "11000m"}
-                                     ))
-    end = time.time()
-    print("\n"  + "used time: " + str(end - start))
+@ignore_order
+@pytest.mark.skipif(is_before_spark_320(), reason="is only supported in Spark 320+")
+def test_fallback_to_single_writer_from_concurrent_writer(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: get_25_partitions_df(spark)  # df has 25 partitions for (c1, c2)
+            .repartition(2)
+            .write.mode("overwrite").partitionBy('c1', 'c2').parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        copy_and_update(
+            # 10 < 25, will fall back to single writer
+            {"spark.sql.maxConcurrentOutputFileWriters": 10},
+            {"spark.rapids.sql.concurrentWriterPartitionFlushSize": 64 * 1024 * 1024}
+        ))
 
-# concurrent mode fall back to single mode
-def test_my3():
-    import time
-    start = time.time()
-    with_gpu_session(lambda spark: spark.read.parquet(test_path)
-                     .write.mode("overwrite").partitionBy('c1', 'c2').parquet("/tmp/my-parquet1"),
-                     copy_and_update({"spark.rapids.sql.format.parquet.reader.type": "PERFILE"},
-                                     {"spark.sql.files.maxPartitionBytes": "11000m"},
-                                     {"spark.sql.maxConcurrentOutputFileWriters": 10}
-                                     ))
-    end = time.time()
-    print("\n"  + "used time: " + str(end - start))

@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import assert_cpu_and_gpu_are_equal_sql_with_capture, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, \
-    assert_cpu_and_gpu_are_equal_collect_with_capture
+    assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_writes_are_equal_collect
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -690,3 +690,45 @@ def test_orc_read_count(spark_tmp_path):
 def test_orc_read_varchar_as_string(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema("id bigint, name string").orc(std_input_path + "/test_orc_varchar.orc"))
+
+# generate a df with c1 and c2 column have 25 combinations
+def get_25_partitions_df(spark):
+    schema = StructType([
+        StructField("c1", IntegerType()),
+        StructField("c2", IntegerType()),
+        StructField("c3", IntegerType())])
+    data = [[i, j, k] for i in range(0, 5) for j in range(0, 5) for k in range(0, 100)]
+    return spark.createDataFrame(data, schema)
+
+
+@ignore_order
+@pytest.mark.skipif(is_before_spark_320(), reason="is only supported in Spark 320+")
+def test_concurrent_writer(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: get_25_partitions_df(spark)  # df has 25 partitions for (c1, c2)
+            .repartition(2)
+            .write.mode("overwrite").partitionBy('c1', 'c2').orc(path),
+        lambda spark, path: spark.read.orc(path),
+        data_path,
+        copy_and_update(
+            # 26 > 25, will not fall back to single writer
+            {"spark.sql.maxConcurrentOutputFileWriters": 26}
+        ))
+
+
+@ignore_order
+@pytest.mark.skipif(is_before_spark_320(), reason="is only supported in Spark 320+")
+def test_fallback_to_single_writer_from_concurrent_writer(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: get_25_partitions_df(spark)  # df has 25 partitions for (c1, c2)
+            .repartition(2)
+            .write.mode("overwrite").partitionBy('c1', 'c2').orc(path),
+        lambda spark, path: spark.read.orc(path),
+        data_path,
+        copy_and_update(
+            # 10 < 25, will fall back to single writer
+            {"spark.sql.maxConcurrentOutputFileWriters": 10},
+            {"spark.rapids.sql.concurrentWriterPartitionFlushSize": 64 * 1024 * 1024}
+        ))

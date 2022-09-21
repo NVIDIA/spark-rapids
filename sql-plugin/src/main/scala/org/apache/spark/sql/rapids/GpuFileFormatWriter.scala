@@ -201,8 +201,14 @@ object GpuFileFormatWriter extends Logging {
     // prepares the job, any exception thrown from here shouldn't cause abortJob() to be called.
     committer.setupJob(job)
 
-
-    val maxWriters = sparkSession.sessionState.conf.maxConcurrentOutputFileWriters
+    // check if we can use concurrent writer
+    val maxWriterConfKey = "spark.sql.maxConcurrentOutputFileWriters"
+    val maxWriters: Int = if (sparkSession.sessionState.conf.contains(maxWriterConfKey)) {
+      sparkSession.sessionState.conf.getConfString(maxWriterConfKey).toInt
+    } else {
+      // Spark 31x does not support concurrent writer
+      0
+    }
     val concurrentWritersEnabled = maxWriters > 0 && sortColumns.isEmpty
 
     try {
