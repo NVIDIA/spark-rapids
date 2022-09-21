@@ -186,10 +186,7 @@ run_delta_lake_tests() {
   DELTA_LAKE_VER="1.2.1"
 
   if [[ $SPARK_VER =~ $SPARK_321_PATTERN ]]; then
-    # Avoid parallel testing to work around issues with multiple processes trying to
-    # download and update Ivy cache
-    TEST_PARALLEL=0 \
-      PYSP_TEST_spark_jars_packages="io.delta:delta-core_2.12:$DELTA_LAKE_VER" \
+    PYSP_TEST_spark_jars_packages="io.delta:delta-core_2.12:$DELTA_LAKE_VER" \
       PYSP_TEST_spark_sql_extensions="io.delta.sql.DeltaSparkSessionExtension" \
       PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.spark.sql.delta.catalog.DeltaCatalog" \
       ./run_pyspark_from_build.sh -m delta_lake --delta_lake
@@ -205,10 +202,7 @@ run_iceberg_tests() {
 
   # Iceberg does not support Spark 3.3+ yet
   if [[ "$ICEBERG_SPARK_VER" < "3.3" ]]; then
-    # Avoid parallel testing to work around issues with multiple processes trying to
-    # download and update Ivy cache
-    TEST_PARALLEL=0 \
-      PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_2.12:${ICEBERG_VERSION} \
+    PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_2.12:${ICEBERG_VERSION} \
       PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
       PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
       PYSP_TEST_spark_sql_catalog_spark__catalog_type="hadoop" \
@@ -223,10 +217,7 @@ run_avro_tests() {
   # Workaround to avoid appending avro jar file by '--jars',
   # which would be addressed by https://github.com/NVIDIA/spark-rapids/issues/6532
   rm -vf $LOCAL_JAR_PATH/spark-avro*.jar
-  # Avoid parallel testing to work around issues with multiple processes trying to
-  # download and update Ivy cache
-  TEST_PARALLEL=0 \
-    PYSP_TEST_spark_jars_packages="org.apache.spark:spark-avro_2.12:${SPARK_VER}" \
+  PYSP_TEST_spark_jars_packages="org.apache.spark:spark-avro_2.12:${SPARK_VER}" \
     ./run_pyspark_from_build.sh -k avro
 }
 
