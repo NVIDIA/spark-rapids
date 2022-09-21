@@ -720,13 +720,28 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val df1 = spark.sparkContext.parallelize(List(10, 20, 30, 40)).toDF
       df1.filter(hex($"value") === "A") // hex is not supported in GPU yet.
     }
+    //stdout output tests
     val sumOut = qualApp.getSummary()
     val detailedOut = qualApp.getDetailed()
     assert(sumOut.nonEmpty)
     assert(sumOut.startsWith("|") && sumOut.endsWith("|\n"))
     assert(detailedOut.nonEmpty)
     assert(detailedOut.startsWith("|") && detailedOut.endsWith("|\n"))
+    val stdOut = sumOut.split("\n")
+    val stdOutHeader = stdOut(0).split("\\|")
+    val stdOutValues = stdOut(1).split("\\|")
+    val stdOutunsupportedExecs = stdOutValues(stdOutValues.length - 2) // index of unsupportedExecs
+    val stdOutunsupportedExprs = stdOutValues(stdOutValues.length - 1) // index of unsupportedExprs
+    val expectedstdOutExecs = "Scan;Filter;SerializeF..."
+    assert(stdOutunsupportedExecs == expectedstdOutExecs)
+    // Exec value is Scan;Filter;SerializeFromObject and UNSUPPORTED_EXECS_MAX_SIZE is 25
+    val expectedStdOutExecsMaxLength = 25
+    // Expr value is hex and length of expr header is 23 (Unsupported Expressions)
+    val expectedStdOutExprsMaxLength = 23
+    assert(stdOutunsupportedExecs.size == expectedStdOutExecsMaxLength)
+    assert(stdOutunsupportedExprs.size == expectedStdOutExprsMaxLength)
 
+    //csv output tests
     val csvSumOut = qualApp.getSummary(",", false)
     val rowsSumOut = csvSumOut.split("\n")
     val headers = rowsSumOut(0).split(",")
