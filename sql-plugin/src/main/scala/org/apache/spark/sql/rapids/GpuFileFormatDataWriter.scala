@@ -21,7 +21,7 @@ import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, OrderByArg, Table}
 import com.nvidia.spark.TimingUtils
-import com.nvidia.spark.rapids.{ColumnarOutputWriter, _}
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import org.apache.hadoop.fs.Path
@@ -212,7 +212,7 @@ class GpuDynamicPartitionDataSingleWriter(
        * File counter for writing current partition or bucket. For same partition or bucket,
        * we may have more than one file, due to number of records limit per file.
        */
-      var fileCounter: Int = 0,
+      var fileCounter: Int = 0
   )
 
   /** Wrapper class for status and caches of a unique concurrent output writer.
