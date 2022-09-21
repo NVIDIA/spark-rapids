@@ -453,7 +453,9 @@ object AlluxioUtils extends Logging {
           s"from ${RapidsConf.ALLUXIO_PATHS_REPLACE.key} which requires only 1 rule " +
           s"for each file path")
       } else if (matchedSet.size == 1) {
+        logWarning(s"matched set 1 file: $file")
         val replacedFile = file.replaceFirst(matchedSet.head._2, matchedSet.head._1)
+        logWarning(s"matched set 1 replacedFile: $replacedFile")
         (pf, Some(PartitionedFile(pf.partitionValues, replacedFile, pf.start, file.length)))
       } else {
         (pf, None)
