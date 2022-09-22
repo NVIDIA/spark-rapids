@@ -81,5 +81,4 @@ For a detailed list of changes, please refer to the
 
 ## Archived releases
 
-As new releases come out for each development stream, previous ones will still be available 
-in [archived releases](./archive.md). 
+As new releases come out, previous ones will still be available in [archived releases](./archive.md). 
