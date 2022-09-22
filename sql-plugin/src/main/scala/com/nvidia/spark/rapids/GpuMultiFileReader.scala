@@ -385,6 +385,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     val tc = TaskContext.get
     for (i <- 0 until limit) {
       val file = files(i)
+      logWarning(s"multi file reader using file ${file._1}")
       // Add these in the order as we got them so that we can make sure
       // we process them in the same order as CPU would.
       val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)

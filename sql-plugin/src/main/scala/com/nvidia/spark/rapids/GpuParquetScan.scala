@@ -989,6 +989,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       filters: Array[Filter],
       readDataSchema: StructType): BlockMetaWithPartFile = {
     try {
+      logWarning(s"Filtering block for coalescing reader file: ${file.filePath}")
       val meta = filterHandler.filterBlocks(footerReadType, file, conf, filters,
         readDataSchema)
       BlockMetaWithPartFile(meta, file)

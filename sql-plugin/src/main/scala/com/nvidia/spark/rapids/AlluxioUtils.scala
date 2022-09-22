@@ -353,10 +353,12 @@ object AlluxioUtils extends Logging {
       origFiles: Array[PartitionedFile],
       alluxionPathReplacementMap: Option[Map[String, String]]):
     Array[(PartitionedFile, Option[PartitionedFile])] = {
-
-    alluxionPathReplacementMap.map { pathsToReplace =>
+    val res: Array[(PartitionedFile, Option[PartitionedFile])] =
+      alluxionPathReplacementMap.map { pathsToReplace =>
       replacePathInPartitionFileTaskTimeIfNeeded(pathsToReplace, origFiles)
     }.getOrElse(origFiles.map((_, None)))
+    logWarning(s"Updated files at TASK_TIME for Alluxio: ${res.mkString(",")}")
+    res
   }
 
   // Replaces the path if needed and returns the replaced path and optionally the
