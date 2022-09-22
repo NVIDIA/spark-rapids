@@ -408,3 +408,6 @@ vi $ALLUXIO_HOME/conf/alluxio-site.properties
 alluxio.master.worker.timeout=60sec
 ```
 
+### the logs
+By default, the log path is <ALLUXIO_HOME>/logs.
+See the master.log and worker.log in this path.
