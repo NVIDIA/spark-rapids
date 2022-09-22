@@ -151,8 +151,7 @@ class GpuSingleDirectoryDataWriter(
   }
 
   override def write(batch: ColumnarBatch): Unit = {
-    var needToCloseBatch = true
-    try {
+    withResource(batch) { batch =>
       withResource(GpuColumnVector.from(batch)) {table => 
         val numRows = table.getRowCount()
         val maxRecordsPerFile = description.maxRecordsPerFile.toInt
@@ -192,13 +191,6 @@ class GpuSingleDirectoryDataWriter(
             }
           })
         }
-        batch.close()
-      }
-
-      needToCloseBatch = false
-    } finally {
-      if (needToCloseBatch) {
-        batch.close()
       }
     }
   }
@@ -391,59 +383,58 @@ class GpuDynamicPartitionDataWriter(
       val paths = cbKeys.rowIterator().asScala.map(getPartitionPath)
 
       paths.toArray.zip(splits).foreach(combined => {
-        val batch = GpuColumnVector.from(combined._2.getTable, outDataTypes)
-        val partPath = combined._1
-        if (currentPartPath != partPath) {
-          currentPartPath = partPath
-          statsTrackers.foreach(_.newPartition())
-          fileCounter = 0
-          newOutputWriter(currentPartPath)
-          }
-
-        withResource(GpuColumnVector.from(batch)) {table => 
-          val numRows = table.getRowCount()
-          val maxRecordsPerFile = description.maxRecordsPerFile.toInt
-          val fillOldFile = recordsInFile < maxRecordsPerFile
-          val splitIndexes = (maxRecordsPerFile > 0, fillOldFile) match {
-            case (false, _) => IndexedSeq.empty
-            case (true, false) =>
-              (1 until ((numRows + maxRecordsPerFile - 1) / maxRecordsPerFile).toInt)
-                .map(i => i * maxRecordsPerFile)
-            case (true, true) => {
-              val filledUp = maxRecordsPerFile - recordsInFile.toInt
-              val remain = numRows - filledUp
-              (0 until ((remain + maxRecordsPerFile - 1) / maxRecordsPerFile).toInt)
-                .map(i => filledUp + i * maxRecordsPerFile)
+        withResource(GpuColumnVector.from(combined._2.getTable, outDataTypes)) {batch =>
+          val partPath = combined._1
+          if (currentPartPath != partPath) {
+            currentPartPath = partPath
+            statsTrackers.foreach(_.newPartition())
+            fileCounter = 0
+            newOutputWriter(currentPartPath)
             }
-          }
 
-          val dataTypes = (0 until batch.numCols()).map(i => batch.column(i).dataType()).toArray
-
-          var needNewWriter = !fillOldFile
-          withResource(table.contiguousSplit(splitIndexes: _*)) {tabs => 
-            tabs.foreach(b => {
-              if (needNewWriter) {
-                fileCounter += 1
-                assert(fileCounter < MAX_FILE_COUNTER,
-                  s"File counter $fileCounter is beyond max value $MAX_FILE_COUNTER")
-                newOutputWriter(currentPartPath)
-                recordsInFile = 0
+          withResource(GpuColumnVector.from(batch)) {table => 
+            val numRows = table.getRowCount()
+            val maxRecordsPerFile = description.maxRecordsPerFile.toInt
+            val fillOldFile = recordsInFile < maxRecordsPerFile
+            val splitIndexes = (maxRecordsPerFile > 0, fillOldFile) match {
+              case (false, _) => IndexedSeq.empty
+              case (true, false) =>
+                (1 until ((numRows + maxRecordsPerFile - 1) / maxRecordsPerFile).toInt)
+                  .map(i => i * maxRecordsPerFile)
+              case (true, true) => {
+                val filledUp = maxRecordsPerFile - recordsInFile.toInt
+                val remain = numRows - filledUp
+                (0 until ((remain + maxRecordsPerFile - 1) / maxRecordsPerFile).toInt)
+                  .map(i => filledUp + i * maxRecordsPerFile)
               }
-              withResource(b.getTable()) {tab =>
-                val bc = GpuColumnVector.from(tab, dataTypes)
-                statsTrackers.foreach(_.newBatch(bc))
-                recordsInFile += b.getRowCount()
-                currentWriter.write(bc, statsTrackers)
-                needNewWriter = true
-              }
-            })
-          }
+            }
 
-          statsTrackers.foreach(_.newBatch(batch))
-          recordsInFile += batch.numRows
-          currentWriter.write(batch, statsTrackers)
+            val dataTypes = (0 until batch.numCols()).map(i => batch.column(i).dataType()).toArray
+
+            var needNewWriter = !fillOldFile
+            withResource(table.contiguousSplit(splitIndexes: _*)) {tabs => 
+              tabs.foreach(b => {
+                if (needNewWriter) {
+                  fileCounter += 1
+                  assert(fileCounter < MAX_FILE_COUNTER,
+                    s"File counter $fileCounter is beyond max value $MAX_FILE_COUNTER")
+                  newOutputWriter(currentPartPath)
+                  recordsInFile = 0
+                }
+                withResource(b.getTable()) {tab =>
+                  val bc = GpuColumnVector.from(tab, dataTypes)
+                  statsTrackers.foreach(_.newBatch(bc))
+                  recordsInFile += b.getRowCount()
+                  currentWriter.write(bc, statsTrackers)
+                  needNewWriter = true
+                }
+              })
+            }
+            statsTrackers.foreach(_.newBatch(batch))
+            recordsInFile += batch.numRows
+            currentWriter.write(batch, statsTrackers)
+          }
         }
-        batch.close()
       })
     } finally {
       if (needToCloseBatch) {
