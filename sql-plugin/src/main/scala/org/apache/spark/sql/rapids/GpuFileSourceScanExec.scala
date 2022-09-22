@@ -123,12 +123,10 @@ case class GpuFileSourceScanExec(
     val pds = relation.location.listFiles(
         partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
     if (AlluxioUtils.isAlluxioAutoMountTaskTime(rapidsConf, relation.fileFormat)) {
-      logWarning("in is alluxio auto mount task time")
       alluxioPathReplacementMap = AlluxioUtils.autoMountIfNeeded(rapidsConf, pds,
         relation.sparkSession.sparkContext.hadoopConfiguration,
         relation.sparkSession.conf)
     } else if (AlluxioUtils.isAlluxioPathsToReplaceTaskTime(rapidsConf, relation.fileFormat)) {
-      logWarning("in is alluxio replace path task time")
       // this is not ideal, here we check to see if we will replace any paths, which is an
       // extra iteration through paths
       alluxioPathReplacementMap = AlluxioUtils.checkIfNeedsReplaced(rapidsConf, pds)
@@ -568,7 +566,7 @@ case class GpuFileSourceScanExec(
       SparkShimImpl.getFileScanRDD(relation.sparkSession, readFile.get, partitions,
         requiredSchema)
     } else {
-      logWarning(s"using datasource RDD, partitions are: " +
+      logDebug(s"Using Datasource RDD, files are: " +
         s"${partitions.flatMap(_.files).mkString(",")}")
       // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
       GpuDataSourceRDD(relation.sparkSession.sparkContext, partitions, readerFactory)
