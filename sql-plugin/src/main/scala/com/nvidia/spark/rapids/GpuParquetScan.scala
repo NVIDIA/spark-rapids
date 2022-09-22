@@ -1130,7 +1130,6 @@ case class GpuParquetPartitionReaderFactory(
     // Replace the file path with Alluxio one if needed. Replacing at this point so we
     // leave the input file name reported as the original one.
     val partitionedFile = if (alluxioReplacementTaskTime) {
-
       val res = AlluxioUtils.updateFilesTaskTimeIfAlluxio(Array(origPartitionedFile),
         alluxionPathReplacementMap).head._1
       logWarning(s"in read file for per file reader file replaced task time is: ${res.filePath}")

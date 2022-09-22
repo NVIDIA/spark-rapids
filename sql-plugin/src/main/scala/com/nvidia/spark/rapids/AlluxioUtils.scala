@@ -53,8 +53,12 @@ import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
  *      clusters short on task slots this may be a better fit.
  *
  * Note the way we do the actual replacement algorithm diffs depending on the file reader
- * type we use: PERFILE, COALESCING, MULTITHREADED. Note that COALESCING reader is not
- * support for input_file_name functionality so it falls back to the MULTITHREADED reader.
+ * type we use: PERFILE, COALESCING, MULTITHREADED.
+ * PERFILE is not supported with Alluxio due to not easily being able to fix up
+ * input_file_name. We could but would require copying the FileScanRDD so skip for now.
+ * The COALESCING reader is not support for input_file_name functionality so it falls
+ * back to the MULTITHREADED reader if that is used, otherwise we replace the paths properly
+ * based on the replacement algorithm.
  * In order to do the replacement at task time and to reverse the path from convert time
  * we need to have a mapping of the original scheme to the alluxio scheme. This has been
  * made a parameter to many of the readers. In order to get that mapping for task time
@@ -308,6 +312,7 @@ object AlluxioUtils extends Logging {
         val (access_key, secret_key) = getKeyAndSecret(hadoopConf, runtimeConf)
         val (scheme, bucket) = getSchemeAndBucketFromPath(pathStr)
         autoMountBucket(scheme, bucket, access_key, secret_key)
+        assert(alluxioMasterHost.isDefined)
         (new Path(replaceSchemeWithAlluxio(pathStr, scheme, alluxioMasterHost.get)), Some(scheme))
       } else {
         (f, None)
