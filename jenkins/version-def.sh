@@ -17,6 +17,18 @@
 
 set -e
 
+# PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
+# regular: noSnapshots + snapshots
+# pre-release: noSnapshots only
+PHASE_TYPE=regular
+
+if [[ $# -eq 1 ]]; then
+    PHASE_TYPE=$1
+elif [[ $# -gt 1 ]]; then
+    >&2 echo "ERROR: too many parameters are provided"
+    exit 1
+fi
+
 # Split abc=123 from $OVERWRITE_PARAMS
 # $OVERWRITE_PARAMS patten 'abc=123;def=456;'
 PRE_IFS=$IFS
@@ -48,9 +60,44 @@ SPARK_REPO=${SPARK_REPO:-"$URM_URL"}
 echo "CUDF_VER: $CUDF_VER, CUDA_CLASSIFIER: $CUDA_CLASSIFIER, PROJECT_VER: $PROJECT_VER \
     SPARK_VER: $SPARK_VER, SCALA_BINARY_VER: $SCALA_BINARY_VER"
 
+# Spark shim versions
+# get Spark shim versions from pom
+function set_env_var_SPARK_SHIM_VERSIONS_ARR() {
+    PROFILE_OPT=$1
+    SPARK_SHIM_VERSIONS_STR=$(mvn -B help:evaluate -q -pl dist $PROFILE_OPT -Dexpression=included_buildvers -DforceStdout)
+    SPARK_SHIM_VERSIONS_STR=$(echo $SPARK_SHIM_VERSIONS_STR)
+    IFS=", " <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS_ARR
+}
+# Psnapshots: snapshots + noSnapshots
+set_env_var_SPARK_SHIM_VERSIONS_ARR -Psnapshots
+SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+# PnoSnapshots: noSnapshots only
+set_env_var_SPARK_SHIM_VERSIONS_ARR -PnoSnapshots
+SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+# Spark shim versions list based on given profile option (snapshots or noSnapshots)
+case $PHASE_TYPE in
+    pre-release)
+        SPARK_SHIM_VERSIONS=("${SPARK_SHIM_VERSIONS_SNAPSHOTS[@]}")
+        ;;
 
-SPARK_SHIM_VERSIONS_STR=${SPARK_SHIM_VERSIONS_STR:-"311 321cdh 312 313 314 320 321 322 330 331"}
-
-IFS=" " <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS
-
+    *)
+        SPARK_SHIM_VERSIONS=("${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]}")
+        ;;
+esac
+# base version
 SPARK_BASE_SHIM_VERSION=${SPARK_SHIM_VERSIONS[0]}
+# tail snapshots
+SPARK_SHIM_VERSIONS_SNAPSHOTS_TAIL=("${SPARK_SHIM_VERSIONS_SNAPSHOTS[@]:1}")
+# tail noSnapshots
+SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL=("${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]:1}")
+# build and run unit tests on one specific version for each sub-version (e.g. 320, 330)
+# separate the versions to two parts (premergeUT1, premergeUT2) for balancing the duration
+set_env_var_SPARK_SHIM_VERSIONS_ARR -PpremergeUT1
+SPARK_SHIM_VERSIONS_PREMERGE_UT_1=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+set_env_var_SPARK_SHIM_VERSIONS_ARR -PpremergeUT2
+SPARK_SHIM_VERSIONS_PREMERGE_UT_2=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+# utf-8 cases
+set_env_var_SPARK_SHIM_VERSIONS_ARR -PpremergeUTF8
+SPARK_SHIM_VERSIONS_PREMERGE_UTF8=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+
+echo "SPARK_BASE_SHIM_VERSION: $SPARK_BASE_SHIM_VERSION"

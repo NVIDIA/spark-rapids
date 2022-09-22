@@ -216,8 +216,12 @@ run_iceberg_tests() {
 run_avro_tests() {
   # Workaround to avoid appending avro jar file by '--jars',
   # which would be addressed by https://github.com/NVIDIA/spark-rapids/issues/6532
+  # Adding the Apache snapshots repository since we may be running with a snapshot
+  # version of Apache Spark which requires accessing the snapshot repository to
+  # fetch the spark-avro jar.
   rm -vf $LOCAL_JAR_PATH/spark-avro*.jar
   PYSP_TEST_spark_jars_packages="org.apache.spark:spark-avro_2.12:${SPARK_VER}" \
+    PYSP_TEST_spark_jars_repositories="https://repository.apache.org/snapshots" \
     ./run_pyspark_from_build.sh -k avro
 }
 
