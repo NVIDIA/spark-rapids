@@ -57,8 +57,8 @@ object GpuPartitioningUtils extends SQLConfHelper {
    * @param userSpecifiedSchema an optional user specified schema that will be use to provide
    *                            types for the discovered partitions
    * @param replaceFunc the alluxio replace function
-   * @return the specification of the partitions inferred from the data and if it replaced the
-   *         base path
+   * @return the specification of the partitions inferred from the data and if it was replaced the
+   *         original path
    *
    * Mainly copied from PartitioningAwareFileIndex.inferPartitioning
    */
@@ -82,10 +82,10 @@ object GpuPartitioningUtils extends SQLConfHelper {
       // filter out non-data path and get unique leaf dirs of inputFiles
       val leafDirs: Seq[Path] = leafFiles.filter(isDataPath).map(_.getParent).distinct
 
-      val basePathAndAnyReplacedOption = parameters.get(BASE_PATH_PARAM).map(file => {
+      val basePathAndAnyReplacedOption = parameters.get(BASE_PATH_PARAM).map { file =>
         // need to replace the base path
         replaceFunc(new Path(file))
-      })
+      }
       val basePathOption = basePathAndAnyReplacedOption.map(_._1)
       val anyReplacedBase = basePathAndAnyReplacedOption.flatMap(_._2)
 

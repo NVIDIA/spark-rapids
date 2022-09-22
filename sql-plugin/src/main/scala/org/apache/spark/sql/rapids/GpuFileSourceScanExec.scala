@@ -61,8 +61,7 @@ import org.apache.spark.util.collection.BitSet
  *                               off in GpuTransitionOverrides if InputFileName,
  *                               InputFileBlockStart, or InputFileBlockLength are used
  * @param disableBucketedScan Disable bucketed scan based on physical query plan.
- * @param alluxioPathsConverTime Optional map containing mapping of DFS scheme to Alluxio
- *                               scheme.
+ * @param alluxioPathsMap Map containing mapping of DFS scheme to Alluxio scheme
  */
 case class GpuFileSourceScanExec(
     @transient relation: HadoopFsRelation,

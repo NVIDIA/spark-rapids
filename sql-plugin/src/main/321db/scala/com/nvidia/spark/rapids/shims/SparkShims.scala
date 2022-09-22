@@ -139,7 +139,7 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
 
-            val (fi, alluxioPathsToReplaceMap) = if (conf.isAlluxioReplacementAlgoConvertTime) {
+            val (location, alluxioPathsToReplaceMap) = if (conf.isAlluxioReplacementAlgoConvertTime) {
               AlluxioUtils.replacePathIfNeeded(
                 conf,
                 wrapped.relation,
@@ -150,7 +150,7 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
             }
 
             val newRelation = HadoopFsRelation(
-              fi,
+              location,
               wrapped.relation.partitionSchema,
               wrapped.relation.dataSchema,
               wrapped.relation.bucketSpec,

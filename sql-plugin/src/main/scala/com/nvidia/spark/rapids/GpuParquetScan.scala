@@ -1745,8 +1745,8 @@ class MultiFileParquetPartitionReader(
  * @param ignoreMissingFiles Whether to ignore missing files
  * @param ignoreCorruptFiles Whether to ignore corrupt files
  * @param useFieldId Whether to use field id for column matching
- * @param alluxioRegexTaskTime Whether alluxio replacement algorithm is set to task time and if it
- *                             is, then it contains the Alluxio replacement regex
+ * @param alluxionPathReplacementMap Map containing mapping of DFS scheme to Alluxio scheme
+ * @param alluxioReplacementTaskTime Whether the Alluxio replacement algorithm is set to task time
  */
 class MultiFileCloudParquetPartitionReader(
     override val conf: Configuration,

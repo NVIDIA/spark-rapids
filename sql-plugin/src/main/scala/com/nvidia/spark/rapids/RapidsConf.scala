@@ -1406,10 +1406,9 @@ object RapidsConf {
       "when we convert it to a GPU file read, this has extra overhead of creating an entirely " +
       "new file index, which requires listing the files and getting all new file info from " +
       "Alluxio. TASK_TIME replaces the path as late as possible inside of the task. " +
-      "By waiting and replacing it at task time, the path reported by the input_file_name " +
-      "comes back as the original path and not the Alluxio replaced path. Task time " +
-      "just replaces the path without fetching the file information again, this is faster " +
-      "but doesn't update locality information if that were to work with Alluxio.")
+      "By waiting and replacing it at task time,  it just replaces " +
+      "the path without fetching the file information again, this is faster " +
+      "but doesn't update locality information if that has a bit impact on performance.")
     .stringConf
     .checkValues(Set("CONVERT_TIME", "TASK_TIME"))
     .createWithDefault("TASK_TIME")

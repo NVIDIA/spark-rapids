@@ -351,7 +351,7 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
 
-            val (fi, alluxioPathsToReplaceMap) = if (conf.isAlluxioReplacementAlgoConvertTime) {
+            val (location, alluxioPathsToReplaceMap) = if (conf.isAlluxioReplacementAlgoConvertTime) {
               AlluxioUtils.replacePathIfNeeded(
                 conf,
                 wrapped.relation,
@@ -362,7 +362,7 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
             }
 
             val newRelation = HadoopFsRelation(
-              fi,
+              location,
               wrapped.relation.partitionSchema,
               wrapped.relation.dataSchema,
               wrapped.relation.bucketSpec,

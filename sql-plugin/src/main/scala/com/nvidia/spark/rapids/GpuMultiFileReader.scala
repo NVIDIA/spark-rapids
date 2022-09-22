@@ -167,7 +167,7 @@ object MultiFileReaderUtils {
   }
 
   // If Alluxio is enabled and we do task time replacement we have to take that
-  // into account here so use the Coalescing reader instead of the MultiThreaded reader.
+  // into account here so we use the Coalescing reader instead of the MultiThreaded reader.
   def useMultiThreadReader(
       coalescingEnabled: Boolean,
       multiThreadEnabled: Boolean,
