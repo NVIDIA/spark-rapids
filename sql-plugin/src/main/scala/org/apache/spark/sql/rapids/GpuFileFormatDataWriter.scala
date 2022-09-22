@@ -393,8 +393,7 @@ class GpuDynamicPartitionDataWriter(
           withResource(GpuColumnVector.from(batch)) {table => 
             val numRows = table.getRowCount()
             val maxRecordsPerFile = description.maxRecordsPerFile.toInt
-            val fillOldFile = recordsInFile < maxRecordsPerFile
-            val splitIndexes = (maxRecordsPerFile > 0, fillOldFile) match {
+            val splitIndexes = (maxRecordsPerFile > 0, recordsInFile < maxRecordsPerFile) match {
               case (false, _) => IndexedSeq.empty
               case (true, false) =>
                 (1 until ((numRows + maxRecordsPerFile - 1) / maxRecordsPerFile).toInt)
@@ -409,7 +408,7 @@ class GpuDynamicPartitionDataWriter(
 
             val dataTypes = (0 until batch.numCols()).map(i => batch.column(i).dataType()).toArray
 
-            var needNewWriter = !fillOldFile
+            var needNewWriter = recordsInFile >= maxRecordsPerFile && maxRecordsPerFile > 0
             withResource(table.contiguousSplit(splitIndexes: _*)) {tabs => 
               tabs.foreach(b => {
                 if (needNewWriter) {
