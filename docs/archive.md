@@ -3,7 +3,7 @@ layout: page
 title: Archive
 nav_order: 15
 ---
-Below are archived old releases for RAPIDS Accelerator for Apache Spark.
+Below are archived releases for RAPIDS Accelerator for Apache Spark.
 
 ## Release v22.06.0
 Hardware Requirements:
