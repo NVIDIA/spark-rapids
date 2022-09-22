@@ -30,8 +30,9 @@ trait AlluxioSuite extends SparkQueryCompareTestSuite with Arm {
   /** File format */
   protected def format: String
 
-  protected def otherConfs: Iterable[(String, String)] = Seq.empty
-  protected def testContextOk: Boolean = true
+  protected def otherConfs: Iterable[(String, String)] =
+    Seq(("spark.rapids.alluxio.automount.enabled", "true"),
+      ("spark.rapids.alluxio.bucket.regex", "^file://.*"))
 
   private def checkReaderType(
       readerFactory: PartitionReaderFactory,
@@ -62,6 +63,7 @@ trait AlluxioSuite extends SparkQueryCompareTestSuite with Arm {
       conf: SparkConf,
       files: Array[String],
       expectedReaderType: RapidsReaderType,
+      algo: String,
       hasInputExpression: Boolean = false): Unit = {
     withTempPath { file =>
       withCpuSparkSession(spark => {
@@ -75,9 +77,29 @@ trait AlluxioSuite extends SparkQueryCompareTestSuite with Arm {
         val plans = df.queryExecution.executedPlan.collect {
           case plan: GpuBatchScanExec =>
             // not supported with Alluxio yet
-            checkReaderType(plan.readerFactory, files, expectedReaderType)
+            // checkReaderType(plan.readerFactory, files, expectedReaderType)
             plan
           case plan: GpuFileSourceScanExec =>
+            if (algo == "CONVERT_TIME") {
+              val allAllux = plan.selectedPartitions.forall { p =>
+                p.files.forall(p => p.toString.startsWith("alluxio://"))
+              }
+              assert(allAllux, "All files should start with alluxio")
+            } else {
+             /*
+              // depends on reader type
+              plan.readerFactory match {
+                case mf: MultiFilePartitionReaderFactoryBase =>
+                  if (mf.useMultiThread(files)) {
+                    // MULTITHREADED
+                    val rdd = plan.
+                    mf.createColumnarReader()
+                  } else {
+                    // COALESCING
+                  }
+                case _ => PERFILE
+                             */
+            }
             checkReaderType(plan.readerFactory, files, expectedReaderType)
             plan
         }
@@ -86,16 +108,29 @@ trait AlluxioSuite extends SparkQueryCompareTestSuite with Arm {
     }
   }
 
-  test("Use coalescing reading for local files") {
-    assume(testContextOk)
+  // Alluxio only supports V1 datasource and Parquet format right now
+
+  /*
+  test("Use defaults Alluxio - coalescing reading at task time") {
     val testFile = Array("/tmp/xyz")
-    Seq(format, "").foreach(useV1Source => {
+    Seq(format).foreach(useV1Source => {
       val conf = new SparkConf()
         .set("spark.sql.sources.useV1SourceList", useV1Source)
-      testReaderType(conf, testFile, COALESCING)
+      testAlluxioPaths(conf, testFile, COALESCING, "TASK_TIME")
+    })
+  }
+  */
+
+  test("Use coalescing reading Alluxio convert time") {
+    val testFile = Array("/tmp/xyz")
+    Seq(format).foreach(useV1Source => {
+      val conf = new SparkConf()
+        .set("spark.sql.sources.useV1SourceList", useV1Source)
+      testAlluxioPaths(conf, testFile, COALESCING, "CONVERT_TIME")
     })
   }
 
+  /*
   test("Use multithreaded reading for cloud files") {
     assume(testContextOk)
     val testFile = Array("s3:/tmp/xyz")
@@ -150,12 +185,15 @@ trait AlluxioSuite extends SparkQueryCompareTestSuite with Arm {
       testReaderType(conf, testFile, MULTITHREADED)
     })
   }
+
+   */
 }
 
 class GpuParquetAlluxioSuites extends AlluxioSuite{
   override protected def format: String = "parquet"
 }
 
+/*
 class GpuOrcAlluxioSuites extends ReaderTypeSuite {
   override protected def format: String = "orc"
 }
@@ -163,3 +201,5 @@ class GpuOrcAlluxioSuites extends ReaderTypeSuite {
 class GpuAvroAlluxioSuites extends ReaderTypeSuite {
   override lazy val format: String = "avro"
 }
+
+ */
