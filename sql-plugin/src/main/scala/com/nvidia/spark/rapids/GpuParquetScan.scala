@@ -1050,7 +1050,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       // Since coalescing reader isn't supported if input_file_name is used, so won't
       // ever get here with that. So with convert time or no Alluxio just use the files as
       // passed in.
-      origFiles.map((_, None))
+      origFiles
     }
     val clippedBlocks = ArrayBuffer[ParquetSingleDataBlockMeta]()
     val startTime = System.nanoTime()

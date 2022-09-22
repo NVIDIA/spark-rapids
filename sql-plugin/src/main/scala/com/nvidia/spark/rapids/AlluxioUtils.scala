@@ -300,7 +300,7 @@ object AlluxioUtils extends Logging {
         } else if (matchedSet.size == 1) {
           val res = (new Path(pathStr.replaceFirst(matchedSet.head._1, matchedSet.head._2)),
             Some(matchedSet.head._1))
-          logWarning(s"specific path replacement, replacing paths: $res")
+          logDebug(s"Specific path replacement, replacing paths with: $res")
           res
         } else {
           (f, None)
@@ -326,7 +326,7 @@ object AlluxioUtils extends Logging {
       } else {
         (f, None)
       }
-      logWarning(s"auto mount replacing paths: $res")
+      logDebug(s"Automount replacing paths: $res")
       res
     })
   }
@@ -392,13 +392,12 @@ object AlluxioUtils extends Logging {
   // assumes Alluxio directories already mounted at this point
   def updateFilesTaskTimeIfAlluxio(
       origFiles: Array[PartitionedFile],
-      alluxionPathReplacementMap: Option[Map[String, String]]):
-    Array[(PartitionedFile, Option[PartitionedFile])] = {
+      alluxionPathReplacementMap: Option[Map[String, String]]): Array[(PartitionedFile, Option[PartitionedFile])] = {
     val res: Array[(PartitionedFile, Option[PartitionedFile])] =
       alluxionPathReplacementMap.map { pathsToReplace =>
       replacePathInPartitionFileTaskTimeIfNeeded(pathsToReplace, origFiles)
     }.getOrElse(origFiles.map((_, None)))
-    logWarning(s"Updated files at TASK_TIME for Alluxio: ${res.mkString(",")}")
+    logDebug(s"Updated files at TASK_TIME for Alluxio: ${res.mkString(",")}")
     res
   }
 
@@ -496,9 +495,8 @@ object AlluxioUtils extends Logging {
           s"from ${RapidsConf.ALLUXIO_PATHS_REPLACE.key} which requires only 1 rule " +
           s"for each file path")
       } else if (matchedSet.size == 1) {
-        logWarning(s"matched set 1 file: $file")
         val replacedFile = file.replaceFirst(matchedSet.head._2, matchedSet.head._1)
-        logWarning(s"matched set 1 replacedFile: $replacedFile")
+        logDebug(s"getOrigPath replacedFile: $replacedFile")
         (pf, Some(PartitionedFile(pf.partitionValues, replacedFile, pf.start, file.length)))
       } else {
         (pf, None)
