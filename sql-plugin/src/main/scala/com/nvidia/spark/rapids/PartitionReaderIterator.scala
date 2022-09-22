@@ -53,8 +53,7 @@ class PartitionReaderIterator(reader: PartitionReader[ColumnarBatch])
 }
 
 object PartitionReaderIterator {
-  def buildReader(factory: FilePartitionReaderFactory,
-      alluxionPathReplacementMap: Option[Map[String, String]] = None)
+  def buildReader(factory: FilePartitionReaderFactory)
   : PartitionedFile => Iterator[InternalRow] = {
     file: PartitionedFile => {
       val reader = factory.buildColumnarReader(file)
