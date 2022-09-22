@@ -82,7 +82,7 @@ object AlluxioUtils extends Logging {
     if (rapidsConf.isParquetPerFileReadEnabled &&
       (rapidsConf.getAlluxioAutoMountEnabled || rapidsConf.getAlluxioPathsToReplace.isDefined)) {
       throw new IllegalArgumentException("Alluxio is currently not supported with the PERFILE " +
-        "reader, please use one of the other reader types."
+        "reader, please use one of the other reader types.")
     }
   }
 
