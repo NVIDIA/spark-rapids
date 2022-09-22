@@ -583,7 +583,8 @@ case class GpuFileSourceScanExec(
       SparkShimImpl.getFileScanRDD(relation.sparkSession, readFile.get, partsToUse,
         requiredSchema)
     } else {
-      logWarning(s"using datasource RDD, partitions are: ${partitions.mkString(",")}")
+      logWarning(s"using datasource RDD, partitions are: " +
+        s"${partitions.flatMap(_.files).mkString(",")}")
       // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
       GpuDataSourceRDD(relation.sparkSession.sparkContext, partitions, readerFactory)
     }

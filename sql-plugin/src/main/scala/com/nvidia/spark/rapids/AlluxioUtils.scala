@@ -51,6 +51,17 @@ import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
  *      if it doesn't have to do the extra list leaf files, but you don't get the
  *      locality information updated. So for small Alluxio clusters or with Spark
  *      clusters short on task slots this may be a better fit.
+ *
+ * Note the way we do the actual replacement algorithm diffs depending on the file reader
+ * type we use: PERFILE, COALESCING, MULTITHREADED. Note that COALESCING reader is not
+ * support for input_file_name functionality so it falls back to the MULTITHREADED reader.
+ * In order to do the replacement at task time and to reverse the path from convert time
+ * we need to have a mapping of the original scheme to the alluxio scheme. This has been
+ * made a parameter to many of the readers. In order to get that mapping for task time
+ * replacement and to support auto mounting we make a pass through the files on the driver
+ * side in GpuFileSourceScanExec.
+ * Note that Delta Lake uses the input_file_name functionality to do things like
+ * Updates and Deletes and will fail if the path has the alluxio:// in it.
  */
 object AlluxioUtils extends Logging {
   private val checkedAlluxioPath = scala.collection.mutable.HashSet[String]()
@@ -62,10 +73,6 @@ object AlluxioUtils extends Logging {
   private var alluxioPathsToReplaceMap: Option[Map[String, String]] = None
   private var alluxioHome: String = "/opt/alluxio-2.8.0"
   private var isInit: Boolean = false
-
-  // Alluxio should be initialized before calling
-  def getAlluxioMasterAndPort: Option[String] = alluxioMasterHost
-  def getAlluxioPathsToReplace: Option[Map[String, String]] = alluxioPathsToReplaceMap
 
   def isAlluxioAutoMountTaskTime(rapidsConf: RapidsConf,
       fileFormat: FileFormat): Boolean = {
@@ -137,9 +144,6 @@ object AlluxioUtils extends Logging {
           }
           alluxioMasterHost = Some(alluxio_master + ":" + alluxio_port)
           val alluxioBucketRegex: String = conf.getAlluxioBucketRegex
-          // TODO - do we still need this since set later?
-          alluxioPathsToReplaceMap =
-            Some(Map(alluxioBucketRegex -> (ALLUXIO_SCHEME + alluxioMasterHost.get + "/")))
           // load mounted point by call Alluxio mount command.
           val (ret, output) = runAlluxioCmd("fs mount")
           if (ret == 0) {
@@ -281,8 +285,10 @@ object AlluxioUtils extends Logging {
             s"from ${RapidsConf.ALLUXIO_PATHS_REPLACE.key} which requires only 1 rule " +
             s"for each file path")
         } else if (matchedSet.size == 1) {
-          (new Path(pathStr.replaceFirst(matchedSet.head._1, matchedSet.head._2)),
+          val res = (new Path(pathStr.replaceFirst(matchedSet.head._1, matchedSet.head._2)),
             Some(matchedSet.head._1))
+          logWarning(s"specific path replacement, replacing paths: $res")
+          res
         } else {
           (f, None)
         }
@@ -298,7 +304,7 @@ object AlluxioUtils extends Logging {
       alluxioBucketRegex: String) : Option[Path => (Path, Option[String])] = {
     Some((f: Path) => {
       val pathStr = f.toString
-      if (pathStr.matches(alluxioBucketRegex)) {
+      val res = if (pathStr.matches(alluxioBucketRegex)) {
         val (access_key, secret_key) = getKeyAndSecret(hadoopConf, runtimeConf)
         val (scheme, bucket) = getSchemeAndBucketFromPath(pathStr)
         autoMountBucket(scheme, bucket, access_key, secret_key)
@@ -306,6 +312,8 @@ object AlluxioUtils extends Logging {
       } else {
         (f, None)
       }
+      logWarning(s"auto mount replacing paths: $res")
+      res
     })
   }
 
@@ -315,7 +323,6 @@ object AlluxioUtils extends Logging {
   private def genFuncForTaskTimeReplacement(
       pathsToReplace: Map[String, String]): Option[String => (String, Boolean)] = {
     Some((pathStr: String) => {
-
       // pathsToReplace contain strings of exact paths to replace
       val matchedSet = pathsToReplace.filter { case (pattern, _) => pathStr.startsWith(pattern) }
       if (matchedSet.size > 1) {
