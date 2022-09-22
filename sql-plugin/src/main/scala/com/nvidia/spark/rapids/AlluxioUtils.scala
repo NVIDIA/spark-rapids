@@ -32,6 +32,26 @@ import org.apache.spark.sql.execution.datasources.{CatalogFileIndex, FileFormat,
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 
+/*
+ * Utilities for using Alluxio with the plugin for reading.
+ * Currently we only support Alluxio with the Datasource v1 Parquet reader.
+ * We currently support 2 different replacement algorithms:
+ *    CONVERT_TIME: this replaces the file path when we convert a FileSourceScanExec to
+ *      a GpuFileSourceScanExec. This will create an entirely new FileIndex and potentially
+ *      has to re-infer the partitioning if its not a FileIndex type we know. So this can
+ *      cause an extra list leaf files which for many files will run another job and thus
+ *      has additional overhead. This will update the file locations to be the
+ *      Alluxio specific ones if the data is already cached. In order to support the
+ *      input_file_name functionality we have to convert the alluxio:// path back to its
+ *      original url when we go to actually read the file.
+ *    TASK_TIME: this replaces the file path as late as possible on the task side when
+ *      we actually go to read the file. This makes is so that the original non-Alluxio
+ *      path gets reported for the input_file_name properly without having to convert
+ *      paths back to the original. This also has the benefit that it can be more performant
+ *      if it doesn't have to do the extra list leaf files, but you don't get the
+ *      locality information updated. So for small Alluxio clusters or with Spark
+ *      clusters short on task slots this may be a better fit.
+ */
 object AlluxioUtils extends Logging {
   private val checkedAlluxioPath = scala.collection.mutable.HashSet[String]()
   private val ALLUXIO_SCHEME = "alluxio://"
