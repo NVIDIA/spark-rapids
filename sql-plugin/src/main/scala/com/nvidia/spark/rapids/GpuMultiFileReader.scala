@@ -385,7 +385,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     val tc = TaskContext.get
     for (i <- 0 until limit) {
       val file = files(i)
-      logWarning(s"multi file reader using file ${file._1}")
+      logDebug(s"MultiFile reader using file ${file._1}, orig file is ${file._2}")
       // Add these in the order as we got them so that we can make sure
       // we process them in the same order as CPU would.
       val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
@@ -452,8 +452,7 @@ abstract class MultiFileCloudPartitionReaderBase(
             readBatch(currentFileHostBuffers.get)
           } catch {
             case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
-              logWarning(
-                s"Skipped the corrupted file: ${file}", e)
+              logWarning(s"Skipped the corrupted file: ${file}", e)
               None
           }
         }
@@ -495,8 +494,7 @@ abstract class MultiFileCloudPartitionReaderBase(
               readBatch(fileBufsAndMeta)
             } catch {
               case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
-                logWarning(
-                  s"Skipped the corrupted file: ${file}", e)
+                logWarning(s"Skipped the corrupted file: ${file}", e)
                 None
             }
 

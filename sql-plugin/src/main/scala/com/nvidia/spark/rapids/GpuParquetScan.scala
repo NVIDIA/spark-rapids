@@ -989,7 +989,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       filters: Array[Filter],
       readDataSchema: StructType): BlockMetaWithPartFile = {
     try {
-      logWarning(s"Filtering block for coalescing reader file: ${file.filePath}")
+      logDebug(s"Filtering blocks for coalescing reader, file: ${file.filePath}")
       val meta = filterHandler.filterBlocks(footerReadType, file, conf, filters,
         readDataSchema)
       BlockMetaWithPartFile(meta, file)
@@ -1044,8 +1044,14 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       conf: Configuration): PartitionReader[ColumnarBatch] = {
     // update the file paths for Alluxio if needed, the coalescing reader doesn't support
     // input_file_name so no need to track what the non Alluxio file name is
-    val files =
+    val files = if (alluxioReplacementTaskTime) {
       AlluxioUtils.updateFilesTaskTimeIfAlluxio(origFiles, alluxionPathReplacementMap).map(_._1)
+    } else {
+      // Since coalescing reader isn't supported if input_file_name is used, so won't
+      // ever get here with that. So with convert time or no Alluxio just use the files as
+      // passed in.
+      origFiles.map((_, None))
+    }
     val clippedBlocks = ArrayBuffer[ParquetSingleDataBlockMeta]()
     val startTime = System.nanoTime()
     val metaAndFilesArr = if (numFilesFilterParallel > 0) {
@@ -1126,20 +1132,7 @@ case class GpuParquetPartitionReaderFactory(
   }
 
   override def buildColumnarReader(
-      origPartitionedFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
-    // Replace the file path with Alluxio one if needed. Replacing at this point so we
-    // leave the input file name reported as the original one.
-    val partitionedFile = if (alluxioReplacementTaskTime) {
-      val res = AlluxioUtils.updateFilesTaskTimeIfAlluxio(Array(origPartitionedFile),
-        alluxionPathReplacementMap).head._1
-      logWarning(s"in read file for per file reader file replaced task time is: ${res.filePath}")
-      res
-    } else {
-      logWarning(s"in read file for per file reader file is: ${origPartitionedFile.filePath}")
-
-      // otherwise if using Alluxio, path was already replaced
-      origPartitionedFile
-    }
+      partitionedFile: PartitionedFile): PartitionReader[ColumnarBatch] = {
     val reader = new PartitionReaderWithBytesRead(buildBaseColumnarParquetReader(partitionedFile))
     ColumnarPartitionReaderWithPartitionValues.newReader(partitionedFile, reader, partitionSchema)
   }
