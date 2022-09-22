@@ -78,6 +78,14 @@ object AlluxioUtils extends Logging {
   private var alluxioHome: String = "/opt/alluxio-2.8.0"
   private var isInit: Boolean = false
 
+  def checkAlluxioNotSupported(rapidsConf: RapidsConf): Unit = {
+    if (rapidsConf.isParquetPerFileReadEnabled &&
+      (rapidsConf.getAlluxioAutoMountEnabled || rapidsConf.getAlluxioPathsToReplace.isDefined)) {
+      throw new IllegalArgumentException("Alluxio is currently not supported with the PERFILE " +
+        "reader, please use one of the other reader types."
+    }
+  }
+
   def isAlluxioAutoMountTaskTime(rapidsConf: RapidsConf,
       fileFormat: FileFormat): Boolean = {
       rapidsConf.getAlluxioAutoMountEnabled && rapidsConf.isAlluxioReplacementAlgoTaskTime &&
@@ -138,6 +146,7 @@ object AlluxioUtils extends Logging {
       // left outside isInit to allow changing at runtime
       alluxioHome = scala.util.Properties.envOrElse("ALLUXIO_HOME", "/opt/alluxio-2.8.0")
       alluxioCmd = conf.getAlluxioCmd
+      checkAlluxioNotSupported(conf)
 
       if (!isInit) {
         if (conf.getAlluxioAutoMountEnabled) {

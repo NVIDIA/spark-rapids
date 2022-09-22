@@ -565,22 +565,7 @@ case class GpuFileSourceScanExec(
 
     if (isPerFileReadEnabled) {
       logInfo("Using the original per file parquet reader")
-      // this is weird, if we are using the CONVERT_TIME alluxio replacement, here we are going
-      // to change the file partitions to be the original paths, not the Alluxio ones so
-      // that input_file_name shows up properly, then in the PartitionReaderFactory it handles
-      // really using the Alluxio path
-      val partsToUse = if (isAlluxioReplacementTaskTime || !alluxioPathReplacementMap.isDefined) {
-        partitions
-      } else {
-        partitions.map { partition =>
-          val fileAndOrig = AlluxioUtils.getOrigPathFromReplaced(partition.files,
-            alluxioPathReplacementMap.get)
-          // if the filename was replaced get the original, otherwise just the filename here
-          val origFiles = fileAndOrig.map( x => x._2.getOrElse(x._1))
-          FilePartition(partition.index, origFiles)
-        }
-      }
-      SparkShimImpl.getFileScanRDD(relation.sparkSession, readFile.get, partsToUse,
+      SparkShimImpl.getFileScanRDD(relation.sparkSession, readFile.get, partitions,
         requiredSchema)
     } else {
       logWarning(s"using datasource RDD, partitions are: " +
