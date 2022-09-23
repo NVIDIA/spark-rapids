@@ -369,13 +369,16 @@ This section will give some links about how to configure, tune Alluxio and some 
 ## Alluxio reliability
 The properties mentioned in this section can be found in [Alluxio configuration](https://docs.alluxio.io/os/user/stable/en/reference/Properties-List.html)
 
-### Avoid long time response if masters or workers hang
-The default value of `alluxio.user.rpc.retry.max.duration` is 2 minutes.  
-If master is done or hang, the `alluxio.user.rpc.retry.max.duration` will cause at least 2 minutes waiting, it's too long.
-The default value of `alluxio.user.block.read.retry.max.duration` is 5 minutes.
-If worker is done or hang, the `alluxio.user.block.read.retry.max.duration` will cause 5 minutes waiting, it's too long.
+### Dealing with Client side delays in response from master or workers
+If the master is not responding, possibly due to it crashing or GC pause, 
+`alluxio.user.rpc.retry.max.duration` will cause the client to retry for 2 minutes. 
+This is a very long time and can cause delays in the running job, so we suggest lowering this value to 10 seconds.
 
-See also:
+If the worker is not responding, possibly due to it crashing or GC pause, 
+`alluxio.user.block.read.retry.max.duration` will cause the client to retry for 5 minutes. 
+This is a very long time and can cause delays in the running job, so we suggest lowering this value to 10 seconds.
+
+See relative configs also:
 ```
 alluxio.user.rpc.retry.max.duration
 alluxio.user.rpc.retry.max.sleep	
@@ -388,13 +391,15 @@ alluxio.user.block.read.retry.sleep.base
 Above configurations define the `ExponentialTimeBoundedRetry` retry policies and `max durations`, we can adjust them to appropriate values.  
 
 Set these properties on Spark because Spark invokes Alluxio client.
-vi $SPARK_HOME/conf/spark-defaults.conf
 ```
-spark.driver.extraJavaOptions    -Dalluxio.user.rpc.retry.max.duration=10sec -Dalluxio.user.block.read.retry.max.duration=10sec
-spark.executor.extraJavaOptions  -Dalluxio.user.rpc.retry.max.duration=10sec -Dalluxio.user.block.read.retry.max.duration=10sec
+$SPARK_HOME/bin/spark-shell \
+......
+--conf spark.driver.extraJavaOptions='-Dalluxio.user.rpc.retry.max.duration=10sec -Dalluxio.user.block.read.retry.max.duration=10sec' \
+--conf spark.executor.extraJavaOptions='-Dalluxio.user.rpc.retry.max.duration=10sec -Dalluxio.user.block.read.retry.max.duration=10sec' \
+......
 ```
 
-### Worker Timeout to fail fast
+### Worker server tunings to fail fast
 By default, `alluxio.master.worker.timeout` is 5min, this is the timeout between master and worker indicating a lost worker.  
 If the worker holding cache is killed but the elapsed time does not exceed the timeout,   
 the master still marks the worker as alive. The client will connect this dead worker to pull data, and will fail.  
@@ -408,6 +413,10 @@ vi $ALLUXIO_HOME/conf/alluxio-site.properties
 alluxio.master.worker.timeout=60sec
 ```
 
-### the logs
+### The logs
 By default, the log path is <ALLUXIO_HOME>/logs.
 See the master.log and worker.log in this path.
+
+### Auto start Alluxio the master and workers
+After installing Alluxio master and workers, it's better to add a systemd service for each process of master and workers.
+Systemd service can automatically start process if process is terminated.
