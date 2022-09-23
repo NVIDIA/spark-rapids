@@ -84,8 +84,8 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
       QualOutputWriter.UNSUPPORTED_EXPRS_MAX_SIZE,
       QualOutputWriter.UNSUPPORTED_EXPRS.size)
     val appNameMaxSize = QualOutputWriter.getAppNameSize(sums)
-    val headersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(appNameMaxSize, appIdMaxSize,
-      unSupExecMaxSize, unSupExprMaxSize)
+    val headersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(appNameMaxSize,
+      appIdMaxSize, unSupExecMaxSize, unSupExprMaxSize)
     val entireHeader = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
       TEXT_DELIMITER, true)
     val sep = "=" * (entireHeader.size - 1)
@@ -738,8 +738,8 @@ object QualOutputWriter {
       appInfo.supportedSQLTaskDuration.toString -> headersAndSizes(SUPPORTED_SQL_TASK_DURATION_STR),
       appInfo.taskSpeedupFactor.toString -> headersAndSizes(SPEEDUP_FACTOR_STR),
       appInfo.endDurationEstimated.toString -> headersAndSizes(APP_DUR_ESTIMATED_STR),
-      appInfo.unSupportedExecs.toString -> headersAndSizes(UNSUPPORTED_EXECS),
-      appInfo.unSupportedExprs.toString -> headersAndSizes(UNSUPPORTED_EXPRS)
+      appInfo.unSupportedExecs -> headersAndSizes(UNSUPPORTED_EXECS),
+      appInfo.unSupportedExprs -> headersAndSizes(UNSUPPORTED_EXPRS)
     )
     if (reportReadSchema) {
       data += (stringIfempty(appInfo.readFileFormats) -> headersAndSizes(READ_SCHEMA_STR))

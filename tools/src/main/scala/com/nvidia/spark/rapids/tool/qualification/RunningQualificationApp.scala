@@ -160,10 +160,22 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
   def getSummary(delimiter: String = "|", prettyPrint: Boolean = true): String = {
     val appInfo = super.aggregateStats()
     appInfo match {
-      case Some(info) => val headerStr = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
+      case Some(info) =>
+        val headerStr = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
           delimiter, prettyPrint)
+        val unSupExecMaxSize = QualOutputWriter.getunSupportedMaxSize(
+          Seq(info).map(_.unSupportedExecs.size),
+          QualOutputWriter.UNSUPPORTED_EXECS_MAX_SIZE,
+          QualOutputWriter.UNSUPPORTED_EXECS.size)
+        val unSupExprMaxSize = QualOutputWriter.getunSupportedMaxSize(
+          Seq(info).map(_.unSupportedExprs.size),
+          QualOutputWriter.UNSUPPORTED_EXPRS_MAX_SIZE,
+          QualOutputWriter.UNSUPPORTED_EXPRS.size)
+        val appHeadersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(appName.size,
+          info.appId.size, unSupExecMaxSize, unSupExprMaxSize)
         val appInfoStr = QualOutputWriter.constructAppSummaryInfo(info.estimatedInfo,
-          headersAndSizes, appId.size, delimiter, prettyPrint)
+          appHeadersAndSizes, appId.size, unSupExecMaxSize, unSupExprMaxSize, delimiter,
+          prettyPrint)
         headerStr + appInfoStr
       case None =>
         logWarning(s"Unable to get qualification information for this application")
