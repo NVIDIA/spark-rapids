@@ -21,7 +21,6 @@ import scala.collection.mutable
 import ai.rapids.cudf.{ContiguousTable, OrderByArg, Table}
 import com.nvidia.spark.TimingUtils
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.TaskAttemptContext
 
@@ -380,8 +379,9 @@ class GpuDynamicPartitionDataWriter(
       import scala.collection.JavaConverters._
       val paths = cbKeys.rowIterator().asScala.map(getPartitionPath)
 
-      paths.toArray.zip(splits).foreach(combined => {
-        withResource(GpuColumnVector.from(combined._2.getTable, outDataTypes)) {batch =>
+      withResource(splits) {splits => 
+        paths.toArray.zip(splits).foreach(combined => {
+          val batch = GpuColumnVector.from(combined._2.getTable, outDataTypes)
           val partPath = combined._1
           if (currentPartPath != partPath) {
             currentPartPath = partPath
@@ -430,9 +430,9 @@ class GpuDynamicPartitionDataWriter(
             statsTrackers.foreach(_.newBatch(batch))
             recordsInFile += batch.numRows
             currentWriter.write(batch, statsTrackers)
-          }
-        }
-      })
+          }  
+        })
+      }
     } finally {
       if (needToCloseBatch) {
         cb.close()
@@ -449,8 +449,6 @@ class GpuDynamicPartitionDataWriter(
       if (outputColumns != null) {
         outputColumns.close()
       }
-
-      splits.safeClose()
 
       if (cbKeys != null) {
         cbKeys.close()
