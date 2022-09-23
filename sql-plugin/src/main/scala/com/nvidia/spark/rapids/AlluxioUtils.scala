@@ -52,20 +52,26 @@ import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
  *      locality information updated. So for small Alluxio clusters or with Spark
  *      clusters short on task slots this may be a better fit.
  *
- * Note the way we do the actual replacement algorithm diffs depending on the file reader
- * type we use: PERFILE, COALESCING, MULTITHREADED.
+ * The way we do the actual replacement algorithm differs depending on the file reader
+ * type we use: PERFILE, COALESCING or MULTITHREADED.
  * PERFILE is not supported with Alluxio due to not easily being able to fix up
  * input_file_name. We could but would require copying the FileScanRDD so skip for now.
- * The COALESCING reader is not support for input_file_name functionality so it falls
- * back to the MULTITHREADED reader if that is used, otherwise we replace the paths properly
- * based on the replacement algorithm.
- * In order to do the replacement at task time and to reverse the path from convert time
- * we need to have a mapping of the original scheme to the alluxio scheme. This has been
- * made a parameter to many of the readers. In order to get that mapping for task time
- * replacement and to support auto mounting we make a pass through the files on the driver
- * side in GpuFileSourceScanExec.
+ * The COALESCING reader is not support when input_file_name is requested so it falls
+ * back to the MULTITHREADED reader if that is used, when input_file_name is not requested,
+ * we replace the paths properly based on the replacement algorithm and don't have to worry
+ * about calculating the original path.  The MULTITHREADED reader supports input_file_name
+ * so it handles calculating the original file path in the case of the conver time algorithm.
+ * In order to do the replacement at task time and to output the original path for convert
+ * time, we need to have a mapping of the original scheme to the alluxio scheme. This has been
+ * made a parameter to many of the readers. With auto mount and task time replacement,
+ * we make a pass through the files on the driver side in GpuFileSourceScanExec in order to
+ * do the mounting before the tasks try to access alluxio.
  * Note that Delta Lake uses the input_file_name functionality to do things like
  * Updates and Deletes and will fail if the path has the alluxio:// in it.
+ *
+ * Below we support 2 configs to turn on Alluxio, we have the automount which uses a regex
+ * to replace paths and then we have the config that specifies direct paths to replace and
+ * user has to manually mount those.
  */
 object AlluxioUtils extends Logging {
   private val checkedAlluxioPath = scala.collection.mutable.HashSet[String]()
