@@ -100,13 +100,15 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
    * @return a tuple of the CSV summary followed by the Text summary.
    */
   def getPerSqlTextAndCSVSummary(sqlID: Long): (String, String) = {
+    /*
     val appInfo = super.aggregateStats()
     appInfo.foreach { info =>
     logWarning("application info is: " + info)
     }
-    val sqlInfo = aggregatePerSQLStats()
-    val csvResult = constructPerSqlResult(sqlID, sqlInfo, QualOutputWriter.CSV_DELIMITER, false)
-    val textResult = constructPerSqlResult(sqlID, sqlInfo, QualOutputWriter.TEXT_DELIMITER, true)
+     */
+    val sqlInfo = aggregatePerSQLStats(sqlID)
+    val csvResult = constructPerSqlResult(sqlInfo, QualOutputWriter.CSV_DELIMITER, false)
+    val textResult = constructPerSqlResult(sqlInfo, QualOutputWriter.TEXT_DELIMITER, true)
     (csvResult, textResult)
   }
 
@@ -122,28 +124,19 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
   def getPerSQLSummary(sqlID: Long, delimiter: String = "|",
       prettyPrint: Boolean = true, sqlDescLength: Int = SQL_DESC_LENGTH): String = {
     // TODO - my guess is skip aggregating at app level???
-    val sqlInfo = aggregatePerSQLStats()
-    constructPerSqlResult(sqlID, sqlInfo, delimiter, prettyPrint, sqlDescLength)
+    val sqlInfo = aggregatePerSQLStats(sqlID)
+    constructPerSqlResult(sqlInfo, delimiter, prettyPrint, sqlDescLength)
   }
 
   private def constructPerSqlResult(
-      sqlID: Long,
-      sqlInfo: Option[Seq[EstimatedPerSQLSummaryInfo]],
+      sqlInfo: Option[EstimatedPerSQLSummaryInfo],
       delimiter: String = "|",
       prettyPrint: Boolean = true,
       sqlDescLength: Int = SQL_DESC_LENGTH): String = {
     sqlInfo match {
       case Some(info) =>
-        val res = info.filter(_.sqlID == sqlID)
-        if (res.isEmpty) {
-          logWarning(s"Unable to get per sql qualification information for $sqlID")
-          ""
-        } else {
-          assert(res.size == 1)
-          val line = QualOutputWriter.constructPerSqlSummaryInfo(res.head, headersAndSizes,
-            appId.size, delimiter, prettyPrint, sqlDescLength)
-          line
-        }
+        QualOutputWriter.constructPerSqlSummaryInfo(info, headersAndSizes,
+          appId.size, delimiter, prettyPrint, sqlDescLength)
       case None =>
         logWarning(s"Unable to get qualification information for this application")
         ""
@@ -216,38 +209,33 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
   }
 
   // don't aggregate at app level, just sql level
-  def aggregatePerSQLStats(): Option[Seq[EstimatedPerSQLSummaryInfo]] = {
-    appInfo.flatMap { info =>
-      // a bit odd but force filling in notSupportFormatAndTypes
-      // TODO - make this better
-      super.checkUnsupportedReadFormats()
+  private def aggregatePerSQLStats(sqlID: Long): Option[EstimatedPerSQLSummaryInfo] = {
+    // a bit odd but force filling in notSupportFormatAndTypes
+    // TODO - make this better
+    super.checkUnsupportedReadFormats()
 
-      val origPlanInfos = sqlPlans.map { case (id, plan) =>
-        val sqlDesc = sqlIdToInfo(id).description
-        SQLPlanParser.parseSQLPlan(appId, plan, id, sqlDesc, pluginTypeChecker, this)
-      }.toSeq
-
+    val sqlDesc = sqlIdToInfo(sqlID).description
+    val origPlanInfo = sqlPlans.get(sqlID).map { plan =>
+      SQLPlanParser.parseSQLPlan(appId, plan, sqlID, sqlDesc, pluginTypeChecker, this)
+    }
+    val perSqlInfos = origPlanInfo.flatMap { pInfo =>
       // filter out any execs that should be removed
-      val planInfos = removeExecsShouldRemove(origPlanInfos)
+      val planInfos = removeExecsShouldRemove(Seq(pInfo))
       // get a summary of each SQL Query
       val perSqlStageSummary = summarizeSQLStageInfo(planInfos)
-
-      val appName = appInfo.map(_.appName).getOrElse("")
-      val perSqlInfos = if (reportSqlLevel) {
-        Some(planInfos.flatMap { pInfo =>
-          sqlIdToInfo.get(pInfo.sqlID).map { info =>
-            val wallClockDur = info.duration.getOrElse(0L)
-            // get task duration ratio
-            val sqlStageSums = perSqlStageSummary.filter(_.sqlID == pInfo.sqlID)
-            val estimatedInfo = getPerSQLWallClockSummary(sqlStageSums, wallClockDur,
-              sqlIDtoFailures.get(pInfo.sqlID).nonEmpty, appName)
-            EstimatedPerSQLSummaryInfo(pInfo.sqlID, pInfo.sqlDesc, estimatedInfo)
-          }
-        })
+      if (reportSqlLevel) {
+        sqlIdToInfo.get(pInfo.sqlID).map { sqlInfo =>
+          val wallClockDur = sqlInfo.duration.getOrElse(0L)
+          // get task duration ratio
+          val sqlStageSums = perSqlStageSummary.filter(_.sqlID == pInfo.sqlID)
+          val estimatedInfo = getPerSQLWallClockSummary(sqlStageSums, wallClockDur,
+            sqlIDtoFailures.get(pInfo.sqlID).nonEmpty, appName)
+          EstimatedPerSQLSummaryInfo(pInfo.sqlID, pInfo.sqlDesc, estimatedInfo)
+        }
       } else {
         None
       }
-      perSqlInfos
     }
+    perSqlInfos
   }
 }
