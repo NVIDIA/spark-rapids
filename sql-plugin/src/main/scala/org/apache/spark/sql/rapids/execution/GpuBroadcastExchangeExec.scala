@@ -33,6 +33,7 @@ import com.nvidia.spark.rapids.shims.{ShimBroadcastExchangeLike, ShimUnaryExecNo
 
 import org.apache.spark.SparkException
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.internal.Logging
 import org.apache.spark.launcher.SparkLauncher
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -91,7 +92,7 @@ object SerializedHostTableUtils extends Arm {
 class SerializeConcatHostBuffersDeserializeBatch(
     data: Array[SerializeBatchDeserializeHostBuffer],
     output: Seq[Attribute])
-  extends Serializable with Arm with AutoCloseable {
+  extends Serializable with Arm with AutoCloseable with Logging {
   @transient private var dataTypes = output.map(_.dataType).toArray
   @transient private var headers = data.map(_.header)
   @transient private var buffers = data.map(_.buffer)
@@ -121,9 +122,15 @@ class SerializeConcatHostBuffersDeserializeBatch(
               val numRows = tableInfo.getNumRows
               batchInternal = new ColumnarBatch(new Array[ColumnVector](0), numRows)
             } else {
-              batchInternal = GpuColumnVectorFromBuffer.from(table, dataTypes)
-              GpuColumnVector.extractBases(batchInternal).foreach(_.noWarnLeakExpected())
+              val gpuCV = GpuColumnVectorFromBuffer.from(table, dataTypes)
+              GpuColumnVector.extractBases(gpuCV).foreach(_.noWarnLeakExpected())
               table.getBuffer.noWarnLeakExpected()
+              val spillable = SpillableColumnarBatch(
+                gpuCV,
+                SpillPriorities.ACTIVE_BATCHING_PRIORITY,
+                RapidsBuffer.defaultSpillCallback).getColumnarBatch()
+              logDebug(s"Created a spillable for table buffer ${table.getBuffer}")
+              batchInternal = spillable
             }
           }
         }
