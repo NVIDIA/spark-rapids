@@ -1564,11 +1564,10 @@ object RapidsConf {
         .doc("The flush size of the concurrent writer cache in bytes for each partition. " +
             "If specified spark.sql.maxConcurrentOutputFileWriters, use concurrent writer to " +
             "write data. Concurrent writer first caches data for each partition and begins to " +
-            "flush data if find one partition data is equal or greater than this size. " +
-            "The default value is 0 which means using " +
-            "Parquet `write.parquet.row-group-size-bytes` config value(default 128M)" +
-            "or use Orc `orc.stripe.size` config value(default 64M) " +
-            "or use 128M for other file types. " +
+            "flush the data if it finds one partition with a size that is greater than or equal " +
+            "to this config. The default value is 0, which will try to select a size based off " +
+            "of file type specific configs. E.g.: It uses `write.parquet.row-group-size-bytes` " +
+            "config for Parquet type and `orc.stripe.size` config for Orc type. " +
             "If the value is greater than 0, will use this positive value." +
             "Max value may get better performance but not always, because concurrent writer uses " +
             "spillable cache and big value may cause more IO swaps.")

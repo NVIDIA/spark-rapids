@@ -316,8 +316,9 @@ class GpuDynamicPartitionDataSingleWriter(
   /** Release resources of writer. */
   private [rapids] def releaseWriter(writer: ColumnarOutputWriter): Unit = {
     if (writer != null) {
+      val path = writer.path()
       writer.close()
-      statsTrackers.foreach(_.closeFile(writer.path()))
+      statsTrackers.foreach(_.closeFile(path))
     }
   }
 
@@ -746,8 +747,10 @@ class GpuDynamicPartitionDataConcurrentWriter(
     assert(!isBucketed)
 
     if (cb.numRows() == 0) {
-      // intend to write meta only
       // TODO https://github.com/NVIDIA/spark-rapids/issues/6453
+      // To solve above issue, I assume that an empty batch will be wrote for saving metadata.
+      // If the assumption it's true, this concurrent writer should write the metadata here,
+      // and should not run into below splitting and caching logic
       return
     }
 

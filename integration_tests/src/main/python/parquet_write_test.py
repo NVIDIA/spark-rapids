@@ -505,17 +505,6 @@ def test_write_daytime_interval(spark_tmp_path):
             data_path,
             conf=writer_confs)
 
-
-# generate a df with c1 and c2 column have 25 combinations
-def get_25_partitions_df(spark):
-    schema = StructType([
-        StructField("c1", IntegerType()),
-        StructField("c2", IntegerType()),
-        StructField("c3", IntegerType())])
-    data = [[i, j, k] for i in range(0, 5) for j in range(0, 5) for k in range(0, 100)]
-    return spark.createDataFrame(data, schema)
-
-
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="is only supported in Spark 320+")
 def test_concurrent_writer(spark_tmp_path):
@@ -548,3 +537,26 @@ def test_fallback_to_single_writer_from_concurrent_writer(spark_tmp_path):
             {"spark.rapids.sql.concurrentWriterPartitionFlushSize": 64 * 1024 * 1024}
         ))
 
+
+@pytest.mark.skipif(True, reason="currently not support write emtpy data: https://github.com/NVIDIA/spark-rapids/issues/6453")
+def test_write_empty_data_concurrent_writer(spark_tmp_path):
+    schema = StructType(
+        [StructField("c1", StringType()), StructField("c2", IntegerType()), StructField("c3", IntegerType())])
+    data = []  # empty data
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_gpu_session(lambda spark: spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
+                     .write.mode("overwrite").partitionBy('c1', 'c2').parquet(data_path),
+                     # concurrent writer
+                     {"spark.sql.maxConcurrentOutputFileWriters": 10})
+    with_cpu_session(lambda spark: spark.read.parquet(data_path).collect())
+
+
+@pytest.mark.skipif(True, reason="currently not support write emtpy data: https://github.com/NVIDIA/spark-rapids/issues/6453")
+def test_write_empty_data_single_writer(spark_tmp_path):
+    schema = StructType(
+        [StructField("c1", StringType()), StructField("c2", IntegerType()), StructField("c3", IntegerType())])
+    data = []  # empty data
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_gpu_session(lambda spark: spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
+                     .write.mode("overwrite").partitionBy('c1', 'c2').parquet(data_path))
+    with_cpu_session(lambda spark: spark.read.parquet(data_path).collect())
