@@ -2,89 +2,85 @@
 <  * Copyright (c) 2022, NVIDIA CORPORATION.
 ---
 >  * Copyright (c) 2019-2022, NVIDIA CORPORATION.
-19a20
-> 
-22a24,25
-> 
+24a25
 > import ai.rapids.cudf.DType
-24c27,28
+26c27
 < import com.nvidia.spark.rapids.shims.{GpuBroadcastHashJoinMeta, GpuShuffledHashJoinMeta, GpuSortMergeJoinMeta, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, GpuWindowSpecDefinitionMeta, OffsetWindowFunctionMeta}
 ---
 > import com.nvidia.spark.rapids.shims.{AQEUtils, GpuBatchScanExec, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
-> 
-25a30
+28a30
 > import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
-29a35,36
+32a35,36
 > import org.apache.spark.sql.catalyst.json.rapids.GpuJsonScan
 > import org.apache.spark.sql.catalyst.optimizer.NormalizeNaNAndZero
-31a39
+34a39
 > import org.apache.spark.sql.catalyst.trees.TreeNodeTag
-32a41
+35a41
 > import org.apache.spark.sql.connector.read.Scan
-34,35c43,44
+37,38c43,44
 < import org.apache.spark.sql.execution.ScalarSubquery
 < import org.apache.spark.sql.execution.aggregate._
 ---
 > import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 > import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
-43c52,55
+46c52,55
 < import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec, ShuffleExchangeExec}
 ---
 > import org.apache.spark.sql.execution.datasources.v2._
 > import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 > import org.apache.spark.sql.execution.datasources.v2.json.JsonScan
 > import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ENSURE_REQUIREMENTS, ReusedExchangeExec, ShuffleExchangeExec}
-49a62
+52a62
 > import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
-50a64,66
+53a64,66
 > import org.apache.spark.sql.rapids.execution.python._
 > import org.apache.spark.sql.rapids.execution.python.shims.GpuFlatMapGroupsInPandasExecMeta
 > import org.apache.spark.sql.rapids.shims.GpuTimeAdd
-63c79
+66c79
 < abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPUT, BASE]](
 ---
 > abstract class ReplacementRule[INPUT <: BASE, BASE, WRAP_TYPE <: RapidsMeta[INPUT, BASE, _]](
-67c83
+70c83
 <         Option[RapidsMeta[_, _]],
 ---
 >         Option[RapidsMeta[_, _, _]],
-118c134
+121c134
 <       Option[RapidsMeta[_, _]],
 ---
 >       Option[RapidsMeta[_, _, _]],
-190c206
+193c206
 <       parent: Option[RapidsMeta[_, _]],
 ---
 >       parent: Option[RapidsMeta[_, _, _]],
-205c221
+208c221
 <         Option[RapidsMeta[_, _]],
 ---
 >         Option[RapidsMeta[_, _, _]],
-220d235
+223d235
 < /*
-235c250
+238c250
 < */
 ---
 > 
-243c258
+246c258
 <         Option[RapidsMeta[_, _]],
 ---
 >         Option[RapidsMeta[_, _, _]],
-262c277
+265c277
 <         Option[RapidsMeta[_, _]],
 ---
 >         Option[RapidsMeta[_, _, _]],
-284c299
+287c299
 <         Option[RapidsMeta[_, _]],
 ---
 >         Option[RapidsMeta[_, _, _]],
-295d309
+298d309
 < 
-299c313
+302c313
 <     parent: Option[RapidsMeta[_, _]],
 ---
 >     parent: Option[RapidsMeta[_, _, _]],
-303,307c317
+306,310c317
 <   // spark 2.3 doesn't have this so just code it here
 <   def sparkSessionActive: SparkSession = {
 <     SparkSession.getActiveSession.getOrElse(SparkSession.getDefaultSession.getOrElse(
@@ -92,25 +88,25 @@
 <   }
 ---
 >   private var fileFormat: Option[ColumnarFileFormat] = None
-314c324
+317c324
 <     val spark = sparkSessionActive
 ---
 >     val spark = SparkSession.active
-316c326
+319c326
 <     cmd.fileFormat match {
 ---
 >     fileFormat = cmd.fileFormat match {
-318a329
+321a329
 >         None
-320a332
+323a332
 >         None
-326a339
+329a339
 >         None
-328a342
+331a342
 >         None
-331d344
+334d344
 < }
-332a346,365
+335a346,365
 >   override def convertToGpu(): GpuDataWritingCommand = {
 >     val format = fileFormat.getOrElse(
 >       throw new IllegalStateException("fileFormat missing, tagSelfForGpu not called?"))
@@ -131,11 +127,11 @@
 >       conf.stableSort)
 >   }
 > }
-337c370
+340c370
 <     parent: Option[RapidsMeta[_, _]],
 ---
 >     parent: Option[RapidsMeta[_, _, _]],
-342,347c375
+345,350c375
 < 
 <   // spark 2.3 doesn't have this so just code it here
 <   def sparkSessionActive: SparkSession = {
@@ -144,23 +140,23 @@
 <   }
 ---
 >   private var gpuProvider: Option[ColumnarFileFormat] = None
-357c385
+360c385
 <     val spark = sparkSessionActive
 ---
 >     val spark = SparkSession.active
-359c387
+362c387
 <       GpuDataSource.lookupDataSource(cmd.table.provider.get, spark.sessionState.conf)
 ---
 >       GpuDataSource.lookupDataSourceWithFallback(cmd.table.provider.get, spark.sessionState.conf)
-362c390
+365c390
 <     origProvider.getConstructor().newInstance() match {
 ---
 >     gpuProvider = origProvider.getConstructor().newInstance() match {
-365d392
+368d392
 <         None
-369d395
+372d395
 <         None
-375a402,414
+378a402,414
 >   override def convertToGpu(): GpuDataWritingCommand = {
 >     val newProvider = gpuProvider.getOrElse(
 >       throw new IllegalStateException("fileFormat unexpected, tagSelfForGpu not called?"))
@@ -174,27 +170,27 @@
 >       newProvider,
 >       conf.stableSort)
 >   }
-377a417,419
+380a417,419
 > /**
 >  * Listener trait so that tests can confirm that the expected optimizations are being applied
 >  */
-395d436
+398d436
 < 
-399d439
+402d439
 < 
-403d442
+406d442
 < 
-416,418d454
+419,421d454
 < // copy here for 2.x
 < sealed abstract class Optimization
 < 
-420,424d455
+423,427d455
 <   // Spark 2.x - don't pull in cudf so hardcode here
 <   val DECIMAL32_MAX_PRECISION = 9
 <   val DECIMAL64_MAX_PRECISION = 18
 <   val DECIMAL128_MAX_PRECISION = 38
 < 
-477a509,571
+480a509,571
 >   private def convertPartToGpuIfPossible(part: Partitioning, conf: RapidsConf): Partitioning = {
 >     part match {
 >       case _: GpuPartitioning => part
@@ -258,15 +254,15 @@
 >     }
 >   }
 > 
-570c664
+573c664
 <       case dt: DecimalType if allowDecimal => dt.precision <= GpuOverrides.DECIMAL64_MAX_PRECISION
 ---
 >       case dt: DecimalType if allowDecimal => dt.precision <= DType.DECIMAL64_MAX_PRECISION
-593c687
+596c687
 <   def checkAndTagFloatAgg(dataType: DataType, conf: RapidsConf, meta: RapidsMeta[_,_]): Unit = {
 ---
 >   def checkAndTagFloatAgg(dataType: DataType, conf: RapidsConf, meta: RapidsMeta[_,_,_]): Unit = {
-602a697,728
+605a697,728
 >   /**
 >    * Helper function specific to ANSI mode for the aggregate functions that should
 >    * fallback, since we don't have the same overflow checks that Spark provides in
@@ -299,11 +295,11 @@
 >     }
 >   }
 > 
-606c732
+609c732
 <       doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _]], DataFromReplacementRule)
 ---
 >       doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], DataFromReplacementRule)
-613a740,749
+616a740,749
 >   def scan[INPUT <: Scan](
 >       desc: String,
 >       doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], DataFromReplacementRule)
@@ -314,50 +310,50 @@
 >     new ScanRule[INPUT](doWrap, desc, tag)
 >   }
 > 
-617c753
+620c753
 <       doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _]], DataFromReplacementRule)
 ---
 >       doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], DataFromReplacementRule)
-635c771
+638c771
 <         p: Option[RapidsMeta[_, _]],
 ---
 >         p: Option[RapidsMeta[_, _, _]],
-644c780
+647c780
 <       doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _]], DataFromReplacementRule)
 ---
 >       doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], DataFromReplacementRule)
-654c790
+657c790
 <       doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _]], DataFromReplacementRule)
 ---
 >       doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], DataFromReplacementRule)
-665c801
+668c801
 <       parent: Option[RapidsMeta[_, _]]): BaseExprMeta[INPUT] =
 ---
 >       parent: Option[RapidsMeta[_, _, _]]): BaseExprMeta[INPUT] =
-725a862
+728a862
 >         override def convertToGpu(child: Expression): GpuExpression = GpuSignum(child)
-735a873,874
+738a873,874
 >         override def convertToGpu(child: Expression): GpuExpression =
 >           GpuAlias(child, a.name)(a.exprId, a.qualifier, a.explicitMetadata)
-746a886
+749a886
 >         override def convertToGpu(): Expression = att
-760a901
+763a901
 >         override def convertToGpu(child: Expression): GpuExpression = GpuPromotePrecision(child)
-778,779c919
+781,782c919
 <                   // allowNegativeScaleOfDecimalEnabled is not in 2.x assume its default false
 <                   val t = if (s < 0 && !false) {
 ---
 >                   val t = if (s < 0 && !SQLConf.get.allowNegativeScaleOfDecimalEnabled) {
-791,792c931
+794,795c931
 <             // Spark 2.X only has Cast, no AnsiCast so no CastBase, hardcode here to Cast
 <             case p: PromotePrecision if p.child.isInstanceOf[Cast] &&
 ---
 >             case p: PromotePrecision if p.child.isInstanceOf[CastBase] &&
-794c933
+797c933
 <               val c = p.child.asInstanceOf[Cast]
 ---
 >               val c = p.child.asInstanceOf[CastBase]
-833a973,1000
+836a973,1000
 >         override def convertToGpu(): GpuExpression = {
 >           // Prior to Spark 3.4.0
 >           // Division and Multiplication of Decimal types is a little odd. Spark will cast the
@@ -386,62 +382,62 @@
 >                 wrapped.dataType, wrapped.nullOnOverflow)
 >           }
 >         }
-838a1006
+841a1006
 >         override def convertToGpu(child: Expression): GpuToDegrees = GpuToDegrees(child)
-843a1012
+846a1012
 >         override def convertToGpu(child: Expression): GpuToRadians = GpuToRadians(child)
-882a1052
+885a1052
 >         override def convertToGpu(): GpuExpression = GpuSpecialFrameBoundary(currentRow)
-888a1059
+891a1059
 >           override def convertToGpu(): GpuExpression = GpuSpecialFrameBoundary(unboundedPreceding)
-894a1066
+897a1066
 >           override def convertToGpu(): GpuExpression = GpuSpecialFrameBoundary(unboundedFollowing)
-899a1072
+902a1072
 >         override def convertToGpu(): GpuExpression = GpuRowNumber
-908a1082
+911a1082
 >         override def convertToGpu(): GpuExpression = GpuRank(childExprs.map(_.convertToGpu()))
-917a1092
+920a1092
 >         override def convertToGpu(): GpuExpression = GpuDenseRank(childExprs.map(_.convertToGpu()))
-926a1102,1103
+929a1102,1103
 >         override def convertToGpu(): GpuExpression =
 >           GpuPercentRank(childExprs.map(_.convertToGpu()))
-946a1124,1125
+949a1124,1125
 >         override def convertToGpu(): GpuExpression =
 >           GpuLead(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
-966a1146,1147
+969a1146,1147
 >         override def convertToGpu(): GpuExpression =
 >           GpuLag(input.convertToGpu(), offset.convertToGpu(), default.convertToGpu())
-976a1158,1159
+979a1158,1159
 >         override def convertToGpu(child: Expression): GpuExpression =
 >           GpuPreciseTimestampConversion(child, a.fromType, a.toType)
-985,986c1168
+988,989c1168
 <         // val ansiEnabled = SQLConf.get.ansiEnabled
 <         val ansiEnabled = false
 ---
 >         val ansiEnabled = SQLConf.get.ansiEnabled
-989,990d1170
+992,993d1170
 <           // Spark 2.x - ansi in not in 2.x
 <           /*
-994,995d1173
+997,998d1173
 < 
 <            */
-996a1175,1177
+999a1175,1177
 > 
 >         override def convertToGpu(child: Expression): GpuExpression =
 >           GpuUnaryMinus(child, ansiEnabled)
-1004a1186
+1007a1186
 >         override def convertToGpu(child: Expression): GpuExpression = GpuUnaryPositive(child)
-1009a1192
+1012a1192
 >         override def convertToGpu(child: Expression): GpuExpression = GpuYear(child)
-1014a1198
+1017a1198
 >         override def convertToGpu(child: Expression): GpuExpression = GpuMonth(child)
-1019a1204
+1022a1204
 >         override def convertToGpu(child: Expression): GpuExpression = GpuQuarter(child)
-1024a1210
+1027a1210
 >         override def convertToGpu(child: Expression): GpuExpression = GpuDayOfMonth(child)
-1029a1216
+1032a1216
 >         override def convertToGpu(child: Expression): GpuExpression = GpuDayOfYear(child)
-1034a1222,1233
+1037a1222,1233
 >         override def convertToGpu(child: Expression): GpuExpression = GpuAcos(child)
 >       }),
 >     expr[Acosh](
@@ -454,9 +450,9 @@
 >           } else {
 >             GpuAcoshCompat(child)
 >           }
-1036d1234
+1039d1234
 <     // Acosh is not supported in spark 2.x
-1040a1239,1259
+1043a1239,1259
 >         override def convertToGpu(child: Expression): GpuExpression = GpuAsin(child)
 >       }),
 >     expr[Asinh](
@@ -478,82 +474,82 @@
 >                 s"${RapidsConf.IMPROVED_FLOAT_OPS.key} is enabled")
 >           }
 >         }
-1042d1260
+1045d1260
 <     // Asinh is not supported in spark 2.x
-1046a1265
+1049a1265
 >         override def convertToGpu(child: Expression): GpuExpression = GpuSqrt(child)
-1051a1271
+1054a1271
 >         override def convertToGpu(child: Expression): GpuExpression = GpuCbrt(child)
-1060a1281,1282
+1063a1281,1282
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuHypot(lhs, rhs)
-1072c1294
+1075c1294
 <               if (precision > GpuOverrides.DECIMAL128_MAX_PRECISION) {
 ---
 >               if (precision > DType.DECIMAL128_MAX_PRECISION) {
-1079a1302,1305
+1082a1302,1305
 >         override def convertToGpu(child: Expression): GpuExpression = {
 >           // use Spark `Floor.dataType` to keep consistent between Spark versions.
 >           GpuFloor(child, a.dataType)
 >         }
-1091c1317
+1094c1317
 <               if (precision > GpuOverrides.DECIMAL128_MAX_PRECISION) {
 ---
 >               if (precision > DType.DECIMAL128_MAX_PRECISION) {
-1098a1325,1328
+1101a1325,1328
 >         override def convertToGpu(child: Expression): GpuExpression = {
 >           // use Spark `Ceil.dataType` to keep consistent between Spark versions.
 >           GpuCeil(child, a.dataType)
 >         }
-1104a1335
+1107a1335
 >         override def convertToGpu(child: Expression): GpuExpression = GpuNot(child)
-1113a1345
+1116a1345
 >         override def convertToGpu(child: Expression): GpuExpression = GpuIsNull(child)
-1122a1355
+1125a1355
 >         override def convertToGpu(child: Expression): GpuExpression = GpuIsNotNull(child)
-1128a1362
+1131a1362
 >         override def convertToGpu(child: Expression): GpuExpression = GpuIsNan(child)
-1133a1368
+1136a1368
 >         override def convertToGpu(child: Expression): GpuExpression = GpuRint(child)
-1139a1375
+1142a1375
 >         override def convertToGpu(child: Expression): GpuExpression = GpuBitwiseNot(child)
-1148a1385,1386
+1151a1385,1386
 >         def convertToGpu(): GpuExpression =
 >           GpuAtLeastNNonNulls(a.n, childExprs.map(_.convertToGpu()))
-1157a1396,1397
+1160a1396,1397
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuDateAdd(lhs, rhs)
-1166a1407,1408
+1169a1407,1408
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuDateSub(lhs, rhs)
-1173a1416,1417
+1176a1416,1417
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuNaNvl(lhs, rhs)
-1180a1425,1426
+1183a1425,1426
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuShiftLeft(lhs, rhs)
-1187a1434,1435
+1190a1434,1435
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuShiftRight(lhs, rhs)
-1194a1443,1444
+1197a1443,1444
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuShiftRightUnsigned(lhs, rhs)
-1202a1453,1454
+1205a1453,1454
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuBitwiseAnd(lhs, rhs)
-1210a1463,1464
+1213a1463,1464
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuBitwiseOr(lhs, rhs)
-1218a1473,1474
+1221a1473,1474
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuBitwiseXor(lhs, rhs)
-1230a1487
+1233a1487
 >         override def convertToGpu(): GpuExpression = GpuCoalesce(childExprs.map(_.convertToGpu()))
-1239a1497
+1242a1497
 >         override def convertToGpu(): GpuExpression = GpuLeast(childExprs.map(_.convertToGpu()))
-1248a1507
+1251a1507
 >         override def convertToGpu(): GpuExpression = GpuGreatest(childExprs.map(_.convertToGpu()))
-1253a1513,1519
+1256a1513,1519
 >         override def convertToGpu(child: Expression): GpuExpression = GpuAtan(child)
 >       }),
 >     expr[Atanh](
@@ -561,45 +557,45 @@
 >       ExprChecks.mathUnaryWithAst,
 >       (a, conf, p, r) => new UnaryAstExprMeta[Atanh](a, conf, p, r) {
 >         override def convertToGpu(child: Expression): GpuExpression = GpuAtanh(child)
-1255d1520
+1258d1520
 <     // Atanh is not supported in spark 2.x
-1259a1525
+1262a1525
 >         override def convertToGpu(child: Expression): GpuExpression = GpuCos(child)
-1264a1531
+1267a1531
 >         override def convertToGpu(child: Expression): GpuExpression = GpuExp(child)
-1269a1537
+1272a1537
 >         override def convertToGpu(child: Expression): GpuExpression = GpuExpm1(child)
-1275a1544
+1278a1544
 >         override def convertToGpu(child: Expression): GpuExpression = GpuInitCap(child)
-1280a1550
+1283a1550
 >         override def convertToGpu(child: Expression): GpuExpression = GpuLog(child)
-1285a1556,1560
+1288a1556,1560
 >         override def convertToGpu(child: Expression): GpuExpression = {
 >           // No need for overflow checking on the GpuAdd in Double as Double handles overflow
 >           // the same in all modes.
 >           GpuLog(GpuAdd(child, GpuLiteral(1d, DataTypes.DoubleType), false))
 >         }
-1290a1566,1567
+1293a1566,1567
 >         override def convertToGpu(child: Expression): GpuExpression =
 >           GpuLogarithm(child, GpuLiteral(2d, DataTypes.DoubleType))
-1295a1573,1574
+1298a1573,1574
 >         override def convertToGpu(child: Expression): GpuExpression =
 >           GpuLogarithm(child, GpuLiteral(10d, DataTypes.DoubleType))
-1302a1582,1584
+1305a1582,1584
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           // the order of the parameters is transposed intentionally
 >           GpuLogarithm(rhs, lhs)
-1307a1590
+1310a1590
 >         override def convertToGpu(child: Expression): GpuExpression = GpuSin(child)
-1312a1596
+1315a1596
 >         override def convertToGpu(child: Expression): GpuExpression = GpuSinh(child)
-1317a1602
+1320a1602
 >         override def convertToGpu(child: Expression): GpuExpression = GpuCosh(child)
-1322a1608
+1325a1608
 >         override def convertToGpu(child: Expression): GpuExpression = GpuCot(child)
-1327a1614
+1330a1614
 >         override def convertToGpu(child: Expression): GpuExpression = GpuTanh(child)
-1332a1620,1636
+1335a1620,1636
 >         override def convertToGpu(child: Expression): GpuExpression = GpuTan(child)
 >       }),
 >     expr[NormalizeNaNAndZero](
@@ -617,20 +613,20 @@
 >       (a, conf, p, r) => new UnaryExprMeta[KnownFloatingPointNormalized](a, conf, p, r) {
 >         override def convertToGpu(child: Expression): GpuExpression =
 >           GpuKnownFloatingPointNormalized(child)
-1334,1335d1637
+1337,1338d1637
 <     // NormalizeNaNAndZero is not supported in spark 2.x
 <     // KnownFloatingPointNormalized is not supported in spark 2.x
-1341a1644,1645
+1344a1644,1645
 >         override def convertToGpu(child: Expression): GpuExpression =
 >           GpuKnownNotNull(child)
-1348a1653,1655
+1351a1653,1655
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
 >           GpuDateDiff(lhs, rhs)
 >         }
-1366a1674,1675
+1369a1674,1675
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuTimeAdd(lhs, rhs)
-1368c1677,1697
+1371c1677,1697
 <     // DateAddInterval is not supported in spark 2.x
 ---
 >     expr[DateAddInterval](
@@ -654,10 +650,10 @@
 >           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >             GpuDateAddInterval(lhs, rhs)
 >         }),
-1376a1706,1707
+1379a1706,1707
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuDateFormatClass(lhs, rhs, strfFormat)
-1388a1720,1727
+1391a1720,1727
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
 >           if (conf.isImprovedTimestampOpsEnabled) {
 >             // passing the already converted strf string for a little optimization
@@ -666,7 +662,7 @@
 >             GpuToUnixTimestamp(lhs, rhs, sparkFormat, strfFormat)
 >           }
 >         }
-1399a1739,1746
+1402a1739,1746
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
 >           if (conf.isImprovedTimestampOpsEnabled) {
 >             // passing the already converted strf string for a little optimization
@@ -675,59 +671,59 @@
 >             GpuUnixTimestamp(lhs, rhs, sparkFormat, strfFormat)
 >           }
 >         }
-1406a1754
+1409a1754
 >         override def convertToGpu(expr: Expression): GpuExpression = GpuHour(expr)
-1412a1761,1763
+1415a1761,1763
 > 
 >         override def convertToGpu(expr: Expression): GpuExpression =
 >           GpuMinute(expr)
-1418a1770,1772
+1421a1770,1772
 > 
 >         override def convertToGpu(expr: Expression): GpuExpression =
 >           GpuSecond(expr)
-1424a1779,1780
+1427a1779,1780
 >         override def convertToGpu(expr: Expression): GpuExpression =
 >           GpuWeekDay(expr)
-1430a1787,1788
+1433a1787,1788
 >         override def convertToGpu(expr: Expression): GpuExpression =
 >           GpuDayOfWeek(expr)
-1435a1794,1795
+1438a1794,1795
 >         override def convertToGpu(expr: Expression): GpuExpression =
 >           GpuLastDay(expr)
-1444a1805,1807
+1447a1805,1807
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           // passing the already converted strf string for a little optimization
 >           GpuFromUnixTime(lhs, rhs, strfFormat)
-1469a1833,1834
+1472a1833,1834
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuPmod(lhs, rhs)
-1482c1847
+1485c1847
 <         private val ansiEnabled = false
 ---
 >         private val ansiEnabled = SQLConf.get.ansiEnabled
-1484a1850,1852
+1487a1850,1852
 >           if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
 >             willNotWorkInAst("AST Addition does not support ANSI mode.")
 >           }
-1486a1855,1856
+1489a1855,1856
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuAdd(lhs, rhs, failOnError = ansiEnabled)
-1499c1869
+1502c1869
 <         private val ansiEnabled = false
 ---
 >         private val ansiEnabled = SQLConf.get.ansiEnabled
-1501a1872,1874
+1504a1872,1874
 >           if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
 >             willNotWorkInAst("AST Subtraction does not support ANSI mode.")
 >           }
-1503a1877,1878
+1506a1877,1878
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuSubtract(lhs, rhs, ansiEnabled)
-1516a1892,1894
+1519a1892,1894
 >           if (SQLConf.get.ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
 >             willNotWorkOnGpu("GPU Multiplication does not support ANSI mode")
 >           }
-1518a1897,1904
+1521a1897,1904
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
 >           a.dataType match {
 >             case _: DecimalType => throw new IllegalStateException(
@@ -736,37 +732,37 @@
 >               GpuMultiply(lhs, rhs)
 >           }
 >         }
-1525a1912,1913
+1528a1912,1913
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuAnd(lhs, rhs)
-1532a1921,1922
+1535a1921,1922
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuOr(lhs, rhs)
-1544a1935,1936
+1547a1935,1936
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuEqualNullSafe(lhs, rhs)
-1557a1950,1951
+1560a1950,1951
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuEqualTo(lhs, rhs)
-1570a1965,1966
+1573a1965,1966
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuGreaterThan(lhs, rhs)
-1583a1980,1981
+1586a1980,1981
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuGreaterThanOrEqual(lhs, rhs)
-1603a2002,2003
+1606a2002,2003
 >         override def convertToGpu(): GpuExpression =
 >           GpuInSet(childExprs.head.convertToGpu(), in.list.asInstanceOf[Seq[Literal]].map(_.value))
-1614a2015,2016
+1617a2015,2016
 >         override def convertToGpu(): GpuExpression =
 >           GpuInSet(childExprs.head.convertToGpu(), in.hset.toSeq)
-1627a2030,2031
+1630a2030,2031
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuLessThan(lhs, rhs)
-1640a2045,2046
+1643a2045,2046
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuLessThanOrEqual(lhs, rhs)
-1645a2052,2063
+1648a2052,2063
 >         override def convertToGpu(): GpuExpression = {
 >           val branches = childExprs.grouped(2).flatMap {
 >             case Seq(cond, value) => Some((cond.convertToGpu(), value.convertToGpu()))
@@ -779,15 +775,15 @@
 >           }
 >           GpuCaseWhen(branches, elseValue)
 >         }
-1662a2081,2084
+1665a2081,2084
 >         override def convertToGpu(): GpuExpression = {
 >           val Seq(boolExpr, trueExpr, falseExpr) = childExprs.map(_.convertToGpu())
 >           GpuIf(boolExpr, trueExpr, falseExpr)
 >         }
-1670a2093,2094
+1673a2093,2094
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuPow(lhs, rhs)
-1681a2106,2125
+1684a2106,2125
 >         // Division of Decimal types is a little odd. To work around some issues with
 >         // what Spark does the tagging/checks are in CheckOverflow instead of here.
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
@@ -808,17 +804,17 @@
 >       (a, conf, p, r) => new BinaryExprMeta[IntegralDivide](a, conf, p, r) {
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuIntegralDivide(lhs, rhs)
-1683d2126
+1686d2126
 <     // IntegralDivide is not supported in spark 2.x
-1690a2134,2135
+1693a2134,2135
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuRemainder(lhs, rhs)
-1705c2150,2151
+1708c2150,2151
 <         // No filter parameter in 2.x
 ---
 >         private val filter: Option[BaseExprMeta[_]] =
 >           a.filter.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-1709c2155,2170
+1712c2155,2170
 <           childrenExprMeta
 ---
 >           childrenExprMeta ++ filter.toSeq
@@ -837,11 +833,11 @@
 >           GpuAggregateExpression(childExprs.head.convertToGpu().asInstanceOf[GpuAggregateFunction],
 >             a.mode, a.isDistinct, filter.map(_.convertToGpu()), resultId)
 >         }
-1732a2194,2196
+1735a2194,2196
 >         // One of the few expressions that are not replaced with a GPU version
 >         override def convertToGpu(): Expression =
 >           sortOrder.withNewChildren(childExprs.map(_.convertToGpu()))
-1754a2219,2225
+1757a2219,2225
 >         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
 >           val Seq(pivotColumn, valueColumn) = childExprs
 >           GpuPivotFirst(pivotColumn, valueColumn, pivot.pivotColumnValues)
@@ -849,22 +845,22 @@
 > 
 >         // Pivot does not overflow, so it doesn't need the ANSI check
 >         override val needsAnsiCheck: Boolean = false
-1767a2239,2240
+1770a2239,2240
 >         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
 >           GpuCount(childExprs)
-1788a2262,2266
+1791a2262,2266
 >         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
 >           GpuMax(childExprs.head)
 > 
 >         // Max does not overflow, so it doesn't need the ANSI check
 >         override val needsAnsiCheck: Boolean = false
-1809a2288,2292
+1812a2288,2292
 >         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
 >           GpuMin(childExprs.head)
 > 
 >         // Min does not overflow, so it doesn't need the ANSI check
 >         override val needsAnsiCheck: Boolean = false
-1822a2306,2326
+1825a2306,2326
 >         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
 >           GpuSum(childExprs.head, a.dataType)
 >       }),
@@ -886,87 +882,87 @@
 > 
 >         // nth does not overflow, so it doesn't need the ANSI check
 >         override val needsAnsiCheck: Boolean = false
-1824d2327
+1827d2327
 <     // Spark 2.x doesn't have NthValue
-1836a2340,2344
+1839a2340,2344
 >         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
 >           GpuFirst(childExprs.head, a.ignoreNulls)
 > 
 >         // First does not overflow, so it doesn't need the ANSI check
 >         override val needsAnsiCheck: Boolean = false
-1839c2347
+1842c2347
 <       "last aggregate operator",
 ---
 >     "last aggregate operator",
-1849a2358,2362
+1852a2358,2362
 >         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
 >           GpuLast(childExprs.head, a.ignoreNulls)
 > 
 >         // Last does not overflow, so it doesn't need the ANSI check
 >         override val needsAnsiCheck: Boolean = false
-1868a2382,2383
+1871a2382,2383
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuBRound(lhs, rhs, a.dataType)
-1887a2403,2404
+1890a2403,2404
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuRound(lhs, rhs, a.dataType)
-1909a2427,2431
+1912a2427,2431
 > 
 >         override def convertToGpu(): GpuExpression =
 >           GpuPythonUDF(a.name, a.func, a.dataType,
 >             childExprs.map(_.convertToGpu()),
 >             a.evalType, a.udfDeterministic, a.resultId)
-1918a2441
+1921a2441
 >         override def convertToGpu(child: Expression): GpuExpression = GpuRand(child)
-1923a2447
+1926a2447
 >         override def convertToGpu(): GpuExpression = GpuSparkPartitionID()
-1928a2453
+1931a2453
 >         override def convertToGpu(): GpuExpression = GpuMonotonicallyIncreasingID()
-1933a2459
+1936a2459
 >         override def convertToGpu(): GpuExpression = GpuInputFileName()
-1938a2465
+1941a2465
 >         override def convertToGpu(): GpuExpression = GpuInputFileBlockStart()
-1943a2471
+1946a2471
 >         override def convertToGpu(): GpuExpression = GpuInputFileBlockLength()
-1949a2478
+1952a2478
 >         override def convertToGpu(child: Expression): GpuExpression = GpuMd5(child)
-1954a2484
+1957a2484
 >         override def convertToGpu(child: Expression): GpuExpression = GpuUpper(child)
-1960a2491
+1963a2491
 >         override def convertToGpu(child: Expression): GpuExpression = GpuLower(child)
-1977a2509,2513
+1980a2509,2513
 >         override def convertToGpu(
 >             str: Expression,
 >             width: Expression,
 >             pad: Expression): GpuExpression =
 >           GpuStringLPad(str, width, pad)
-1993a2530,2534
+1996a2530,2534
 >         override def convertToGpu(
 >             str: Expression,
 >             width: Expression,
 >             pad: Expression): GpuExpression =
 >           GpuStringRPad(str, width, pad)
-2014a2556,2557
+2017a2556,2557
 >         override def convertToGpu(arr: Expression): GpuExpression =
 >           GpuGetStructField(arr, expr.ordinal, expr.name)
-2026a2570,2571
+2029a2570,2571
 >         override def convertToGpu(arr: Expression, ordinal: Expression): GpuExpression =
 >           GpuGetArrayItem(arr, ordinal, in.failOnError)
-2044a2590,2591
+2047a2590,2591
 >         override def convertToGpu(map: Expression, key: Expression): GpuExpression =
 >           GpuGetMapValue(map, key, in.failOnError)
-2048c2595
+2051c2595
 <         "Returns value for the given key in value if column is map",
 ---
 >         "Returns value for the given key in value if column is map.",
-2093a2641,2643
+2096a2641,2643
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
 >           GpuElementAt(lhs, rhs, failOnError = in.failOnError)
 >         }
-2104a2655,2656
+2107a2655,2656
 >         override def convertToGpu(child: Expression): GpuExpression =
 >           GpuMapKeys(child)
-2115a2668,2683
+2118a2668,2683
 >         override def convertToGpu(child: Expression): GpuExpression =
 >           GpuMapValues(child)
 >       }),
@@ -983,24 +979,24 @@
 >       (in, conf, p, r) => new UnaryExprMeta[MapEntries](in, conf, p, r) {
 >         override def convertToGpu(child: Expression): GpuExpression =
 >           GpuMapEntries(child)
-2117d2684
+2120d2684
 <     // MapEntries is not supported in spark 2.x
-2132a2700,2701
+2135a2700,2701
 >         override def convertToGpu(child: Expression): GpuExpression =
 >           GpuArrayMin(child)
-2141a2711,2712
+2144a2711,2712
 >         override def convertToGpu(child: Expression): GpuExpression =
 >           GpuArrayMax(child)
-2152a2724,2725
+2155a2724,2725
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuArrayRepeat(lhs, rhs)
-2158a2732,2733
+2161a2732,2733
 >         override def convertToGpu(): GpuExpression =
 >           GpuCreateNamedStruct(childExprs.map(_.convertToGpu()))
-2174a2750,2751
+2177a2750,2751
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuArrayContains(lhs, rhs)
-2187c2764,2768
+2190c2764,2768
 <       }),
 ---
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
@@ -1008,10 +1004,10 @@
 >         }
 >       }
 >     ),
-2212a2794,2795
+2215a2794,2795
 >         override def convertToGpu(): GpuExpression =
 >           GpuCreateArray(childExprs.map(_.convertToGpu()), wrapped.useStringTypeWhenEmpty)
-2228a2812,2818
+2231a2812,2818
 >         override def convertToGpu(): GpuExpression = {
 >           val func = childExprs.head
 >           val args = childExprs.tail
@@ -1019,15 +1015,15 @@
 >             args.map(_.convertToGpu().asInstanceOf[NamedExpression]),
 >             in.hidden)
 >         }
-2236a2827,2829
+2239a2827,2829
 >         override def convertToGpu(): GpuExpression = {
 >           GpuNamedLambdaVariable(in.name, in.dataType, in.nullable, in.exprId)
 >         }
-2253a2847,2849
+2256a2847,2849
 >         override def convertToGpu(): GpuExpression = {
 >           GpuArrayTransform(childExprs.head.convertToGpu(), childExprs(1).convertToGpu())
 >         }
-2264a2861,2867
+2267a2861,2867
 >         override def convertToGpu(): GpuExpression = {
 >           GpuArrayExists(
 >             childExprs.head.convertToGpu(),
@@ -1035,15 +1031,15 @@
 >             SQLConf.get.getConf(SQLConf.LEGACY_ARRAY_EXISTS_FOLLOWS_THREE_VALUED_LOGIC)
 >           )
 >         }
-2278a2882,2884
+2281a2882,2884
 >         override def convertToGpu(): GpuExpression = {
 >           GpuArraysZip(childExprs.map(_.convertToGpu()))
 >         }
-2292a2899,2901
+2295a2899,2901
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
 >           GpuArrayExcept(lhs, rhs)
 >         }
-2311a2921,2944
+2314a2921,2944
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
 >           GpuArrayIntersect(lhs, rhs)
 >         }
@@ -1068,13 +1064,13 @@
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
 >           GpuArrayUnion(lhs, rhs)
 >         }
-2318d2950
+2321d2950
 <     // ArrayUnion is not supported in Spark 2.x
-2330a2963,2965
+2333a2963,2965
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
 >           GpuArraysOverlap(lhs, rhs)
 >         }
-2337,2339c2972,3033
+2340,2342c2972,3033
 <     // TransformKeys is not supported in Spark 2.x
 <     // TransformValues is not supported in Spark 2.x
 <     // spark 2.x doesn't have MapFilter
@@ -1141,66 +1137,66 @@
 >           GpuMapFilter(childExprs.head.convertToGpu(), childExprs(1).convertToGpu())
 >         }
 >       }),
-2346a3041,3045
+2349a3041,3045
 >         override def convertToGpu(
 >             val0: Expression,
 >             val1: Expression,
 >             val2: Expression): GpuExpression =
 >           GpuStringLocate(val0, val1, val2)
-2354a3054,3058
+2357a3054,3058
 >         override def convertToGpu(
 >             column: Expression,
 >             position: Expression,
 >             length: Expression): GpuExpression =
 >           GpuSubstring(column, position, length)
-2370a3075,3077
+2373a3075,3077
 >         override def convertToGpu(
 >             input: Expression,
 >             repeatTimes: Expression): GpuExpression = GpuStringRepeat(input, repeatTimes)
-2378a3086,3090
+2381a3086,3090
 >         override def convertToGpu(
 >             column: Expression,
 >             target: Expression,
 >             replace: Expression): GpuExpression =
 >           GpuStringReplace(column, target, replace)
-2386a3099,3102
+2389a3099,3102
 >         override def convertToGpu(
 >             column: Expression,
 >             target: Option[Expression] = None): GpuExpression =
 >           GpuStringTrim(column, target)
-2395a3112,3115
+2398a3112,3115
 >           override def convertToGpu(
 >             column: Expression,
 >             target: Option[Expression] = None): GpuExpression =
 >             GpuStringTrimLeft(column, target)
-2404a3125,3128
+2407a3125,3128
 >           override def convertToGpu(
 >               column: Expression,
 >               target: Option[Expression] = None): GpuExpression =
 >             GpuStringTrimRight(column, target)
-2411a3136,3137
+2414a3136,3137
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuStartsWith(lhs, rhs)
-2418a3145,3146
+2421a3145,3146
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuEndsWith(lhs, rhs)
-2431a3160
+2434a3160
 >         override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuConcat(child)
-2442a3172
+2445a3172
 >         override def convertToGpu(child: Seq[Expression]): GpuExpression = GpuMapConcat(child)
-2459a3190,3191
+2462a3190,3191
 >         override final def convertToGpu(): GpuExpression =
 >           GpuConcatWs(childExprs.map(_.convertToGpu()))
-2469a3202,3203
+2472a3202,3203
 >         def convertToGpu(): GpuExpression =
 >           GpuMurmur3Hash(childExprs.map(_.convertToGpu()), a.seed)
-2476a3211,3212
+2479a3211,3212
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuContains(lhs, rhs)
-2483a3220,3221
+2486a3220,3221
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuLike(lhs, rhs, a.escapeChar)
-2509c3247,3254
+2512c3247,3254
 <     // RegExpExtractAll is not supported in Spark 2.x
 ---
 >     expr[RegExpExtractAll](
@@ -1211,21 +1207,21 @@
 >           ParamCheck("regexp", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
 >           ParamCheck("idx", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
 >       (a, conf, p, r) => new GpuRegExpExtractAllMeta(a, conf, p, r)),
-2514a3260
+2517a3260
 >         override def convertToGpu(child: Expression): GpuExpression = GpuLength(child)
-2522a3269,3270
+2525a3269,3270
 >         override def convertToGpu(child: Expression): GpuExpression =
 >           GpuSize(child, a.legacySizeOfNull)
-2529a3278
+2532a3278
 >         override def convertToGpu(child: Expression): GpuExpression = GpuUnscaledValue(child)
-2535a3285,3286
+2538a3285,3286
 >         override def convertToGpu(child: Expression): GpuExpression =
 >           GpuMakeDecimal(child, a.precision, a.scale, a.nullOnOverflow)
-2549a3301
+2552a3301
 >         override def convertToGpu(): GpuExpression = GpuExplode(childExprs.head.convertToGpu())
-2563a3316
+2566a3316
 >         override def convertToGpu(): GpuExpression = GpuPosExplode(childExprs.head.convertToGpu())
-2576,2577c3329,3409
+2579,2580c3329,3409
 <      }),
 <     // spark 2.x CollectList and CollectSet use TypedImperative which isn't in 2.x
 ---
@@ -1310,53 +1306,53 @@
 >         // Last does not overflow, so it doesn't need the ANSI check
 >         override val needsAnsiCheck: Boolean = false
 >       }),
-2583a3416,3419
+2586a3416,3419
 >         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
 >           val legacyStatisticalAggregate = SQLConf.get.legacyStatisticalAggregate
 >           GpuStddevPop(childExprs.head, !legacyStatisticalAggregate)
 >         }
-2591a3428,3431
+2594a3428,3431
 >           override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
 >             val legacyStatisticalAggregate = SQLConf.get.legacyStatisticalAggregate
 >             GpuStddevSamp(childExprs.head, !legacyStatisticalAggregate)
 >           }
-2598a3439,3442
+2601a3439,3442
 >         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
 >           val legacyStatisticalAggregate = SQLConf.get.legacyStatisticalAggregate
 >           GpuVariancePop(childExprs.head, !legacyStatisticalAggregate)
 >         }
-2605a3450,3453
+2608a3450,3453
 >         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
 >           val legacyStatisticalAggregate = SQLConf.get.legacyStatisticalAggregate
 >           GpuVarianceSamp(childExprs.head, !legacyStatisticalAggregate)
 >         }
-2645a3494,3499
+2648a3494,3499
 > 
 >         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
 >           GpuApproximatePercentile(childExprs.head,
 >               childExprs(1).asInstanceOf[GpuLiteral],
 >               childExprs(2).asInstanceOf[GpuLiteral])
 > 
-2660a3515,3516
+2663a3515,3516
 >         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
 >           GpuGetJsonObject(lhs, rhs)
-2672c3528,3530
+2675c3528,3530
 <       }),
 ---
 >           override def convertToGpu(): GpuExpression = GpuScalarSubquery(a.plan, a.exprId)
 >         }
 >     ),
-2677c3535,3537
+2680c3535,3537
 <       }),
 ---
 >         override def convertToGpu(): GpuExpression = GpuCreateMap(childExprs.map(_.convertToGpu()))
 >       }
 >     ),
-2695a3556
+2698a3556
 >         override def convertToGpu(child: Expression): GpuExpression = GpuBitLength(child)
-2702a3564
+2705a3564
 >         override def convertToGpu(child: Expression): GpuExpression = GpuOctetLength(child)
-2716,2718c3578,3588
+2719,2721c3578,3588
 <       )
 <     // Spark 2.x doesn't have RaiseError or ansicast
 <   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
@@ -1372,7 +1368,7 @@
 >       }),
 >     SparkShimImpl.ansiCastRule
 >   ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[Expression]), r)}.toMap
-2723c3593,3640
+2726c3593,3640
 <         ShimGpuOverrides.shimExpressions
 ---
 >         SparkShimImpl.getExprs
@@ -1423,14 +1419,14 @@
 > 
 >   val scans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] =
 >     commonScans ++ SparkShimImpl.getScans ++ ExternalSource.getScans
-2728c3645
+2731c3645
 <       parent: Option[RapidsMeta[_, _]]): PartMeta[INPUT] =
 ---
 >       parent: Option[RapidsMeta[_, _, _]]): PartMeta[INPUT] =
-2758a3676,3677
+2761a3676,3677
 >         override def convertToGpu(): GpuPartitioning =
 >           GpuHashPartitioning(childExprs.map(_.convertToGpu()), hp.numPartitions)
-2768a3688,3695
+2771a3688,3695
 >         override def convertToGpu(): GpuPartitioning = {
 >           if (rp.numPartitions > 1) {
 >             val gpuOrdering = childExprs.map(_.convertToGpu()).asInstanceOf[Seq[SortOrder]]
@@ -1439,21 +1435,21 @@
 >             GpuSinglePartitioning
 >           }
 >         }
-2773a3701,3703
+2776a3701,3703
 >         override def convertToGpu(): GpuPartitioning = {
 >           GpuRoundRobinPartitioning(rrp.numPartitions)
 >         }
-2778a3709
+2781a3709
 >         override def convertToGpu(): GpuPartitioning = GpuSinglePartitioning
-2785c3716
+2788c3716
 <       parent: Option[RapidsMeta[_, _]]): DataWritingCommandMeta[INPUT] =
 ---
 >       parent: Option[RapidsMeta[_, _, _]]): DataWritingCommandMeta[INPUT] =
-2807c3738
+2810c3738
 <       parent: Option[RapidsMeta[_, _]]): SparkPlanMeta[INPUT]  =
 ---
 >       parent: Option[RapidsMeta[_, _, _]]): SparkPlanMeta[INPUT]  =
-2831c3762,3780
+2834c3762,3780
 <       (range, conf, p, r) => new SparkPlanMeta[RangeExec](range, conf, p, r) {
 ---
 >       (range, conf, p, r) => {
@@ -1475,16 +1471,16 @@
 > 
 >         override def convertToGpu(): GpuExec =
 >           GpuBatchScanExec(p.output, childScans.head.convertToGpu())
-2838a3788,3789
+2841a3788,3789
 >         override def convertToGpu(): GpuExec =
 >           GpuCoalesceExec(coalesce.numPartitions, childPlans.head.convertIfNeeded())
-2846a3798
+2849a3798
 >           TypeSig.BINARY.withPsNote(TypeEnum.BINARY, "Only supported for Parquet") +
-2852a3805,3807
+2855a3805,3807
 >         override def convertToGpu(): GpuExec =
 >           GpuDataWritingCommandExec(childDataWriteCmds.head.convertToGpu(),
 >             childPlans.head.convertIfNeeded())
-2867a3823,3847
+2870a3823,3847
 >           override def convertToGpu(): GpuExec = {
 >             // To avoid metrics confusion we split a single stage up into multiple parts but only
 >             // if there are multiple partitions to make it worth doing.
@@ -1510,26 +1506,26 @@
 >               )(takeExec.sortOrder)
 >             }
 >           }
-2875a3856,3857
+2878a3856,3857
 >           override def convertToGpu(): GpuExec =
 >             GpuLocalLimitExec(localLimitExec.limit, childPlans.head.convertIfNeeded())
-2883a3866,3867
+2886a3866,3867
 >           override def convertToGpu(): GpuExec =
 >             GpuGlobalLimitExec(globalLimitExec.limit, childPlans.head.convertIfNeeded(), 0)
-2890,2893c3874
+2893,2896c3874
 <       (collectLimitExec, conf, p, r) =>
 <         new SparkPlanMeta[CollectLimitExec](collectLimitExec, conf, p, r) {
 <           override val childParts: scala.Seq[PartMeta[_]] =
 <             Seq(GpuOverrides.wrapPart(collectLimitExec.outputPartitioning, conf, Some(this)))})
 ---
 >       (collectLimitExec, conf, p, r) => new GpuCollectLimitMeta(collectLimitExec, conf, p, r))
-2902a3884,3885
+2905a3884,3885
 >         override def convertToGpu(): GpuExec =
 >           GpuFilterExec(childExprs.head.convertToGpu(), childPlans.head.convertIfNeeded())
-2924a3908,3909
+2927a3908,3909
 >         override def convertToGpu(): GpuExec =
 >           GpuUnionExec(childPlans.map(_.convertIfNeeded()))
-2955a3941,3951
+2958a3941,3951
 >         override def convertToGpu(): GpuExec = {
 >           val Seq(left, right) = childPlans.map(_.convertIfNeeded())
 >           val joinExec = GpuCartesianProductExec(
@@ -1541,7 +1537,7 @@
 >           // as a filter after the join when possible.
 >           condition.map(c => GpuFilterExec(c.convertToGpu(), joinExec)).getOrElse(joinExec)
 >         }
-2970a3967,3982
+2973a3967,3982
 >     exec[ObjectHashAggregateExec](
 >       "The backend for hash based aggregations supporting TypedImperativeAggregate functions",
 >       ExecChecks(
@@ -1558,16 +1554,16 @@
 >               "not allowed for grouping expressions if containing Array or Map as child"),
 >         TypeSig.all),
 >       (agg, conf, p, r) => new GpuObjectHashAggregateExecMeta(agg, conf, p, r)),
-2977,2978d3988
+2980,2981d3988
 <       // SPARK 2.x we can't check for the TypedImperativeAggregate properly so
 <       // map/array/struct left off
-2981c3991
+2984c3991
 <             TypeSig.MAP + TypeSig.BINARY)
 ---
 >             TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY)
-2983d3992
+2986d3992
 <             .withPsNote(TypeEnum.MAP, "not allowed for grouping expressions")
-2985c3994,3998
+2988c3994,3998
 <               "converted between CPU and GPU"),
 ---
 >               "converted between CPU and GPU")
@@ -1575,39 +1571,39 @@
 >               "not allowed for grouping expressions")
 >             .withPsNote(TypeEnum.STRUCT,
 >               "not allowed for grouping expressions if containing Array or Map as child"),
-2988,2989d4000
+2991,2992d4000
 <     // SPARK 2.x we can't check for the TypedImperativeAggregate properly so don't say we do the
 <     // ObjectHashAggregate
-3026c4037
+3029c4037,4042
 <       (sample, conf, p, r) => new GpuSampleExecMeta(sample, conf, p, r) {}
 ---
 >       (sample, conf, p, r) => new GpuSampleExecMeta(sample, conf, p, r)
-3027a4039,4044
+>     ),
 >     exec[SubqueryBroadcastExec](
 >       "Plan to collect and transform the broadcast key values",
 >       ExecChecks(TypeSig.all, TypeSig.all),
 >       (s, conf, p, r) => new GpuSubqueryBroadcastMeta(s, conf, p, r)
->     ),
+3030a4044
 >     SparkShimImpl.aqeShuffleReaderExec,
-3046c4063
+3049c4063
 <             e.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 ---
 >             e.resultAttrs.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-3051a4069,4074
+3054a4069,4074
 > 
 >           override def convertToGpu(): GpuExec =
 >             GpuArrowEvalPythonExec(udfs.map(_.convertToGpu()).asInstanceOf[Seq[GpuPythonUDF]],
 >               resultAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
 >               childPlans.head.convertIfNeeded(),
 >               e.evalType)
-3052a4076,4081
+3055a4076,4081
 >     exec[FlatMapCoGroupsInPandasExec](
 >       "The backend for CoGrouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
 >         " scheduling GPU resources for the Python process when enabled",
 >       ExecChecks.hiddenHack(),
 >       (flatCoPy, conf, p, r) => new GpuFlatMapCoGroupsInPandasExecMeta(flatCoPy, conf, p, r))
 >         .disabledByDefault("Performance is not ideal now"),
-3058a4088,4094
+3061a4088,4094
 >     exec[MapInPandasExec](
 >       "The backend for Map Pandas Iterator UDF. Accelerates the data transfer between the" +
 >         " Java process and the Python process. It also supports scheduling GPU resources" +
@@ -1615,7 +1611,7 @@
 >       ExecChecks((TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
 >         TypeSig.all),
 >       (mapPy, conf, p, r) => new GpuMapInPandasExecMeta(mapPy, conf, p, r)),
-3064,3066c4100,4121
+3067,3069c4100,4121
 <     // SparkShimImpl.aqeShuffleReaderExec,
 <     // SparkShimImpl.neverReplaceShowCurrentNamespaceCommand,
 <     neverReplaceExec[ExecutedCommandExec]("Table metadata operation")
@@ -1642,23 +1638,23 @@
 >     neverReplaceExec[AdaptiveSparkPlanExec]("Wrapper for adaptive query plan"),
 >     neverReplaceExec[BroadcastQueryStageExec]("Broadcast query stage"),
 >     neverReplaceExec[ShuffleQueryStageExec]("Shuffle query stage")
-3070c4125
+3073c4125
 <     commonExecs ++ ShimGpuOverrides.shimExecs
 ---
 >     commonExecs ++ SparkShimImpl.getExecs
-3073,3075c4128
+3076,3078c4128
 <     // val key = SQLConf.LEGACY_TIME_PARSER_POLICY.key
 <     val key = "2xgone"
 <     val policy = SQLConf.get.getConfString(key, "EXCEPTION")
 ---
 >     val policy = SQLConf.get.getConfString(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "EXCEPTION")
-3082a4136,4140
+3085a4136,4140
 >   val preRowToColProjection = TreeNodeTag[Seq[NamedExpression]]("rapids.gpu.preRowToColProcessing")
 > 
 >   val postColToRowProjection = TreeNodeTag[Seq[NamedExpression]](
 >     "rapids.gpu.postColToRowProcessing")
 > 
-3088a4147,4154
+3091a4147,4154
 >   private def doConvertPlan(wrap: SparkPlanMeta[SparkPlan], conf: RapidsConf,
 >       optimizations: Seq[Optimization]): SparkPlan = {
 >     val convertedPlan = wrap.convertIfNeeded()
@@ -1667,7 +1663,7 @@
 >     sparkPlan
 >   }
 > 
-3091c4157,4205
+3094c4157,4205
 <    Seq.empty
 ---
 >     if (conf.optimizerEnabled) {
@@ -1719,7 +1715,7 @@
 >       }
 >     }
 >     operator.withNewChildren(children)
-3101,3102c4215,4221
+3104,3105c4215,4221
 <   // Only run the explain and don't actually convert or run on GPU.
 <   def explainPotentialGpuPlan(df: DataFrame, explain: String = "ALL"): String = {
 ---
@@ -1730,7 +1726,7 @@
 >    * to make it close to when the columnar rules would normally run on the plan.
 >    */
 >   def explainPotentialGpuPlan(df: DataFrame, explain: String): String = {
-3128a4248,4268
+3131a4248,4268
 >   /**
 >    * Use explain mode on an active SQL plan as its processed through catalyst.
 >    * This path is the same as being run through the plugin running on hosts with
@@ -1752,17 +1748,17 @@
 >     }
 >   }
 > 
-3151c4291
+3154c4291
 <       // case c2r: ColumnarToRowExec => prepareExplainOnly(c2r.child)
 ---
 >       case c2r: ColumnarToRowExec => prepareExplainOnly(c2r.child)
-3153,3154c4293,4294
+3156,3157c4293,4294
 <       // case aqe: AdaptiveSparkPlanExec =>
 <       //   prepareExplainOnly(SparkShimImpl.getAdaptiveInputPlan(aqe))
 ---
 >       case aqe: AdaptiveSparkPlanExec =>
 >         prepareExplainOnly(SparkShimImpl.getAdaptiveInputPlan(aqe))
-3161,3165c4301,4383
+3164,3168c4301,4383
 < // Spark 2.x
 < object GpuUserDefinedFunction {
 <   // UDFs can support all types except UDT which does not have a clear columnar representation.
@@ -1852,7 +1848,7 @@
 >       plan
 >     }
 >   }
-3166a4385,4477
+3169a4385,4477
 >   /**
 >    *  Determine whether query is running against Delta Lake _delta_log JSON files or
 >    *  if Delta is doing stats collection that ends up hardcoding the use of AQE,

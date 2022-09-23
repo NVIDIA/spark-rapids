@@ -68,10 +68,10 @@ object ShimGpuOverrides extends Logging {
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
-     GpuOverrides.exec[FileSourceScanExec](
-        "Reading data from files, often from Hive tables",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-            TypeSig.ARRAY + TypeSig.BINARY + TypeSig.DECIMAL_128).nested(), TypeSig.all),
+    GpuOverrides.exec[FileSourceScanExec](
+      "Reading data from files, often from Hive tables",
+      ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
+        TypeSig.ARRAY + TypeSig.BINARY + TypeSig.DECIMAL_128).nested(), TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
 
           // partition filters and data filters are not run on the GPU

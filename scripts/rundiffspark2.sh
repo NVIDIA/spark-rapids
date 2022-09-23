@@ -106,7 +106,8 @@ diff -c spark2diffs/GpuRegExpExtractMeta.diff $tmp_dir/GpuRegExpExtractMeta.newd
 
 diff ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/RegexComplexityEstimator.scala ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/RegexComplexityEstimator.scala
 
-diff ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuBatchUtils.scala ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuBatchUtils.scala
+diff ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuBatchUtils.scala ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuBatchUtils.scala > $tmp_dir/GpuBatchUtils.newdiff || true
+diff -c spark2diffs/GpuBatchUtils.diff $tmp_dir/GpuBatchUtils.newdiff
 
 diff ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOptimizedCreateHiveTableAsSelectCommand.scala ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOptimizedCreateHiveTableAsSelectCommand.scala > $tmp_dir/GpuOptimizedCreateHiveTableAsSelectCommand.newdiff || true
 diff -c spark2diffs/GpuOptimizedCreateHiveTableAsSelectCommand.diff $tmp_dir/GpuOptimizedCreateHiveTableAsSelectCommand.newdiff
