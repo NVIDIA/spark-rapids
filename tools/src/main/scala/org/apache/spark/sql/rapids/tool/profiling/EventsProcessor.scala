@@ -243,7 +243,6 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
       app: ApplicationInfo,
       event: SparkListenerSQLExecutionStart): Unit = {
     super.doSparkListenerSQLExecutionStart(app, event)
-    app.sqlPlan += (event.executionId -> event.sparkPlanInfo)
     app.physicalPlanDescription += (event.executionId -> event.physicalPlanDescription)
   }
 
@@ -287,7 +286,6 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
       event: SparkListenerSQLAdaptiveExecutionUpdate): Unit = {
     logDebug("Processing event: " + event.getClass)
     // AQE plan can override the ones got from SparkListenerSQLExecutionStart
-    app.sqlPlan += (event.executionId -> event.sparkPlanInfo)
     app.physicalPlanDescription += (event.executionId -> event.physicalPlanDescription)
   }
 

@@ -139,6 +139,7 @@ abstract class EventProcessorBase[T <: AppBase](app: T) extends SparkListener wi
       ""
     )
     app.sqlIdToInfo.put(event.executionId, sqlExecution)
+    app.sqlPlans += (event.executionId -> event.sparkPlanInfo)
   }
 
   def doSparkListenerSQLExecutionEnd(
@@ -167,7 +168,10 @@ abstract class EventProcessorBase[T <: AppBase](app: T) extends SparkListener wi
 
   def doSparkListenerSQLAdaptiveExecutionUpdate(
       app: T,
-      event: SparkListenerSQLAdaptiveExecutionUpdate): Unit = {}
+      event: SparkListenerSQLAdaptiveExecutionUpdate): Unit = {
+    // AQE plan can override the ones got from SparkListenerSQLExecutionStart
+    app.sqlPlans += (event.executionId -> event.sparkPlanInfo)
+  }
 
   def doSparkListenerSQLAdaptiveSQLMetricUpdates(
       app: T,
@@ -270,29 +274,7 @@ abstract class EventProcessorBase[T <: AppBase](app: T) extends SparkListener wi
 
   def doSparkListenerTaskEnd(
       app: T,
-      event: SparkListenerTaskEnd): Unit = {
-    // Parse task accumulables
-    for (res <- event.taskInfo.accumulables) {
-      try {
-        val value = res.value.map(_.toString.toLong)
-        val update = res.update.map(_.toString.toLong)
-        val thisMetric = TaskStageAccumCase(
-          event.stageId, event.stageAttemptId, Some(event.taskInfo.taskId),
-          res.id, res.name, value, update, res.internal)
-        val arrBuf =  app.taskStageAccumMap.getOrElseUpdate(res.id,
-          ArrayBuffer[TaskStageAccumCase]())
-        arrBuf += thisMetric
-      } catch {
-        case NonFatal(e) =>
-          logWarning("Exception when parsing accumulables for task "
-            + "stageID=" + event.stageId + ",taskId=" + event.taskInfo.taskId
-            + ": ")
-          logWarning(e.toString)
-          logWarning("The problematic accumulable is: name="
-            + res.name + ",value=" + res.value + ",update=" + res.update)
-      }
-    }
-  }
+      event: SparkListenerTaskEnd): Unit = {}
 
   override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = {
     doSparkListenerTaskEnd(app, taskEnd)

@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids.tool.qualification
 
 import com.nvidia.spark.rapids.tool.qualification.RunningQualOutputWriter
 
-import org.apache.spark.SparkConf
+import org.apache.spark.{CleanerListener, SparkConf, SparkContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui.{SparkListenerSQLExecutionEnd, SparkListenerSQLExecutionStart}
@@ -27,6 +27,22 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
 
   private val qualApp = new com.nvidia.spark.rapids.tool.qualification.RunningQualificationApp(true)
   private val listener = qualApp.getEventListener
+
+  class QualCleanerListener extends SparkListener with CleanerListener with Logging {
+    def rddCleaned(rddId: Int): Unit = {
+      logWarning("TOM rdd cleaned")
+    }
+    def accumCleaned(accId: Long): Unit = {
+      // TODO - remove the accums
+      logWarning("TOM ACCUMULATOR CLEANED")
+    }
+    def shuffleCleaned(shuffleId: Int): Unit = {}
+    def broadcastCleaned(broadcastId: Long): Unit = {}
+    def checkpointCleaned(rddId: Long): Unit = {}
+  }
+
+  val sc = SparkContext.getOrCreate(sparkConf)
+  sc.cleaner.foreach( x => x.attachListener(new QualCleanerListener()))
 
   private val outputFileFromConfig = sparkConf.get("spark.rapids.qualification.outputDir", "")
   logWarning("Tom output file is: " + outputFileFromConfig)

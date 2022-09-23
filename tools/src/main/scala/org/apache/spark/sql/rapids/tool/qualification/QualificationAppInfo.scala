@@ -54,7 +54,6 @@ class QualificationAppInfo(
   val sqlIDtoFailures: HashMap[Long, ArrayBuffer[String]] = HashMap.empty[Long, ArrayBuffer[String]]
 
   val notSupportFormatAndTypes: HashMap[String, Set[String]] = HashMap[String, Set[String]]()
-  var sqlPlans: HashMap[Long, SparkPlanInfo] = HashMap.empty[Long, SparkPlanInfo]
 
   private lazy val eventProcessor =  new QualificationEventProcessor(this)
 
@@ -164,7 +163,7 @@ class QualificationAppInfo(
   protected def checkUnsupportedReadFormats(): Unit = {
     if (dataSourceInfo.size > 0) {
       dataSourceInfo.map { ds =>
-        val (readScore, nsTypes) = pluginTypeChecker.scoreReadDataTypes(ds.format, ds.schema)
+        val (_, nsTypes) = pluginTypeChecker.scoreReadDataTypes(ds.format, ds.schema)
         if (nsTypes.nonEmpty) {
           val currentFormat = notSupportFormatAndTypes.get(ds.format).getOrElse(Set.empty[String])
           notSupportFormatAndTypes(ds.format) = (currentFormat ++ nsTypes)
@@ -202,15 +201,6 @@ class QualificationAppInfo(
       } else {
         e.children.getOrElse(Seq.empty) :+ e
       }
-    }
-  }
-
-  private def getAllStagesForJobsInSqlQuery(sqlID: Long): Seq[Int] = {
-    val jobsIdsInSQLQuery = jobIdToSqlID.filter { case (_, sqlIdForJob) =>
-      sqlIdForJob == sqlID
-    }.keys.toSeq
-    jobsIdsInSQLQuery.flatMap { jId =>
-      jobIdToInfo(jId).stageIds
     }
   }
 

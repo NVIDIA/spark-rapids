@@ -33,7 +33,7 @@ import org.apache.spark.deploy.history.{EventLogFileReader, EventLogFileWriter}
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListenerEvent, StageInfo}
 import org.apache.spark.sql.execution.SparkPlanInfo
-import org.apache.spark.sql.execution.ui.SparkPlanGraphNode
+import org.apache.spark.sql.execution.ui.{SparkPlanGraph, SparkPlanGraphNode}
 import org.apache.spark.util.{JsonProtocol, Utils}
 
 abstract class AppBase(
@@ -54,6 +54,8 @@ abstract class AppBase(
   val sqlIDtoProblematic: HashMap[Long, Set[String]] = HashMap[Long, Set[String]]()
   // sqlId to sql info
   val sqlIdToInfo = new HashMap[Long, SQLExecutionInfoClass]()
+  // sqlPlan stores HashMap (sqlID <-> SparkPlanInfo)
+  var sqlPlans: HashMap[Long, SparkPlanInfo] = HashMap.empty[Long, SparkPlanInfo]
 
   // accum id to task stage accum info
   var taskStageAccumMap: HashMap[Long, ArrayBuffer[TaskStageAccumCase]] =
@@ -72,6 +74,51 @@ abstract class AppBase(
     val stage = stageIdToInfo.getOrElseUpdate((info.stageId, info.attemptNumber()),
       new StageInfoClass(info))
     stage
+  }
+
+  def getAllStagesForJobsInSqlQuery(sqlID: Long): Seq[Int] = {
+    val jobsIdsInSQLQuery = jobIdToSqlID.filter { case (_, sqlIdForJob) =>
+      sqlIdForJob == sqlID
+    }.keys.toSeq
+    jobsIdsInSQLQuery.flatMap { jId =>
+      jobIdToInfo(jId).stageIds
+    }
+  }
+
+  def cleanupSQL(sqlID: Int): Unit = {
+    sqlIDToDataSetOrRDDCase.remove(sqlID)
+    sqlIDtoProblematic.remove(sqlID)
+    val info = sqlIdToInfo.remove(sqlID)
+    val dsToRemove = dataSourceInfo.filter(_.sqlID == sqlID)
+    dsToRemove.foreach(dataSourceInfo -= _)
+
+    // TODO get stage ids in sql to remove, but stages might be used by others?
+    // val stageIdsWithAttempts = stageIdToInfo.filterKeys(_._1 == stageId).keys
+    // stageIdsWithAttempts.foreach(stageIdToInfo.remove(_))
+
+    // TODO - get all accumulator ids for sql query and remove from driverAccumMap
+    // and taskStageAccumMap, accumulatorToStages
+    // TODO is it ok to do this if accumids could be in multiple sql? reused stages?
+    /* val accumsInSqlID = sqlPlans.get(sqlID).map { plan =>
+      plan.metrics.map(_.accumulatorId)
+    }
+    accumsInSqlID.map { ids =>
+      ids.foreach { id =>
+        taskStageAccumMap.remove(id)
+      }
+    }
+
+     */
+
+    // TODO what about jobs not in any sql? Perhaps we should remove all jobs ids
+    // < then these at some point?
+    val jobsInSql = jobIdToSqlID.filter { case (_, sqlIdForJob) =>
+      sqlIdForJob == sqlID
+    }.keys
+    jobsInSql.foreach { id =>
+      jobIdToSqlID.remove(_)
+      jobIdToInfo.remove(_)
+    }
   }
 
   def processEvent(event: SparkListenerEvent): Boolean

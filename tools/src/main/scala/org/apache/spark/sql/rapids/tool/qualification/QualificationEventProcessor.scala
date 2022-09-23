@@ -98,7 +98,6 @@ class QualificationEventProcessor(app: QualificationAppInfo)
     )
     app.sqlStart += (event.executionId -> sqlExecution)
     app.processSQLPlan(event.executionId, event.sparkPlanInfo)
-    app.sqlPlans += (event.executionId -> event.sparkPlanInfo)
   }
 
   override def doSparkListenerSQLExecutionEnd(
@@ -174,7 +173,6 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       event: SparkListenerSQLAdaptiveExecutionUpdate): Unit = {
     logDebug("Processing event: " + event.getClass)
     // AQE plan can override the ones got from SparkListenerSQLExecutionStart
-    app.sqlPlans += (event.executionId -> event.sparkPlanInfo)
     app.processSQLPlan(event.executionId, event.sparkPlanInfo)
   }
 }

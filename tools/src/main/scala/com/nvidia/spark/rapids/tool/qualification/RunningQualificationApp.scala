@@ -212,7 +212,7 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
   private def aggregatePerSQLStats(sqlID: Long): Option[EstimatedPerSQLSummaryInfo] = {
     // a bit odd but force filling in notSupportFormatAndTypes
     // TODO - make this better
-    super.checkUnsupportedReadFormats()
+    // super.checkUnsupportedReadFormats()
 
     val sqlDesc = sqlIdToInfo(sqlID).description
     val origPlanInfo = sqlPlans.get(sqlID).map { plan =>
