@@ -29,7 +29,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
   private val listener = qualApp.getEventListener
 
   private val outputFileFromConfig = sparkConf.get("spark.rapids.qualification.outputDir", "")
-  logWarning("Tom otuput file is: " + outputFileFromConfig)
+  logWarning("Tom output file is: " + outputFileFromConfig)
   private lazy val appName = qualApp.appInfo.map(_.appName).getOrElse("")
   private lazy val fileWriter: Option[RunningQualOutputWriter] =
     if (outputFileFromConfig.nonEmpty) {
@@ -49,11 +49,11 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
       }
     } else {
       // TODO - fix
-      logWarning("no output location")
+      logError("Qualification tool doesn't have an output location, no output written!")
     }
   }
 
-  private val outputFuncSQLDetails = (sqlID: Long) => {
+  private def writeSQLDetails(sqlID: Long): Unit = {
     val (csvSQLInfo, textSQLInfo) = qualApp.getPerSqlTextAndCSVSummary(sqlID)
     if (outputFileFromConfig.nonEmpty) {
       fileWriter.foreach { writer =>
@@ -117,7 +117,8 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
 
   override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
     listener.onApplicationEnd(applicationEnd)
-    outputFuncApplicationDetails()
+    // don't write application details because requires storing everything in memory to long
+    // outputFuncApplicationDetails()
     close()
   }
 
@@ -146,7 +147,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
         logWarning("Tom otuput file is: " + outputFileFromConfig)
         logWarning("starting new SQL query")
       case e: SparkListenerSQLExecutionEnd =>
-        outputFuncSQLDetails(e.executionId)
+        writeSQLDetails(e.executionId)
       case _ =>
     }
   }

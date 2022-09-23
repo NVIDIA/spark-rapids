@@ -104,8 +104,9 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
     appInfo.foreach { info =>
     logWarning("application info is: " + info)
     }
-    val csvResult = constructPerSqlResult(sqlID, appInfo, QualOutputWriter.CSV_DELIMITER, false)
-    val textResult = constructPerSqlResult(sqlID, appInfo, QualOutputWriter.TEXT_DELIMITER, true)
+    val sqlInfo = aggregatePerSQLStats()
+    val csvResult = constructPerSqlResult(sqlID, sqlInfo, QualOutputWriter.CSV_DELIMITER, false)
+    val textResult = constructPerSqlResult(sqlID, sqlInfo, QualOutputWriter.TEXT_DELIMITER, true)
     (csvResult, textResult)
   }
 
@@ -120,6 +121,7 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
    */
   def getPerSQLSummary(sqlID: Long, delimiter: String = "|",
       prettyPrint: Boolean = true, sqlDescLength: Int = SQL_DESC_LENGTH): String = {
+    // TODO - my guess is skip aggregating at app level???
     val sqlInfo = aggregatePerSQLStats()
     constructPerSqlResult(sqlID, sqlInfo, delimiter, prettyPrint, sqlDescLength)
   }
@@ -202,6 +204,7 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
     super.aggregateStats()
   }
 
+  // don't aggregate at app level, just sql level
   def aggregatePerSQLStats(): Option[Seq[EstimatedPerSQLSummaryInfo]] = {
     appInfo.flatMap { info =>
       // a bit odd but force filling in notSupportFormatAndTypes
