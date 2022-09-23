@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{Map => MutableMap}
+import scala.sys.process._
 import scala.util.Try
 import scala.util.matching.Regex
 
@@ -324,6 +325,15 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     }
   }
 
+  // Try to output nvidia-smi output when task fails due to a cuda exception.
+  private def logGpuDebugInfo() = {
+    try {
+      val nvidiaSmiOutput = "nvidia-smi".!!
+      logWarning("nvidia-smi output:\n" + nvidiaSmiOutput)
+    } catch {
+      case _: Throwable => // ignore
+    }
+  }
   override def shutdown(): Unit = {
     GpuSemaphore.shutdown()
     PythonWorkerSemaphore.shutdown()
@@ -338,10 +348,12 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
           case Some(_: CudaFatalException) =>
             logError("Stopping the Executor based on exception being a fatal CUDA error: " +
               s"${ef.toErrorString}")
+            logGpuDebugInfo()
             System.exit(20)
           case Some(_: CudaException) =>
-            logDebug(s"Executor onTaskFailed because of a non-fatal CUDA error: " +
+            logWarning(s"Executor onTaskFailed because of a non-fatal CUDA error: " +
               s"${ef.toErrorString}")
+            logGpuDebugInfo()
           case Some(_: CudfException) =>
             logDebug(s"Executor onTaskFailed because of a CUDF error: ${ef.toErrorString}")
           case _ =>
