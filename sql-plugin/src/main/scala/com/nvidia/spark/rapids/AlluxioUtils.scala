@@ -392,7 +392,8 @@ object AlluxioUtils extends Logging {
   // assumes Alluxio directories already mounted at this point
   def updateFilesTaskTimeIfAlluxio(
       origFiles: Array[PartitionedFile],
-      alluxionPathReplacementMap: Option[Map[String, String]]): Array[(PartitionedFile, Option[PartitionedFile])] = {
+      alluxionPathReplacementMap: Option[Map[String, String]]):
+    Array[(PartitionedFile, Option[PartitionedFile])] = {
     val res: Array[(PartitionedFile, Option[PartitionedFile])] =
       alluxionPathReplacementMap.map { pathsToReplace =>
       replacePathInPartitionFileTaskTimeIfNeeded(pathsToReplace, origFiles)
