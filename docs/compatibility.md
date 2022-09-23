@@ -366,9 +366,9 @@ similar issue exists for writing dates as described
 to work for dates after the epoch as described
 [here](https://github.com/NVIDIA/spark-rapids/issues/140).
 
-The plugin supports reading `uncompressed`, `snappy` and `zlib` ORC files and writing `uncompressed`
- and `snappy` ORC files.  At this point, the plugin does not have the ability to fall back to the
- CPU when reading an unsupported compression format, and will error out in that case.
+The plugin supports reading `uncompressed`, `snappy`, `zlib` and `zstd` ORC files and writing
+ `uncompressed` and `snappy` ORC files.  At this point, the plugin does not have the ability to fall
+ back to the CPU when reading an unsupported compression format, and will error out in that case.
 
 ### Push Down Aggregates for ORC
 
@@ -437,7 +437,7 @@ issue, turn off the ParquetWriter acceleration for timestamp columns by either s
 set `spark.sql.parquet.outputTimestampType` to `TIMESTAMP_MICROS` or `TIMESTAMP_MILLIS` to by
 -pass the issue entirely.
 
-The plugin supports reading `uncompressed`, `snappy` and `gzip` Parquet files and writing
+The plugin supports reading `uncompressed`, `snappy`, `gzip` and `zstd` Parquet files and writing
 `uncompressed` and `snappy` Parquet files.  At this point, the plugin does not have the ability to
 fall back to the CPU when reading an unsupported compression format, and will error out in that
 case.

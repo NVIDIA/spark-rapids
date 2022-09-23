@@ -129,7 +129,7 @@ class Config {
  *       --conf spark.executor.memoryOverhead=8.38g
  *       --conf spark.rapids.memory.pinnedPool.size=2g
  *       --conf spark.rapids.sql.concurrentGpuTasks=4
- *       --conf spark.sql.files.maxPartitionBytes=31.67g
+ *       --conf spark.sql.files.maxPartitionBytes=4g
  *       --conf spark.sql.shuffle.partitions=200
  *       --conf spark.task.resource.gpu.amount=0.125
  *
@@ -330,7 +330,7 @@ class AutoTuner(app: ApplicationSummaryInfo, workerInfo: String) extends Logging
    * MIN_PARTITION_BYTES_RANGE = 128m, MAX_PARTITION_BYTES_RANGE = 256m
    * (1) Input:  maxPartitionBytes = 512m
    *             taskInputSize = 12m
-   *     Output: newMaxPartitionBytes = 512m * (128m/12m) = 5g
+   *     Output: newMaxPartitionBytes = 512m * (128m/12m) = 4g (hit max value)
    * (2) Input:  maxPartitionBytes = 2g
    *             taskInputSize = 512m,
    *     Output: newMaxPartitionBytes = 2g / (512m/128m) = 512m
@@ -342,7 +342,7 @@ class AutoTuner(app: ApplicationSummaryInfo, workerInfo: String) extends Logging
     if (taskInputSize > 0 &&
       taskInputSize < convertFromHumanReadableSize(MIN_PARTITION_BYTES_RANGE)) {
       // Increase partition size
-      val calculatedMaxPartitionBytes = Math.max(
+      val calculatedMaxPartitionBytes = Math.min(
         maxPartitionBytesNum *
           (convertFromHumanReadableSize(MIN_PARTITION_BYTES_RANGE) / taskInputSize),
         convertFromHumanReadableSize(MAX_PARTITION_BYTES_BOUND))
@@ -350,7 +350,7 @@ class AutoTuner(app: ApplicationSummaryInfo, workerInfo: String) extends Logging
       convertToHumanReadableSize(calculatedMaxPartitionBytes.toLong)
     } else if (taskInputSize > convertFromHumanReadableSize(MAX_PARTITION_BYTES_RANGE)) {
       // Decrease partition size
-      val calculatedMaxPartitionBytes = Math.max(
+      val calculatedMaxPartitionBytes = Math.min(
         maxPartitionBytesNum /
           (taskInputSize / convertFromHumanReadableSize(MAX_PARTITION_BYTES_RANGE)),
         convertFromHumanReadableSize(MAX_PARTITION_BYTES_BOUND))

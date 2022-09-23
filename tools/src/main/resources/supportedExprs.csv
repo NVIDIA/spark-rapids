@@ -456,8 +456,8 @@ SortArray,S,`sort_array`,None,project,result,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 SortOrder,S, ,None,project,input,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,NS,NA,PS,NS
 SortOrder,S, ,None,project,result,S,S,S,S,S,S,S,S,PS,S,S,S,NS,NS,NS,NA,PS,NS
 SparkPartitionID,S,`spark_partition_id`,None,project,result,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
-SpecifiedWindowFrame,S, ,None,project,lower,NA,S,S,S,S,NS,NS,NA,NA,NA,NS,NA,NA,S,NA,NA,NA,NA
-SpecifiedWindowFrame,S, ,None,project,upper,NA,S,S,S,S,NS,NS,NA,NA,NA,NS,NA,NA,S,NA,NA,NA,NA
+SpecifiedWindowFrame,S, ,None,project,lower,NA,S,S,S,S,NS,NS,NA,NA,NA,S,NA,NA,S,NA,NA,NA,NA
+SpecifiedWindowFrame,S, ,None,project,upper,NA,S,S,S,S,NS,NS,NA,NA,NA,S,NA,NA,S,NA,NA,NA,NA
 SpecifiedWindowFrame,S, ,None,project,result,NA,S,S,S,S,NS,NS,NA,NA,NA,NS,NA,NA,S,NA,NA,NA,NA
 Sqrt,S,`sqrt`,None,project,input,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 Sqrt,S,`sqrt`,None,project,result,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA

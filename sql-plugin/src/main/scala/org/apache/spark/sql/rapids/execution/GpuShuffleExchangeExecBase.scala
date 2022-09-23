@@ -174,7 +174,22 @@ abstract class GpuShuffleExchangeExecBase(
   lazy val readMetrics =
     SQLShuffleReadMetricsReporter.createShuffleReadMetrics(sparkContext)
   override lazy val additionalMetrics : Map[String, GpuMetric] = Map(
-    "dataSize" -> createSizeMetric(ESSENTIAL_LEVEL,"data size")
+    // dataSize and dataReadSize are uncompressed, one is on write and the 
+    // other on read
+    "dataSize" -> createSizeMetric(ESSENTIAL_LEVEL,"data size"),
+    "dataReadSize" -> createSizeMetric(MODERATE_LEVEL, "data read size"),
+    "rapidsShuffleSerializationTime" ->
+        createNanoTimingMetric(DEBUG_LEVEL,"rs. serialization time"),
+    "rapidsShuffleDeserializationTime" ->
+        createNanoTimingMetric(DEBUG_LEVEL,"rs. deserialization time"),
+    "rapidsShuffleWriteTime" ->
+        createNanoTimingMetric(ESSENTIAL_LEVEL,"rs. shuffle write time"),
+    "rapidsShuffleCombineTime" ->
+        createNanoTimingMetric(DEBUG_LEVEL,"rs. shuffle combine time"),
+    "rapidsShuffleWriteIoTime" ->
+        createNanoTimingMetric(DEBUG_LEVEL,"rs. shuffle write io time"),
+    "rapidsShuffleReadTime" ->
+        createNanoTimingMetric(ESSENTIAL_LEVEL,"rs. shuffle read time")
   ) ++ GpuMetric.wrap(readMetrics) ++ GpuMetric.wrap(writeMetrics)
 
   // Spark doesn't report totalTime for this operator so we override metrics
@@ -300,12 +315,18 @@ object GpuShuffleExchangeExecBase {
                 batch.close()
                 batch = iter.next()
               }
-              partitioned = getParts(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
-              partitioned.foreach(batches => {
-                metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
-              })
-              metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
-              at = 0
+              // Get a non-empty batch or the last batch. So still need to
+              // check if it is empty for the later case.
+              if (batch.numRows > 0) {
+                partitioned = getParts(batch).asInstanceOf[Array[(ColumnarBatch, Int)]]
+                partitioned.foreach(batches => {
+                  metrics(GpuMetric.NUM_OUTPUT_ROWS) += batches._1.numRows()
+                })
+                metrics(GpuMetric.NUM_OUTPUT_BATCHES) += partitioned.length
+                at = 0
+              } else {
+                batch.close()
+              }
             }
           }
 

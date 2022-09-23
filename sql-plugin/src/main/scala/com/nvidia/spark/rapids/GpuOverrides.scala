@@ -1034,10 +1034,10 @@ object GpuOverrides extends Logging {
         TypeSig.numericAndInterval,
         Seq(
           ParamCheck("lower",
-            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral,
+            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL_128,
             TypeSig.numericAndInterval),
           ParamCheck("upper",
-            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral,
+            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL_128,
             TypeSig.numericAndInterval))),
       (windowFrame, conf, p, r) => new GpuSpecifiedWindowFrameMeta(windowFrame, conf, p, r) ),
     expr[WindowSpecDefinition](
@@ -4421,10 +4421,12 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
           logDebug(s"Fallback for RDDScanExec delta log: $rdd")
         }
         found
-      case aqe: AdaptiveSparkPlanExec if !AQEUtils.isAdaptiveExecutionSupportedInSparkVersion =>
+      case aqe: AdaptiveSparkPlanExec if 
+        !AQEUtils.isAdaptiveExecutionSupportedInSparkVersion(plan.conf) =>
         logDebug(s"AdaptiveSparkPlanExec found on unsupported Spark Version: $aqe")
         true
-      case project: ProjectExec if !AQEUtils.isAdaptiveExecutionSupportedInSparkVersion =>
+      case project: ProjectExec if
+        !AQEUtils.isAdaptiveExecutionSupportedInSparkVersion(plan.conf) =>
         val foundExprs = project.expressions.flatMap { e =>
           PlanUtils.findExpressions(e, {
             case udf: ScalaUDF =>

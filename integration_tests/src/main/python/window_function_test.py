@@ -68,6 +68,11 @@ _grpkey_longs_with_nullable_larger_decimals = [
     ('b', DecimalGen(precision=23, scale=10, nullable=True)),
     ('c', DecimalGen(precision=23, scale=10, nullable=True))]
 
+_grpkey_longs_with_nullable_largest_decimals = [
+    ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
+    ('b', DecimalGen(precision=38, scale=2, nullable=True)),
+    ('c', DecimalGen(precision=38, scale=2, nullable=True))]
+
 _grpkey_decimals_with_nulls = [
     ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
     ('b', IntegerGen()),
@@ -699,6 +704,29 @@ def test_multi_types_window_aggs_for_rows(a_b_gen, c_gen):
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
+def test_percent_rank_no_part_multiple_batches():
+    data_gen = [('a', long_gen)]
+    # The goal of this is to have multiple batches so we can verify that the code
+    # is working properly, but not so large that it takes forever to run.
+    baseWindowSpec = Window.orderBy('a')
+
+    def do_it(spark):
+        return gen_df(spark, data_gen, length=8000) \
+                .withColumn('percent_rank_val', f.percent_rank().over(baseWindowSpec))
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf = {'spark.rapids.sql.batchSizeBytes': '100'})
+
+def test_percent_rank_single_part_multiple_batches():
+    data_gen = [('a', long_gen)]
+    # The goal of this is to have multiple batches so we can verify that the code
+    # is working properly, but not so large that it takes forever to run.
+    baseWindowSpec = Window.partitionBy('b').orderBy('a')
+
+    def do_it(spark):
+        return gen_df(spark, data_gen, length=8000) \
+                .withColumn('b', f.lit(1)) \
+                .withColumn('percent_rank_val', f.percent_rank().over(baseWindowSpec))
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf = {'spark.rapids.sql.batchSizeBytes': '100'})
+
 @pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0 is IGNORE NULLS supported for lead and lag by Spark")
 @allow_non_gpu('WindowExec', 'Alias', 'WindowExpression', 'Lead', 'Literal', 'WindowSpecDefinition', 'SpecifiedWindowFrame')
 @ignore_order(local=True)
@@ -792,6 +820,46 @@ def test_window_aggs_for_ranges_timestamps(data_gen):
         '       range between UNBOUNDED preceding and UNBOUNDED following) as max_c_unbounded '
         'from window_agg_table',
         conf = {'spark.rapids.sql.castFloatToDecimal.enabled': True})
+
+
+# In a distributed setup the order of the partitions returned might be different, so we must ignore the order
+# but small batch sizes can make sort very slow, so do the final order by locally
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_nullable_decimals,
+                                      _grpkey_longs_with_nullable_larger_decimals,
+                                      _grpkey_longs_with_nullable_largest_decimals],
+                         ids=idfn)
+def test_window_aggregations_for_decimal_ranges(data_gen):
+    """
+    Tests for range window aggregations, with DECIMAL order by columns.
+    The table schema used:
+      a: Group By column
+      b: Order By column (decimal)
+      c: Aggregation column (incidentally, also decimal)
+
+    Since this test is for the order-by column type, and not for each specific windowing aggregation,
+    we use COUNT(1) throughout the test, for different window widths and ordering.
+    Some other aggregation functions are thrown in for variety.
+    """
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=2048),
+        "window_agg_table",
+        'SELECT '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b ASC RANGE BETWEEN 10.2345 PRECEDING AND 6.7890 FOLLOWING), '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b ASC), '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b ASC RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b ASC RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING), '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b DESC RANGE BETWEEN 10.2345 PRECEDING AND 6.7890 FOLLOWING), '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b DESC), '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b DESC RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b DESC RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING),'
+        ' COUNT(c) OVER (PARTITION BY a ORDER BY b RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+        ' SUM(c)   OVER (PARTITION BY a ORDER BY b RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+        ' MIN(c)   OVER (PARTITION BY a ORDER BY b RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+        ' MAX(c)   OVER (PARTITION BY a ORDER BY b RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+        ' RANK()   OVER (PARTITION BY a ORDER BY b) '
+        'FROM window_agg_table',
+        conf={})
 
 
 _gen_data_for_collect_list = [
@@ -903,6 +971,32 @@ def test_running_window_function_exec_for_all_aggs():
             (partition by a order by b,c_int rows between UNBOUNDED PRECEDING AND CURRENT ROW) as collect_struct
         from window_collect_table
         ''')
+
+# Test the Databricks WindowExec which combines a WindowExec with a ProjectExec and provides the output
+# fields that we need to handle with an extra GpuProjectExec and we need the input expressions to compute
+# a window function of another window function case
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
+def test_join_sum_window_of_window(data_gen):
+    def do_it(spark):
+        agg_table = gen_df(spark, StructGen([('a_1', LongRangeGen()), ('c', data_gen)], nullable=False))
+        part_table = gen_df(spark, StructGen([('a_2', LongRangeGen()), ('b', byte_gen)], nullable=False))
+        agg_table.createOrReplaceTempView("agg")
+        part_table.createOrReplaceTempView("part")
+        # Note that if we include `c` in the select clause here (the output projection), the bug described
+        # in https://github.com/NVIDIA/spark-rapids/issues/6531 does not manifest
+        return spark.sql("""
+        select
+            b,
+            sum(c) as sum_c,
+            sum(c)/sum(sum(c)) over (partition by b) as ratio_sum,
+            (b + c)/sum(sum(c)) over (partition by b) as ratio_bc
+        from agg, part
+        where a_1 = a_2
+        group by b, c
+        order by b, ratio_sum, ratio_bc""")
+
+    assert_gpu_and_cpu_are_equal_collect(do_it)
 
 # Generates some repeated values to test the deduplication of GpuCollectSet.
 # And GpuCollectSet does not yet support struct type.
