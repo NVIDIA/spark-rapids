@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.shims
 
 import com.databricks.sql.execution.window.RunningWindowFunctionExec
 import com.nvidia.spark.rapids._
-import org.apache.hadoop.fs.{FileStatus, Path}
+import org.apache.hadoop.fs.FileStatus
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
