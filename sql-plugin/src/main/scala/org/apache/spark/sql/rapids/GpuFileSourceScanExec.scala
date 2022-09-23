@@ -82,7 +82,7 @@ case class GpuFileSourceScanExec(
 
   // this is set only when we either explicitly replaced a path for CONVERT_TIME
   // or when TASK_TIME if one of the paths will be replaced
-  private var alluxionPathReplacementMap: Option[Map[String, String]] = alluxioPathsMap
+  private var alluxioPathReplacementMap: Option[Map[String, String]] = alluxioPathsMap
 
   private val isPerFileReadEnabled = relation.fileFormat match {
     case _: ParquetFileFormat => rapidsConf.isParquetPerFileReadEnabled
@@ -123,15 +123,13 @@ case class GpuFileSourceScanExec(
     val pds = relation.location.listFiles(
         partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
     if (AlluxioUtils.isAlluxioAutoMountTaskTime(rapidsConf, relation.fileFormat)) {
-      logWarning("in is alluxio auto mount task time")
-      alluxionPathReplacementMap = AlluxioUtils.autoMountIfNeeded(rapidsConf, pds,
+      alluxioPathReplacementMap = AlluxioUtils.autoMountIfNeeded(rapidsConf, pds,
         relation.sparkSession.sparkContext.hadoopConfiguration,
         relation.sparkSession.conf)
     } else if (AlluxioUtils.isAlluxioPathsToReplaceTaskTime(rapidsConf, relation.fileFormat)) {
-      logWarning("in is alluxio replace path task time")
       // this is not ideal, here we check to see if we will replace any paths, which is an
       // extra iteration through paths
-      alluxionPathReplacementMap = AlluxioUtils.checkIfNeedsReplaced(rapidsConf, pds)
+      alluxioPathReplacementMap = AlluxioUtils.checkIfNeedsReplaced(rapidsConf, pds)
     }
     logDebug(s"File listing and possibly replace with Alluxio path " +
       s"took: ${System.nanoTime() - startTime}")
@@ -347,7 +345,7 @@ case class GpuFileSourceScanExec(
           hadoopConf =
             relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options),
           metrics = allMetrics,
-          alluxionPathReplacementMap)
+          alluxioPathReplacementMap)
         Some(reader)
       } else {
         None
@@ -565,25 +563,10 @@ case class GpuFileSourceScanExec(
 
     if (isPerFileReadEnabled) {
       logInfo("Using the original per file parquet reader")
-      // this is weird, if we are using the CONVERT_TIME alluxio replacement, here we are going
-      // to change the file partitions to be the original paths, not the Alluxio ones so
-      // that input_file_name shows up properly, then in the PartitionReaderFactory it handles
-      // really using the Alluxio path
-      val partsToUse = if (isAlluxioReplacementTaskTime || !alluxionPathReplacementMap.isDefined) {
-        partitions
-      } else {
-        partitions.map { partition =>
-          val fileAndOrig = AlluxioUtils.getOrigPathFromReplaced(partition.files,
-            alluxionPathReplacementMap.get)
-          // if the filename was replaced get the original, otherwise just the filename here
-          val origFiles = fileAndOrig.map( x => x._2.getOrElse(x._1))
-          FilePartition(partition.index, origFiles)
-        }
-      }
-      SparkShimImpl.getFileScanRDD(relation.sparkSession, readFile.get, partsToUse,
+      SparkShimImpl.getFileScanRDD(relation.sparkSession, readFile.get, partitions,
         requiredSchema)
     } else {
-      logWarning(s"using datasource RDD, partitions are: " +
+      logDebug(s"Using Datasource RDD, files are: " +
         s"${partitions.flatMap(_.files).mkString(",")}")
       // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
       GpuDataSourceRDD(relation.sparkSession.sparkContext, partitions, readerFactory)
@@ -611,7 +594,7 @@ case class GpuFileSourceScanExec(
           rapidsConf,
           allMetrics,
           queryUsesInputFile,
-          alluxionPathReplacementMap)
+          alluxioPathReplacementMap)
       case _: OrcFileFormat =>
         GpuOrcMultiFilePartitionReaderFactory(
           sqlConf,

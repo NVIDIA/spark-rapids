@@ -53,8 +53,12 @@ import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
  *      clusters short on task slots this may be a better fit.
  *
  * Note the way we do the actual replacement algorithm diffs depending on the file reader
- * type we use: PERFILE, COALESCING, MULTITHREADED. Note that COALESCING reader is not
- * support for input_file_name functionality so it falls back to the MULTITHREADED reader.
+ * type we use: PERFILE, COALESCING, MULTITHREADED.
+ * PERFILE is not supported with Alluxio due to not easily being able to fix up
+ * input_file_name. We could but would require copying the FileScanRDD so skip for now.
+ * The COALESCING reader is not support for input_file_name functionality so it falls
+ * back to the MULTITHREADED reader if that is used, otherwise we replace the paths properly
+ * based on the replacement algorithm.
  * In order to do the replacement at task time and to reverse the path from convert time
  * we need to have a mapping of the original scheme to the alluxio scheme. This has been
  * made a parameter to many of the readers. In order to get that mapping for task time
@@ -73,6 +77,14 @@ object AlluxioUtils extends Logging {
   private var alluxioPathsToReplaceMap: Option[Map[String, String]] = None
   private var alluxioHome: String = "/opt/alluxio-2.8.0"
   private var isInit: Boolean = false
+
+  def checkAlluxioNotSupported(rapidsConf: RapidsConf): Unit = {
+    if (rapidsConf.isParquetPerFileReadEnabled &&
+      (rapidsConf.getAlluxioAutoMountEnabled || rapidsConf.getAlluxioPathsToReplace.isDefined)) {
+      throw new IllegalArgumentException("Alluxio is currently not supported with the PERFILE " +
+        "reader, please use one of the other reader types.")
+    }
+  }
 
   def isAlluxioAutoMountTaskTime(rapidsConf: RapidsConf,
       fileFormat: FileFormat): Boolean = {
@@ -134,6 +146,7 @@ object AlluxioUtils extends Logging {
       // left outside isInit to allow changing at runtime
       alluxioHome = scala.util.Properties.envOrElse("ALLUXIO_HOME", "/opt/alluxio-2.8.0")
       alluxioCmd = conf.getAlluxioCmd
+      checkAlluxioNotSupported(conf)
 
       if (!isInit) {
         if (conf.getAlluxioAutoMountEnabled) {
@@ -287,7 +300,7 @@ object AlluxioUtils extends Logging {
         } else if (matchedSet.size == 1) {
           val res = (new Path(pathStr.replaceFirst(matchedSet.head._1, matchedSet.head._2)),
             Some(matchedSet.head._1))
-          logWarning(s"specific path replacement, replacing paths: $res")
+          logDebug(s"Specific path replacement, replacing paths with: $res")
           res
         } else {
           (f, None)
@@ -308,11 +321,12 @@ object AlluxioUtils extends Logging {
         val (access_key, secret_key) = getKeyAndSecret(hadoopConf, runtimeConf)
         val (scheme, bucket) = getSchemeAndBucketFromPath(pathStr)
         autoMountBucket(scheme, bucket, access_key, secret_key)
+        assert(alluxioMasterHost.isDefined)
         (new Path(replaceSchemeWithAlluxio(pathStr, scheme, alluxioMasterHost.get)), Some(scheme))
       } else {
         (f, None)
       }
-      logWarning(s"auto mount replacing paths: $res")
+      logDebug(s"Automount replacing paths: $res")
       res
     })
   }
@@ -384,7 +398,7 @@ object AlluxioUtils extends Logging {
       alluxionPathReplacementMap.map { pathsToReplace =>
       replacePathInPartitionFileTaskTimeIfNeeded(pathsToReplace, origFiles)
     }.getOrElse(origFiles.map((_, None)))
-    logWarning(s"Updated files at TASK_TIME for Alluxio: ${res.mkString(",")}")
+    logDebug(s"Updated files at TASK_TIME for Alluxio: ${res.mkString(",")}")
     res
   }
 
@@ -482,9 +496,8 @@ object AlluxioUtils extends Logging {
           s"from ${RapidsConf.ALLUXIO_PATHS_REPLACE.key} which requires only 1 rule " +
           s"for each file path")
       } else if (matchedSet.size == 1) {
-        logWarning(s"matched set 1 file: $file")
         val replacedFile = file.replaceFirst(matchedSet.head._2, matchedSet.head._1)
-        logWarning(s"matched set 1 replacedFile: $replacedFile")
+        logDebug(s"getOrigPath replacedFile: $replacedFile")
         (pf, Some(PartitionedFile(pf.partitionValues, replacedFile, pf.start, file.length)))
       } else {
         (pf, None)
