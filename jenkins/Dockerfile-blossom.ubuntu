@@ -22,12 +22,12 @@
 #       CUDA_VER=11.0+
 #       UBUNTU_VER=18.04 or 20.04
 #       UCX_CUDA_VER=11 (major CUDA version)
-#       UCX_VER=1.12.1
+#       UCX_VER=1.13.1
 ###
 
 ARG CUDA_VER=11.0
 ARG UBUNTU_VER=18.04
-ARG UCX_VER=1.12.1
+ARG UCX_VER=1.13.1
 ARG UCX_CUDA_VER=11
 FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu${UBUNTU_VER}
 ARG CUDA_VER
@@ -45,7 +45,7 @@ RUN apt-get update -y && \
 RUN add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update -y && \
     DEBIAN_FRONTEND="noninteractive" apt-get install -y maven \
-    openjdk-8-jdk openjdk-11-jdk python3.8 python3.8-distutils python3-setuptools tzdata git
+    openjdk-8-jdk openjdk-11-jdk python3.8 python3.8-distutils python3-setuptools tzdata git zip unzip
 RUN python3.8 -m easy_install pip
 
 # Set default jdk as 1.8.0

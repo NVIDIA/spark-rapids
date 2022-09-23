@@ -2,3 +2,15 @@
 <                         parent: Option[RapidsMeta[_, _]],
 ---
 >                         parent: Option[RapidsMeta[_, _, _]],
+38d37
+< 
+42,45c41,44
+<  /**
+<   * Define all dependency expressions as `childExprs`.
+<   * This ensures that they are tagged for GPU execution.
+<   */
+---
+>   /**
+>    * Define all dependency expressions as `childExprs`.
+>    * This ensures that they are tagged for GPU execution.
+>    */

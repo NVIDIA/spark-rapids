@@ -10,7 +10,7 @@ nav_order: 12
 
 ### What versions of Apache Spark does the RAPIDS Accelerator for Apache Spark support?
 
-The RAPIDS Accelerator for Apache Spark requires version 3.1.1, 3.1.2, 3.1.3, 3.2.0, 3.2.1 or 3.3.0 of
+The RAPIDS Accelerator for Apache Spark requires version 3.1.1, 3.1.2, 3.1.3, 3.2.0, 3.2.1, 3.2.2 or 3.3.0 of
 Apache Spark. Because the plugin replaces parts of the physical plan that Apache Spark considers to
 be internal the code for those plans can change even between bug fix releases. As a part of our
 process, we try to stay on top of these changes and release updates as quickly as possible.
@@ -418,7 +418,7 @@ There are multiple reasons why this a problematic configuration:
 
 Yes, but it requires support from the underlying cluster manager to isolate the MIG GPU instance
 for each executor (e.g.: by setting `CUDA_VISIBLE_DEVICES`,
-[YARN with docker isolation](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.08/examples/MIG-Support)
+[YARN with docker isolation](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.10/examples/MIG-Support)
 or other means).
 
 Note that MIG is not recommended for use with the RAPIDS Accelerator since it significantly

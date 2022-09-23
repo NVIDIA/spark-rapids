@@ -60,7 +60,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
   override final def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan] = exec[AQEShuffleReadExec](
     "A wrapper of shuffle query stage",
     ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.ARRAY +
-      TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
+      TypeSig.STRUCT + TypeSig.MAP + TypeSig.BINARY).nested(), TypeSig.all),
     (exec, conf, p, r) => new GpuCustomShuffleReaderMeta(exec, conf, p, r))
 
   override final def sessionFromPlan(plan: SparkPlan): SparkSession = {
@@ -141,26 +141,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
           TypeSig.numericAndInterval + TypeSig.NULL))),
       (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
         override def tagAggForGpu(): Unit = {
-          // For Decimal Average the SUM adds a precision of 10 to avoid overflowing
-          // then it divides by the count with an output scale that is 4 more than the input
-          // scale. With how our divide works to match Spark, this means that we will need a
-          // precision of 5 more. So 38 - 10 - 5 = 23
-          val dataType = a.child.dataType
-          dataType match {
-            case dt: DecimalType =>
-              if (dt.precision > 23) {
-                if (conf.needDecimalGuarantees) {
-                  willNotWorkOnGpu("GpuAverage cannot guarantee proper overflow checks for " +
-                    s"a precision large than 23. The current precision is ${dt.precision}")
-                } else {
-                  logWarning("Decimal overflow guarantees disabled for " +
-                    s"Average(${a.child.dataType}) produces $dt with an " +
-                    s"intermediate precision of ${dt.precision + 15}")
-                }
-              }
-            case _ => // NOOP
-          }
-          GpuOverrides.checkAndTagFloatAgg(dataType, conf, this)
+          GpuOverrides.checkAndTagFloatAgg(a.child.dataType, conf, this)
         }
 
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
@@ -191,8 +172,9 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       ExprChecks.projectAndAst(
         TypeSig.astTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.CALENDAR
-            + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT + TypeSig.ansiIntervals)
-            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+            + TypeSig.BINARY + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT
+            + TypeSig.ansiIntervals)
+            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +
                 TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
         TypeSig.all),
       (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
@@ -227,10 +209,12 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         TypeSig.numericAndInterval,
         Seq(
           ParamCheck("lower",
-            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME,
+            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME
+              + TypeSig.DECIMAL_128,
             TypeSig.numericAndInterval),
           ParamCheck("upper",
-            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME,
+            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME
+              + TypeSig.DECIMAL_128,
             TypeSig.numericAndInterval))),
       (windowFrame, conf, p, r) => new GpuSpecifiedWindowFrameMeta(windowFrame, conf, p, r)),
     GpuOverrides.expr[WindowExpression](
@@ -276,13 +260,13 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-          TypeSig.ARRAY + TypeSig.DECIMAL_128).nested(), TypeSig.all),
+          TypeSig.ARRAY + TypeSig.BINARY + TypeSig.DECIMAL_128).nested(), TypeSig.all),
         (fsse, conf, p, r) => new FileSourceScanExecMeta(fsse, conf, p, r)),
       GpuOverrides.exec[BatchScanExec](
         "The backend for most file input",
         ExecChecks(
           (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
-            TypeSig.DECIMAL_128).nested(),
+            TypeSig.DECIMAL_128 + TypeSig.BINARY).nested(),
           TypeSig.all),
         (p, conf, parent, r) => new BatchScanExecMeta(p, conf, parent, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
@@ -400,12 +384,15 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       val sparkSession = wrapped.relation.sparkSession
       val options = wrapped.relation.options
 
-      val location = AlluxioUtils.replacePathIfNeeded(
-        conf,
-        wrapped.relation,
-        partitionFilters,
-        wrapped.dataFilters)
-
+      val location = if (conf.isAlluxioReplacementAlgoConvertTime) {
+        AlluxioUtils.replacePathIfNeeded(
+          conf,
+          wrapped.relation,
+          partitionFilters,
+          wrapped.dataFilters)
+      } else {
+        wrapped.relation.location
+      }
       val newRelation = HadoopFsRelation(
         location,
         wrapped.relation.partitionSchema,

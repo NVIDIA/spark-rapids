@@ -71,13 +71,6 @@ class GpuRegExpExtractMeta(
     }
     */
 
-    def countGroups(regexp: RegexAST): Int = {
-      regexp match {
-        case RegexGroup(_, term) => 1 + countGroups(term)
-        case other => other.children().map(countGroups).sum
-      }
-    }
-
     expr.regexp match {
       case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
         try {
@@ -85,7 +78,7 @@ class GpuRegExpExtractMeta(
           // verify that we support this regex and can transpile it to cuDF format
           pattern = Some(new CudfRegexTranspiler(RegexFindMode)
             .transpile(javaRegexpPattern, None)._1)
-          numGroups = countGroups(new RegexParser(javaRegexpPattern).parse())
+          numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
         } catch {
           case e: RegexUnsupportedException =>
             willNotWorkOnGpu(e.getMessage)
@@ -314,10 +307,6 @@ class GpuStringSplitMeta(
     /*
     extractLit(expr.limit) match {
       case Some(Literal(n: Int, _)) =>
-        if (n == 0 || n == 1) {
-          // https://github.com/NVIDIA/spark-rapids/issues/4720
-          willNotWorkOnGpu("limit of 0 or 1 is not supported")
-        }
       case _ =>
         willNotWorkOnGpu("only literal limit is supported")
     }

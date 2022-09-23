@@ -22,7 +22,9 @@ import pyspark.sql.functions as f
 
 nested_gens = [ArrayGen(LongGen()), ArrayGen(decimal_gen_128bit),
                StructGen([("a", LongGen()), ("b", decimal_gen_128bit)]),
-               MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen())]
+               MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen()),
+               ArrayGen(BinaryGen(max_length=5)),
+               MapGen(IntegerGen(nullable=False), BinaryGen(max_length=5))]
 # additional test for NonNull Array because of https://github.com/rapidsai/cudf/pull/8181
 non_nested_array_gens = [ArrayGen(sub_gen, nullable=nullable)
                          for nullable in [True, False]
@@ -146,6 +148,29 @@ def test_sort_array_lit(data_gen):
         lambda spark: unary_op_df(spark, data_gen, length=10).select(
             f.sort_array(f.lit(array_lit), True),
             f.sort_array(f.lit(array_lit), False)))
+
+
+def test_sort_array_normalize_nans():
+    """
+    When the average length of array is > 100,
+    and there are `-Nan`s in the data, the sorting order
+    of `Nan` is inconsistent in cuDF (https://github.com/rapidsai/cudf/issues/11630).
+    `GpuSortArray` fixes the inconsistency by normalizing `Nan`s.
+    """
+    bytes1 = struct.pack('L', 0x7ff83cec2c05b870)
+    bytes2 = struct.pack('L', 0xfff5101d3f1cd31b)
+    bytes3 = struct.pack('L', 0x7c22453f18c407a8)
+    nan1 = struct.unpack('d', bytes1)[0]
+    nan2 = struct.unpack('d', bytes2)[0]
+    other = struct.unpack('d', bytes3)[0]
+
+    data1 = [([nan2] + [other for _ in range(256)] + [nan1],)]
+    # array of struct
+    data2 = [([(nan2, nan1)] + [(other, nan2) for _ in range(256)] + [(nan1, nan2)],)]
+    for data in [data1, data2]:
+        assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: spark.createDataFrame(data).selectExpr('sort_array(_1, true)', 'sort_array(_1, false)')
+        )
 
 # For functionality test, the sequence length in each row should be limited,
 # to avoid the exception as below,

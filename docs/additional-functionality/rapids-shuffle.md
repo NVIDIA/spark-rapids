@@ -7,10 +7,15 @@ nav_order: 5
 # RAPIDS Shuffle Manager
 
 The RAPIDS Shuffle Manager is an implementation of the `ShuffleManager` interface in Apache Spark
-that allows custom mechanisms to exchange shuffle data. It has two components: a spillable cache,
-and a transport that can utilize Remote Direct Memory Access (RDMA) and high-bandwidth transfers
-within a node that has multiple GPUs. This is possible because the plugin utilizes
-[Unified Communication X (UCX)](https://www.openucx.org/) as its transport.
+that allows custom mechanisms to exchange shuffle data. We currently expose two modes of operation:
+UCX and Multi Threaded (experimental). 
+
+## UCX Mode
+
+UCX mode is the default for the RAPIDS Shuffle Manager. It has two components: a spillable cache, 
+and a transport that can utilize Remote Direct Memory Access (RDMA) and high-bandwidth transfers 
+within a node that has multiple GPUs. This is possible because the plugin 
+utilizes [Unified Communication X (UCX)](https://www.openucx.org/) as its transport.
 
 - **Spillable cache**: This store keeps GPU data close by where it was produced in device memory,
 but can spill in the following cases:
@@ -142,16 +147,15 @@ configurations as we are able to test different scenarios.
 NOTE: A system administrator should have performed Step 1 in [Baremetal](#baremetal) in the host
 system if you have RDMA capable hardware.
 
-Within the Docker container we need to install UCX and its requirements. These are Dockerfile
-examples for Ubuntu 18.04:
+The following are examples of Docker containers with UCX 1.12.1 and CUDA 11.5 support.
 
-The following are examples of Docker containers with UCX 1.12.1 and cuda-11.2 support.
-
-| OS Type | RDMA | Dockerfile |
-| ------- | ---- | ---------- |
-| Ubuntu  | Yes  | [Dockerfile.ubuntu_rdma](shuffle-docker-examples/Dockerfile.ubuntu_rdma) |
+| OS Type | RDMA | Dockerfile                                                                     |
+|---------| ---- |--------------------------------------------------------------------------------|
+| Ubuntu  | Yes  | [Dockerfile.ubuntu_rdma](shuffle-docker-examples/Dockerfile.ubuntu_rdma)       |
 | Ubuntu  | No   | [Dockerfile.ubuntu_no_rdma](shuffle-docker-examples/Dockerfile.ubuntu_no_rdma) |
-| CentOS  | Yes  | [Dockerfile.centos_rdma](shuffle-docker-examples/Dockerfile.centos_rdma) |
+| Rocky   | Yes  | [Dockerfile.rocky_rdma](shuffle-docker-examples/Dockerfile.rocky_rdma)         |
+| Rocky   | No   | [Dockerfile.rocky_no_rdma](shuffle-docker-examples/Dockerfile.rocky_no_rdma)   |
+| CentOS  | Yes  | [Dockerfile.centos_rdma](shuffle-docker-examples/Dockerfile.centos_rdma)       |
 | CentOS  | No   | [Dockerfile.centos_no_rdma](shuffle-docker-examples/Dockerfile.centos_no_rdma) |
 
 ### Validating UCX Environment
@@ -160,14 +164,15 @@ After installing UCX you can utilize `ucx_info` and `ucx_perftest` to validate t
 
 In this section, we are using a docker container built using the sample dockerfile above.
 
-1. Start the docker container with `--privileged` mode. In this example, we are also adding
-   `--device /dev/infiniband` to make Mellanox devices available for our test, but this is only
-   required if you are using RDMA:
+1. Start the docker container with `--privileged` mode, which makes Mellanox devices available 
+   for our test (this is only required if you are using RDMA), `pid=host` and `ipc=host` are
+   requirements for container communication within the same machine:
     ```
     nvidia-docker run \
-     --network=host \
-     --device /dev/infiniband \
      --privileged \
+     --pid=host \
+     --ipc=host \
+     --network=host \
      -it \
      ucx_container:latest \
      /bin/bash
@@ -426,3 +431,24 @@ for this, other than to trigger a GC cycle on the driver.
 Spark has a configuration `spark.cleaner.periodicGC.interval` (defaults to 30 minutes), that
 can be used to periodically cause garbage collection. If you are experiencing OOM situations, or
 performance degradation with several Spark actions, consider tuning this setting in your jobs.
+
+## Multi Threaded Mode (experimental)
+
+This mode is similar to the built-in Spark shuffle, but it attempts to use more CPU threads
+for compute-intensive tasks, such as compression and decompression. This mode does not use UCX, and
+so it does not require a UCX installation.
+
+Minimum configuration:
+
+```shell
+--conf spark.shuffle.manager=com.nvidia.spark.rapids.[shim package].RapidsShuffleManager \
+--conf spark.driver.extraClassPath=${SPARK_RAPIDS_PLUGIN_JAR} \
+--conf spark.executor.extraClassPath=${SPARK_RAPIDS_PLUGIN_JAR} \
+--conf spark.rapids.shuffle.mode=MULTITHREADED
+```
+
+By default, a thread pool of 20 threads is used for shuffle writes and reads. This
+configuration can be independently changed for writers and readers using:
+`spark.rapids.shuffle.multiThreaded.[writer|reader].threads`. An appropriate value for these
+pools is the number of cores in the system divided by the number of executors per machine.
+

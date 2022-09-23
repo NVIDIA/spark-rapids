@@ -420,7 +420,7 @@ object ExecutionPlanCaptureCallback {
   def extractExecutedPlan(plan: Option[SparkPlan]): SparkPlan = {
     plan match {
       case Some(p: AdaptiveSparkPlanExec) => p.executedPlan
-      case Some(p) => p
+      case Some(p) => PlanShims.extractExecutedPlan(p)
       case _ => throw new IllegalStateException("No execution plan available")
     }
   }

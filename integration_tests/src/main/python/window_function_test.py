@@ -68,6 +68,11 @@ _grpkey_longs_with_nullable_larger_decimals = [
     ('b', DecimalGen(precision=23, scale=10, nullable=True)),
     ('c', DecimalGen(precision=23, scale=10, nullable=True))]
 
+_grpkey_longs_with_nullable_largest_decimals = [
+    ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
+    ('b', DecimalGen(precision=38, scale=2, nullable=True)),
+    ('c', DecimalGen(precision=38, scale=2, nullable=True))]
+
 _grpkey_decimals_with_nulls = [
     ('a', RepeatSeqGen(LongGen(nullable=(True, 10.0)), length=20)),
     ('b', IntegerGen()),
@@ -135,9 +140,19 @@ lead_lag_data_gens = [long_gen, DoubleGen(no_nans=True, special_cases=[]),
             ['child_string', StringGen()]
         ])]
 
-all_basic_gens_no_nans = [byte_gen, short_gen, int_gen, long_gen, 
-        FloatGen(no_nans=True, special_cases=[]), DoubleGen(no_nans=True, special_cases=[]),
-        string_gen, boolean_gen, date_gen, timestamp_gen, null_gen]
+_float_conf = {'spark.rapids.sql.variableFloatAgg.enabled': 'true',
+                       'spark.rapids.sql.castStringToFloat.enabled': 'true'
+                      }
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [SetValuesGen(t, [math.nan, None]) for t in [FloatType(), DoubleType()]], ids=idfn)
+def test_float_window_min_max_all_nans(data_gen):
+  w = Window().partitionBy('a')
+  assert_gpu_and_cpu_are_equal_collect(
+      lambda spark: two_col_df(spark, byte_gen, data_gen)
+          .withColumn("min_b", f.min('a').over(w))
+          .withColumn("max_b", f.max('a').over(w))
+  )
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', [decimal_gen_128bit], ids=idfn)
@@ -372,10 +387,9 @@ def test_window_aggs_for_rows(data_gen, batch_size):
 # specially, but it only works if all of the aggregations can support this.
 # the order returned should be consistent because the data ends up in a single task (no partitioning)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches 
-@pytest.mark.parametrize('b_gen', all_basic_gens_no_nans + [decimal_gen_32bit, decimal_gen_128bit], ids=meta_idfn('data:'))
+@pytest.mark.parametrize('b_gen', all_basic_gens + [decimal_gen_32bit, decimal_gen_128bit], ids=meta_idfn('data:'))
 def test_window_running_no_part(b_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
-            'spark.rapids.sql.hasNans': False,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
     query_parts = ['row_number() over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as row_num',
             'rank() over (order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as rank_val',
@@ -428,7 +442,7 @@ def test_running_float_sum_no_part(batch_size):
 # to allow for duplication in the ordering, because there will be no other columns. This means that if you swtich
 # rows it does not matter because the only time rows are switched is when the rows are exactly the same.
 @pytest.mark.parametrize('data_gen',
-                         all_basic_gens_no_nans + [decimal_gen_32bit, decimal_gen_128bit],
+                         all_basic_gens + [decimal_gen_32bit, orderable_decimal_gen_128bit],
                          ids=meta_idfn('data:'))
 def test_window_running_rank_no_part(data_gen):
     # Keep the batch size small. We have tested these with operators with exact inputs already, this is mostly
@@ -482,10 +496,9 @@ def test_window_running_rank(data_gen):
 @ignore_order(local=True)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize('b_gen, c_gen', [(long_gen, x) for x in running_part_and_order_gens] +
-        [(x, long_gen) for x in all_basic_gens_no_nans + [decimal_gen_32bit]], ids=idfn)
+        [(x, long_gen) for x in all_basic_gens + [decimal_gen_32bit]], ids=idfn)
 def test_window_running(b_gen, c_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
-            'spark.rapids.sql.hasNans': False,
             'spark.rapids.sql.variableFloatAgg.enabled': True,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
     query_parts = ['b', 'a', 'row_number() over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as row_num',
@@ -546,8 +559,7 @@ def test_window_running_float_decimal_sum(batch_size):
 @pytest.mark.parametrize('c_gen', lead_lag_data_gens, ids=idfn)
 @pytest.mark.parametrize('a_b_gen', part_and_order_gens, ids=meta_idfn('partAndOrderBy:'))
 def test_multi_types_window_aggs_for_rows_lead_lag(a_b_gen, c_gen, batch_size):
-    conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
-            'spark.rapids.sql.hasNans': False}
+    conf = {'spark.rapids.sql.batchSizeBytes': batch_size}
     data_gen = [
             ('a', RepeatSeqGen(a_b_gen, length=20)),
             ('b', a_b_gen),
@@ -604,7 +616,6 @@ lead_lag_struct_with_arrays_gen = [struct_with_arrays,
 @pytest.mark.parametrize('struct_gen', lead_lag_struct_with_arrays_gen, ids=idfn)
 @pytest.mark.parametrize('a_b_gen', part_and_order_gens, ids=meta_idfn('partAndOrderBy:'))
 def test_lead_lag_for_structs_with_arrays(a_b_gen, struct_gen):
-    conf = {'spark.rapids.sql.hasNans': False}
     data_gen = [
         ('a', RepeatSeqGen(a_b_gen, length=20)),
         ('b', IntegerGen(nullable=False, special_cases=[])),
@@ -622,7 +633,7 @@ def test_lead_lag_for_structs_with_arrays(a_b_gen, struct_gen):
             .withColumn('lead_5_c', f.lead('c', 5).over(base_window_spec)) \
             .withColumn('lag_1_c', f.lag('c', 1).over(base_window_spec))
 
-    assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
+    assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
 lead_lag_array_data_gens =\
@@ -690,8 +701,31 @@ def test_multi_types_window_aggs_for_rows(a_b_gen, c_gen):
                 .withColumn('dense_rank_val', f.dense_rank().over(baseWindowSpec)) \
                 .withColumn('percent_rank_val', f.percent_rank().over(baseWindowSpec)) \
                 .withColumn('row_num', f.row_number().over(baseWindowSpec))
-    assert_gpu_and_cpu_are_equal_collect(do_it, conf={'spark.rapids.sql.hasNans': 'false'})
+    assert_gpu_and_cpu_are_equal_collect(do_it)
 
+
+def test_percent_rank_no_part_multiple_batches():
+    data_gen = [('a', long_gen)]
+    # The goal of this is to have multiple batches so we can verify that the code
+    # is working properly, but not so large that it takes forever to run.
+    baseWindowSpec = Window.orderBy('a')
+
+    def do_it(spark):
+        return gen_df(spark, data_gen, length=8000) \
+                .withColumn('percent_rank_val', f.percent_rank().over(baseWindowSpec))
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf = {'spark.rapids.sql.batchSizeBytes': '100'})
+
+def test_percent_rank_single_part_multiple_batches():
+    data_gen = [('a', long_gen)]
+    # The goal of this is to have multiple batches so we can verify that the code
+    # is working properly, but not so large that it takes forever to run.
+    baseWindowSpec = Window.partitionBy('b').orderBy('a')
+
+    def do_it(spark):
+        return gen_df(spark, data_gen, length=8000) \
+                .withColumn('b', f.lit(1)) \
+                .withColumn('percent_rank_val', f.percent_rank().over(baseWindowSpec))
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf = {'spark.rapids.sql.batchSizeBytes': '100'})
 
 @pytest.mark.skipif(is_before_spark_320(), reason="Only in Spark 3.2.0 is IGNORE NULLS supported for lead and lag by Spark")
 @allow_non_gpu('WindowExec', 'Alias', 'WindowExpression', 'Lead', 'Literal', 'WindowSpecDefinition', 'SpecifiedWindowFrame')
@@ -786,6 +820,46 @@ def test_window_aggs_for_ranges_timestamps(data_gen):
         '       range between UNBOUNDED preceding and UNBOUNDED following) as max_c_unbounded '
         'from window_agg_table',
         conf = {'spark.rapids.sql.castFloatToDecimal.enabled': True})
+
+
+# In a distributed setup the order of the partitions returned might be different, so we must ignore the order
+# but small batch sizes can make sort very slow, so do the final order by locally
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_nullable_decimals,
+                                      _grpkey_longs_with_nullable_larger_decimals,
+                                      _grpkey_longs_with_nullable_largest_decimals],
+                         ids=idfn)
+def test_window_aggregations_for_decimal_ranges(data_gen):
+    """
+    Tests for range window aggregations, with DECIMAL order by columns.
+    The table schema used:
+      a: Group By column
+      b: Order By column (decimal)
+      c: Aggregation column (incidentally, also decimal)
+
+    Since this test is for the order-by column type, and not for each specific windowing aggregation,
+    we use COUNT(1) throughout the test, for different window widths and ordering.
+    Some other aggregation functions are thrown in for variety.
+    """
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=2048),
+        "window_agg_table",
+        'SELECT '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b ASC RANGE BETWEEN 10.2345 PRECEDING AND 6.7890 FOLLOWING), '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b ASC), '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b ASC RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b ASC RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING), '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b DESC RANGE BETWEEN 10.2345 PRECEDING AND 6.7890 FOLLOWING), '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b DESC), '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b DESC RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b DESC RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING),'
+        ' COUNT(c) OVER (PARTITION BY a ORDER BY b RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+        ' SUM(c)   OVER (PARTITION BY a ORDER BY b RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+        ' MIN(c)   OVER (PARTITION BY a ORDER BY b RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+        ' MAX(c)   OVER (PARTITION BY a ORDER BY b RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+        ' RANK()   OVER (PARTITION BY a ORDER BY b) '
+        'FROM window_agg_table',
+        conf={})
 
 
 _gen_data_for_collect_list = [
@@ -898,6 +972,32 @@ def test_running_window_function_exec_for_all_aggs():
         from window_collect_table
         ''')
 
+# Test the Databricks WindowExec which combines a WindowExec with a ProjectExec and provides the output
+# fields that we need to handle with an extra GpuProjectExec and we need the input expressions to compute
+# a window function of another window function case
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
+def test_join_sum_window_of_window(data_gen):
+    def do_it(spark):
+        agg_table = gen_df(spark, StructGen([('a_1', LongRangeGen()), ('c', data_gen)], nullable=False))
+        part_table = gen_df(spark, StructGen([('a_2', LongRangeGen()), ('b', byte_gen)], nullable=False))
+        agg_table.createOrReplaceTempView("agg")
+        part_table.createOrReplaceTempView("part")
+        # Note that if we include `c` in the select clause here (the output projection), the bug described
+        # in https://github.com/NVIDIA/spark-rapids/issues/6531 does not manifest
+        return spark.sql("""
+        select
+            b,
+            sum(c) as sum_c,
+            sum(c)/sum(sum(c)) over (partition by b) as ratio_sum,
+            (b + c)/sum(sum(c)) over (partition by b) as ratio_bc
+        from agg, part
+        where a_1 = a_2
+        group by b, c
+        order by b, ratio_sum, ratio_bc""")
+
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
 # Generates some repeated values to test the deduplication of GpuCollectSet.
 # And GpuCollectSet does not yet support struct type.
 _gen_data_for_collect_set = [
@@ -920,6 +1020,28 @@ _gen_data_for_collect_set = [
     ('c_fp_nan', RepeatSeqGen(FloatGen().with_special_case(math.nan, 200.0), length=5)),
 ]
 
+_gen_data_for_collect_set_nested = [
+    ('a', RepeatSeqGen(LongGen(), length=20)),
+    ('b', LongRangeGen()),
+    ('c_int', RepeatSeqGen(IntegerGen(), length=15)),
+    ('c_struct_array_1', RepeatSeqGen(struct_array_gen_no_nans, length=15)),
+    ('c_struct_array_2', RepeatSeqGen(StructGen([
+        ['c0', struct_array_gen_no_nans], ['c1', int_gen]]), length=14)),
+    ('c_array_struct', RepeatSeqGen(ArrayGen(all_basic_struct_gen_no_nan), length=15)),
+    ('c_array_array_bool', RepeatSeqGen(ArrayGen(ArrayGen(BooleanGen())), length=15)),
+    ('c_array_array_int', RepeatSeqGen(ArrayGen(ArrayGen(IntegerGen())), length=15)),
+    ('c_array_array_long', RepeatSeqGen(ArrayGen(ArrayGen(LongGen())), length=15)),
+    ('c_array_array_short', RepeatSeqGen(ArrayGen(ArrayGen(ShortGen())), length=15)),
+    ('c_array_array_date', RepeatSeqGen(ArrayGen(ArrayGen(DateGen())), length=15)),
+    ('c_array_array_timestamp', RepeatSeqGen(ArrayGen(ArrayGen(TimestampGen())), length=15)),
+    ('c_array_array_byte', RepeatSeqGen(ArrayGen(ArrayGen(ByteGen())), length=15)),
+    ('c_array_array_string', RepeatSeqGen(ArrayGen(ArrayGen(StringGen())), length=15)),
+    ('c_array_array_float', RepeatSeqGen(ArrayGen(ArrayGen(FloatGen(no_nans=True))), length=15)),
+    ('c_array_array_double', RepeatSeqGen(ArrayGen(ArrayGen(DoubleGen(no_nans=True))), length=15)),
+    ('c_array_array_decimal_32', RepeatSeqGen(ArrayGen(ArrayGen(DecimalGen(precision=8, scale=3))), length=15)),
+    ('c_array_array_decimal_64', RepeatSeqGen(ArrayGen(ArrayGen(decimal_gen_64bit)), length=15)),
+    ('c_array_array_decimal_128', RepeatSeqGen(ArrayGen(ArrayGen(decimal_gen_128bit)), length=15)),
+]
 
 # SortExec does not support array type, so sort the result locally.
 @ignore_order(local=True)
@@ -976,6 +1098,86 @@ def test_window_aggs_for_rows_collect_set():
             from window_collect_table
         ) t
         ''')
+
+
+# Note, using sort_array() on the CPU, because sort_array() does not yet
+# support sorting certain nested/arbitrary types on the GPU
+# See https://github.com/NVIDIA/spark-rapids/issues/3715
+# and https://github.com/rapidsai/cudf/issues/11222
+@ignore_order(local=True)
+@allow_non_gpu("ProjectExec", "SortArray")
+def test_window_aggs_for_rows_collect_set_nested_array():
+    conf = copy_and_update(_float_conf, {
+        "spark.rapids.sql.castFloatToString.enabled": "true",
+        "spark.rapids.sql.castDecimalToString.enabled": "true",
+        "spark.rapids.sql.expression.SortArray": "false"
+    })
+
+    def do_it(spark):
+        df = gen_df(spark, _gen_data_for_collect_set_nested, length=512)
+        df.createOrReplaceTempView("window_collect_table")
+        df = spark.sql(
+            """select a, b,
+              collect_set(c_struct_array_1) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_struct_array_1, 
+              collect_set(c_struct_array_2) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_struct_array_2,
+              collect_set(c_array_struct) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_struct,
+              collect_set(c_array_array_bool) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_bool,
+              collect_set(c_array_array_int) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_int,
+              collect_set(c_array_array_long) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_long,
+              collect_set(c_array_array_short) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_short,
+              collect_set(c_array_array_date) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_date,
+              collect_set(c_array_array_timestamp) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_ts,
+              collect_set(c_array_array_byte) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_byte,
+              collect_set(c_array_array_string) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_str,
+              collect_set(c_array_array_float) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_float,
+              collect_set(c_array_array_double) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_double,
+              collect_set(c_array_array_decimal_32) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_decimal_32,
+              collect_set(c_array_array_decimal_64) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_decimal_64,
+              collect_set(c_array_array_decimal_128) over
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_array_array_decimal_128
+        from window_collect_table
+        """)
+        df = spark.createDataFrame(df.rdd, schema=df.schema)
+        # pull out the rdd and schema and create a new dataframe to run SortArray
+        # to handle Databricks 10.4+ optimization that moves SortArray from ProjectExec
+        # to ObjectHashAggregateExec
+        df.createOrReplaceTempView("window_collect_table_2")
+        return spark.sql("""select a, b,
+              sort_array(cc_struct_array_1),
+              sort_array(cc_struct_array_2),
+              sort_array(cc_array_struct),
+              sort_array(cc_array_array_bool),
+              sort_array(cc_array_array_int),
+              sort_array(cc_array_array_long),
+              sort_array(cc_array_array_short),
+              sort_array(cc_array_array_date),
+              sort_array(cc_array_array_ts),
+              sort_array(cc_array_array_byte),
+              sort_array(cc_array_array_str),
+              sort_array(cc_array_array_float),
+              sort_array(cc_array_array_double),
+              sort_array(cc_array_array_decimal_32),
+              sort_array(cc_array_array_decimal_64),
+              sort_array(cc_array_array_decimal_128)
+        from window_collect_table_2
+        """)
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
+
 
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally

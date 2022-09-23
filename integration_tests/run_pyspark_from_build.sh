@@ -25,6 +25,7 @@ then
     >&2 echo "SPARK_HOME IS NOT SET CANNOT RUN PYTHON INTEGRATION TESTS..."
 else
     echo "WILL RUN TESTS WITH SPARK_HOME: ${SPARK_HOME}"
+    [[ ! -x "$(command -v zip)" ]] && { echo "fail to find zip command in $PATH"; exit 1; }
     # Spark 3.1.1 includes https://github.com/apache/spark/pull/31540
     # which helps with spurious task failures as observed in our tests. If you are running
     # Spark versions before 3.1.1, this sets the spark.max.taskFailures to 4 to allow for
@@ -87,8 +88,12 @@ else
         AVRO_JARS=""
     fi
 
-    # Only 3 jars: dist.jar integration-test.jar avro.jar
-    ALL_JARS="$PLUGIN_JARS $TEST_JARS $AVRO_JARS $PARQUET_HADOOP_TESTS"
+    # ALL_JARS includes dist.jar integration-test.jar avro.jar parquet.jar if they exist
+    # Remove non-existing paths and canonicalize the paths including get rid of links and `..`
+    ALL_JARS=$(readlink -e $PLUGIN_JARS $TEST_JARS $AVRO_JARS $PARQUET_HADOOP_TESTS || true)
+    # `:` separated jars
+    ALL_JARS="${ALL_JARS//$'\n'/:}"
+
     echo "AND PLUGIN JARS: $ALL_JARS"
     if [[ "${TEST}" != "" ]];
     then
@@ -114,22 +119,28 @@ else
         # free memory. We use free memory to try and avoid issues if the GPU also is working
         # on graphics, which happens with many workstation GPUs. We also reserve 2 GiB for
         # CUDA/CUDF overhead which can be used because of JIT or launching large kernels.
-       
+
         # If you need to increase the amount of GPU memory you need to change it here and
         # below where the processes are launched.
         GPU_MEM_PARALLEL=`nvidia-smi --query-gpu=memory.free --format=csv,noheader | awk '{if (MAX < $1){ MAX = $1}} END {print int((MAX - 2 * 1024) / ((1.5 * 1024) + 750))}'`
-        CPU_CORES=`nproc` 
+        CPU_CORES=`nproc`
         HOST_MEM_PARALLEL=`cat /proc/meminfo | grep MemAvailable | awk '{print int($2 / (5 * 1024))}'`
         TMP_PARALLEL=$(( $GPU_MEM_PARALLEL > $CPU_CORES ? $CPU_CORES : $GPU_MEM_PARALLEL ))
         TMP_PARALLEL=$(( $TMP_PARALLEL > $HOST_MEM_PARALLEL ? $HOST_MEM_PARALLEL : $TMP_PARALLEL ))
-        if [[ $TMP_PARALLEL -gt 1 ]];
-        then
-            # We subtract 1 from the parallel number because xdist launches a process to
-            # control and monitor the other processes. It takes up one available parallel
-            # slot, even if it is not truly using all of the resources we give it.
-            TEST_PARALLEL=$(( $TMP_PARALLEL - 1 ))
-        else
+
+        # Account for intra-Spark parallelism
+        numGpuJVM=1
+        if [[ "$NUM_LOCAL_EXECS" != "" ]]; then
+            numGpuJVM=$NUM_LOCAL_EXECS
+        elif [[ "$PYSP_TEST_spark_cores_max" != "" && "$PYSP_TEST_spark_executor_cores" != "" ]]; then
+            numGpuJVM=$(( $PYSP_TEST_spark_cores_max /  $PYSP_TEST_spark_executor_cores ))
+        fi
+        TMP_PARALLEL=$(( $TMP_PARALLEL / $numGpuJVM ))
+
+        if  (( $TMP_PARALLEL <= 1 )); then
             TEST_PARALLEL=1
+        else
+            TEST_PARALLEL=$TMP_PARALLEL
         fi
 
         echo "AUTO DETECTED PARALLELISM OF $TEST_PARALLEL"
@@ -157,8 +168,8 @@ else
 
     if [[ ${TEST_PARALLEL} -lt 2 ]];
     then
-        # With xdist 0 and 1 are the same parallelsm but
-        # 0 is more effecient
+        # With xdist 0 and 1 are the same parallelism but
+        # 0 is more efficient
         TEST_PARALLEL_OPTS=()
     else
         TEST_PARALLEL_OPTS=("-n" "$TEST_PARALLEL")
@@ -177,8 +188,9 @@ else
       "$LOCAL_ROOTDIR"
       "$LOCAL_ROOTDIR"/src/main/python)
 
+    REPORT_CHARS=${REPORT_CHARS:="fE"} # default as (f)ailed, (E)rror
     TEST_COMMON_OPTS=(-v
-          -rfExXs
+          -r"$REPORT_CHARS"
           "$TEST_TAGS"
           --std_input_path="$INPUT_PATH"/src/test/resources
           --color=yes
@@ -192,11 +204,18 @@ else
     MB_PER_EXEC=${MB_PER_EXEC:-1024}
     CORES_PER_EXEC=${CORES_PER_EXEC:-1}
 
-    SPARK_TASK_MAXFAILURES=1
+    SPARK_TASK_MAXFAILURES=${SPARK_TASK_MAXFAILURES:-1}
     [[ "$VERSION_STRING" < "3.1.1" ]] && SPARK_TASK_MAXFAILURES=4
 
-    export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS// /:}"
-    export PYSP_TEST_spark_executor_extraClassPath="${ALL_JARS// /:}"
+    if [[ "${PYSP_TEST_spark_shuffle_manager}" =~ "RapidsShuffleManager" ]]; then
+        # If specified shuffle manager, set `extraClassPath` due to issue https://github.com/NVIDIA/spark-rapids/issues/5796
+        # Remove this line if the issue is fixed
+        export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS}"
+        export PYSP_TEST_spark_executor_extraClassPath="${ALL_JARS}"
+    else
+        export PYSP_TEST_spark_jars="${ALL_JARS//:/,}"
+    fi
+
     export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=UTC $COVERAGE_SUBMIT_FLAGS"
     export PYSP_TEST_spark_executor_extraJavaOptions='-ea -Duser.timezone=UTC'
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
@@ -208,6 +227,7 @@ else
     # Not the default 2G but should be large enough for a single batch for all data (we found
     # 200 MiB being allocated by a single test at most, and we typically have 4 tasks.
     export PYSP_TEST_spark_rapids_sql_batchSizeBytes='100m'
+    export PYSP_TEST_spark_rapids_sql_regexp_maxStateMemoryBytes='300m'
 
     # Extract Databricks version from deployed configs. This is set automatically on Databricks
     # notebooks but not when running Spark manually.
@@ -234,7 +254,7 @@ else
     else
       # If a master is not specified, use "local[cores, $SPARK_TASK_MAXFAILURES]"
       if [ -z "${PYSP_TEST_spark_master}" ] && [[ "$SPARK_SUBMIT_FLAGS" != *"--master"* ]]; then
-        CPU_CORES=`nproc` 
+        CPU_CORES=`nproc`
         # We are limiting the number of tasks in local mode to 4 because it helps to reduce the
         # total memory usage, especially host memory usage because when copying data to the GPU
         # buffers as large as batchSizeBytes can be allocated, and the fewer of them we have the better.
@@ -243,9 +263,16 @@ else
       fi
     fi
 
-    # If you want to change the amount of GPU memory allocated you have to change it here 
+    # If you want to change the amount of GPU memory allocated you have to change it here
     # and where TEST_PARALLEL is calculated
-    export PYSP_TEST_spark_rapids_memory_gpu_allocSize='1536m'
+    if [[ -n "${PYSP_TEST_spark_rapids_memory_gpu_allocSize}" ]]; then
+       >&2 echo "#### WARNING: using externally set" \
+                "PYSP_TEST_spark_rapids_memory_gpu_allocSize" \
+                "${PYSP_TEST_spark_rapids_memory_gpu_allocSize}." \
+                "If needed permanently in CI please file an issue to accommodate" \
+                "for new GPU memory requirements ####"
+    fi
+    export PYSP_TEST_spark_rapids_memory_gpu_allocSize=${PYSP_TEST_spark_rapids_memory_gpu_allocSize:-'1536m'}
 
     if ((${#TEST_PARALLEL_OPTS[@]} > 0));
     then
@@ -253,10 +280,39 @@ else
     else
         # We set the GPU memory size to be a constant value even if only running with a parallelism of 1
         # because it helps us have consistent test runs.
-        exec "$SPARK_HOME"/bin/spark-submit --jars "${ALL_JARS// /,}" \
-            --driver-java-options "$PYSP_TEST_spark_driver_extraJavaOptions" \
+        jarOpts=()
+        if [[ -n "$PYSP_TEST_spark_jars" ]]; then
+            jarOpts+=(--jars "${PYSP_TEST_spark_jars}")
+        fi
+
+        if [[ -n "$PYSP_TEST_spark_jars_packages" ]]; then
+            jarOpts+=(--packages "${PYSP_TEST_spark_jars_packages}")
+        fi
+
+        if [[ -n "$PYSP_TEST_spark_jars_repositories" ]]; then
+            jarOpts+=(--repositories "${PYSP_TEST_spark_jars_repositories}")
+        fi
+
+        if [[ -n "$PYSP_TEST_spark_driver_extraClassPath" ]]; then
+            jarOpts+=(--driver-class-path "${PYSP_TEST_spark_driver_extraClassPath}")
+        fi
+
+        driverJavaOpts="$PYSP_TEST_spark_driver_extraJavaOptions"
+        gpuAllocSize="$PYSP_TEST_spark_rapids_memory_gpu_allocSize"
+
+        # avoid double processing of variables passed to spark in
+        # spark_conf_init
+        unset PYSP_TEST_spark_driver_extraClassPath
+        unset PYSP_TEST_spark_driver_extraJavaOptions
+        unset PYSP_TEST_spark_jars
+        unset PYSP_TEST_spark_jars_packages
+        unset PYSP_TEST_spark_jars_repositories
+        unset PYSP_TEST_spark_rapids_memory_gpu_allocSize
+
+        exec "$SPARK_HOME"/bin/spark-submit "${jarOpts[@]}" \
+            --driver-java-options "$driverJavaOpts" \
             $SPARK_SUBMIT_FLAGS \
-            --conf 'spark.rapids.memory.gpu.allocSize='"$PYSP_TEST_spark_rapids_memory_gpu_allocSize" \
+            --conf 'spark.rapids.memory.gpu.allocSize='"$gpuAllocSize" \
             "${RUN_TESTS_COMMAND[@]}" "${TEST_COMMON_OPTS[@]}"
     fi
 fi

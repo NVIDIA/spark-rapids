@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.Locale
+import java.util.{Locale, Optional}
 
 import scala.collection.JavaConverters._
 
@@ -25,6 +25,7 @@ import com.nvidia.spark.rapids.shims.ParquetSchemaClipShims
 import org.apache.parquet.schema._
 import org.apache.parquet.schema.Type.Repetition
 
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 
@@ -344,7 +345,7 @@ object ParquetSchemaUtils extends Arm {
     sparkType match {
       case t: ArrayType =>
         // Only clips array types with nested type as element type.
-        clipSparkArrayType(t, parquetType.asGroupType(), caseSensitive, useFieldId)
+        clipSparkArrayType(t, parquetType, caseSensitive, useFieldId)
 
       case t: MapType =>
         clipSparkMapType(t, parquetType.asGroupType(), caseSensitive, useFieldId)
@@ -359,18 +360,20 @@ object ParquetSchemaUtils extends Arm {
 
   private def clipSparkArrayType(
       sparkType: ArrayType,
-      parquetList: GroupType,
+      parquetList: Type,
       caseSensitive: Boolean,
       useFieldId: Boolean): DataType = {
     val elementType = sparkType.elementType
     // Unannotated repeated group should be interpreted as required list of required element, so
     // list element type is just the group itself.
     // TODO: When we drop Spark 3.1.x, this should use Parquet's LogicalTypeAnnotation
+    //       Note that the original type is not null for leaf nodes.
     //if (parquetList.getLogicalTypeAnnotation == null &&
-    if (parquetList.getOriginalType == null &&
+    val newSparkType = if (parquetList.getOriginalType == null &&
         parquetList.isRepetition(Repetition.REPEATED)) {
       clipSparkType(elementType, parquetList, caseSensitive, useFieldId)
     } else {
+      val parquetListGroup = parquetList.asGroupType()
       assert(
         // TODO: When we drop Spark 3.1.x, this should use Parquet's LogicalTypeAnnotation
         //parquetList.getLogicalTypeAnnotation.isInstanceOf[ListLogicalTypeAnnotation],
@@ -380,14 +383,15 @@ object ParquetSchemaUtils extends Arm {
             "ListLogicalTypeAnnotation: " + parquetList.toString)
 
       assert(
-        parquetList.getFieldCount == 1 && parquetList.getType(0).isRepetition(Repetition.REPEATED),
+        parquetListGroup.getFieldCount == 1 &&
+            parquetListGroup.getType(0).isRepetition(Repetition.REPEATED),
         "Invalid Parquet schema. " +
             "LIST-annotated group should only have exactly one repeated field: " +
             parquetList)
 
-      val repeated = parquetList.getType(0)
-      val newSparkType = if (repeated.isPrimitive) {
-        clipSparkType(elementType, parquetList.getType(0), caseSensitive, useFieldId)
+      val repeated = parquetListGroup.getType(0)
+      if (repeated.isPrimitive) {
+        clipSparkType(elementType, parquetListGroup.getType(0), caseSensitive, useFieldId)
       } else {
         val repeatedGroup = repeated.asGroupType()
 
@@ -407,9 +411,9 @@ object ParquetSchemaUtils extends Arm {
         }
         clipSparkType(elementType, parquetElementType, caseSensitive, useFieldId)
       }
-
-      sparkType.copy(elementType = newSparkType)
     }
+
+    sparkType.copy(elementType = newSparkType)
   }
 
   private def clipSparkMapType(
@@ -510,7 +514,8 @@ object ParquetSchemaUtils extends Arm {
     }
     SchemaUtils.evolveSchemaIfNeededAndClose(table, fileSparkSchema, sparkSchema,
       caseSensitive, Some(evolveSchemaCasts),
-      existsUnsignedType(fileSchema.asGroupType()))
+      existsUnsignedType(fileSchema.asGroupType()) ||
+          TrampolineUtil.dataTypeExistsRecursively(sparkSchema, _.isInstanceOf[BinaryType]))
   }
 
   /**
@@ -567,8 +572,23 @@ object ParquetSchemaUtils extends Arm {
       cv.castTo(DType.create(GpuColumnVector.getNonNestedRapidsType(dt).getTypeId))
     } else if (needInt32Downcast(cv, dt)) {
       cv.castTo(DType.create(GpuColumnVector.getNonNestedRapidsType(dt).getTypeId))
+    } else if (DType.STRING.equals(cv.getType) && dt == BinaryType) {
+      // Ideally we would bitCast the STRING to a LIST, but that does not work.
+      // Instead we are going to have to pull apart the string and put it back together
+      // as a list.
+
+      val dataBuf = cv.getData
+      withResource(new ColumnView(DType.INT8, dataBuf.getLength, Optional.of(0L),
+        dataBuf, null)) { data =>
+        withResource(new ColumnView(DType.LIST, cv.getRowCount,
+          Optional.of[java.lang.Long](cv.getNullCount),
+          cv.getValid, cv.getOffsets, Array(data))) { everything =>
+          everything.copyToColumnVector()
+        }
+      }
     } else {
-      throw new IllegalStateException("Logical error: no valid casts are found")
+      throw new IllegalStateException("Logical error: no valid casts are found " +
+          s"${cv.getType} to $dt")
     }
   }
 }

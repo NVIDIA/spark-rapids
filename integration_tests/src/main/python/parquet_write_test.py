@@ -51,12 +51,14 @@ parquet_basic_gen =[byte_gen, short_gen, int_gen, long_gen, float_gen, double_ge
                     string_gen, boolean_gen, date_gen,
                     # we are limiting TimestampGen to avoid overflowing the INT96 value
                     # see https://github.com/rapidsai/cudf/issues/8070
-                    limited_timestamp()]
+                    limited_timestamp(), binary_gen]
 
 parquet_basic_map_gens = [MapGen(f(nullable=False), f()) for f in [
     BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DateGen,
     limited_timestamp]] + [simple_string_to_string_map_gen,
-                           MapGen(DecimalGen(20, 2, nullable=False), decimal_gen_128bit)]
+                           MapGen(DecimalGen(20, 2, nullable=False), decimal_gen_128bit),
+                           # python is not happy with binary values being keys of a map
+                           MapGen(StringGen("a{1,5}", nullable=False), binary_gen)]
 
 parquet_struct_gen_no_maps = [
     StructGen([['child' + str(ind), sub_gen] for ind, sub_gen in enumerate(parquet_basic_gen)]),
@@ -81,7 +83,7 @@ parquet_map_gens_sample = parquet_basic_map_gens + [MapGen(StringGen(pattern='ke
 parquet_map_gens = parquet_map_gens_sample + [
     MapGen(StructGen([['child0', StringGen()], ['child1', StringGen()]], nullable=False), FloatGen()),
     MapGen(StructGen([['child0', StringGen(nullable=True)]], nullable=False), StringGen())]
-parquet_write_gens_list = [parquet_basic_gen, decimal_gens] +  [ [single_gen] for single_gen in parquet_struct_gen + parquet_array_gen + parquet_map_gens]
+parquet_write_gens_list = [[binary_gen], parquet_basic_gen, decimal_gens] +  [ [single_gen] for single_gen in parquet_struct_gen + parquet_array_gen + parquet_map_gens]
 parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
@@ -283,7 +285,7 @@ def test_parquet_write_legacy_fallback(spark_tmp_path, ts_write, ts_rebase, spar
 @pytest.mark.parametrize('write_options', [{"parquet.encryption.footer.key": "k1"},
                                            {"parquet.encryption.column.keys": "k2:a"},
                                            {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
-def test_parquet_write_encryption_fallback(spark_tmp_path, spark_tmp_table_factory, write_options):
+def test_parquet_write_encryption_option_fallback(spark_tmp_path, spark_tmp_table_factory, write_options):
     def write_func(spark, path):
         writer = unary_op_df(spark, gen).coalesce(1).write
         for key in write_options:
@@ -296,6 +298,43 @@ def test_parquet_write_encryption_fallback(spark_tmp_path, spark_tmp_table_facto
         lambda spark, path: spark.read.parquet(path),
         data_path,
         'DataWritingCommandExec')
+
+@allow_non_gpu("DataWritingCommandExec")
+@pytest.mark.parametrize("write_options", [{"parquet.encryption.footer.key": "k1"},
+                                           {"parquet.encryption.column.keys": "k2:a"},
+                                           {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
+def test_parquet_write_encryption_runtimeconfig_fallback(spark_tmp_path, write_options):
+    gen = IntegerGen()
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    assert_gpu_fallback_write(
+        lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        "DataWritingCommandExec",
+        conf=write_options)
+
+@allow_non_gpu("DataWritingCommandExec")
+@pytest.mark.parametrize("write_options", [{"parquet.encryption.footer.key": "k1"},
+                                           {"parquet.encryption.column.keys": "k2:a"},
+                                           {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
+def test_parquet_write_encryption_hadoopconfig_fallback(spark_tmp_path, write_options):
+    gen = IntegerGen()
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    def setup_hadoop_confs(spark):
+        for k, v in write_options.items():
+            spark.sparkContext._jsc.hadoopConfiguration().set(k, v)
+    def reset_hadoop_confs(spark):
+        for k in write_options.keys():
+            spark.sparkContext._jsc.hadoopConfiguration().unset(k)
+    try:
+        with_cpu_session(setup_hadoop_confs)
+        assert_gpu_fallback_write(
+            lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.parquet(path),
+            lambda spark, path: spark.read.parquet(path),
+            data_path,
+            "DataWritingCommandExec")
+    finally:
+        with_cpu_session(reset_hadoop_confs)
 
 @allow_non_gpu('DataWritingCommandExec')
 # note that others should fail as well but requires you to load the libraries for them

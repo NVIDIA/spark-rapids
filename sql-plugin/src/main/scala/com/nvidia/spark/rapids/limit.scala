@@ -58,24 +58,60 @@ trait GpuBaseLimitExec extends LimitExec with GpuExec with ShimUnaryExecNode {
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    sliceRDD(child.executeColumnar(), limit, 0)
+  }
+
+  def sliceRDD(rdd: RDD[ColumnarBatch], limit: Int, offset: Int): RDD[ColumnarBatch] = {
+    val opTime = gpuLongMetric(OP_TIME)
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val opTime = gpuLongMetric(OP_TIME)
-
-    val crdd = child.executeColumnar()
-    crdd.mapPartitions { cbIter =>
+    rdd.mapPartitions { iter =>
       new Iterator[ColumnarBatch] {
-        private var remainingLimit = limit
+        private var remainingLimit = limit - offset
+        private var remainingOffset = offset
 
-        override def hasNext: Boolean = remainingLimit > 0 && cbIter.hasNext
+        override def hasNext: Boolean = (limit == -1 || remainingLimit > 0) && iter.hasNext
 
         override def next(): ColumnarBatch = {
-          val batch = cbIter.next()
-          withResource(new NvtxWithMetrics("limit", NvtxColor.ORANGE, opTime)) { _ =>
-            val result = if (batch.numRows() > remainingLimit) {
-              sliceBatch(batch)
+          if (!this.hasNext) {
+            throw new NoSuchElementException("Next on empty iterator")
+          }
+
+          var batch = iter.next()
+          val numCols = batch.numCols()
+
+          // In each partition, we need to skip `offset` rows
+          while (batch != null && remainingOffset >= batch.numRows()) {
+            remainingOffset -= batch.numRows()
+            batch.safeClose()
+            batch = if (this.hasNext) { iter.next() } else { null }
+          }
+
+          // If the last batch is null, then we have offset >= numRows in this partition.
+          // In such case, we should return an empty batch
+          if (batch == null || batch.numRows() == 0) {
+            return new ColumnarBatch(new ArrayBuffer[GpuColumnVector](numCols).toArray, 0)
+          }
+
+          // Here 0 <= remainingOffset < batch.numRow(), we need to get batch[remainingOffset:]
+          withResource(new NvtxWithMetrics("limit and offset", NvtxColor.ORANGE, opTime)) { _ =>
+            var result: ColumnarBatch = null
+            // limit < 0 (limit == -1) denotes there is no limitation, so when
+            // (remainingOffset == 0 && (remainingLimit >= batch.numRows() || limit < 0)) is true,
+            // we can take this batch completely
+            if (remainingOffset == 0 && (remainingLimit >= batch.numRows() || limit < 0)) {
+              result = batch
             } else {
-              batch
+              // otherwise, we need to slice batch with (remainingOffset, remainingLimit).
+              // And remainingOffset > 0 will be used only once, for the latter batches in this
+              // partition, set remainingOffset = 0
+              val length = if (remainingLimit >= batch.numRows() || limit < 0) {
+                batch.numRows()
+              } else {
+                remainingLimit
+              }
+              result = sliceBatchWithOffset(batch, remainingOffset, length)
+              remainingOffset = 0
             }
             numOutputBatches += 1
             numOutputRows += result.numRows()
@@ -84,35 +120,23 @@ trait GpuBaseLimitExec extends LimitExec with GpuExec with ShimUnaryExecNode {
           }
         }
 
-        def sliceBatch(batch: ColumnarBatch): ColumnarBatch = {
-          val numColumns = batch.numCols()
-          val resultCVs = new ArrayBuffer[GpuColumnVector](numColumns)
-          var exception: Throwable = null
-          var table: Table = null
-          try {
-            if (numColumns > 0) {
-              table = GpuColumnVector.from(batch)
-              (0 until numColumns).zip(output).foreach{ case (i, attr) =>
-                val subVector = table.getColumn(i).subVector(0, remainingLimit)
-                assert(subVector != null)
-                resultCVs.append(GpuColumnVector.from(subVector, attr.dataType))
-                assert(subVector.getRowCount == remainingLimit,
-                  s"result rowcount ${subVector.getRowCount} is not equal to the " +
-                    s"remainingLimit $remainingLimit")
+        def sliceBatchWithOffset(batch: ColumnarBatch, offset: Int, limit: Int): ColumnarBatch = {
+          val numCols = batch.numCols()
+          val end = Math.min(offset + limit, batch.numRows())
+          withResource(batch) { _ =>
+            // result buffer need to be closed when there is an exception
+            closeOnExcept(new ArrayBuffer[GpuColumnVector](numCols)) { result =>
+              if (numCols > 0) {
+                withResource(GpuColumnVector.from(batch)) { table =>
+                  (0 until numCols).zip(output).foreach{ case (i, attr) =>
+                    val subVector = table.getColumn(i).subVector(offset, end)
+                    assert(subVector != null)
+                    result.append(GpuColumnVector.from(subVector, attr.dataType))
+                  }
+                }
               }
+              new ColumnarBatch(result.toArray, end - offset)
             }
-            new ColumnarBatch(resultCVs.toArray, remainingLimit)
-          } catch {
-            case e: Throwable => exception = e
-              throw e
-          } finally {
-            if (exception != null) {
-              resultCVs.foreach(gpuVector => gpuVector.safeClose(exception))
-            }
-            if (table != null) {
-              table.safeClose(exception)
-            }
-            batch.safeClose(exception)
           }
         }
       }
@@ -128,8 +152,15 @@ case class GpuLocalLimitExec(limit: Int, child: SparkPlan) extends GpuBaseLimitE
 /**
  * Take the first `limit` elements of the child's single output partition.
  */
-case class GpuGlobalLimitExec(limit: Int, child: SparkPlan, offset: Int) extends GpuBaseLimitExec {
+case class GpuGlobalLimitExec(limit: Int = -1, child: SparkPlan,
+                              offset: Int = 0) extends GpuBaseLimitExec {
+  // In CPU code of spark, there is an assertion 'limit >= 0 || (limit == -1 && offset > 0)'.
+
   override def requiredChildDistribution: List[Distribution] = AllTuples :: Nil
+
+  override def doExecuteColumnar(): RDD[ColumnarBatch]  = {
+    super.sliceRDD(child.executeColumnar(), limit, offset)
+  }
 }
 
 class GpuCollectLimitMeta(

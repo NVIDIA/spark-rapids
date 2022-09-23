@@ -160,9 +160,9 @@ def test_union_by_name(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', [
-    pytest.param([('basic' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens)]),
+    pytest.param([('basic' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens + [binary_gen])]),
     pytest.param([('struct' + str(i), gen) for i, gen in enumerate(struct_gens_sample)]),
-    pytest.param([('array' + str(i), gen) for i, gen in enumerate(array_gens_sample)]),
+    pytest.param([('array' + str(i), gen) for i, gen in enumerate(array_gens_sample + [ArrayGen(BinaryGen(max_length=5), max_length=5)])]),
     pytest.param([('map' + str(i), gen) for i, gen in enumerate(map_gens_sample)]),
 ], ids=idfn)
 def test_coalesce_types(data_gen):
@@ -173,12 +173,12 @@ def test_coalesce_types(data_gen):
 @pytest.mark.parametrize('length', [0, 2048, 4096], ids=idfn)
 def test_coalesce_df(num_parts, length):
     #This should change eventually to be more than just the basic gens
-    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens)]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens + [binary_gen])]
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, gen_list, length=length).coalesce(num_parts))
 
 @pytest.mark.parametrize('data_gen', [
-    pytest.param([('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens)]),
+    pytest.param([('_c' + str(i), gen) for i, gen in enumerate(all_basic_gens + decimal_gens + [binary_gen])]),
     pytest.param([('s', StructGen([['child0', all_basic_struct_gen]]))]),
     pytest.param([('a', ArrayGen(string_gen))]),
     pytest.param([('m', simple_string_to_string_map_gen)]),
@@ -214,10 +214,23 @@ def test_round_robin_sort_fallback(data_gen):
             lambda spark : gen_df(spark, data_gen).withColumn('extra', lit(1)).repartition(13),
             'ShuffleExchangeExec')
 
+@allow_non_gpu("ProjectExec", "ShuffleExchangeExec")
+@ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
+@pytest.mark.parametrize('num_parts', [2, 10, 17, 19, 32], ids=idfn)
+@pytest.mark.parametrize('gen', [([('ag', ArrayGen(StructGen([('b1', long_gen)])))], ['ag'])], ids=idfn)
+def test_hash_repartition_exact_fallback(gen, num_parts):
+    data_gen = gen[0]
+    part_on = gen[1]
+    assert_gpu_fallback_collect(
+        lambda spark : gen_df(spark, data_gen, length=1024) \
+            .repartition(num_parts, *part_on) \
+            .withColumn('id', f.spark_partition_id()) \
+            .selectExpr('*'), "ShuffleExchangeExec")
+
 @ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
 @pytest.mark.parametrize('num_parts', [1, 2, 10, 17, 19, 32], ids=idfn)
 @pytest.mark.parametrize('gen', [
-    ([('a', boolean_gen)], ['a']), 
+    ([('a', boolean_gen)], ['a']),
     ([('a', byte_gen)], ['a']), 
     ([('a', short_gen)], ['a']),
     ([('a', int_gen)], ['a']),

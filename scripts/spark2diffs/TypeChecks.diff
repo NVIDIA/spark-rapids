@@ -6,91 +6,104 @@
 > import ai.rapids.cudf.DType
 24d24
 < import org.apache.spark.{SPARK_BUILD_USER, SPARK_VERSION}
-171c171
+173c173
 <     private val maxAllowedDecimalPrecision: Int = GpuOverrides.DECIMAL64_MAX_PRECISION,
 ---
 >     private val maxAllowedDecimalPrecision: Int = DType.DECIMAL64_MAX_PRECISION,
-295c295
+297c297
 <       meta: RapidsMeta[_, _],
 ---
 >       meta: RapidsMeta[_, _, _],
-611c611
+615c615
 <   val DECIMAL_64: TypeSig = decimal(GpuOverrides.DECIMAL64_MAX_PRECISION)
 ---
 >   val DECIMAL_64: TypeSig = decimal(DType.DECIMAL64_MAX_PRECISION)
-618c618
+622c622
 <   val DECIMAL_128: TypeSig = decimal(GpuOverrides.DECIMAL128_MAX_PRECISION)
 ---
 >   val DECIMAL_128: TypeSig = decimal(DType.DECIMAL128_MAX_PRECISION)
-763c763
+767c767
 <   def tag(meta: RapidsMeta[_, _]): Unit
 ---
 >   def tag(meta: RapidsMeta[_, _, _]): Unit
-776c776
+780c780
 <     meta: RapidsMeta[_, _],
 ---
 >     meta: RapidsMeta[_, _, _],
-833c833
+804,814d803
+<   // Spark 2.X doesn't have getZoneId - copy it here
+<   private def getZoneId(timeZoneId: String): ZoneId = {
+<     val formattedZoneId = timeZoneId
+<       // To support the (+|-)h:mm format because it was supported before Spark 3.0.
+<       .replaceFirst("(\\+|\\-)(\\d):", "$10$2:")
+<       // To support the (+|-)hh:m format because it was supported before Spark 3.0.
+<       .replaceFirst("(\\+|\\-)(\\d\\d):(\\d)$", "$1$2:0$3")
+< 
+<     ZoneId.of(formattedZoneId, ZoneId.SHORT_IDS)
+<   }
+< 
+816,817c805
+<     // Spark 2.X doesn't have getZoneId
+<     val zoneId = getZoneId(zoneIdString)
+---
+>     val zoneId = DateTimeUtils.getZoneId(zoneIdString)
+854c842
 <   override def tag(rapidsMeta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(rapidsMeta: RapidsMeta[_, _, _]): Unit = {
-837c837
+858c846
 <   private[this] def tagBase(rapidsMeta: RapidsMeta[_, _], willNotWork: String => Unit): Unit = {
 ---
 >   private[this] def tagBase(rapidsMeta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
-895c895
+916c904
 <   def tag(meta: RapidsMeta[_, _],
 ---
 >   def tag(meta: RapidsMeta[_, _, _],
-906c906
+927c915
 <   override def tag(meta: RapidsMeta[_, _]): Unit =
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit =
-932c932
+953c941
 <   def tag(meta: RapidsMeta[_, _],
 ---
 >   def tag(meta: RapidsMeta[_, _, _],
-953c953
+974c962
 <   override def tag(rapidsMeta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(rapidsMeta: RapidsMeta[_, _, _]): Unit = {
-1028c1028
+1049c1037
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1080c1080
+1101c1089
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1123c1123
+1144c1132
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1173c1173
+1194c1182
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1219c1219
+1240c1228
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1255c1255
+1276c1264
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1306c1306
-<   val sparkIntegralSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + STRING +
----
->   val sparkIntegralSig: TypeSig = cpuNumeric + BOOLEAN + TIMESTAMP + STRING + BINARY +
-1409c1409
+1430c1418
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1419c1419
+1440c1428
 <   private[this] def tagBase(meta: RapidsMeta[_, _], willNotWork: String => Unit): Unit = {
 ---
 >   private[this] def tagBase(meta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
-1754,1762d1753
+1775,1783d1762
 <   def getSparkVersion: String = {
 <     // hack for databricks, try to find something more reliable?
 <     if (SPARK_BUILD_USER.equals("Databricks")) {
@@ -100,27 +113,27 @@
 <     }
 <   }
 < 
-1777c1768
+1798c1777
 <     println(s"against version ${getSparkVersion} of Spark. Most of this should still")
 ---
 >     println(s"against version ${ShimLoader.getSparkVersion} of Spark. Most of this should still")
-1885c1876
+1906c1885
 <         val allData = allSupportedTypes.toList.map { t =>
 ---
 >         val allData = allSupportedTypes.map { t =>
-1968c1959
+1989c1968
 <         val allData = allSupportedTypes.toList.map { t =>
 ---
 >         val allData = allSupportedTypes.map { t =>
-2072c2063
+2093c2072
 <         val allData = allSupportedTypes.toList.map { t =>
 ---
 >         val allData = allSupportedTypes.map { t =>
-2268d2258
+2294d2272
 <   /*
-2344d2333
+2370d2347
 <   */
-2348,2349c2337,2338
+2374,2375c2351,2352
 <       // case a if a.equals("execs") => outputSupportedExecs()
 <       // case expr if expr.equals("exprs") => outputSupportedExpressions()
 ---

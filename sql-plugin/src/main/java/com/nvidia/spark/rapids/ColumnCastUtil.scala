@@ -22,7 +22,7 @@ import scala.collection.mutable.{ArrayBuffer, ArrayBuilder}
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType}
 
-import org.apache.spark.sql.types.{ArrayType, DataType, StructType, MapType, StructField}
+import org.apache.spark.sql.types.{ArrayType, BinaryType, ByteType, DataType, MapType, StructField, StructType}
 
 /**
  * This class casts a column to another column if the predicate passed resolves to true.
@@ -43,16 +43,17 @@ object ColumnCastUtil extends Arm {
    * everything in the returned collection of AutoCloseable values.
    *
    * @param cv the view to be updated
+   * @param dt the Spark's data type of the input view (if applicable)
    * @param convert the partial function used to convert the data. If this matches and returns
    *                a updated view this function takes ownership of that view.
    * @return None if there were no changes to the view or the updated view along with anything else
    *         that needs to be closed.
    */
-  def deepTransformView(cv: ColumnView)
-      (convert: PartialFunction[ColumnView, ColumnView]):
+  def deepTransformView(cv: ColumnView, dt: Option[DataType] = None)
+      (convert: PartialFunction[(ColumnView, Option[DataType]), ColumnView]):
   (Option[ColumnView], ArrayBuffer[AutoCloseable]) = {
     closeOnExcept(ArrayBuffer.empty[AutoCloseable]) { needsClosing =>
-      val updated = convert.lift(cv)
+      val updated = convert.lift((cv, dt))
       needsClosing ++= updated
 
       updated match {
@@ -63,12 +64,24 @@ object ColumnCastUtil extends Arm {
           cv.getType.getTypeId match {
             case DType.DTypeEnum.STRUCT =>
               withResource(ArrayBuffer.empty[ColumnView]) { tmpNeedsClosed =>
+                val structFields = dt match {
+                  case None => Array.empty[StructField]
+                  case Some(t: StructType) => t.fields
+                  case Some(t) => /* this should never be reach out */
+                    throw new IllegalStateException("Invalid input DataType: " +
+                      s"Expect StructType but got ${t.toString}")
+                }
                 var childrenUpdated = false
                 val newChildren = ArrayBuffer.empty[ColumnView]
                 (0 until cv.getNumChildren).foreach { index =>
                   val child = cv.getChildColumnView(index)
                   tmpNeedsClosed += child
-                  val (updatedChild, needsClosingChild) = deepTransformView(child)(convert)
+                  val childDt = if (structFields.nonEmpty) {
+                    Some(structFields(index).dataType)
+                  } else {
+                    None
+                  }
+                  val (updatedChild, needsClosingChild) = deepTransformView(child, childDt)(convert)
                   needsClosing ++= needsClosingChild
                   updatedChild match {
                     case Some(newChild) =>
@@ -89,8 +102,23 @@ object ColumnCastUtil extends Arm {
                 }
               }
             case DType.DTypeEnum.LIST =>
-              withResource(cv.getChildColumnView(0)) { dataView =>
-                val (updatedData, needsClosingData) = deepTransformView(dataView)(convert)
+              withResource(cv.getChildColumnView(0)) { child =>
+                // A ColumnView of LIST type may have data type is ArrayType or MapType in Spark.
+                // If it is a MapType, its child will be a column of type struct<key, value>.
+                // In such cases, we need to generate the corresponding Spark's data type
+                // for the child column as a StructType.
+                val childDt = dt match {
+                  case None => None
+                  case Some(t: ArrayType) => Some(t.elementType)
+                  case Some(_: BinaryType) => Some(ByteType)
+                  case Some(t: MapType) => Some(StructType(Array(
+                    StructField("key", t.keyType, nullable = false),
+                    StructField("value", t.valueType, nullable = t.valueContainsNull))))
+                  case Some(t) => /* this should never be reach out */
+                    throw new IllegalStateException("Invalid input DataType: " +
+                      s"Expect ArrayType/BinaryType/MapType but got ${t.toString}")
+                }
+                val (updatedData, needsClosingData) = deepTransformView(child, childDt)(convert)
                 needsClosing ++= needsClosingData
                 updatedData match {
                   case Some(updated) =>
@@ -113,13 +141,14 @@ object ColumnCastUtil extends Arm {
    * A lot of caution needs to be taken when using this method because of ownership of the data.
    *
    * @param cv the vector to be updated
+   * @param dt the Spark's data type of the input vector (if applicable)
    * @param convert the partial function used to convert the data. If this matches and returns
    *                a updated view this function takes ownership of that view.
    * @return the updated vector
    */
-  def deepTransform(cv: ColumnVector)
-      (convert: PartialFunction[ColumnView, ColumnView]): ColumnVector = {
-    val (retView, needsClosed) = deepTransformView(cv)(convert)
+  def deepTransform(cv: ColumnVector, dt: Option[DataType] = None)
+      (convert: PartialFunction[(ColumnView, Option[DataType]), ColumnView]): ColumnVector = {
+    val (retView, needsClosed) = deepTransformView(cv, dt)(convert)
     withResource(needsClosed) { _ =>
       retView match {
         case Some(updated) =>
@@ -195,7 +224,7 @@ object ColumnCastUtil extends Arm {
           // map is list of structure
           val struct = cv.getChildColumnView(0)
           toClose += struct
-          
+
           if(cv.getType != DType.LIST || struct.getType != DType.STRUCT) {
             throw new IllegalStateException("Map should be List(Structure) in column view")
           }

@@ -15,6 +15,8 @@
  */
 package com.nvidia.spark.rapids
 
+import java.nio.charset.Charset
+
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, RegExpReplace}
 import org.apache.spark.sql.types.DataTypes
 import org.apache.spark.unsafe.types.UTF8String
@@ -26,7 +28,8 @@ class GpuRegExpReplaceMeta(
     rule: DataFromReplacementRule)
   extends TernaryExprMeta[RegExpReplace](expr, conf, parent, rule) {
 
-  private var pattern: Option[String] = None
+  private var javaPattern: Option[String] = None
+  private var cudfPattern: Option[String] = None
   private var replacement: Option[String] = None
   private var canUseGpuStringReplace = false
   private var containsBackref: Boolean = false
@@ -44,9 +47,10 @@ class GpuRegExpReplaceMeta(
           canUseGpuStringReplace = true
         } else {
           try {
+            javaPattern = Some(s.toString())
             val (pat, repl) =
                 new CudfRegexTranspiler(RegexReplaceMode).transpile(s.toString, replacement)
-            pattern = Some(pat)
+            cudfPattern = Some(pat)
             repl.map(GpuRegExpUtils.backrefConversion).foreach {
                 case (hasBackref, convertedRep) =>
                   containsBackref = hasBackref
@@ -73,6 +77,9 @@ class GpuRegExpReplaceMeta(
 }
 
 object GpuRegExpUtils {
+  private def parseAST(pattern: String): RegexAST = {
+    new RegexParser(pattern).parse()
+  }
 
   /**
    * Convert symbols of back-references if input string contains any.
@@ -137,5 +144,52 @@ object GpuRegExpUtils {
       meta.willNotWorkOnGpu(s"regular expression support is disabled. " +
         s"Set ${RapidsConf.ENABLE_REGEXP}=true to enable it")
     }
+
+    Charset.defaultCharset().name() match {
+      case "UTF-8" =>
+        // supported
+      case _ =>
+        meta.willNotWorkOnGpu(s"regular expression support is disabled because the GPU only " +
+        "supports the UTF-8 charset when using regular expressions")
+    }
+  }
+
+  /**
+   * Recursively check if pattern contains only zero-match repetitions
+   * ?, *, {0,}, or {0,n} or any combination of them.
+   */
+  def isEmptyRepetition(pattern: String): Boolean = {
+    def isASTEmptyRepetition(regex: RegexAST): Boolean = {
+      regex match {
+        case RegexRepetition(_, term) => term match {
+          case SimpleQuantifier('*') | SimpleQuantifier('?') => true
+          case QuantifierFixedLength(0) => true
+          case QuantifierVariableLength(0, _) => true
+          case _ => false
+        }
+        case RegexGroup(_, term) =>
+          isASTEmptyRepetition(term)
+        case RegexSequence(parts) =>
+          parts.forall(isASTEmptyRepetition)
+        // cuDF does not support repetitions adjacent to a choice (eg. "a*|a"), but if
+        // we did, we would need to add a `case RegexChoice()` here
+        case _ => false
+      }
+    }
+    isASTEmptyRepetition(parseAST(pattern))
+  }
+
+  /**
+   * Returns the number of groups in regexp
+   * (includes both capturing and non-capturing groups)
+   */
+  def countGroups(pattern: String): Int = {
+    def countGroups(regexp: RegexAST): Int = {
+      regexp match {
+        case RegexGroup(_, term) => 1 + countGroups(term)
+        case other => other.children().map(countGroups).sum
+      }
+   }
+   countGroups(parseAST(pattern))
   }
 }

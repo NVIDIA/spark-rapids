@@ -1,6 +1,8 @@
-2c2,9
+1,2c1,9
+< object GpuOrcScan {
 <   // spark 2.x doesn't have data source v2 so not ScanMeta
 ---
+> object GpuOrcScan extends Arm {
 >   def tagSupport(scanMeta: ScanMeta[OrcScan]): Unit = {
 >     val scan = scanMeta.wrapped
 >     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
@@ -13,3 +15,5 @@
 <       meta: RapidsMeta[_, _]): Unit = {
 ---
 >       meta: RapidsMeta[_, _, _]): Unit = {
+24a32
+> 

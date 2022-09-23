@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.shims
 import scala.collection.mutable.ListBuffer
 
 import com.nvidia.spark.rapids._
-import org.apache.hadoop.fs.FileStatus
+import org.apache.hadoop.fs.{FileStatus, Path}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
@@ -71,6 +71,23 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
     fileIndex.allFiles()
   }
 
+  override def alluxioReplacePathsPartitionDirectory(
+      pd: PartitionDirectory,
+      replaceFunc: Option[Path => Path]): (Seq[FileStatus], PartitionDirectory) = {
+    val updatedFileStatus = pd.files.map { f =>
+      val replaced = replaceFunc.get(f.getPath)
+      // Alluxio caches the entire file, so the size should be the same.
+      // Just hardcode block replication to 1 since we don't know what it really
+      // is in Alluxio and its not used by splits. The modification time shouldn't be
+      // affected by Alluxio. Blocksize is also not used. Note that we will not
+      // get new block locations with this so if Alluxio would return new ones
+      // this isn't going to get them. From my current experiments, Alluxio is not
+      // returning the block locations of the cached blocks anyway.
+      new FileStatus(f.getLen, f.isDirectory, 1, f.getBlockSize, f.getModificationTime, replaced)
+    }
+    (updatedFileStatus, PartitionDirectory(pd.values, updatedFileStatus))
+  }
+
   def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any =
     mode.transform(rows)
 
@@ -111,7 +128,7 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
     GpuOverrides.exec[CustomShuffleReaderExec](
       "A wrapper of shuffle query stage",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.ARRAY +
-          TypeSig.STRUCT + TypeSig.MAP).nested(), TypeSig.all),
+          TypeSig.STRUCT + TypeSig.MAP + TypeSig.BINARY).nested(), TypeSig.all),
       (exec, conf, p, r) => new GpuCustomShuffleReaderMeta(exec, conf, p, r))
 
   override def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = {
@@ -262,26 +279,7 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
           TypeSig.cpuNumeric))),
       (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
         override def tagAggForGpu(): Unit = {
-          // For Decimal Average the SUM adds a precision of 10 to avoid overflowing
-          // then it divides by the count with an output scale that is 4 more than the input
-          // scale. With how our divide works to match Spark, this means that we will need a
-          // precision of 5 more. So 38 - 10 - 5 = 23
-          val dataType = a.child.dataType
-          dataType match {
-            case dt: DecimalType =>
-              if (dt.precision > 23) {
-                if (conf.needDecimalGuarantees) {
-                  willNotWorkOnGpu("GpuAverage cannot guarantee proper overflow checks for " +
-                      s"a precision large than 23. The current precision is ${dt.precision}")
-                } else {
-                  logWarning("Decimal overflow guarantees disabled for " +
-                      s"Average(${a.child.dataType}) produces ${dt} with an " +
-                      s"intermediate precision of ${dt.precision + 15}")
-                }
-              }
-            case _ => // NOOP
-          }
-          GpuOverrides.checkAndTagFloatAgg(dataType, conf, this)
+          GpuOverrides.checkAndTagFloatAgg(a.child.dataType, conf, this)
         }
 
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
@@ -327,7 +325,7 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-            TypeSig.ARRAY + TypeSig.DECIMAL_128).nested(), TypeSig.all),
+            TypeSig.ARRAY + TypeSig.BINARY + TypeSig.DECIMAL_128).nested(), TypeSig.all),
         (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
 
           // Replaces SubqueryBroadcastExec inside dynamic pruning filters with GPU counterpart
@@ -370,11 +368,15 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
 
-            val location = AlluxioUtils.replacePathIfNeeded(
-              conf,
-              wrapped.relation,
-              partitionFilters,
-              wrapped.dataFilters)
+            val location = if (conf.isAlluxioReplacementAlgoConvertTime) {
+              AlluxioUtils.replacePathIfNeeded(
+                conf,
+                wrapped.relation,
+                partitionFilters,
+                wrapped.dataFilters)
+            } else {
+              wrapped.relation.location
+            }
 
             val newRelation = HadoopFsRelation(
               location,

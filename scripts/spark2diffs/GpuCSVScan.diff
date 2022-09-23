@@ -33,6 +33,6 @@
 <     */
 119,120c119
 <       // Spark 2.x doesn't have zoneId, so use timeZone and then to id
-<       if (!TypeChecks.areTimestampsSupported(parsedOptions.timeZone.toZoneId)) {
+<       meta.checkTimeZoneId(parsedOptions.timeZone.toZoneId)
 ---
->       if (!TypeChecks.areTimestampsSupported(parsedOptions.zoneId)) {
+>       meta.checkTimeZoneId(parsedOptions.zoneId)

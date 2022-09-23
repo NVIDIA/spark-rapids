@@ -1251,7 +1251,7 @@
 >       agg.requiredChildDistributionExpressions, conf, parent, rule) {
 >   override def tagPlanForGpu(): Unit = {
 >     super.tagPlanForGpu()
-183,245d1338
+194,256d1349
 < 
 <   /**
 <    * Tagging checks tied to configs that control the aggregation modes that are replaced.
@@ -1315,15 +1315,15 @@
 <           s"Set ${conf.partialMergeDistinctEnabled} to true if desired")
 <     }
 <   }
-248,250d1340
+259,261d1351
 < // SPARK 2.x we can't check for the TypedImperativeAggregate properly so don't say we do the
 < // ObjectHashAggregate
 < /*
-254c1344
+265c1355
 <     parent: Option[RapidsMeta[_, _]],
 ---
 >     parent: Option[RapidsMeta[_, _, _]],
-259c1349,1550
+270c1360,1563
 < */
 ---
 > /**
@@ -1418,25 +1418,27 @@
 >       makeSpillCallback(allMetrics))
 > 
 >     // cache in a local variable to avoid serializing the full child plan
+>     val inputAttrs = inputAttributes
 >     val groupingExprs = groupingExpressions
 >     val aggregateExprs = aggregateExpressions
 >     val aggregateAttrs = aggregateAttributes
 >     val resultExprs = resultExpressions
 >     val modeInfo = AggregateModeInfo(uniqueModes)
+>     val targetBatchSize = configuredTargetBatchSize
 > 
 >     val rdd = child.executeColumnar()
 > 
 >     rdd.mapPartitions { cbIter =>
 >       new GpuHashAggregateIterator(
 >         cbIter,
->         inputAttributes,
+>         inputAttrs,
 >         groupingExprs,
 >         aggregateExprs,
 >         aggregateAttrs,
 >         resultExprs,
 >         modeInfo,
 >         aggMetrics,
->         configuredTargetBatchSize)
+>         targetBatchSize)
 >     }
 >   }
 > 

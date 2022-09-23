@@ -160,8 +160,7 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
   def getSummary(delimiter: String = "|", prettyPrint: Boolean = true): String = {
     val appInfo = super.aggregateStats()
     appInfo match {
-      case Some(info) =>
-        val headerStr = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
+      case Some(info) => val headerStr = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
           delimiter, prettyPrint)
         val appInfoStr = QualOutputWriter.constructAppSummaryInfo(info.estimatedInfo,
           headersAndSizes, appId.size, delimiter, prettyPrint)

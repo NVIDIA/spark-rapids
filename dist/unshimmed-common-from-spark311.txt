@@ -8,6 +8,7 @@ com/nvidia/spark/ParquetCachedBatchSerializer*
 com/nvidia/spark/RapidsUDF*
 com/nvidia/spark/SQLPlugin*
 com/nvidia/spark/rapids/ColumnarRdd*
+com/nvidia/spark/rapids/GpuColumnVectorUtils*
 com/nvidia/spark/rapids/ClouderaShimVersion*
 com/nvidia/spark/rapids/DatabricksShimVersion*
 com/nvidia/spark/rapids/ExecutionPlanCaptureCallback*
@@ -28,6 +29,7 @@ com/nvidia/spark/rapids/SparkShimVersion*
 com/nvidia/spark/rapids/SparkShims*
 com/nvidia/spark/udf/Plugin*
 org/apache/spark/sql/rapids/ProxyRapidsShuffleInternalManagerBase*
+org/apache/spark/sql/rapids/execution/Unshimmed*
 org/apache/spark/sql/rapids/RapidsShuffleManagerLike*
 rapids/*.py
 rapids4spark-version-info.properties

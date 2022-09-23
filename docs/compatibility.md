@@ -65,22 +65,9 @@ conditions within the computation itself the result may not be the same each tim
 run. This is inherent in how the plugin speeds up the calculations and cannot be "fixed." If a query
 joins on a floating point value, which is not wise to do anyways, and the value is the result of a
 floating point aggregation then the join may fail to work properly with the plugin but would have
-worked with plain Spark. As of 22.06 this is behavior is enabled by default but can be disabled with 
+worked with plain Spark. Starting from 22.06 this is behavior is enabled by default but can be disabled with 
 the config
 [`spark.rapids.sql.variableFloatAgg.enabled`](configs.md#sql.variableFloatAgg.enabled).
-
-Additionally, some aggregations on floating point columns that contain `NaN` can produce results
-different from Spark in versions prior to Spark 3.1.0.  If it is known with certainty that the
-floating point columns do not contain `NaN`, set
-[`spark.rapids.sql.hasNans`](configs.md#sql.hasNans) to `false` to run GPU enabled aggregations on
-them.
-
-In the case of a distinct count on `NaN` values, prior to Spark 3.1.0, the issue only shows up if
- you have different `NaN` values. There are several different binary values that are all considered
- to be `NaN` by floating point. The plugin treats all of these as the same value, where as Spark
- treats them all as different values. Because this is considered to be rare we do not disable
- distinct count for floating point values even if
- [`spark.rapids.sql.hasNans`](configs.md#sql.hasNans) is `true`.
 
 ### `0.0` vs `-0.0`
 
@@ -111,15 +98,6 @@ a few operations that we cannot support to the same degree as Spark can on the C
 
 ### Decimal Sum Aggregation
 
-A number of fixes for overflow detection went into Spark 3.1.0. Please see
-[SPARK-28067](https://issues.apache.org/jira/browse/SPARK-28067) and
-[SPARK-32018](https://issues.apache.org/jira/browse/SPARK-32018) for more detailed information.
-Some of these fixes we were able to back port, but some of them require Spark 3.1.0 or above to
-fully be able to detect overflow in all cases. As such on versions of Spark older than 3.1.0 for
-large decimal values there is the possibility of data corruption in some corner cases. 
-This is true for both the CPU and GPU implementations, but there are fewer of these cases for the 
-GPU. If this concerns you, you should upgrade to Spark 3.1.0 or above. 
-
 When Apache Spark does a sum aggregation on decimal values it will store the result in a value
 with a precision that is the input precision + 10, but with a maximum precision of 38.
 For an input precision of 9 and above, Spark will do the aggregations as a Java `BigDecimal`
@@ -131,8 +109,13 @@ longer detected. Even then all the values would need to be either the largest or
 possible to be stored in the type for the overflow to cause data corruption.
 
 For the RAPIDS Accelerator we don't have direct access to unlimited precision for our calculations
-like the CPU does. For input values with a precision of 8 and below we follow Spark and process the
-data the same way, as a 64-bit value. For larger values we will do extra calculations looking at the
+like the CPU does, and the aggregations are processed in batches within each task. Therefore it is
+possible for the GPU to detect an intermediate overflow after aggregating a batch, e.g.: a sum
+aggregation on positive and negative values, where the accumulating sum value temporarily
+overflows but returns within bounds before the final cast back into a decimal with precision 38.
+
+For input values with a precision of 8 and below we follow Spark and process the data the
+same way, as a 64-bit value. For larger values we will do extra calculations looking at the
 higher order digits to be able to detect overflow in all cases. But because of this you may see
 some performance differences depending on the input precision used. The differences will show up
 when going from an input precision of 8 to 9 and again when going from an input precision of 28 to 29.
@@ -370,6 +353,7 @@ INTERVAL HOUR TO SECOND | INTERVAL '10:30:40.999999' HOUR TO SECOND | 10:30:40.9
 INTERVAL MINUTE | INTERVAL '30' MINUTE                      | 30|
 INTERVAL MINUTE TO SECOND | INTERVAL '30:40.999999' MINUTE TO SECOND  | 30:40.999999|
 INTERVAL SECOND | INTERVAL '40.999999' SECOND               | 40.999999|
+
 Currently, the RAPIDS Accelerator only supports the ANSI style.
 
 ## ORC
@@ -382,9 +366,9 @@ similar issue exists for writing dates as described
 to work for dates after the epoch as described
 [here](https://github.com/NVIDIA/spark-rapids/issues/140).
 
-The plugin supports reading `uncompressed`, `snappy` and `zlib` ORC files and writing `uncompressed`
- and `snappy` ORC files.  At this point, the plugin does not have the ability to fall back to the
- CPU when reading an unsupported compression format, and will error out in that case.
+The plugin supports reading `uncompressed`, `snappy`, `zlib` and `zstd` ORC files and writing
+ `uncompressed` and `snappy` ORC files.  At this point, the plugin does not have the ability to fall
+ back to the CPU when reading an unsupported compression format, and will error out in that case.
 
 ### Push Down Aggregates for ORC
 
@@ -453,7 +437,7 @@ issue, turn off the ParquetWriter acceleration for timestamp columns by either s
 set `spark.sql.parquet.outputTimestampType` to `TIMESTAMP_MICROS` or `TIMESTAMP_MILLIS` to by
 -pass the issue entirely.
 
-The plugin supports reading `uncompressed`, `snappy` and `gzip` Parquet files and writing
+The plugin supports reading `uncompressed`, `snappy`, `gzip` and `zstd` Parquet files and writing
 `uncompressed` and `snappy` Parquet files.  At this point, the plugin does not have the ability to
 fall back to the CPU when reading an unsupported compression format, and will error out in that
 case.
@@ -807,7 +791,7 @@ leads to restrictions:
 * Float values cannot be larger than `1e18` or smaller than `-1e18` after conversion.
 * The results produced by GPU slightly differ from the default results of Spark.
 
-As of 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or 
+Starting from 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or 
 later, set
 [`spark.rapids.sql.castFloatToDecimal.enabled`](configs.md#sql.castFloatToDecimal.enabled) to `false`
 
@@ -819,7 +803,7 @@ Spark 3.1.0 the MIN and MAX values were floating-point values such as `Int.MaxVa
 starting with 3.1.0 these are now integral types such as `Int.MaxValue` so this has slightly
 affected the valid range of values and now differs slightly from the behavior on GPU in some cases.
 
-As of 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or later, set
+Starting from 22.06 this conf is enabled, to disable this operation on the GPU when using Spark 3.1.0 or later, set
 [`spark.rapids.sql.castFloatToIntegralTypes.enabled`](configs.md#sql.castFloatToIntegralTypes.enabled)
 to `false`.
 
@@ -831,7 +815,7 @@ The GPU will use different precision than Java's toString method when converting
 types to strings. The GPU uses a lowercase `e` prefix for an exponent while Spark uses uppercase
 `E`. As a result the computed string can differ from the default behavior in Spark.
 
-As of 22.06 this conf is enabled by default, to disable this operation on the GPU, set
+Starting from 22.06 this conf is enabled by default, to disable this operation on the GPU, set
 [`spark.rapids.sql.castFloatToString.enabled`](configs.md#sql.castFloatToString.enabled) to `false`.
 
 ### String to Float
@@ -845,7 +829,7 @@ default behavior in Apache Spark is to return `+Infinity` and `-Infinity`, respe
 
 Also, the GPU does not support casting from strings containing hex values.
 
-As of 22.06 this conf is enabled by default, to enable this operation on the GPU, set
+Starting from 22.06 this conf is enabled by default, to enable this operation on the GPU, set
 [`spark.rapids.sql.castStringToFloat.enabled`](configs.md#sql.castStringToFloat.enabled) to `false`.
 
 ### String to Date
@@ -881,6 +865,8 @@ Casting from string to timestamp currently has the following limitations.
 | `"yyyy-[M]M "`                                                      | Yes               |
 | `"yyyy-[M]M-[d]d"`                                                  | Yes               |
 | `"yyyy-[M]M-[d]d "`                                                 | Yes               |
+| `"yyyy-[M]M-[d]dT[h]h:[m]m:[s]s[zone_id]"` | Partial [\[1\]](#Footnote1)       |
+| `"yyyy-[M]M-[d]d [h]h:[m]m:[s]s[zone_id]"` | Partial [\[1\]](#Footnote1)       |
 | `"yyyy-[M]M-[d]dT[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"` | Partial [\[1\]](#Footnote1)       |
 | `"yyyy-[M]M-[d]d [h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"` | Partial [\[1\]](#Footnote1)       |
 | `"[h]h:[m]m:[s]s.[ms][ms][ms][us][us][us][zone_id]"`                | Partial [\[1\]](#Footnote1)       |
@@ -891,8 +877,8 @@ Casting from string to timestamp currently has the following limitations.
 | `"tomorrow"`                                                        | Yes               |
 | `"yesterday"`                                                       | Yes               |
 
-- <a name="Footnote1"></a>[1] The timestamp portion must have 6 digits for milliseconds.
- Only timezone 'Z' (UTC) is supported. Casting unsupported formats will result in null values.
+- <a name="Footnote1"></a>[1] Leap seconds are not supported. If a zone_id is provided then only
+ timezone 'Z' (UTC) is supported. Casting unsupported formats will result in null values.
 
 Spark is very lenient when casting from string to timestamp because all date and time components
 are optional, meaning that input values such as `T`, `T2`, `:`, `::`, `1:`, `:1`, and `::1`

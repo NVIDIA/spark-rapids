@@ -30,6 +30,23 @@ import org.apache.spark.sql.types.DataTypes
 
 class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
+  test("transpiler detects invalid cuDF patterns that cuDF now supports") {
+    // these patterns compile in cuDF since https://github.com/rapidsai/cudf/pull/11654 was merged
+    // but we still reject them because we see failures in fuzz testing if we allow them
+    for (pattern <- Seq("\t+|a", "(\t+|a)Dc$1", "\n[^\r\n]x*|^3x")) {
+      assertUnsupported(pattern, RegexFindMode,
+        "cuDF does not support repetition on one side of a choice")
+    }
+    for (pattern <- Seq("$|$[^\n]2]}|B")) {
+      assertUnsupported(pattern, RegexFindMode,
+        "End of line/string anchor is not supported in this context")
+    }
+    for (pattern <- Seq("a^|b", "w$|b", "]*\\wWW$|zb", "(\\A|\\05)?")) {
+      assertUnsupported(pattern, RegexFindMode,
+        "cuDF does not support terms ending with line anchors on one side of a choice")
+    }
+  }
+
   test("transpiler detects invalid cuDF patterns") {
     // The purpose of this test is to document some examples of valid Java regular expressions
     // that fail to compile in cuDF and to check that the transpiler detects these correctly.
@@ -37,15 +54,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     // random inputs.
     val cudfInvalidPatterns = Seq(
       "a*+",
-      "\t+|a",
-      "(\t+|a)Dc$1",
-      "(?d)",
-      "$|$[^\n]2]}|B",
-      "a^|b",
-      "w$|b",
-      "\n[^\r\n]x*|^3x",
-      "]*\\wWW$|zb",
-      "(\\A|\\05)?"
+      "(?d)"
     )
     // data is not relevant because we are checking for compilation errors
     val inputs = Seq("a")
@@ -87,7 +96,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test("cuDF does not support choice with repetition") {
     val patterns = Seq("b+|^\t")
     patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode, 
+      assertUnsupported(pattern, RegexFindMode,
         "cuDF does not support repetition on one side of a choice")
     )
   }
@@ -101,20 +110,16 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("cuDF unsupported choice cases") {
-    val input = Seq("cat", "dog")
     val patterns = Seq("c*|d*", "c*|dog", "[cat]{3}|dog")
     patterns.foreach(pattern => {
-      val e = intercept[CudfException] {
-        gpuContains(pattern, input)
-      }
-      assert(e.getMessage.contains("invalid regex pattern: nothing to repeat"))
+      assertUnsupported(pattern, RegexFindMode,
+        "cuDF does not support repetition on one side of a choice")
     })
   }
 
   test("sanity check: choice edge case 2") {
-    assertThrows[CudfException] {
-      gpuContains("c+|d+", Seq("cat", "dog"))
-    }
+    assertUnsupported("c+|d+", RegexFindMode,
+      "cuDF does not support repetition on one side of a choice")
   }
 
   test("newline before $ in replace mode") {
@@ -142,10 +147,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("cuDF does not support quantifier syntax when not quantifying anything") {
     // note that we could choose to transpile and escape the '{' and '}' characters
-    val patterns = Seq("{1,2}", "{1,}", "{1}", "{2,1}")
-    patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexFindMode, 
+    val patterns = Seq("{1,2}", "{1,}", "{1}")
+    patterns.foreach(pattern => {
+      assertUnsupported(pattern, RegexFindMode,
         "Token preceding '{' is not quantifiable near index 0")
+        }
     )
   }
 
@@ -376,7 +382,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("transpile character class unescaped range symbol") {
     val patterns = Seq("a[-b]", "a[+-]", "a[-+]", "a[-]", "a[^-]")
-    val expected = Seq(raw"a[\-b]", raw"a[+\-]", raw"a[\-+]", raw"a[\-]", "a(?:[\r\n]|[^\\-])")
+    val expected = Seq(raw"a[\-b]", raw"a[+\-]", raw"a[\-+]", raw"a[\-]", "a(?:[\r]|[^\\-])")
     val transpiler = new CudfRegexTranspiler(RegexFindMode)
     val transpiled = patterns.map(transpiler.transpile(_, None)._1)
     assert(transpiled === expected)
@@ -934,7 +940,7 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true,
       // when we reach maximum depth we generate a non-nested type
       nonNestedTerm
     } else {
-      val baseGenerators: Seq[() => RegexAST] = Seq(
+      val generators: Seq[() => RegexAST] = Seq(
         () => lineTerminator,
         () => escapedChar,
         () => char,
@@ -945,13 +951,8 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true,
         () => group(depth),
         () => boundaryMatch,
         () => sequence(depth),
-        () => repetition(depth))
-      val generators = if (skipKnownIssues) {
-        baseGenerators
-      } else {
-        baseGenerators ++ Seq(
-          () => choice(depth)) // https://github.com/NVIDIA/spark-rapids/issues/4603
-      }
+        () => repetition(depth),
+        () => choice(depth))
       generators(rr.nextInt(generators.length))()
     }
   }
@@ -971,36 +972,25 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true,
   }
 
   private def characterClassComponent = {
-    val baseGenerators = Seq[() => RegexCharacterClassComponent](
+    val generators = Seq[() => RegexCharacterClassComponent](
         () => char,
         () => charRange,
         () => hexDigit,
+        () => octalDigit,
         () => escapedChar)
-    val generators = if (skipKnownIssues) {
-      baseGenerators
-    } else {
-      baseGenerators ++ Seq(
-        () => octalDigit) // https://github.com/NVIDIA/spark-rapids/issues/4862
-    }
     generators(rr.nextInt(generators.length))()
   }
 
   private def charRange: RegexCharacterClassComponent = {
-    val baseGenerators = Seq[() => RegexCharacterClassComponent](
+    val generators = Seq[() => RegexCharacterClassComponent](
       () => RegexCharacterRange(RegexChar('a'), RegexChar('z')),
       () => RegexCharacterRange(RegexChar('A'), RegexChar('Z')),
       () => RegexCharacterRange(RegexChar('z'), RegexChar('a')),
       () => RegexCharacterRange(RegexChar('Z'), RegexChar('A')),
       () => RegexCharacterRange(RegexChar('0'), RegexChar('9')),
-      () => RegexCharacterRange(RegexChar('9'), RegexChar('0'))
+      () => RegexCharacterRange(RegexChar('9'), RegexChar('0')),
+      () => RegexCharacterRange(char, char)
     )
-    val generators = if (skipKnownIssues) {
-      baseGenerators
-    } else {
-      // we do not support escaped characters in character ranges yet
-      // see https://github.com/NVIDIA/spark-rapids/issues/4505
-      baseGenerators ++ Seq(() => RegexCharacterRange(char, char))
-    }
     generators(rr.nextInt(generators.length))()
   }
 
