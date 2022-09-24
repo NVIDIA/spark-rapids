@@ -19,7 +19,7 @@ from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_before_spark_320
 import pyspark.sql.functions as f
 import pyspark.sql.utils
 import random
@@ -504,3 +504,59 @@ def test_write_daytime_interval(spark_tmp_path):
             lambda spark, path: spark.read.parquet(path),
             data_path,
             conf=writer_confs)
+
+@ignore_order
+@pytest.mark.skipif(is_before_spark_320(), reason="is only supported in Spark 320+")
+def test_concurrent_writer(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: get_25_partitions_df(spark)  # df has 25 partitions for (c1, c2)
+            .repartition(2)
+            .write.mode("overwrite").partitionBy('c1', 'c2').parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        copy_and_update(
+            # 26 > 25, will not fall back to single writer
+            {"spark.sql.maxConcurrentOutputFileWriters": 26}
+        ))
+
+
+@ignore_order
+@pytest.mark.skipif(is_before_spark_320(), reason="is only supported in Spark 320+")
+def test_fallback_to_single_writer_from_concurrent_writer(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: get_25_partitions_df(spark)  # df has 25 partitions for (c1, c2)
+            .repartition(2)
+            .write.mode("overwrite").partitionBy('c1', 'c2').parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        copy_and_update(
+            # 10 < 25, will fall back to single writer
+            {"spark.sql.maxConcurrentOutputFileWriters": 10},
+            {"spark.rapids.sql.concurrentWriterPartitionFlushSize": 64 * 1024 * 1024}
+        ))
+
+
+@pytest.mark.skipif(True, reason="currently not support write emtpy data: https://github.com/NVIDIA/spark-rapids/issues/6453")
+def test_write_empty_data_concurrent_writer(spark_tmp_path):
+    schema = StructType(
+        [StructField("c1", StringType()), StructField("c2", IntegerType()), StructField("c3", IntegerType())])
+    data = []  # empty data
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_gpu_session(lambda spark: spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
+                     .write.mode("overwrite").partitionBy('c1', 'c2').parquet(data_path),
+                     # concurrent writer
+                     {"spark.sql.maxConcurrentOutputFileWriters": 10})
+    with_cpu_session(lambda spark: spark.read.parquet(data_path).collect())
+
+
+@pytest.mark.skipif(True, reason="currently not support write emtpy data: https://github.com/NVIDIA/spark-rapids/issues/6453")
+def test_write_empty_data_single_writer(spark_tmp_path):
+    schema = StructType(
+        [StructField("c1", StringType()), StructField("c2", IntegerType()), StructField("c3", IntegerType())])
+    data = []  # empty data
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_gpu_session(lambda spark: spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
+                     .write.mode("overwrite").partitionBy('c1', 'c2').parquet(data_path))
+    with_cpu_session(lambda spark: spark.read.parquet(data_path).collect())

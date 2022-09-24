@@ -84,7 +84,13 @@ object GpuProjectExec extends Arm {
     case _ => None
   }
 
-  private def extractSingleBoundIndex(boundExprs: Seq[Expression]): Seq[Option[Int]] =
+  private def isAllSingleBoundIndex(boundExprs: Seq[Expression]): Boolean =
+    extractSingleBoundIndex(boundExprs).forall {
+      case Some(index) => true
+      case _ => false
+    }
+
+  def extractSingleBoundIndex(boundExprs: Seq[Expression]): Seq[Option[Int]] =
     boundExprs.map(extractSingleBoundIndex)
 
   def isNoopProject(cb: ColumnarBatch, boundExprs: Seq[Expression]): Boolean = {
