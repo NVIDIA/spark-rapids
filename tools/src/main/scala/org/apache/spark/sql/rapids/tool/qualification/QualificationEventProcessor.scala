@@ -167,5 +167,6 @@ class QualificationEventProcessor(app: QualificationAppInfo, perSqlOnly: Boolean
     logDebug("Processing event: " + event.getClass)
     // AQE plan can override the ones got from SparkListenerSQLExecutionStart
     app.processSQLPlan(event.executionId, event.sparkPlanInfo)
+    super.doSparkListenerSQLAdaptiveExecutionUpdate(app, event)
   }
 }
