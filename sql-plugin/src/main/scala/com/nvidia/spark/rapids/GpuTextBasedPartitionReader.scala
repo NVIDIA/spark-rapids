@@ -223,7 +223,8 @@ abstract class GpuTextBasedPartitionReader(
                 case DataTypes.DoubleType =>
                   castStringToFloat(table.getColumn(i), DType.FLOAT64)
                 case dt: DecimalType =>
-                  castStringToDecimal(table.getColumn(i), dt)
+                  com.nvidia.spark.rapids.jni.CastStrings.toDecimal(
+                    table.getColumn(i), false, dt.precision, dt.scale)
                 case DataTypes.DateType =>
                   castStringToDate(table.getColumn(i), DType.TIMESTAMP_DAYS, failOnInvalid = true)
                 case DataTypes.TimestampType =>
@@ -390,10 +391,6 @@ abstract class GpuTextBasedPartitionReader(
 
   def castStringToFloat(input: ColumnVector, dt: DType): ColumnVector = {
     GpuCast.castStringToFloats(input, ansiEnabled = false, dt)
-  }
-
-  def castStringToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
-    GpuCast.castStringToDecimal(input, ansiEnabled = false, dt)
   }
 
   def castStringToInt(input: ColumnVector, intType: DType): ColumnVector = {

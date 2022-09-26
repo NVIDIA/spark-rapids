@@ -474,7 +474,7 @@ object GpuCast extends Arm {
           }
         }
       case (StringType, dt: DecimalType) =>
-        castStringToDecimal(input, ansiMode, dt)
+      com.nvidia.spark.rapids.jni.CastStrings.toDecimal(input, ansiMode, dt.precision, dt.scale)
 
       case (ByteType | ShortType | IntegerType | LongType, dt: DecimalType) =>
         castIntegralsToDecimal(input, dt, ansiMode)
@@ -978,51 +978,6 @@ object GpuCast extends Arm {
                 }
               }
             }
-          }
-        }
-      }
-    }
-  }
-
-  def castStringToDecimal(
-      input: ColumnView,
-      ansiEnabled: Boolean,
-      dt: DecimalType): ColumnVector = {
-    // 1. Sanitize strings to make sure all are fixed points
-    // 2. Identify all fixed point values
-    // 3. Cast String to newDt (newDt = dt. precision + 1, dt.scale + 1). Promote precision if
-    //    needed. This step is required so we can round up if needed in the final step
-    // 4. Now cast newDt to dt (Decimal to Decimal)
-    def getInterimDecimalPromoteIfNeeded(dt: DecimalType): DecimalType = {
-      if (dt.precision + 1 > DecimalType.MAX_PRECISION) {
-        throw new IllegalArgumentException("One or more values exceed the maximum supported " +
-            "Decimal precision while conversion")
-      }
-      DecimalType(dt.precision + 1, dt.scale + 1)
-    }
-
-    val interimSparkDt = getInterimDecimalPromoteIfNeeded(dt)
-    val interimDt = DecimalUtil.createCudfDecimal(interimSparkDt)
-    val isFixedPoints = withResource(input.strip()) {
-      // We further filter out invalid values using the cuDF isFixedPoint method.
-      _.isFixedPoint(interimDt)
-    }
-
-    withResource(isFixedPoints) { isFixedPoints =>
-      if (ansiEnabled) {
-        withResource(isFixedPoints.all()) { allFixedPoints =>
-          if (allFixedPoints.isValid && !allFixedPoints.getBoolean) {
-            throw new ArithmeticException(s"One or more values cannot be " +
-                s"represented as Decimal(${dt.precision}, ${dt.scale})")
-          }
-        }
-      }
-      // intermediate step needed so we can make sure we can round up
-      withResource(input.castTo(interimDt)) { interimDecimals =>
-        withResource(Scalar.fromNull(interimDt)) { nulls =>
-          withResource(isFixedPoints.ifElse(interimDecimals, nulls)) { decimals =>
-            // cast Decimal to the Decimal that's needed
-            castDecimalToDecimal(decimals, interimSparkDt, dt, ansiEnabled)
           }
         }
       }
