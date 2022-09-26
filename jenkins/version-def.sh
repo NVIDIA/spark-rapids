@@ -20,7 +20,7 @@ set -e
 # PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
 # regular: noSnapshots + snapshots
 # pre-release: noSnapshots only
-PHASE_TYPE=regular
+PHASE_TYPE=pre-release # TODO: update it to regular in branch-22.12 when CI is available
 
 if [[ $# -eq 1 ]]; then
     PHASE_TYPE=$1
