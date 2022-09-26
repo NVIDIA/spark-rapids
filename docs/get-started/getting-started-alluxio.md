@@ -376,7 +376,7 @@ This is a very long time and can cause delays in the running job, so we suggest 
 
 If the worker is not responding, possibly due to it crashing or GC pause, 
 `alluxio.user.block.read.retry.max.duration` will cause the client to retry for 5 minutes. 
-This is a very long time and can cause delays in the running job, so we suggest lowering this value to 10 seconds.
+This is a very long time and can cause delays in the running job, so we suggest lowering this value to 1 minute.
 
 See relative configs also:
 ```
@@ -394,8 +394,8 @@ Set these properties on Spark because Spark invokes Alluxio client.
 ```
 $SPARK_HOME/bin/spark-shell \
 ......
---conf spark.driver.extraJavaOptions='-Dalluxio.user.rpc.retry.max.duration=10sec -Dalluxio.user.block.read.retry.max.duration=10sec' \
---conf spark.executor.extraJavaOptions='-Dalluxio.user.rpc.retry.max.duration=10sec -Dalluxio.user.block.read.retry.max.duration=10sec' \
+--conf spark.driver.extraJavaOptions='-Dalluxio.user.rpc.retry.max.duration=10sec -Dalluxio.user.block.read.retry.max.duration=1min' \
+--conf spark.executor.extraJavaOptions='-Dalluxio.user.rpc.retry.max.duration=10sec -Dalluxio.user.block.read.retry.max.duration=1min' \
 ......
 ```
 
