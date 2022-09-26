@@ -18,7 +18,8 @@ package com.nvidia.spark.rapids.tool
 import java.io.FileOutputStream
 
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileSystem, FSDataOutputStream, Path}
+import org.apache.hadoop.fs.{FSDataOutputStream, FileSystem, Path}
+import org.apache.hadoop.fs.permission.FsPermission
 
 import org.apache.spark.internal.Logging
 
@@ -28,6 +29,9 @@ import org.apache.spark.internal.Logging
 class ToolTextFileWriter(finalOutputDir: String, logFileName: String,
     finalLocationText: String) extends Logging {
 
+  // use same as Spark even log writer
+  val LOG_FILE_PERMISSIONS = new FsPermission(Integer.parseInt("660", 8).toShort)
+  val LOG_FOLDER_PERMISSIONS = new FsPermission(Integer.parseInt("770", 8).toShort)
   private val textOutputPath = new Path(s"$finalOutputDir/$logFileName")
   logWarning("text output path is: " + textOutputPath)
   private val hadoopConf = new Configuration()
@@ -42,15 +46,18 @@ class ToolTextFileWriter(finalOutputDir: String, logFileName: String,
   private var outFile: Option[FSDataOutputStream] = {
     logWarning(s"schem is: ${uri.getScheme} is default is $isDefaultLocal final output" +
       s" dir $finalOutputDir")
-    if ((isDefaultLocal && uri.getScheme == null) || uri.getScheme == "file"
+    val fs = FileSystem.get(uri, hadoopConf)
+    val outStream = if ((isDefaultLocal && uri.getScheme == null) || uri.getScheme == "file"
       || finalOutputDir.startsWith("/dbfs")) {
       logWarning("using local file system")
+      FileSystem.mkdirs(fs, new Path(finalOutputDir), LOG_FOLDER_PERMISSIONS)
       Some(new FSDataOutputStream(new FileOutputStream(uri.getPath), null))
     } else {
       logWarning("using distributed file system")
-      val fs = FileSystem.get(uri, hadoopConf)
       Some(fs.create(textOutputPath))
     }
+    fs.setPermission(textOutputPath, LOG_FILE_PERMISSIONS)
+    outStream
   }
 
   def write(stringToWrite: String): Unit = {

@@ -33,9 +33,8 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
 
   class QualCleanerListener extends SparkListener with CleanerListener with Logging {
     def accumCleaned(accId: Long): Unit = {
-      // TODO - remove the accums
-      logWarning("TOM ACCUMULATOR CLEANED")
-      qualApp.cleanupAccumId(accId) // TODO write this function
+      // remove the accums when no longer referenced
+      qualApp.cleanupAccumId(accId)
     }
     def rddCleaned(rddId: Int): Unit = {}
     def shuffleCleaned(shuffleId: Int): Unit = {}
@@ -48,25 +47,12 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
   private lazy val appName = qualApp.appInfo.map(_.appName).getOrElse("")
   private lazy val fileWriter: Option[RunningQualOutputWriter] =
     if (outputFileFromConfig.nonEmpty) {
-      logWarning("create output writer")
       val writer = Some(new RunningQualOutputWriter(qualApp.appId, appName, outputFileFromConfig))
       writer.foreach(_.init())
       writer
     } else {
       None
     }
-
-  private val outputFuncApplicationDetails = () => {
-    if (outputFileFromConfig.nonEmpty) {
-      fileWriter.foreach { writer =>
-        val appInfo = qualApp.getApplicationDetails
-        appInfo.foreach(writer.writeApplicationReport(_))
-      }
-    } else {
-      // TODO - fix
-      logError("Qualification tool doesn't have an output location, no output written!")
-    }
-  }
 
   private def writeSQLDetails(sqlID: Long): Unit = {
     val (csvSQLInfo, textSQLInfo) = qualApp.getPerSqlTextAndCSVSummary(sqlID)
@@ -108,6 +94,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
 
   override def onJobStart(jobStart: SparkListenerJobStart): Unit = {
     listener.onJobStart(jobStart)
+    // TODO - getter place to do this?
     if (!isInited.get()) {
       // install after startup when SparkContext is available
       val sc = SparkContext.getOrCreate(sparkConf)
@@ -139,8 +126,6 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
 
   override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
     listener.onApplicationEnd(applicationEnd)
-    // don't write application details because requires storing everything in memory to long
-    // outputFuncApplicationDetails()
     close()
   }
 
