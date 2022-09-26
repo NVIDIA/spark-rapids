@@ -270,6 +270,9 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       logInfo(s"The number of concurrent GPU tasks allowed is $concurrentGpuTasks")
       GpuSemaphore.initialize(concurrentGpuTasks)
     } catch {
+      case e: CudaFatalException =>
+        logError("Exception in the executor plugin, shutting down!", e)
+        logGpuDebugInfoAndExit(1)
       case e: Throwable =>
         // Exceptions in executor plugin can cause a single thread to die but the executor process
         // sticks around without any useful info until it hearbeat times out. Print what happened
@@ -338,7 +341,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   }
 
   // Try to run nvidia-smi when task fails due to a cuda exception.
-  private def logGpuDebugInfoAndExit() = synchronized {
+  private def logGpuDebugInfoAndExit(systemExitCode: Int) = synchronized {
     try {
       val nvidiaSmiStdout = new StringBuilder
       val nvidiaSmiStderr = new StringBuilder
@@ -357,7 +360,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       case e: Throwable => logWarning("nvidia-smi process failed with: "
           + e.getMessage())
     }
-    System.exit(20)
+    System.exit(systemExitCode)
   }
 
   override def shutdown(): Unit = {
@@ -374,7 +377,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
           case Some(_: CudaFatalException) =>
             logError("Stopping the Executor based on exception being a fatal CUDA error: " +
               s"${ef.toErrorString}")
-            logGpuDebugInfoAndExit()
+            logGpuDebugInfoAndExit(20)
           case Some(_: CudaException) =>
             logDebug(s"Executor onTaskFailed because of a non-fatal CUDA error: " +
               s"${ef.toErrorString}")
