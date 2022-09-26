@@ -19,9 +19,10 @@
 > import org.apache.spark.rdd.RDD
 > import org.apache.spark.sql.catalyst.InternalRow
 > import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, ExprId, If, NamedExpression, NullsFirst, SortOrder}
-24,25c36,44
+24,26c36,46
 < import org.apache.spark.sql.execution.{SortExec, SparkPlan, TrampolineUtil}
 < import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
+< import org.apache.spark.sql.types.{ArrayType, DataType, MapType}
 ---
 > import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 > import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
@@ -32,14 +33,14 @@
 > import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 > import org.apache.spark.sql.rapids.{CpuToGpuAggregateBufferConverter, CudfAggregate, GpuAggregateExpression, GpuToCpuAggregateBufferConverter}
 > import org.apache.spark.sql.rapids.execution.{GpuShuffleMeta, TrampolineUtil}
-26a46
+> import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StructType}
 > import org.apache.spark.sql.vectorized.ColumnarBatch
 28,29c48
 < // Spark 2.x - had to copy the GpuBaseAggregateMeta into each Hash and Sort Meta because no
 < // BaseAggregateExec class in Spark 2.x
 ---
 > object AggregateUtils {
-31,32c50,835
+31,32c50,851
 < class GpuHashAggregateMeta(
 <     val agg: HashAggregateExec,
 ---
@@ -173,6 +174,7 @@
 >  * @param modeInfo identifies which aggregation modes are being used
 >  * @param metrics metrics that will be updated during aggregation
 >  * @param configuredTargetBatchSize user-specified value for the targeted input batch size
+>  * @param useTieredProject user-specified option to enable tiered projections
 >  */
 > class GpuHashAggregateIterator(
 >     cbIter: Iterator[ColumnarBatch],
@@ -183,7 +185,8 @@
 >     resultExpressions: Seq[NamedExpression],
 >     modeInfo: AggregateModeInfo,
 >     metrics: GpuHashAggregateMetrics,
->     configuredTargetBatchSize: Long)
+>     configuredTargetBatchSize: Long,
+>     useTieredProject: Boolean)
 >     extends Iterator[ColumnarBatch] with Arm with AutoCloseable with Logging {
 > 
 >   // Partial mode:
@@ -274,7 +277,7 @@
 > 
 >   /** Aggregate all input batches and place the results in the aggregatedBatches queue. */
 >   private def aggregateInputBatches(): Unit = {
->     val aggHelper = new AggHelper(forceMerge = false)
+>     val aggHelper = new AggHelper(forceMerge = false, useTieredProject = useTieredProject)
 >     while (cbIter.hasNext) {
 >       withResource(cbIter.next()) { childBatch =>
 >         val isLastInputBatch = GpuColumnVector.isTaggedAsFinalBatch(childBatch)
@@ -379,7 +382,8 @@
 >     wasBatchMerged
 >   }
 > 
->   private lazy val concatAndMergeHelper = new AggHelper(forceMerge = true)
+>   private lazy val concatAndMergeHelper =
+>     new AggHelper(forceMerge = true, useTieredProject = useTieredProject)
 > 
 >   /**
 >    * Concatenate batches together and perform a merge aggregation on the result. The input batches
@@ -461,7 +465,8 @@
 >     new Iterator[ColumnarBatch] {
 >       override def hasNext: Boolean = keyBatchingIter.hasNext
 > 
->       private val mergeSortedHelper = new AggHelper(true, isSorted = true)
+>       private val mergeSortedHelper =
+>         new AggHelper(true, isSorted = true, useTieredProject = useTieredProject)
 > 
 >       override def next(): ColumnarBatch = {
 >         // batches coming out of the sort need to be merged
@@ -623,8 +628,10 @@
 >    *                the merge steps for each aggregate function
 >    * @param isSorted - if the batch is sorted this is set to true and is passed to cuDF
 >    *                   as an optimization hint
+>    * @param useTieredProject - if true, used tiered project for input projections
 >    */
->   class AggHelper(forceMerge: Boolean, isSorted: Boolean = false) {
+>   class AggHelper(forceMerge: Boolean, isSorted: Boolean = false,
+>       useTieredProject : Boolean = true) {
 >     // `CudfAggregate` instances to apply, either update or merge aggregates
 >     private val cudfAggregates = new mutable.ArrayBuffer[CudfAggregate]()
 > 
@@ -686,10 +693,16 @@
 >     }
 > 
 >     // a bound expression that is applied before the cuDF aggregate
->     private val preStepBound = if (forceMerge) {
->       GpuBindReferences.bindGpuReferences(preStep.toList, aggBufferAttributes.toList)
+>     private val preStepAttributes = if (forceMerge) {
+>       aggBufferAttributes
 >     } else {
->       GpuBindReferences.bindGpuReferences(preStep, inputAttributes)
+>       inputAttributes
+>     }
+>     private val (preStepBound, preStepBoundTiered) = if (useTieredProject) {
+>       (None, Some(GpuBindReferences.bindGpuReferencesTiered(preStep.toList,
+>         preStepAttributes.toList)))
+>     } else {
+>       (Some(GpuBindReferences.bindGpuReferences(preStep, preStepAttributes.toList)), None)
 >     }
 > 
 >     // a bound expression that is applied after the cuDF aggregate
@@ -704,7 +717,11 @@
 >      */
 >     def preProcess(toAggregateBatch: ColumnarBatch): ColumnarBatch = {
 >       withResource(new NvtxRange("pre-process", NvtxColor.DARK_GREEN)) { _ =>
->         GpuProjectExec.project(toAggregateBatch, preStepBound)
+>         if (useTieredProject) {
+>           preStepBoundTiered.get.tieredProject(toAggregateBatch)
+>         } else {
+>           GpuProjectExec.project(toAggregateBatch, preStepBound.get)
+>         }
 >       }
 >     }
 > 
@@ -829,7 +846,7 @@
 > abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
 >     plan: INPUT,
 >     aggRequiredChildDistributionExpressions: Option[Seq[Expression]],
-34,36c837,840
+34,36c853,856
 <     parent: Option[RapidsMeta[_, _]],
 <     rule: DataFromReplacementRule)
 <   extends SparkPlanMeta[HashAggregateExec](agg, conf, parent, rule) {
@@ -838,7 +855,37 @@
 >     rule: DataFromReplacementRule) extends SparkPlanMeta[INPUT](plan, conf, parent, rule) {
 > 
 >   val agg: BaseAggregateExec
-60a865,877
+51c871
+<     // We don't support Arrays and Maps as GroupBy keys yet, even they are nested in Structs. So,
+---
+>     // We don't support Maps as GroupBy keys yet, even if they are nested in Structs. So,
+53c873,882
+<     val arrayOrMapGroupings = agg.groupingExpressions.exists(e =>
+---
+>     val mapGroupings = agg.groupingExpressions.exists(e =>
+>       TrampolineUtil.dataTypeExistsRecursively(e.dataType,
+>         dt => dt.isInstanceOf[MapType]))
+>     if (mapGroupings) {
+>       willNotWorkOnGpu("MapTypes in grouping expressions are not supported")
+>     }
+> 
+>     // We support Arrays as grouping expression but not if the child is a struct. So we need to
+>     // run recursive type check on the lists of structs
+>     val arrayWithStructsGroupings = agg.groupingExpressions.exists(e =>
+55,57c884,891
+<         dt => dt.isInstanceOf[ArrayType] || dt.isInstanceOf[MapType]))
+<     if (arrayOrMapGroupings) {
+<       willNotWorkOnGpu("ArrayTypes or MapTypes in grouping expressions are not supported")
+---
+>         dt => dt match {
+>           case ArrayType(_: StructType, _) => true
+>           case _ => false
+>         })
+>     )
+>     if (arrayWithStructsGroupings) {
+>       willNotWorkOnGpu("ArrayTypes with Struct children in grouping expressions are not " +
+>           "supported")
+60a895,907
 > 
 >     if (agg.aggregateExpressions.exists(expr => expr.isDistinct)
 >         && agg.aggregateExpressions.exists(expr => expr.filter.isDefined)) {
@@ -852,7 +899,7 @@
 >     if (AggregationTagging.mustReplaceBoth) {
 >       tagForMixedReplacement()
 >     }
-124a942,980
+124a972,1011
 > 
 >   /** Prevent mixing of CPU and GPU aggregations */
 >   private def tagForMixedReplacement(): Unit = {
@@ -890,9 +937,10 @@
 >       aggregateAttributes.map(_.convertToGpu().asInstanceOf[Attribute]),
 >       resultExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
 >       childPlans.head.convertIfNeeded(),
->       conf.gpuTargetBatchSizeBytes)
+>       conf.gpuTargetBatchSizeBytes,
+>       conf.isTieredProjectEnabled)
 >   }
-127,128c983,989
+127,128c1014,1020
 < class GpuSortAggregateExecMeta(
 <     val agg: SortAggregateExec,
 ---
@@ -903,7 +951,7 @@
 > abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: BaseAggregateExec](
 >     plan: INPUT,
 >     aggRequiredChildDistributionExpressions: Option[Seq[Expression]],
-130,132c991,999
+130,132c1022,1030
 <     parent: Option[RapidsMeta[_, _]],
 <     rule: DataFromReplacementRule)
 <   extends SparkPlanMeta[SortAggregateExec](agg, conf, parent, rule) {
@@ -917,7 +965,7 @@
 >       expr.aggregateFunction.isInstanceOf[TypedImperativeAggregate[_]] &&
 >           (expr.mode == Partial || expr.mode == PartialMerge)
 >     }
-134,141c1001,1002
+134,141c1032,1033
 <   val groupingExpressions: Seq[BaseExprMeta[_]] =
 <     agg.groupingExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 <   val aggregateExpressions: Seq[BaseExprMeta[_]] =
@@ -929,7 +977,7 @@
 ---
 >   // overriding data types of Aggregation Buffers if necessary
 >   if (mayNeedAggBufferConversion) overrideAggBufTypes()
-143,144c1004,1015
+143,144c1035,1046
 <   override val childExprs: Seq[BaseExprMeta[_]] =
 <     groupingExpressions ++ aggregateExpressions ++ aggregateAttributes ++ resultExpressions
 ---
@@ -945,7 +993,7 @@
 >       case aggMeta: TypedImperativeAggExprMeta[_] => aggMeta.supportBufferConversion
 >       case _ => true
 >     }
-147,153c1018,1062
+147,153c1049,1094
 <     // We don't support Arrays and Maps as GroupBy keys yet, even they are nested in Structs. So,
 <     // we need to run recursive type check on the structs.
 <     val arrayOrMapGroupings = agg.groupingExpressions.exists(e =>
@@ -996,12 +1044,13 @@
 >         aggAttributes.map(_.convertToGpu().asInstanceOf[Attribute]),
 >         retExpressions.map(_.convertToGpu().asInstanceOf[NamedExpression]),
 >         childPlans.head.convertIfNeeded(),
->         conf.gpuTargetBatchSizeBytes)
+>         conf.gpuTargetBatchSizeBytes,
+>         conf.isTieredProjectEnabled)
 >     } else {
 >       super.convertToGpu()
-154a1064
+154a1096
 >   }
-156c1066,1312
+156c1098,1344
 <     tagForReplaceMode()
 ---
 >   /**
@@ -1251,7 +1300,7 @@
 >       agg.requiredChildDistributionExpressions, conf, parent, rule) {
 >   override def tagPlanForGpu(): Unit = {
 >     super.tagPlanForGpu()
-194,256d1349
+194,256d1381
 < 
 <   /**
 <    * Tagging checks tied to configs that control the aggregation modes that are replaced.
@@ -1315,15 +1364,15 @@
 <           s"Set ${conf.partialMergeDistinctEnabled} to true if desired")
 <     }
 <   }
-259,261d1351
+259,261d1383
 < // SPARK 2.x we can't check for the TypedImperativeAggregate properly so don't say we do the
 < // ObjectHashAggregate
 < /*
-265c1355
+265c1387
 <     parent: Option[RapidsMeta[_, _]],
 ---
 >     parent: Option[RapidsMeta[_, _, _]],
-270c1360,1563
+270c1392,1599
 < */
 ---
 > /**
@@ -1339,6 +1388,7 @@
 >  *                          node should project)
 >  * @param child incoming plan (where we get input columns from)
 >  * @param configuredTargetBatchSize user-configured maximum device memory size of a batch
+>  * @param configuredTieredProjectEnabled configurable optimization to use tiered projections
 >  */
 > case class GpuHashAggregateExec(
 >     requiredChildDistributionExpressions: Option[Seq[Expression]],
@@ -1347,7 +1397,8 @@
 >     aggregateAttributes: Seq[Attribute],
 >     resultExpressions: Seq[NamedExpression],
 >     child: SparkPlan,
->     configuredTargetBatchSize: Long) extends ShimUnaryExecNode with GpuExec with Arm {
+>     configuredTargetBatchSize: Long,
+>     configuredTieredProjectEnabled: Boolean) extends ShimUnaryExecNode with GpuExec with Arm {
 > 
 >   // lifted directly from `BaseAggregateExec.inputAttributes`, edited comment.
 >   def inputAttributes: Seq[Attribute] = {
@@ -1425,6 +1476,7 @@
 >     val resultExprs = resultExpressions
 >     val modeInfo = AggregateModeInfo(uniqueModes)
 >     val targetBatchSize = configuredTargetBatchSize
+>     val useTieredProject = configuredTieredProjectEnabled
 > 
 >     val rdd = child.executeColumnar()
 > 
@@ -1438,7 +1490,8 @@
 >         resultExprs,
 >         modeInfo,
 >         aggMetrics,
->         targetBatchSize)
+>         targetBatchSize,
+>         useTieredProject)
 >     }
 >   }
 > 
