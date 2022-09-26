@@ -105,10 +105,14 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
    * @return a tuple of the CSV summary followed by the Text summary.
    */
   def getPerSqlTextAndCSVSummary(sqlID: Long): (String, String) = {
-    val sqlInfo = aggregatePerSQLStats(sqlID)
-    val csvResult = constructPerSqlResult(sqlInfo, QualOutputWriter.CSV_DELIMITER, false)
-    val textResult = constructPerSqlResult(sqlInfo, QualOutputWriter.TEXT_DELIMITER, true)
-    (csvResult, textResult)
+    if (reportSqlLevel) {
+      val sqlInfo = aggregatePerSQLStats(sqlID)
+      val csvResult = constructPerSqlResult(sqlInfo, QualOutputWriter.CSV_DELIMITER, false)
+      val textResult = constructPerSqlResult(sqlInfo, QualOutputWriter.TEXT_DELIMITER, true)
+      (csvResult, textResult)
+    } else {
+      ("", "")
+    }
   }
 
   /**
@@ -122,8 +126,12 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
    */
   def getPerSQLSummary(sqlID: Long, delimiter: String = "|",
       prettyPrint: Boolean = true, sqlDescLength: Int = SQL_DESC_LENGTH): String = {
-    val sqlInfo = aggregatePerSQLStats(sqlID)
-    constructPerSqlResult(sqlInfo, delimiter, prettyPrint, sqlDescLength)
+    if (reportSqlLevel) {
+      val sqlInfo = aggregatePerSQLStats(sqlID)
+      constructPerSqlResult(sqlInfo, delimiter, prettyPrint, sqlDescLength)
+    } else {
+      ""
+    }
   }
 
   private def constructPerSqlResult(
@@ -202,26 +210,22 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
 
   // don't aggregate at app level, just sql level
   private def aggregatePerSQLStats(sqlID: Long): Option[EstimatedPerSQLSummaryInfo] = {
-    val sqlDesc = sqlIdToInfo(sqlID).description
+    val sqlDesc = sqlIdToInfo.get(sqlID).map(_.description)
     val origPlanInfo = sqlPlans.get(sqlID).map { plan =>
-      SQLPlanParser.parseSQLPlan(appId, plan, sqlID, sqlDesc, pluginTypeChecker, this)
+      SQLPlanParser.parseSQLPlan(appId, plan, sqlID, sqlDesc.getOrElse(""), pluginTypeChecker, this)
     }
     val perSqlInfos = origPlanInfo.flatMap { pInfo =>
       // filter out any execs that should be removed
       val planInfos = removeExecsShouldRemove(Seq(pInfo))
       // get a summary of each SQL Query
       val perSqlStageSummary = summarizeSQLStageInfo(planInfos)
-      if (reportSqlLevel) {
-        sqlIdToInfo.get(pInfo.sqlID).map { sqlInfo =>
-          val wallClockDur = sqlInfo.duration.getOrElse(0L)
-          // get task duration ratio
-          val sqlStageSums = perSqlStageSummary.filter(_.sqlID == pInfo.sqlID)
-          val estimatedInfo = getPerSQLWallClockSummary(sqlStageSums, wallClockDur,
-            sqlIDtoFailures.get(pInfo.sqlID).nonEmpty, appName)
-          EstimatedPerSQLSummaryInfo(pInfo.sqlID, pInfo.sqlDesc, estimatedInfo)
-        }
-      } else {
-        None
+      sqlIdToInfo.get(pInfo.sqlID).map { sqlInfo =>
+        val wallClockDur = sqlInfo.duration.getOrElse(0L)
+        // get task duration ratio
+        val sqlStageSums = perSqlStageSummary.filter(_.sqlID == pInfo.sqlID)
+        val estimatedInfo = getPerSQLWallClockSummary(sqlStageSums, wallClockDur,
+          sqlIDtoFailures.get(pInfo.sqlID).nonEmpty, appName)
+        EstimatedPerSQLSummaryInfo(pInfo.sqlID, pInfo.sqlDesc, estimatedInfo)
       }
     }
     perSqlInfos

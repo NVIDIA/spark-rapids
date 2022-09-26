@@ -847,11 +847,11 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
-  test("running qualification app files") {
+  test("running qualification app files with per sql") {
     TrampolineUtil.withTempPath { outParquetFile =>
       TrampolineUtil.withTempPath { outJsonFile =>
 
-        val qualApp = new RunningQualificationApp()
+        val qualApp = new RunningQualificationApp(true, false)
         ToolTestUtils.runAndCollect("streaming") { spark =>
           val listener = qualApp.getEventListener
           spark.sparkContext.addSparkListener(listener)
@@ -869,6 +869,11 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(rowsSumOut.size == 2)
         val headers = rowsSumOut(0).split(":")
         val values = rowsSumOut(1).split(":")
+
+        val (csvOut, txtOut) = qualApp.getPerSqlTextAndCSVSummary(1)
+        assert(csvOut == "hi")
+        assert(txtOut == "hi")
+
         val appInfo = qualApp.aggregateStats()
         assert(appInfo.nonEmpty)
         assert(headers.size ==
