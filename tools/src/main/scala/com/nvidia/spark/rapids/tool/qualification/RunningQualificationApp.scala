@@ -203,10 +203,6 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
 
   // don't aggregate at app level, just sql level
   private def aggregatePerSQLStats(sqlID: Long): Option[EstimatedPerSQLSummaryInfo] = {
-    // a bit odd but force filling in notSupportFormatAndTypes
-    // TODO - make this better
-    // super.checkUnsupportedReadFormats()
-
     val sqlDesc = sqlIdToInfo(sqlID).description
     val origPlanInfo = sqlPlans.get(sqlID).map { plan =>
       SQLPlanParser.parseSQLPlan(appId, plan, sqlID, sqlDesc, pluginTypeChecker, this)

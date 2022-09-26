@@ -80,8 +80,8 @@ abstract class AppBase(
       sqlIdForJob == sqlID
     }.keys.toSeq
     jobsIdsInSQLQuery.flatMap { jId =>
-      jobIdToInfo.get(jId).flatMap(_.stageIds)
-    }
+      jobIdToInfo.get(jId).map(_.stageIds)
+    }.flatten
   }
 
   def cleanupAccumId(accId: Long): Unit = {
@@ -106,8 +106,6 @@ abstract class AppBase(
     val dsToRemove = dataSourceInfo.filter(_.sqlID == sqlID)
     dsToRemove.foreach(dataSourceInfo -= _)
 
-    // TODO what about jobs not in any sql? Perhaps we should remove all jobs ids
-    // < then these at some point?
     val jobsInSql = jobIdToSqlID.filter { case (_, sqlIdForJob) =>
       sqlIdForJob == sqlID
     }.keys

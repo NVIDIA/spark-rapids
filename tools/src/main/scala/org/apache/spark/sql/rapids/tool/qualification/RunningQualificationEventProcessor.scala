@@ -43,7 +43,6 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
   }
 
   private val outputFileFromConfig = sparkConf.get("spark.rapids.qualification.outputDir", "")
-  logWarning("Tom output file is: " + outputFileFromConfig)
   private lazy val appName = qualApp.appInfo.map(_.appName).getOrElse("")
   private lazy val fileWriter: Option[RunningQualOutputWriter] =
     if (outputFileFromConfig.nonEmpty) {
@@ -53,6 +52,12 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
     } else {
       None
     }
+
+  private def initListener(): Unit = {
+    // install after startup when SparkContext is available
+    val sc = SparkContext.getOrCreate(sparkConf)
+    sc.cleaner.foreach(x => x.attachListener(new QualCleanerListener()))
+  }
 
   private def writeSQLDetails(sqlID: Long): Unit = {
     val (csvSQLInfo, textSQLInfo) = qualApp.getPerSqlTextAndCSVSummary(sqlID)
@@ -94,11 +99,9 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
 
   override def onJobStart(jobStart: SparkListenerJobStart): Unit = {
     listener.onJobStart(jobStart)
-    // TODO - getter place to do this?
+    // make sure we have attached the listener on the first job start
     if (!isInited.get()) {
-      // install after startup when SparkContext is available
-      val sc = SparkContext.getOrCreate(sparkConf)
-      sc.cleaner.foreach(x => x.attachListener(new QualCleanerListener()))
+      initListener()
       isInited.set(true)
     }
   }
