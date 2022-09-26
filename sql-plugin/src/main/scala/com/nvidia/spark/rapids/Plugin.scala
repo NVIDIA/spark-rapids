@@ -270,13 +270,13 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       logInfo(s"The number of concurrent GPU tasks allowed is $concurrentGpuTasks")
       GpuSemaphore.initialize(concurrentGpuTasks)
     } catch {
+      // Exceptions in executor plugin can cause a single thread to die but the executor process
+      // sticks around without any useful info until it hearbeat times out. Print what happened
+      // and exit immediately.
       case e: CudaFatalException =>
-        logError("Exception in the executor plugin, shutting down!", e)
-        logGpuDebugInfoAndExit(1)
+      logError("Fatal Exception in the executor plugin, shutting down!", e)
+        logGpuDebugInfoAndExit(systemExitCode = 1)
       case e: Throwable =>
-        // Exceptions in executor plugin can cause a single thread to die but the executor process
-        // sticks around without any useful info until it hearbeat times out. Print what happened
-        // and exit immediately.
         logError("Exception in the executor plugin, shutting down!", e)
         System.exit(1)
     }
@@ -347,7 +347,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       val nvidiaSmiStderr = new StringBuilder
       val cmd = "nvidia-smi".run(
         ProcessLogger(s => nvidiaSmiStdout.append(s + "\n"), s => nvidiaSmiStderr.append(s + "\n")))
-      waitForProcess(cmd, 2000) match {
+      waitForProcess(cmd, 10000) match {
         case Some(exitStatus) =>
           if (exitStatus == 0) {
             logWarning("nvidia-smi:\n" + nvidiaSmiStdout)
@@ -357,8 +357,8 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         case None => logWarning("nvidia-smi command timed out")
       }
     } catch {
-      case e: Throwable => logWarning("nvidia-smi process failed with: "
-          + e.getMessage())
+      case e: Throwable =>
+        logWarning("nvidia-smi process failed", e)
     }
     System.exit(systemExitCode)
   }
@@ -377,7 +377,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
           case Some(_: CudaFatalException) =>
             logError("Stopping the Executor based on exception being a fatal CUDA error: " +
               s"${ef.toErrorString}")
-            logGpuDebugInfoAndExit(20)
+            logGpuDebugInfoAndExit(systemExitCode = 20)
           case Some(_: CudaException) =>
             logDebug(s"Executor onTaskFailed because of a non-fatal CUDA error: " +
               s"${ef.toErrorString}")
