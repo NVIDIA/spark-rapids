@@ -1316,11 +1316,32 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(64 * 1024)
 
+  val SHUFFLE_MULTITHREADED_MAX_BYTES_IN_FLIGHT =
+    conf("spark.rapids.shuffle.multiThreaded.maxBytesInFlight")
+      .doc("The size limit, in bytes, that the RAPIDS shuffle manager configured in " +
+          "\"MULTITHREADED\" mode will allow to be deserialized concurrently.")
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(Integer.MAX_VALUE)
+
   val SHUFFLE_MULTITHREADED_WRITER_THREADS =
     conf("spark.rapids.shuffle.multiThreaded.writer.threads")
-      .doc("The number of threads to use for writing shuffle blocks per executor.")
+      .doc("The number of threads to use for writing shuffle blocks per executor in the " +
+          "RAPIDS shuffle manager configured in \"MULTITHREADED\" mode. " +
+          "There are two special values: " +
+          "0 = feature is disabled, falls back to Spark built-in shuffle writer; " +
+          "1 = our implementation of Spark's built-in shuffle writer with extra metrics.")
       .integerConf
       .createWithDefault(20)
+
+  val SHUFFLE_MULTITHREADED_READER_THREADS =
+    conf("spark.rapids.shuffle.multiThreaded.reader.threads")
+        .doc("The number of threads to use for reading shuffle blocks per executor in the " +
+            "RAPIDS shuffle manager configured in \"MULTITHREADED\" mode. " +
+            "There are two special values: " +
+            "0 = feature is disabled, falls back to Spark built-in shuffle reader; " +
+            "1 = our implementation of Spark's built-in shuffle reader with extra metrics.")
+        .integerConf
+        .createWithDefault(20)
 
   // ALLUXIO CONFIGS
 
@@ -2009,7 +2030,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
 
+  lazy val shuffleMultiThreadedMaxBytesInFlight: Long =
+    get(SHUFFLE_MULTITHREADED_MAX_BYTES_IN_FLIGHT)
+
   lazy val shuffleMultiThreadedWriterThreads: Int = get(SHUFFLE_MULTITHREADED_WRITER_THREADS)
+
+  lazy val shuffleMultiThreadedReaderThreads: Int = get(SHUFFLE_MULTITHREADED_READER_THREADS)
 
   def isUCXShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode

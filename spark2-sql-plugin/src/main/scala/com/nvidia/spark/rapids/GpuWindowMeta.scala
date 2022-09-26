@@ -34,7 +34,7 @@ abstract class GpuBaseWindowExecMeta[WindowExecType <: SparkPlan] (windowExec: W
                         conf: RapidsConf,
                         parent: Option[RapidsMeta[_, _]],
                         rule: DataFromReplacementRule)
-  extends SparkPlanMeta[WindowExecType](windowExec, conf, parent, rule) with Logging {
+  extends SparkPlanMeta[WindowExecType](windowExec, conf, parent, rule) {
 
   /**
    * Extracts window-expression from WindowExecType.
