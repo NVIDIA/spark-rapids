@@ -287,6 +287,7 @@ class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[Applicati
     logDebug("Processing event: " + event.getClass)
     // AQE plan can override the ones got from SparkListenerSQLExecutionStart
     app.physicalPlanDescription += (event.executionId -> event.physicalPlanDescription)
+    super.doSparkListenerSQLAdaptiveExecutionUpdate(app, event)
   }
 
   override def doSparkListenerSQLAdaptiveSQLMetricUpdates(
