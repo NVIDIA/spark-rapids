@@ -337,7 +337,9 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         return Some(cmd.exitValue())
       }
     } while (System.currentTimeMillis() < endTime)
-    None // Timed out
+    // Timed out
+    cmd.destroy()
+    None
   }
 
   // Try to run nvidia-smi when task fails due to a cuda exception.
