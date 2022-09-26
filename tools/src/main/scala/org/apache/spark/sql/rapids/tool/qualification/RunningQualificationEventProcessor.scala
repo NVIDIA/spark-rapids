@@ -16,6 +16,8 @@
 
 package org.apache.spark.sql.rapids.tool.qualification
 
+import java.util.concurrent.atomic.AtomicBoolean
+
 import com.nvidia.spark.rapids.tool.qualification.RunningQualOutputWriter
 
 import org.apache.spark.{CleanerListener, SparkConf, SparkContext}
@@ -27,22 +29,19 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
 
   private val qualApp = new com.nvidia.spark.rapids.tool.qualification.RunningQualificationApp(true)
   private val listener = qualApp.getEventListener
+  private val isInited = new AtomicBoolean(false)
 
   class QualCleanerListener extends SparkListener with CleanerListener with Logging {
-    def rddCleaned(rddId: Int): Unit = {
-      logWarning("TOM rdd cleaned")
-    }
     def accumCleaned(accId: Long): Unit = {
       // TODO - remove the accums
       logWarning("TOM ACCUMULATOR CLEANED")
+      qualApp.cleanupAccumId(accId) // TODO write this function
     }
+    def rddCleaned(rddId: Int): Unit = {}
     def shuffleCleaned(shuffleId: Int): Unit = {}
     def broadcastCleaned(broadcastId: Long): Unit = {}
     def checkpointCleaned(rddId: Long): Unit = {}
   }
-
-  val sc = SparkContext.getOrCreate(sparkConf)
-  sc.cleaner.foreach( x => x.attachListener(new QualCleanerListener()))
 
   private val outputFileFromConfig = sparkConf.get("spark.rapids.qualification.outputDir", "")
   logWarning("Tom output file is: " + outputFileFromConfig)
@@ -80,6 +79,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
     } else {
       logWarning(textSQLInfo)
     }
+    qualApp.cleanupSQL(sqlID)
   }
 
   private def close(): Unit = {
@@ -108,6 +108,12 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
 
   override def onJobStart(jobStart: SparkListenerJobStart): Unit = {
     listener.onJobStart(jobStart)
+    if (!isInited.get()) {
+      // install after startup when SparkContext is available
+      val sc = SparkContext.getOrCreate(sparkConf)
+      sc.cleaner.foreach(x => x.attachListener(new QualCleanerListener()))
+      isInited.set(true)
+    }
   }
 
   override def onJobEnd(jobEnd: SparkListenerJobEnd): Unit = {

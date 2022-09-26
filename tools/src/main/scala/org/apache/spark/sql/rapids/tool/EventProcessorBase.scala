@@ -284,6 +284,8 @@ abstract class EventProcessorBase[T <: AppBase](app: T) extends SparkListener wi
       event: SparkListenerJobStart): Unit = {
     logDebug("Processing event: " + event.getClass)
     val sqlIDString = event.properties.getProperty("spark.sql.execution.id")
+    // TODO - only track when it has a sql id for the running app
+    logWarning("tom sqlid sto string is: " + sqlIDString)
     val sqlID = ProfileUtils.stringToLong(sqlIDString)
     // add jobInfoClass
     val thisJob = new JobInfoClass(

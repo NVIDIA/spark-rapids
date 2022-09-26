@@ -263,7 +263,7 @@ object SQLPlanParser extends Logging {
           None
         }
       case _ => logDebug(s"Incorrect expression - $expr")
-                None
+        None
     }
     funcName
   }

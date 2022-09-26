@@ -58,7 +58,7 @@ import org.apache.spark.sql.rapids.tool.qualification._
  */
 class RunningQualificationApp(reportSqlLevel: Boolean,
     pluginTypeChecker: PluginTypeChecker = new PluginTypeChecker())
-  extends QualificationAppInfo(None, None, pluginTypeChecker, reportSqlLevel) {
+  extends QualificationAppInfo(None, None, pluginTypeChecker, reportSqlLevel, perSqlOnly=true) {
 
   // we don't know the max sql query name size so lets cap it at 100
   private val SQL_DESC_LENGTH = 100

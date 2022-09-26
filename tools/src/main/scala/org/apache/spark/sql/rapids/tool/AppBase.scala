@@ -62,7 +62,6 @@ abstract class AppBase(
     HashMap[Long, ArrayBuffer[TaskStageAccumCase]]()
 
   val stageIdToInfo: HashMap[(Int, Int), StageInfoClass] = new HashMap[(Int, Int), StageInfoClass]()
-  // TODO - used by per sql
   val accumulatorToStages: HashMap[Long, Set[Int]] = new HashMap[Long, Set[Int]]()
 
   var driverAccumMap: HashMap[Long, ArrayBuffer[DriverAccumCase]] =
@@ -85,37 +84,46 @@ abstract class AppBase(
     }
   }
 
-  def cleanupSQL(sqlID: Int): Unit = {
+  def cleanupAccumId(accId: Long): Unit = {
+    taskStageAccumMap.remove(accId)
+    driverAccumMap.remove(accId)
+    accumulatorToStages.remove(accId)
+  }
+
+  def cleanupStages(stageIds: Set[Int]): Unit = {
+    // stageIdToInfo can have multiple stage attempts, remove all of them
+    stageIds.foreach { stageId =>
+      val toRemove = stageIdToInfo.keys.filter(_._1 == stageId)
+      toRemove.foreach(stageIdToInfo.remove(_))
+    }
+  }
+
+  def cleanupSQL(sqlID: Long): Unit = {
     sqlIDToDataSetOrRDDCase.remove(sqlID)
     sqlIDtoProblematic.remove(sqlID)
-    val info = sqlIdToInfo.remove(sqlID)
+    sqlIdToInfo.remove(sqlID)
+    sqlPlans.remove(sqlID)
     val dsToRemove = dataSourceInfo.filter(_.sqlID == sqlID)
     dsToRemove.foreach(dataSourceInfo -= _)
-
-    // TODO get stage ids in sql to remove, but stages might be used by others?
-    // val stageIdsWithAttempts = stageIdToInfo.filterKeys(_._1 == stageId).keys
-    // stageIdsWithAttempts.foreach(stageIdToInfo.remove(_))
-
-    // TODO - get all accumulator ids for sql query and remove from driverAccumMap
-    // and taskStageAccumMap, accumulatorToStages
-    // TODO is it ok to do this if accumids could be in multiple sql? reused stages?
-    /* val accumsInSqlID = sqlPlans.get(sqlID).map { plan =>
-      plan.metrics.map(_.accumulatorId)
-    }
-    accumsInSqlID.map { ids =>
-      ids.foreach { id =>
-        taskStageAccumMap.remove(id)
-      }
-    }
-
-     */
 
     // TODO what about jobs not in any sql? Perhaps we should remove all jobs ids
     // < then these at some point?
     val jobsInSql = jobIdToSqlID.filter { case (_, sqlIdForJob) =>
       sqlIdForJob == sqlID
     }.keys
-    jobsInSql.foreach { id =>
+    jobsInSql.foreach { jobId =>
+      // must call cleanupStage first
+      // clean when no other jobs need that stage
+      // not sure about races here but lets check the jobs and assume we can clean
+      // when none of them reference this stage
+      val stagesNotInOtherJobs = jobIdToInfo.get(jobId).map { jInfo =>
+        val stagesInJobToRemove = jInfo.stageIds.toSet
+        // check to make sure no other jobs reference the same stage
+        val allOtherJobs = jobIdToInfo - jobId
+        val allOtherStageIds = allOtherJobs.values.flatMap(_.stageIds).toSet
+        stagesInJobToRemove.filter(!allOtherStageIds.contains(_))
+      }
+      stagesNotInOtherJobs.foreach(cleanupStages(_))
       jobIdToSqlID.remove(_)
       jobIdToInfo.remove(_)
     }

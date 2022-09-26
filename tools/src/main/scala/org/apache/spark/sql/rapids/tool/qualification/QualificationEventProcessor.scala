@@ -26,7 +26,7 @@ import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui._
 import org.apache.spark.sql.rapids.tool.{EventProcessorBase, GpuEventLogException, ToolUtils}
 
-class QualificationEventProcessor(app: QualificationAppInfo)
+class QualificationEventProcessor(app: QualificationAppInfo, perSqlOnly: Boolean)
   extends EventProcessorBase[QualificationAppInfo](app) {
 
   type T = QualificationAppInfo
@@ -86,17 +86,6 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       app: QualificationAppInfo,
       event: SparkListenerSQLExecutionStart): Unit = {
     super.doSparkListenerSQLExecutionStart(app, event)
-    val sqlExecution = QualSQLExecutionInfo(
-      event.executionId,
-      event.time,
-      None,
-      None,
-      "",
-      None,
-      false,
-      ""
-    )
-    app.sqlStart += (event.executionId -> sqlExecution)
     app.processSQLPlan(event.executionId, event.sparkPlanInfo)
   }
 
@@ -105,7 +94,9 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       event: SparkListenerSQLExecutionEnd): Unit = {
     super.doSparkListenerSQLExecutionEnd(app, event)
     logDebug("Processing event: " + event.getClass)
-    app.lastSQLEndTime = Some(event.time)
+    if (!perSqlOnly) {
+      app.lastSQLEndTime = Some(event.time)
+    }
     // only include duration if it contains no jobs that failed
     val failures = app.sqlIDtoFailures.get(event.executionId)
     if (event.executionFailure.isDefined || failures.isDefined) {
@@ -136,7 +127,9 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       event: SparkListenerJobEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
     super.doSparkListenerJobEnd(app, event)
-    app.lastJobEndTime = Some(event.time)
+    if (!perSqlOnly) {
+      app.lastJobEndTime = Some(event.time)
+    }
     if (event.jobResult != JobSucceeded) {
       app.jobIdToSqlID.get(event.jobId) match {
         case Some(sqlID) =>
