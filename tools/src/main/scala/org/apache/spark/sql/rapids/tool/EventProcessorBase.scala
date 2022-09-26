@@ -16,7 +16,6 @@
 
 package org.apache.spark.sql.rapids.tool
 
-import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 import scala.util.control.NonFatal
 
@@ -307,23 +306,7 @@ abstract class EventProcessorBase[T <: AppBase](app: T) extends SparkListener wi
       event: SparkListenerJobStart): Unit = {
     logDebug("Processing event: " + event.getClass)
     val sqlIDString = event.properties.getProperty("spark.sql.execution.id")
-    // TODO - only track when it has a sql id for the running app
-    logWarning("tom sqlid sto string is: " + sqlIDString)
     val sqlID = ProfileUtils.stringToLong(sqlIDString)
-    // add jobInfoClass
-    val thisJob = new JobInfoClass(
-      event.jobId,
-      event.stageIds,
-      sqlID,
-      event.properties.asScala,
-      event.time,
-      None,
-      None,
-      None,
-      None,
-      ProfileUtils.isPluginEnabled(event.properties.asScala) || app.gpuMode
-    )
-    app.jobIdToInfo.put(event.jobId, thisJob)
     sqlID.foreach(app.jobIdToSqlID(event.jobId) = _)
   }
 

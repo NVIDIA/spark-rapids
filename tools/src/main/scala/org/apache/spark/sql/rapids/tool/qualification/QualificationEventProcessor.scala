@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids.tool.qualification
 
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.tool.profiling._
@@ -119,6 +120,24 @@ class QualificationEventProcessor(app: QualificationAppInfo, perSqlOnly: Boolean
       event.stageIds.foreach { stageId =>
         app.stageIdToSqlID.getOrElseUpdate(stageId, sqlID)
       }
+    }
+    val sqlID = ProfileUtils.stringToLong(sqlIDString)
+    // don't store if we are only processing per sql queries and the job isn't
+    // related to a SQL query
+    if ((perSqlOnly && sqlID.isDefined) || !perSqlOnly) {
+      val thisJob = new JobInfoClass(
+        event.jobId,
+        event.stageIds,
+        sqlID,
+        event.properties.asScala,
+        event.time,
+        None,
+        None,
+        None,
+        None,
+        ProfileUtils.isPluginEnabled(event.properties.asScala) || app.gpuMode
+      )
+      app.jobIdToInfo.put(event.jobId, thisJob)
     }
   }
 

@@ -80,7 +80,7 @@ abstract class AppBase(
       sqlIdForJob == sqlID
     }.keys.toSeq
     jobsIdsInSQLQuery.flatMap { jId =>
-      jobIdToInfo(jId).stageIds
+      jobIdToInfo.get(jId).flatMap(_.stageIds)
     }
   }
 

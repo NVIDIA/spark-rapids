@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids.tool.profiling
 
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 import scala.util.control.NonFatal
 
@@ -34,6 +35,29 @@ import org.apache.spark.sql.rapids.tool.EventProcessorBase
  */
 class EventsProcessor(app: ApplicationInfo) extends EventProcessorBase[ApplicationInfo](app)
   with Logging {
+
+  override def doSparkListenerJobStart(
+      app: ApplicationInfo,
+      event: SparkListenerJobStart): Unit = {
+    logDebug("Processing event: " + event.getClass)
+    super.doSparkListenerJobStart(app, event)
+    val sqlIDString = event.properties.getProperty("spark.sql.execution.id")
+    val sqlID = ProfileUtils.stringToLong(sqlIDString)
+    // add jobInfoClass
+    val thisJob = new JobInfoClass(
+      event.jobId,
+      event.stageIds,
+      sqlID,
+      event.properties.asScala,
+      event.time,
+      None,
+      None,
+      None,
+      None,
+      ProfileUtils.isPluginEnabled(event.properties.asScala) || app.gpuMode
+    )
+    app.jobIdToInfo.put(event.jobId, thisJob)
+  }
 
   override def doSparkListenerResourceProfileAddedReflect(
       app: ApplicationInfo,
