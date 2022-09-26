@@ -21,9 +21,6 @@ import org.apache.spark.sql.execution.FileSourceScanExec
 object GpuReadOrcFileFormat {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val fsse = meta.wrapped
-    if (fsse.relation.options.getOrElse("mergeSchema", "false").toBoolean) {
-      meta.willNotWorkOnGpu("mergeSchema and schema evolution is not supported yet")
-    }
     GpuOrcScan.tagSupport(
       fsse.sqlContext.sparkSession,
       fsse.requiredSchema,
