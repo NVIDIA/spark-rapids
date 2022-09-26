@@ -22,6 +22,8 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{Map => MutableMap}
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration
 import scala.sys.process._
 import scala.util.Try
 import scala.util.matching.Regex
@@ -325,15 +327,32 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     }
   }
 
-  // Try to output nvidia-smi output when task fails due to a cuda exception.
+  // Try to run nvidia-smi when task fails due to a cuda exception.
   private def logGpuDebugInfo() = {
     try {
-      val nvidiaSmiOutput = "nvidia-smi".!!
-      logWarning("nvidia-smi output:\n" + nvidiaSmiOutput)
+      val nvidiaSmiStdout = new StringBuilder
+      val nvidiaSmiStderr = new StringBuilder
+      val cmd = "nvidia-smi".run(
+        ProcessLogger(s => nvidiaSmiStdout.append(s + "\n"), s => nvidiaSmiStderr.append(s + "\n")))
+      val cmdFuture = concurrent.Future(concurrent.blocking(cmd.exitValue()))
+      try {
+        val exitStatus = concurrent.Await.result(cmdFuture, duration.Duration(2, duration.SECONDS))
+        if (exitStatus == 0) {
+          logWarning("nvidia-smi:\n" + nvidiaSmiStdout)
+        } else {
+          logWarning("nvidia-smi failed with: " + nvidiaSmiStdout + nvidiaSmiStderr)
+        }
+      } catch {
+        case _: concurrent.TimeoutException =>
+          logWarning("nvidia-smi command timed out")
+          cmd.destroy()
+      }
     } catch {
-      case _: Throwable => // ignore
+      case e: Throwable => logWarning("nvidia-smi process failed with: "
+          + e.getMessage())
     }
   }
+
   override def shutdown(): Unit = {
     GpuSemaphore.shutdown()
     PythonWorkerSemaphore.shutdown()
@@ -353,7 +372,6 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
           case Some(_: CudaException) =>
             logWarning(s"Executor onTaskFailed because of a non-fatal CUDA error: " +
               s"${ef.toErrorString}")
-            logGpuDebugInfo()
           case Some(_: CudfException) =>
             logDebug(s"Executor onTaskFailed because of a CUDF error: ${ef.toErrorString}")
           case _ =>
