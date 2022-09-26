@@ -19,10 +19,11 @@ package com.nvidia.spark.rapids.tool.qualification
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import com.nvidia.spark.rapids.tool.qualification.QualOutputWriter.TEXT_DELIMITER
 
-import org.apache.spark.sql.rapids.tool.qualification.QualificationSummaryInfo
-
 /**
  * This class handles writing output to files for a running qualification app.
+ * Currently this only supports writing per sql output, not the entire application
+ * qualification, since doing an entire application may use a lot of memory if its
+ * long running.
  *
  * @param appId The id of the application
  * @param appName The name of the application
@@ -34,7 +35,6 @@ class RunningQualOutputWriter(
     outputDir: String)
   extends QualOutputWriter(outputDir, reportReadSchema=false, printStdout=false,
     prettyPrintOrder = "desc") {
-  // TODO - do we really need to extend the outputwriter
 
   // Since this is running app keeps these open until finished with application.
   private lazy val csvPerSQLFileWriter = new ToolTextFileWriter(outputDir,
@@ -75,11 +75,5 @@ class RunningQualOutputWriter(
   def writePerSqlTextReport(sqlInfo: String): Unit = {
     textPerSQLFileWriter.write(sqlInfo)
     textPerSQLFileWriter.flush()
-  }
-
-  def writeApplicationReport(appSummary: QualificationSummaryInfo): Unit = {
-    // only writing a single application so num output rows should be 1
-    writeTextReport(Seq(appSummary), Seq(appSummary.estimatedInfo), numOutputRows=1)
-    writeDetailedCSVReport(Seq(appSummary))
   }
 }

@@ -47,6 +47,7 @@ class ToolTextFileWriter(finalOutputDir: String, logFileName: String,
     logWarning(s"schem is: ${uri.getScheme} is default is $isDefaultLocal final output" +
       s" dir $finalOutputDir")
     val fs = FileSystem.get(uri, hadoopConf)
+    // TODO - test on dbfs, I don't think this works
     val outStream = if ((isDefaultLocal && uri.getScheme == null) || uri.getScheme == "file"
       || finalOutputDir.startsWith("/dbfs")) {
       logWarning("using local file system")

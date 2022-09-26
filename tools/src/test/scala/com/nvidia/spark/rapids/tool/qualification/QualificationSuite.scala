@@ -769,6 +769,12 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
     val sumOut = qualApp.getSummary()
     val detailedOut = qualApp.getDetailed()
+    // wasn't created with per sql config on so should return empty
+    val perSqlOutput = qualApp.getPerSQLSummary(1)
+    assert(perSqlOutput.isEmpty)
+    val (perSqlcsv, perSqltxt) = qualApp.getPerSqlTextAndCSVSummary(1)
+    assert(perSqlcsv.isEmpty)
+    assert(perSqltxt.isEmpty)
     assert(sumOut.nonEmpty)
     assert(sumOut.startsWith("|") && sumOut.endsWith("|\n"))
     assert(detailedOut.nonEmpty)

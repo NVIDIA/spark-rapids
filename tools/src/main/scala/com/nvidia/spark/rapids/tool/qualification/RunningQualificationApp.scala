@@ -32,12 +32,15 @@ import org.apache.spark.sql.rapids.tool.qualification._
  * like this on a single application, the detailed output may be most useful to look
  * for potential issues and time spent in Dataframe operations.
  *
+ * Please note that this will use additional memory so use with caution if using with a
+ * long running application.
+ *
  * Create the `RunningQualicationApp`:
  * {{{
  *   val qualApp = new com.nvidia.spark.rapids.tool.qualification.RunningQualificationApp()
  * }}}
  *
- *  * Create the `RunningQualicationApp` that reports for each SQL Query:
+ *  * Create the `RunningQualicationApp` that can report for each SQL Query:
  * {{{
  *   val qualApp = new com.nvidia.spark.rapids.tool.qualification.RunningQualificationApp(true)
  * }}}
@@ -71,7 +74,7 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
   }
 
   def this() = {
-    this(false)
+    this(false, false)
   }
 
   // since application is running, try to initialize current state
@@ -80,7 +83,7 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
     val appIdConf = SparkEnv.get.conf.getOption("spark.app.id")
     val appStartTime = SparkEnv.get.conf.get("spark.app.startTime", "-1")
 
-    // start event doesn't happen so initial it
+    // start event doesn't happen so initialize it
     val thisAppInfo = QualApplicationInfo(
       appName,
       appIdConf,
@@ -195,10 +198,6 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
         logWarning(s"Unable to get qualification information for this application")
         ""
     }
-  }
-
-  def getApplicationDetails: Option[QualificationSummaryInfo] = {
-    super.aggregateStats()
   }
 
   // don't aggregate at app level, just sql level
