@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.DateUtils.TimestampFormatConversionException
 import com.nvidia.spark.rapids.GpuOverrides.extractStringLit
 
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, TimeZoneAwareExpression, FromUTCTimestamp}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, FromUTCTimestamp, TimeZoneAwareExpression}
 import org.apache.spark.sql.types._
 
 case class ParseFormatMeta(separator: Option[Char], isTimestamp: Boolean, validRegex: String)
