@@ -57,16 +57,18 @@ import org.apache.spark.sql.rapids.tool.qualification._
  *
  */
 class RunningQualificationApp(reportSqlLevel: Boolean,
+    perSqlOnly: Boolean = false,
     pluginTypeChecker: PluginTypeChecker = new PluginTypeChecker())
-  extends QualificationAppInfo(None, None, pluginTypeChecker, reportSqlLevel, perSqlOnly=true) {
+  extends QualificationAppInfo(None, None, pluginTypeChecker, reportSqlLevel, perSqlOnly) {
 
   // we don't know the max sql query name size so lets cap it at 100
   private val SQL_DESC_LENGTH = 100
   private lazy val appName = appInfo.map(_.appName).getOrElse("")
   private lazy val appNameSize = if (appName.nonEmpty) appName.size else 100
-  private lazy val headersAndSizes =
-    QualOutputWriter.getDetailedPerSqlHeaderStringsAndSizes(appNameSize,
-      appId.size, SQL_DESC_LENGTH)
+  private lazy val perSqlHeadersAndSizes = {
+      QualOutputWriter.getDetailedPerSqlHeaderStringsAndSizes(appNameSize,
+        appId.size, SQL_DESC_LENGTH)
+  }
 
   def this() = {
     this(false)
@@ -100,12 +102,6 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
    * @return a tuple of the CSV summary followed by the Text summary.
    */
   def getPerSqlTextAndCSVSummary(sqlID: Long): (String, String) = {
-    /*
-    val appInfo = super.aggregateStats()
-    appInfo.foreach { info =>
-    logWarning("application info is: " + info)
-    }
-     */
     val sqlInfo = aggregatePerSQLStats(sqlID)
     val csvResult = constructPerSqlResult(sqlInfo, QualOutputWriter.CSV_DELIMITER, false)
     val textResult = constructPerSqlResult(sqlInfo, QualOutputWriter.TEXT_DELIMITER, true)
@@ -123,7 +119,6 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
    */
   def getPerSQLSummary(sqlID: Long, delimiter: String = "|",
       prettyPrint: Boolean = true, sqlDescLength: Int = SQL_DESC_LENGTH): String = {
-    // TODO - my guess is skip aggregating at app level???
     val sqlInfo = aggregatePerSQLStats(sqlID)
     constructPerSqlResult(sqlInfo, delimiter, prettyPrint, sqlDescLength)
   }
@@ -135,7 +130,7 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
       sqlDescLength: Int = SQL_DESC_LENGTH): String = {
     sqlInfo match {
       case Some(info) =>
-        QualOutputWriter.constructPerSqlSummaryInfo(info, headersAndSizes,
+        QualOutputWriter.constructPerSqlSummaryInfo(info, perSqlHeadersAndSizes,
           appId.size, delimiter, prettyPrint, sqlDescLength)
       case None =>
         logWarning(s"Unable to get qualification information for this application")
@@ -154,8 +149,6 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
     val appInfo = super.aggregateStats()
     appInfo match {
       case Some(info) =>
-        val headerStr = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
-          delimiter, prettyPrint)
         val unSupExecMaxSize = QualOutputWriter.getunSupportedMaxSize(
           Seq(info).map(_.unSupportedExecs.size),
           QualOutputWriter.UNSUPPORTED_EXECS_MAX_SIZE,
@@ -166,6 +159,9 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
           QualOutputWriter.UNSUPPORTED_EXPRS.size)
         val appHeadersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(appName.size,
           info.appId.size, unSupExecMaxSize, unSupExprMaxSize)
+        val headerStr = QualOutputWriter.constructOutputRowFromMap(appHeadersAndSizes,
+          delimiter, prettyPrint)
+
         val appInfoStr = QualOutputWriter.constructAppSummaryInfo(info.estimatedInfo,
           appHeadersAndSizes, appId.size, unSupExecMaxSize, unSupExprMaxSize, delimiter,
           prettyPrint)
@@ -188,11 +184,8 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
     val appInfo = super.aggregateStats()
     appInfo match {
       case Some(info) =>
-        val headersAndSizesToUse = if (reportReadSchema) {
+        val headersAndSizesToUse =
           QualOutputWriter.getDetailedHeaderStringsAndSizes(Seq(info), reportReadSchema)
-        } else {
-          headersAndSizes
-        }
         val headerStr = QualOutputWriter.constructDetailedHeader(headersAndSizesToUse,
           delimiter, prettyPrint)
         val appInfoStr = QualOutputWriter.constructAppDetailedInfo(info, headersAndSizesToUse,
