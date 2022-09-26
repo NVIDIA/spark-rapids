@@ -370,7 +370,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
             logGpuDebugInfo()
             System.exit(20)
           case Some(_: CudaException) =>
-            logWarning(s"Executor onTaskFailed because of a non-fatal CUDA error: " +
+            logDebug(s"Executor onTaskFailed because of a non-fatal CUDA error: " +
               s"${ef.toErrorString}")
           case Some(_: CudfException) =>
             logDebug(s"Executor onTaskFailed because of a CUDF error: ${ef.toErrorString}")
