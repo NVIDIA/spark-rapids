@@ -272,8 +272,10 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
           val noNulls = withResource(arrayElements.isNotNull) { isLhsNotNull =>
             isLhsNotNull.ifElse(arrayElements, one)
           }
-          withResource(noNulls.greaterOrEqualTo(one)) { isGeOne =>
-            isGeOne.ifElse(noNulls, one)
+          withResource(noNulls) { _ =>
+            withResource(noNulls.greaterOrEqualTo(one)) { isGeOne =>
+              isGeOne.ifElse(noNulls, one)
+            }
           }
         }
       } else {
