@@ -273,8 +273,8 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       // Exceptions in executor plugin can cause a single thread to die but the executor process
       // sticks around without any useful info until it hearbeat times out. Print what happened
       // and exit immediately.
-      case e: CudaFatalException =>
-        logError("Fatal Exception in the executor plugin, shutting down!", e)
+      case e: CudaException =>
+        logError("Exception in the executor plugin, shutting down!", e)
         logGpuDebugInfoAndExit(systemExitCode = 1)
       case e: Throwable =>
         logError("Exception in the executor plugin, shutting down!", e)
