@@ -769,18 +769,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
     val sumOut = qualApp.getSummary()
     val detailedOut = qualApp.getDetailed()
-    // wasn't created with per sql config on so should return empty
-    val perSqlOutput = qualApp.getPerSQLSummary(1)
-    assert(perSqlOutput.isEmpty)
-    val (perSqlcsv, perSqltxt) = qualApp.getPerSqlTextAndCSVSummary(1)
-    assert(perSqlcsv.isEmpty)
-    assert(perSqltxt.isEmpty)
-    val csvHeader = qualApp.getPerSqlCSVHeader
-    assert(csvHeader.isEmpty)
-    val txtHeader = qualApp.getPerSqlTextHeader
-    assert(txtHeader.isEmpty)
-    val randHeader = qualApp.getPerSqlHeader(";", true)
-    assert(randHeader.isEmpty)
     assert(sumOut.nonEmpty)
     assert(sumOut.startsWith("|") && sumOut.endsWith("|\n"))
     assert(detailedOut.nonEmpty)
@@ -857,7 +845,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     TrampolineUtil.withTempPath { outParquetFile =>
       TrampolineUtil.withTempPath { outJsonFile =>
 
-        val qualApp = new RunningQualificationApp(true, false)
+        val qualApp = new RunningQualificationApp()
         ToolTestUtils.runAndCollect("streaming") { spark =>
           val listener = qualApp.getEventListener
           spark.sparkContext.addSparkListener(listener)
