@@ -288,12 +288,11 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
   }
 
   private def getRowByteCount(column: Seq[ColumnVector]): ColumnVector = {
-    val repeatTable = new Table(column:_*)
-    val bits = withResource(repeatTable) {
-      _.rowBitCount()
+    val bits = withResource(new Table(column:_*)) { tbl =>
+      tbl.rowBitCount()
     }
-    val bitsLong = withResource(bits) {
-      _.castTo(DType.INT64)
+    val bitsLong = withResource(bits) { _ =>
+      bits.castTo(DType.INT64)
     }
     withResource(bitsLong) { _ =>
       withResource(ai.rapids.cudf.Scalar.fromLong(8)) { toBytes =>
