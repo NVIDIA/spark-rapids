@@ -484,21 +484,19 @@ object AutoTuner extends Logging {
 
   def loadSystemProperties(fileInput: String): Option[java.util.Map[String, Any]] = {
     val filePath = new Path(fileInput)
-    val fs = Some(FileSystem.get(filePath.toUri, new Configuration()))
-    fs.foreach { dfs =>
-      val yaml = new Yaml()
-      var fsIs: FSDataInputStream = null
-      try {
-        fsIs = dfs.open(filePath)
-        return Some(yaml.load(fsIs).asInstanceOf[java.util.Map[String, Any]])
-      } finally {
-        if (fsIs != null) {
-          fsIs.close()
-        }
+    val fs = FileSystem.get(filePath.toUri, new Configuration())
+    val yaml = new Yaml()
+    var fsIs: FSDataInputStream = null
+    try {
+      fsIs = fs.open(filePath)
+      Some(yaml.load(fsIs).asInstanceOf[java.util.Map[String, Any]])
+    } finally {
+      if (fsIs != null) {
+        fsIs.close()
       }
     }
-    None
   }
+
   /**
    * Parses the yaml file and returns system and gpu properties.
    * See [[SystemProps]] and [[GpuProps]].
