@@ -83,7 +83,7 @@ class RunningQualificationApp(
   }
 
   def this() = {
-    this(false, false)
+    this(false)
   }
 
   // since application is running, try to initialize current state
