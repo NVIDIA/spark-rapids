@@ -156,7 +156,9 @@ def _handle_event_log_dir(sb, wid):
         return
     d = "./eventlog_{}".format(wid)
     if not os.path.exists(d):
-        os.makedirs(d)
+        # Set 'exist_ok' as True to avoid raising 'FileExistsError' as the folder might be created
+        # by other tests when they are executed in parallel
+        os.makedirs(d, exist_ok=True)
 
     logging.info('Spark event logs will appear under {}. Set the environmnet variable '
           'SPARK_EVENTLOG_ENABLED=false if you want to disable it'.format(d))

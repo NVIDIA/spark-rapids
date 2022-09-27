@@ -31,6 +31,7 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafePr
 import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
 import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistribution, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.{SortExec, SparkPlan}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -63,6 +64,15 @@ class GpuSortMeta(
       childPlans.head.convertIfNeeded(),
       if (conf.stableSort) FullSortSingleBatch else OutOfCoreSort
     )(sort.sortOrder)
+  }
+}
+
+object GpuSortExec {
+  def targetSize(sqlConf: SQLConf): Long = {
+    // To avoid divide by zero errors, underflow and overflow issues in tests
+    // that want the targetSize to be 0, we set it to something more reasonable
+    val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(sqlConf)
+    math.max(16 * 1024, targetSize)
   }
 }
 
@@ -113,7 +123,7 @@ case class GpuSortExec(
     }
   }
 
-  private [this] lazy val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+  private lazy val targetSize = GpuSortExec.targetSize(conf)
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val sorter = new GpuSorter(gpuSortOrder, output)
@@ -130,9 +140,7 @@ case class GpuSortExec(
         val cpuOrd = new LazilyGeneratedOrdering(sorter.cpuOrdering)
         val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
         val iter = GpuOutOfCoreSortIterator(cbIter, sorter, cpuOrd,
-          // To avoid divide by zero errors, underflow and overflow issues in tests
-          // that want the targetSize to be 0, we set it to something more reasonable
-          math.max(16 * 1024, targetSize), opTime, sortTime, outputBatch, outputRows,
+          targetSize, opTime, sortTime, outputBatch, outputRows,
           peakDevMemory, spillCallback)
         TaskContext.get().addTaskCompletionListener(_ -> iter.close())
         iter

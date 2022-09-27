@@ -8,19 +8,19 @@
 <       case _ =>
 ---
 >       case _ => 
-80,81c80,81
+87,88c87,88
 <    * Recursively check if pattern contains only zero-match repetitions
 <    * ?, *, {0,}, or {0,n} or any combination of them.
 ---
 >    * Recursively check if pattern contains only zero-match repetitions 
 >    * ?, *, {0,}, or {0,n} or any combination of them. 
-93c93
+100c100
 <           isASTEmptyRepetition(term)
 ---
 >           isASTEmptyRepetition(term) 
-105c105
+112c112
 <    * Returns the number of groups in regexp
 ---
 >    * Returns the number of groups in regexp 
-116a117
+123a124
 > 
