@@ -775,6 +775,12 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val (perSqlcsv, perSqltxt) = qualApp.getPerSqlTextAndCSVSummary(1)
     assert(perSqlcsv.isEmpty)
     assert(perSqltxt.isEmpty)
+    val csvHeader = qualApp.getPerSqlCSVHeader
+    assert(csvHeader.isEmpty)
+    val txtHeader = qualApp.getPerSqlTextHeader
+    assert(txtHeader.isEmpty)
+    val randHeader = qualApp.getPerSqlHeader(";", true)
+    assert(randHeader.isEmpty)
     assert(sumOut.nonEmpty)
     assert(sumOut.startsWith("|") && sumOut.endsWith("|\n"))
     assert(detailedOut.nonEmpty)
@@ -871,6 +877,18 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           s"TXT output was: $txtOut")
         val sqlOut = qualApp.getPerSQLSummary(0, ":", true, 5)
         assert(sqlOut.contains("0:json :"), s"SQL output was: $sqlOut")
+        val csvHeader = qualApp.getPerSqlCSVHeader
+        assert(csvHeader == "App Name,App ID,SQL ID,SQL Description,SQL DF Duration," +
+          "GPU Opportunity,Estimated GPU Duration,Estimated GPU Speedup," +
+          "Estimated GPU Time Saved,Recommendation")
+        val txtHeader = qualApp.getPerSqlTextHeader
+        assert(txtHeader == "|   App Name|             App ID|SQL ID|     SQL Description|" +
+          "SQL DF Duration|GPU Opportunity|Estimated GPU Duration|Estimated GPU Speedup|" +
+          "Estimated GPU Time Saved|      Recommendation|")
+        val randHeader = qualApp.getPerSqlHeader(";", true, 20)
+        assert(randHeader == ";   App Name;             App ID;SQL ID;     SQL Description;" +
+          "SQL DF Duration;GPU Opportunity;Estimated GPU Duration;Estimated GPU Speedup;" +
+          "Estimated GPU Time Saved;      Recommendation;")
 
         // test different delimiter
         val sumOut = qualApp.getSummary(":", false)
