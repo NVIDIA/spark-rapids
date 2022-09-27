@@ -34,7 +34,9 @@ import org.apache.spark.sql.rapids.tool.qualification._
  * for potential issues and time spent in Dataframe operations.
  *
  * Please note that this will use additional memory so use with caution if using with a
- * long running application.
+ * long running application. The perSqlOnly only option will allow reporting at the per
+ * SQL query level and cleanup memory as it goes so may be better if memory usage is
+ * a concern.
  *
  * Create the `RunningQualicationApp`:
  * {{{
@@ -63,7 +65,7 @@ import org.apache.spark.sql.rapids.tool.qualification._
  *   // print header and output wherever its useful
  * }}}
  *
- * @param perSqlOnly only allows reporting for SQL queries and doesn't track
+ * @param perSqlOnly allows reporting at the SQL query level and doesn't track
  *                   the entire application
  */
 class RunningQualificationApp(
