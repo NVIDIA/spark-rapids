@@ -573,7 +573,7 @@ object GpuCast extends Arm {
       inclusiveMax: Boolean = true,
       errorMsg:String = GpuCast.OVERFLOW_MESSAGE): Unit = {
 
-    def throwAnyNan(cv: ColumnView): Unit = {
+    def throwAnyNan(): Unit = {
       withResource(values.isNan().any()) { anyNan =>
         if (anyNan.isValid && anyNan.getBoolean) {
           throw RapidsErrorUtils.arithmeticOverflowError(errorMsg)
@@ -598,7 +598,7 @@ object GpuCast extends Arm {
           withResource(values.max()) { maxInput =>
             values.getType match {
               case DType.FLOAT64 =>
-                throwAnyNan(values)
+                throwAnyNan()
                 def getDoubleValue(s: Scalar): Double = s.getType match {
                   case DType.INT8 | DType.UINT8 => s.getByte.toDouble
                   case DType.INT16 | DType.UINT16 => s.getShort.toDouble
@@ -609,7 +609,7 @@ object GpuCast extends Arm {
                 throwOutOfRange[Double](minInput.getDouble(), getDoubleValue(minValue),
                                         maxInput.getDouble(), getDoubleValue(maxValue))
               case DType.FLOAT32 =>
-                throwAnyNan(values)
+                throwAnyNan()
                 def getFloatValue(s: Scalar): Float = s.getType match {
                   case DType.INT8 | DType.UINT8 => s.getByte.toFloat
                   case DType.INT16 | DType.UINT16 => s.getShort.toFloat
