@@ -593,53 +593,24 @@ object GpuCast extends Arm {
         withResource(values.min()) { minInput =>
           withResource(values.max()) { maxInput =>
             values.getType match {
-              // case DType.INT8 | DType.UINT8 =>
-              //   throwOutOfRange[Byte](minInput.getByte(), minValue.getByte(),
-              //                         maxInput.getByte(), maxValue.getByte())
-              // case DType.INT16 | DType.UINT16 =>
-              //   throwOutOfRange[Short](minInput.getShort(), minValue.getShort(),
-              //                          maxInput.getShort(), maxValue.getShort())
-              // case DType.INT32 | DType.UINT32 | DType.TIMESTAMP_DAYS | DType.DURATION_DAYS =>
-              //   throwOutOfRange[Int](minInput.getInt(), minValue.getInt(),
-              //                        maxInput.getInt(), maxValue.getInt())
-              // case DType.INT64 | DType.UINT64 |
-              //     DType.TIMESTAMP_SECONDS | DType.TIMESTAMP_MILLISECONDS |
-              //     DType.TIMESTAMP_MICROSECONDS | DType.TIMESTAMP_NANOSECONDS |
-              //     DType.DURATION_SECONDS | DType.DURATION_MILLISECONDS |
-              //     DType.DURATION_MICROSECONDS | DType.DURATION_NANOSECONDS =>
-              //   throwOutOfRange[Long](minInput.getLong(), minValue.getLong(),
-              //                           maxInput.getLong(), maxValue.getLong())
               case DType.FLOAT64 =>
                 throwAnyNan(values)
                 def getDoubleValue(s: Scalar): Double = s.getType match {
                   case DType.INT8 | DType.UINT8 => s.getByte.toDouble
                   case DType.INT16 | DType.UINT16 => s.getShort.toDouble
-                  // case DType.INT32 | DType.UINT32 | 
-                  //     DType.TIMESTAMP_DAYS => s.getInt.toDouble
                   case DType.INT32 | DType.UINT32 => s.getInt.toDouble
-                  // case DType.INT64 | DType.UINT64 | 
-                  //     DType.TIMESTAMP_MICROSECONDS => s.getLong.toDouble
                   case DType.INT64 | DType.UINT64 => s.getLong.toDouble
                   case _ => s.getDouble
                 }
-                // println(s"minValue: ${getDoubleValue(minValue)}, maxValue: ${getDoubleValue(maxValue)}, minInput: ${minInput.getDouble()}, maxInput: ${maxInput.getDouble()}")
-                // println(s"values: $values")
                 throwOutOfRange[Double](minInput.getDouble(), getDoubleValue(minValue),
-                                          maxInput.getDouble(), getDoubleValue(maxValue))
-                // GpuColumnVector.debug("values ", values)
+                                        maxInput.getDouble(), getDoubleValue(maxValue))
               case DType.FLOAT32 =>
                 throwAnyNan(values)
                 def getFloatValue(s: Scalar): Float = s.getType match {
-                  // case DType.FLOAT32 => s.getFloat
-                  // case DType.FLOAT64 => s.getDouble.toFloat
                   case DType.INT8 | DType.UINT8 => s.getByte.toFloat
                   case DType.INT16 | DType.UINT16 => s.getShort.toFloat
                   case DType.INT32 | DType.UINT32 => s.getInt.toFloat
-                  // case DType.INT32 | DType.UINT32 | 
-                  //     DType.TIMESTAMP_DAYS => s.getInt.toFloat
-                    case DType.INT64 | DType.UINT64 => s.getLong.toFloat
-                  // case DType.INT64 | DType.UINT64 | 
-                  //     DType.TIMESTAMP_MICROSECONDS => s.getLong.toFloat
+                  case DType.INT64 | DType.UINT64 => s.getLong.toFloat
                   case _ => s.getFloat
                 }
                 throwOutOfRange[Float](minInput.getFloat, getFloatValue(minValue),
