@@ -863,16 +863,14 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           "GPU Opportunity,Estimated GPU Duration,Estimated GPU Speedup," +
           "Estimated GPU Time Saved,Recommendation"))
         val txtHeader = qualApp.getPerSqlTextHeader
-
         assert(txtHeader.contains("|                              App Name|             App ID|SQL ID" +
           "|                                                                                     SQL Description|" +
           "SQL DF Duration|GPU Opportunity|Estimated GPU Duration|" +
           "Estimated GPU Speedup|Estimated GPU Time Saved|      Recommendation|"))
-
         val randHeader = qualApp.getPerSqlHeader(";", true, 20)
-        assert(randHeader.contains(";   App Name;             App ID;SQL ID;     SQL Description;" +
-          "SQL DF Duration;GPU Opportunity;Estimated GPU Duration;Estimated GPU Speedup;" +
-          "Estimated GPU Time Saved;      Recommendation;"))
+        assert(randHeader.contains(";                              App Name;             App ID" +
+          ";SQL ID;     SQL Description;SQL DF Duration;GPU Opportunity;Estimated GPU Duration;" +
+          "Estimated GPU Speedup;Estimated GPU Time Saved;      Recommendation;"))
         val (csvOut, txtOut) = qualApp.getPerSqlTextAndCSVSummary(0)
         assert(txtOut.contains("QualificationSuite.scala") && txtOut.contains("|"),
           s"TXT output was: $txtOut")
