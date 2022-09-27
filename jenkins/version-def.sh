@@ -26,10 +26,10 @@ for VAR in $OVERWRITE_PARAMS; do
 done
 IFS=$PRE_IFS
 
-CUDF_VER=${CUDF_VER:-"22.10.0-SNAPSHOT"}
+CUDF_VER=${CUDF_VER:-"22.10.0-SNAPSHOT"} # TODO: update to 22.12 when new nightly conda pkg is available
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-"cuda11"}
-PROJECT_VER=${PROJECT_VER:-"22.10.0-SNAPSHOT"}
-PROJECT_TEST_VER=${PROJECT_TEST_VER:-"22.10.0-SNAPSHOT"}
+PROJECT_VER=${PROJECT_VER:-"22.12.0-SNAPSHOT"}
+PROJECT_TEST_VER=${PROJECT_TEST_VER:-"22.12.0-SNAPSHOT"}
 SPARK_VER=${SPARK_VER:-"3.1.1"}
 # Make a best attempt to set the default value for the shuffle shim.
 # Note that SPARK_VER for non-Apache Spark flavors (i.e. databricks,
@@ -66,7 +66,7 @@ SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 # PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
 # regular: noSnapshots + snapshots
 # pre-release: noSnapshots only
-PHASE_TYPE=${PHASE_TYPE:-"pre-release"} # TODO: update it to regular in branch-22.12 when CI is available
+PHASE_TYPE=${PHASE_TYPE:-"regular"}
 case $PHASE_TYPE in
     # SPARK_SHIM_VERSIONS will be used for nightly artifact build
     pre-release)
