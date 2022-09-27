@@ -178,6 +178,7 @@ object FuzzerUtils {
         seed: Long = 0): DataFrame = {
     val r = new Random(seed)
     val rows: Seq[Row] = (0 until rowCount).map(_ => generateRow(schema.fields, r, options))
+    // print(rows)
     spark.createDataFrame(rows.asJava, schema)
   }
 
