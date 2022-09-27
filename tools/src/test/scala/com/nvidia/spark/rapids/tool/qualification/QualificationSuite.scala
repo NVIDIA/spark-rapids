@@ -863,21 +863,24 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           "GPU Opportunity,Estimated GPU Duration,Estimated GPU Speedup," +
           "Estimated GPU Time Saved,Recommendation"))
         val txtHeader = qualApp.getPerSqlTextHeader
-        assert(txtHeader.contains("|                              App Name|             App ID|SQL ID" +
-          "|                                                                                     SQL Description|" +
+        assert(txtHeader.contains("|                              App Name|             App ID|" +
+          "SQL ID" +
+          "|                                                                                     " +
+          "SQL Description|" +
           "SQL DF Duration|GPU Opportunity|Estimated GPU Duration|" +
           "Estimated GPU Speedup|Estimated GPU Time Saved|      Recommendation|"))
         val randHeader = qualApp.getPerSqlHeader(";", true, 20)
         assert(randHeader.contains(";                              App Name;             App ID" +
           ";SQL ID;     SQL Description;SQL DF Duration;GPU Opportunity;Estimated GPU Duration;" +
           "Estimated GPU Speedup;Estimated GPU Time Saved;      Recommendation;"))
-        val (csvOut, txtOut) = qualApp.getPerSqlTextAndCSVSummary(0)
+        val sqlIdToLookup = qualApp.getAvailableSqlIDs.head
+        val (csvOut, txtOut) = qualApp.getPerSqlTextAndCSVSummary(sqlIdToLookup)
         assert(txtOut.contains("QualificationSuite.scala") && txtOut.contains("|"),
           s"TXT output was: $txtOut")
         assert(csvOut.nonEmpty)
         assert(csvOut.contains("QualificationSuite.scala") && csvOut.contains(","),
           s"CSV output was: $csvOut")
-        val sqlOut = qualApp.getPerSQLSummary(0, ":", true, 5)
+        val sqlOut = qualApp.getPerSQLSummary(sqlIdToLookup, ":", true, 5)
         assert(sqlOut.contains("0:json :"), s"SQL output was: $sqlOut")
 
         // test different delimiter

@@ -34,9 +34,9 @@ import org.apache.spark.sql.rapids.tool.qualification._
  * for potential issues and time spent in Dataframe operations.
  *
  * Please note that this will use additional memory so use with caution if using with a
- * long running application. The perSqlOnly only option will allow reporting at the per
- * SQL query level and cleanup memory as it goes so may be better if memory usage is
- * a concern.
+ * long running application. The perSqlOnly option will allow reporting at the per
+ * SQL query level without tracking all the Application information, but currently does
+ * not cleanup. There is a cleanupSQL function that the user can force cleanup if required.
  *
  * Create the `RunningQualicationApp`:
  * {{{
@@ -109,6 +109,14 @@ class RunningQualificationApp(
   }
 
   initApp()
+
+  /**
+   * Get the IDs of the SQL queries currently being tracked.
+   * @return a sequence of SQL IDs
+   */
+  def getAvailableSqlIDs: Seq[Long] = {
+    super.sqlIdToInfo.keys.toSeq
+  }
 
   /**
    * Get the per SQL query header in CSV format.
