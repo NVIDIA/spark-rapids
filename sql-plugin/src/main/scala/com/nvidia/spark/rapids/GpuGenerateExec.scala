@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, Table}
+import ai.rapids.cudf.{ColumnVector, ContiguousTable, DType, NvtxColor, OrderByArg, Table}
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -264,38 +264,149 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
       }
   }
 
+  private def getPerRowRepetition(explodingColumn: ColumnVector, outer: Boolean): ColumnVector = {
+    withResource(explodingColumn.countElements()) { arrayElements =>
+      if (outer) {
+        // for outer, empty arrays and null arrays will produce a row
+        withResource(GpuScalar.from(1, IntegerType)) { one =>
+          val noNulls = withResource(arrayElements.isNotNull) { isLhsNotNull =>
+            isLhsNotNull.ifElse(arrayElements, one)
+          }
+          withResource(noNulls.greaterOrEqualTo(one)) { isGeOne =>
+            isGeOne.ifElse(noNulls, one)
+          }
+        }
+      } else {
+        // ensure no nulls in this output
+        withResource(GpuScalar.from(0, IntegerType)) { zero =>
+          GpuNvl(arrayElements, zero)
+        }
+      }
+    }
+  }
+
+  private def getRowByteCount(column: Seq[ColumnVector]): ColumnVector = {
+    val repeatTable = new Table(column:_*)
+    val bits = withResource(repeatTable) {
+      _.rowBitCount()
+    }
+    val bitsLong = withResource(bits) {
+      _.castTo(DType.INT64)
+    }
+    withResource(bitsLong) { _ =>
+      withResource(ai.rapids.cudf.Scalar.fromLong(8)) { toBytes =>
+        bitsLong.div(toBytes)
+      }
+    }
+  }
+
   override def inputSplitIndices(inputBatch: ColumnarBatch,
-      generatorOffset: Int,
-      outer: Boolean,
+      generatorOffset: Int, outer: Boolean,
       targetSizeBytes: Long): Array[Int] = {
 
-    val vectors = GpuColumnVector.extractBases(inputBatch)
     val inputRows = inputBatch.numRows()
     if (inputRows == 0) return Array()
 
+    val vectors = GpuColumnVector.extractBases(inputBatch)
+
+    val explodingColumn = vectors(generatorOffset)
+
     // Get the output size in bytes of the column that we are going to explode
     // along with an estimate of how many output rows produced by the explode
-    val (explodeColOutputSize, estimatedOutputRows) = withResource(
-      vectors(generatorOffset).getChildColumnView(0)) { listValues =>
-      val totalSize = listValues.getDeviceMemorySize
-      val totalCount = listValues.getRowCount
-      (totalSize.toDouble, totalCount.toDouble)
+    val (explodeColOutputSize, estimatedOutputRows) =
+      withResource(explodingColumn.getChildColumnView(0)) { listValues =>
+        val totalSize = explodingColumn.getDeviceMemorySize
+        // get the number of elements in the array child
+        var totalCount = listValues.getRowCount + listValues.getNullCount
+        // when we are calculating an explode_outer, we need to add to the row count
+        // null rows, as we are going to produce them
+        if (outer) {
+          totalCount += explodingColumn.getNullCount
+        }
+        (totalSize.toDouble, totalCount.toDouble)
+      }
+
+    // we know we are going to output at least this much
+    var estimatedOutputSizeBytes = explodeColOutputSize
+
+    val splitIndices = if (generatorOffset == 0) {
+      // this explodes the array column, and the table has no other columns to go
+      // along with it
+      val numSplitsForTargetSize = math.ceil(explodeColOutputSize / targetSizeBytes).toInt
+      GpuBatchUtils.generateSplitIndices(inputRows, numSplitsForTargetSize)
+    } else {
+      // get the # of repetitions per row of the input for this explode
+      val perRowRepetition = getPerRowRepetition(explodingColumn, outer)
+      val repeatingColumns = vectors.slice(0, generatorOffset)
+
+      val repeatingByteCount =
+        withResource(getRowByteCount(repeatingColumns)) { byteCountBeforeRepetition =>
+          withResource(perRowRepetition) { _ =>
+            byteCountBeforeRepetition.mul(perRowRepetition)
+          }
+        }
+
+      val prefixSum = withResource(repeatingByteCount) { _.prefixSum }
+      val splitIndices = withResource(prefixSum) { _ =>
+        val repeatedSizeEstimate =
+          withResource(prefixSum.subVector((prefixSum.getRowCount - 1).toInt)) { lastRow =>
+            withResource(lastRow.copyToHost()) { hc =>
+              hc.getLong(0)
+            }
+          }
+
+        estimatedOutputSizeBytes += repeatedSizeEstimate
+
+        // how may splits will we need to keep the output size under the target size
+        val numSplitsForTargetSize =
+          math.ceil(estimatedOutputSizeBytes / targetSizeBytes).toInt
+
+        val sizePerSplit = (estimatedOutputSizeBytes / numSplitsForTargetSize).toLong
+        val idealSplits = (1 until numSplitsForTargetSize).map { s =>
+          s * sizePerSplit
+        }.toArray
+
+        if (idealSplits.length == 0) {
+          Array.empty[Int]
+        } else {
+          val lowerBound =
+            withResource(new Table(prefixSum)) { prefixSumTable =>
+              withResource(ColumnVector.fromLongs(idealSplits: _*)) { idealBounds =>
+                withResource(new Table(idealBounds)) { idealBoundsTable =>
+                  prefixSumTable.lowerBound(idealBoundsTable, OrderByArg.asc(0))
+                }
+              }
+            }
+
+          val splits = withResource(lowerBound) { _ =>
+            withResource(lowerBound.copyToHost) { hostBounds =>
+              (0 until hostBounds.getRowCount.toInt).map { s =>
+                hostBounds.getInt(s)
+              }
+            }
+          }
+
+          // apply distinct in the case of extreme skew, where for example we have all nulls
+          // except for 1 row that has all the data.
+          splits.distinct.toArray
+        }
+      }
+      splitIndices
     }
-    // input size of columns to be repeated during exploding
-    val repeatColsInputSize = vectors.slice(0, generatorOffset).map(_.getDeviceMemorySize).sum
-    // estimated output size of repeated columns
-    val repeatColsOutputSize = repeatColsInputSize * estimatedOutputRows / inputRows
-    // estimated total output size
-    val estimatedOutputSizeBytes = explodeColOutputSize + repeatColsOutputSize
-    // how may splits will we need to keep the output size under the target size
-    val numSplitsForTargetSize = math.ceil(estimatedOutputSizeBytes / targetSizeBytes).toInt
+
     // how may splits will we need to keep the output rows under max value
     val numSplitsForTargetRow = math.ceil(estimatedOutputRows / Int.MaxValue).toInt
-    // how may splits will we need to keep exploding working safely
-    val numSplits = numSplitsForTargetSize max numSplitsForTargetRow
 
-    if (numSplits == 0) Array()
-    else GpuBatchUtils.generateSplitIndices(inputRows, numSplits)
+    // If the number of splits needed to keep the row limits for cuDF is higher than
+    // the splits we found by size, we need to use the row-based splits.
+    // Note, given skewed input, we could be left with batches split at bad places,
+    // e.g. all of the non nulls are in a single split. So we may need to re-split
+    // that row-based slice using the size approach.
+    if (numSplitsForTargetRow > splitIndices.length) {
+      GpuBatchUtils.generateSplitIndices(inputRows, numSplitsForTargetRow)
+    } else {
+      splitIndices
+    }
   }
 
   // Infer result schema of GenerateExec from input schema
