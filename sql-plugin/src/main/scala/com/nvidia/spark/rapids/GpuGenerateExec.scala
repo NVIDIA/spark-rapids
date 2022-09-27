@@ -319,11 +319,12 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
       withResource(explodingColumn.getChildColumnView(0)) { listValues =>
         val totalSize = explodingColumn.getDeviceMemorySize
         // get the number of elements in the array child
-        var totalCount = listValues.getRowCount + listValues.getNullCount
+        var totalCount = listValues.getRowCount
         // when we are calculating an explode_outer, we need to add to the row count
-        // null rows, as we are going to produce them
+        // the cases where the parent element has a null array, as we are going to produce
+        // these rows.
         if (outer) {
-          totalCount += explodingColumn.getNullCount
+          totalCount += listValues.getNullCount
         }
         (totalSize.toDouble, totalCount.toDouble)
       }
