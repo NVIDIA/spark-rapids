@@ -136,7 +136,8 @@ class GpuSingleDirectoryDataWriter(
     taskAttemptContext: TaskAttemptContext,
     committer: FileCommitProtocol)
   extends GpuFileFormatDataWriter(description, taskAttemptContext, committer) 
-  with Arm {
+  with Arm 
+  with WriterUtil {
   private var fileCounter: Int = _
   private var recordsInFile: Long = _
   // Initialize currentWriter and statsTrackers
@@ -166,20 +167,12 @@ class GpuSingleDirectoryDataWriter(
   override def write(batch: ColumnarBatch): Unit = {
     withResource(batch) { batch =>
       withResource(GpuColumnVector.from(batch)) {table => 
-        val numRows = table.getRowCount()
-        val maxRecordsPerFile = description.maxRecordsPerFile.toInt
-        val splitIndexes = (maxRecordsPerFile > 0, recordsInFile < maxRecordsPerFile) match {
-          case (false, _) => IndexedSeq.empty
-          case (true, false) =>
-            (1 until ((numRows + maxRecordsPerFile - 1) / maxRecordsPerFile).toInt)
-              .map(i => i * maxRecordsPerFile)
-          case (true, true) => {
-            val filledUp = maxRecordsPerFile - recordsInFile.toInt
-            val remain = numRows - filledUp
-            (0 until ((remain + maxRecordsPerFile - 1) / maxRecordsPerFile).toInt)
-              .map(i => filledUp + i * maxRecordsPerFile)
-          }
-        }
+        val maxRecordsPerFile = description.maxRecordsPerFile
+        val splitIndexes = getSplitIndexes(
+          maxRecordsPerFile,
+          recordsInFile,
+          table.getRowCount()
+        )
 
         val dataTypes = (0 until batch.numCols()).map(i => batch.column(i).dataType()).toArray
 
@@ -191,7 +184,6 @@ class GpuSingleDirectoryDataWriter(
               assert(fileCounter < MAX_FILE_COUNTER,
                 s"File counter $fileCounter is beyond max value $MAX_FILE_COUNTER")
               newOutputWriter()
-              recordsInFile = 0
             }
             withResource(b.getTable()) {tab =>
               val bc = GpuColumnVector.from(tab, dataTypes)
@@ -217,7 +209,9 @@ class GpuDynamicPartitionDataSingleWriter(
     description: GpuWriteJobDescription,
     taskAttemptContext: TaskAttemptContext,
     committer: FileCommitProtocol)
-  extends GpuFileFormatDataWriter(description, taskAttemptContext, committer) with Arm {
+  extends GpuFileFormatDataWriter(description, taskAttemptContext, committer) 
+  with Arm 
+  with WriterUtil{
 
   /** Wrapper class for status of a unique single output writer. */
   protected class WriterStatus(
@@ -515,21 +509,12 @@ class GpuDynamicPartitionDataSingleWriter(
 
         val writeBatch = (batch: ColumnarBatch) => 
           withResource(GpuColumnVector.from(batch)) {table => 
-            val numRows = table.getRowCount()
             val maxRecordsPerFile = description.maxRecordsPerFile.toInt
-            val splitIndexes =
-              (maxRecordsPerFile > 0, currentWriterStatus.recordsInFile < maxRecordsPerFile) match {
-              case (false, _) => IndexedSeq.empty
-              case (true, false) =>
-                (1 until ((numRows + maxRecordsPerFile - 1) / maxRecordsPerFile).toInt)
-                  .map(i => i * maxRecordsPerFile)
-              case (true, true) => {
-                val filledUp = maxRecordsPerFile - currentWriterStatus.recordsInFile.toInt
-                val remain = numRows - filledUp
-                (0 until ((remain + maxRecordsPerFile - 1) / maxRecordsPerFile).toInt)
-                  .map(i => filledUp + i * maxRecordsPerFile)
-              }
-            }
+            val splitIndexes = getSplitIndexes(
+              maxRecordsPerFile,
+              currentWriterStatus.recordsInFile,
+              table.getRowCount()
+            )
 
             val dataTypes = (0 until batch.numCols()).map(i => batch.column(i).dataType()).toArray
 
@@ -1060,4 +1045,25 @@ class GpuWriteJobDescription(
          |Partition columns: ${partitionColumns.mkString(", ")}
          |Data columns: ${dataColumns.mkString(", ")}
        """.stripMargin)
+}
+
+trait WriterUtil {
+  def ceilingDiv(num: Long, divisor: Long) = {
+    ((num + divisor - 1) / divisor).toInt
+  }
+
+  def getSplitIndexes(maxRecordsPerFile: Long, recordsInFile: Long, numRows: Long) = {
+    (maxRecordsPerFile > 0, recordsInFile < maxRecordsPerFile) match {
+      case (false, _) => IndexedSeq.empty
+      case (true, false) =>
+        (1 until ceilingDiv(numRows, maxRecordsPerFile))
+          .map(i => (i * maxRecordsPerFile).toInt)
+      case (true, true) => {
+        val filledUp = maxRecordsPerFile - recordsInFile
+        val remain = numRows - filledUp
+        (0 until ceilingDiv(remain, maxRecordsPerFile))
+          .map(i => (filledUp + i * maxRecordsPerFile).toInt)
+      }
+    }
+  }
 }
