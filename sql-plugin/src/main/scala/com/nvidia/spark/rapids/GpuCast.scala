@@ -568,31 +568,112 @@ object GpuCast extends Arm {
       inclusiveMin: Boolean = true,
       inclusiveMax: Boolean = true,
       errorMsg:String = GpuCast.OVERFLOW_MESSAGE): Unit = {
-
-    def throwIfAny(cv: ColumnView): Unit = {
-      withResource(cv) { cv =>
-        withResource(cv.any()) { isAny =>
-          if (isAny.isValid && isAny.getBoolean) {
-            throw RapidsErrorUtils.arithmeticOverflowError(errorMsg)
-          }
-        }
+    def throwIfOutOfBound[T](minInput: T, minValue: T,
+                             maxInput: T, maxValue: T)
+                            (implicit numeric: Numeric[T]): Unit = {
+      if (inclusiveMin && numeric.compare(minInput, minValue) < 0 ||
+          !inclusiveMin && numeric.compare(minInput, minValue) <= 0 ||
+          inclusiveMax && numeric.compare(maxInput, maxValue) > 0 ||
+          !inclusiveMax && numeric.compare(maxInput, maxValue) >= 0) {
+        throw RapidsErrorUtils.arithmeticOverflowError(errorMsg)
       }
     }
 
-    withResource(minValue) { minValue =>
-      throwIfAny(if (inclusiveMin) {
-        values.lessThan(minValue)
-      } else {
-        values.lessOrEqualTo(minValue)
-      })
-    }
+    // def throwIfOutOfBound[T <: Comparable[T]]
+    //                      (minInput: T, minValue: T,
+    //                       maxInput: T, maxValue: T): Unit = {
+    //   if (inclusiveMin && minInput.compareTo(minValue) < 0 ||
+    //       !inclusiveMin && minInput.compareTo(minValue) <= 0 ||
+    //       inclusiveMax && maxInput.compareTo(maxValue) > 0 ||
+    //       !inclusiveMax && maxInput.compareTo(maxValue) >= 0) {
+    //     throw RapidsErrorUtils.arithmeticOverflowError(errorMsg)
+    //   }
+    // }
 
-    withResource(maxValue) { maxValue =>
-      throwIfAny(if (inclusiveMax) {
-        values.greaterThan(maxValue)
-      } else {
-        values.greaterOrEqualTo(maxValue)
-      })
+    withResource(minValue) { minValue =>
+      withResource(maxValue) { maxValue =>
+        withResource(values.min()) { minInput =>
+          withResource(values.max()) { maxInput =>
+            if (minInput.isValid && maxInput.isValid && minValue.isValid && maxValue.isValid) {
+              values.getType match {
+                case DType.INT8 | DType.UINT8 =>
+                  throwIfOutOfBound[Byte](minInput.getByte(), minValue.getByte(),
+                                          maxInput.getByte(), maxValue.getByte())
+                case DType.INT16 | DType.UINT16 =>
+                  throwIfOutOfBound[Short](minInput.getShort(), minValue.getShort(),
+                                          maxInput.getShort(), maxValue.getShort())
+                case DType.INT32 | DType.UINT32 | DType.TIMESTAMP_DAYS | DType.DURATION_DAYS =>
+                  throwIfOutOfBound[Int](minInput.getInt(), minValue.getInt(),
+                                        maxInput.getInt(), maxValue.getInt())
+                case DType.INT64 | DType.UINT64 |
+                    DType.TIMESTAMP_SECONDS | DType.TIMESTAMP_MILLISECONDS |
+                    DType.TIMESTAMP_MICROSECONDS | DType.TIMESTAMP_NANOSECONDS |
+                    DType.DURATION_SECONDS | DType.DURATION_MILLISECONDS |
+                    DType.DURATION_MICROSECONDS | DType.DURATION_NANOSECONDS =>
+                  throwIfOutOfBound[Long](minInput.getLong(), minValue.getLong(),
+                                          maxInput.getLong(), maxValue.getLong())
+                case DType.FLOAT64 =>
+                  def getDoubleValue(s: Scalar): Double = s.getType match {
+                    case DType.FLOAT32 => s.getFloat.toDouble
+                    case DType.FLOAT64 => s.getDouble
+                    case DType.INT8 | DType.UINT8 => s.getByte.toDouble
+                    case DType.INT16 | DType.UINT16 => s.getShort.toDouble
+                    case DType.INT32 | DType.UINT32 | 
+                        DType.TIMESTAMP_DAYS => s.getInt.toDouble
+                    case DType.INT64 | DType.UINT64 | 
+                        DType.TIMESTAMP_MICROSECONDS => s.getLong.toDouble
+                    case _ => s.getDouble
+                  }
+                  // println(s"minValue: ${getDoubleValue(minValue)}, maxValue: ${getDoubleValue(maxValue)}, minInput: ${minInput.getDouble()}, maxInput: ${maxInput.getDouble()}")
+                  // println(s"values: $values")
+                  throwIfOutOfBound[Double](minInput.getDouble(), getDoubleValue(minValue),
+                                            maxInput.getDouble(), getDoubleValue(maxValue))
+                  if (minInput.getDouble() == Double.PositiveInfinity && 
+                      maxInput.getDouble() == Double.NegativeInfinity) {
+                    throw RapidsErrorUtils.arithmeticOverflowError(errorMsg)
+                  }
+                case DType.FLOAT32 =>
+                  def getFloatValue(s: Scalar): Float = s.getType match {
+                    case DType.FLOAT32 => s.getFloat
+                    case DType.FLOAT64 => s.getDouble.toFloat
+                    case DType.INT8 | DType.UINT8 => s.getByte.toFloat
+                    case DType.INT16 | DType.UINT16 => s.getShort.toFloat
+                    case DType.INT32 | DType.UINT32 | 
+                        DType.TIMESTAMP_DAYS => s.getInt.toFloat
+                    case DType.INT64 | DType.UINT64 | 
+                        DType.TIMESTAMP_MICROSECONDS => s.getLong.toFloat
+                    case _ => s.getFloat
+                  }
+                  throwIfOutOfBound[Float](minInput.getFloat(), getFloatValue(minValue),
+                                          maxInput.getFloat(), getFloatValue(maxValue))
+                case DType.STRING =>
+                  val minInputStr = minInput.getJavaString
+                  val maxInputStr = maxInput.getJavaString
+                  val minValueStr = minValue.getJavaString
+                  val maxValueStr = maxValue.getJavaString
+                  if (inclusiveMin && minInputStr.compareTo(minValueStr) < 0 ||
+                      !inclusiveMin && minInputStr.compareTo(minValueStr) <= 0 ||
+                      inclusiveMax && maxInputStr.compareTo(maxValueStr) > 0 ||
+                      !inclusiveMax && maxInputStr.compareTo(maxValueStr) >= 0) {
+                    throw RapidsErrorUtils.arithmeticOverflowError(errorMsg)
+                  }
+                case dt: DType if dt.isDecimalType =>
+                  val minInputDecimal = minInput.getBigDecimal
+                  val maxInputDecimal = maxInput.getBigDecimal
+                  val minValueDecimal = minValue.getBigDecimal
+                  val maxValueDecimal = maxValue.getBigDecimal
+                  if (inclusiveMin && minInputDecimal.compareTo(minValueDecimal) < 0 ||
+                      !inclusiveMin && minInputDecimal.compareTo(minValueDecimal) <= 0 ||
+                      inclusiveMax && maxInputDecimal.compareTo(maxValueDecimal) > 0 ||
+                      !inclusiveMax && maxInputDecimal.compareTo(maxValueDecimal) >= 0) {
+                    throw RapidsErrorUtils.arithmeticOverflowError(errorMsg)
+                  }
+                case _ => ()
+              }
+            }
+          }
+        }
+      }
     }
   }
 
