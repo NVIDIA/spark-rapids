@@ -27,7 +27,7 @@ import org.apache.spark.sql.execution.ui.{SparkListenerSQLExecutionEnd, SparkLis
 
 class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkListener with Logging {
 
-  private val qualApp = new RunningQualificationApp(true, true)
+  private val qualApp = new RunningQualificationApp(true)
   private val listener = qualApp.getEventListener
   private val isInited = new AtomicBoolean(false)
 
