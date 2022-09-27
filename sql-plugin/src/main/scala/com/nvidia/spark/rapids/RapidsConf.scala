@@ -1318,11 +1318,32 @@ object RapidsConf {
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(64 * 1024)
 
+  val SHUFFLE_MULTITHREADED_MAX_BYTES_IN_FLIGHT =
+    conf("spark.rapids.shuffle.multiThreaded.maxBytesInFlight")
+      .doc("The size limit, in bytes, that the RAPIDS shuffle manager configured in " +
+          "\"MULTITHREADED\" mode will allow to be deserialized concurrently.")
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(Integer.MAX_VALUE)
+
   val SHUFFLE_MULTITHREADED_WRITER_THREADS =
     conf("spark.rapids.shuffle.multiThreaded.writer.threads")
-      .doc("The number of threads to use for writing shuffle blocks per executor.")
+      .doc("The number of threads to use for writing shuffle blocks per executor in the " +
+          "RAPIDS shuffle manager configured in \"MULTITHREADED\" mode. " +
+          "There are two special values: " +
+          "0 = feature is disabled, falls back to Spark built-in shuffle writer; " +
+          "1 = our implementation of Spark's built-in shuffle writer with extra metrics.")
       .integerConf
       .createWithDefault(20)
+
+  val SHUFFLE_MULTITHREADED_READER_THREADS =
+    conf("spark.rapids.shuffle.multiThreaded.reader.threads")
+        .doc("The number of threads to use for reading shuffle blocks per executor in the " +
+            "RAPIDS shuffle manager configured in \"MULTITHREADED\" mode. " +
+            "There are two special values: " +
+            "0 = feature is disabled, falls back to Spark built-in shuffle reader; " +
+            "1 = our implementation of Spark's built-in shuffle reader with extra metrics.")
+        .integerConf
+        .createWithDefault(20)
 
   // ALLUXIO CONFIGS
 
@@ -1565,6 +1586,21 @@ object RapidsConf {
       "is useful with Alluxio.")
     .integerConf
     .createWithDefault(value = 0)
+
+  val CONCURRENT_WRITER_PARTITION_FLUSH_SIZE =
+    conf("spark.rapids.sql.concurrentWriterPartitionFlushSize")
+        .doc("The flush size of the concurrent writer cache in bytes for each partition. " +
+            "If specified spark.sql.maxConcurrentOutputFileWriters, use concurrent writer to " +
+            "write data. Concurrent writer first caches data for each partition and begins to " +
+            "flush the data if it finds one partition with a size that is greater than or equal " +
+            "to this config. The default value is 0, which will try to select a size based off " +
+            "of file type specific configs. E.g.: It uses `write.parquet.row-group-size-bytes` " +
+            "config for Parquet type and `orc.stripe.size` config for Orc type. " +
+            "If the value is greater than 0, will use this positive value." +
+            "Max value may get better performance but not always, because concurrent writer uses " +
+            "spillable cache and big value may cause more IO swaps.")
+        .bytesConf(ByteUnit.BYTE)
+        .createWithDefault(0L)
 
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
@@ -2007,7 +2043,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleCompressionMaxBatchMemory: Long = get(SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY)
 
+  lazy val shuffleMultiThreadedMaxBytesInFlight: Long =
+    get(SHUFFLE_MULTITHREADED_MAX_BYTES_IN_FLIGHT)
+
   lazy val shuffleMultiThreadedWriterThreads: Int = get(SHUFFLE_MULTITHREADED_WRITER_THREADS)
+
+  lazy val shuffleMultiThreadedReaderThreads: Int = get(SHUFFLE_MULTITHREADED_READER_THREADS)
 
   def isUCXShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode
@@ -2091,7 +2132,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRegExpEnabled: Boolean = get(ENABLE_REGEXP)
 
   lazy val maxRegExpStateMemory: Long =  {
-    val size = get(REGEXP_MAX_STATE_MEMORY_BYTES) 
+    val size = get(REGEXP_MAX_STATE_MEMORY_BYTES)
     if (size > 3 * gpuTargetBatchSizeBytes) {
       logWarning(s"${REGEXP_MAX_STATE_MEMORY_BYTES.key} is more than 3 times " +
         s"${GPU_BATCH_SIZE_BYTES.key}. This may cause regular expression operations to " +
@@ -2107,6 +2148,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isFastSampleEnabled: Boolean = get(ENABLE_FAST_SAMPLE)
 
   lazy val isDetectDeltaLogQueries: Boolean = get(DETECT_DELTA_LOG_QUERIES)
+
+  lazy val concurrentWriterPartitionFlushSize:Long = get(CONCURRENT_WRITER_PARTITION_FLUSH_SIZE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

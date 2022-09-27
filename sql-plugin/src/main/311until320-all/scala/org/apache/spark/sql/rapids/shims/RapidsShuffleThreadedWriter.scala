@@ -19,24 +19,25 @@ package org.apache.spark.sql.rapids.shims
 import org.apache.spark.SparkConf
 import org.apache.spark.shuffle.ShuffleWriteMetricsReporter
 import org.apache.spark.shuffle.api.{ShuffleExecutorComponents, ShuffleMapOutputWriter}
-import org.apache.spark.shuffle.sort.BypassMergeSortShuffleHandle
-import org.apache.spark.sql.rapids.RapidsShuffleThreadedWriterBase
+import org.apache.spark.sql.rapids.{RapidsShuffleThreadedWriterBase, ShuffleHandleWithMetrics}
 import org.apache.spark.storage.BlockManager
 
 class RapidsShuffleThreadedWriter[K, V](
     blockManager: BlockManager,
-    handle: BypassMergeSortShuffleHandle[K, V],
+    handle: ShuffleHandleWithMetrics[K, V, V],
     mapId: Long,
     sparkConf: SparkConf,
     writeMetrics: ShuffleWriteMetricsReporter,
-    shuffleExecutorComponents: ShuffleExecutorComponents)
+    shuffleExecutorComponents: ShuffleExecutorComponents,
+    numWriterThreads: Int)
   extends RapidsShuffleThreadedWriterBase[K, V](
     blockManager,
     handle,
     mapId,
     sparkConf,
     writeMetrics,
-    shuffleExecutorComponents) {
+    shuffleExecutorComponents,
+    numWriterThreads) {
 
   // emptyChecksums: unused in versions of Spark before 3.2.0
   override def doCommitAllPartitions(

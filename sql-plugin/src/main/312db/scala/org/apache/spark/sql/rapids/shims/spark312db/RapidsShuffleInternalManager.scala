@@ -16,11 +16,9 @@
 
 package org.apache.spark.sql.rapids.shims.spark312db
 
-import org.apache.spark.{SparkConf, TaskContext}
+import org.apache.spark.SparkConf
 import org.apache.spark.shuffle._
-import org.apache.spark.shuffle.sort.BypassMergeSortShuffleHandle
 import org.apache.spark.sql.rapids.{ProxyRapidsShuffleInternalManagerBase, RapidsShuffleInternalManagerBase}
-import org.apache.spark.sql.rapids.shims.RapidsShuffleThreadedWriter
 
 /**
  * A shuffle manager optimized for the RAPIDS Plugin For Apache Spark.
@@ -28,21 +26,7 @@ import org.apache.spark.sql.rapids.shims.RapidsShuffleThreadedWriter
  *       `ShuffleManager` and `SortShuffleManager` classes.
  */
 class RapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
-    extends RapidsShuffleInternalManagerBase(conf, isDriver) {
-  override def makeBypassMergeSortShuffleWriter[K, V](
-      handle: BypassMergeSortShuffleHandle[K, V],
-      mapId: Long,
-      context: TaskContext,
-      metricsReporter: ShuffleWriteMetricsReporter): ShuffleWriter[K, V] = {
-    new RapidsShuffleThreadedWriter[K, V](
-      blockManager,
-      handle,
-      mapId,
-      conf,
-      metricsReporter,
-      execComponents.get)
-  }
-}
+    extends RapidsShuffleInternalManagerBase(conf, isDriver)
 
 class ProxyRapidsShuffleInternalManager(conf: SparkConf, isDriver: Boolean)
     extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver)

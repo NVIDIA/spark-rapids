@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -113,6 +113,7 @@ def pytest_sessionstart(session):
         wid = os.environ['PYTEST_XDIST_WORKER']
         _handle_derby_dir(_sb, driver_opts, wid)
         _handle_event_log_dir(_sb, wid)
+        _handle_ivy_cache_dir(_sb, wid)
     else:
         _sb.config('spark.driver.extraJavaOptions', driver_opts)
         _handle_event_log_dir(_sb, 'gw0')
@@ -155,7 +156,9 @@ def _handle_event_log_dir(sb, wid):
         return
     d = "./eventlog_{}".format(wid)
     if not os.path.exists(d):
-        os.makedirs(d)
+        # Set 'exist_ok' as True to avoid raising 'FileExistsError' as the folder might be created
+        # by other tests when they are executed in parallel
+        os.makedirs(d, exist_ok=True)
 
     logging.info('Spark event logs will appear under {}. Set the environmnet variable '
           'SPARK_EVENTLOG_ENABLED=false if you want to disable it'.format(d))
@@ -165,6 +168,14 @@ def _handle_event_log_dir(sb, wid):
         .config('spark.eventLog.compress', True) \
         .config('spark.eventLog.enabled', True) \
         .config('spark.eventLog.compression.codec', event_log_codec)
+
+def _handle_ivy_cache_dir(sb, wid):
+    if os.environ.get('SPARK_IVY_CACHE_ENABLED', str(True)).lower() in [
+        str(False).lower(), 'off', '0'
+    ]:
+        logging.info('Automatic configuration for spark ivy cache dir disabled')
+        return
+    sb.config('spark.jars.ivy', '/tmp/.ivy2_{}'.format(wid))
 
 def get_spark_i_know_what_i_am_doing():
     """

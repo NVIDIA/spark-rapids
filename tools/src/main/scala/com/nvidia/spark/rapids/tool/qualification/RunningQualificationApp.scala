@@ -86,12 +86,20 @@ class RunningQualificationApp() extends QualificationAppInfo(None, None,
     appInfo match {
       case Some(info) =>
         val appIdMaxSize = QualOutputWriter.getAppIdSize(Seq(info))
-        val headersAndSizes =
-          QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(info), appIdMaxSize)
+        val unSupExecMaxSize = QualOutputWriter.getunSupportedMaxSize(
+          Seq(info).map(_.unSupportedExecs.size),
+          QualOutputWriter.UNSUPPORTED_EXECS_MAX_SIZE,
+          QualOutputWriter.UNSUPPORTED_EXECS.size)
+        val unSupExprMaxSize = QualOutputWriter.getunSupportedMaxSize(
+          Seq(info).map(_.unSupportedExprs.size),
+          QualOutputWriter.UNSUPPORTED_EXPRS_MAX_SIZE,
+          QualOutputWriter.UNSUPPORTED_EXPRS.size)
+        val headersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(info),
+          appIdMaxSize, unSupExecMaxSize, unSupExprMaxSize)
         val headerStr = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
           delimiter, prettyPrint)
         val appInfoStr = QualOutputWriter.constructAppSummaryInfo(info.estimatedInfo,
-          headersAndSizes, appIdMaxSize,
+          headersAndSizes, appIdMaxSize, unSupExecMaxSize, unSupExprMaxSize,
           delimiter, prettyPrint)
         headerStr + appInfoStr
       case None =>

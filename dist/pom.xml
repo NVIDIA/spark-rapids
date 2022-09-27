@@ -48,7 +48,8 @@
             321,
             321cdh,
             322,
-            330
+            330,
+            330cdh
         </noSnapshot.buildvers>
         <snapshot.buildvers>
             314,
@@ -58,6 +59,21 @@
             312db,
             321db
         </databricks.buildvers>
+        <!--
+          Build and run unit tests on one specific version for each sub-version (e.g. 311, 320, 330)
+          Base shim version (311 currently) should be covered in default mvn verify command of premerge script, 
+          so base shim version is removed from the premergeUT list.
+          Separate the versions to two parts (premergeUT1, premergeUT2) for balancing the duration
+        -->
+        <premergeUT1.buildvers>
+            320
+        </premergeUT1.buildvers>
+        <premergeUT2.buildvers>
+            330
+        </premergeUT2.buildvers>
+        <premergeUTF8.buildvers>
+            320
+        </premergeUTF8.buildvers>
         <dist.jar.name>${project.build.directory}/${project.build.finalName}-${cuda.version}.jar</dist.jar.name>
     </properties>
     <profiles>
@@ -75,6 +91,30 @@
             <properties>
                 <included_buildvers>
                     ${noSnapshot.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
+            <id>premergeUT1</id>
+            <properties>
+                <included_buildvers>
+                    ${premergeUT1.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
+            <id>premergeUT2</id>
+            <properties>
+                <included_buildvers>
+                    ${premergeUT2.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
+            <id>premergeUTF8</id>
+            <properties>
+                <included_buildvers>
+                    ${premergeUTF8.buildvers}
                 </included_buildvers>
             </properties>
         </profile>
@@ -100,7 +140,8 @@
                     312,
                     320,
                     321cdh,
-                    330
+                    330,
+                    330cdh
                 </included_buildvers>
             </properties>
         </profile>
@@ -191,6 +232,75 @@
                     <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
                 </pluginRepository>
              </pluginRepositories>
+        </profile>
+        <profile>
+            <id>release330cdh</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>330cdh</value>
+                </property>
+            </activation>
+            <properties>
+                 <included_buildvers>${buildver}</included_buildvers>
+            </properties>
+            <dependencies>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <version>${spark330cdh.version}</version>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>org.apache.arrow</groupId>
+                            <artifactId>arrow-vector</artifactId>
+                        </exclusion>
+                    </exclusions>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
+                    <version>${spark330cdh.version}</version>
+                    <exclusions>
+                        <!-- spark-core tries to pull a curator-recipes version we don't want -->
+                        <exclusion>
+                            <groupId>org.apache.spark</groupId>
+                            <artifactId>spark-core_${scala.binary.version}</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>org.apache.arrow</groupId>
+                            <artifactId>arrow-vector</artifactId>
+                        </exclusion>
+                    </exclusions>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.arrow</groupId>
+                    <artifactId>arrow-vector</artifactId>
+                    <version>${arrow.cdh.version}</version>
+                    <scope>provided</scope>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>com.fasterxml.jackson.core</groupId>
+                            <artifactId>jackson-core</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>com.fasterxml.jackson.core</groupId>
+                            <artifactId>jackson-annotations</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>io.netty</groupId>
+                            <artifactId>netty-common</artifactId>
+                        </exclusion>
+                    </exclusions>
+                </dependency>
+            </dependencies>
+            <pluginRepositories>
+                <pluginRepository>
+                    <id>cloudera-repo</id>
+                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+                </pluginRepository>
+            </pluginRepositories>
         </profile>
         <profile>
             <id>individual</id>
