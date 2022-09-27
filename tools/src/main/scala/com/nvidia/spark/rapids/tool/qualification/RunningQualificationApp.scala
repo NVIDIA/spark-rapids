@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.tool.qualification
 
 import com.nvidia.spark.rapids.tool.planparser.SQLPlanParser
+import com.nvidia.spark.rapids.tool.qualification.QualOutputWriter.SQL_DESC_STR
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.rapids.tool.qualification._
@@ -100,6 +101,46 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
   initApp()
 
   /**
+   * Get the per SQL query header in CSV format.
+   * @return a string with the header
+   */
+  def getPerSqlCSVHeader: String = {
+    if (reportSqlLevel) {
+      QualOutputWriter.constructDetailedHeader(perSqlHeadersAndSizes,
+        QualOutputWriter.CSV_DELIMITER, false)
+    } else {
+      ""
+    }
+  }
+
+  /**
+   * Get the per SQL query header in TXT format for pretty printing.
+   * @return a string with the header
+   */
+  def getPerSqlTextHeader: String = {
+    if (reportSqlLevel) {
+      QualOutputWriter.constructDetailedHeader(perSqlHeadersAndSizes,
+        QualOutputWriter.TEXT_DELIMITER, true)
+    } else {
+      ""
+    }
+  }
+
+  /**
+   * Get the per SQL query header.
+   * @return a string with the header
+   */
+  def getPerSqlHeader(delimiter: String,
+      prettyPrint: Boolean, sqlDescLength: Int = SQL_DESC_LENGTH): String = {
+    if (reportSqlLevel) {
+      perSqlHeadersAndSizes(SQL_DESC_STR) = sqlDescLength
+      QualOutputWriter.constructDetailedHeader(perSqlHeadersAndSizes, delimiter, prettyPrint)
+    } else {
+      ""
+    }
+  }
+
+  /**
    * Get the per SQL query summary report in both Text and CSV format.
    * @param sqlID The sqlID of the query.
    * @return a tuple of the CSV summary followed by the Text summary.
@@ -141,6 +182,7 @@ class RunningQualificationApp(reportSqlLevel: Boolean,
       sqlDescLength: Int = SQL_DESC_LENGTH): String = {
     sqlInfo match {
       case Some(info) =>
+        perSqlHeadersAndSizes(SQL_DESC_STR) = sqlDescLength
         QualOutputWriter.constructPerSqlSummaryInfo(info, perSqlHeadersAndSizes,
           appId.size, delimiter, prettyPrint, sqlDescLength)
       case None =>

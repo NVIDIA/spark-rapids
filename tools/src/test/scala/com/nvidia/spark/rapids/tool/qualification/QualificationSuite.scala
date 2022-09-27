@@ -863,17 +863,21 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           val df2 = spark.read.json(outJsonFile.getCanonicalPath)
           df.join(df2.select($"a" as "a2"), $"a" === $"a2")
         }
+        // just basic testing that line exists and has right separator
+        val (csvOut, txtOut) = qualApp.getPerSqlTextAndCSVSummary(0)
+        assert(csvOut.contains("QualificationSuite.scala") && csvOut.contains(","),
+          s"CSV output was: $csvOut")
+        assert(txtOut.contains("QualificationSuite.scala") && txtOut.contains("|"),
+          s"TXT output was: $txtOut")
+        val sqlOut = qualApp.getPerSQLSummary(0, ":", true, 5)
+        assert(sqlOut.contains("0:json :"), s"SQL output was: $sqlOut")
+
         // test different delimiter
         val sumOut = qualApp.getSummary(":", false)
         val rowsSumOut = sumOut.split("\n")
         assert(rowsSumOut.size == 2)
         val headers = rowsSumOut(0).split(":")
         val values = rowsSumOut(1).split(":")
-
-        val (csvOut, txtOut) = qualApp.getPerSqlTextAndCSVSummary(1)
-        assert(csvOut == "hi")
-        assert(txtOut == "hi")
-
         val appInfo = qualApp.aggregateStats()
         assert(appInfo.nonEmpty)
         assert(headers.size ==
