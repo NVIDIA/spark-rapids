@@ -115,7 +115,7 @@ class RunningQualificationApp(
    * @return a sequence of SQL IDs
    */
   def getAvailableSqlIDs: Seq[Long] = {
-    super.sqlIdToInfo.keys.toSeq
+    sqlIdToInfo.keys.toSeq
   }
 
   /**
