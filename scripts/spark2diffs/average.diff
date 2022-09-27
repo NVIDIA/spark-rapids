@@ -1,4 +1,4 @@
-32a33,37
+13a14,18
 >         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
 >           GpuAverage(childExprs.head)
 > 

@@ -23,7 +23,7 @@ if [[ $# -eq 1 ]]; then
     BUILD_TYPE=$1
 
 elif [[ $# -gt 1 ]]; then
-    echo "ERROR: too many parameters are provided"
+    >&2 echo "ERROR: too many parameters are provided"
     exit 1
 fi
 
@@ -36,28 +36,36 @@ mvn_verify() {
     BASE_REF=$(git --no-pager log --oneline -1 | awk '{ print $NF }')
     # file size check for pull request. The size of a committed file should be less than 1.5MiB
     pre-commit run check-added-large-files --from-ref $BASE_REF --to-ref HEAD
-
     # build the Spark 2.x explain jar
     env -u SPARK_HOME $MVN_CMD -B $MVN_URM_MIRROR -Dbuildver=24X clean install -DskipTests
 
     MVN_INSTALL_CMD="env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR clean install $MVN_BUILD_ARGS -DskipTests -pl aggregator -am"
-    # build all the versions but only run unit tests on one 3.1.X version (base version covers this), one 3.2.X and one 3.3.X version.
-    # All others shims test should be covered in nightly pipelines
-    $MVN_INSTALL_CMD -DskipTests -Dbuildver=321cdh
-    $MVN_INSTALL_CMD -DskipTests -Dbuildver=312
-    $MVN_INSTALL_CMD -DskipTests -Dbuildver=313
-    [[ $BUILD_MAINTENANCE_VERSION_SNAPSHOTS == "true" ]] && $MVN_INSTALL_CMD -Dbuildver=314
 
-    $MVN_INSTALL_CMD -DskipTests -Dbuildver=320
+    for version in "${SPARK_SHIM_VERSIONS_SNAPSHOTS_TAIL[@]}"
+    do
+        echo "Spark version: $version"
+        # build and run unit tests on one specific version for each sub-version (e.g. 320, 330) except base version
+        # separate the versions to two ci stages (mvn_verify, ci_2) for balancing the duration
+        if [[ "${SPARK_SHIM_VERSIONS_PREMERGE_UT_1[@]}" =~ "$version" ]]; then
+            env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS \
+              -Dpytest.TEST_TAGS='' -pl '!tools'
+        # build only for nosnapshot versions
+        elif [[ "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}" =~ "$version" ]]; then
+            $MVN_INSTALL_CMD -DskipTests -Dbuildver=$version
+        # build only for snapshot versions
+        elif [[ $BUILD_MAINTENANCE_VERSION_SNAPSHOTS == "true" ]]; then
+            $MVN_INSTALL_CMD -Dbuildver=$version
+        fi
+    done
+    
     # enable UTF-8 for regular expression tests
-    env -u SPARK_HOME LC_ALL="en_US.UTF-8" $MVN_CMD $MVN_URM_MIRROR -Dbuildver=320 test $MVN_BUILD_ARGS \
-      -Dpytest.TEST_TAGS='' -pl '!tools' \
-      -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
-    $MVN_INSTALL_CMD -DskipTests -Dbuildver=321
-    $MVN_INSTALL_CMD -DskipTests -Dbuildver=322
-    env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=330 clean install $MVN_BUILD_ARGS \
-      -Dpytest.TEST_TAGS='' -pl '!tools'
-    [[ $BUILD_MAINTENANCE_VERSION_SNAPSHOTS == "true" ]] && $MVN_INSTALL_CMD -DskipTests -Dbuildver=331
+    for version in "${SPARK_SHIM_VERSIONS_PREMERGE_UTF8[@]}"
+    do
+        env -u SPARK_HOME LC_ALL="en_US.UTF-8" $MVN_CMD $MVN_URM_MIRROR -Dbuildver=$version test $MVN_BUILD_ARGS \
+          -Dpytest.TEST_TAGS='' -pl '!tools' \
+          -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
+    done
+    
     # TODO: move it to BUILD_MAINTENANCE_VERSION_SNAPSHOTS when we resolve all spark340 build issues
     [[ $BUILD_FEATURE_VERSION_SNAPSHOTS == "true" ]] && $MVN_INSTALL_CMD -DskipTests -Dbuildver=340
 
@@ -140,8 +148,11 @@ ci_2() {
 
     # put some mvn tests here to balance durations of parallel stages
     echo "Run mvn package..."
-    env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=320 clean package $MVN_BUILD_ARGS \
-      -Dpytest.TEST_TAGS='' -pl '!tools'
+    for version in "${SPARK_SHIM_VERSIONS_PREMERGE_UT_2[@]}"
+    do
+        env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean package $MVN_BUILD_ARGS \
+          -Dpytest.TEST_TAGS='' -pl '!tools'
+    done
 }
 
 
@@ -154,11 +165,11 @@ BUILD_MAINTENANCE_VERSION_SNAPSHOTS="false"
 # controls whether we build snapshots for the next Spark major or feature version like 3.4.0 or 4.0.0
 BUILD_FEATURE_VERSION_SNAPSHOTS="false"
 PREMERGE_PROFILES="-PnoSnapshots,pre-merge"
-if [[ ${PROJECT_VER} =~ ^22\.10\. ]]; then # enable snapshot builds for active development branch only
+if [[ ${PROJECT_VER} =~ ^22\.12\. ]]; then # enable snapshot builds for active development branch only
   BUILD_MAINTENANCE_VERSION_SNAPSHOTS="true"
   BUILD_FEATURE_VERSION_SNAPSHOTS="false"
   PREMERGE_PROFILES="-Psnapshots,pre-merge"
-elif [[ ${PROJECT_VER} =~ ^22\.12\. ]]; then
+elif [[ ${PROJECT_VER} =~ ^23\.02\. ]]; then
   BUILD_MAINTENANCE_VERSION_SNAPSHOTS="true"
   BUILD_FEATURE_VERSION_SNAPSHOTS="true"
   PREMERGE_PROFILES="-Psnapshots,pre-merge"

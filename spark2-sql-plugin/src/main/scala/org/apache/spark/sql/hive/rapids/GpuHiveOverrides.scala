@@ -16,15 +16,13 @@
 
 package org.apache.spark.sql.hive.rapids
 
-import com.nvidia.spark.RapidsUDF
-import com.nvidia.spark.rapids.{ExprChecks, ExprMeta, ExprRule, GpuOverrides, RapidsConf, RepeatingParamCheck, TypeSig}
-import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
+import com.nvidia.spark.rapids.{DataWritingCommandRule, ExprRule, HiveProvider}
 
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
+import org.apache.spark.sql.execution.command.DataWritingCommand
 
 object GpuHiveOverrides {
-  def isSparkHiveAvailable: Boolean = {
+  val isSparkHiveAvailable: Boolean = {
     try {
       getClass().getClassLoader.loadClass("org.apache.spark.sql.hive.HiveSessionStateBuilder")
       getClass().getClassLoader.loadClass("org.apache.hadoop.hive.conf.HiveConf")
@@ -34,16 +32,29 @@ object GpuHiveOverrides {
     }
   }
 
+  private lazy val hiveProvider: HiveProvider = {
+    if (isSparkHiveAvailable) {
+      new HiveProviderImpl()
+    } else {
+      new HiveProvider() {
+        override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
+            DataWritingCommandRule[_ <: DataWritingCommand]] = Map.empty
+        override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map.empty
+      }
+    }
+  }
+
+
+  /**
+   * Builds the data writing command rules that are specific to spark-hive Catalyst nodes.
+   * This will return an empty mapping if spark-hive is unavailable
+   */
+  def dataWriteCmds: Map[Class[_ <: DataWritingCommand],
+      DataWritingCommandRule[_ <: DataWritingCommand]] = hiveProvider.getDataWriteCmds
+
   /**
    * Builds the rules that are specific to spark-hive Catalyst nodes. This will return an empty
    * mapping if spark-hive is unavailable.
    */
-  def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    if (isSparkHiveAvailable) {
-      // don't use the ShimLoader for Spark 2.x
-      new HiveProviderImpl().getExprs
-    } else {
-      Map.empty
-    }
-  }
+  def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = hiveProvider.getExprs
 }

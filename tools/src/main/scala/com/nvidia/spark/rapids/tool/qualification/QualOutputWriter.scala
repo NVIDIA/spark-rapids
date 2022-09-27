@@ -178,7 +178,16 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
       sums: Seq[QualificationSummaryInfo], estSum: Seq[EstimatedSummaryInfo],
       numOutputRows: Int): Unit = {
     val appIdMaxSize = QualOutputWriter.getAppIdSize(sums)
-    val headersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(sums, appIdMaxSize)
+    val unSupExecMaxSize = QualOutputWriter.getunSupportedMaxSize(
+      sums.map(_.unSupportedExecs.size),
+      QualOutputWriter.UNSUPPORTED_EXECS_MAX_SIZE,
+      QualOutputWriter.UNSUPPORTED_EXECS.size)
+    val unSupExprMaxSize = QualOutputWriter.getunSupportedMaxSize(
+      sums.map(_.unSupportedExprs.size),
+      QualOutputWriter.UNSUPPORTED_EXPRS_MAX_SIZE,
+      QualOutputWriter.UNSUPPORTED_EXPRS.size)
+    val headersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(sums, appIdMaxSize,
+      unSupExecMaxSize, unSupExprMaxSize)
     val entireHeader = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
       TEXT_DELIMITER, true)
     val sep = "=" * (entireHeader.size - 1)
@@ -195,7 +204,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
     val finalSums = estSum.take(numOutputRows)
     finalSums.foreach { sumInfo =>
       val wStr = QualOutputWriter.constructAppSummaryInfo(sumInfo, headersAndSizes,
-        appIdMaxSize, TEXT_DELIMITER, true)
+        appIdMaxSize, unSupExecMaxSize, unSupExprMaxSize, TEXT_DELIMITER, true)
       writer.write(wStr)
       if (printStdout) print(wStr)
     }
@@ -228,7 +237,9 @@ case class FormattedQualificationSummaryInfo(
     unsupportedSQLTaskDuration: Long,
     supportedSQLTaskDuration: Long,
     taskSpeedupFactor: Double,
-    endDurationEstimated: Boolean)
+    endDurationEstimated: Boolean,
+    unSupportedExecs: String,
+    unSupportedExprs: String)
 
 object QualOutputWriter {
   val NON_SQL_TASK_DURATION_STR = "NonSQL Task Duration"
@@ -271,6 +282,8 @@ object QualOutputWriter {
   val ESTIMATED_GPU_SPEEDUP = "Estimated GPU Speedup"
   val ESTIMATED_GPU_TIMESAVED = "Estimated GPU Time Saved"
   val STAGE_ESTIMATED_STR = "Stage Estimated"
+  val UNSUPPORTED_EXECS = "Unsupported Execs"
+  val UNSUPPORTED_EXPRS = "Unsupported Expressions"
 
   val APP_DUR_STR_SIZE: Int = APP_DUR_STR.size
   val SQL_DUR_STR_SIZE: Int = SQL_DUR_STR.size
@@ -278,6 +291,8 @@ object QualOutputWriter {
   val SPEEDUP_BUCKET_STR_SIZE: Int = QualificationAppInfo.STRONGLY_RECOMMENDED.size
   val LONGEST_SQL_DURATION_STR_SIZE: Int = LONGEST_SQL_DURATION_STR.size
   val GPU_OPPORTUNITY_STR_SIZE: Int = GPU_OPPORTUNITY_STR.size
+  val UNSUPPORTED_EXECS_MAX_SIZE: Int = 25
+  val UNSUPPORTED_EXPRS_MAX_SIZE: Int = 25
 
   val CSV_DELIMITER = ","
   val TEXT_DELIMITER = "|"
@@ -285,6 +300,24 @@ object QualOutputWriter {
   def getAppIdSize(sums: Seq[QualificationSummaryInfo]): Int = {
     val sizes = sums.map(_.appId.size)
     getMaxSizeForHeader(sizes, QualOutputWriter.APP_ID_STR)
+  }
+
+  def getunSupportedMaxSize(unSupExecs: Seq[Int], maxStringSize: Int, headerSize: Int): Int = {
+    val unSupportedExecsSize = unSupExecs.size
+    val unSupportedExecsMax = if (unSupExecs.nonEmpty) {
+      unSupExecs.max
+    } else {
+      0
+    }
+    // return maxString size if the unsupportedString exceeds maxStringSize
+    if (unSupportedExecsSize > 0 && unSupportedExecsMax > maxStringSize) {
+      maxStringSize
+    } else if (unSupportedExecsSize > 0 && unSupportedExecsMax < maxStringSize
+      && unSupportedExecsMax >= headerSize) {
+      unSupportedExecsMax
+    } else {
+      headerSize
+    }
   }
 
   def getSqlDescSize(sums: Seq[QualificationSummaryInfo], maxSQLDescLength: Int,
@@ -323,7 +356,8 @@ object QualOutputWriter {
     val lastEntry = strAndSizes.last
     strAndSizes.dropRight(1).foreach { case (str, strSize) =>
       if (prettyPrint) {
-        entireHeader.append(s"%${strSize}s${delimiter}".format(str))
+        val updatedString = stringLengthExceedsMax(str, strSize, delimiter)
+        entireHeader.append(updatedString)
       } else {
         entireHeader.append(s"${str}${delimiter}")
       }
@@ -331,7 +365,8 @@ object QualOutputWriter {
     // for the last element we don't want to print the delimiter at the end unless
     // pretty printing
     if (prettyPrint) {
-      entireHeader.append(s"%${lastEntry._2}s${delimiter}".format(lastEntry._1))
+      val updatedString = stringLengthExceedsMax(lastEntry._1, lastEntry._2, delimiter)
+      entireHeader.append(updatedString)
     } else {
       entireHeader.append(s"${lastEntry._1}")
     }
@@ -341,6 +376,16 @@ object QualOutputWriter {
 
   private def stringIfempty(str: String): String = {
     if (str.isEmpty) "\"\"" else str
+  }
+
+  private def stringLengthExceedsMax(str: String, strSize: Int, delimiter: String): String = {
+    val prettyPrintValue = if (str.size > strSize) {
+      val newStrSize = strSize - 3 // suffixing ... at the end
+      s"%${newStrSize}.${newStrSize}s...${delimiter}".format(str)
+    } else {
+      s"%${strSize}.${strSize}s${delimiter}".format(str)
+    }
+    prettyPrintValue
   }
 
   def getDetailedHeaderStringsAndSizes(appInfos: Seq[QualificationSummaryInfo],
@@ -376,7 +421,9 @@ object QualOutputWriter {
       UNSUPPORTED_TASK_DURATION_STR -> UNSUPPORTED_TASK_DURATION_STR.size,
       SUPPORTED_SQL_TASK_DURATION_STR -> SUPPORTED_SQL_TASK_DURATION_STR.size,
       SPEEDUP_FACTOR_STR -> SPEEDUP_FACTOR_STR.size,
-      APP_DUR_ESTIMATED_STR -> APP_DUR_ESTIMATED_STR.size
+      APP_DUR_ESTIMATED_STR -> APP_DUR_ESTIMATED_STR.size,
+      UNSUPPORTED_EXECS -> UNSUPPORTED_EXECS.size,
+      UNSUPPORTED_EXPRS -> UNSUPPORTED_EXPRS.size
     )
     if (reportReadSchema) {
       detailedHeadersAndFields +=
@@ -388,7 +435,9 @@ object QualOutputWriter {
 
   private[qualification] def getSummaryHeaderStringsAndSizes(
       appInfos: Seq[QualificationSummaryInfo],
-      appIdMaxSize: Int): LinkedHashMap[String, Int] = {
+      appIdMaxSize: Int,
+      unSupExecMaxSize: Int = UNSUPPORTED_EXECS_MAX_SIZE,
+      unSupExprMaxSize: Int = UNSUPPORTED_EXPRS_MAX_SIZE): LinkedHashMap[String, Int] = {
     LinkedHashMap[String, Int](
       APP_NAME_STR -> getMaxSizeForHeader(appInfos.map(_.appName.size), APP_NAME_STR),
       APP_ID_STR -> appIdMaxSize,
@@ -398,7 +447,9 @@ object QualOutputWriter {
       ESTIMATED_GPU_DURATION -> ESTIMATED_GPU_DURATION.size,
       ESTIMATED_GPU_SPEEDUP -> ESTIMATED_GPU_SPEEDUP.size,
       ESTIMATED_GPU_TIMESAVED -> ESTIMATED_GPU_TIMESAVED.size,
-      SPEEDUP_BUCKET_STR -> SPEEDUP_BUCKET_STR_SIZE
+      SPEEDUP_BUCKET_STR -> SPEEDUP_BUCKET_STR_SIZE,
+      UNSUPPORTED_EXECS -> unSupExecMaxSize,
+      UNSUPPORTED_EXPRS -> unSupExprMaxSize
     )
   }
 
@@ -406,6 +457,8 @@ object QualOutputWriter {
       sumInfo: EstimatedSummaryInfo,
       headersAndSizes: LinkedHashMap[String, Int],
       appIdMaxSize: Int,
+      unSupExecMaxSize: Int,
+      unSupExprMaxSize: Int,
       delimiter: String,
       prettyPrint: Boolean): String = {
     val data = ListBuffer[(String, Int)](
@@ -418,7 +471,9 @@ object QualOutputWriter {
       ToolUtils.formatDoublePrecision(sumInfo.estimatedGpuSpeedup) -> ESTIMATED_GPU_SPEEDUP.size,
       ToolUtils.formatDoublePrecision(sumInfo.estimatedGpuTimeSaved) ->
         ESTIMATED_GPU_TIMESAVED.size,
-      sumInfo.recommendation -> SPEEDUP_BUCKET_STR_SIZE
+      sumInfo.recommendation -> SPEEDUP_BUCKET_STR_SIZE,
+      sumInfo.unsupportedExecs -> unSupExecMaxSize,
+      sumInfo.unsupportedExprs -> unSupExprMaxSize
     )
     constructOutputRow(data, delimiter, prettyPrint)
   }
@@ -631,7 +686,9 @@ object QualOutputWriter {
       appInfo.unsupportedSQLTaskDuration,
       appInfo.supportedSQLTaskDuration,
       ToolUtils.truncateDoubleToTwoDecimal(appInfo.taskSpeedupFactor),
-      appInfo.endDurationEstimated
+      appInfo.endDurationEstimated,
+      appInfo.unSupportedExecs,
+      appInfo.unSupportedExprs
     )
   }
 
@@ -663,7 +720,9 @@ object QualOutputWriter {
       appInfo.unsupportedSQLTaskDuration.toString -> headersAndSizes(UNSUPPORTED_TASK_DURATION_STR),
       appInfo.supportedSQLTaskDuration.toString -> headersAndSizes(SUPPORTED_SQL_TASK_DURATION_STR),
       appInfo.taskSpeedupFactor.toString -> headersAndSizes(SPEEDUP_FACTOR_STR),
-      appInfo.endDurationEstimated.toString -> headersAndSizes(APP_DUR_ESTIMATED_STR)
+      appInfo.endDurationEstimated.toString -> headersAndSizes(APP_DUR_ESTIMATED_STR),
+      appInfo.unSupportedExecs.toString -> headersAndSizes(UNSUPPORTED_EXECS),
+      appInfo.unSupportedExprs.toString -> headersAndSizes(UNSUPPORTED_EXPRS)
     )
     if (reportReadSchema) {
       data += (stringIfempty(appInfo.readFileFormats) -> headersAndSizes(READ_SCHEMA_STR))

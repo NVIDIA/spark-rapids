@@ -14,23 +14,31 @@
 <       meta: RapidsMeta[_, _],
 ---
 >       meta: RapidsMeta[_, _, _],
-615c615
+613c613
 <   val DECIMAL_64: TypeSig = decimal(GpuOverrides.DECIMAL64_MAX_PRECISION)
 ---
 >   val DECIMAL_64: TypeSig = decimal(DType.DECIMAL64_MAX_PRECISION)
-622c622
+620c620
 <   val DECIMAL_128: TypeSig = decimal(GpuOverrides.DECIMAL128_MAX_PRECISION)
 ---
 >   val DECIMAL_128: TypeSig = decimal(DType.DECIMAL128_MAX_PRECISION)
-767c767
+765c765
 <   def tag(meta: RapidsMeta[_, _]): Unit
 ---
 >   def tag(meta: RapidsMeta[_, _, _]): Unit
-780c780
+777c777
+<   /**
+---
+>   /** 
+783c783
+<     meta: RapidsMeta[_, _]
+---
+>     meta: RapidsMeta[_, _, _]
+808c808
 <     meta: RapidsMeta[_, _],
 ---
 >     meta: RapidsMeta[_, _, _],
-804,814d803
+834,844d833
 <   // Spark 2.X doesn't have getZoneId - copy it here
 <   private def getZoneId(timeZoneId: String): ZoneId = {
 <     val formattedZoneId = timeZoneId
@@ -42,68 +50,68 @@
 <     ZoneId.of(formattedZoneId, ZoneId.SHORT_IDS)
 <   }
 < 
-816,817c805
+846,847c835
 <     // Spark 2.X doesn't have getZoneId
 <     val zoneId = getZoneId(zoneIdString)
 ---
 >     val zoneId = DateTimeUtils.getZoneId(zoneIdString)
-854c842
+889c877
 <   override def tag(rapidsMeta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(rapidsMeta: RapidsMeta[_, _, _]): Unit = {
-858c846
+893c881
 <   private[this] def tagBase(rapidsMeta: RapidsMeta[_, _], willNotWork: String => Unit): Unit = {
 ---
 >   private[this] def tagBase(rapidsMeta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
-916c904
+951c939
 <   def tag(meta: RapidsMeta[_, _],
 ---
 >   def tag(meta: RapidsMeta[_, _, _],
-927c915
+962c950
 <   override def tag(meta: RapidsMeta[_, _]): Unit =
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit =
-953c941
+988c976
 <   def tag(meta: RapidsMeta[_, _],
 ---
 >   def tag(meta: RapidsMeta[_, _, _],
-974c962
+1009c997
 <   override def tag(rapidsMeta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(rapidsMeta: RapidsMeta[_, _, _]): Unit = {
-1049c1037
+1084c1072
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1101c1089
+1136c1124
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1144c1132
+1179c1167
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1194c1182
+1229c1217
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1240c1228
+1275c1263
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1276c1264
+1311c1299
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1430c1418
+1465c1453
 <   override def tag(meta: RapidsMeta[_, _]): Unit = {
 ---
 >   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
-1440c1428
+1475c1463
 <   private[this] def tagBase(meta: RapidsMeta[_, _], willNotWork: String => Unit): Unit = {
 ---
 >   private[this] def tagBase(meta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
-1775,1783d1762
+1810,1818d1797
 <   def getSparkVersion: String = {
 <     // hack for databricks, try to find something more reliable?
 <     if (SPARK_BUILD_USER.equals("Databricks")) {
@@ -113,27 +121,27 @@
 <     }
 <   }
 < 
-1798c1777
+1833c1812
 <     println(s"against version ${getSparkVersion} of Spark. Most of this should still")
 ---
 >     println(s"against version ${ShimLoader.getSparkVersion} of Spark. Most of this should still")
-1906c1885
+1941c1920
 <         val allData = allSupportedTypes.toList.map { t =>
 ---
 >         val allData = allSupportedTypes.map { t =>
-1989c1968
+2024c2003
 <         val allData = allSupportedTypes.toList.map { t =>
 ---
 >         val allData = allSupportedTypes.map { t =>
-2093c2072
+2128c2107
 <         val allData = allSupportedTypes.toList.map { t =>
 ---
 >         val allData = allSupportedTypes.map { t =>
-2294d2272
+2329d2307
 <   /*
-2370d2347
+2405d2382
 <   */
-2374,2375c2351,2352
+2409,2410c2386,2387
 <       // case a if a.equals("execs") => outputSupportedExecs()
 <       // case expr if expr.equals("exprs") => outputSupportedExpressions()
 ---
