@@ -49,11 +49,16 @@
             321cdh,
             322,
             330,
-            330cdh
-        </noSnapshot.buildvers>
-        <snapshot.buildvers>
-            314,
+            330cdh,
             331
+        </noSnapshot.buildvers>
+        <!--
+            We move 331 as noSnapshot here to make sure we still build and test the shim for 22.10 (pre-release)
+            TODO: If we decide not to support spark 3.3.1 in 22.10,
+                  then we should move it back to snapshot before release
+        -->
+        <snapshot.buildvers>
+            314
         </snapshot.buildvers>
         <databricks.buildvers>
             312db,
