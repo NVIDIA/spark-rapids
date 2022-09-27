@@ -265,12 +265,12 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
   }
 
   private def getPerRowRepetition(explodingColumn: ColumnVector, outer: Boolean): ColumnVector = {
-    withResource(explodingColumn.countElements()) { arrayElements =>
+    withResource(explodingColumn.countElements()) { arrayLengths =>
       if (outer) {
         // for outer, empty arrays and null arrays will produce a row
         withResource(GpuScalar.from(1, IntegerType)) { one =>
-          val noNulls = withResource(arrayElements.isNotNull) { isLhsNotNull =>
-            isLhsNotNull.ifElse(arrayElements, one)
+          val noNulls = withResource(arrayLengths.isNotNull) { isLhsNotNull =>
+            isLhsNotNull.ifElse(arrayLengths, one)
           }
           withResource(noNulls) { _ =>
             withResource(noNulls.greaterOrEqualTo(one)) { isGeOne =>
@@ -281,7 +281,7 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
       } else {
         // ensure no nulls in this output
         withResource(GpuScalar.from(0, IntegerType)) { zero =>
-          GpuNvl(arrayElements, zero)
+          GpuNvl(arrayLengths, zero)
         }
       }
     }
