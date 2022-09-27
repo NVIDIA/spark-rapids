@@ -18,8 +18,11 @@ package com.nvidia.spark.rapids.tool.profiling
 
 import java.io.FileNotFoundException
 
-import org.yaml.snakeyaml.Yaml
 import scala.collection.JavaConverters._
+
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.{FileSystem, FSDataInputStream, Path}
+import org.yaml.snakeyaml.Yaml
 
 import org.apache.spark.internal.Logging
 
@@ -479,55 +482,71 @@ object AutoTuner extends Logging {
   val DEFAULT_WORKER_INFO: String = "."
   val SUPPORTED_SIZE_UNITS: Seq[String] = Seq("b", "k", "m", "g", "t", "p")
 
+  def loadSystemProperties(fileInput: String): Option[java.util.Map[String, Any]] = {
+    val filePath = new Path(fileInput)
+    val fs = FileSystem.get(filePath.toUri, new Configuration())
+    val yaml = new Yaml()
+    var fsIs: FSDataInputStream = null
+    try {
+      fsIs = fs.open(filePath)
+      Some(yaml.load(fsIs).asInstanceOf[java.util.Map[String, Any]])
+    } finally {
+      if (fsIs != null) {
+        fsIs.close()
+      }
+    }
+  }
+
   /**
    * Parses the yaml file and returns system and gpu properties.
    * See [[SystemProps]] and [[GpuProps]].
    */
   def parseSystemInfo(yamlFile: String): (SystemProps, Option[String]) = {
-     try {
-       val yaml = new Yaml()
-       val file = scala.io.Source.fromFile(yamlFile)
-       val text = file.mkString
-       val rawProps = yaml.load(text).asInstanceOf[java.util.Map[String, Any]]
-         .asScala.toMap.filter { case (_, v) => v != null }
-       val rawSystemProps = rawProps("system").asInstanceOf[java.util.Map[String, Any]]
-         .asScala.toMap.filter { case (_, v) => v != null }
+    try {
+      val loadedProps = loadSystemProperties(yamlFile)
+      if (loadedProps.isDefined) {
+        val rawProps = loadedProps.get.asScala.toMap.filter { case (_, v) => v != null }
+        val rawSystemProps = rawProps("system").asInstanceOf[java.util.Map[String, Any]]
+          .asScala.toMap.filter { case (_, v) => v != null }
+        if (rawSystemProps.nonEmpty) {
+          val rawGpuProps = rawProps("gpu").asInstanceOf[java.util.Map[String, Any]]
+            .asScala.toMap.filter { case (_, v) => v != null }
 
-       if (rawSystemProps.nonEmpty) {
-         val rawGpuProps = rawProps("gpu").asInstanceOf[java.util.Map[String, Any]]
-           .asScala.toMap.filter { case (_, v) => v != null }
+          val gpuProps = if (rawGpuProps.nonEmpty) {
+            GpuProps(
+              rawGpuProps("count").toString.toInt,
+              rawGpuProps("memory").toString,
+              rawGpuProps("name").toString)
+          } else {
+            null
+          }
 
-         val gpuProps = if (rawGpuProps.nonEmpty) {
-           GpuProps(
-             rawGpuProps("count").toString.toInt,
-             rawGpuProps("memory").toString,
-             rawGpuProps("name").toString)
-         } else {
-           null
-         }
-
-         (SystemProps(
-           rawSystemProps.getOrElse("num_cores", 1).toString.toInt,
-           rawSystemProps.getOrElse("cpu_arch", "").toString,
-           rawSystemProps.getOrElse("memory", "0b").toString,
-           rawSystemProps.getOrElse("free_disk_space", "0b").toString,
-           rawSystemProps.getOrElse("time_zone", "").toString,
-           rawSystemProps.get("num_workers").map(_.toString.toInt),
-           gpuProps), None)
-       } else {
-         (null, Some("System properties was empty"))
-       }
-     } catch {
-       case e: FileNotFoundException =>
-         logError("Exception: " + e.getStackTrace.mkString("Array(", ", ", ")"))
-         (null, Some("System properties file was not found"))
-       case e: NullPointerException =>
-         logError("Exception: " + e.getStackTrace.mkString("Array(", ", ", ")"))
-         (null, Some("System properties file was not formatted correctly."))
-       case e: Exception =>
-         logError("Exception: " + e.getStackTrace.mkString("Array(", ", ", ")"))
-         (null, Some(e.toString))
-     }
+          (SystemProps(
+            rawSystemProps.getOrElse("num_cores", 1).toString.toInt,
+            rawSystemProps.getOrElse("cpu_arch", "").toString,
+            rawSystemProps.getOrElse("memory", "0b").toString,
+            rawSystemProps.getOrElse("free_disk_space", "0b").toString,
+            rawSystemProps.getOrElse("time_zone", "").toString,
+            rawSystemProps.get("num_workers").map(_.toString.toInt),
+            gpuProps), None)
+        } else {
+          (null, Some("System properties was empty"))
+        }
+      }
+      else {
+        (null, Some("System properties was empty"))
+      }
+    } catch {
+      case e: FileNotFoundException =>
+        logError("Exception: " + e.getStackTrace.mkString("Array(", ", ", ")"))
+        (null, Some("System properties file was not found"))
+      case e: NullPointerException =>
+        logError("Exception: " + e.getStackTrace.mkString("Array(", ", ", ")"))
+        (null, Some("System properties file was not formatted correctly."))
+      case e: Exception =>
+        logError("Exception: " + e.getStackTrace.mkString("Array(", ", ", ")"))
+        (null, Some(e.toString))
+    }
   }
 
   /**
