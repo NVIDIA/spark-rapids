@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.text.SimpleDateFormat
 import java.time.DateTimeException
+import java.util.Optional
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -480,6 +481,9 @@ object GpuCast extends Arm {
 
       case (ShortType | IntegerType | LongType | ByteType | StringType, BinaryType) =>
         input.asByteList(true)
+
+      case (BinaryType, StringType) =>
+        castBinToString(input)
 
       case (_: DecimalType, StringType) =>
         input.castTo(DType.STRING)
@@ -1411,6 +1415,21 @@ object GpuCast extends Arm {
             }
           }
         }
+      }
+    }
+  }
+
+  private def castBinToString(input: ColumnView): ColumnVector = {
+    // Spark interprets the binary as UTF-8 bytes. So the layout of the
+    // binary and the layout of the string are the same. We just need to play some games with
+    // the CPU side metadata to make CUDF think it is a String.
+    // Sadly there is no simple CUDF API to do this, so for now we pull it apart and put
+    // it back together again
+    withResource(input.getChildColumnView(0)) { dataCol =>
+      withResource(new ColumnView(DType.STRING, input.getRowCount,
+        Optional.of[java.lang.Long](input.getNullCount),
+        dataCol.getData, input.getValid, input.getOffsets)) { cv =>
+        cv.copyToColumnVector()
       }
     }
   }

@@ -42,14 +42,11 @@ jobs:
         id: noSnapshotVersionsStep
         run: |
           set -x
-          noSnapshotVersionsStr=$(mvn -B help:evaluate -q -pl dist -PnoSnapshots -Dexpression=included_buildvers -DforceStdout)
-          noSnapshotVersionsStr=$(echo $noSnapshotVersionsStr)
-          noSnapshotVersionsArr=($(IFS=", "; echo $noSnapshotVersionsStr))
-          tailNoSnapshotVersionsArr=(${noSnapshotVersionsArr[@]:1})
-          svArrBody=$(printf ",{\"spark-version\":\"%s\"}" "${tailNoSnapshotVersionsArr[@]}")
+          . jenkins/version-def.sh
+          svArrBody=$(printf ",{\"spark-version\":\"%s\"}" "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}")
           svArrBody=${svArrBody:1}
           svJsonStr=$(printf {\"include\":[%s]} $svArrBody)
-          echo ::set-output name=headVersion::${noSnapshotVersionsArr[0]}
+          echo ::set-output name=headVersion::$SPARK_BASE_SHIM_VERSION
           echo ::set-output name=tailVersions::$svJsonStr
 
   package-aggregator:

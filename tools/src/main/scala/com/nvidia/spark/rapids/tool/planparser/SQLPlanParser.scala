@@ -36,7 +36,8 @@ class ExecInfo(
     val isSupported: Boolean,
     val children: Option[Seq[ExecInfo]], // only one level deep
     val stages: Set[Int] = Set.empty,
-    val shouldRemove: Boolean = false) {
+    val shouldRemove: Boolean = false,
+    val unsupportedExprs: Array[String] = Array.empty) {
   private def childrenToString = {
     val str = children.map { c =>
       c.map("       " + _.toString).mkString("\n")
@@ -196,9 +197,10 @@ object SQLPlanParser extends Logging {
       }
       val stagesInNode = getStagesInSQLNode(node, app)
       val supported = execInfos.isSupported && !ds && !containsUDF
+
       Seq(new ExecInfo(execInfos.sqlID, execInfos.exec, execInfos.expr, execInfos.speedupFactor,
         execInfos.duration, execInfos.nodeId, supported, execInfos.children,
-        stagesInNode, execInfos.shouldRemove))
+        stagesInNode, execInfos.shouldRemove, execInfos.unsupportedExprs))
     }
   }
 
