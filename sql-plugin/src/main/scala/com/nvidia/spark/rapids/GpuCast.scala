@@ -574,9 +574,11 @@ object GpuCast extends Arm {
       errorMsg:String = GpuCast.OVERFLOW_MESSAGE): Unit = {
 
     def throwAnyNan(): Unit = {
-      withResource(values.isNan().any()) { anyNan =>
-        if (anyNan.isValid && anyNan.getBoolean) {
-          throw RapidsErrorUtils.arithmeticOverflowError(errorMsg)
+      withResource(values.isNan()) { valuesIsNan =>
+        withResource(valuesIsNan.any()) { anyNan =>
+          if (anyNan.isValid && anyNan.getBoolean) {
+            throw RapidsErrorUtils.arithmeticOverflowError(errorMsg)
+          }
         }
       }
     }
@@ -626,8 +628,10 @@ object GpuCast extends Arm {
                 throwOutOfRange[BigDecimal](minInput.getBigDecimal, minValue.getBigDecimal,
                                             maxInput.getBigDecimal, maxValue.getBigDecimal)
               case dt if dt.isBackedByLong =>
-                throwOutOfRange[Long](minInput.getLong, minValue.getLong,
-                                      maxInput.getLong, maxValue.getLong)
+                val minValueLong = GpuScalar.from(GpuScalar.extract(minValue), LongType).getLong
+                val maxValueLong = GpuScalar.from(GpuScalar.extract(maxValue), LongType).getLong
+                throwOutOfRange[Long](minInput.getLong, minValueLong,
+                                      maxInput.getLong, maxValueLong)
               case dt if dt.isBackedByInt =>
                 throwOutOfRange[Int](minInput.getInt, minValue.getInt,
                                      maxInput.getInt, maxValue.getInt)
