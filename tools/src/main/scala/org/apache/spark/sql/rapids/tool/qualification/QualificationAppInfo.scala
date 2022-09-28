@@ -298,7 +298,6 @@ class QualificationAppInfo(
         // don't worry about supported execs for these are these are mostly indicator of I/O
         val execRunTime = sqlIDToTaskEndSum.get(sqlID).map(_.executorRunTime).getOrElse(0L)
         val execCPUTime = sqlIDToTaskEndSum.get(sqlID).map(_.executorCPUTime).getOrElse(0L)
-
         SQLStageSummary(stageSum, sqlID, estimateWallclockSupported,
           execCPUTime, execRunTime)
       }
