@@ -18,7 +18,9 @@ package org.apache.spark.sql.rapids.tool.qualification
 
 import java.util.concurrent.atomic.AtomicBoolean
 
-import com.nvidia.spark.rapids.tool.qualification.{RunningQualificationApp, RunningQualOutputWriter}
+import scala.util.control.NonFatal
+
+import com.nvidia.spark.rapids.tool.qualification.{RunningQualOutputWriter, RunningQualificationApp}
 
 import org.apache.spark.{CleanerListener, SparkConf, SparkContext}
 import org.apache.spark.internal.Logging
@@ -44,9 +46,16 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
 
   private val outputFileFromConfig = sparkConf.get("spark.rapids.qualification.outputDir", "")
   private lazy val appName = qualApp.appInfo.map(_.appName).getOrElse("")
-  private lazy val fileWriter: Option[RunningQualOutputWriter] =
+  private val fileWriter: Option[RunningQualOutputWriter] =
     if (outputFileFromConfig.nonEmpty) {
-      val writer = Some(new RunningQualOutputWriter(qualApp.appId, appName, outputFileFromConfig))
+      val writer = try {
+        Some(new RunningQualOutputWriter(qualApp.appId, appName, outputFileFromConfig))
+      } catch {
+        case NonFatal(e) =>
+          logError("Error creating the RunningQualOutputWriter, output will not be" +
+            s" saved to a file: ${e.getMessage}", e)
+          None
+      }
       writer.foreach(_.init())
       writer
     } else {
