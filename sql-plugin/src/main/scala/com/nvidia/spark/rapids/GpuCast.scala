@@ -26,6 +26,7 @@ import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DecimalUtils, DType, 
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{AnsiUtil, GpuIntervalUtils, GpuTypeShims, SparkShimImpl, YearParseUtil}
+import com.nvidia.spark.rapids.jni.CastStrings
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, NullIntolerant, TimeZoneAwareExpression}
@@ -453,7 +454,7 @@ object GpuCast extends Arm {
       case (FloatType | DoubleType, StringType) =>
         castFloatingTypeToString(input)
       case (StringType, ByteType | ShortType | IntegerType | LongType ) =>
-        com.nvidia.spark.rapids.jni.CastStrings.toInteger(input, ansiMode,
+        CastStrings.toInteger(input, ansiMode,
           GpuColumnVector.getNonNestedRapidsType(toDataType))
       case (StringType, BooleanType | FloatType | DoubleType | DateType | TimestampType) =>
         withResource(input.strip()) { trimmed =>
@@ -474,7 +475,7 @@ object GpuCast extends Arm {
           }
         }
       case (StringType, dt: DecimalType) =>
-      com.nvidia.spark.rapids.jni.CastStrings.toDecimal(input, ansiMode, dt.precision, -dt.scale)
+      CastStrings.toDecimal(input, ansiMode, dt.precision, -dt.scale)
 
       case (ByteType | ShortType | IntegerType | LongType, dt: DecimalType) =>
         castIntegralsToDecimal(input, dt, ansiMode)
