@@ -147,7 +147,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("cuDF does not support quantifier syntax when not quantifying anything") {
     // note that we could choose to transpile and escape the '{' and '}' characters
-    val patterns = Seq("{1,2}", "{1,}", "{1}")
+    val patterns = Seq("{1,2}", "{1,}", "{1}", "{2,1}")
     patterns.foreach(pattern => {
       assertUnsupported(pattern, RegexFindMode,
         "Token preceding '{' is not quantifiable near index 0")
