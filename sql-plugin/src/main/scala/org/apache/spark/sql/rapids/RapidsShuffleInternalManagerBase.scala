@@ -1181,10 +1181,16 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
           gpu.dependency.metrics)
       case bmssh: BypassMergeSortShuffleHandle[_, _] =>
         bmssh.dependency match {
-          case gpuDep: GpuShuffleDependency[_, _, _] if gpuDep.useMultiThreadedShuffle =>
-            // cast the handle with specific generic types due to type-erasure
+          case gpuDep: GpuShuffleDependency[_, _, _]
+              if gpuDep.useMultiThreadedShuffle &&
+                  rapidsConf.shuffleMultiThreadedWriterThreads > 0 =>
+            // use the threaded writer if the number of threads specified is 1 or above,
+            // with 0 threads we fallback to the Spark-provided writer.
             val handleWithMetrics = new ShuffleHandleWithMetrics(
-              bmssh.shuffleId, gpuDep.metrics, gpuDep.asInstanceOf[GpuShuffleDependency[K, V, V]])
+              bmssh.shuffleId,
+              gpuDep.metrics,
+              // cast the handle with specific generic types due to type-erasure
+              gpuDep.asInstanceOf[GpuShuffleDependency[K, V, V]])
             new RapidsShuffleThreadedWriter[K, V](
               blockManager,
               handleWithMetrics,
