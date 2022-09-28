@@ -29,7 +29,7 @@ import org.apache.spark.internal.Logging
 class ToolTextFileWriter(finalOutputDir: String, logFileName: String,
     finalLocationText: String) extends Logging {
 
-  // use same as Spark even log writer
+  // use same as Spark event log writer
   val LOG_FILE_PERMISSIONS = new FsPermission(Integer.parseInt("660", 8).toShort)
   val LOG_FOLDER_PERMISSIONS = new FsPermission(Integer.parseInt("770", 8).toShort)
   private val textOutputPath = new Path(s"$finalOutputDir/$logFileName")
