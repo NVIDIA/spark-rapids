@@ -324,6 +324,11 @@ abstract class FilePartitionReaderBase(conf: Configuration, execMetrics: Map[Str
   }
 }
 
+// Contains the actual file path to read from and then an optional original path if its read from
+// Alluxio. To make it transparent to the user, we return the original non-Alluxio path
+// for input_file_name.
+case class PartitionedFileInfoOptAlluxio(toRead: PartitionedFile, original: Option[PartitionedFile])
+
 /**
  * The Abstract multi-file cloud reading framework
  *
@@ -362,10 +367,7 @@ abstract class MultiFileCloudPartitionReaderBase(
   private[this] val inputMetrics = Option(TaskContext.get).map(_.taskMetrics().inputMetrics)
       .getOrElse(TrampolineUtil.newInputMetrics())
 
-  // Contains the actual file path to read from and then an optional original path if its read from
-  // Alluxio. To make it transparent to the user, we return the original non-Alluxio path
-  // for input_file_name.
-  private val files: Array[(PartitionedFile, Option[PartitionedFile])] = {
+  private val files: Array[PartitionedFileInfoOptAlluxio] = {
     if (alluxionPathReplacementMap.nonEmpty) {
       if (alluxioReplacementTaskTime) {
         AlluxioUtils.updateFilesTaskTimeIfAlluxio(inputFiles, Some(alluxionPathReplacementMap))
@@ -375,7 +377,7 @@ abstract class MultiFileCloudPartitionReaderBase(
         AlluxioUtils.getOrigPathFromReplaced(inputFiles, alluxionPathReplacementMap)
       }
     } else {
-      inputFiles.map((_, None))
+      inputFiles.map(PartitionedFileInfoOptAlluxio(_, None))
     }
   }
 
@@ -385,16 +387,16 @@ abstract class MultiFileCloudPartitionReaderBase(
     val tc = TaskContext.get
     for (i <- 0 until limit) {
       val file = files(i)
-      logDebug(s"MultiFile reader using file ${file._1}, orig file is ${file._2}")
+      logDebug(s"MultiFile reader using file ${file.toRead}, orig file is ${file.original}")
       // Add these in the order as we got them so that we can make sure
       // we process them in the same order as CPU would.
       val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
-      tasks.add(threadPool.submit(getBatchRunner(tc, file._1, file._2, conf, filters)))
+      tasks.add(threadPool.submit(getBatchRunner(tc, file.toRead, file.original, conf, filters)))
     }
     // queue up any left to add once others finish
     for (i <- limit until files.length) {
       val file = files(i)
-      tasksToRun.enqueue(getBatchRunner(tc, file._1, file._2, conf, filters))
+      tasksToRun.enqueue(getBatchRunner(tc, file.toRead, file.original, conf, filters))
     }
     isInitted = true
     filesToRead = files.length

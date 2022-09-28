@@ -1814,13 +1814,13 @@ class MultiFileCloudParquetPartitionReader(
       } catch {
         case e: FileNotFoundException if ignoreMissingFiles =>
           logWarning(s"Skipped missing file: ${file.filePath}", e)
-          HostMemoryEmptyMetaData(file, origFile, 0, 0,  false, false, false, null, null)
+          HostMemoryEmptyMetaData(file, origPartitionedFile, 0, 0,  false, false, false, null, null)
         // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
         case e: FileNotFoundException if !ignoreMissingFiles => throw e
         case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
           logWarning(
             s"Skipped the rest of the content in the corrupted file: ${file.filePath}", e)
-          HostMemoryEmptyMetaData(file, origFile, 0, 0,  false, false, false, null, null)
+          HostMemoryEmptyMetaData(file, origPartitionedFile, 0, 0,  false, false, false, null, null)
       } finally {
         TrampolineUtil.unsetTaskContext()
       }
@@ -1839,7 +1839,7 @@ class MultiFileCloudParquetPartitionReader(
         if (fileBlockMeta.blocks.isEmpty) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead
           // no blocks so return null buffer and size 0
-          HostMemoryEmptyMetaData(file, origFile, 0, bytesRead,
+          HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
             fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
             fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
         } else {
@@ -1847,7 +1847,7 @@ class MultiFileCloudParquetPartitionReader(
           if (isDone) {
             val bytesRead = fileSystemBytesRead() - startingBytesRead
             // got close before finishing
-            HostMemoryEmptyMetaData(file, origFile, 0, bytesRead,
+            HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
               fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
               fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
           } else {
@@ -1855,7 +1855,7 @@ class MultiFileCloudParquetPartitionReader(
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               val numRows = fileBlockMeta.blocks.map(_.getRowCount).sum.toInt
               // overload size to be number of rows with null buffer
-              HostMemoryEmptyMetaData(file, origFile, numRows, bytesRead,
+              HostMemoryEmptyMetaData(file, origPartitionedFile, numRows, bytesRead,
                 fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
                 fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
             } else {
@@ -1869,12 +1869,12 @@ class MultiFileCloudParquetPartitionReader(
               if (isDone) {
                 // got close before finishing
                 hostBuffers.foreach(_._1.safeClose())
-                HostMemoryEmptyMetaData(file, origFile, 0, bytesRead,
+                HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
                   fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
                   fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
               } else {
-                HostMemoryBuffersWithMetaData(file, origFile, hostBuffers.toArray, bytesRead,
-                  fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
+                HostMemoryBuffersWithMetaData(file, origPartitionedFile, hostBuffers.toArray,
+                  bytesRead, fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
                   fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
               }
             }

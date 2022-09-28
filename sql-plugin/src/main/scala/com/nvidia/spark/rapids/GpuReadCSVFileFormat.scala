@@ -43,7 +43,7 @@ class GpuReadCSVFileFormat extends CSVFileFormat with GpuReadFileFormatWithMetri
       hadoopConf: Configuration,
       metrics: Map[String, GpuMetric],
       alluxionPathReplacementMap: Option[Map[String, String]] = None)
-  : PartitionedFile => Iterator[InternalRow] = {
+    : PartitionedFile => Iterator[InternalRow] = {
     val sqlConf = sparkSession.sessionState.conf
     val broadcastedHadoopConf =
       sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))

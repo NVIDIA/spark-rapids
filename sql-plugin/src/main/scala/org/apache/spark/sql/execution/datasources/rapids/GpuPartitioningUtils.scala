@@ -25,13 +25,14 @@ import scala.collection.mutable.ArrayBuffer
 import scala.util.Try
 import scala.util.control.NonFatal
 
+import com.nvidia.spark.rapids.AlluxioUtils.AlluxioReplacedFilePathInfoConvertTime
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, SQLConfHelper}
 import org.apache.spark.sql.catalyst.analysis.TypeCoercion
-import org.apache.spark.sql.catalyst.catalog.ExternalCatalogUtils.{unescapePathName, DEFAULT_PARTITION_NAME}
+import org.apache.spark.sql.catalyst.catalog.ExternalCatalogUtils.{DEFAULT_PARTITION_NAME, unescapePathName}
 import org.apache.spark.sql.catalyst.expressions.{Cast, Literal}
 import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, DateTimeUtils, TimestampFormatter}
 import org.apache.spark.sql.catalyst.util.rapids.DateFormatter
@@ -68,7 +69,8 @@ object GpuPartitioningUtils extends SQLConfHelper {
       leafFiles: Seq[Path],
       parameters: Map[String, String],
       userSpecifiedSchema: Option[StructType],
-      replaceFunc: Path => (Path, Option[String])): (PartitionSpec, Option[String]) = {
+      replaceFunc: Path => AlluxioReplacedFilePathInfoConvertTime)
+    : (PartitionSpec, Option[String]) = {
 
     val recursiveFileLookup = parameters.getOrElse("recursiveFileLookup", "false").toBoolean
 
@@ -86,8 +88,8 @@ object GpuPartitioningUtils extends SQLConfHelper {
         // need to replace the base path
         replaceFunc(new Path(file))
       }
-      val basePathOption = basePathAndAnyReplacedOption.map(_._1)
-      val anyReplacedBase = basePathAndAnyReplacedOption.flatMap(_._2)
+      val basePathOption = basePathAndAnyReplacedOption.map(_.filePath)
+      val anyReplacedBase = basePathAndAnyReplacedOption.flatMap(_.origPrefix)
 
       val basePaths = getBasePaths(sparkSession.sessionState.newHadoopConfWithOptions(parameters),
         basePathOption, rootPaths, leafFiles)
