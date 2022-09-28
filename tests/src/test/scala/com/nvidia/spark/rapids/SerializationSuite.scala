@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -68,11 +68,11 @@ class SerializationSuite extends FunSuite with Arm {
       val buffer = createDeserializedHostBuffer(gpuExpected)
       val hostBatch = new SerializeConcatHostBuffersDeserializeBatch(Array(buffer), attrs)
       withResource(hostBatch) { _ =>
-        val gpuBatch = hostBatch.batch
+        val gpuBatch = hostBatch.batch.fold(identity, _.getColumnarBatch())
         TestUtils.compareBatches(gpuExpected, gpuBatch)
         // clone via serialization after manifesting the GPU batch
         withResource(SerializationUtils.clone(hostBatch)) { clonedObj =>
-          val gpuClonedBatch = clonedObj.batch
+          val gpuClonedBatch = clonedObj.batch.fold(identity, _.getColumnarBatch())
           TestUtils.compareBatches(gpuExpected, gpuClonedBatch)
           // try to clone it again from the cloned object
           SerializationUtils.clone(clonedObj).close()
