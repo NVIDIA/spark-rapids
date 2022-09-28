@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids.catalyst.expressions
 
-import ai.rapids.cudf.{DType, HostColumnVector}
+import ai.rapids.cudf.{DType, HostColumnVector, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuLiteral}
 import com.nvidia.spark.rapids.shims.ShimUnaryExpression
 
@@ -61,15 +61,17 @@ case class GpuRand(child: Expression) extends ShimUnaryExpression with GpuExpres
   override def inputTypes: Seq[AbstractDataType] = Seq(TypeCollection(IntegerType, LongType))
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    val partId = TaskContext.getPartitionId()
-    if (partId != previousPartition || !wasInitialized) {
-      rng = new XORShiftRandom(seed + partId)
-      previousPartition = partId
-    }
-    val numRows = batch.numRows()
-    withResource(HostColumnVector.builder(DType.FLOAT64, numRows)) { builder =>
-      (0 until numRows).foreach(_ =>  builder.append(rng.nextDouble()))
-      GpuColumnVector.from(builder.buildAndPutOnDevice(), dataType)
+    withResource(new NvtxRange("GPU_RANDOM", NvtxColor.RED)) { _ =>
+      val partId = TaskContext.getPartitionId()
+      if (partId != previousPartition || !wasInitialized) {
+        rng = new XORShiftRandom(seed + partId)
+        previousPartition = partId
+      }
+      val numRows = batch.numRows()
+      withResource(HostColumnVector.builder(DType.FLOAT64, numRows)) { builder =>
+        (0 until numRows).foreach(_ => builder.append(rng.nextDouble()))
+        GpuColumnVector.from(builder.buildAndPutOnDevice(), dataType)
+      }
     }
   }
 }

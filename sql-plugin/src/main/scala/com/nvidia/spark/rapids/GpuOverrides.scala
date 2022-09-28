@@ -64,6 +64,7 @@ import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.execution.python.shims.GpuFlatMapGroupsInPandasExecMeta
 import org.apache.spark.sql.rapids.shims.GpuTimeAdd
+import org.apache.spark.sql.rapids.zorder.ZOrderRules
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 
@@ -3594,7 +3595,7 @@ object GpuOverrides extends Logging {
   // Shim expressions should be last to allow overrides with shim-specific versions
   val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
     commonExpressions ++ TimeStamp.getExprs ++ GpuHiveOverrides.exprs ++
-        SparkShimImpl.getExprs
+        SparkShimImpl.getExprs ++ ZOrderRules.exprs
 
   def wrapScan[INPUT <: Scan](
       scan: INPUT,
