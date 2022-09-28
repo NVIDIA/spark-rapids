@@ -174,6 +174,11 @@ object RapidsBufferCatalog extends Logging with Arm {
     }
   }
 
+  // For testing
+  def setDeviceStorage(rdms: RapidsDeviceMemoryStore): Unit = {
+    deviceStorage = rdms
+  }
+
   def init(rapidsConf: RapidsConf): Unit = {
     // We are going to re-initialize so make sure all of the old things were closed...
     closeImpl()
