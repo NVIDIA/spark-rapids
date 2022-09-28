@@ -884,7 +884,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(csvOut.contains("QualificationSuite.scala") && csvOut.contains(","),
           s"CSV output was: $csvOut")
         val sqlOut = qualApp.getPerSQLSummary(sqlIdToLookup, ":", true, 5)
-        assert(sqlOut.contains("0:json :"), s"SQL output was: $sqlOut")
+        assert(sqlOut.contains(":json :"), s"SQL output was: $sqlOut")
         qualApp.cleanupSQL(sqlIdToLookup)
         assert(qualApp.getAvailableSqlIDs.size == numSQLIds - 1)
 
