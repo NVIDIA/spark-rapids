@@ -18,6 +18,8 @@ package org.apache.spark.sql.rapids.tool
 
 import com.nvidia.spark.rapids.tool.profiling.ProfileUtils.replaceDelimiter
 import com.nvidia.spark.rapids.tool.qualification.QualOutputWriter
+import org.json4s.DefaultFormats
+import org.json4s.jackson.JsonMethods.parse
 
 import org.apache.spark.internal.{config, Logging}
 import org.apache.spark.sql.DataFrame
@@ -33,26 +35,28 @@ object ToolUtils extends Logging {
     df.showString(numRows, 0)
   }
 
-  def parseClusterTags(clusterTag: String): (String, String, String, String) = {
+  /**
+   * Parses the string which contains configs in JSON format ( key : value ) pairs and
+   * returns the Map of [String, String]
+   * @param clusterTag  String which contains property clusterUsageTags.clusterAllTags in
+   *                    JSON format
+   * @return Map of ClusterTags
+   */
+  def parseClusterTags(clusterTag: String): Map[String, String] = {
     // clusterTags will be in this format -
     // [{"key":"Vendor","value":"Databricks"},
-    // {"key":"Creator","value":"tgraves@nvidia.com"},{"key":"ClusterName",
+    // {"key":"Creator","value":"abc@company.com"},{"key":"ClusterName",
     // "value":"job-215-run-1"},{"key":"ClusterId","value":"0617-131246-dray530"},
     // {"key":"JobId","value":"215"},{"key":"RunName","value":"test73longer"},
     // {"key":"DatabricksEnvironment","value":"workerenv-7026851462233806"}]
-    // We first sanitize the input by removing brackets, keywords such as key, value
-    // and create an array consisting of cluster tags.
-    val clusterTagsArray = clusterTag.replaceAll("\\[", "").replaceAll("\\]", "").split("}").
-      map(_.replaceAll("\"value\":", "").replaceAll("\"key\":", "").
-        replaceAll("""\,\{""", "").replaceAll("""\{""", ""))
-    // Here we split the array to create Map of key, value pairs of clusterTags.
-    val clusterTagsMap = clusterTagsArray.map(x => x.split(",")).map {
-      case Array(k, v) => k.stripPrefix("\"").stripSuffix("\"") -> v.stripPrefix("\"")
-        .stripSuffix("\"")
-    }.toMap
 
-    (clusterTagsMap.mkString(";"), clusterTagsMap.getOrElse("ClusterId", ""),
-      clusterTagsMap.getOrElse("JobId", ""), clusterTagsMap.getOrElse("RunName", ""))
+    // case class to hold key -> value pairs
+    case class ClusterTags(key: String, value: String)
+    implicit val formats = DefaultFormats
+    val listOfClusterTags = parse(clusterTag)
+    val clusterTagsMap = listOfClusterTags.extract[List[ClusterTags]].map(
+      x => x.key -> x.value).toMap
+    clusterTagsMap
   }
 
   // given to duration values, calculate a human readable percent

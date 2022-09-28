@@ -96,11 +96,14 @@ class RunningQualificationApp() extends QualificationAppInfo(None, None,
           QualOutputWriter.UNSUPPORTED_EXPRS.size)
         val clusterTags = info.clusterTags.nonEmpty
         val (clusterIdMax, jobIdMax, runNameMax) = if (clusterTags) {
-          (QualOutputWriter.getMaxSizeForHeader(Seq(info).map(_.clusterId.size),
+          (QualOutputWriter.getMaxSizeForHeader(Seq(info).map(
+            _.allClusterTagsMap.getOrElse(QualOutputWriter.CLUSTER_ID, "").size),
             QualOutputWriter.CLUSTER_ID),
-            QualOutputWriter.getMaxSizeForHeader(Seq(info).map(_.jobId.size),
+            QualOutputWriter.getMaxSizeForHeader(Seq(info).map(
+              _.allClusterTagsMap.getOrElse(QualOutputWriter.JOB_ID, "").size),
               QualOutputWriter.JOB_ID),
-            QualOutputWriter.getMaxSizeForHeader(Seq(info).map(_.runName.size),
+            QualOutputWriter.getMaxSizeForHeader(Seq(info).map(
+              _.allClusterTagsMap.getOrElse(QualOutputWriter.RUN_NAME, "").size),
               QualOutputWriter.RUN_NAME))
         } else {
           (QualOutputWriter.CLUSTER_ID_STR_SIZE, QualOutputWriter.JOB_ID_STR_SIZE,

@@ -21,7 +21,7 @@ import scala.collection.mutable.{Buffer, LinkedHashMap, ListBuffer}
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import com.nvidia.spark.rapids.tool.planparser.{ExecInfo, PlanInfo}
 import com.nvidia.spark.rapids.tool.profiling.ProfileUtils.replaceDelimiter
-import com.nvidia.spark.rapids.tool.qualification.QualOutputWriter.{CLUSTER_ID_STR_SIZE, JOB_ID_STR_SIZE, RUN_NAME_STR_SIZE, TEXT_DELIMITER}
+import com.nvidia.spark.rapids.tool.qualification.QualOutputWriter.{CLUSTER_ID, CLUSTER_ID_STR_SIZE, JOB_ID, JOB_ID_STR_SIZE, RUN_NAME, RUN_NAME_STR_SIZE, TEXT_DELIMITER}
 
 import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.qualification.{EstimatedPerSQLSummaryInfo, EstimatedSummaryInfo, QualificationAppInfo, QualificationSummaryInfo}
@@ -188,10 +188,12 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
       QualOutputWriter.UNSUPPORTED_EXPRS.size)
     val clusterTags = sums.exists(_.clusterTags.nonEmpty)
     val (clusterIdMaxSize, jobIdMaxSize, runNameMaxSize) = if (clusterTags) {
-      (QualOutputWriter.getMaxSizeForHeader(sums.map(_.clusterId.size),
-        QualOutputWriter.CLUSTER_ID),
-        QualOutputWriter.getMaxSizeForHeader(sums.map(_.jobId.size), QualOutputWriter.JOB_ID),
-        QualOutputWriter.getMaxSizeForHeader(sums.map(_.runName.size), QualOutputWriter.RUN_NAME))
+      (QualOutputWriter.getMaxSizeForHeader(sums.map(_.allClusterTagsMap.getOrElse(
+        CLUSTER_ID, "").size), QualOutputWriter.CLUSTER_ID),
+        QualOutputWriter.getMaxSizeForHeader(sums.map(_.allClusterTagsMap.getOrElse(
+          JOB_ID, "").size), QualOutputWriter.JOB_ID),
+        QualOutputWriter.getMaxSizeForHeader(sums.map(_.allClusterTagsMap.getOrElse(
+          RUN_NAME, "").size), QualOutputWriter.RUN_NAME))
     } else {
       (CLUSTER_ID_STR_SIZE, JOB_ID_STR_SIZE, RUN_NAME_STR_SIZE)
     }
@@ -251,7 +253,7 @@ case class FormattedQualificationSummaryInfo(
     endDurationEstimated: Boolean,
     unSupportedExecs: String,
     unSupportedExprs: String,
-    clusterTags: String)
+    clusterTags: Map[String, String])
 
 object QualOutputWriter {
   val NON_SQL_TASK_DURATION_STR = "NonSQL Task Duration"
@@ -297,9 +299,9 @@ object QualOutputWriter {
   val UNSUPPORTED_EXECS = "Unsupported Execs"
   val UNSUPPORTED_EXPRS = "Unsupported Expressions"
   val CLUSTER_TAGS = "Cluster Tags"
-  val CLUSTER_ID = "Cluster Id"
-  val JOB_ID = "Job Id"
-  val RUN_NAME = "Run Name"
+  val CLUSTER_ID = "ClusterId"
+  val JOB_ID = "JobId"
+  val RUN_NAME = "RunName"
 
   val APP_DUR_STR_SIZE: Int = APP_DUR_STR.size
   val SQL_DUR_STR_SIZE: Int = SQL_DUR_STR.size
@@ -514,9 +516,9 @@ object QualOutputWriter {
       sumInfo.unsupportedExprs -> unSupExprMaxSize
     )
     if (clusterTags) {
-      data += (sumInfo.clusterId -> clusterIdMaxSize)
-      data += (sumInfo.jobId -> jobIdMaxSize)
-      data += (sumInfo.runName -> runNameMaxSize)
+      data += (sumInfo.allTagsMap.getOrElse(CLUSTER_ID, "") -> clusterIdMaxSize)
+      data += (sumInfo.allTagsMap.getOrElse(JOB_ID, "") -> jobIdMaxSize)
+      data += (sumInfo.allTagsMap.getOrElse(RUN_NAME, "") -> runNameMaxSize)
     }
     constructOutputRow(data, delimiter, prettyPrint)
   }
@@ -732,7 +734,7 @@ object QualOutputWriter {
       appInfo.endDurationEstimated,
       appInfo.unSupportedExecs,
       appInfo.unSupportedExprs,
-      appInfo.clusterTags
+      appInfo.allClusterTagsMap
     )
   }
 
@@ -770,7 +772,7 @@ object QualOutputWriter {
       appInfo.unSupportedExprs.toString -> headersAndSizes(UNSUPPORTED_EXPRS)
     )
     if (clusterTags) {
-      data += appInfo.clusterTags -> headersAndSizes(CLUSTER_TAGS)
+      data += appInfo.clusterTags.mkString(";") -> headersAndSizes(CLUSTER_TAGS)
     }
     if (reportReadSchema) {
       data += (stringIfempty(appInfo.readFileFormats) -> headersAndSizes(READ_SCHEMA_STR))
