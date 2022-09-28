@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.tool.qualification
 
 import java.io.File
+import java.nio.file.Files
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
@@ -27,7 +28,7 @@ import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerStageCompleted, SparkListenerTaskEnd}
-import org.apache.spark.sql.{DataFrame, SparkSession, TrampolineUtil}
+import org.apache.spark.sql.{DataFrame, Dataset, SparkSession, TrampolineUtil}
 import org.apache.spark.sql.functions.{desc, hex, udf}
 import org.apache.spark.sql.rapids.tool.{AppBase, AppFilterImpl, ToolUtils}
 import org.apache.spark.sql.rapids.tool.qualification.{QualificationAppInfo, QualificationSummaryInfo, RunningQualificationEventProcessor}
@@ -131,6 +132,10 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       Some(perSQLSchema))
   }
 
+  def readPerSqlTextFile(expected: File): Dataset[String] = {
+    sparkSession.read.textFile(expected.getPath())
+  }
+
   private def createSummaryForDF(
       appSums: Seq[QualificationSummaryInfo]): Seq[TestQualificationSummary] = {
     appSums.map { appInfoRec =>
@@ -182,6 +187,55 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
             s"rapids_4_spark_qualification_output_persql.csv"
           val dfPerSqlActual = readPerSqlFile(new File(actualExpectation))
           ToolTestUtils.compareDataFrames(dfPerSqlActual, dfPerSqlExpect)
+        }
+      }
+    }
+  }
+
+  test("RunningQualificationEventProcessor per sql") {
+    // val qualOutDir = Files.createTempDirectory("spark-rapids-qualtest").toFile
+        TrampolineUtil.withTempDir { qualOutDir =>
+      TrampolineUtil.withTempPath { outParquetFile =>
+        TrampolineUtil.withTempPath { outJsonFile =>
+          val csvOutput = qualOutDir.getPath + "/" + QualOutputWriter.LOGFILE_NAME + "_persql.csv"
+          val txtOutput = qualOutDir.getPath + "/" + QualOutputWriter.LOGFILE_NAME + "_persql.log"
+          // note don't close the application here so we test running output
+          ToolTestUtils.runAndCollect("running per sql") { spark =>
+            val sparkConf = spark.sparkContext.getConf
+            sparkConf.set("spark.rapids.qualification.outputDir", qualOutDir.getPath)
+            val listener = new RunningQualificationEventProcessor(sparkConf)
+            spark.sparkContext.addSparkListener(listener)
+            import spark.implicits._
+            val testData = Seq((1, 2), (3, 4)).toDF("a", "b")
+            testData.write.json(outJsonFile.getCanonicalPath)
+            testData.write.parquet(outParquetFile.getCanonicalPath)
+            val df = spark.read.parquet(outParquetFile.getCanonicalPath)
+            val df2 = spark.read.json(outJsonFile.getCanonicalPath)
+            val df3 = df.join(df2.select($"a" as "a2"), $"a" === $"a2")
+            df3
+          }
+          // the code above that runs the Spark query stops the Sparksession
+          // so create a new one to read in the csv file
+          createSparkSession()
+
+          val dfPerSqlActual = readPerSqlFile(new File(csvOutput))
+          assert(dfPerSqlActual.columns.size == 10)
+          val rows = dfPerSqlActual.collect()
+          assert(rows.size == 3)
+          val firstRow = rows(1)
+          // , should be replaced with ;
+          assert(firstRow(3).toString.contains("at QualificationSuite.scala"))
+
+          // this reads everything into single column
+          val dfPerSqlActualTxt = readPerSqlTextFile(new File(txtOutput))
+          assert(dfPerSqlActualTxt.columns.size == 1)
+          val rowsTxt = dfPerSqlActualTxt.collect()
+          // have to account for headers
+          assert(rowsTxt.size == 7)
+          val headerRowTxt = rowsTxt(1).toString
+          assert(headerRowTxt.contains("Recommendation"))
+          val firstValueRow = rowsTxt(3).toString
+          assert(firstValueRow.contains("QualificationSuite.scala"))
         }
       }
     }
@@ -884,7 +938,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(csvOut.contains("QualificationSuite.scala") && csvOut.contains(","),
           s"CSV output was: $csvOut")
         val sqlOut = qualApp.getPerSQLSummary(sqlIdToLookup, ":", true, 5)
-        assert(sqlOut.contains(":json :"), s"SQL output was: $sqlOut")
+        assert(sqlOut.contains("Tool Unit Tests:"), s"SQL output was: $sqlOut")
         qualApp.cleanupSQL(sqlIdToLookup)
         assert(qualApp.getAvailableSqlIDs.size == numSQLIds - 1)
 
@@ -913,93 +967,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(
           valuesDetailed(readSchemaIndex).contains("json") &&
             valuesDetailed(readSchemaIndex).contains("parquet"))
-      }
-    }
-  }
-
-  test("RunningQualificationEventProcessor per sql") {
-    TrampolineUtil.withTempPath { outParquetFile =>
-      TrampolineUtil.withTempPath { outJsonFile =>
-        TrampolineUtil.withTempDir { qualOutDir =>
-          ToolTestUtils.runAndCollect("running per sql") { spark =>
-            val sparkConf = spark.sparkContext.getConf
-            sparkConf.set("spark.rapids.qualification.outputDir", qualOutDir.getPath)
-            val listener = new RunningQualificationEventProcessor(sparkConf)
-            spark.sparkContext.addSparkListener(listener)
-            import spark.implicits._
-            val testData = Seq((1, 2), (3, 4)).toDF("a", "b")
-            testData.write.json(outJsonFile.getCanonicalPath)
-            testData.write.parquet(outParquetFile.getCanonicalPath)
-            val df = spark.read.parquet(outParquetFile.getCanonicalPath)
-            val df2 = spark.read.json(outJsonFile.getCanonicalPath)
-            df.join(df2.select($"a" as "a2"), $"a" === $"a2")
-          }
-
-          val csvOutput = qualOutDir.getPath + QualOutputWriter.LOGFILE_NAME + ".csv"
-          val txtOutput = qualOutDir.getPath + QualOutputWriter.LOGFILE_NAME + ".log"
-
-          val dfPerSqlActual = readPerSqlFile(new File(csvOutput))
-          assert(dfPerSqlActual.columns.size == 10)
-          val rows = dfPerSqlActual.collect()
-          assert(rows.size == 3)
-          val firstRow = rows(1)
-          // , should be replaced with ;
-          assert(firstRow(3) == "testing; csv delimiter; replacement")
-/*
-          // just basic testing that line exists and has right separator
-          val csvHeader = qualApp.getPerSqlCSVHeader
-          assert(csvHeader.contains("App Name,App ID,SQL ID,SQL Description,SQL DF Duration," +
-            "GPU Opportunity,Estimated GPU Duration,Estimated GPU Speedup," +
-            "Estimated GPU Time Saved,Recommendation"))
-          val txtHeader = qualApp.getPerSqlTextHeader
-          assert(txtHeader.contains("|                              App Name|             App ID|" +
-            "SQL ID" +
-            "|                                                                                     " +
-            "SQL Description|" +
-            "SQL DF Duration|GPU Opportunity|Estimated GPU Duration|" +
-            "Estimated GPU Speedup|Estimated GPU Time Saved|      Recommendation|"))
-          val randHeader = qualApp.getPerSqlHeader(";", true, 20)
-          assert(randHeader.contains(";                              App Name;             App ID" +
-            ";SQL ID;     SQL Description;SQL DF Duration;GPU Opportunity;Estimated GPU Duration;" +
-            "Estimated GPU Speedup;Estimated GPU Time Saved;      Recommendation;"))
-          val allSQLIds = qualApp.getAvailableSqlIDs
-          val numSQLIds = allSQLIds.size
-          assert(numSQLIds > 0)
-          val sqlIdToLookup = allSQLIds.head
-          val (csvOut, txtOut) = qualApp.getPerSqlTextAndCSVSummary(sqlIdToLookup)
-          assert(txtOut.contains("QualificationSuite.scala") && txtOut.contains("|"),
-            s"TXT output was: $txtOut")
-          assert(csvOut.nonEmpty)
-          assert(csvOut.contains("QualificationSuite.scala") && csvOut.contains(","),
-            s"CSV output was: $csvOut")
-          val sqlOut = qualApp.getPerSQLSummary(sqlIdToLookup, ":", true, 5)
-          assert(sqlOut.contains(":json :"), s"SQL output was: $sqlOut")
-          qualApp.cleanupSQL(sqlIdToLookup)
-          assert(qualApp.getAvailableSqlIDs.size == numSQLIds - 1)
-
-          // test different delimiter
-          val sumOut = qualApp.getSummary(":", false)
-          assert(sumOut.isEmpty)
-          assert(headers.size ==
-            QualOutputWriter.getSummaryHeaderStringsAndSizes(30, 30).keys.size)
-          assert(values.size == headers.size - 1) // UnsupportedExpr is empty
-          // 3 should be the SQL DF Duration
-          assert(headers(3).contains("SQL DF"))
-          assert(values(3).toInt > 0)
-          val detailedOut = qualApp.getDetailed(":", prettyPrint = false, reportReadSchema = true)
-          val rowsDetailedOut = detailedOut.split("\n")
-          assert(rowsDetailedOut.size == 2)
-          val headersDetailed = rowsDetailedOut(0).split(":")
-          val valuesDetailed = rowsDetailedOut(1).split(":")
-          // Check Read Schema contains json and parquet
-          val readSchemaIndex = headersDetailed.length - 1
-          assert(headersDetailed(readSchemaIndex).contains("Read Schema"))
-          assert(
-            valuesDetailed(readSchemaIndex).contains("json") &&
-              valuesDetailed(readSchemaIndex).contains("parquet"))
-
- */
-        }
       }
     }
   }
