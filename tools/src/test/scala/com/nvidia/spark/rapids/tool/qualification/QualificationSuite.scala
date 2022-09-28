@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.tool.qualification
 
 import java.io.File
-import java.nio.file.Files
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
@@ -193,8 +192,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   test("RunningQualificationEventProcessor per sql") {
-    // val qualOutDir = Files.createTempDirectory("spark-rapids-qualtest").toFile
-        TrampolineUtil.withTempDir { qualOutDir =>
+    TrampolineUtil.withTempDir { qualOutDir =>
       TrampolineUtil.withTempPath { outParquetFile =>
         TrampolineUtil.withTempPath { outJsonFile =>
           val csvOutput = qualOutDir.getPath + "/" + QualOutputWriter.LOGFILE_NAME + "_persql.csv"
