@@ -1372,7 +1372,7 @@ object RapidsConf {
       "then replace a cloud path which matches spark.rapids.alluxio.bucket.regex like " +
       "\"s3://bar/b.csv\" to \"alluxio://0.1.2.3:19998/bar/b.csv\", " +
       "and the bucket \"s3://bar\" will be mounted to \"/bar\" in Alluxio automatically." +
-      "This config should be enabled when initially starting the application but it" +
+      "This config should be enabled when initially starting the application but it " +
       "can be turned off and one programmatically after that.")
     .booleanConf
     .createWithDefault(false)
