@@ -41,7 +41,10 @@ object GpuBroadcastHelper {
                         broadcastSchema: StructType): ColumnarBatch = {
     broadcastRelation.value match {
       case broadcastBatch: SerializeConcatHostBuffersDeserializeBatch =>
-        broadcastBatch.batch()
+        broadcastBatch.batch.fold(
+          GpuColumnVector.incRefCounts,
+          _.getColumnarBatch()
+        )
       case v if SparkShimImpl.isEmptyRelation(v) =>
         GpuColumnVector.emptyBatch(broadcastSchema)
       case t =>
