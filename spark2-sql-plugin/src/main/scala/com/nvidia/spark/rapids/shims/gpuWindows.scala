@@ -98,7 +98,7 @@ abstract class GpuWindowExpressionMetaBase(
               val orderByTypeSupported = orderSpec.forall { so =>
                 so.dataType match {
                   case ByteType | ShortType | IntegerType | LongType |
-                       DateType | TimestampType => true
+                       DateType | TimestampType | DecimalType() => true
                   case _ => false
                 }
               }
@@ -125,13 +125,17 @@ abstract class GpuWindowExpressionMetaBase(
                     s"Range window frame is not 100% compatible when the order by type is " +
                       s"long and the range value calculated has overflow. " +
                       s"To enable it please set ${RapidsConf.ENABLE_RANGE_WINDOW_LONG} to true.")
+                  case DecimalType() => if (!conf.isRangeWindowDecimalEnabled) willNotWorkOnGpu(
+                      s"To enable DECIMAL order by columns with Range window frames, " +
+                      s"please set ${RapidsConf.ENABLE_RANGE_WINDOW_DECIMAL} to true.")
                   case _ => // never reach here
                 }
               }
 
               // check whether the boundaries are supported or not.
               Seq(spec.lower, spec.upper).foreach {
-                case l @ Literal(_, ByteType | ShortType | IntegerType | LongType) =>
+                case l @ Literal(_, ByteType | ShortType | IntegerType |
+                                    LongType | DecimalType()) =>
                   checkRangeBoundaryConfig(l.dataType)
                 case Literal(ci: CalendarInterval, CalendarIntervalType) =>
                   // interval is only working for TimeStampType
@@ -190,6 +194,7 @@ abstract class GpuSpecifiedWindowFrameMetaBase(
           case Literal(value, ShortType) => value.asInstanceOf[Short].toLong
           case Literal(value, IntegerType) => value.asInstanceOf[Int].toLong
           case Literal(value, LongType) => value.asInstanceOf[Long]
+          case Literal(value: Decimal, DecimalType()) => value.toLong
           case Literal(ci: CalendarInterval, CalendarIntervalType) =>
             if (ci.months != 0) {
               willNotWorkOnGpu("interval months isn't supported")
@@ -307,7 +312,7 @@ object GpuWindowUtil {
   }
 }
 
-case class ParsedBoundary(isUnbounded: Boolean, valueAsLong: Long)
+case class ParsedBoundary(isUnbounded: Boolean, value: Either[BigInt, Long])
 
 class GpuWindowSpecDefinitionMeta(
     windowSpec: WindowSpecDefinition,
