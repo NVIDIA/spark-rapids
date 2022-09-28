@@ -541,9 +541,15 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("compare CPU and GPU: regexp replace negated character class") {
-    val inputs = Seq("a", "b", "a\r", "a\n", "a\r\n", "a\n\r", "a\nb",
-      "a\r\nb\n\rc\rd", "\r", "\r\n", "\n")
-    val patterns = Seq("[^a]", "[^a\r]", "[^a\n]", "[^a\r\n]", "[^z]", "[^\r]", "[^\n]", "[^\r]",
+    val inputs = Seq(
+      "a", "a\r", "a\n", "a\r\n", "a\n\r",
+      "b", "b\r", "b\n", "b\r\n", "b\n\r",
+      "a\nb", "b", "a\r\nb\n\rc\rd", "\r", "\r\n", "\n")
+    val patterns = Seq(
+      "[^a]", "[^a\r]", "[^a\n]", "[^a\r\n]",
+      "[a]", "[a\r]", "[a\n]", "[a\r\n]",
+      "[^b]", "[^b\r]", "[^b\n]", "[^b\r\n]",
+      "[^z]", "[^\r]", "[^\n]", "[^\r]",
       "[^\r\n]", "[^b\r]", "[^bc\r\n]", "[^\\r\\n]", "[^\r\r]", "[^\r\n\r]", "[^\n\n\r\r]")
     assertCpuGpuMatchesRegexpReplace(patterns, inputs)
   }
