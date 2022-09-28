@@ -614,7 +614,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val (exit, appSum) = QualificationMain.mainInternal(appArgs)
         assert(exit == 0)
         assert(appSum.size == 1)
-        // note this would have failed an assert if we didn't dedup states
+        // note this would have failed an assert with total task time to small if we
+        // didn't dedup stages
       }
     }
   }
