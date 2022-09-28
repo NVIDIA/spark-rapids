@@ -30,21 +30,6 @@ import org.apache.spark.sql.types.DataTypes
 
 class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
-  test("negated character class newline handling") {
-    // tests behavior of com.nvidia.spark.rapids.CudfRegexTranspiler.negateCharacterClass
-
-    def test(pattern: String, expected: String): Unit = {
-      val t = new CudfRegexTranspiler(RegexFindMode)
-      val (actual, _) = t.transpile(pattern, None)
-      assert(toReadableString(expected) === toReadableString(actual))
-    }
-
-    test(raw"[^a]", raw"(?:[\r]|[^a])")
-    test(raw"[^a\r]", raw"[^a\r]")
-    test(raw"[^a\n]", raw"(?:[\r]|[^a\n])")
-    test(raw"[^a\r\n]", raw"[^a\r\n]")
-  }
-
   test("transpiler detects invalid cuDF patterns that cuDF now supports") {
     // these patterns compile in cuDF since https://github.com/rapidsai/cudf/pull/11654 was merged
     // but we still reject them because we see failures in fuzz testing if we allow them
@@ -540,10 +525,26 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
+  test("negated character class newline handling") {
+    // tests behavior of com.nvidia.spark.rapids.CudfRegexTranspiler.negateCharacterClass
+
+    def test(pattern: String, expected: String): Unit = {
+      val t = new CudfRegexTranspiler(RegexFindMode)
+      val (actual, _) = t.transpile(pattern, None)
+      assert(toReadableString(expected) === toReadableString(actual))
+    }
+
+    test(raw"[^a]", raw"(?:[\r]|[^a])")
+    test(raw"[^a\n]", raw"(?:[\r]|[^a\n])")
+    test(raw"[^a\r]", raw"[^a\r]")
+    test(raw"[^a\r\n]", raw"[^a\r\n]")
+  }
+
   test("compare CPU and GPU: regexp replace negated character class") {
-    val inputs = Seq("a", "b", "a\nb", "a\r\nb\n\rc\rd", "\r", "\r\n", "\n")
-    val patterns = Seq("[^z]", "[^\r]", "[^\n]", "[^\r]", "[^\r\n]",
-      "[^a\n]", "[^b\r]", "[^bc\r\n]", "[^\\r\\n]", "[^\r\r]", "[^\r\n\r]", "[^\n\n\r\r]")
+    val inputs = Seq("a", "b", "a\r", "a\n", "a\r\n", "a\n\r", "a\nb",
+      "a\r\nb\n\rc\rd", "\r", "\r\n", "\n")
+    val patterns = Seq("[^a]", "[^a\r]", "[^a\n]", "[^a\r\n]", "[^z]", "[^\r]", "[^\n]", "[^\r]",
+      "[^\r\n]", "[^b\r]", "[^bc\r\n]", "[^\\r\\n]", "[^\r\r]", "[^\r\n\r]", "[^\n\n\r\r]")
     assertCpuGpuMatchesRegexpReplace(patterns, inputs)
   }
 

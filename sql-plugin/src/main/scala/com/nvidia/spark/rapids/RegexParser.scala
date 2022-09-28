@@ -822,16 +822,18 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
   private def negateCharacterClass(components: Seq[RegexCharacterClassComponent]): RegexAST = {
     // There are differences between cuDF and Java handling of `\r`
-    // in negative character classes. The expression `[^a]` will match
+    // in negated character classes. The expression `[^a]` will match
     // `\r` in Java but not in cuDF, so we replace `[^a]` with
-    // `(?:[\r]|[^a])`. We also have to remove `\r` if it exists
-    // in the negated character class.
+    // `(?:[\r]|[^a])`.
     //
     // Examples:
     //
     // `[^a]`     => `(?:[\r]|[^a])`
-    // `[^a\r]`   => `[^a]`
     // `[^a\n]`   => `(?:[\r]|[^a\n])`
+    //
+    // If the negated character class contains `\r` then there is no transformation:
+    //
+    // `[^a\r]`   => `[^a\r]`
     // `[^a\r\n]` => `[^a\r\n]`
 
     val componentsWithoutLinefeed = components.filterNot {
@@ -852,6 +854,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     }
 
     if (componentsWithoutLinefeed.length != components.length) {
+      // no modification needed in this case
       RegexCharacterClass(negated = true, ListBuffer(components: _*))
     } else {
       RegexGroup(capture = false,
