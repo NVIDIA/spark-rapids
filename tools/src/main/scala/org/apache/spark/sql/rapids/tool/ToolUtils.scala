@@ -33,6 +33,28 @@ object ToolUtils extends Logging {
     df.showString(numRows, 0)
   }
 
+  def parseClusterTags(clusterTag: String): (String, String, String, String) = {
+    // clusterTags will be in this format -
+    // [{"key":"Vendor","value":"Databricks"},
+    // {"key":"Creator","value":"tgraves@nvidia.com"},{"key":"ClusterName",
+    // "value":"job-215-run-1"},{"key":"ClusterId","value":"0617-131246-dray530"},
+    // {"key":"JobId","value":"215"},{"key":"RunName","value":"test73longer"},
+    // {"key":"DatabricksEnvironment","value":"workerenv-7026851462233806"}]
+    // We first sanitize the input by removing brackets, keywords such as key, value
+    // and create an array consisting of cluster tags.
+    val clusterTagsArray = clusterTag.replaceAll("\\[", "").replaceAll("\\]", "").split("}").
+      map(_.replaceAll("\"value\":", "").replaceAll("\"key\":", "").
+        replaceAll("""\,\{""", "").replaceAll("""\{""", ""))
+    // Here we split the array to create Map of key, value pairs of clusterTags.
+    val clusterTagsMap = clusterTagsArray.map(x => x.split(",")).map {
+      case Array(k, v) => k.stripPrefix("\"").stripSuffix("\"") -> v.stripPrefix("\"")
+        .stripSuffix("\"")
+    }.toMap
+
+    (clusterTagsMap.mkString(";"), clusterTagsMap.getOrElse("ClusterId", ""),
+      clusterTagsMap.getOrElse("JobId", ""), clusterTagsMap.getOrElse("RunName", ""))
+  }
+
   // given to duration values, calculate a human readable percent
   // rounded to 2 decimal places. ie 39.12%
   def calculateDurationPercent(first: Long, total: Long): Double = {

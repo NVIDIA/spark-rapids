@@ -39,6 +39,8 @@ class QualificationEventProcessor(app: QualificationAppInfo)
     if (ToolUtils.isPluginEnabled(sparkProperties)) {
       throw GpuEventLogException(s"Eventlog is from GPU run. Skipping ...")
     }
+    app.clusterTags = sparkProperties.getOrElse(
+      "spark.databricks.clusterUsageTags.clusterAllTags", "")
   }
 
   override def doSparkListenerApplicationStart(
