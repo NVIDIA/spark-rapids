@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.tool
 import java.io.FileOutputStream
 
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FSDataOutputStream, FileSystem, Path}
+import org.apache.hadoop.fs.{FileSystem, FSDataOutputStream, Path}
 import org.apache.hadoop.fs.permission.FsPermission
 
 import org.apache.spark.internal.Logging
