@@ -97,10 +97,10 @@ class SerializeConcatHostBuffersDeserializeBatch(
   @transient private var dataTypes = output.map(_.dataType).toArray
   @transient private var headers = data.map(_.header)
   @transient private var buffers = data.map(_.buffer)
-  @transient private var batchInternal: Option[Either[ColumnarBatch, SpillableColumnarBatch]] = None
+  @transient private var batchInternal: Either[ColumnarBatch, SpillableColumnarBatch] = null
 
   def batch: Either[ColumnarBatch, SpillableColumnarBatch] = this.synchronized {
-    batchInternal.getOrElse {
+    Option(batchInternal).getOrElse {
       if (headers.length > 1) {
         // This should only happen if the driver is trying to access the batch. That should not be
         // a common occurrence, so for simplicity just round-trip this through the serialization.
@@ -134,7 +134,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
                 }
             }
           }
-          batchInternal = Some(res)
+          batchInternal = res
           res
         } finally {
           headers = null
@@ -154,7 +154,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
    * NOTE: The caller is responsible to release these host columnar batches.
    */
   def hostBatches: Array[ColumnarBatch] = this.synchronized {
-    batchInternal.map { maybeSpillable =>
+    Option(batchInternal).map { maybeSpillable =>
       val cols = maybeSpillable.fold(
         GpuColumnVector.extractColumns,
         sp => withResource(sp.getColumnarBatch())(GpuColumnVector.extractColumns)
@@ -178,7 +178,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
   }
 
   private def writeObject(out: ObjectOutputStream): Unit = {
-    batchInternal.map { maybeSpillable =>
+    Option(batchInternal).map { maybeSpillable =>
       val table = maybeSpillable.fold(
         GpuColumnVector.from,
         sp => withResource(sp.getColumnarBatch())(GpuColumnVector.from)
@@ -216,23 +216,25 @@ class SerializeConcatHostBuffersDeserializeBatch(
     }
   }
 
-  def numRows: Int = batchInternal.map { x =>
-    x.fold(_.numRows(), _.numRows())
-  }.getOrElse(headers.map(_.getNumRows).sum)
+  def numRows: Int = Option(batchInternal)
+    .map(_.fold(_.numRows(), _.numRows()))
+    .getOrElse(headers.map(_.getNumRows).sum)
 
-  def dataSize: Long = batchInternal.map { x =>
-    val batch = x.fold(identity, _.getColumnarBatch())
-    val bases = GpuColumnVector.extractBases(batch).map(_.copyToHost())
-    try {
-      JCudfSerialization.getSerializedSizeInBytes(bases, 0, batch.numRows())
-    } finally {
-      bases.safeClose()
+  def dataSize: Long = Option(batchInternal)
+    .map { maybeSpillable =>
+      val batch = maybeSpillable.fold(identity, _.getColumnarBatch())
+      val bases = GpuColumnVector.extractBases(batch).map(_.copyToHost())
+      try {
+        JCudfSerialization.getSerializedSizeInBytes(bases, 0, batch.numRows())
+      } finally {
+        bases.safeClose()
+      }
     }
-  }.getOrElse(buffers.map(_.getLength).sum)
+    .getOrElse(buffers.map(_.getLength).sum)
 
   override def close(): Unit = this.synchronized {
     buffers.safeClose()
-    batchInternal.foreach(either => either.fold(_.close(), _.close()))
+    Option(batchInternal).foreach(_.fold(_.close(), _.close()))
   }
 
   override def finalize(): Unit = {
