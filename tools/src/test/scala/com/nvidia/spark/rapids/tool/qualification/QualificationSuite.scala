@@ -592,6 +592,31 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
+  test("test with stage reuse") {
+    TrampolineUtil.withTempDir { outpath =>
+      TrampolineUtil.withTempDir { eventLogDir =>
+        val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
+          import spark.implicits._
+          val df = spark.sparkContext.makeRDD(1 to 10000000, 6).toDF
+          val df2 = spark.sparkContext.makeRDD(1 to 10000000, 6).toDF
+          val j1 = df.select( $"value" as "a")
+            .join(df2.select($"value" as "b"), $"a" === $"b").cache()
+          j1.count()
+          j1.union(j1)
+        }
+
+        val allArgs = Array(
+          "--output-directory",
+          outpath.getAbsolutePath())
+        val appArgs = new QualificationArgs(allArgs ++ Array(eventLog))
+        val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+        assert(exit == 0)
+        assert(appSum.size == 1)
+        // note this would have failed an assert if we didn't dedup states
+      }
+    }
+  }
+
   test("test generate udf different sql ops") {
     TrampolineUtil.withTempDir { outpath =>
 
