@@ -1793,7 +1793,7 @@ class MultiFileCloudParquetPartitionReader(
 
   private class ReadBatchRunner(
       file: PartitionedFile,
-      origFile: Option[PartitionedFile],
+      origPartitionedFile: Option[PartitionedFile],
       filterFunc: PartitionedFile => ParquetFileInfoWithBlockMeta,
       taskContext: TaskContext) extends Callable[HostMemoryBuffersWithMetaDataBase] with Logging {
 
