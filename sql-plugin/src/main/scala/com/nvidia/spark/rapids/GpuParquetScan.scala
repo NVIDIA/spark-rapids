@@ -1045,7 +1045,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     // update the file paths for Alluxio if needed, the coalescing reader doesn't support
     // input_file_name so no need to track what the non Alluxio file name is
     val files = if (alluxioReplacementTaskTime) {
-      AlluxioUtils.updateFilesTaskTimeIfAlluxio(origFiles, alluxionPathReplacementMap).map(_._1)
+      AlluxioUtils.updateFilesTaskTimeIfAlluxio(origFiles, alluxionPathReplacementMap).map(_.toRead)
     } else {
       // Since coalescing reader isn't supported if input_file_name is used, so won't
       // ever get here with that. So with convert time or no Alluxio just use the files as
@@ -1873,9 +1873,11 @@ class MultiFileCloudParquetPartitionReader(
                   fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
                   fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
               } else {
+
                 HostMemoryBuffersWithMetaData(file, origPartitionedFile, hostBuffers.toArray,
-                  bytesRead, fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
-                  fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
+                  bytesRead, fileBlockMeta.isCorrectedRebaseMode,
+                  fileBlockMeta.isCorrectedInt96RebaseMode, fileBlockMeta.hasInt96Timestamps,
+                  fileBlockMeta.schema, fileBlockMeta.readSchema)
               }
             }
           }
