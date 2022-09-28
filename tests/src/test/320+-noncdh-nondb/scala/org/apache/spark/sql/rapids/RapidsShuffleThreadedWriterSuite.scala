@@ -32,7 +32,7 @@ import org.scalatest.mockito.MockitoSugar
 
 import org.apache.spark.{HashPartitioner, SparkConf, SparkException, TaskContext}
 import org.apache.spark.executor.{ShuffleWriteMetrics, TaskMetrics}
-import org.apache.spark.internal.config
+import org.apache.spark.internal.{config, Logging}
 import org.apache.spark.network.shuffle.checksum.ShuffleChecksumHelper
 import org.apache.spark.network.util.LimitedInputStream
 import org.apache.spark.serializer.{JavaSerializer, SerializerInstance, SerializerManager}
@@ -135,7 +135,8 @@ class RapidsShuffleThreadedWriterSuite extends FunSuite
     with BeforeAndAfterEach
     with BeforeAndAfterAll
     with MockitoSugar
-    with ShuffleChecksumTestHelper {
+    with ShuffleChecksumTestHelper 
+    with Logging {
   @Mock(answer = RETURNS_SMART_NULLS) private var blockManager: BlockManager = _
   @Mock(answer = RETURNS_SMART_NULLS) private var diskBlockManager: DiskBlockManager = _
   @Mock(answer = RETURNS_SMART_NULLS) private var taskContext: TaskContext = _
@@ -239,10 +240,16 @@ class RapidsShuffleThreadedWriterSuite extends FunSuite
 
   override def afterEach(): Unit = {
     TaskContext.unset()
+    blockIdToFileMap.clear()
+    temporaryFilesCreated.clear()
     try {
       Utils.deleteRecursively(tempDir)
-      blockIdToFileMap.clear()
-      temporaryFilesCreated.clear()
+    } catch {
+      case t: Throwable =>
+        // Catch any error here as we are cleaning up directories using a Spark utility
+        // and we shouldn't fail a test in this case: 
+        // https://github.com/NVIDIA/spark-rapids/issues/6515
+        logWarning(s"Error while cleaning up $tempDir", t)
     } finally {
       super.afterEach()
     }
