@@ -20,7 +20,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 import scala.util.control.NonFatal
 
-import com.nvidia.spark.rapids.tool.qualification.{RunningQualOutputWriter, RunningQualificationApp}
+import com.nvidia.spark.rapids.tool.qualification.{RunningQualificationApp, RunningQualOutputWriter}
+import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.{CleanerListener, SparkConf, SparkContext}
 import org.apache.spark.internal.Logging
@@ -46,10 +47,21 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
 
   private val outputFileFromConfig = sparkConf.get("spark.rapids.qualification.outputDir", "")
   private lazy val appName = qualApp.appInfo.map(_.appName).getOrElse("")
-  private val fileWriter: Option[RunningQualOutputWriter] =
-    if (outputFileFromConfig.nonEmpty) {
+  private var fileWriter: Option[RunningQualOutputWriter] = None
+
+  private def initListener(): Unit = {
+    // install after startup when SparkContext is available
+    val sc = SparkContext.getOrCreate(sparkConf)
+    sc.cleaner.foreach(x => x.attachListener(new QualCleanerListener()))
+  }
+
+  private def initFileWriter(): Unit = {
+    // get the running Hadoop Configuration so we pick up keys for accessing various
+    // distributed filesystems
+    val hadoopConf = SparkContext.getOrCreate(sparkConf).hadoopConfiguration
+    fileWriter = if (outputFileFromConfig.nonEmpty) {
       val writer = try {
-        Some(new RunningQualOutputWriter(qualApp.appId, appName, outputFileFromConfig))
+        Some(new RunningQualOutputWriter(qualApp.appId, appName, outputFileFromConfig, hadoopConf))
       } catch {
         case NonFatal(e) =>
           logError("Error creating the RunningQualOutputWriter, output will not be" +
@@ -61,11 +73,6 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
     } else {
       None
     }
-
-  private def initListener(): Unit = {
-    // install after startup when SparkContext is available
-    val sc = SparkContext.getOrCreate(sparkConf)
-    sc.cleaner.foreach(x => x.attachListener(new QualCleanerListener()))
   }
 
   private def writeSQLDetails(sqlID: Long): Unit = {
@@ -111,6 +118,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
     // make sure we have attached the listener on the first job start
     if (!isInited.get()) {
       initListener()
+      initFileWriter()
       isInited.set(true)
     }
   }

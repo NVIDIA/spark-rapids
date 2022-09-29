@@ -26,17 +26,20 @@ import org.apache.spark.internal.Logging
 /**
  * Class for writing local files, allows writing to distributed file systems.
  */
-class ToolTextFileWriter(finalOutputDir: String, logFileName: String,
-    finalLocationText: String) extends Logging {
+class ToolTextFileWriter(
+    finalOutputDir: String,
+    logFileName: String,
+    finalLocationText: String,
+    hadoopConf: Option[Configuration]) extends Logging {
 
   // use same as Spark event log writer
   val LOG_FILE_PERMISSIONS = new FsPermission(Integer.parseInt("660", 8).toShort)
   val LOG_FOLDER_PERMISSIONS = new FsPermission(Integer.parseInt("770", 8).toShort)
   private val textOutputPath = new Path(s"$finalOutputDir/$logFileName")
   logWarning("text output path is: " + textOutputPath)
-  private val hadoopConf = new Configuration()
+  private val hadoopConfToUse = hadoopConf.getOrElse(new Configuration())
 
-  val defaultFs = FileSystem.getDefaultUri(hadoopConf).getScheme
+  val defaultFs = FileSystem.getDefaultUri(hadoopConfToUse).getScheme
   val isDefaultLocal = defaultFs == null || defaultFs == "file"
   val uri = textOutputPath.toUri
 
@@ -46,7 +49,7 @@ class ToolTextFileWriter(finalOutputDir: String, logFileName: String,
   private var outFile: Option[FSDataOutputStream] = {
     logWarning(s"schem is: ${uri.getScheme} is default is $isDefaultLocal final output" +
       s" dir $finalOutputDir")
-    val fs = FileSystem.get(uri, hadoopConf)
+    val fs = FileSystem.get(uri, hadoopConfToUse)
     // TODO - test on dbfs, I don't think this works
     val outStream = if ((isDefaultLocal && uri.getScheme == null) || uri.getScheme == "file"
       || finalOutputDir.startsWith("/dbfs")) {

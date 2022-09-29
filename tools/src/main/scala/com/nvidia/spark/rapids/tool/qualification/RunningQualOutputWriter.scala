@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.tool.qualification
 
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import com.nvidia.spark.rapids.tool.qualification.QualOutputWriter.TEXT_DELIMITER
+import org.apache.hadoop.conf.Configuration
 
 /**
  * This class handles writing output to files for a running qualification app.
@@ -28,19 +29,23 @@ import com.nvidia.spark.rapids.tool.qualification.QualOutputWriter.TEXT_DELIMITE
  * @param appId The id of the application
  * @param appName The name of the application
  * @param outputDir The directory to output the files to
+ * @param hadoopConf Optional Hadoop Configuration to use
  */
 class RunningQualOutputWriter(
     appId: String,
     appName: String,
-    outputDir: String)
+    outputDir: String,
+    hadoopConf: Option[Configuration] = None)
   extends QualOutputWriter(outputDir, reportReadSchema=false, printStdout=false,
-    prettyPrintOrder = "desc") {
+    prettyPrintOrder = "desc", hadoopConf) {
 
   // Since this is running app keeps these open until finished with application.
   private lazy val csvPerSQLFileWriter = new ToolTextFileWriter(outputDir,
-    s"${QualOutputWriter.LOGFILE_NAME}_persql.csv", "Per SQL CSV Report")
+    s"${QualOutputWriter.LOGFILE_NAME}_persql.csv",
+    "Per SQL CSV Report", hadoopConf)
   private lazy val textPerSQLFileWriter = new ToolTextFileWriter(outputDir,
-    s"${QualOutputWriter.LOGFILE_NAME}_persql.log", "Per SQL Summary Report")
+    s"${QualOutputWriter.LOGFILE_NAME}_persql.log",
+    "Per SQL Summary Report", hadoopConf)
 
   // we don't know max length since process per query, hardcode for 100 for now
   private val SQL_DESC_LENGTH = 100

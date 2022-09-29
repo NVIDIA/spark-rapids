@@ -22,6 +22,7 @@ import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import com.nvidia.spark.rapids.tool.planparser.{ExecInfo, PlanInfo}
 import com.nvidia.spark.rapids.tool.profiling.ProfileUtils.replaceDelimiter
 import com.nvidia.spark.rapids.tool.qualification.QualOutputWriter.TEXT_DELIMITER
+import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.qualification.{EstimatedPerSQLSummaryInfo, EstimatedSummaryInfo, QualificationAppInfo, QualificationSummaryInfo}
@@ -33,13 +34,15 @@ import org.apache.spark.sql.rapids.tool.qualification.{EstimatedPerSQLSummaryInf
  * @param reportReadSchema Whether to include the read data source schema in csv output
  * @param printStdout Indicates if the summary report should be printed to stdout as well
  * @param prettyPrintOrder The order in which to print the Text output
+ * @param hadoopConf Optional Hadoop Configuration to use
  */
 class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
-    printStdout: Boolean, prettyPrintOrder: String) {
+    printStdout: Boolean, prettyPrintOrder: String,
+    hadoopConf: Option[Configuration] = None) {
 
   def writeDetailedCSVReport(sums: Seq[QualificationSummaryInfo]): Unit = {
     val csvFileWriter = new ToolTextFileWriter(outputDir,
-      s"${QualOutputWriter.LOGFILE_NAME}.csv", "CSV")
+      s"${QualOutputWriter.LOGFILE_NAME}.csv", "CSV", hadoopConf)
     try {
       writeDetailedCSVReport(csvFileWriter, sums)
     } finally {
@@ -63,7 +66,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
   def writeTextReport(sums: Seq[QualificationSummaryInfo], estSums: Seq[EstimatedSummaryInfo],
       numOutputRows: Int) : Unit = {
     val textFileWriter = new ToolTextFileWriter(outputDir, s"${QualOutputWriter.LOGFILE_NAME}.log",
-      "Summary Report")
+      "Summary Report", hadoopConf)
     try {
       writeTextReport(textFileWriter, sums, estSums, numOutputRows)
     } finally {
@@ -112,7 +115,8 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
 
   def writeStageReport(sums: Seq[QualificationSummaryInfo], order: String) : Unit = {
     val csvFileWriter = new ToolTextFileWriter(outputDir,
-      s"${QualOutputWriter.LOGFILE_NAME}_stages.csv", "Stage Exec Info")
+      s"${QualOutputWriter.LOGFILE_NAME}_stages.csv",
+      "Stage Exec Info", hadoopConf)
     try {
       val headersAndSizes = QualOutputWriter
         .getDetailedStagesHeaderStringsAndSizes(sums)
@@ -128,7 +132,8 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
 
   def writePerSqlCSVReport(sums: Seq[QualificationSummaryInfo], maxSQLDescLength: Int): Unit = {
     val csvFileWriter = new ToolTextFileWriter(outputDir,
-      s"${QualOutputWriter.LOGFILE_NAME}_persql.csv", "Per SQL CSV Report")
+      s"${QualOutputWriter.LOGFILE_NAME}_persql.csv",
+      "Per SQL CSV Report", hadoopConf)
     try {
       val appNameSize = QualOutputWriter.getAppNameSize(sums)
       val appIdSize = QualOutputWriter.getAppIdSize(sums)
@@ -195,7 +200,8 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
   def writePerSqlTextReport(sums: Seq[QualificationSummaryInfo], numOutputRows: Int,
       maxSQLDescLength: Int) : Unit = {
     val textFileWriter = new ToolTextFileWriter(outputDir,
-      s"${QualOutputWriter.LOGFILE_NAME}_persql.log", "Per SQL Summary Report")
+      s"${QualOutputWriter.LOGFILE_NAME}_persql.log",
+      "Per SQL Summary Report", hadoopConf)
     try {
       writePerSqlTextSummary(textFileWriter, sums, numOutputRows, maxSQLDescLength)
     } finally {
@@ -205,7 +211,8 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
 
   def writeExecReport(sums: Seq[QualificationSummaryInfo], order: String) : Unit = {
     val csvFileWriter = new ToolTextFileWriter(outputDir,
-      s"${QualOutputWriter.LOGFILE_NAME}_execs.csv", "Plan Exec Info")
+      s"${QualOutputWriter.LOGFILE_NAME}_execs.csv",
+      "Plan Exec Info", hadoopConf)
     try {
       val plans = sums.flatMap(_.planInfo)
       val allExecs = QualOutputWriter.getAllExecsFromPlan(plans)
