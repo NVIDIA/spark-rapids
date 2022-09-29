@@ -26,6 +26,7 @@ import org.apache.spark.{CleanerListener, SparkConf, SparkContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui.{SparkListenerSQLExecutionEnd, SparkListenerSQLExecutionStart}
+import org.apache.spark.util.ShutdownHookManager
 
 class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkListener with Logging {
 
@@ -47,6 +48,11 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
   private val outputFileFromConfig = sparkConf.get("spark.rapids.qualification.outputDir", "")
   private lazy val appName = qualApp.appInfo.map(_.appName).getOrElse("")
   private var fileWriter: Option[RunningQualOutputWriter] = None
+
+  ShutdownHookManager.addShutdownHook(40) { () =>
+    logWarning("in shutdown hook")
+    fileWriter.foreach(_.close)
+  }
 
   private def initListener(): Unit = {
     // install after startup when SparkContext is available
@@ -90,6 +96,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
   }
 
   private def close(): Unit = {
+    logWarning("closing file writer for eventProcessor")
     fileWriter.foreach(_.close())
   }
 
