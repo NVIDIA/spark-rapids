@@ -1015,8 +1015,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
           s"TXT output was: $txtOut")
         val sqlOut = qualApp.getPerSQLSummary(sqlIdToLookup, ":", true, 5)
         assert(sqlOut.contains("Tool Unit Tests:"), s"SQL output was: $sqlOut")
-        qualApp.cleanupSQL(sqlIdToLookup)
-        assert(qualApp.getAvailableSqlIDs.size == numSQLIds - 1)
 
         // test different delimiter
         val sumOut = qualApp.getSummary(":", false)
@@ -1040,9 +1038,10 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         // Check Read Schema contains json and parquet
         val readSchemaIndex = headersDetailed.length - 1
         assert(headersDetailed(readSchemaIndex).contains("Read Schema"))
-        assert(
-          valuesDetailed(readSchemaIndex).contains("json") &&
+        assert(valuesDetailed(readSchemaIndex).contains("json") &&
             valuesDetailed(readSchemaIndex).contains("parquet"))
+        qualApp.cleanupSQL(sqlIdToLookup)
+        assert(qualApp.getAvailableSqlIDs.size == numSQLIds - 1)
       }
     }
   }
