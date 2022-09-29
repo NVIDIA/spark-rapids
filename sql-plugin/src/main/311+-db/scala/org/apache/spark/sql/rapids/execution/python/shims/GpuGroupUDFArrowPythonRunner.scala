@@ -54,12 +54,10 @@ class GpuGroupUDFArrowPythonRunner(
     timeZoneId: String,
     conf: Map[String, String],
     batchSize: Long,
-    semWait: GpuMetric,
-    onDataWriteFinished: () => Unit,
-    override val pythonOutSchema: StructType,
-    minReadTargetBatchSize: Int)
-    extends GpuArrowPythonRunner(funcs, evalType, argOffsets, pythonInSchema, timeZoneId, conf,
-      batchSize, semWait, onDataWriteFinished, pythonOutSchema, minReadTargetBatchSize) {
+    val semWait: GpuMetric,
+    val pythonOutSchema: StructType)
+  extends GpuPythonRunnerBase[ColumnarBatch](funcs, evalType, argOffsets)
+    with GpuPythonArrowOutput {
 
   protected override def newWriterThread(
       env: SparkEnv,
@@ -91,7 +89,7 @@ class GpuGroupUDFArrowPythonRunner(
             GpuSemaphore.releaseIfNecessary(TaskContext.get())
           })
           // Flatten the names of nested struct columns, required by cudf Arrow IPC writer.
-          flattenNames(pythonInSchema).foreach { case (name, nullable) =>
+          GpuArrowPythonRunner.flattenNames(pythonInSchema).foreach { case (name, nullable) =>
               if (nullable) {
                 builder.withColumnNames(name)
               } else {
@@ -121,18 +119,7 @@ class GpuGroupUDFArrowPythonRunner(
           // tell serializer we are done
           dataOut.writeInt(0)
           dataOut.flush()
-          if (onDataWriteFinished != null) onDataWriteFinished()
         }
-      }
-
-      private def flattenNames(d: DataType, nullable: Boolean=true): Seq[(String, Boolean)] =
-        d match {
-          case s: StructType =>
-            s.flatMap(sf => Seq((sf.name, sf.nullable)) ++ flattenNames(sf.dataType, sf.nullable))
-          case m: MapType =>
-            flattenNames(m.keyType, nullable) ++ flattenNames(m.valueType, nullable)
-          case a: ArrayType => flattenNames(a.elementType, nullable)
-          case _ => Nil
       }
     }
   }

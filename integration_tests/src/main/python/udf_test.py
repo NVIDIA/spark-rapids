@@ -32,7 +32,7 @@ except Exception as e:
         raise AssertionError("incorrect pyarrow version during required testing " + str(e))
     pytestmark = pytest.mark.skip(reason=str(e))
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import *
 from marks import incompat, approximate_float, allow_non_gpu, ignore_order
 from pyspark.sql import Window
@@ -44,7 +44,7 @@ from typing import Iterator, Tuple
 arrow_udf_conf = {
     'spark.sql.execution.arrow.pyspark.enabled': 'true',
     'spark.rapids.sql.exec.WindowInPandasExec': 'true',
-    'spark.rapids.sql.exec.AggregateInPandasExec': 'true'
+    'spark.rapids.sql.exec.FlatMapCoGroupsInPandasExec': 'true'
 }
 
 data_gens_nested_for_udf = arrow_array_gens + arrow_struct_gens
@@ -323,7 +323,6 @@ def create_df(spark, data_gen, left_length, right_length):
 
 
 @ignore_order
-@allow_non_gpu('FlatMapCoGroupsInPandasExec', 'PythonUDF', 'Alias')
 @pytest.mark.parametrize('data_gen', [ShortGen(nullable=False)], ids=idfn)
 def test_cogroup_apply_udf(data_gen):
     def asof_join(l, r):
@@ -335,3 +334,18 @@ def test_cogroup_apply_udf(data_gen):
                 right.groupby('a')).applyInPandas(
                         asof_join, schema="a int, b int")
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=arrow_udf_conf)
+
+
+@ignore_order
+@allow_non_gpu('FlatMapCoGroupsInPandasExec')
+def test_cogroup_apply_fallback():
+    def asof_join(l, r):
+        return r
+
+    def do_it(spark):
+        left = two_col_df(spark, int_gen, int_gen, length=100)
+        right = two_col_df(spark, short_gen, int_gen, length=100)
+        return left.groupby('a').cogroup(
+                right.groupby('a')).applyInPandas(
+                        asof_join, schema="a int, b int")
+    assert_gpu_fallback_collect(do_it, 'FlatMapCoGroupsInPandasExec', conf=arrow_udf_conf)

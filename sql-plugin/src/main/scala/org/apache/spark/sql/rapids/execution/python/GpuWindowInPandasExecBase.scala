@@ -22,7 +22,6 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf
 import ai.rapids.cudf.{GroupByAggregation, NullPolicy, OrderByArg}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
@@ -30,7 +29,6 @@ import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 import org.apache.spark.TaskContext
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.python._
@@ -177,7 +175,7 @@ class GroupingIterator(
  * The base class of GpuWindowInPandasExec in different shim layers
  *
  */
-trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuExec {
+trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase {
 
   def windowExpression: Seq[Expression]
   def gpuPartitionSpec: Seq[Expression]
@@ -395,22 +393,9 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuExec {
     new ColumnarBatch(boundsCVs ++ dataCVs.map(_.incRefCount()), numRows)
   }
 
-  override lazy val allMetrics: Map[String, GpuMetric] = Map(
-    NUM_OUTPUT_ROWS -> createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS),
-    NUM_OUTPUT_BATCHES -> createMetric(outputBatchesLevel, DESCRIPTION_NUM_OUTPUT_BATCHES),
-    NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
-    NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES)
-  ) ++ spillMetrics
-
-  override protected def doExecute(): RDD[InternalRow] =
-    throw new IllegalStateException(s"Row-based execution should not occur for $this")
-
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val numInputRows = gpuLongMetric(NUM_INPUT_ROWS)
-    val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
-    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
+    val (numInputRows, numInputBatches, numOutputRows, numOutputBatches,
+         spillCallback) = commonGpuMetrics()
     val sessionLocalTimeZone = conf.sessionLocalTimeZone
 
     // 1) Unwrap the expressions and build some info data:
@@ -548,45 +533,12 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuExec {
           /* The whole group data should be written in a single call, so here is unlimited */
           Int.MaxValue,
           spillCallback.semaphoreWaitTime,
-          () => queue.finish(),
-          pythonOutputSchema)
+          pythonOutputSchema,
+          () => queue.finish())
 
-        val outputBatchIterator = pyRunner.compute(pyInputIterator, context.partitionId(), context)
-        new Iterator[ColumnarBatch] {
-          // for hasNext we are waiting on the queue to have something inserted into it
-          // instead of waiting for a result to be ready from python. The reason for this
-          // is to let us know the target number of rows in the batch that we want when reading.
-          // It is a bit hacked up but it works. In the future when we support spilling we should
-          // store the number of rows separate from the batch. That way we can get the target batch
-          // size out without needing to grab the GpuSemaphore which we cannot do if we might block
-          // on a read operation.
-          // Besides, when the queue is empty, need to call the `hasNext` of the out iterator to
-          // trigger reading and handling the control data followed with the stream data.
-          override def hasNext: Boolean = queue.hasNext || outputBatchIterator.hasNext
-
-          private [this] def combine(
-                                      origBatch: ColumnarBatch,
-                                      retBatch: ColumnarBatch): ColumnarBatch = {
-            val lColumns = GpuColumnVector.extractColumns(origBatch)
-            val rColumns = GpuColumnVector.extractColumns(retBatch)
-            new ColumnarBatch(lColumns.map(_.incRefCount()) ++ rColumns.map(_.incRefCount()),
-              origBatch.numRows())
-          }
-
-          override def next(): ColumnarBatch = {
-            val numRows = queue.peekBatchSize
-            // Update the expected batch size for next read
-            pyRunner.minReadTargetBatchSize = numRows
-            withResource(outputBatchIterator.next()) { cbFromPython =>
-              assert(cbFromPython.numRows() == numRows)
-              withResource(queue.remove()) { origBatch =>
-                numOutputBatches += 1
-                numOutputRows += numRows
-                projectResult(combine(origBatch, cbFromPython))
-              }
-            }
-          }
-        } // End of new Iterator
+        val outputIterator = pyRunner.compute(pyInputIterator, context.partitionId(), context)
+        new CombiningIterator(queue, outputIterator, pyRunner, numOutputRows,
+          numOutputBatches)
       } else {
         // Empty partition, return the input iterator directly
         inputIter
