@@ -1009,11 +1009,10 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         assert(numSQLIds > 0)
         val sqlIdToLookup = allSQLIds.head
         val (csvOut, txtOut) = qualApp.getPerSqlTextAndCSVSummary(sqlIdToLookup)
-        assert(txtOut.contains("QualificationSuite.scala") && txtOut.contains("|"),
-          s"TXT output was: $txtOut")
-        assert(csvOut.nonEmpty)
-        assert(csvOut.contains("QualificationSuite.scala") && csvOut.contains(","),
+        assert(csvOut.contains("Profiling Tool Unit Tests") && csvOut.contains(","),
           s"CSV output was: $csvOut")
+        assert(txtOut.contains("Profiling Tool Unit Tests") && txtOut.contains("|"),
+          s"TXT output was: $txtOut")
         val sqlOut = qualApp.getPerSQLSummary(sqlIdToLookup, ":", true, 5)
         assert(sqlOut.contains("Tool Unit Tests:"), s"SQL output was: $sqlOut")
         qualApp.cleanupSQL(sqlIdToLookup)
