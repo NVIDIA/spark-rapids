@@ -41,7 +41,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
   private val maxNumFiles: Int =
     sparkConf.get("spark.rapids.qualification.output.maxNumFiles", "10").toInt
   private var fileWriter: Option[RunningQualOutputWriter] = None
-  private var currentFile = 1
+  private var currentFile = -1
   private var currentSQLQueriesWritten = 0
   private val filesWritten = Array.fill[Seq[Path]](maxNumFiles)(Seq.empty)
 
@@ -89,8 +89,8 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
     val hadoopConf = SparkContext.getOrCreate(sparkConf).hadoopConfiguration
     if (outputFileFromConfig.nonEmpty) {
       val cleanupId = currentFile
-      if (currentFile >= maxNumFiles) {
-        currentFile = 1
+      if (currentFile >= maxNumFiles - 1) {
+        currentFile = 0
       } else {
         currentFile += 1
       }
@@ -98,7 +98,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
       fileWriter.map(w => filesWritten(currentFile) = w.getOutputFileNames)
       val writer = try {
         val runningWriter = new RunningQualOutputWriter(qualApp.appId, appName,
-          outputFileFromConfig, Some(hadoopConf), s"_$currentFile")
+          outputFileFromConfig, Some(hadoopConf), currentFile.toString)
         runningWriter.getOutputFileNames
         Some(runningWriter)
       } catch {
@@ -118,8 +118,11 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
     val (csvSQLInfo, textSQLInfo) = qualApp.getPerSqlTextAndCSVSummary(sqlID)
     if (outputFileFromConfig.nonEmpty) {
       // once file has gotten enough SQL queries, switch it to new file
-      if (currentSQLQueriesWritten >= maxSQLQueriesPerFile) {
+      if (currentSQLQueriesWritten >= maxSQLQueriesPerFile || !fileWriter.isDefined) {
+        logWarning(" getting new file writer")
+        val existingFileWriter = fileWriter
         fileWriter = getFileWriter
+        existingFileWriter.foreach(_.close())
         currentSQLQueriesWritten = 0
       }
       fileWriter.foreach { writer =>
