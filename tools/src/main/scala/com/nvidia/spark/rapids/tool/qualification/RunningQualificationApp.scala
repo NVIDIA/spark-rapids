@@ -224,12 +224,11 @@ class RunningQualificationApp(
             (QualOutputWriter.CLUSTER_ID_STR_SIZE, QualOutputWriter.JOB_ID_STR_SIZE,
               QualOutputWriter.RUN_NAME_STR_SIZE)
           }
-          val appHeadersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(appName.size,
-            info.appId.size, unSupExecMaxSize, unSupExprMaxSize, hasClusterTags,
-            clusterIdMax, jobIdMax, runNameMax))
+          val appHeadersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(
+            appName.size, info.appId.size, unSupExecMaxSize, unSupExprMaxSize,
+            hasClusterTags, clusterIdMax, jobIdMax, runNameMax)
           val headerStr = QualOutputWriter.constructOutputRowFromMap(appHeadersAndSizes,
             delimiter, prettyPrint)
-
           val appInfoStr = QualOutputWriter.constructAppSummaryInfo(info.estimatedInfo,
             appHeadersAndSizes, appId.size, unSupExecMaxSize, unSupExprMaxSize, hasClusterTags,
             clusterIdMax, jobIdMax, runNameMax, delimiter, prettyPrint)

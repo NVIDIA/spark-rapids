@@ -99,7 +99,7 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
       (CLUSTER_ID_STR_SIZE, JOB_ID_STR_SIZE, RUN_NAME_STR_SIZE)
     }
     val headersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(
-      sums, appIdMaxSize, unSupExecMaxSize, unSupExprMaxSize, hasClusterTags,
+      appNameMaxSize, appIdMaxSize, unSupExecMaxSize, unSupExprMaxSize, hasClusterTags,
       clusterIdMaxSize, jobIdMaxSize, runNameMaxSize)
     val entireHeader = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
       TEXT_DELIMITER, true)
