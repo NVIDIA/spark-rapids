@@ -39,6 +39,8 @@ class QualificationEventProcessor(app: QualificationAppInfo)
     if (ToolUtils.isPluginEnabled(sparkProperties)) {
       throw GpuEventLogException(s"Eventlog is from GPU run. Skipping ...")
     }
+    app.clusterTags = sparkProperties.getOrElse(
+      "spark.databricks.clusterUsageTags.clusterAllTags", "")
   }
 
   override def doSparkListenerApplicationStart(
@@ -129,6 +131,11 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       event.stageIds.foreach { stageId =>
         app.stageIdToSqlID.getOrElseUpdate(stageId, sqlID)
       }
+    }
+    // If the confs are set after SparkSession initialization, it is captured in this event.
+    if (app.clusterTags.isEmpty) {
+      app.clusterTags = event.properties.getProperty(
+        "spark.databricks.clusterUsageTags.clusterAllTags", "")
     }
   }
 
