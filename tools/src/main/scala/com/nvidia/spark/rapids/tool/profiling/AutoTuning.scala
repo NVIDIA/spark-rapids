@@ -26,7 +26,7 @@ import java.util
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, FSDataInputStream, Path}
 import org.yaml.snakeyaml.Yaml
-import org.yaml.snakeyaml.constructor.Constructor
+import org.yaml.snakeyaml.constructor.{Constructor, ConstructorException}
 import org.yaml.snakeyaml.representer.Representer
 
 import org.apache.spark.internal.Logging
@@ -397,7 +397,7 @@ class AutoTuning(
    */
   private def recommendMaxPartitionBytes(): Unit = {
     val res =
-      getPropertyValue("spark.sql.files.maxPartitionBytes")  match {
+      getPropertyValue("spark.sql.files.maxPartitionBytes") match {
         case None =>
           if (appInfo.isDefined) {
             calculateMaxPartitionBytes(MAX_PARTITION_BYTES)
@@ -520,7 +520,10 @@ object AutoTuning extends Logging {
       appInfo: Option[ApplicationSummaryInfo]): AutoTuning = {
     logError("Exception: " + ex.getStackTrace.mkString("Array(", ", ", ")"))
     val tuning = new AutoTuning(new ClusterProperties(), appInfo)
-    val msg = if (ex.getCause != null) ex.getCause.toString else ex.toString
+    val msg = ex match {
+      case cEx: ConstructorException => cEx.getContext
+      case _ => if (ex.getCause != null) ex.getCause.toString else ex.toString
+    }
     tuning.appendComment(msg)
     tuning
   }
