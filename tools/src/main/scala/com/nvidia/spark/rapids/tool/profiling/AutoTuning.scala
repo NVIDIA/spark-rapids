@@ -17,12 +17,12 @@
 package com.nvidia.spark.rapids.tool.profiling
 
 import java.io.{BufferedReader, InputStreamReader}
+import java.util
 
 import scala.beans.BeanProperty
-import scala.collection.mutable
 import scala.collection.JavaConverters.mapAsScalaMapConverter
+import scala.collection.mutable
 
-import java.util
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, FSDataInputStream, Path}
 import org.yaml.snakeyaml.Yaml
