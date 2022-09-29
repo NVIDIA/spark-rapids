@@ -659,6 +659,42 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
+  test("test clusterTags configs ") {
+    TrampolineUtil.withTempDir { outpath =>
+      TrampolineUtil.withTempDir { eventLogDir =>
+
+        val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "clustertags") { spark =>
+          import spark.implicits._
+          spark.conf.set("spark.databricks.clusterUsageTags.clusterAllTags",
+            """[{"key":"Vendor",
+              |"value":"Databricks"},{"key":"Creator","value":"abc@company.com"},
+              |{"key":"ClusterName","value":"job-215-run-1"},{"key":"ClusterId",
+              |"value":"0617-131246-dray530"},{"key":"JobId","value":"215"},
+              |{"key":"RunName","value":"test73longer"},{"key":"DatabricksEnvironment",
+              |"value":"workerenv-7026851462233806"}]""".stripMargin)
+
+          val df1 = spark.sparkContext.makeRDD(1 to 1000, 6).toDF
+          df1.sample(0.1)
+        }
+        val expectedClusterId = "0617-131246-dray530"
+        val expectedJobId = "215"
+        val expectedRunName = "test73longer"
+
+        val allArgs = Array(
+          "--output-directory",
+          outpath.getAbsolutePath())
+        val appArgs = new QualificationArgs(allArgs ++ Array(eventLog))
+        val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+        assert(exit == 0)
+        assert(appSum.size == 1)
+        val allTags = appSum.flatMap(_.allClusterTagsMap).toMap
+        assert(allTags("ClusterId") == expectedClusterId)
+        assert(allTags("JobId") == expectedJobId)
+        assert(allTags("RunName") == expectedRunName)
+      }
+    }
+  }
+
   test("test read datasource v1") {
     val profileLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
     val logFiles = Array(s"$profileLogDir/eventlog_dsv1.zstd")
