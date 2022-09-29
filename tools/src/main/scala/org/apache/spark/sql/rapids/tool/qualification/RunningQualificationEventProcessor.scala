@@ -39,7 +39,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
   private val maxSQLQueriesPerFile: Long =
     sparkConf.get("spark.rapids.qualification.output.numSQLQueriesPerFile", "100").toLong
   private val maxNumFiles: Int =
-    sparkConf.get("spark.rapids.qualification.output.maxNumFiles", "10").toLong
+    sparkConf.get("spark.rapids.qualification.output.maxNumFiles", "10").toInt
   private var fileWriter: Option[RunningQualOutputWriter] = None
   private var currentFile = 1
   private var currentSQLQueriesWritten = 0
