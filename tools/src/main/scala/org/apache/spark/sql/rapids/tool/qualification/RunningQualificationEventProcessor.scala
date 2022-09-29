@@ -21,7 +21,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 import scala.util.control.NonFatal
 
 import com.nvidia.spark.rapids.tool.qualification.{RunningQualificationApp, RunningQualOutputWriter}
-import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.{CleanerListener, SparkConf, SparkContext}
 import org.apache.spark.internal.Logging
@@ -61,7 +60,8 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
     val hadoopConf = SparkContext.getOrCreate(sparkConf).hadoopConfiguration
     fileWriter = if (outputFileFromConfig.nonEmpty) {
       val writer = try {
-        Some(new RunningQualOutputWriter(qualApp.appId, appName, outputFileFromConfig, hadoopConf))
+        Some(new RunningQualOutputWriter(qualApp.appId, appName, outputFileFromConfig,
+          Some(hadoopConf)))
       } catch {
         case NonFatal(e) =>
           logError("Error creating the RunningQualOutputWriter, output will not be" +

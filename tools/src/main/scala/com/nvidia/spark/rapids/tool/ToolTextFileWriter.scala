@@ -30,7 +30,7 @@ class ToolTextFileWriter(
     finalOutputDir: String,
     logFileName: String,
     finalLocationText: String,
-    hadoopConf: Option[Configuration]) extends Logging {
+    hadoopConf: Option[Configuration] = None) extends Logging {
 
   // use same as Spark event log writer
   val LOG_FILE_PERMISSIONS = new FsPermission(Integer.parseInt("660", 8).toShort)
