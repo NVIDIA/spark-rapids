@@ -139,7 +139,8 @@ trait GpuGenerator extends GpuUnevaluable {
   def inputSplitIndices(inputBatch: ColumnarBatch,
       generatorOffset: Int,
       outer: Boolean,
-      targetSizeBytes: Long): Array[Int]
+      targetSizeBytes: Long,
+      maxRows: Int = Int.MaxValue): Array[Int]
 
   /**
    * Extract lazy expressions from generator if exists.
@@ -205,7 +206,8 @@ case class GpuReplicateRows(children: Seq[Expression]) extends GpuGenerator with
   override def inputSplitIndices(inputBatch: ColumnarBatch,
       generatorOffset: Int,
       outer: Boolean,
-      targetSizeBytes: Long): Array[Int] = {
+      targetSizeBytes: Long,
+      maxRows: Int = Int.MaxValue): Array[Int] = {
     val vectors = GpuColumnVector.extractBases(inputBatch)
     val inputRows = inputBatch.numRows()
     if (inputRows == 0) return Array()
@@ -224,7 +226,7 @@ case class GpuReplicateRows(children: Seq[Expression]) extends GpuGenerator with
     // how may splits will we need to keep the output size under the target size
     val numSplitsForTargetSize = math.ceil(estimatedOutputSizeBytes / targetSizeBytes).toInt
     // how may splits will we need to keep the output rows under max value
-    val numSplitsForTargetRow = math.ceil(estimatedOutputRows / Int.MaxValue).toInt
+    val numSplitsForTargetRow = math.ceil(estimatedOutputRows / maxRows).toInt
     // how may splits will we need to keep replicateRows working safely
     val numSplits = numSplitsForTargetSize max numSplitsForTargetRow
 
@@ -293,12 +295,9 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
       val bits = withResource(new Table(column: _*)) { tbl =>
         tbl.rowBitCount()
       }
-      val bitsLong = withResource(bits) { _ =>
-        bits.castTo(DType.INT64)
-      }
-      withResource(bitsLong) { _ =>
+      withResource(bits) { _ =>
         withResource(ai.rapids.cudf.Scalar.fromLong(8)) { toBytes =>
-          bitsLong.div(toBytes)
+          bits.trueDiv(toBytes, DType.INT64)
         }
       }
     }
@@ -306,10 +305,12 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
 
   override def inputSplitIndices(inputBatch: ColumnarBatch,
       generatorOffset: Int, outer: Boolean,
-      targetSizeBytes: Long): Array[Int] = {
-
+      targetSizeBytes: Long,
+      maxRows: Int = Int.MaxValue): Array[Int] = {
     val inputRows = inputBatch.numRows()
-    if (inputRows == 0) return Array()
+
+    // if the number of input rows is 1 or less, cannot split
+    if (inputRows <= 1) return Array()
 
     val vectors = GpuColumnVector.extractBases(inputBatch)
 
@@ -326,7 +327,7 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
         // the cases where the parent element has a null array, as we are going to produce
         // these rows.
         if (outer) {
-          totalCount += listValues.getNullCount
+          totalCount += explodingColumn.getNullCount
         }
         (totalSize.toDouble, totalCount.toDouble)
       }
@@ -337,7 +338,9 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
     val splitIndices = if (generatorOffset == 0) {
       // this explodes the array column, and the table has no other columns to go
       // along with it
-      val numSplitsForTargetSize = math.ceil(explodeColOutputSize / targetSizeBytes).toInt
+      val numSplitsForTargetSize =
+        math.min(inputRows,
+          math.ceil(estimatedOutputSizeBytes / targetSizeBytes).toInt)
       GpuBatchUtils.generateSplitIndices(inputRows, numSplitsForTargetSize).distinct
     } else {
       withResource(new NvtxRange("EstimateRepetition", NvtxColor.BLUE)) { _ =>
@@ -345,6 +348,9 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
         val perRowRepetition = getPerRowRepetition(explodingColumn, outer)
         val repeatingColumns = vectors.slice(0, generatorOffset)
 
+        // get per row byte count of every column, except the exploding one
+        // NOTE: in the future, we may want to factor in the exploding column size
+        // into this math, if there is skew in the column to explode.
         val repeatingByteCount =
           withResource(getRowByteCount(repeatingColumns)) { byteCountBeforeRepetition =>
             withResource(perRowRepetition) { _ =>
@@ -352,10 +358,15 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
             }
           }
 
+        // compute prefix sum of byte sizes, this can be used to find input row
+        // split points at which point the output batch is estimated to be roughly
+        // prefixSum(row) bytes ( + exploding column size for `row`)
         val prefixSum = withResource(repeatingByteCount) {
           _.prefixSum
         }
+
         val splitIndices = withResource(prefixSum) { _ =>
+          // the last element of `repeatedSizeEstimate` is the overall sum
           val repeatedSizeEstimate =
             withResource(prefixSum.subVector((prefixSum.getRowCount - 1).toInt)) { lastRow =>
               withResource(lastRow.copyToHost()) { hc =>
@@ -370,12 +381,17 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
             math.min(inputRows,
               math.ceil(estimatedOutputSizeBytes / targetSizeBytes).toInt)
 
-          // we need to apply the splits onto repeated size, because the prefixSum
-          // is only done for repeated sizes
-          val sizePerSplit = (repeatedSizeEstimate / numSplitsForTargetSize).toLong
-          val idealSplits = (1 until numSplitsForTargetSize).map { s =>
-            s * sizePerSplit
-          }.toArray
+          val idealSplits = if (numSplitsForTargetSize == 0) {
+            Array.empty[Long]
+          } else {
+            // we need to apply the splits onto repeated size, because the prefixSum
+            // is only done for repeated sizes
+            val sizePerSplit =
+              math.ceil(repeatedSizeEstimate.toDouble / numSplitsForTargetSize).toLong
+            (1 until numSplitsForTargetSize).map { s =>
+              s * sizePerSplit
+            }.toArray
+          }
 
           if (idealSplits.length == 0) {
             Array.empty[Int]
@@ -389,18 +405,21 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
                 }
               }
 
-            val prefixSumVector = withResource(prefixSum.copyToHost()) { hps =>
-              (0 until hps.getRowCount.toInt).map(hps.getLong(_))
-            }
-
+            val largestSplitIndex = inputRows - 1
             val splits = withResource(lowerBound) { _ =>
               withResource(lowerBound.copyToHost) { hostBounds =>
                 (0 until hostBounds.getRowCount.toInt).map { s =>
-                  hostBounds.getInt(s)
+                  // add 1 to the bound because you get the row index of the last
+                  // row at which was smaller or equal to the bound, for example:
+                  // prefixSum=[8, 16, 24, 32]
+                  // if you are looking for a bound of 16, you get index 1. That said, to
+                  // split this, you want the index to be between 16 and 24, so that's index 2.
+                  // Make sure that the maximum bound is inputRows - 1, otherwise we can trigger
+                  // a cuDF exception.
+                  math.min(hostBounds.getInt(s) + 1, largestSplitIndex)
                 }
               }
             }
-            logInfo(s"prefixSum=$prefixSumVector, splits=$splits")
 
             // apply distinct in the case of extreme skew, where for example we have all nulls
             // except for 1 row that has all the data.
@@ -412,7 +431,7 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
     }
 
     // how may splits will we need to keep the output rows under max value
-    val numSplitsForTargetRow = math.ceil(estimatedOutputRows / Int.MaxValue).toInt
+    val numSplitsForTargetRow = math.ceil(estimatedOutputRows / maxRows).toInt
 
     // If the number of splits needed to keep the row limits for cuDF is higher than
     // the splits we found by size, we need to use the row-based splits.
