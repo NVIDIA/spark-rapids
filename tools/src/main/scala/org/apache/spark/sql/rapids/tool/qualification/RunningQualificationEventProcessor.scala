@@ -94,15 +94,15 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
     // distributed filesystems
     val hadoopConf = SparkContext.getOrCreate(sparkConf).hadoopConfiguration
     if (outputFileFromConfig.nonEmpty) {
-      val cleanupId = currentFile
       if (fileWriter.isDefined) {
+        val cleanupId = currentFile
         if (currentFile >= maxNumFiles - 1) {
           currentFile = 0
         } else {
           currentFile += 1
         }
+        cleanupExistingFiles(cleanupId, hadoopConf)
       }
-      cleanupExistingFiles(cleanupId, hadoopConf)
       fileWriter.map(w => filesWritten(currentFile) = w.getOutputFileNames)
       val writer = try {
         logWarning(s"creating new file output writer id: $currentFile")
