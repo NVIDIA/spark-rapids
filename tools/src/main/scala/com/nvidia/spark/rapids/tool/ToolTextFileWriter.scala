@@ -36,7 +36,6 @@ class ToolTextFileWriter(
   val LOG_FILE_PERMISSIONS = new FsPermission(Integer.parseInt("660", 8).toShort)
   val LOG_FOLDER_PERMISSIONS = new FsPermission(Integer.parseInt("770", 8).toShort)
   private val textOutputPath = new Path(s"$finalOutputDir/$logFileName")
-  logWarning("text output path is: " + textOutputPath)
   private val hadoopConfToUse = hadoopConf.getOrElse(new Configuration())
 
   private val defaultFs = FileSystem.getDefaultUri(hadoopConfToUse).getScheme
@@ -49,15 +48,11 @@ class ToolTextFileWriter(
   // Therefore, for local files, use FileOutputStream instead.
   // this overwrites existing path
   private var outFile: Option[FSDataOutputStream] = {
-    logWarning(s"schem is: ${uri.getScheme} is default is $isDefaultLocal final output" +
-      s" dir $finalOutputDir")
     val fs = FileSystem.get(uri, hadoopConfToUse)
     val outStream = if ((isDefaultLocal && uri.getScheme == null) || uri.getScheme == "file") {
-      logWarning("using local file system")
       FileSystem.mkdirs(fs, new Path(finalOutputDir), LOG_FOLDER_PERMISSIONS)
       Some(new FSDataOutputStream(new FileOutputStream(uri.getPath), null))
     } else {
-      logWarning("using distributed file system")
       Some(fs.create(textOutputPath))
     }
     fs.setPermission(textOutputPath, LOG_FILE_PERMISSIONS)
@@ -66,11 +61,6 @@ class ToolTextFileWriter(
 
   def write(stringToWrite: String): Unit = {
     outFile.foreach(_.writeBytes(stringToWrite))
-    if (outFile.nonEmpty) {
-      logWarning(s"write : $stringToWrite outfile is: $outFile")
-    } else {
-      logWarning("outFile is empty not writing")
-    }
   }
 
   def flush(): Unit = {

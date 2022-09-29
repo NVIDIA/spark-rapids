@@ -120,18 +120,18 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
     if (outputFileFromConfig.nonEmpty) {
       // once file has gotten enough SQL queries, switch it to new file
       if (currentSQLQueriesWritten >= maxSQLQueriesPerFile || !fileWriter.isDefined) {
-        logWarning(" getting new file writer")
         updateFileWriter()
         currentSQLQueriesWritten = 0
       }
       fileWriter.foreach { writer =>
+        logDebug(s"Done with SQL query ${sqlID} summary:: \n $textSQLInfo")
         writer.writePerSqlCSVReport(csvSQLInfo)
-        logWarning(s"Done with SQL query ${sqlID} \n summary: $textSQLInfo")
         writer.writePerSqlTextReport(textSQLInfo)
         currentSQLQueriesWritten += 1
       }
     } else {
-      logWarning(textSQLInfo)
+      // file writer isn't configured so just output to driver logs
+      logInfo(textSQLInfo)
     }
     qualApp.cleanupSQL(sqlID)
   }
@@ -213,8 +213,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
     listener.onOtherEvent(event)
     event match {
       case e: SparkListenerSQLExecutionStart =>
-        logWarning("Tom otuput file is: " + outputFileFromConfig)
-        logWarning("starting new SQL query")
+        logDebug("Starting new SQL query")
       case e: SparkListenerSQLExecutionEnd =>
         writeSQLDetails(e.executionId)
       case _ =>
