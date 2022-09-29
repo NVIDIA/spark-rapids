@@ -1708,6 +1708,7 @@ class MultiFileCloudOrcPartitionReader(
   override def getBatchRunner(
       tc: TaskContext,
       file: PartitionedFile,
+      origFile: Option[PartitionedFile],
       conf: Configuration,
       filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase] = {
     new ReadBatchRunner(tc, file, conf, filters)
