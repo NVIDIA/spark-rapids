@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import scala.util.control.NonFatal
 
 import com.nvidia.spark.rapids.tool.qualification.{RunningQualificationApp, RunningQualOutputWriter}
+import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.security.AccessControlException
 
@@ -37,12 +38,12 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
   private val isInited = new AtomicBoolean(false)
   private val maxSQLQueriesPerFile: Long =
     sparkConf.get("spark.rapids.qualification.output.numSQLQueriesPerFile", "100").toLong
-  private var maxNumFiles: Long =
+  private val maxNumFiles: Int =
     sparkConf.get("spark.rapids.qualification.output.maxNumFiles", "10").toLong
   private var fileWriter: Option[RunningQualOutputWriter] = None
-  private var currentFile = 0
+  private var currentFile = 1
   private var currentSQLQueriesWritten = 0
-  private val filesWritten: Array[Seq[String]] = Array.fill[Seq[String]](maxNumFiles)(Seq.empty)
+  private val filesWritten = Array.fill[Seq[Path]](maxNumFiles)(Seq.empty)
 
   class QualCleanerListener extends SparkListener with CleanerListener with Logging {
     def accumCleaned(accId: Long): Unit = {
@@ -64,7 +65,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
     sc.cleaner.foreach(x => x.attachListener(new QualCleanerListener()))
   }
 
-  private def cleanupExistingFiles(id: Long): Unit = {
+  private def cleanupExistingFiles(id: Int, hadoopConf: Configuration): Unit = {
     val existingFiles = filesWritten(id)
     if (existingFiles.nonEmpty) {
       existingFiles.foreach { file =>
@@ -82,16 +83,22 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
     }
   }
 
-  private def getFileWriter(id: Long): Option[RunningQualOutputWriter] = {
+  private def getFileWriter: Option[RunningQualOutputWriter] = {
     // get the running Hadoop Configuration so we pick up keys for accessing various
     // distributed filesystems
     val hadoopConf = SparkContext.getOrCreate(sparkConf).hadoopConfiguration
     if (outputFileFromConfig.nonEmpty) {
-      cleanupExistingFiles(id)
-      fileWriter.map(w => filesWritten(id) = w.getOutputFileNames)
+      val cleanupId = currentFile
+      if (currentFile >= maxNumFiles) {
+        currentFile = 1
+      } else {
+        currentFile += 1
+      }
+      cleanupExistingFiles(cleanupId, hadoopConf)
+      fileWriter.map(w => filesWritten(currentFile) = w.getOutputFileNames)
       val writer = try {
         val runningWriter = new RunningQualOutputWriter(qualApp.appId, appName,
-          outputFileFromConfig, Some(hadoopConf), s"_$id")
+          outputFileFromConfig, Some(hadoopConf), s"_$currentFile")
         runningWriter.getOutputFileNames
         Some(runningWriter)
       } catch {
@@ -109,12 +116,15 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
 
   private def writeSQLDetails(sqlID: Long): Unit = {
     val (csvSQLInfo, textSQLInfo) = qualApp.getPerSqlTextAndCSVSummary(sqlID)
-    if (currentSQLQueriesWritten >= maxNumFiles) {
-      fileWriter = getFileWriter(sqlID)
-    }
     if (outputFileFromConfig.nonEmpty) {
+      // once file has gotten enough SQL queries, switch it to new file
+      if (currentSQLQueriesWritten >= maxSQLQueriesPerFile) {
+        fileWriter = getFileWriter
+        currentSQLQueriesWritten = 0
+      }
       fileWriter.foreach { writer =>
         writer.writePerSqlCSVReport(csvSQLInfo)
+        currentSQLQueriesWritten += 1
         logWarning(s"Done with SQL query ${sqlID} \n summary: $textSQLInfo")
         writer.writePerSqlTextReport(textSQLInfo)
       }
