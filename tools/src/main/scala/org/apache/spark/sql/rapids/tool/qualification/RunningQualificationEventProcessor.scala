@@ -156,8 +156,9 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
         currentSQLQueriesWritten += 1
       }
     } else {
-      // file writer isn't configured so just output to driver logs
-      logInfo(textSQLInfo)
+      // file writer isn't configured so just output to driver logs, us warning
+      // level so it comes out when using the shell
+      logWarning(textSQLInfo)
     }
     qualApp.cleanupSQL(sqlID)
   }
