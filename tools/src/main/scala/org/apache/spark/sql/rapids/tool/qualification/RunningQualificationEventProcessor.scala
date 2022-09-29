@@ -42,9 +42,9 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
   private val listener = qualApp.getEventListener
   private val isInited = new AtomicBoolean(false)
   private val maxSQLQueriesPerFile: Long =
-    sparkConf.get("spark.rapids.qualification.output.numSQLQueriesPerFile", "100").toLong
+    sparkConf.get("spark.rapids.qualification.output.numSQLQueriesPerFile", "10").toLong
   private val maxNumFiles: Int =
-    sparkConf.get("spark.rapids.qualification.output.maxNumFiles", "10").toInt
+    sparkConf.get("spark.rapids.qualification.output.maxNumFiles", "100").toInt
   private var fileWriter: Option[RunningQualOutputWriter] = None
   private var currentFileNum = 0
   private var currentSQLQueriesWritten = 0
@@ -104,12 +104,11 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
         // writing a new file
         cleanupExistingFiles(currentFileNum, hadoopConf)
       }
-      fileWriter.map(w => filesWritten(currentFileNum) = w.getOutputFileNames)
       val writer = try {
         logWarning(s"creating new file output writer id: $currentFileNum")
         val runningWriter = new RunningQualOutputWriter(qualApp.appId, appName,
           outputFileFromConfig, Some(hadoopConf), currentFileNum.toString)
-        runningWriter.getOutputFileNames
+        filesWritten(currentFileNum) = runningWriter.getOutputFileNames
         Some(runningWriter)
       } catch {
         case NonFatal(e) =>
