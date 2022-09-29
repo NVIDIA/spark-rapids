@@ -24,6 +24,7 @@ import scala.util.control.NonFatal
 
 import com.nvidia.spark.rapids.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.tool.{EventLogInfo, EventLogPathProcessor}
+import com.nvidia.spark.rapids.tool.profiling.AutoTuning.buildAutoTuning
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.internal.Logging
@@ -450,6 +451,25 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         Some("Unsupported SQL Ops"))
 
       if (useAutoTuner) {
+        val workerInfo: String = appArgs.workerInfo.getOrElse(AutoTuner.DEFAULT_WORKER_INFO)
+        val autoTuner: AutoTuning = buildAutoTuning(workerInfo, Option(app))
+        val (properties, comments) = autoTuner.getRecommendedProperties
+        profileOutputWriter.writeText("\n### D. Recommended Configuration ###\n")
+
+        if (properties.nonEmpty) {
+          val propertiesToStr = properties.map(_.toString).reduce(_ + "\n" + _)
+          profileOutputWriter.writeText("\nSpark Properties:\n" + propertiesToStr + "\n")
+        } else {
+          profileOutputWriter.writeText("Cannot recommend properties. See Comments.\n")
+        }
+
+        // Comments are optional
+        if (comments.nonEmpty) {
+          val commentsToStr = comments.map(_.toString).reduce(_ + "\n" + _)
+          profileOutputWriter.writeText("\nComments:\n" + commentsToStr + "\n")
+        }
+      }
+      if (false && useAutoTuner) {
         val workerInfo: String = appArgs.workerInfo.getOrElse(AutoTuner.DEFAULT_WORKER_INFO)
         val autoTuner: AutoTuner = new AutoTuner(app, workerInfo)
         val (properties, comments) = autoTuner.getRecommendedProperties
