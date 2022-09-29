@@ -32,7 +32,29 @@ import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui.{SparkListenerSQLExecutionEnd, SparkListenerSQLExecutionStart}
 
 /**
- * This is a Spark Listener that can be used
+ * This is a Spark Listener that can be used to determine if the SQL queries in
+ * the running application are a good fit to try with the Rapids Accelerator for Spark.
+ *
+ * This only supports output on a per sql query basis. It supports writing to
+ * local filesystem and most distribute filesystems and blob stores supported
+ * by Hadoop.
+ *
+ * It can be run in your Spark application by installing it as a listener:
+ * spark.extraListeners org.apache.spark.sql.rapids.tool.qualification.RunningQualificationEventProcessor
+ * and including the tools jar rapids-4-spark-tools_2.12-<version>.jar when you start
+ * the Spark application.
+ *
+ * The user should specify the output directory if they want the output to go to separate
+ * files, otherwise it will go to the Spark driver log:
+ *  - spark.rapids.qualification.outputDir
+ *
+ * By default, this will output results for 10 SQL queries per file and will
+ * keep 100 files. This behavior is because many blob stores don't show files until
+ * they are full written so you wouldn't be able to see the results for a running
+ * application until it finishes the number of SQL queries per file. This behavior
+ * can be configured with the following configs.
+ *  - spark.rapids.qualification.output.numSQLQueriesPerFile - default 10
+ *  - spark.rapids.qualification.output.maxNumFiles - default 100
  *
  * @param sparkConf Spark Configuration used to get configs used by this listener
  */
