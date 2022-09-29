@@ -132,6 +132,11 @@ class QualificationEventProcessor(app: QualificationAppInfo)
         app.stageIdToSqlID.getOrElseUpdate(stageId, sqlID)
       }
     }
+    // If the confs are set after SparkSession initialization, it is captured in this event.
+    if (app.clusterTags.isEmpty) {
+      app.clusterTags = event.properties.getProperty(
+        "spark.databricks.clusterUsageTags.clusterAllTags", "")
+    }
   }
 
   override def doSparkListenerJobEnd(

@@ -94,8 +94,8 @@ class RunningQualificationApp() extends QualificationAppInfo(None, None,
           Seq(info).map(_.unSupportedExprs.size),
           QualOutputWriter.UNSUPPORTED_EXPRS_MAX_SIZE,
           QualOutputWriter.UNSUPPORTED_EXPRS.size)
-        val clusterTags = info.clusterTags.nonEmpty
-        val (clusterIdMax, jobIdMax, runNameMax) = if (clusterTags) {
+        val hasClusterTags = info.clusterTags.nonEmpty
+        val (clusterIdMax, jobIdMax, runNameMax) = if (hasClusterTags) {
           (QualOutputWriter.getMaxSizeForHeader(Seq(info).map(
             _.allClusterTagsMap.getOrElse(QualOutputWriter.CLUSTER_ID, "").size),
             QualOutputWriter.CLUSTER_ID),
@@ -110,12 +110,12 @@ class RunningQualificationApp() extends QualificationAppInfo(None, None,
             QualOutputWriter.RUN_NAME_STR_SIZE)
         }
         val headersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(info),
-          appIdMaxSize, unSupExecMaxSize, unSupExprMaxSize, clusterTags,
+          appIdMaxSize, unSupExecMaxSize, unSupExprMaxSize, hasClusterTags,
           clusterIdMax, jobIdMax, runNameMax)
         val headerStr = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
           delimiter, prettyPrint)
         val appInfoStr = QualOutputWriter.constructAppSummaryInfo(info.estimatedInfo,
-          headersAndSizes, appIdMaxSize, unSupExecMaxSize, unSupExprMaxSize, clusterTags,
+          headersAndSizes, appIdMaxSize, unSupExecMaxSize, unSupExprMaxSize, hasClusterTags,
           clusterIdMax, jobIdMax, runNameMax, delimiter, prettyPrint)
         headerStr + appInfoStr
       case None =>
