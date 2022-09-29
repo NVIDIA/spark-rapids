@@ -23,6 +23,8 @@ import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 import scala.io.Source
 
 import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTestUtils}
+import org.apache.hadoop.fs.{FileSystem, Path}
+
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 
 import org.apache.spark.internal.Logging
@@ -195,11 +197,11 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     TrampolineUtil.withTempDir { qualOutDir =>
       TrampolineUtil.withTempPath { outParquetFile =>
         TrampolineUtil.withTempPath { outJsonFile =>
-          val csvOutput = qualOutDir.getPath + "/" + QualOutputWriter.LOGFILE_NAME + "_persql_0.csv"
-          val txtOutput = qualOutDir.getPath + "/" + QualOutputWriter.LOGFILE_NAME + "_persql_0.log"
           // note don't close the application here so we test running output
           ToolTestUtils.runAndCollect("running per sql") { spark =>
             val sparkConf = spark.sparkContext.getConf
+            sparkConf.set("spark.rapids.qualification.output.numSQLQueriesPerFile", "2")
+            sparkConf.set("spark.rapids.qualification.output.maxNumFiles", "3")
             sparkConf.set("spark.rapids.qualification.outputDir", qualOutDir.getPath)
             val listener = new RunningQualificationEventProcessor(sparkConf)
             spark.sparkContext.addSparkListener(listener)
@@ -209,27 +211,41 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
             testData.write.parquet(outParquetFile.getCanonicalPath)
             val df = spark.read.parquet(outParquetFile.getCanonicalPath)
             val df2 = spark.read.json(outJsonFile.getCanonicalPath)
+            // generate a bunch of SQL queries to test the file rolling, should run
+            // 10 sql queries total with above and below
+            for (i <- 1 to 7) {
+              df.join(df2.select($"a" as "a2"), $"a" === $"a2")
+            }
             val df3 = df.join(df2.select($"a" as "a2"), $"a" === $"a2")
             df3
           }
           // the code above that runs the Spark query stops the Sparksession
           // so create a new one to read in the csv file
           createSparkSession()
-
-          val dfPerSqlActual = readPerSqlFile(new File(csvOutput))
+          val outputDir = qualOutDir.getPath + "/"
+          val csvOutput0 = outputDir + QualOutputWriter.LOGFILE_NAME + "_persql_0.csv"
+          val txtOutput0 = outputDir + QualOutputWriter.LOGFILE_NAME + "_persql_0.log"
+          // check that there are 6 files since configured for 3 and have 1 csv and 1 log
+          // file each
+          val outputDirPath = new Path(outputDir)
+          val fs = FileSystem.get(outputDirPath.toUri,
+            sparkSession.sparkContext.hadoopConfiguration)
+          val allFiles = fs.listStatus(outputDirPath)
+          assert(allFiles.size == 6)
+          val dfPerSqlActual = readPerSqlFile(new File(csvOutput0))
           assert(dfPerSqlActual.columns.size == 10)
           val rows = dfPerSqlActual.collect()
-          assert(rows.size == 3)
+          assert(rows.size == 2)
           val firstRow = rows(1)
           // , should be replaced with ;
           assert(firstRow(3).toString.contains("at QualificationSuite.scala"))
 
           // this reads everything into single column
-          val dfPerSqlActualTxt = readPerSqlTextFile(new File(txtOutput))
+          val dfPerSqlActualTxt = readPerSqlTextFile(new File(txtOutput0))
           assert(dfPerSqlActualTxt.columns.size == 1)
           val rowsTxt = dfPerSqlActualTxt.collect()
           // have to account for headers
-          assert(rowsTxt.size == 7)
+          assert(rowsTxt.size == 6)
           val headerRowTxt = rowsTxt(1).toString
           assert(headerRowTxt.contains("Recommendation"))
           val firstValueRow = rowsTxt(3).toString
