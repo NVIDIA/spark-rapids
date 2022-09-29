@@ -18,10 +18,11 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, ContiguousTable, DType, NvtxColor, OrderByArg, Table}
+import ai.rapids.cudf.{ColumnVector, ContiguousTable, DType, NvtxColor, NvtxRange, OrderByArg, Table}
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, Generator, ReplicateRows}
@@ -235,7 +236,7 @@ case class GpuReplicateRows(children: Seq[Expression]) extends GpuGenerator with
   }
 }
 
-abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGenerator {
+abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGenerator with Logging {
 
   /** The position of an element within the collection should also be returned. */
   def position: Boolean
@@ -288,15 +289,17 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
   }
 
   private def getRowByteCount(column: Seq[ColumnVector]): ColumnVector = {
-    val bits = withResource(new Table(column:_*)) { tbl =>
-      tbl.rowBitCount()
-    }
-    val bitsLong = withResource(bits) { _ =>
-      bits.castTo(DType.INT64)
-    }
-    withResource(bitsLong) { _ =>
-      withResource(ai.rapids.cudf.Scalar.fromLong(8)) { toBytes =>
-        bitsLong.div(toBytes)
+    withResource(new NvtxRange("getRowByteCount", NvtxColor.GREEN)) { _ =>
+      val bits = withResource(new Table(column: _*)) { tbl =>
+        tbl.rowBitCount()
+      }
+      val bitsLong = withResource(bits) { _ =>
+        bits.castTo(DType.INT64)
+      }
+      withResource(bitsLong) { _ =>
+        withResource(ai.rapids.cudf.Scalar.fromLong(8)) { toBytes =>
+          bitsLong.div(toBytes)
+        }
       }
     }
   }
@@ -316,7 +319,7 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
     // along with an estimate of how many output rows produced by the explode
     val (explodeColOutputSize, estimatedOutputRows) =
       withResource(explodingColumn.getChildColumnView(0)) { listValues =>
-        val totalSize = explodingColumn.getDeviceMemorySize
+        val totalSize = listValues.getDeviceMemorySize
         // get the number of elements in the array child
         var totalCount = listValues.getRowCount
         // when we are calculating an explode_outer, we need to add to the row count
@@ -335,65 +338,77 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
       // this explodes the array column, and the table has no other columns to go
       // along with it
       val numSplitsForTargetSize = math.ceil(explodeColOutputSize / targetSizeBytes).toInt
-      GpuBatchUtils.generateSplitIndices(inputRows, numSplitsForTargetSize)
+      GpuBatchUtils.generateSplitIndices(inputRows, numSplitsForTargetSize).distinct
     } else {
-      // get the # of repetitions per row of the input for this explode
-      val perRowRepetition = getPerRowRepetition(explodingColumn, outer)
-      val repeatingColumns = vectors.slice(0, generatorOffset)
+      withResource(new NvtxRange("EstimateRepetition", NvtxColor.BLUE)) { _ =>
+        // get the # of repetitions per row of the input for this explode
+        val perRowRepetition = getPerRowRepetition(explodingColumn, outer)
+        val repeatingColumns = vectors.slice(0, generatorOffset)
 
-      val repeatingByteCount =
-        withResource(getRowByteCount(repeatingColumns)) { byteCountBeforeRepetition =>
-          withResource(perRowRepetition) { _ =>
-            byteCountBeforeRepetition.mul(perRowRepetition)
-          }
-        }
-
-      val prefixSum = withResource(repeatingByteCount) { _.prefixSum }
-      val splitIndices = withResource(prefixSum) { _ =>
-        val repeatedSizeEstimate =
-          withResource(prefixSum.subVector((prefixSum.getRowCount - 1).toInt)) { lastRow =>
-            withResource(lastRow.copyToHost()) { hc =>
-              hc.getLong(0)
+        val repeatingByteCount =
+          withResource(getRowByteCount(repeatingColumns)) { byteCountBeforeRepetition =>
+            withResource(perRowRepetition) { _ =>
+              byteCountBeforeRepetition.mul(perRowRepetition)
             }
           }
 
-        estimatedOutputSizeBytes += repeatedSizeEstimate
+        val prefixSum = withResource(repeatingByteCount) {
+          _.prefixSum
+        }
+        val splitIndices = withResource(prefixSum) { _ =>
+          val repeatedSizeEstimate =
+            withResource(prefixSum.subVector((prefixSum.getRowCount - 1).toInt)) { lastRow =>
+              withResource(lastRow.copyToHost()) { hc =>
+                hc.getLong(0)
+              }
+            }
 
-        // how may splits will we need to keep the output size under the target size
-        val numSplitsForTargetSize =
-          math.ceil(estimatedOutputSizeBytes / targetSizeBytes).toInt
+          estimatedOutputSizeBytes += repeatedSizeEstimate
 
-        val sizePerSplit = (estimatedOutputSizeBytes / numSplitsForTargetSize).toLong
-        val idealSplits = (1 until numSplitsForTargetSize).map { s =>
-          s * sizePerSplit
-        }.toArray
+          // how may splits will we need to keep the output size under the target size
+          val numSplitsForTargetSize =
+            math.min(inputRows,
+              math.ceil(estimatedOutputSizeBytes / targetSizeBytes).toInt)
 
-        if (idealSplits.length == 0) {
-          Array.empty[Int]
-        } else {
-          val lowerBound =
-            withResource(new Table(prefixSum)) { prefixSumTable =>
-              withResource(ColumnVector.fromLongs(idealSplits: _*)) { idealBounds =>
-                withResource(new Table(idealBounds)) { idealBoundsTable =>
-                  prefixSumTable.lowerBound(idealBoundsTable, OrderByArg.asc(0))
+          // we need to apply the splits onto repeated size, because the prefixSum
+          // is only done for repeated sizes
+          val sizePerSplit = (repeatedSizeEstimate / numSplitsForTargetSize).toLong
+          val idealSplits = (1 until numSplitsForTargetSize).map { s =>
+            s * sizePerSplit
+          }.toArray
+
+          if (idealSplits.length == 0) {
+            Array.empty[Int]
+          } else {
+            val lowerBound =
+              withResource(new Table(prefixSum)) { prefixSumTable =>
+                withResource(ColumnVector.fromLongs(idealSplits: _*)) { idealBounds =>
+                  withResource(new Table(idealBounds)) { idealBoundsTable =>
+                    prefixSumTable.lowerBound(idealBoundsTable, OrderByArg.asc(0))
+                  }
+                }
+              }
+
+            val prefixSumVector = withResource(prefixSum.copyToHost()) { hps =>
+              (0 until hps.getRowCount.toInt).map(hps.getLong(_))
+            }
+
+            val splits = withResource(lowerBound) { _ =>
+              withResource(lowerBound.copyToHost) { hostBounds =>
+                (0 until hostBounds.getRowCount.toInt).map { s =>
+                  hostBounds.getInt(s)
                 }
               }
             }
+            logInfo(s"prefixSum=$prefixSumVector, splits=$splits")
 
-          val splits = withResource(lowerBound) { _ =>
-            withResource(lowerBound.copyToHost) { hostBounds =>
-              (0 until hostBounds.getRowCount.toInt).map { s =>
-                hostBounds.getInt(s)
-              }
-            }
+            // apply distinct in the case of extreme skew, where for example we have all nulls
+            // except for 1 row that has all the data.
+            splits.distinct.toArray
           }
-
-          // apply distinct in the case of extreme skew, where for example we have all nulls
-          // except for 1 row that has all the data.
-          splits.distinct.toArray
         }
+        splitIndices
       }
-      splitIndices
     }
 
     // how may splits will we need to keep the output rows under max value
