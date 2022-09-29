@@ -45,6 +45,8 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
     sparkConf.get("spark.rapids.qualification.output.numSQLQueriesPerFile", "10").toLong
   private val maxNumFiles: Int =
     sparkConf.get("spark.rapids.qualification.output.maxNumFiles", "100").toInt
+  private val outputFileFromConfig = sparkConf.get("spark.rapids.qualification.outputDir", "")
+  private lazy val appName = qualApp.appInfo.map(_.appName).getOrElse("")
   private var fileWriter: Option[RunningQualOutputWriter] = None
   private var currentFileNum = 0
   private var currentSQLQueriesWritten = 0
@@ -61,9 +63,6 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
     def checkpointCleaned(rddId: Long): Unit = {}
   }
 
-  private val outputFileFromConfig = sparkConf.get("spark.rapids.qualification.outputDir", "")
-  private lazy val appName = qualApp.appInfo.map(_.appName).getOrElse("")
-
   private def initListener(): Unit = {
     // install after startup when SparkContext is available
     val sc = SparkContext.getOrCreate(sparkConf)
@@ -71,20 +70,17 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
   }
 
   private def cleanupExistingFiles(id: Int, hadoopConf: Configuration): Unit = {
-    val existingFiles = filesWritten(id)
-    if (existingFiles.nonEmpty) {
-      logWarning(s"Going to clean up files: ${existingFiles.mkString(",")}")
-      existingFiles.foreach { file =>
-        val fs = FileSystem.get(file.toUri, hadoopConf)
-        try {
-          // delete recursive
-          fs.delete(file, true)
-        } catch {
-          case _: AccessControlException =>
-            logInfo(s"No permission to delete $file, ignoring.")
-          case ioe: IOException =>
-            logError(s"IOException in cleaning $file", ioe)
-        }
+    filesWritten(id).foreach { file =>
+      logWarning(s"Going to remove file: $file")
+      val fs = FileSystem.get(file.toUri, hadoopConf)
+      try {
+        // delete recursive
+        fs.delete(file, true)
+      } catch {
+        case _: AccessControlException =>
+          logInfo(s"No permission to delete $file, ignoring.")
+        case ioe: IOException =>
+          logError(s"IOException in cleaning $file", ioe)
       }
     }
   }
@@ -105,7 +101,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
         cleanupExistingFiles(currentFileNum, hadoopConf)
       }
       val writer = try {
-        logWarning(s"creating new file output writer id: $currentFileNum")
+        logDebug(s"Creating new file output writer for id: $currentFileNum")
         val runningWriter = new RunningQualOutputWriter(qualApp.appId, appName,
           outputFileFromConfig, Some(hadoopConf), currentFileNum.toString)
         filesWritten(currentFileNum) = runningWriter.getOutputFileNames
@@ -113,7 +109,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
       } catch {
         case NonFatal(e) =>
           logError("Error creating the RunningQualOutputWriter, output will not be" +
-            s" saved to a file: ${e.getMessage}", e)
+            s" saved to a file, error: ${e.getMessage}", e)
           None
       }
       writer.foreach(_.init())
