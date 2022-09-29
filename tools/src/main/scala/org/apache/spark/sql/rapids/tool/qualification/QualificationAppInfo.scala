@@ -181,7 +181,7 @@ class QualificationAppInfo(
       if (execInfo.stages.size > 1) {
         execInfo.stages.map((_, execInfo))
       } else if (execInfo.stages.size < 1) {
-        // we don't know what stage its in our its duration
+        // we don't know what stage its in or its duration
         logDebug(s"No stage associated with ${execInfo.exec} " +
           s"so speedup factor isn't applied anywhere.")
         execsWithoutStages += execInfo
@@ -240,7 +240,6 @@ class QualificationAppInfo(
 
   def summarizeStageLevel(execInfos: Seq[ExecInfo], sqlID: Long): Set[StageQualSummaryInfo] = {
     val (allStagesToExecs, execsNoStage) = getStageToExec(execInfos)
-
     if (allStagesToExecs.isEmpty) {
       // use job level
       // also get the job ids associated with the SQLId
@@ -395,7 +394,10 @@ class QualificationAppInfo(
         0L
       }
 
+      // the same stage might be referenced from multiple sql queries, we have to dedup them
+      // with the assumption the stage was reused so time only counts once
       val allStagesSummary = perSqlStageSummary.flatMap(_.stageSum)
+        .map(sum => sum.stageId -> sum).toMap.values.toSeq
       val sqlDataframeTaskDuration = allStagesSummary.map(s => s.stageTaskTime).sum
       val unsupportedSQLTaskDuration = calculateSQLUnsupportedTaskDuration(allStagesSummary)
       val endDurationEstimated = this.appEndTime.isEmpty && appDuration > 0

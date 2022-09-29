@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{Map => MutableMap}
+import scala.sys.process._
 import scala.util.Try
 import scala.util.matching.Regex
 
@@ -269,10 +270,13 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       logInfo(s"The number of concurrent GPU tasks allowed is $concurrentGpuTasks")
       GpuSemaphore.initialize(concurrentGpuTasks)
     } catch {
+      // Exceptions in executor plugin can cause a single thread to die but the executor process
+      // sticks around without any useful info until it hearbeat times out. Print what happened
+      // and exit immediately.
+      case e: CudaException =>
+        logError("Exception in the executor plugin, shutting down!", e)
+        logGpuDebugInfoAndExit(systemExitCode = 1)
       case e: Throwable =>
-        // Exceptions in executor plugin can cause a single thread to die but the executor process
-        // sticks around without any useful info until it hearbeat times out. Print what happened
-        // and exit immediately.
         logError("Exception in the executor plugin, shutting down!", e)
         System.exit(1)
     }
@@ -324,6 +328,43 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     }
   }
 
+  // Wait for command spawned via Process
+  private def waitForProcess(cmd: Process, durationMs: Long): Option[Int] = {
+    val endTime = System.currentTimeMillis() + durationMs
+    do {
+      Thread.sleep(10)
+      if (!cmd.isAlive()) {
+        return Some(cmd.exitValue())
+      }
+    } while (System.currentTimeMillis() < endTime)
+    // Timed out
+    cmd.destroy()
+    None
+  }
+
+  // Try to run nvidia-smi when task fails due to a cuda exception.
+  private def logGpuDebugInfoAndExit(systemExitCode: Int) = synchronized {
+    try {
+      val nvidiaSmiStdout = new StringBuilder
+      val nvidiaSmiStderr = new StringBuilder
+      val cmd = "nvidia-smi".run(
+        ProcessLogger(s => nvidiaSmiStdout.append(s + "\n"), s => nvidiaSmiStderr.append(s + "\n")))
+      waitForProcess(cmd, 10000) match {
+        case Some(exitStatus) =>
+          if (exitStatus == 0) {
+            logWarning("nvidia-smi:\n" + nvidiaSmiStdout)
+          } else {
+            logWarning("nvidia-smi failed with: " + nvidiaSmiStdout + nvidiaSmiStderr)
+          }
+        case None => logWarning("nvidia-smi command timed out")
+      }
+    } catch {
+      case e: Throwable =>
+        logWarning("nvidia-smi process failed", e)
+    }
+    System.exit(systemExitCode)
+  }
+
   override def shutdown(): Unit = {
     GpuSemaphore.shutdown()
     PythonWorkerSemaphore.shutdown()
@@ -338,7 +379,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
           case Some(_: CudaFatalException) =>
             logError("Stopping the Executor based on exception being a fatal CUDA error: " +
               s"${ef.toErrorString}")
-            System.exit(20)
+            logGpuDebugInfoAndExit(systemExitCode = 20)
           case Some(_: CudaException) =>
             logDebug(s"Executor onTaskFailed because of a non-fatal CUDA error: " +
               s"${ef.toErrorString}")
