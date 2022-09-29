@@ -72,6 +72,7 @@ class GpuFileScanRDD(
         context.killTaskIfInterrupted()
         (currentIterator != null && currentIterator.hasNext) || nextIterator()
       }
+
       def next(): Object = {
         val nextElement = currentIterator.next()
         // TODO: we should have a better separation of row based and batch based scan, so that we
@@ -169,7 +170,11 @@ class GpuFileScanRDD(
           }
         } else {
           currentFile = null
-          InputFileBlockHolder.unset()
+          // Removed "InputFileBlockHolder.unset()", because for some cases on DB,
+          // cleaning the input file holder here is too early. Some operators are still
+          // leveraging this holder to get the current file path even after hasNext
+          // returns false.
+          // See https://github.com/NVIDIA/spark-rapids/issues/6592
           false
         }
       }

@@ -17,18 +17,6 @@
 
 set -e
 
-# PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
-# regular: noSnapshots + snapshots
-# pre-release: noSnapshots only
-PHASE_TYPE=regular
-
-if [[ $# -eq 1 ]]; then
-    PHASE_TYPE=$1
-elif [[ $# -gt 1 ]]; then
-    >&2 echo "ERROR: too many parameters are provided"
-    exit 1
-fi
-
 # Split abc=123 from $OVERWRITE_PARAMS
 # $OVERWRITE_PARAMS patten 'abc=123;def=456;'
 PRE_IFS=$IFS
@@ -74,8 +62,13 @@ SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 # PnoSnapshots: noSnapshots only
 set_env_var_SPARK_SHIM_VERSIONS_ARR -PnoSnapshots
 SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-# Spark shim versions list based on given profile option (snapshots or noSnapshots)
+
+# PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
+# regular: noSnapshots + snapshots
+# pre-release: noSnapshots only
+PHASE_TYPE=${PHASE_TYPE:-"pre-release"} # TODO: update it to regular in branch-22.12 when CI is available
 case $PHASE_TYPE in
+    # SPARK_SHIM_VERSIONS will be used for nightly artifact build
     pre-release)
         SPARK_SHIM_VERSIONS=("${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]}")
         ;;

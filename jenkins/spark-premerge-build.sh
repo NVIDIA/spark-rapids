@@ -165,11 +165,11 @@ BUILD_MAINTENANCE_VERSION_SNAPSHOTS="false"
 # controls whether we build snapshots for the next Spark major or feature version like 3.4.0 or 4.0.0
 BUILD_FEATURE_VERSION_SNAPSHOTS="false"
 PREMERGE_PROFILES="-PnoSnapshots,pre-merge"
-if [[ ${PROJECT_VER} =~ ^22\.10\. ]]; then # enable snapshot builds for active development branch only
+if [[ ${PROJECT_VER} =~ ^22\.12\. ]]; then # enable snapshot builds for active development branch only
   BUILD_MAINTENANCE_VERSION_SNAPSHOTS="true"
   BUILD_FEATURE_VERSION_SNAPSHOTS="false"
   PREMERGE_PROFILES="-Psnapshots,pre-merge"
-elif [[ ${PROJECT_VER} =~ ^22\.12\. ]]; then
+elif [[ ${PROJECT_VER} =~ ^23\.02\. ]]; then
   BUILD_MAINTENANCE_VERSION_SNAPSHOTS="true"
   BUILD_FEATURE_VERSION_SNAPSHOTS="true"
   PREMERGE_PROFILES="-Psnapshots,pre-merge"

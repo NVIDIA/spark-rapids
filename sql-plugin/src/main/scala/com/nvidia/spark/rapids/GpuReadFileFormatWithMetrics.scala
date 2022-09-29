@@ -59,5 +59,7 @@ trait GpuReadFileFormatWithMetrics extends FileFormat {
       filters: Seq[Filter],
       options: Map[String, String],
       hadoopConf: Configuration,
-      metrics: Map[String, GpuMetric]): PartitionedFile => Iterator[InternalRow]
+      metrics: Map[String, GpuMetric],
+      alluxioPathReplacementMap: Option[Map[String, String]])
+  : PartitionedFile => Iterator[InternalRow]
 }

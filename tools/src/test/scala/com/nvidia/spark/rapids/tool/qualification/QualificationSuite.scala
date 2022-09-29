@@ -660,6 +660,34 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
+  test("test with stage reuse") {
+    TrampolineUtil.withTempDir { outpath =>
+      TrampolineUtil.withTempDir { eventLogDir =>
+        val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "dot") { spark =>
+          import spark.implicits._
+          val df = spark.sparkContext.makeRDD(1 to 1000, 6).toDF
+          val df2 = spark.sparkContext.makeRDD(1 to 1000, 6).toDF
+          val j1 = df.select( $"value" as "a")
+            .join(df2.select($"value" as "b"), $"a" === $"b").cache()
+          j1.count()
+          j1.union(j1).count()
+          // count above is important thing, here we just make up small df to return
+          spark.sparkContext.makeRDD(1 to 2).toDF
+        }
+
+        val allArgs = Array(
+          "--output-directory",
+          outpath.getAbsolutePath())
+        val appArgs = new QualificationArgs(allArgs ++ Array(eventLog))
+        val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+        assert(exit == 0)
+        assert(appSum.size == 1)
+        // note this would have failed an assert with total task time to small if we
+        // didn't dedup stages
+      }
+    }
+  }
+
   test("test generate udf different sql ops") {
     TrampolineUtil.withTempDir { outpath =>
 
@@ -695,6 +723,42 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val probApp = appSum.head
         assert(probApp.potentialProblems.contains("UDF"))
         assert(probApp.unsupportedSQLTaskDuration > 0) // only UDF is unsupported in the query.
+      }
+    }
+  }
+
+  test("test clusterTags configs ") {
+    TrampolineUtil.withTempDir { outpath =>
+      TrampolineUtil.withTempDir { eventLogDir =>
+
+        val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "clustertags") { spark =>
+          import spark.implicits._
+          spark.conf.set("spark.databricks.clusterUsageTags.clusterAllTags",
+            """[{"key":"Vendor",
+              |"value":"Databricks"},{"key":"Creator","value":"abc@company.com"},
+              |{"key":"ClusterName","value":"job-215-run-1"},{"key":"ClusterId",
+              |"value":"0617-131246-dray530"},{"key":"JobId","value":"215"},
+              |{"key":"RunName","value":"test73longer"},{"key":"DatabricksEnvironment",
+              |"value":"workerenv-7026851462233806"}]""".stripMargin)
+
+          val df1 = spark.sparkContext.makeRDD(1 to 1000, 6).toDF
+          df1.sample(0.1)
+        }
+        val expectedClusterId = "0617-131246-dray530"
+        val expectedJobId = "215"
+        val expectedRunName = "test73longer"
+
+        val allArgs = Array(
+          "--output-directory",
+          outpath.getAbsolutePath())
+        val appArgs = new QualificationArgs(allArgs ++ Array(eventLog))
+        val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+        assert(exit == 0)
+        assert(appSum.size == 1)
+        val allTags = appSum.flatMap(_.allClusterTagsMap).toMap
+        assert(allTags("ClusterId") == expectedClusterId)
+        assert(allTags("JobId") == expectedJobId)
+        assert(allTags("RunName") == expectedRunName)
       }
     }
   }

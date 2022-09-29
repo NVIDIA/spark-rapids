@@ -40,6 +40,8 @@ class QualificationEventProcessor(app: QualificationAppInfo, perSqlOnly: Boolean
     if (ToolUtils.isPluginEnabled(sparkProperties)) {
       throw GpuEventLogException(s"Eventlog is from GPU run. Skipping ...")
     }
+    app.clusterTags = sparkProperties.getOrElse(
+      "spark.databricks.clusterUsageTags.clusterAllTags", "")
   }
 
   override def doSparkListenerApplicationStart(
@@ -138,6 +140,11 @@ class QualificationEventProcessor(app: QualificationAppInfo, perSqlOnly: Boolean
         ProfileUtils.isPluginEnabled(event.properties.asScala) || app.gpuMode
       )
       app.jobIdToInfo.put(event.jobId, thisJob)
+    }
+    // If the confs are set after SparkSession initialization, it is captured in this event.
+    if (app.clusterTags.isEmpty) {
+      app.clusterTags = event.properties.getProperty(
+        "spark.databricks.clusterUsageTags.clusterAllTags", "")
     }
   }
 

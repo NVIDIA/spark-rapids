@@ -168,7 +168,7 @@ abstract class AppBase(
           val logFiles = reader.listEventLogFiles
           logFiles.foreach { file =>
             Utils.tryWithResource(openEventLogInternal(file.getPath, fs)) { in =>
-              val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toList
+              val lines = Source.fromInputStream(in)(Codec.UTF8).getLines().toIterator
               // Using find as foreach with conditional to exit early if we are done.
               // Do NOT use a while loop as it is much much slower.
               lines.find { line =>
