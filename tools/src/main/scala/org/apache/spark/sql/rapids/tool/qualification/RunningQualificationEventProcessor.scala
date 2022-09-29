@@ -40,7 +40,8 @@ import org.apache.spark.sql.execution.ui.{SparkListenerSQLExecutionEnd, SparkLis
  * by Hadoop.
  *
  * It can be run in your Spark application by installing it as a listener:
- * spark.extraListeners org.apache.spark.sql.rapids.tool.qualification.RunningQualificationEventProcessor
+ * set spark.extraListeners to
+ * org.apache.spark.sql.rapids.tool.qualification.RunningQualificationEventProcessor
  * and including the tools jar rapids-4-spark-tools_2.12-<version>.jar when you start
  * the Spark application.
  *
