@@ -1053,7 +1053,10 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
       if (rapidsConf.isCacheOnlyShuffleManagerMode) {
         "Transport disabled (local cached blocks only)"
       } else {
-        "Experimental threaded shuffle mode"
+        val numWriteThreads = rapidsConf.shuffleMultiThreadedWriterThreads
+        val numReadThreads = rapidsConf.shuffleMultiThreadedReaderThreads
+        s"Experimental threaded shuffle mode " +
+          s"(write threads=$numWriteThreads, read threads=$numReadThreads)"
       }
     } else {
       s"Transport enabled (remote fetches will use ${rapidsConf.shuffleTransportClassName}"
