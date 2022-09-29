@@ -25,7 +25,7 @@ import scala.collection.mutable.ArrayBuffer
 import scala.util.Try
 import scala.util.control.NonFatal
 
-import com.nvidia.spark.rapids.AlluxioUtils.AlluxioReplacedFilePathInfoConvertTime
+import com.nvidia.spark.rapids.AlluxioUtils.AlluxioPathReplaceConvertTime
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -69,7 +69,7 @@ object GpuPartitioningUtils extends SQLConfHelper {
       leafFiles: Seq[Path],
       parameters: Map[String, String],
       userSpecifiedSchema: Option[StructType],
-      replaceFunc: Path => AlluxioReplacedFilePathInfoConvertTime)
+      replaceFunc: Path => AlluxioPathReplaceConvertTime)
     : (PartitionSpec, Option[String]) = {
 
     val recursiveFileLookup = parameters.getOrElse("recursiveFileLookup", "false").toBoolean

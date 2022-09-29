@@ -185,14 +185,14 @@ object MultiFileReaderUtils {
  * @param sqlConf         the SQLConf
  * @param broadcastedConf the Hadoop configuration
  * @param rapidsConf      the Rapids configuration
- * @param alluxionPathReplacementMap Optional map containing mapping of DFS
+ * @param alluxioPathReplacementMap Optional map containing mapping of DFS
  *                                   scheme to Alluxio scheme
  */
 abstract class MultiFilePartitionReaderFactoryBase(
     @transient sqlConf: SQLConf,
     broadcastedConf: Broadcast[SerializableConfiguration],
     @transient rapidsConf: RapidsConf,
-    alluxionPathReplacementMap: Option[Map[String, String]] = None)
+    alluxioPathReplacementMap: Option[Map[String, String]] = None)
   extends PartitionReaderFactory with Arm with Logging {
 
   protected val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
@@ -266,7 +266,7 @@ abstract class MultiFilePartitionReaderFactoryBase(
   /** for testing */
   private[rapids] def useMultiThread(filePaths: Array[String]): Boolean =
     MultiFileReaderUtils.useMultiThreadReader(canUseCoalesceFilesReader,
-      canUseMultiThreadReader, filePaths, allCloudSchemes, alluxionPathReplacementMap.isDefined)
+      canUseMultiThreadReader, filePaths, allCloudSchemes, alluxioPathReplacementMap.isDefined)
 }
 
 /**
@@ -344,7 +344,7 @@ case class PartitionedFileInfoOptAlluxio(toRead: PartitionedFile, original: Opti
  * @param filters push down filters
  * @param execMetrics the metrics
  * @param ignoreCorruptFiles Whether to ignore corrupt files when GPU failed to decode the files
- * @param alluxionPathReplacementMap Map containing mapping of DFS scheme to Alluxio scheme
+ * @param alluxioPathReplacementMap Map containing mapping of DFS scheme to Alluxio scheme
  * @param alluxioReplacementTaskTime Whether the Alluxio replacement algorithm is set to task time
  */
 abstract class MultiFileCloudPartitionReaderBase(
@@ -355,7 +355,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     filters: Array[Filter],
     execMetrics: Map[String, GpuMetric],
     ignoreCorruptFiles: Boolean = false,
-    alluxionPathReplacementMap: Map[String, String] = Map.empty,
+    alluxioPathReplacementMap: Map[String, String] = Map.empty,
     alluxioReplacementTaskTime: Boolean = false)
   extends FilePartitionReaderBase(conf, execMetrics) {
 
@@ -368,13 +368,13 @@ abstract class MultiFileCloudPartitionReaderBase(
       .getOrElse(TrampolineUtil.newInputMetrics())
 
   private val files: Array[PartitionedFileInfoOptAlluxio] = {
-    if (alluxionPathReplacementMap.nonEmpty) {
+    if (alluxioPathReplacementMap.nonEmpty) {
       if (alluxioReplacementTaskTime) {
-        AlluxioUtils.updateFilesTaskTimeIfAlluxio(inputFiles, Some(alluxionPathReplacementMap))
+        AlluxioUtils.updateFilesTaskTimeIfAlluxio(inputFiles, Some(alluxioPathReplacementMap))
       } else {
         // was done at CONVERT_TIME, need to recalculate the original path to set for
         // input_file_name
-        AlluxioUtils.getOrigPathFromReplaced(inputFiles, alluxionPathReplacementMap)
+        AlluxioUtils.getOrigPathFromReplaced(inputFiles, alluxioPathReplacementMap)
       }
     } else {
       inputFiles.map(PartitionedFileInfoOptAlluxio(_, None))

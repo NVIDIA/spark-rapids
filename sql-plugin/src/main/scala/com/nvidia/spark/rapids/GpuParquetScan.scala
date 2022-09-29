@@ -935,9 +935,9 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     @transient rapidsConf: RapidsConf,
     metrics: Map[String, GpuMetric],
     queryUsesInputFile: Boolean,
-    alluxionPathReplacementMap: Option[Map[String, String]])
+    alluxioPathReplacementMap: Option[Map[String, String]])
   extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf,
-    rapidsConf, alluxionPathReplacementMap) {
+    rapidsConf, alluxioPathReplacementMap) {
 
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
@@ -979,7 +979,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       metrics, partitionSchema, numThreads, maxNumFileProcessed,
       ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId,
-      alluxionPathReplacementMap.getOrElse(Map.empty), alluxioReplacementTaskTime)
+      alluxioPathReplacementMap.getOrElse(Map.empty), alluxioReplacementTaskTime)
   }
 
   private def filterBlocksForCoalescingReader(
@@ -1045,7 +1045,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     // update the file paths for Alluxio if needed, the coalescing reader doesn't support
     // input_file_name so no need to track what the non Alluxio file name is
     val files = if (alluxioReplacementTaskTime) {
-      AlluxioUtils.updateFilesTaskTimeIfAlluxio(origFiles, alluxionPathReplacementMap).map(_.toRead)
+      AlluxioUtils.updateFilesTaskTimeIfAlluxio(origFiles, alluxioPathReplacementMap).map(_.toRead)
     } else {
       // Since coalescing reader isn't supported if input_file_name is used, so won't
       // ever get here with that. So with convert time or no Alluxio just use the files as
@@ -1111,7 +1111,7 @@ case class GpuParquetPartitionReaderFactory(
     @transient rapidsConf: RapidsConf,
     metrics: Map[String, GpuMetric],
     @transient params: Map[String, String],
-    alluxionPathReplacementMap: Option[Map[String, String]])
+    alluxioPathReplacementMap: Option[Map[String, String]])
   extends ShimFilePartitionReaderFactory(params) with Arm with Logging {
 
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
@@ -1742,7 +1742,7 @@ class MultiFileParquetPartitionReader(
  * @param ignoreMissingFiles Whether to ignore missing files
  * @param ignoreCorruptFiles Whether to ignore corrupt files
  * @param useFieldId Whether to use field id for column matching
- * @param alluxionPathReplacementMap Map containing mapping of DFS scheme to Alluxio scheme
+ * @param alluxioPathReplacementMap Map containing mapping of DFS scheme to Alluxio scheme
  * @param alluxioReplacementTaskTime Whether the Alluxio replacement algorithm is set to task time
  */
 class MultiFileCloudParquetPartitionReader(

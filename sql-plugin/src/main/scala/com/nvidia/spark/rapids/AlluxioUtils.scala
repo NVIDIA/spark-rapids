@@ -294,7 +294,7 @@ object AlluxioUtils extends Logging {
 
   private def genFuncForPathReplacement(
       replaceMapOption: Option[Map[String, String]])
-    : Option[Path => AlluxioReplacedFilePathInfoConvertTime] = {
+    : Option[Path => AlluxioPathReplaceConvertTime] = {
     if (replaceMapOption.isDefined) {
       Some((f: Path) => {
         val pathStr = f.toString
@@ -305,13 +305,13 @@ object AlluxioUtils extends Logging {
             s"from ${RapidsConf.ALLUXIO_PATHS_REPLACE.key} which requires only 1 rule " +
             s"for each file path")
         } else if (matchedSet.size == 1) {
-          val res = AlluxioReplacedFilePathInfoConvertTime(
+          val res = AlluxioPathReplaceConvertTime(
             new Path(pathStr.replaceFirst(matchedSet.head._1, matchedSet.head._2)),
             Some(matchedSet.head._1))
           logDebug(s"Specific path replacement, replacing paths with: $res")
           res
         } else {
-          AlluxioReplacedFilePathInfoConvertTime(f, None)
+          AlluxioPathReplaceConvertTime(f, None)
         }
       })
     } else {
@@ -322,7 +322,7 @@ object AlluxioUtils extends Logging {
   private def genFuncForAutoMountReplacement(
       runtimeConf: RuntimeConfig,
       hadoopConf: Configuration,
-      alluxioBucketRegex: String): Option[Path => AlluxioReplacedFilePathInfoConvertTime] = {
+      alluxioBucketRegex: String): Option[Path => AlluxioPathReplaceConvertTime] = {
     Some((f: Path) => {
       val pathStr = f.toString
       val res = if (pathStr.matches(alluxioBucketRegex)) {
@@ -330,11 +330,11 @@ object AlluxioUtils extends Logging {
         val (scheme, bucket) = getSchemeAndBucketFromPath(pathStr)
         autoMountBucket(scheme, bucket, access_key, secret_key)
         assert(alluxioMasterHost.isDefined)
-        AlluxioReplacedFilePathInfoConvertTime(
+        AlluxioPathReplaceConvertTime(
           new Path(replaceSchemeWithAlluxio(pathStr, scheme, alluxioMasterHost.get)),
           Some(scheme))
       } else {
-        AlluxioReplacedFilePathInfoConvertTime(f, None)
+        AlluxioPathReplaceConvertTime(f, None)
       }
       logDebug(s"Automount replacing paths: $res")
       res
@@ -343,18 +343,18 @@ object AlluxioUtils extends Logging {
 
   // Contains the file string to read and contains a boolean indicating if the
   // path was updated to an alluxio:// path.
-  case class AlluxioReplacedFilePathInfoTaskTime(fileStr: String, wasReplaced: Boolean)
+  case class AlluxioPathReplaceTaskTime(fileStr: String, wasReplaced: Boolean)
 
   // Contains the file Path to read and optionally contains the prefix of the original path.
   // The original path is needed when using the input_file_name option with the reader so
   // it reports the original path and not the alluxio version
-  case class AlluxioReplacedFilePathInfoConvertTime(filePath: Path, origPrefix: Option[String])
+  case class AlluxioPathReplaceConvertTime(filePath: Path, origPrefix: Option[String])
 
   // Replaces the file name with Alluxio one if it matches.
   // Returns a tuple with the file path and whether or not it replaced the
   // scheme with the Alluxio one.
   private def genFuncForTaskTimeReplacement(pathsToReplace: Map[String, String])
-    : Option[String => AlluxioReplacedFilePathInfoTaskTime] = {
+    : Option[String => AlluxioPathReplaceTaskTime] = {
     Some((pathStr: String) => {
       // pathsToReplace contain strings of exact paths to replace
       val matchedSet = pathsToReplace.filter { case (pattern, _) => pathStr.startsWith(pattern) }
@@ -364,10 +364,10 @@ object AlluxioUtils extends Logging {
           s"from ${RapidsConf.ALLUXIO_PATHS_REPLACE.key} which requires only 1 rule " +
           s"for each file path")
       } else if (matchedSet.size == 1) {
-        AlluxioReplacedFilePathInfoTaskTime(
+        AlluxioPathReplaceTaskTime(
           pathStr.replaceFirst(matchedSet.head._1, matchedSet.head._2), true)
       } else {
-        AlluxioReplacedFilePathInfoTaskTime(pathStr, false)
+        AlluxioPathReplaceTaskTime(pathStr, false)
       }
     })
   }
@@ -398,7 +398,7 @@ object AlluxioUtils extends Logging {
   private def getReplacementFunc(
       conf: RapidsConf,
       runtimeConf: RuntimeConfig,
-      hadoopConf: Configuration): Option[Path => AlluxioReplacedFilePathInfoConvertTime] = {
+      hadoopConf: Configuration): Option[Path => AlluxioPathReplaceConvertTime] = {
     if (conf.getAlluxioPathsToReplace.isDefined) {
       genFuncForPathReplacement(alluxioPathsToReplaceMap)
     } else if (conf.getAlluxioAutoMountEnabled) {

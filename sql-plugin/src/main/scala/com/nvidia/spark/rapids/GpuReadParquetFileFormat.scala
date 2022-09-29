@@ -41,7 +41,7 @@ class GpuReadParquetFileFormat extends ParquetFileFormat with GpuReadFileFormatW
       options: Map[String, String],
       hadoopConf: Configuration,
       metrics: Map[String, GpuMetric],
-      alluxionPathReplacementMap: Option[Map[String, String]])
+      alluxioPathReplacementMap: Option[Map[String, String]])
     : PartitionedFile => Iterator[InternalRow] = {
     val sqlConf = sparkSession.sessionState.conf
     val broadcastedHadoopConf =
@@ -56,7 +56,7 @@ class GpuReadParquetFileFormat extends ParquetFileFormat with GpuReadFileFormatW
       new RapidsConf(sqlConf),
       metrics,
       options,
-      alluxionPathReplacementMap)
+      alluxioPathReplacementMap)
     PartitionReaderIterator.buildReader(factory)
   }
 }
