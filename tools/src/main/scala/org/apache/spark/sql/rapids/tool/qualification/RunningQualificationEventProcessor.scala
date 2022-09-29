@@ -31,6 +31,11 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui.{SparkListenerSQLExecutionEnd, SparkListenerSQLExecutionStart}
 
+/**
+ * This is a Spark Listener that can be used
+ *
+ * @param sparkConf Spark Configuration used to get configs used by this listener
+ */
 class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkListener with Logging {
 
   private val qualApp = new RunningQualificationApp(true)
@@ -68,6 +73,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
   private def cleanupExistingFiles(id: Int, hadoopConf: Configuration): Unit = {
     val existingFiles = filesWritten(id)
     if (existingFiles.nonEmpty) {
+      logWarning(s"Going to clean up files: ${existingFiles.mkString(",")}")
       existingFiles.foreach { file =>
         val fs = FileSystem.get(file.toUri, hadoopConf)
         try {
@@ -99,6 +105,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
       cleanupExistingFiles(cleanupId, hadoopConf)
       fileWriter.map(w => filesWritten(currentFile) = w.getOutputFileNames)
       val writer = try {
+        logWarning(s"creating new file output writer id: $currentFile")
         val runningWriter = new RunningQualOutputWriter(qualApp.appId, appName,
           outputFileFromConfig, Some(hadoopConf), currentFile.toString)
         runningWriter.getOutputFileNames

@@ -54,7 +54,7 @@ abstract class AppBase(
   val sqlIDtoProblematic: HashMap[Long, Set[String]] = HashMap[Long, Set[String]]()
   // sqlId to sql info
   val sqlIdToInfo = new HashMap[Long, SQLExecutionInfoClass]()
-  // sqlPlan stores HashMap (sqlID <-> SparkPlanInfo)
+  // sqlPlans stores HashMap (sqlID <-> SparkPlanInfo)
   var sqlPlans: HashMap[Long, SparkPlanInfo] = HashMap.empty[Long, SparkPlanInfo]
 
   // accum id to task stage accum info

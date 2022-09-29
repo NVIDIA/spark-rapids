@@ -42,7 +42,6 @@ class RunningQualOutputWriter(
   extends QualOutputWriter(outputDir, reportReadSchema=false, printStdout=false,
     prettyPrintOrder = "desc", hadoopConf) {
 
-  // Since this is running app keeps these open until finished with application.
   private lazy val csvPerSQLFileWriter = new ToolTextFileWriter(outputDir,
     s"${QualOutputWriter.LOGFILE_NAME}_persql_$fileNameSuffix.csv",
     "Per SQL CSV Report", hadoopConf)
@@ -53,7 +52,6 @@ class RunningQualOutputWriter(
   // we don't know max length since process per query, hardcode for 100 for now
   private val SQL_DESC_LENGTH = 100
   private val appNameSize = if (appName.nonEmpty) appName.size else 100
-  // we don't know the max sql query name size so lets cap it at 100
   val headersAndSizes = QualOutputWriter.getDetailedPerSqlHeaderStringsAndSizes(appNameSize,
     appId.size, SQL_DESC_LENGTH)
   val entireTextHeader = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
