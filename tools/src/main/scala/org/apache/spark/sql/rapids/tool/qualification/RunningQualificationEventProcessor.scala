@@ -74,6 +74,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
   private var currentFileNum = 0
   private var currentSQLQueriesWritten = 0
   private val filesWritten = Array.fill[Seq[Path]](maxNumFiles)(Seq.empty)
+  private lazy val txtHeader = qualApp.getPerSqlTextHeader
 
   class QualCleanerListener extends SparkListener with CleanerListener with Logging {
     def accumCleaned(accId: Long): Unit = {
@@ -158,7 +159,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
     } else {
       // file writer isn't configured so just output to driver logs, us warning
       // level so it comes out when using the shell
-      logWarning(textSQLInfo)
+      logWarning("\n" + txtHeader + textSQLInfo)
     }
     qualApp.cleanupSQL(sqlID)
   }
