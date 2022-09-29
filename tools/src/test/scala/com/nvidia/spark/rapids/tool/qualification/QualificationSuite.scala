@@ -195,8 +195,8 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     TrampolineUtil.withTempDir { qualOutDir =>
       TrampolineUtil.withTempPath { outParquetFile =>
         TrampolineUtil.withTempPath { outJsonFile =>
-          val csvOutput = qualOutDir.getPath + "/" + QualOutputWriter.LOGFILE_NAME + "_persql.csv"
-          val txtOutput = qualOutDir.getPath + "/" + QualOutputWriter.LOGFILE_NAME + "_persql.log"
+          val csvOutput = qualOutDir.getPath + "/" + QualOutputWriter.LOGFILE_NAME + "_persql_0.csv"
+          val txtOutput = qualOutDir.getPath + "/" + QualOutputWriter.LOGFILE_NAME + "_persql_0.log"
           // note don't close the application here so we test running output
           ToolTestUtils.runAndCollect("running per sql") { spark =>
             val sparkConf = spark.sparkContext.getConf
