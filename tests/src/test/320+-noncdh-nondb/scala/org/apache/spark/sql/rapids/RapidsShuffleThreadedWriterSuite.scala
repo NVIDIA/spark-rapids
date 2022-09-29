@@ -22,6 +22,7 @@ import java.util.zip.CheckedInputStream
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
+import scala.util.control.NonFatal
 
 import org.mockito.{Mock, MockitoAnnotations}
 import org.mockito.Answers.RETURNS_SMART_NULLS
@@ -245,11 +246,11 @@ class RapidsShuffleThreadedWriterSuite extends FunSuite
     try {
       Utils.deleteRecursively(tempDir)
     } catch {
-      case t: Throwable =>
-        // Catch any error here as we are cleaning up directories using a Spark utility
-        // and we shouldn't fail a test in this case: 
+      case NonFatal(e) =>
+        // Catch non-fatal errors here as we are cleaning up directories using a Spark utility
+        // and we shouldn't fail a test for these exceptions. See:
         // https://github.com/NVIDIA/spark-rapids/issues/6515
-        logWarning(s"Error while cleaning up $tempDir", t)
+        logWarning(s"Error while cleaning up $tempDir", e)
     } finally {
       super.afterEach()
     }
