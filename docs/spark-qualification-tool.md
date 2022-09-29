@@ -403,8 +403,10 @@ Add the RunningQualificationEventProcess to the spark listeners configuration:
 `spark.extraListeners=org.apache.spark.sql.rapids.tool.qualification.RunningQualificationEventProcessor`
 
 The user should specify the output directory if they want the output to go to separate
-files, otherwise it will go to the Spark driver log:
-`spark.rapids.qualification.outputDir`
+files, otherwise it will go to the Spark driver log. If the output directory is specified, it outputs
+two different files, one csv and one pretty printed log file. The output directory can be a local directory
+or point to a distributed file system or blobstore like S3.
+ - `spark.rapids.qualification.outputDir`
 
 By default, this will output results for 10 SQL queries per file and will
 keep 100 files. This behavior is because many blob stores don't show files until
@@ -429,6 +431,20 @@ SPARK_HOME/bin/spark-shell \
 --conf spark.rapids.qualification.output.numSQLQueriesPerFile=5 \
 --conf spark.rapids.qualification.output.maxNumFiles=10
 ```
+
+After running some SQL queries you can look in the output directory and see files like:
+
+```
+rapids_4_spark_qualification_output_persql_0.csv
+rapids_4_spark_qualification_output_persql_0.log
+rapids_4_spark_qualification_output_persql_1.csv
+rapids_4_spark_qualification_output_persql_1.log
+rapids_4_spark_qualification_output_persql_2.csv
+rapids_4_spark_qualification_output_persql_2.log
+```
+
+See the [Understanding the Qualification tool output](#understanding-the-qualification-tool-output)
+section on the file contents details.
 
 ## Understanding the Qualification tool output
 
