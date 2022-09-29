@@ -39,9 +39,11 @@ class ToolTextFileWriter(
   logWarning("text output path is: " + textOutputPath)
   private val hadoopConfToUse = hadoopConf.getOrElse(new Configuration())
 
-  val defaultFs = FileSystem.getDefaultUri(hadoopConfToUse).getScheme
-  val isDefaultLocal = defaultFs == null || defaultFs == "file"
-  val uri = textOutputPath.toUri
+  private val defaultFs = FileSystem.getDefaultUri(hadoopConfToUse).getScheme
+  private val isDefaultLocal = defaultFs == null || defaultFs == "file"
+  private val uri = textOutputPath.toUri
+
+  def getFileOutputPath: Path = textOutputPath
 
   // The Hadoop LocalFileSystem (r1.0.4) has known issues with syncing (HADOOP-7844).
   // Therefore, for local files, use FileOutputStream instead.
@@ -51,8 +53,7 @@ class ToolTextFileWriter(
       s" dir $finalOutputDir")
     val fs = FileSystem.get(uri, hadoopConfToUse)
     // TODO - test on dbfs, I don't think this works
-    val outStream = if ((isDefaultLocal && uri.getScheme == null) || uri.getScheme == "file"
-      || finalOutputDir.startsWith("/dbfs")) {
+    val outStream = if ((isDefaultLocal && uri.getScheme == null) || uri.getScheme == "file") {
       logWarning("using local file system")
       FileSystem.mkdirs(fs, new Path(finalOutputDir), LOG_FOLDER_PERMISSIONS)
       Some(new FSDataOutputStream(new FileOutputStream(uri.getPath), null))

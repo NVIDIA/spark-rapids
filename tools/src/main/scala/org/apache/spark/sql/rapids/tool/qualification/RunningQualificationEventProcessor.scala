@@ -16,23 +16,33 @@
 
 package org.apache.spark.sql.rapids.tool.qualification
 
+import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 
 import scala.util.control.NonFatal
 
 import com.nvidia.spark.rapids.tool.qualification.{RunningQualificationApp, RunningQualOutputWriter}
+import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.hadoop.security.AccessControlException
 
 import org.apache.spark.{CleanerListener, SparkConf, SparkContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui.{SparkListenerSQLExecutionEnd, SparkListenerSQLExecutionStart}
-import org.apache.spark.util.ShutdownHookManager
 
 class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkListener with Logging {
 
   private val qualApp = new RunningQualificationApp(true)
   private val listener = qualApp.getEventListener
   private val isInited = new AtomicBoolean(false)
+  private val maxSQLQueriesPerFile: Long =
+    sparkConf.get("spark.rapids.qualification.output.numSQLQueriesPerFile", "100").toLong
+  private var maxNumFiles: Long =
+    sparkConf.get("spark.rapids.qualification.output.maxNumFiles", "10").toLong
+  private var fileWriter: Option[RunningQualOutputWriter] = None
+  private var currentFile = 0
+  private var currentSQLQueriesWritten = 0
+  private val filesWritten: Array[Seq[String]] = Array.fill[Seq[String]](maxNumFiles)(Seq.empty)
 
   class QualCleanerListener extends SparkListener with CleanerListener with Logging {
     def accumCleaned(accId: Long): Unit = {
@@ -47,12 +57,6 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
 
   private val outputFileFromConfig = sparkConf.get("spark.rapids.qualification.outputDir", "")
   private lazy val appName = qualApp.appInfo.map(_.appName).getOrElse("")
-  private var fileWriter: Option[RunningQualOutputWriter] = None
-
-  ShutdownHookManager.addShutdownHook(40) { () =>
-    logWarning("in shutdown hook")
-    fileWriter.foreach(_.close)
-  }
 
   private def initListener(): Unit = {
     // install after startup when SparkContext is available
@@ -60,14 +64,36 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
     sc.cleaner.foreach(x => x.attachListener(new QualCleanerListener()))
   }
 
-  private def initFileWriter(): Unit = {
+  private def cleanupExistingFiles(id: Long): Unit = {
+    val existingFiles = filesWritten(id)
+    if (existingFiles.nonEmpty) {
+      existingFiles.foreach { file =>
+        val fs = FileSystem.get(file.toUri, hadoopConf)
+        try {
+          // delete recursive
+          fs.delete(file, true)
+        } catch {
+          case _: AccessControlException =>
+            logInfo(s"No permission to delete $file, ignoring.")
+          case ioe: IOException =>
+            logError(s"IOException in cleaning $file", ioe)
+        }
+      }
+    }
+  }
+
+  private def getFileWriter(id: Long): Option[RunningQualOutputWriter] = {
     // get the running Hadoop Configuration so we pick up keys for accessing various
     // distributed filesystems
     val hadoopConf = SparkContext.getOrCreate(sparkConf).hadoopConfiguration
-    fileWriter = if (outputFileFromConfig.nonEmpty) {
+    if (outputFileFromConfig.nonEmpty) {
+      cleanupExistingFiles(id)
+      fileWriter.map(w => filesWritten(id) = w.getOutputFileNames)
       val writer = try {
-        Some(new RunningQualOutputWriter(qualApp.appId, appName, outputFileFromConfig,
-          Some(hadoopConf)))
+        val runningWriter = new RunningQualOutputWriter(qualApp.appId, appName,
+          outputFileFromConfig, Some(hadoopConf), s"_$id")
+        runningWriter.getOutputFileNames
+        Some(runningWriter)
       } catch {
         case NonFatal(e) =>
           logError("Error creating the RunningQualOutputWriter, output will not be" +
@@ -83,6 +109,9 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
 
   private def writeSQLDetails(sqlID: Long): Unit = {
     val (csvSQLInfo, textSQLInfo) = qualApp.getPerSqlTextAndCSVSummary(sqlID)
+    if (currentSQLQueriesWritten >= maxNumFiles) {
+      fileWriter = getFileWriter(sqlID)
+    }
     if (outputFileFromConfig.nonEmpty) {
       fileWriter.foreach { writer =>
         writer.writePerSqlCSVReport(csvSQLInfo)
@@ -93,10 +122,6 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
       logWarning(textSQLInfo)
     }
     qualApp.cleanupSQL(sqlID)
-  }
-
-  private def close(): Unit = {
-    logWarning("closing file writer for eventProcessor")
     fileWriter.foreach(_.close())
   }
 
@@ -125,7 +150,6 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
     // make sure we have attached the listener on the first job start
     if (!isInited.get()) {
       initListener()
-      initFileWriter()
       isInited.set(true)
     }
   }
@@ -153,7 +177,6 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
 
   override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
     listener.onApplicationEnd(applicationEnd)
-    close()
   }
 
   override def onExecutorMetricsUpdate(

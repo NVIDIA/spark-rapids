@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.tool.qualification
 import com.nvidia.spark.rapids.tool.ToolTextFileWriter
 import com.nvidia.spark.rapids.tool.qualification.QualOutputWriter.TEXT_DELIMITER
 import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.Path
 
 /**
  * This class handles writing output to files for a running qualification app.
@@ -30,21 +31,23 @@ import org.apache.hadoop.conf.Configuration
  * @param appName The name of the application
  * @param outputDir The directory to output the files to
  * @param hadoopConf Optional Hadoop Configuration to use
+ * @param fileNameSuffix A suffix to add to the output per sql filenames
  */
 class RunningQualOutputWriter(
     appId: String,
     appName: String,
     outputDir: String,
-    hadoopConf: Option[Configuration] = None)
+    hadoopConf: Option[Configuration] = None,
+    fileNameSuffix: String = "")
   extends QualOutputWriter(outputDir, reportReadSchema=false, printStdout=false,
     prettyPrintOrder = "desc", hadoopConf) {
 
   // Since this is running app keeps these open until finished with application.
   private lazy val csvPerSQLFileWriter = new ToolTextFileWriter(outputDir,
-    s"${QualOutputWriter.LOGFILE_NAME}_persql.csv",
+    s"${QualOutputWriter.LOGFILE_NAME}_persql_$fileNameSuffix.csv",
     "Per SQL CSV Report", hadoopConf)
   private lazy val textPerSQLFileWriter = new ToolTextFileWriter(outputDir,
-    s"${QualOutputWriter.LOGFILE_NAME}_persql.log",
+    s"${QualOutputWriter.LOGFILE_NAME}_persql_$fileNameSuffix.log",
     "Per SQL Summary Report", hadoopConf)
 
   // we don't know max length since process per query, hardcode for 100 for now
@@ -56,6 +59,10 @@ class RunningQualOutputWriter(
   val entireTextHeader = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
     TEXT_DELIMITER, true)
   private val sep = "=" * (entireTextHeader.size - 1)
+
+  def getOutputFileNames: Seq[Path] = {
+    Seq(csvPerSQLFileWriter.getFileOutputPath, textPerSQLFileWriter.getFileOutputPath)
+  }
 
   def init(): Unit = {
     csvPerSQLFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes,
