@@ -41,7 +41,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
   private val maxNumFiles: Int =
     sparkConf.get("spark.rapids.qualification.output.maxNumFiles", "10").toInt
   private var fileWriter: Option[RunningQualOutputWriter] = None
-  private var currentFile = -1
+  private var currentFile = 0
   private var currentSQLQueriesWritten = 0
   private val filesWritten = Array.fill[Seq[Path]](maxNumFiles)(Seq.empty)
 
@@ -83,16 +83,18 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
     }
   }
 
-  private def getFileWriter: Option[RunningQualOutputWriter] = {
+  private def updateFileWriter(): Unit = {
     // get the running Hadoop Configuration so we pick up keys for accessing various
     // distributed filesystems
     val hadoopConf = SparkContext.getOrCreate(sparkConf).hadoopConfiguration
     if (outputFileFromConfig.nonEmpty) {
       val cleanupId = currentFile
-      if (currentFile >= maxNumFiles - 1) {
-        currentFile = 0
-      } else {
-        currentFile += 1
+      if (fileWriter.isDefined) {
+        if (currentFile >= maxNumFiles - 1) {
+          currentFile = 0
+        } else {
+          currentFile += 1
+        }
       }
       cleanupExistingFiles(cleanupId, hadoopConf)
       fileWriter.map(w => filesWritten(currentFile) = w.getOutputFileNames)
@@ -108,9 +110,8 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
           None
       }
       writer.foreach(_.init())
-      writer
-    } else {
-      None
+      fileWriter.foreach(_.close())
+      fileWriter = writer
     }
   }
 
@@ -120,9 +121,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
       // once file has gotten enough SQL queries, switch it to new file
       if (currentSQLQueriesWritten >= maxSQLQueriesPerFile || !fileWriter.isDefined) {
         logWarning(" getting new file writer")
-        val existingFileWriter = fileWriter
-        fileWriter = getFileWriter
-        existingFileWriter.foreach(_.close())
+        updateFileWriter()
         currentSQLQueriesWritten = 0
       }
       fileWriter.foreach { writer =>
