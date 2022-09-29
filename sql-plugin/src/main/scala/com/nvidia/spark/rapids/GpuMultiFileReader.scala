@@ -54,6 +54,8 @@ import org.apache.spark.util.SerializableConfiguration
 trait HostMemoryBuffersWithMetaDataBase {
   // PartitionedFile to be read
   def partitionedFile: PartitionedFile
+  // Original PartitionedFile if path was replaced with Alluxio
+  def origPartitionedFile: Option[PartitionedFile] = None
   // An array of BlockChunk(HostMemoryBuffer and its data size) read from PartitionedFile
   def memBuffersAndSizes: Array[(HostMemoryBuffer, Long)]
   // Total bytes read
@@ -164,13 +166,16 @@ object MultiFileReaderUtils {
     filePaths.exists(fp => cloudSchemes.contains(fp.getScheme))
   }
 
+  // If Alluxio is enabled and we do task time replacement we have to take that
+  // into account here so we use the Coalescing reader instead of the MultiThreaded reader.
   def useMultiThreadReader(
       coalescingEnabled: Boolean,
       multiThreadEnabled: Boolean,
       files: Array[String],
-      cloudSchemes: Set[String]): Boolean =
-  !coalescingEnabled || (multiThreadEnabled && hasPathInCloud(files, cloudSchemes))
-
+      cloudSchemes: Set[String],
+      anyAlluxioPathsReplaced: Boolean = false): Boolean =
+  !coalescingEnabled || (multiThreadEnabled &&
+    (!anyAlluxioPathsReplaced && hasPathInCloud(files, cloudSchemes)))
 }
 
 /**
@@ -180,11 +185,15 @@ object MultiFileReaderUtils {
  * @param sqlConf         the SQLConf
  * @param broadcastedConf the Hadoop configuration
  * @param rapidsConf      the Rapids configuration
+ * @param alluxioPathReplacementMap Optional map containing mapping of DFS
+ *                                   scheme to Alluxio scheme
  */
 abstract class MultiFilePartitionReaderFactoryBase(
     @transient sqlConf: SQLConf,
     broadcastedConf: Broadcast[SerializableConfiguration],
-    @transient rapidsConf: RapidsConf) extends PartitionReaderFactory with Arm with Logging {
+    @transient rapidsConf: RapidsConf,
+    alluxioPathReplacementMap: Option[Map[String, String]] = None)
+  extends PartitionReaderFactory with Arm with Logging {
 
   protected val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
   protected val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
@@ -256,8 +265,8 @@ abstract class MultiFilePartitionReaderFactoryBase(
 
   /** for testing */
   private[rapids] def useMultiThread(filePaths: Array[String]): Boolean =
-    MultiFileReaderUtils.useMultiThreadReader(
-      canUseCoalesceFilesReader, canUseMultiThreadReader, filePaths, allCloudSchemes)
+    MultiFileReaderUtils.useMultiThreadReader(canUseCoalesceFilesReader,
+      canUseMultiThreadReader, filePaths, allCloudSchemes, alluxioPathReplacementMap.isDefined)
 }
 
 /**
@@ -315,6 +324,11 @@ abstract class FilePartitionReaderBase(conf: Configuration, execMetrics: Map[Str
   }
 }
 
+// Contains the actual file path to read from and then an optional original path if its read from
+// Alluxio. To make it transparent to the user, we return the original non-Alluxio path
+// for input_file_name.
+case class PartitionedFileInfoOptAlluxio(toRead: PartitionedFile, original: Option[PartitionedFile])
+
 /**
  * The Abstract multi-file cloud reading framework
  *
@@ -330,15 +344,20 @@ abstract class FilePartitionReaderBase(conf: Configuration, execMetrics: Map[Str
  * @param filters push down filters
  * @param execMetrics the metrics
  * @param ignoreCorruptFiles Whether to ignore corrupt files when GPU failed to decode the files
+ * @param alluxioPathReplacementMap Map containing mapping of DFS scheme to Alluxio scheme
+ * @param alluxioReplacementTaskTime Whether the Alluxio replacement algorithm is set to task time
  */
 abstract class MultiFileCloudPartitionReaderBase(
     conf: Configuration,
-    files: Array[PartitionedFile],
+    inputFiles: Array[PartitionedFile],
     numThreads: Int,
     maxNumFileProcessed: Int,
     filters: Array[Filter],
     execMetrics: Map[String, GpuMetric],
-    ignoreCorruptFiles: Boolean = false) extends FilePartitionReaderBase(conf, execMetrics) {
+    ignoreCorruptFiles: Boolean = false,
+    alluxioPathReplacementMap: Map[String, String] = Map.empty,
+    alluxioReplacementTaskTime: Boolean = false)
+  extends FilePartitionReaderBase(conf, execMetrics) {
 
   private var filesToRead = 0
   protected var currentFileHostBuffers: Option[HostMemoryBuffersWithMetaDataBase] = None
@@ -348,21 +367,36 @@ abstract class MultiFileCloudPartitionReaderBase(
   private[this] val inputMetrics = Option(TaskContext.get).map(_.taskMetrics().inputMetrics)
       .getOrElse(TrampolineUtil.newInputMetrics())
 
+  private val files: Array[PartitionedFileInfoOptAlluxio] = {
+    if (alluxioPathReplacementMap.nonEmpty) {
+      if (alluxioReplacementTaskTime) {
+        AlluxioUtils.updateFilesTaskTimeIfAlluxio(inputFiles, Some(alluxioPathReplacementMap))
+      } else {
+        // was done at CONVERT_TIME, need to recalculate the original path to set for
+        // input_file_name
+        AlluxioUtils.getOrigPathFromReplaced(inputFiles, alluxioPathReplacementMap)
+      }
+    } else {
+      inputFiles.map(PartitionedFileInfoOptAlluxio(_, None))
+    }
+  }
+
   private def initAndStartReaders(): Unit = {
     // limit the number we submit at once according to the config if set
     val limit = math.min(maxNumFileProcessed, files.length)
     val tc = TaskContext.get
     for (i <- 0 until limit) {
       val file = files(i)
+      logDebug(s"MultiFile reader using file ${file.toRead}, orig file is ${file.original}")
       // Add these in the order as we got them so that we can make sure
       // we process them in the same order as CPU would.
       val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
-      tasks.add(threadPool.submit(getBatchRunner(tc, file, conf, filters)))
+      tasks.add(threadPool.submit(getBatchRunner(tc, file.toRead, file.original, conf, filters)))
     }
     // queue up any left to add once others finish
     for (i <- limit until files.length) {
       val file = files(i)
-      tasksToRun.enqueue(getBatchRunner(tc, file, conf, filters))
+      tasksToRun.enqueue(getBatchRunner(tc, file.toRead, file.original, conf, filters))
     }
     isInitted = true
     filesToRead = files.length
@@ -374,6 +408,7 @@ abstract class MultiFileCloudPartitionReaderBase(
    *
    * @param tc   task context to use
    * @param file file to be read
+   * @param origFile optional original unmodified file if replaced with Alluxio
    * @param conf the Configuration parameters
    * @param filters push down filters
    * @return Callable[HostMemoryBuffersWithMetaDataBase]
@@ -381,6 +416,7 @@ abstract class MultiFileCloudPartitionReaderBase(
   def getBatchRunner(
       tc: TaskContext,
       file: PartitionedFile,
+      origFile: Option[PartitionedFile],
       conf: Configuration,
       filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase]
 
@@ -418,8 +454,7 @@ abstract class MultiFileCloudPartitionReaderBase(
             readBatch(currentFileHostBuffers.get)
           } catch {
             case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
-              logWarning(
-                s"Skipped the corrupted file: ${file}", e)
+              logWarning(s"Skipped the corrupted file: ${file}", e)
               None
           }
         }
@@ -440,10 +475,14 @@ abstract class MultiFileCloudPartitionReaderBase(
 
           filesToRead -= 1
           TrampolineUtil.incBytesRead(inputMetrics, fileBufsAndMeta.bytesRead)
+          // if we replaced the path with Alluxio, set it to the original filesystem file
+          // since Alluxio replacement is supposed to be transparent to the user
+          val inputFileToSet =
+            fileBufsAndMeta.origPartitionedFile.getOrElse(fileBufsAndMeta.partitionedFile)
           InputFileUtils.setInputFileBlock(
-            fileBufsAndMeta.partitionedFile.filePath,
-            fileBufsAndMeta.partitionedFile.start,
-            fileBufsAndMeta.partitionedFile.length)
+            inputFileToSet.filePath,
+            inputFileToSet.start,
+            inputFileToSet.length)
 
           if (getSizeOfHostBuffers(fileBufsAndMeta) == 0) {
             // if sizes are 0 means no rows and no data so skip to next file
@@ -457,8 +496,7 @@ abstract class MultiFileCloudPartitionReaderBase(
               readBatch(fileBufsAndMeta)
             } catch {
               case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
-                logWarning(
-                  s"Skipped the corrupted file: ${file}", e)
+                logWarning(s"Skipped the corrupted file: ${file}", e)
                 None
             }
 

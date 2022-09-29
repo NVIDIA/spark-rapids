@@ -268,7 +268,7 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
           .toArray(String[]::new);
       // Get the final decision for the subtype of the Rapids reader.
       boolean useMultiThread = MultiFileReaderUtils.useMultiThreadReader(
-          canUseCoalescing, canUseMultiThread, files, allCloudSchemes);
+          canUseCoalescing, canUseMultiThread, files, allCloudSchemes, false);
       return scala.Tuple3.apply(canAccelerateRead, useMultiThread, ff);
     }
   }
