@@ -126,15 +126,14 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
       }
       fileWriter.foreach { writer =>
         writer.writePerSqlCSVReport(csvSQLInfo)
-        currentSQLQueriesWritten += 1
         logWarning(s"Done with SQL query ${sqlID} \n summary: $textSQLInfo")
         writer.writePerSqlTextReport(textSQLInfo)
+        currentSQLQueriesWritten += 1
       }
     } else {
       logWarning(textSQLInfo)
     }
     qualApp.cleanupSQL(sqlID)
-    fileWriter.foreach(_.close())
   }
 
   override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = {
@@ -189,6 +188,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
 
   override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
     listener.onApplicationEnd(applicationEnd)
+    fileWriter.foreach(_.close())
   }
 
   override def onExecutorMetricsUpdate(
