@@ -46,7 +46,7 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
   private val maxNumFiles: Int =
     sparkConf.get("spark.rapids.qualification.output.maxNumFiles", "10").toInt
   private var fileWriter: Option[RunningQualOutputWriter] = None
-  private var currentFile = 0
+  private var currentFileNum = 0
   private var currentSQLQueriesWritten = 0
   private val filesWritten = Array.fill[Seq[Path]](maxNumFiles)(Seq.empty)
 
@@ -95,19 +95,20 @@ class RunningQualificationEventProcessor(sparkConf: SparkConf) extends SparkList
     val hadoopConf = SparkContext.getOrCreate(sparkConf).hadoopConfiguration
     if (outputFileFromConfig.nonEmpty) {
       if (fileWriter.isDefined) {
-        val cleanupId = currentFile
-        if (currentFile >= maxNumFiles - 1) {
-          currentFile = 0
+        if (currentFileNum >= maxNumFiles - 1) {
+          currentFileNum = 0
         } else {
-          currentFile += 1
+          currentFileNum += 1
         }
-        cleanupExistingFiles(cleanupId, hadoopConf)
+        // if the current slot already had files written, remove those before
+        // writing a new file
+        cleanupExistingFiles(currentFileNum, hadoopConf)
       }
-      fileWriter.map(w => filesWritten(currentFile) = w.getOutputFileNames)
+      fileWriter.map(w => filesWritten(currentFileNum) = w.getOutputFileNames)
       val writer = try {
-        logWarning(s"creating new file output writer id: $currentFile")
+        logWarning(s"creating new file output writer id: $currentFileNum")
         val runningWriter = new RunningQualOutputWriter(qualApp.appId, appName,
-          outputFileFromConfig, Some(hadoopConf), currentFile.toString)
+          outputFileFromConfig, Some(hadoopConf), currentFileNum.toString)
         runningWriter.getOutputFileNames
         Some(runningWriter)
       } catch {
