@@ -573,7 +573,7 @@ object GpuCast extends Arm {
       inclusiveMax: Boolean = true,
       errorMsg:String = GpuCast.OVERFLOW_MESSAGE): Unit = {
 
-    def throwAnyNan(): Unit = {
+    def throwIfAnyNan(): Unit = {
       withResource(values.isNan()) { valuesIsNan =>
         withResource(valuesIsNan.any()) { anyNan =>
           if (anyNan.isValid && anyNan.getBoolean) {
@@ -594,13 +594,13 @@ object GpuCast extends Arm {
       }
     }
 
-    withResource(minValue) { minValue =>
-      withResource(maxValue) { maxValue =>
+    withResource(minValue) { minBound =>
+      withResource(maxValue) { maxBound =>
         withResource(values.min()) { minInput =>
           withResource(values.max()) { maxInput =>
             values.getType match {
               case DType.FLOAT64 =>
-                throwAnyNan()
+                throwIfAnyNan()
                 def getDoubleValue(s: Scalar): Double = s.getType match {
                   case DType.INT8 | DType.UINT8 => s.getByte.toDouble
                   case DType.INT16 | DType.UINT16 => s.getShort.toDouble
@@ -608,10 +608,10 @@ object GpuCast extends Arm {
                   case DType.INT64 | DType.UINT64 => s.getLong.toDouble
                   case _ => s.getDouble
                 }
-                throwOutOfRange[Double](minInput.getDouble(), getDoubleValue(minValue),
-                                        maxInput.getDouble(), getDoubleValue(maxValue))
+                throwOutOfRange[Double](minInput.getDouble(), getDoubleValue(minBound),
+                                        maxInput.getDouble(), getDoubleValue(maxBound))
               case DType.FLOAT32 =>
-                throwAnyNan()
+                throwIfAnyNan()
                 def getFloatValue(s: Scalar): Float = s.getType match {
                   case DType.INT8 | DType.UINT8 => s.getByte.toFloat
                   case DType.INT16 | DType.UINT16 => s.getShort.toFloat
@@ -619,28 +619,28 @@ object GpuCast extends Arm {
                   case DType.INT64 | DType.UINT64 => s.getLong.toFloat
                   case _ => s.getFloat
                 }
-                throwOutOfRange[Float](minInput.getFloat, getFloatValue(minValue),
-                                       maxInput.getFloat, getFloatValue(maxValue))
+                throwOutOfRange[Float](minInput.getFloat, getFloatValue(minBound),
+                                       maxInput.getFloat, getFloatValue(maxBound))
               case DType.STRING =>
-                throwOutOfRange[String](minInput.getJavaString, minValue.getJavaString,
-                                        maxInput.getJavaString, maxValue.getJavaString)
+                throwOutOfRange[String](minInput.getJavaString, minBound.getJavaString,
+                                        maxInput.getJavaString, maxBound.getJavaString)
               case dt if dt.isDecimalType =>
-                throwOutOfRange[BigDecimal](minInput.getBigDecimal, minValue.getBigDecimal,
-                                            maxInput.getBigDecimal, maxValue.getBigDecimal)
+                throwOutOfRange[BigDecimal](minInput.getBigDecimal, minBound.getBigDecimal,
+                                            maxInput.getBigDecimal, maxBound.getBigDecimal)
               case dt if dt.isBackedByLong =>
-                val minValueLong = GpuScalar.from(GpuScalar.extract(minValue), LongType).getLong
-                val maxValueLong = GpuScalar.from(GpuScalar.extract(maxValue), LongType).getLong
-                throwOutOfRange[Long](minInput.getLong, minValueLong,
-                                      maxInput.getLong, maxValueLong)
+                val minBoundLong = GpuScalar.from(GpuScalar.extract(minBound), LongType).getLong
+                val maxBoundLong = GpuScalar.from(GpuScalar.extract(maxBound), LongType).getLong
+                throwOutOfRange[Long](minInput.getLong, minBoundLong,
+                                      maxInput.getLong, maxBoundLong)
               case dt if dt.isBackedByInt =>
-                throwOutOfRange[Int](minInput.getInt, minValue.getInt,
-                                     maxInput.getInt, maxValue.getInt)
+                throwOutOfRange[Int](minInput.getInt, minBound.getInt,
+                                     maxInput.getInt, maxBound.getInt)
               case dt if dt.isBackedByShort =>
-                throwOutOfRange[Short](minInput.getShort, minValue.getShort,
-                                       maxInput.getShort, maxValue.getShort)
+                throwOutOfRange[Short](minInput.getShort, minBound.getShort,
+                                       maxInput.getShort, maxBound.getShort)
               case dt if dt.isBackedByByte =>
-                throwOutOfRange[Byte](minInput.getByte, minValue.getByte,
-                                      maxInput.getByte, maxValue.getByte)
+                throwOutOfRange[Byte](minInput.getByte, minBound.getByte,
+                                      maxInput.getByte, maxBound.getByte)
               case _ => ()
             }
           }
