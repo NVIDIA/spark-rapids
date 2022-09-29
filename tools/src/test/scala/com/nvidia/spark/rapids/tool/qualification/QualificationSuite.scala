@@ -214,7 +214,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
             // generate a bunch of SQL queries to test the file rolling, should run
             // 10 sql queries total with above and below
             for (i <- 1 to 7) {
-              df.join(df2.select($"a" as "a2"), $"a" === $"a2")
+              df.join(df2.select($"a" as "a2"), $"a" === $"a2").count()
             }
             val df3 = df.join(df2.select($"a" as "a2"), $"a" === $"a2")
             df3
