@@ -16,6 +16,7 @@
 package com.nvidia.spark.rapids.tool.qualification
 
 import org.rogach.scallop.{ScallopConf, ScallopOption}
+import org.rogach.scallop.exceptions.ScallopException
 
 import org.apache.spark.sql.rapids.tool.AppFilterImpl
 
@@ -165,6 +166,16 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
   }
 
   verify()
+
+  override def onError(e: Throwable) = e match {
+    case ScallopException(message) =>
+      if (args.contains("--help")) {
+        printHelp
+        System.exit(0)
+      }
+      errorMessageHandler(message)
+    case ex => super.onError(ex)
+  }
 }
 
 object QualificationArgs {
