@@ -1312,20 +1312,24 @@ case class GpuRegExpExtractAll(
                       }
                     }
                 }
-                ColumnVector.makeList(stringCols: _*)
+                withResource(stringCols) { _ =>
+                  ColumnVector.makeList(stringCols: _*)
+                }
               }
             }
           }
         // Filter out null values in the lists
-        val extractedStrings = withResource(extractedWithNulls.getListOffsetsView) { offsetsCol =>
+        val extractedStrings = withResource(extractedWithNulls) { _ =>
+          withResource(extractedWithNulls.getListOffsetsView) { offsetsCol =>
             withResource(extractedWithNulls.getChildColumnView(0)) { stringCol =>
               withResource(stringCol.isNotNull) { isNotNull =>
-                withResource(isNotNull.makeListFromOffsets(rowCount, offsetsCol)) { booleanMask => 
+                withResource(isNotNull.makeListFromOffsets(rowCount, offsetsCol)) { booleanMask =>
                   extractedWithNulls.applyBooleanMask(booleanMask)
                 }
               }
             }
           }
+        }
         // If input is null, output should also be null
         withResource(extractedStrings) { s =>
           withResource(GpuScalar.from(null, DataTypes.createArrayType(DataTypes.StringType))) { 
