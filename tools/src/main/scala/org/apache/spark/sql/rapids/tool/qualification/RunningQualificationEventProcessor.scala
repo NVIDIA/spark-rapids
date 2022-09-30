@@ -36,7 +36,7 @@ import org.apache.spark.sql.execution.ui.{SparkListenerSQLExecutionEnd, SparkLis
  * the running application are a good fit to try with the Rapids Accelerator for Spark.
  *
  * This only supports output on a per sql query basis. It supports writing to
- * local filesystem and most distribute filesystems and blob stores supported
+ * local filesystem and most distributed filesystems and blob stores supported
  * by Hadoop.
  *
  * It can be run in your Spark application by installing it as a listener:
