@@ -410,7 +410,7 @@ or point to a distributed file system or blobstore like S3.
 
 By default, this will output results for 10 SQL queries per file and will
 keep 100 files. This behavior is because many blob stores don't show files until
-they are full written so you wouldn't be able to see the results for a running
+they are fully written so you wouldn't be able to see the results for a running
 application until it finishes the number of SQL queries per file. This behavior
 can be configured with the following configs.
  - `spark.rapids.qualification.output.numSQLQueriesPerFile` - default 10
