@@ -31,7 +31,7 @@ class CompareApplications(apps: Seq[ApplicationInfo]) extends Logging {
 
   def findMatchingStages(): (Seq[CompareProfileResults], Seq[CompareProfileResults]) = {
     val normalizedByAppId = apps.map { app =>
-      val normalized = app.sqlPlan.mapValues { plan =>
+      val normalized = app.sqlPlans.mapValues { plan =>
         SparkPlanInfoWithStage(plan, app.accumIdToStageId).normalizeForStageComparison
       }
       (app.appId, normalized)
