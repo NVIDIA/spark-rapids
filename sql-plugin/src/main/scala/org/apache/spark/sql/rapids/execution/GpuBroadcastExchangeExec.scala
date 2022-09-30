@@ -97,6 +97,8 @@ class SerializeConcatHostBuffersDeserializeBatch(
   @transient private var dataTypes = output.map(_.dataType).toArray
   @transient private var headers = data.map(_.header)
   @transient private var buffers = data.map(_.buffer)
+
+  // used for memoization of deserialization to GPU on Executor
   @transient private var batchInternal: SpillableColumnarBatch = null
 
   def batch: SpillableColumnarBatch = this.synchronized {
@@ -126,10 +128,8 @@ class SerializeConcatHostBuffersDeserializeBatch(
                   SpillableColumnarBatch(new ColumnarBatch(Array.empty[ColumnVector], numRows),
                     SpillPriorities.ACTIVE_BATCHING_PRIORITY, RapidsBuffer.defaultSpillCallback)
                 } else {
-                  withResource(tableInfo) { _ =>
-                    SpillableColumnarBatch(table, dataTypes,
-                      SpillPriorities.ACTIVE_BATCHING_PRIORITY, RapidsBuffer.defaultSpillCallback)
-                  }
+                  SpillableColumnarBatch(table, dataTypes,
+                    SpillPriorities.ACTIVE_BATCHING_PRIORITY, RapidsBuffer.defaultSpillCallback)
                 }
             }
           }
