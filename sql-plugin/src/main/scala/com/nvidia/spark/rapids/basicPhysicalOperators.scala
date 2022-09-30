@@ -262,22 +262,24 @@ case class GpuProjectAstExec(
 /**
  * Do projections in a tiered fashion, where earlier tiers contain sub-expressions that are
  * referenced in later tiers.  Each tier adds columns to the original batch corresponding
- * to the output of the sub-expressions.
+ * to the output of the sub-expressions.  It also removes columns that are no longer needed,
+ * based on the contents of columnSkips for that tier.
  * Example of how this is processed:
  *   Original projection expressions:
  *   (((a + b) + c) * e), (((a + b) + d) * f), (a + e), (c + f)
  *   Input columns for tier 1: a, b, c, d, e, f  (original projection inputs)
  *   Tier 1: (a + b) as ref1
- *   Input columns for tier 2: a, b, c, d, e, f, ref1
+ *   Input columns for tier 2: a, c, d, e, f, ref1
  *   Tier 2: (ref1 + c) as ref2, (ref1 + d) as ref3
- *   Input columns for tier 3: a, b, c, d, e, f, ref1, ref2, ref3
+ *   Input columns for tier 3: a, c, e, f, ref2, ref3
  *   Tier 3: (ref2 * e), (ref3 * f), (a + e), (c + f)
  */
- case class GpuTieredProject(val exprSets: Seq[Seq[GpuExpression]]) extends Arm {
+ case class GpuTieredProject(exprSets: Seq[Seq[GpuExpression]],
+    columnSkips: Seq[Seq[Boolean]]) extends Arm {
 
   @tailrec
   private def projectTier(boundExprs: Seq[Seq[GpuExpression]],
-      cb: ColumnarBatch, doClose: Boolean): ColumnarBatch = {
+      skips: Seq[Seq[Boolean]], cb: ColumnarBatch, doClose: Boolean): ColumnarBatch = {
     boundExprs match {
       case Nil => {
         cb
@@ -292,17 +294,19 @@ case class GpuProjectAstExec(
           projectCb
         } else {
           withResource(projectCb) { newCols =>
-            GpuColumnVector.combineColumns(cb, newCols)
+            withResource(GpuColumnVector.dropColumns(cb, skips.head.toArray)) { remainingCb =>
+              GpuColumnVector.combineColumns(remainingCb, newCols)
+            }
           }
         }
         if (doClose) cb.close()
-        projectTier(tail, nextCb, true)
+        projectTier(tail, skips.tail, nextCb, true)
       }
     }
   }
 
   def tieredProject(batch: ColumnarBatch): ColumnarBatch = {
-    projectTier(exprSets, batch, false)
+    projectTier(exprSets, columnSkips, batch, false)
   }
 }
 

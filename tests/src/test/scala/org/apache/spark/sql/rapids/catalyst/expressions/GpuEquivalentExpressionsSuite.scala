@@ -641,17 +641,30 @@ class GpuEquivalentExpressionsSuite extends FunSuite with Logging {
   private def validateInputTiers(exprTiers: Seq[Seq[Expression]],
       initialInputs: AttributeSeq): Unit = {
     val inputTiers = GpuEquivalentExpressions.getInputTiers(exprTiers, initialInputs)
+    val skipCols = GpuEquivalentExpressions.getColumnSkipTiers(inputTiers)
     assert(exprTiers.size == inputTiers.size)
     // First tier should have same inputs as original inputs
-    // Subsequent tiers should add inputs for each expr in previous tier
-    var expectedNumInputs = initialInputs.attrs.size
+    // Subsequent tiers should remove eclipsed inputs and add inputs for each expr in previous tier
+    var currentAttrs = initialInputs.attrs
     var curTier = 0
     while (curTier < inputTiers.size) {
-      assert(inputTiers(curTier).attrs.size == expectedNumInputs)
-      expectedNumInputs += exprTiers(curTier).size
+      assert(inputTiers(curTier).attrs.size == currentAttrs.size)
+      assert(inputTiers(curTier).attrs == currentAttrs)
+      val inputAttrs = currentAttrs
+      currentAttrs = GpuEquivalentExpressions.getAttrsForNextTier(inputAttrs,
+            exprTiers.drop(curTier))
+      var attrIdx = 0
+      val curSkips = skipCols(curTier)
+      while (attrIdx < inputAttrs.size) {
+        if (curSkips(attrIdx)) {
+          assert(!currentAttrs.contains(inputAttrs(attrIdx)))
+        } else {
+          assert(currentAttrs.contains(inputAttrs(attrIdx)))
+        }
+        attrIdx += 1
+      }
       curTier += 1
     }
-    initialInputs.attrs.foreach(a => assert(inputTiers.last.attrs.contains(a)))
   }
 
   /**

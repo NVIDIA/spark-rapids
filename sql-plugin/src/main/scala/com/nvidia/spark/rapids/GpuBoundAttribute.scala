@@ -139,10 +139,11 @@ object GpuBindReferences extends Logging {
 
     val exprTiers = GpuEquivalentExpressions.getExprTiers(expressions)
     val inputTiers = GpuEquivalentExpressions.getInputTiers(exprTiers, input)
+    val columnSkipTiers = GpuEquivalentExpressions.getColumnSkipTiers(inputTiers)
     GpuTieredProject(exprTiers.zip(inputTiers).map {
       case (es:Seq[Expression], is:AttributeSeq) =>
         es.map(GpuBindReferences.bindGpuReference(_, is)).toList
-    })
+    }, columnSkipTiers)
   }
 }
 
