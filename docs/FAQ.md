@@ -276,9 +276,6 @@ Queries on Databricks will not fail but it can not benefit from DPP.
 
 Any operation that is supported on GPU will stay on the GPU when AQE is enabled.
 
-AQE is not supported on Databricks with the plugin.
-If AQE is enabled on Databricks, queries may fail with `StackOverflowError` error.
-
 #### Why does my query show as not on the GPU when Adaptive Query Execution is enabled?
 
 When running an `explain()` on a query where AQE is on, it is possible that AQE has not finalized

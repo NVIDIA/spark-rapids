@@ -23,17 +23,7 @@ The number of GPUs per node dictates the number of Spark executors that can run 
 
 ## Limitations
 
-1. Adaptive query execution(AQE) and Delta optimization write do not work. These should be disabled
-when using the plugin. Queries may still see significant speedups even with AQE disabled.
-
-   ```bash 
-   spark.databricks.delta.optimizeWrite.enabled false
-   spark.sql.adaptive.enabled false
-   ```
-    
-   See [issue-1059](https://github.com/NVIDIA/spark-rapids/issues/1059) for more detail. 
-
-2. Dynamic partition pruning(DPP) does not work.  This results in poor performance for queries which
+1. Dynamic partition pruning(DPP) does not work.  This results in poor performance for queries which
    would normally benefit from DPP.   With DPP on, queries may fail on Databricks when using the plugin.
 
    ```bash 
@@ -42,17 +32,17 @@ when using the plugin. Queries may still see significant speedups even with AQE 
    
    See [issue-3143](https://github.com/NVIDIA/spark-rapids/issues/3143) for more detail.
 
-3. When selecting GPU nodes, Databricks requires the driver node to be a GPU node.  Outside of
+2. When selecting GPU nodes, Databricks requires the driver node to be a GPU node.  Outside of
    Databricks the plugin can operate with the driver as a CPU node and workers as GPU nodes.
 
-4. Cannot spin off multiple executors on a multi-GPU node. 
+3. Cannot spin off multiple executors on a multi-GPU node. 
 
    Even though it is possible to set `spark.executor.resource.gpu.amount=1` in the in Spark 
    Configuration tab, Databricks overrides this to `spark.executor.resource.gpu.amount=N` 
    (where N is the number of GPUs per node). This will result in failed executors when starting the
    cluster.
 
-5. Parquet rebase mode is set to "LEGACY" by default.
+4. Parquet rebase mode is set to "LEGACY" by default.
 
    The following Spark configurations are set to `LEGACY` by default on Databricks:
    
@@ -65,7 +55,7 @@ when using the plugin. Queries may still see significant speedups even with AQE 
    If you do not need `LEGACY` write semantics, set these configs to `EXCEPTION` which is
    the default value in Apache Spark 3.0 and higher.
 
-6. Databricks makes changes to the runtime without notification.
+5. Databricks makes changes to the runtime without notification.
 
     Databricks makes changes to existing runtimes, applying patches, without notification.
 	[Issue-3098](https://github.com/NVIDIA/spark-rapids/issues/3098) is one example of this.  We run
@@ -133,17 +123,13 @@ cluster.
     Note: Please remove the `spark.task.resource.gpu.amount` config for a single-node Databricks 
     cluster because Spark local mode does not support GPU scheduling.
 
-	There is an incompatibility between the Databricks specific implementation of adaptive query
-    execution (AQE) and the spark-rapids plugin.  In order to mitigate this,
-    `spark.sql.adaptive.enabled` should be set to false.  In addition, the plugin does not work with
-    the Databricks `spark.databricks.delta.optimizeWrite` option.
+	The plugin does not work with the Databricks `spark.databricks.delta.optimizeWrite` option.
 
     ```bash
     spark.plugins com.nvidia.spark.SQLPlugin
     spark.task.resource.gpu.amount 0.1
     spark.rapids.memory.pinnedPool.size 2G
     spark.databricks.delta.optimizeWrite.enabled false
-    spark.sql.adaptive.enabled false
     spark.sql.optimizer.dynamicPartitionPruning.enabled false
     spark.rapids.sql.concurrentGpuTasks 2
     ```
@@ -163,7 +149,7 @@ cluster.
     ```bash
     spark.rapids.sql.python.gpu.enabled true
     spark.python.daemon.module rapids.daemon_databricks
-    spark.executorEnv.PYTHONPATH /databricks/jars/rapids-4-spark_2.12-22.08.0.jar:/databricks/spark/python
+    spark.executorEnv.PYTHONPATH /databricks/jars/rapids-4-spark_2.12-22.10.0.jar:/databricks/spark/python
     ```
 
 7. Once you’ve added the Spark config, click “Confirm and Restart”.
@@ -171,7 +157,7 @@ cluster.
 
 ## Import the GPU Mortgage Example Notebook
 Import the example [notebook](../demo/Databricks/Mortgage-ETL-db.ipynb) from the repo into your
-workspace, then open the notebook. Please find this [instruction](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-22.08/docs/get-started/xgboost-examples/dataset/mortgage.md)
+workspace, then open the notebook. Please find this [instruction](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-22.10/docs/get-started/xgboost-examples/dataset/mortgage.md)
 to download the dataset.
 
 ```bash
