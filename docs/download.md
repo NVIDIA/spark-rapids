@@ -48,6 +48,7 @@ New functionality and performance improvements for this release include:
 * MultiThreaded Shuffle feature
 * HashAggregate on Array support
 * Binary write support for parquet
+* Hive parquet table write support
 
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
