@@ -179,9 +179,9 @@ class GpuSingleDirectoryDataWriter(
             table.getRowCount()
           )
   
-          val dataTypes = (0 until batch.numCols()).map(i => batch.column(i).dataType()).toArray
+          val dataTypes = GpuColumnVector.extractTypes(batch)
   
-          var needNewWriter = recordsInFile >= maxRecordsPerFile && maxRecordsPerFile > 0
+          var needNewWriter = recordsInFile >= maxRecordsPerFile
           withResource(table.contiguousSplit(splitIndexes: _*)) {tabs =>
             tabs.foreach(b => {
               if (needNewWriter) {
@@ -523,10 +523,10 @@ class GpuDynamicPartitionDataSingleWriter(
               table.getRowCount()
             )
 
-            val dataTypes = (0 until batch.numCols()).map(i => batch.column(i).dataType()).toArray
+            val dataTypes = GpuColumnVector.extractTypes(batch)
 
             var needNewWriter =
-              currentWriterStatus.recordsInFile >= maxRecordsPerFile && maxRecordsPerFile > 0
+              currentWriterStatus.recordsInFile >= maxRecordsPerFile
             withResource(table.contiguousSplit(splitIndexes: _*)) {tabs => 
               tabs.foreach(b => {
                 if (needNewWriter) {
