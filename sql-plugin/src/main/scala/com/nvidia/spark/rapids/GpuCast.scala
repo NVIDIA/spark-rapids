@@ -285,14 +285,14 @@ object GpuCast extends Arm {
               if (ansiMode) {
                 toDataType match {
                   case IntegerType =>
-                    assertValuesInRange(cv, Scalar.fromInt(Int.MinValue),
-                      Scalar.fromInt(Int.MaxValue), errorMsg = GpuCast.OVERFLOW_MESSAGE)
+                    assertValuesInRange[Long](cv, Int.MinValue.toLong,
+                      Int.MaxValue.toLong, errorMsg = GpuCast.OVERFLOW_MESSAGE)
                   case ShortType =>
-                    assertValuesInRange(cv, Scalar.fromShort(Short.MinValue),
-                      Scalar.fromShort(Short.MaxValue), errorMsg = GpuCast.OVERFLOW_MESSAGE)
+                    assertValuesInRange[Long](cv, Short.MinValue.toLong,
+                      Short.MaxValue.toLong, errorMsg = GpuCast.OVERFLOW_MESSAGE)
                   case ByteType =>
-                    assertValuesInRange(cv, Scalar.fromByte(Byte.MinValue),
-                      Scalar.fromByte(Byte.MaxValue), errorMsg = GpuCast.OVERFLOW_MESSAGE)
+                    assertValuesInRange[Long](cv, Byte.MinValue.toLong,
+                      Byte.MaxValue.toLong, errorMsg = GpuCast.OVERFLOW_MESSAGE)
                 }
               }
               cv.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
@@ -346,44 +346,81 @@ object GpuCast extends Arm {
 
       // ansi cast from larger-than-integer integral-like types, to integer
       case (t @(LongType | _: DecimalType), IntegerType) if ansiMode =>
-        assertValuesInRange(input, GpuScalar.from(Int.MinValue, t),
-          GpuScalar.from(Int.MaxValue, t))
+        t match {
+          case LongType =>
+            assertValuesInRange[Long](input, Int.MinValue.toLong, Int.MaxValue.toLong)
+          case _ =>
+            assertValuesInRange[BigDecimal](input, BigDecimal(Int.MinValue),
+              BigDecimal(Int.MaxValue))
+        }
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from larger-than-short integral-like types, to short
       case (t @(LongType | IntegerType | _: DecimalType), ShortType) if ansiMode =>
-        assertValuesInRange(input, GpuScalar.from(Short.MinValue, t),
-          GpuScalar.from(Short.MaxValue, t))
+        t match {
+          case LongType =>
+            assertValuesInRange[Long](input, Short.MinValue.toLong, Short.MaxValue.toLong)
+          case IntegerType =>
+            assertValuesInRange[Int](input, Short.MinValue.toInt, Short.MaxValue.toInt)
+          case _ =>
+            assertValuesInRange[BigDecimal](input, BigDecimal(Short.MinValue),
+              BigDecimal(Short.MaxValue))
+        }
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from larger-than-byte integral-like types, to byte
       case (t @ (LongType | IntegerType | ShortType | _: DecimalType), ByteType) if ansiMode =>
-        assertValuesInRange(input, GpuScalar.from(Byte.MinValue, t),
-          GpuScalar.from(Byte.MaxValue, t))
+        t match {
+          case LongType =>
+            assertValuesInRange[Long](input, Byte.MinValue.toLong, Byte.MaxValue.toLong)
+          case IntegerType =>
+            assertValuesInRange[Int](input, Byte.MinValue.toInt, Byte.MaxValue.toInt)
+          case ShortType =>
+            assertValuesInRange[Short](input, Byte.MinValue.toShort, Byte.MaxValue.toShort)
+          case _ =>
+            assertValuesInRange[BigDecimal](input, BigDecimal(Byte.MinValue),
+              BigDecimal(Byte.MaxValue))
+        }
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from floating-point types, to byte
       case (FloatType | DoubleType, ByteType) if ansiMode =>
-        assertValuesInRange(input, Scalar.fromByte(Byte.MinValue),
-          Scalar.fromByte(Byte.MaxValue))
+        fromDataType match {
+          case FloatType =>
+            assertValuesInRange[Float](input, Byte.MinValue.toFloat, Byte.MaxValue.toFloat)
+          case DoubleType =>
+            assertValuesInRange[Double](input, Byte.MinValue.toDouble, Byte.MaxValue.toDouble)
+        }
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from floating-point types, to short
       case (FloatType | DoubleType, ShortType) if ansiMode =>
-        assertValuesInRange(input, Scalar.fromShort(Short.MinValue),
-          Scalar.fromShort(Short.MaxValue))
+        fromDataType match {
+          case FloatType =>
+            assertValuesInRange[Float](input, Short.MinValue.toFloat, Short.MaxValue.toFloat)
+          case DoubleType =>
+            assertValuesInRange[Double](input, Short.MinValue.toDouble, Short.MaxValue.toDouble)
+        }
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from floating-point types, to integer
       case (FloatType | DoubleType, IntegerType) if ansiMode =>
-        assertValuesInRange(input, Scalar.fromInt(Int.MinValue),
-          Scalar.fromInt(Int.MaxValue))
+        fromDataType match {
+          case FloatType =>
+            assertValuesInRange[Float](input, Int.MinValue.toFloat, Int.MaxValue.toFloat)
+          case DoubleType =>
+            assertValuesInRange[Double](input, Int.MinValue.toDouble, Int.MaxValue.toDouble)
+        }
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from floating-point types, to long
       case (FloatType | DoubleType, LongType) if ansiMode =>
-        assertValuesInRange(input, Scalar.fromLong(Long.MinValue),
-          Scalar.fromLong(Long.MaxValue))
+        fromDataType match {
+          case FloatType =>
+            assertValuesInRange[Float](input, Long.MinValue.toFloat, Long.MaxValue.toFloat)
+          case DoubleType =>
+            assertValuesInRange[Double](input, Long.MinValue.toDouble, Long.MaxValue.toDouble)
+        }
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       case (FloatType | DoubleType, TimestampType) =>
@@ -566,9 +603,9 @@ object GpuCast extends Arm {
    * @param errorMsg Specify the message in the `IllegalStateException`
    * @throws IllegalStateException if any values in the column are not within the specified range
    */
-  private def assertValuesInRange(values: ColumnView,
-      minValue: => Scalar,
-      maxValue: => Scalar,
+  private def assertValuesInRange[T](values: ColumnView,
+      minValue: T,
+      maxValue: T,
       inclusiveMin: Boolean = true,
       inclusiveMax: Boolean = true,
       errorMsg:String = GpuCast.OVERFLOW_MESSAGE): Unit = {
@@ -594,57 +631,55 @@ object GpuCast extends Arm {
       }
     }
 
-    withResource(minValue) { minBound =>
-      withResource(maxValue) { maxBound =>
-        withResource(values.min()) { minInput =>
-          withResource(values.max()) { maxInput =>
-            values.getType match {
-              case DType.FLOAT64 =>
-                throwIfAnyNan()
-                def getDoubleValue(s: Scalar): Double = s.getType match {
-                  case DType.INT8 | DType.UINT8 => s.getByte.toDouble
-                  case DType.INT16 | DType.UINT16 => s.getShort.toDouble
-                  case DType.INT32 | DType.UINT32 => s.getInt.toDouble
-                  case DType.INT64 | DType.UINT64 => s.getLong.toDouble
-                  case _ => s.getDouble
-                }
-                throwOutOfRange[Double](minInput.getDouble(), getDoubleValue(minBound),
-                                        maxInput.getDouble(), getDoubleValue(maxBound))
-              case DType.FLOAT32 =>
-                throwIfAnyNan()
-                def getFloatValue(s: Scalar): Float = s.getType match {
-                  case DType.INT8 | DType.UINT8 => s.getByte.toFloat
-                  case DType.INT16 | DType.UINT16 => s.getShort.toFloat
-                  case DType.INT32 | DType.UINT32 => s.getInt.toFloat
-                  case DType.INT64 | DType.UINT64 => s.getLong.toFloat
-                  case _ => s.getFloat
-                }
-                throwOutOfRange[Float](minInput.getFloat, getFloatValue(minBound),
-                                       maxInput.getFloat, getFloatValue(maxBound))
-              case DType.STRING =>
-                throwOutOfRange[String](minInput.getJavaString, minBound.getJavaString,
-                                        maxInput.getJavaString, maxBound.getJavaString)
-              case dt if dt.isDecimalType =>
-                throwOutOfRange[BigDecimal](minInput.getBigDecimal, minBound.getBigDecimal,
-                                            maxInput.getBigDecimal, maxBound.getBigDecimal)
-              case dt if dt.isBackedByLong =>
-                val minBoundLong = GpuScalar.from(GpuScalar.extract(minBound), LongType).getLong
-                val maxBoundLong = GpuScalar.from(GpuScalar.extract(maxBound), LongType).getLong
-                throwOutOfRange[Long](minInput.getLong, minBoundLong,
-                                      maxInput.getLong, maxBoundLong)
-              case dt if dt.isBackedByInt =>
-                throwOutOfRange[Int](minInput.getInt, minBound.getInt,
-                                     maxInput.getInt, maxBound.getInt)
-              case dt if dt.isBackedByShort =>
-                throwOutOfRange[Short](minInput.getShort, minBound.getShort,
-                                       maxInput.getShort, maxBound.getShort)
-              case dt if dt.isBackedByByte =>
-                throwOutOfRange[Byte](minInput.getByte, minBound.getByte,
-                                      maxInput.getByte, maxBound.getByte)
-              case _ => ()
-            }
-          }
+    // def getValue[T](s: Scalar): T = (s.getType match {
+    //     case DType.FLOAT64 => s.getDouble
+    //     case DType.FLOAT32 => s.getFloat
+    //     case DType.STRING => s.getJavaString
+    //     case dt if dt.isDecimalType => s.getBigDecimal
+    //     case dt if dt.isBackedByLong => s.getLong
+    //     case dt if dt.isBackedByInt => s.getInt
+    //     case dt if dt.isBackedByShort => s.getShort
+    //     case dt if dt.isBackedByByte => s.getByte
+    //     case _ => throw new IllegalArgumentException("Unsupported scalar type")
+    //   }).asInstanceOf[T]
+
+    withResource(values.min()) { minInput =>
+      withResource(values.max()) { maxInput =>
+        values.getType match {
+          case DType.FLOAT64 =>
+            throwIfAnyNan()
+            throwOutOfRange[Double](minInput.getDouble, minValue.asInstanceOf[Double],
+                                    maxInput.getDouble, maxValue.asInstanceOf[Double])
+          case DType.FLOAT32 =>
+            throwIfAnyNan()
+            throwOutOfRange[Float](minInput.getFloat, minValue.asInstanceOf[Float],
+                                    maxInput.getFloat, maxValue.asInstanceOf[Float])
+          // case DType.STRING =>
+          //   throwOutOfRange[String](minInput.getJavaString, minValue.to,
+          //                           maxInput.getJavaString, maxValue)
+          case dt if dt.isDecimalType =>
+            throwOutOfRange[BigDecimal](minInput.getBigDecimal, minValue.asInstanceOf[BigDecimal],
+                                        maxInput.getBigDecimal, maxValue.asInstanceOf[BigDecimal])
+          case dt if dt.isBackedByLong =>
+            throwOutOfRange[Long](minInput.getLong, minValue.asInstanceOf[Long],
+                                  maxInput.getLong, maxValue.asInstanceOf[Long])
+          case dt if dt.isBackedByInt =>
+            throwOutOfRange[Int](minInput.getInt, minValue.asInstanceOf[Int],
+                                  maxInput.getInt, maxValue.asInstanceOf[Int])
+          case dt if dt.isBackedByShort =>
+            throwOutOfRange[Short](minInput.getShort, minValue.asInstanceOf[Short],
+                                    maxInput.getShort, maxValue.asInstanceOf[Short])
+          case dt if dt.isBackedByByte =>
+            throwOutOfRange[Byte](minInput.getByte, minValue.asInstanceOf[Byte],
+                                  maxInput.getByte, maxValue.asInstanceOf[Byte])
+          case _ => ()
         }
+        // if (values.getType == DType.FLOAT32 || values.getType == DType.FLOAT64) {
+        //   throwIfAnyNan()
+        // }
+        // val minInputValue = getValue[T](minInput)
+        // val maxInputValue = getValue[T](maxInput)
+        // throwOutOfRange[T](minInputValue, minValue, maxInputValue, maxValue)
       }
     }
   }
@@ -1467,9 +1502,9 @@ object GpuCast extends Arm {
         val containerScaleBound = DType.DECIMAL128_MAX_PRECISION - (dt.scale + 1)
         val bound = math.pow(10, (dt.precision - dt.scale) min containerScaleBound)
         if (ansiMode) {
-          assertValuesInRange(rounded,
-            minValue = Scalar.fromDouble(-bound),
-            maxValue = Scalar.fromDouble(bound),
+          assertValuesInRange[Double](rounded,
+            minValue = -bound,
+            maxValue = bound,
             inclusiveMin = false,
             inclusiveMax = false)
           rounded.incRefCount()
