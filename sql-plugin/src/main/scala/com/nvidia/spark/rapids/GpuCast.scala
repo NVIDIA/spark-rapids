@@ -608,7 +608,8 @@ object GpuCast extends Arm {
       maxValue: T,
       inclusiveMin: Boolean = true,
       inclusiveMax: Boolean = true,
-      errorMsg:String = GpuCast.OVERFLOW_MESSAGE): Unit = {
+      errorMsg:String = GpuCast.OVERFLOW_MESSAGE)
+      (implicit ord: Ordering[T]): Unit = {
 
     def throwIfAnyNan(): Unit = {
       withResource(values.isNan()) { valuesIsNan =>
@@ -620,9 +621,8 @@ object GpuCast extends Arm {
       }
     }
 
-    def throwOutOfRange[T](minInput: T, minValue: T,
-                           maxInput: T, maxValue: T)
-                          (implicit ord: Ordering[T]): Unit = {
+    def throwOutOfRange(minInput: T, minValue: T,
+                        maxInput: T, maxValue: T): Unit = {
       if (inclusiveMin && ord.compare(minInput, minValue) < 0 ||
           !inclusiveMin && ord.compare(minInput, minValue) <= 0 ||
           inclusiveMax && ord.compare(maxInput, maxValue) > 0 ||
@@ -631,55 +631,24 @@ object GpuCast extends Arm {
       }
     }
 
-    // def getValue[T](s: Scalar): T = (s.getType match {
-    //     case DType.FLOAT64 => s.getDouble
-    //     case DType.FLOAT32 => s.getFloat
-    //     case DType.STRING => s.getJavaString
-    //     case dt if dt.isDecimalType => s.getBigDecimal
-    //     case dt if dt.isBackedByLong => s.getLong
-    //     case dt if dt.isBackedByInt => s.getInt
-    //     case dt if dt.isBackedByShort => s.getShort
-    //     case dt if dt.isBackedByByte => s.getByte
-    //     case _ => throw new IllegalArgumentException("Unsupported scalar type")
-    //   }).asInstanceOf[T]
+    def getValue(s: Scalar): T = (s.getType match {
+        case DType.FLOAT64 => s.getDouble
+        case DType.FLOAT32 => s.getFloat
+        case DType.STRING => s.getJavaString
+        case dt if dt.isDecimalType => BigDecimal(s.getBigDecimal)
+        case dt if dt.isBackedByLong => s.getLong
+        case dt if dt.isBackedByInt => s.getInt
+        case dt if dt.isBackedByShort => s.getShort
+        case dt if dt.isBackedByByte => s.getByte
+        case _ => throw new IllegalArgumentException("Unsupported scalar type")
+      }).asInstanceOf[T]
 
     withResource(values.min()) { minInput =>
       withResource(values.max()) { maxInput =>
-        values.getType match {
-          case DType.FLOAT64 =>
-            throwIfAnyNan()
-            throwOutOfRange[Double](minInput.getDouble, minValue.asInstanceOf[Double],
-                                    maxInput.getDouble, maxValue.asInstanceOf[Double])
-          case DType.FLOAT32 =>
-            throwIfAnyNan()
-            throwOutOfRange[Float](minInput.getFloat, minValue.asInstanceOf[Float],
-                                    maxInput.getFloat, maxValue.asInstanceOf[Float])
-          // case DType.STRING =>
-          //   throwOutOfRange[String](minInput.getJavaString, minValue.to,
-          //                           maxInput.getJavaString, maxValue)
-          case dt if dt.isDecimalType =>
-            throwOutOfRange[BigDecimal](minInput.getBigDecimal, minValue.asInstanceOf[BigDecimal],
-                                        maxInput.getBigDecimal, maxValue.asInstanceOf[BigDecimal])
-          case dt if dt.isBackedByLong =>
-            throwOutOfRange[Long](minInput.getLong, minValue.asInstanceOf[Long],
-                                  maxInput.getLong, maxValue.asInstanceOf[Long])
-          case dt if dt.isBackedByInt =>
-            throwOutOfRange[Int](minInput.getInt, minValue.asInstanceOf[Int],
-                                  maxInput.getInt, maxValue.asInstanceOf[Int])
-          case dt if dt.isBackedByShort =>
-            throwOutOfRange[Short](minInput.getShort, minValue.asInstanceOf[Short],
-                                    maxInput.getShort, maxValue.asInstanceOf[Short])
-          case dt if dt.isBackedByByte =>
-            throwOutOfRange[Byte](minInput.getByte, minValue.asInstanceOf[Byte],
-                                  maxInput.getByte, maxValue.asInstanceOf[Byte])
-          case _ => ()
+        if (values.getType == DType.FLOAT32 || values.getType == DType.FLOAT64) {
+          throwIfAnyNan()
         }
-        // if (values.getType == DType.FLOAT32 || values.getType == DType.FLOAT64) {
-        //   throwIfAnyNan()
-        // }
-        // val minInputValue = getValue[T](minInput)
-        // val maxInputValue = getValue[T](maxInput)
-        // throwOutOfRange[T](minInputValue, minValue, maxInputValue, maxValue)
+        throwOutOfRange(getValue(minInput), minValue, getValue(maxInput), maxValue)
       }
     }
   }
