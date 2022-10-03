@@ -82,7 +82,7 @@ class GpuWorkerProps(
   }
 
   override def toString: String =
-    s"{Count: $count, Memory: $memory, GpuDevice: $name}"
+    s"{count: $count, memory: $memory, name: $name}"
 }
 
 /**
@@ -104,7 +104,7 @@ class SystemClusterProps(
     numCores == 0 && memory.startsWith("0") && numWorkers == 0
   }
   override def toString: String =
-    s"{numCores: $numCores, Memory: $memory, numWorkers: $numWorkers}"
+    s"{numCores: $numCores, memory: $memory, numWorkers: $numWorkers}"
 }
 
 /**
