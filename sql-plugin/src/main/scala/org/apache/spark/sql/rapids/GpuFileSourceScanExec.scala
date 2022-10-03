@@ -61,6 +61,7 @@ import org.apache.spark.util.collection.BitSet
  *                               off in GpuTransitionOverrides if InputFileName,
  *                               InputFileBlockStart, or InputFileBlockLength are used
  * @param disableBucketedScan Disable bucketed scan based on physical query plan.
+ * @param alluxioPathsMap Map containing mapping of DFS scheme to Alluxio scheme
  */
 case class GpuFileSourceScanExec(
     @transient relation: HadoopFsRelation,
@@ -72,9 +73,16 @@ case class GpuFileSourceScanExec(
     dataFilters: Seq[Expression],
     tableIdentifier: Option[TableIdentifier],
     disableBucketedScan: Boolean = false,
-    queryUsesInputFile: Boolean = false)(@transient val rapidsConf: RapidsConf)
+    queryUsesInputFile: Boolean = false,
+    alluxioPathsMap: Option[Map[String, String]])(@transient val rapidsConf: RapidsConf)
     extends GpuDataSourceScanExec with GpuExec {
   import GpuMetric._
+
+  private val isAlluxioReplacementTaskTime = rapidsConf.isAlluxioReplacementAlgoTaskTime
+
+  // this is set only when we either explicitly replaced a path for CONVERT_TIME
+  // or when TASK_TIME if one of the paths will be replaced
+  private var alluxioPathReplacementMap: Option[Map[String, String]] = alluxioPathsMap
 
   private val isPerFileReadEnabled = relation.fileFormat match {
     case _: ParquetFileFormat => rapidsConf.isParquetPerFileReadEnabled
@@ -82,15 +90,6 @@ case class GpuFileSourceScanExec(
     case ef if ExternalSource.isSupportedFormat(ef) =>
       ExternalSource.isPerFileReadEnabledForFormat(ef, rapidsConf)
     case _ => true // For others, default to PERFILE reader
-  }
-
-  private val isAlluxioAlgoSelectionTime = {
-    val alluxioPathsReplace = rapidsConf.getAlluxioPathsToReplace
-    val alluxioAutoMountEnabled = rapidsConf.getAlluxioAutoMountEnabled
-    // currently only support Alluxio replacement with Parquet files
-    (alluxioPathsReplace.isDefined || alluxioAutoMountEnabled) &&
-      rapidsConf.isAlluxioReplacementAlgoSelectTime &&
-      relation.fileFormat.isInstanceOf[ParquetFileFormat]
   }
 
   override def otherCopyArgs: Seq[AnyRef] = Seq(rapidsConf)
@@ -121,27 +120,25 @@ case class GpuFileSourceScanExec(
   @transient lazy val selectedPartitions: Array[PartitionDirectory] = {
     val optimizerMetadataTimeNs = relation.location.metadataOpsTimeNs.getOrElse(0L)
     val startTime = System.nanoTime()
-    val origRet =
-      relation.location.listFiles(
+    val pds = relation.location.listFiles(
         partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
-    val ret = if (isAlluxioAlgoSelectionTime) {
-      val res = origRet.map { pd =>
-        AlluxioUtils.replacePathInPDIfNeeded(rapidsConf, pd,
-          relation.sparkSession.sparkContext.hadoopConfiguration,
-          relation.sparkSession.conf)
-      }
-      res
-    } else {
-      origRet
+    if (AlluxioUtils.isAlluxioAutoMountTaskTime(rapidsConf, relation.fileFormat)) {
+      alluxioPathReplacementMap = AlluxioUtils.autoMountIfNeeded(rapidsConf, pds,
+        relation.sparkSession.sparkContext.hadoopConfiguration,
+        relation.sparkSession.conf)
+    } else if (AlluxioUtils.isAlluxioPathsToReplaceTaskTime(rapidsConf, relation.fileFormat)) {
+      // this is not ideal, here we check to see if we will replace any paths, which is an
+      // extra iteration through paths
+      alluxioPathReplacementMap = AlluxioUtils.checkIfNeedsReplaced(rapidsConf, pds)
     }
     logDebug(s"File listing and possibly replace with Alluxio path " +
       s"took: ${System.nanoTime() - startTime}")
 
-    setFilesNumAndSizeMetric(ret, true)
+    setFilesNumAndSizeMetric(pds, true)
     val timeTakenMs = NANOSECONDS.toMillis(
       (System.nanoTime() - startTime) + optimizerMetadataTimeNs)
     driverMetrics("metadataTime") = timeTakenMs
-    ret
+    pds
   }.toArray
 
   // We can only determine the actual partitions at runtime when a dynamic partition filter is
@@ -183,7 +180,8 @@ case class GpuFileSourceScanExec(
 
   // exposed for testing
   lazy val bucketedScan: Boolean = {
-    if (relation.sparkSession.sessionState.conf.bucketingEnabled && relation.bucketSpec.isDefined
+    if (relation.sparkSession.sessionState.conf.bucketingEnabled
+      && relation.bucketSpec.isDefined
       && !disableBucketedScan) {
       val spec = relation.bucketSpec.get
       val bucketColumns = spec.bucketColumnNames.flatMap(n => toAttribute(n))
@@ -255,7 +253,8 @@ case class GpuFileSourceScanExec(
 
   @transient
   private lazy val pushedDownFilters = {
-    val supportNestedPredicatePushdown = DataSourceUtils.supportNestedPredicatePushdown(relation)
+    val supportNestedPredicatePushdown =
+      DataSourceUtils.supportNestedPredicatePushdown(relation)
     dataFilters.flatMap(DataSourceStrategy.translateFilter(_, supportNestedPredicatePushdown))
   }
 
@@ -345,7 +344,8 @@ case class GpuFileSourceScanExec(
           options = relation.options,
           hadoopConf =
             relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options),
-          metrics = allMetrics)
+          metrics = allMetrics,
+          alluxioPathReplacementMap)
         Some(reader)
       } else {
         None
@@ -355,8 +355,7 @@ case class GpuFileSourceScanExec(
       createBucketedReadRDD(relation.bucketSpec.get, readFile, dynamicallySelectedPartitions,
         relation)
     } else {
-      createNonBucketedReadRDD(readFile, dynamicallySelectedPartitions,
-        relation)
+      createNonBucketedReadRDD(readFile, dynamicallySelectedPartitions, relation)
     }
     sendDriverMetrics()
     readRDD
@@ -567,6 +566,8 @@ case class GpuFileSourceScanExec(
       SparkShimImpl.getFileScanRDD(relation.sparkSession, readFile.get, partitions,
         requiredSchema)
     } else {
+      logDebug(s"Using Datasource RDD, files are: " +
+        s"${partitions.flatMap(_.files).mkString(",")}")
       // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
       GpuDataSourceRDD(relation.sparkSession.sparkContext, partitions, readerFactory)
     }
@@ -592,7 +593,8 @@ case class GpuFileSourceScanExec(
           pushedDownFilters.toArray,
           rapidsConf,
           allMetrics,
-          queryUsesInputFile)
+          queryUsesInputFile,
+          alluxioPathReplacementMap)
       case _: OrcFileFormat =>
         GpuOrcMultiFilePartitionReaderFactory(
           sqlConf,
@@ -633,7 +635,8 @@ case class GpuFileSourceScanExec(
       optionalNumCoalescedBuckets,
       QueryPlan.normalizePredicates(dataFilters, output),
       None,
-      queryUsesInputFile)(rapidsConf)
+      queryUsesInputFile,
+      alluxioPathsMap = alluxioPathsMap)(rapidsConf)
   }
 
 }

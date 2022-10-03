@@ -94,13 +94,29 @@ class RunningQualificationApp() extends QualificationAppInfo(None, None,
           Seq(info).map(_.unSupportedExprs.size),
           QualOutputWriter.UNSUPPORTED_EXPRS_MAX_SIZE,
           QualOutputWriter.UNSUPPORTED_EXPRS.size)
+        val hasClusterTags = info.clusterTags.nonEmpty
+        val (clusterIdMax, jobIdMax, runNameMax) = if (hasClusterTags) {
+          (QualOutputWriter.getMaxSizeForHeader(Seq(info).map(
+            _.allClusterTagsMap.getOrElse(QualOutputWriter.CLUSTER_ID, "").size),
+            QualOutputWriter.CLUSTER_ID),
+            QualOutputWriter.getMaxSizeForHeader(Seq(info).map(
+              _.allClusterTagsMap.getOrElse(QualOutputWriter.JOB_ID, "").size),
+              QualOutputWriter.JOB_ID),
+            QualOutputWriter.getMaxSizeForHeader(Seq(info).map(
+              _.allClusterTagsMap.getOrElse(QualOutputWriter.RUN_NAME, "").size),
+              QualOutputWriter.RUN_NAME))
+        } else {
+          (QualOutputWriter.CLUSTER_ID_STR_SIZE, QualOutputWriter.JOB_ID_STR_SIZE,
+            QualOutputWriter.RUN_NAME_STR_SIZE)
+        }
         val headersAndSizes = QualOutputWriter.getSummaryHeaderStringsAndSizes(Seq(info),
-          appIdMaxSize, unSupExecMaxSize, unSupExprMaxSize)
+          appIdMaxSize, unSupExecMaxSize, unSupExprMaxSize, hasClusterTags,
+          clusterIdMax, jobIdMax, runNameMax)
         val headerStr = QualOutputWriter.constructOutputRowFromMap(headersAndSizes,
           delimiter, prettyPrint)
         val appInfoStr = QualOutputWriter.constructAppSummaryInfo(info.estimatedInfo,
-          headersAndSizes, appIdMaxSize, unSupExecMaxSize, unSupExprMaxSize,
-          delimiter, prettyPrint)
+          headersAndSizes, appIdMaxSize, unSupExecMaxSize, unSupExprMaxSize, hasClusterTags,
+          clusterIdMax, jobIdMax, runNameMax, delimiter, prettyPrint)
         headerStr + appInfoStr
       case None =>
         logWarning(s"Unable to get qualification information for this application")
