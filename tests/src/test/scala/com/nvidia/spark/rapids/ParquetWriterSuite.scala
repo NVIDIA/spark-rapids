@@ -102,6 +102,64 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
+  private def listAllFiles(f: File): Array[File] = {
+    if (f.isFile()) {
+      Array(f)
+    } else if (f.isDirectory()) {
+      f
+        .listFiles()
+        .flatMap(f => listAllFiles(f))
+    } else {
+      Array.empty
+    }
+  }
+
+  test("set max records per file no partition") {
+    val conf = new SparkConf().set("spark.sql.files.maxRecordsPerFile", "50")
+    val tempFile = File.createTempFile("maxRecords", ".parquet")
+    val assertRowCount50 = assertResult(50) _
+
+    try {
+      SparkSessionHolder.withSparkSession(conf, spark => {
+        import spark.implicits._
+        val df = (1 to 16000).toDF()
+        df.write.mode("overwrite").parquet(tempFile.getAbsolutePath())
+
+        listAllFiles(tempFile)
+          .map(f => f.getAbsolutePath())
+          .filter(p => p.endsWith("parquet"))
+          .map(p => {
+            assertRowCount50 (spark.read.parquet(p).count()) 
+          })
+      })
+    } finally {
+      tempFile.delete()
+    }
+  }
+
+  test("set max records per file with partition") {
+    val conf = new SparkConf().set("spark.sql.files.maxRecordsPerFile", "50")
+    val tempFile = File.createTempFile("maxRecords", ".parquet")
+    val assertRowCount50 = assertResult(50) _
+
+    try {
+      SparkSessionHolder.withSparkSession(conf, spark => {
+        import spark.implicits._
+        val df = (1 to 16000).map(i => (i, i % 2)).toDF()
+        df.write.mode("overwrite").partitionBy("_2").parquet(tempFile.getAbsolutePath())
+
+        listAllFiles(tempFile)
+          .map(f => f.getAbsolutePath())
+          .filter(p => p.endsWith("parquet"))
+          .map(p => {
+            assertRowCount50 (spark.read.parquet(p).count()) 
+          })
+      })
+    } finally {
+      tempFile.delete()
+    }
+  }
+
   testExpectedGpuException(
     "Old dates in EXCEPTION mode",
     classOf[SparkException],
