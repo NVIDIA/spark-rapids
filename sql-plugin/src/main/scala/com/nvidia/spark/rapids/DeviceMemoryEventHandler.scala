@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 import java.lang.management.ManagementFactory
+import java.util.concurrent.atomic.AtomicLong
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange, Rmm, RmmEventHandler}
 import com.sun.management.HotSpotDiagnosticMXBean
@@ -92,9 +93,10 @@ class DeviceMemoryEventHandler(
     mxBean.dumpHeap(dumpPath, false)
   }
 
+  private val dumps: AtomicLong = new AtomicLong(0)
   private def getDumpPath(dumpDir: String): String = {
     // pid is typically before the '@' character in the name
     val pid = ManagementFactory.getRuntimeMXBean.getName.split('@').head
-    new File(dumpDir, s"gpu-oom-$pid.hprof").toString
+    new File(dumpDir, s"gpu-oom-$pid-${dumps.incrementAndGet}.hprof").toString
   }
 }

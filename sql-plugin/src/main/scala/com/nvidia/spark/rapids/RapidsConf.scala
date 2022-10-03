@@ -333,7 +333,9 @@ object RapidsConf {
   val GPU_OOM_DUMP_DIR = conf("spark.rapids.memory.gpu.oomDumpDir")
     .doc("The path to a local directory where a heap dump will be created if the GPU " +
       "encounters an unrecoverable out-of-memory (OOM) error. The filename will be of the " +
-      "form: \"gpu-oom-<pid>.hprof\" where <pid> is the process ID.")
+      "form: \"gpu-oom-<pid>-<dumpId>.hprof\" where <pid> is the process ID, and " +
+      "the dumpId is a sequence number to disambiguate multiple heap dumps " +
+      "per process lifecycle")
     .stringConf
     .createOptional
 
