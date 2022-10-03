@@ -596,8 +596,8 @@ object GpuCast extends Arm {
    * Asserts that all values in a column are within the specific range.
    *
    * @param values ColumnVector to be performed with range check
-   * @param minValue Named parameter for function to create Scalar representing range minimum value
-   * @param maxValue Named parameter for function to create Scalar representing range maximum value
+   * @param minValue Range minimum value of type T
+   * @param maxValue Range maximum value of type T
    * @param inclusiveMin Whether the min value is included in the valid range or not
    * @param inclusiveMax Whether the max value is included in the valid range or not
    * @param errorMsg Specify the message in the `IllegalStateException`
