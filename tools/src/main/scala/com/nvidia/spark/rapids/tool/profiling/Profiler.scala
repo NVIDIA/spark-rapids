@@ -455,22 +455,9 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         // the autotuner allows skipping some properties
         // e.g. getRecommendedProperties(Some(Seq("spark.executor.instances"))) skips the
         // recommendation related to executor instances.
-        val (properties, comments) =
-          autoTuner.getRecommendedProperties()
+        val (properties, comments) = autoTuner.getRecommendedProperties()
         profileOutputWriter.writeText("\n### D. Recommended Configuration ###\n")
-
-        if (properties.nonEmpty) {
-          val propertiesToStr = properties.map(_.toString).reduce(_ + "\n" + _)
-          profileOutputWriter.writeText("\nSpark Properties:\n" + propertiesToStr + "\n")
-        } else {
-          profileOutputWriter.writeText("Cannot recommend properties. See Comments.\n")
-        }
-
-        // Comments are optional
-        if (comments.nonEmpty) {
-          val commentsToStr = comments.map(_.toString).reduce(_ + "\n" + _)
-          profileOutputWriter.writeText("\nComments:\n" + commentsToStr + "\n")
-        }
+        profileOutputWriter.writeText(Profiler.getAutoTunerResultsAsString(properties, comments))
       }
     }
   }
@@ -482,4 +469,19 @@ object Profiler {
   val COMPARE_LOG_FILE_NAME_PREFIX = "rapids_4_spark_tools_compare"
   val COMBINED_LOG_FILE_NAME_PREFIX = "rapids_4_spark_tools_combined"
   val SUBDIR = "rapids_4_spark_profile"
+  def getAutoTunerResultsAsString(props: Seq[RecommendedPropertyResult],
+      comments: Seq[RecommendedCommentResult]): String = {
+    val propStr = if (props.nonEmpty) {
+        val propertiesToStr = props.map(_.toString).reduce(_ + "\n" + _)
+        s"\nSpark Properties:\n$propertiesToStr\n"
+      } else {
+        "Cannot recommend properties. See Comments.\n"
+      }
+    if (comments.isEmpty) { // Comments are optional
+      propStr
+    } else {
+      val commentsToStr = comments.map(_.toString).reduce(_ + "\n" + _)
+      propStr + s"\nComments:\n$commentsToStr\n"
+    }
+  }
 }

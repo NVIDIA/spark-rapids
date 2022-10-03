@@ -56,9 +56,9 @@ class GpuWorkerProps(
    *
    * @return true if the value has been updated.
    */
-  def setDefaultGpuCountIfMissing(clusterSystemProps: SystemClusterProps): Boolean = {
+  def setDefaultGpuCountIfMissing(): Boolean = {
     if (count == 0) {
-      count = Math.max(1, clusterSystemProps.numCores / AutoTuner.DEF_WORKER_CPU_SORES_PER_GPU)
+      count = AutoTuner.DEF_WORKER_GPU_COUNT
       true
     } else {
       false
@@ -261,28 +261,36 @@ class AutoTuner(
   var comments = new ListBuffer[String]()
   var recommendations: mutable.LinkedHashMap[String, RecommendationEntry] =
     mutable.LinkedHashMap[String, RecommendationEntry]()
-  // list of criterion to be computed for recommendations
+  // list of criteria to be skipped for recommendations
   private var skipRecommendations: Option[Seq[String]] = None
   // When enabled, the profiler recommendations should only include updated settings.
   var filterByUpdatedPropertiesEnabled: Boolean = true
 
+  private def findPropertyInProfPropertyResults(
+      key: String,
+      props: Seq[RapidsPropertyProfileResult]): Option[String] = {
+    props.collectFirst {
+      case entry: RapidsPropertyProfileResult
+        if entry.key == key && entry.rows(1) != "null" => entry.rows(1)
+    }
+  }
   def getSparkPropertyFromProfile(propKey: String): Option[String] = {
-    if (appInfo.isDefined) {
-      appInfo.get.sparkProps.collectFirst {
-        case entry: RapidsPropertyProfileResult
-          if entry.key == propKey && entry.rows(1) != "null" => entry.rows(1)
-      }
-    } else {
-      None
+    appInfo match {
+      case None => None
+      case Some(profInfo) =>
+        val resFromProfSparkProps = findPropertyInProfPropertyResults(propKey, profInfo.sparkProps)
+        resFromProfSparkProps match {
+          case None => findPropertyInProfPropertyResults(propKey, profInfo.rapidsProps)
+          case Some(_) => resFromProfSparkProps
+        }
     }
   }
 
   def getPropertyValue(key: String): Option[String] = {
     val fromProfile = getSparkPropertyFromProfile(key)
-    if (fromProfile.isDefined) {
-      fromProfile
-    } else {
-      Option(clusterProps.softwareProperties.get(key))
+    fromProfile match {
+      case None => Option(clusterProps.softwareProperties.get(key))
+      case Some(_) => fromProfile
     }
   }
 
@@ -315,8 +323,8 @@ class AutoTuner(
    * Safely appends the recommendation to the given key.
    * It skips if the value is 0.
    */
-  def appendRecommendationForIntNum(key: String, value: Int): Unit = {
-    if (value != 0) {
+  def appendRecommendation(key: String, value: Int): Unit = {
+    if (value > 0) {
       appendRecommendation(key: String, s"$value")
     }
   }
@@ -325,8 +333,8 @@ class AutoTuner(
    * Safely appends the recommendation to the given key.
    * It skips if the value is 0.0.
    */
-  def appendRecommendationForFloat(key: String, value: Double): Unit = {
-    if (value != 0.0) {
+  def appendRecommendation(key: String, value: Double): Unit = {
+    if (value > 0.0) {
       appendRecommendation(key: String, s"$value")
     }
   }
@@ -335,17 +343,36 @@ class AutoTuner(
    * It appends "m" to the string value. It skips if the value is 0 or null.
    */
   def appendRecommendationForMemoryMB(key: String, value: String): Unit = {
-    if (value != null && value.toDouble != 0.0) {
+    if (value != null && value.toDouble > 0.0) {
       appendRecommendation(key, s"${value}m")
     }
   }
 
   /**
-   * Recommendation for 'spark.executor.instances' based on number of gpus and workers.
-   * Assumption - In case GPU properties are not available, it assumes 1 GPU per worker.
+   * calculated 'spark.executor.instances' based on number of gpus and workers.
    */
   def calcExecInstances(): Int = {
     clusterProps.gpu.getCount * clusterProps.system.numWorkers
+  }
+
+  /**
+   * Recommendation for 'spark.executor.instances' based on number of gpus and workers.
+   * Assumption - If the properties include "spark.dynamicAllocation.enabled=true", then ignore
+   * spark.executor.instances.
+   */
+  def recommendExecutorInstances(): Unit = {
+    val execInstancesOpt = getPropertyValue("spark.dynamicAllocation.enabled") match {
+        case Some(propValue) =>
+          if (propValue.toBoolean) {
+            None
+          } else {
+            Option(calcExecInstances())
+          }
+        case None => Option(calcExecInstances())
+      }
+    if (execInstancesOpt.isDefined) {
+      appendRecommendation("spark.executor.instances", execInstancesOpt.get)
+    }
   }
 
   /**
@@ -482,14 +509,14 @@ class AutoTuner(
   }
 
   def calculateRecommendations(): Unit = {
-    appendRecommendationForIntNum("spark.executor.instances", calcExecInstances())
+    recommendExecutorInstances()
     val numExecutorCores = calcNumExecutorCores
     val execCoresExpr = () => numExecutorCores
 
-    appendRecommendationForIntNum("spark.executor.cores", numExecutorCores)
-    appendRecommendationForFloat("spark.task.resource.gpu.amount",
+    appendRecommendation("spark.executor.cores", numExecutorCores)
+    appendRecommendation("spark.task.resource.gpu.amount",
       calcTaskGPUAmount(execCoresExpr))
-    appendRecommendationForIntNum("spark.rapids.sql.concurrentGpuTasks",
+    appendRecommendation("spark.rapids.sql.concurrentGpuTasks",
       calcGpuConcTasks().toInt)
     val availableMemPerExec = calcAvailableMemPerExec()
     val availableMemPerExecExpr = () => availableMemPerExec
@@ -515,22 +542,19 @@ class AutoTuner(
    *         true if the missing information were updated to default initial values.
    */
   def processPropsAndCheck: Boolean = {
-    if (clusterProps.isEmpty) {
+    if (clusterProps.system.getNumCores <= 0) {
+      if (!clusterProps.isEmpty) {
+        appendComment(
+          s"Worker info has incorrect number of cores: ${clusterProps.system.getNumCores}.")
+      }
       false
     } else {
       if (clusterProps.system.isMissingInfo) {
-        // set the cores to DEF_WORKER_CPU_CORES by default
-        val systemComment =
-          if (clusterProps.system.setDefaultNumCoresIfMissing(DEF_WORKER_CPU_CORES)) {
-            s"CPU cores is missing. Setting default to ${clusterProps.system.getNumCores}."
-          } else {
-            s"CPU properties is incomplete: ${clusterProps.system}."
-          }
-        appendComment(systemComment)
+        appendComment(s"CPU properties is incomplete: ${clusterProps.system}.")
       }
       if (clusterProps.gpu.isMissingInfo) {
         val gpuComment =
-          if (clusterProps.gpu.setDefaultGpuCountIfMissing(clusterProps.system)) {
+          if (clusterProps.gpu.setDefaultGpuCountIfMissing()) {
             s"GPU count is missing. Setting default to ${clusterProps.gpu.getCount}."
           } else {
             s"GPU properties is incomplete: ${clusterProps.gpu}."
@@ -577,8 +601,9 @@ class AutoTuner(
     if (app.sqlTaskAggMetrics.isEmpty) { // avoid division by zero
       maxPartitionBytesNum.toString
     } else {
-      val taskInputSizeInMB =
-        (app.sqlTaskAggMetrics.map(_.inputBytesReadAvg).sum / app.sqlTaskAggMetrics.size) / 1024
+      val taskInputSizeInBytes =
+        app.sqlTaskAggMetrics.map(_.inputBytesReadAvg).sum / app.sqlTaskAggMetrics.size
+      val taskInputSizeInMB = taskInputSizeInBytes / (1024 * 1024)
       if (taskInputSizeInMB > 0 &&
         taskInputSizeInMB < MIN_PARTITION_BYTES_RANGE_MB) {
         // Increase partition size
@@ -617,28 +642,33 @@ class AutoTuner(
           if (appInfo.isDefined) {
             calculateMaxPartitionBytes(maxPartitionBytes)
           } else {
-            maxPartitionBytes
+            s"${convertToMB(maxPartitionBytes)}"
           }
       }
     appendRecommendationForMemoryMB("spark.sql.files.maxPartitionBytes", res)
   }
 
-  private def recommendShufflePartitions(): Unit = {
+  /**
+   * Recommendations for "spark.sql.shuffle.partitions'.
+   * Note that this only recommend the default value for now.
+   * The logic to calculate teh recommendations based on spills is disabled for now.
+   */
+  def recommendShufflePartitions(): Unit = {
     val lookup = "spark.sql.shuffle.partitions"
-    var shufflePartitions =
+    val shufflePartitions =
       getPropertyValue(lookup).getOrElse(DEF_SHUFFLE_PARTITIONS).toInt
     // TODO: Need to look at other metrics for GPU spills (DEBUG mode), and batch sizes metric
-    if (appInfo.isDefined) {
-      val totalSpilledMetrics = appInfo.get.sqlTaskAggMetrics.map {
-        task => task.diskBytesSpilledSum + task.memoryBytesSpilledSum
-      }.sum
-      if (totalSpilledMetrics > 0) {
-        shufflePartitions *= DEF_SHUFFLE_PARTITION_MULTIPLIER
-        // Could be memory instead of partitions
-        appendOptionalComment(lookup,
-          s"'$lookup' should be increased since spilling occurred.")
-      }
-    }
+    //    if (appInfo.isDefined) {
+    //      val totalSpilledMetrics = appInfo.get.sqlTaskAggMetrics.map {
+    //        task => task.diskBytesSpilledSum + task.memoryBytesSpilledSum
+    //      }.sum
+    //      if (totalSpilledMetrics > 0) {
+    //        shufflePartitions *= DEF_SHUFFLE_PARTITION_MULTIPLIER
+    //        // Could be memory instead of partitions
+    //        appendOptionalComment(lookup,
+    //          s"'$lookup' should be increased since spilling occurred.")
+    //      }
+    //    }
     appendRecommendation("spark.sql.shuffle.partitions", s"$shufflePartitions")
   }
 
@@ -728,11 +758,8 @@ object AutoTuner extends Logging {
   val MAX_PARTITION_BYTES: String = "512m"
   val DEF_SHUFFLE_PARTITIONS = "200"
   val DEF_SHUFFLE_PARTITION_MULTIPLIER: Int = 2
-  // Default CPU cores when missing in cluster properties
-  val DEF_WORKER_CPU_CORES: Int = 16
-  // Default GPU count based on number of cores.
-  // GPU by default is to 1 for each 16 cores
-  val DEF_WORKER_CPU_SORES_PER_GPU = 16
+  // GPU count defaults to 1 if it is missing.
+  val DEF_WORKER_GPU_COUNT = 1
   val DEFAULT_WORKER_INFO_PATH = "./worker_info.yaml"
   val SUPPORTED_SIZE_UNITS: Seq[String] = Seq("b", "k", "m", "g", "t", "p")
 
@@ -779,6 +806,7 @@ object AutoTuner extends Logging {
 
   def loadClusterPropertiesFromContent(clusterProps: String): Option[ClusterProperties] = {
     val representer = new Representer
+    representer.getPropertyUtils.setSkipMissingProperties(true)
     val yamlObjNested = new Yaml(new Constructor(classOf[ClusterProperties]), representer)
     Option(yamlObjNested.load(clusterProps).asInstanceOf[ClusterProperties])
   }
