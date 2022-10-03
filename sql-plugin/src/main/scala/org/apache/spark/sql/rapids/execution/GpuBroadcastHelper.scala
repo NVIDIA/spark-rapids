@@ -41,9 +41,7 @@ object GpuBroadcastHelper {
                         broadcastSchema: StructType): ColumnarBatch = {
     broadcastRelation.value match {
       case broadcastBatch: SerializeConcatHostBuffersDeserializeBatch =>
-        val builtBatch = broadcastBatch.batch
-        GpuColumnVector.incRefCounts(builtBatch)
-        builtBatch
+        broadcastBatch.batch.getColumnarBatch()
       case v if SparkShimImpl.isEmptyRelation(v) =>
         GpuColumnVector.emptyBatch(broadcastSchema)
       case t =>
@@ -67,7 +65,7 @@ object GpuBroadcastHelper {
   def getBroadcastBatchNumRows(broadcastRelation: Broadcast[Any]): Int = {
     broadcastRelation.value match {
       case broadcastBatch: SerializeConcatHostBuffersDeserializeBatch =>
-        broadcastBatch.batch.numRows()
+        broadcastBatch.numRows
       case v if SparkShimImpl.isEmptyRelation(v) => 0
       case t =>
         throw new IllegalStateException(s"Invalid broadcast batch received $t")
