@@ -446,6 +446,13 @@ case class JobStageAggTaskMetricsProfileResult(
   }
 }
 
+case class SQLMaxTaskInputSizesOnGPU(
+    appIndex: Int,
+    appId: String,
+    // Not added to the output since it is used only by the AutoTuner
+    maxTaskInputBytesReadGpu: Double
+)
+
 case class SQLTaskAggMetricsProfileResult(
     appIndex: Int,
     appId: String,

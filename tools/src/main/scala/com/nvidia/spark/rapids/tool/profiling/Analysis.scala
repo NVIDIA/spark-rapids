@@ -312,6 +312,32 @@ class Analysis(apps: Seq[ApplicationInfo]) {
     }
   }
 
+  // not very efficient since aggregate things again, which is likely
+  // done already via sqlMetricsAggregation
+  def getMaxTaskInputSizeBytesOnGPU(): Seq[SQLMaxTaskInputSizesOnGPU] = {
+    apps.map { app =>
+      val maxOfSql = app.sqlIdToInfo.map { case (sqlId, _) =>
+        val jcs = app.jobIdToInfo.filter { case (_, jc) =>
+          jc.sqlID.getOrElse(-1) == sqlId
+        }
+        if (jcs.isEmpty) {
+          0L
+        } else {
+          val stageIdsForSQL = jcs.flatMap(_._2.stageIds).toSeq
+          val tasksInSQL = app.taskEnd.filter { tc =>
+            stageIdsForSQL.contains(tc.stageId)
+          }
+          if (tasksInSQL.isEmpty) {
+            0L
+          } else {
+            tasksInSQL.map(_.input_bytesRead).max
+          }
+        }
+      }.max
+      SQLMaxTaskInputSizesOnGPU(app.index, app.appId, maxOfSql)
+    }
+  }
+
   def sqlMetricsAggregationDurationAndCpuTime(): Seq[SQLDurationExecutorTimeProfileResult] = {
     val allRows = apps.flatMap { app =>
       app.sqlIdToInfo.map { case (sqlId, sqlCase) =>

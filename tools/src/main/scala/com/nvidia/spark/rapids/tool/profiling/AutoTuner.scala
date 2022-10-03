@@ -597,13 +597,42 @@ class AutoTuner(
    */
   private def calculateMaxPartitionBytes(maxPartitionBytes: String): String = {
     val app = appInfo.get
+    // Autotuner only supports a single app right now, so we get whatever value is here
+    val inputBytesOnGpuMax = if (app.maxTaskInputBytesReadGpu.nonEmpty) {
+      app.maxTaskInputBytesReadGpu.head.maxTaskInputBytesReadGpu
+    } else {
+      0.0
+    }
+
     val maxPartitionBytesNum = convertToMB(maxPartitionBytes)
+    val basedOnMax = if (inputBytesOnGpuMax > 0 &&
+      inputBytesOnGpuMax < MIN_PARTITION_BYTES_RANGE_MB) {
+      // Increase partition size
+      val calculatedMaxPartitionBytes = Math.min(
+        maxPartitionBytesNum *
+          (MIN_PARTITION_BYTES_RANGE_MB / maxPartitionBytesNum),
+        MAX_PARTITION_BYTES_BOUND_MB)
+      calculatedMaxPartitionBytes.toLong.toString
+    } else if (maxPartitionBytesNum > MAX_PARTITION_BYTES_RANGE_MB) {
+      // Decrease partition size
+      val calculatedMaxPartitionBytes = Math.min(
+        maxPartitionBytesNum /
+          (maxPartitionBytesNum / MAX_PARTITION_BYTES_RANGE_MB),
+        MAX_PARTITION_BYTES_BOUND_MB)
+      calculatedMaxPartitionBytes.toLong.toString
+    } else {
+      // Do not recommend maxPartitionBytes
+      null
+    }
+
+
     if (app.sqlTaskAggMetrics.isEmpty) { // avoid division by zero
       maxPartitionBytesNum.toString
     } else {
       val taskInputSizeInBytes =
         app.sqlTaskAggMetrics.map(_.inputBytesReadAvg).sum / app.sqlTaskAggMetrics.size
       val taskInputSizeInMB = taskInputSizeInBytes / (1024 * 1024)
+
       if (taskInputSizeInMB > 0 &&
         taskInputSizeInMB < MIN_PARTITION_BYTES_RANGE_MB) {
         // Increase partition size
@@ -624,6 +653,7 @@ class AutoTuner(
         null
       }
     }
+    basedOnMax
   }
 
   /**
