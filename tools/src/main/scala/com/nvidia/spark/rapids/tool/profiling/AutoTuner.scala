@@ -42,7 +42,7 @@ class GpuWorkerProps(
     @BeanProperty var count: Int,
     @BeanProperty var name: String) {
   def this() {
-    this("0b", 0, "None")
+    this("0m", 0, "None")
   }
   def isMissingInfo: Boolean = {
     count == 0 || memory.startsWith("0") || name == "None"
@@ -64,6 +64,23 @@ class GpuWorkerProps(
       false
     }
   }
+  def setDefaultGpuNameIfMissing(): Boolean = {
+    if (name == "None") {
+      name = AutoTuner.DEF_WORKER_GPU_NAME
+      true
+    } else {
+      false
+    }
+  }
+  def setDefaultGpuMemIfMissing(): Boolean = {
+    if (memory.startsWith("0")) {
+      memory = AutoTuner.DEF_WORKER_GPU_MEMORY_MB.getOrElse(getName, "0m")
+      true
+    } else {
+      false
+    }
+  }
+
   override def toString: String =
     s"{Count: $count, Memory: $memory, GpuDevice: $name}"
 }
@@ -78,27 +95,13 @@ class SystemClusterProps(
     @BeanProperty var memory: String,
     @BeanProperty var numWorkers: Int) {
   def this() {
-    this(0, "0b", 0)
+    this(0, "0m", 0)
   }
   def isMissingInfo: Boolean = {
     numCores == 0 || memory.startsWith("0") || numWorkers == 0
   }
   def isEmpty: Boolean = {
     numCores == 0 && memory.startsWith("0") && numWorkers == 0
-  }
-
-  /**
-   * Set the number of cores to default if it was 0.
-   *
-   * @return true if the value has been updated.
-   */
-  def setDefaultNumCoresIfMissing(coreNum: Int): Boolean = {
-    if (numCores == 0) {
-      numCores = coreNum
-      true
-    } else {
-      false
-    }
   }
   override def toString: String =
     s"{numCores: $numCores, Memory: $memory, numWorkers: $numWorkers}"
@@ -109,7 +112,8 @@ class SystemClusterProps(
  * The BeanProperty enables loading and parsing the YAML formatted content using the
  * Constructor SnakeYaml approach.
  *
- * @param system wrapper that includes the properties related to number of cores and memory.
+ * @param system wrapper that includes the properties related to system information like cores and
+ *               memory.
  * @param gpu wrapper that includes the properties related to GPU.
  * @param softwareProperties a set of software properties such as Spark properties.
  *                           The properties are typically loaded from the default cluster
@@ -151,7 +155,7 @@ class RecommendationEntry(val name: String, val originalValue: String, var recom
 
   private def getRawValue(arg: String): String = {
     if (arg != null && AutoTuner.containsMemoryUnits(arg)) {
-      // if it is memory return the bytesUnit
+      // if it is memory return the bytes unit
       s"${AutoTuner.convertFromHumanReadableSize(arg)}"
     } else {
       arg
@@ -245,7 +249,7 @@ class RecommendationEntry(val name: String, val originalValue: String, var recom
  *      - 'spark.executor.instances' should be set to (gpuCount * numWorkers).
  *      - 'spark.task.resource.gpu.amount' should be set to Max(1, (numCores / gpuCount)).
  *      - 'spark.rapids.sql.concurrentGpuTasks' should be set between [1, 4]
- *      - 'spark.rapids.memory.pinnedPool.size' should be set up to 4096m.
+ *      - 'spark.rapids.memory.pinnedPool.size' should be set up to 2048m.
  *      - 'spark.sql.adaptive.enabled' should be enabled for better performance.
  *
  * @param clusterProps The cluster properties including cores, mem, GPU, and software
@@ -262,9 +266,9 @@ class AutoTuner(
   var recommendations: mutable.LinkedHashMap[String, RecommendationEntry] =
     mutable.LinkedHashMap[String, RecommendationEntry]()
   // list of criteria to be skipped for recommendations
-  private var skipRecommendations: Option[Seq[String]] = None
+  private val skippedRecommendations: mutable.HashSet[String] = mutable.HashSet[String]()
   // When enabled, the profiler recommendations should only include updated settings.
-  var filterByUpdatedPropertiesEnabled: Boolean = true
+  private var filterByUpdatedPropertiesEnabled: Boolean = true
 
   private def findPropertyInProfPropertyResults(
       key: String,
@@ -304,11 +308,7 @@ class AutoTuner(
   }
 
   def appendRecommendation(key: String, value: String): Unit = {
-    val skip = skipRecommendations match {
-      case Some(seq) => seq.contains(key)
-      case None => false
-    }
-    if (!skip) {
+    if (!skippedRecommendations.contains(key)) {
       val recomRecord = recommendations.getOrElseUpdate(key,
         new RecommendationEntry(key, null, null))
       recomRecord.setRecommendedValue(value)
@@ -350,6 +350,7 @@ class AutoTuner(
 
   /**
    * calculated 'spark.executor.instances' based on number of gpus and workers.
+   * Assumption - cluster properties were updated to have a default values if missing.
    */
   def calcExecInstances(): Int = {
     clusterProps.gpu.getCount * clusterProps.system.numWorkers
@@ -377,16 +378,12 @@ class AutoTuner(
 
   /**
    * Recommendation for 'spark.executor.cores' based on number of cpu cores and gpus.
+   * Assumption - cluster properties were updated to have a default values if missing.
    */
   def calcNumExecutorCores: Int = {
+    // clusterProps.gpu.getCount can never be 0. This is verified in processPropsAndCheck()
     val executorsPerNode = clusterProps.gpu.getCount
-    if (executorsPerNode == 0) {
-      // Being extra caution about zero division.
-      // handling 0 and default value is processed in [[processPropsAndCheck]]
-      1
-    } else {
-      Math.max(1, clusterProps.system.getNumCores / executorsPerNode)
-    }
+    Math.max(1, clusterProps.system.getNumCores / executorsPerNode)
   }
 
   /**
@@ -394,11 +391,13 @@ class AutoTuner(
    */
   def calcTaskGPUAmount(numExecCoresCalculator: () => Int): Double = {
     val numExecutorCores =  numExecCoresCalculator.apply()
-    if (numExecutorCores == 0) 0.0 else 1.0 / numExecutorCores
+    // can never be 0 since numExecutorCores has to be at least 1
+    1.0 / numExecutorCores
   }
 
   /**
    * Recommendation for 'spark.rapids.sql.concurrentGpuTasks' based on gpu memory.
+   * Assumption - cluster properties were updated to have a default values if missing.
    */
   def calcGpuConcTasks(): Long = {
     Math.min(MAX_CONC_GPU_TASKS,
@@ -408,17 +407,14 @@ class AutoTuner(
   /**
    * Calculates the available memory for each executor on the worker based on the number of
    * executors per node and the memory.
+   * Assumption - cluster properties were updated to have a default values if missing.
    */
   private def calcAvailableMemPerExec(): Double = {
     // account for system overhead
     val usableWorkerMem =
       Math.max(0, convertToMB(clusterProps.system.memory) - DEF_SYSTEM_RESERVE_MB)
-    val executorsPerNode = clusterProps.gpu.getCount
-    if (executorsPerNode == 0) {
-      0.0
-    } else {
-      (1.0 * usableWorkerMem) / executorsPerNode
-    }
+    // clusterProps.gpu.getCount can never be 0. This is verified in processPropsAndCheck()
+    (1.0 * usableWorkerMem) / clusterProps.gpu.getCount
   }
 
   /**
@@ -553,13 +549,17 @@ class AutoTuner(
         appendComment(s"CPU properties is incomplete: ${clusterProps.system}.")
       }
       if (clusterProps.gpu.isMissingInfo) {
-        val gpuComment =
-          if (clusterProps.gpu.setDefaultGpuCountIfMissing()) {
-            s"GPU count is missing. Setting default to ${clusterProps.gpu.getCount}."
-          } else {
-            s"GPU properties is incomplete: ${clusterProps.gpu}."
-          }
-        appendComment(gpuComment)
+        if (clusterProps.gpu.setDefaultGpuCountIfMissing()) {
+          appendComment(s"GPU count is missing. Setting default to ${clusterProps.gpu.getCount}.")
+        }
+        // make sure the name is set correctly before checking the memory because the default
+        // memory is based on the GPU device
+        if (clusterProps.gpu.setDefaultGpuNameIfMissing()) {
+          appendComment(s"GPU device is missing. Setting default to ${clusterProps.gpu.getName}.")
+        }
+        if (clusterProps.gpu.setDefaultGpuMemIfMissing()) {
+          appendComment(s"GPU device is missing. Setting default to ${clusterProps.gpu.getMemory}.")
+        }
       }
       true
     }
@@ -673,11 +673,7 @@ class AutoTuner(
   }
 
   def appendOptionalComment(lookup: String, comment: String): Unit = {
-    val skip = skipRecommendations match {
-      case None => false
-      case Some(criteriaSeq) => criteriaSeq.contains(lookup)
-    }
-    if (!skip) {
+    if (!skippedRecommendations.contains(lookup)) {
       appendComment(comment)
     }
   }
@@ -690,8 +686,7 @@ class AutoTuner(
     clusterProps.toString
   }
 
-  private def toCommentProfileResult:
-  Seq[RecommendedCommentResult] = {
+  private def toCommentProfileResult: Seq[RecommendedCommentResult] = {
     comments.map(RecommendedCommentResult)
   }
 
@@ -720,7 +715,7 @@ class AutoTuner(
       skipList: Option[Seq[String]] = None, showOnlyUpdatedProps: Boolean = true):
       (Seq[RecommendedPropertyResult], Seq[RecommendedCommentResult]) = {
     filterByUpdatedPropertiesEnabled = showOnlyUpdatedProps
-    skipRecommendations = skipList
+    skipList.foreach(_ => skippedRecommendations.add(_))
     if (processPropsAndCheck) {
       initRecommendations()
       calculateRecommendations()
@@ -760,6 +755,12 @@ object AutoTuner extends Logging {
   val DEF_SHUFFLE_PARTITION_MULTIPLIER: Int = 2
   // GPU count defaults to 1 if it is missing.
   val DEF_WORKER_GPU_COUNT = 1
+  // GPU default device is T4
+  val DEF_WORKER_GPU_NAME = "T4"
+  // T4 default memory is 16G
+  // A100 set default to 40GB
+  val DEF_WORKER_GPU_MEMORY_MB: mutable.LinkedHashMap[String, String] =
+    mutable.LinkedHashMap[String, String]("T4"-> "16384m", "A100" -> "40960m")
   val DEFAULT_WORKER_INFO_PATH = "./worker_info.yaml"
   val SUPPORTED_SIZE_UNITS: Seq[String] = Seq("b", "k", "m", "g", "t", "p")
 
@@ -771,7 +772,7 @@ object AutoTuner extends Logging {
     "spark.task.resource.gpu.amount" ->
       "'spark.task.resource.gpu.amount' should be set to Max(1, (numCores / gpuCount)).",
     "spark.rapids.sql.concurrentGpuTasks" ->
-      s"'spark.rapids.sql.concurrentGpuTasks' should be set between [1, $MAX_CONC_GPU_TASKS]",
+      s"'spark.rapids.sql.concurrentGpuTasks' should be set to Max(4, (Gpu_memory / 8G)).",
     "spark.rapids.memory.pinnedPool.size" ->
       s"'spark.rapids.memory.pinnedPool.size' should be set up to ${MAX_PINNED_MEMORY_MB}m.",
     "spark.sql.adaptive.enabled" ->
