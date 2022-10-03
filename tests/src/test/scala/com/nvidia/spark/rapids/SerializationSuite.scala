@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,14 +18,20 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.Table
 import org.apache.commons.lang3.SerializationUtils
-import org.scalatest.FunSuite
+import org.scalatest.{BeforeAndAfterAll, FunSuite}
 
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.rapids.execution.{SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.types.{DoubleType, IntegerType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class SerializationSuite extends FunSuite with Arm {
+class SerializationSuite extends FunSuite
+  with BeforeAndAfterAll with Arm {
+
+  override def beforeAll(): Unit = {
+    RapidsBufferCatalog.setDeviceStorage(new RapidsDeviceMemoryStore())
+  }
+
   private def buildBatch(): ColumnarBatch = {
     withResource(new Table.TestBuilder()
         .column(5, null.asInstanceOf[java.lang.Integer], 3, 1, 1, 1, 1, 1, 1, 1)
@@ -68,12 +74,14 @@ class SerializationSuite extends FunSuite with Arm {
       val buffer = createDeserializedHostBuffer(gpuExpected)
       val hostBatch = new SerializeConcatHostBuffersDeserializeBatch(Array(buffer), attrs)
       withResource(hostBatch) { _ =>
-        val gpuBatch = hostBatch.batch
-        TestUtils.compareBatches(gpuExpected, gpuBatch)
+        withResource(hostBatch.batch.getColumnarBatch()) { gpuBatch =>
+          TestUtils.compareBatches(gpuExpected, gpuBatch)
+        }
         // clone via serialization after manifesting the GPU batch
         withResource(SerializationUtils.clone(hostBatch)) { clonedObj =>
-          val gpuClonedBatch = clonedObj.batch
-          TestUtils.compareBatches(gpuExpected, gpuClonedBatch)
+          withResource(clonedObj.batch.getColumnarBatch()) { gpuClonedBatch =>
+            TestUtils.compareBatches(gpuExpected, gpuClonedBatch)
+          }
           // try to clone it again from the cloned object
           SerializationUtils.clone(clonedObj).close()
         }
