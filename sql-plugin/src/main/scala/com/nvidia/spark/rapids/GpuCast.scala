@@ -632,16 +632,16 @@ object GpuCast extends Arm {
     }
 
     def getValue(s: Scalar): T = (s.getType match {
-        case DType.FLOAT64 => s.getDouble
-        case DType.FLOAT32 => s.getFloat
-        case DType.STRING => s.getJavaString
-        case dt if dt.isDecimalType => BigDecimal(s.getBigDecimal)
-        case dt if dt.isBackedByLong => s.getLong
-        case dt if dt.isBackedByInt => s.getInt
-        case dt if dt.isBackedByShort => s.getShort
-        case dt if dt.isBackedByByte => s.getByte
-        case _ => throw new IllegalArgumentException("Unsupported scalar type")
-      }).asInstanceOf[T]
+      case DType.FLOAT64 => s.getDouble
+      case DType.FLOAT32 => s.getFloat
+      case DType.STRING => s.getJavaString
+      case dt if dt.isDecimalType => BigDecimal(s.getBigDecimal)
+      case dt if dt.isBackedByLong => s.getLong
+      case dt if dt.isBackedByInt => s.getInt
+      case dt if dt.isBackedByShort => s.getShort
+      case dt if dt.isBackedByByte => s.getByte
+      case _ => throw new IllegalArgumentException("Unsupported scalar type")
+    }).asInstanceOf[T]
 
     withResource(values.min()) { minInput =>
       withResource(values.max()) { maxInput =>
