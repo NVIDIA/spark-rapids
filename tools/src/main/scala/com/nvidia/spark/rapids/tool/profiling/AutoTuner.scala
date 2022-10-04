@@ -584,8 +584,10 @@ class AutoTuner(
   }
 
   /**
-   * Calculate max partition bytes using task input size and existing setting for maxPartitionBytes.
-   * Note that this won't apply the same on iceberg.
+   * Calculate max partition bytes using the max task input size and existing setting
+   * for maxPartitionBytes. Note that this won't apply the same on iceberg.
+   * The max bytes here does not distinguish between GPU and CPU reads so we could
+   * improve that in the future.
    * Eg,
    * MIN_PARTITION_BYTES_RANGE = 128m, MAX_PARTITION_BYTES_RANGE = 256m
    * (1) Input:  maxPartitionBytes = 512m
@@ -603,10 +605,11 @@ class AutoTuner(
     } else {
       0.0
     }
-    logWarning(s"max is $inputBytesOnGpuMax")
-
     val maxPartitionBytesNum = convertToMB(maxPartitionBytes)
-    val basedOnMax = if (inputBytesOnGpuMax > 0 &&
+    if (inputBytesOnGpuMax == 0.0) {
+      maxPartitionBytesNum.toString
+    } else {
+    if (inputBytesOnGpuMax > 0 &&
       inputBytesOnGpuMax < MIN_PARTITION_BYTES_RANGE_MB) {
       // Increase partition size
       val calculatedMaxPartitionBytes = Math.min(
@@ -625,36 +628,7 @@ class AutoTuner(
       // Do not recommend maxPartitionBytes
       null
     }
-
-
-    if (app.sqlTaskAggMetrics.isEmpty) { // avoid division by zero
-      maxPartitionBytesNum.toString
-    } else {
-      val taskInputSizeInBytes =
-        app.sqlTaskAggMetrics.map(_.inputBytesReadAvg).sum / app.sqlTaskAggMetrics.size
-      val taskInputSizeInMB = taskInputSizeInBytes / (1024 * 1024)
-
-      if (taskInputSizeInMB > 0 &&
-        taskInputSizeInMB < MIN_PARTITION_BYTES_RANGE_MB) {
-        // Increase partition size
-        val calculatedMaxPartitionBytes = Math.min(
-          maxPartitionBytesNum *
-            (MIN_PARTITION_BYTES_RANGE_MB / taskInputSizeInMB),
-          MAX_PARTITION_BYTES_BOUND_MB)
-        calculatedMaxPartitionBytes.toLong.toString
-      } else if (taskInputSizeInMB > MAX_PARTITION_BYTES_RANGE_MB) {
-        // Decrease partition size
-        val calculatedMaxPartitionBytes = Math.min(
-          maxPartitionBytesNum /
-            (taskInputSizeInMB / MAX_PARTITION_BYTES_RANGE_MB),
-          MAX_PARTITION_BYTES_BOUND_MB)
-        calculatedMaxPartitionBytes.toLong.toString
-      } else {
-        // Do not recommend maxPartitionBytes
-        null
-      }
     }
-    basedOnMax
   }
 
   /**
