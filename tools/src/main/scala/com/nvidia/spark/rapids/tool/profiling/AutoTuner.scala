@@ -143,22 +143,34 @@ class ClusterProperties(
  * Wrapper to hold the recommendation of a given criterion.
  *
  * @param name the property label.
- * @param originalValue the value loaded from the spark properties.
+ * @param original the value loaded from the spark properties.
  * @param recommended the recommended value by the AutoTuner.
  */
-class RecommendationEntry(val name: String, val originalValue: String, var recommended: String) {
+class RecommendationEntry(val name: String,
+    val original: Option[String],
+    var recommended: Option[String]) {
+
   def setRecommendedValue(value: String): Unit = {
-    if (value != null) {
-      recommended = value
-    }
+    recommended = Option(value)
   }
 
-  private def getRawValue(arg: String): String = {
-    if (arg != null && AutoTuner.containsMemoryUnits(arg)) {
-      // if it is memory return the bytes unit
-      s"${AutoTuner.convertFromHumanReadableSize(arg)}"
-    } else {
-      arg
+  /**
+   * Used to compare between two properties by converting memory units to
+   * a equivalent representations.
+   * @param propValue property to be processed.
+   * @return the uniform representation of property.
+   *         For Memory, the value is converted to bytes.
+   */
+  private def getRawValue(propValue: Option[String]): Option[String] = {
+    propValue match {
+      case None => None
+      case Some(value) =>
+        if (AutoTuner.containsMemoryUnits(value)) {
+          // if it is memory return the bytes unit
+          Some(s"${AutoTuner.convertFromHumanReadableSize(value)}")
+        } else {
+          propValue
+        }
     }
   }
 
@@ -166,9 +178,14 @@ class RecommendationEntry(val name: String, val originalValue: String, var recom
    * Returns true when the recommendation is different than the original.
    */
   private def recommendsNewValue(): Boolean = {
-    val convertedOriginal = getRawValue(originalValue)
-    val convertedRecommended = getRawValue(recommended)
-    convertedOriginal != convertedRecommended
+    val originalVal = getRawValue(original)
+    val recommendedVal = getRawValue(recommended)
+    (originalVal, recommendedVal) match {
+      case (None, None) => false
+      case (Some(orig), Some(rec)) =>
+        orig != rec
+      case _ => true
+    }
   }
 
   /**
@@ -178,14 +195,14 @@ class RecommendationEntry(val name: String, val originalValue: String, var recom
    *                        recommendations
    */
   def isValid(filterByUpdated: Boolean): Boolean = {
-    if (recommended == null) { // no recommendations
-      false
-    } else {
-      if (filterByUpdated) { // filter enabled
-        recommendsNewValue()
-      } else {
-        true
-      }
+    recommended match {
+      case None => false
+      case _ =>
+        if (filterByUpdated) { // filter enabled
+          recommendsNewValue()
+        } else {
+          true
+        }
     }
   }
 }
@@ -265,10 +282,17 @@ class AutoTuner(
   var comments = new ListBuffer[String]()
   var recommendations: mutable.LinkedHashMap[String, RecommendationEntry] =
     mutable.LinkedHashMap[String, RecommendationEntry]()
-  // list of criteria to be skipped for recommendations
+  // list of recommendations to be skipped for recommendations
+  // Note that the recommendations will be computed anyway to avoid breaking dependencies.
   private val skippedRecommendations: mutable.HashSet[String] = mutable.HashSet[String]()
+  // list of recommendations having the calculations disabled, and only depend on default values
+  private val limitedLogicRecommendations: mutable.HashSet[String] = mutable.HashSet[String]()
   // When enabled, the profiler recommendations should only include updated settings.
   private var filterByUpdatedPropertiesEnabled: Boolean = true
+
+  private def isCalculationEnabled(prop: String) : Boolean = {
+    !limitedLogicRecommendations.contains(prop)
+  }
 
   private def findPropertyInProfPropertyResults(
       key: String,
@@ -300,8 +324,9 @@ class AutoTuner(
 
   def initRecommendations(): Unit = {
     recommendationsTarget.foreach { key =>
+      // no need to add new records if they are missing from props
       getPropertyValue(key).foreach { propVal =>
-        val recommendationVal = new RecommendationEntry(key, propVal, null)
+        val recommendationVal = new RecommendationEntry(key, Option(propVal), None)
         recommendations(key) = recommendationVal
       }
     }
@@ -310,11 +335,13 @@ class AutoTuner(
   def appendRecommendation(key: String, value: String): Unit = {
     if (!skippedRecommendations.contains(key)) {
       val recomRecord = recommendations.getOrElseUpdate(key,
-        new RecommendationEntry(key, null, null))
-      recomRecord.setRecommendedValue(value)
-      if (recomRecord.originalValue == null && value != null) {
-        // add a comment
-        appendComment(s"'$key' was not set.")
+        new RecommendationEntry(key, getPropertyValue(key), None))
+      if (value != null) {
+        recomRecord.setRecommendedValue(value)
+        if (recomRecord.original.isEmpty) {
+          // add a comment that the value was missing in the cluster properties
+          appendComment(s"'$key' was not set.")
+        }
       }
     }
   }
@@ -628,47 +655,50 @@ class AutoTuner(
 
   /**
    * Recommendation for 'spark.sql.files.maxPartitionBytes' based on input size for each task.
+   * Note that the logic can be disabled by adding the property to [[limitedLogicRecommendations]]
+   * which is one of the arguments of [[getRecommendedProperties()]].
    */
   private def recommendMaxPartitionBytes(): Unit = {
-    val res =
-      getPropertyValue("spark.sql.files.maxPartitionBytes") match {
-        case None =>
-          if (appInfo.isDefined) {
-            calculateMaxPartitionBytes(MAX_PARTITION_BYTES)
-          } else {
-            s"${convertToMB(MAX_PARTITION_BYTES)}"
-          }
-        case Some(maxPartitionBytes) =>
-          if (appInfo.isDefined) {
-            calculateMaxPartitionBytes(maxPartitionBytes)
-          } else {
-            s"${convertToMB(maxPartitionBytes)}"
-          }
+    val maxPartitionProp =
+      getPropertyValue("spark.sql.files.maxPartitionBytes").getOrElse(MAX_PARTITION_BYTES)
+    val recommended =
+      if (isCalculationEnabled("spark.sql.files.maxPartitionBytes")) {
+        appInfo match {
+          case None => s"${convertToMB(maxPartitionProp)}"
+          case Some(_) =>
+            calculateMaxPartitionBytes(maxPartitionProp)
+        }
+      } else {
+        s"${convertToMB(maxPartitionProp)}"
       }
-    appendRecommendationForMemoryMB("spark.sql.files.maxPartitionBytes", res)
+    appendRecommendationForMemoryMB("spark.sql.files.maxPartitionBytes", recommended)
   }
 
   /**
    * Recommendations for "spark.sql.shuffle.partitions'.
-   * Note that this only recommend the default value for now.
-   * The logic to calculate teh recommendations based on spills is disabled for now.
+   * Note that by default this only recommend the default value for now.
+   * To enable calculating recommendation based on spills, override the argument
+   * "limitedLogicList" passed to [[getRecommendedProperties()]].
+   *
    */
   def recommendShufflePartitions(): Unit = {
     val lookup = "spark.sql.shuffle.partitions"
-    val shufflePartitions =
+    var shufflePartitions =
       getPropertyValue(lookup).getOrElse(DEF_SHUFFLE_PARTITIONS).toInt
     // TODO: Need to look at other metrics for GPU spills (DEBUG mode), and batch sizes metric
-    //    if (appInfo.isDefined) {
-    //      val totalSpilledMetrics = appInfo.get.sqlTaskAggMetrics.map {
-    //        task => task.diskBytesSpilledSum + task.memoryBytesSpilledSum
-    //      }.sum
-    //      if (totalSpilledMetrics > 0) {
-    //        shufflePartitions *= DEF_SHUFFLE_PARTITION_MULTIPLIER
-    //        // Could be memory instead of partitions
-    //        appendOptionalComment(lookup,
-    //          s"'$lookup' should be increased since spilling occurred.")
-    //      }
-    //    }
+    if (isCalculationEnabled(lookup)) {
+      appInfo.foreach { app =>
+        val totalSpilledMetrics = app.sqlTaskAggMetrics.map { task =>
+          task.diskBytesSpilledSum + task.memoryBytesSpilledSum
+        }.sum
+        if (totalSpilledMetrics > 0) {
+          shufflePartitions *= DEF_SHUFFLE_PARTITION_MULTIPLIER
+          // Could be memory instead of partitions
+          appendOptionalComment(lookup,
+            s"'$lookup' should be increased since spilling occurred.")
+        }
+      }
+    }
     appendRecommendation("spark.sql.shuffle.partitions", s"$shufflePartitions")
   }
 
@@ -694,7 +724,7 @@ class AutoTuner(
     val finalRecommendations =
       recommendations.filter(elem => elem._2.isValid(filterByUpdatedPropertiesEnabled))
     finalRecommendations.collect {
-      case (key, record) => RecommendedPropertyResult(key, record.recommended)
+      case (key, record) => RecommendedPropertyResult(key, record.recommended.get)
     }.toSeq.sortBy(_.property)
   }
 
@@ -706,16 +736,28 @@ class AutoTuner(
    * 3- Null values are excluded.
    * 4- A comment is added for each missing property in the spark property.
    *
-   * @param skipList a list of recommendations to be skipped. If none, all recommendations are
-   *                 returned. Default is None.
+   * @param skipList a list of properties to be skipped. If none, all recommendations are
+   *                 returned. Note that the recommendations will be computed anyway internally
+   *                 in case there are dependencies between the recommendations.
+   *                 Default is empty.
+   * @param limitedLogicList a list of properties that will do simple recommendations based on
+   *                         static default values.
+   *                         Default is set to "spark.sql.shuffle.partitions".
    * @param showOnlyUpdatedProps When enabled, the profiler recommendations should only include
    *                             updated settings.
+   * @return pair of recommendations and comments. Both sequence can be empty.
    */
+
   def getRecommendedProperties(
-      skipList: Option[Seq[String]] = None, showOnlyUpdatedProps: Boolean = true):
+      skipList: Option[Seq[String]] = Some(Seq()),
+      limitedLogicList: Option[Seq[String]] = Some(Seq("spark.sql.shuffle.partitions")),
+      showOnlyUpdatedProps: Boolean = true):
       (Seq[RecommendedPropertyResult], Seq[RecommendedCommentResult]) = {
     filterByUpdatedPropertiesEnabled = showOnlyUpdatedProps
-    skipList.foreach(_ => skippedRecommendations.add(_))
+    limitedLogicList.foreach { limitedSeq =>
+      limitedSeq.foreach(_ => limitedLogicRecommendations.add(_))
+    }
+    skipList.foreach(skipSeq => skipSeq.foreach(_ => skippedRecommendations.add(_)))
     if (processPropsAndCheck) {
       initRecommendations()
       calculateRecommendations()
