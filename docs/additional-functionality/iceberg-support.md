@@ -56,6 +56,18 @@ The RAPIDS Accelerator does not support Apache Iceberg tables using the ORC data
 
 The RAPIDS Accelerator does not support Apache Iceberg tables using the Avro data format.
 
+
+### Reader Split Size
+
+The maximum number of bytes to pack into a single partition when reading files on Spark is normally
+controlled by the config `spark.files.maxPartitionBytes`. But on Iceberg that doesn't apply.
+Iceberg has its own configs to control the split size. See the read options in the
+ [Iceberg Runtime Configuration](https://iceberg.apache.org/docs/latest/spark-configuration/#runtime-configuration)
+documentation for details. One example is to use the `split-size` reader option like:
+```scala
+spark.read.option("split-size", "24217728").table("someTable")
+```
+
 ## Writing Tables
 
 The RAPIDS Accelerator for Apache Spark does not accelerate Apache Iceberg writes. Writes

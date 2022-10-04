@@ -51,12 +51,11 @@ class GpuWorkerProps(
     count == 0 && memory.startsWith("0") && name == "None"
   }
   /**
-   * If the GPU count is missing, it will set a default value based on the number of cores in the
-   * system. Adds GPU count for each 16 CPU core.
+   * If the GPU count is missing, it will set 1 as a default value
    *
    * @return true if the value has been updated.
    */
-  def setDefaultGpuCountIfMissing(): Boolean = {
+  def setDefaultGpuCountIfMissing: Boolean = {
     if (count == 0) {
       count = AutoTuner.DEF_WORKER_GPU_COUNT
       true
@@ -64,7 +63,7 @@ class GpuWorkerProps(
       false
     }
   }
-  def setDefaultGpuNameIfMissing(): Boolean = {
+  def setDefaultGpuNameIfMissing: Boolean = {
     if (name == "None") {
       name = AutoTuner.DEF_WORKER_GPU_NAME
       true
@@ -72,13 +71,40 @@ class GpuWorkerProps(
       false
     }
   }
-  def setDefaultGpuMemIfMissing(): Boolean = {
+
+  /**
+   * If the GPU memory is missing, it will sets a default valued based on the GPU device and the
+   * static HashMap [[AutoTuner.DEF_WORKER_GPU_MEMORY_MB]].
+   * If it is still missing, it sets a default to 16384m.
+   *
+   * @return true if the value has been updated.
+   */
+  def setDefaultGpuMemIfMissing: Boolean = {
     if (memory.startsWith("0")) {
-      memory = AutoTuner.DEF_WORKER_GPU_MEMORY_MB.getOrElse(getName, "0m")
+      memory = AutoTuner.DEF_WORKER_GPU_MEMORY_MB.getOrElse(getName, "1634m")
       true
     } else {
       false
     }
+  }
+
+  /**
+   * Sets any missing field and return a list of messages to indicate what has been updated.
+   * @return a list containing information of what was missing and the default value that has been
+   *         used to initialize the field.
+   */
+  def setMissingFields(): Seq[String] = {
+    val res = new ListBuffer[String]()
+    if (setDefaultGpuCountIfMissing) {
+      res += s"GPU count is missing. Setting default to $getCount."
+    }
+    if (setDefaultGpuNameIfMissing) {
+      res += s"GPU device is missing. Setting default to $getName."
+    }
+    if (setDefaultGpuMemIfMissing) {
+      res += s"GPU memory is missing. Setting default to $getMemory."
+    }
+    res
   }
 
   override def toString: String =
@@ -98,10 +124,32 @@ class SystemClusterProps(
     this(0, "0m", 0)
   }
   def isMissingInfo: Boolean = {
-    numCores == 0 || memory.startsWith("0") || numWorkers == 0
+    // keep for future expansion as we may add more fields later.
+    numWorkers <= 0
   }
   def isEmpty: Boolean = {
-    numCores == 0 && memory.startsWith("0") && numWorkers == 0
+    // consider the object incorrect if either numCores or memory are not set.
+    numCores <= 0 || memory.startsWith("0")
+  }
+  def setDefaultNumWorkersIfMissing(): Boolean = {
+    if (numWorkers <= 0) {
+      numWorkers = AutoTuner.DEF_NUM_WORKERS
+      true
+    } else {
+      false
+    }
+  }
+  /**
+   * Sets any missing field and return a list of messages to indicate what has been updated.
+   * @return a list containing information of what was missing and the default value that has been
+   *         used to initialize the field.
+   */
+  def setMissingFields(): Seq[String] = {
+    val res = new ListBuffer[String]()
+    if (setDefaultNumWorkersIfMissing()) {
+      res += s"Number of workers is missing. Setting default to $getNumWorkers."
+    }
+    res
   }
   override def toString: String =
     s"{numCores: $numCores, memory: $memory, numWorkers: $numWorkers}"
@@ -565,28 +613,18 @@ class AutoTuner(
    *         true if the missing information were updated to default initial values.
    */
   def processPropsAndCheck: Boolean = {
-    if (clusterProps.system.getNumCores <= 0) {
+    if (clusterProps.system.isEmpty) {
       if (!clusterProps.isEmpty) {
         appendComment(
-          s"Worker info has incorrect number of cores: ${clusterProps.system.getNumCores}.")
+          s"Incorrect values in worker system information: ${clusterProps.system}.")
       }
       false
     } else {
       if (clusterProps.system.isMissingInfo) {
-        appendComment(s"CPU properties is incomplete: ${clusterProps.system}.")
+        clusterProps.system.setMissingFields().foreach(m => appendComment(m))
       }
       if (clusterProps.gpu.isMissingInfo) {
-        if (clusterProps.gpu.setDefaultGpuCountIfMissing()) {
-          appendComment(s"GPU count is missing. Setting default to ${clusterProps.gpu.getCount}.")
-        }
-        // make sure the name is set correctly before checking the memory because the default
-        // memory is based on the GPU device
-        if (clusterProps.gpu.setDefaultGpuNameIfMissing()) {
-          appendComment(s"GPU device is missing. Setting default to ${clusterProps.gpu.getName}.")
-        }
-        if (clusterProps.gpu.setDefaultGpuMemIfMissing()) {
-          appendComment(s"GPU device is missing. Setting default to ${clusterProps.gpu.getMemory}.")
-        }
+        clusterProps.gpu.setMissingFields().foreach(m => appendComment(m))
       }
       true
     }
@@ -810,6 +848,8 @@ object AutoTuner extends Logging {
   // A100 set default to 40GB
   val DEF_WORKER_GPU_MEMORY_MB: mutable.LinkedHashMap[String, String] =
     mutable.LinkedHashMap[String, String]("T4"-> "16384m", "A100" -> "40960m")
+  // Default Number of Workers 1
+  val DEF_NUM_WORKERS = 1
   val DEFAULT_WORKER_INFO_PATH = "./worker_info.yaml"
   val SUPPORTED_SIZE_UNITS: Seq[String] = Seq("b", "k", "m", "g", "t", "p")
 

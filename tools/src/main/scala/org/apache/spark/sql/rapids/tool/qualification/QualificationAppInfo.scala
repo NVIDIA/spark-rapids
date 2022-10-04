@@ -34,7 +34,8 @@ class QualificationAppInfo(
     eventLogInfo: Option[EventLogInfo],
     hadoopConf: Option[Configuration] = None,
     pluginTypeChecker: PluginTypeChecker,
-    reportSqlLevel: Boolean)
+    reportSqlLevel: Boolean,
+    perSqlOnly: Boolean = false)
   extends AppBase(eventLogInfo, hadoopConf) with Logging {
 
   var appId: String = ""
@@ -43,7 +44,6 @@ class QualificationAppInfo(
   val writeDataFormat: ArrayBuffer[String] = ArrayBuffer[String]()
 
   var appInfo: Option[QualApplicationInfo] = None
-  val sqlStart: HashMap[Long, QualSQLExecutionInfo] = HashMap[Long, QualSQLExecutionInfo]()
 
   val sqlIDToTaskEndSum: HashMap[Long, StageTaskQualificationSummary] =
     HashMap.empty[Long, StageTaskQualificationSummary]
@@ -54,11 +54,9 @@ class QualificationAppInfo(
   val sqlIDtoFailures: HashMap[Long, ArrayBuffer[String]] = HashMap.empty[Long, ArrayBuffer[String]]
 
   val notSupportFormatAndTypes: HashMap[String, Set[String]] = HashMap[String, Set[String]]()
-  var sqlPlans: HashMap[Long, SparkPlanInfo] = HashMap.empty[Long, SparkPlanInfo]
 
   var clusterTags: String = ""
-
-  private lazy val eventProcessor =  new QualificationEventProcessor(this)
+  private lazy val eventProcessor =  new QualificationEventProcessor(this, perSqlOnly)
 
   /**
    * Get the event listener the qualification tool uses to process Spark events.
@@ -78,6 +76,20 @@ class QualificationAppInfo(
   override def processEvent(event: SparkListenerEvent): Boolean = {
     eventProcessor.processAnyEvent(event)
     false
+  }
+
+  override def cleanupStages(stageIds: Set[Int]): Unit = {
+    stageIds.foreach { stageId =>
+      stageIdToTaskEndSum.remove(stageId)
+      stageIdToSqlID.remove(stageId)
+    }
+    super.cleanupStages(stageIds)
+  }
+
+  override def cleanupSQL(sqlID: Long): Unit = {
+    sqlIDToTaskEndSum.remove(sqlID)
+    sqlIDtoFailures.remove(sqlID)
+    super.cleanupSQL(sqlID)
   }
 
   // time in ms
@@ -163,10 +175,10 @@ class QualificationAppInfo(
     }
   }
 
-  private def checkUnsupportedReadFormats(): Unit = {
+  protected def checkUnsupportedReadFormats(): Unit = {
     if (dataSourceInfo.size > 0) {
       dataSourceInfo.map { ds =>
-        val (readScore, nsTypes) = pluginTypeChecker.scoreReadDataTypes(ds.format, ds.schema)
+        val (_, nsTypes) = pluginTypeChecker.scoreReadDataTypes(ds.format, ds.schema)
         if (nsTypes.nonEmpty) {
           val currentFormat = notSupportFormatAndTypes.get(ds.format).getOrElse(Set.empty[String])
           notSupportFormatAndTypes(ds.format) = (currentFormat ++ nsTypes)
@@ -204,15 +216,6 @@ class QualificationAppInfo(
       } else {
         e.children.getOrElse(Seq.empty) :+ e
       }
-    }
-  }
-
-  private def getAllStagesForJobsInSqlQuery(sqlID: Long): Seq[Int] = {
-    val jobsIdsInSQLQuery = jobIdToSqlID.filter { case (_, sqlIdForJob) =>
-      sqlIdForJob == sqlID
-    }.keys.toSeq
-    jobsIdsInSQLQuery.flatMap { jId =>
-      jobIdToInfo(jId).stageIds
     }
   }
 
@@ -477,7 +480,7 @@ class QualificationAppInfo(
         sqlIDtoProblematic(sqlID) = existingIssues ++ issues
       }
       // Get the write data format
-      if (node.name.contains("InsertIntoHadoopFsRelationCommand")) {
+      if (!perSqlOnly && node.name.contains("InsertIntoHadoopFsRelationCommand")) {
         val writeFormat = node.desc.split(",")(2)
         writeDataFormat += writeFormat
       }
@@ -650,7 +653,7 @@ object QualificationAppInfo extends Logging {
       reportSqlLevel: Boolean): Option[QualificationAppInfo] = {
     val app = try {
         val app = new QualificationAppInfo(Some(path), Some(hadoopConf), pluginTypeChecker,
-          reportSqlLevel)
+          reportSqlLevel, false)
         logInfo(s"${path.eventLog.toString} has App: ${app.appId}")
         Some(app)
       } catch {

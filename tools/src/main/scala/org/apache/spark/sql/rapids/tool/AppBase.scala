@@ -54,6 +54,8 @@ abstract class AppBase(
   val sqlIDtoProblematic: HashMap[Long, Set[String]] = HashMap[Long, Set[String]]()
   // sqlId to sql info
   val sqlIdToInfo = new HashMap[Long, SQLExecutionInfoClass]()
+  // sqlPlans stores HashMap (sqlID <-> SparkPlanInfo)
+  var sqlPlans: HashMap[Long, SparkPlanInfo] = HashMap.empty[Long, SparkPlanInfo]
 
   // accum id to task stage accum info
   var taskStageAccumMap: HashMap[Long, ArrayBuffer[TaskStageAccumCase]] =
@@ -71,6 +73,58 @@ abstract class AppBase(
     val stage = stageIdToInfo.getOrElseUpdate((info.stageId, info.attemptNumber()),
       new StageInfoClass(info))
     stage
+  }
+
+  def getAllStagesForJobsInSqlQuery(sqlID: Long): Seq[Int] = {
+    val jobsIdsInSQLQuery = jobIdToSqlID.filter { case (_, sqlIdForJob) =>
+      sqlIdForJob == sqlID
+    }.keys.toSeq
+    jobsIdsInSQLQuery.flatMap { jId =>
+      jobIdToInfo.get(jId).map(_.stageIds)
+    }.flatten
+  }
+
+  def cleanupAccumId(accId: Long): Unit = {
+    taskStageAccumMap.remove(accId)
+    driverAccumMap.remove(accId)
+    accumulatorToStages.remove(accId)
+  }
+
+  def cleanupStages(stageIds: Set[Int]): Unit = {
+    // stageIdToInfo can have multiple stage attempts, remove all of them
+    stageIds.foreach { stageId =>
+      val toRemove = stageIdToInfo.keys.filter(_._1 == stageId)
+      toRemove.foreach(stageIdToInfo.remove(_))
+    }
+  }
+
+  def cleanupSQL(sqlID: Long): Unit = {
+    sqlIDToDataSetOrRDDCase.remove(sqlID)
+    sqlIDtoProblematic.remove(sqlID)
+    sqlIdToInfo.remove(sqlID)
+    sqlPlans.remove(sqlID)
+    val dsToRemove = dataSourceInfo.filter(_.sqlID == sqlID)
+    dsToRemove.foreach(dataSourceInfo -= _)
+
+    val jobsInSql = jobIdToSqlID.filter { case (_, sqlIdForJob) =>
+      sqlIdForJob == sqlID
+    }.keys
+    jobsInSql.foreach { jobId =>
+      // must call cleanupStage first
+      // clean when no other jobs need that stage
+      // not sure about races here but lets check the jobs and assume we can clean
+      // when none of them reference this stage
+      val stagesNotInOtherJobs = jobIdToInfo.get(jobId).map { jInfo =>
+        val stagesInJobToRemove = jInfo.stageIds.toSet
+        // check to make sure no other jobs reference the same stage
+        val allOtherJobs = jobIdToInfo - jobId
+        val allOtherStageIds = allOtherJobs.values.flatMap(_.stageIds).toSet
+        stagesInJobToRemove.filter(!allOtherStageIds.contains(_))
+      }
+      stagesNotInOtherJobs.foreach(cleanupStages(_))
+      jobIdToSqlID.remove(_)
+      jobIdToInfo.remove(_)
+    }
   }
 
   def processEvent(event: SparkListenerEvent): Boolean

@@ -206,9 +206,6 @@ class ApplicationInfo(
   var appInfo: ApplicationCase = null
   var appId: String = ""
 
-  // sqlPlan stores HashMap (sqlID <-> SparkPlanInfo)
-  var sqlPlan: mutable.HashMap[Long, SparkPlanInfo] = mutable.HashMap.empty[Long, SparkPlanInfo]
-
   // physicalPlanDescription stores HashMap (sqlID <-> physicalPlanDescription)
   var physicalPlanDescription: mutable.HashMap[Long, String] = mutable.HashMap.empty[Long, String]
 
@@ -243,7 +240,7 @@ class ApplicationInfo(
 
   // Connects Operators to Stages using AccumulatorIDs
   def connectOperatorToStage(): Unit = {
-    for ((sqlId, planInfo) <- sqlPlan) {
+    for ((sqlId, planInfo) <- sqlPlans) {
       val planGraph = SparkPlanGraph(planInfo)
       // Maps stages to operators by checking for non-zero intersection
       // between nodeMetrics and stageAccumulateIDs
@@ -260,7 +257,7 @@ class ApplicationInfo(
    */
   def processSQLPlanMetrics(): Unit = {
     connectOperatorToStage()
-    for ((sqlID, planInfo) <- sqlPlan) {
+    for ((sqlID, planInfo) <- sqlPlans) {
       checkMetadataForReadSchema(sqlID, planInfo)
       val planGraph = SparkPlanGraph(planInfo)
       // SQLPlanMetric is a case Class of
@@ -344,7 +341,7 @@ class ApplicationInfo(
         val nodeIds = sqlPlanNodeIdToStageIds.filter { case (_, v) =>
           v.contains(s)
         }.keys.toSeq
-        val nodeNames = sqlPlan.get(j.sqlID.get).map { planInfo =>
+        val nodeNames = sqlPlans.get(j.sqlID.get).map { planInfo =>
           val nodes = SparkPlanGraph(planInfo).allNodes
           val validNodes = nodes.filter { n =>
             nodeIds.contains((j.sqlID.get, n.id))
