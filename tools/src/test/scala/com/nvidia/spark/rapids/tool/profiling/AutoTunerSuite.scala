@@ -40,7 +40,7 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
       "spark.executor.memoryOverhead" -> "7372m",
       "spark.executorEnv.OPENBLAS_NUM_THREADS" -> "1",
       "spark.extraListeners" -> "com.google.cloud.spark.performance.DataprocMetricsListener",
-      "spark.rapids.memory.pinnedPool.size" -> "4096m",
+      "spark.rapids.memory.pinnedPool.size" -> "2048m",
       "spark.scheduler.mode" -> "FAIR",
       "spark.sql.cbo.enabled" -> "true",
       "spark.sql.adaptive.enabled" -> "true",
