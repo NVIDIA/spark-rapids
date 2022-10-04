@@ -665,28 +665,28 @@ class AutoTuner(
   private def calculateMaxPartitionBytes(maxPartitionBytes: String): String = {
     val app = appInfo.get
     // Autotuner only supports a single app right now, so we get whatever value is here
-    val inputBytesOnGpuMax = if (app.maxTaskInputBytesRead.nonEmpty) {
+    val inputBytesMax = if (app.maxTaskInputBytesRead.nonEmpty) {
       app.maxTaskInputBytesRead.head.maxTaskInputBytesRead / 1024 / 1024
     } else {
       0.0
     }
     val maxPartitionBytesNum = convertToMB(maxPartitionBytes)
-    if (inputBytesOnGpuMax == 0.0) {
+    if (inputBytesMax == 0.0) {
       maxPartitionBytesNum.toString
     } else {
-      if (inputBytesOnGpuMax > 0 &&
-        inputBytesOnGpuMax < MIN_PARTITION_BYTES_RANGE_MB) {
+      if (inputBytesMax > 0 &&
+        inputBytesMax < MIN_PARTITION_BYTES_RANGE_MB) {
         // Increase partition size
         val calculatedMaxPartitionBytes = Math.min(
           maxPartitionBytesNum *
-            (MIN_PARTITION_BYTES_RANGE_MB / inputBytesOnGpuMax),
+            (MIN_PARTITION_BYTES_RANGE_MB / inputBytesMax),
           MAX_PARTITION_BYTES_BOUND_MB)
         calculatedMaxPartitionBytes.toLong.toString
-      } else if (inputBytesOnGpuMax > MAX_PARTITION_BYTES_RANGE_MB) {
+      } else if (inputBytesMax > MAX_PARTITION_BYTES_RANGE_MB) {
         // Decrease partition size
         val calculatedMaxPartitionBytes = Math.min(
           maxPartitionBytesNum /
-            (inputBytesOnGpuMax / MAX_PARTITION_BYTES_RANGE_MB),
+            (inputBytesMax / MAX_PARTITION_BYTES_RANGE_MB),
           MAX_PARTITION_BYTES_BOUND_MB)
         calculatedMaxPartitionBytes.toLong.toString
       } else {
