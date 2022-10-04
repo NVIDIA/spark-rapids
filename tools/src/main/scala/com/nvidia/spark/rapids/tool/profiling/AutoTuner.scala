@@ -55,7 +55,7 @@ class GpuWorkerProps(
    *
    * @return true if the value has been updated.
    */
-  def setDefaultGpuCountIfMissing(): Boolean = {
+  def setDefaultGpuCountIfMissing: Boolean = {
     if (count == 0) {
       count = AutoTuner.DEF_WORKER_GPU_COUNT
       true
@@ -63,7 +63,7 @@ class GpuWorkerProps(
       false
     }
   }
-  def setDefaultGpuNameIfMissing(): Boolean = {
+  def setDefaultGpuNameIfMissing: Boolean = {
     if (name == "None") {
       name = AutoTuner.DEF_WORKER_GPU_NAME
       true
@@ -74,12 +74,12 @@ class GpuWorkerProps(
 
   /**
    * If the GPU memory is missing, it will sets a default valued based on the GPU device and the
-   * static HashMap[[DEF_WORKER_GPU_MEMORY_MB]].
+   * static HashMap [[AutoTuner.DEF_WORKER_GPU_MEMORY_MB]].
    * If it is still missing, it sets a default to 16384m.
    *
    * @return true if the value has been updated.
    */
-  def setDefaultGpuMemIfMissing(): Boolean = {
+  def setDefaultGpuMemIfMissing: Boolean = {
     if (memory.startsWith("0")) {
       memory = AutoTuner.DEF_WORKER_GPU_MEMORY_MB.getOrElse(getName, "1634m")
       true
@@ -95,14 +95,14 @@ class GpuWorkerProps(
    */
   def setMissingFields(): Seq[String] = {
     val res = new ListBuffer[String]()
-    if (setDefaultGpuCountIfMissing()) {
-      res += s"GPU count is missing. Setting default to ${getCount}."
+    if (setDefaultGpuCountIfMissing) {
+      res += s"GPU count is missing. Setting default to $getCount."
     }
     if (setDefaultGpuNameIfMissing) {
-      res += s"GPU device is missing. Setting default to ${getName}."
+      res += s"GPU device is missing. Setting default to $getName."
     }
     if (setDefaultGpuMemIfMissing) {
-      res += s"GPU memory is missing. Setting default to ${getMemory}."
+      res += s"GPU memory is missing. Setting default to $getMemory."
     }
     res
   }
@@ -147,7 +147,7 @@ class SystemClusterProps(
   def setMissingFields(): Seq[String] = {
     val res = new ListBuffer[String]()
     if (setDefaultNumWorkersIfMissing()) {
-      res += s"Number of workers is missing. Setting default to ${getNumWorkers}."
+      res += s"Number of workers is missing. Setting default to $getNumWorkers."
     }
     res
   }
@@ -621,10 +621,10 @@ class AutoTuner(
       false
     } else {
       if (clusterProps.system.isMissingInfo) {
-        clusterProps.system.setMissingFields.foreach(m => appendComment(m))
+        clusterProps.system.setMissingFields().foreach(m => appendComment(m))
       }
       if (clusterProps.gpu.isMissingInfo) {
-        clusterProps.gpu.setMissingFields.foreach(m => appendComment(m))
+        clusterProps.gpu.setMissingFields().foreach(m => appendComment(m))
       }
       true
     }
