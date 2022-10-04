@@ -40,7 +40,7 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
       "spark.executor.memoryOverhead" -> "7372m",
       "spark.executorEnv.OPENBLAS_NUM_THREADS" -> "1",
       "spark.extraListeners" -> "com.google.cloud.spark.performance.DataprocMetricsListener",
-      "spark.rapids.memory.pinnedPool.size" -> "4096m",
+      "spark.rapids.memory.pinnedPool.size" -> "2048m",
       "spark.scheduler.mode" -> "FAIR",
       "spark.sql.cbo.enabled" -> "true",
       "spark.sql.adaptive.enabled" -> "true",
@@ -50,18 +50,18 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   private def buildWorkerInfoAsString(
-      customProps: Option[mutable.Map[String, String]]): String = {
-    val gpuWorkerProps = new GpuWorkerProps("122880MiB", 2, "T4")
-    val cpuSystem = new SystemClusterProps(32, "122880MiB", 4)
+      customProps: Option[mutable.Map[String, String]] = None,
+      numCores: Option[Int] = Some(32),
+      gpuCount: Option[Int] = Some(2)): String = {
+    val gpuWorkerProps = new GpuWorkerProps("122880MiB", gpuCount.getOrElse(2), "T4")
+    val cpuSystem = new SystemClusterProps(numCores.getOrElse(32), "122880MiB", 4)
     val systemProperties = customProps match {
-      case None => defaultDataprocProps
-      case Some(newProps) => defaultDataprocProps.++(newProps)
+      case None => mutable.Map[String, String]()
+      case Some(newProps) => newProps
       }
     val convertedMap = new util.LinkedHashMap[String, String](systemProperties.asJava)
-    val clusterProps = {
-      new ClusterProperties(cpuSystem, gpuWorkerProps, convertedMap)
-      // set the options to convert the object into formatted yaml content
-    }
+    val clusterProps = new ClusterProperties(cpuSystem, gpuWorkerProps, convertedMap)
+    // set the options to convert the object into formatted yaml content
     val options = new DumperOptions()
     options.setIndent(2)
     options.setPrettyFlow(true)
@@ -84,22 +84,77 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
           |- 'spark.executor.memory' should be set to at least 2GB/core.
           |- 'spark.executor.instances' should be set to (gpuCount * numWorkers).
           |- 'spark.task.resource.gpu.amount' should be set to Max(1, (numCores / gpuCount)).
-          |- 'spark.rapids.sql.concurrentGpuTasks' should be set between [1, 4]
-          |- 'spark.rapids.memory.pinnedPool.size' should be set up to 4096m.
+          |- 'spark.rapids.sql.concurrentGpuTasks' should be set to Max(4, (gpuMemory / 8G)).
+          |- 'spark.rapids.memory.pinnedPool.size' should be set to 2048m.
           |- 'spark.sql.adaptive.enabled' should be enabled for better performance.
           |""".stripMargin
     assert(expectedResults == autoTunerOutput)
   }
 
-  test("test T4 dataproc cluster with dynamicAllocation enabled") {
-    val dataprocWorkerInfo = buildWorkerInfoAsString(Some(mutable.LinkedHashMap(
+  test("Load cluster properties with missing CPU cores") {
+    val dataprocWorkerInfo = buildWorkerInfoAsString(None, Some(0))
+    val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, None)
+    val (properties, comments) = autoTuner.getRecommendedProperties()
+    val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
+    val expectedResults =
+      s"""|Cannot recommend properties. See Comments.
+          |
+          |Comments:
+          |- Worker info has incorrect number of cores: 0.
+          |- 'spark.executor.memory' should be set to at least 2GB/core.
+          |- 'spark.executor.instances' should be set to (gpuCount * numWorkers).
+          |- 'spark.task.resource.gpu.amount' should be set to Max(1, (numCores / gpuCount)).
+          |- 'spark.rapids.sql.concurrentGpuTasks' should be set to Max(4, (gpuMemory / 8G)).
+          |- 'spark.rapids.memory.pinnedPool.size' should be set to 2048m.
+          |- 'spark.sql.adaptive.enabled' should be enabled for better performance.
+          |""".stripMargin
+    assert(expectedResults == autoTunerOutput)
+  }
+
+  test("Load cluster properties with missing GPU count") {
+    // the gpuCount should default to 1
+    val customProps = mutable.LinkedHashMap(
       "spark.executor.cores" -> "16",
       "spark.executor.memory" -> "32768m",
       "spark.executor.memoryOverhead" -> "7372m",
       "spark.rapids.memory.pinnedPool.size" -> "4096m",
       "spark.rapids.sql.concurrentGpuTasks" -> "2",
       "spark.sql.files.maxPartitionBytes" -> "512m",
-      "spark.task.resource.gpu.amount" -> "0.0625")))
+      "spark.task.resource.gpu.amount" -> "0.0625")
+    val sparkProps = defaultDataprocProps.++(customProps)
+    val dataprocWorkerInfo = buildWorkerInfoAsString(Some(sparkProps),
+      Some(32), Some(0))
+    val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, None)
+    val (properties, comments) = autoTuner.getRecommendedProperties()
+    val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
+    val expectedResults =
+      s"""|
+          |Spark Properties:
+          |--conf spark.executor.cores=32
+          |--conf spark.executor.memory=65536m
+          |--conf spark.executor.memoryOverhead=10649m
+          |--conf spark.rapids.sql.concurrentGpuTasks=4
+          |--conf spark.sql.shuffle.partitions=200
+          |--conf spark.task.resource.gpu.amount=0.03125
+          |
+          |Comments:
+          |- GPU count is missing. Setting default to 1.
+          |- 'spark.sql.shuffle.partitions' was not set.
+          |""".stripMargin
+    assert(expectedResults == autoTunerOutput)
+  }
+
+  test("test T4 dataproc cluster with dynamicAllocation enabled") {
+    val customProps = mutable.LinkedHashMap(
+      "spark.executor.cores" -> "16",
+      "spark.executor.memory" -> "32768m",
+      "spark.executor.memoryOverhead" -> "7372m",
+      "spark.rapids.memory.pinnedPool.size" -> "4096m",
+      "spark.rapids.sql.concurrentGpuTasks" -> "2",
+      "spark.sql.files.maxPartitionBytes" -> "512m",
+      "spark.task.resource.gpu.amount" -> "0.0625")
+    val sparkProps = defaultDataprocProps.++(customProps)
+    val dataprocWorkerInfo = buildWorkerInfoAsString(Some(sparkProps))
     val expectedResults =
       s"""|
           |Spark Properties:
@@ -118,7 +173,7 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
   // This mainly to test that the executorInstances will be calculated when the dynamic allocation
   // is missing.
   test("test T4 dataproc cluster with missing dynamic allocation") {
-    val dataprocWorkerInfo = buildWorkerInfoAsString(Some(mutable.LinkedHashMap(
+    val customProps = mutable.LinkedHashMap(
       "spark.dynamicAllocation.enabled" -> "false",
       "spark.executor.cores" -> "16",
       "spark.executor.memory" -> "32768m",
@@ -126,7 +181,9 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
       "spark.rapids.memory.pinnedPool.size" -> "4096m",
       "spark.rapids.sql.concurrentGpuTasks" -> "2",
       "spark.sql.files.maxPartitionBytes" -> "512m",
-      "spark.task.resource.gpu.amount" -> "0.0625")))
+      "spark.task.resource.gpu.amount" -> "0.0625")
+    val sparkProps = defaultDataprocProps.++(customProps)
+    val dataprocWorkerInfo = buildWorkerInfoAsString(Some(sparkProps))
     val expectedResults =
       s"""|
           |Spark Properties:
@@ -140,6 +197,40 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, None)
     val (properties, comments) = autoTuner.getRecommendedProperties()
     val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
+    assert(expectedResults == autoTunerOutput)
+  }
+
+  test("test AutoTuner with empty sparkProperties" ) {
+    val dataprocWorkerInfo = buildWorkerInfoAsString(None)
+    val expectedResults =
+      s"""|
+          |Spark Properties:
+          |--conf spark.executor.cores=16
+          |--conf spark.executor.instances=8
+          |--conf spark.executor.memory=32768m
+          |--conf spark.executor.memoryOverhead=7372m
+          |--conf spark.rapids.memory.pinnedPool.size=4096m
+          |--conf spark.rapids.sql.concurrentGpuTasks=4
+          |--conf spark.sql.files.maxPartitionBytes=512m
+          |--conf spark.sql.shuffle.partitions=200
+          |--conf spark.task.resource.gpu.amount=0.0625
+          |
+          |Comments:
+          |- 'spark.executor.instances' was not set.
+          |- 'spark.executor.cores' was not set.
+          |- 'spark.task.resource.gpu.amount' was not set.
+          |- 'spark.rapids.sql.concurrentGpuTasks' was not set.
+          |- 'spark.executor.memory' was not set.
+          |- 'spark.rapids.memory.pinnedPool.size' was not set.
+          |- 'spark.executor.memoryOverhead' was not set.
+          |- 'spark.sql.files.maxPartitionBytes' was not set.
+          |- 'spark.sql.shuffle.partitions' was not set.
+          |- 'spark.sql.adaptive.enabled' should be enabled for better performance.
+          |""".stripMargin
+    val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, None)
+    val (properties, comments) = autoTuner.getRecommendedProperties()
+    val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
+    println(autoTunerOutput)
     assert(expectedResults == autoTunerOutput)
   }
 }
