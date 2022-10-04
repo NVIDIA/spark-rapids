@@ -394,7 +394,7 @@ abstract class GpuTextBasedPartitionReader(
   }
 
   def castStringToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
-    CastStrings.toDecimal(input, false, dt.precision, dt.scale)
+    CastStrings.toDecimal(input, false, dt.precision, -dt.scale)
   }
 
   def castStringToInt(input: ColumnVector, intType: DType): ColumnVector = {
