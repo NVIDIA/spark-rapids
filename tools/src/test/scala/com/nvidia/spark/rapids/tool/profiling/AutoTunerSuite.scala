@@ -84,8 +84,8 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
           |- 'spark.executor.memory' should be set to at least 2GB/core.
           |- 'spark.executor.instances' should be set to (gpuCount * numWorkers).
           |- 'spark.task.resource.gpu.amount' should be set to Max(1, (numCores / gpuCount)).
-          |- 'spark.rapids.sql.concurrentGpuTasks' should be set to Max(4, (Gpu_memory / 8G)).
-          |- 'spark.rapids.memory.pinnedPool.size' should be set up to 4096m.
+          |- 'spark.rapids.sql.concurrentGpuTasks' should be set to Max(4, (gpuMemory / 8G)).
+          |- 'spark.rapids.memory.pinnedPool.size' should be set to 2048m.
           |- 'spark.sql.adaptive.enabled' should be enabled for better performance.
           |""".stripMargin
     assert(expectedResults == autoTunerOutput)
@@ -104,8 +104,8 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
           |- 'spark.executor.memory' should be set to at least 2GB/core.
           |- 'spark.executor.instances' should be set to (gpuCount * numWorkers).
           |- 'spark.task.resource.gpu.amount' should be set to Max(1, (numCores / gpuCount)).
-          |- 'spark.rapids.sql.concurrentGpuTasks' should be set to Max(4, (Gpu_memory / 8G)).
-          |- 'spark.rapids.memory.pinnedPool.size' should be set up to 4096m.
+          |- 'spark.rapids.sql.concurrentGpuTasks' should be set to Max(4, (gpuMemory / 8G)).
+          |- 'spark.rapids.memory.pinnedPool.size' should be set to 2048m.
           |- 'spark.sql.adaptive.enabled' should be enabled for better performance.
           |""".stripMargin
     assert(expectedResults == autoTunerOutput)

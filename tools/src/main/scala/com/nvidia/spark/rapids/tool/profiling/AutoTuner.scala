@@ -265,8 +265,8 @@ class RecommendationEntry(val name: String,
  *      - 'spark.executor.memory' should be set to at least 2GB/core.
  *      - 'spark.executor.instances' should be set to (gpuCount * numWorkers).
  *      - 'spark.task.resource.gpu.amount' should be set to Max(1, (numCores / gpuCount)).
- *      - 'spark.rapids.sql.concurrentGpuTasks' should be set between [1, 4]
- *      - 'spark.rapids.memory.pinnedPool.size' should be set up to 2048m.
+ *      - 'spark.rapids.sql.concurrentGpuTasks' should be set to Max(4, (gpuMemory / 8G)).
+ *      - 'spark.rapids.memory.pinnedPool.size' should be set to 2048m.
  *      - 'spark.sql.adaptive.enabled' should be enabled for better performance.
  *
  * @param clusterProps The cluster properties including cores, mem, GPU, and software
@@ -786,6 +786,8 @@ object AutoTuner extends Logging {
   val DEF_HEAP_PER_CORE_MB: Long = 2 * 1024L
   // Maximum amount of pinned memory to use per executor in MB
   val MAX_PINNED_MEMORY_MB: Long = 4 * 1024L
+  // Default pinned memory to use per executor in MB
+  val DEF_PINNED_MEMORY_MB: Long = 2 * 1024L
   // value in MB
   val MIN_PARTITION_BYTES_RANGE_MB = 128L
   // value in MB
@@ -814,9 +816,9 @@ object AutoTuner extends Logging {
     "spark.task.resource.gpu.amount" ->
       "'spark.task.resource.gpu.amount' should be set to Max(1, (numCores / gpuCount)).",
     "spark.rapids.sql.concurrentGpuTasks" ->
-      s"'spark.rapids.sql.concurrentGpuTasks' should be set to Max(4, (Gpu_memory / 8G)).",
+      s"'spark.rapids.sql.concurrentGpuTasks' should be set to Max(4, (gpuMemory / 8G)).",
     "spark.rapids.memory.pinnedPool.size" ->
-      s"'spark.rapids.memory.pinnedPool.size' should be set up to ${MAX_PINNED_MEMORY_MB}m.",
+      s"'spark.rapids.memory.pinnedPool.size' should be set to ${DEF_PINNED_MEMORY_MB}m.",
     "spark.sql.adaptive.enabled" ->
       "'spark.sql.adaptive.enabled' should be enabled for better performance.")
 
