@@ -18,11 +18,10 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, ContiguousTable, DType, NvtxColor, NvtxRange, OrderByArg, Table}
+import ai.rapids.cudf.{ColumnVector, ContiguousTable, DType, NvtxColor, NvtxRange, OrderByArg, Scalar, Table}
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, Generator, ReplicateRows}
@@ -238,7 +237,7 @@ case class GpuReplicateRows(children: Seq[Expression]) extends GpuGenerator with
   }
 }
 
-abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGenerator with Logging {
+abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGenerator {
 
   /** The position of an element within the collection should also be returned. */
   def position: Boolean
@@ -296,7 +295,7 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
         tbl.rowBitCount()
       }
       withResource(bits) { _ =>
-        withResource(ai.rapids.cudf.Scalar.fromLong(8)) { toBytes =>
+        withResource(Scalar.fromLong(8)) { toBytes =>
           bits.trueDiv(toBytes, DType.INT64)
         }
       }
