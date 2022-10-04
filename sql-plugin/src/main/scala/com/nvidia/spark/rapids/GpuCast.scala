@@ -475,7 +475,7 @@ object GpuCast extends Arm {
           }
         }
       case (StringType, dt: DecimalType) =>
-      CastStrings.toDecimal(input, ansiMode, dt.precision, -dt.scale)
+        CastStrings.toDecimal(input, ansiMode, dt.precision, -dt.scale)
 
       case (ByteType | ShortType | IntegerType | LongType, dt: DecimalType) =>
         castIntegralsToDecimal(input, dt, ansiMode)
