@@ -106,12 +106,12 @@ function read_system_properties() {
 function write_system_properties() {
   cat > "$OUTPUT_FILE" << EOF
 system:
-  num_cores: $numCores
-  cpu_arch: $cpuArch
+  numCores: $numCores
+  cpuArch: $cpuArch
   memory: $memInGb
-  free_disk_space: $freeDiskSpaceInGb
-  time_zone: $timeZone
-  num_workers: $NUM_WORKERS
+  freeDiskSpace: $freeDiskSpaceInGb
+  timeZone: $timeZone
+  numWorkers: $NUM_WORKERS
 gpu:
   count: $gpuCount
   memory: $gpuMemoryInMb

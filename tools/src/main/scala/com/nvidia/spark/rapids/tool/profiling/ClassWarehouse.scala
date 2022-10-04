@@ -633,10 +633,6 @@ case class WholeStageCodeGenResults(
   }
 }
 
-case class GpuProps(count: Int, memory: String, name: String)
-case class SystemProps(numCores: Int, cpuArch: String, memory: String,
-    diskSpace: String, timeZone: String, numWorkers: Option[Int], gpuProps: GpuProps)
-
 case class RecommendedPropertyResult(property: String, value: String){
   override def toString: String = "--conf %s=%s".format(property, value)
 }
