@@ -23,6 +23,7 @@ import scala.math.max
 
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, NvtxColor, NvtxRange, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.DateUtils.{toStrf, TimestampFormatConversionException}
+import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.GpuTypeShims
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -223,8 +224,7 @@ abstract class GpuTextBasedPartitionReader(
                 case DataTypes.DoubleType =>
                   castStringToFloat(table.getColumn(i), DType.FLOAT64)
                 case dt: DecimalType =>
-                  com.nvidia.spark.rapids.jni.CastStrings.toDecimal(
-                    table.getColumn(i), false, dt.precision, dt.scale)
+                  castStringToDecimal(table.getColumn(i), dt)
                 case DataTypes.DateType =>
                   castStringToDate(table.getColumn(i), DType.TIMESTAMP_DAYS, failOnInvalid = true)
                 case DataTypes.TimestampType =>
@@ -391,6 +391,10 @@ abstract class GpuTextBasedPartitionReader(
 
   def castStringToFloat(input: ColumnVector, dt: DType): ColumnVector = {
     GpuCast.castStringToFloats(input, ansiEnabled = false, dt)
+  }
+
+  def castStringToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
+    CastStrings.toDecimal(input, false, dt.precision, dt.scale)
   }
 
   def castStringToInt(input: ColumnVector, intType: DType): ColumnVector = {

@@ -385,6 +385,12 @@ class JsonPartitionReader(
     }
   }
 
+  override def castStringToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
+    withResource(sanitizeNumbers(input)) { sanitizedInput =>
+      super.castStringToDecimal(sanitizedInput, dt)
+    }
+  }
+
   override def dateFormat: String = GpuJsonUtils.dateFormatInRead(parsedOptions)
   override def timestampFormat: String = GpuJsonUtils.timestampFormatInRead(parsedOptions)
 }
