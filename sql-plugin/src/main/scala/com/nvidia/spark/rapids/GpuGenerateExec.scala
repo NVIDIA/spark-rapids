@@ -133,6 +133,7 @@ trait GpuGenerator extends GpuUnevaluable {
    * @param outer           when true, each input row will be output at least once, even if the
    *                        output of the given `generator` is empty.
    * @param targetSizeBytes the target number of bytes for a GPU batch, one of `RapidsConf`
+   * @param maxRows         the target number of rows for a GPU batch, exposed for testing purposes.
    * @return split indices of input batch
    */
   def inputSplitIndices(inputBatch: ColumnarBatch,
