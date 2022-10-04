@@ -311,7 +311,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     val durAndCpuMet = analysis.sqlMetricsAggregationDurationAndCpuTime()
     val skewInfo = analysis.shuffleSkewCheck()
     val maxTaskInputInfo = if (useAutoTuner) {
-      analysis.getMaxTaskInputSizeBytesOnGPU()
+      analysis.getMaxTaskInputSizeBytes()
     } else {
       Seq.empty
     }
@@ -412,7 +412,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         combineProps(rapidsOnly=false, appsSum).sortBy(_.key),
         appsSum.flatMap(_.sqlStageInfo).sortBy(_.duration)(Ordering[Option[Long]].reverse),
         appsSum.flatMap(_.wholeStage).sortBy(_.appIndex),
-        appsSum.flatMap(_.maxTaskInputBytesReadGpu).sortBy(_.appIndex)
+        appsSum.flatMap(_.maxTaskInputBytesRead).sortBy(_.appIndex)
       )
       Seq(reduced)
     } else {

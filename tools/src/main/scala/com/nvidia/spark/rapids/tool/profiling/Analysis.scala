@@ -312,9 +312,7 @@ class Analysis(apps: Seq[ApplicationInfo]) {
     }
   }
 
-  // not very efficient since aggregate things again, which is likely
-  // done already via sqlMetricsAggregation
-  def getMaxTaskInputSizeBytesOnGPU(): Seq[SQLMaxTaskInputSizesOnGPU] = {
+  def getMaxTaskInputSizeBytes(): Seq[SQLMaxTaskInputSizes] = {
     apps.map { app =>
       val maxOfSql = app.sqlIdToInfo.map { case (sqlId, _) =>
         val jcs = app.jobIdToInfo.filter { case (_, jc) =>
@@ -334,7 +332,7 @@ class Analysis(apps: Seq[ApplicationInfo]) {
           }
         }
       }.max
-      SQLMaxTaskInputSizesOnGPU(app.index, app.appId, maxOfSql)
+      SQLMaxTaskInputSizes(app.index, app.appId, maxOfSql)
     }
   }
 

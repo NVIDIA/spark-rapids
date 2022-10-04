@@ -37,4 +37,4 @@ case class ApplicationSummaryInfo(
     val sparkProps: Seq[RapidsPropertyProfileResult],
     val sqlStageInfo: Seq[SQLStageInfoProfileResult],
     val wholeStage: Seq[WholeStageCodeGenResults],
-    val maxTaskInputBytesReadGpu: Seq[SQLMaxTaskInputSizesOnGPU])
+    val maxTaskInputBytesRead: Seq[SQLMaxTaskInputSizes])
