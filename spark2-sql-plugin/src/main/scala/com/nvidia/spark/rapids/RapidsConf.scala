@@ -1369,7 +1369,9 @@ object RapidsConf {
       "alluxio.master.rpc.port(default: 19998) from ALLUXIO_HOME/conf/alluxio-site.properties, " +
       "then replace a cloud path which matches spark.rapids.alluxio.bucket.regex like " +
       "\"s3://bar/b.csv\" to \"alluxio://0.1.2.3:19998/bar/b.csv\", " +
-      "and the bucket \"s3://bar\" will be mounted to \"/bar\" in Alluxio automatically.")
+      "and the bucket \"s3://bar\" will be mounted to \"/bar\" in Alluxio automatically." +
+      "This config should be enabled when initially starting the application but it " +
+      "can be turned off and one programmatically after that.")
     .booleanConf
     .createWithDefault(false)
 
@@ -1398,15 +1400,16 @@ object RapidsConf {
 
   val ALLUXIO_REPLACEMENT_ALGO = conf("spark.rapids.alluxio.replacement.algo")
     .doc("The algorithm used when replacing the UFS path with the Alluxio path. CONVERT_TIME " +
-      "and SELECTION_TIME are the valid options. CONVERT_TIME indicates that we do it when " +
-      "we convert it to a GPU file read, this has extra overhead of creating an entirely new " +
-      "file index, which requires listing the files and getting all new file info from Alluxio. " +
-      "SELECTION_TIME indicates we do it when the file reader is selecting the partitions " +
-      "to process and just replaces the path without fetching the file information again, this " +
-      "is faster but doesn't update locality information if that were to work with Alluxio.")
+      "and TASK_TIME are the valid options. CONVERT_TIME indicates that we do it " +
+      "when we convert it to a GPU file read, this has extra overhead of creating an entirely " +
+      "new file index, which requires listing the files and getting all new file info from " +
+      "Alluxio. TASK_TIME replaces the path as late as possible inside of the task. " +
+      "By waiting and replacing it at task time, it just replaces " +
+      "the path without fetching the file information again, this is faster " +
+      "but doesn't update locality information if that has a bit impact on performance.")
     .stringConf
-    .checkValues(Set("CONVERT_TIME", "SELECTION_TIME"))
-    .createWithDefault("SELECTION_TIME")
+    .checkValues(Set("CONVERT_TIME", "TASK_TIME"))
+    .createWithDefault("TASK_TIME")
 
   // USER FACING DEBUG CONFIGS
 
@@ -2113,11 +2116,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val getAlluxioReplacementAlgo: String = get(ALLUXIO_REPLACEMENT_ALGO)
 
-  lazy val isAlluxioReplacementAlgoSelectTime: Boolean =
-    get(ALLUXIO_REPLACEMENT_ALGO) == "SELECTION_TIME"
-
   lazy val isAlluxioReplacementAlgoConvertTime: Boolean =
     get(ALLUXIO_REPLACEMENT_ALGO) == "CONVERT_TIME"
+
+  lazy val isAlluxioReplacementAlgoTaskTime: Boolean =
+    get(ALLUXIO_REPLACEMENT_ALGO) == "TASK_TIME"
 
   lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
 
