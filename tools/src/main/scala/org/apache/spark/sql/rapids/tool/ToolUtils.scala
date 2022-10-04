@@ -18,6 +18,8 @@ package org.apache.spark.sql.rapids.tool
 
 import com.nvidia.spark.rapids.tool.profiling.ProfileUtils.replaceDelimiter
 import com.nvidia.spark.rapids.tool.qualification.QualOutputWriter
+import org.json4s.DefaultFormats
+import org.json4s.jackson.JsonMethods.parse
 
 import org.apache.spark.internal.{config, Logging}
 import org.apache.spark.sql.DataFrame
@@ -31,6 +33,30 @@ object ToolUtils extends Logging {
 
   def showString(df: DataFrame, numRows: Int) = {
     df.showString(numRows, 0)
+  }
+
+  /**
+   * Parses the string which contains configs in JSON format ( key : value ) pairs and
+   * returns the Map of [String, String]
+   * @param clusterTag  String which contains property clusterUsageTags.clusterAllTags in
+   *                    JSON format
+   * @return Map of ClusterTags
+   */
+  def parseClusterTags(clusterTag: String): Map[String, String] = {
+    // clusterTags will be in this format -
+    // [{"key":"Vendor","value":"Databricks"},
+    // {"key":"Creator","value":"abc@company.com"},{"key":"ClusterName",
+    // "value":"job-215-run-1"},{"key":"ClusterId","value":"0617-131246-dray530"},
+    // {"key":"JobId","value":"215"},{"key":"RunName","value":"test73longer"},
+    // {"key":"DatabricksEnvironment","value":"workerenv-7026851462233806"}]
+
+    // case class to hold key -> value pairs
+    case class ClusterTags(key: String, value: String)
+    implicit val formats = DefaultFormats
+    val listOfClusterTags = parse(clusterTag)
+    val clusterTagsMap = listOfClusterTags.extract[List[ClusterTags]].map(
+      x => x.key -> x.value).toMap
+    clusterTagsMap
   }
 
   // given to duration values, calculate a human readable percent

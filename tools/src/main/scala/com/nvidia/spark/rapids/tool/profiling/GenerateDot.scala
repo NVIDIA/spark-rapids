@@ -110,7 +110,7 @@ object GenerateDot {
       list += row(1) -> row(2)
     }
 
-    val sqlPlansMap = app.sqlPlan.map { case (sqlId, sparkPlanInfo) =>
+    val sqlPlansMap = app.sqlPlans.map { case (sqlId, sparkPlanInfo) =>
       sqlId -> ((sparkPlanInfo, app.physicalPlanDescription(sqlId)))
     }
     for ((sqlID, (planInfo, physicalPlan)) <- sqlPlansMap) {

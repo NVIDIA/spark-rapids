@@ -25,6 +25,7 @@ import scala.collection.mutable.ArrayBuffer
 import scala.util.Try
 import scala.util.control.NonFatal
 
+import com.nvidia.spark.rapids.AlluxioUtils.AlluxioPathReplaceConvertTime
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -57,7 +58,8 @@ object GpuPartitioningUtils extends SQLConfHelper {
    * @param userSpecifiedSchema an optional user specified schema that will be use to provide
    *                            types for the discovered partitions
    * @param replaceFunc the alluxio replace function
-   * @return the specification of the partitions inferred from the data
+   * @return the specification of the partitions inferred from the data and if it was replaced the
+   *         original path
    *
    * Mainly copied from PartitioningAwareFileIndex.inferPartitioning
    */
@@ -67,12 +69,13 @@ object GpuPartitioningUtils extends SQLConfHelper {
       leafFiles: Seq[Path],
       parameters: Map[String, String],
       userSpecifiedSchema: Option[StructType],
-      replaceFunc: Path => Path): PartitionSpec = {
+      replaceFunc: Path => AlluxioPathReplaceConvertTime)
+    : (PartitionSpec, Option[String]) = {
 
     val recursiveFileLookup = parameters.getOrElse("recursiveFileLookup", "false").toBoolean
 
     if (recursiveFileLookup) {
-      PartitionSpec.emptySpec
+      (PartitionSpec.emptySpec, None)
     } else {
       val caseInsensitiveOptions = CaseInsensitiveMap(parameters)
       val timeZoneId = caseInsensitiveOptions.get(DateTimeUtils.TIMEZONE_OPTION)
@@ -81,15 +84,17 @@ object GpuPartitioningUtils extends SQLConfHelper {
       // filter out non-data path and get unique leaf dirs of inputFiles
       val leafDirs: Seq[Path] = leafFiles.filter(isDataPath).map(_.getParent).distinct
 
-      val basePathOption = parameters.get(BASE_PATH_PARAM).map(file => {
+      val basePathAndAnyReplacedOption = parameters.get(BASE_PATH_PARAM).map { file =>
         // need to replace the base path
         replaceFunc(new Path(file))
-      })
+      }
+      val basePathOption = basePathAndAnyReplacedOption.map(_.filePath)
+      val anyReplacedBase = basePathAndAnyReplacedOption.flatMap(_.origPrefix)
 
       val basePaths = getBasePaths(sparkSession.sessionState.newHadoopConfWithOptions(parameters),
         basePathOption, rootPaths, leafFiles)
 
-      parsePartitions(
+      val parsed = parsePartitions(
         leafDirs,
         typeInference = sparkSession.sessionState.conf.partitionColumnTypeInferenceEnabled,
         basePaths = basePaths,
@@ -97,6 +102,7 @@ object GpuPartitioningUtils extends SQLConfHelper {
         caseSensitive = sparkSession.sqlContext.conf.caseSensitiveAnalysis,
         validatePartitionColumns = sparkSession.sqlContext.conf.validatePartitionColumns,
         timeZoneId = timeZoneId)
+      (parsed, anyReplacedBase)
     }
   }
 
