@@ -72,11 +72,15 @@ class GpuGenerateSuite
         }
         withResource(ColumnVector.fromBoxedInts(secondColumn: _*)) { repeatCol =>
           inputSize += listSize * repeatCol.getDeviceMemorySize
-          GpuColumnVector.from(new Table(repeatCol, cvList), dt)
+          withResource(new Table(repeatCol, cvList)) { tbl =>
+            GpuColumnVector.from(tbl, dt)
+          }
         }
       } else {
         val dt: Array[DataType] = Seq(ArrayType(IntegerType)).toArray
-        GpuColumnVector.from(new Table(cvList), dt)
+        withResource(new Table(cvList)) { tbl =>
+          GpuColumnVector.from(tbl, dt)
+        }
       }
       (batch, inputSize)
     }
