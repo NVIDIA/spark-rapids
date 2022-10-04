@@ -101,6 +101,7 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, None)
     val (properties, comments) = autoTuner.getRecommendedProperties()
     val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
+    // scalastyle:off line.size.limit
     val expectedResults =
       s"""|Cannot recommend properties. See Comments.
           |
@@ -113,6 +114,7 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
           |- 'spark.rapids.memory.pinnedPool.size' should be set to 2048m.
           |- 'spark.sql.adaptive.enabled' should be enabled for better performance.
           |""".stripMargin
+    // scalastyle:on line.size.limit
     assert(expectedResults == autoTunerOutput)
   }
 
@@ -121,6 +123,7 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, None)
     val (properties, comments) = autoTuner.getRecommendedProperties()
     val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
+    // scalastyle:off line.size.limit
     val expectedResults =
       s"""|Cannot recommend properties. See Comments.
           |
@@ -133,6 +136,7 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
           |- 'spark.rapids.memory.pinnedPool.size' should be set to 2048m.
           |- 'spark.sql.adaptive.enabled' should be enabled for better performance.
           |""".stripMargin
+    // scalastyle:on line.size.limit
     assert(expectedResults == autoTunerOutput)
   }
 
