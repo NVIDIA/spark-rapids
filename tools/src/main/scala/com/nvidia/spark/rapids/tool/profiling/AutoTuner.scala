@@ -81,7 +81,7 @@ class GpuWorkerProps(
    */
   def setDefaultGpuMemIfMissing: Boolean = {
     if (memory.startsWith("0")) {
-      memory = AutoTuner.DEF_WORKER_GPU_MEMORY_MB.getOrElse(getName, "1634m")
+      memory = AutoTuner.DEF_WORKER_GPU_MEMORY_MB.getOrElse(getName, "16384m")
       true
     } else {
       false
@@ -716,7 +716,7 @@ class AutoTuner(
    * Recommendations for "spark.sql.shuffle.partitions'.
    * Note that by default this only recommend the default value for now.
    * To enable calculating recommendation based on spills, override the argument
-   * "limitedLogicList" passed to [[getRecommendedProperties()]].
+   * "limitedLogicList" passed to [[getRecommendedProperties]].
    *
    */
   def recommendShufflePartitions(): Unit = {
@@ -842,7 +842,7 @@ object AutoTuner extends Logging {
   // T4 default memory is 16G
   // A100 set default to 40GB
   val DEF_WORKER_GPU_MEMORY_MB: mutable.LinkedHashMap[String, String] =
-    mutable.LinkedHashMap[String, String]("T4"-> "16384m", "A100" -> "40960m")
+    mutable.LinkedHashMap[String, String]("T4"-> "15109m", "A100" -> "40960m")
   // Default Number of Workers 1
   val DEF_NUM_WORKERS = 1
   val DEFAULT_WORKER_INFO_PATH = "./worker_info.yaml"
