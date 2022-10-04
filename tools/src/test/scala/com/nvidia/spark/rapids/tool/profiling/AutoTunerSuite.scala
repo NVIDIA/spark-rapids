@@ -255,7 +255,7 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
           |Spark Properties:
           |--conf spark.sql.shuffle.partitions=200
           |
-          Comments:
+          |Comments:
           |- GPU memory is missing. Setting default to 16384m.
           |- 'spark.sql.shuffle.partitions' was not set.
           |""".stripMargin
