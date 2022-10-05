@@ -209,7 +209,8 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
       "spark.sql.files.maxPartitionBytes" -> "512m",
       "spark.task.resource.gpu.amount" -> "0.0625")
     val sparkProps = defaultDataprocProps.++(customProps)
-    val dataprocWorkerInfo = buildWorkerInfoAsString(Some(sparkProps), Some(32), Some("122880MiB"), Some(4), Some(0))
+    val dataprocWorkerInfo = buildWorkerInfoAsString(Some(sparkProps), Some(32),
+      Some("122880MiB"), Some(4), Some(0))
     val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, None)
     val (properties, comments) = autoTuner.getRecommendedProperties()
     val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
@@ -268,8 +269,8 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
       "spark.sql.files.maxPartitionBytes" -> "512m",
       "spark.task.resource.gpu.amount" -> "0.0625")
     val sparkProps = defaultDataprocProps.++(customProps)
-    val dataprocWorkerInfo =
-      buildWorkerInfoAsString(Some(sparkProps), Some(32), Some("122880MiB"), Some(4), Some(2), Some("0M"))
+    val dataprocWorkerInfo = buildWorkerInfoAsString(Some(sparkProps), Some(32),
+      Some("122880MiB"), Some(4), Some(2), Some("0M"))
     val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, None)
     val (properties, comments) = autoTuner.getRecommendedProperties()
     val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
@@ -295,8 +296,8 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
       "spark.sql.files.maxPartitionBytes" -> "512m",
       "spark.task.resource.gpu.amount" -> "0.0625")
     val sparkProps = defaultDataprocProps.++(customProps)
-    val dataprocWorkerInfo =
-      buildWorkerInfoAsString(Some(sparkProps), Some(32), Some("122880MiB"), Some(4), Some(2), Some("0MiB"), None)
+    val dataprocWorkerInfo = buildWorkerInfoAsString(Some(sparkProps), Some(32),
+      Some("122880MiB"), Some(4), Some(2), Some("0MiB"), None)
     val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, None)
     val (properties, comments) = autoTuner.getRecommendedProperties()
     val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
@@ -324,8 +325,8 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
       "spark.sql.files.maxPartitionBytes" -> "512m",
       "spark.task.resource.gpu.amount" -> "0.0625")
     val sparkProps = defaultDataprocProps.++(customProps)
-    val dataprocWorkerInfo =
-      buildWorkerInfoAsString(Some(sparkProps), Some(32), Some("122880MiB"), Some(4), Some(2), Some("0MiB"), Some("GPU-X"))
+    val dataprocWorkerInfo = buildWorkerInfoAsString(Some(sparkProps), Some(32),
+      Some("122880MiB"), Some(4), Some(2), Some("0MiB"), Some("GPU-X"))
     val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, None)
     val (properties, comments) = autoTuner.getRecommendedProperties()
     val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
