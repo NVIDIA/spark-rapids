@@ -559,7 +559,7 @@ case class GpuBasicMin(child: Expression) extends GpuMin(child)
  */
 case class GpuFloatMin(child: Expression) extends GpuMin(child)
   with GpuReplaceWindowFunction {
-  
+
   override val dataType: DataType = child.dataType match {
     case FloatType | DoubleType => child.dataType
     case t => throw new IllegalStateException(s"child type $t is not FloatType or DoubleType")
@@ -606,7 +606,7 @@ case class GpuFloatMin(child: Expression) extends GpuMin(child)
   // Else return the min value
   override lazy val postUpdate: Seq[Expression] = Seq(
     GpuIf(
-      updateAllNansOrNulls.attr, 
+      updateAllNansOrNulls.attr,
       GpuIf(
         updateHasNan.attr, GpuLiteral(nan, dataType), GpuLiteral(null, dataType)
       ),
@@ -668,7 +668,7 @@ object GpuMax {
 abstract class GpuMax(child: Expression) extends GpuAggregateFunction
     with GpuBatchedRunningWindowWithFixer
     with GpuAggregateWindowFunction
-    with GpuRunningWindowFunction 
+    with GpuRunningWindowFunction
     with Serializable {
   override lazy val initialValues: Seq[GpuLiteral] = Seq(GpuLiteral(null, child.dataType))
   override lazy val inputProjection: Seq[Expression] = Seq(child)
@@ -730,7 +730,7 @@ case class GpuBasicMax(child: Expression) extends GpuMax(child)
  * column `isNan`. If any value in this column is true, return `Nan`,
  * Else, return what `GpuBasicMax` returns.
  */
-case class GpuFloatMax(child: Expression) extends GpuMax(child) 
+case class GpuFloatMax(child: Expression) extends GpuMax(child)
     with GpuReplaceWindowFunction{
 
   override val dataType: DataType = child.dataType match {
@@ -756,13 +756,13 @@ case class GpuFloatMax(child: Expression) extends GpuMax(child)
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(updateMaxVal, updateIsNan)
   // If there is `Nan` value in the target column, return `Nan`
   // else return what the `CudfMax` returns
-  override lazy val postUpdate: Seq[Expression] = 
+  override lazy val postUpdate: Seq[Expression] =
     Seq(
       GpuIf(updateIsNan.attr, GpuLiteral(nan, dataType), updateMaxVal.attr)
     )
 
   // Same logic as the `inputProjection` stage.
-  override lazy val preMerge: Seq[Expression] = 
+  override lazy val preMerge: Seq[Expression] =
     Seq(evaluateExpression, GpuIsNan(evaluateExpression))
   // Same logic as the `updateAggregates` stage.
   override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(mergeMaxVal,  mergeIsNan)

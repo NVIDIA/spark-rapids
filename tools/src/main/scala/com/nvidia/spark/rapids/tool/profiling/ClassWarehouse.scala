@@ -446,6 +446,13 @@ case class JobStageAggTaskMetricsProfileResult(
   }
 }
 
+case class SQLMaxTaskInputSizes(
+    appIndex: Int,
+    appId: String,
+    // Not added to the output since it is used only by the AutoTuner
+    maxTaskInputBytesRead: Double
+)
+
 case class SQLTaskAggMetricsProfileResult(
     appIndex: Int,
     appId: String,
@@ -632,10 +639,6 @@ case class WholeStageCodeGenResults(
       childNodeID.toString)
   }
 }
-
-case class GpuProps(count: Int, memory: String, name: String)
-case class SystemProps(numCores: Int, cpuArch: String, memory: String,
-    diskSpace: String, timeZone: String, numWorkers: Option[Int], gpuProps: GpuProps)
 
 case class RecommendedPropertyResult(property: String, value: String){
   override def toString: String = "--conf %s=%s".format(property, value)

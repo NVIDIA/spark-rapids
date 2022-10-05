@@ -214,23 +214,10 @@ def test_round_robin_sort_fallback(data_gen):
             lambda spark : gen_df(spark, data_gen).withColumn('extra', lit(1)).repartition(13),
             'ShuffleExchangeExec')
 
-@allow_non_gpu("ProjectExec", "ShuffleExchangeExec")
-@ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
-@pytest.mark.parametrize('num_parts', [2, 10, 17, 19, 32], ids=idfn)
-@pytest.mark.parametrize('gen', [([('ag', ArrayGen(StructGen([('b1', long_gen)])))], ['ag'])], ids=idfn)
-def test_hash_repartition_exact_fallback(gen, num_parts):
-    data_gen = gen[0]
-    part_on = gen[1]
-    assert_gpu_fallback_collect(
-        lambda spark : gen_df(spark, data_gen, length=1024) \
-            .repartition(num_parts, *part_on) \
-            .withColumn('id', f.spark_partition_id()) \
-            .selectExpr('*'), "ShuffleExchangeExec")
-
 @ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
 @pytest.mark.parametrize('num_parts', [1, 2, 10, 17, 19, 32], ids=idfn)
 @pytest.mark.parametrize('gen', [
-    ([('a', boolean_gen)], ['a']),
+    ([('a', boolean_gen)], ['a']), 
     ([('a', byte_gen)], ['a']), 
     ([('a', short_gen)], ['a']),
     ([('a', int_gen)], ['a']),
