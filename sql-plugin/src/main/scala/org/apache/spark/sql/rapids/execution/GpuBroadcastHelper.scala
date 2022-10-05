@@ -16,14 +16,15 @@
 
 package org.apache.spark.sql.rapids.execution
 
-import com.nvidia.spark.rapids.GpuColumnVector
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.{Arm, GpuColumnVector}
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-object GpuBroadcastHelper {
+object GpuBroadcastHelper extends Arm {
   /**
    * Given a broadcast relation get a ColumnarBatch that can be used on the GPU.
    *
@@ -41,7 +42,9 @@ object GpuBroadcastHelper {
                         broadcastSchema: StructType): ColumnarBatch = {
     broadcastRelation.value match {
       case broadcastBatch: SerializeConcatHostBuffersDeserializeBatch =>
-        broadcastBatch.batch.getColumnarBatch()
+        withResource(new NvtxRange("getBroadcastBatch", NvtxColor.YELLOW)) { _ =>
+          broadcastBatch.batch.getColumnarBatch()
+        }
       case v if SparkShimImpl.isEmptyRelation(v) =>
         GpuColumnVector.emptyBatch(broadcastSchema)
       case t =>
