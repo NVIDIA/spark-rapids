@@ -88,7 +88,7 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
         "m(months). If a period is not specified it defaults to days.")
   val autoTuner: ScallopOption[Boolean] =
     opt[Boolean](required = false,
-      descr = "Toggle auto-tuner module.",
+      descr = "Toggle AutoTuner module.",
       default = Some(false))
   val workerInfo: ScallopOption[String] =
     opt[String](required = false,
