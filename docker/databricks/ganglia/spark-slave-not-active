@@ -1,0 +1,4 @@
+\n\
+check process spark-slave with pidfile /tmp/spark-root-org.apache.spark.deploy.worker.Worker-1.pid\n\
+      start program = "/databricks/spark/scripts/restart-workers"\n\
+      stop program = "/databricks/spark/scripts/kill_worker.sh"\n\

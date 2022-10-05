@@ -1,0 +1,27 @@
+BOLD='\033[1m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+echo -e "
+Welcome to Databricks web terminal! Please read the following instructions:
+
+ * This terminal session is ${RED}${BOLD}ephemeral${NC}, so it will go away if you close or refresh the browser tab.
+
+ * If you want to have a persistent terminal session on this cluster, please use ${YELLOW}'tmux'${NC}.
+
+ * There is an idle timeout if no client- or server-side changes are made to the terminal session.
+   Refreshing the tab would launch a new session.
+"
+
+unset BOLD RED YELLOW NC
+
+source /etc/profile
+
+source ~/.bashrc
+
+# Unset HISTFILE so that the bash session does not write history to ~/.bash_history at exit.
+# Users can still see command history within the terminal session.
+unset HISTFILE
+
+cd /databricks/driver

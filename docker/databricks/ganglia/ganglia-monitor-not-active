@@ -1,0 +1,5 @@
+\n\
+check process ganglia-monitor with pidfile /var/run/ganglia-monitor.pid\n\
+      start program = "/usr/sbin/service ganglia-monitor start"\n\
+      stop program = "/usr/sbin/service ganglia-monitor stop"\n\
+      if memory usage > 500 MB for 3 cycles then restart\n\
