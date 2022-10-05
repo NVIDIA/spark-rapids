@@ -356,7 +356,7 @@ Yes
 The GPU is not needed on the driver and there is no benefit to having one available on the driver
 for the RAPIDS plugin.
 
-### Are table layout formats supported??
+### Are table layout formats supported?
 
 Yes, there is GPU support for Delta Lake read 
 and [Apache Iceberg 0.13 read](./additional-functionality/iceberg-support.md).  
