@@ -8,7 +8,7 @@ nav_order: 9
 The Profiling tool analyzes both CPU or GPU generated event logs and generates information 
 which can be used for debugging and profiling Apache Spark applications.
 The output information contains the Spark version, executor details, properties, etc.  
-Starting with release "_22.10_", the Profiling tool optionally provides optimized RAPIDS
+Starting with release _22.10_, the Profiling tool optionally provides optimized RAPIDS
 configurations based on the worker's information (see [Auto-Tuner support](#auto-tuner-support)).
 
 * TOC
@@ -24,7 +24,7 @@ configurations based on the worker's information (see [Auto-Tuner support](#auto
 - The tool does not support nested directories.
   Event log files or event log directories should be at the top level when specifying a directory.
 
-Note: Spark event logs can be downloaded from Spark UI using a "Download" button on the right side,
+Note: Spark event logs can be downloaded from Spark UI using a _Download_ button on the right side,
 or can be found in the location specified by `spark.eventLog.dir`. See the
 [Apache Spark Monitoring](http://spark.apache.org/docs/latest/monitoring.html) documentation for
 more information.
@@ -519,7 +519,7 @@ Failed jobs:
 
 The _Auto-Tuner_ output has 2 main sections:
 1. _Spark Properties_: A list of Apache Spark configurations to tune the performance of the app.
-   The list is the result of "_diff_" between the existing app configurations and the recommended
+   The list is the result of `diff` between the existing app configurations and the recommended
    ones. Therefore, a recommendation matches the existing app configuration, it will not show up in
    the list.
 2. _Comments_: A list of messages to highlight properties that were missing in the app
@@ -527,7 +527,7 @@ The _Auto-Tuner_ output has 2 main sections:
 
 **Examples**
 
-- A succesful run with missing "_softwareProperties_":
+- A succesful run with missing _softwareProperties_:
    ```
    Spark Properties:
    --conf spark.executor.cores=16
@@ -553,7 +553,7 @@ The _Auto-Tuner_ output has 2 main sections:
    - 'spark.sql.adaptive.enabled' should be enabled for better performance.
    ```
 
-- A succesful run with defined "_softwareProperties_". In this example, only
+- A succesful run with defined _softwareProperties_. In this example, only
   two recommendations did not match the existing app app configurations:
   ```
   Spark Properties:
@@ -647,14 +647,19 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
 
 ### Auto-Tuner support
 
-Starting with release "_22.10_", the Profiling tool a new "_Auto-Tuner_" that aims at optimizing
+Starting with release _22.10_, the Profiling tool a new _Auto-Tuner_ that aims at optimizing
 Apache Spark applications by recommending a set of configurations to tune the performance of
 Rapids accelerator.  
+Currently, the _Auto-Tuner_ calculates a set of configurations that impact the performance of Apache
+Spark apps executing on GPU. Those calculations can leverage cluster information
+(e.g. memory, cores, Spark default configurations) as well as information processed in the
+application event logs.
+The values loaded from the app logs have higher precedence than the default configs.  
 Please refer to [Understanding the Profiling tool output](#d-recommended-configuration) for
 more details on the output of the _Auto-Tuner_.
 
 Note the following _Auto-Tuner_ limitations:
-- It is currently only supported the "_Collection Mode_", and
+- It is currently only supported in the _Collection Mode_ (see [the 3 different modes](#step-2-how-to-run-the-profiling-tool)), and
 - It is assumed that all the _worker_ nodes on the cluster are homogenous.
 
 To run the _Auto-Tuner_, enable the `auto-tuner` flag and pass a valid `--worker-info <FILE_PATH>`.
