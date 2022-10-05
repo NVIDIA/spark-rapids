@@ -44,6 +44,7 @@ for your hardware's minimum driver version.
 ### Release Notes
 New functionality and performance improvements for this release include:
 * Dataproc qualification, profiling, bootstrap and diagnostic tool
+* Databricks custom docker container
 * AQE support on Databricks
 * MultiThreaded Shuffle feature
 * HashAggregate on Array support
