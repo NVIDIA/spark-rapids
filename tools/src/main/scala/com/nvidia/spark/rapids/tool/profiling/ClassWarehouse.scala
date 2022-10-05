@@ -446,6 +446,13 @@ case class JobStageAggTaskMetricsProfileResult(
   }
 }
 
+case class SQLMaxTaskInputSizes(
+    appIndex: Int,
+    appId: String,
+    // Not added to the output since it is used only by the AutoTuner
+    maxTaskInputBytesRead: Double
+)
+
 case class SQLTaskAggMetricsProfileResult(
     appIndex: Int,
     appId: String,
