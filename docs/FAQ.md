@@ -488,7 +488,7 @@ This is typically caused by the IOMMU being enabled.  Please see the
 for this issue.
 
 To fix it you can either disable the IOMMU, or you can disable using pinned memory by setting
-[spark.rapids.memory.pinnedPool.size](configs.md#memory.pinnedPool.size) to 0.
+[`spark.rapids.memory.pinnedPool.size`](configs.md#memory.pinnedPool.size) to 0.
 
 ### Why am I getting a buffer overflow error when using the KryoSerializer?
 Buffer overflow will happen when trying to serialize an object larger than
