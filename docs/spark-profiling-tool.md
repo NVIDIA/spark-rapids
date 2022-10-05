@@ -9,7 +9,7 @@ The Profiling tool analyzes both CPU or GPU generated event logs and generates i
 which can be used for debugging and profiling Apache Spark applications.
 The output information contains the Spark version, executor details, properties, etc.  
 Starting with release "_22.10_", the Profiling tool optionally provides optimized RAPIDS
-configurations based on the worker's information.
+configurations based on the worker's information (see [Auto-Tuner support](#auto-tuner-support)).
 
 * TOC
 {:toc}
@@ -47,7 +47,6 @@ in the local filesystem, HDFS, S3 or mixed.
 Please note, if processing a lot of event logs use combined or compare mode.
 Both these modes may need you to increase the java heap size using `-Xmx` option.
 For instance, to specify 30 GB heap size `java -Xmx30g`. 
-### Debugging and profiling Apache Spark applications
 
 There are 3 modes of operation for the Profiling tool:
  1. Collection Mode: 
@@ -59,6 +58,8 @@ There are 3 modes of operation for the Profiling tool:
            com.nvidia.spark.rapids.tool.profiling.ProfileMain [options]
            <eventlogs | eventlog directories ...>
     ```
+    Note that this is the only mode that supports the _Auto-Tuner_ option described in more details
+    in the [Auto-Tuner support](#auto-tuner-support) section.
 
  2. Combined Mode:
     Combined mode is collection mode but then combines all the applications 
@@ -88,65 +89,6 @@ There are 3 modes of operation for the Profiling tool:
     java -cp ~/rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*:$HADOOP_CONF_DIR/ \
      com.nvidia.spark.rapids.tool.profiling.ProfileMain  /eventlogDir
     ```
-
-### Auto-Tuner support
-
-Starting with release "_22.10_", the Profiling tool a new "_Auto-Tuner_" that aims at optimizing
-Apache Spark applications by recommending a set of configurations to tune the performance of
-Rapids accelerator.  
-Please refer to [Understanding the Profiling tool output](####d.-recommended-configuration) for
-more details on the output of the _Auto-Tuner_.
-
-Note the following _Auto-Tuner_ limitations:
-- It is currently only supported the "_Collection Mode_", and
-- It is assumed that all the _worker_ nodes on the cluster are homogenous.
-
-To run the _Auto-Tuner_, there are two more additional steps to follow:
-
-#### Step 1 Collect worker properties in a yaml file
-
-The _Auto-Tuner_ needs to learn the system properties of the _worker_ nodes that run application
-code in the cluster. The file location can either be local filesystem or HDFS.  
-A template of the worker information is shown below:
-
-  ```
-  system:
-    numCores: 32
-    memory: 212992MiB
-    numWorkers: 5
-  gpu:
-    memory: 15109MiB
-    count: 4
-    name: T4
-  softwareProperties:
-    spark.driver.maxResultSize: 7680m
-    spark.driver.memory: 15360m
-    spark.executor.cores: '8'
-    spark.executor.instances: '2'
-    spark.executor.memory: 47222m
-    spark.executorEnv.OPENBLAS_NUM_THREADS: '1'
-    spark.scheduler.mode: FAIR
-    spark.sql.cbo.enabled: 'true'
-    spark.ui.port: '0'
-    spark.yarn.am.memory: 640m
-  ```
-
-  | Property           | Optional | If Missing                                                                                                                   |
-  |--------------------|:--------:|------------------------------------------------------------------------------------------------------------------------------|
-  | system.numCores    |    No    | _Auto-Tuner_ does not calculate recommendations                                                                              |
-  | system.memory      |    No    | _Auto-Tuner_ does not calculate any recommendations                                                                          |
-  | system.numWorkers  |    Yes   | Default: 1                                                                                                                   |
-  | gpu.Name           |    Yes   | Default: T4 (Nvidia Tesla T4)                                                                                                |
-  | gpu.Memory         |    Yes   | Default: 16G                                                                                                                 |
-  | softwareProperties |    Yes   | This section is optional. The _Auto-Tuner_ reads the configs within the logs of the Apache Spark apps with higher precedence |
-
-#### Step 2 Enable Auto-Tuner
-
-Enable the _Auto-Tuner_ by adding two more arguments:
-- `--auto-tuner`: enables the _Auto-Tuner_
-- `--worker-info <PATH>`: location of the yaml file containing the worker info.
-
-To learn more details on the tool options, please refer to [Profiling tool options](##profiling-tool-options).
 
 ## Understanding Profiling tool detailed output and examples
 The default output location is the current directory. 
@@ -576,16 +518,16 @@ Failed jobs:
 #### D. Recommended Configuration
 
 The _Auto-Tuner_ output has 2 main sections:
-1. "_Spark Properties_"
-   A list of Apache Spark configurations to tune the performance of the app.
+1. _Spark Properties_: A list of Apache Spark configurations to tune the performance of the app.
    The list is the result of "_diff_" between the existing app configurations and the recommended
    ones. Therefore, a recommendation matches the existing app configuration, it will not show up in
    the list.
-2. "_Comments_"  
-   A list of messages to highlight properties that were missing in the app configurations, or the
-   cause of failure to generate the recommendations.
+2. _Comments_: A list of messages to highlight properties that were missing in the app
+   configurations, or the cause of failure to generate the recommendations.
 
-- Example output of a succesful run with missing "_softwareProperties_":
+**Examples**
+
+- A succesful run with missing "_softwareProperties_":
    ```
    Spark Properties:
    --conf spark.executor.cores=16
@@ -611,7 +553,7 @@ The _Auto-Tuner_ output has 2 main sections:
    - 'spark.sql.adaptive.enabled' should be enabled for better performance.
    ```
 
-- Example output of a succesful run with defined "_softwareProperties_". In this example, only
+- A succesful run with defined "_softwareProperties_". In this example, only
   two recommendations did not match the existing app app configurations:
   ```
   Spark Properties:
@@ -622,7 +564,7 @@ The _Auto-Tuner_ output has 2 main sections:
   - 'spark.sql.shuffle.partitions' was not set.
   ```
 
-- Example failed to load the worker info:
+- Failing to load the worker info:
   ```
   Cannot recommend properties. See Comments.
 
@@ -638,7 +580,7 @@ The _Auto-Tuner_ output has 2 main sections:
 
 ## Profiling tool options
   
-```bash
+```
 Profiling tool for the RAPIDS Accelerator and Apache Spark
 
 Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
@@ -702,6 +644,55 @@ Usage: java -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
                         containing event logs. eg: s3a://<BUCKET>/eventlog1
                         /path/to/eventlog2
 ```
+
+### Auto-Tuner support
+
+Starting with release "_22.10_", the Profiling tool a new "_Auto-Tuner_" that aims at optimizing
+Apache Spark applications by recommending a set of configurations to tune the performance of
+Rapids accelerator.  
+Please refer to [Understanding the Profiling tool output](#d-recommended-configuration) for
+more details on the output of the _Auto-Tuner_.
+
+Note the following _Auto-Tuner_ limitations:
+- It is currently only supported the "_Collection Mode_", and
+- It is assumed that all the _worker_ nodes on the cluster are homogenous.
+
+To run the _Auto-Tuner_, enable the `auto-tuner` flag and pass a valid `--worker-info <FILE_PATH>`.
+The _Auto-Tuner_ needs to learn the system properties of the _worker_ nodes that run application
+code in the cluster. The argument `FILE_PATH` can either be local or remote file (i.e., HDFS).   
+A template of the worker information is shown below:
+
+  ```
+  system:
+    numCores: 32
+    memory: 212992MiB
+    numWorkers: 5
+  gpu:
+    memory: 15109MiB
+    count: 4
+    name: T4
+  softwareProperties:
+    spark.driver.maxResultSize: 7680m
+    spark.driver.memory: 15360m
+    spark.executor.cores: '8'
+    spark.executor.instances: '2'
+    spark.executor.memory: 47222m
+    spark.executorEnv.OPENBLAS_NUM_THREADS: '1'
+    spark.scheduler.mode: FAIR
+    spark.sql.cbo.enabled: 'true'
+    spark.ui.port: '0'
+    spark.yarn.am.memory: 640m
+  ```
+
+  | Property           | Optional | If Missing                                                                                                                   |
+  |--------------------|:--------:|------------------------------------------------------------------------------------------------------------------------------|
+  | system.numCores    |    No    | _Auto-Tuner_ does not calculate recommendations                                                                              |
+  | system.memory      |    No    | _Auto-Tuner_ does not calculate any recommendations                                                                          |
+  | system.numWorkers  |    Yes   | Default: 1                                                                                                                   |
+  | gpu.Name           |    Yes   | Default: T4 (Nvidia Tesla T4)                                                                                                |
+  | gpu.Memory         |    Yes   | Default: 16G                                                                                                                 |
+  | softwareProperties |    Yes   | This section is optional. The _Auto-Tuner_ reads the configs within the logs of the Apache Spark apps with higher precedence |
+
 
 ## Profiling tool metrics definitions
 
