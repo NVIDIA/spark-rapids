@@ -848,19 +848,4 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       }
     }
   }
-/*
-  test("--help at end of command line arguments") {
-    val testLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
-    val eventLog = s"$logDir/rp_sql_eventlog.zstd"
-    TrampolineUtil.withTempDir { outpath =>
-      val allArgs = Array(
-        "--output-directory",
-        eventLog)
-      val lastArgs = Array("--help")
-
-      val appArgs = new ProfileArgs(allArgs ++ lastArgs)
-      val (exit, _) = ProfileMain.mainInternal(appArgs)
-      assert(exit == 0)
-    }
-  }*/
 }
