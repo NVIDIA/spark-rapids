@@ -354,10 +354,10 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
           s"to $outputDir in $duration second(s)\n")
       }
     }
-    (ApplicationSummaryInfo(appInfo, appEventLogPath, dsInfo, execInfo, jobInfo, rapidsProps, rapidsJar,
-      sqlMetrics, jsMetAgg, sqlTaskAggMetrics, durAndCpuMet, skewInfo, failedTasks, failedStages,
-      failedJobs, removedBMs, removedExecutors, unsupportedOps, sparkProps, sqlStageInfo,
-      wholeStage, maxTaskInputInfo), compareRes)
+    (ApplicationSummaryInfo(appInfo, appEventLogPath, dsInfo, execInfo, jobInfo, rapidsProps, 
+      rapidsJar, sqlMetrics, jsMetAgg, sqlTaskAggMetrics, durAndCpuMet, skewInfo, failedTasks, 
+      failedStages, failedJobs, removedBMs, removedExecutors, unsupportedOps, sparkProps, 
+      sqlStageInfo, wholeStage, maxTaskInputInfo), compareRes)
   }
 
   def writeOutput(profileOutputWriter: ProfileOutputWriter,
