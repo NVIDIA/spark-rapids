@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.GpuShuffledHashJoinExec.CloseableBufferedIterator
 import com.nvidia.spark.rapids.shims.ShimBinaryExecNode
 
 import org.apache.spark.TaskContext
