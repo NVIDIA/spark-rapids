@@ -164,7 +164,7 @@ case class GpuBroadcastHashJoinExec(
    * (including IO) to produce that first batch. Once the first stream batch is produced,
    * the build side is materialized to the GPU (while holding the semaphore).
    *
-   * TODO: This could try to trigger the broadcast meterialization on the host before
+   * TODO: This could try to trigger the broadcast materialization on the host before
    *   getting started on the stream side (e.g. call `broadcastRelation.value`).
    */
   private def getBroadcastBuiltBatchAndStreamIter(
