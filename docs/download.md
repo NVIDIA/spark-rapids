@@ -23,7 +23,7 @@ Hardware Requirements:
 
 The plugin is tested on the following architectures:
 
-	GPU Models: NVIDIA V100, T4 and A2/A10/A30/A100 GPUs
+	GPU Models: NVIDIA P100, V100, T4 and A2/A10/A30/A100 GPUs
 
 Software Requirements:
 

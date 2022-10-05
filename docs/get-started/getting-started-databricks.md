@@ -32,8 +32,9 @@ The number of GPUs per node dictates the number of Spark executors that can run 
    
    See [issue-3143](https://github.com/NVIDIA/spark-rapids/issues/3143) for more detail.
 
-2. When selecting GPU nodes, Databricks requires the driver node to be a GPU node.  Outside of
-   Databricks the plugin can operate with the driver as a CPU node and workers as GPU nodes.
+2. When selecting GPU nodes, Databricks UI requires the driver node to be a GPU node. However you 
+   can use Databricks API to create a cluster with CPU driver node.
+   Outside of Databricks the plugin can operate with the driver as a CPU node and workers as GPU nodes.
 
 3. Cannot spin off multiple executors on a multi-GPU node. 
 
