@@ -53,6 +53,7 @@ RUN set -ex && \
                cuda-toolkit-config-common python3.8-dev libpq-dev libcairo2-dev build-essential unattended-upgrades cmake ccache \
                openmpi-bin linux-headers-5.4.0-117 linux-headers-5.4.0-117-generic linux-headers-generic libopenmpi-dev unixodbc-dev \
                sysstat ssh tmux && \
+    apt-get install -y less vim && \
     /var/lib/dpkg/info/ca-certificates-java.postinst configure && \
     # Initialize the default environment that Spark and notebooks will use
     virtualenv -p python3.8 --system-site-packages /databricks/python3 \
@@ -145,10 +146,24 @@ RUN cd /tmp \
 # later.
 RUN rm /etc/apache2/sites-enabled/* && a2enmod proxy && a2enmod proxy_http
 RUN mkdir -p /etc/monit/conf.d
-ADD ganglia/ganglia-monitor-not-active /etc/monit/conf.d
-ADD ganglia/gmetad-not-active /etc/monit/conf.d
-ADD ganglia/spark-slave-not-active /etc/monit/conf.d
-RUN echo $'\n\
+RUN echo '\
+check process ganglia-monitor with pidfile /var/run/ganglia-monitor.pid\n\
+      start program = "/usr/sbin/service ganglia-monitor start"\n\
+      stop program = "/usr/sbin/service ganglia-monitor stop"\n\
+      if memory usage > 500 MB for 3 cycles then restart\n\
+' > /etc/monit/conf.d/ganglia-monitor-not-active 
+RUN echo '\
+check process gmetad with pidfile /var/run/gmetad.pid\n\
+      start program = "/usr/sbin/service gmetad start"\n\
+      stop program = "/usr/sbin/service gmetad stop"\n\
+      if memory usage > 500 MB for 3 cycles then restart\n\
+\n\
+check process apache2 with pidfile /var/run/apache2/apache2.pid\n\
+      start program = "/usr/sbin/service apache2 start"\n\
+      stop program = "/usr/sbin/service apache2 stop"\n\
+      if memory usage > 500 MB for 3 cycles then restart\n\
+' > /etc/monit/conf.d/gmetad-not-active
+RUN echo '\
 check process spark-slave with pidfile /tmp/spark-root-org.apache.spark.deploy.worker.Worker-1.pid\n\
       start program = "/databricks/spark/scripts/restart-workers"\n\
       stop program = "/databricks/spark/scripts/kill_worker.sh"\n\
@@ -186,8 +201,10 @@ COPY webterminal/setup_ttyd_daemon.sh $TTYD_DIR/setup_ttyd_daemon.sh
 COPY webterminal/stop_ttyd_daemon.sh $TTYD_DIR/stop_ttyd_daemon.sh
 COPY webterminal/start_ttyd_daemon.sh $TTYD_DIR/start_ttyd_daemon.sh
 COPY webterminal/webTerminalBashrc $TTYD_DIR/webTerminalBashrc
-COPY webterminal/ttyd-daemon-not-active /etc/monit/conf.d/ttyd-daemon-not-active
-
+RUN echo '\
+check process ttyd with pidfile /var/run/ttyd-daemon.pid\n\
+      start program = "/databricks/spark/scripts/ttyd/start_ttyd_daemon.sh"\n\
+      stop program = "/databricks/spark/scripts/ttyd/stop_ttyd_daemon.sh"' >  /etc/monit/conf.d/ttyd-daemon-not-active
 FROM databricks-webterminal as databricks-alluxio
 
 #############

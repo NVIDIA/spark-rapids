@@ -1,3 +1,0 @@
-check process ttyd with pidfile /var/run/ttyd-daemon.pid
-      start program = "/databricks/spark/scripts/ttyd/start_ttyd_daemon.sh"
-      stop program = "/databricks/spark/scripts/ttyd/stop_ttyd_daemon.sh"

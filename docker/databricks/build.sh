@@ -15,14 +15,8 @@
 
 set -ex
 
-REPO_BASE=${REPO_BASE:-""}
+REPO_BASE=${REPO_BASE:-"nvidia"}
 TAG_NAME=${TAG_NAME:-"rapids-4-spark-databricks"}
-
-if [ -z "$REPO_BASE" ]; then
-  >&2 echo "Need to specify REPO_BASE"
-  exit 1
-fi
-
 VERSION=${VERSION:-"22.10.0"}
 TAG_VERSION=${TAG_VERSION:-$VERSION}
 CUDA_VERSION=${CUDA_VERSION:-"11.5.1"}

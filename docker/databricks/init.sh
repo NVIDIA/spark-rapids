@@ -30,7 +30,11 @@ readonly ALLUXIO_HOME="/opt/alluxio-${ALLUXIO_VERSION}"
 readonly ALLUXIO_SITE_PROPERTIES="${ALLUXIO_HOME}/conf/alluxio-site.properties"
 readonly ALLUXIO_METRICS_PROPERTIES_TEMPLATE="${ALLUXIO_HOME}/conf/metrics.properties.template"
 readonly ALLUXIO_METRICS_PROPERTIES="${ALLUXIO_HOME}/conf/metrics.properties"
-readonly ALLUXIO_STORAGE_PERCENT="70"
+ALLUXIO_STORAGE_PERCENT=${ALLUXIO_STORAGE_PERCENT:-'70'}
+ALLUXIO_MASTER_HEAP=${ALLUXIO_MASTER_HEAP:-'16g'}
+# location to copy the Alluxio logs to so that they are kept after cluster is shutdown
+# recommended location would be dbfs on Databricks, path has to be accessible via rsync
+ALLUXIO_COPY_LOG_PATH=${ALLUXIO_COPY_LOG_PATH:-''}
 
 # Run a command as a specific user
 # Assumes the provided user already exists on the system and user running script has sudo access
@@ -156,10 +160,10 @@ set_crontab_alluxio_log() {
     exit 2
   fi
   local folder=$1
-  mkdir -p /dbfs/cluster-logs/alluxio/$folder
+  mkdir -p $ALLUXIO_COPY_LOG_PATH/$folder
   # add crond to copy alluxio logs
   crontab -l > cron_bkp || true
-  echo "* * * * * /usr/bin/rsync -a /opt/alluxio-2.8.0/logs /dbfs/cluster-logs/alluxio/$folder >/dev/null 2>&1" >> cron_bkp
+  echo "* * * * * /usr/bin/rsync -a /opt/alluxio-2.8.0/logs $ALLUXIO_COPY_LOG_PATH/$folder >/dev/null 2>&1" >> cron_bkp
   crontab cron_bkp
   rm cron_bkp
 }
@@ -200,11 +204,16 @@ start_alluxio() {
 
   if [[ $DB_IS_DRIVER = "TRUE" ]]; then
     # On Driver
-    set_crontab_alluxio_log "${DB_DRIVER_IP}-master"
-    doas ubuntu "ALLUXIO_MASTER_JAVA_OPTS='-Xms16g -Xmx16g' ${ALLUXIO_HOME}/bin/alluxio-start.sh master"
+    if [[ -n $ALLUXIO_COPY_LOG_PATH ]]; then
+      set_crontab_alluxio_log "${DB_DRIVER_IP}-master"
+    fi
+    MASTER_HEAP_SETTING="-Xms${ALLUXIO_MASTER_HEAP} -Xmx${ALLUXIO_MASTER_HEAP}"
+    doas ubuntu "ALLUXIO_MASTER_JAVA_OPTS=\"${MASTER_HEAP_SETTING}\" ${ALLUXIO_HOME}/bin/alluxio-start.sh master"
   else
     # On Workers
-    set_crontab_alluxio_log "${DB_CONTAINER_IP}-worker"
+    if [[ -n $ALLUXIO_COPY_LOG_PATH ]]; then
+      set_crontab_alluxio_log "${DB_CONTAINER_IP}-worker"
+    fi
     echo "alluxio.worker.hostname=${DB_CONTAINER_IP}" >> ${ALLUXIO_SITE_PROPERTIES}
     echo "alluxio.user.hostname=${DB_CONTAINER_IP}" >> ${ALLUXIO_SITE_PROPERTIES}
     

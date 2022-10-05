@@ -1,24 +1,4 @@
-# RAPIDS Accelerator Docker container for Databricks 10.4 LTS
-
-## Build the container
-
-You will need to build the Docker container before using it in the Databricks environment. This can be done with the provided build script. You can customize a few options using environment variables, but will at minimum need to set REPO_BASE and TAG_NAME to a repository where you can push the built image. For example to push an image to repository at `i-love-spark/rapids-4-spark-databricks`:
-
-```bash
-$ REPO_BASE=i-love-spark TAG_NAME=rapids-4-spark-databricks ./build.sh
-```
-
-The script will then build an image with fully qualified tag: `i-love-spark/rapids-4-spark-databricks:22.10.0`. 
-
-If you set `PUSH=true`, if the build completes successfully, the script will push it to specified repository. Only do this if you have authenticated using Docker to the repository and you have the appropriate permissions to push image artifacts.
-
-```bash
-$ REPO_BASE=i-love-spark TAG_NAME=rapids-4-spark-databricks PUSH=true ./build.sh
-```
-
-There are other customizations possible, see the source in `build.sh` for more information.
-
-Once this image is pushed to your repository, it is ready to be used on the Databricks environment.
+# RAPIDS Accelerator for Apache Spark Docker container for Databricks
 
 ## Usage
 
@@ -54,9 +34,9 @@ cluster meets the prerequisites above by configuring it as follows:
 
 8. Select `Use your own Docker container`.
 
-9. In the `Docker Image URL` field, enter the image location you pushed to using the build steps.
+9. In the `Docker Image URL` field, enter `navkumar82/rapids-4-spark-databricks:22.10.0`.
 
-10. Set `Authentication` set to `Default` if using a public repository, or configure `Authentication` for the repository you have pushed the image to.
+10. Leave `Authentication` set to `Default`.
 
 11. Now select the `Init Scripts` tab.
 
@@ -66,7 +46,9 @@ cluster meets the prerequisites above by configuring it as follows:
 
 14. Click `Add`.
 
-15. Start the cluster.
+15. Add any other configs, such as SSH Key, Logging, or additional Spark configuration. The Docker container uses the configuration in `00-custom-spark-driver-defaults.conf` by default. When adding additional lines to `Spark config` in the UI, the configuration will override those defaults that are configured in the Docker container.
+
+16. Start the cluster.
 
 ### Enabling Alluxio in the Databricks cluster using the Docker container
 
@@ -76,14 +58,25 @@ If you would like to enable the Alluxio cluster on your Databricks cluster, you 
 
 2. Under the `Advanced options`, select the `Spark` tab.
 
-3. In the `Spark config` field, add the following lines:
+3. In the `Spark config` field, add the following lines. The second 2 are good starting points when using Alluxio but could be tuned
+if needed.
 
 ```
 spark.databricks.io.cached.enabled false
 spark.rapids.alluxio.automount.enabled true
+spark.rapids.sql.coalescing.reader.numFilterParallel 2
+spark.rapids.sql.multiThreadedRead.numThreads 40
 ```
 
 4. In the `Environment variables` field, add the line `ENABLE_ALLUXIO=1`.
+
+5. Customize Alluxio configuration using the following configs if needed. These should be added in the `Environment variables` field if you wish to change them.
+
+  - The default amount of disk space used for Alluxio on the Workers is 70%.  This can be adjusted using the configuration below. `ALLUXIO_STORAGE_PERCENT=70`
+
+  - The default heap size used by the Alluxio Master process is 16GB, this may need to be changed depending on the size of the driver node. Make sure it has enough memory for the Master and the Spark driver processes.  `ALLUXIO_MASTER_HEAP=16g`
+
+  - To copy the Alluxio Master and Worker logs off of local disk to be able to look at them after the cluster is shutdown you can configure this to some path accessible via rsync.  For instance, on Databricks this might be a path in /dbfs/.  `ALLUXIO_COPY_LOG_PATH=/dbfs/somedirectory/`
 
 5. Click `Confirm` (if the cluster is currently stopped) or `Confirm and Restart` if the cluster is currently running.
 
