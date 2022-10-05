@@ -97,7 +97,7 @@ Usage: `spark_rapids_dataproc profiling --cluster <cluster-name> --region <regio
 Example output:
 ```bash
 +--------------------------------+--------------------------------------------------+--------------------------------------------------------------------------------------------------+
-| App Name                       | Recommendations                                  | Comments                                                                                         |
+| App ID                         | Recommendations                                  | Comments                                                                                         |
 +================================+==================================================+==================================================================================================+
 | application_1664894105643_0011 | --conf spark.executor.cores=16                   | - 'spark.task.resource.gpu.amount' was not set.                                                  |
 |                                | --conf spark.executor.memory=32768m              | - 'spark.rapids.sql.concurrentGpuTasks' was not set.                                             |
