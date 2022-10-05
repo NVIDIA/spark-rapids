@@ -234,6 +234,17 @@ case class AppInfoProfileResults(appIndex: Int, appName: String,
   }
 }
 
+case class AppEventLogPath(appIndex: Int, appName: String,
+    appId: Option[String], eventLogPath: String)  extends ProfileResult {
+  override val outputHeaders = Seq("appIndex", "appName", "appId",
+    "eventLogPath")
+
+  override def convertToSeq: Seq[String] = {
+    Seq(appIndex.toString, appName, appId.getOrElse(""),
+      eventLogPath)
+  }
+}
+
 case class ApplicationCase(
     appName: String, appId: Option[String], sparkUser: String,
     startTime: Long, endTime: Option[Long], duration: Option[Long],

@@ -1045,7 +1045,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       }
     }
   }
-
+/*
   test("--help at end of command line arguments") {
     val qualLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
     val logFiles = Array(s"$qualLogDir/gpu_eventlog")
@@ -1060,7 +1060,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       assert(exit == 0)
       assert(appSum.size == 0)
     }
-  }
+  }*/
 }
 
 class ToolTestListener extends SparkListener {
