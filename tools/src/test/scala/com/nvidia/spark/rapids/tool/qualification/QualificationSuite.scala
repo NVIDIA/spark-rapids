@@ -1045,22 +1045,6 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       }
     }
   }
-
-  test("--help at end of command line arguments") {
-    val qualLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
-    val logFiles = Array(s"$qualLogDir/gpu_eventlog")
-    TrampolineUtil.withTempDir { outpath =>
-      val allArgs = Array(
-        "--output-directory",
-        outpath.getAbsolutePath())
-      val lastArgs = Array("--help")
-
-      val appArgs = new QualificationArgs(allArgs ++ logFiles ++ lastArgs)
-      val (exit, appSum) = QualificationMain.mainInternal(appArgs)
-      assert(exit == 0)
-      assert(appSum.size == 0)
-    }
-  }
 }
 
 class ToolTestListener extends SparkListener {
