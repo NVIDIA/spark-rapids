@@ -225,6 +225,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
     Option(batchInternal).foreach(_.close())
   }
 
+  @scala.annotation.nowarn("msg=method finalize in class Object is deprecated")
   override def finalize(): Unit = {
     super.finalize()
     close()
