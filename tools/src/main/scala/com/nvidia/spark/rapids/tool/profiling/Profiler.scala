@@ -286,6 +286,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
 
     val collect = new CollectInformation(apps)
     val appInfo = collect.getAppInfo
+    val appEventLogPath = collect.getAppEventLogPath
     val dsInfo = collect.getDataSourceInfo
     val execInfo = collect.getExecutorInfo
     val jobInfo = collect.getJobInfo
@@ -353,10 +354,10 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
           s"to $outputDir in $duration second(s)\n")
       }
     }
-    (ApplicationSummaryInfo(appInfo, dsInfo, execInfo, jobInfo, rapidsProps, rapidsJar,
-      sqlMetrics, jsMetAgg, sqlTaskAggMetrics, durAndCpuMet, skewInfo, failedTasks, failedStages,
-      failedJobs, removedBMs, removedExecutors, unsupportedOps, sparkProps, sqlStageInfo,
-      wholeStage, maxTaskInputInfo), compareRes)
+    (ApplicationSummaryInfo(appInfo, appEventLogPath, dsInfo, execInfo, jobInfo, rapidsProps, 
+      rapidsJar, sqlMetrics, jsMetAgg, sqlTaskAggMetrics, durAndCpuMet, skewInfo, failedTasks, 
+      failedStages, failedJobs, removedBMs, removedExecutors, unsupportedOps, sparkProps, 
+      sqlStageInfo, wholeStage, maxTaskInputInfo), compareRes)
   }
 
   def writeOutput(profileOutputWriter: ProfileOutputWriter,
@@ -393,6 +394,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       }
       val reduced = ApplicationSummaryInfo(
         appsSum.flatMap(_.appInfo).sortBy(_.appIndex),
+        appsSum.flatMap(_.appEventLogPath).sortBy(_.appIndex),
         appsSum.flatMap(_.dsInfo).sortBy(_.appIndex),
         appsSum.flatMap(_.execInfo).sortBy(_.appIndex),
         appsSum.flatMap(_.jobInfo).sortBy(_.appIndex),
@@ -421,6 +423,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     sums.foreach { app =>
       profileOutputWriter.writeText("### A. Information Collected ###")
       profileOutputWriter.write("Application Information", app.appInfo)
+      profileOutputWriter.write("Application Log Path Mapping", app.appEventLogPath)
       profileOutputWriter.write("Data Source Information", app.dsInfo)
       profileOutputWriter.write("Executor Information", app.execInfo)
       profileOutputWriter.write("Job Information", app.jobInfo)

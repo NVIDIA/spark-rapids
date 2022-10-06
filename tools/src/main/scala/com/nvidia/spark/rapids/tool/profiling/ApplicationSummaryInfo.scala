@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.tool.profiling
 
 case class ApplicationSummaryInfo(
     val appInfo: Seq[AppInfoProfileResults],
+    val appEventLogPath: Seq[AppEventLogPath],
     val dsInfo: Seq[DataSourceProfileResult],
     val execInfo: Seq[ExecutorInfoProfileResult],
     val jobInfo: Seq[JobInfoProfileResult],

@@ -719,7 +719,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
         f.endsWith(".csv")
       })
-      assert(dotDirs.length === 15)
+      assert(dotDirs.length === 16)
       for (file <- dotDirs) {
         assert(file.getAbsolutePath.endsWith(".csv"))
         // just load each one to make sure formatted properly
@@ -746,7 +746,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
         f.endsWith(".csv")
       })
-      assert(dotDirs.length === 11)
+      assert(dotDirs.length === 12)
       for (file <- dotDirs) {
         assert(file.getAbsolutePath.endsWith(".csv"))
         // just load each one to make sure formatted properly
@@ -776,7 +776,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
         f.endsWith(".csv")
       })
-      assert(dotDirs.length === 15)
+      assert(dotDirs.length === 16)
       for (file <- dotDirs) {
         assert(file.getAbsolutePath.endsWith(".csv"))
         // just load each one to make sure formatted properly
@@ -806,7 +806,7 @@ class ApplicationInfoSuite extends FunSuite with Logging {
       val dotDirs = ToolTestUtils.listFilesMatching(tempSubDir, { f =>
         f.endsWith(".csv")
       })
-      assert(dotDirs.length === 13)
+      assert(dotDirs.length === 14)
       for (file <- dotDirs) {
         assert(file.getAbsolutePath.endsWith(".csv"))
         // just load each one to make sure formatted properly
@@ -846,21 +846,6 @@ class ApplicationInfoSuite extends FunSuite with Logging {
         // right now we just ignore them so nothing else to check
         assert(apps.size == 1)
       }
-    }
-  }
-
-  test("--help at end of command line arguments") {
-    val testLogDir = ToolTestUtils.getTestResourcePath("spark-events-profiling")
-    val eventLog = s"$logDir/rp_sql_eventlog.zstd"
-    TrampolineUtil.withTempDir { outpath =>
-      val allArgs = Array(
-        "--output-directory",
-        eventLog)
-      val lastArgs = Array("--help")
-
-      val appArgs = new ProfileArgs(allArgs ++ lastArgs)
-      val (exit, _) = ProfileMain.mainInternal(appArgs)
-      assert(exit == 0)
     }
   }
 }
