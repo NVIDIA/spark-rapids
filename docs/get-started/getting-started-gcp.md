@@ -9,7 +9,7 @@ parent: Getting-Started
  [Google Cloud Dataproc](https://cloud.google.com/dataproc) is Google Cloud's fully managed Apache
  Spark and Hadoop service.  The quick start guide will go through:
 
-* [Quick Start Prerequisitves](#quick-start-prerequisites) 
+* [Quick Start Prerequisites](#quick-start-prerequisites) 
 * [Qualify CPU workloads for GPU acceleration](#qualify-cpu-workloads-for-gpu-acceleration)
 * [Bootstrap GPU cluster with optimized settings](#bootstrap-gpu-cluster-with-optimized-settings)
 * [Tune applications on GPU cluster](#tune-applications-on-gpu-cluster)
@@ -31,12 +31,14 @@ The advanced guide will walk through the steps to:
 
 ## Qualify CPU Workloads for GPU Acceleration
 
-The qualification tool is run on a Dataproc cluster that has applications that have already run.
+The [qualification tool](https://nvidia.github.io/spark-rapids/docs/spark-qualification-tool.html) is launched on a Dataproc cluster that has applications that have already run.
 The tool will output the applications recommended for acceleration along with estimated speed-up
 and cost saving metrics.  Additionally, it will provide information on how to launch a GPU-
 accelerated cluster to take advantage of the speed-up and cost savings.
 
 Usage: `spark_rapids_dataproc qualification --cluster <cluster-name> --region <region>`
+
+Help (to see all options available): `spark_rapids_dataproc qualification --help`
 
 Example output:
 ```bash
@@ -72,6 +74,8 @@ applications.
 
 Usage: `spark_rapids_dataproc bootstrap --cluster <cluster-name> --region <region>`
 
+Help (to see all options available): `spark_rapids_dataproc bootstrap --help`
+
 Example output: 
 ```bash
 ##### BEGIN : RAPIDS bootstrap settings for gpu-cluster
@@ -87,12 +91,14 @@ spark.task.resource.gpu.amount=0.0625
 
 ## Tune Applications on GPU Cluster
 
-Once Spark applications have been run on the GPU cluster, the profiling tool can be run to 
+Once Spark applications have been run on the GPU cluster, the [profiling tool](https://nvidia.github.io/spark-rapids/docs/spark-profiling-tool.html) can be run to 
 analyze the event logs of the applications to determine if more optimal settings should be
 configured.  The tool will output a per-application set of config settings to be adjusted for
 enhanced performance.
 
 Usage: `spark_rapids_dataproc profiling --cluster <cluster-name> --region <region>`
+
+Help (to see all options available): `spark_rapids_dataproc profiling --help`
 
 Example output:
 ```bash
