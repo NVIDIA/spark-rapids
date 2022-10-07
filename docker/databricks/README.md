@@ -1,5 +1,25 @@
 # RAPIDS Accelerator for Apache Spark Docker container for Databricks
 
+## Build the container
+
+You will need to build the Docker container before using it in the Databricks environment. This can be done with the provided build script. You can customize a few options using environment variables, but will at minimum need to set REPO_BASE and TAG_NAME to a repository where you can push the built image. For example to push an image to repository at `i-love-spark/rapids-4-spark-databricks`:
+
+```bash
+$ REPO_BASE=i-love-spark TAG_NAME=rapids-4-spark-databricks ./build.sh
+```
+
+The script will then build an image with fully qualified tag: `i-love-spark/rapids-4-spark-databricks:22.10.0`. 
+
+If you set `PUSH=true`, if the build completes successfully, the script will push it to specified repository. Only do this if you have authenticated using Docker to the repository and you have the appropriate permissions to push image artifacts.
+
+```bash
+$ REPO_BASE=i-love-spark TAG_NAME=rapids-4-spark-databricks PUSH=true ./build.sh
+```
+
+There are other customizations possible, see the source in `build.sh` for more information.
+
+Once this image is pushed to your repository, it is ready to be used on the Databricks environment.
+
 ## Usage
 
 The easiest way to use the RAPIDS Accelerator for Spark on Databricks is use the pre-built Docker
@@ -34,9 +54,9 @@ cluster meets the prerequisites above by configuring it as follows:
 
 8. Select `Use your own Docker container`.
 
-9. In the `Docker Image URL` field, enter `navkumar82/rapids-4-spark-databricks:22.10.0`.
+9. In the `Docker Image URL` field, enter the image location you pushed to using the build steps.
 
-10. Leave `Authentication` set to `Default`.
+10. Set `Authentication` set to `Default` if using a public repository, or configure `Authentication` for the repository you have pushed the image to.
 
 11. Now select the `Init Scripts` tab.
 
