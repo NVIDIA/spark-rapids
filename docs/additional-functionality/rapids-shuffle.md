@@ -52,8 +52,8 @@ The minimum UCX requirement for the RAPIDS Shuffle Manager is
 
 #### Baremetal
 
-1. If you have Mellanox hardware, please ensure you have the [MLNX_OFED driver](https://www.mellanox.com/products/infiniband-drivers/linux/mlnx_ofed), and the
-[`nv_peer_mem` kernel module](https://www.mellanox.com/products/GPUDirect-RDMA) installed. UCX packages
+1. If you have Mellanox hardware, please ensure you have the [MLNX_OFED driver](https://network.nvidia.com/products/infiniband-drivers/linux/mlnx_ofed), and the
+[`nv_peer_mem` kernel module](https://network.nvidia.com/products/GPUDirect-RDMA) installed. UCX packages
    are compatible with MLNX_OFED 5.0+. Please install the latest driver available.
 
    With `nv_peer_mem` (GPUDirectRDMA), IB/RoCE-based transfers can perform zero-copy transfers
