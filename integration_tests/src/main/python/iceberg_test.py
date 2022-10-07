@@ -79,7 +79,7 @@ def test_iceberg_aqe_dpp(spark_tmp_table_factory, reader_type):
 def test_iceberg_parquet_read_round_trip_select_one(spark_tmp_table_factory, data_gens, reader_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
     # just change it up from selecting the first column
-    select_colunmn = '_c' + str(len(data_gens))
+    select_colunm = '_c' + str(len(data_gens))
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
