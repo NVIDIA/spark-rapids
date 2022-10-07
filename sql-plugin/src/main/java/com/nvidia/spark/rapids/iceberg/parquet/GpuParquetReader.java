@@ -311,10 +311,12 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
 
     @Override
     public Type list(Types.ListType expectedList, GroupType list, Type element) {
-      boolean hasConstant = expectedList.fields().stream()
+      if (expectedList != null) {
+        boolean hasConstant = expectedList.fields().stream()
           .anyMatch(f -> idToConstant.containsKey(f.fieldId()));
-      if (hasConstant) {
-        throw new UnsupportedOperationException("constant column in list");
+        if (hasConstant) {
+          throw new UnsupportedOperationException("constant column in list");
+        }
       }
       GroupType repeated = list.getType(0).asGroupType();
       Type originalElement = repeated.getType(0);
@@ -326,10 +328,12 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
 
     @Override
     public Type map(Types.MapType expectedMap, GroupType map, Type key, Type value) {
-      boolean hasConstant = expectedMap.fields().stream()
+      if (expectedMap != null) {
+        boolean hasConstant = expectedMap.fields().stream()
           .anyMatch(f -> idToConstant.containsKey(f.fieldId()));
-      if (hasConstant) {
-        throw new UnsupportedOperationException("constant column in map");
+        if (hasConstant) {
+          throw new UnsupportedOperationException("constant column in map");
+        }
       }
       GroupType repeated = map.getFields().get(0).asGroupType();
       Type originalKey = repeated.getType(0);
