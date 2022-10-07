@@ -34,7 +34,7 @@ DRIVER_CONF_FILE=${DRIVER_CONF_FILE:-"00-custom-spark-driver-defaults.conf"}
 DATABRICKS_RUNTIME_VERSION=${DATABRICKS_RUNTIME_VERSION:-"10.4"}
 REQUIREMENTS="requirements_${DATABRICKS_RUNTIME_VERSION}ML.txt"
 
-STAGE=${STAGE:-"databricks-alluxio"}
+STAGE=${STAGE:-"with-alluxio"}
 
 docker build \
   --build-arg CUDA_VERSION=${CUDA_VERSION} \

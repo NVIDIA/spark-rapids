@@ -23,7 +23,7 @@
 # https://github.com/dayananddevarapalli/containers/blob/main/webterminal/Dockerfile
 #############
 ARG CUDA_VERSION=11.5.2
-FROM nvidia/cuda:${CUDA_VERSION}-cudnn8-runtime-ubuntu20.04 as databricks
+FROM nvidia/cuda:${CUDA_VERSION}-cudnn8-runtime-ubuntu20.04 as base
 
 ARG CUDA_PKG_VERSION=11-5
 
@@ -89,7 +89,7 @@ ENV LANG=C.UTF-8
 ENV USER=ubuntu
 ENV PATH=/usr/local/nvidia/bin:/databricks/python3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin
 
-FROM databricks as databricks-plugin
+FROM base as with-plugin
 
 #############
 # Spark RAPIDS configuration
@@ -111,7 +111,7 @@ WORKDIR /databricks
 #############
 # Setup Ganglia
 #############
-FROM databricks-plugin as databricks-ganglia
+FROM with-plugin as with-ganglia
 
 WORKDIR /databricks
 ENV DEBIAN_FRONTEND=noninteractive
@@ -185,7 +185,7 @@ RUN chmod 775 /etc/init.d/monit
 #############
 # Set up webterminal ssh
 #############
-FROM databricks-ganglia as databricks-webterminal
+FROM with-ganglia as with-webterminal
 
 RUN wget https://github.com/tsl0922/ttyd/releases/download/1.6.3/ttyd.x86_64 && \
         mkdir -p /databricks/driver/logs && \
@@ -205,8 +205,8 @@ RUN echo '\
 check process ttyd with pidfile /var/run/ttyd-daemon.pid\n\
       start program = "/databricks/spark/scripts/ttyd/start_ttyd_daemon.sh"\n\
       stop program = "/databricks/spark/scripts/ttyd/stop_ttyd_daemon.sh"' >  /etc/monit/conf.d/ttyd-daemon-not-active
-FROM databricks-webterminal as databricks-alluxio
 
+FROM with-webterminal as with-alluxio
 #############
 # Setup Alluxio
 #############
