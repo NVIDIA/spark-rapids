@@ -96,7 +96,7 @@ class PluginTypeChecker extends Logging {
     val source = Source.fromResource(SUPPORTED_EXPRS_FILE)
     // Some SQL function names have backquotes(`) around their names,
     // so we remove them before saving.
-      readSupportedOperators(source, "exprs").map(
+    readSupportedOperators(source, "exprs").map(
       x => (x._1.toLowerCase.replaceAll("\\`", ""), x._2))
   }
 
