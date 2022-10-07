@@ -78,8 +78,6 @@ def test_iceberg_aqe_dpp(spark_tmp_table_factory, reader_type):
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_parquet_read_round_trip_select_one(spark_tmp_table_factory, data_gens, reader_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
-    # just change it up from selecting the first column
-    select_column = '_c' + str(len(data_gens))
     table = spark_tmp_table_factory.get()
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
@@ -89,7 +87,7 @@ def test_iceberg_parquet_read_round_trip_select_one(spark_tmp_table_factory, dat
     with_cpu_session(setup_iceberg_table)
     # explicitly only select 1 column to make sure we test that path in the schema parsing code
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : spark.sql("SELECT {} FROM {}".format(select_column, table)),
+        lambda spark : spark.sql("SELECT _c0 FROM {}".format(table)),
         conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
 
 @iceberg
