@@ -346,8 +346,8 @@ object GpuCast extends Arm {
         }
 
       // ansi cast from larger-than-integer integral-like types, to integer
-      case (t @(LongType | _: DecimalType), IntegerType) if ansiMode =>
-        t match {
+      case (LongType | _: DecimalType, IntegerType) if ansiMode =>
+        fromDataType match {
           case LongType =>
             assertValuesInRange[Long](input, Int.MinValue.toLong, Int.MaxValue.toLong)
           case _ =>
@@ -357,8 +357,8 @@ object GpuCast extends Arm {
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from larger-than-short integral-like types, to short
-      case (t @(LongType | IntegerType | _: DecimalType), ShortType) if ansiMode =>
-        t match {
+      case (LongType | IntegerType | _: DecimalType, ShortType) if ansiMode =>
+        fromDataType match {
           case LongType =>
             assertValuesInRange[Long](input, Short.MinValue.toLong, Short.MaxValue.toLong)
           case IntegerType =>
@@ -370,8 +370,8 @@ object GpuCast extends Arm {
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from larger-than-byte integral-like types, to byte
-      case (t @ (LongType | IntegerType | ShortType | _: DecimalType), ByteType) if ansiMode =>
-        t match {
+      case (LongType | IntegerType | ShortType | _: DecimalType, ByteType) if ansiMode =>
+        fromDataType match {
           case LongType =>
             assertValuesInRange[Long](input, Byte.MinValue.toLong, Byte.MaxValue.toLong)
           case IntegerType =>
