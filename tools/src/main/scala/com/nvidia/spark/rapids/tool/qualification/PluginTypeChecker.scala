@@ -84,7 +84,7 @@ class PluginTypeChecker extends Logging {
 
   private def readOperatorsScore: Map[String, Double] = {
     val source = Source.fromResource(OPERATORS_SCORE_FILE)
-    readSupportedOperators(source).map(x => (x._1, x._2.toDouble))
+    readSupportedOperators(source, "score").map(x => (x._1, x._2.toDouble))
   }
 
   private def readSupportedExecs: Map[String, String] = {
@@ -94,7 +94,10 @@ class PluginTypeChecker extends Logging {
 
   private def readSupportedExprs: Map[String, String] = {
     val source = Source.fromResource(SUPPORTED_EXPRS_FILE)
-    readSupportedOperators(source).map(x => (x._1.toLowerCase, x._2))
+    // Some SQL function names have backquotes(`) around their names,
+    // so we remove them before saving.
+    readSupportedOperators(source, "exprs").map(
+      x => (x._1.toLowerCase.replaceAll("\\`", ""), x._2))
   }
 
   private def readSupportedTypesForPlugin: (
@@ -103,7 +106,10 @@ class PluginTypeChecker extends Logging {
     readSupportedTypesForPlugin(source)
   }
 
-  private def readSupportedOperators(source: BufferedSource): Map[String, String] = {
+  // operatorType can be exprs, score or execs(default). Reads the columns in file depending
+  // on the operatorType passed to this function.
+  private def readSupportedOperators(source: BufferedSource,
+      operatorType: String = "execs"): Map[String, String] = {
     val supportedOperators = HashMap.empty[String, String]
     try {
       val fileContents = source.getLines().toSeq
@@ -121,7 +127,27 @@ class PluginTypeChecker extends Logging {
               s" header length doesn't match rows length. Row that doesn't match is " +
               s"${cols.mkString(",")}")
         }
-        supportedOperators.put(cols(0), cols(1))
+        // There are addidtional checks for Expressions. In physical plan, SQL function name is
+        // printed instead of expression name. We have to save both expression name and
+        // SQL function name(if there is one) so that we don't miss the expression while
+        // parsing the execs.
+        // Ex: Expression name = Substring, SQL function= `substr`; `substring`
+        // Ex: Expression name = Average, SQL function name = `avg`
+        if (operatorType.equals("exprs")) {
+          // save expression name
+          supportedOperators.put(cols(0), cols(1))
+          // Check if there is SQL function name for the above expression
+          if (cols(2).nonEmpty && cols(2) != None) {
+            // Split on `;` if there are multiple SQL names as shown in above example and
+            // save each SQL function name as a separate key.
+            val sqlFuncNames = cols(2).split(";")
+            for (i <- sqlFuncNames) {
+              supportedOperators.put(i, cols(1))
+            }
+          }
+        } else {
+          supportedOperators.put(cols(0), cols(1))
+        }
       }
     } finally {
       source.close()
