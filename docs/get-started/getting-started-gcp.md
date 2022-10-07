@@ -41,7 +41,7 @@ Usage: `spark_rapids_dataproc qualification --cluster <cluster-name> --region <r
 Help (to see all options available): `spark_rapids_dataproc qualification --help`
 
 Example output:
-```bash
+```
 +----+------------+--------------------------------+----------------------+-----------------+-----------------+---------------+-----------------+
 |    | App Name   | App ID                         | Recommendation       |   Estimated GPU |   Estimated GPU |           App |   Estimated GPU |
 |    |            |                                |                      |         Speedup |     Duration(s) |   Duration(s) |      Savings(%) |
@@ -77,7 +77,7 @@ Usage: `spark_rapids_dataproc bootstrap --cluster <cluster-name> --region <regio
 Help (to see all options available): `spark_rapids_dataproc bootstrap --help`
 
 Example output: 
-```bash
+```
 ##### BEGIN : RAPIDS bootstrap settings for gpu-cluster
 spark.executor.cores=16
 spark.executor.memory=32768m
@@ -101,7 +101,7 @@ Usage: `spark_rapids_dataproc profiling --cluster <cluster-name> --region <regio
 Help (to see all options available): `spark_rapids_dataproc profiling --help`
 
 Example output:
-```bash
+```
 +--------------------------------+--------------------------------------------------+--------------------------------------------------------------------------------------------------+
 | App ID                         | Recommendations                                  | Comments                                                                                         |
 +================================+==================================================+==================================================================================================+
