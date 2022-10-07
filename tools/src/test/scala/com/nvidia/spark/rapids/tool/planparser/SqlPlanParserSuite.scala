@@ -740,4 +740,27 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       }
     }
   }
+
+  test("Parse SQL function Name in HashAggregateExec") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
+        import spark.implicits._
+        val df1 = Seq((1, "a"), (1, "aa"), (1, "a"), (2, "b"),
+          (2, "b"), (3, "c"), (3, "c")).toDF("num", "letter")
+        // Average is Expression name and `avg` is SQL function name.
+        // SQL function name is in the eventlog as shown below.
+        // HashAggregate(keys=[letter#187], functions=[avg(cast(num#186 as bigint))])
+        df1.groupBy("letter").avg("num")
+      }
+      val pluginTypeChecker = new PluginTypeChecker()
+      val app = createAppFromEventlog(eventLog)
+      assert(app.sqlPlans.size == 1)
+      val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+        SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, "", pluginTypeChecker, app)
+      }
+      val execInfo = getAllExecsFromPlan(parsedPlans.toSeq)
+      val hashAggregate = execInfo.filter(_.exec == "HashAggregate")
+      assertSizeAndSupported(2, hashAggregate, 4.5)
+    }
+  }
 }
