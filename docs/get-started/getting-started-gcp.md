@@ -89,7 +89,7 @@ spark.task.resource.gpu.amount=0.0625
 ##### END : RAPIDS bootstrap settings for gpu-cluster
 ```
 
-A detailed description for bootstrap settings with usage information is available in the [Configs](https://nvidia.github.io/spark-rapids/docs/configs.html) page.
+A detailed description for bootstrap settings with usage information is available in the [RAPIDS Accelerator for Apache Spark Configuration](https://nvidia.github.io/spark-rapids/docs/configs.html) and [Spark Configuration](https://spark.apache.org/docs/latest/configuration.html) page.
 
 ## Tune Applications on GPU Cluster
 
