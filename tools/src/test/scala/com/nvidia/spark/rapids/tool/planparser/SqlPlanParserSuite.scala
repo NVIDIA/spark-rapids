@@ -343,10 +343,11 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val df1 = spark.sparkContext.makeRDD(1 to 1000, 6).toDF
         df1.coalesce(1).collect // Coalesce
         spark.range(10).where(col("id") === 2).collect // Range
-        df1.orderBy("value").limit(10).collect // TakeOrderedAndProject
+        // TakeOrderedAndProject
+        df1.orderBy($"value", ceil($"value"), round($"value")).limit(10).collect
         df1.limit(10).collect // CollectLimit
         df1.union(df1).collect // Union
-        df1.rollup(col("value")).agg(col("value")).collect // Expand
+        df1.rollup(ceil(col("value"))).agg(ceil(col("value"))).collect // Expand
         df1.sample(0.1) // Sample
       }
       val pluginTypeChecker = new PluginTypeChecker()
