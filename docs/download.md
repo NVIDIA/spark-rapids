@@ -41,6 +41,26 @@ for your hardware's minimum driver version.
 *For Cloudera and EMR support, please refer to the
 [Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
 
+### Download v22.10.0
+* Download the [RAPIDS
+  Accelerator for Apache Spark 22.10.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/22.10.0/rapids-4-spark_2.12-22.10.0.jar)
+
+This package is built against CUDA 11.5 and all CUDA 11.x versions are supported through [CUDA forward
+compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html). It is tested
+	@@ -52,812 +52,33 @@ do not have CUDA forward compatibility (for example, GeForce), CUDA 11.5 or late
+need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on each Spark node.
+
+### Verify signature
+* Download the [RAPIDS Accelerator for Apache Spark 22.10.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/22.10.0/rapids-4-spark_2.12-22.10.0.jar)
+  and [RAPIDS Accelerator for Apache Spark 22.10.0 jars.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/22.10.0/rapids-4-spark_2.12-22.10.0.jar.asc)
+* Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
+* Import the public key: `gpg --import PUB_KEY`
+* Verify the signature: `gpg --verify rapids-4-spark_2.12-22.10.0.jar.asc rapids-4-spark_2.12-22.10.0.jar`
+
+The output if signature verify:
+
+	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
+
 ### Release Notes
 New functionality and performance improvements for this release include:
 * Dataproc qualification, profiling, bootstrap and diagnostic tool
