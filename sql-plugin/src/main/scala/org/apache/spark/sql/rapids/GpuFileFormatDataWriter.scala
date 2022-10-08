@@ -423,7 +423,6 @@ class GpuDynamicPartitionDataSingleWriter(
     assert(!isBucketed)
 
     // We have an entire batch that is sorted, so we need to split it up by key
-    var distinctKeys: Table = null
     val maxRecordsPerFile = description.maxRecordsPerFile
 
     try {
@@ -431,10 +430,11 @@ class GpuDynamicPartitionDataSingleWriter(
       val outDataTypes = description.dataColumns.map(_.dataType).toArray
       val (partitionIndexes, splits, cbKeys) = withResource(cb) { cb =>
         val (partitionIndexes, cbKeys) = withResource(getPartitionColumns(cb)) { partitionColumns =>
-          distinctKeys = distinctAndSort(partitionColumns)
-          val partitionIndexes = splitIndexes(partitionColumns, distinctKeys)
-          val cbKeys = copyToHostAsBatch(distinctKeys, partDataTypes)
-          (partitionIndexes, cbKeys)
+          withResource(distinctAndSort(partitionColumns)) { distinctKeys =>
+            val partitionIndexes = splitIndexes(partitionColumns, distinctKeys)
+            val cbKeys = copyToHostAsBatch(distinctKeys, partDataTypes)
+            (partitionIndexes, cbKeys)
+          }
         }
 
         // split the original data on the indexes
@@ -443,10 +443,6 @@ class GpuDynamicPartitionDataSingleWriter(
         }
         (partitionIndexes, splits, cbKeys)
       }
-
-
-      distinctKeys.close()
-      distinctKeys = null
 
       // Use the existing code to convert each row into a path. It would be nice to do this on
       // the GPU, but the data should be small and there are things we cannot easily support
@@ -589,9 +585,6 @@ class GpuDynamicPartitionDataSingleWriter(
         })
       }
     } finally {
-      if (distinctKeys != null) {
-        distinctKeys.close()
-      }
     }
   }
 
