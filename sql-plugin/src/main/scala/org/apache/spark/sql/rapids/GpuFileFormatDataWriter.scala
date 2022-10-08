@@ -426,7 +426,7 @@ class GpuDynamicPartitionDataSingleWriter(
     val maxRecordsPerFile = description.maxRecordsPerFile
     val partDataTypes = description.partitionColumns.map(_.dataType).toArray
     val outDataTypes = description.dataColumns.map(_.dataType).toArray
-    val (partitionIndexes, splits, cbKeys) = withResource(cb) { cb =>
+    val (splits, cbKeys) = withResource(cb) { cb =>
       val (partitionIndexes, cbKeys) = withResource(getPartitionColumns(cb)) { partitionColumns =>
         withResource(distinctAndSort(partitionColumns)) { distinctKeys =>
           val partitionIndexes = splitIndexes(partitionColumns, distinctKeys)
@@ -439,7 +439,7 @@ class GpuDynamicPartitionDataSingleWriter(
       val splits = withResource(getOutputColumns(cb)) { outputColumns =>
         outputColumns.contiguousSplit(partitionIndexes: _*)
       }
-      (partitionIndexes, splits, cbKeys)
+      (splits, cbKeys)
     }
 
     // Use the existing code to convert each row into a path. It would be nice to do this on
