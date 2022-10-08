@@ -429,20 +429,22 @@ class GpuDynamicPartitionDataSingleWriter(
     try {
       val partDataTypes = description.partitionColumns.map(_.dataType).toArray
       val outDataTypes = description.dataColumns.map(_.dataType).toArray
-      val (partitionIndexes, splits) = withResource(cb) { cb =>
-        val partitionIndexes = withResource(getPartitionColumns(cb)) { partitionColumns =>
+      val (partitionIndexes, splits, cbKeys) = withResource(cb) { cb =>
+        val (partitionIndexes, cbKeys) = withResource(getPartitionColumns(cb)) { partitionColumns =>
           distinctKeys = distinctAndSort(partitionColumns)
-          splitIndexes(partitionColumns, distinctKeys)
+          val partitionIndexes = splitIndexes(partitionColumns, distinctKeys)
+          val cbKeys = copyToHostAsBatch(distinctKeys, partDataTypes)
+          (partitionIndexes, cbKeys)
         }
 
         // split the original data on the indexes
         val splits = withResource(getOutputColumns(cb)) { outputColumns =>
           outputColumns.contiguousSplit(partitionIndexes: _*)
         }
-        (partitionIndexes, splits)
+        (partitionIndexes, splits, cbKeys)
       }
 
-      val cbKeys = copyToHostAsBatch(distinctKeys, partDataTypes)
+
       distinctKeys.close()
       distinctKeys = null
 
