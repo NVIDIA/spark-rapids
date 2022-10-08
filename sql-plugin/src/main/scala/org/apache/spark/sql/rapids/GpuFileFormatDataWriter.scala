@@ -423,7 +423,6 @@ class GpuDynamicPartitionDataSingleWriter(
     assert(!isBucketed)
 
     // We have an entire batch that is sorted, so we need to split it up by key
-    var needToCloseBatch = true
     var partitionColumns: Table = null
     var distinctKeys: Table = null
     var outputColumns: Table = null
@@ -432,18 +431,19 @@ class GpuDynamicPartitionDataSingleWriter(
     val maxRecordsPerFile = description.maxRecordsPerFile
 
     try {
-      partitionColumns = getPartitionColumns(cb)
-      val partDataTypes = description.partitionColumns.map(_.dataType).toArray
-      distinctKeys = distinctAndSort(partitionColumns)
-      val partitionIndexes = splitIndexes(partitionColumns, distinctKeys)
-      partitionColumns.close()
-      partitionColumns = null
+      val (partDataTypes, partitionIndexes, outDataTypes) = withResource(cb) { cb =>
+        partitionColumns = getPartitionColumns(cb)
+        val partDataTypes = description.partitionColumns.map(_.dataType).toArray
+        distinctKeys = distinctAndSort(partitionColumns)
+        val partitionIndexes = splitIndexes(partitionColumns, distinctKeys)
+        partitionColumns.close()
+        partitionColumns = null
 
-      // split the original data on the indexes
-      outputColumns = getOutputColumns(cb)
-      val outDataTypes = description.dataColumns.map(_.dataType).toArray
-      cb.close()
-      needToCloseBatch = false
+        // split the original data on the indexes
+        outputColumns = getOutputColumns(cb)
+        val outDataTypes = description.dataColumns.map(_.dataType).toArray
+        (partDataTypes, partitionIndexes, outDataTypes)
+      }
       splits = outputColumns.contiguousSplit(partitionIndexes: _*)
       outputColumns.close()
       outputColumns = null
@@ -591,10 +591,6 @@ class GpuDynamicPartitionDataSingleWriter(
         })
       }
     } finally {
-      if (needToCloseBatch) {
-        cb.close()
-      }
-
       if (partitionColumns != null) {
         partitionColumns.close()
       }
