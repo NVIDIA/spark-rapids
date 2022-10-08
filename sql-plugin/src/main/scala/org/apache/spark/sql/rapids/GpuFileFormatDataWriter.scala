@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import scala.collection.mutable
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
-import ai.rapids.cudf.{ColumnVector, ContiguousTable, OrderByArg, Table}
+import ai.rapids.cudf.{ColumnVector, OrderByArg, Table}
 import com.nvidia.spark.TimingUtils
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -423,28 +423,27 @@ class GpuDynamicPartitionDataSingleWriter(
     assert(!isBucketed)
 
     // We have an entire batch that is sorted, so we need to split it up by key
-    var partitionColumns: Table = null
     var distinctKeys: Table = null
     var outputColumns: Table = null
-    var splits: Array[ContiguousTable] = null
     var cbKeys: ColumnarBatch = null
     val maxRecordsPerFile = description.maxRecordsPerFile
 
     try {
       val (partDataTypes, partitionIndexes, outDataTypes) = withResource(cb) { cb =>
-        partitionColumns = getPartitionColumns(cb)
-        val partDataTypes = description.partitionColumns.map(_.dataType).toArray
-        distinctKeys = distinctAndSort(partitionColumns)
-        val partitionIndexes = splitIndexes(partitionColumns, distinctKeys)
-        partitionColumns.close()
-        partitionColumns = null
+        val partitionColumns = getPartitionColumns(cb)
+        val (partDataTypes, partitionIndexes) = withResource(partitionColumns) { partitionColumns =>
+          val partDataTypes = description.partitionColumns.map(_.dataType).toArray
+          distinctKeys = distinctAndSort(partitionColumns)
+          val partitionIndexes = splitIndexes(partitionColumns, distinctKeys)
+          (partDataTypes, partitionIndexes)
+        }
 
         // split the original data on the indexes
         outputColumns = getOutputColumns(cb)
         val outDataTypes = description.dataColumns.map(_.dataType).toArray
         (partDataTypes, partitionIndexes, outDataTypes)
       }
-      splits = outputColumns.contiguousSplit(partitionIndexes: _*)
+      val splits = outputColumns.contiguousSplit(partitionIndexes: _*)
       outputColumns.close()
       outputColumns = null
 
@@ -591,10 +590,6 @@ class GpuDynamicPartitionDataSingleWriter(
         })
       }
     } finally {
-      if (partitionColumns != null) {
-        partitionColumns.close()
-      }
-
       if (distinctKeys != null) {
         distinctKeys.close()
       }
