@@ -277,11 +277,8 @@ class GpuDynamicPartitionDataSingleWriter(
       description.partitionColumns,
       description.allColumns)
     cb => {
-      val batch = GpuProjectExec.project(cb, expressions)
-      try {
+      withResource(GpuProjectExec.project(cb, expressions)) { batch =>
         GpuColumnVector.from(batch)
-      } finally {
-        batch.close()
       }
     }
   }
@@ -292,11 +289,8 @@ class GpuDynamicPartitionDataSingleWriter(
       description.dataColumns,
       description.allColumns)
     cb => {
-      val batch = GpuProjectExec.project(cb, expressions)
-      try {
+      withResource(GpuProjectExec.project(cb, expressions)) { batch =>
         GpuColumnVector.from(batch)
-      } finally {
-        batch.close()
       }
     }
   }
@@ -387,11 +381,8 @@ class GpuDynamicPartitionDataSingleWriter(
   // distinct value sorted the same way the input data is sorted.
   private def distinctAndSort(t: Table): Table = {
     val columnIds = 0 until t.getNumberOfColumns
-    val distinct = t.groupBy(columnIds: _*).aggregate()
-    try {
+    withResource(t.groupBy(columnIds: _*).aggregate()) { distinct =>
       distinct.orderBy(columnIds.map(OrderByArg.asc(_, nullsSmallest)): _*)
-    } finally {
-      distinct.close()
     }
   }
 
@@ -399,21 +390,15 @@ class GpuDynamicPartitionDataSingleWriter(
   private def splitIndexes(t: Table, keys: Table): Array[Int] = {
     val nullsSmallestArray = Array.fill[Boolean](t.getNumberOfColumns)(nullsSmallest)
     val desc = Array.fill[Boolean](t.getNumberOfColumns)(false)
-    val cv = t.upperBound(nullsSmallestArray, keys, desc)
-    try {
+    withResource(t.upperBound(nullsSmallestArray, keys, desc)) { cv =>
       GpuColumnVector.toIntArray(cv)
-    } finally {
-      cv.close()
     }
   }
 
   // Convert a table to a ColumnarBatch on the host, so we can iterate through it.
   protected def copyToHostAsBatch(input: Table, colTypes: Array[DataType]): ColumnarBatch = {
-    val tmp = GpuColumnVector.from(input, colTypes)
-    try {
+    withResource(GpuColumnVector.from(input, colTypes)) { tmp =>
       new ColumnarBatch(GpuColumnVector.extractColumns(tmp).map(_.copyToHost()), tmp.numRows())
-    } finally {
-      tmp.close()
     }
   }
 
