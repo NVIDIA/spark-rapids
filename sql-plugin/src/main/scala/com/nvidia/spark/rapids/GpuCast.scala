@@ -622,8 +622,7 @@ object GpuCast extends Arm {
       }
     }
 
-    def throwIfOutOfRange(minInput: T, minValue: T,
-                        maxInput: T, maxValue: T): Unit = {
+    def throwIfOutOfRange(minInput: T, maxInput: T): Unit = {
       if (inclusiveMin && ord.compare(minInput, minValue) < 0 ||
           !inclusiveMin && ord.compare(minInput, minValue) <= 0 ||
           inclusiveMax && ord.compare(maxInput, maxValue) > 0 ||
@@ -649,7 +648,7 @@ object GpuCast extends Arm {
         if (values.getType == DType.FLOAT32 || values.getType == DType.FLOAT64) {
           throwIfAnyNan()
         }
-        throwIfOutOfRange(getValue(minInput), minValue, getValue(maxInput), maxValue)
+        throwIfOutOfRange(getValue(minInput), getValue(maxInput))
       }
     }
   }
