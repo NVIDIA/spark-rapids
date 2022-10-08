@@ -425,7 +425,6 @@ class GpuDynamicPartitionDataSingleWriter(
     // We have an entire batch that is sorted, so we need to split it up by key
     var distinctKeys: Table = null
     var outputColumns: Table = null
-    var cbKeys: ColumnarBatch = null
     val maxRecordsPerFile = description.maxRecordsPerFile
 
     try {
@@ -447,7 +446,7 @@ class GpuDynamicPartitionDataSingleWriter(
       outputColumns.close()
       outputColumns = null
 
-      cbKeys = copyToHostAsBatch(distinctKeys, partDataTypes)
+      val cbKeys = copyToHostAsBatch(distinctKeys, partDataTypes)
       distinctKeys.close()
       distinctKeys = null
 
@@ -455,7 +454,9 @@ class GpuDynamicPartitionDataSingleWriter(
       // the GPU, but the data should be small and there are things we cannot easily support
       // on the GPU right now
       import scala.collection.JavaConverters._
-      val paths = cbKeys.rowIterator().asScala.map(getPartitionPath)
+      val paths = withResource(cbKeys) { cbKeys =>
+        cbKeys.rowIterator().asScala.map(getPartitionPath)
+      }
 
       withResource(splits) { splits =>
         paths.toArray.zip(splits).foreach(combined => {
@@ -596,10 +597,6 @@ class GpuDynamicPartitionDataSingleWriter(
 
       if (outputColumns != null) {
         outputColumns.close()
-      }
-
-      if (cbKeys != null) {
-        cbKeys.close()
       }
     }
   }
