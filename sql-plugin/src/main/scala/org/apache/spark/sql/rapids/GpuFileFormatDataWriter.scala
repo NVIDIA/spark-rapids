@@ -426,7 +426,7 @@ class GpuDynamicPartitionDataSingleWriter(
     val maxRecordsPerFile = description.maxRecordsPerFile
     val partDataTypes = description.partitionColumns.map(_.dataType).toArray
     val outDataTypes = description.dataColumns.map(_.dataType).toArray
-    val (splits, cbKeys) = withResource(cb) { cb =>
+    val (splits, cbKeys) = withResource(cb) { _ =>
       val (partitionIndexes, cbKeys) = withResource(getPartitionColumns(cb)) { partitionColumns =>
         withResource(distinctAndSort(partitionColumns)) { distinctKeys =>
           val partitionIndexes = splitIndexes(partitionColumns, distinctKeys)
@@ -436,8 +436,10 @@ class GpuDynamicPartitionDataSingleWriter(
       }
 
       // split the original data on the indexes
-      val splits = withResource(getOutputColumns(cb)) { outputColumns =>
-        outputColumns.contiguousSplit(partitionIndexes: _*)
+      val splits = closeOnExcept(cbKeys) { _ =>
+        withResource(getOutputColumns(cb)) { outputColumns =>
+          outputColumns.contiguousSplit(partitionIndexes: _*)
+        }
       }
       (splits, cbKeys)
     }
@@ -446,13 +448,11 @@ class GpuDynamicPartitionDataSingleWriter(
     // the GPU, but the data should be small and there are things we cannot easily support
     // on the GPU right now
     import scala.collection.JavaConverters._
-    withResource(splits) { splits =>
-      withResource(cbKeys) { cbkeys =>
+    withResource(splits) { _ =>
+      withResource(cbKeys) { _ =>
         val paths = cbKeys.rowIterator().asScala.map(getPartitionPath)
-        paths.toArray.zip(splits).foreach( combined => {
-          val table = combined._2.getTable
-          val batch = GpuColumnVector.from(table, outDataTypes)
-          val partPath = combined._1
+        paths.toArray.zip(splits).foreach{ case (partPath, splitTable) => {
+          val table = splitTable.getTable
 
           // If fall back from for `GpuDynamicPartitionDataConcurrentWriter`, we should get the
           // saved status
@@ -534,51 +534,53 @@ class GpuDynamicPartitionDataSingleWriter(
               }
             }
 
-          if (savedStatus.isDefined && savedStatus.get.tableCaches.nonEmpty) {
-            // convert caches seq to tables and close caches seq
-            val subTables = convertSpillBatchesToTables(savedStatus.get.tableCaches)
-            // clear the caches
-            savedStatus.get.tableCaches.clear()
-            // concat the caches and this `batch`
-            val concat = withResource(subTables) { _ =>
-              withResource(batch) { _ =>
-                // append `batch` to sub tables
-                subTables += GpuColumnVector.from(batch)
+          closeOnExcept(GpuColumnVector.from(table, outDataTypes)) { batch =>
+            if (savedStatus.isDefined && savedStatus.get.tableCaches.nonEmpty) {
+              // convert caches seq to tables and close caches seq
+              val subTables = convertSpillBatchesToTables(savedStatus.get.tableCaches)
+              // clear the caches
+              savedStatus.get.tableCaches.clear()
+              // concat the caches and this `batch`
+              val concat = withResource(subTables) { _ =>
+                withResource(batch) { _ =>
+                  // append `batch` to sub tables
+                  subTables += GpuColumnVector.from(batch)
+                }
+                withResource(Table.concatenate(subTables: _*)) { concat =>
+                  GpuColumnVector.from(concat, outDataTypes)
+                }
               }
-              withResource(Table.concatenate(subTables: _*)) { concat =>
-                GpuColumnVector.from(concat, outDataTypes)
+              // write concat table
+              if (!needSplitBatch(
+                maxRecordsPerFile,
+                currentWriterStatus.recordsInFile,
+                concat.numRows))
+              {
+                statsTrackers.foreach(_.newBatch(concat))
+                currentWriterStatus.recordsInFile += concat.numRows()
+                currentWriterStatus.outputWriter.write(concat, statsTrackers)
+              } else {
+                withResource(concat){ _ =>
+                  writeBatch(concat)
+                }
               }
-            }
-            // write concat table
-            if (!needSplitBatch(
-              maxRecordsPerFile,
-              currentWriterStatus.recordsInFile,
-              concat.numRows))
-            {
-              statsTrackers.foreach(_.newBatch(concat))
-              currentWriterStatus.recordsInFile += concat.numRows()
-              currentWriterStatus.outputWriter.write(concat, statsTrackers)
             } else {
-              withResource(concat){ concat =>
-                writeBatch(concat)
-              }
-            }
-          } else {
-            if (!needSplitBatch(
-              maxRecordsPerFile,
-              currentWriterStatus.recordsInFile,
-              batch.numRows))
-            {
-              statsTrackers.foreach(_.newBatch(batch))
-              currentWriterStatus.recordsInFile += batch.numRows()
-              currentWriterStatus.outputWriter.write(batch, statsTrackers)
-            } else {
-              withResource(batch){ batch =>
-                writeBatch(batch)
+              if (!needSplitBatch(
+                maxRecordsPerFile,
+                currentWriterStatus.recordsInFile,
+                batch.numRows))
+              {
+                statsTrackers.foreach(_.newBatch(batch))
+                currentWriterStatus.recordsInFile += batch.numRows()
+                currentWriterStatus.outputWriter.write(batch, statsTrackers)
+              } else {
+                withResource(batch){ _ =>
+                  writeBatch(batch)
+                }
               }
             }
           }
-        })
+        }}
       }
     }
   }
