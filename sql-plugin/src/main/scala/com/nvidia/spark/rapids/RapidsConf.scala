@@ -117,7 +117,7 @@ object ConfHelper {
 }
 
 abstract class ConfEntry[T](val key: String, val converter: String => T,
-    val doc: String, val isInternal: Boolean) {
+    val doc: String, val isInternal: Boolean, val isStartUpOnly: Boolean) {
 
   def get(conf: Map[String, String]): T
   def get(conf: SQLConf): T
@@ -127,8 +127,8 @@ abstract class ConfEntry[T](val key: String, val converter: String => T,
 }
 
 class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
-    isInternal: Boolean, val defaultValue: T)
-  extends ConfEntry[T](key, converter, doc, isInternal) {
+    isInternal: Boolean, isStartupOnly: Boolean, val defaultValue: T)
+  extends ConfEntry[T](key, converter, doc, isInternal, isStartupOnly) {
 
   override def get(conf: Map[String, String]): T = {
     conf.get(key).map(converter).getOrElse(defaultValue)
@@ -145,13 +145,15 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
 
   override def help(asTable: Boolean = false): Unit = {
     if (!isInternal) {
+      val startupOnlyStr = if (isStartupOnly) "Startup" else "Runtime"
       if (asTable) {
         import ConfHelper.makeConfAnchor
-        println(s"${makeConfAnchor(key)}|$doc|$defaultValue")
+        println(s"${makeConfAnchor(key)}|$doc|$defaultValue|$startupOnlyStr")
       } else {
         println(s"$key:")
         println(s"\t$doc")
         println(s"\tdefault $defaultValue")
+        println(s"\ttype $startupOnlyStr")
         println()
       }
     }
@@ -159,8 +161,8 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
 }
 
 class OptionalConfEntry[T](key: String, val rawConverter: String => T, doc: String,
-    isInternal: Boolean)
-  extends ConfEntry[Option[T]](key, s => Some(rawConverter(s)), doc, isInternal) {
+    isInternal: Boolean, isStartupOnly: Boolean)
+  extends ConfEntry[Option[T]](key, s => Some(rawConverter(s)), doc, isInternal, isStartupOnly) {
 
   override def get(conf: Map[String, String]): Option[T] = {
     conf.get(key).map(rawConverter)
@@ -177,13 +179,15 @@ class OptionalConfEntry[T](key: String, val rawConverter: String => T, doc: Stri
 
   override def help(asTable: Boolean = false): Unit = {
     if (!isInternal) {
+      val startupOnlyStr = if (isStartupOnly) "Startup" else "Runtime"
       if (asTable) {
         import ConfHelper.makeConfAnchor
-        println(s"${makeConfAnchor(key)}|$doc|None")
+        println(s"${makeConfAnchor(key)}|$doc|None|$startupOnlyStr")
       } else {
         println(s"$key:")
         println(s"\t$doc")
         println("\tNone")
+        println(s"\ttype $startupOnlyStr")
         println()
       }
     }
@@ -230,7 +234,7 @@ class TypedConfBuilder[T](
     // then 'converter' will throw an exception
     val transformedValue = converter(stringConverter(value))
     val ret = new ConfEntryWithDefault[T](parent.key, converter,
-      parent.doc, parent.isInternal, transformedValue)
+      parent.doc, parent.isInternal, parent.isStartupOnly, transformedValue)
     parent.register(ret)
     ret
   }
@@ -243,7 +247,7 @@ class TypedConfBuilder[T](
 
   def createOptional: OptionalConfEntry[T] = {
     val ret = new OptionalConfEntry[T](parent.key, converter,
-      parent.doc, parent.isInternal)
+      parent.doc, parent.isInternal, parent.isStartupOnly)
     parent.register(ret)
     ret
   }
@@ -255,6 +259,7 @@ class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
 
   var doc: String = null
   var isInternal: Boolean = false
+  var isStartupOnly: Boolean = false
 
   def doc(data: String): ConfBuilder = {
     this.doc = data
@@ -263,6 +268,11 @@ class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
 
   def internal(): ConfBuilder = {
     this.isInternal = true
+    this
+  }
+
+  def startupOnly(): ConfBuilder = {
+    this.isStartupOnly = true
     this
   }
 
@@ -552,6 +562,7 @@ object RapidsConf {
          "The explanations of what would have run on the GPU and why are output in log " +
          "messages. When using explainOnly mode, the default explain output is ALL, this can " +
          "be changed by setting spark.rapids.sql.explain. See that config for more details.")
+    .startupOnly()
     .stringConf
     .transform(_.toLowerCase(java.util.Locale.ROOT))
     .checkValues(Set("explainonly", "executeongpu"))
@@ -737,6 +748,7 @@ object RapidsConf {
         "assign value of `max(MULTITHREAD_READ_NUM_THREADS_DEFAULT, spark.executor.cores)`, " +
         s"where MULTITHREAD_READ_NUM_THREADS_DEFAULT = $MULTITHREAD_READ_NUM_THREADS_DEFAULT" +
         ".")
+      .startupOnly()
       .integerConf
       .checkValue(v => v > 0, "The thread count must be greater than zero.")
       .createWithDefault(MULTITHREAD_READ_NUM_THREADS_DEFAULT)
@@ -827,6 +839,7 @@ object RapidsConf {
         "Parquet files in parallel. This can not be changed at runtime after the executor has " +
         "started. Used with COALESCING and MULTITHREADED reader, see " +
         s"$PARQUET_READER_TYPE. DEPRECATED: use $MULTITHREAD_READ_NUM_THREADS")
+      .startupOnly()
       .integerConf
       .createOptional
 
@@ -910,6 +923,7 @@ object RapidsConf {
         "ORC files in parallel. This can not be changed at runtime after the executor has " +
         "started. Used with MULTITHREADED reader, see " +
         s"$ORC_READER_TYPE. DEPRECATED: use $MULTITHREAD_READ_NUM_THREADS")
+      .startupOnly()
       .integerConf
       .createOptional
 
@@ -1018,6 +1032,7 @@ object RapidsConf {
         "Avro files in parallel. This can not be changed at runtime after the executor has " +
         "started. Used with MULTITHREADED reader, see " +
         s"$AVRO_READER_TYPE. DEPRECATED: use $MULTITHREAD_READ_NUM_THREADS")
+      .startupOnly()
       .integerConf
       .createOptional
 
@@ -1183,12 +1198,14 @@ object RapidsConf {
         "shuffle (for testing purposes). Set to \"MULTITHREADED\" for an experimental mode that " +
         "uses a thread pool to speed up shuffle writes without needing UCX. Note: Changing this " +
         "mode dynamically is not supported.")
+    .startupOnly()
     .stringConf
     .checkValues(RapidsShuffleManagerMode.values.map(_.toString))
     .createWithDefault(RapidsShuffleManagerMode.UCX.toString)
 
   val SHUFFLE_TRANSPORT_EARLY_START = conf("spark.rapids.shuffle.transport.earlyStart")
     .doc("Enable early connection establishment for RAPIDS Shuffle")
+    .startupOnly()
     .booleanConf
     .createWithDefault(true)
 
@@ -1196,6 +1213,7 @@ object RapidsConf {
     conf("spark.rapids.shuffle.transport.earlyStart.heartbeatInterval")
       .doc("Shuffle early start heartbeat interval (milliseconds). " +
         "Executors will send a heartbeat RPC message to the driver at this interval")
+      .startupOnly()
       .integerConf
       .createWithDefault(5000)
 
@@ -1205,6 +1223,7 @@ object RapidsConf {
         s"Executors that don't heartbeat within this timeout will be considered stale. " +
         s"This timeout must be higher than the value for " +
         s"${SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_INTERVAL.key}")
+      .startupOnly()
       .integerConf
       .createWithDefault(10000)
 
