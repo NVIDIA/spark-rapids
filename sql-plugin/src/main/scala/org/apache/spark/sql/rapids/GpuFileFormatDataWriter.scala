@@ -534,7 +534,7 @@ class GpuDynamicPartitionDataSingleWriter(
               }
             }
 
-          closeOnExcept(GpuColumnVector.from(table, outDataTypes)) { batch =>
+          withResource(GpuColumnVector.from(table, outDataTypes)) { batch =>
             if (savedStatus.isDefined && savedStatus.get.tableCaches.nonEmpty) {
               // convert caches seq to tables and close caches seq
               val subTables = convertSpillBatchesToTables(savedStatus.get.tableCaches)
@@ -558,7 +558,10 @@ class GpuDynamicPartitionDataSingleWriter(
               {
                 statsTrackers.foreach(_.newBatch(concat))
                 currentWriterStatus.recordsInFile += concat.numRows()
-                currentWriterStatus.outputWriter.write(concat, statsTrackers)
+                currentWriterStatus.outputWriter.write(
+                  GpuColumnVector.incRefCounts(concat),
+                  statsTrackers
+                )
               } else {
                 withResource(concat){ _ =>
                   writeBatch(concat)
@@ -572,7 +575,10 @@ class GpuDynamicPartitionDataSingleWriter(
               {
                 statsTrackers.foreach(_.newBatch(batch))
                 currentWriterStatus.recordsInFile += batch.numRows()
-                currentWriterStatus.outputWriter.write(batch, statsTrackers)
+                currentWriterStatus.outputWriter.write(
+                  GpuColumnVector.incRefCounts(batch),
+                  statsTrackers
+                )
               } else {
                 withResource(batch){ _ =>
                   writeBatch(batch)
