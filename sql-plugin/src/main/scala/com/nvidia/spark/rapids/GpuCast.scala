@@ -456,7 +456,10 @@ object GpuCast extends Arm {
       case (StringType, ByteType | ShortType | IntegerType | LongType ) =>
         CastStrings.toInteger(input, ansiMode,
           GpuColumnVector.getNonNestedRapidsType(toDataType))
-      case (StringType, BooleanType | FloatType | DoubleType | DateType | TimestampType) =>
+      case (StringType, FloatType | DoubleType) =>
+        CastStrings.toFloat(input, ansiMode,
+          GpuColumnVector.getNonNestedRapidsType(toDataType))
+      case (StringType, BooleanType | DateType | TimestampType) =>
         withResource(input.strip()) { trimmed =>
           toDataType match {
             case BooleanType =>
@@ -469,9 +472,6 @@ object GpuCast extends Arm {
               }
             case TimestampType =>
               castStringToTimestamp(trimmed, ansiMode)
-            case FloatType | DoubleType =>
-              castStringToFloats(trimmed, ansiMode,
-                GpuColumnVector.getNonNestedRapidsType(toDataType))
           }
         }
       case (StringType, dt: DecimalType) =>
@@ -976,57 +976,6 @@ object GpuCast extends Arm {
                 // return true, false, or null, as appropriate
                 withResource(ColumnVector.fromStrings(trueStrings: _*)) { cvTrue =>
                   sanitizedInput.contains(cvTrue)
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  def castStringToFloats(
-      input: ColumnVector,
-      ansiEnabled: Boolean,
-      dType: DType,
-      alreadySanitized: Boolean = false): ColumnVector = {
-    // 1. identify the nans
-    // 2. identify the floats. "null" and letters are not considered floats
-    // 3. if ansi is enabled we want to throw an exception if the string is neither float nor nan
-    // 4. convert everything that's not floats to null
-    // 5. set the indices where we originally had nans to Float.NaN
-    //
-    // NOTE Limitation: "1.7976931348623159E308" and "-1.7976931348623159E308" are not considered
-    // Inf even though Spark does
-
-    val NAN_REGEX = "^[nN][aA][nN]$"
-
-    val sanitized = if (alreadySanitized) {
-      input.incRefCount()
-    } else {
-      GpuCast.sanitizeStringToFloat(input, ansiEnabled)
-    }
-
-    withResource(sanitized) { _ =>
-      //Now identify the different variations of nans
-      withResource(sanitized.matchesRe(NAN_REGEX)) { isNan =>
-        // now check if the values are floats
-        withResource(sanitized.isFloat) { isFloat =>
-          if (ansiEnabled) {
-            withResource(isNan.or(isFloat)) { nanOrFloat =>
-              withResource(nanOrFloat.all()) { allNanOrFloat =>
-                // Check that all non-null values are valid floats or NaN.
-                if (allNanOrFloat.isValid && !allNanOrFloat.getBoolean) {
-                  throw new NumberFormatException(GpuCast.INVALID_NUMBER_MSG)
-                }
-              }
-            }
-          }
-          withResource(sanitized.castTo(dType)) { casted =>
-            withResource(Scalar.fromNull(dType)) { nulls =>
-              withResource(isFloat.ifElse(casted, nulls)) { floatsOnly =>
-                withResource(FloatUtils.getNanScalar(dType)) { nan =>
-                  isNan.ifElse(nan, floatsOnly)
                 }
               }
             }

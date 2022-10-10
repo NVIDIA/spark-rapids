@@ -390,7 +390,7 @@ abstract class GpuTextBasedPartitionReader(
   def castStringToBool(input: ColumnVector): ColumnVector
 
   def castStringToFloat(input: ColumnVector, dt: DType): ColumnVector = {
-    GpuCast.castStringToFloats(input, ansiEnabled = false, dt)
+    CastStrings.toFloat(input, false, dt)
   }
 
   def castStringToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {

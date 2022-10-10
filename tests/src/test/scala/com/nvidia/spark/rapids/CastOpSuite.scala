@@ -1021,9 +1021,9 @@ class CastOpSuite extends GpuExpressionTestSuite {
       if (!gpuOnly) {
         val (fromCpu, fromGpu) = runOnCpuAndGpu(createDF, execFun, conf, repart = 0)
         val (cpuResult, gpuResult) = dataType match {
-          case ShortType | IntegerType | LongType | _: DecimalType =>
+          case ShortType | IntegerType | LongType | _: DecimalType | StringType =>
             (fromCpu, fromGpu)
-          case FloatType | DoubleType | StringType =>
+          case FloatType | DoubleType =>
             // There may be tiny difference between CPU and GPU result when casting from double
             val fetchFromRow = (r: Row) => {
               if (r.isNullAt(1)) Double.NaN

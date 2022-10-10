@@ -381,7 +381,7 @@ class JsonPartitionReader(
 
   override def castStringToFloat(input: ColumnVector, dt: DType): ColumnVector = {
     withResource(sanitizeNumbers(input)) { sanitizedInput =>
-      GpuCast.castStringToFloats(sanitizedInput, ansiEnabled = false, dt, alreadySanitized = true)
+      super.castStringToFloat(sanitizedInput, dt)
     }
   }
 
