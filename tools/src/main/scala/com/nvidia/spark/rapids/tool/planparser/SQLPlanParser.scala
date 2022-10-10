@@ -356,6 +356,84 @@ object SQLPlanParser extends Logging {
     parsedExpressions.distinct.toArray
   }
 
+  def parseExpandExpressions(exprStr: String): Array[String] = {
+    val parsedExpressions = ArrayBuffer[String]()
+    // [List(x#1564, hex(y#1455L)#1565, CEIL(z#1456)#1566L, 0),
+    // List(x#1564, hex(y#1455L)#1565, null, 1), .......
+    // , spark_grouping_id#1567L]
+    val pattern = """\[List([\w#, \(\)]+0\),)""".r
+    val expandString = pattern.findFirstMatchIn(exprStr)
+    // This splits the string to get expressions within ExpandExec. With ExpandExec,
+    // there are multiple rows in the output for single input row. This is shown in
+    // physical plan by appending list of different output rows. We can extract all
+    // expressions from the first index of the list. So we split the string on
+    // first index and remove parenthesis and the resultant array contains expressions
+    // in this exec. Result will be as shown below:
+    // Array(x#1712, hex(y#1701L)#1713)
+    if (expandString.isDefined) {
+      val firstIndexElements = expandString.get.toString.split("0\\),").mkString.trim
+      val parenRemoved = firstIndexElements.split(",").map(
+        _.trim).map(_.replaceAll("""^\[List\(""", ""))
+      val functionPattern = """(\w+)\(.*\)""".r
+
+      parenRemoved.foreach { case expr =>
+        val functionName = getFunctionName(functionPattern, expr)
+        functionName match {
+          case Some(func) => parsedExpressions += func
+          case _ => // NO OP
+        }
+      }
+    }
+    parsedExpressions.distinct.toArray
+  }
+
+  def parseTakeOrderedExpressions(exprStr: String): Array[String] = {
+    val parsedExpressions = ArrayBuffer[String]()
+    // (limit=2, orderBy=[FLOOR(z#796) ASC NULLS FIRST,
+    // CEIL(y#795L) ASC NULLS FIRST,y#1588L ASC NULLS FIRST], output=[x#794,y#796L,z#795])
+    val pattern = """orderBy=\[([\w#, \(\)]+\])""".r
+    val orderString = pattern.findFirstMatchIn(exprStr)
+    // This is to split multiple column names in orderBy clause of parse TakeOrderedAndProjectExec.
+    // First we remove orderBy from the string and then split the resultant string.
+    // The string is split on delimiter containing FIRST, OR LAST, which is the last string
+    // of each column in this Exec that produces an array containing
+    // column names. Finally we remove the parentheses from the beginning and end to get only
+    // the expressions. Result will be as below.
+    // Array(FLOOR(z#796) ASC NULLS FIRST,, CEIL(y#795L) ASC NULLS FIRST)
+    if (orderString.isDefined) {
+      val parenRemoved = orderString.get.toString.replaceAll("orderBy=", "").
+        split("(?<=FIRST,)|(?<=LAST,)").map(_.trim).map(
+        _.replaceAll("""^\[+""", "").replaceAll("""\]+$""", ""))
+      val functionPattern = """(\w+)\(.*\)""".r
+      parenRemoved.foreach { case expr =>
+        val functionName = getFunctionName(functionPattern, expr)
+        functionName match {
+          case Some(func) => parsedExpressions += func
+          case _ => // NO OP
+        }
+      }
+    }
+    parsedExpressions.distinct.toArray
+  }
+
+  def parseGenerateExpressions(exprStr: String): Array[String] = {
+    val parsedExpressions = ArrayBuffer[String]()
+    // Only one generator is allowed per select clause. So we need to parse first expression in
+    // the GenerateExec and check if it is supported.
+    // 1. Generate explode(arrays#1306), [id#1304], true, [col#1426]
+    // 2. Generate json_tuple(values#1305, Zipcode, ZipCodeType, City), [id#1304],
+    // false, [c0#1407, c1#1408, c2#1409]
+    if (exprStr.nonEmpty) {
+      val functionPattern = """(\w+)\(.*\)""".r
+      val functionName = getFunctionName(functionPattern, exprStr)
+      functionName match {
+        case Some(func) => parsedExpressions += func
+        case _ => // NO OP
+      }
+    }
+    parsedExpressions.distinct.toArray
+  }
+
   def parseSortExpressions(exprStr: String): Array[String] = {
     val parsedExpressions = ArrayBuffer[String]()
     // Sort [round(num#126, 0) ASC NULLS FIRST, letter#127 DESC NULLS LAST], true, 0
