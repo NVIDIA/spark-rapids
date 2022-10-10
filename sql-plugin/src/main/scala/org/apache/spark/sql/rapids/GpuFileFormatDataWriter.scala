@@ -451,7 +451,7 @@ class GpuDynamicPartitionDataSingleWriter(
     withResource(splits) { _ =>
       withResource(cbKeys) { _ =>
         val paths = cbKeys.rowIterator().asScala.map(getPartitionPath)
-        paths.toArray.zip(splits).foreach{ case (partPath, splitTable) => {
+        paths.toArray.zip(splits).foreach{ case (partPath, splitTable) =>
           val table = splitTable.getTable
 
           // If fall back from for `GpuDynamicPartitionDataConcurrentWriter`, we should get the
@@ -580,7 +580,7 @@ class GpuDynamicPartitionDataSingleWriter(
               }
             }
           }
-        }}
+        }
       }
     }
   }
