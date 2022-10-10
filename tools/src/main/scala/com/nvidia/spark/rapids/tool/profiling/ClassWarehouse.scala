@@ -234,7 +234,7 @@ case class AppInfoProfileResults(appIndex: Int, appName: String,
   }
 }
 
-case class AppEventLogPath(appIndex: Int, appName: String,
+case class AppLogPathProfileResults(appIndex: Int, appName: String,
     appId: Option[String], eventLogPath: String)  extends ProfileResult {
   override val outputHeaders = Seq("appIndex", "appName", "appId",
     "eventLogPath")

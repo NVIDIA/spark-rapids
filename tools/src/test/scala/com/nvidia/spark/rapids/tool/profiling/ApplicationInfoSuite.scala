@@ -133,6 +133,8 @@ class ApplicationInfoSuite extends FunSuite with Logging {
     assert(rapidsJarResults.size === 2)
     assert(rapidsJarResults.filter(_.jar.contains("rapids-4-spark_2.12-0.5.0.jar")).size === 1)
     assert(rapidsJarResults.filter(_.jar.contains("cudf-0.19.2-cuda11.jar")).size === 1)
+
+    assert(apps.head.eventLogPath == (s"file:$logDir/rapids_join_eventlog.zstd"))
   }
 
   test("test sql and resourceprofile eventlog") {
