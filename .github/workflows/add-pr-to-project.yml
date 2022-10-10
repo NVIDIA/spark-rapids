@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: Add new issues to project
+name: Add new pull requests to project
 
 on:
   pull_request:
