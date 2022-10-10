@@ -1078,3 +1078,14 @@ def append_unique_int_col_to_df(spark, dataframe):
 disable_parquet_field_id_write = {"spark.sql.parquet.fieldId.write.enabled": "false"}  # default is true
 enable_parquet_field_id_write = {"spark.sql.parquet.fieldId.write.enabled": "true"}
 enable_parquet_field_id_read = {"spark.sql.parquet.fieldId.read.enabled": "true"}  # default is false
+
+
+# generate a df with c1 and c2 column have 25 combinations
+def get_25_partitions_df(spark):
+    schema = StructType([
+        StructField("c1", IntegerType()),
+        StructField("c2", IntegerType()),
+        StructField("c3", IntegerType())])
+    data = [[i, j, k] for i in range(0, 5) for j in range(0, 5) for k in range(0, 100)]
+    return spark.createDataFrame(data, schema)
+

@@ -7,7 +7,14 @@ parent: Getting-Started
 
 # Getting started with RAPIDS Accelerator on GCP Dataproc
  [Google Cloud Dataproc](https://cloud.google.com/dataproc) is Google Cloud's fully managed Apache
- Spark and Hadoop service.  This guide will walk through the steps to:
+ Spark and Hadoop service.  The quick start guide will go through:
+
+* [Quick Start Prerequisites](#quick-start-prerequisites) 
+* [Qualify CPU workloads for GPU acceleration](#qualify-cpu-workloads-for-gpu-acceleration)
+* [Bootstrap GPU cluster with optimized settings](#bootstrap-gpu-cluster-with-optimized-settings)
+* [Tune applications on GPU cluster](#tune-applications-on-gpu-cluster)
+
+The advanced guide will walk through the steps to:
 
 * [Create a Dataproc Cluster Accelerated by GPUs](#create-a-dataproc-cluster-accelerated-by-gpus)
 * [Run Pyspark or Scala ETL and XGBoost training Notebook on a Dataproc Cluster Accelerated by
@@ -15,6 +22,110 @@ parent: Getting-Started
 * [Submit the same sample ETL application as a Spark job to a Dataproc Cluster Accelerated by
   GPUs](#submit-spark-jobs-to-a-dataproc-cluster-accelerated-by-gpus)
 * [Build custom Dataproc image to accelerate cluster initialization time](#build-custom-dataproc-image-to-accelerate-cluster-init-time)
+
+## Quick Start Prerequisites
+
+* gcloud CLI is installed: https://cloud.google.com/sdk/docs/install
+* python 3.8+
+* `pip install spark-rapids-user-tools`
+
+## Qualify CPU Workloads for GPU Acceleration
+
+The [qualification tool](https://nvidia.github.io/spark-rapids/docs/spark-qualification-tool.html) is launched on a Dataproc cluster that has applications that have already run.
+The tool will output the applications recommended for acceleration along with estimated speed-up
+and cost saving metrics.  Additionally, it will provide information on how to launch a GPU-
+accelerated cluster to take advantage of the speed-up and cost savings.
+
+Usage: `spark_rapids_dataproc qualification --cluster <cluster-name> --region <region>`
+
+Help (to see all options available): `spark_rapids_dataproc qualification --help`
+
+Example output:
+```
++----+------------+--------------------------------+----------------------+-----------------+-----------------+---------------+-----------------+
+|    | App Name   | App ID                         | Recommendation       |   Estimated GPU |   Estimated GPU |           App |   Estimated GPU |
+|    |            |                                |                      |         Speedup |     Duration(s) |   Duration(s) |      Savings(%) |
+|----+------------+--------------------------------+----------------------+-----------------+-----------------+---------------+-----------------|
+|  0 | query24    | application_1664888311321_0011 | Strongly Recommended |            3.49 |          257.18 |        897.68 |           59.70 |
+|  1 | query78    | application_1664888311321_0009 | Strongly Recommended |            3.35 |          113.89 |        382.35 |           58.10 |
+|  2 | query23    | application_1664888311321_0010 | Strongly Recommended |            3.08 |          325.77 |       1004.28 |           54.37 |
+|  3 | query64    | application_1664888311321_0008 | Strongly Recommended |            2.91 |          150.81 |        440.30 |           51.82 |
+|  4 | query50    | application_1664888311321_0003 | Recommended          |            2.47 |          101.54 |        250.95 |           43.08 |
+|  5 | query16    | application_1664888311321_0005 | Recommended          |            2.36 |          106.33 |        251.95 |           40.63 |
+|  6 | query38    | application_1664888311321_0004 | Recommended          |            2.29 |           67.37 |        154.33 |           38.59 |
+|  7 | query87    | application_1664888311321_0006 | Recommended          |            2.25 |           75.67 |        170.69 |           37.64 |
+|  8 | query51    | application_1664888311321_0002 | Recommended          |            1.53 |           53.94 |         82.63 |            8.18 |
++----+------------+--------------------------------+----------------------+-----------------+-----------------+---------------+-----------------+
+To launch a GPU-accelerated cluster with Spark RAPIDS, add the following to your cluster creation script:
+        --initialization-actions=gs://goog-dataproc-initialization-actions-us-central1/gpu/install_gpu_driver.sh,gs://goog-dataproc-initialization-actions-us-central1/rapids/rapids.sh \
+        --worker-accelerator type=nvidia-tesla-t4,count=2 \
+        --metadata gpu-driver-provider="NVIDIA" \
+        --metadata rapids-runtime=SPARK \
+        --cuda-version=11.5
+```
+
+## Bootstrap GPU Cluster with Optimized Settings
+
+The bootstrap tool will apply optimized settings for the RAPIDS Accelerator on Apache Spark on a 
+GPU cluster for Dataproc.  The tool will fetch the characteristics of the cluster -- including 
+number of workers, worker cores, worker memory, and GPU accelerator type and count.  It will use
+the cluster properties to then determine the optimal settings for running GPU-accelerated Spark 
+applications.
+
+Usage: `spark_rapids_dataproc bootstrap --cluster <cluster-name> --region <region>`
+
+Help (to see all options available): `spark_rapids_dataproc bootstrap --help`
+
+Example output: 
+```
+##### BEGIN : RAPIDS bootstrap settings for gpu-cluster
+spark.executor.cores=16
+spark.executor.memory=32768m
+spark.executor.memoryOverhead=7372m
+spark.rapids.sql.concurrentGpuTasks=2
+spark.rapids.memory.pinnedPool.size=4096m
+spark.sql.files.maxPartitionBytes=512m
+spark.task.resource.gpu.amount=0.0625
+##### END : RAPIDS bootstrap settings for gpu-cluster
+```
+
+A detailed description for bootstrap settings with usage information is available in the [RAPIDS Accelerator for Apache Spark Configuration](https://nvidia.github.io/spark-rapids/docs/configs.html) and [Spark Configuration](https://spark.apache.org/docs/latest/configuration.html) page.
+
+## Tune Applications on GPU Cluster
+
+Once Spark applications have been run on the GPU cluster, the [profiling tool](https://nvidia.github.io/spark-rapids/docs/spark-profiling-tool.html) can be run to 
+analyze the event logs of the applications to determine if more optimal settings should be
+configured.  The tool will output a per-application set of config settings to be adjusted for
+enhanced performance.
+
+Usage: `spark_rapids_dataproc profiling --cluster <cluster-name> --region <region>`
+
+Help (to see all options available): `spark_rapids_dataproc profiling --help`
+
+Example output:
+```
++--------------------------------+--------------------------------------------------+--------------------------------------------------------------------------------------------------+
+| App ID                         | Recommendations                                  | Comments                                                                                         |
++================================+==================================================+==================================================================================================+
+| application_1664894105643_0011 | --conf spark.executor.cores=16                   | - 'spark.task.resource.gpu.amount' was not set.                                                  |
+|                                | --conf spark.executor.memory=32768m              | - 'spark.rapids.sql.concurrentGpuTasks' was not set.                                             |
+|                                | --conf spark.executor.memoryOverhead=7372m       | - 'spark.rapids.memory.pinnedPool.size' was not set.                                             |
+|                                | --conf spark.rapids.memory.pinnedPool.size=4096m | - 'spark.executor.memoryOverhead' was not set.                                                   |
+|                                | --conf spark.rapids.sql.concurrentGpuTasks=2     | - 'spark.sql.files.maxPartitionBytes' was not set.                                               |
+|                                | --conf spark.sql.files.maxPartitionBytes=1571m   | - 'spark.sql.shuffle.partitions' was not set.                                                    |
+|                                | --conf spark.sql.shuffle.partitions=200          |                                                                                                  |
+|                                | --conf spark.task.resource.gpu.amount=0.0625     |                                                                                                  |
++--------------------------------+--------------------------------------------------+--------------------------------------------------------------------------------------------------+
+| application_1664894105643_0002 | --conf spark.executor.cores=16                   | - 'spark.task.resource.gpu.amount' was not set.                                                  |
+|                                | --conf spark.executor.memory=32768m              | - 'spark.rapids.sql.concurrentGpuTasks' was not set.                                             |
+|                                | --conf spark.executor.memoryOverhead=7372m       | - 'spark.rapids.memory.pinnedPool.size' was not set.                                             |
+|                                | --conf spark.rapids.memory.pinnedPool.size=4096m | - 'spark.executor.memoryOverhead' was not set.                                                   |
+|                                | --conf spark.rapids.sql.concurrentGpuTasks=2     | - 'spark.sql.files.maxPartitionBytes' was not set.                                               |
+|                                | --conf spark.sql.files.maxPartitionBytes=3844m   | - 'spark.sql.shuffle.partitions' was not set.                                                    |
+|                                | --conf spark.sql.shuffle.partitions=200          |                                                                                                  |
+|                                | --conf spark.task.resource.gpu.amount=0.0625     |                                                                                                  |
++--------------------------------+--------------------------------------------------+--------------------------------------------------------------------------------------------------+
+```
 
 ## Create a Dataproc Cluster Accelerated by GPUs
  
@@ -147,7 +258,7 @@ Jupyter link. Download the sample [Mortgage ETL on GPU Jupyter
 Notebook](../demo/GCP/Mortgage-ETL.ipynb) and upload it to Jupyter.
 
 To get example data for the sample notebook, please refer to these
-[instructions](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-22.10/docs/get-started/xgboost-examples/dataset/mortgage.md).
+[instructions](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-22.12/docs/get-started/xgboost-examples/dataset/mortgage.md).
 Download the desired data, decompress it, and upload the csv files to a GCS bucket.
 
 ![Dataproc Web Interfaces](../img/GCP/dataproc-service.png)
@@ -166,7 +277,7 @@ Once the data is prepared, we use the [Mortgage XGBoost4j Scala
 Notebook](../demo/GCP/mortgage-xgboost4j-gpu-scala.ipynb) in Dataproc's jupyter notebook to execute
 the training job on GPUs. Scala based XGBoost examples use [DLMC
 XGBoost](https://github.com/dmlc/xgboost). For a PySpark based XGBoost example, please refer to
-[Spark-RAPIDS-examples](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.10) that use
+[Spark-RAPIDS-examples](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.12) that use
 [NVIDIA’s Spark XGBoost](https://repo1.maven.org/maven2/com/nvidia/xgboost4j-spark_3.0/1.4.2-0.3.0/).
 Precompiled [XGBoost4j](https://repo1.maven.org/maven2/ml/dmlc/xgboost4j-gpu_2.12/) and [XGBoost4j
 Spark](https://repo1.maven.org/maven2/ml/dmlc/xgboost4j-gpu_2.12/) libraries are available on
@@ -187,12 +298,12 @@ val (xgbClassificationModel, _) = benchmark("train") {
 ## Submit Spark jobs to a Dataproc Cluster Accelerated by GPUs
 Similar to spark-submit for on-prem clusters, Dataproc supports submitting Spark applications to
 Dataproc clusters.  The previous mortgage examples are also available as a [spark
-application](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.10/examples/XGBoost-Examples).
+application](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.12/examples/XGBoost-Examples).
 
 Follow these
-[instructions](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-22.10/docs/get-started/xgboost-examples/building-sample-apps/scala.md)
+[instructions](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-22.12/docs/get-started/xgboost-examples/building-sample-apps/scala.md)
 to Build the
-[xgboost-example](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-22.10/docs/get-started/xgboost-examples)
+[xgboost-example](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-22.12/docs/get-started/xgboost-examples)
 jars. Upload the `sample_xgboost_apps-${VERSION}-SNAPSHOT-jar-with-dependencies.jar` to a GCS
 bucket by dragging and dropping the jar file from your local machine into the GCS web console or by running:
 ```

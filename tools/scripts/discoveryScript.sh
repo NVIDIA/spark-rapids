@@ -80,9 +80,8 @@ function get_gpu_properties() {
   IFS=',' read -ra gpuInfoArr <<< "$gpuInfo"
   gpuCount=${gpuInfoArr[0]}
   gpuName=${gpuInfoArr[1]}
-  local gpuMemoryInMb="$(echo ${gpuInfoArr[2]} | cut -d' ' -f1)"
-  gpuMemoryInGb=$((gpuMemoryInMb / 1024))
-  gpuMemoryInGb="${gpuMemoryInGb}gb"
+  # GPU memory should have units but separated by space so remove the space
+  gpuMemoryInMb="$(echo ${gpuInfoArr[2]} | sed 's/ //g')"
 }
 
 function get_disk_space() {
@@ -106,12 +105,12 @@ function read_system_properties() {
 function write_system_properties() {
   cat > "$OUTPUT_FILE" << EOF
 system:
-  num_cores: $numCores
-  cpu_arch: $cpuArch
+  numCores: $numCores
+  cpuArch: $cpuArch
   memory: $memInGb
-  free_disk_space: $freeDiskSpaceInGb
-  time_zone: $timeZone
-  num_workers: $NUM_WORKERS
+  freeDiskSpace: $freeDiskSpaceInGb
+  timeZone: $timeZone
+  numWorkers: $NUM_WORKERS
 gpu:
   count: $gpuCount
   memory: $gpuMemoryInMb

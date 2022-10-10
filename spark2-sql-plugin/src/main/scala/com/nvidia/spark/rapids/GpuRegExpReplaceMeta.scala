@@ -49,9 +49,10 @@ class GpuRegExpReplaceMeta(
           try {
             javaPattern = Some(s.toString())
             val (pat, repl) =
-                new CudfRegexTranspiler(RegexReplaceMode).transpile(s.toString, replacement)
-            cudfPattern = Some(pat)
-            repl.map(GpuRegExpUtils.backrefConversion).foreach {
+                new CudfRegexTranspiler(RegexReplaceMode).getTranspiledAST(s.toString, replacement)
+            GpuRegExpUtils.validateRegExpComplexity(this, pat)
+            cudfPattern = Some(pat.toRegexString)
+            repl.map { r => GpuRegExpUtils.backrefConversion(r.toRegexString) }.foreach {
                 case (hasBackref, convertedRep) =>
                   containsBackref = hasBackref
                   replacement = Some(GpuRegExpUtils.unescapeReplaceString(convertedRep))
@@ -151,6 +152,13 @@ object GpuRegExpUtils {
       case _ =>
         meta.willNotWorkOnGpu(s"regular expression support is disabled because the GPU only " +
         "supports the UTF-8 charset when using regular expressions")
+    }
+  }
+
+  def validateRegExpComplexity(meta: ExprMeta[_], regex: RegexAST): Unit = {
+    if(!RegexComplexityEstimator.isValid(meta.conf, regex)) {
+      meta.willNotWorkOnGpu(s"estimated memory needed for regular expression exceeds the maximum." +
+        s" Set ${RapidsConf.REGEXP_MAX_STATE_MEMORY_BYTES} to change it.")
     }
   }
 

@@ -481,8 +481,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("longs").cast(StringType),
       col("more_longs").cast(BooleanType),
       col("more_longs").cast(ByteType),
-      // Test requires ProjectExec support BinaryType, tested within md5 hash functionality instead
-      // col("longs").cast(BinaryType),
+      col("longs").cast(BinaryType),
       col("longs").cast(ShortType),
       col("longs").cast(FloatType),
       col("longs").cast(DoubleType),
@@ -643,11 +642,10 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("c0").cast(FloatType))
   }
 
-  // Test requires ProjectExec support BinaryType, tested within md5 hash functionality instead
-  // testSparkResultsAreEqual("Test cast from strings to binary", floatsAsStrings) {
-  //   frame => frame.select(
-  //     col("c0").cast(BinaryType))
-  // }
+  testSparkResultsAreEqual("Test cast from strings to binary", floatsAsStrings) {
+    frame => frame.select(
+      col("c0").cast(BinaryType))
+  }
 
   test("cast short to decimal") {
     List(-4, -2, 0,  1, 5, 15).foreach { scale =>

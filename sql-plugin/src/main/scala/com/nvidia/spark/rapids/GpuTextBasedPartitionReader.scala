@@ -23,6 +23,7 @@ import scala.math.max
 
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, NvtxColor, NvtxRange, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.DateUtils.{toStrf, TimestampFormatConversionException}
+import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.GpuTypeShims
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -393,7 +394,7 @@ abstract class GpuTextBasedPartitionReader(
   }
 
   def castStringToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
-    GpuCast.castStringToDecimal(input, ansiEnabled = false, dt)
+    CastStrings.toDecimal(input, false, dt.precision, -dt.scale)
   }
 
   def castStringToInt(input: ColumnVector, intType: DType): ColumnVector = {

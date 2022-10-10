@@ -16,14 +16,15 @@
 
 package org.apache.spark.sql.rapids.execution
 
-import com.nvidia.spark.rapids.GpuColumnVector
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.{Arm, GpuColumnVector}
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-object GpuBroadcastHelper {
+object GpuBroadcastHelper extends Arm {
   /**
    * Given a broadcast relation get a ColumnarBatch that can be used on the GPU.
    *
@@ -41,9 +42,9 @@ object GpuBroadcastHelper {
                         broadcastSchema: StructType): ColumnarBatch = {
     broadcastRelation.value match {
       case broadcastBatch: SerializeConcatHostBuffersDeserializeBatch =>
-        val builtBatch = broadcastBatch.batch
-        GpuColumnVector.incRefCounts(builtBatch)
-        builtBatch
+        withResource(new NvtxRange("getBroadcastBatch", NvtxColor.YELLOW)) { _ =>
+          broadcastBatch.batch.getColumnarBatch()
+        }
       case v if SparkShimImpl.isEmptyRelation(v) =>
         GpuColumnVector.emptyBatch(broadcastSchema)
       case t =>
@@ -67,7 +68,7 @@ object GpuBroadcastHelper {
   def getBroadcastBatchNumRows(broadcastRelation: Broadcast[Any]): Int = {
     broadcastRelation.value match {
       case broadcastBatch: SerializeConcatHostBuffersDeserializeBatch =>
-        broadcastBatch.batch.numRows()
+        broadcastBatch.numRows
       case v if SparkShimImpl.isEmptyRelation(v) => 0
       case t =>
         throw new IllegalStateException(s"Invalid broadcast batch received $t")

@@ -862,6 +862,34 @@ def test_window_aggregations_for_decimal_ranges(data_gen):
         conf={})
 
 
+# In a distributed setup the order of the partitions returned might be different, so we must ignore the order
+# but small batch sizes can make sort very slow, so do the final order by locally
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_nullable_largest_decimals],
+                         ids=idfn)
+def test_window_aggregations_for_big_decimal_ranges(data_gen):
+    """
+    Tests for range window aggregations, with DECIMAL order by columns.
+    The table schema used:
+      a: Group By column
+      b: Order By column (decimal)
+      c: Aggregation column (incidentally, also decimal)
+
+    Since this test is for the order-by column type, and not for each specific windowing aggregation,
+    we use COUNT(1) throughout the test, for different window widths and ordering.
+    Some other aggregation functions are thrown in for variety.
+    """
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark, data_gen, length=2048),
+        "window_agg_table",
+        'SELECT '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b ASC '
+        '                RANGE BETWEEN 12345678901234567890123456789012345.12 PRECEDING '
+        '                          AND 11111111112222222222333333333344444.12 FOLLOWING) '
+        'FROM window_agg_table',
+        conf={})
+
+
 _gen_data_for_collect_list = [
     ('a', RepeatSeqGen(LongGen(), length=20)),
     ('b', LongRangeGen()),

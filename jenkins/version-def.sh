@@ -17,18 +17,6 @@
 
 set -e
 
-# PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
-# regular: noSnapshots + snapshots
-# pre-release: noSnapshots only
-PHASE_TYPE=regular
-
-if [[ $# -eq 1 ]]; then
-    PHASE_TYPE=$1
-elif [[ $# -gt 1 ]]; then
-    >&2 echo "ERROR: too many parameters are provided"
-    exit 1
-fi
-
 # Split abc=123 from $OVERWRITE_PARAMS
 # $OVERWRITE_PARAMS patten 'abc=123;def=456;'
 PRE_IFS=$IFS
@@ -38,10 +26,10 @@ for VAR in $OVERWRITE_PARAMS; do
 done
 IFS=$PRE_IFS
 
-CUDF_VER=${CUDF_VER:-"22.10.0-SNAPSHOT"}
+CUDF_VER=${CUDF_VER:-"22.12.0-SNAPSHOT"}
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-"cuda11"}
-PROJECT_VER=${PROJECT_VER:-"22.10.0-SNAPSHOT"}
-PROJECT_TEST_VER=${PROJECT_TEST_VER:-"22.10.0-SNAPSHOT"}
+PROJECT_VER=${PROJECT_VER:-"22.12.0-SNAPSHOT"}
+PROJECT_TEST_VER=${PROJECT_TEST_VER:-"22.12.0-SNAPSHOT"}
 SPARK_VER=${SPARK_VER:-"3.1.1"}
 # Make a best attempt to set the default value for the shuffle shim.
 # Note that SPARK_VER for non-Apache Spark flavors (i.e. databricks,
@@ -74,14 +62,19 @@ SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 # PnoSnapshots: noSnapshots only
 set_env_var_SPARK_SHIM_VERSIONS_ARR -PnoSnapshots
 SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-# Spark shim versions list based on given profile option (snapshots or noSnapshots)
+
+# PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
+# regular: noSnapshots + snapshots
+# pre-release: noSnapshots only
+PHASE_TYPE=${PHASE_TYPE:-"regular"}
 case $PHASE_TYPE in
+    # SPARK_SHIM_VERSIONS will be used for nightly artifact build
     pre-release)
-        SPARK_SHIM_VERSIONS=("${SPARK_SHIM_VERSIONS_SNAPSHOTS[@]}")
+        SPARK_SHIM_VERSIONS=("${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]}")
         ;;
 
     *)
-        SPARK_SHIM_VERSIONS=("${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]}")
+        SPARK_SHIM_VERSIONS=("${SPARK_SHIM_VERSIONS_SNAPSHOTS[@]}")
         ;;
 esac
 # base version

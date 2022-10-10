@@ -30,12 +30,17 @@ case class ExpandExecParser(
   override def parse: ExecInfo = {
     // Expand doesn't have duration
     val duration = None
-    val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
+    val exprString = node.desc.replaceFirst("Expand ", "")
+    val expressions = SQLPlanParser.parseExpandExpressions(exprString)
+    val notSupportedExprs = expressions.filterNot(expr => checker.isExprSupported(expr))
+    val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName) &&
+      notSupportedExprs.isEmpty) {
       (checker.getSpeedupFactor(fullExecName), true)
     } else {
       (1.0, false)
     }
     // TODO - add in parsing expressions - average speedup across?
-    new ExecInfo(sqlID, node.name, "", speedupFactor, duration, node.id, isSupported, None)
+    new ExecInfo(sqlID, node.name, "", speedupFactor,
+      duration, node.id, isSupported, None, unsupportedExprs = notSupportedExprs)
   }
 }

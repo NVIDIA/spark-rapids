@@ -20,7 +20,7 @@ OS_NAME=$(lsb_release -is | tr '[:upper:]' '[:lower:]')
 readonly OS_NAME
 OS_DIST=$(lsb_release -cs)
 readonly OS_DIST
-CUDA_VERSION='11.0'
+CUDA_VERSION='11.5'
 readonly CUDA_VERSION
 
 readonly NVIDIA_BASE_DL_URL='https://developer.download.nvidia.com/compute'
@@ -76,7 +76,7 @@ function install_nvidia_gpu_driver() {
     local -r cuda_package=cuda-toolkit
   fi
   # Without --no-install-recommends this takes a very long time.
-  execute_with_retries "apt-get install -y -q --no-install-recommends cuda-drivers-460"
+  execute_with_retries "apt-get install -y -q --no-install-recommends cuda-drivers-495"
   execute_with_retries "apt-get install -y -q --no-install-recommends ${cuda_package}"
   ldconfig
   echo "NVIDIA GPU driver provided by NVIDIA was installed successfully"
@@ -139,9 +139,9 @@ EOF
   systemctl start dataproc-cgroup-device-permissions
 }
 
-readonly DEFAULT_SPARK_RAPIDS_VERSION="22.08.0"
-readonly DEFAULT_CUDA_VERSION="11.0"
-readonly DEFAULT_XGBOOST_VERSION="1.6.1"
+readonly DEFAULT_SPARK_RAPIDS_VERSION="22.10.0"
+readonly DEFAULT_CUDA_VERSION="11.5"
+readonly DEFAULT_XGBOOST_VERSION="1.6.2"
 readonly SPARK_VERSION="3.0"
 
 # SPARK config
@@ -150,7 +150,7 @@ readonly XGBOOST_VERSION=${DEFAULT_XGBOOST_VERSION}
 readonly XGBOOST_GPU_SUB_VERSION=${DEFAULT_XGBOOST_GPU_SUB_VERSION}
 
 function install_spark_rapids() {
-  local -r rapids_repo_url='https://repo1.maven.org/maven2/ai/rapids'
+  local -r nvidia_repo_url='https://repo1.maven.org/maven2/com/nvidia'
   local -r dmlc_repo_url='https://repo.maven.apache.org/maven2/ml/dmlc'
 
   # Convert . to - for URL formatting
@@ -188,6 +188,8 @@ spark.executor.resource.gpu.amount=1
 spark.plugins=com.nvidia.spark.SQLPlugin
 spark.executor.resource.gpu.discoveryScript=/usr/lib/spark/scripts/gpu/getGpusResources.sh
 spark.submit.pyFiles=/usr/lib/spark/jars/xgboost4j-spark_${SPARK_VERSION}-${XGBOOST_VERSION}-${XGBOOST_GPU_SUB_VERSION}.jar
+spark.dynamicAllocation.enabled=false
+spark.sql.files.maxPartitionBytes=512m
 ###### END   : RAPIDS properties for Spark ${SPARK_VERSION} ######
 EOF
 }

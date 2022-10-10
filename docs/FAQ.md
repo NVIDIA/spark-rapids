@@ -25,8 +25,7 @@ The RAPIDS Accelerator for Apache Spark officially supports:
 - [Azure Synapse](get-started/getting-started-azure-synapse-analytics.md)
 - Cloudera provides the plugin packaged through
   [CDS 3.2](https://docs.cloudera.com/cdp-private-cloud-base/7.1.7/cds-3/topics/spark-spark-3-overview.html)
-  which is supported on the following
-  [CDP Private Cloud Base releases](https://docs.cloudera.com/cdp-private-cloud-base/7.1.7/cds-3/topics/spark-3-requirements.html).
+  and [CDS 3.3](https://docs.cloudera.com/cdp-private-cloud-base/7.1.8/cds-3/topics/spark-spark-3-overview.html).
 
 Most distributions based on a supported Apache Spark version should work, but because the plugin
 replaces parts of the physical plan that Apache Spark considers to be internal the code for those
@@ -40,7 +39,7 @@ release.
 
 ### What hardware is supported?
 
-The plugin is tested and supported on V100, T4, A2, A10, A30 and A100 datacenter GPUs.  It is possible
+The plugin is tested and supported on P100, V100, T4, A2, A10, A30 and A100 datacenter GPUs.  It is possible
 to run the plugin on GeForce desktop hardware with Volta or better architectures.  GeForce hardware
 does not support [CUDA forward
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html#forward-compatibility-title),
@@ -60,20 +59,16 @@ More information about cards that support forward compatibility can be found
 On startup the RAPIDS Accelerator will log a warning message on the Spark driver showing the
 version with a message that looks something like this:
 ```
-21/04/14 22:14:55 WARN SQLExecPlugin: RAPIDS Accelerator 21.06.0 using cudf 21.06.0. To disable GPU support set `spark.rapids.sql.enabled` to false
+WARN RapidsPluginUtils: RAPIDS Accelerator 22.10.0 using cudf 22.10.0.
 ```
 
-The full RAPIDS Accelerator and cudf build properties are logged at `INFO` level in the
-Spark driver and executor logs with messages that are similar to the following:
+The full RAPIDS Accelerator, RAPIDS Accelerator JNI and cudf build properties are logged at `INFO` 
+level in the Spark driver and executor logs with messages that are similar to the following:
 ```
-21/04/14 17:20:20 INFO RapidsExecutorPlugin: RAPIDS Accelerator build: {version=0.5.0-SNAPSHOT, user=jlowe, url=, date=2021-04-14T22:12:14Z, revision=79a5cf8acd615587b2c7835072b0d8b0d4604f8b, cudf_version=0.19-SNAPSHOT, branch=branch-0.5}
-21/04/14 17:20:20 INFO RapidsExecutorPlugin: cudf build: {version=0.19-SNAPSHOT, user=, date=2021-04-13T08:42:40Z, revision=a5d2407b93de444a6a7faf9db4b7dbf4ecbfe9ed, branch=HEAD}
+INFO RapidsPluginUtils: RAPIDS Accelerator build: {version=22.10.0-SNAPSHOT, user=, url=https://github.com/NVIDIA/spark-rapids.git, date=2022-09-02T12:41:30Z, revision=66450a3549d7cbb23799ec7be2f6f02b253efb85, cudf_version=22.10.0-SNAPSHOT, branch=HEAD}
+INFO RapidsPluginUtils: RAPIDS Accelerator JNI build: {version=22.10.0-SNAPSHOT, user=, url=https://github.com/NVIDIA/spark-rapids-jni.git, date=2022-09-02T03:35:21Z, revision=76b71b9ffa1fa4237365b51485d11362cbfb99e5, branch=HEAD}
+INFO RapidsPluginUtils: cudf build: {version=22.10.0-SNAPSHOT, user=, url=https://github.com/rapidsai/cudf.git, date=2022-09-02T03:35:21Z, revision=c273da4d6285d6b6f9640585cb3b8cf11310bef6, branch=HEAD}
 ```
-
-### What is the right hardware setup to run GPU accelerated Spark?
-
-GPU accelerated Spark can run on any NVIDIA Pascal or better GPU architecture, including Volta,
-Turing or Ampere.
 
 ### What parts of Apache Spark are accelerated?
 
@@ -276,9 +271,6 @@ Queries on Databricks will not fail but it can not benefit from DPP.
 
 Any operation that is supported on GPU will stay on the GPU when AQE is enabled.
 
-AQE is not supported on Databricks with the plugin.
-If AQE is enabled on Databricks, queries may fail with `StackOverflowError` error.
-
 #### Why does my query show as not on the GPU when Adaptive Query Execution is enabled?
 
 When running an `explain()` on a query where AQE is on, it is possible that AQE has not finalized
@@ -364,11 +356,11 @@ Yes
 The GPU is not needed on the driver and there is no benefit to having one available on the driver
 for the RAPIDS plugin.
 
-### How does the performance compare to Databricks' DeltaEngine?
+### Are table layout formats supported?
 
-We have not evaluated the performance yet. DeltaEngine is not open source, so any analysis needs to
-be done with Databricks in some form. When DeltaEngine is generally available and the terms of
-service allow it, we will look into doing a comparison.
+Yes, there is GPU support for Delta Lake read 
+and [Apache Iceberg 0.13 read](./additional-functionality/iceberg-support.md).  
+Write operations will fall back to the CPU.
 
 ### How many tasks can I run per executor? How many should I run per executor?
 
@@ -418,7 +410,7 @@ There are multiple reasons why this a problematic configuration:
 
 Yes, but it requires support from the underlying cluster manager to isolate the MIG GPU instance
 for each executor (e.g.: by setting `CUDA_VISIBLE_DEVICES`,
-[YARN with docker isolation](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.10/examples/MIG-Support)
+[YARN with docker isolation](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.12/examples/MIG-Support)
 or other means).
 
 Note that MIG is not recommended for use with the RAPIDS Accelerator since it significantly
@@ -496,7 +488,7 @@ This is typically caused by the IOMMU being enabled.  Please see the
 for this issue.
 
 To fix it you can either disable the IOMMU, or you can disable using pinned memory by setting
-[spark.rapids.memory.pinnedPool.size](configs.md#memory.pinnedPool.size) to 0.
+[`spark.rapids.memory.pinnedPool.size`](configs.md#memory.pinnedPool.size) to 0.
 
 ### Why am I getting a buffer overflow error when using the KryoSerializer?
 Buffer overflow will happen when trying to serialize an object larger than
@@ -558,9 +550,14 @@ If you are getting a warning `Avro library not found by the RAPIDS plugin.` or i
 Spark job by using the `--jars` or `--packages` option followed by the file path or maven path to
 RAPIDS jar since that is the preferred way to run RAPIDS accelerator.
 
-Note, you can add locally installed jars for external packages such as Avro Data Sources and the RAPIDS Accelerator jars via  `spark.driver.extraClassPath` (--driver-class-path in the client mode) on the driver side, and `spark.executor.extraClassPath` on the executor side. However, you should not mix the deploy methods for either of the external modules.  Either deploy both Spark Avro and RAPIDS Accelerator jars as local jars via `extraClassPath` settings or use the `--jars` or `--packages` options.
+Note, you can add locally installed jars for external packages such as Avro Data Sources and the 
+RAPIDS Accelerator jars via  `spark.driver.extraClassPath` (--driver-class-path in the client mode) 
+on the driver side, and `spark.executor.extraClassPath` on the executor side. However, you should not 
+mix the deploy methods for either of the external modules.  Either deploy both Spark Avro and RAPIDS 
+Accelerator jars as local jars via `extraClassPath` settings or use the `--jars` or `--packages` options.
 
-As a consequence, per  Issue #5796, if you also use the RAPIDS Shuffle Manager, your deployment option may be limited to the extraClassPath method.
+As a consequence, per [issue-5796](https://github.com/NVIDIA/spark-rapids/issues/5796), if you also 
+use the RAPIDS Shuffle Manager, your deployment option may be limited to the extraClassPath method.
 
 ### What is the default RMM pool allocator?
 

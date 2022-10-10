@@ -45,6 +45,8 @@ case class WholeStageExecParser(
     // if any of the execs in WholeStageCodegen supported mark this entire thing
     // as supported
     val anySupported = childNodes.exists(_.isSupported == true)
+    val unSupportedExprsArray = childNodes.filter(_.unsupportedExprs.length > 0 ).map(
+      x => x.unsupportedExprs).flatten.toArray
     // average speedup across the execs in the WholeStageCodegen for now
     val supportedChildren = childNodes.filterNot(_.shouldRemove)
     val avSpeedupFactor = SQLPlanParser.averageSpeedup(supportedChildren.map(_.speedupFactor))
@@ -52,7 +54,8 @@ case class WholeStageExecParser(
     // for now
     val allStagesIncludingChildren = childNodes.flatMap(_.stages).toSet ++ stagesInNode.toSet
     val execInfo = new ExecInfo(sqlID, node.name, node.name, avSpeedupFactor, maxDuration,
-      node.id, anySupported, Some(childNodes), allStagesIncludingChildren)
+      node.id, anySupported, Some(childNodes), allStagesIncludingChildren,
+      unsupportedExprs = unSupportedExprsArray)
     Seq(execInfo)
   }
 }

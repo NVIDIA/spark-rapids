@@ -102,8 +102,9 @@ You can build against different versions of the CUDA Toolkit by using qone of th
 * `-Pcuda11` (CUDA 11.0/11.1/11.2, default)
 
 ### Building and Testing with JDK9+
-We support JDK8 as our main JDK version. However, it's possible to build and run with more modern
-JDK versions as well. To this end set `JAVA_HOME` in the environment to your JDK root directory.
+We support JDK8 as our main JDK version, and test JDK8 and JDK11. It is possible to build and run
+with more modern JDK versions, however these are untested. The first step is to set `JAVA_HOME` in
+the environment to your JDK root directory.
 
 At the time of this writing, the most robust way to run the RAPIDS Accelerator is from a jar dedicated to
 a single Spark version. To this end please use a single shim and specify `-DallowConventionalDistJar=true`
@@ -137,7 +138,7 @@ To this end in a pre-production build you can set the Boolean property
 
 The time saved is more significant if you are merely changing
 the `aggregator` module, or the `dist` module, or just incorporating changes from
-[spark-rapids-jni](https://github.com/NVIDIA/spark-rapids-jni/blob/branch-22.10/CONTRIBUTING.md#local-testing-of-cross-repo-contributions-cudf-spark-rapids-jni-and-spark-rapids)
+[spark-rapids-jni](https://github.com/NVIDIA/spark-rapids-jni/blob/branch-22.12/CONTRIBUTING.md#local-testing-of-cross-repo-contributions-cudf-spark-rapids-jni-and-spark-rapids)
 
 For example, to quickly repackage `rapids-4-spark` after the
 initial `./build/buildall` you can iterate by invoking

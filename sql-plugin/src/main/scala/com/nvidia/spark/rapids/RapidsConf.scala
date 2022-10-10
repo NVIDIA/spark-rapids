@@ -333,7 +333,9 @@ object RapidsConf {
   val GPU_OOM_DUMP_DIR = conf("spark.rapids.memory.gpu.oomDumpDir")
     .doc("The path to a local directory where a heap dump will be created if the GPU " +
       "encounters an unrecoverable out-of-memory (OOM) error. The filename will be of the " +
-      "form: \"gpu-oom-<pid>.hprof\" where <pid> is the process ID.")
+      "form: \"gpu-oom-<pid>-<dumpId>.hprof\" where <pid> is the process ID, and " +
+      "the dumpId is a sequence number to disambiguate multiple heap dumps " +
+      "per process lifecycle")
     .stringConf
     .createOptional
 
@@ -1371,7 +1373,9 @@ object RapidsConf {
       "alluxio.master.rpc.port(default: 19998) from ALLUXIO_HOME/conf/alluxio-site.properties, " +
       "then replace a cloud path which matches spark.rapids.alluxio.bucket.regex like " +
       "\"s3://bar/b.csv\" to \"alluxio://0.1.2.3:19998/bar/b.csv\", " +
-      "and the bucket \"s3://bar\" will be mounted to \"/bar\" in Alluxio automatically.")
+      "and the bucket \"s3://bar\" will be mounted to \"/bar\" in Alluxio automatically." +
+      "This config should be enabled when initially starting the application but it " +
+      "can be turned off and one programmatically after that.")
     .booleanConf
     .createWithDefault(false)
 
@@ -1400,15 +1404,16 @@ object RapidsConf {
 
   val ALLUXIO_REPLACEMENT_ALGO = conf("spark.rapids.alluxio.replacement.algo")
     .doc("The algorithm used when replacing the UFS path with the Alluxio path. CONVERT_TIME " +
-      "and SELECTION_TIME are the valid options. CONVERT_TIME indicates that we do it when " +
-      "we convert it to a GPU file read, this has extra overhead of creating an entirely new " +
-      "file index, which requires listing the files and getting all new file info from Alluxio. " +
-      "SELECTION_TIME indicates we do it when the file reader is selecting the partitions " +
-      "to process and just replaces the path without fetching the file information again, this " +
-      "is faster but doesn't update locality information if that were to work with Alluxio.")
+      "and TASK_TIME are the valid options. CONVERT_TIME indicates that we do it " +
+      "when we convert it to a GPU file read, this has extra overhead of creating an entirely " +
+      "new file index, which requires listing the files and getting all new file info from " +
+      "Alluxio. TASK_TIME replaces the path as late as possible inside of the task. " +
+      "By waiting and replacing it at task time, it just replaces " +
+      "the path without fetching the file information again, this is faster " +
+      "but doesn't update locality information if that has a bit impact on performance.")
     .stringConf
-    .checkValues(Set("CONVERT_TIME", "SELECTION_TIME"))
-    .createWithDefault("SELECTION_TIME")
+    .checkValues(Set("CONVERT_TIME", "TASK_TIME"))
+    .createWithDefault("TASK_TIME")
 
   // USER FACING DEBUG CONFIGS
 
@@ -1587,6 +1592,21 @@ object RapidsConf {
     .integerConf
     .createWithDefault(value = 0)
 
+  val CONCURRENT_WRITER_PARTITION_FLUSH_SIZE =
+    conf("spark.rapids.sql.concurrentWriterPartitionFlushSize")
+        .doc("The flush size of the concurrent writer cache in bytes for each partition. " +
+            "If specified spark.sql.maxConcurrentOutputFileWriters, use concurrent writer to " +
+            "write data. Concurrent writer first caches data for each partition and begins to " +
+            "flush the data if it finds one partition with a size that is greater than or equal " +
+            "to this config. The default value is 0, which will try to select a size based off " +
+            "of file type specific configs. E.g.: It uses `write.parquet.row-group-size-bytes` " +
+            "config for Parquet type and `orc.stripe.size` config for Orc type. " +
+            "If the value is greater than 0, will use this positive value." +
+            "Max value may get better performance but not always, because concurrent writer uses " +
+            "spillable cache and big value may cause more IO swaps.")
+        .bytesConf(ByteUnit.BYTE)
+        .createWithDefault(0L)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1617,7 +1637,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-22.10.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-22.12.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2096,11 +2116,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val getAlluxioReplacementAlgo: String = get(ALLUXIO_REPLACEMENT_ALGO)
 
-  lazy val isAlluxioReplacementAlgoSelectTime: Boolean =
-    get(ALLUXIO_REPLACEMENT_ALGO) == "SELECTION_TIME"
-
   lazy val isAlluxioReplacementAlgoConvertTime: Boolean =
     get(ALLUXIO_REPLACEMENT_ALGO) == "CONVERT_TIME"
+
+  lazy val isAlluxioReplacementAlgoTaskTime: Boolean =
+    get(ALLUXIO_REPLACEMENT_ALGO) == "TASK_TIME"
 
   lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
 
@@ -2117,7 +2137,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isRegExpEnabled: Boolean = get(ENABLE_REGEXP)
 
   lazy val maxRegExpStateMemory: Long =  {
-    val size = get(REGEXP_MAX_STATE_MEMORY_BYTES) 
+    val size = get(REGEXP_MAX_STATE_MEMORY_BYTES)
     if (size > 3 * gpuTargetBatchSizeBytes) {
       logWarning(s"${REGEXP_MAX_STATE_MEMORY_BYTES.key} is more than 3 times " +
         s"${GPU_BATCH_SIZE_BYTES.key}. This may cause regular expression operations to " +
@@ -2133,6 +2153,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isFastSampleEnabled: Boolean = get(ENABLE_FAST_SAMPLE)
 
   lazy val isDetectDeltaLogQueries: Boolean = get(DETECT_DELTA_LOG_QUERIES)
+
+  lazy val concurrentWriterPartitionFlushSize:Long = get(CONCURRENT_WRITER_PARTITION_FLUSH_SIZE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values
