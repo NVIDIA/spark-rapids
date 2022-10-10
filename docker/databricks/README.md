@@ -39,24 +39,28 @@ cluster meets the prerequisites above by configuring it as follows:
 
 3. Ensure `Enable autoscaling` is disabled.
 
-4. Choose the number of workers that matches the number of GPUs you want to use.
+Note that GPU nodes are not available to be selected at this time for the driver or the workers. Therefore, you must first configure the use of the Docker container before configuring the driver and worker nodes.
 
-5. Select a worker type.  On AWS, use nodes with 1 GPU each such as `p3.2xlarge` or `g4dn.xlarge`.
+4. Under the `Advanced options`, select the `Docker` tab.
+
+5. Select `Use your own Docker container`.
+
+6. In the `Docker Image URL` field, enter the image location you pushed to using the build steps.
+
+7. Set `Authentication` set to `Default` if using a public repository, or configure `Authentication` for the repository you have pushed the image to.
+
+Now you can configure the driver and worker nodes in the main part of the UI.
+
+8. Choose the number of workers that matches the number of GPUs you want to use.
+
+9. Select a worker type.  On AWS, use nodes with 1 GPU each such as `p3.2xlarge` or `g4dn.xlarge`.
    p2 nodes do not meet the architecture requirements (Pascal or higher) for the Spark worker
    (although they can be used for the driver node).  For Azure, choose GPU nodes such as
    Standard_NC6s_v3.  For GCP, choose N1 or A2 instance types with GPUs. 
 
-6. Select a driver type. Generally, this can be set the same as the worker, but you can select a node that 
+10. Select a driver type. Generally, this can be set the same as the worker, but you can select a node that 
    does NOT include a GPU if you don't plan to do any GPU-related operations on the driver. On AWS, this 
    can be an `i3.xlarge` or larger.
-
-7. Under the `Advanced options`, select the `Docker` tab.
-
-8. Select `Use your own Docker container`.
-
-9. In the `Docker Image URL` field, enter the image location you pushed to using the build steps.
-
-10. Set `Authentication` set to `Default` if using a public repository, or configure `Authentication` for the repository you have pushed the image to.
 
 11. Now select the `Init Scripts` tab.
 
