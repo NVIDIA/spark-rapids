@@ -1692,7 +1692,7 @@ object RapidsConf {
 
       println("\n## General Configuration\n")
       println("Name | Description | Default Value | Applicable at")
-      println("-----|-------------|--------------")
+      println("-----|-------------|--------------|--------------")
     } else {
       println("Rapids Configs:")
     }
