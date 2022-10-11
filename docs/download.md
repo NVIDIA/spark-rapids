@@ -68,7 +68,6 @@ New functionality and performance improvements for this release include:
 * Databricks custom docker container
 * AQE support on Databricks
 * MultiThreaded Shuffle feature
-* HashAggregate on Array support
 * Binary write support for parquet
 * Cast binary to string  
 * Hive parquet table write support
