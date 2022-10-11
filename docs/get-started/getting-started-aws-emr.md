@@ -14,7 +14,7 @@ Different versions of EMR ship with different versions of Spark, RAPIDS Accelera
 
 | EMR | Spark | RAPIDS Accelerator jar | cuDF jar | xgboost4j-spark jar
 | --- | --- | --- | ---| --- |
-| 6.8 | 3.3.0 | rapids-4-spark_2.12-22.06.0.jar | X | xgboost4j-spark_3.0-1.4.2-0.3.0.jar |
+| 6.8 | 3.3.0 | rapids-4-spark_2.12-22.06.0.jar | Bundled with rapids-4-spark | xgboost4j-spark_3.0-1.4.2-0.3.0.jar |
 | 6.7 | 3.2.1 | rapids-4-spark_2.12-22.02.0.jar | cudf-22.02.0-cuda11.jar | xgboost4j-spark_3.0-1.2.0-0.1.0.jar |
 | 6.6 | 3.2.0 | rapids-4-spark_2.12-22.02.0.jar | cudf-22.02.0-cuda11.jar | xgboost4j-spark_3.0-1.2.0-0.1.0.jar |
 | 6.5 | 3.1.2 | rapids-4-spark_2.12-0.4.1.jar | cudf-0.18.1-cuda10-1.jar | xgboost4j-spark_3.0-1.2.0-0.1.0.jar |
