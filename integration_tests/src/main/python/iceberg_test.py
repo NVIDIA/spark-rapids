@@ -92,6 +92,7 @@ def test_iceberg_parquet_read_round_trip_select_one(spark_tmp_table_factory, dat
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/6718')
 @pytest.mark.parametrize("data_gens", iceberg_gens_list, ids=idfn)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_parquet_read_round_trip(spark_tmp_table_factory, data_gens, reader_type):
