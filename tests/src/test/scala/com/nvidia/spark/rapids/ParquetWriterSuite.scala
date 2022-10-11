@@ -114,22 +114,23 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  test("set max records per file no partition") {
+  test("set maxRecordsPerFile smaller than number of rows no partition") {
     val conf = new SparkConf().set("spark.sql.files.maxRecordsPerFile", "50")
     val tempFile = File.createTempFile("maxRecords", ".parquet")
-    val assertRowCount50 = assertResult(50) _
 
     try {
       SparkSessionHolder.withSparkSession(conf, spark => {
         import spark.implicits._
-        val df = (1 to 16000).toDF()
+        val df = (1 to 1600).toDF()
         df.write.mode("overwrite").parquet(tempFile.getAbsolutePath())
-
+        // check the whole number of rows
+        assertResult(1600) (spark.read.parquet(tempFile.getAbsolutePath()).count())
+        // check number of rows in each file
         listAllFiles(tempFile)
           .map(f => f.getAbsolutePath())
           .filter(p => p.endsWith("parquet"))
           .map(p => {
-            assertRowCount50 (spark.read.parquet(p).count()) 
+            assertResult(50) (spark.read.parquet(p).count())
           })
       })
     } finally {
@@ -137,23 +138,70 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  test("set max records per file with partition") {
-    val conf = new SparkConf().set("spark.sql.files.maxRecordsPerFile", "50")
+  test("set maxRecordsPerFile larger than number of rows no partition") {
+    val conf = new SparkConf().set("spark.sql.files.maxRecordsPerFile", "200")
     val tempFile = File.createTempFile("maxRecords", ".parquet")
-    val assertRowCount50 = assertResult(50) _
 
     try {
       SparkSessionHolder.withSparkSession(conf, spark => {
         import spark.implicits._
-        val df = (1 to 16000).map(i => (i, i % 2)).toDF()
+        val df = (1 to 1600).toDF()
+        df.repartition(16).write.mode("overwrite").parquet(tempFile.getAbsolutePath())
+        // check the whole number of rows
+        assertResult(1600) (spark.read.parquet(tempFile.getAbsolutePath()).count())
+        // there should be 16 files
+        assertResult(16) (
+          listAllFiles(tempFile)
+            .map(f => f.getAbsolutePath())
+            .count(p => p.endsWith("parquet")))
+      })
+    } finally {
+      tempFile.delete()
+    }
+  }
+
+  test("set maxRecordsPerFile smaller than number of rows with partition") {
+    val conf = new SparkConf().set("spark.sql.files.maxRecordsPerFile", "50")
+    val tempFile = File.createTempFile("maxRecords", ".parquet")
+
+    try {
+      SparkSessionHolder.withSparkSession(conf, spark => {
+        import spark.implicits._
+        val df = (1 to 1600).map(i => (i, i % 2)).toDF()
         df.write.mode("overwrite").partitionBy("_2").parquet(tempFile.getAbsolutePath())
 
+        // check the whole number of rows
+        assertResult(1600) (spark.read.parquet(tempFile.getAbsolutePath()).count())
+        // check number of rows in each file
         listAllFiles(tempFile)
           .map(f => f.getAbsolutePath())
           .filter(p => p.endsWith("parquet"))
           .map(p => {
-            assertRowCount50 (spark.read.parquet(p).count()) 
+            assertResult(50) (spark.read.parquet(p).count())
           })
+      })
+    } finally {
+      tempFile.delete()
+    }
+  }
+
+  test("set maxRecordsPerFile greater than number of rows with partition") {
+    val conf = new SparkConf().set("spark.sql.files.maxRecordsPerFile", "800")
+    val tempFile = File.createTempFile("maxRecords", ".parquet")
+
+    try {
+      SparkSessionHolder.withSparkSession(conf, spark => {
+        import spark.implicits._
+        val df = (1 to 1600).map(i => (i, i % 2)).toDF()
+        df.repartition(2).write.mode("overwrite").partitionBy("_2").parquet(tempFile.getAbsolutePath())
+
+        // check the whole number of rows
+        assertResult(1600) (spark.read.parquet(tempFile.getAbsolutePath()).count())
+        // there should be only 2 files in each partition
+        assertResult(4) (
+          listAllFiles(tempFile)
+            .map(f => f.getAbsolutePath())
+            .count(p => p.endsWith("parquet")))
       })
     } finally {
       tempFile.delete()
