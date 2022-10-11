@@ -30,6 +30,7 @@ ShuffledHashJoinExec,3.0
 SortMergeJoinExec,22.7
 AggregateInPandasExec,1.2
 ArrowEvalPythonExec,1.2
+FlatMapCoGroupsInPandasExec,3.0
 FlatMapGroupsInPandasExec,1.2
 MapInPandasExec,1.2
 WindowInPandasExec,1.2
