@@ -1,5 +1,5 @@
 # Change log
-Generated on 2022-10-09
+Generated on 2022-10-11
 
 ## Release 22.10
 
@@ -52,6 +52,7 @@ Generated on 2022-10-09
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#6614](https://github.com/NVIDIA/spark-rapids/issues/6614)|[BUG] test_iceberg_read_parquet_compression_codec CPU and GPU output mismatched in PASCAL GPU|
 |[#6723](https://github.com/NVIDIA/spark-rapids/issues/6723)|[BUG] null pointer exception selecting single column from iceberg table|
 |[#6693](https://github.com/NVIDIA/spark-rapids/issues/6693)|[BUG] test_cast_string_to_negative_scale_decimal failed in nightly|
 |[#6692](https://github.com/NVIDIA/spark-rapids/issues/6692)|[BUG] compile error deprecated method w/ jdk11|
