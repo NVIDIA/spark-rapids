@@ -323,12 +323,14 @@ object RapidsConf {
   val PINNED_POOL_SIZE = conf("spark.rapids.memory.pinnedPool.size")
     .doc("The size of the pinned memory pool in bytes unless otherwise specified. " +
       "Use 0 to disable the pool.")
+    .startupOnly()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(0)
 
   val PAGEABLE_POOL_SIZE = conf("spark.rapids.memory.host.pageablePool.size")
     .doc("The size of the pageable memory pool in bytes unless otherwise specified. " +
       "Use 0 to disable the pool.")
+    .startupOnly()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(ByteUnit.GiB.toBytes(1))
 
@@ -337,6 +339,7 @@ object RapidsConf {
       "STDOUT or STDERR the logging will go there. Setting it to NONE disables logging. " +
       "All other values are reserved for possible future expansion and in the mean time will " +
       "disable logging.")
+    .startupOnly()
     .stringConf
     .createWithDefault("NONE")
 
@@ -346,6 +349,7 @@ object RapidsConf {
       "form: \"gpu-oom-<pid>-<dumpId>.hprof\" where <pid> is the process ID, and " +
       "the dumpId is a sequence number to disambiguate multiple heap dumps " +
       "per process lifecycle")
+    .startupOnly()
     .stringConf
     .createOptional
 
@@ -358,6 +362,7 @@ object RapidsConf {
       "memory. This must be less than or equal to the maximum limit configured via " +
       s"$RMM_ALLOC_MAX_FRACTION_KEY, and greater than or equal to the minimum limit configured " +
       s"via $RMM_ALLOC_MIN_FRACTION_KEY.")
+    .startupOnly()
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(1)
@@ -374,6 +379,7 @@ object RapidsConf {
         s"The value must be greater than or equal to the setting for $RMM_ALLOC_FRACTION. " +
         "Note that this limit will be reduced by the reserve memory configured in " +
         s"$RMM_ALLOC_RESERVE_KEY.")
+    .startupOnly()
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(1)
@@ -381,6 +387,7 @@ object RapidsConf {
   val RMM_ALLOC_MIN_FRACTION = conf(RMM_ALLOC_MIN_FRACTION_KEY)
     .doc("The fraction of total GPU memory that limits the minimum size of the RMM pool. " +
       s"The value must be less than or equal to the setting for $RMM_ALLOC_FRACTION.")
+    .startupOnly()
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(0.25)
@@ -388,6 +395,7 @@ object RapidsConf {
   val RMM_ALLOC_RESERVE = conf(RMM_ALLOC_RESERVE_KEY)
       .doc("The amount of GPU memory that should remain unallocated by RMM and left for " +
           "system use such as memory needed for kernels and kernel launches.")
+      .startupOnly()
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(ByteUnit.MiB.toBytes(640))
 
@@ -395,6 +403,7 @@ object RapidsConf {
     .doc("Amount of off-heap host memory to use for buffering spilled GPU data before spilling " +
         "to local disk. Use -1 to set the amount to the combined size of pinned and pageable " +
         "memory pools.")
+    .startupOnly()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(-1)
 
@@ -403,14 +412,16 @@ object RapidsConf {
         "back into GPU memory temporarily. Unspilling may be useful for GPU buffers that are " +
         "needed frequently, for example, broadcast variables; however, it may also increase GPU " +
         "memory usage")
-      .booleanConf
-      .createWithDefault(false)
+    .startupOnly()
+    .booleanConf
+    .createWithDefault(false)
 
   val GDS_SPILL = conf("spark.rapids.memory.gpu.direct.storage.spill.enabled")
     .doc("Should GPUDirect Storage (GDS) be used to spill GPU memory buffers directly to disk. " +
       "GDS must be enabled and the directory `spark.local.dir` must support GDS. This is an " +
       "experimental feature. For more information on GDS, see " +
       "https://docs.nvidia.com/gpudirect-storage/.")
+    .startupOnly()
     .booleanConf
     .createWithDefault(false)
 
@@ -420,6 +431,7 @@ object RapidsConf {
         "Note that this buffer is mapped to the PCI Base Address Register (BAR) space, which may " +
         "be very limited on some GPUs (e.g. the NVIDIA T4 only has 256 MiB), and it is also used " +
         "by UCX bounce buffers.")
+    .startupOnly()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(ByteUnit.MiB.toBytes(8))
 
@@ -427,6 +439,7 @@ object RapidsConf {
     .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
       "through to CUDA memory allocation directly. DEPRECATED: please use " +
       "spark.rapids.memory.gpu.pool instead.")
+    .startupOnly()
     .booleanConf
     .createWithDefault(true)
 
@@ -436,6 +449,7 @@ object RapidsConf {
       "\"ARENA\", the RMM arena allocator is used; with \"ASYNC\", the new CUDA stream-ordered " +
       "memory allocator in CUDA 11.2+ is used. If set to \"NONE\", pooling is disabled and RMM " +
       "just passes through to CUDA memory allocation directly.")
+    .startupOnly()
     .stringConf
     .createWithDefault("ASYNC")
 
@@ -444,6 +458,7 @@ object RapidsConf {
           "Tasks may temporarily block when the number of concurrent tasks in the executor " +
           "exceeds this amount. Allowing too many concurrent tasks on the same GPU may lead to " +
           "GPU out of memory errors.")
+      .startupOnly()
       .integerConf
       .createWithDefault(1)
 
@@ -490,6 +505,7 @@ object RapidsConf {
       "for device(GPU) memory. This allows the GPU to process more data than fits in memory, but " +
       "can result in slower processing. This is an experimental feature.")
     .internal()
+    .startupOnly()
     .booleanConf
     .createWithDefault(false)
 
@@ -1469,6 +1485,7 @@ object RapidsConf {
 
   val CUDF_VERSION_OVERRIDE = conf("spark.rapids.cudfVersionOverride")
     .internal()
+    .startupOnly()
     .doc("Overrides the cudf version compatibility check between cudf jar and RAPIDS Accelerator " +
       "jar. If you are sure that the cudf jar which is mentioned in the classpath is compatible " +
       "with the RAPIDS Accelerator version, then set this to true.")
@@ -1576,6 +1593,7 @@ object RapidsConf {
   val SPARK_GPU_RESOURCE_NAME = conf("spark.rapids.gpu.resourceName")
     .doc("The name of the Spark resource that represents a GPU that you want the plugin to use " +
       "if using custom resources with Spark.")
+    .startupOnly()
     .stringConf
     .createWithDefault("gpu")
 
@@ -1673,7 +1691,7 @@ object RapidsConf {
       // scalastyle:on line.size.limit
 
       println("\n## General Configuration\n")
-      println("Name | Description | Default Value")
+      println("Name | Description | Default Value | Applicable at")
       println("-----|-------------|--------------")
     } else {
       println("Rapids Configs:")
