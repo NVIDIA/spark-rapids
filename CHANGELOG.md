@@ -32,7 +32,7 @@ Generated on 2022-10-11
 |[#6144](https://github.com/NVIDIA/spark-rapids/issues/6144)|[FEA] Support FromUTCTimestamp|
 |[#5559](https://github.com/NVIDIA/spark-rapids/issues/5559)|[FEA] Add `GpuMapConcat` support for nested (array, struct, map) types.|
 |[#6143](https://github.com/NVIDIA/spark-rapids/issues/6143)|[FEA] Avoid CPU fallback due to intermediate precision overflow when handling decimal|
-|[#4061](https://github.com/NVIDIA/spark-rapids/issues/4061)|[FEA]  Validate the size/complexity of regular expressions|
+|[#4061](https://github.com/NVIDIA/spark-rapids/issues/4061)|[FEA] Validate the size/complexity of regular expressions|
 |[#6145](https://github.com/NVIDIA/spark-rapids/issues/6145)|[FEA] Avoid CPU fallback due to date_format:Failed to convert Unsupported word: SSS null.|
 |[#6300](https://github.com/NVIDIA/spark-rapids/issues/6300)|[FEA] Profiling Tool supports recommendations for tuning|
 |[#6267](https://github.com/NVIDIA/spark-rapids/issues/6267)|[FEA] Support ShuffleExchangeExec with BinaryType as input and output|
@@ -90,11 +90,11 @@ Generated on 2022-10-11
 |[#6467](https://github.com/NVIDIA/spark-rapids/issues/6467)|[BUG] Fix DOP calculations for xdist |
 |[#6428](https://github.com/NVIDIA/spark-rapids/issues/6428)|[BUG] IntervalDivisionSuite has memory leak|
 |[#6438](https://github.com/NVIDIA/spark-rapids/issues/6438)|[BUG] `GpuSortArray` doesn't match the behavior of Spark when handling `Nan`s|
-|[#6442](https://github.com/NVIDIA/spark-rapids/issues/6442)|[BUG]java.lang.ClassNotFoundException: org.apache.spark.sql.rapids.execution.SerializeConcatHostBuffersDeserializeBatch|
+|[#6442](https://github.com/NVIDIA/spark-rapids/issues/6442)|[BUG] java.lang.ClassNotFoundException: org.apache.spark.sql.rapids.execution.SerializeConcatHostBuffersDeserializeBatch|
 |[#6417](https://github.com/NVIDIA/spark-rapids/issues/6417)|[BUG] CDH integration tests ClassNotFoundException: com.nvidia.spark.rapids.spark321cdh.RapidsShuffleManager|
 |[#6471](https://github.com/NVIDIA/spark-rapids/issues/6471)|[BUG] Encrypted Parquet writes are not falling back if configs are set in configuration|
 |[#6433](https://github.com/NVIDIA/spark-rapids/issues/6433)|[BUG] dist module "install" should install reduced pom |
-|[#6240](https://github.com/NVIDIA/spark-rapids/issues/6240)|[BUG]shuffle file can not be deleted correctly when use RapidsShuffleManager.|
+|[#6240](https://github.com/NVIDIA/spark-rapids/issues/6240)|[BUG] shuffle file can not be deleted correctly when use RapidsShuffleManager.|
 |[#6446](https://github.com/NVIDIA/spark-rapids/issues/6446)|[BUG]  test_casting_from_integer[timestamp] fails on databricks321|
 |[#6426](https://github.com/NVIDIA/spark-rapids/issues/6426)|[BUG] GpuShuffledHashJoinExecSuite has leaks|
 |[#6447](https://github.com/NVIDIA/spark-rapids/issues/6447)|[BUG] Python UDF triggered java.lang.NullPointerException|
@@ -126,6 +126,7 @@ Generated on 2022-10-11
 ### PRs
 |||
 |:---|:---|
+|[#6750](https://github.com/NVIDIA/spark-rapids/pull/6750)|Enabling decimal 38,2 casting|
 |[#6729](https://github.com/NVIDIA/spark-rapids/pull/6729)|Fix NullPointerException in iceberg schema parsing code when selecting single column|
 |[#6724](https://github.com/NVIDIA/spark-rapids/pull/6724)|Qualification tool: Read SQL function names for parsing expressions|
 |[#6695](https://github.com/NVIDIA/spark-rapids/pull/6695)|[Doc] Adding Dataproc quick start steps to use new user tools package [skip ci]|
