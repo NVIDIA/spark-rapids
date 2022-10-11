@@ -175,7 +175,7 @@ else
         TEST_PARALLEL_OPTS=("-n" "$TEST_PARALLEL")
     fi
     RUN_DIR=${RUN_DIR-"$SCRIPTPATH"/target/run_dir}
-    mkdir -p "$RUN_DIR"
+    rm -rf "$RUN_DIR" && mkdir -p "$RUN_DIR"
     cd "$RUN_DIR"
 
     ## Under cloud environment, overwrite the '--rootdir' param to point to the working directory of each excutor
