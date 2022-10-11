@@ -114,97 +114,86 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  test("set maxRecordsPerFile smaller than number of rows no partition") {
-    val conf = new SparkConf().set("spark.sql.files.maxRecordsPerFile", "50")
+  test("set maxRecordsPerFile no partition") {
     val tempFile = File.createTempFile("maxRecords", ".parquet")
-
-    try {
-      SparkSessionHolder.withSparkSession(conf, spark => {
-        import spark.implicits._
-        val df = (1 to 1600).toDF()
-        df.write.mode("overwrite").parquet(tempFile.getAbsolutePath())
-        // check the whole number of rows
-        assertResult(1600) (spark.read.parquet(tempFile.getAbsolutePath()).count())
-        // check number of rows in each file
-        listAllFiles(tempFile)
-          .map(f => f.getAbsolutePath())
-          .filter(p => p.endsWith("parquet"))
-          .map(p => {
-            assertResult(50) (spark.read.parquet(p).count())
-          })
-      })
-    } finally {
-      tempFile.delete()
-    }
-  }
-
-  test("set maxRecordsPerFile larger than number of rows no partition") {
-    val conf = new SparkConf().set("spark.sql.files.maxRecordsPerFile", "200")
-    val tempFile = File.createTempFile("maxRecords", ".parquet")
-
-    try {
-      SparkSessionHolder.withSparkSession(conf, spark => {
-        import spark.implicits._
-        val df = (1 to 1600).toDF()
-        df.repartition(16).write.mode("overwrite").parquet(tempFile.getAbsolutePath())
-        // check the whole number of rows
-        assertResult(1600) (spark.read.parquet(tempFile.getAbsolutePath()).count())
-        // there should be 16 files
-        assertResult(16) (
+    
+    Seq(("50", 50), ("200", 100)).foreach{ case (maxRecordsPerFile, expectedRecordsPerFile) =>
+      val conf = new SparkConf().set("spark.sql.files.maxRecordsPerFile", maxRecordsPerFile)
+      try {
+        SparkSessionHolder.withSparkSession(conf, spark => {
+          import spark.implicits._
+          val df = (1 to 100).toDF()
+          df.repartition(1).write.mode("overwrite").parquet(tempFile.getAbsolutePath())
+          // check the whole number of rows
+          assertResult(100) (spark.read.parquet(tempFile.getAbsolutePath()).count())
+          // check number of rows in each file
           listAllFiles(tempFile)
             .map(f => f.getAbsolutePath())
-            .count(p => p.endsWith("parquet")))
-      })
-    } finally {
-      tempFile.delete()
+            .filter(p => p.endsWith("parquet"))
+            .map(p => {
+              assertResult(expectedRecordsPerFile) (spark.read.parquet(p).count())
+            })
+        })
+      } finally {
+        tempFile.delete()
+      }
     }
   }
 
-  test("set maxRecordsPerFile smaller than number of rows with partition") {
-    val conf = new SparkConf().set("spark.sql.files.maxRecordsPerFile", "50")
+  test("set maxRecordsPerFile with partition") {
     val tempFile = File.createTempFile("maxRecords", ".parquet")
+    
+    Seq(("50", 50), ("200", 100)).foreach{ case (maxRecordsPerFile, expectedRecordsPerFile) =>
+      val conf = new SparkConf().set("spark.sql.files.maxRecordsPerFile", maxRecordsPerFile)
+      try {
+        SparkSessionHolder.withSparkSession(conf, spark => {
+          import spark.implicits._
+          val df = (1 to 200).map(i => (i, i % 2)).toDF()
+          df.repartition(1).write.mode("overwrite").partitionBy("_2").parquet(tempFile.getAbsolutePath())
 
-    try {
-      SparkSessionHolder.withSparkSession(conf, spark => {
-        import spark.implicits._
-        val df = (1 to 1600).map(i => (i, i % 2)).toDF()
-        df.write.mode("overwrite").partitionBy("_2").parquet(tempFile.getAbsolutePath())
-
-        // check the whole number of rows
-        assertResult(1600) (spark.read.parquet(tempFile.getAbsolutePath()).count())
-        // check number of rows in each file
-        listAllFiles(tempFile)
-          .map(f => f.getAbsolutePath())
-          .filter(p => p.endsWith("parquet"))
-          .map(p => {
-            assertResult(50) (spark.read.parquet(p).count())
-          })
-      })
-    } finally {
-      tempFile.delete()
-    }
-  }
-
-  test("set maxRecordsPerFile greater than number of rows with partition") {
-    val conf = new SparkConf().set("spark.sql.files.maxRecordsPerFile", "800")
-    val tempFile = File.createTempFile("maxRecords", ".parquet")
-
-    try {
-      SparkSessionHolder.withSparkSession(conf, spark => {
-        import spark.implicits._
-        val df = (1 to 1600).map(i => (i, i % 2)).toDF()
-        df.repartition(2).write.mode("overwrite").partitionBy("_2").parquet(tempFile.getAbsolutePath())
-
-        // check the whole number of rows
-        assertResult(1600) (spark.read.parquet(tempFile.getAbsolutePath()).count())
-        // there should be only 2 files in each partition
-        assertResult(4) (
+          // check the whole number of rows
+          assertResult(200) (spark.read.parquet(tempFile.getAbsolutePath()).count())
+          // check number of rows in each file
           listAllFiles(tempFile)
             .map(f => f.getAbsolutePath())
-            .count(p => p.endsWith("parquet")))
-      })
-    } finally {
-      tempFile.delete()
+            .filter(p => p.endsWith("parquet"))
+            .map(p => {
+              assertResult(expectedRecordsPerFile) (spark.read.parquet(p).count())
+            })
+        })
+      } finally {
+        tempFile.delete()
+      }
+    }
+  }
+
+  test("set maxRecordsPerFile with partition concurrent fallback to single writer") {
+    val tempFile = File.createTempFile("maxRecords", ".parquet")
+    
+    Seq(("40", 40), ("200", 80)).foreach{ case (maxRecordsPerFile, expectedRecordsPerFile) =>
+      val conf = new SparkConf()
+        .set("spark.sql.files.maxRecordsPerFile", maxRecordsPerFile)
+        .set("spark.sql.maxConcurrentOutputFileWriters", "10")
+      try {
+        SparkSessionHolder.withSparkSession(conf, spark => {
+          import spark.implicits._
+          val df = (1 to 1600).map(i => (i, i % 20)).toDF()
+          // 20 > 10, so fallback to single writer
+          df.repartition(1).write.mode("overwrite").partitionBy("_2").parquet(tempFile.getAbsolutePath())
+
+          // check the whole number of rows
+          assertResult(1600) (spark.read.parquet(tempFile.getAbsolutePath()).count())
+          // check number of rows in each file
+          listAllFiles(tempFile)
+            .map(f => f.getAbsolutePath())
+            .filter(p => p.endsWith("parquet"))
+            .map(p => {
+              assertResult(expectedRecordsPerFile) (spark.read.parquet(p).count())
+            })
+        })
+      } finally {
+        tempFile.delete()
+      }
     }
   }
 
