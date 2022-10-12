@@ -1047,8 +1047,41 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   test("test potential problems timestamp") {
-    val logFiles = Array(s"$logDir/eventlog_nds_q1_timestamp")
-    runQualificationTest(logFiles, "timestamp_potential_problems.csv")
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val listener = new ToolTestListener
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "timestampfunctions") { spark =>
+        spark.sparkContext.addSparkListener(listener)
+        import spark.implicits._
+        val testData = Seq((1, 1662519019), (2, 1662519020)).toDF("id", "timestamp")
+        spark.sparkContext.setJobDescription("timestamp functions as potential problems")
+        testData.createOrReplaceTempView("t1")
+        spark.sql("SELECT id, hour(current_timestamp()), second(to_timestamp(timestamp)) FROM t1")
+      }
+
+      // run the qualification tool
+      TrampolineUtil.withTempDir { outpath =>
+        val appArgs = new QualificationArgs(Array(
+          "--output-directory",
+          outpath.getAbsolutePath,
+          eventLog))
+
+        val (exit, sumInfo) =
+          QualificationMain.mainInternal(appArgs)
+        assert(exit == 0)
+  
+        // the code above that runs the Spark query stops the Sparksession
+        // so create a new one to read in the csv file
+        createSparkSession()
+
+        // validate that the SQL description in the csv file escapes commas properly
+        val outputResults = s"$outpath/rapids_4_spark_qualification_output/" +
+          s"rapids_4_spark_qualification_output.csv"
+        val outputActual = readExpectedFile(new File(outputResults))
+        assert(outputActual.select("Potential Problems").first.getString(0) == 
+          "TIMEZONE to_timestamp():TIMEZONE hour():TIMEZONE current_timestamp():TIMEZONE second()")
+        assert(outputActual.collect().size == 1)
+      }
+    }
   }
 }
 
