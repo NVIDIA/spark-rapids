@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids.shims
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 
 import org.apache.spark.TaskContext
@@ -27,7 +26,7 @@ import org.apache.spark.api.python.PythonEvalType
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.python.{BatchQueue, GpuArrowPythonRunner, GpuPythonHelper, GpuPythonUDF, GpuWindowInPandasExecBase, GroupingIterator}
+import org.apache.spark.sql.rapids.execution.python.{BatchQueue, CombiningIterator, GpuArrowPythonRunner, GpuPythonHelper, GpuPythonUDF, GpuWindowInPandasExecBase, GroupingIterator}
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch

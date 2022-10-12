@@ -28,7 +28,7 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python._
 import org.apache.spark.sql.execution.python.PythonUDFRunner
-import org.apache.spark.sql.rapids.execution.python.{BufferToStreamWriter, GpuArrowPythonRunner}
+import org.apache.spark.sql.rapids.execution.python.{BufferToStreamWriter, GpuArrowPythonRunner, GpuPythonArrowOutput, GpuPythonRunnerBase}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils

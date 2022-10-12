@@ -377,7 +377,7 @@ private[python] object BatchGroupedIterator extends Arm {
  * @param numOutputRows a metric for output rows.
  * @param numOutputBatches a metric for output batches
  */
-private[python] class CombiningIterator(
+class CombiningIterator(
     inputBatchQueue: BatchQueue,
     pythonOutputIter: Iterator[ColumnarBatch],
     pythonArrowReader: GpuPythonArrowOutput,
