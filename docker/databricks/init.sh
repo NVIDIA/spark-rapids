@@ -32,6 +32,8 @@ readonly ALLUXIO_METRICS_PROPERTIES_TEMPLATE="${ALLUXIO_HOME}/conf/metrics.prope
 readonly ALLUXIO_METRICS_PROPERTIES="${ALLUXIO_HOME}/conf/metrics.properties"
 ALLUXIO_STORAGE_PERCENT=${ALLUXIO_STORAGE_PERCENT:-'70'}
 ALLUXIO_MASTER_HEAP=${ALLUXIO_MASTER_HEAP:-'16g'}
+ALLUXIO_WORKER_HEAP=${ALLUXIO_WORKER_HEAP:-'4g'}
+ALLUXIO_WORKER_DIRECT_HEAP=${ALLUXIO_WORKER_DIRECT_HEAP:-'4g'}
 # location to copy the Alluxio logs to so that they are kept after cluster is shutdown
 # recommended location would be dbfs on Databricks, path has to be accessible via rsync
 ALLUXIO_COPY_LOG_PATH=${ALLUXIO_COPY_LOG_PATH:-''}
@@ -163,7 +165,7 @@ set_crontab_alluxio_log() {
   mkdir -p $ALLUXIO_COPY_LOG_PATH/$folder
   # add crond to copy alluxio logs
   crontab -l > cron_bkp || true
-  echo "* * * * * /usr/bin/rsync -a /opt/alluxio-2.8.0/logs $ALLUXIO_COPY_LOG_PATH/$folder >/dev/null 2>&1" >> cron_bkp
+  echo "* * * * * /usr/bin/rsync -a ${ALLUXIO_HOME}/logs $ALLUXIO_COPY_LOG_PATH/$folder >/dev/null 2>&1" >> cron_bkp
   crontab cron_bkp
   rm cron_bkp
 }
@@ -173,7 +175,7 @@ start_ssh() {
   service ssh start
 }
 
-start_alluxio() {
+config_alluxio() {
 
   # create the folder for NVMe caching
   mkdir -p /local_disk0/cache
@@ -208,7 +210,25 @@ start_alluxio() {
       set_crontab_alluxio_log "${DB_DRIVER_IP}-master"
     fi
     MASTER_HEAP_SETTING="-Xms${ALLUXIO_MASTER_HEAP} -Xmx${ALLUXIO_MASTER_HEAP}"
+
+    # start master, alluxio-start.sh will do some initialization
     doas ubuntu "ALLUXIO_MASTER_JAVA_OPTS=\"${MASTER_HEAP_SETTING}\" ${ALLUXIO_HOME}/bin/alluxio-start.sh master"
+
+    # stop master, the master process will be managed by supervisor
+    doas ubuntu "${ALLUXIO_HOME}/bin/alluxio-stop.sh master"
+
+    # add a supervisor conf to manage the master process
+    # supervisor manages processes by subprocess, here we can't use `alluxio-start.sh` as command directly because of `nohup` in it
+    cat > /etc/supervisor/conf.d/alluxio-master.conf << EOF
+[program:alluxio-master]
+command=/usr/bin/java ${MASTER_HEAP_SETTING} -cp ${ALLUXIO_HOME}/conf/::${ALLUXIO_HOME}/assembly/alluxio-server-2.8.0.jar -Dalluxio.logger.type=MASTER_LOGGER -Dalluxio.master.audit.logger.type=MASTER_AUDIT_LOGGER -Dalluxio.home=${ALLUXIO_HOME} -Dalluxio.conf.dir=${ALLUXIO_HOME}/conf -Dalluxio.logs.dir=${ALLUXIO_HOME}/logs -Dalluxio.user.logs.dir=${ALLUXIO_HOME}/logs/user -Dlog4j.configuration=file:${ALLUXIO_HOME}/conf/log4j.properties -Dorg.apache.jasper.compiler.disablejsr199=true -Djava.net.preferIPv4Stack=true -Dorg.apache.ratis.thirdparty.io.netty.allocator.useCacheForAllThreads=false -XX:MetaspaceSize=256M alluxio.master.AlluxioMaster
+user=ubuntu
+autostart=true ;auto start this program when supervisord starting
+autorestart=true ;supervisord auto starts this program if program crashes
+stderr_logfile=${ALLUXIO_HOME}/logs/alluxio-master.err
+stdout_logfile=${ALLUXIO_HOME}/logs/alluxio-master.out
+EOF
+
   else
     # On Workers
     if [[ -n $ALLUXIO_COPY_LOG_PATH ]]; then
@@ -216,19 +236,26 @@ start_alluxio() {
     fi
     echo "alluxio.worker.hostname=${DB_CONTAINER_IP}" >> ${ALLUXIO_SITE_PROPERTIES}
     echo "alluxio.user.hostname=${DB_CONTAINER_IP}" >> ${ALLUXIO_SITE_PROPERTIES}
-    
-    n=0
-    until [ "$n" -ge 5 ]
-    do     
-      doas ubuntu "${ALLUXIO_HOME}/bin/alluxio-start.sh worker" && break
-      n=$((n+1)) 
-      sleep 10
-    done
+
+    # add supervisor conf for worker
+    cat > /etc/supervisor/conf.d/alluxio-worker.conf << EOF
+[program:alluxio-worker]
+command=/usr/bin/java -Xmx${ALLUXIO_WORKER_HEAP} -XX:MaxDirectMemorySize=${ALLUXIO_WORKER_DIRECT_HEAP} -cp ${ALLUXIO_HOME}/conf/::${ALLUXIO_HOME}/assembly/alluxio-server-2.8.0.jar -Dalluxio.logger.type=WORKER_LOGGER -Dalluxio.home=${ALLUXIO_HOME} -Dalluxio.conf.dir=${ALLUXIO_HOME}/conf -Dalluxio.logs.dir=${ALLUXIO_HOME}/logs -Dalluxio.user.logs.dir=${ALLUXIO_HOME}/logs/user -Dlog4j.configuration=file:${ALLUXIO_HOME}/conf/log4j.properties -Dorg.apache.jasper.compiler.disablejsr199=true -Djava.net.preferIPv4Stack=true -Dorg.apache.ratis.thirdparty.io.netty.allocator.useCacheForAllThreads=false alluxio.worker.AlluxioWorker
+user=ubuntu
+autostart=true ;auto start this program when supervisord starting
+autorestart=true ;supervisord auto starts this program if program crashes
+stderr_logfile=${ALLUXIO_HOME}/logs/alluxio-worker.err
+stdout_logfile=${ALLUXIO_HOME}/logs/alluxio-worker.out
+EOF
+
   fi
 }
 
 start_ssh
 
 if [[ "$ENABLE_ALLUXIO" = "1" ]]; then
-  start_alluxio
+  config_alluxio
+  # start supervisord, and supervisord starts alluxio
+  # supervisord will restart alluxio if alluxio crashes
+  /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
 fi
