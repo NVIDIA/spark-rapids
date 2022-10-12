@@ -13,6 +13,7 @@ parent: Getting-Started
 * [Qualify CPU workloads for GPU acceleration](#qualify-cpu-workloads-for-gpu-acceleration)
 * [Bootstrap GPU cluster with optimized settings](#bootstrap-gpu-cluster-with-optimized-settings)
 * [Tune applications on GPU cluster](#tune-applications-on-gpu-cluster)
+* [Diagnose GPU Cluster](#diagnose-gpu-cluster)
 
 The advanced guide will walk through the steps to:
 
@@ -129,10 +130,11 @@ Example output:
 
 ## Diagnose GPU Cluster
 
-Diagnostic tool can be run to check GPU cluster with Spark RAPIDS environment is healthy and
-ready for Spark jobs, such as installed Nvidia driver version, cuda-toolkit, Spark RAPIDS jar
-and run some Spark test jobs etc. This tool also can be used by the frontline support team for
-basic diagnostic and troubleshooting before escalating to NVIDIA Spark RAPIDS engineering team.
+The diagnostic tool can be run to check a GPU cluster with RAPIDS Accelerator for Apache Spark
+is healthy and ready for Spark jobs, such as installed Nvidia driver version, cuda-toolkit, RAPIDS
+Accelerator and run some Spark test jobs etc. This tool also can be used by the frontline support
+team for basic diagnostic and troubleshooting before escalating to NVIDIA RAPIDS Accelerator for
+Apache Spark engineering team.
 
 Usage: `spark_rapids_dataproc diagnostic --cluster <cluster-name> --region <region>`
 
@@ -203,7 +205,7 @@ found rapids jar version: 2.12-22.06.0
 ...
 ```
 
-Please note, diagnostic tool supported
+Please note that the diagnostic tool supports the following:
 
 * Dataproc 2.0 with image of Debian 10 or Ubuntu 18.04 (Rocky8 is coming soon)
 * GPU cluster that must have 1 worker node at least. Single node cluster (1 master, 0 workers) is
