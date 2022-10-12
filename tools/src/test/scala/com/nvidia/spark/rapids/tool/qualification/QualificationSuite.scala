@@ -1045,6 +1045,11 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
       }
     }
   }
+
+  test("test potential problems timestamp") {
+    val logFiles = Array(s"$logDir/eventlog_nds_q1_timestamp")
+    runQualificationTest(logFiles, "timestamp_potential_problems.csv")
+  }
 }
 
 class ToolTestListener extends SparkListener {
