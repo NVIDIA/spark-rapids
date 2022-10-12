@@ -1,5 +1,5 @@
 # Change log
-Generated on 2022-10-11
+Generated on 2022-10-12
 
 ## Release 22.10
 
@@ -126,6 +126,7 @@ Generated on 2022-10-11
 ### PRs
 |||
 |:---|:---|
+|[#6703](https://github.com/NVIDIA/spark-rapids/pull/6703)|Docker container for ease of deployment to Databricks [skip ci]|
 |[#6750](https://github.com/NVIDIA/spark-rapids/pull/6750)|Enabling decimal 38,2 casting|
 |[#6729](https://github.com/NVIDIA/spark-rapids/pull/6729)|Fix NullPointerException in iceberg schema parsing code when selecting single column|
 |[#6724](https://github.com/NVIDIA/spark-rapids/pull/6724)|Qualification tool: Read SQL function names for parsing expressions|
@@ -209,6 +210,7 @@ Generated on 2022-10-11
 |[#6461](https://github.com/NVIDIA/spark-rapids/pull/6461)|Enabling AQE on|
 |[#6436](https://github.com/NVIDIA/spark-rapids/pull/6436)|Switch to gpu string to integer casts|
 |[#6538](https://github.com/NVIDIA/spark-rapids/pull/6538)|Updating qual tool speedup factors from latest CSP benchmarks|
+|[#6421](https://github.com/NVIDIA/spark-rapids/pull/6421)|Fix notebook and getting started examples [skip ci]|
 |[#6505](https://github.com/NVIDIA/spark-rapids/pull/6505)|Include avro test by using '--packages' option [skip ci]|
 |[#6525](https://github.com/NVIDIA/spark-rapids/pull/6525)|Fix typo in file name|
 |[#6527](https://github.com/NVIDIA/spark-rapids/pull/6527)|Use ShimLoader to access PlanShims|
@@ -366,6 +368,7 @@ Generated on 2022-10-11
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#6146](https://github.com/NVIDIA/spark-rapids/issues/6146)|[BUG] intermittent orc test_read_round_trip failed due to /tmp/hive location|
 |[#6112](https://github.com/NVIDIA/spark-rapids/issues/6112)|[BUG] UCX ubuntu dockerfile build failed|
 |[#6281](https://github.com/NVIDIA/spark-rapids/issues/6281)|[BUG] Reading binary columns from nested types does not work.|
 |[#6282](https://github.com/NVIDIA/spark-rapids/issues/6282)|[BUG] Missing CPU fallback for GetMapValue on scalar map, vector key|
@@ -443,7 +446,6 @@ Generated on 2022-10-11
 ### PRs
 |||
 |:---|:---|
-|[#6421](https://github.com/NVIDIA/spark-rapids/pull/6421)|Fix notebook and getting started examples [skip ci]|
 |[#6376](https://github.com/NVIDIA/spark-rapids/pull/6376)|Update 22.08 changelog to latest|
 |[#6367](https://github.com/NVIDIA/spark-rapids/pull/6367)|Revert "Enable Strings as a supported type for GpuColumnarToRow transitions"|
 |[#6354](https://github.com/NVIDIA/spark-rapids/pull/6354)|Update 22.08 changelog to latest [skip ci]|
