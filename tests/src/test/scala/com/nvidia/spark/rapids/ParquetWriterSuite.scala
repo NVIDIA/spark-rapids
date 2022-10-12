@@ -149,7 +149,12 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
         SparkSessionHolder.withSparkSession(conf, spark => {
           import spark.implicits._
           val df = (1 to 200).map(i => (i, i % 2)).toDF()
-          df.repartition(1).write.mode("overwrite").partitionBy("_2").parquet(tempFile.getAbsolutePath())
+          df
+            .repartition(1)
+            .write
+            .mode("overwrite")
+            .partitionBy("_2")
+            .parquet(tempFile.getAbsolutePath())
 
           // check the whole number of rows
           assertResult(200) (spark.read.parquet(tempFile.getAbsolutePath()).count())
@@ -179,7 +184,12 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
           import spark.implicits._
           val df = (1 to 1600).map(i => (i, i % 20)).toDF()
           // 20 > 10, so fallback to single writer
-          df.repartition(1).write.mode("overwrite").partitionBy("_2").parquet(tempFile.getAbsolutePath())
+          df
+            .repartition(1)
+            .write
+            .mode("overwrite")
+            .partitionBy("_2")
+            .parquet(tempFile.getAbsolutePath())
 
           // check the whole number of rows
           assertResult(1600) (spark.read.parquet(tempFile.getAbsolutePath()).count())
