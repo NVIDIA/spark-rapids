@@ -198,8 +198,8 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
 ```
 
 Explanation of parameters:
-* NUM_GPUS = number of GPUs to attach to each worker nodes in the cluster
-* NUM_WORKERS = number of Spark worer nodes in the cluster
+* NUM_GPUS = number of GPUs to attach to each worker node in the cluster
+* NUM_WORKERS = number of Spark worker nodes in the cluster
 
 This takes around 10-15 minutes to complete.  You can navigate to the Dataproc clusters tab in the
 Google Cloud Console to see the progress.
@@ -241,8 +241,8 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
 ``` 
 
 Explanation of parameters:
-* NUM_GPUS = number of GPUs to attach to each worker nodes in the cluster
-* NUM_WORKERS = number of Spark worer nodes in the cluster
+* NUM_GPUS = number of GPUs to attach to each worker node in the cluster
+* NUM_WORKERS = number of Spark worker nodes in the cluster
 
 To change the MIG instance profile you can specify either the profile id or profile name via the
 metadata parameter `MIG_CGI`. Below is an example of using a profile name and a profile id.
