@@ -338,46 +338,6 @@ object GpuEquivalentExpressions {
     recurseUpdateTiers(expressionTiers, Seq.empty, substitutionMap, 0)
   }
 
-  // For a given set of input attr tiers, determine which attributes can be
-  // skipped when building the list of attributes for the next tier.
-  // Returns a set of tiers that are the same size as the input tiers, but
-  // are lists of boolean values that are true if the column can be skipped.
-  // The indices of the attributes correspond to the columns that
-  // are bound via GpuBindReferences.bindGpuReference.
-  def getColumnSkipTiers(inputTiers: Seq[AttributeSeq]): Seq[Seq[Boolean]] = {
-    @tailrec
-    def recurse(curTier: AttributeSeq, remainingTiers: Seq[AttributeSeq],
-        skipTiers: Seq[Seq[Boolean]]): Seq[Seq[Boolean]] = remainingTiers match {
-      case Nil =>
-        // For the last tier, fill with all true (skip) values, because the output
-        // of the last tier does not include any input columns.
-        skipTiers ++ Seq(Seq.fill(curTier.attrs.size)(true))
-      case nextTier :: tail =>
-        val curAttrs = curTier.attrs
-        val nextAttrs = nextTier.attrs
-        // This is equivalent to:
-        // skipList = curAttrs.map(a => if (nextAttrs.contains(a)) false else true)
-        // but this should be faster
-        val skipList = new Array[Boolean](curAttrs.size)
-        var curIdx = 0
-        var nextIdx = 0
-        while (curIdx < curAttrs.size) {
-          if (nextAttrs(nextIdx) == curAttrs(curIdx)) {
-            skipList(curIdx) = false
-            nextIdx += 1
-          } else {
-            skipList(curIdx) = true
-          }
-          curIdx += 1
-        }
-        recurse(nextTier, tail, skipTiers ++ Seq(skipList.toSeq))
-    }
-    inputTiers match {
-      case Nil => Seq.empty
-      case _ => recurse(inputTiers.head, inputTiers.tail, Seq.empty)
-    }
-  }
-
   // Determine which of the inputAttrs are needed for remaining tiers
   // Filter the inputAttrs using this set to determine which ones
   // we need for the next tier, and to maintain the ordering.

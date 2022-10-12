@@ -147,6 +147,13 @@ class GpuEquivalentExpressionsSuite extends FunSuite with Logging {
       Seq(mul, mul2, sqrt, sum))
   }
 
+  test("Get Expression Tiers - empty") {
+    val initialExprs : Seq[Expression] = Seq.empty
+    val inputAttrs = AttributeSeq(Seq.empty)
+    validateExpressionTiers(initialExprs, inputAttrs,
+      Seq.empty, Seq.empty, Seq.empty)
+  }
+
   test("Get Expression Tiers - simple example") {
     // Set up the expressions
     //   one + two,
@@ -641,7 +648,6 @@ class GpuEquivalentExpressionsSuite extends FunSuite with Logging {
   private def validateInputTiers(exprTiers: Seq[Seq[Expression]],
       initialInputs: AttributeSeq): Unit = {
     val inputTiers = GpuEquivalentExpressions.getInputTiers(exprTiers, initialInputs)
-    val skipCols = GpuEquivalentExpressions.getColumnSkipTiers(inputTiers)
     assert(exprTiers.size == inputTiers.size)
     // First tier should have same inputs as original inputs
     // Subsequent tiers should remove eclipsed inputs and add inputs for each expr in previous tier
@@ -650,19 +656,8 @@ class GpuEquivalentExpressionsSuite extends FunSuite with Logging {
     while (curTier < inputTiers.size) {
       assert(inputTiers(curTier).attrs.size == currentAttrs.size)
       assert(inputTiers(curTier).attrs == currentAttrs)
-      val inputAttrs = currentAttrs
-      currentAttrs = GpuEquivalentExpressions.getAttrsForNextTier(inputAttrs,
+      currentAttrs = GpuEquivalentExpressions.getAttrsForNextTier(currentAttrs,
             exprTiers.drop(curTier))
-      var attrIdx = 0
-      val curSkips = skipCols(curTier)
-      while (attrIdx < inputAttrs.size) {
-        if (curSkips(attrIdx)) {
-          assert(!currentAttrs.contains(inputAttrs(attrIdx)))
-        } else {
-          assert(currentAttrs.contains(inputAttrs(attrIdx)))
-        }
-        attrIdx += 1
-      }
       curTier += 1
     }
   }
