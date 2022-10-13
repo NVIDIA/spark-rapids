@@ -27,7 +27,7 @@ The advanced guide will walk through the steps to:
 
 * gcloud CLI is installed: https://cloud.google.com/sdk/docs/install
 * python 3.8+
-* `pip install spark-rapids-user-tools`
+* `pip install spark_rapids_user_tools`
 
 ## Qualify CPU Workloads for GPU Acceleration
 
@@ -178,8 +178,8 @@ The script below will initialize with the following:
     export REGION=[Your Preferred GCP Region]
     export GCS_BUCKET=[Your GCS Bucket]
     export CLUSTER_NAME=[Your Cluster Name]
-    export NUM_GPUS=4
-    export NUM_WORKERS=5
+    export NUM_GPUS=2
+    export NUM_WORKERS=4
 
 gcloud dataproc clusters create $CLUSTER_NAME  \
     --region=$REGION \
@@ -196,6 +196,10 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --enable-component-gateway \
     --subnet=default
 ```
+
+Explanation of parameters:
+* NUM_GPUS = number of GPUs to attach to each worker node in the cluster
+* NUM_WORKERS = number of Spark worker nodes in the cluster
 
 This takes around 10-15 minutes to complete.  You can navigate to the Dataproc clusters tab in the
 Google Cloud Console to see the progress.
@@ -216,7 +220,7 @@ If you'd like to further accelerate init time to 4-5 minutes, create a custom Da
     export GCS_BUCKET=[Your GCS Bucket]
     export CLUSTER_NAME=[Your Cluster Name]
     export NUM_GPUS=1
-    export NUM_WORKERS=5
+    export NUM_WORKERS=4
 
 gcloud dataproc clusters create $CLUSTER_NAME  \
     --region=$REGION \
@@ -236,6 +240,10 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --subnet=default
 ``` 
 
+Explanation of parameters:
+* NUM_GPUS = number of GPUs to attach to each worker node in the cluster
+* NUM_WORKERS = number of Spark worker nodes in the cluster
+
 To change the MIG instance profile you can specify either the profile id or profile name via the
 metadata parameter `MIG_CGI`. Below is an example of using a profile name and a profile id.
 
@@ -244,12 +252,19 @@ metadata parameter `MIG_CGI`. Below is an example of using a profile name and a 
 ```
 
 This may take around 10-15 minutes to complete.  You can navigate to the Dataproc clusters tab in
-the Google Cloud Console to see the progress.
+the Google Cloud Console to see the progress.  
 
 ![Dataproc Cluster](../img/GCP/dataproc-cluster.png)
 
 If you'd like to further accelerate init time to 4-5 minutes, create a custom Dataproc image using
 [this](#build-custom-dataproc-image-to-accelerate-cluster-init-time) guide. 
+
+### Cluster creation troubleshooting
+If you encounter an error related to GPUs not being available because of your account quotas, please 
+go to this page for updating your quotas: [Quotas and limits](https://cloud.google.com/compute/quotas).
+
+If you encounter an error related to GPUs not available in the specific region or zone, you will 
+need to update the REGION or ZONE parameter in the cluster creation command.
 
 ## Run PySpark or Scala Notebook on a Dataproc Cluster Accelerated by GPUs
 To use notebooks with a Dataproc cluster, click on the cluster name under the Dataproc cluster tab

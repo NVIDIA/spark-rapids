@@ -69,10 +69,14 @@ class GpuSortMeta(
 
 object GpuSortExec {
   def targetSize(sqlConf: SQLConf): Long = {
+    val batchSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(sqlConf)
+    targetSize(batchSize)
+  }
+
+  def targetSize(batchSize: Long): Long = {
     // To avoid divide by zero errors, underflow and overflow issues in tests
     // that want the targetSize to be 0, we set it to something more reasonable
-    val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(sqlConf)
-    math.max(16 * 1024, targetSize)
+    math.max(16 * 1024, batchSize)
   }
 }
 

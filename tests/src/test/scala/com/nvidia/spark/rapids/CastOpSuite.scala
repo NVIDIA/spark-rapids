@@ -906,12 +906,9 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  test("cast string to decimal (fail)") {
-    assertThrows[IllegalArgumentException](
-    List(-38, 38, 2, 32, 8).foreach { scale =>
-      testCastToDecimal(DataTypes.StringType, scale,
-        customRandGenerator = Some(new scala.util.Random(1234L)))
-    })
+  test("cast 38,2 string to decimal") {
+    testCastToDecimal(DataTypes.StringType, scale = 2, precision = 38,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
   }
 
   test("cast string to decimal (include NaN/INF/-INF)") {

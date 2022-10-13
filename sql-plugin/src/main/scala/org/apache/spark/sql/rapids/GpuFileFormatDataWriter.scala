@@ -779,7 +779,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
    */
   private def getSorted(iterator: Iterator[ColumnarBatch]): GpuOutOfCoreSortIterator = {
     val gpuSortOrder: Seq[SortOrder] = spec.sortOrder
-    val output: Seq[Attribute] = spec.exec.output
+    val output: Seq[Attribute] = spec.output
     val sorter = new GpuSorter(gpuSortOrder, output)
     val cpuOrd = new LazilyGeneratedOrdering(sorter.cpuOrdering)
 
@@ -795,7 +795,8 @@ class GpuDynamicPartitionDataConcurrentWriter(
 
       override def semaphoreWaitTime: GpuMetric = NoopMetric
     }
-    val targetSize = GpuSortExec.targetSize(spec.exec.conf)
+
+    val targetSize = GpuSortExec.targetSize(spec.batchSize)
     // out of core sort the entire iterator
     GpuOutOfCoreSortIterator(iterator, sorter, cpuOrd, targetSize,
       opTime, sortTime, outputBatch, outputRows,
