@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
+import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimExpression
 
@@ -194,7 +195,7 @@ case class GpuAtLeastNNonNulls(
         var notNanVector: ColumnVector = null
         var nanAndNullVector: ColumnVector = null
         try {
-          cv = expr.columnarEval(batch).asInstanceOf[GpuColumnVector].getBase
+          cv = columnarEvalToColumn(expr, batch).getBase
           notNullVector = cv.isNotNull
           if (cv.getType == DType.FLOAT32 || cv.getType == DType.FLOAT64) {
             notNanVector = cv.isNotNan

@@ -512,40 +512,17 @@ class GpuHashAggregateIterator(
     val opTime = metrics.opTime
     withResource(new NvtxWithMetrics("finalize agg", NvtxColor.DARK_GREEN, aggTime,
       opTime)) { _ =>
-      val finalBatch = if (boundExpressions.boundFinalProjections.isDefined) {
-        withResource(batch) { _ =>
-          val finalCvs = boundExpressions.boundFinalProjections.get.map { ref =>
-            // aggregatedCb is made up of ColumnVectors
-            // and the final projections from the aggregates won't change that,
-            // so we can assume they will be vectors after we eval
-            ref.columnarEval(batch).asInstanceOf[GpuColumnVector]
-          }
-          new ColumnarBatch(finalCvs.toArray, finalCvs.head.getRowCount.toInt)
-        }
-      } else {
-        batch
-      }
-
-      // If `resultCvs` empty, it means we don't have any `resultExpressions` for this
-      // aggregate. In these cases, the row count is the only important piece of information
-      // that this aggregate exec needs to report up, so it will return batches that have no columns
-      // but that do have a row count. If `resultCvs` is non-empty, the row counts match
-      // `finalBatch.numRows` since `columnarEvalToColumn` cannot change the number of rows.
-      val finalNumRows = finalBatch.numRows()
+      val finalBatch = boundExpressions.boundFinalProjections.map { exprs =>
+        GpuProjectExec.projectAndClose(batch, exprs, NoopMetric)
+      }.getOrElse(batch)
 
       // Perform the last project to get the correct shape that Spark expects. Note this may
       // add things like literals that were not part of the aggregate into the batch.
-      val resultCvs = withResource(finalBatch) { _ =>
-        boundExpressions.boundResultReferences.safeMap { ref =>
-          // Result references can be virtually anything, we need to coerce
-          // them to be vectors since this is going into a ColumnarBatch
-          GpuExpressionsUtils.columnarEvalToColumn(ref, finalBatch)
-        }
-      }
-      closeOnExcept(resultCvs) { _ =>
-        metrics.numOutputRows += finalNumRows
+      closeOnExcept(GpuProjectExec.projectAndClose(finalBatch,
+        boundExpressions.boundResultReferences, NoopMetric)) { ret =>
+        metrics.numOutputRows += ret.numRows()
         metrics.numOutputBatches += 1
-        new ColumnarBatch(resultCvs.toArray, finalNumRows)
+        ret
       }
     }
   }

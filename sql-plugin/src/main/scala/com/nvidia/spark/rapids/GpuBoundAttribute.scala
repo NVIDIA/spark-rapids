@@ -142,7 +142,7 @@ object GpuBindReferences extends Logging {
     GpuTieredProject(exprTiers.zip(inputTiers).map {
       case (es:Seq[Expression], is:AttributeSeq) =>
         es.map(GpuBindReferences.bindGpuReference(_, is)).toList
-    })
+    }, inputTiers)
   }
 }
 
