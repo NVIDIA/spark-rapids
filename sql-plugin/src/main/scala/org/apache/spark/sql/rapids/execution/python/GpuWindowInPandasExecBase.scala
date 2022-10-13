@@ -538,7 +538,7 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
 
         val outputIterator = pyRunner.compute(pyInputIterator, context.partitionId(), context)
         new CombiningIterator(queue, outputIterator, pyRunner, numOutputRows,
-          numOutputBatches)
+          numOutputBatches).map(projectResult(_))
       } else {
         // Empty partition, return the input iterator directly
         inputIter
