@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.execution.SparkPlanInfo
 import org.apache.spark.sql.execution.ui.{SparkPlanGraph, SparkPlanGraphCluster, SparkPlanGraphNode}
-import org.apache.spark.sql.rapids.tool.{AppBase, ToolUtils}
+import org.apache.spark.sql.rapids.tool.{AppBase, BuildSide, JoinType, ToolUtils}
 
 class ExecInfo(
     val sqlID: Long,
@@ -432,6 +432,150 @@ object SQLPlanParser extends Logging {
       }
     }
     parsedExpressions.distinct.toArray
+  }
+
+   // This parser is used for BroadcastHashJoin, ShuffledHashJoin and SortMergeJoin
+   def parseEquijoinsExpressions(exprStr: String): (Array[String], Boolean) = {
+     // ShuffledHashJoin [name#11, CEIL(DEPT#12)], [name#28, CEIL(DEPT_ID#27)], Inner, BuildLeft
+     // SortMergeJoin [name#11, CEIL(dept#12)], [name#28, CEIL(dept_id#27)], Inner
+     // BroadcastHashJoin [name#11, CEIL(dept#12)], [name#28, CEIL(dept_id#27)], Inner,
+     // BuildRight, false
+     val parsedExpressions = ArrayBuffer[String]()
+     val pattern = """\[([\w#, +*\\\-\.<>=\`\(\)]+\])""".r
+     // Get all the join expressions and split it with delimiter :: so that it could be used to
+     // parse function names (if present) later.
+     val joinExprs = pattern.findAllMatchIn(exprStr).mkString("::")
+     // Get joinType and buildSide(if applicable)
+     val joinParams = pattern.replaceAllIn(exprStr, "").split(",").map(_.trim).filter(_.nonEmpty)
+     val joinType = joinParams(0).trim
+     // SortMergeJoin doesn't have buildSide, assign empty string in that case
+     val buildSide = if (joinParams.size > 1) {
+       joinParams(1).trim
+     } else {
+       ""
+     }
+     // Get individual expressions which is later used to get the function names.
+     val expressions = joinExprs.split("::").map(_.trim).map(
+       _.replaceAll("""^\[+""", "").replaceAll("""\]+$""", "")).
+       map(_.split(",")).flatten.map(_.trim)
+
+     if (expressions.nonEmpty) {
+       val functionPattern = """(\w+)\(.*\)""".r
+       expressions.foreach { expr =>
+         val functionName = getFunctionName(functionPattern, expr)
+         functionName match {
+           case Some(func) => parsedExpressions += func
+           case _ => // NO OP
+         }
+       }
+     }
+
+     (parsedExpressions.distinct.toArray, equiJoinSupportedTypes(buildSide, joinType))
+   }
+
+  def parseNestedLoopJoinExpressions(exprStr: String): (Array[String], Boolean) = {
+    // BuildRight, LeftOuter, ((CEIL(cast(id1#1490 as double)) <= cast(id2#1496 as bigint))
+    // AND (cast(id1#1490 as bigint) < CEIL(cast(id2#1496 as double))))
+    val parsedExpressions = ArrayBuffer[String]()
+    // Get joinType and buildSide by splitting the input string.
+    val nestedLoopParameters = exprStr.split(",", 3)
+    val buildSide = nestedLoopParameters(0).trim
+    val joinType = nestedLoopParameters(1).trim
+
+    if (nestedLoopParameters.size > 2) { // condition present on join columns
+      val exprSepAND = if (exprStr.contains("AND")) {
+        exprStr.split(" AND ").map(_.trim)
+      } else {
+        Array(exprStr)
+      }
+      val exprSplit = if (exprStr.contains(" OR ")) {
+        exprSepAND.flatMap(_.split(" OR ").map(_.trim))
+      } else {
+        exprSepAND
+      }
+
+      // Remove parentheses from the beginning and end to get only the expressions
+      val paranRemoved = exprSplit.map(_.replaceAll("""^\(+""", "").replaceAll("""\)\)$""", ")"))
+      val functionPattern = """(\w+)\(.*\)""".r
+      val conditionalExprPattern = """([(\w# )]+) ([+=<>|]+) ([(\w# )]+)""".r
+      paranRemoved.foreach { case expr =>
+        if (expr.contains(" ")) {
+          conditionalExprPattern.findFirstMatchIn(expr) match {
+            case Some(func) =>
+              logDebug(s" found expr: $func")
+              if (func.groupCount < 3) {
+                logError(s"found incomplete expression - $func")
+              }
+              // get expressions from condition
+              val expressions = Array(func.group(1), func.group(3))
+              expressions.foreach { expr =>
+                // Add function name to result
+                val functionName = getFunctionName(functionPattern, expr)
+                functionName match {
+                  case Some(func) => parsedExpressions += func
+                  case _ => // NO OP
+                }
+              }
+            case None => logDebug(s"Incorrect expression - $expr")
+          }
+        } else {
+          // likely some function call, add function name to result
+          val functionName = getFunctionName(functionPattern, expr)
+          functionName match {
+            case Some(func) => parsedExpressions += func
+            case _ => // NO OP
+          }
+        }
+      }
+    } else {
+      // NO OP
+    }
+    (parsedExpressions.distinct.toArray, nestedLoopJoinSupportedTypes(buildSide, joinType))
+  }
+
+  private def isJoinTypeSupported(joinType: String): Boolean = {
+    joinType match {
+      case JoinType.Cross => true
+      case JoinType.Inner => true
+      case JoinType.LeftSemi => true
+      case JoinType.LeftOuter => true
+      case JoinType.RightOuter => true
+      case JoinType.LeftAnti => true
+      case _ => false
+    }
+  }
+
+  private def equiJoinSupportedTypes(buildSide: String, joinType: String): Boolean = {
+    val joinTypeSupported = isJoinTypeSupported(joinType)
+    // This is from GpuHashJoin.tagJoin where the Exec is tagged to run on GPU if one of the
+    // below condition is met.
+    val buildSideSupported = if (buildSide == BuildSide.BuildLeft) {
+      joinType == JoinType.Inner || joinType == JoinType.Cross ||
+        joinType == JoinType.RightOuter || joinType == JoinType.FullOuter
+    } else if (buildSide == BuildSide.BuildRight) {
+      joinType == JoinType.Inner || joinType == JoinType.Cross ||
+        joinType == JoinType.LeftOuter || joinType == JoinType.LeftSemi ||
+        joinType == JoinType.LeftAnti
+    } else {
+      true
+    }
+    joinTypeSupported && buildSideSupported
+  }
+
+  private def nestedLoopJoinSupportedTypes(buildSide: String, joinType: String): Boolean = {
+    val joinTypeSupported = isJoinTypeSupported(joinType)
+
+    // This is from GpuBroadcastNestedLoopJoinMeta.tagPlanForGpu where join is
+    // not supported on GPU if below condition is met.
+    val buildSideNotSupported = if (buildSide == BuildSide.BuildLeft) {
+      joinType == JoinType.LeftOuter || joinType == JoinType.LeftSemi ||
+        joinType == JoinType.LeftAnti
+    } else if (buildSide == BuildSide.BuildRight) {
+      joinType == JoinType.RightOuter
+    } else {
+      false
+    }
+    joinTypeSupported && !buildSideNotSupported
   }
 
   def parseSortExpressions(exprStr: String): Array[String] = {
