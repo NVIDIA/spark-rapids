@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write
-from spark_session import is_databricks104_or_later
+from spark_session import is_before_spark_320
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
@@ -41,7 +41,9 @@ orc_write_array_gens_sample = [ArrayGen(sub_gen) for sub_gen in orc_write_basic_
 
 orc_write_basic_map_gens = [simple_string_to_string_map_gen] + [MapGen(f(nullable=False), f()) for f in [
     BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen,
-    lambda nullable=True: TimestampGen(start=datetime(1900, 1, 1, tzinfo=timezone.utc), nullable=nullable),
+    # Using timestamps from 1970 to work around a cudf ORC bug
+    # https://github.com/NVIDIA/spark-rapids/issues/140.
+    lambda nullable=True: TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc), nullable=nullable),
     lambda nullable=True: DateGen(start=date(1590, 1, 1), nullable=nullable),
     lambda nullable=True: DecimalGen(precision=15, scale=1, nullable=nullable),
     lambda nullable=True: DecimalGen(precision=36, scale=5, nullable=nullable)]]
@@ -167,3 +169,36 @@ def test_write_empty_orc_round_trip(spark_tmp_path, orc_gens):
         lambda spark, path: spark.read.orc(path),
         data_path,
         conf={'spark.rapids.sql.format.orc.write.enabled': True})
+
+
+@ignore_order
+@pytest.mark.skipif(is_before_spark_320(), reason="is only supported in Spark 320+")
+def test_concurrent_writer(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: get_25_partitions_df(spark)  # df has 25 partitions for (c1, c2)
+            .repartition(2)
+            .write.mode("overwrite").partitionBy('c1', 'c2').orc(path),
+        lambda spark, path: spark.read.orc(path),
+        data_path,
+        copy_and_update(
+            # 26 > 25, will not fall back to single writer
+            {"spark.sql.maxConcurrentOutputFileWriters": 26}
+        ))
+
+
+@ignore_order
+@pytest.mark.skipif(is_before_spark_320(), reason="is only supported in Spark 320+")
+def test_fallback_to_single_writer_from_concurrent_writer(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: get_25_partitions_df(spark)  # df has 25 partitions for (c1, c2)
+            .repartition(2)
+            .write.mode("overwrite").partitionBy('c1', 'c2').orc(path),
+        lambda spark, path: spark.read.orc(path),
+        data_path,
+        copy_and_update(
+            # 10 < 25, will fall back to single writer
+            {"spark.sql.maxConcurrentOutputFileWriters": 10},
+            {"spark.rapids.sql.concurrentWriterPartitionFlushSize": 64 * 1024 * 1024}
+        ))

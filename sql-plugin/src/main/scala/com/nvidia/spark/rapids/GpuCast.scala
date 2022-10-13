@@ -18,12 +18,14 @@ package com.nvidia.spark.rapids
 
 import java.text.SimpleDateFormat
 import java.time.DateTimeException
+import java.util.Optional
 
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DecimalUtils, DType, Scalar}
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.{AnsiUtil, GpuIntervalUtils, GpuTypeShims, SparkShimImpl, YearParseUtil}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -31,6 +33,7 @@ import org.apache.spark.sql.catalyst.expressions.{Cast, CastBase, Expression, Nu
 import org.apache.spark.sql.catalyst.util.DateTimeConstants.MICROS_PER_SECOND
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuToTimestamp.replaceSpecialDates
+import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 
 /** Meta-data for cast and ansi_cast. */
@@ -97,8 +100,6 @@ final class CastExprMeta[INPUT <: CastBase](
             "converting floating point data types to strings and this can produce results that " +
             "differ from the default behavior in Spark.  To enable this operation on the GPU, set" +
             s" ${RapidsConf.ENABLE_CAST_FLOAT_TO_STRING} to true.")
-      case (_: StringType, dt: DecimalType) if dt.precision + 1 > DecimalType.MAX_PRECISION =>
-        willNotWorkOnGpu(s"Because of rounding requirements we cannot support $dt on the GPU")
       case (_: StringType, _: FloatType | _: DoubleType) if !conf.isCastStringToFloatEnabled =>
         willNotWorkOnGpu("Currently hex values aren't supported on the GPU. Also note " +
             "that casting from string to float types on the GPU returns incorrect results when " +
@@ -168,15 +169,10 @@ object GpuCast extends Arm {
   private val TIMESTAMP_REGEX_YYYY_MM = "\\A\\d{4}\\-\\d{1,2}[ ]?\\Z"
   private val TIMESTAMP_REGEX_YYYY = "\\A\\d{4}[ ]?\\Z"
   private val TIMESTAMP_REGEX_FULL =
-    "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}[ T]?(\\d{1,2}:\\d{1,2}:\\d{1,2}\\.\\d{6}Z)\\Z"
-  private val TIMESTAMP_REGEX_NO_DATE = "\\A[T]?(\\d{1,2}:\\d{1,2}:\\d{1,2}\\.\\d{6}Z)\\Z"
+    "\\A\\d{4}\\-\\d{1,2}\\-\\d{1,2}[ T]?(\\d{1,2}:\\d{1,2}:([0-5]\\d|\\d)(\\.\\d{0,6})?Z?)\\Z"
+  private val TIMESTAMP_REGEX_NO_DATE =
+    "\\A[T]?(\\d{1,2}:\\d{1,2}:([0-5]\\d|\\d)(\\.\\d{0,6})?Z?)\\Z"
 
-  /**
-   * Regex to match timestamps with or without trailing zeros.
-   */
-  private val TIMESTAMP_TRUNCATE_REGEX = "^([0-9]{4}-[0-9]{2}-[0-9]{2} " +
-    "[0-9]{2}:[0-9]{2}:[0-9]{2})" +
-    "(.[1-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?$"
   private val BIG_DECIMAL_LONG_MIN = BigDecimal(Long.MinValue)
   private val BIG_DECIMAL_LONG_MAX = BigDecimal(Long.MaxValue)
 
@@ -245,68 +241,6 @@ object GpuCast extends Arm {
         // strip floating-point designator 'f' or 'd' but don't strip the 'f' from 'Inf'
         withResource(floatOrNull) {
           _.stringReplaceWithBackrefs("([^nN])[fFdD]$", "\\1")
-        }
-      }
-    }
-  }
-
-  def sanitizeStringToIntegralType(input: ColumnVector, ansiEnabled: Boolean): ColumnVector = {
-    // Convert any strings containing whitespace to null values. The input is assumed to already
-    // have been stripped of leading and trailing whitespace
-    val sanitized = withResource(input.containsRe("\\s")) { hasWhitespace =>
-      withResource(hasWhitespace.any()) { any =>
-        if (any.isValid && any.getBoolean) {
-          if (ansiEnabled) {
-            throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
-          } else {
-            withResource(GpuScalar.from(null, DataTypes.StringType)) { nullVal =>
-              hasWhitespace.ifElse(nullVal, input)
-            }
-          }
-        } else {
-          input.incRefCount()
-        }
-      }
-    }
-
-    withResource(sanitized) { _ =>
-      if (ansiEnabled) {
-        // ansi mode only supports simple integers, so no exponents or decimal places
-        val regex = "^[+\\-]?[0-9]+$"
-        withResource(sanitized.matchesRe(regex)) { isInt =>
-          withResource(isInt.all()) { allInts =>
-            // Check that all non-null values are valid integers.
-            if (allInts.isValid && !allInts.getBoolean) {
-              throw new NumberFormatException(GpuCast.INVALID_INPUT_MESSAGE)
-            }
-          }
-          sanitized.incRefCount()
-        }
-      } else {
-        // truncate strings that represent decimals to just look at the string before the dot
-        withResource(Scalar.fromString(".")) { dot =>
-          withResource(sanitized.stringContains(dot)) { hasDot =>
-            // only do the decimal sanitization if any strings do contain dot
-            withResource(hasDot.any(DType.BOOL8)) { anyDot =>
-              if (anyDot.getBoolean) {
-                // Special handling for strings that have no numeric value before the dot, such
-                // as "." and ".1" because extractsRe returns null for the capture group
-                // for these values and it also returns null for invalid inputs so we need this
-                // explicit check
-                withResource(sanitized.matchesRe("^[+\\-]?\\.[0-9]*$")) { startsWithDot =>
-                  withResource(sanitized.extractRe("^([+\\-]?[0-9]*)\\.[0-9]*$")) { table =>
-                    withResource(Scalar.fromString("0")) { zero =>
-                      withResource(startsWithDot.ifElse(zero, table.getColumn(0))) {
-                        decimal => hasDot.ifElse(decimal, sanitized)
-                      }
-                    }
-                  }
-                }
-              } else {
-                sanitized.incRefCount()
-              }
-            }
-          }
         }
       }
     }
@@ -389,7 +323,7 @@ object GpuCast extends Arm {
           withResource(input.max()) { maxInput =>
             if (minInput.isValid && minInput.getBigDecimal().compareTo(min) == -1 ||
                 maxInput.isValid && maxInput.getBigDecimal().compareTo(max) == 1) {
-              throw new ArithmeticException(GpuCast.INVALID_INPUT_MESSAGE)
+              throw new ArithmeticException(GpuCast.OVERFLOW_MESSAGE)
             }
           }
         }
@@ -517,8 +451,10 @@ object GpuCast extends Arm {
         }
       case (FloatType | DoubleType, StringType) =>
         castFloatingTypeToString(input)
-      case (StringType, BooleanType | ByteType | ShortType | IntegerType | LongType | FloatType
-                        | DoubleType | DateType | TimestampType) =>
+      case (StringType, ByteType | ShortType | IntegerType | LongType ) =>
+        CastStrings.toInteger(input, ansiMode,
+          GpuColumnVector.getNonNestedRapidsType(toDataType))
+      case (StringType, BooleanType | FloatType | DoubleType | DateType | TimestampType) =>
         withResource(input.strip()) { trimmed =>
           toDataType match {
             case BooleanType =>
@@ -534,19 +470,19 @@ object GpuCast extends Arm {
             case FloatType | DoubleType =>
               castStringToFloats(trimmed, ansiMode,
                 GpuColumnVector.getNonNestedRapidsType(toDataType))
-            case ByteType | ShortType | IntegerType | LongType =>
-              castStringToInts(trimmed, ansiMode,
-                GpuColumnVector.getNonNestedRapidsType(toDataType))
           }
         }
       case (StringType, dt: DecimalType) =>
-        castStringToDecimal(input, ansiMode, dt)
+        CastStrings.toDecimal(input, ansiMode, dt.precision, -dt.scale)
 
       case (ByteType | ShortType | IntegerType | LongType, dt: DecimalType) =>
         castIntegralsToDecimal(input, dt, ansiMode)
 
       case (ShortType | IntegerType | LongType | ByteType | StringType, BinaryType) =>
         input.asByteList(true)
+
+      case (BinaryType, StringType) =>
+        castBinToString(input)
 
       case (_: DecimalType, StringType) =>
         input.castTo(DType.STRING)
@@ -634,13 +570,13 @@ object GpuCast extends Arm {
       maxValue: => Scalar,
       inclusiveMin: Boolean = true,
       inclusiveMax: Boolean = true,
-      errorMsg:String = GpuCast.INVALID_INPUT_MESSAGE): Unit = {
+      errorMsg:String = GpuCast.OVERFLOW_MESSAGE): Unit = {
 
     def throwIfAny(cv: ColumnView): Unit = {
       withResource(cv) { cv =>
         withResource(cv.any()) { isAny =>
           if (isAny.isValid && isAny.getBoolean) {
-            throw new IllegalStateException(errorMsg)
+            throw RapidsErrorUtils.arithmeticOverflowError(errorMsg)
           }
         }
       }
@@ -707,9 +643,29 @@ object GpuCast extends Arm {
   }
 
   private def castTimestampToString(input: ColumnView): ColumnVector = {
+    // the complexity in this function is due to Spark's rules for truncating
+    // the fractional part of the timestamp string. Any trailing decimal place
+    // or zeroes should be truncated
+    // ".000000" -> ""
+    // ".000100" -> ".0001"
+    // ".100000" -> ".1"
+    // ".101010" -> ".10101"
     withResource(input.castTo(DType.TIMESTAMP_MICROSECONDS)) { micros =>
       withResource(micros.asStrings("%Y-%m-%d %H:%M:%S.%6f")) { cv =>
-        cv.stringReplaceWithBackrefs(GpuCast.TIMESTAMP_TRUNCATE_REGEX, "\\1\\2\\3")
+        // to keep code complexity down, do a first pass that
+        // removes ".000000" using simple string replace
+        val firstPass = withResource(Scalar.fromString(".000000")) { search =>
+          withResource(Scalar.fromString("")) { replace =>
+            cv.stringReplace(search, replace)
+          }
+        }
+        // now remove trailing zeroes from any remaining fractional parts
+        // the first group captures everything between
+        // the decimal point and the last non-zero digit
+        // the second group (non-capture) covers the remaining zeroes
+        withResource(firstPass) { _ =>
+          firstPass.stringReplaceWithBackrefs("(\\.[0-9]*[1-9]+)(?:0+)?$", "\\1")
+        }
       }
     }
   }
@@ -973,7 +929,7 @@ object GpuCast extends Arm {
     }
   }
 
-  private def castFloatingTypeToString(input: ColumnView): ColumnVector = {
+  private[rapids] def castFloatingTypeToString(input: ColumnView): ColumnVector = {
     withResource(input.castTo(DType.STRING)) { cudfCast =>
 
       // replace "e+" with "E"
@@ -1021,75 +977,6 @@ object GpuCast extends Arm {
                 }
               }
             }
-          }
-        }
-      }
-    }
-  }
-
-  def castStringToInts(
-      input: ColumnVector,
-      ansiEnabled: Boolean,
-      dType: DType): ColumnVector = {
-
-    withResource(GpuCast.sanitizeStringToIntegralType(input, ansiEnabled)) { sanitized =>
-      withResource(sanitized.isInteger(dType)) { isInt =>
-        if (ansiEnabled) {
-          withResource(isInt.all()) { allInts =>
-            // Check that all non-null values are valid integers.
-            if (allInts.isValid && !allInts.getBoolean) {
-              throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
-            }
-          }
-        }
-        withResource(sanitized.castTo(dType)) { parsedInt =>
-          withResource(Scalar.fromNull(dType)) { nullVal =>
-            isInt.ifElse(parsedInt, nullVal)
-          }
-        }
-      }
-    }
-  }
-
-  def castStringToDecimal(
-      input: ColumnView,
-      ansiEnabled: Boolean,
-      dt: DecimalType): ColumnVector = {
-    // 1. Sanitize strings to make sure all are fixed points
-    // 2. Identify all fixed point values
-    // 3. Cast String to newDt (newDt = dt. precision + 1, dt.scale + 1). Promote precision if
-    //    needed. This step is required so we can round up if needed in the final step
-    // 4. Now cast newDt to dt (Decimal to Decimal)
-    def getInterimDecimalPromoteIfNeeded(dt: DecimalType): DecimalType = {
-      if (dt.precision + 1 > DecimalType.MAX_PRECISION) {
-        throw new IllegalArgumentException("One or more values exceed the maximum supported " +
-            "Decimal precision while conversion")
-      }
-      DecimalType(dt.precision + 1, dt.scale + 1)
-    }
-
-    val interimSparkDt = getInterimDecimalPromoteIfNeeded(dt)
-    val interimDt = DecimalUtil.createCudfDecimal(interimSparkDt)
-    val isFixedPoints = withResource(input.strip()) {
-      // We further filter out invalid values using the cuDF isFixedPoint method.
-      _.isFixedPoint(interimDt)
-    }
-
-    withResource(isFixedPoints) { isFixedPoints =>
-      if (ansiEnabled) {
-        withResource(isFixedPoints.all()) { allFixedPoints =>
-          if (allFixedPoints.isValid && !allFixedPoints.getBoolean) {
-            throw new ArithmeticException(s"One or more values cannot be " +
-                s"represented as Decimal(${dt.precision}, ${dt.scale})")
-          }
-        }
-      }
-      // intermediate step needed so we can make sure we can round up
-      withResource(input.castTo(interimDt)) { interimDecimals =>
-        withResource(Scalar.fromNull(interimDt)) { nulls =>
-          withResource(isFixedPoints.ifElse(interimDecimals, nulls)) { decimals =>
-            // cast Decimal to the Decimal that's needed
-            castDecimalToDecimal(decimals, interimSparkDt, dt, ansiEnabled)
           }
         }
       }
@@ -1299,13 +1186,23 @@ object GpuCast extends Arm {
 
     val cudfFormat1 = "%Y-%m-%d %H:%M:%S.%f"
     val cudfFormat2 = "%Y-%m-%dT%H:%M:%S.%f"
+    val cudfFormat3 = "%Y-%m-%d %H:%M:%S"
+    val cudfFormat4 = "%Y-%m-%dT%H:%M:%S"
 
     withResource(orElse) { orElse =>
 
       // valid dates must match the regex and either of the cuDF formats
       val isCudfMatch = withResource(input.isTimestamp(cudfFormat1)) { isTimestamp1 =>
         withResource(input.isTimestamp(cudfFormat2)) { isTimestamp2 =>
-          isTimestamp1.or(isTimestamp2)
+          withResource(input.isTimestamp(cudfFormat3)) { isTimestamp3 =>
+            withResource(input.isTimestamp(cudfFormat4)) { isTimestamp4 =>
+              withResource(isTimestamp1.or(isTimestamp2)) { isTimestamp12 =>
+                withResource(isTimestamp12.or(isTimestamp3)) { isTimestamp123 =>
+                  isTimestamp123.or(isTimestamp4)
+                }
+              }
+            }
+          }
         }
       }
 
@@ -1431,6 +1328,21 @@ object GpuCast extends Arm {
     }
   }
 
+  private def castBinToString(input: ColumnView): ColumnVector = {
+    // Spark interprets the binary as UTF-8 bytes. So the layout of the
+    // binary and the layout of the string are the same. We just need to play some games with
+    // the CPU side metadata to make CUDF think it is a String.
+    // Sadly there is no simple CUDF API to do this, so for now we pull it apart and put
+    // it back together again
+    withResource(input.getChildColumnView(0)) { dataCol =>
+      withResource(new ColumnView(DType.STRING, input.getRowCount,
+        Optional.of[java.lang.Long](input.getNullCount),
+        dataCol.getData, input.getValid, input.getOffsets)) { cv =>
+        cv.copyToColumnVector()
+      }
+    }
+  }
+
   private def castIntegralsToDecimal(
       input: ColumnView,
       dt: DecimalType,
@@ -1514,7 +1426,7 @@ object GpuCast extends Arm {
     if (ansiMode) {
       withResource(outOfBounds.any()) { isAny =>
         if (isAny.isValid && isAny.getBoolean) {
-          throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+          throw RapidsErrorUtils.arithmeticOverflowError(GpuCast.OVERFLOW_MESSAGE)
         }
       }
       input.copyToColumnVector()

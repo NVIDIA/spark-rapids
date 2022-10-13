@@ -763,8 +763,8 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
             case _ => fail(s"the escape character is not allowed to precede '$c'")
           }
         case c if c == escapeChar => fail("it is not allowed to end with the escape character")
-        case '_' => out ++= "(.|\n)"
-        case '%' => out ++= "(.|\n)*"
+        case '_' => out ++= "(?:.|\n)"
+        case '%' => out ++= "(?:.|\n)*"
         case c => out ++= cudfQuote(c)
       }
     }
@@ -850,6 +850,13 @@ object GpuRegExpUtils {
     }
   }
 
+  def validateRegExpComplexity(meta: ExprMeta[_], regex: RegexAST): Unit = {
+    if(!RegexComplexityEstimator.isValid(meta.conf, regex)) {
+      meta.willNotWorkOnGpu(s"estimated memory needed for regular expression exceeds the maximum." +
+        s" Set ${RapidsConf.REGEXP_MAX_STATE_MEMORY_BYTES} to change it.")
+    }
+  }
+
   /**
    * Recursively check if pattern contains only zero-match repetitions 
    * ?, *, {0,}, or {0,n} or any combination of them. 
@@ -905,7 +912,10 @@ class GpuRLikeMeta(
         case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
           try {
             // verify that we support this regex and can transpile it to cuDF format
-            pattern = Some(new CudfRegexTranspiler(RegexFindMode).transpile(str.toString, None)._1)
+            val (transpiledAST, _) = 
+                new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(str.toString, None)
+            GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
+            pattern = Some(transpiledAST.toRegexString)
           } catch {
             case e: RegexUnsupportedException =>
               willNotWorkOnGpu(e.getMessage)
@@ -1092,8 +1102,10 @@ class GpuRegExpExtractMeta(
         try {
           val javaRegexpPattern = str.toString
           // verify that we support this regex and can transpile it to cuDF format
-          pattern = Some(new CudfRegexTranspiler(RegexFindMode)
-            .transpile(javaRegexpPattern, None)._1)
+          val (transpiledAST, _) = 
+            new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(javaRegexpPattern, None) 
+          GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
+          pattern = Some(transpiledAST.toRegexString)
           numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
         } catch {
           case e: RegexUnsupportedException =>
@@ -1211,8 +1223,10 @@ class GpuRegExpExtractAllMeta(
         try {
           val javaRegexpPattern = str.toString
           // verify that we support this regex and can transpile it to cuDF format
-          pattern = Some(new CudfRegexTranspiler(RegexFindMode)
-            .transpile(javaRegexpPattern, None)._1)
+          val (transpiledAST, _) = 
+            new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(javaRegexpPattern, None)
+          GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
+          pattern = Some(transpiledAST.toRegexString)
           numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
         } catch {
           case e: RegexUnsupportedException =>
@@ -1298,20 +1312,24 @@ case class GpuRegExpExtractAll(
                       }
                     }
                 }
-                ColumnVector.makeList(stringCols: _*)
+                withResource(stringCols) { _ =>
+                  ColumnVector.makeList(stringCols: _*)
+                }
               }
             }
           }
         // Filter out null values in the lists
-        val extractedStrings = withResource(extractedWithNulls.getListOffsetsView) { offsetsCol =>
+        val extractedStrings = withResource(extractedWithNulls) { _ =>
+          withResource(extractedWithNulls.getListOffsetsView) { offsetsCol =>
             withResource(extractedWithNulls.getChildColumnView(0)) { stringCol =>
               withResource(stringCol.isNotNull) { isNotNull =>
-                withResource(isNotNull.makeListFromOffsets(rowCount, offsetsCol)) { booleanMask => 
+                withResource(isNotNull.makeListFromOffsets(rowCount, offsetsCol)) { booleanMask =>
                   extractedWithNulls.applyBooleanMask(booleanMask)
                 }
               }
             }
           }
+        }
         // If input is null, output should also be null
         withResource(extractedStrings) { s =>
           withResource(GpuScalar.from(null, DataTypes.createArrayType(DataTypes.StringType))) { 
@@ -1588,7 +1606,9 @@ abstract class StringSplitRegExpMeta[INPUT <: TernaryExpression](expr: INPUT,
             pattern = simplified
           case None =>
             try {
-              pattern = transpiler.transpile(utf8Str.toString, None)._1
+              val (transpiledAST, _) = transpiler.getTranspiledAST(utf8Str.toString, None)
+              GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
+              pattern = transpiledAST.toRegexString
               isRegExp = true
             } catch {
               case e: RegexUnsupportedException =>

@@ -31,9 +31,10 @@ This document covers below topics:
 
 ## How to use the Qualification tool
 
-The Qualification tool can be run in two different ways. One is to run it as a standalone tool on the
-Spark event logs after the application(s) have run and other is to be integrated into a running Spark
-application.
+The Qualification tool can be run in three different ways. One is to run it as a standalone tool on the
+Spark event logs after the application(s) have run, the second is to be integrated into a running Spark
+application using explicit API calls, and the third is to install a Spark listener which can output
+results on a per SQL query basis.
 
 ## Running the Qualification tool standalone on Spark event logs
 
@@ -301,7 +302,7 @@ For information on the files content and processing the Qualification report and
 to [Understanding the Qualification tool output](#understanding-the-qualification-tool-output) and
 [Output Formats](#output-formats) sections below.
 
-## Running the Qualification tool inside a running Spark application
+## Running the Qualification tool inside a running Spark application using the API
 
 ### Prerequisites
 - Java 8 or above, Spark 3.0.1+
@@ -384,6 +385,67 @@ For example, if running the spark-shell:
 $SPARK_HOME/bin/spark-shell --jars rapids-4-spark-tools_2.12-<version>.jar
 ```
 
+## Running using a Spark Listener
+
+We provide a Spark Listener that can be installed at application start that will produce output
+for each SQL queries in the running application and indicate if that query is a good fit to try
+with the Rapids Accelerator for Spark.
+
+### Prerequisites
+- Java 8 or above, Spark 3.0.1+
+
+### Download the tools jar
+- Download the jar file from [Maven repository](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-tools_2.12/22.08.0/)
+
+### Configuration
+
+Add the RunningQualificationEventProcess to the spark listeners configuration:
+`spark.extraListeners=org.apache.spark.sql.rapids.tool.qualification.RunningQualificationEventProcessor`
+
+The user should specify the output directory if they want the output to go to separate
+files, otherwise it will go to the Spark driver log. If the output directory is specified, it outputs
+two different files, one csv and one pretty printed log file. The output directory can be a local directory
+or point to a distributed file system or blobstore like S3.
+ - `spark.rapids.qualification.outputDir`
+
+By default, this will output results for 10 SQL queries per file and will
+keep 100 files. This behavior is because many blob stores don't show files until
+they are fully written so you wouldn't be able to see the results for a running
+application until it finishes the number of SQL queries per file. This behavior
+can be configured with the following configs.
+ - `spark.rapids.qualification.output.numSQLQueriesPerFile` - default 10
+ - `spark.rapids.qualification.output.maxNumFiles` - default 100
+
+### Run the Spark application
+
+Run the application and include the tools jar, `spark.extraListeners` config and optionally the other
+configs to control the tools behavior.
+
+For example:
+
+```bash
+SPARK_HOME/bin/spark-shell \
+--jars rapids-4-spark-tools_2.12-<version>.jar \
+--conf spark.extraListeners=org.apache.spark.sql.rapids.tool.qualification.RunningQualificationEventProcessor \
+--conf spark.rapids.qualification.outputDir=/tmp/qualPerSqlOutput \
+--conf spark.rapids.qualification.output.numSQLQueriesPerFile=5 \
+--conf spark.rapids.qualification.output.maxNumFiles=10
+```
+
+After running some SQL queries you can look in the output directory and see files like:
+
+```
+rapids_4_spark_qualification_output_persql_0.csv
+rapids_4_spark_qualification_output_persql_0.log
+rapids_4_spark_qualification_output_persql_1.csv
+rapids_4_spark_qualification_output_persql_1.log
+rapids_4_spark_qualification_output_persql_2.csv
+rapids_4_spark_qualification_output_persql_2.log
+```
+
+See the [Understanding the Qualification tool output](#understanding-the-qualification-tool-output)
+section on the file contents details.
+
 ## Understanding the Qualification tool output
 
 For each processed Spark application, the Qualification tool generates two main fields to help quantify the expected
@@ -458,6 +520,10 @@ The report represents the entire app execution, including unsupported operators 
 23. _App Duration Estimated_: True or False indicates if we had to estimate the application duration.
     If we had to estimate it, the value will be `True` and it means the event log was missing the application finished
     event, so we will use the last job or sql execution time we find as the end time used to calculate the duration.
+24. _Unsupported Execs_: reports all the execs that are not supported by GPU in this application. Note that an Exec name  may be
+    printed in this column if any of the expressions within this Exec is not supported by GPU. If the resultant string
+    exceeds maximum limit (25), then ... is suffixed to the STDOUT and full output can be found in the CSV file.
+25. _Unsupported Expressions_: reports all expressions not supported by GPU in this application.
 24. _Read Schema_: shows the datatypes and read formats. This field is only listed when the argument `--report-read-schema`
     is passed to the CLI.
 
@@ -707,16 +773,16 @@ Note: the duration(s) reported are in milliseconds.
 Sample output in text:
 
 ```
-+------------+--------------+----------+----------+-------------+-----------+-----------+-----------+--------------------+
-|  App Name  |    App ID    |    App   |  SQL DF  |     GPU     | Estimated | Estimated | Estimated |  Recommendation    |
-|            |              | Duration | Duration | Opportunity |    GPU    |    GPU    |    GPU    |                    |
-|            |              |          |          |             |  Duration |  Speedup  |    Time   |                    |
-|            |              |          |          |             |           |           |   Saved   |                    |
-+============+==============+==========+==========+=============+===========+===========+===========+====================+
-| appName-01 | app-ID-01-01 |    898429|    879422|       879422|  273911.92|       3.27|  624517.06|Strongly Recommended|
-+------------+--------------+----------+----------+-------------+-----------+-----------+-----------+--------------------+
-| appName-02 | app-ID-02-01 |      9684|      1353|         1353|    8890.09|       1.08|      793.9|     Not Recommended|
-+------------+--------------+----------+----------+-------------+-----------+-----------+-----------+--------------------+
++------------+--------------+----------+----------+-------------+-----------+-----------+-----------+--------------------+-------------------------------------------------------+
+|  App Name  |    App ID    |    App   |  SQL DF  |     GPU     | Estimated | Estimated | Estimated |  Recommendation    |      Unsupported Execs        |Unsupported Expressions|
+|            |              | Duration | Duration | Opportunity |    GPU    |    GPU    |    GPU    |                    |                               |                       |
+|            |              |          |          |             |  Duration |  Speedup  |    Time   |                    |                               |                       |
+|            |              |          |          |             |           |           |   Saved   |                    |                               |                       |
++============+==============+==========+==========+=============+===========+===========+===========+====================+=======================================================+
+| appName-01 | app-ID-01-01 |    898429|    879422|       879422|  273911.92|       3.27|  624517.06|Strongly Recommended|                               |                       |
++------------+--------------+----------+----------+-------------+-----------+-----------+-----------+--------------------+-------------------------------------------------------+
+| appName-02 | app-ID-02-01 |      9684|      1353|         1353|    8890.09|       1.08|      793.9|     Not Recommended|Filter;SerializeFromObject;S...|           hex         |
++------------+--------------+----------+----------+-------------+-----------+-----------+-----------+--------------------+-------------------------------------------------------+
 ```
 
 In the above example, two application event logs were analyzed. “app-ID-01-01” is "_Strongly Recommended_"

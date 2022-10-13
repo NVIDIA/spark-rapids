@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import com.nvidia.spark.rapids.GpuMetric;
+import com.nvidia.spark.rapids.MultiFileReaderUtils;
 import com.nvidia.spark.rapids.RapidsConf;
 import com.nvidia.spark.rapids.ScanWithMetricsWrapper;
 import com.nvidia.spark.rapids.iceberg.spark.Spark3Util;
@@ -31,6 +32,7 @@ import com.nvidia.spark.rapids.iceberg.spark.SparkSchemaUtil;
 import com.nvidia.spark.rapids.iceberg.spark.SparkUtil;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.CombinedScanTask;
+import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.SchemaParser;
@@ -77,13 +79,14 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
   private final List<Expression> filterExpressions;
   private final boolean readTimestampWithoutZone;
   private final RapidsConf rapidsConf;
+  private final boolean queryUsesInputFile;
 
   // lazy variables
   private StructType readSchema = null;
 
   GpuSparkScan(SparkSession spark, Table table, SparkReadConf readConf,
                Schema expectedSchema, List<Expression> filters,
-               RapidsConf rapidsConf) {
+               RapidsConf rapidsConf, boolean queryUsesInputFile) {
 
     SparkSchemaUtil.validateMetadataColumnReferences(table.schema(), expectedSchema);
 
@@ -95,10 +98,19 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
     this.filterExpressions = filters != null ? filters : Collections.emptyList();
     this.readTimestampWithoutZone = readConf.handleTimestampWithoutZone();
     this.rapidsConf = rapidsConf;
+    this.queryUsesInputFile = queryUsesInputFile;
   }
 
   protected Table table() {
     return table;
+  }
+
+  protected SparkReadConf readConf() {
+    return readConf;
+  }
+
+  protected RapidsConf rapidsConf() {
+    return rapidsConf;
   }
 
   protected boolean caseSensitive() {
@@ -114,6 +126,10 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
   }
 
   protected abstract List<CombinedScanTask> tasks();
+
+  boolean queryUsesInputFile() {
+    return queryUsesInputFile;
+  }
 
   @Override
   public Batch toBatch() {
@@ -179,9 +195,22 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
 
   static class ReaderFactory implements PartitionReaderFactory {
     private final scala.collection.immutable.Map<String, GpuMetric> metrics;
+    private final scala.collection.immutable.Set<String> allCloudSchemes;
+    private final boolean canUseParquetMultiThread;
+    private final boolean canUseParquetCoalescing;
+    private final boolean isParquetPerFileReadEnabled;
 
-    public ReaderFactory(scala.collection.immutable.Map<String, GpuMetric> metrics) {
+    public ReaderFactory(scala.collection.immutable.Map<String, GpuMetric> metrics,
+                         RapidsConf rapidsConf, boolean queryUsesInputFile) {
       this.metrics = metrics;
+      this.allCloudSchemes = rapidsConf.getCloudSchemes().toSet();
+      this.isParquetPerFileReadEnabled = rapidsConf.isParquetPerFileReadEnabled();
+      this.canUseParquetMultiThread = rapidsConf.isParquetMultiThreadReadEnabled();
+      // Here ignores the "ignoreCorruptFiles" comparing to the code in
+      // "GpuParquetMultiFilePartitionReaderFactory", since "ignoreCorruptFiles" is
+      // not honored by Iceberg.
+      this.canUseParquetCoalescing = rapidsConf.isParquetCoalesceFileReadEnabled() &&
+          !queryUsesInputFile;
     }
 
     @Override
@@ -192,7 +221,16 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
     @Override
     public PartitionReader<ColumnarBatch> createColumnarReader(InputPartition partition) {
       if (partition instanceof ReadTask) {
-        return new BatchReader((ReadTask) partition, metrics);
+        ReadTask rTask = (ReadTask) partition;
+        scala.Tuple3<Boolean, Boolean, FileFormat> ret = multiFileReadCheck(rTask);
+        boolean canAccelerateRead = ret._1();
+        if (canAccelerateRead) {
+          boolean isMultiThread = ret._2();
+          FileFormat ff = ret._3();
+          return new MultiFileBatchReader(rTask, isMultiThread, ff, metrics);
+        } else {
+          return new BatchReader(rTask, metrics);
+        }
       } else {
         throw new UnsupportedOperationException("Incorrect input partition type: " + partition);
       }
@@ -201,6 +239,48 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
     @Override
     public boolean supportColumnarReads(InputPartition partition) {
       return true;
+    }
+
+    /**
+     * Return a tuple as (canAccelerateRead, isMultiThread, fileFormat).
+     *   - "canAccelerateRead" Whether the input read task can be accelerated by
+     *     multi-threaded or coalescing reading.
+     *   - "isMultiThread" Whether to use the multi-threaded reading.
+     *   - "fileFormat" The file format of this combined task. Acceleration requires
+     *     all the files in a combined task have the same format.
+     */
+    private scala.Tuple3<Boolean, Boolean, FileFormat> multiFileReadCheck(ReadTask readTask) {
+      Collection<FileScanTask> scans = readTask.files();
+      boolean isSingleFormat = false, isPerFileReadEnabled = false;
+      boolean canUseMultiThread = false, canUseCoalescing = false;
+      FileFormat ff = null;
+      // Require all the files in a partition have the same file format.
+      if (scans.stream().allMatch(t -> t.file().format().equals(FileFormat.PARQUET))) {
+        // Now only Parquet is supported.
+        canUseMultiThread = canUseParquetMultiThread;
+        canUseCoalescing = canUseParquetCoalescing;
+        isPerFileReadEnabled = isParquetPerFileReadEnabled;
+        isSingleFormat = true;
+        ff = FileFormat.PARQUET;
+      }
+      boolean canAccelerateRead = !isPerFileReadEnabled && isSingleFormat;
+      String[] files = scans.stream().map(f -> f.file().path().toString())
+          .toArray(String[]::new);
+      // Get the final decision for the subtype of the Rapids reader.
+      boolean useMultiThread = MultiFileReaderUtils.useMultiThreadReader(
+          canUseCoalescing, canUseMultiThread, files, allCloudSchemes, false);
+      return scala.Tuple3.apply(canAccelerateRead, useMultiThread, ff);
+    }
+  }
+
+  private static class MultiFileBatchReader
+      extends GpuMultiFileBatchReader implements PartitionReader<ColumnarBatch> {
+    MultiFileBatchReader(ReadTask task, boolean useMultiThread, FileFormat ff,
+                         scala.collection.immutable.Map<String, GpuMetric> metrics) {
+      super(task.task, task.table(), task.expectedSchema(), task.isCaseSensitive(),
+          task.getConfiguration(), task.getMaxBatchSizeRows(), task.getMaxBatchSizeBytes(),
+          task.getParquetDebugDumpPrefix(), task.getNumThreads(), task.getMaxNumFileProcessed(),
+          useMultiThread, ff, metrics);
     }
   }
 
@@ -222,6 +302,8 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
     private final int maxBatchSizeRows;
     private final long maxBatchSizeBytes;
     private final String parquetDebugDumpPrefix;
+    private final int numThreads;
+    private final int maxNumFileProcessed;
 
     private transient Schema expectedSchema = null;
     private transient String[] preferredLocations = null;
@@ -243,6 +325,8 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
       this.maxBatchSizeRows = rapidsConf.maxReadBatchSizeRows();
       this.maxBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes();
       this.parquetDebugDumpPrefix = rapidsConf.parquetDebugDumpPrefix();
+      this.numThreads = rapidsConf.multiThreadReadNumThreads();
+      this.maxNumFileProcessed = rapidsConf.maxNumParquetFilesParallel();
     }
 
     @Override
@@ -276,6 +360,14 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
 
     public String getParquetDebugDumpPrefix() {
       return parquetDebugDumpPrefix;
+    }
+
+    public int getNumThreads() {
+      return numThreads;
+    }
+
+    public int getMaxNumFileProcessed() {
+      return maxNumFileProcessed;
     }
 
     private Schema expectedSchema() {

@@ -16,7 +16,6 @@
 
 package org.apache.spark.sql.rapids.tool
 
-import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 import scala.util.control.NonFatal
 
@@ -139,6 +138,7 @@ abstract class EventProcessorBase[T <: AppBase](app: T) extends SparkListener wi
       ""
     )
     app.sqlIdToInfo.put(event.executionId, sqlExecution)
+    app.sqlPlans += (event.executionId -> event.sparkPlanInfo)
   }
 
   def doSparkListenerSQLExecutionEnd(
@@ -167,7 +167,10 @@ abstract class EventProcessorBase[T <: AppBase](app: T) extends SparkListener wi
 
   def doSparkListenerSQLAdaptiveExecutionUpdate(
       app: T,
-      event: SparkListenerSQLAdaptiveExecutionUpdate): Unit = {}
+      event: SparkListenerSQLAdaptiveExecutionUpdate): Unit = {
+    // AQE plan can override the ones got from SparkListenerSQLExecutionStart
+    app.sqlPlans += (event.executionId -> event.sparkPlanInfo)
+  }
 
   def doSparkListenerSQLAdaptiveSQLMetricUpdates(
       app: T,
@@ -304,20 +307,6 @@ abstract class EventProcessorBase[T <: AppBase](app: T) extends SparkListener wi
     logDebug("Processing event: " + event.getClass)
     val sqlIDString = event.properties.getProperty("spark.sql.execution.id")
     val sqlID = ProfileUtils.stringToLong(sqlIDString)
-    // add jobInfoClass
-    val thisJob = new JobInfoClass(
-      event.jobId,
-      event.stageIds,
-      sqlID,
-      event.properties.asScala,
-      event.time,
-      None,
-      None,
-      None,
-      None,
-      ProfileUtils.isPluginEnabled(event.properties.asScala) || app.gpuMode
-    )
-    app.jobIdToInfo.put(event.jobId, thisJob)
     sqlID.foreach(app.jobIdToSqlID(event.jobId) = _)
   }
 

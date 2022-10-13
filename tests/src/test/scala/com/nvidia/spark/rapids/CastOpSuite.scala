@@ -89,7 +89,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
   test("Cast from string to int using hand-picked values") {
     testCastStringTo(DataTypes.IntegerType, Seq(".--e-37602.n", "\r\r\t\n11.12380", "-.2", ".3",
-      ".", "+1.2", "\n123\n456\n", "1e+4"))
+      ".", "+1.2", "\n123\n456\n", "1e+4", "0.123", "321.123", ".\r123"))
   }
 
   test("Cast from string to int ANSI mode with mix of valid and invalid values") {
@@ -481,8 +481,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("longs").cast(StringType),
       col("more_longs").cast(BooleanType),
       col("more_longs").cast(ByteType),
-      // Test requires ProjectExec support BinaryType, tested within md5 hash functionality instead
-      // col("longs").cast(BinaryType),
+      col("longs").cast(BinaryType),
       col("longs").cast(ShortType),
       col("longs").cast(FloatType),
       col("longs").cast(DoubleType),
@@ -643,11 +642,10 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("c0").cast(FloatType))
   }
 
-  // Test requires ProjectExec support BinaryType, tested within md5 hash functionality instead
-  // testSparkResultsAreEqual("Test cast from strings to binary", floatsAsStrings) {
-  //   frame => frame.select(
-  //     col("c0").cast(BinaryType))
-  // }
+  testSparkResultsAreEqual("Test cast from strings to binary", floatsAsStrings) {
+    frame => frame.select(
+      col("c0").cast(BinaryType))
+  }
 
   test("cast short to decimal") {
     List(-4, -2, 0,  1, 5, 15).foreach { scale =>
@@ -835,7 +833,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
         intercept[org.apache.spark.SparkException] {
           nonOverflowCase(dataType, generator, precision, scale)
         },
-        GpuCast.INVALID_INPUT_MESSAGE)
+        GpuCast.OVERFLOW_MESSAGE)
       )
       // Compare gpu results with cpu ones when AnsiMode is off (most of them should be null)
       testCastToDecimal(dataType,
@@ -908,12 +906,9 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  test("cast string to decimal (fail)") {
-    assertThrows[IllegalArgumentException](
-    List(-38, 38, 2, 32, 8).foreach { scale =>
-      testCastToDecimal(DataTypes.StringType, scale,
-        customRandGenerator = Some(new scala.util.Random(1234L)))
-    })
+  test("cast 38,2 string to decimal") {
+    testCastToDecimal(DataTypes.StringType, scale = 2, precision = 38,
+      customRandGenerator = Some(new scala.util.Random(1234L)))
   }
 
   test("cast string to decimal (include NaN/INF/-INF)") {
@@ -981,30 +976,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
     withResource(ColumnVector.fromStrings(inputs: _*)) { v =>
       withResource(ColumnVector.fromStrings(expected: _*)) { expected =>
         withResource(GpuCast.sanitizeStringToFloat(v, ansiEnabled = false)) { actual =>
-          CudfTestHelper.assertColumnsAreEqual(expected, actual)
-        }
-      }
-    }
-  }
-
-  test("CAST string to integer - sanitize step") {
-    val testPairs: Seq[(String, String)] = Seq(
-      (null, null),
-      ("1e4", "1e4"),
-      ("123", "123"),
-      (".", "0"),
-      (".2", "0"),
-      ("-.2", "0"),
-      ("0.123", "0"),
-      ("321.123", "321"),
-      ("0.123\r123", null),
-      (".\r123", null)
-    )
-    val inputs = testPairs.map(_._1)
-    val expected = testPairs.map(_._2)
-    withResource(ColumnVector.fromStrings(inputs: _*)) { v =>
-      withResource(ColumnVector.fromStrings(expected: _*)) { expected =>
-        withResource(GpuCast.sanitizeStringToIntegralType(v, ansiEnabled = false)) { actual =>
           CudfTestHelper.assertColumnsAreEqual(expected, actual)
         }
       }
@@ -1442,6 +1413,9 @@ object CastOpSuite {
       "1920-12-31T11:59:59.999",
       "1969-12-31T23:59:59.999",
       "1969-12-31T23:59:59.999999",
+      "1969-12-31T23:59:59.001700",
+      "1969-12-31T23:59:59.001070",
+      "1969-12-31T23:59:59.010701",
       "1970-01-01T00:00:00.000",
       "1970-01-01T00:00:00.999",
       "1970-01-01T00:00:00.999111",

@@ -143,30 +143,33 @@ public class GpuParquet {
     }
 
     public CloseableIterable<ColumnarBatch> build() {
-      ParquetReadOptions.Builder optionsBuilder;
-      if (file instanceof HadoopInputFile) {
-        // remove read properties already set that may conflict with this read
-        Configuration conf = new Configuration(((HadoopInputFile) file).getConf());
-        for (String property : READ_PROPERTIES_TO_REMOVE) {
-          conf.unset(property);
-        }
-        optionsBuilder = HadoopReadOptions.builder(conf);
-      } else {
-        //optionsBuilder = ParquetReadOptions.builder();
-        throw new UnsupportedOperationException("Only Hadoop files are supported for now");
-      }
-
-      if (start != null) {
-        optionsBuilder.withRange(start, start + length);
-      }
-
-      ParquetReadOptions options = optionsBuilder.build();
-
+      ParquetReadOptions options = buildReaderOptions(file, start, length);
       PartitionedFile partFile = PartitionedFileUtils.newPartitionedFile(
           InternalRow.empty(), file.location(), start, length);
       return new GpuParquetReader(file, projectSchema, options, nameMapping, filter, caseSensitive,
           idToConstant, deleteFilter, partFile, conf, maxBatchSizeRows, maxBatchSizeBytes,
           debugDumpPrefix, metrics);
     }
+  }
+
+  public static ParquetReadOptions buildReaderOptions(InputFile file, Long start, Long length) {
+    ParquetReadOptions.Builder optionsBuilder;
+    if (file instanceof HadoopInputFile) {
+      // remove read properties already set that may conflict with this read
+      Configuration conf = new Configuration(((HadoopInputFile) file).getConf());
+      for (String property : READ_PROPERTIES_TO_REMOVE) {
+        conf.unset(property);
+      }
+      optionsBuilder = HadoopReadOptions.builder(conf);
+    } else {
+      //optionsBuilder = ParquetReadOptions.builder();
+      throw new UnsupportedOperationException("Only Hadoop files are supported for now");
+    }
+
+    if (start != null) {
+      optionsBuilder.withRange(start, start + length);
+    }
+
+    return optionsBuilder.build();
   }
 }

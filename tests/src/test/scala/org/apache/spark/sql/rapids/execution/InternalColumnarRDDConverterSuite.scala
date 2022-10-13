@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids.execution
 
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.{ColumnarToRowIterator, GpuBatchUtilsSuite, NoopMetric, SparkQueryCompareTestSuite, TestResourceFinder}
+import com.nvidia.spark.rapids.{ColumnarRdd, ColumnarToRowIterator, GpuBatchUtilsSuite, GpuColumnVectorUtils, NoopMetric, RapidsHostColumnVector, SparkQueryCompareTestSuite, TestResourceFinder}
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 
 import org.apache.spark.SparkConf
@@ -291,5 +291,19 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite {
     }, new SparkConf().set("spark.rapids.sql.test.allowedNonGpu", "DeserializeToObjectExec"))
   }
 
-}
+  test("Extract RapidsHostColumnVector from GpuColumnVectorUtils") {
+    withGpuSparkSession(spark => {
+      val rdd = ColumnarRdd(spark.range(10).toDF())
+      val result = rdd.map(table => {
+        val columns = GpuColumnVectorUtils.extractHostColumns(table, Array(LongType))
+        val isRapidsHostColumnVector = columns(0) match {
+          case _: RapidsHostColumnVector => true
+          case _ => false
+        }
+        isRapidsHostColumnVector
+      }).collect()
+      assert(result.forall(_ == true))
+    }, new SparkConf().set("spark.rapids.sql.test.allowedNonGpu", "DeserializeToObjectExec"))
+  }
 
+}

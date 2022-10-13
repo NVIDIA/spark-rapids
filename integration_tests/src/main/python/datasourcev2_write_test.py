@@ -13,39 +13,34 @@
 # limitations under the License.
 import pytest
 
-from asserts import assert_gpu_fallback_write
+from asserts import assert_gpu_fallback_collect
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
+from spark_session import is_hive_available, is_spark_330_or_later, with_cpu_session
 
 @ignore_order
 @allow_non_gpu('DataWritingCommandExec')
+@pytest.mark.skipif(not (is_hive_available() and is_spark_330_or_later()), reason="Must have Hive on Spark 3.3+")
 @pytest.mark.parametrize('fileFormat', ['parquet', 'orc'])
-def test_write_hive_bucketed_table_fallback(spark_tmp_path, spark_tmp_table_factory, fileFormat):
+def test_write_hive_bucketed_table_fallback(spark_tmp_table_factory, fileFormat):
     """
     fallback because GPU does not support Hive hash partition
     """
-    src = spark_tmp_table_factory.get()
     table = spark_tmp_table_factory.get()
 
-    def write_hive_table(spark):
-        
-        data = map(lambda i: (i % 13, str(i), i % 5), range(50))
-        df = spark.createDataFrame(data, ["i", "j", "k"])
-        df.write.mode("overwrite").partitionBy("k").bucketBy(8, "i", "j").format(fileFormat).saveAsTable(src)
+    def create_hive_table(spark):
+        spark.sql("""create table {0} (a bigint, b bigint, c bigint)
+                  stored as {1}
+                  clustered by (b) into 3 buckets""".format(table, fileFormat))
+        return None
 
-        spark.sql("""
-            create table if not exists {0} 
-            using hive options(fileFormat \"{1}\")
-            as select * from {2} 
-            """.format(table, fileFormat, src))
+    conf = {"hive.enforce.bucketing": "true",
+            "hive.exec.dynamic.partition": "true",
+            "hive.exec.dynamic.partition.mode": "nonstrict"}
+    with_cpu_session(create_hive_table, conf = conf)
 
-    data_path = spark_tmp_path + '/HIVE_DATA'
-
-    assert_gpu_fallback_write(
-        lambda spark, _: write_hive_table(spark),
-        lambda spark, _: spark.sql("SELECT * FROM {}".format(table)),
-        data_path,
+    assert_gpu_fallback_collect(
+        lambda spark: spark.sql("insert into {} values (1, 2, 3)".format(table)),
         'DataWritingCommandExec',
-        conf = {"hive.exec.dynamic.partition": "true",
-                "hive.exec.dynamic.partition.mode": "nonstrict"})
+        conf = conf)

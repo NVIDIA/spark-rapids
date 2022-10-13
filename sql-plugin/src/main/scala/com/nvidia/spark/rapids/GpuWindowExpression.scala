@@ -27,7 +27,8 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.rapids.{GpuAdd, GpuAggregateExpression, GpuCreateNamedStruct}
+import org.apache.spark.sql.rapids.{GpuAdd, GpuAggregateExpression, GpuCount, GpuCreateNamedStruct, GpuDivide, GpuSubtract}
+import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.CalendarInterval
 
@@ -105,7 +106,7 @@ abstract class GpuWindowExpressionMetaBase(
               val orderByTypeSupported = orderSpec.forall { so =>
                 so.dataType match {
                   case ByteType | ShortType | IntegerType | LongType |
-                       DateType | TimestampType => true
+                       DateType | TimestampType | DecimalType() => true
                   case _ => false
                 }
               }
@@ -132,13 +133,17 @@ abstract class GpuWindowExpressionMetaBase(
                     s"Range window frame is not 100% compatible when the order by type is " +
                       s"long and the range value calculated has overflow. " +
                       s"To enable it please set ${RapidsConf.ENABLE_RANGE_WINDOW_LONG} to true.")
+                  case DecimalType() => if (!conf.isRangeWindowDecimalEnabled) willNotWorkOnGpu(
+                      s"To enable DECIMAL order by columns with Range window frames, " +
+                      s"please set ${RapidsConf.ENABLE_RANGE_WINDOW_DECIMAL} to true.")
                   case _ => // never reach here
                 }
               }
 
               // check whether the boundaries are supported or not.
               Seq(spec.lower, spec.upper).foreach {
-                case l @ Literal(_, ByteType | ShortType | IntegerType | LongType) =>
+                case l @ Literal(_, ByteType | ShortType | IntegerType |
+                                    LongType | DecimalType()) =>
                   checkRangeBoundaryConfig(l.dataType)
                 case Literal(ci: CalendarInterval, CalendarIntervalType) =>
                   // interval is only working for TimeStampType
@@ -371,11 +376,12 @@ abstract class GpuSpecifiedWindowFrameMetaBase(
           return None
         }
 
-        val value: Long = bounds match {
+        val value: BigInt = bounds match {
           case Literal(value, ByteType) => value.asInstanceOf[Byte].toLong
           case Literal(value, ShortType) => value.asInstanceOf[Short].toLong
           case Literal(value, IntegerType) => value.asInstanceOf[Int].toLong
           case Literal(value, LongType) => value.asInstanceOf[Long]
+          case Literal(value: Decimal, DecimalType()) => value.toJavaBigDecimal.unscaledValue()
           case Literal(ci: CalendarInterval, CalendarIntervalType) =>
             if (ci.months != 0) {
               willNotWorkOnGpu("interval months isn't supported")
@@ -811,10 +817,73 @@ trait BatchedRunningWindowFixer extends AutoCloseable {
 
   def needsOrderMask: Boolean = false
 
-  protected def incRef(col: cudf.ColumnView): cudf.ColumnVector = col match {
-    case cv: cudf.ColumnVector => cv.incRefCount()
-    case _ => col.copyToColumnVector()
-  }
+  protected def incRef(col: cudf.ColumnView): cudf.ColumnVector = col.copyToColumnVector()
+}
+
+/**
+ * Provides a way to process window operations without needing to buffer and split the
+ * batches on partition by boundaries. When this happens part of a partition by key set may
+ * have been processed in the previous batches, and may need to be updated. For example
+ * if we are doing a min operation with unbounded preceding and unbounded following.
+ * We may first get in something like
+ * <code>
+ * PARTS:  1, 1,  2, 2
+ * VALUES: 2, 3, 10, 9
+ * </code>
+ *
+ * The output of processing this would result in a new column that would look like
+ * <code>
+ *   MINS: 2, 2, 9, 9
+ * </code>
+ *
+ * But we don't know if the group with 2 in PARTS is done or not. So the fixer saved
+ * the last value in MINS, which is a 9, and caches the batch. When the next batch shows up
+ *
+ * <code>
+ *  PARTS:  2,  2,  3,  3
+ * VALUES: 11,  5, 13, 14
+ * </code>
+ *
+ * We generate the window result again and get
+ *
+ * <code>
+ *    MINS: 5, 5, 13, 13
+ * </code>
+ *
+ * And now we need to grab the first entry which is a 5 and update the cached data with another min.
+ * The cached data for PARTS=2 is now 5. We then need to go back and fix up all of the previous
+ * batches that had something to do with PARTS=2. The first batch will be pulled from the cache
+ * and updated to look like
+ *
+ * <code>
+ *  PARTS: 1, 1,  2, 2
+ * VALUES: 2, 3, 10, 9
+ *   MINS: 2, 2,  5, 5
+ * </code>
+ * which can be output because we were able to fix up all of the PARTS in that batch.
+ */
+trait BatchedUnboundedToUnboundedWindowFixer extends AutoCloseable {
+  /**
+   * Called to fix up a batch. There is no guarantee on the order the batches are fixed. The only
+   * ordering guarantee is that the state will be updated for all batches before any are "fixed"
+   * @param samePartitionMask indicates which rows are a part of the same partition.
+   * @param column the column of data to be fixed.
+   * @return a column of data that was fixed.
+   */
+  def fixUp(samePartitionMask: Either[ColumnVector, Boolean], column: ColumnVector): ColumnVector
+
+  /**
+   * Clear any state so that updateState can be called again for a new partition by group.
+   */
+  def reset(): Unit
+
+  /**
+   * Cache and update any state needed. Because this is specific to unbounded preceding to
+   * unbounded following the result should be the same for any row within a batch. As such, this is
+   * only guaranteed to be called once per batch with the value from a row within the batch.
+   * @param scalar the value to use to update what is cached.
+   */
+  def updateState(scalar: Scalar): Unit
 }
 
 /**
@@ -826,9 +895,74 @@ trait BatchedRunningWindowFixer extends AutoCloseable {
 trait GpuBatchedRunningWindowWithFixer {
 
   /**
-   * Get a new class that can be used to fix up batched RunningWindowOperations.
+   * Get a new class that can be used to fix up batched running window operations.
    */
   def newFixer(): BatchedRunningWindowFixer
+}
+
+/**
+ * For many window operations the results in earlier rows depends on the results from the last
+ * or later rows. In many of these cases we chunk the data based off of the partition by groups
+ * and process the data at once. But this can lead to out of memory errors, or hitting the
+ * row limit on some columns. Doing two passes through the data where the first pass processes
+ * the data and a second pass fixes up the data can let us keep the data in the original batches
+ * and reduce total memory usage. But this requires that some of the batches be made spillable
+ * while we wait for the end of the partition by group.
+ *
+ * Right now this is written to be specific to windows that are unbounded preceding to unbounded
+ * following, but it could be adapted to also work for current row to unbounded following, and
+ * possibly more situations.
+ */
+trait GpuUnboundToUnboundWindowWithFixer {
+  def newUnboundedToUnboundedFixer: BatchedUnboundedToUnboundedWindowFixer
+}
+
+/**
+ * Fixes up a count operation for unbounded preceding to unbounded following
+ * @param errorOnOverflow if we need to throw an exception when an overflow happens or not.
+ */
+class CountUnboundedToUnboundedFixer(errorOnOverflow: Boolean)
+    extends BatchedUnboundedToUnboundedWindowFixer with Arm {
+  private var previousValue: Option[Long] = None
+
+  override def reset(): Unit = {
+    previousValue = None
+  }
+
+  override def updateState(scalar: Scalar): Unit = {
+    // It should be impossible for count to produce a null.
+    // Even if the input was all nulls the count is 0
+    assert(scalar.isValid)
+    if (previousValue.isEmpty) {
+      previousValue = Some(scalar.getLong)
+    } else {
+      val old = previousValue.get
+      previousValue = Some(old + scalar.getLong)
+      if (errorOnOverflow && previousValue.get < 0) {
+        // This matches what would happen in an add operation, which is where the overflow
+        // in the CPU count would happen
+        throw RapidsErrorUtils.arithmeticOverflowError(
+          "One or more rows overflow for Add operation.")
+      }
+    }
+  }
+
+  override def close(): Unit = reset()
+
+  override def fixUp(samePartitionMask: Either[ColumnVector, Boolean],
+      column: ColumnVector): ColumnVector = {
+    assert(previousValue.nonEmpty)
+    withResource(Scalar.fromLong(previousValue.get)) { scalar =>
+      samePartitionMask match {
+        case scala.Left(cv) =>
+          cv.ifElse(scalar, column)
+        case scala.Right(true) =>
+          ColumnVector.fromScalar(scalar, column.getRowCount.toInt)
+        case _ =>
+          column.incRefCount()
+      }
+    }
+  }
 }
 
 /**
@@ -1529,36 +1663,47 @@ case class GpuLag(input: Expression, offset: Expression, default: Expression)
 
 /**
  * percent_rank() is a running window function in that it only operates on a window of unbounded
- * preceding to current row. But, an entire window has to be in the batch because the rank is
- * divided by the number of entries in the window to get the percent rank. We cannot know the number
- * of entries in the window without the entire window. This is why it is not a
- * `GpuBatchedRunningWindowWithFixer`.
+ * preceding to current row. But the percent part actually makes it need a full count of the number
+ * of rows in the window. This is why we rewrite the operator to allow us to compute the result
+ * in a way that will not overflow memory.
  */
-case class GpuPercentRank(children: Seq[Expression]) extends GpuRunningWindowFunction {
+case class GpuPercentRank(children: Seq[Expression]) extends GpuReplaceWindowFunction {
   override def nullable: Boolean = false
   override def dataType: DataType = DoubleType
 
-  override def groupByScanInputProjection(isRunningBatched: Boolean): Seq[Expression] = {
-    val orderedBy = if (children.length == 1) {
-      children.head
-    } else {
-      val childrenWithNames = children.zipWithIndex.flatMap {
-        case (expr, idx) => Seq(GpuLiteral(idx.toString, StringType), expr)
-      }
-      GpuCreateNamedStruct(childrenWithNames)
-    }
-    Seq(orderedBy)
-  }
-  
-  override def groupByScanAggregation(
-      isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] = {
-    Seq(AggAndReplace(GroupByScanAggregation.percentRank(), None))
-  }
-
-  override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
-    groupByScanInputProjection(isRunningBatched)
-
-  override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] = {
-    Seq(AggAndReplace(ScanAggregation.percentRank(), None))
+  override def windowReplacement(spec: GpuWindowSpecDefinition): Expression = {
+    // Spark writes this as
+    // If(n > one, (rank - one).cast(DoubleType) / (n - one).cast(DoubleType), 0.0d)
+    // where n is the count of all values in the window and rank is the rank.
+    //
+    // The databricks docs describe it as
+    // nvl(
+    //     (rank() over (PARTITION BY p ORDER BY o) - 1) /
+    //     (nullif(count(1) over(PARTITION BY p) - 1, 0)),
+    //     0.0)
+    //
+    // We do it slightly differently to try and optimize things for the GPU.
+    // We ignore ANSI mode because the count agg will take care of overflows already
+    // and n - 1 cannot overflow. It also cannot be negative because it is COUNT(1) and 1
+    // cannot be null.
+    // A divide by 0 in non-ANSI mode produces a null, which we can use to avoid extra data copies.
+    // The If/Else from the original Spark expression on the GPU needs to split the input data to
+    // avoid the ANSI divide throwing an error on the divide by 0 that it is trying to avoid. We
+    // skip that and just take the null as output, which we can replace with 0.0 afterwards.
+    // That is the only case when we would get a null as output.
+    // From this we essentially do
+    // coalesce(CAST(rank - 1 AS DOUBLE) / CAST(n - 1 AS DOUBLE), 0.0)
+    val isAnsi = false
+    val fullUnboundedFrame = GpuSpecifiedWindowFrame(RowFrame,
+      GpuSpecialFrameBoundary(UnboundedPreceding),
+      GpuSpecialFrameBoundary(UnboundedFollowing))
+    val fullUnboundedSpec = GpuWindowSpecDefinition(spec.partitionSpec, spec.orderSpec,
+      fullUnboundedFrame)
+    val count = GpuWindowExpression(GpuCount(Seq(GpuLiteral(1))), fullUnboundedSpec)
+    val rank = GpuWindowExpression(GpuRank(children), spec)
+    val rankMinusOne = GpuCast(GpuSubtract(rank, GpuLiteral(1), isAnsi), DoubleType, isAnsi)
+    val countMinusOne = GpuCast(GpuSubtract(count, GpuLiteral(1L), isAnsi), DoubleType, isAnsi)
+    val divided = GpuDivide(rankMinusOne, countMinusOne, failOnErrorOverride = isAnsi)
+    GpuCoalesce(Seq(divided, GpuLiteral(0.0)))
   }
 }

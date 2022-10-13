@@ -133,26 +133,7 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
           TypeSig.cpuNumeric))),
       (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
         override def tagAggForGpu(): Unit = {
-          // For Decimal Average the SUM adds a precision of 10 to avoid overflowing
-          // then it divides by the count with an output scale that is 4 more than the input
-          // scale. With how our divide works to match Spark, this means that we will need a
-          // precision of 5 more. So 38 - 10 - 5 = 23
-          val dataType = a.child.dataType
-          dataType match {
-            case dt: DecimalType =>
-              if (dt.precision > 23) {
-                if (conf.needDecimalGuarantees) {
-                  willNotWorkOnGpu("GpuAverage cannot guarantee proper overflow checks for " +
-                      s"a precision large than 23. The current precision is ${dt.precision}")
-                } else {
-                  logWarning("Decimal overflow guarantees disabled for " +
-                      s"Average(${a.child.dataType}) produces ${dt} with an " +
-                      s"intermediate precision of ${dt.precision + 15}")
-                }
-              }
-            case _ => // NOOP
-          }
-          GpuOverrides.checkAndTagFloatAgg(dataType, conf, this)
+          GpuOverrides.checkAndTagFloatAgg(a.child.dataType, conf, this)
         }
 
         override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
@@ -265,11 +246,16 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
 
-            val location = AlluxioUtils.replacePathIfNeeded(
-              conf,
-              wrapped.relation,
-              partitionFilters,
-              wrapped.dataFilters)
+            val (location, alluxioPathsToReplaceMap) =
+              if (conf.isAlluxioReplacementAlgoConvertTime) {
+                AlluxioUtils.replacePathIfNeeded(
+                  conf,
+                  wrapped.relation,
+                  partitionFilters,
+                  wrapped.dataFilters)
+              } else {
+                (wrapped.relation.location, None)
+              }
 
             val newRelation = HadoopFsRelation(
               location,
@@ -289,7 +275,9 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
               None,
               wrapped.dataFilters,
               wrapped.tableIdentifier,
-              wrapped.disableBucketedScan)(conf)
+              wrapped.disableBucketedScan,
+              queryUsesInputFile = false,
+              alluxioPathsToReplaceMap)(conf)
             }
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap

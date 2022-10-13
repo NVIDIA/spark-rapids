@@ -132,11 +132,15 @@ def test_cast_string_date_non_ansi():
         lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
         conf={'spark.rapids.sql.hasExtendedYearValues': 'false'})
 
-def test_cast_string_ts_valid_format():
+@pytest.mark.parametrize('data_gen', [StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2}'),
+                                      StringGen('[0-9]{1,4}-[0-3][0-9]-[0-5][0-9][ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9]'),
+                                      StringGen('[0-9]{1,4}-[0-3][0-9]-[0-5][0-9][ |T][0-3][0-9]:[0-6][0-9]:[0-6][0-9].[0-9]{0,6}Z?')],
+                        ids=idfn)
+def test_cast_string_ts_valid_format(data_gen):
     # In Spark 3.2.0+ the valid format changed, and we cannot support all of the format.
     # This provides values that are valid in all of those formats.
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, StringGen('[0-9]{1,4}-[0-9]{1,2}-[0-9]{1,2}')).select(f.col('a').cast(TimestampType())),
+            lambda spark : unary_op_df(spark, data_gen).select(f.col('a').cast(TimestampType())),
             conf = {'spark.rapids.sql.hasExtendedYearValues': 'false',
                 'spark.rapids.sql.castStringToTimestamp.enabled': 'true'})
 
@@ -228,9 +232,15 @@ def test_cast_long_to_decimal_overflow():
 # casting these types to string should be passed
 basic_gens_for_cast_to_string = [ByteGen, ShortGen, IntegerGen, LongGen, StringGen, BooleanGen, DateGen, TimestampGen] 
 basic_array_struct_gens_for_cast_to_string = [f() for f in basic_gens_for_cast_to_string] + [null_gen] + decimal_gens
+
+# We currently do not generate the exact string as Spark for some decimal values of zero
+# https://github.com/NVIDIA/spark-rapids/issues/6339
 basic_map_gens_for_cast_to_string = [
     MapGen(f(nullable=False), f()) for f in basic_gens_for_cast_to_string] + [
-    MapGen(DecimalGen(nullable=False), DecimalGen(precision=7, scale=3)), MapGen(DecimalGen(precision=7, scale=7, nullable=False), DecimalGen(precision=12, scale=2))]
+    MapGen(DecimalGen(nullable=False, special_cases=[]),
+           DecimalGen(precision=7, scale=3, special_cases=[])),
+    MapGen(DecimalGen(precision=7, scale=7, nullable=False, special_cases=[]),
+           DecimalGen(precision=12, scale=2), special_cases=[])]
 
 # GPU does not match CPU to casting these types to string, marked as xfail when testing
 not_matched_gens_for_cast_to_string = [FloatGen, DoubleGen]
@@ -388,8 +398,9 @@ def test_cast_float_to_timestamp_ansi_overflow(type, invalid_value):
 @pytest.mark.skipif(is_before_spark_330(), reason='330+ throws exception in ANSI mode')
 def test_cast_float_to_timestamp_side_effect():
     def getDf(spark):
-        return spark.createDataFrame([(True, float(LONG_MAX) + 100), (False, float(1))],
-                                     "c_b boolean, c_f float").repartition(1)
+        data = [(True, float(LONG_MAX) + 100), (False, float(1))]
+        distData = spark.sparkContext.parallelize(data, 1)
+        return spark.createDataFrame(distData, "c_b boolean, c_f float")
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: getDf(spark).selectExpr("if(c_b, cast(0 as timestamp), cast(c_f as timestamp))"),
         conf=ansi_enabled_conf)
@@ -472,6 +483,11 @@ def test_cast_timestamp_to_numeric_non_ansi():
         lambda spark: unary_op_df(spark, timestamp_gen)
             .selectExpr("cast(a as byte)", "cast(a as short)", "cast(a as int)", "cast(a as long)",
                         "cast(a as float)", "cast(a as double)"))
+
+def test_cast_timestamp_to_string():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, timestamp_gen)
+            .selectExpr("cast(a as string)"))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 def test_cast_day_time_interval_to_string():
@@ -616,3 +632,6 @@ def test_cast_day_time_to_integral_side_effect():
         # 106751991 > Byte.MaxValue
         return spark.createDataFrame([(True, MAX_DAY_TIME_INTERVAL), (False, (timedelta(microseconds=0)))], "c_b boolean, c_dt interval day to second").repartition(1)
     assert_gpu_and_cpu_are_equal_collect(lambda spark: getDf(spark).selectExpr("if(c_b, 0, cast(c_dt as byte))", "if(c_b, 0, cast(c_dt as short))", "if(c_b, 0, cast(c_dt as int))"))
+
+def test_cast_binary_to_string():
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: unary_op_df(spark, binary_gen).selectExpr("a", "CAST(a AS STRING) as str"))

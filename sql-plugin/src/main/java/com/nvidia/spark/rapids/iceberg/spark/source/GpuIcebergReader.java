@@ -97,6 +97,16 @@ public class GpuIcebergReader implements CloseableIterator<ColumnarBatch> {
   }
 
   private ColumnarBatch addConstantColumns(ColumnarBatch batch) {
+    return addConstantColumns(batch, expectedSchema, idToConstant);
+  }
+
+  private ColumnarBatch addUpcastsIfNeeded(ColumnarBatch batch) {
+    return addUpcastsIfNeeded(batch, expectedSchema);
+  }
+
+  /** (package accessible for GpuBatchRapidsReader) */
+  static ColumnarBatch addConstantColumns(ColumnarBatch batch,
+      Schema expectedSchema, Map<Integer, ?> idToConstant) {
     ColumnVector[] columns = new ColumnVector[expectedSchema.columns().size()];
     ColumnarBatch result = null;
     final ConstantDetector constantDetector = new ConstantDetector(idToConstant);
@@ -135,7 +145,8 @@ public class GpuIcebergReader implements CloseableIterator<ColumnarBatch> {
     return result;
   }
 
-  private ColumnarBatch addUpcastsIfNeeded(ColumnarBatch batch) {
+  /** (package accessible for GpuBatchRapidsReader) */
+  static ColumnarBatch addUpcastsIfNeeded(ColumnarBatch batch, Schema expectedSchema) {
     GpuColumnVector[] columns = null;
     try {
       List<Types.NestedField> expectedColumnTypes = expectedSchema.columns();
@@ -146,8 +157,8 @@ public class GpuIcebergReader implements CloseableIterator<ColumnarBatch> {
         DataType expectedSparkType = SparkSchemaUtil.convert(expectedColumnTypes.get(i).type());
         GpuColumnVector oldColumn = columns[i];
         columns[i] = GpuColumnVector.from(
-            GpuCast.doCast(oldColumn.getBase(), oldColumn.dataType(), expectedSparkType, false, false, false),
-            expectedSparkType);
+            GpuCast.doCast(oldColumn.getBase(), oldColumn.dataType(), expectedSparkType,
+            false, false, false), expectedSparkType);
       }
       ColumnarBatch newBatch = new ColumnarBatch(columns, batch.numRows());
       columns = null;

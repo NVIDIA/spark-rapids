@@ -33,6 +33,7 @@ import com.nvidia.spark.rapids.shims.{ShimBroadcastExchangeLike, ShimUnaryExecNo
 
 import org.apache.spark.SparkException
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.internal.Logging
 import org.apache.spark.launcher.SparkLauncher
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -87,18 +88,21 @@ object SerializedHostTableUtils extends Arm {
   }
 }
 
+// scalastyle:off no.finalize
 @SerialVersionUID(100L)
 class SerializeConcatHostBuffersDeserializeBatch(
     data: Array[SerializeBatchDeserializeHostBuffer],
     output: Seq[Attribute])
-  extends Serializable with Arm with AutoCloseable {
+  extends Serializable with Arm with AutoCloseable with Logging {
   @transient private var dataTypes = output.map(_.dataType).toArray
   @transient private var headers = data.map(_.header)
   @transient private var buffers = data.map(_.buffer)
-  @transient private var batchInternal: ColumnarBatch = null
 
-  def batch: ColumnarBatch = this.synchronized {
-    if (batchInternal == null) {
+  // used for memoization of deserialization to GPU on Executor
+  @transient private var batchInternal: SpillableColumnarBatch = null
+
+  def batch: SpillableColumnarBatch = this.synchronized {
+    Option(batchInternal).getOrElse {
       if (headers.length > 1) {
         // This should only happen if the driver is trying to access the batch. That should not be
         // a common occurrence, so for simplicity just round-trip this through the serialization.
@@ -111,30 +115,34 @@ class SerializeConcatHostBuffersDeserializeBatch(
       }
       assert(headers.length <= 1 && buffers.length <= 1)
       withResource(new NvtxRange("broadcast manifest batch", NvtxColor.PURPLE)) { _ =>
-        if (headers.isEmpty) {
-          batchInternal = GpuColumnVector.emptyBatchFromTypes(dataTypes)
-          GpuColumnVector.extractBases(batchInternal).foreach(_.noWarnLeakExpected())
-        } else {
-          withResource(JCudfSerialization.readTableFrom(headers.head, buffers.head)) { tableInfo =>
-            val table = tableInfo.getContiguousTable
-            if (table == null) {
-              val numRows = tableInfo.getNumRows
-              batchInternal = new ColumnarBatch(new Array[ColumnVector](0), numRows)
-            } else {
-              batchInternal = GpuColumnVectorFromBuffer.from(table, dataTypes)
-              GpuColumnVector.extractBases(batchInternal).foreach(_.noWarnLeakExpected())
-              table.getBuffer.noWarnLeakExpected()
+        try {
+          val res = if (headers.isEmpty) {
+            SpillableColumnarBatch(GpuColumnVector.emptyBatchFromTypes(dataTypes),
+            SpillPriorities.ACTIVE_BATCHING_PRIORITY, RapidsBuffer.defaultSpillCallback)
+          } else {
+            withResource(JCudfSerialization.readTableFrom(headers.head, buffers.head)) {
+              tableInfo =>
+                val table = tableInfo.getContiguousTable
+                if (table == null) {
+                  val numRows = tableInfo.getNumRows
+                  SpillableColumnarBatch(new ColumnarBatch(Array.empty[ColumnVector], numRows),
+                    SpillPriorities.ACTIVE_BATCHING_PRIORITY, RapidsBuffer.defaultSpillCallback)
+                } else {
+                  SpillableColumnarBatch(table, dataTypes,
+                    SpillPriorities.ACTIVE_BATCHING_PRIORITY, RapidsBuffer.defaultSpillCallback)
+                }
             }
           }
+          batchInternal = res
+          res
+        } finally {
+          // At this point we no longer need the host data and should not need to touch it again.
+          buffers.safeClose()
+          headers = null
+          buffers = null
         }
-
-        // At this point we no longer need the host data and should not need to touch it again.
-        buffers.safeClose()
-        headers = null
-        buffers = null
       }
     }
-    batchInternal
   }
 
   /**
@@ -145,32 +153,35 @@ class SerializeConcatHostBuffersDeserializeBatch(
    * NOTE: The caller is responsible to release these host columnar batches.
    */
   def hostBatches: Array[ColumnarBatch] = this.synchronized {
-    batchInternal match {
-      case batch if batch == null =>
-        withResource(new NvtxRange("broadcast manifest batch", NvtxColor.PURPLE)) { _ =>
-          val columnBatches = new mutable.ArrayBuffer[ColumnarBatch]()
-          closeOnExcept(columnBatches) { cBatches =>
-            headers.zip(buffers).foreach { case (header, buffer) =>
-              val hostColumns = SerializedHostTableUtils.buildHostColumns(
-                header, buffer, dataTypes)
-              val rowCount = header.getNumRows
-              cBatches += new ColumnarBatch(hostColumns.toArray, rowCount)
-            }
+    Option(batchInternal).map { spillable =>
+      withResource(spillable.getColumnarBatch()) { batch =>
+        val hostColumns: Array[ColumnVector] = GpuColumnVector
+          .extractColumns(batch)
+          .safeMap(_.copyToHost())
+        Array(new ColumnarBatch(hostColumns, numRows))
+      }
+    }.getOrElse {
+      withResource(new NvtxRange("broadcast manifest batch", NvtxColor.PURPLE)) { _ =>
+        val columnBatches = new mutable.ArrayBuffer[ColumnarBatch]()
+        closeOnExcept(columnBatches) { cBatches =>
+          headers.zip(buffers).foreach { case (header, buffer) =>
+            val hostColumns = SerializedHostTableUtils.buildHostColumns(
+              header, buffer, dataTypes)
+            val rowCount = header.getNumRows
+            cBatches += new ColumnarBatch(hostColumns.toArray, rowCount)
           }
-          columnBatches.toArray
         }
-      case batch =>
-        val hostColumns = GpuColumnVector.extractColumns(batch).map(_.copyToHost())
-        Array(new ColumnarBatch(hostColumns.toArray, batch.numRows()))
+        columnBatches.toArray
+      }
     }
   }
 
   private def writeObject(out: ObjectOutputStream): Unit = {
-    if (batchInternal != null) {
-      val table = GpuColumnVector.from(batchInternal)
+    Option(batchInternal).map { spillable =>
+      val table = withResource(spillable.getColumnarBatch())(GpuColumnVector.from)
       JCudfSerialization.writeToStream(table, out, 0, table.getRowCount)
       out.writeObject(dataTypes)
-    } else {
+    }.getOrElse {
       if (headers.length == 0) {
         // We didn't get any data back, but we need to write out an empty table that matches
         withResource(GpuColumnVector.emptyHostColumns(dataTypes)) { hostVectors =>
@@ -201,35 +212,26 @@ class SerializeConcatHostBuffersDeserializeBatch(
     }
   }
 
-  def numRows: Int = {
-    if (batchInternal != null) {
-      batchInternal.numRows()
-    } else {
-      headers.map(_.getNumRows).sum
-    }
-  }
+  def numRows: Int = Option(batchInternal)
+    .map(_.numRows())
+    .getOrElse(headers.map(_.getNumRows).sum)
 
-  def dataSize: Long = {
-    if (batchInternal != null) {
-      val bases = GpuColumnVector.extractBases(batchInternal).map(_.copyToHost())
-      try {
-        JCudfSerialization.getSerializedSizeInBytes(bases, 0, batchInternal.numRows())
-      } finally {
-        bases.safeClose()
-      }
-    } else {
-      buffers.map(_.getLength).sum
-    }
-  }
+  def dataSize: Long = Option(batchInternal)
+    .map(_.sizeInBytes)
+    .getOrElse(buffers.map(_.getLength).sum)
 
   override def close(): Unit = this.synchronized {
     buffers.safeClose()
-    if (batchInternal != null) {
-      batchInternal.close()
-      batchInternal = null
-    }
+    Option(batchInternal).foreach(_.close())
+  }
+
+  @scala.annotation.nowarn("msg=method finalize in class Object is deprecated")
+  override def finalize(): Unit = {
+    super.finalize()
+    close()
   }
 }
+// scalastyle:on no.finalize
 
 @SerialVersionUID(100L)
 class SerializeBatchDeserializeHostBuffer(batch: ColumnarBatch)

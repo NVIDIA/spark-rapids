@@ -143,6 +143,8 @@ object GpuScalar extends Arm with Logging {
           k.asInstanceOf[Object],
           v.asInstanceOf[Object])
       }.asJava
+    case BinaryType =>
+      element.asInstanceOf[Array[Byte]].toList.asJava
     case _ => element
   }
 
@@ -205,6 +207,10 @@ object GpuScalar extends Arm with Logging {
         val colType = resolveElementType(elementType)
         val rows = seq.map(convertElementTo(_, elementType))
         ColumnVector.fromLists(colType, rows.asInstanceOf[Seq[JList[_]]]: _*)
+      case BinaryType =>
+        val colType = GpuColumnVector.convertFrom(elementType, true)
+        val rows = seq.map(convertElementTo(_, elementType))
+        ColumnVector.fromLists(colType, rows.asInstanceOf[Seq[JList[_]]]: _*)
       case NullType =>
         GpuColumnVector.columnVectorFromNull(seq.size, NullType)
       case u =>
@@ -235,6 +241,8 @@ object GpuScalar extends Arm with Logging {
         Scalar.listFromNull(
           resolveElementType(StructType(
             Seq(StructField("key", keyType), StructField("value", valueType)))))
+      case BinaryType =>
+        Scalar.listFromNull(GpuColumnVector.convertFrom(ByteType, false))
       case _ => Scalar.fromNull(GpuColumnVector.getNonNestedRapidsType(nullType))
     }
     case decType: DecimalType =>
@@ -356,6 +364,14 @@ object GpuScalar extends Arm with Logging {
         }
       case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
           s" for MapType, expecting MapData")
+    }
+    case BinaryType => v match {
+      case data: Array[Byte] =>
+        withResource(columnVectorFromLiterals(data, ByteType)) { list =>
+          Scalar.listFromColumnView(list)
+        }
+      case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+          s" for BinaryType, expecting Array[Byte]")
     }
     case GpuUnsignedIntegerType => v match {
       case i: Int =>  Scalar.fromUnsignedInt(i)

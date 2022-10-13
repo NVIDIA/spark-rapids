@@ -34,7 +34,7 @@ class GpuMultiFileReaderSuite extends FunSuite with Arm {
     val membuffers = Array((HostMemoryBuffer.allocate(0), 0L))
     val multiFileReader = new MultiFileCloudPartitionReaderBase(
       conf,
-      files = Array.empty,
+      inputFiles = Array.empty,
       numThreads = 1,
       maxNumFileProcessed = 1,
       filters = Array.empty,
@@ -52,6 +52,7 @@ class GpuMultiFileReaderSuite extends FunSuite with Arm {
       override def getBatchRunner(
           tc: TaskContext,
           file: PartitionedFile,
+          origFile: Option[PartitionedFile],
           conf: Configuration,
           filters: Array[Filter]): Callable[HostMemoryBuffersWithMetaDataBase] = {
         () => null

@@ -84,7 +84,8 @@ public class SparkBatch implements Batch {
 
   @Override
   public PartitionReaderFactory createReaderFactory() {
-    return new GpuSparkScan.ReaderFactory(parentScan.metrics());
+    return new GpuSparkScan.ReaderFactory(parentScan.metrics(), rapidsConf,
+        parentScan.queryUsesInputFile());
   }
 
   @Override

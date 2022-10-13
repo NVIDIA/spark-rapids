@@ -276,6 +276,7 @@ class Analysis(apps: Seq[ApplicationInfo]) {
               tasksInSQL.map(_.executorDeserializeTime).sum,
               execRunTime,
               tasksInSQL.map(_.input_bytesRead).sum,
+              tasksInSQL.map(_.input_bytesRead).sum * 1.0 / tasksInSQL.size,
               tasksInSQL.map(_.input_recordsRead).sum,
               tasksInSQL.map(_.jvmGCTime).sum,
               tasksInSQL.map(_.memoryBytesSpilled).sum,
@@ -308,6 +309,30 @@ class Analysis(apps: Seq[ApplicationInfo]) {
       sortedRows
     } else {
       Seq.empty
+    }
+  }
+
+  def getMaxTaskInputSizeBytes(): Seq[SQLMaxTaskInputSizes] = {
+    apps.map { app =>
+      val maxOfSql = app.sqlIdToInfo.map { case (sqlId, _) =>
+        val jcs = app.jobIdToInfo.filter { case (_, jc) =>
+          jc.sqlID.getOrElse(-1) == sqlId
+        }
+        if (jcs.isEmpty) {
+          0L
+        } else {
+          val stageIdsForSQL = jcs.flatMap(_._2.stageIds).toSeq
+          val tasksInSQL = app.taskEnd.filter { tc =>
+            stageIdsForSQL.contains(tc.stageId)
+          }
+          if (tasksInSQL.isEmpty) {
+            0L
+          } else {
+            tasksInSQL.map(_.input_bytesRead).max
+          }
+        }
+      }.max
+      SQLMaxTaskInputSizes(app.index, app.appId, maxOfSql)
     }
   }
 

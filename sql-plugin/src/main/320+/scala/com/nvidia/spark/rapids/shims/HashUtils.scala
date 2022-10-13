@@ -28,13 +28,13 @@ object HashUtils extends Arm {
     // This looks really stupid, but -0.0 in cudf is equal to  0.0 so we can check if they are
     // equal and replace it with the same thing to normalize it.
     ColumnCastUtil.deepTransform(in) {
-      case cv if cv.getType == cudf.DType.FLOAT32 =>
+      case (cv, _) if cv.getType == cudf.DType.FLOAT32 =>
         withResource(cudf.Scalar.fromFloat(0.0f)) { zero =>
           withResource(cv.equalTo(zero)) { areEqual =>
             areEqual.ifElse(zero, cv)
           }
         }
-      case cv if cv.getType == cudf.DType.FLOAT64 =>
+      case (cv, _) if cv.getType == cudf.DType.FLOAT64 =>
         withResource(cudf.Scalar.fromDouble(0.0)) { zero =>
           withResource(cv.equalTo(zero)) { areEqual =>
             areEqual.ifElse(zero, cv)

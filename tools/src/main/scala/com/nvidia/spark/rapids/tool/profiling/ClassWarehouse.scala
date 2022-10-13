@@ -446,6 +446,13 @@ case class JobStageAggTaskMetricsProfileResult(
   }
 }
 
+case class SQLMaxTaskInputSizes(
+    appIndex: Int,
+    appId: String,
+    // Not added to the output since it is used only by the AutoTuner
+    maxTaskInputBytesRead: Double
+)
+
 case class SQLTaskAggMetricsProfileResult(
     appIndex: Int,
     appId: String,
@@ -466,6 +473,8 @@ case class SQLTaskAggMetricsProfileResult(
     executorDeserializeTimeSum: Long,
     executorRunTimeSum: Long,
     inputBytesReadSum: Long,
+    // Not added to the output since it is used only by the AutoTuner
+    inputBytesReadAvg: Double,
     inputRecordsReadSum: Long,
     jvmGCTimeSum: Long,
     memoryBytesSpilledSum: Long,
@@ -629,4 +638,12 @@ case class WholeStageCodeGenResults(
       child,
       childNodeID.toString)
   }
+}
+
+case class RecommendedPropertyResult(property: String, value: String){
+  override def toString: String = "--conf %s=%s".format(property, value)
+}
+
+case class RecommendedCommentResult(comment: String) {
+  override def toString: String = "- %s".format(comment)
 }
