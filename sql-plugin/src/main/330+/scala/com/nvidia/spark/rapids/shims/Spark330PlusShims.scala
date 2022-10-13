@@ -28,8 +28,10 @@ import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.datasources.{DataSourceUtils, FilePartition, FileScanRDD, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
+import org.apache.spark.sql.execution.python.PythonMapInArrowExec
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
+import org.apache.spark.sql.rapids.execution.python.GpuPythonMapInArrowExecMeta
 import org.apache.spark.sql.rapids.shims.{GpuDivideDTInterval, GpuDivideYMInterval, GpuMultiplyDTInterval, GpuMultiplyYMInterval, GpuTimeAdd}
 import org.apache.spark.sql.types.{CalendarIntervalType, DayTimeIntervalType, DecimalType, StructType}
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -250,7 +252,14 @@ trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
             TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.BINARY +
             GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
           TypeSig.all),
-        (fsse, conf, p, r) => new FileSourceScanExecMeta(fsse, conf, p, r))
+        (fsse, conf, p, r) => new FileSourceScanExecMeta(fsse, conf, p, r)),
+      GpuOverrides.exec[PythonMapInArrowExec](
+        "The backend for Map Arrow Iterator UDF. Accelerates the data transfer between the" +
+          " Java process and the Python process. It also supports scheduling GPU resources" +
+          " for the Python process when enabled.",
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
+          TypeSig.all),
+        (mapPy, conf, p, r) => new GpuPythonMapInArrowExecMeta(mapPy, conf, p, r)),
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
     super.getExecs ++ map
   }
