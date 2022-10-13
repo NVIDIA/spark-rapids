@@ -524,8 +524,8 @@ def test_concurrent_writer(spark_tmp_path):
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="is only supported in Spark 320+")
 @allow_non_gpu(any=True)
-@pytest.mark.parametrize('enable_aqe', ["true", "false"])
-def test_fallback_to_single_writer_from_concurrent_writer(spark_tmp_path, enable_aqe):
+@pytest.mark.parametrize('aqe_enabled', [True, False])
+def test_fallback_to_single_writer_from_concurrent_writer(spark_tmp_path, aqe_enabled):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: get_25_partitions_df(spark)  # df has 25 partitions for (c1, c2)
@@ -537,7 +537,7 @@ def test_fallback_to_single_writer_from_concurrent_writer(spark_tmp_path, enable
             # 10 < 25, will fall back to single writer
             {"spark.sql.maxConcurrentOutputFileWriters": 10},
             {"spark.rapids.sql.concurrentWriterPartitionFlushSize": 64 * 1024 * 1024},
-            {"spark.sql.adaptive.enabled": enable_aqe},
+            {"spark.sql.adaptive.enabled": aqe_enabled},
         ))
 
 
