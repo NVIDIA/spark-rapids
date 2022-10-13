@@ -1467,6 +1467,7 @@ object RapidsConf {
 
   val SHIMS_PROVIDER_OVERRIDE = conf("spark.rapids.shims-provider-override")
     .internal()
+    .startupOnly()
     .doc("Overrides the automatic Spark shim detection logic and forces a specific shims " +
       "provider class to be used. Set to the fully qualified shims provider class to use. " +
       "If you are using a custom Spark version such as Spark 3.1.1.0 then this can be used to " +
