@@ -13,6 +13,7 @@ parent: Getting-Started
 * [Qualify CPU workloads for GPU acceleration](#qualify-cpu-workloads-for-gpu-acceleration)
 * [Bootstrap GPU cluster with optimized settings](#bootstrap-gpu-cluster-with-optimized-settings)
 * [Tune applications on GPU cluster](#tune-applications-on-gpu-cluster)
+* [Diagnose GPU Cluster](#diagnose-gpu-cluster)
 
 The advanced guide will walk through the steps to:
 
@@ -27,7 +28,7 @@ The advanced guide will walk through the steps to:
 
 * gcloud CLI is installed: https://cloud.google.com/sdk/docs/install
 * python 3.8+
-* `pip install spark_rapids_user_tools`
+* `pip install spark-rapids-user-tools`
 
 ## Qualify CPU Workloads for GPU Acceleration
 
@@ -126,6 +127,92 @@ Example output:
 |                                | --conf spark.task.resource.gpu.amount=0.0625     |                                                                                                  |
 +--------------------------------+--------------------------------------------------+--------------------------------------------------------------------------------------------------+
 ```
+
+## Diagnose GPU Cluster
+
+The diagnostic tool can be run to check a GPU cluster with RAPIDS Accelerator for Apache Spark
+is healthy and ready for Spark jobs, such as checking the version of installed NVIDIA driver,
+cuda-toolkit, RAPIDS Accelerator and running Spark test jobs etc. This tool also can
+be used by the frontline support team for basic diagnostic and troubleshooting before escalating
+to NVIDIA RAPIDS Accelerator for Apache Spark engineering team.
+
+Usage: `spark_rapids_dataproc diagnostic --cluster <cluster-name> --region <region>`
+
+Help (to see all options available): `spark_rapids_dataproc diagnostic --help`
+
+Example output:
+
+```text
+*** Running diagnostic function "nv_driver" ***
+Warning: Permanently added 'compute.9009746126288801979' (ECDSA) to the list of known hosts.
+Fri Oct 14 05:17:55 2022
++-----------------------------------------------------------------------------+
+| NVIDIA-SMI 460.106.00   Driver Version: 460.106.00   CUDA Version: 11.2     |
+|-------------------------------+----------------------+----------------------+
+| GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |
+|                               |                      |               MIG M. |
+|===============================+======================+======================|
+|   0  Tesla T4            On   | 00000000:00:04.0 Off |                    0 |
+| N/A   48C    P8    10W /  70W |      0MiB / 15109MiB |      0%      Default |
+|                               |                      |                  N/A |
++-------------------------------+----------------------+----------------------+
+
++-----------------------------------------------------------------------------+
+| Processes:                                                                  |
+|  GPU   GI   CI        PID   Type   Process name                  GPU Memory |
+|        ID   ID                                                   Usage      |
+|=============================================================================|
+|  No running processes found                                                 |
++-----------------------------------------------------------------------------+
+NVRM version: NVIDIA UNIX x86_64 Kernel Module  460.106.00  Tue Sep 28 12:05:58 UTC 2021
+GCC version:  gcc version 7.5.0 (Ubuntu 7.5.0-3ubuntu1~18.04)
+Connection to 34.68.242.247 closed.
+*** Check "nv_driver": PASS ***
+*** Running diagnostic function "nv_driver" ***
+Warning: Permanently added 'compute.6788823627063447738' (ECDSA) to the list of known hosts.
+Fri Oct 14 05:18:02 2022
++-----------------------------------------------------------------------------+
+| NVIDIA-SMI 460.106.00   Driver Version: 460.106.00   CUDA Version: 11.2     |
+|-------------------------------+----------------------+----------------------+
+| GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |
+|                               |                      |               MIG M. |
+|===============================+======================+======================|
+|   0  Tesla T4            On   | 00000000:00:04.0 Off |                    0 |
+| N/A   35C    P8     9W /  70W |      0MiB / 15109MiB |      0%      Default |
+|                               |                      |                  N/A |
++-------------------------------+----------------------+----------------------+
+
++-----------------------------------------------------------------------------+
+| Processes:                                                                  |
+|  GPU   GI   CI        PID   Type   Process name                  GPU Memory |
+|        ID   ID                                                   Usage      |
+|=============================================================================|
+|  No running processes found                                                 |
++-----------------------------------------------------------------------------+
+NVRM version: NVIDIA UNIX x86_64 Kernel Module  460.106.00  Tue Sep 28 12:05:58 UTC 2021
+GCC version:  gcc version 7.5.0 (Ubuntu 7.5.0-3ubuntu1~18.04)
+Connection to 34.123.223.104 closed.
+*** Check "nv_driver": PASS ***
+*** Running diagnostic function "cuda_version" ***
+Connection to 34.68.242.247 closed.
+found cuda major version: 11
+*** Check "cuda_version": PASS ***
+*** Running diagnostic function "cuda_version" ***
+Connection to 34.123.223.104 closed.
+found cuda major version: 11
+*** Check "cuda_version": PASS ***
+...
+********************************************************************************
+Overall check result: PASS
+```
+
+Please note that the diagnostic tool supports the following:
+
+* Dataproc 2.0 with image of Debian 10 or Ubuntu 18.04 (Rocky8 support is coming soon)
+* GPU cluster that must have 1 worker node at least. Single node cluster (1 master, 0 workers) is
+  not supported
 
 ## Create a Dataproc Cluster Accelerated by GPUs
  
