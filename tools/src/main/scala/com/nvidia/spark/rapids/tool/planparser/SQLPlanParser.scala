@@ -66,6 +66,12 @@ case class PlanInfo(
 
 object SQLPlanParser extends Logging {
 
+  val equiJoinRegexPattern = """\[([\w#, +*\\\-\.<>=\`\(\)]+\])""".r
+
+  val functionPattern = """(\w+)\(.*\)""".r
+
+  val windowFunctionPattern = """(\w+)\(""".r
+
   def parseSQLPlan(
       appID: String,
       planInfo: SparkPlanInfo,
@@ -281,7 +287,6 @@ object SQLPlanParser extends Logging {
     // paranRemoved = Array(cast(value#136 as string), CEIL(value#136))
     val paranRemoved = pattern.replaceAllIn(exprStr.replace("),", "::"), "")
         .split(",").map(_.trim).map(_.replaceAll("""^\[+""", "").replaceAll("""\]+$""", ""))
-    val functionPattern = """(\w+)\(.*\)""".r
     paranRemoved.foreach { case expr =>
       val functionName = getFunctionName(functionPattern, expr)
       functionName match {
@@ -309,7 +314,6 @@ object SQLPlanParser extends Logging {
       val paranRemoved = aggregatesString.get.toString.replaceAll("functions=", "").
           replaceAll("partial_", "").split("(?<=\\),)").map(_.trim).
           map(_.replaceAll("""^\[+""", "").replaceAll("""\]+$""", ""))
-      val functionPattern = """(\w+)\(.*\)""".r
       paranRemoved.foreach { case expr =>
         val functionName = getFunctionName(functionPattern, expr)
         functionName match {
@@ -340,14 +344,13 @@ object SQLPlanParser extends Logging {
     val windowExprs = exprStr.split("(?<=\\])")(0).
         trim.replaceAll("""^\[+""", "").replaceAll("""\]+$""", "").
         replaceAll("cast\\(", "").split("windowspecdefinition").map(_.trim)
-    val functionPattern = """(\w+)\(""".r
 
     // Get functionname from each array element except the last one as it doesn't contain
     // any window function
     for ( i <- 0 to windowExprs.size - 1 ) {
-      val windowFunc = functionPattern.findAllIn(windowExprs(i)).toList
+      val windowFunc = windowFunctionPattern.findAllIn(windowExprs(i)).toList
       val expr = windowFunc(windowFunc.size -1)
-      val functionName = getFunctionName(functionPattern, expr)
+      val functionName = getFunctionName(windowFunctionPattern, expr)
       functionName match {
         case Some(func) => parsedExpressions += func
         case _ => // NO OP
@@ -374,7 +377,6 @@ object SQLPlanParser extends Logging {
       val firstIndexElements = expandString.get.toString.split("0\\),").mkString.trim
       val parenRemoved = firstIndexElements.split(",").map(
         _.trim).map(_.replaceAll("""^\[List\(""", ""))
-      val functionPattern = """(\w+)\(.*\)""".r
 
       parenRemoved.foreach { case expr =>
         val functionName = getFunctionName(functionPattern, expr)
@@ -404,7 +406,6 @@ object SQLPlanParser extends Logging {
       val parenRemoved = orderString.get.toString.replaceAll("orderBy=", "").
         split("(?<=FIRST,)|(?<=LAST,)").map(_.trim).map(
         _.replaceAll("""^\[+""", "").replaceAll("""\]+$""", ""))
-      val functionPattern = """(\w+)\(.*\)""".r
       parenRemoved.foreach { case expr =>
         val functionName = getFunctionName(functionPattern, expr)
         functionName match {
@@ -424,7 +425,6 @@ object SQLPlanParser extends Logging {
     // 2. Generate json_tuple(values#1305, Zipcode, ZipCodeType, City), [id#1304],
     // false, [c0#1407, c1#1408, c2#1409]
     if (exprStr.nonEmpty) {
-      val functionPattern = """(\w+)\(.*\)""".r
       val functionName = getFunctionName(functionPattern, exprStr)
       functionName match {
         case Some(func) => parsedExpressions += func
@@ -441,12 +441,12 @@ object SQLPlanParser extends Logging {
      // BroadcastHashJoin [name#11, CEIL(dept#12)], [name#28, CEIL(dept_id#27)], Inner,
      // BuildRight, false
      val parsedExpressions = ArrayBuffer[String]()
-     val pattern = """\[([\w#, +*\\\-\.<>=\`\(\)]+\])""".r
      // Get all the join expressions and split it with delimiter :: so that it could be used to
      // parse function names (if present) later.
-     val joinExprs = pattern.findAllMatchIn(exprStr).mkString("::")
+     val joinExprs = equiJoinRegexPattern.findAllMatchIn(exprStr).mkString("::")
      // Get joinType and buildSide(if applicable)
-     val joinParams = pattern.replaceAllIn(exprStr, "").split(",").map(_.trim).filter(_.nonEmpty)
+     val joinParams = equiJoinRegexPattern.replaceAllIn(
+       exprStr, "").split(",").map(_.trim).filter(_.nonEmpty)
      val joinType = joinParams(0).trim
      // SortMergeJoin doesn't have buildSide, assign empty string in that case
      val buildSide = if (joinParams.size > 1) {
@@ -456,11 +456,10 @@ object SQLPlanParser extends Logging {
      }
      // Get individual expressions which is later used to get the function names.
      val expressions = joinExprs.split("::").map(_.trim).map(
-       _.replaceAll("""^\[+|\]+$""", "")
+       _.replaceAll("""^\[+|\]+$""", "")).
        map(_.split(",")).flatten.map(_.trim)
 
      if (expressions.nonEmpty) {
-       val functionPattern = """(\w+)\(.*\)""".r
        expressions.foreach { expr =>
          val functionName = getFunctionName(functionPattern, expr)
          functionName.foreach(parsedExpressions += _)
@@ -493,7 +492,6 @@ object SQLPlanParser extends Logging {
 
       // Remove parentheses from the beginning and end to get only the expressions
       val paranRemoved = exprSplit.map(_.replaceAll("""^\(+""", "").replaceAll("""\)\)$""", ")"))
-      val functionPattern = """(\w+)\(.*\)""".r
       val conditionalExprPattern = """([(\w# )]+) ([+=<>|]+) ([(\w# )]+)""".r
       paranRemoved.foreach { case expr =>
         if (expr.contains(" ")) {
@@ -589,7 +587,6 @@ object SQLPlanParser extends Logging {
     if (sortString.isDefined) {
       val paranRemoved = sortString.get.toString.split("(?<=FIRST,)|(?<=LAST,)").
           map(_.trim).map(_.replaceAll("""^\[+""", "").replaceAll("""\]+$""", ""))
-      val functionPattern = """(\w+)\(.*\)""".r
       paranRemoved.foreach { case expr =>
         val functionName = getFunctionName(functionPattern, expr)
         functionName match {
@@ -626,7 +623,6 @@ object SQLPlanParser extends Logging {
 
     // Remove paranthesis from the beginning and end to get only the expressions
     val paranRemoved = exprSplit.map(_.replaceAll("""^\(+""", "").replaceAll("""\)\)$""", ")"))
-    val functionPattern = """(\w+)\(.*\)""".r
     val conditionalExprPattern = """([(\w# )]+) ([+=<>|]+) ([(\w# )]+)""".r
 
     paranRemoved.foreach { case expr =>
