@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -37,7 +37,7 @@ from typing import Iterator
 from pyspark.sql import Window
 from pyspark.sql.functions import pandas_udf, PandasUDFType
 from spark_session import with_cpu_session, with_gpu_session
-from marks import allow_non_gpu, cudf_udf
+from marks import cudf_udf
 
 
 _conf = {
@@ -300,7 +300,6 @@ def test_window(enable_cudf_udf):
 
 
 # ======= Test CoGroup Map In Pandas =======
-@allow_non_gpu('GpuFlatMapCoGroupsInPandasExec','PythonUDF')
 @cudf_udf
 def test_cogroup(enable_cudf_udf):
     def cpu_run(spark):
