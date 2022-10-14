@@ -28,7 +28,7 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.RuntimeConfig
 import org.apache.spark.sql.catalyst.expressions.{Expression, PlanExpression}
-import org.apache.spark.sql.execution.datasources.{CatalogFileIndex, FileFormat, FileIndex, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile, PartitioningAwareFileIndex, PartitionSpec}
+import org.apache.spark.sql.execution.datasources.{CatalogFileIndex, FileFormat, FileIndex, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile, PartitionSpec}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 
@@ -578,9 +578,6 @@ object AlluxioUtils extends Logging {
       // we know then fall back to inferring. The latter happens on certain CSPs
       // like Databricks where they have customer file index types.
       relation.location match {
-        case pfi: PartitioningAwareFileIndex =>
-          logDebug("Handling PartitioningAwareFileIndex")
-          createNewFileIndexWithPathsReplaced(pfi.partitionSpec(), pfi.rootPaths)
         case cfi: CatalogFileIndex =>
           logDebug("Handling CatalogFileIndex")
           val memFI = cfi.filterPartitions(Nil)
