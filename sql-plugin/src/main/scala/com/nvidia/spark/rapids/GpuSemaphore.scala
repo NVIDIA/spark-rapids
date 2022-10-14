@@ -17,13 +17,14 @@
 package com.nvidia.spark.rapids
 
 import java.util.concurrent.{ConcurrentHashMap, Semaphore}
-import scala.collection.mutable.ArrayBuffer
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import org.apache.commons.lang3.mutable.MutableInt
-import org.apache.spark.TaskContext
-import org.apache.spark.internal.Logging
 
 import scala.collection.mutable
+
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import org.apache.commons.lang3.mutable.MutableInt
+
+import org.apache.spark.TaskContext
+import org.apache.spark.internal.Logging
 
 object GpuSemaphore {
 
@@ -169,8 +170,8 @@ private final class GpuSemaphore(tasksPerGpu: Int) extends Logging with Arm {
 
   def dumpActiveStackTracesToLog(): Unit = {
     try {
-      val stackTracesSemaphoreHeld = new ArrayBuffer[String]()
-      val otherStackTraces = new ArrayBuffer[String]()
+      val stackTracesSemaphoreHeld = new mutable.ArrayBuffer[String]()
+      val otherStackTraces = new mutable.ArrayBuffer[String]()
       activeTasks.forEach { (taskAttemptId, taskInfo) =>
         val sb = new mutable.StringBuilder()
         val semaphoreHeld = taskInfo.count.getValue > 0
