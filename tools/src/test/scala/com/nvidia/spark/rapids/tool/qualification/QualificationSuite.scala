@@ -1048,9 +1048,7 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   test("test potential problems timestamp") {
     TrampolineUtil.withTempDir { eventLogDir =>
-      val listener = new ToolTestListener
       val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "timezone") { spark =>
-        spark.sparkContext.addSparkListener(listener)
         import spark.implicits._
         val testData = Seq((1, 1662519019), (2, 1662519020)).toDF("id", "timestamp")
         spark.sparkContext.setJobDescription("timestamp functions as potential problems")
@@ -1077,9 +1075,9 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val outputResults = s"$outpath/rapids_4_spark_qualification_output/" +
           s"rapids_4_spark_qualification_output.csv"
         val outputActual = readExpectedFile(new File(outputResults))
+        assert(outputActual.collect().size == 1)
         assert(outputActual.select("Potential Problems").first.getString(0) == 
           "TIMEZONE to_timestamp():TIMEZONE hour():TIMEZONE current_timestamp():TIMEZONE second()")
-        assert(outputActual.collect().size == 1)
       }
     }
   }
