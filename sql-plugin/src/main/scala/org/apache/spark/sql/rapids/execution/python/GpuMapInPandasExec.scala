@@ -139,14 +139,7 @@ case class GpuMapInPandasExec(
           pythonRunnerConf,
           batchSize,
           spillCallback.semaphoreWaitTime,
-          onDataWriteFinished = null,
-          pythonOutputSchema,
-          // We can not assert the result batch from Python has the same row number with the
-          // input batch. Because Map Pandas UDF allows the output of arbitrary length
-          // and columns.
-          // Then try to read as many as possible by specifying `minReadTargetBatchSize` as
-          // `Int.MaxValue` here.
-          Int.MaxValue)
+          pythonOutputSchema)
 
         executePython(pyInputIterator, output, pyRunner, mNumOutputRows, mNumOutputBatches)
       } else {

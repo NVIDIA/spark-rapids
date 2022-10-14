@@ -4061,11 +4061,12 @@ object GpuOverrides extends Logging {
               e.evalType)
         }),
     exec[FlatMapCoGroupsInPandasExec](
-      "The backend for CoGrouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
-        " scheduling GPU resources for the Python process when enabled",
-      ExecChecks.hiddenHack(),
+      "The backend for CoGrouped Aggregation Pandas UDF. Accelerates the data transfer" +
+        " between the Java process and the Python process. It also supports scheduling GPU" +
+        " resources for the Python process when enabled.",
+      ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
       (flatCoPy, conf, p, r) => new GpuFlatMapCoGroupsInPandasExecMeta(flatCoPy, conf, p, r))
-        .disabledByDefault("Performance is not ideal now"),
+        .disabledByDefault("Performance is not ideal with many small groups"),
     exec[FlatMapGroupsInPandasExec](
       "The backend for Flat Map Groups Pandas UDF, Accelerates the data transfer between the" +
         " Java process and the Python process. It also supports scheduling GPU resources" +

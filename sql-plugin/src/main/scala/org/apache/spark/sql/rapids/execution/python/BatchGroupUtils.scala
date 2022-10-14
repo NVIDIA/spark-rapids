@@ -24,6 +24,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.expressions.codegen.GenerateOrdering
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -190,10 +191,10 @@ private[python] object BatchGroupUtils extends Arm {
    * @param outputBatches a metric to record the output batches.
    * @return an iterator of the resulting batches from the Python runner.
    */
-  def executePython(
-      pyInputIterator: Iterator[ColumnarBatch],
+  def executePython[IN](
+      pyInputIterator: Iterator[IN],
       output: Seq[Attribute],
-      pyRunner: GpuArrowPythonRunner,
+      pyRunner: GpuPythonRunnerBase[IN],
       outputRows: GpuMetric,
       outputBatches: GpuMetric): Iterator[ColumnarBatch] = {
     val context = TaskContext.get()
@@ -376,7 +377,7 @@ private[python] object BatchGroupedIterator extends Arm {
  * @param numOutputRows a metric for output rows.
  * @param numOutputBatches a metric for output batches
  */
-private[python] class CombiningIterator(
+class CombiningIterator(
     inputBatchQueue: BatchQueue,
     pythonOutputIter: Iterator[ColumnarBatch],
     pythonArrowReader: GpuPythonArrowOutput,
@@ -395,7 +396,7 @@ private[python] class CombiningIterator(
   override def next(): ColumnarBatch = {
     val numRows = inputBatchQueue.peekBatchSize
     // Updates the expected batch size for next read
-    pythonArrowReader.updateMinReadTargetBatchSize(numRows)
+    pythonArrowReader.setMinReadTargetBatchSize(numRows)
     // Reads next batch from Python and combines it with the input batch by the left side.
     withResource(pythonOutputIter.next()) { cbFromPython =>
       assert(cbFromPython.numRows() == numRows)
@@ -413,4 +414,135 @@ private[python] class CombiningIterator(
     new ColumnarBatch(lColumns ++ rColumns, lBatch.numRows())
   }
 
+}
+
+/**
+ * Iterates over the left and right BatchGroupedIterators and returns the cogrouped data,
+ * i.e. each record is rows having the same grouping key from the two BatchGroupedIterators.
+ *
+ * Note: we assume the output of each BatchGroupedIterator is ordered by the grouping key.
+ */
+class CoGroupedIterator(
+    leftGroupedIter: Iterator[ColumnarBatch],
+    leftSchema: Seq[Attribute],
+    leftGroupOffsets: Seq[Int],
+    rightGroupedIter: Iterator[ColumnarBatch],
+    rightSchema: Seq[Attribute],
+    rightGroupOffsets: Seq[Int]) extends Iterator[(ColumnarBatch, ColumnarBatch)] with Arm {
+
+  // Same with CPU, use the left grouping key for comparison.
+  private val groupSchema = leftGroupOffsets.map(leftSchema(_))
+  private val keyOrdering =
+    GenerateOrdering.generate(groupSchema.map(SortOrder(_, Ascending)), groupSchema)
+
+  private var currentLeftData: ColumnarBatch = _
+  private var currentRightData: ColumnarBatch = _
+
+  // An empty table is required to indicate an empty group according to
+  // the cuDF Arrow writer and the communication protocol.
+  // We don't want to create multiple empty batches, instead leverage the ref count.
+  private lazy val emptyLeftBatch: ColumnarBatch =
+    GpuColumnVector.emptyBatch(StructType.fromAttributes(leftSchema))
+  private lazy val emptyRightBatch: ColumnarBatch =
+    GpuColumnVector.emptyBatch(StructType.fromAttributes(rightSchema))
+
+  // Suppose runs inside a task context.
+  TaskContext.get().addTaskCompletionListener[Unit] { _ =>
+    Seq(currentLeftData, currentRightData, emptyLeftBatch, emptyRightBatch)
+      .filter(_ != null)
+      .safeClose()
+  }
+
+  override def hasNext: Boolean = {
+    if (currentLeftData == null && leftGroupedIter.hasNext) {
+      currentLeftData = leftGroupedIter.next()
+    }
+    closeOnExcept(Option(currentLeftData)) { _ =>
+      if (currentRightData == null && rightGroupedIter.hasNext) {
+        currentRightData = rightGroupedIter.next()
+      }
+    }
+
+    currentLeftData != null || currentRightData != null
+  }
+
+  override def next(): (ColumnarBatch, ColumnarBatch) = {
+    assert(hasNext)
+
+    if (currentLeftData.eq(null)) {
+      // left is null, right is not null, consume the right data.
+      rightOnly()
+    } else if (currentRightData.eq(null)) {
+      // left is not null, right is null, consume the left data.
+      leftOnly()
+    } else {
+      // Neither is null.
+      val leftKey = getHostKeyBatch(currentLeftData, leftSchema, leftGroupOffsets)
+      val rightKey = closeOnExcept(leftKey) { _ =>
+        getHostKeyBatch(currentRightData, rightSchema, rightGroupOffsets)
+      }
+      val compared = withResource(Seq(leftKey, rightKey)) { _ =>
+        compareHostKeyBatch(leftKey, rightKey)
+      }
+      if (compared < 0) {
+        // the grouping key of left is smaller, consume the left data.
+        leftOnly()
+      } else if (compared > 0) {
+        // the grouping key of right is smaller, consume the right data.
+        rightOnly()
+      } else {
+        // left and right have the same grouping key, consume both of them.
+        val result = (currentLeftData, currentRightData)
+        currentLeftData = null
+        currentRightData = null
+        result
+      }
+    }
+  }
+
+  private def leftOnly(): (ColumnarBatch, ColumnarBatch) = {
+    val result = (currentLeftData, GpuColumnVector.incRefCounts(emptyRightBatch))
+    currentLeftData = null
+    result
+  }
+
+  private def rightOnly(): (ColumnarBatch, ColumnarBatch) = {
+    val result = (GpuColumnVector.incRefCounts(emptyLeftBatch), currentRightData)
+    currentRightData = null
+    result
+  }
+
+  private def getHostKeyBatch(
+      batch: ColumnarBatch,
+      schema: Seq[Attribute],
+      groupKeys: Seq[Int]): ColumnarBatch = {
+
+    val groupAttrs = groupKeys.map(schema(_))
+    val keyRefs = GpuBindReferences.bindGpuReferences(groupAttrs, schema)
+    val oneRowKeyTable = withResource(GpuProjectExec.project(batch, keyRefs)) { keyBatch =>
+      withResource(GpuColumnVector.from(keyBatch)) { keyTable =>
+        // The group batch will not be empty, since an empty group will be skipped when
+        // doing group splitting previously.
+        // Only one row is needed since keys are the same in a group.
+        withResource(cudf.ColumnVector.fromInts(0)) { gatherMap =>
+          keyTable.gather(gatherMap)
+        }
+      }
+    }
+    withResource(oneRowKeyTable) { _ =>
+      val hostCols = GpuColumnVector.extractHostColumns(oneRowKeyTable,
+        groupAttrs.map(_.dataType).toArray)
+      new ColumnarBatch(hostCols.toArray, oneRowKeyTable.getRowCount.toInt)
+    }
+  }
+
+  private def compareHostKeyBatch(leftKey: ColumnarBatch, rightKey: ColumnarBatch): Int = {
+    // This is not an ETL operation, so cuDF does not have this kind of comparison API,
+    // Then here borrows the CPU way.
+    // Assume the data of the input batches are on host.
+    assert(leftKey.numRows() > 0 && rightKey.numRows() > 0)
+    val leftKeyRow = leftKey.rowIterator().next()
+    val rightKeyRow = rightKey.rowIterator().next()
+    keyOrdering.compare(leftKeyRow, rightKeyRow)
+  }
 }
