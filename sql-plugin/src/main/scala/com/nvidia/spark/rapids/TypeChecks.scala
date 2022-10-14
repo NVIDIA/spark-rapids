@@ -2232,6 +2232,7 @@ object SupportedOpsForTools {
         val formatLowerCase = format.toString.toLowerCase
         val formatEnabled = formatLowerCase match {
           case "csv" => conf.isCsvEnabled && conf.isCsvReadEnabled
+          case "delta" => conf.isDeltaEnabled
           case "parquet" => conf.isParquetEnabled && conf.isParquetReadEnabled
           case "orc" => conf.isOrcEnabled && conf.isOrcReadEnabled
           case "json" => conf.isJsonEnabled && conf.isJsonReadEnabled

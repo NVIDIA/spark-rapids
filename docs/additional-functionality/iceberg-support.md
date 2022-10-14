@@ -7,7 +7,8 @@ nav_order: 7
 
 # Apache Iceberg Support
 
-The RAPIDS Accelerator for Apache Spark provides limited support for Apache Iceberg tables.
+The RAPIDS Accelerator for Apache Spark provides limited support for
+[Apache Iceberg](https://iceberg.apache.org) tables.
 This document details the Apache Iceberg features that are supported.
 
 ## Apache Iceberg Versions
