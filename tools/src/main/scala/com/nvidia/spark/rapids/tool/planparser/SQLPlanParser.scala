@@ -456,7 +456,7 @@ object SQLPlanParser extends Logging {
      }
      // Get individual expressions which is later used to get the function names.
      val expressions = joinExprs.split("::").map(_.trim).map(
-       _.replaceAll("""^\[+""", "").replaceAll("""\]+$""", "")).
+       _.replaceAll("""^\[+|\]+$""", "")
        map(_.split(",")).flatten.map(_.trim)
 
      if (expressions.nonEmpty) {
