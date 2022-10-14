@@ -1,5 +1,5 @@
 # Change log
-Generated on 2022-10-13
+Generated on 2022-10-14
 
 ## Release 22.10
 
@@ -126,6 +126,10 @@ Generated on 2022-10-13
 ### PRs
 |||
 |:---|:---|
+|[#6799](https://github.com/NVIDIA/spark-rapids/pull/6799)|Update JNI version to released 22.10.0|
+|[#6755](https://github.com/NVIDIA/spark-rapids/pull/6755)|[doc] Add diagnostic tool section to GCP Dataproc getting started page [skip ci]|
+|[#6734](https://github.com/NVIDIA/spark-rapids/pull/6734)|Init 22.10 changelog [skip ci]|
+|[#6770](https://github.com/NVIDIA/spark-rapids/pull/6770)|Revert "Docker container for ease of deployment to Databricks [skip ci]"|
 |[#6754](https://github.com/NVIDIA/spark-rapids/pull/6754)|[Doc] update getting started guide for emr 6.8.0 release[skip ci]|
 |[#6772](https://github.com/NVIDIA/spark-rapids/pull/6772)|[Doc]remove group on array in 22.10, target in 22.12[skip ci]|
 |[#6767](https://github.com/NVIDIA/spark-rapids/pull/6767)|Avoid any issues with scalar values returned by evalColumnar|
