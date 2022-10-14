@@ -28,7 +28,7 @@ The advanced guide will walk through the steps to:
 
 * gcloud CLI is installed: https://cloud.google.com/sdk/docs/install
 * python 3.8+
-* `pip install spark_rapids_user_tools`
+* `pip install spark-rapids-user-tools`
 
 ## Qualify CPU Workloads for GPU Acceleration
 
