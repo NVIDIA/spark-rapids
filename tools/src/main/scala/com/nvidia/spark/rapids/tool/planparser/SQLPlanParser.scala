@@ -463,10 +463,7 @@ object SQLPlanParser extends Logging {
        val functionPattern = """(\w+)\(.*\)""".r
        expressions.foreach { expr =>
          val functionName = getFunctionName(functionPattern, expr)
-         functionName match {
-           case Some(func) => parsedExpressions += func
-           case _ => // NO OP
-         }
+         functionName.foreach(parsedExpressions += _)
        }
      }
 
