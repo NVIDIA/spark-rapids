@@ -31,7 +31,7 @@ case class GpuPartitionerExpr(child: Expression, partitioner: GpuRangePartitione
   override def nullable: Boolean = false
 
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
-    withResource(new NvtxRange("PART_EXPR", NvtxColor.GREEN)) { _ =>
+    withResource(new NvtxRange("GpuPartitioner", NvtxColor.GREEN)) { _ =>
       withResource(new ColumnarBatch(Array(input.incRefCount()))) { cb =>
         cb.setNumRows(input.getRowCount.toInt)
         partitioner.computePartitionIndexes(cb)

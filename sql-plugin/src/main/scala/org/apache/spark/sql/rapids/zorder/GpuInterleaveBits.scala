@@ -53,7 +53,7 @@ case class GpuInterleaveBits(children: Seq[Expression])
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     val ret = withResource(GpuProjectExec.project(batch, children)) { inputs =>
-      withResource(new NvtxRange("INTERLEAVE BITS", NvtxColor.PURPLE)) { _ =>
+      withResource(new NvtxRange("interleaveBits", NvtxColor.PURPLE)) { _ =>
         val bases = GpuColumnVector.extractBases(inputs)
         // Null values are replaced with 0 as a part of interleaveBits to match what delta does,
         // but null values should never show up in practice because this is fed by

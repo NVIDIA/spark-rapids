@@ -49,6 +49,7 @@
             <artifactId>scalatest_${scala.binary.version}</artifactId>
             <scope>test</scope>
         </dependency>
+
         <!-- Flat buffers is a small jar, it's appropriate to use a fixed version -->
         <!-- Shade and relocate it in the aggregator module-->
         <dependency>

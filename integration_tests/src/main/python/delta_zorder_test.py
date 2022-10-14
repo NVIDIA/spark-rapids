@@ -39,7 +39,7 @@ def test_delta_zorder(spark_tmp_table_factory):
 
     def optimize_table(spark):
         # The optimize returns stats and metadata about the operation, which is different
-        # from one run to another, so we cannot just compate them...
+        # from one run to another, so we cannot just compare them...
         spark.sql("OPTIMIZE {} ZORDER BY a, b".format(table)).show()
         return spark.sql("select * from {} where a = 1".format(table))
 

@@ -60,7 +60,7 @@ object ZOrderRules {
           (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested(),
           TypeSig.orderable),
         (a, conf, p, r) => new UnaryExprMeta[UnaryExpression](a, conf, p, r) {
-          override def convertToGpu(child: Expression): GpuExpression = {
+          def getBoundsNOrder: (Array[InternalRow], SortOrder) = {
             // We have to pull pick apart the partitioner apart, but we have to use reflection
             // to do it, because what we want is private
             val parterField = partExprClass.getDeclaredField("partitioner")
@@ -76,6 +76,22 @@ object ZOrderRules {
             orderingField.setAccessible(true)
             val ordering = orderingField.get(parter).asInstanceOf[LazilyGeneratedOrdering]
             val singleOrder = ordering.ordering.head
+            (rangeBounds, singleOrder)
+          }
+
+          override def tagExprForGpu(): Unit = {
+            try {
+              // Run this first to be sure that we can get what we need to convert
+              getBoundsNOrder
+            } catch {
+              case _: NoSuchFieldError | _: SecurityException | _: IllegalAccessException =>
+                willNotWorkOnGpu("The version of the partitioner does not have " +
+                    "the expected fields in it.")
+            }
+          }
+
+          override def convertToGpu(child: Expression): GpuExpression = {
+            val (rangeBounds, singleOrder) = getBoundsNOrder
             // We need to create a GpuSorter, but where we are at will not have a schema/etc
             // so we need to make one up. We know the type and that there will only ever be
             // one column, so

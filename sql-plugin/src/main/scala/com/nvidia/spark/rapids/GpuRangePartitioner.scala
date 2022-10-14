@@ -221,7 +221,6 @@ case class GpuRangePartitioner(
     if (rangeBounds.nonEmpty) {
       val (parts, partitionColumns) = computeBoundsAndClose(batch)
       withResource(partitionColumns) { partitionColumns =>
-        //val partitionColumns = GpuColumnVector.extractColumns(sortedBatch)
         val slicedCb = sliceInternalGpuOrCpu(partitionColumns.head.getRowCount.toInt,
           parts, partitionColumns)
         slicedCb.zipWithIndex.filter(_._1 != null)
