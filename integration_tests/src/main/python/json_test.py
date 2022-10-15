@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect
 from data_gen import *
 from conftest import is_databricks_runtime
 from marks import approximate_float, allow_non_gpu, ignore_order
@@ -346,3 +346,16 @@ def test_json_read_with_corrupt_files(spark_tmp_path, v1_enabled_list):
                 .json([first_data_path, second_data_path, third_data_path])
                 .collect(),
             conf=all_confs)
+
+@pytest.mark.parametrize('v1_enabled_list', ["", "json"])
+def test_json_read_count(spark_tmp_path, v1_enabled_list):
+    gen_list = [byte_gen, short_gen, int_gen, long_gen, boolean_gen]
+    gen = StructGen([('_c' + str(i), gen) for i, gen in enumerate(gen_list)], nullable=False)
+    data_path = spark_tmp_path + '/JSON_DATA'
+    schema = gen.data_type
+    updated_conf = copy_and_update(_enable_all_types_conf, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen).write.json(data_path))
+    assert_gpu_and_cpu_row_counts_equal(
+            lambda spark : spark.read.schema(schema).json(data_path),
+            conf=updated_conf)

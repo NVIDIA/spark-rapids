@@ -23,6 +23,7 @@ import scala.math.max
 
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, NvtxColor, NvtxRange, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.DateUtils.{toStrf, TimestampFormatConversionException}
+import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.GpuTypeShims
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -102,8 +103,7 @@ abstract class GpuTextBasedPartitionReader(
   }
 
   private def readPartFile(): (HostMemoryBuffer, Long) = {
-    withResource(new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
-      metrics("bufferTime"))) { _ =>
+    withResource(new NvtxRange("Buffer file split", NvtxColor.YELLOW)) { _ =>
       isFirstChunkForIterator = false
       val separator = lineSeparatorInRead.getOrElse(Array('\n'.toByte))
       var succeeded = false
@@ -159,7 +159,9 @@ abstract class GpuTextBasedPartitionReader(
   }
 
   private def readToTable(isFirstChunk: Boolean): Option[Table] = {
-    val (dataBuffer, dataSize) = readPartFile()
+    val (dataBuffer, dataSize) = metrics(BUFFER_TIME).ns {
+      readPartFile()
+    }
     try {
       if (dataSize == 0) {
         None
@@ -392,7 +394,7 @@ abstract class GpuTextBasedPartitionReader(
   }
 
   def castStringToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
-    GpuCast.castStringToDecimal(input, ansiEnabled = false, dt)
+    CastStrings.toDecimal(input, false, dt.precision, -dt.scale)
   }
 
   def castStringToInt(input: ColumnVector, intType: DType): ColumnVector = {

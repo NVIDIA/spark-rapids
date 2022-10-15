@@ -191,32 +191,6 @@ case class GpuShuffledHashJoinExec(
 
 object GpuShuffledHashJoinExec extends Arm {
   /**
-   * Helper iterator that wraps a BufferedIterator of AutoCloseable subclasses.
-   * This iterator also implements AutoCloseable, so it can be closed in case
-   * of exceptions.
-   *
-   * @param wrapped the buffered iterator
-   * @tparam T an AutoCloseable subclass
-   */
-  class CloseableBufferedIterator[T <: AutoCloseable](wrapped: BufferedIterator[T])
-    extends BufferedIterator[T] with AutoCloseable {
-    // register against task completion to close any leaked buffered items
-    Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
-
-    private[this] var isClosed = false
-    override def head: T = wrapped.head
-    override def headOption: Option[T] = wrapped.headOption
-    override def next: T = wrapped.next
-    override def hasNext: Boolean = wrapped.hasNext
-    override def close(): Unit = {
-      if (!isClosed) {
-        headOption.foreach(_.close())
-        isClosed = true
-      }
-    }
-  }
-
-  /**
    * Gets a `ColumnarBatch` and stream Iterator[ColumnarBatch] pair by acquiring
    * the GPU semaphore optimally in the scenario where the build side is relatively
    * small (less than `hostTargetBatchSize`).

@@ -31,7 +31,6 @@ import org.apache.spark.sql.types.{DataType, DataTypes}
 class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   private def floatAggConf: SparkConf = enableCsvConf()
       .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")
-      .set(RapidsConf.HAS_NANS.key, "false")
 
   def replaceHashAggMode(mode: String, conf: SparkConf = new SparkConf()): SparkConf = {
     // configures whether Plugin will replace certain aggregate exec nodes
@@ -65,7 +64,6 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     if (batchSize > 0) {
       makeBatchedBytes(batchSize, conf)
     }
-    conf.set(RapidsConf.HAS_NANS.key, "false")
     conf.set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")
     testSparkResultsAreEqual(testName, df,
       conf = conf, repart = repart,
@@ -1109,12 +1107,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   private val nonFinalOnGpuConf = replaceHashAggMode(
     "partial|partialMerge|partial&partialMerge", enableCsvConf())
       .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")
-      .set(RapidsConf.HAS_NANS.key, "false")
   // GPU -> GPU -> GPU -> CPU
   private val nonPartialOnGpuConf = replaceHashAggMode(
     "final|partial&partialMerge|partialMerge", enableCsvConf())
       .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")
-      .set(RapidsConf.HAS_NANS.key, "false")
 
   IGNORE_ORDER_ALLOW_NON_GPU_testSparkResultsAreEqualWithCapture(
       "PartMerge:countDistinct:sum:partOnly",
@@ -1618,41 +1614,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     frame => frame.groupBy("large_longs").agg(avg("large_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
 
-  ALLOW_NON_GPU_testSparkResultsAreEqualWithCapture(
-    "max_with_nans_fall_back",
-    nanDf,
-    Seq("HashAggregateExec", "AggregateExpression",
-      "AttributeReference", "Alias", "Max", "ShuffleExchangeExec"),
-    conf = enableCsvConf()) {
-    frame => frame.agg(max("doubles"))
-  } { (_, gpuPlan) => {
-    // verify nothing ran on the gpu
-    if (gpuPlan.conf.getAllConfs(RapidsConf.SQL_ENABLED.key).toBoolean) {
-      val execNode = gpuPlan.find(_.isInstanceOf[GpuHashAggregateExec])
-      assert(execNode.isEmpty)
-    }
-  }}
-
-  ALLOW_NON_GPU_testSparkResultsAreEqualWithCapture(
-    "min_with_nans_fall_back",
-    nanDf,
-    Seq("HashAggregateExec", "AggregateExpression",
-      "AttributeReference", "Alias", "Min", "ShuffleExchangeExec"),
-    conf = enableCsvConf()) {
-    frame => frame.agg(min("doubles"))
-  } { (_, gpuPlan) => {
-    // verify nothing ran on the gpu
-    if (gpuPlan.conf.getAllConfs(RapidsConf.SQL_ENABLED.key).toBoolean) {
-      val execNode = gpuPlan.find(_.isInstanceOf[GpuHashAggregateExec])
-      assert(execNode.isEmpty)
-    }
-  }}
-
   IGNORE_ORDER_testSparkResultsAreEqual(
     testName = "Test NormalizeNansAndZeros(Float)",
     floatWithDifferentKindsOfNansAndZeros,
     conf = enableCsvConf()
-      .set(RapidsConf.HAS_NANS.key, "false")
       .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
     frame => frame.groupBy(col("float")).agg(sum(col("int")))
   }
@@ -1661,7 +1626,6 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     testName = "Test NormalizeNansAndZeros(Double)",
     doubleWithDifferentKindsOfNansAndZeros,
     conf = enableCsvConf()
-      .set(RapidsConf.HAS_NANS.key, "false")
       .set(RapidsConf.ENABLE_FLOAT_AGG.key, "true")) {
     frame => frame.groupBy(col("double")).agg(sum(col("int")))
   }

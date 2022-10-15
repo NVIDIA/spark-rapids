@@ -19,11 +19,12 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar}
+import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, Expression, Predicate}
-import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.{DataType, DoubleType, FloatType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuNvl extends Arm {
@@ -140,6 +141,26 @@ case class GpuIsNan(child: Expression) extends GpuUnaryExpression with Predicate
     input.getBase.isNan
 }
 
+/*
+ * Replace all `Nan`s in child to `null`s.
+ * The data type of child can only be FloatType or DoubleType.
+ *
+ * This class is used in `GpuFloatMin`.
+ */
+case class GpuNansToNulls(child: Expression) extends GpuUnaryExpression{
+
+  override def dataType: DataType = child.dataType match {
+    case FloatType => FloatType
+    case DoubleType => DoubleType
+    case t => throw new IllegalStateException(s"child type $t is not FloatType or DoubleType")
+  }
+
+  override protected def doColumnar(input: GpuColumnVector): ColumnVector =
+    input.getBase.nansToNulls
+
+  override def nullable = true
+}
+
 /**
  * A GPU accelerated predicate that is evaluated to be true if there are at least `n` non-null
  * and non-NaN values.
@@ -174,7 +195,7 @@ case class GpuAtLeastNNonNulls(
         var notNanVector: ColumnVector = null
         var nanAndNullVector: ColumnVector = null
         try {
-          cv = expr.columnarEval(batch).asInstanceOf[GpuColumnVector].getBase
+          cv = columnarEvalToColumn(expr, batch).getBase
           notNullVector = cv.isNotNull
           if (cv.getType == DType.FLOAT32 || cv.getType == DType.FLOAT64) {
             notNanVector = cv.isNotNan

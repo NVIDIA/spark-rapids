@@ -40,7 +40,9 @@ class GpuReadOrcFileFormat extends OrcFileFormat with GpuReadFileFormatWithMetri
       filters: Seq[Filter],
       options: Map[String, String],
       hadoopConf: Configuration,
-      metrics: Map[String, GpuMetric]): PartitionedFile => Iterator[InternalRow] = {
+      metrics: Map[String, GpuMetric],
+      alluxioPathReplacementMap: Option[Map[String, String]] = None)
+    : PartitionedFile => Iterator[InternalRow] = {
     val sqlConf = sparkSession.sessionState.conf
     val broadcastedHadoopConf =
       sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
@@ -61,9 +63,6 @@ class GpuReadOrcFileFormat extends OrcFileFormat with GpuReadFileFormatWithMetri
 object GpuReadOrcFileFormat {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val fsse = meta.wrapped
-    if (fsse.relation.options.getOrElse("mergeSchema", "false").toBoolean) {
-      meta.willNotWorkOnGpu("mergeSchema and schema evolution is not supported yet")
-    }
     GpuOrcScan.tagSupport(
       SparkShimImpl.sessionFromPlan(fsse),
       fsse.requiredSchema,

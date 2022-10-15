@@ -22,12 +22,12 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>22.08.0</version>
+        <version>22.10.0</version>
     </parent>
     <artifactId>rapids-4-spark-tests_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Tests</name>
     <description>RAPIDS plugin for Apache Spark integration tests</description>
-    <version>22.08.0</version>
+    <version>22.10.0</version>
 
     <dependencies>
         <dependency>
@@ -148,6 +148,75 @@
                     </exclusions>
                 </dependency>
             </dependencies>
+        </profile>
+        <profile>
+            <id>release330cdh</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>330cdh</value>
+                </property>
+            </activation>
+            <properties>
+                <included_buildvers>${buildver}</included_buildvers>
+            </properties>
+            <dependencies>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-sql_${scala.binary.version}</artifactId>
+                    <version>${spark330cdh.version}</version>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>org.apache.arrow</groupId>
+                            <artifactId>arrow-vector</artifactId>
+                        </exclusion>
+                    </exclusions>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-hive_${scala.binary.version}</artifactId>
+                    <version>${spark330cdh.version}</version>
+                    <exclusions>
+                        <!-- spark-core tries to pull a curator-recipes version we don't want -->
+                        <exclusion>
+                            <groupId>org.apache.spark</groupId>
+                            <artifactId>spark-core_${scala.binary.version}</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>org.apache.arrow</groupId>
+                            <artifactId>arrow-vector</artifactId>
+                        </exclusion>
+                    </exclusions>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.arrow</groupId>
+                    <artifactId>arrow-vector</artifactId>
+                    <version>${arrow.cdh.version}</version>
+                    <scope>provided</scope>
+                    <exclusions>
+                        <exclusion>
+                            <groupId>com.fasterxml.jackson.core</groupId>
+                            <artifactId>jackson-core</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>com.fasterxml.jackson.core</groupId>
+                            <artifactId>jackson-annotations</artifactId>
+                        </exclusion>
+                        <exclusion>
+                            <groupId>io.netty</groupId>
+                            <artifactId>netty-common</artifactId>
+                        </exclusion>
+                    </exclusions>
+                </dependency>
+            </dependencies>
+            <pluginRepositories>
+                <pluginRepository>
+                    <id>cloudera-repo</id>
+                    <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+                </pluginRepository>
+            </pluginRepositories>
         </profile>
         <profile>
             <!--

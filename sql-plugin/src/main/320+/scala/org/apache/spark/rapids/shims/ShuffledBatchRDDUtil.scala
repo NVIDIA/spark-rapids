@@ -22,6 +22,7 @@ import org.apache.spark.sql.execution.{CoalescedMapperPartitionSpec, CoalescedPa
 import org.apache.spark.sql.execution.metric.SQLShuffleReadMetricsReporter
 import org.apache.spark.sql.rapids.execution.ShuffledBatchRDDPartition
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.storage.{BlockId, BlockManagerId}
 
 /**
  * Some APIs for the ShuffledBatchRDD are only accessible from org.apache.spark...
@@ -52,6 +53,13 @@ object ShuffledBatchRDDUtil {
     }
   }
 
+  private def getPartitionSize(
+      blocksByAddress: Iterator[(BlockManagerId, Seq[(BlockId, Long, Int)])]): Long = {
+    blocksByAddress.flatMap { case (_, blockInfos) =>
+      blockInfos.map { case (_, size, _) => size }
+    }.sum
+  }
+
   def getReaderAndPartSize(
       split: Partition,
       context: TaskContext,
@@ -67,10 +75,12 @@ object ShuffledBatchRDDUtil {
           context,
           sqlMetricsReporter)
         val blocksByAddress = SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(
-          dependency.shuffleHandle.shuffleId, 0, Int.MaxValue, startReducerIndex, endReducerIndex)
-        val partitionSize = blocksByAddress.flatMap(_._2).map(_._2).sum
-        (reader, partitionSize)
-
+          dependency.shuffleHandle.shuffleId, 
+          0, 
+          Int.MaxValue, 
+          startReducerIndex, 
+          endReducerIndex)
+        (reader, getPartitionSize(blocksByAddress))
       case PartialReducerPartitionSpec(reducerIndex, startMapIndex, endMapIndex, _) =>
         val reader = SparkEnv.get.shuffleManager.getReader(
           dependency.shuffleHandle,
@@ -81,12 +91,12 @@ object ShuffledBatchRDDUtil {
           context,
           sqlMetricsReporter)
         val blocksByAddress = SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(
-          dependency.shuffleHandle.shuffleId, 0, Int.MaxValue, reducerIndex,
+          dependency.shuffleHandle.shuffleId, 
+          startMapIndex, 
+          endMapIndex, 
+          reducerIndex,
           reducerIndex + 1)
-        val partitionSize = blocksByAddress.flatMap(_._2)
-            .filter(tuple => tuple._3 >= startMapIndex && tuple._3 < endMapIndex)
-            .map(_._2).sum
-        (reader, partitionSize)
+        (reader, getPartitionSize(blocksByAddress))
       case PartialMapperPartitionSpec(mapIndex, startReducerIndex, endReducerIndex) =>
         val reader = SparkEnv.get.shuffleManager.getReader(
           dependency.shuffleHandle,
@@ -97,11 +107,12 @@ object ShuffledBatchRDDUtil {
           context,
           sqlMetricsReporter)
         val blocksByAddress = SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(
-          dependency.shuffleHandle.shuffleId, 0, Int.MaxValue, startReducerIndex, endReducerIndex)
-        val partitionSize = blocksByAddress.flatMap(_._2)
-            .filter(_._3 == mapIndex)
-            .map(_._2).sum
-        (reader, partitionSize)
+          dependency.shuffleHandle.shuffleId,
+          mapIndex, 
+          mapIndex + 1, 
+          startReducerIndex, 
+          endReducerIndex)
+        (reader, getPartitionSize(blocksByAddress))
       case CoalescedMapperPartitionSpec(startMapIndex, endMapIndex, numReducers) =>
         val reader = SparkEnv.get.shuffleManager.getReader(
           dependency.shuffleHandle,
@@ -112,11 +123,12 @@ object ShuffledBatchRDDUtil {
           context,
           sqlMetricsReporter)
         val blocksByAddress = SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(
-          dependency.shuffleHandle.shuffleId, startMapIndex, endMapIndex, 0, numReducers)
-        val partitionSize = blocksByAddress.flatMap(_._2)
-            .filter(tuple => tuple._3 >= startMapIndex && tuple._3 < endMapIndex)
-            .map(_._2).sum
-        (reader, partitionSize)
+          dependency.shuffleHandle.shuffleId, 
+          startMapIndex, 
+          endMapIndex, 
+          0, 
+          numReducers)
+        (reader, getPartitionSize(blocksByAddress))
     }
   }
 }

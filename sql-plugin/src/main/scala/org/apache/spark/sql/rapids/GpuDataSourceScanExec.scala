@@ -17,18 +17,19 @@
 package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.rapids.GpuExec
+import com.nvidia.spark.rapids.shims.ShimLeafExecNode
 import org.apache.commons.lang3.StringUtils
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.util.truncatedString
-import org.apache.spark.sql.execution.{ExplainUtils, LeafExecNode}
+import org.apache.spark.sql.execution.ExplainUtils
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.util.Utils
 
 /** GPU implementation of Spark's `DataSourceScanExec` */
-trait GpuDataSourceScanExec extends LeafExecNode with GpuExec {
+trait GpuDataSourceScanExec extends ShimLeafExecNode with GpuExec {
   def relation: BaseRelation
   def tableIdentifier: Option[TableIdentifier]
 

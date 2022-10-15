@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids.tool.qualification
 
 import java.util.concurrent.TimeUnit.NANOSECONDS
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.tool.profiling._
@@ -26,7 +27,7 @@ import org.apache.spark.scheduler._
 import org.apache.spark.sql.execution.ui._
 import org.apache.spark.sql.rapids.tool.{EventProcessorBase, GpuEventLogException, ToolUtils}
 
-class QualificationEventProcessor(app: QualificationAppInfo)
+class QualificationEventProcessor(app: QualificationAppInfo, perSqlOnly: Boolean)
   extends EventProcessorBase[QualificationAppInfo](app) {
 
   type T = QualificationAppInfo
@@ -39,6 +40,8 @@ class QualificationEventProcessor(app: QualificationAppInfo)
     if (ToolUtils.isPluginEnabled(sparkProperties)) {
       throw GpuEventLogException(s"Eventlog is from GPU run. Skipping ...")
     }
+    app.clusterTags = sparkProperties.getOrElse(
+      "spark.databricks.clusterUsageTags.clusterAllTags", "")
   }
 
   override def doSparkListenerApplicationStart(
@@ -86,19 +89,7 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       app: QualificationAppInfo,
       event: SparkListenerSQLExecutionStart): Unit = {
     super.doSparkListenerSQLExecutionStart(app, event)
-    val sqlExecution = QualSQLExecutionInfo(
-      event.executionId,
-      event.time,
-      None,
-      None,
-      "",
-      None,
-      false,
-      ""
-    )
-    app.sqlStart += (event.executionId -> sqlExecution)
     app.processSQLPlan(event.executionId, event.sparkPlanInfo)
-    app.sqlPlans += (event.executionId -> event.sparkPlanInfo)
   }
 
   override def doSparkListenerSQLExecutionEnd(
@@ -106,7 +97,9 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       event: SparkListenerSQLExecutionEnd): Unit = {
     super.doSparkListenerSQLExecutionEnd(app, event)
     logDebug("Processing event: " + event.getClass)
-    app.lastSQLEndTime = Some(event.time)
+    if (!perSqlOnly) {
+      app.lastSQLEndTime = Some(event.time)
+    }
     // only include duration if it contains no jobs that failed
     val failures = app.sqlIDtoFailures.get(event.executionId)
     if (event.executionFailure.isDefined || failures.isDefined) {
@@ -130,6 +123,29 @@ class QualificationEventProcessor(app: QualificationAppInfo)
         app.stageIdToSqlID.getOrElseUpdate(stageId, sqlID)
       }
     }
+    val sqlID = ProfileUtils.stringToLong(sqlIDString)
+    // don't store if we are only processing per sql queries and the job isn't
+    // related to a SQL query
+    if ((perSqlOnly && sqlID.isDefined) || !perSqlOnly) {
+      val thisJob = new JobInfoClass(
+        event.jobId,
+        event.stageIds,
+        sqlID,
+        event.properties.asScala,
+        event.time,
+        None,
+        None,
+        None,
+        None,
+        ProfileUtils.isPluginEnabled(event.properties.asScala) || app.gpuMode
+      )
+      app.jobIdToInfo.put(event.jobId, thisJob)
+    }
+    // If the confs are set after SparkSession initialization, it is captured in this event.
+    if (app.clusterTags.isEmpty) {
+      app.clusterTags = event.properties.getProperty(
+        "spark.databricks.clusterUsageTags.clusterAllTags", "")
+    }
   }
 
   override def doSparkListenerJobEnd(
@@ -137,7 +153,9 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       event: SparkListenerJobEnd): Unit = {
     logDebug("Processing event: " + event.getClass)
     super.doSparkListenerJobEnd(app, event)
-    app.lastJobEndTime = Some(event.time)
+    if (!perSqlOnly) {
+      app.lastJobEndTime = Some(event.time)
+    }
     if (event.jobResult != JobSucceeded) {
       app.jobIdToSqlID.get(event.jobId) match {
         case Some(sqlID) =>
@@ -174,7 +192,7 @@ class QualificationEventProcessor(app: QualificationAppInfo)
       event: SparkListenerSQLAdaptiveExecutionUpdate): Unit = {
     logDebug("Processing event: " + event.getClass)
     // AQE plan can override the ones got from SparkListenerSQLExecutionStart
-    app.sqlPlans += (event.executionId -> event.sparkPlanInfo)
     app.processSQLPlan(event.executionId, event.sparkPlanInfo)
+    super.doSparkListenerSQLAdaptiveExecutionUpdate(app, event)
   }
 }

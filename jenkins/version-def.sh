@@ -26,10 +26,10 @@ for VAR in $OVERWRITE_PARAMS; do
 done
 IFS=$PRE_IFS
 
-CUDF_VER=${CUDF_VER:-"22.08.0"}
+CUDF_VER=${CUDF_VER:-"22.10.0-SNAPSHOT"}
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-"cuda11"}
-PROJECT_VER=${PROJECT_VER:-"22.08.0"}
-PROJECT_TEST_VER=${PROJECT_TEST_VER:-"22.08.0"}
+PROJECT_VER=${PROJECT_VER:-"22.10.0"}
+PROJECT_TEST_VER=${PROJECT_TEST_VER:-"22.10.0"}
 SPARK_VER=${SPARK_VER:-"3.1.1"}
 # Make a best attempt to set the default value for the shuffle shim.
 # Note that SPARK_VER for non-Apache Spark flavors (i.e. databricks,
@@ -48,9 +48,49 @@ SPARK_REPO=${SPARK_REPO:-"$URM_URL"}
 echo "CUDF_VER: $CUDF_VER, CUDA_CLASSIFIER: $CUDA_CLASSIFIER, PROJECT_VER: $PROJECT_VER \
     SPARK_VER: $SPARK_VER, SCALA_BINARY_VER: $SCALA_BINARY_VER"
 
+# Spark shim versions
+# get Spark shim versions from pom
+function set_env_var_SPARK_SHIM_VERSIONS_ARR() {
+    PROFILE_OPT=$1
+    SPARK_SHIM_VERSIONS_STR=$(mvn -B help:evaluate -q -pl dist $PROFILE_OPT -Dexpression=included_buildvers -DforceStdout)
+    SPARK_SHIM_VERSIONS_STR=$(echo $SPARK_SHIM_VERSIONS_STR)
+    IFS=", " <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS_ARR
+}
+# Psnapshots: snapshots + noSnapshots
+set_env_var_SPARK_SHIM_VERSIONS_ARR -Psnapshots
+SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+# PnoSnapshots: noSnapshots only
+set_env_var_SPARK_SHIM_VERSIONS_ARR -PnoSnapshots
+SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 
-SPARK_SHIM_VERSIONS_STR=${SPARK_SHIM_VERSIONS_STR:-"311 321cdh 312 313 320 321 322 330"}
+# PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
+# regular: noSnapshots + snapshots
+# pre-release: noSnapshots only
+PHASE_TYPE=${PHASE_TYPE:-"pre-release"} # TODO: update it to regular in branch-22.12 when CI is available
+case $PHASE_TYPE in
+    # SPARK_SHIM_VERSIONS will be used for nightly artifact build
+    pre-release)
+        SPARK_SHIM_VERSIONS=("${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]}")
+        ;;
 
-IFS=" " <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS
-
+    *)
+        SPARK_SHIM_VERSIONS=("${SPARK_SHIM_VERSIONS_SNAPSHOTS[@]}")
+        ;;
+esac
+# base version
 SPARK_BASE_SHIM_VERSION=${SPARK_SHIM_VERSIONS[0]}
+# tail snapshots
+SPARK_SHIM_VERSIONS_SNAPSHOTS_TAIL=("${SPARK_SHIM_VERSIONS_SNAPSHOTS[@]:1}")
+# tail noSnapshots
+SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL=("${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]:1}")
+# build and run unit tests on one specific version for each sub-version (e.g. 320, 330)
+# separate the versions to two parts (premergeUT1, premergeUT2) for balancing the duration
+set_env_var_SPARK_SHIM_VERSIONS_ARR -PpremergeUT1
+SPARK_SHIM_VERSIONS_PREMERGE_UT_1=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+set_env_var_SPARK_SHIM_VERSIONS_ARR -PpremergeUT2
+SPARK_SHIM_VERSIONS_PREMERGE_UT_2=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+# utf-8 cases
+set_env_var_SPARK_SHIM_VERSIONS_ARR -PpremergeUTF8
+SPARK_SHIM_VERSIONS_PREMERGE_UTF8=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+
+echo "SPARK_BASE_SHIM_VERSION: $SPARK_BASE_SHIM_VERSION"

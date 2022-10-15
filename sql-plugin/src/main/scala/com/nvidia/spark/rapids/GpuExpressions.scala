@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{ast, BinaryOp, BinaryOperable, ColumnVector, DType, Scalar, UnaryOp}
+import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{ShimBinaryExpression, ShimExpression, ShimTernaryExpression, ShimUnaryExpression}
 
@@ -353,10 +354,7 @@ trait GpuString2TrimExpression extends String2TrimExpression with GpuExpression
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     val trim = GpuExpressionsUtils.getTrimString(trimStr)
-    withResourceIfAllowed(srcStr.columnarEval(batch)) { shouldBeColumn =>
-      // We know the first parameter is not a Literal, because trim(Literal, Literal) would already
-      // have been optimized out
-      val column = shouldBeColumn.asInstanceOf[GpuColumnVector]
+    withResourceIfAllowed(columnarEvalToColumn(srcStr, batch)) { column =>
       if (trim == null) {
         GpuColumnVector.fromNull(column.getRowCount.toInt, StringType)
       } else if (trim.isEmpty) {

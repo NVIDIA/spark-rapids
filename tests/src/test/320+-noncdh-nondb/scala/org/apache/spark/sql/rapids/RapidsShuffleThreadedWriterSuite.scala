@@ -22,23 +22,23 @@ import java.util.zip.CheckedInputStream
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
+import scala.util.control.NonFatal
 
 import org.mockito.{Mock, MockitoAnnotations}
 import org.mockito.Answers.RETURNS_SMART_NULLS
 import org.mockito.ArgumentMatchers.{any, anyInt, anyLong}
 import org.mockito.Mockito._
-import org.scalatest.{BeforeAndAfterEach, FunSuite}
+import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, FunSuite}
 import org.scalatest.mockito.MockitoSugar
 
-import org.apache.spark.{HashPartitioner, ShuffleDependency, SparkConf, SparkException, TaskContext}
+import org.apache.spark.{HashPartitioner, SparkConf, SparkException, TaskContext}
 import org.apache.spark.executor.{ShuffleWriteMetrics, TaskMetrics}
-import org.apache.spark.internal.config
+import org.apache.spark.internal.{config, Logging}
 import org.apache.spark.network.shuffle.checksum.ShuffleChecksumHelper
 import org.apache.spark.network.util.LimitedInputStream
 import org.apache.spark.serializer.{JavaSerializer, SerializerInstance, SerializerManager}
 import org.apache.spark.shuffle.IndexShuffleBlockResolver
 import org.apache.spark.shuffle.api.ShuffleExecutorComponents
-import org.apache.spark.shuffle.sort.BypassMergeSortShuffleHandle
 import org.apache.spark.shuffle.sort.io.LocalDiskShuffleExecutorComponents
 import org.apache.spark.sql.rapids.shims.RapidsShuffleThreadedWriter
 import org.apache.spark.storage.{BlockId, BlockManager, DiskBlockManager, DiskBlockObjectWriter, ShuffleChecksumBlockId, ShuffleDataBlockId, ShuffleIndexBlockId, TempShuffleBlockId}
@@ -134,15 +134,18 @@ class TestIndexShuffleBlockResolver(
 
 class RapidsShuffleThreadedWriterSuite extends FunSuite
     with BeforeAndAfterEach
+    with BeforeAndAfterAll
     with MockitoSugar
-    with ShuffleChecksumTestHelper {
+    with ShuffleChecksumTestHelper 
+    with Logging {
   @Mock(answer = RETURNS_SMART_NULLS) private var blockManager: BlockManager = _
   @Mock(answer = RETURNS_SMART_NULLS) private var diskBlockManager: DiskBlockManager = _
   @Mock(answer = RETURNS_SMART_NULLS) private var taskContext: TaskContext = _
   @Mock(answer = RETURNS_SMART_NULLS) private var blockResolver: TestIndexShuffleBlockResolver = _
-  @Mock(answer = RETURNS_SMART_NULLS) private var dependency: ShuffleDependency[Int, Int, Int] = _
   @Mock(answer = RETURNS_SMART_NULLS)
-    private var dependencyBad: ShuffleDependency[Int, BadSerializable, BadSerializable] = _
+    private var dependency: GpuShuffleDependency[Int, Int, Int] = _
+  @Mock(answer = RETURNS_SMART_NULLS)
+    private var dependencyBad: GpuShuffleDependency[Int, BadSerializable, BadSerializable] = _
 
   private var taskMetrics: TaskMetrics = _
   private var tempDir: File = _
@@ -152,24 +155,33 @@ class RapidsShuffleThreadedWriterSuite extends FunSuite
     .set("spark.app.id", "sampleApp")
   private val temporaryFilesCreated: mutable.Buffer[File] = new ArrayBuffer[File]()
   private val blockIdToFileMap: mutable.Map[BlockId, File] = new mutable.HashMap[BlockId, File]
-  private var shuffleHandle: BypassMergeSortShuffleHandle[Int, Int] = _
+  private var shuffleHandle: ShuffleHandleWithMetrics[Int, Int, Int] = _
 
-  RapidsShuffleInternalManagerBase.startThreadPoolIfNeeded(2)
+  private val numWriterThreads = 2
+
+  override def beforeAll(): Unit = {
+    RapidsShuffleInternalManagerBase.startThreadPoolIfNeeded(numWriterThreads, 0)
+  }
+
+  override def afterAll(): Unit = {
+    RapidsShuffleInternalManagerBase.stopThreadPool()
+  }
 
   override def beforeEach(): Unit = {
     super.beforeEach()
+    TaskContext.setTaskContext(taskContext)
     MockitoAnnotations.openMocks(this).close()
     tempDir = Utils.createTempDir()
     outputFile = File.createTempFile("shuffle", null, tempDir)
-    taskMetrics = new TaskMetrics
-    shuffleHandle = new BypassMergeSortShuffleHandle[Int, Int](
-      shuffleId = 0,
-      dependency = dependency
-    )
+    taskMetrics = spy(new TaskMetrics)
+    val shuffleWriteMetrics = new ShuffleWriteMetrics
+    shuffleHandle = new ShuffleHandleWithMetrics[Int, Int, Int](
+      0, Map.empty, dependency)
     when(dependency.partitioner).thenReturn(new HashPartitioner(7))
     when(dependency.serializer).thenReturn(new JavaSerializer(conf))
     when(dependencyBad.partitioner).thenReturn(new HashPartitioner(7))
     when(dependencyBad.serializer).thenReturn(new JavaSerializer(conf))
+    when(taskMetrics.shuffleWriteMetrics).thenReturn(shuffleWriteMetrics)
     when(taskContext.taskMetrics()).thenReturn(taskMetrics)
     when(blockResolver.getDataFile(0, 0)).thenReturn(outputFile)
     when(blockManager.diskBlockManager).thenReturn(diskBlockManager)
@@ -229,10 +241,16 @@ class RapidsShuffleThreadedWriterSuite extends FunSuite
 
   override def afterEach(): Unit = {
     TaskContext.unset()
+    blockIdToFileMap.clear()
+    temporaryFilesCreated.clear()
     try {
       Utils.deleteRecursively(tempDir)
-      blockIdToFileMap.clear()
-      temporaryFilesCreated.clear()
+    } catch {
+      case NonFatal(e) =>
+        // Catch non-fatal errors here as we are cleaning up directories using a Spark utility
+        // and we shouldn't fail a test for these exceptions. See:
+        // https://github.com/NVIDIA/spark-rapids/issues/6515
+        logWarning(s"Error while cleaning up $tempDir", e)
     } finally {
       super.afterEach()
     }
@@ -245,7 +263,8 @@ class RapidsShuffleThreadedWriterSuite extends FunSuite
       0L, // MapId
       conf,
       taskContext.taskMetrics().shuffleWriteMetrics,
-      shuffleExecutorComponents)
+      shuffleExecutorComponents,
+      numWriterThreads)
     writer.write(Iterator.empty)
     writer.stop( /* success = */ true)
     assert(writer.getPartitionLengths.sum === 0)
@@ -270,7 +289,8 @@ class RapidsShuffleThreadedWriterSuite extends FunSuite
         0L, // MapId
         transferConf,
         new ThreadSafeShuffleWriteMetricsReporter(taskContext.taskMetrics().shuffleWriteMetrics),
-        shuffleExecutorComponents)
+        shuffleExecutorComponents,
+        numWriterThreads)
       writer.write(records)
       writer.stop( /* success = */ true)
       assert(temporaryFilesCreated.nonEmpty)
@@ -305,7 +325,8 @@ class RapidsShuffleThreadedWriterSuite extends FunSuite
       0L, // MapId
       conf,
       taskContext.taskMetrics().shuffleWriteMetrics,
-      shuffleExecutorComponents)
+      shuffleExecutorComponents,
+      numWriterThreads)
 
     intercept[SparkException] {
       writer.write(records)
@@ -326,7 +347,8 @@ class RapidsShuffleThreadedWriterSuite extends FunSuite
       0L, // MapId
       conf,
       taskContext.taskMetrics().shuffleWriteMetrics,
-      shuffleExecutorComponents)
+      shuffleExecutorComponents,
+      numWriterThreads)
     intercept[SparkException] {
       writer.write((0 until 100000).iterator.map(i => {
         if (i == 99990) {
@@ -379,8 +401,9 @@ class RapidsShuffleThreadedWriterSuite extends FunSuite
       shuffleHandle,
       mapId,
       conf,
-      taskContext.taskMetrics().shuffleWriteMetrics,
-      new LocalDiskShuffleExecutorComponents(conf, blockManager, blockResolver))
+      new ThreadSafeShuffleWriteMetricsReporter(taskContext.taskMetrics().shuffleWriteMetrics),
+      new LocalDiskShuffleExecutorComponents(conf, blockManager, blockResolver),
+      numWriterThreads)
 
     writer.write(Iterator((0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6)))
     writer.stop( /* success = */ true)
@@ -397,9 +420,10 @@ class RapidsShuffleThreadedWriterSuite extends FunSuite
           (5, new BadSerializable(5))) ++
           (10 until 100000).iterator.map(x => (2, new BadSerializable(x)))
 
-      val shuffleHandle = new BypassMergeSortShuffleHandle[Int, BadSerializable](
-        shuffleId = 0,
-        dependency = dependencyBad
+      val shuffleHandle = new ShuffleHandleWithMetrics[Int, BadSerializable, BadSerializable](
+        0,
+        Map.empty,
+        dependencyBad
       )
       val writer = new RapidsShuffleThreadedWriter[Int, BadSerializable](
         blockManager,
@@ -407,7 +431,8 @@ class RapidsShuffleThreadedWriterSuite extends FunSuite
         0L, // MapId
         conf,
         new ThreadSafeShuffleWriteMetricsReporter(taskContext.taskMetrics().shuffleWriteMetrics),
-        shuffleExecutorComponents)
+        shuffleExecutorComponents,
+        numWriterThreads)
       assertThrows[IOException] {
         writer.write(records)
       }

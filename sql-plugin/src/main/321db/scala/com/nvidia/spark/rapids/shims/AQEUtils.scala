@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.shims
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
+import org.apache.spark.sql.internal.SQLConf
 
 /** Utility methods for manipulating Catalyst classes involved in Adaptive Query Execution */
 object AQEUtils {
@@ -28,6 +29,10 @@ object AQEUtils {
     ShuffleQueryStageExec(sqse.id, reusedExchange, sqse.originalPlan, sqse.isSparkExchange)
   }
 
-  // currently we don't support AQE on Databricks
-  def isAdaptiveExecutionSupportedInSparkVersion: Boolean = false
+  // Databricks 10.4 has an issue where if you turn off AQE it can still use it for
+  // certain operations. This causes issues with the plugin so this is to work around
+  // that.
+  def isAdaptiveExecutionSupportedInSparkVersion(conf: SQLConf): Boolean = {
+    conf.getConf(SQLConf.ADAPTIVE_EXECUTION_ENABLED)
+  }
 }

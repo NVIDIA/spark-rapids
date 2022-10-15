@@ -37,10 +37,5 @@ object GpuOrcScan {
     }
 
     FileFormatChecks.tag(meta, schema, OrcFormatType, ReadFileOp)
-
-    if (sparkSession.conf
-      .getOption("spark.sql.orc.mergeSchema").exists(_.toBoolean)) {
-      meta.willNotWorkOnGpu("mergeSchema and schema evolution is not supported yet")
-    }
   }
 }

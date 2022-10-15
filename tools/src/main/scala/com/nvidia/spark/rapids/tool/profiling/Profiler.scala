@@ -47,6 +47,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
   private val outputCSV: Boolean = appArgs.csv()
   private val outputCombined: Boolean = appArgs.combined()
 
+  private val useAutoTuner: Boolean = appArgs.autoTuner()
+
   logInfo(s"Threadpool size is $nThreads")
 
   /**
@@ -60,35 +62,43 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       if (outputCombined) {
         logError("Output combined option not valid with compare mode!")
       } else {
-        // create all the apps in parallel
-        val apps = createApps(eventLogInfos)
-
-        if (apps.size < 2) {
-          logError("At least 2 applications are required for comparison mode. Exiting!")
+        if (useAutoTuner) {
+          logError("Autotuner is currently not supported with compare mode!")
         } else {
-          val profileOutputWriter = new ProfileOutputWriter(s"$outputDir/compare",
-            Profiler.COMPARE_LOG_FILE_NAME_PREFIX, numOutputRows, outputCSV = outputCSV)
-          try {
-            // we need the info for all of the apps to be able to compare so this happens serially
-            val (sums, comparedRes) = processApps(apps, printPlans = false, profileOutputWriter)
-            writeOutput(profileOutputWriter, Seq(sums), false, comparedRes)
-          }
-          finally {
-            profileOutputWriter.close()
+          // create all the apps in parallel
+          val apps = createApps(eventLogInfos)
+
+          if (apps.size < 2) {
+            logError("At least 2 applications are required for comparison mode. Exiting!")
+          } else {
+            val profileOutputWriter = new ProfileOutputWriter(s"$outputDir/compare",
+              Profiler.COMPARE_LOG_FILE_NAME_PREFIX, numOutputRows, outputCSV = outputCSV)
+            try {
+              // we need the info for all of the apps to be able to compare so this happens serially
+              val (sums, comparedRes) = processApps(apps, printPlans = false, profileOutputWriter)
+              writeOutput(profileOutputWriter, Seq(sums), false, comparedRes)
+            }
+            finally {
+              profileOutputWriter.close()
+            }
           }
         }
       }
     } else if (outputCombined) {
-      // same as collection but combine the output so all apps are in single tables
-      // We can process all the apps in parallel and get the summary for them and then
-      // combine them into single tables in the output.
-      val profileOutputWriter = new ProfileOutputWriter(s"$outputDir/combined",
-        Profiler.COMBINED_LOG_FILE_NAME_PREFIX, numOutputRows, outputCSV = outputCSV)
-      val sums = createAppsAndSummarize(eventLogInfos, false, profileOutputWriter)
-      try {
-        writeOutput(profileOutputWriter, sums, outputCombined)
-      } finally {
-        profileOutputWriter.close()
+      if (useAutoTuner) {
+        logError("Autotuner is currently not supported with combined mode!")
+      } else {
+        // same as collection but combine the output so all apps are in single tables
+        // We can process all the apps in parallel and get the summary for them and then
+        // combine them into single tables in the output.
+        val profileOutputWriter = new ProfileOutputWriter(s"$outputDir/combined",
+          Profiler.COMBINED_LOG_FILE_NAME_PREFIX, numOutputRows, outputCSV = outputCSV)
+        val sums = createAppsAndSummarize(eventLogInfos, false, profileOutputWriter)
+        try {
+          writeOutput(profileOutputWriter, sums, outputCombined)
+        } finally {
+          profileOutputWriter.close()
+        }
       }
     } else {
       // Read each application and process it separately to save memory.
@@ -300,6 +310,11 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     val sqlTaskAggMetrics = analysis.sqlMetricsAggregation()
     val durAndCpuMet = analysis.sqlMetricsAggregationDurationAndCpuTime()
     val skewInfo = analysis.shuffleSkewCheck()
+    val maxTaskInputInfo = if (useAutoTuner) {
+      analysis.getMaxTaskInputSizeBytes()
+    } else {
+      Seq.empty
+    }
 
     val healthCheck = new HealthCheck(apps)
     val failedTasks = healthCheck.getFailedTasks
@@ -308,7 +323,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     val removedBMs = healthCheck.getRemovedBlockManager
     val removedExecutors = healthCheck.getRemovedExecutors
     val unsupportedOps = healthCheck.getPossibleUnsupportedSQLPlan
-   
+
     if (printPlans) {
       CollectInformation.printSQLPlans(apps, outputDir)
     }
@@ -341,7 +356,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     (ApplicationSummaryInfo(appInfo, dsInfo, execInfo, jobInfo, rapidsProps, rapidsJar,
       sqlMetrics, jsMetAgg, sqlTaskAggMetrics, durAndCpuMet, skewInfo, failedTasks, failedStages,
       failedJobs, removedBMs, removedExecutors, unsupportedOps, sparkProps, sqlStageInfo,
-      wholeStage), compareRes)
+      wholeStage, maxTaskInputInfo), compareRes)
   }
 
   def writeOutput(profileOutputWriter: ProfileOutputWriter,
@@ -376,8 +391,6 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         val resRows = allRows.map(r => RapidsPropertyProfileResult(r(0), outputHeaders, r))
         resRows.sortBy(cols => cols.key)
       }
-
-      val sorted = appsSum.sortBy( x => x.appInfo.head.appIndex)
       val reduced = ApplicationSummaryInfo(
         appsSum.flatMap(_.appInfo).sortBy(_.appIndex),
         appsSum.flatMap(_.dsInfo).sortBy(_.appIndex),
@@ -398,7 +411,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         appsSum.flatMap(_.unsupportedOps).sortBy(_.appIndex),
         combineProps(rapidsOnly=false, appsSum).sortBy(_.key),
         appsSum.flatMap(_.sqlStageInfo).sortBy(_.duration)(Ordering[Option[Long]].reverse),
-        appsSum.flatMap(_.wholeStage).sortBy(_.appIndex)
+        appsSum.flatMap(_.wholeStage).sortBy(_.appIndex),
+        appsSum.flatMap(_.maxTaskInputBytesRead).sortBy(_.appIndex)
       )
       Seq(reduced)
     } else {
@@ -446,6 +460,17 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       profileOutputWriter.write("Removed Executors", app.removedExecutors)
       profileOutputWriter.write("Unsupported SQL Plan", app.unsupportedOps,
         Some("Unsupported SQL Ops"))
+
+      if (useAutoTuner) {
+        val workerInfoPath = appArgs.workerInfo.getOrElse(AutoTuner.DEFAULT_WORKER_INFO_PATH)
+        val autoTuner: AutoTuner = AutoTuner.buildAutoTuner(workerInfoPath, Some(app))
+        // the autotuner allows skipping some properties
+        // e.g. getRecommendedProperties(Some(Seq("spark.executor.instances"))) skips the
+        // recommendation related to executor instances.
+        val (properties, comments) = autoTuner.getRecommendedProperties()
+        profileOutputWriter.writeText("\n### D. Recommended Configuration ###\n")
+        profileOutputWriter.writeText(Profiler.getAutoTunerResultsAsString(properties, comments))
+      }
     }
   }
 }
@@ -456,4 +481,19 @@ object Profiler {
   val COMPARE_LOG_FILE_NAME_PREFIX = "rapids_4_spark_tools_compare"
   val COMBINED_LOG_FILE_NAME_PREFIX = "rapids_4_spark_tools_combined"
   val SUBDIR = "rapids_4_spark_profile"
+  def getAutoTunerResultsAsString(props: Seq[RecommendedPropertyResult],
+      comments: Seq[RecommendedCommentResult]): String = {
+    val propStr = if (props.nonEmpty) {
+        val propertiesToStr = props.map(_.toString).reduce(_ + "\n" + _)
+        s"\nSpark Properties:\n$propertiesToStr\n"
+      } else {
+        "Cannot recommend properties. See Comments.\n"
+      }
+    if (comments.isEmpty) { // Comments are optional
+      propStr
+    } else {
+      val commentsToStr = comments.map(_.toString).reduce(_ + "\n" + _)
+      propStr + s"\nComments:\n$commentsToStr\n"
+    }
+  }
 }

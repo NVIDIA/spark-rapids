@@ -23,7 +23,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{ShimSparkPlan, ShimUnaryExecNode}
+import com.nvidia.spark.rapids.shims.{ShimLeafExecNode, ShimSparkPlan, ShimUnaryExecNode}
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
@@ -31,7 +31,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Descending, Expression, NamedExpression, NullIntolerant, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning, SinglePartition, UnknownPartitioning}
-import org.apache.spark.sql.execution.{LeafExecNode, ProjectExec, SampleExec, SparkPlan}
+import org.apache.spark.sql.execution.{ProjectExec, SampleExec, SparkPlan}
 import org.apache.spark.sql.rapids.{GpuPartitionwiseSampledRDD, GpuPoissonSampler, GpuPredicateHelper}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DataType, LongType}
@@ -84,7 +84,13 @@ object GpuProjectExec extends Arm {
     case _ => None
   }
 
-  private def extractSingleBoundIndex(boundExprs: Seq[Expression]): Seq[Option[Int]] =
+  private def isAllSingleBoundIndex(boundExprs: Seq[Expression]): Boolean =
+    extractSingleBoundIndex(boundExprs).forall {
+      case Some(index) => true
+      case _ => false
+    }
+
+  def extractSingleBoundIndex(boundExprs: Seq[Expression]): Seq[Option[Int]] =
     boundExprs.map(extractSingleBoundIndex)
 
   def isNoopProject(cb: ColumnarBatch, boundExprs: Seq[Expression]): Boolean = {
@@ -251,6 +257,53 @@ case class GpuProjectAstExec(
 
   // The same as what feeds us
   override def outputBatching: CoalesceGoal = GpuExec.outputBatching(child)
+}
+
+/**
+ * Do projections in a tiered fashion, where earlier tiers contain sub-expressions that are
+ * referenced in later tiers.  Each tier adds columns to the original batch corresponding
+ * to the output of the sub-expressions.
+ * Example of how this is processed:
+ *   Original projection expressions:
+ *   (((a + b) + c) * e), (((a + b) + d) * f), (a + e), (c + f)
+ *   Input columns for tier 1: a, b, c, d, e, f  (original projection inputs)
+ *   Tier 1: (a + b) as ref1
+ *   Input columns for tier 2: a, b, c, d, e, f, ref1
+ *   Tier 2: (ref1 + c) as ref2, (ref1 + d) as ref3
+ *   Input columns for tier 3: a, b, c, d, e, f, ref1, ref2, ref3
+ *   Tier 3: (ref2 * e), (ref3 * f), (a + e), (c + f)
+ */
+ case class GpuTieredProject(val exprSets: Seq[Seq[GpuExpression]]) extends Arm {
+
+  @tailrec
+  private def projectTier(boundExprs: Seq[Seq[GpuExpression]],
+      cb: ColumnarBatch, doClose: Boolean): ColumnarBatch = {
+    boundExprs match {
+      case Nil => {
+        cb
+      }
+      case exprSet :: tail => {
+        val projectCb = withResource(new NvtxRange("project tier", NvtxColor.ORANGE)) { _ =>
+          closeOnExcept(GpuProjectExec.project(cb, exprSet)) { projectResult =>
+            projectResult
+          }
+        }
+        val nextCb = if (tail.isEmpty) {
+          projectCb
+        } else {
+          withResource(projectCb) { newCols =>
+            GpuColumnVector.combineColumns(cb, newCols)
+          }
+        }
+        if (doClose) cb.close()
+        projectTier(tail, nextCb, true)
+      }
+    }
+  }
+
+  def tieredProject(batch: ColumnarBatch): ColumnarBatch = {
+    projectTier(exprSets, batch, false)
+  }
 }
 
 /**
@@ -544,7 +597,7 @@ case class GpuRangeExec(
     numSlices: Int,
     output: Seq[Attribute],
     targetSizeBytes: Long)
-    extends LeafExecNode with GpuExec {
+    extends ShimLeafExecNode with GpuExec {
 
   val numElements: BigInt = {
     val safeStart = BigInt(start)

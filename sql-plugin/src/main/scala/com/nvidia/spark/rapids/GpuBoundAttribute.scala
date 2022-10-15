@@ -21,6 +21,7 @@ import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, Expression, ExprId, SortOrder}
+import org.apache.spark.sql.rapids.catalyst.expressions.GpuEquivalentExpressions
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -125,6 +126,23 @@ object GpuBindReferences extends Logging {
       input: AttributeSeq): Seq[A] = {
     // Force list to avoid recursive Java serialization of lazy list Seq implementation
     expressions.map(GpuBindReferences.bindReference(_, input)).toList
+  }
+
+  /**
+   * A helper function to bind given expressions to an input schema where the expressions are
+   * to be processed on the GPU, and the result type indicates this.  Common sub-expressions
+   * bound with their inputs are placed into a sequence of tiers in a GpuTieredProject object.
+   */
+  def bindGpuReferencesTiered[A <: Expression](
+      expressions: Seq[A],
+      input: AttributeSeq): GpuTieredProject = {
+
+    val exprTiers = GpuEquivalentExpressions.getExprTiers(expressions)
+    val inputTiers = GpuEquivalentExpressions.getInputTiers(exprTiers, input)
+    GpuTieredProject(exprTiers.zip(inputTiers).map {
+      case (es:Seq[Expression], is:AttributeSeq) =>
+        es.map(GpuBindReferences.bindGpuReference(_, is)).toList
+    })
   }
 }
 

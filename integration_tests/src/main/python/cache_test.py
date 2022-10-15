@@ -26,7 +26,9 @@ import pyspark.ml.linalg as ml
 enable_vectorized_confs = [{"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "true"},
                            {"spark.sql.inMemoryColumnarStorage.enableVectorizedReader": "false"}]
 
-_cache_decimal_gens = [decimal_gen_32bit, decimal_gen_64bit, decimal_gen_128bit]
+# Many tests sort the results, so use a sortable decimal generator as many Spark versions
+# fail to sort some large decimals properly.
+_cache_decimal_gens = [decimal_gen_32bit, decimal_gen_64bit, orderable_decimal_gen_128bit]
 _cache_single_array_gens_no_null = [ArrayGen(gen) for gen in all_basic_gens_no_null + _cache_decimal_gens]
 
 decimal_struct_gen= StructGen([['child0', sub_gen] for ind, sub_gen in enumerate(_cache_decimal_gens)])
@@ -158,7 +160,7 @@ def test_cache_diff_req_order(spark_tmp_path):
                                      pytest.param(FloatGen(special_cases=[FLOAT_MIN, FLOAT_MAX, 0.0, 1.0, -1.0]), marks=[incompat]),
                                      pytest.param(DoubleGen(special_cases=double_special_cases), marks=[incompat]),
                                      BooleanGen(), DateGen(), TimestampGen(), decimal_gen_32bit, decimal_gen_64bit,
-                                     decimal_gen_128bit] + _cache_single_array_gens_no_null, ids=idfn)
+                                     orderable_decimal_gen_128bit] + _cache_single_array_gens_no_null, ids=idfn)
 @pytest.mark.parametrize('ts_write', ['TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS'])
 @pytest.mark.parametrize('enable_vectorized', ['true', 'false'], ids=idfn)
 @ignore_order
@@ -323,3 +325,17 @@ def test_cache_daytimeinterval(enable_vectorized_conf):
         df.cache().count()
         return df.selectExpr("b", "a")
     assert_gpu_and_cpu_are_equal_collect(test_func, enable_vectorized_conf)
+
+# For AQE, test the computeStats(...) implementation in GpuInMemoryTableScanExec
+# NOTE: this test is here because the necessary cache configuration is only 
+# available when this test file is used
+@ignore_order(local=True)
+@allow_non_gpu("ShuffleExchangeExec", "ColumnarToRowExec")
+@pytest.mark.parametrize("data_gen", integral_gens, ids=idfn)
+def test_aqe_cache_join(data_gen):
+    conf = {'spark.sql.adaptive.enabled': 'true'}
+    def do_it(spark):
+        df1 = unary_op_df(spark, data_gen).orderBy('a').cache()
+        df2 = df1.alias('df2')
+        return df1.join(df2, df1.a == df2.a, 'Outer')
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
