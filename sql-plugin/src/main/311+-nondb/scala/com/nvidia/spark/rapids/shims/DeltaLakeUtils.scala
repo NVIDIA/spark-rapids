@@ -19,5 +19,5 @@ package com.nvidia.spark.rapids.shims
 import org.apache.spark.sql.execution.FileSourceScanExec
 
 object DeltaLakeUtils {
-  def isDeltaLakeScan(f: FileSourceScanExec): Boolean = false
+  def isDatabricksDeltaLakeScan(f: FileSourceScanExec): Boolean = false
 }

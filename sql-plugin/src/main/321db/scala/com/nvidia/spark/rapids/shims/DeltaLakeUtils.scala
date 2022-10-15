@@ -20,7 +20,7 @@ import org.apache.spark.sql.execution.FileSourceScanExec
 
 object DeltaLakeUtils {
   /* Check for _databricks_internal when running on Databricks */
-  def isDeltaLakeScan(f: FileSourceScanExec): Boolean = {
+  def isDatabricksDeltaLakeScan(f: FileSourceScanExec): Boolean = {
     f.requiredSchema.fields.exists(_.name.startsWith("_databricks_internal"))
   }
 }
