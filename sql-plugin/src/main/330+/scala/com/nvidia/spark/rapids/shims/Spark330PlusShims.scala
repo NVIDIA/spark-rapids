@@ -259,7 +259,7 @@ trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
           " for the Python process when enabled.",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
           TypeSig.all),
-        (mapPy, conf, p, r) => new GpuPythonMapInArrowExecMeta(mapPy, conf, p, r)),
+        (mapPy, conf, p, r) => new GpuPythonMapInArrowExecMeta(mapPy, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
     super.getExecs ++ map
   }
