@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect
-from conftest import spark_tmp_table_factory, is_databricks_runtime
+from conftest import spark_tmp_table_factory
 from data_gen import *
 from marks import ignore_order, allow_non_gpu
 from spark_session import is_before_spark_320, with_cpu_session, is_before_spark_312
@@ -148,7 +148,6 @@ def test_dpp_reuse_broadcast_exchange(spark_tmp_table_factory, store_format, s_i
 # The SubqueryBroadcast can work on GPU even if the scan who holds it fallbacks into CPU.
 @ignore_order
 @pytest.mark.allow_non_gpu('FileSourceScanExec')
-@pytest.mark.skipif(is_databricks_runtime(), reason="DPP can not cooperate with rapids plugin on Databricks runtime")
 def test_dpp_reuse_broadcast_exchange_cpu_scan(spark_tmp_table_factory):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, 'parquet', length=10000)

@@ -17,6 +17,8 @@
 package com.nvidia.spark.rapids.shims
 
 import com.databricks.sql.execution.window.RunningWindowFunctionExec
+// import com.databricks.sql.execution.adaptive.{CanonicalizeDynamicPruningFilters, PlanAdaptiveDynamicPruningFilters}
+// import com.databricks.sql.execution.adaptive._
 import com.nvidia.spark.rapids._
 import org.apache.hadoop.fs.FileStatus
 
@@ -26,7 +28,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, IdentityBroadcastMode}
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.datasources._
@@ -34,7 +36,9 @@ import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.python.WindowInPandasExec
 import org.apache.spark.sql.execution.window.WindowExecBase
+import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuSubqueryBroadcastExec}
 import org.apache.spark.sql.rapids.shims.GpuFileScanRDD
 import org.apache.spark.sql.types._
 
@@ -82,6 +86,66 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
 
   private val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(
+      GpuOverrides.exec[SubqueryBroadcastExec](
+        "Plan to collect and transform the broadcast key values",
+        ExecChecks(TypeSig.all, TypeSig.all),
+        (s, conf, p, r) => new SparkPlanMeta[SubqueryBroadcastExec](s, conf, p, r) {
+          private var broadcastBuilder: () => SparkPlan = _
+
+          override val childExprs: Seq[BaseExprMeta[_]] = Nil
+
+          override val childPlans: Seq[SparkPlanMeta[SparkPlan]] = Nil
+
+          override def tagPlanForGpu(): Unit = s.child match {
+            case bqse: BroadcastQueryStageExec =>
+              logWarning("DPP+DB+AQE")
+              logWarning(s"plan: ${bqse.plan}")
+              bqse.plan match {
+                case reuse: ReusedExchangeExec =>
+                  reuse.child match {
+                    case gpuExchange: GpuBroadcastExchangeExec =>
+                      // A BroadcastExchange has already been replaced, so it can run on the GPU
+                      broadcastBuilder = () => reuse
+                    case _ =>
+                      willNotWorkOnGpu("underlying BroadcastExchange can not run in the GPU.")
+                  }
+              }
+            case _ =>
+              willNotWorkOnGpu("the subquery to broadcast can not entirely run in the GPU.")
+          }
+          /**
+          * Simply returns the original plan. Because its only child, BroadcastExchange, doesn't
+          * need to change if SubqueryBroadcastExec falls back to the CPU.
+          */
+          override def convertToCpu(): SparkPlan = s
+
+          override def convertToGpu(): GpuExec = {
+            GpuSubqueryBroadcastExec(s.name, s.index, s.buildKeys, broadcastBuilder())(
+              getBroadcastModeKeyExprs)
+          }
+
+          /** Extract the broadcast mode key expressions if there are any. */
+          private def getBroadcastModeKeyExprs: Option[Seq[Expression]] = {
+            val broadcastMode = s.child match {
+              case bqse: BroadcastQueryStageExec =>
+                bqse.plan match {
+                  case reuse: ReusedExchangeExec =>
+                    reuse.child match {
+                      case g: GpuBroadcastExchangeExec =>
+                        g.mode
+                    }
+                  case _ =>
+                    throw new AssertionError("should not reach here")
+                }
+            }
+
+            broadcastMode match {
+              case HashedRelationBroadcastMode(keys, _) => Some(keys)
+              case IdentityBroadcastMode => None
+              case m => throw new UnsupportedOperationException(s"Unknown broadcast mode $m")
+            }
+          }
+        }),
       GpuOverrides.exec[FileSourceScanExec](
         "Reading data from files, often from Hive tables",
         ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
@@ -98,11 +162,55 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
             val convertBroadcast = (bc: SubqueryBroadcastExec) => {
               val meta = GpuOverrides.wrapAndTagPlan(bc, conf)
               meta.tagForExplain()
-              meta.convertIfNeeded().asInstanceOf[BaseSubqueryExec]
+              val converted = meta.convertIfNeeded()
+              logWarning(s"DPP: converted to $converted")
+              converted.asInstanceOf[BaseSubqueryExec]
             }
+            def findRootMeta(m: RapidsMeta[_,_,_]): RapidsMeta[_,_,_] = {
+              m.parent match {
+                case None => m
+                case Some(p) => findRootMeta(p)
+              }
+            }
+
+            // logWarning(s"DPE: wrapped: ${wrapped}")
+            // logWarning(s"DPE: filePruning: ${wrapped.getFilePruningFilterFromBroadcast}")
+            // val sparkSession = wrapped.relation.sparkSession
+            // val root = findRootMeta(this).wrapped.asInstanceOf[SparkPlan]
+            // logWarning(s"DPF: root:\n$root")
+            // val cdpf = PlanAdaptiveDynamicPruningFilters(root)
+            // // logWarning(s"CDPF: ${cdpf}")
+            // val updatedRoot = cdpf.apply(root)
+            // logWarning(s"CDPF: updated:\n${updatedRoot}")
+
+            // updated.asInstanceOf[FileSourceScanExec].partitionFilters.foreach {
+            //   // logWarning(s"filter: $filter")
+            //   case dps @ DynamicPruningSubquery(_, _, _, _, _, _, _, _, _) =>
+            //     logWarning(s"DPE: still a DPS instead: $dps")
+            //   case dpe @ DynamicPruningExpression(_) =>
+            //     logWarning(s"DPE: got a DPE: $dpe")
+            //   case _ =>
+            //   // filter.transformDown {
+            //   //   case dps @ DynamicPruningSubquery(_, _, _, _, _, _, _, _, _) =>
+            //   //     logWarning(s"DPE: still a DPS instead: $dps")
+            //   //     dps
+            //   //   case dpe @ DynamicPruningExpression(_) =>
+            //   //     logWarning(s"DPE: got a DPE: $dpe")
+            //   //     dpe
+            //   // }
+            // }
             wrapped.partitionFilters.map { filter =>
               filter.transformDown {
+                case dps @ DynamicPruningSubquery(child, _, _, _, _, _, buildQuery, _, _) =>
+                  logWarning(s"DPE: got DPS instead: $dps")
+                  logWarning(s"DPS: what is this child: ${child.getClass}")
+                  logWarning(s"DPS: methods: onlyInBroadcast ${dps.onlyInBroadcast}")
+                  logWarning(s"DPS: methods: buildKeys ${dps.buildKeys}")
+                  logWarning(s"DPS: methods: broadcastKeyIndex ${dps.broadcastKeyIndex}")
+
+                  dps
                 case dpe @ DynamicPruningExpression(inSub: InSubqueryExec) =>
+                  logWarning(s"DPE: inSub plan: ${inSub.plan}")
                   inSub.plan match {
                     case bc: SubqueryBroadcastExec =>
                       dpe.copy(inSub.copy(plan = convertBroadcast(bc)))

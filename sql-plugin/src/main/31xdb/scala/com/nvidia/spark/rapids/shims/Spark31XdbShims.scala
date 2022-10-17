@@ -207,6 +207,7 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
               meta.tagForExplain()
               meta.convertIfNeeded().asInstanceOf[BaseSubqueryExec]
             }
+            logWarning(s"DPE: 31xdb shim: partitionFilters: ${wrapped.partitionFilters}")
             wrapped.partitionFilters.map { filter =>
               filter.transformDown {
                 case dpe @ DynamicPruningExpression(inSub: InSubqueryExec) =>
