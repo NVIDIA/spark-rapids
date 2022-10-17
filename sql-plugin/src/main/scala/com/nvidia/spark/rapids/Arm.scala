@@ -156,6 +156,19 @@ trait Arm {
       h.close()
     }
   }
+
+  def lazyReduce[T <: AutoCloseable](
+    lazySeq: Seq[() => T])(
+    func: Function2[T, T, T]
+    ): () => T = {
+    lazySeq.reduceLeft { (lazy1, lazy2) =>
+      () => {
+        withResource(lazy1()) { lzv1 =>
+          withResource(lazy2())(lzv2 => func(lzv1, lzv2))
+        }
+      }
+    }
+  }
 }
 
 class CloseableHolder[T <: AutoCloseable](var t: T) {

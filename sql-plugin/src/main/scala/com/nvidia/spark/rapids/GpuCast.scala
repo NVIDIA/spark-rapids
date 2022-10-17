@@ -1244,29 +1244,18 @@ object GpuCast extends Arm {
     withResource(orElse) { orElse =>
 
       // valid dates must match the regex and either of the cuDF formats
-      val isCudfMatch = withResource(input.isTimestamp(cudfFormat1)) { isTimestamp1 =>
-        withResource(input.isTimestamp(cudfFormat2)) { isTimestamp2 =>
-          withResource(input.isTimestamp(cudfFormat3)) { isTimestamp3 =>
-            withResource(input.isTimestamp(cudfFormat4)) { isTimestamp4 =>
-              withResource(isTimestamp1.or(isTimestamp2)) { isTimestamp12 =>
-                withResource(isTimestamp12.or(isTimestamp3)) { isTimestamp123 =>
-                  isTimestamp123.or(isTimestamp4)
-                }
-              }
-            }
-          }
-        }
-      }
+      val isCudfMatch = lazyReduce(
+        Seq(cudfFormat1, cudfFormat2, cudfFormat3, cudfFormat4)
+          .map(f => (() => input.isTimestamp(f)))
+      )(_ or _)
 
-      val isValidTimestamp = withResource(isCudfMatch) { isCudfMatch =>
-        withResource(input.matchesRe(TIMESTAMP_REGEX_FULL)) { isRegexMatch =>
-          isCudfMatch.and(isRegexMatch)
-        }
-      }
+      val isValidTimestamp = lazyReduce(
+        Seq(isCudfMatch, () => input.matchesRe(TIMESTAMP_REGEX_FULL))
+      )(_ and _)
 
       // we only need to parse with one of the cuDF formats because the parsing code ignores
       // the ' ' or 'T' between the date and time components
-      withResource(isValidTimestamp) { _ =>
+      withResource(isValidTimestamp()) { isValidTimestamp =>
         withResource(input.asTimestampMicroseconds(cudfFormat1)) { asDays =>
           isValidTimestamp.ifElse(asDays, orElse)
         }
