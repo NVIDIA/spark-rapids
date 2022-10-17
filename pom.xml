@@ -1069,6 +1069,7 @@
         <cuda.version>cuda11</cuda.version>
         <spark-rapids-jni.version>22.12.0-SNAPSHOT</spark-rapids-jni.version>
         <scala.binary.version>2.12</scala.binary.version>
+        <alluxio.client.version>2.8.0</alluxio.client.version>
         <scala.recompileMode>incremental</scala.recompileMode>
         <scala.version>2.12.15</scala.version>
         <scala.javac.args>-Xlint:all,-serial,-path,-try</scala.javac.args>
@@ -1207,6 +1208,13 @@
               <groupId>org.rogach</groupId>
               <artifactId>scallop_${scala.binary.version}</artifactId>
               <version>3.5.1</version>
+            </dependency>
+            <dependency>
+                <!-- Used for Alluxio mounting -->
+                <groupId>org.alluxio</groupId>
+                <artifactId>alluxio-core-client-fs</artifactId>
+                <version>${alluxio.client.version}</version>
+                <scope>provided</scope>
             </dependency>
             <dependency>
               <groupId>org.scalatest</groupId>

@@ -129,7 +129,9 @@ case class GpuFileSourceScanExec(
     } else if (AlluxioUtils.isAlluxioPathsToReplaceTaskTime(rapidsConf, relation.fileFormat)) {
       // this is not ideal, here we check to see if we will replace any paths, which is an
       // extra iteration through paths
-      alluxioPathReplacementMap = AlluxioUtils.checkIfNeedsReplaced(rapidsConf, pds)
+      alluxioPathReplacementMap = AlluxioUtils.checkIfNeedsReplaced(rapidsConf, pds,
+        relation.sparkSession.sparkContext.hadoopConfiguration,
+        relation.sparkSession.conf)
     }
     logDebug(s"File listing and possibly replace with Alluxio path " +
       s"took: ${System.nanoTime() - startTime}")
