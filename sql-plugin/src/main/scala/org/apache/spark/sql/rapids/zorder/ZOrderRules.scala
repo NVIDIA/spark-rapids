@@ -29,6 +29,62 @@ import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
  * apart with reflection.  That way if they exist on the classpath we can replace them.
  */
 object ZOrderRules {
+
+  private[this] def readFieldWithReflection[T](instance: T, fieldName: String): Any = {
+    val clazz = instance.getClass
+    val field = clazz.getDeclaredField(fieldName)
+    field.setAccessible(true)
+    field.get(instance)
+  }
+
+  def partExprRule(partExprClass: Class[_ <: Expression]): ExprRule[_ <: Expression] =
+    expr[UnaryExpression](
+      "Partitioning for zorder (normalize a column)",
+      ExprChecks.unaryProject(
+        TypeSig.INT,
+        TypeSig.INT,
+        // Same as RangePartitioningExec
+        (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested(),
+        TypeSig.orderable),
+      (a, conf, p, r) => new UnaryExprMeta[UnaryExpression](a, conf, p, r) {
+        def getBoundsNOrder: (Array[InternalRow], SortOrder) = {
+          // We have to pull pick apart the partitioner apart, but we have to use reflection
+          // to do it, because what we want is private
+          val parter = readFieldWithReflection(a, "partitioner")
+          val rangeBounds = readFieldWithReflection(parter, "rangeBounds")
+              .asInstanceOf[Array[InternalRow]]
+          val ordering = readFieldWithReflection(parter, "ordering")
+              .asInstanceOf[LazilyGeneratedOrdering]
+
+          val singleOrder = ordering.ordering.head
+          (rangeBounds, singleOrder)
+        }
+
+        override def tagExprForGpu(): Unit = {
+          try {
+            // Run this first to be sure that we can get what we need to convert
+            getBoundsNOrder
+          } catch {
+            case _: NoSuchFieldError | _: SecurityException | _: IllegalAccessException =>
+              willNotWorkOnGpu("The version of the partitioner does not have " +
+                  "the expected fields in it.")
+          }
+        }
+
+        override def convertToGpu(child: Expression): GpuExpression = {
+          val (rangeBounds, singleOrder) = getBoundsNOrder
+          // We need to create a GpuSorter, but where we are at will not have a schema/etc
+          // so we need to make one up. We know the type and that there will only ever be
+          // one column, so
+          val sortCol = AttributeReference("sort_col", child.dataType, child.nullable)()
+          val ourSortOrder =
+            SortOrder(sortCol, singleOrder.direction, singleOrder.nullOrdering, Seq.empty)
+          val sorter = new GpuSorter(Seq(ourSortOrder), Array(sortCol))
+          val gpuPart = new GpuRangePartitioner(rangeBounds, sorter)
+          GpuPartitionerExpr(child, gpuPart)
+        }
+      })
+
   def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     try {
       val interleaveClazz =
@@ -51,60 +107,9 @@ object ZOrderRules {
       val partExprClass =
         ShimLoader.loadClass("org.apache.spark.sql.delta.expressions.PartitionerExpr")
             .asInstanceOf[Class[Expression]]
-      val partExprRule = expr[UnaryExpression](
-        "Partitioning on a single column for deltalake zorder",
-        ExprChecks.unaryProject(
-          TypeSig.INT,
-          TypeSig.INT,
-          // Same as RangePartitioningExec
-          (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested(),
-          TypeSig.orderable),
-        (a, conf, p, r) => new UnaryExprMeta[UnaryExpression](a, conf, p, r) {
-          def getBoundsNOrder: (Array[InternalRow], SortOrder) = {
-            // We have to pull pick apart the partitioner apart, but we have to use reflection
-            // to do it, because what we want is private
-            val parterField = partExprClass.getDeclaredField("partitioner")
-            parterField.setAccessible(true)
-            val parter = parterField.get(a)
-            val partClass = parter.getClass
-
-            val rangeBoundsField = partClass.getDeclaredField("rangeBounds")
-            rangeBoundsField.setAccessible(true)
-            val rangeBounds = rangeBoundsField.get(parter).asInstanceOf[Array[InternalRow]]
-
-            val orderingField = partClass.getDeclaredField("ordering")
-            orderingField.setAccessible(true)
-            val ordering = orderingField.get(parter).asInstanceOf[LazilyGeneratedOrdering]
-            val singleOrder = ordering.ordering.head
-            (rangeBounds, singleOrder)
-          }
-
-          override def tagExprForGpu(): Unit = {
-            try {
-              // Run this first to be sure that we can get what we need to convert
-              getBoundsNOrder
-            } catch {
-              case _: NoSuchFieldError | _: SecurityException | _: IllegalAccessException =>
-                willNotWorkOnGpu("The version of the partitioner does not have " +
-                    "the expected fields in it.")
-            }
-          }
-
-          override def convertToGpu(child: Expression): GpuExpression = {
-            val (rangeBounds, singleOrder) = getBoundsNOrder
-            // We need to create a GpuSorter, but where we are at will not have a schema/etc
-            // so we need to make one up. We know the type and that there will only ever be
-            // one column, so
-            val sortCol = AttributeReference("sort_col", child.dataType, child.nullable)()
-            val ourSortOrder =
-              SortOrder(sortCol, singleOrder.direction, singleOrder.nullOrdering, Seq.empty)
-            val sorter = new GpuSorter(Seq(ourSortOrder), Array(sortCol))
-            val gpuPart = new GpuRangePartitioner(rangeBounds, sorter)
-            GpuPartitionerExpr(child, gpuPart)
-          }
-        })
+      val partRule = partExprRule(partExprClass)
       Map(interleaveClazz -> interleaveRule,
-        partExprClass -> partExprRule)
+        partExprClass -> partRule)
     } catch {
       case _: ClassNotFoundException =>
         Map.empty
