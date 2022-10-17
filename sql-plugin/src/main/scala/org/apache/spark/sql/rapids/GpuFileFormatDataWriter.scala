@@ -186,7 +186,7 @@ class GpuSingleDirectoryDataWriter(
             tabs.foreach(b => {
               if (needNewWriter) {
                 fileCounter += 1
-                assert(fileCounter < MAX_FILE_COUNTER,
+                assert(fileCounter <= MAX_FILE_COUNTER,
                   s"File counter $fileCounter is beyond max value $MAX_FILE_COUNTER")
                 newOutputWriter()
               }
@@ -531,7 +531,7 @@ class GpuDynamicPartitionDataSingleWriter(
               tabs.foreach(b => {
                 if (needNewWriter) {
                   currentWriterStatus.fileCounter += 1
-                  assert(currentWriterStatus.fileCounter < MAX_FILE_COUNTER,
+                  assert(currentWriterStatus.fileCounter <= MAX_FILE_COUNTER,
                     s"File counter ${currentWriterStatus.fileCounter} " +
                       s"is beyond max value $MAX_FILE_COUNTER")
 
@@ -978,7 +978,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
               tabs.foreach(b => {
                 if (needNewWriter) {
                   status.writerStatus.fileCounter += 1
-                  assert(status.writerStatus.fileCounter < MAX_FILE_COUNTER,
+                  assert(status.writerStatus.fileCounter <= MAX_FILE_COUNTER,
                     s"File counter ${status.writerStatus.fileCounter} " +
                       s"is beyond max value $MAX_FILE_COUNTER")
                   status.writerStatus.outputWriter.close()
@@ -987,7 +987,6 @@ class GpuDynamicPartitionDataConcurrentWriter(
                   val w = newWriter(partitionDir, None, status.writerStatus.fileCounter)
                   status.writerStatus.outputWriter = w
                   status.writerStatus.recordsInFile = 0L
-                  status.writerStatus.fileCounter += 1
                 }
                 withResource(b.getTable()) {tab =>
                   val bc = GpuColumnVector.from(tab, dataTypes)
