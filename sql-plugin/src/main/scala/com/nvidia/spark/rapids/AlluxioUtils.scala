@@ -172,7 +172,7 @@ object AlluxioUtils extends Logging with Arm {
           // load mounted point by call Alluxio client.
           try {
             val (access_key, secret_key) = getKeyAndSecret(hadoopConf, runtimeConf)
-            val mountPoints = getExistS3MountPoints(access_key, secret_key)
+            val mountPoints = getExistS3MountPoints(conf.getAlluxioUser, access_key, secret_key)
             mountPoints.foreach { e =>
               val (s3Path, alluxioPath) = (e._2.getUfsUri, e._1)
               mountedBuckets(alluxioPath) = s3Path
@@ -201,6 +201,7 @@ object AlluxioUtils extends Logging with Arm {
   }
 
   private def getS3ClientConf(
+      alluxioUser: String,
       s3AccessKey: Option[String],
       s3SecretKey: Option[String]): InstancedConfiguration = {
     val conf = InstancedConfiguration.defaults
@@ -210,13 +211,15 @@ object AlluxioUtils extends Logging with Arm {
       conf.set(PropertyKey.MASTER_HOSTNAME, host, Source.RUNTIME))
     alluxioMasterPort.foreach(port =>
       conf.set(PropertyKey.MASTER_RPC_PORT, port, Source.RUNTIME))
+    conf.set(PropertyKey.SECURITY_LOGIN_USERNAME, alluxioUser, Source.RUNTIME)
     conf
   }
 
   private def getExistS3MountPoints(
+      alluxioUser: String,
       s3AccessKey: Option[String],
       s3SecretKey: Option[String]): mutable.Map[String, MountPointInfo] = {
-    val conf = getS3ClientConf(s3AccessKey, s3SecretKey)
+    val conf = getS3ClientConf(alluxioUser, s3AccessKey, s3SecretKey)
     // get s3 mount points by alluxio client
     withResource(alluxio.client.file.FileSystem.Factory.create(conf)) { fs =>
       val mountTable = fs.getMountTable
@@ -227,9 +230,9 @@ object AlluxioUtils extends Logging with Arm {
   // path is like "s3://foo/test...", it mounts bucket "foo" by calling the alluxio CLI
   // And we'll append --option to set access_key and secret_key if existing.
   // Suppose the key doesn't exist when using like Databricks's instance profile
-  private def autoMountBucket(scheme: String, bucket: String,
+  private def autoMountBucket(alluxioUser: String, scheme: String, bucket: String,
       s3AccessKey: Option[String], s3SecretKey: Option[String]): Unit = {
-    val conf = getS3ClientConf(s3AccessKey, s3SecretKey)
+    val conf = getS3ClientConf(alluxioUser, s3AccessKey, s3SecretKey)
 
     // to match the output of alluxio fs mount, append / to remote_path
     // and add / before bucket name for absolute path in Alluxio
@@ -319,6 +322,7 @@ object AlluxioUtils extends Logging with Arm {
   }
 
   private def genFuncForAutoMountReplacement(
+      alluxioUser: String,
       runtimeConf: RuntimeConfig,
       hadoopConf: Configuration,
       alluxioBucketRegex: String): Option[Path => AlluxioPathReplaceConvertTime] = {
@@ -327,7 +331,7 @@ object AlluxioUtils extends Logging with Arm {
       val res = if (pathStr.matches(alluxioBucketRegex)) {
         val (access_key, secret_key) = getKeyAndSecret(hadoopConf, runtimeConf)
         val (scheme, bucket) = getSchemeAndBucketFromPath(pathStr)
-        autoMountBucket(scheme, bucket, access_key, secret_key)
+        autoMountBucket(alluxioUser, scheme, bucket, access_key, secret_key)
         assert(alluxioMasterHostAndPort.isDefined)
         AlluxioPathReplaceConvertTime(
           new Path(replaceSchemeWithAlluxio(pathStr, scheme, alluxioMasterHostAndPort.get)),
@@ -402,7 +406,8 @@ object AlluxioUtils extends Logging with Arm {
       genFuncForPathReplacement(alluxioPathsToReplaceMap)
     } else if (conf.getAlluxioAutoMountEnabled) {
       val alluxioBucketRegex: String = conf.getAlluxioBucketRegex
-      genFuncForAutoMountReplacement(runtimeConf, hadoopConf, alluxioBucketRegex)
+      genFuncForAutoMountReplacement(conf.getAlluxioUser, runtimeConf, hadoopConf,
+        alluxioBucketRegex)
     } else {
       None
     }
@@ -458,7 +463,7 @@ object AlluxioUtils extends Logging with Arm {
         pd.files.map(_.getPath.toString).flatMap { file =>
           if (file.matches(alluxioBucketRegex)) {
             val (scheme, bucket) = getSchemeAndBucketFromPath(file)
-            autoMountBucket(scheme, bucket, access_key, secret_key)
+            autoMountBucket(conf.getAlluxioUser, scheme, bucket, access_key, secret_key)
             Some(scheme)
           } else {
             None

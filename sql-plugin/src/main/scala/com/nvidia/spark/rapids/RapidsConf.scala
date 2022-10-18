@@ -1390,6 +1390,14 @@ object RapidsConf {
     .stringConf
     .createWithDefault("^s3a{0,1}://.*")
 
+  val ALLUXIO_USER = conf("spark.rapids.alluxio.user")
+      .doc("Alluxio user is set on the Alluxio client, " +
+          "which is used to mount or get information. " +
+          "By default it should be the user that running the Alluxio processes. " +
+          "The default value is ubuntu.")
+      .stringConf
+      .createWithDefault("ubuntu")
+
   val ALLUXIO_REPLACEMENT_ALGO = conf("spark.rapids.alluxio.replacement.algo")
     .doc("The algorithm used when replacing the UFS path with the Alluxio path. CONVERT_TIME " +
       "and TASK_TIME are the valid options. CONVERT_TIME indicates that we do it " +
@@ -2099,6 +2107,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val getAlluxioAutoMountEnabled: Boolean = get(ALLUXIO_AUTOMOUNT_ENABLED)
 
   lazy val getAlluxioBucketRegex: String = get(ALLUXIO_BUCKET_REGEX)
+
+  lazy val getAlluxioUser: String = get(ALLUXIO_USER)
 
   lazy val getAlluxioReplacementAlgo: String = get(ALLUXIO_REPLACEMENT_ALGO)
 
