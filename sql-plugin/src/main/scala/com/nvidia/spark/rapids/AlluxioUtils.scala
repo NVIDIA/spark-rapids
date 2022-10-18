@@ -179,7 +179,7 @@ object AlluxioUtils extends Logging with Arm {
               logInfo(s"Found mounted bucket $s3Path to $alluxioPath")
             }
           } catch {
-            case e: Exception => logWarning(s"Failed to run alluxio fs mount", e)
+            case e: Exception => logWarning(s"Failed to get alluxio mount table", e)
           }
         } else {
           alluxioPathsToReplaceMap = getReplacementMapOption(conf)
