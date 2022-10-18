@@ -299,7 +299,7 @@ object GpuIntervalUtils extends Arm {
       ))(_ bitXor _)
     }
 
-    withResource(negatives) { _ =>
+    withResource(negatives()) { s =>
       withResource(Scalar.fromLong(1L)) { posOne =>
         withResource(Scalar.fromLong(-1L))(negOne => s.ifElse(negOne, posOne))
       }
@@ -315,10 +315,10 @@ object GpuIntervalUtils extends Arm {
    */
   private def getMicrosFromDecimal(sign: ColumnVector, decimal: ColumnVector): ColumnVector = {
     val timesMillion = lazyReduce(Seq(
-      lazyResource(decimal.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -6)),
-      lazyResource(Scalar.fromLong(1000000L))
-    )))(_ mul _)
-    val timesMillionLongs = withResource(timesMillion)(_.asLongs())
+      lazyResource(decimal.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -6))),
+      lazyResource(Scalar.fromLong(1000000L))))(_ mul _)
+
+    val timesMillionLongs = withResource(timesMillion().asInstanceOf[ColumnVector])(_.asLongs())
     withResource(timesMillionLongs)(_ mul sign)
   }
 

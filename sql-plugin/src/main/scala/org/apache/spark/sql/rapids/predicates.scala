@@ -223,7 +223,8 @@ case class GpuEqualTo(left: Expression, right: Expression) extends CudfBinaryCom
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    fixFloatingPointResult(super.doColumnar(lhs, rhs), lhs.getBase.isNan, Scalar.fromBool(rhs.isNan))
+    fixFloatingPointResult(super.doColumnar(lhs, rhs), lhs.getBase.isNan,
+      Scalar.fromBool(rhs.isNan))
   }
 
   override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
@@ -301,7 +302,8 @@ case class GpuGreaterThan(left: Expression, right: Expression) extends CudfBinar
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    fixFloatingPointResult(super.doColumnar(lhs, rhs), lhs.getBase.isNan, Scalar.fromBool(rhs.isNotNan))
+    fixFloatingPointResult(super.doColumnar(lhs, rhs), lhs.getBase.isNan,
+      Scalar.fromBool(rhs.isNotNan))
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
