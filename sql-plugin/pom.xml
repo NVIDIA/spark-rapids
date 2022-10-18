@@ -75,7 +75,7 @@
         <dependency>
             <!-- Used for Alluxio mounting -->
             <groupId>org.alluxio</groupId>
-            <artifactId>alluxio-core-client-fs</artifactId>
+            <artifactId>alluxio-shaded-client</artifactId>
         </dependency>
     </dependencies>
 
