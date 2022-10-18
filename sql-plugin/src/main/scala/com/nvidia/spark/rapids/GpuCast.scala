@@ -1542,17 +1542,13 @@ object GpuCast extends Arm {
       }
     }
 
-    withResource(updatedMaxRet) { updatedMax =>
-      withResource(Scalar.fromLong(minSeconds)) { minSecondsS =>
-        withResource(longInput.lessThan(minSecondsS)) { lessThanMinSeconds =>
-          withResource(Scalar.fromLong(Long.MinValue)) { longMinS =>
-            withResource(lessThanMinSeconds.ifElse(longMinS, updatedMax)) { cv =>
-              cv.castTo(GpuColumnVector.getNonNestedRapidsType(toType))
-            }
-          }
-        }
+    val cv = withResource(updatedMaxRet) { updatedMax =>
+      withResource(Seq(minSeconds, Long.MinValue).safeMap(Scalar.fromLong)) {
+        case Seq(minSecondsS, longMinS) =>
+          withResource(longInput.lessThan(minSecondsS))(_.ifElse(longMinS, updatedMax))
       }
     }
+    withResource(cv)(_.castTo(GpuColumnVector.getNonNestedRapidsType(toType)))
   }
 }
 
