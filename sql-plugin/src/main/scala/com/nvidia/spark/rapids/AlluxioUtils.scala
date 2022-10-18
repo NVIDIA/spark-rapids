@@ -25,6 +25,7 @@ import scala.io.BufferedSource
 
 import alluxio.AlluxioURI
 import alluxio.conf.{InstancedConfiguration, PropertyKey, Source}
+import alluxio.grpc.MountPOptions
 import alluxio.wire.MountPointInfo
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -246,7 +247,11 @@ object AlluxioUtils extends Logging with Arm {
             // we only support s3 or s3a bucket for now.
             // To support other cloud storage,
             // we need to support credential parameters for the others
-            fs.mount(new AlluxioURI(local_bucket), new AlluxioURI(remote_path))
+            val mountOptionsBuilder = MountPOptions.newBuilder().setReadOnly(true)
+            s3AccessKey.foreach(e => mountOptionsBuilder.putProperties("s3a.accessKeyId", e))
+            s3SecretKey.foreach(e => mountOptionsBuilder.putProperties("s3a.secretKey", e))
+            fs.mount(new AlluxioURI(local_bucket), new AlluxioURI(remote_path),
+              mountOptionsBuilder.build())
             logInfo(s"Mounted bucket $remote_path to $local_bucket in Alluxio")
             mountedBuckets(local_bucket) = remote_path
           }
