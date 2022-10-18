@@ -341,9 +341,13 @@ class CSVPartitionReader(
    */
   override def castStringToBool(input: ColumnVector): ColumnVector = {
     val lowerStripped = withResource(input.strip())(_.lower())
-    val isTrue = closeOnExcept(lowerStripped)(_.matchesRe(true.toString()))
-    val isValidBool = withResource(lowerStripped) {
-      _.matchesRe(Seq(true, false).mkString("|"))
+    val isTrue = closeOnExcept(lowerStripped) { _ =>
+      withResource(Scalar.fromString(true.toString))(lowerStripped.equalTo)
+    }
+    val isValidBool = withResource(lowerStripped) { _ =>
+      withResource(ColumnVector.fromStrings(true.toString, false.toString)) { boolStrings =>
+        lowerStripped.contains(boolStrings)
+      }
     }
     withResource(isValidBool) { _ =>
       withResource(Scalar.fromNull(DType.BOOL8)) { nullBool =>
