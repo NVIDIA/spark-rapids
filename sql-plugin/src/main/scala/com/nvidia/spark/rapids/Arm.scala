@@ -159,6 +159,7 @@ trait Arm {
 
 
   def lazyResource[T <: AutoCloseable](x: => T) = () => x
+
   def lazyReduce[T <: AutoCloseable](
     lazySeq: Seq[() => T])(
     func: Function2[T, T, T]
@@ -170,6 +171,12 @@ trait Arm {
         }
       }
     }
+  }
+
+  def lazyAndThen[T <: AutoCloseable, R <: AutoCloseable](
+    x: () => T
+  )(func: Function[T, R]): () => R = {
+    lazyResource(withResource(x())(func))
   }
 }
 

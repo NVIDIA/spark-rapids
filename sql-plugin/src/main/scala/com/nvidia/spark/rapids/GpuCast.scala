@@ -992,31 +992,26 @@ object GpuCast extends Arm {
     val trueStrings = Seq("t", "true", "y", "yes", "1")
     val falseStrings = Seq("f", "false", "n", "no", "0")
     val boolStrings = trueStrings ++ falseStrings
-
     // determine which values are valid bool strings
     withResource(ColumnVector.fromStrings(boolStrings: _*)) { boolStrings =>
-      withResource(input.strip()) { stripped =>
-        withResource(stripped.lower()) { lower =>
-          withResource(lower.contains(boolStrings)) { validBools =>
-            // in ansi mode, fail if any values are not valid bool strings
-            if (ansiEnabled) {
-              withResource(validBools.all()) { isAllBool =>
-                if (isAllBool.isValid && !isAllBool.getBoolean) {
-                  throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
-                }
-              }
-            }
-            // replace non-boolean values with null
-            withResource(Scalar.fromNull(DType.STRING)) { nullString =>
-              withResource(validBools.ifElse(lower, nullString)) { sanitizedInput =>
-                // return true, false, or null, as appropriate
-                withResource(ColumnVector.fromStrings(trueStrings: _*)) { cvTrue =>
-                  sanitizedInput.contains(cvTrue)
-                }
+      val lowerStripped = withResource(input.strip())(_.lower())
+      val sanitizedInput = withResource(lowerStripped) { _ =>
+        withResource(lowerStripped.contains(boolStrings)) { validBools =>
+          // in ansi mode, fail if any values are not valid bool strings
+          if (ansiEnabled) {
+            withResource(validBools.all()) { isAllBool =>
+              if (isAllBool.isValid && !isAllBool.getBoolean) {
+                throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
               }
             }
           }
+          // replace non-boolean values with null
+          withResource(Scalar.fromNull(DType.STRING))(validBools.ifElse(lowerStripped, _))
         }
+      }
+      withResource(sanitizedInput) { _ =>
+        // return true, false, or null, as appropriate
+        withResource(ColumnVector.fromStrings(trueStrings: _*))(sanitizedInput.contains)
       }
     }
   }
@@ -1058,14 +1053,11 @@ object GpuCast extends Arm {
               }
             }
           }
-          withResource(sanitized.castTo(dType)) { casted =>
-            withResource(Scalar.fromNull(dType)) { nulls =>
-              withResource(isFloat.ifElse(casted, nulls)) { floatsOnly =>
-                withResource(FloatUtils.getNanScalar(dType)) { nan =>
-                  isNan.ifElse(nan, floatsOnly)
-                }
-              }
-            }
+          val floatsOnly = withResource(sanitized.castTo(dType)) { casted =>
+            withResource(Scalar.fromNull(dType))(isFloat.ifElse(casted, _))
+          }
+          withResource(floatsOnly) { _ =>
+            withResource(FloatUtils.getNanScalar(dType))(isNan.ifElse(_, floatsOnly))
           }
         }
       }
@@ -1117,16 +1109,15 @@ object GpuCast extends Arm {
 
   private def checkResultForAnsiMode(input: ColumnVector, result: ColumnVector,
       errMessage: String): ColumnVector = {
-    closeOnExcept(result) { finalResult =>
-      withResource(input.isNotNull) { wasNotNull =>
-        withResource(finalResult.isNull) { isNull =>
-          withResource(wasNotNull.and(isNull)) { notConverted =>
-            withResource(notConverted.any()) { notConvertedAny =>
-              if (notConvertedAny.isValid && notConvertedAny.getBoolean) {
-                throw new DateTimeException(errMessage)
-              }
-            }
-          }
+    closeOnExcept(result) { _ =>
+      val notConverted = lazyReduce(Seq(
+        lazyResource(input.isNotNull()),
+        lazyResource(result.isNull())
+      ))(_ and _)
+      val notConvertedAny = lazyAndThen(notConverted)(_.any())
+      withResource(notConvertedAny()) { x =>
+        if (x.isValid && x.getBoolean) {
+          throw new DateTimeException(errMessage)
         }
       }
     }
