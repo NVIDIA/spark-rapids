@@ -1246,6 +1246,7 @@ object RapidsConf {
   val SHUFFLE_TRANSPORT_CLASS_NAME = conf("spark.rapids.shuffle.transport.class")
     .doc("The class of the specific RapidsShuffleTransport to use during the shuffle.")
     .internal()
+    .startupOnly()
     .stringConf
     .createWithDefault("com.nvidia.spark.rapids.shuffle.ucx.UCXShuffleTransport")
 
@@ -1253,6 +1254,7 @@ object RapidsConf {
     conf("spark.rapids.shuffle.transport.maxReceiveInflightBytes")
       .doc("Maximum aggregate amount of bytes that be fetched at any given time from peers " +
         "during shuffle")
+      .startupOnly()
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(1024 * 1024 * 1024)
 
@@ -1261,23 +1263,27 @@ object RapidsConf {
       .doc("Set to true to force 'rndv' mode for all UCX Active Messages. " +
         "This should only be required with UCX 1.10.x. UCX 1.11.x deployments should " +
         "set to false.")
+      .startupOnly()
       .booleanConf
       .createWithDefault(false)
 
   val SHUFFLE_UCX_USE_WAKEUP = conf("spark.rapids.shuffle.ucx.useWakeup")
     .doc("When set to true, use UCX's event-based progress (epoll) in order to wake up " +
       "the progress thread when needed, instead of a hot loop.")
+    .startupOnly()
     .booleanConf
     .createWithDefault(true)
 
   val SHUFFLE_UCX_LISTENER_START_PORT = conf("spark.rapids.shuffle.ucx.listenerStartPort")
     .doc("Starting port to try to bind the UCX listener.")
     .internal()
+    .startupOnly()
     .integerConf
     .createWithDefault(0)
 
   val SHUFFLE_UCX_MGMT_SERVER_HOST = conf("spark.rapids.shuffle.ucx.managementServerHost")
     .doc("The host to be used to start the management server")
+    .startupOnly()
     .stringConf
     .createWithDefault(null)
 
@@ -1285,6 +1291,7 @@ object RapidsConf {
     conf("spark.rapids.shuffle.ucx.managementConnectionTimeout")
     .doc("The timeout for client connections to a remote peer")
     .internal()
+    .startupOnly()
     .integerConf
     .createWithDefault(0)
 
@@ -1292,6 +1299,7 @@ object RapidsConf {
     .doc("The size of bounce buffer to use in bytes. Note that this size will be the same " +
       "for device and host memory")
     .internal()
+    .startupOnly()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(4 * 1024  * 1024)
 
@@ -1299,6 +1307,7 @@ object RapidsConf {
     conf("spark.rapids.shuffle.ucx.bounceBuffers.device.count")
     .doc("The number of bounce buffers to pre-allocate from device memory")
     .internal()
+    .startupOnly()
     .integerConf
     .createWithDefault(32)
 
@@ -1306,12 +1315,14 @@ object RapidsConf {
     conf("spark.rapids.shuffle.ucx.bounceBuffers.host.count")
     .doc("The number of bounce buffers to pre-allocate from host memory")
     .internal()
+    .startupOnly()
     .integerConf
     .createWithDefault(32)
 
   val SHUFFLE_MAX_CLIENT_THREADS = conf("spark.rapids.shuffle.maxClientThreads")
     .doc("The maximum number of threads that the shuffle client should be allowed to start")
     .internal()
+    .startupOnly()
     .integerConf
     .createWithDefault(50)
 
@@ -1319,6 +1330,7 @@ object RapidsConf {
     .doc("The maximum number of tasks shuffle clients will queue before adding threads " +
       s"(up to spark.rapids.shuffle.maxClientThreads), or slowing down the transport")
     .internal()
+    .startupOnly()
     .integerConf
     .createWithDefault(100)
 
@@ -1326,12 +1338,14 @@ object RapidsConf {
     .doc("The number of seconds that the ThreadPoolExecutor will allow an idle client " +
       "shuffle thread to stay alive, before reclaiming.")
     .internal()
+    .startupOnly()
     .integerConf
     .createWithDefault(30)
 
   val SHUFFLE_MAX_SERVER_TASKS = conf("spark.rapids.shuffle.maxServerTasks")
     .doc("The maximum number of tasks the shuffle server will queue up for its thread")
     .internal()
+    .startupOnly()
     .integerConf
     .createWithDefault(1000)
 
@@ -1339,6 +1353,7 @@ object RapidsConf {
     .doc("The maximum size of a metadata message that the shuffle plugin will keep in its " +
       "direct message pool. ")
     .internal()
+    .startupOnly()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(500 * 1024)
 
@@ -1346,12 +1361,14 @@ object RapidsConf {
       .doc("The GPU codec used to compress shuffle data when using RAPIDS shuffle. " +
           "Supported codecs: lz4, copy, none")
       .internal()
+      .startupOnly()
       .stringConf
       .createWithDefault("none")
 
   val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.lz4.chunkSize")
     .doc("A configurable chunk size to use when compressing with LZ4.")
     .internal()
+    .startupOnly()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(64 * 1024)
 
@@ -1359,6 +1376,7 @@ object RapidsConf {
     conf("spark.rapids.shuffle.multiThreaded.maxBytesInFlight")
       .doc("The size limit, in bytes, that the RAPIDS shuffle manager configured in " +
           "\"MULTITHREADED\" mode will allow to be deserialized concurrently.")
+      .startupOnly()
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(Integer.MAX_VALUE)
 
@@ -1369,6 +1387,7 @@ object RapidsConf {
           "There are two special values: " +
           "0 = feature is disabled, falls back to Spark built-in shuffle writer; " +
           "1 = our implementation of Spark's built-in shuffle writer with extra metrics.")
+      .startupOnly()
       .integerConf
       .createWithDefault(20)
 
@@ -1379,6 +1398,7 @@ object RapidsConf {
             "There are two special values: " +
             "0 = feature is disabled, falls back to Spark built-in shuffle reader; " +
             "1 = our implementation of Spark's built-in shuffle reader with extra metrics.")
+        .startupOnly()
         .integerConf
         .createWithDefault(20)
 
@@ -1687,7 +1707,9 @@ object RapidsConf {
         |```
         |
         | All configs can be set on startup, but some configs, especially for shuffle, will not
-        | work if they are set at runtime.
+        | work if they are set at runtime. Please check the column of "Applicable at" to see
+        | when the config can be set. "Startup" means only valid on startup, "Runtime" means
+        | valid on both startup and runtime.
         |""".stripMargin)
       // scalastyle:on line.size.limit
 
