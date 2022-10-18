@@ -45,9 +45,9 @@ class GpuCoGroupedArrowPythonRunner(
     conf: Map[String, String],
     batchSize: Int,
     val semWait: GpuMetric,
-    val pythonOutSchema: StructType)
+    pythonOutSchema: StructType)
   extends GpuPythonRunnerBase[(ColumnarBatch, ColumnarBatch)](funcs, evalType, argOffsets)
-    with GpuPythonArrowOutput with DefaultTableToBatchConverter {
+    with GpuPythonArrowOutput {
 
   protected override def newWriterThread(
       env: SparkEnv,
@@ -117,4 +117,8 @@ class GpuCoGroupedArrowPythonRunner(
       } // end of writeGroup
     }
   } // end of newWriterThread
+
+  def toBatch(table: Table): ColumnarBatch = {
+    GpuColumnVector.from(table, GpuColumnVector.extractTypes(pythonOutSchema))
+  }
 }

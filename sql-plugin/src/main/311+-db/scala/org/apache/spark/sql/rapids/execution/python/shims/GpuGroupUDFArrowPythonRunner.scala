@@ -28,7 +28,7 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python._
 import org.apache.spark.sql.execution.python.PythonUDFRunner
-import org.apache.spark.sql.rapids.execution.python.{BufferToStreamWriter, DefaultTableToBatchConverter, GpuArrowPythonRunner, GpuPythonArrowOutput, GpuPythonRunnerBase}
+import org.apache.spark.sql.rapids.execution.python.{BufferToStreamWriter, GpuArrowPythonRunner, GpuPythonArrowOutput, GpuPythonRunnerBase}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
@@ -55,9 +55,9 @@ class GpuGroupUDFArrowPythonRunner(
     conf: Map[String, String],
     batchSize: Long,
     val semWait: GpuMetric,
-    val pythonOutSchema: StructType)
+    pythonOutSchema: StructType)
   extends GpuPythonRunnerBase[ColumnarBatch](funcs, evalType, argOffsets)
-    with GpuPythonArrowOutput with DefaultTableToBatchConverter {
+    with GpuPythonArrowOutput {
 
   protected override def newWriterThread(
       env: SparkEnv,
@@ -122,5 +122,9 @@ class GpuGroupUDFArrowPythonRunner(
         }
       }
     }
+  }
+
+  def toBatch(table: Table): ColumnarBatch = {
+    GpuColumnVector.from(table, GpuColumnVector.extractTypes(pythonOutSchema))
   }
 }

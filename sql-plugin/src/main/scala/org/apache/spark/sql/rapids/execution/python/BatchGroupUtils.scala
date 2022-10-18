@@ -347,17 +347,9 @@ private[python] object BatchGroupedIterator extends Arm {
    * @return a columnar batch with the children pulled out.
    */
   def extractChildren(batch: ColumnarBatch, childrenAttrs: Seq[Attribute]): ColumnarBatch = {
-    assert(batch.numCols() == 1, "Expect only one struct column")
-    assert(batch.column(0).dataType().isInstanceOf[StructType],
-      "Expect a struct column")
-    val structColumn = batch.column(0).asInstanceOf[GpuColumnVector].getBase
-    val outputColumns = childrenAttrs.zipWithIndex.safeMap {
-      case (attr, i) =>
-        withResource(structColumn.getChildColumnView(i)) { childView =>
-          GpuColumnVector.from(childView.copyToColumnVector(), attr.dataType)
-        }
+    withResource(GpuColumnVector.from(batch)) { table =>
+      extractChildren(table, childrenAttrs)
     }
-    new ColumnarBatch(outputColumns.toArray, batch.numRows())
   }
 
   /**

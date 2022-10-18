@@ -52,12 +52,8 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
     val (numInputRows, numInputBatches, numOutputRows, numOutputBatches,
          spillCallback) = commonGpuMetrics()
 
-    lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
     val pyInputTypes = child.schema
     val chainedFunc = Seq(ChainedPythonFunctions(Seq(pandasFunction)))
-    val sessionLocalTimeZone = conf.sessionLocalTimeZone
-    val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
-    val localOutput = output
 
     // Start process
     child.executeColumnar().mapPartitionsInternal { inputIter =>
@@ -66,15 +62,16 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
       // Single function with one struct.
       val argOffsets = Array(Array(0))
       val pyInputSchema = StructType(StructField("in_struct", pyInputTypes) :: Nil)
+      val sessionLocalTimeZone = conf.sessionLocalTimeZone
+      val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
 
+      val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
       if (isPythonOnGpuEnabled) {
         GpuPythonHelper.injectGpuInfo(chainedFunc, isPythonOnGpuEnabled)
         PythonWorkerSemaphore.acquireIfNecessary(context)
       }
 
       val contextAwareIter = new Iterator[ColumnarBatch] {
-        // This is to implement the same logic of `ContextAwareIterator` involved from 3.0.2 .
-        // Doing this can avoid shim layers for Spark versions before 3.0.2.
         override def hasNext: Boolean =
           !context.isCompleted() && !context.isInterrupted() && inputIter.hasNext
 
@@ -106,7 +103,7 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
             batchSize,
             spillCallback.semaphoreWaitTime) {
           override def toBatch(table: Table): ColumnarBatch = {
-            BatchGroupedIterator.extractChildren(table, localOutput)
+            BatchGroupedIterator.extractChildren(table, output)
           }
         }
 

@@ -189,14 +189,6 @@ trait GpuPythonArrowOutput extends Arm { _: GpuPythonRunnerBase[_] =>
   }
 }
 
-trait DefaultTableToBatchConverter {
-  def pythonOutSchema: StructType
-
-  def toBatch(table: Table): ColumnarBatch = {
-    GpuColumnVector.from(table, GpuColumnVector.extractTypes(pythonOutSchema))
-  }
-}
-
 /**
  * Base class of GPU Python runners who will be mixed with GpuPythonArrowOutput
  * to produce columnar batches.
@@ -299,7 +291,7 @@ class GpuArrowPythonRunner(
     conf: Map[String, String],
     batchSize: Long,
     override val semWait: GpuMetric,
-    val pythonOutSchema: StructType,
+    pythonOutSchema: StructType,
     onDataWriteFinished: () => Unit = null)
   extends GpuArrowPythonRunnerBase(
     funcs,
@@ -310,7 +302,12 @@ class GpuArrowPythonRunner(
     conf,
     batchSize,
     semWait,
-    onDataWriteFinished) with DefaultTableToBatchConverter
+    onDataWriteFinished) {
+
+  def toBatch(table: Table): ColumnarBatch = {
+    GpuColumnVector.from(table, GpuColumnVector.extractTypes(pythonOutSchema))
+  }
+}
 
 object GpuArrowPythonRunner {
   def flattenNames(d: DataType, nullable: Boolean = true): Seq[(String, Boolean)] =
