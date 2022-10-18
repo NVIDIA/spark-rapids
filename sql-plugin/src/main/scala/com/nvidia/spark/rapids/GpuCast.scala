@@ -783,20 +783,13 @@ object GpuCast extends Arm {
         else {strCol.incRefCount}
       }
 
-      withResource(ColumnVector.fromScalar(sep, numRows)) {sepCol =>
-        withResource(input.getChildColumnView(0)) { childCol =>
-          withResource(addSpaces(childCol)) {strChildCol =>
-            withResource(input.replaceListChild(strChildCol)) {strArrayCol =>
-              withResource(
-                strArrayCol.stringConcatenateListElements(sepCol)) { strColContainsNull =>
-                withResource(strColContainsNull.replaceNulls(empty)) {strCol =>
-                  removeFirstSpace(strCol)
-                }
-              }
-            }
-          }
-        }
+      val strChildCol = withResource(input.getChildColumnView(0))(addSpaces)
+      val strArrayCol = withResource(strChildCol)(input.replaceListChild)
+      val strColContainsNull = withResource(ColumnVector.fromScalar(sep, numRows)) { sepCol =>
+        withResource(strArrayCol)(_.stringConcatenateListElements(sepCol))
       }
+      val strCol = withResource(strColContainsNull)(_.replaceNulls(empty))
+      withResource(strCol)(removeFirstSpace)
     }
   }
 
@@ -831,15 +824,11 @@ object GpuCast extends Arm {
           child, elementType, StringType, ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
       }
 
-      withResource(strChildContainsNull) {strChildContainsNull =>
-        withResource(input.replaceListChild(strChildContainsNull)) {strArrayCol =>
-          withResource(concatenateStringArrayElements(strArrayCol, legacyCastToString)) {strCol =>
-            withResource(addBrackets(strCol)) {
-              _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
-            }
-          }
-        }
-      }
+      val strArrayCol = withResource(strChildContainsNull)(input.replaceListChild)
+      val strCol = withResource(strArrayCol)(concatenateStringArrayElements(_, legacyCastToString))
+      val strColWithBrackets = withResource(strCol)(addBrackets)
+
+      withResource(strColWithBrackets)( _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input))
     }
   }
 
@@ -897,20 +886,17 @@ object GpuCast extends Arm {
       }
 
       // concatenate elements
-      withResource(strElements) {strElements =>
-        withResource(input.replaceListChild(strElements)) {strArrayCol =>
-          withResource(concatenateStringArrayElements(strArrayCol, legacyCastToString)) {strCol =>
-            withResource(
-              Seq(leftScalar, rightScalar).safeMap(ColumnVector.fromScalar(_, numRows))
-            ) {case Seq(leftCol, rightCol) =>
-              withResource(ColumnVector.stringConcatenate(
-                emptyScalar, nullScalar, Array(leftCol, strCol, rightCol))) {
-                _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
-              }
-            }
-          }
-        }
+      val strArrayCol = withResource(strElements)(input.replaceListChild)
+      val strCol = withResource(strArrayCol)(concatenateStringArrayElements(_, legacyCastToString))
+      val Seq(leftCol, rightCol) = closeOnExcept(strCol) { _ =>
+        Seq(leftScalar, rightScalar).safeMap(ColumnVector.fromScalar(_, numRows))
       }
+      val cols = Array[ColumnView](leftCol, strCol, rightCol)
+      val concatCol = withResource(cols) { _ =>
+        ColumnVector.stringConcatenate(emptyScalar, nullScalar, cols)
+      }
+
+      withResource(concatCol)( _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input))
     }
   }
 

@@ -292,17 +292,16 @@ object GpuIntervalUtils extends Arm {
   // not close firstSignInTable and secondSignInTable here, outer table.close will close them
   private def finalSign(
       firstSignInTable: ColumnVector, secondSignInTable: ColumnVector): ColumnVector = {
-    withResource(Scalar.fromString("-")) { negScalar =>
-      withResource(negScalar.equalTo(firstSignInTable)) { neg1 =>
-        withResource(negScalar.equalTo(secondSignInTable)) { neg2 =>
-          withResource(neg1.bitXor(neg2)) { s =>
-            withResource(Scalar.fromLong(1L)) { one =>
-              withResource(Scalar.fromLong(-1L)) { negOne =>
-                s.ifElse(negOne, one)
-              }
-            }
-          }
-        }
+    val negatives = withResource(Scalar.fromString("-")) { negScalar =>
+      lazyReduce(Seq(
+        lazyResource(negScalar.equalTo(firstSignInTable)),
+        lazyResource(negScalar.equalTo(secondSignInTable))
+      ))(_ bitXor _)
+    }
+
+    withResource(negatives) { _ =>
+      withResource(Scalar.fromLong(1L)) { posOne =>
+        withResource(Scalar.fromLong(-1L))(negOne => s.ifElse(negOne, posOne))
       }
     }
   }
@@ -315,15 +314,12 @@ object GpuIntervalUtils extends Arm {
    * @return micros column
    */
   private def getMicrosFromDecimal(sign: ColumnVector, decimal: ColumnVector): ColumnVector = {
-    withResource(decimal.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -6))) { decimal =>
-      withResource(Scalar.fromLong(1000000L)) { million =>
-        withResource(decimal.mul(million)) { r =>
-          withResource(r.asLongs()) { l =>
-            l.mul(sign)
-          }
-        }
-      }
-    }
+    val timesMillion = lazyReduce(Seq(
+      lazyResource(decimal.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -6)),
+      lazyResource(Scalar.fromLong(1000000L))
+    )))(_ mul _)
+    val timesMillionLongs = withResource(timesMillion)(_.asLongs())
+    withResource(timesMillionLongs)(_ mul sign)
   }
 
   private def addFromDayToDay(
