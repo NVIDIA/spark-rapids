@@ -80,17 +80,12 @@ case class GpuAcoshCompat(child: Expression) extends GpuUnaryMathExpression("ACO
     // to match Spark's
     // StrictMath.log(x + math.sqrt(x * x - 1.0))
     val base = input.getBase
-    withResource(base.mul(base)) { squared =>
-      withResource(Scalar.fromDouble(1.0)) { one =>
-        withResource(squared.sub(one)) { squaredMinOne =>
-          withResource(squaredMinOne.sqrt()) { sqrt =>
-            withResource(base.add(sqrt)) { sum =>
-              sum.log()
-            }
-          }
-        }
-      }
+    val squaredMinOne = withResource(base.mul(base)) { squared =>
+      withResource(Scalar.fromDouble(1.0))(squared.sub)
     }
+    val sqrt = withResource(squaredMinOne)(_.sqrt())
+    val sum = withResource(sqrt)(base.add)
+    withResource(sum)(_.log())
   }
 
   override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
