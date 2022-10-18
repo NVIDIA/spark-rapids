@@ -447,7 +447,11 @@ object SQLPlanParser extends Logging {
      // Get joinType and buildSide(if applicable)
      val joinParams = equiJoinRegexPattern.replaceAllIn(
        exprStr, "").split(",").map(_.trim).filter(_.nonEmpty)
-     val joinType = joinParams(0).trim
+     val joinType = if (joinParams.nonEmpty) {
+       joinParams(0).trim
+     } else {
+       ""
+     }
      // SortMergeJoin doesn't have buildSide, assign empty string in that case
      val buildSide = if (joinParams.size > 1) {
        joinParams(1).trim
@@ -456,14 +460,11 @@ object SQLPlanParser extends Logging {
      }
      // Get individual expressions which is later used to get the function names.
      val expressions = joinExprs.split("::").map(_.trim).map(
-       _.replaceAll("""^\[+|\]+$""", "")).
-       map(_.split(",")).flatten.map(_.trim)
+       _.replaceAll("""^\[+|\]+$""", "")).map(_.split(",")).flatten.map(_.trim)
 
-     if (expressions.nonEmpty) {
-       expressions.foreach { expr =>
-         val functionName = getFunctionName(functionPattern, expr)
-         functionName.foreach(parsedExpressions += _)
-       }
+     expressions.foreach { expr =>
+       val functionName = getFunctionName(functionPattern, expr)
+       functionName.foreach(parsedExpressions += _)
      }
 
      (parsedExpressions.distinct.toArray, equiJoinSupportedTypes(buildSide, joinType))
@@ -472,67 +473,30 @@ object SQLPlanParser extends Logging {
   def parseNestedLoopJoinExpressions(exprStr: String): (Array[String], Boolean) = {
     // BuildRight, LeftOuter, ((CEIL(cast(id1#1490 as double)) <= cast(id2#1496 as bigint))
     // AND (cast(id1#1490 as bigint) < CEIL(cast(id2#1496 as double))))
-    val parsedExpressions = ArrayBuffer[String]()
     // Get joinType and buildSide by splitting the input string.
     val nestedLoopParameters = exprStr.split(",", 3)
     val buildSide = nestedLoopParameters(0).trim
     val joinType = nestedLoopParameters(1).trim
 
-    if (nestedLoopParameters.size > 2) { // condition present on join columns
-      val exprSepAND = if (exprStr.contains("AND")) {
-        exprStr.split(" AND ").map(_.trim)
-      } else {
-        Array(exprStr)
-      }
-      val exprSplit = if (exprStr.contains(" OR ")) {
-        exprSepAND.flatMap(_.split(" OR ").map(_.trim))
-      } else {
-        exprSepAND
-      }
-
-      // Remove parentheses from the beginning and end to get only the expressions
-      val paranRemoved = exprSplit.map(_.replaceAll("""^\(+""", "").replaceAll("""\)\)$""", ")"))
-      val conditionalExprPattern = """([(\w# )]+) ([+=<>|]+) ([(\w# )]+)""".r
-      paranRemoved.foreach { case expr =>
-        if (expr.contains(" ")) {
-          conditionalExprPattern.findFirstMatchIn(expr) match {
-            case Some(func) =>
-              logDebug(s" found expr: $func")
-              if (func.groupCount < 3) {
-                logError(s"found incomplete expression - $func")
-              }
-              // get expressions from condition
-              val expressions = Array(func.group(1), func.group(3))
-              expressions.foreach { expr =>
-                // Add function name to result
-                val functionName = getFunctionName(functionPattern, expr)
-                functionName match {
-                  case Some(func) => parsedExpressions += func
-                  case _ => // NO OP
-                }
-              }
-            case None => logDebug(s"Incorrect expression - $expr")
-          }
-        } else {
-          // likely some function call, add function name to result
-          val functionName = getFunctionName(functionPattern, expr)
-          functionName match {
-            case Some(func) => parsedExpressions += func
-            case _ => // NO OP
-          }
-        }
-      }
+    // Check if condition present on join columns else return empty array
+    val parsedExpressions = if (nestedLoopParameters.size > 2) {
+      parseConditionalExpressions(exprStr)
     } else {
-      // NO OP
+      Array[String] ()
     }
-    (parsedExpressions.distinct.toArray, nestedLoopJoinSupportedTypes(buildSide, joinType))
+    (parsedExpressions, nestedLoopJoinSupportedTypes(buildSide, joinType))
   }
 
   private def isJoinTypeSupported(joinType: String): Boolean = {
+    // Existence join doesn't show up in eventlog, so we return false for existence joins.
+    // There is caveat for FullOuter join for equiJoins.
+    // FullOuter join id not supported with struct keys but we are sending true for all
+    // data structures.
     joinType match {
       case JoinType.Cross => true
       case JoinType.Inner => true
       case JoinType.LeftSemi => true
+      case JoinType.FullOuter => true
       case JoinType.LeftOuter => true
       case JoinType.RightOuter => true
       case JoinType.LeftAnti => true
@@ -558,8 +522,12 @@ object SQLPlanParser extends Logging {
   }
 
   private def nestedLoopJoinSupportedTypes(buildSide: String, joinType: String): Boolean = {
-    val joinTypeSupported = isJoinTypeSupported(joinType)
-
+    // Full Outer join not supported in BroadcastNestedLoopJoin
+    val joinTypeSupported = if (joinType != JoinType.FullOuter) {
+      isJoinTypeSupported(joinType)
+    } else {
+      false
+    }
     // This is from GpuBroadcastNestedLoopJoinMeta.tagPlanForGpu where join is
     // not supported on GPU if below condition is met.
     val buildSideNotSupported = if (buildSide == BuildSide.BuildLeft) {
@@ -599,9 +567,12 @@ object SQLPlanParser extends Logging {
   }
 
   def parseFilterExpressions(exprStr: String): Array[String] = {
-    val parsedExpressions = ArrayBuffer[String]()
-
     // Filter ((isnotnull(s_state#68) AND (s_state#68 = TN)) OR (hex(cast(value#0 as bigint)) = B))
+    parseConditionalExpressions(exprStr)
+  }
+
+  def parseConditionalExpressions(exprStr: String): Array[String] = {
+    val parsedExpressions = ArrayBuffer[String]()
     // split on AND/OR/NOT
     val exprSepAND = if (exprStr.contains("AND")) {
       exprStr.split(" AND ").map(_.trim)
@@ -621,11 +592,11 @@ object SQLPlanParser extends Logging {
       exprSepOR
     }
 
-    // Remove paranthesis from the beginning and end to get only the expressions
-    val paranRemoved = exprSplit.map(_.replaceAll("""^\(+""", "").replaceAll("""\)\)$""", ")"))
+    // Remove parentheses from the beginning and end to get only the expressions
+    val parenRemoved = exprSplit.map(_.replaceAll("""^\(+""", "").replaceAll("""\)\)$""", ")"))
     val conditionalExprPattern = """([(\w# )]+) ([+=<>|]+) ([(\w# )]+)""".r
 
-    paranRemoved.foreach { case expr =>
+    parenRemoved.foreach { case expr =>
       if (expr.contains(" ")) {
         // likely some conditional expression
         // TODO - add in arithmetic stuff (- / * )
@@ -635,18 +606,16 @@ object SQLPlanParser extends Logging {
             if (func.groupCount < 3) {
               logError(s"found incomplete expression - $func")
             }
-            val lhs = func.group(1)
+            val expressions = Array(func.group(1), func.group(3))
             // Add function name to result
-            val functionName = getFunctionName(functionPattern, lhs)
-             functionName match {
-               case Some(func) => parsedExpressions += func
-               case _ => // NO OP
-             }
+            expressions.foreach { expr =>
+              val functionName = getFunctionName(functionPattern, expr)
+              functionName.foreach(parsedExpressions += _)
+            }
             val predicate = func.group(2)
-            val rhs = func.group(3)
             // check for variable
-            if (lhs.contains("#") || rhs.contains("#")) {
-              logDebug(s"expr contains # $lhs or $rhs")
+            if (expressions.exists(_.contains("#"))) {
+              logDebug(s"expr contains # ${expressions(0)} or ${expressions(1)}")
             }
             val predStr = predicate match {
               case "=" => "EqualTo"
@@ -665,10 +634,7 @@ object SQLPlanParser extends Logging {
       } else {
         // likely some function call, add function name to result
         val functionName = getFunctionName(functionPattern, expr)
-        functionName match {
-          case Some(func) => parsedExpressions += func
-          case _ => // NO OP
-        }
+        functionName.foreach(parsedExpressions += _)
       }
     }
     parsedExpressions.distinct.toArray
