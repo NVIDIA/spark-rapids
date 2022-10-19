@@ -36,6 +36,11 @@ class DeviceMemoryEventHandler(
     oomDumpDir: Option[String],
     isGdsSpillEnabled: Boolean) extends RmmEventHandler with Logging {
 
+  // Flag that ensures we dump stack traces once and not for every allocation
+  // failure. The assumption is that unhandled allocations will be fatal
+  // to the process at this stage, so we only need this once before we exit.
+  private var dumpStackTracesOnFailureToHandleOOM = true
+
   /**
    * Handles RMM allocation failures by spilling buffers from device memory.
    * @param allocSize the byte amount that RMM failed to allocate
@@ -51,6 +56,12 @@ class DeviceMemoryEventHandler(
         if (storeSize == 0) {
           logWarning(s"Device store exhausted, unable to allocate $allocSize bytes. " +
               s"Total RMM allocated is ${Rmm.getTotalBytesAllocated} bytes.")
+          synchronized {
+            if (dumpStackTracesOnFailureToHandleOOM) {
+              dumpStackTracesOnFailureToHandleOOM = false
+              GpuSemaphore.dumpActiveStackTracesToLog()
+            }
+          }
           oomDumpDir.foreach(heapDump)
           return false
         }
