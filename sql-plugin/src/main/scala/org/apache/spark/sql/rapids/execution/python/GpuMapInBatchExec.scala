@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
-import org.apache.spark.TaskContext
+import org.apache.spark.{ContextAwareIterator, TaskContext}
 import org.apache.spark.api.python.ChainedPythonFunctions
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{AttributeSet, Expression}
@@ -54,6 +54,10 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
 
     val pyInputTypes = child.schema
     val chainedFunc = Seq(ChainedPythonFunctions(Seq(pandasFunction)))
+    val sessionLocalTimeZone = conf.sessionLocalTimeZone
+    val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
+    val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
+    val localOutput = output
 
     // Start process
     child.executeColumnar().mapPartitionsInternal { inputIter =>
@@ -62,21 +66,13 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
       // Single function with one struct.
       val argOffsets = Array(Array(0))
       val pyInputSchema = StructType(StructField("in_struct", pyInputTypes) :: Nil)
-      val sessionLocalTimeZone = conf.sessionLocalTimeZone
-      val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
 
-      val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
       if (isPythonOnGpuEnabled) {
         GpuPythonHelper.injectGpuInfo(chainedFunc, isPythonOnGpuEnabled)
         PythonWorkerSemaphore.acquireIfNecessary(context)
       }
 
-      val contextAwareIter = new Iterator[ColumnarBatch] {
-        override def hasNext: Boolean =
-          !context.isCompleted() && !context.isInterrupted() && inputIter.hasNext
-
-        override def next(): ColumnarBatch = inputIter.next()
-      }
+      val contextAwareIter = new ContextAwareIterator(context, inputIter)
 
       val pyInputIterator = new RebatchingRoundoffIterator(contextAwareIter, pyInputTypes,
           batchSize, numInputRows, numInputBatches, spillCallback)
@@ -103,7 +99,7 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
             batchSize,
             spillCallback.semaphoreWaitTime) {
           override def toBatch(table: Table): ColumnarBatch = {
-            BatchGroupedIterator.extractChildren(table, output)
+            BatchGroupedIterator.extractChildren(table, localOutput)
           }
         }
 
