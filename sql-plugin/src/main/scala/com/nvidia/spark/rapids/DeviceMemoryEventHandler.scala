@@ -47,7 +47,58 @@ class DeviceMemoryEventHandler(
 
   // Thread local used to the number of times a sync has been attempted, when
   // handling OOMs after depleting the device store.
-  private val synchronizeAttempts = ThreadLocal.withInitial[Int](() => 0)
+  private val oomRetryState =
+    ThreadLocal.withInitial[OOMRetryState](() => new OOMRetryState)
+
+  /**
+   * A small helper class that helps keep track of retry counts as we trigger
+   * synchronizes on a depleted store.
+   */
+  class OOMRetryState {
+    private var synchronizeAttempts = 0
+    private var retryCountLastSynced = 0
+
+    def getRetriesSoFar: Int = synchronizeAttempts
+
+    def reset(): Unit = {
+      synchronizeAttempts = 0
+      retryCountLastSynced = 0
+    }
+
+    /**
+     * If we have synchronized less times than `maxFailedOOMRetries` we allow
+     * this retry to proceed, and track the `retryCount` provided by cuDF. If we
+     * are above our counter, we reset our state.
+     */
+    def shouldTrySynchronizing(retryCount: Int): Boolean = {
+      if (synchronizeAttempts < maxFailedOOMRetries) {
+        retryCountLastSynced = retryCount
+        synchronizeAttempts += 1
+        true
+      } else {
+        reset()
+        false
+      }
+    }
+
+    /**
+     * We reset our counters if `storeSize` is non-zero (as we only track when the store is
+     * depleted), or `retryCount` is less than or equal to what we had previously
+     * recorded in `shouldTrySynchronizing`. We do this to detect that the new failures
+     * are for a separate allocation (we need to give this new attempt a new set of
+     * retries.)
+     *
+     * For example, if an allocation fails and we deplete the store, `retryCountLastSynced`
+     * is set to the last `retryCount` sent to us by cuDF as we keep allowing retries
+     * from cuDF. If we succeed, cuDF resets `retryCount`, and so the new count sent to us
+     * must be <= than what we saw last, so we can reset our tracking.
+     */
+    def resetIfNeeded(retryCount: Int, storeSize: Long): Unit = {
+      if (storeSize != 0 || retryCount <= retryCountLastSynced) {
+        reset()
+      }
+    }
+  }
 
   /**
    * Handles RMM allocation failures by spilling buffers from device memory.
@@ -64,21 +115,21 @@ class DeviceMemoryEventHandler(
         } else {
           "First attempt. "
         }
+
+        val retryState = oomRetryState.get()
+        retryState.resetIfNeeded(retryCount, storeSize)
+
         logInfo(s"Device allocation of $allocSize bytes failed, device store has " +
           s"$storeSize bytes. $attemptMsg" +
           s"Total RMM allocated is ${Rmm.getTotalBytesAllocated} bytes. ")
         if (storeSize == 0) {
-          var syncAttempt = synchronizeAttempts.get()
-          if (syncAttempt <= maxFailedOOMRetries) {
-            syncAttempt = syncAttempt + 1
-            synchronizeAttempts.set(syncAttempt)
+          if (retryState.shouldTrySynchronizing(retryCount)) {
             Cuda.deviceSynchronize()
-            logWarning(s"[RETRY ${syncAttempt}] " +
+            logWarning(s"[RETRY ${retryState.getRetriesSoFar}] " +
               s"Retrying allocation of $allocSize after a synchronize. " +
               s"Total RMM allocated is ${Rmm.getTotalBytesAllocated} bytes.")
             true
           } else {
-            synchronizeAttempts.set(0)
             logWarning(s"Device store exhausted, unable to allocate $allocSize bytes. " +
               s"Total RMM allocated is ${Rmm.getTotalBytesAllocated} bytes.")
             synchronized {
@@ -91,7 +142,6 @@ class DeviceMemoryEventHandler(
             false
           }
         } else {
-          synchronizeAttempts.set(0)
           val targetSize = Math.max(storeSize - allocSize, 0)
           logDebug(s"Targeting device store size of $targetSize bytes")
           val amountSpilled = store.synchronousSpill(targetSize)
