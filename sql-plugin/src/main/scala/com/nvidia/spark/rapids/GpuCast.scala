@@ -1222,12 +1222,14 @@ object GpuCast extends Arm {
     withResource(orElse) { orElse =>
 
       // valid dates must match the regex and either of the cuDF formats
-      val isCudfMatch = withResource {
-        Seq(cudfFormat1, cudfFormat2, cudfFormat3, cudfFormat4).safeMap(input.isTimestamp)
-      } {
-        _.reduceLeft { (isTs1, isTs2) =>
-          withResource(isTs1) { _ =>
-            withResource(isTs2)(_ => isTs1.or(isTs2))
+      val isCudfMatch = Seq(
+        cudfFormat2,
+        cudfFormat3,
+        cudfFormat4
+      ).foldLeft(input.isTimestamp(cudfFormat1)) { (isTimestamp, nextFormat) =>
+        withResource(isTimestamp) { _ =>
+          withResource(input.isTimestamp(nextFormat)) { nextIsTimeStamp =>
+            isTimestamp.or(nextIsTimeStamp)
           }
         }
       }
