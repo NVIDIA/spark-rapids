@@ -783,13 +783,23 @@ object GpuCast extends Arm {
         else {strCol.incRefCount}
       }
 
-      val strChildCol = withResource(input.getChildColumnView(0))(addSpaces)
-      val strArrayCol = withResource(strChildCol)(input.replaceListChild)
-      val strColContainsNull = withResource(ColumnVector.fromScalar(sep, numRows)) { sepCol =>
-        withResource(strArrayCol)(_.stringConcatenateListElements(sepCol))
+      val strChildCol = withResource(input.getChildColumnView(0)) {
+        addSpaces
       }
-      val strCol = withResource(strColContainsNull)(_.replaceNulls(empty))
-      withResource(strCol)(removeFirstSpace)
+      val strArrayCol = withResource(strChildCol) {
+        input.replaceListChild
+      }
+      val strColContainsNull = withResource(ColumnVector.fromScalar(sep, numRows)) { sepCol =>
+        withResource(strArrayCol) {
+          _.stringConcatenateListElements(sepCol)
+        }
+      }
+      val strCol = withResource(strColContainsNull) {
+        _.replaceNulls(empty)
+      }
+      withResource(strCol) {
+        removeFirstSpace
+      }
     }
   }
 
@@ -824,9 +834,15 @@ object GpuCast extends Arm {
           child, elementType, StringType, ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
       }
 
-      val strArrayCol = withResource(strChildContainsNull)(input.replaceListChild)
-      val strCol = withResource(strArrayCol)(concatenateStringArrayElements(_, legacyCastToString))
-      val strColWithBrackets = withResource(strCol)(addBrackets)
+      val strArrayCol = withResource(strChildContainsNull) {
+        input.replaceListChild
+      }
+      val strCol = withResource(strArrayCol) {
+        concatenateStringArrayElements(_, legacyCastToString)
+      }
+      val strColWithBrackets = withResource(strCol) {
+        addBrackets
+      }
 
       withResource(strColWithBrackets)( _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input))
     }
@@ -886,17 +902,24 @@ object GpuCast extends Arm {
       }
 
       // concatenate elements
-      val strArrayCol = withResource(strElements)(input.replaceListChild)
-      val strCol = withResource(strArrayCol)(concatenateStringArrayElements(_, legacyCastToString))
+      val strArrayCol = withResource(strElements) {
+        input.replaceListChild
+      }
+      val strCol = withResource(strArrayCol) {
+        concatenateStringArrayElements(_, legacyCastToString)
+      }
       val Seq(leftCol, rightCol) = closeOnExcept(strCol) { _ =>
-        Seq(leftScalar, rightScalar).safeMap(ColumnVector.fromScalar(_, numRows))
+        Seq(leftScalar, rightScalar).safeMap {
+          ColumnVector.fromScalar(_, numRows)
+        }
       }
       val cols = Array[ColumnView](leftCol, strCol, rightCol)
       val concatCol = withResource(cols) { _ =>
         ColumnVector.stringConcatenate(emptyScalar, nullScalar, cols)
       }
-
-      withResource(concatCol)( _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input))
+      withResource(concatCol) {
+        _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
+      }
     }
   }
 
@@ -994,7 +1017,9 @@ object GpuCast extends Arm {
     val boolStrings = trueStrings ++ falseStrings
     // determine which values are valid bool strings
     withResource(ColumnVector.fromStrings(boolStrings: _*)) { boolStrings =>
-      val lowerStripped = withResource(input.strip())(_.lower())
+      val lowerStripped = withResource(input.strip()) {
+        _.lower()
+      }
       val sanitizedInput = withResource(lowerStripped) { _ =>
         withResource(lowerStripped.contains(boolStrings)) { validBools =>
           // in ansi mode, fail if any values are not valid bool strings
@@ -1006,7 +1031,9 @@ object GpuCast extends Arm {
             }
           }
           // replace non-boolean values with null
-          withResource(Scalar.fromNull(DType.STRING))(validBools.ifElse(lowerStripped, _))
+          withResource(Scalar.fromNull(DType.STRING)) {
+            validBools.ifElse(lowerStripped, _)
+          }
         }
       }
       withResource(sanitizedInput) { _ =>
@@ -1054,10 +1081,14 @@ object GpuCast extends Arm {
             }
           }
           val floatsOnly = withResource(sanitized.castTo(dType)) { casted =>
-            withResource(Scalar.fromNull(dType))(isFloat.ifElse(casted, _))
+            withResource(Scalar.fromNull(dType)) {
+              isFloat.ifElse(casted, _)
+            }
           }
           withResource(floatsOnly) { _ =>
-            withResource(FloatUtils.getNanScalar(dType))(isNan.ifElse(_, floatsOnly))
+            withResource(FloatUtils.getNanScalar(dType)) {
+              isNan.ifElse(_, floatsOnly)
+            }
           }
         }
       }
@@ -1115,7 +1146,9 @@ object GpuCast extends Arm {
           inputNotNull.and(resultIsNull)
         }
       }
-      val notConvertedAny = withResource(notConverted)(_.any())
+      val notConvertedAny = withResource(notConverted) {
+        _.any()
+      }
       withResource(notConvertedAny) { _ =>
         if (notConvertedAny.isValid && notConvertedAny.getBoolean) {
           throw new DateTimeException(errMessage)
@@ -1555,10 +1588,14 @@ object GpuCast extends Arm {
     val cv = withResource(updatedMaxRet) { updatedMax =>
       withResource(Seq(minSeconds, Long.MinValue).safeMap(Scalar.fromLong)) {
         case Seq(minSecondsS, longMinS) =>
-          withResource(longInput.lessThan(minSecondsS))(_.ifElse(longMinS, updatedMax))
+          withResource(longInput.lessThan(minSecondsS)){
+            _.ifElse(longMinS, updatedMax)
+          }
       }
     }
-    withResource(cv)(_.castTo(GpuColumnVector.getNonNestedRapidsType(toType)))
+    withResource(cv) {
+      _.castTo(GpuColumnVector.getNonNestedRapidsType(toType))
+    }
   }
 }
 

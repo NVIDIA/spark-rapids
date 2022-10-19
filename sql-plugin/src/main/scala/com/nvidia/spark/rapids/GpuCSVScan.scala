@@ -340,16 +340,20 @@ class CSVPartitionReader(
    * CSV supports "true" and "false" (case-insensitive) as valid boolean values.
    */
   override def castStringToBool(input: ColumnVector): ColumnVector = {
-    val lowerStripped = withResource(input.strip())(_.lower())
+    val lowerStripped = withResource(input.strip()) {
+      _.lower()
+    }
 
     val isTrue = closeOnExcept(lowerStripped) { _ =>
-      withResource(Scalar.fromString(true.toString))(lowerStripped.equalTo)
+      withResource(Scalar.fromString(true.toString)) {
+        lowerStripped.equalTo
+      }
     }
 
     withResource(isTrue) { _ =>
       val isValidBool = withResource(lowerStripped) { _ =>
-        withResource(ColumnVector.fromStrings(true.toString, false.toString)) { boolStrings =>
-          lowerStripped.contains(boolStrings)
+        withResource(ColumnVector.fromStrings(true.toString, false.toString)) {
+          lowerStripped.contains
         }
       }
       withResource(isValidBool) { _ =>

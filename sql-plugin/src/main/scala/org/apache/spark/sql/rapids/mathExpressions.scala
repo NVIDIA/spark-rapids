@@ -81,11 +81,19 @@ case class GpuAcoshCompat(child: Expression) extends GpuUnaryMathExpression("ACO
     // StrictMath.log(x + math.sqrt(x * x - 1.0))
     val base = input.getBase
     val squaredMinOne = withResource(base.mul(base)) { squared =>
-      withResource(Scalar.fromDouble(1.0))(squared.sub)
+      withResource(Scalar.fromDouble(1.0)) {
+        squared.sub
+      }
     }
-    val sqrt = withResource(squaredMinOne)(_.sqrt())
-    val sum = withResource(sqrt)(base.add)
-    withResource(sum)(_.log())
+    val sqrt = withResource(squaredMinOne) {
+      _.sqrt()
+    }
+    val sum = withResource(sqrt) {
+      base.add
+    }
+    withResource(sum) {
+      _.log()
+    }
   }
 
   override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
@@ -116,11 +124,19 @@ case class GpuAsinhCompat(child: Expression) extends GpuUnaryMathExpression("ASI
 
   def computeBasic(input: ColumnVector): ColumnVector = {
     val squaredPlusOne = withResource(input.mul(input)) { squared =>
-       withResource(Scalar.fromDouble(1.0))(squared.add)
+       withResource(Scalar.fromDouble(1.0)) {
+        squared.add
+       }
     }
-    val sqrt = withResource(squaredPlusOne)(_.sqrt())
-    val sum = withResource(sqrt)(input.add(_))
-    withResource(sum)(_.log())
+    val sqrt = withResource(squaredPlusOne) {
+      _.sqrt()
+    }
+    val sum = withResource(sqrt) {
+      input.add
+    }
+    withResource(sum) {
+      _.log()
+    }
   }
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {

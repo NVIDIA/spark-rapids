@@ -325,7 +325,9 @@ class GpuParquetWriter(
               withResource(Scalar.fromLong(Long.MinValue / 1000)) { lower =>
                 withResource(cv.bitCastTo(DType.INT64)) { int64 =>
                   withResource(int64.greaterOrEqualTo(upper)) { a =>
-                    withResource(int64.lessOrEqualTo(lower))(b => a.or(b))
+                    withResource(int64.lessOrEqualTo(lower)) { b =>
+                      a.or(b)
+                    }
                   }
                 }
               }
@@ -338,8 +340,8 @@ class GpuParquetWriter(
                 "INT96 column contains one " +
                 "or more values that can overflow and will result in data " +
                 "corruption. Please set " +
-                "`spark.rapids.sql.format.parquet.writer.int96.enabled` to false" +
-                " so we can fallback on CPU for writing parquet but still take " +
+                "`spark.rapids.sql.format.parquet.writer.int96.enabled` to false " +
+                "so we can fallback on CPU for writing parquet but still take " +
                 "advantage of parquet read on the GPU.")
             }
             cv.copyToColumnVector() /* the input is unchanged */

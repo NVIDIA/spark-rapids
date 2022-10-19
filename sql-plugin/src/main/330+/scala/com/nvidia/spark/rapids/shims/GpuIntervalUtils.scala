@@ -299,9 +299,11 @@ object GpuIntervalUtils extends Arm {
       }
     }
 
-    withResource(negatives) { s =>
+    withResource(negatives) { _ =>
       withResource(Scalar.fromLong(1L)) { posOne =>
-        withResource(Scalar.fromLong(-1L))(negOne => s.ifElse(negOne, posOne))
+        withResource(Scalar.fromLong(-1L)) { negOne =>
+          negatives.ifElse(negOne, posOne)
+        }
       }
     }
   }
@@ -316,7 +318,9 @@ object GpuIntervalUtils extends Arm {
   private def getMicrosFromDecimal(sign: ColumnVector, decimal: ColumnVector): ColumnVector = {
     val decimalType64_6 = DType.create(DType.DTypeEnum.DECIMAL64, -6)
     val timesMillion = withResource(decimal.castTo(decimalType64_6)) { decimal =>
-      withResource(Scalar.fromLong(1000000L))(decimal.mul)
+      withResource(Scalar.fromLong(1000000L)) { million =>
+        decimal.mul(million)
+      }
     }
     val timesMillionLongs = withResource(timesMillion)(_.asLongs())
     withResource(timesMillionLongs)(_.mul(sign))

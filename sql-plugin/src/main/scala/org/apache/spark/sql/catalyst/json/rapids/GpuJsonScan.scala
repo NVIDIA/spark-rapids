@@ -337,7 +337,9 @@ class JsonPartitionReader(
       withResource(Scalar.fromNull(DType.BOOL8)) { nullBool =>
         withResource(ColumnVector.fromStrings(true.toString, false.toString)) { boolStrings =>
           withResource(input.contains(boolStrings)) { isValidBool =>
-            withResource(input.equalTo(t))(isValidBool.ifElse(_, nullBool))
+            withResource(input.equalTo(t)) {
+              isValidBool.ifElse(_, nullBool)
+            }
           }
         }
       }
