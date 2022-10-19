@@ -284,11 +284,11 @@ class GpuHashAggregateIterator(
     while (cbIter.hasNext) {
       val childBatch = cbIter.next()
       val isLastInputBatch = GpuColumnVector.isTaggedAsFinalBatch(childBatch)
-      val aggBatch = computeAggregateAndClose(childBatch, aggHelper)
 
-      val spillableBatch = withResource(aggBatch) { _ =>
-        LazySpillableColumnarBatch(aggBatch, metrics.spillCallback, "aggbatch")
-      }
+      val spillableBatch =
+        withResource(computeAggregateAndClose(childBatch, aggHelper)) { aggBatch =>
+          LazySpillableColumnarBatch(aggBatch, metrics.spillCallback, "aggbatch")
+        }
       // Avoid making batch spillable for the common case of the last and only batch
       if (!(isLastInputBatch && aggregatedBatches.isEmpty)) {
         spillableBatch.allowSpilling()
@@ -764,9 +764,7 @@ class GpuHashAggregateIterator(
      */
     def postProcess(resultBatch: ColumnarBatch): ColumnarBatch = {
       withResource(new NvtxRange("post-process", NvtxColor.ORANGE)) { _ =>
-        withResource(resultBatch) { _ =>
-          GpuProjectExec.project(resultBatch, postStepBound)
-        }
+        GpuProjectExec.project(resultBatch, postStepBound)
       }
     }
   }
@@ -800,7 +798,9 @@ class GpuHashAggregateIterator(
 
       // a post-processing step required in some scenarios, casting or picking
       // apart a struct
-      helper.postProcess(aggregated)
+      withResource(aggregated) { _ =>
+        helper.postProcess(aggregated)
+      }
     }
   }
 }
