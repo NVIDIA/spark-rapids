@@ -322,8 +322,12 @@ object GpuIntervalUtils extends Arm {
         decimal.mul(million)
       }
     }
-    val timesMillionLongs = withResource(timesMillion)(_.asLongs())
-    withResource(timesMillionLongs)(_.mul(sign))
+    val timesMillionLongs = withResource(timesMillion) {
+      _.asLongs()
+    }
+    withResource(timesMillionLongs) {
+      _.mul(sign)
+    }
   }
 
   private def addFromDayToDay(

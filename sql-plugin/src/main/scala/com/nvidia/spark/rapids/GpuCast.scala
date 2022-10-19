@@ -1040,7 +1040,9 @@ object GpuCast extends Arm {
       }
       withResource(sanitizedInput) { _ =>
         // return true, false, or null, as appropriate
-        withResource(ColumnVector.fromStrings(trueStrings: _*))(sanitizedInput.contains)
+        withResource(ColumnVector.fromStrings(trueStrings: _*)) {
+          sanitizedInput.contains
+        }
       }
     }
   }
