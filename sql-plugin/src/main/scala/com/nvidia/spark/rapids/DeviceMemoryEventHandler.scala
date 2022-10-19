@@ -65,7 +65,7 @@ class DeviceMemoryEventHandler(
           "First attempt. "
         }
         logInfo(s"Device allocation of $allocSize bytes failed, device store has " +
-            s"$storeSize bytes. $attemptMsg" +
+          s"$storeSize bytes. $attemptMsg" +
           s"Total RMM allocated is ${Rmm.getTotalBytesAllocated} bytes. ")
         if (storeSize == 0) {
           var syncAttempt = synchronizeAttempts.get()
