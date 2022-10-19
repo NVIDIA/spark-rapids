@@ -23,7 +23,7 @@ jobs:
   signoff-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - name: sigoff-check job
         uses: ./.github/workflows/signoff-check
