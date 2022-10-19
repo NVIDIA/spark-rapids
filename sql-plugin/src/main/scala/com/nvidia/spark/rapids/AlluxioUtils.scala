@@ -24,7 +24,7 @@ import scala.collection.mutable
 import scala.io.BufferedSource
 
 import alluxio.AlluxioURI
-import alluxio.conf.{InstancedConfiguration, PropertyKey, Source}
+import alluxio.conf.{AlluxioProperties, InstancedConfiguration, PropertyKey}
 import alluxio.grpc.MountPOptions
 import alluxio.wire.MountPointInfo
 import org.apache.hadoop.conf.Configuration
@@ -205,15 +205,13 @@ object AlluxioUtils extends Logging with Arm {
       alluxioUser: String,
       s3AccessKey: Option[String],
       s3SecretKey: Option[String]): InstancedConfiguration = {
-    val conf = InstancedConfiguration.defaults
-    s3AccessKey.foreach(access => conf.set(PropertyKey.S3A_ACCESS_KEY, access, Source.RUNTIME))
-    s3SecretKey.foreach(secret => conf.set(PropertyKey.S3A_SECRET_KEY, secret, Source.RUNTIME))
-    alluxioMasterHost.foreach(host =>
-      conf.set(PropertyKey.MASTER_HOSTNAME, host, Source.RUNTIME))
-    alluxioMasterPort.foreach(port =>
-      conf.set(PropertyKey.MASTER_RPC_PORT, port, Source.RUNTIME))
-    conf.set(PropertyKey.SECURITY_LOGIN_USERNAME, alluxioUser, Source.RUNTIME)
-    conf
+    val p = new AlluxioProperties()
+    s3AccessKey.foreach(access => p.set(PropertyKey.S3A_ACCESS_KEY, access))
+    s3SecretKey.foreach(secret => p.set(PropertyKey.S3A_SECRET_KEY, secret))
+    alluxioMasterHost.foreach(host => p.set(PropertyKey.MASTER_HOSTNAME, host))
+    alluxioMasterPort.foreach(port => p.set(PropertyKey.MASTER_RPC_PORT, port))
+    p.set(PropertyKey.SECURITY_LOGIN_USERNAME, alluxioUser)
+    new InstancedConfiguration(p)
   }
 
   private def getExistS3MountPoints(
