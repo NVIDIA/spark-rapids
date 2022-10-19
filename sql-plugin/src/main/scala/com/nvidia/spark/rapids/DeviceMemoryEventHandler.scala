@@ -60,7 +60,7 @@ class DeviceMemoryEventHandler(
 
     def getRetriesSoFar: Int = synchronizeAttempts
 
-    def reset(): Unit = {
+    private def reset(): Unit = {
       synchronizeAttempts = 0
       retryCountLastSynced = 0
     }
