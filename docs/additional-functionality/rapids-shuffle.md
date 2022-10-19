@@ -7,10 +7,15 @@ nav_order: 5
 # RAPIDS Shuffle Manager
 
 The RAPIDS Shuffle Manager is an implementation of the `ShuffleManager` interface in Apache Spark
-that allows custom mechanisms to exchange shuffle data. It has two components: a spillable cache,
-and a transport that can utilize Remote Direct Memory Access (RDMA) and high-bandwidth transfers
-within a node that has multiple GPUs. This is possible because the plugin utilizes
-[Unified Communication X (UCX)](https://www.openucx.org/) as its transport.
+that allows custom mechanisms to exchange shuffle data. We currently expose two modes of operation:
+UCX and Multi Threaded (experimental). 
+
+## UCX Mode
+
+UCX mode is the default for the RAPIDS Shuffle Manager. It has two components: a spillable cache, 
+and a transport that can utilize Remote Direct Memory Access (RDMA) and high-bandwidth transfers 
+within a node that has multiple GPUs. This is possible because the plugin 
+utilizes [Unified Communication X (UCX)](https://www.openucx.org/) as its transport.
 
 - **Spillable cache**: This store keeps GPU data close by where it was produced in device memory,
 but can spill in the following cases:
@@ -47,8 +52,8 @@ The minimum UCX requirement for the RAPIDS Shuffle Manager is
 
 #### Baremetal
 
-1. If you have Mellanox hardware, please ensure you have the [MLNX_OFED driver](https://www.mellanox.com/products/infiniband-drivers/linux/mlnx_ofed), and the
-[`nv_peer_mem` kernel module](https://www.mellanox.com/products/GPUDirect-RDMA) installed. UCX packages
+1. If you have Mellanox hardware, please ensure you have the [MLNX_OFED driver](https://network.nvidia.com/products/infiniband-drivers/linux/mlnx_ofed/), and the
+[`nv_peer_mem` kernel module](https://network.nvidia.com/products/GPUDirect-RDMA/) installed. UCX packages
    are compatible with MLNX_OFED 5.0+. Please install the latest driver available.
 
    With `nv_peer_mem` (GPUDirectRDMA), IB/RoCE-based transfers can perform zero-copy transfers
@@ -426,3 +431,24 @@ for this, other than to trigger a GC cycle on the driver.
 Spark has a configuration `spark.cleaner.periodicGC.interval` (defaults to 30 minutes), that
 can be used to periodically cause garbage collection. If you are experiencing OOM situations, or
 performance degradation with several Spark actions, consider tuning this setting in your jobs.
+
+## Multi Threaded Mode (experimental)
+
+This mode is similar to the built-in Spark shuffle, but it attempts to use more CPU threads
+for compute-intensive tasks, such as compression and decompression. This mode does not use UCX, and
+so it does not require a UCX installation.
+
+Minimum configuration:
+
+```shell
+--conf spark.shuffle.manager=com.nvidia.spark.rapids.[shim package].RapidsShuffleManager \
+--conf spark.driver.extraClassPath=${SPARK_RAPIDS_PLUGIN_JAR} \
+--conf spark.executor.extraClassPath=${SPARK_RAPIDS_PLUGIN_JAR} \
+--conf spark.rapids.shuffle.mode=MULTITHREADED
+```
+
+By default, a thread pool of 20 threads is used for shuffle writes and reads. This
+configuration can be independently changed for writers and readers using:
+`spark.rapids.shuffle.multiThreaded.[writer|reader].threads`. An appropriate value for these
+pools is the number of cores in the system divided by the number of executors per machine.
+
