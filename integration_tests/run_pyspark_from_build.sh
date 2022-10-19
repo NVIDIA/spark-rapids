@@ -174,7 +174,16 @@ else
     else
         TEST_PARALLEL_OPTS=("-n" "$TEST_PARALLEL")
     fi
-    RUN_DIR=${RUN_DIR-"$SCRIPTPATH"/target/run_dir}
+
+    # Delete old run directories
+    cd "$SCRIPTPATH/target"
+    for f in */; do
+      if [[ $f = run_dir* && $(($(date +%s) - ${f:8:(${#f} - 9)})) -gt 86400 ]]; then
+        rm -rf "$f"
+      fi
+    done
+
+    RUN_DIR=${RUN_DIR-"$SCRIPTPATH"/target/run_dir-$(date +%s)}
     mkdir -p "$RUN_DIR"
     cd "$RUN_DIR"
 
