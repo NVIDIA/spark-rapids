@@ -30,7 +30,7 @@ jobs:
       sparkHeadVersion: ${{ steps.noSnapshotVersionsStep.outputs.headVersion }}
       sparkTailVersions: ${{ steps.noSnapshotVersionsStep.outputs.tailVersions }}
     steps:
-      - uses: actions/checkout@v2 # refs/pull/:prNumber/merge
+      - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
       - name: Setup Java and Maven Env
         uses: actions/setup-java@v3
@@ -46,8 +46,8 @@ jobs:
           svArrBody=$(printf ",{\"spark-version\":\"%s\"}" "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}")
           svArrBody=${svArrBody:1}
           svJsonStr=$(printf {\"include\":[%s]} $svArrBody)
-          echo ::set-output name=headVersion::$SPARK_BASE_SHIM_VERSION
-          echo ::set-output name=tailVersions::$svJsonStr
+          echo "headVersion=$SPARK_BASE_SHIM_VERSION" >> $GITHUB_OUTPUT
+          echo "tailVersions=$svJsonStr" >> $GITHUB_OUTPUT
 
   package-aggregator:
     needs: get-noSnapshot-versions-from-dist
@@ -55,7 +55,7 @@ jobs:
       matrix: ${{ fromJSON(needs.get-noSnapshot-versions-from-dist.outputs.sparkTailVersions) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2 # refs/pull/:prNumber/merge
+      - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
       - name: Setup Java and Maven Env
         uses: actions/setup-java@v3
@@ -78,7 +78,7 @@ jobs:
     needs: get-noSnapshot-versions-from-dist
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2 # refs/pull/:prNumber/merge
+      - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
       - name: Setup Java and Maven Env
         uses: actions/setup-java@v3
