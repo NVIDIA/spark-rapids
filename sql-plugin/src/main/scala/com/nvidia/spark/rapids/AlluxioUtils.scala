@@ -197,7 +197,7 @@ object AlluxioUtils extends Logging {
           isInitMountPointsForAutoMount = true
         }
       } else {
-        // disabled Alluxio feature
+        // disabled Alluxio feature, do nothing
       }
     }
   }
