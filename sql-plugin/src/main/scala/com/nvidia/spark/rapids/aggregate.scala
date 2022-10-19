@@ -282,12 +282,9 @@ class GpuHashAggregateIterator(
   private def aggregateInputBatches(): Unit = {
     val aggHelper = new AggHelper(forceMerge = false, useTieredProject = useTieredProject)
     while (cbIter.hasNext) {
-      val (aggBatch, isLastInputBatch) =
-        closeOnExcept(cbIter.next()) { childBatch =>
-          val isFinal = GpuColumnVector.isTaggedAsFinalBatch(childBatch)
-          val aggBatch = computeAggregateAndClose(childBatch, aggHelper)
-          (aggBatch, isFinal)
-        }
+      val childBatch = cbIter.next()
+      val isLastInputBatch = GpuColumnVector.isTaggedAsFinalBatch(childBatch)
+      val aggBatch = computeAggregateAndClose(childBatch, aggHelper)
 
       val spillableBatch = withResource(aggBatch) { _ =>
         LazySpillableColumnarBatch(aggBatch, metrics.spillCallback, "aggbatch")
@@ -403,10 +400,8 @@ class GpuHashAggregateIterator(
     val concatBatch = withResource(batches) { _ =>
       concatenateBatches(batches)
     }
-    closeOnExcept(concatBatch) { _ =>
-      withResource(computeAggregateAndClose(concatBatch, concatAndMergeHelper)) { mergedBatch =>
-        LazySpillableColumnarBatch(mergedBatch, metrics.spillCallback, "agg merged batch")
-      }
+    withResource(computeAggregateAndClose(concatBatch, concatAndMergeHelper)) { mergedBatch =>
+      LazySpillableColumnarBatch(mergedBatch, metrics.spillCallback, "agg merged batch")
     }
   }
 
@@ -478,9 +473,7 @@ class GpuHashAggregateIterator(
 
       override def next(): ColumnarBatch = {
         // batches coming out of the sort need to be merged
-        closeOnExcept(keyBatchingIter.next()) { batch =>
-          computeAggregateAndClose(batch, mergeSortedHelper)
-        }
+        computeAggregateAndClose(keyBatchingIter.next(), mergeSortedHelper)
       }
     }
   }
