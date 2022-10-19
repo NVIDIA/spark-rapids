@@ -709,12 +709,11 @@ object GpuDivModLike extends Arm {
       case LongType =>
         val overFlowVector = withResource(Seq(Long.MinValue, -1).safeMap(Scalar.fromLong)) {
           case Seq(minLong, minusOne) =>
-            lazyReduce(Seq(
-              lazyResource(left.getBase.equalTo(minLong)),
-              lazyResource(right.getBase.equalTo(minusOne))
-            ))(_ and _)
+            withResource(left.getBase.equalTo(minLong)) { eqToMinLong =>
+              withResource(right.getBase.equalTo(minusOne))(eqToMinLong and _)
+            }
         }
-        val overFlowVectorAny = withResource(overFlowVector())(_.any())
+        val overFlowVectorAny = withResource(overFlowVector)(_.any())
         withResource(overFlowVectorAny) { isOverFlow =>
           isOverFlow.isValid && isOverFlow.getBoolean
         }

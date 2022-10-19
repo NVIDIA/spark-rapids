@@ -1110,13 +1110,14 @@ object GpuCast extends Arm {
   private def checkResultForAnsiMode(input: ColumnVector, result: ColumnVector,
       errMessage: String): ColumnVector = {
     closeOnExcept(result) { _ =>
-      val notConverted = lazyReduce(Seq(
-        lazyResource(input.isNotNull()),
-        lazyResource(result.isNull())
-      ))(_ and _)
-      val notConvertedAny = lazyAndThen(notConverted)(_.any())
-      withResource(notConvertedAny()) { x =>
-        if (x.isValid && x.getBoolean) {
+      val notConverted = withResource(input.isNotNull()) { inputNotNull =>
+        withResource(result.isNull()) { resultIsNull =>
+          inputNotNull.and(resultIsNull)
+        }
+      }
+      val notConvertedAny = withResource(notConverted)(_.any())
+      withResource(notConvertedAny) { _ =>
+        if (notConvertedAny.isValid && notConvertedAny.getBoolean) {
           throw new DateTimeException(errMessage)
         }
       }
@@ -1221,18 +1222,25 @@ object GpuCast extends Arm {
     withResource(orElse) { orElse =>
 
       // valid dates must match the regex and either of the cuDF formats
-      val isCudfMatch = lazyReduce(
-        Seq(cudfFormat1, cudfFormat2, cudfFormat3, cudfFormat4)
-          .map(f => (() => input.isTimestamp(f)))
-      )(_ or _)
+      val isCudfMatch = withResource {
+        Seq(cudfFormat1, cudfFormat2, cudfFormat3, cudfFormat4).safeMap(input.isTimestamp)
+      } {
+        _.reduceLeft { (isTs1, isTs2) =>
+          withResource(isTs1) { _ =>
+            withResource(isTs2)(_ => isTs1.or(isTs2))
+          }
+        }
+      }
 
-      val isValidTimestamp = lazyReduce(
-        Seq(isCudfMatch, () => input.matchesRe(TIMESTAMP_REGEX_FULL))
-      )(_ and _)
+      val isValidTimestamp = withResource(isCudfMatch) { _ =>
+        withResource(input.matchesRe(TIMESTAMP_REGEX_FULL)) { isRegexMatch =>
+          isCudfMatch.and(isRegexMatch)
+        }
+      }
 
       // we only need to parse with one of the cuDF formats because the parsing code ignores
       // the ' ' or 'T' between the date and time components
-      withResource(isValidTimestamp()) { isValidTimestamp =>
+      withResource(isValidTimestamp) { _ =>
         withResource(input.asTimestampMicroseconds(cudfFormat1)) { asDays =>
           isValidTimestamp.ifElse(asDays, orElse)
         }

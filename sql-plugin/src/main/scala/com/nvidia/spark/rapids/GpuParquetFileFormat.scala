@@ -321,27 +321,26 @@ class GpuParquetWriter(
             cv.castTo(DType.TIMESTAMP_MILLISECONDS)
 
           case `typeInt96` =>
-            withResource(Scalar.fromLong(Long.MaxValue / 1000)) { upper =>
+            val inRange = withResource(Scalar.fromLong(Long.MaxValue / 1000)) { upper =>
               withResource(Scalar.fromLong(Long.MinValue / 1000)) { lower =>
-                val aOrB = withResource(cv.bitCastTo(DType.INT64)) { int64 =>
-                  lazyReduce(Seq(
-                    lazyResource(int64.greaterOrEqualTo(upper)),
-                    lazyResource(int64.lessOrEqualTo(lower))))(_ or _)()
-                }
-                val any = withResource(aOrB)(_.any())
-                withResource(any) { _ =>
-                  if (any.isValid && any.getBoolean) {
-                    // Its the writer's responsibility to close the input batch when this
-                    // exception is thrown.
-                    throw new IllegalArgumentException("INT96 column contains one " +
-                      "or more values that can overflow and will result in data " +
-                      "corruption. Please set " +
-                      "`spark.rapids.sql.format.parquet.writer.int96.enabled` to false" +
-                      " so we can fallback on CPU for writing parquet but still take " +
-                      "advantage of parquet read on the GPU.")
+                withResource(cv.bitCastTo(DType.INT64)) { int64 =>
+                  withResource(int64.greaterOrEqualTo(upper)) { a =>
+                    withResource(int64.lessOrEqualTo(lower))(b => a.or(b))
                   }
                 }
               }
+            }
+            val anyInRange = withResource(inRange)(_.any())
+            withResource(anyInRange) { _ =>
+              require(anyInRange.isValid && anyInRange.getBoolean,
+                // Its the writer's responsibility to close the input batch when this
+                // exception is thrown.
+                "INT96 column contains one " +
+                "or more values that can overflow and will result in data " +
+                "corruption. Please set " +
+                "`spark.rapids.sql.format.parquet.writer.int96.enabled` to false" +
+                " so we can fallback on CPU for writing parquet but still take " +
+                "advantage of parquet read on the GPU.")
             }
             cv.copyToColumnVector() /* the input is unchanged */
 

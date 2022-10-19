@@ -22,6 +22,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.{Arm, BoolUtils, CloseableHolder}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.util.DateTimeConstants.{MICROS_PER_DAY, MICROS_PER_HOUR, MICROS_PER_MINUTE, MICROS_PER_SECOND, MONTHS_PER_YEAR}
 import org.apache.spark.sql.rapids.shims.IntervalUtils
@@ -293,13 +294,12 @@ object GpuIntervalUtils extends Arm {
   private def finalSign(
       firstSignInTable: ColumnVector, secondSignInTable: ColumnVector): ColumnVector = {
     val negatives = withResource(Scalar.fromString("-")) { negScalar =>
-      lazyReduce(Seq(
-        lazyResource(negScalar.equalTo(firstSignInTable)),
-        lazyResource(negScalar.equalTo(secondSignInTable))
-      ))(_ bitXor _)
+      withResource(Seq(firstSignInTable, secondSignInTable).safeMap(negScalar.equalTo)) {
+        case Seq(neg1, neg2) => neg1.bitXor(neg2)
+      }
     }
 
-    withResource(negatives()) { s =>
+    withResource(negatives) { s =>
       withResource(Scalar.fromLong(1L)) { posOne =>
         withResource(Scalar.fromLong(-1L))(negOne => s.ifElse(negOne, posOne))
       }
@@ -314,12 +314,12 @@ object GpuIntervalUtils extends Arm {
    * @return micros column
    */
   private def getMicrosFromDecimal(sign: ColumnVector, decimal: ColumnVector): ColumnVector = {
-    val timesMillion = lazyReduce(Seq(
-      lazyResource(decimal.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -6))),
-      lazyResource(Scalar.fromLong(1000000L))))(_ mul _)
-
-    val timesMillionLongs = withResource(timesMillion().asInstanceOf[ColumnVector])(_.asLongs())
-    withResource(timesMillionLongs)(_ mul sign)
+    val decimalType64_6 = DType.create(DType.DTypeEnum.DECIMAL64, -6)
+    val timesMillion = withResource(decimal.castTo(decimalType64_6)) { decimal =>
+      withResource(Scalar.fromLong(1000000L))(decimal.mul)
+    }
+    val timesMillionLongs = withResource(timesMillion)(_.asLongs())
+    withResource(timesMillionLongs)(_.mul(sign))
   }
 
   private def addFromDayToDay(

@@ -181,12 +181,12 @@ abstract class CudfBinaryComparison extends CudfBinaryOperator with Predicate {
     if (!hasFloatingPointInputs) {
       result
     } else {
-      lazyReduce(Seq(
-        lazyResource(result),
-          lazyReduce(Seq(
-            lazyResource(lhsNanPredicate),
-            lazyResource(rhsNanPredicate)))(_ and _)
-        ))( _ or _)().asInstanceOf[ColumnVector]
+      withResource(result) { _ =>
+        val lhsAndRhs = withResource(lhsNanPredicate) { _ =>
+          withResource(rhsNanPredicate)(_ => lhsNanPredicate.and(rhsNanPredicate))
+        }
+        withResource(lhsAndRhs)(_ => lhsAndRhs.or(result))
+      }
     }
   }
 }
