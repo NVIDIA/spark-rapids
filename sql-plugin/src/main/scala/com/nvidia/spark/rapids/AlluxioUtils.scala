@@ -82,7 +82,9 @@ object AlluxioUtils extends Logging {
   private var alluxioMasterHost: Option[String] = None
   private var alluxioPathsToReplaceMap: Option[Map[String, String]] = None
   private var alluxioHome: String = "/opt/alluxio-2.8.0"
-  private var isInit: Boolean = false
+
+  private var isInitReplaceMap: Boolean = false
+  private var isInitMountPointsForAutoMount: Boolean = false
 
   def checkAlluxioNotSupported(rapidsConf: RapidsConf): Unit = {
     if (rapidsConf.isParquetPerFileReadEnabled &&
@@ -154,8 +156,15 @@ object AlluxioUtils extends Logging {
       alluxioCmd = conf.getAlluxioCmd
       checkAlluxioNotSupported(conf)
 
-      if (!isInit) {
-        if (conf.getAlluxioAutoMountEnabled) {
+      if (isConfiguredReplacementMap(conf)) {
+        // replace-map is enabled, if set this will invalid the auto-mount
+        if (!isInitReplaceMap) {
+          alluxioPathsToReplaceMap = getReplacementMapOption(conf)
+          isInitReplaceMap = true
+        }
+      } else if (conf.getAlluxioAutoMountEnabled) {
+        // auto-mound is enabled
+        if (!isInitMountPointsForAutoMount) {
           val (alluxio_master, alluxio_port) = readAlluxioMasterAndPort
           if (alluxio_master == null) {
             throw new RuntimeException(
@@ -185,10 +194,10 @@ object AlluxioUtils extends Logging {
           } else {
             logWarning(s"Failed to run alluxio fs mount $ret")
           }
-        } else {
-          alluxioPathsToReplaceMap = getReplacementMapOption(conf)
+          isInitMountPointsForAutoMount = true
         }
-        isInit = true
+      } else {
+        // disabled Alluxio feature
       }
     }
   }
@@ -370,6 +379,10 @@ object AlluxioUtils extends Logging {
         AlluxioPathReplaceTaskTime(pathStr, false)
       }
     })
+  }
+
+  private def isConfiguredReplacementMap(conf: RapidsConf): Boolean = {
+    conf.getAlluxioPathsToReplace.isDefined
   }
 
   private def getReplacementMapOption(conf: RapidsConf): Option[Map[String, String]] = {
