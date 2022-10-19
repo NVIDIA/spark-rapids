@@ -789,9 +789,9 @@ object GpuCast extends Arm {
       val strArrayCol = withResource(strChildCol) {
         input.replaceListChild
       }
-      val strColContainsNull = withResource(ColumnVector.fromScalar(sep, numRows)) { sepCol =>
-        withResource(strArrayCol) {
-          _.stringConcatenateListElements(sepCol)
+      val strColContainsNull = withResource(strArrayCol) { _ =>
+        withResource(ColumnVector.fromScalar(sep, numRows)) {
+          strArrayCol.stringConcatenateListElements
         }
       }
       val strCol = withResource(strColContainsNull) {
@@ -844,7 +844,9 @@ object GpuCast extends Arm {
         addBrackets
       }
 
-      withResource(strColWithBrackets)( _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input))
+      withResource(strColWithBrackets) {
+        _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
+      }
     }
   }
 
