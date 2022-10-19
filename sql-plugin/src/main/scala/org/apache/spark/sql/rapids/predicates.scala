@@ -218,7 +218,8 @@ case class GpuEqualTo(left: Expression, right: Expression) extends CudfBinaryCom
   override def binaryOp: BinaryOp = BinaryOp.EQUAL
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    evaluateAndFixFloatingPointResult(super.doColumnar(lhs, rhs), lhs.getBase.isNan, rhs.getBase.isNan)
+    evaluateAndFixFloatingPointResult(super.doColumnar(lhs, rhs), lhs.getBase.isNan,
+      rhs.getBase.isNan)
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
@@ -249,7 +250,8 @@ case class GpuEqualNullSafe(left: Expression, right: Expression) extends CudfBin
   override def binaryOp: BinaryOp = BinaryOp.NULL_EQUALS
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    evaluateAndFixFloatingPointResult(super.doColumnar(lhs, rhs), lhs.getBase.isNan, rhs.getBase.isNan)
+    evaluateAndFixFloatingPointResult(super.doColumnar(lhs, rhs), lhs.getBase.isNan,
+      rhs.getBase.isNan)
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
@@ -302,7 +304,8 @@ case class GpuGreaterThan(left: Expression, right: Expression) extends CudfBinar
   override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.GREATER)
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    evaluateAndFixFloatingPointResult(super.doColumnar(lhs, rhs), lhs.getBase.isNan, rhs.getBase.isNotNan)
+    evaluateAndFixFloatingPointResult(super.doColumnar(lhs, rhs), lhs.getBase.isNan,
+      rhs.getBase.isNotNan)
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
@@ -411,7 +414,8 @@ case class GpuLessThan(left: Expression, right: Expression) extends CudfBinaryCo
   override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.LESS)
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    evaluateAndFixFloatingPointResult(super.doColumnar(lhs, rhs), lhs.getBase.isNotNan, rhs.getBase.isNan)
+    evaluateAndFixFloatingPointResult(super.doColumnar(lhs, rhs), lhs.getBase.isNotNan,
+      rhs.getBase.isNan)
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
