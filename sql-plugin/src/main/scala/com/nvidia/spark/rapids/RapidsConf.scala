@@ -339,6 +339,16 @@ object RapidsConf {
     .stringConf
     .createOptional
 
+  val GPU_OOM_MAX_RETRIES =
+    conf("spark.rapids.memory.gpu.oomMaxRetries")
+      .doc("The number of times that an OOM will be re-attempted after the device store " +
+        "can't spill anymore. In practice, we can use Cuda.deviceSynchronize to allow temporary " +
+        "state in the allocator and in the various streams to catch up, in hopes we can satisfy " +
+        "an allocation which was failing due to the interim state of memory.")
+      .internal()
+      .integerConf
+      .createWithDefault(2)
+
   private val RMM_ALLOC_MAX_FRACTION_KEY = "spark.rapids.memory.gpu.maxAllocFraction"
   private val RMM_ALLOC_MIN_FRACTION_KEY = "spark.rapids.memory.gpu.minAllocFraction"
   private val RMM_ALLOC_RESERVE_KEY = "spark.rapids.memory.gpu.reserve"
@@ -1772,6 +1782,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val rmmDebugLocation: String = get(RMM_DEBUG)
 
   lazy val gpuOomDumpDir: Option[String] = get(GPU_OOM_DUMP_DIR)
+
+  lazy val gpuOomMaxRetries: Int = get(GPU_OOM_MAX_RETRIES)
 
   lazy val isUvmEnabled: Boolean = get(UVM_ENABLED)
 
