@@ -282,17 +282,18 @@ class GpuHashAggregateIterator(
   private def aggregateInputBatches(): Unit = {
     val aggHelper = new AggHelper(forceMerge = false, useTieredProject = useTieredProject)
     while (cbIter.hasNext) {
-      withResource(cbIter.next()) { childBatch =>
-        val isLastInputBatch = GpuColumnVector.isTaggedAsFinalBatch(childBatch)
-        withResource(computeAggregate(childBatch, aggHelper)) { aggBatch =>
-          val batch = LazySpillableColumnarBatch(aggBatch, metrics.spillCallback, "aggbatch")
-          // Avoid making batch spillable for the common case of the last and only batch
-          if (!(isLastInputBatch && aggregatedBatches.isEmpty)) {
-            batch.allowSpilling()
-          }
-          aggregatedBatches.add(batch)
+      val childBatch = cbIter.next()
+      val isLastInputBatch = GpuColumnVector.isTaggedAsFinalBatch(childBatch)
+
+      val spillableBatch =
+        withResource(computeAggregateAndClose(childBatch, aggHelper)) { aggBatch =>
+          LazySpillableColumnarBatch(aggBatch, metrics.spillCallback, "aggbatch")
         }
+      // Avoid making batch spillable for the common case of the last and only batch
+      if (!(isLastInputBatch && aggregatedBatches.isEmpty)) {
+        spillableBatch.allowSpilling()
       }
+      aggregatedBatches.add(spillableBatch)
     }
   }
 
@@ -396,12 +397,11 @@ class GpuHashAggregateIterator(
    */
   private def concatenateAndMerge(
       batches: mutable.ArrayBuffer[LazySpillableColumnarBatch]): LazySpillableColumnarBatch = {
-    withResource(batches) { _ =>
-      withResource(concatenateBatches(batches)) { concatBatch =>
-        withResource(computeAggregate(concatBatch, concatAndMergeHelper)) { mergedBatch =>
-          LazySpillableColumnarBatch(mergedBatch, metrics.spillCallback, "agg merged batch")
-        }
-      }
+    val concatBatch = withResource(batches) { _ =>
+      concatenateBatches(batches)
+    }
+    withResource(computeAggregateAndClose(concatBatch, concatAndMergeHelper)) { mergedBatch =>
+      LazySpillableColumnarBatch(mergedBatch, metrics.spillCallback, "agg merged batch")
     }
   }
 
@@ -473,9 +473,7 @@ class GpuHashAggregateIterator(
 
       override def next(): ColumnarBatch = {
         // batches coming out of the sort need to be merged
-        withResource(keyBatchingIter.next()) { batch =>
-          computeAggregate(batch, mergeSortedHelper)
-        }
+        computeAggregateAndClose(keyBatchingIter.next(), mergeSortedHelper)
       }
     }
   }
@@ -766,38 +764,42 @@ class GpuHashAggregateIterator(
      */
     def postProcess(resultBatch: ColumnarBatch): ColumnarBatch = {
       withResource(new NvtxRange("post-process", NvtxColor.ORANGE)) { _ =>
-        withResource(resultBatch) { _ =>
-          GpuProjectExec.project(resultBatch, postStepBound)
-        }
+        GpuProjectExec.project(resultBatch, postStepBound)
       }
     }
   }
 
   /**
-   * Compute the aggregations on the projected input columns.
+   * Compute the aggregations on the projected input columns, and close input batch.
    * @param toAggregateBatch input batch to aggregate
-   * @param helper an internal object that carries state required to execute computeAggregate from
+   * @param helper an internal object that carries state required to execute the aggregate from
    *               different parts of the codebase.
    * @return aggregated batch
    */
-  private def computeAggregate(
-      toAggregateBatch: ColumnarBatch, helper: AggHelper): ColumnarBatch  = {
+  private def computeAggregateAndClose(
+      toAggregateBatch: ColumnarBatch, helper: AggHelper): ColumnarBatch = {
     val computeAggTime = metrics.computeAggTime
     val opTime = metrics.opTime
     withResource(new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime,
       opTime)) { _ =>
       // a pre-processing step required before we go into the cuDF aggregate, in some cases
       // casting and in others creating a struct (MERGE_M2 for instance, requires a struct)
-      withResource(helper.preProcess(toAggregateBatch)) { preProcessed =>
-        val resultBatch = if (groupingExpressions.nonEmpty) {
+      val preProcessed = withResource(toAggregateBatch) { _ =>
+        helper.preProcess(toAggregateBatch)
+      }
+
+      val aggregated = withResource(preProcessed) { _ =>
+        if (groupingExpressions.nonEmpty) {
           helper.performGroupByAggregation(preProcessed)
         } else {
           helper.performReduction(preProcessed)
         }
+      }
 
-        // a post-processing step required in some scenarios, casting or picking
-        // apart a struct
-        helper.postProcess(resultBatch)
+      // a post-processing step required in some scenarios, casting or picking
+      // apart a struct
+      withResource(aggregated) { _ =>
+        helper.postProcess(aggregated)
       }
     }
   }
