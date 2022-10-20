@@ -55,8 +55,4 @@ object RapidsErrorUtils extends RapidsErrorUtilsFor33Xand34X {
       "Overflow in integral divide", "try_divide", context
     )
   }
-
-  def tableIdentifierExistsError(tableIdentifier: TableIdentifier): Throwable = {
-    QueryCompilationErrors.tableIdentifierExistsError(tableIdentifier)
-  }
 }
