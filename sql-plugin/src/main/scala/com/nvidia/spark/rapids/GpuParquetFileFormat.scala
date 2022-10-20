@@ -334,7 +334,7 @@ class GpuParquetWriter(
             }
             val anyInRange = withResource(inRange)(_.any())
             withResource(anyInRange) { _ =>
-              require(anyInRange.isValid && anyInRange.getBoolean,
+              require(!(anyInRange.isValid && anyInRange.getBoolean),
                 // Its the writer's responsibility to close the input batch when this
                 // exception is thrown.
                 "INT96 column contains one " +
