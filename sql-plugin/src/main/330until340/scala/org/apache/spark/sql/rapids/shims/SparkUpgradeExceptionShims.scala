@@ -21,9 +21,9 @@ import org.apache.spark.SparkUpgradeException
 object SparkUpgradeExceptionShims {
 
   def newSparkUpgradeException(
-                                version: String,
-                                message: String,
-                                cause: Throwable): SparkUpgradeException = {
+      version: String,
+      message: String,
+      cause: Throwable): SparkUpgradeException = {
     new SparkUpgradeException(
       "INCONSISTENT_BEHAVIOR_CROSS_VERSION",
       Array(version, message),
