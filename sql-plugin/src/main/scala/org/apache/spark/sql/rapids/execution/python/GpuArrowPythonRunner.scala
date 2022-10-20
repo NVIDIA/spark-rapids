@@ -94,9 +94,10 @@ trait GpuPythonArrowOutput extends Arm { _: GpuPythonRunnerBase[_] =>
     minReadTargetBatchSize = size
   }
 
-  def pythonOutSchema: StructType
-
   def semWait: GpuMetric
+
+  /** Convert the table received from the Python side to a batch. */
+  protected def toBatch(table: Table): ColumnarBatch
 
   protected def newReaderIterator(
       stream: DataInputStream,
@@ -158,9 +159,9 @@ trait GpuPythonArrowOutput extends Arm { _: GpuPythonRunnerBase[_] =>
               arrowReader = null
               read()
             } else {
-              withResource(table) { table =>
+              withResource(table) { _ =>
                 batchLoaded = true
-                GpuColumnVector.from(table, GpuColumnVector.extractTypes(pythonOutSchema))
+                toBatch(table)
               }
             }
           } else {
@@ -201,7 +202,7 @@ abstract class GpuPythonRunnerBase[IN](
 /**
  * Similar to `PythonUDFRunner`, but exchange data with Python worker via Arrow stream.
  */
-class GpuArrowPythonRunner(
+abstract class GpuArrowPythonRunnerBase(
     funcs: Seq[ChainedPythonFunctions],
     evalType: Int,
     argOffsets: Array[Array[Int]],
@@ -210,7 +211,6 @@ class GpuArrowPythonRunner(
     conf: Map[String, String],
     batchSize: Long,
     val semWait: GpuMetric,
-    val pythonOutSchema: StructType,
     onDataWriteFinished: () => Unit = null)
   extends GpuPythonRunnerBase[ColumnarBatch](funcs, evalType, argOffsets)
     with GpuPythonArrowOutput {
@@ -279,6 +279,33 @@ class GpuArrowPythonRunner(
         }
       }
     }
+  }
+}
+
+class GpuArrowPythonRunner(
+    funcs: Seq[ChainedPythonFunctions],
+    evalType: Int,
+    argOffsets: Array[Array[Int]],
+    pythonInSchema: StructType,
+    timeZoneId: String,
+    conf: Map[String, String],
+    batchSize: Long,
+    override val semWait: GpuMetric,
+    pythonOutSchema: StructType,
+    onDataWriteFinished: () => Unit = null)
+  extends GpuArrowPythonRunnerBase(
+    funcs,
+    evalType,
+    argOffsets,
+    pythonInSchema,
+    timeZoneId,
+    conf,
+    batchSize,
+    semWait,
+    onDataWriteFinished) {
+
+  def toBatch(table: Table): ColumnarBatch = {
+    GpuColumnVector.from(table, GpuColumnVector.extractTypes(pythonOutSchema))
   }
 }
 

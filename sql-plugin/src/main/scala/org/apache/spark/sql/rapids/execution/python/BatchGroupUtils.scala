@@ -338,25 +338,41 @@ private[python] object BatchGroupedIterator extends Arm {
   }
 
   /**
-   * Extract the children columns from a batch consisting of only one struct column, and
-   * wrap them up by a ColumnarBatch where they become the top-level children.
+   * Extract the first N children columns from a batch consisting of only one struct column,
+   * and wrap them up by a ColumnarBatch where they become the top-level children.
+   * N is equal to the size of the given children attributes.
    *
    * @param batch         The input batch
    * @param childrenAttrs The attributes of the children columns to be pulled out
    * @return a columnar batch with the children pulled out.
    */
   def extractChildren(batch: ColumnarBatch, childrenAttrs: Seq[Attribute]): ColumnarBatch = {
-    assert(batch.numCols() == 1, "Expect only one struct column")
-    assert(batch.column(0).dataType().isInstanceOf[StructType],
+    withResource(GpuColumnVector.from(batch)) { table =>
+      extractChildren(table, childrenAttrs)
+    }
+  }
+
+  /**
+   * Extract the first N children columns from a table consisting of only one struct column,
+   * and wrap them up by a ColumnarBatch where they become the top-level children.
+   * N is equal to the size of the given children attributes.
+   *
+   * @param table         The input table
+   * @param childrenAttrs The attributes of the children columns to be pulled out
+   * @return a columnar batch with the children pulled out.
+   */
+  def extractChildren(table: cudf.Table, childrenAttrs: Seq[Attribute]): ColumnarBatch = {
+    assert(table.getNumberOfColumns == 1, "Expect only one struct column")
+    assert(table.getColumn(0).getType == cudf.DType.STRUCT,
       "Expect a struct column")
-    val structColumn = batch.column(0).asInstanceOf[GpuColumnVector].getBase
+    val structColumn = table.getColumn(0)
     val outputColumns = childrenAttrs.zipWithIndex.safeMap {
       case (attr, i) =>
         withResource(structColumn.getChildColumnView(i)) { childView =>
           GpuColumnVector.from(childView.copyToColumnVector(), attr.dataType)
         }
     }
-    new ColumnarBatch(outputColumns.toArray, batch.numRows())
+    new ColumnarBatch(outputColumns.toArray, table.getRowCount.toInt)
   }
 
 }
