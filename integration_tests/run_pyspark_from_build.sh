@@ -175,16 +175,7 @@ else
         TEST_PARALLEL_OPTS=("-n" "$TEST_PARALLEL")
     fi
 
-    # Delete old run directories
-    cd "$SCRIPTPATH/target"
-    for f in */; do
-      if [[ $f = run_dir* && $(($(date +%s) - ${f:8:(${#f} - 9)})) -gt 86400 ]]; then
-        rm -rf "$f"
-      fi
-    done
-
-    RUN_DIR=${RUN_DIR-"$SCRIPTPATH"/target/run_dir-$(date +%s)}
-    mkdir -p "$RUN_DIR"
+    RUN_DIR=${RUN_DIR-`mktemp -p "$SCRIPTPATH"/target -d run_dir-$(date +%Y%m%d%H%M%S)-XXXX`}
     cd "$RUN_DIR"
 
     ## Under cloud environment, overwrite the '--rootdir' param to point to the working directory of each excutor
