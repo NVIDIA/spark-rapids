@@ -82,7 +82,7 @@ object AlluxioUtils extends Logging {
   private var alluxioMasterHost: Option[String] = None
   private var alluxioPathsToReplaceMap: Option[Map[String, String]] = None
   private var alluxioHome: String = "/opt/alluxio-2.8.0"
-
+  private var alluxioBucketRegex: Option[String] = None
   private var isInitReplaceMap: Boolean = false
   private var isInitMountPointsForAutoMount: Boolean = false
 
@@ -183,7 +183,7 @@ object AlluxioUtils extends Logging {
               s"Can't find alluxio.master.hostname from $alluxioHome/conf/alluxio-site.properties.")
           }
           alluxioMasterHost = Some(alluxio_master + ":" + alluxio_port)
-          val alluxioBucketRegex: String = conf.getAlluxioBucketRegex
+          alluxioBucketRegex = Some(conf.getAlluxioBucketRegex)
           // load mounted point by call Alluxio mount command.
           val (ret, output) = runAlluxioCmd("fs mount")
           if (ret == 0) {
@@ -342,15 +342,16 @@ object AlluxioUtils extends Logging {
 
   private def genFuncForAutoMountReplacement(
       runtimeConf: RuntimeConfig,
-      hadoopConf: Configuration,
-      alluxioBucketRegex: String): Option[Path => AlluxioPathReplaceConvertTime] = {
+      hadoopConf: Configuration): Option[Path => AlluxioPathReplaceConvertTime] = {
+    assert(alluxioMasterHost.isDefined)
+    assert(alluxioBucketRegex.isDefined)
+
     Some((f: Path) => {
       val pathStr = f.toString
-      val res = if (pathStr.matches(alluxioBucketRegex)) {
+      val res = if (pathStr.matches(alluxioBucketRegex.get)) {
         val (access_key, secret_key) = getKeyAndSecret(hadoopConf, runtimeConf)
         val (scheme, bucket) = getSchemeAndBucketFromPath(pathStr)
         autoMountBucket(scheme, bucket, access_key, secret_key)
-        assert(alluxioMasterHost.isDefined)
         AlluxioPathReplaceConvertTime(
           new Path(replaceSchemeWithAlluxio(pathStr, scheme, alluxioMasterHost.get)),
           Some(scheme))
@@ -427,8 +428,7 @@ object AlluxioUtils extends Logging {
     if (conf.getAlluxioPathsToReplace.isDefined) {
       genFuncForPathReplacement(alluxioPathsToReplaceMap)
     } else if (conf.getAlluxioAutoMountEnabled) {
-      val alluxioBucketRegex: String = conf.getAlluxioBucketRegex
-      genFuncForAutoMountReplacement(runtimeConf, hadoopConf, alluxioBucketRegex)
+      genFuncForAutoMountReplacement(runtimeConf, hadoopConf)
     } else {
       None
     }
@@ -476,13 +476,12 @@ object AlluxioUtils extends Logging {
       hadoopConf: Configuration,
       runtimeConf: RuntimeConfig): Option[Map[String, String]] = {
     val alluxioAutoMountEnabled = conf.getAlluxioAutoMountEnabled
-    val alluxioBucketRegex: String = conf.getAlluxioBucketRegex
     initAlluxioInfo(conf)
     if (alluxioAutoMountEnabled) {
       val (access_key, secret_key) = getKeyAndSecret(hadoopConf, runtimeConf)
       val replacedSchemes = pds.flatMap { pd =>
         pd.files.map(_.getPath.toString).flatMap { file =>
-          if (file.matches(alluxioBucketRegex)) {
+          if (file.matches(alluxioBucketRegex.get)) {
             val (scheme, bucket) = getSchemeAndBucketFromPath(file)
             autoMountBucket(scheme, bucket, access_key, secret_key)
             Some(scheme)
