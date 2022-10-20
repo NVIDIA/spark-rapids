@@ -20,10 +20,10 @@ from marks import allow_non_gpu, ignore_order, delta_lake
 from spark_session import is_databricks_runtime, with_cpu_session, with_gpu_session
 
 # Almost all of this is the metadata query
-# the important part is to not have InterleaveBits or PartitionerExpr
-@allow_non_gpu("SerializeFromObjectExec", "MapElementsExec", "MapPartitionsExec", "DeserializeToObjectExec",
-        "ProjectExec", "FilterExec", "SortExec", "ShuffleExchangeExec", "FileSourceScanExec",
-        "ObjectHashAggregateExec", "CollectLimitExec", "CreateTableExec", "AppendDataExecV1")
+# the important part is to not have InterleaveBits or HilbertLongIndex and PartitionerExpr
+# but there is no good way to check for that so I filed https://github.com/NVIDIA/spark-rapids/issues/6875
+# Until then we allow anything to be on the CPU.
+@allow_non_gpu(any=True)
 @delta_lake
 @ignore_order(local=True)
 def test_delta_zorder(spark_tmp_table_factory):
