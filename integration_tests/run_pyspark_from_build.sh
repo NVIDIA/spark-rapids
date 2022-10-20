@@ -175,7 +175,8 @@ else
         TEST_PARALLEL_OPTS=("-n" "$TEST_PARALLEL")
     fi
 
-    RUN_DIR=${RUN_DIR-`mktemp -p "$SCRIPTPATH"/target -d run_dir-$(date +%Y%m%d%H%M%S)-XXXX`}
+    RUN_DIR=${RUN_DIR-$(mktemp -u -p "$SCRIPTPATH"/target -d run_dir-$(date +%Y%m%d%H%M%S)-XXXX)}
+    mkdir -p "$RUN_DIR"
     cd "$RUN_DIR"
 
     ## Under cloud environment, overwrite the '--rootdir' param to point to the working directory of each excutor
