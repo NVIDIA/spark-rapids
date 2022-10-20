@@ -22,6 +22,7 @@ import java.util.Properties
 import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.collection.mutable
 import scala.io.BufferedSource
+import scala.util.control.NonFatal
 
 import alluxio.AlluxioURI
 import alluxio.conf.{AlluxioProperties, InstancedConfiguration, PropertyKey}
@@ -180,7 +181,7 @@ object AlluxioUtils extends Logging with Arm {
               logInfo(s"Found mounted bucket $s3Path to $alluxioPath")
             }
           } catch {
-            case e: Exception => logWarning(s"Failed to get alluxio mount table", e)
+            case NonFatal(e) => logWarning(s"Failed to get alluxio mount table", e)
           }
         } else {
           alluxioPathsToReplaceMap = getReplacementMapOption(conf)
@@ -258,7 +259,7 @@ object AlluxioUtils extends Logging with Arm {
             mountedBuckets(local_bucket) = remote_path
           }
         } catch {
-          case e: Exception =>
+          case NonFatal(e) =>
             throw new RuntimeException(s"Mount bucket $remote_path to $local_bucket failed", e)
         }
       } else if (mountedBuckets(local_bucket).equals(remote_path)) {
@@ -551,8 +552,7 @@ object AlluxioUtils extends Logging with Arm {
       dataFilters: Seq[Expression]): (FileIndex, Option[Map[String, String]])= {
     val hadoopConf = relation.sparkSession.sparkContext.hadoopConfiguration
     val runtimeConf = relation.sparkSession.conf
-    initAlluxioInfo(conf, relation.sparkSession.sparkContext.hadoopConfiguration,
-      relation.sparkSession.conf)
+    initAlluxioInfo(conf, hadoopConf, runtimeConf)
     val replaceFunc = getReplacementFunc(conf, runtimeConf, hadoopConf)
 
     val (location, allReplacedPrefixes) = if (replaceFunc.isDefined) {
