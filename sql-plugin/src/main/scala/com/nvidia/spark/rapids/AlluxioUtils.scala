@@ -174,8 +174,8 @@ object AlluxioUtils extends Logging with Arm {
           try {
             val (access_key, secret_key) = getKeyAndSecret(hadoopConf, runtimeConf)
             val mountPoints = getExistS3MountPoints(conf.getAlluxioUser, access_key, secret_key)
-            mountPoints.foreach { e =>
-              val (s3Path, alluxioPath) = (e._2.getUfsUri, e._1)
+            mountPoints.foreach { case (alluxioPath, mountPoint) =>
+              val s3Path = mountPoint.getUfsUri
               mountedBuckets(alluxioPath) = s3Path
               logInfo(s"Found mounted bucket $s3Path to $alluxioPath")
             }
@@ -222,7 +222,11 @@ object AlluxioUtils extends Logging with Arm {
     // get s3 mount points by alluxio client
     withResource(alluxio.client.file.FileSystem.Factory.create(conf)) { fs =>
       val mountTable = fs.getMountTable
-      mountTable.asScala.filter(e => e._2.getUfsType == "s3")
+      mountTable.asScala.filter { case (_, mountPoint) =>
+        // checked the alluxio code, the type should be s3
+        // anyway let's keep both of them
+        mountPoint.getUfsType == "s3" || mountPoint.getUfsType == "s3a"
+      }
     }
   }
 
