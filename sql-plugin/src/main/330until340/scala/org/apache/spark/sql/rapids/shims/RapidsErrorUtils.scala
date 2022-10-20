@@ -16,12 +16,11 @@
 
 package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.sql.catalyst.TableIdentifier
-import org.apache.spark.sql.catalyst.trees.Origin
-import org.apache.spark.sql.errors.{QueryCompilationErrors, QueryExecutionErrors}
-import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
+import org.apache.spark.sql.errors.QueryExecutionErrors
+import org.apache.spark.sql.types.{Decimal, DecimalType}
 
-object RapidsErrorUtils {
+object RapidsErrorUtils extends RapidsErrorUtilsFor33Xand34X {
+
   def invalidArrayIndexError(index: Int, numElements: Int,
       isElementAtF: Boolean = false): ArrayIndexOutOfBoundsException = {
     if (isElementAtF) {
@@ -31,25 +30,6 @@ object RapidsErrorUtils {
     }
   }
 
-  def mapKeyNotExistError(
-      key: String,
-      keyType: DataType,
-      origin: Origin): NoSuchElementException = {
-    QueryExecutionErrors.mapKeyNotExistError(key, keyType, origin.context)
-  }
-
-  def sqlArrayIndexNotStartAtOneError(): ArrayIndexOutOfBoundsException = {
-    new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
-  }
-
-  def divByZeroError(origin: Origin): ArithmeticException = {
-    QueryExecutionErrors.divideByZeroError(origin.context)
-  }
-
-  def divOverflowError(origin: Origin): ArithmeticException = {
-    QueryExecutionErrors.overflowInIntegralDivideError(origin.context)
-  }
-
   def arithmeticOverflowError(
       message: String,
       hint: String = "",
@@ -57,7 +37,7 @@ object RapidsErrorUtils {
     QueryExecutionErrors.arithmeticOverflowError(message, hint, errorContext)
   }
 
-  def cannotChangeDecimalPrecisionError(      
+  def cannotChangeDecimalPrecisionError(
       value: Decimal,
       toType: DecimalType,
       context: String = ""): ArithmeticException = {
@@ -70,15 +50,5 @@ object RapidsErrorUtils {
     QueryExecutionErrors.arithmeticOverflowError(
       "Overflow in integral divide", "try_divide", context
     )
-  }
-
-  def foundDuplicateFieldInCaseInsensitiveModeError(
-      requiredFieldName: String, matchedFields: String): Throwable = {
-    QueryExecutionErrors.foundDuplicateFieldInCaseInsensitiveModeError(
-      requiredFieldName, matchedFields)
-  }
-
-  def tableIdentifierExistsError(tableIdentifier: TableIdentifier): Throwable = {
-    QueryCompilationErrors.tableIdentifierExistsError(tableIdentifier)
   }
 }
