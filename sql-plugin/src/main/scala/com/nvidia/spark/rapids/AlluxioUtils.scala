@@ -94,6 +94,18 @@ object AlluxioUtils extends Logging {
     }
   }
 
+  /**
+   * Returns whether alluxio convert time algorithm should be enabled
+   * Note: should also check whether the auto-mount or replace path is enabled.
+   *
+   * @param conf the rapids conf
+   * @return Returns whether alluxio convert time algorithm should be enabled
+   */
+  def enabledAlluxioReplacementAlgoConvertTime(conf: RapidsConf): Boolean = {
+    conf.isAlluxioReplacementAlgoConvertTime &&
+        (conf.getAlluxioAutoMountEnabled || conf.getAlluxioPathsToReplace.isDefined)
+  }
+
   def isAlluxioAutoMountTaskTime(rapidsConf: RapidsConf,
       fileFormat: FileFormat): Boolean = {
       rapidsConf.getAlluxioAutoMountEnabled && rapidsConf.isAlluxioReplacementAlgoTaskTime &&
@@ -163,7 +175,7 @@ object AlluxioUtils extends Logging {
           isInitReplaceMap = true
         }
       } else if (conf.getAlluxioAutoMountEnabled) {
-        // auto-mound is enabled
+        // auto-mount is enabled
         if (!isInitMountPointsForAutoMount) {
           val (alluxio_master, alluxio_port) = readAlluxioMasterAndPort
           if (alluxio_master == null) {
