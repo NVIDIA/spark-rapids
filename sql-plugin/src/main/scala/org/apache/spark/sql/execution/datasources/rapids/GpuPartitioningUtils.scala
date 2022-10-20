@@ -26,6 +26,7 @@ import scala.util.Try
 import scala.util.control.NonFatal
 
 import com.nvidia.spark.rapids.AlluxioUtils.AlluxioPathReplaceConvertTime
+import com.nvidia.spark.rapids.shims.FileIndexOptionsShims.BASE_PATH_PARAM
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -37,7 +38,6 @@ import org.apache.spark.sql.catalyst.expressions.{Cast, Literal}
 import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, DateTimeUtils, TimestampFormatter}
 import org.apache.spark.sql.catalyst.util.rapids.DateFormatter
 import org.apache.spark.sql.execution.datasources.{PartitionPath, PartitionSpec}
-import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex.BASE_PATH_PARAM
 import org.apache.spark.sql.execution.datasources.PartitioningUtils.timestampPartitionPattern
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.types.shims.PartitionValueCastShims
