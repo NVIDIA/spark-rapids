@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids
 
 import java.util.concurrent.{ConcurrentHashMap, Semaphore}
 
+import scala.collection.mutable
+
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import org.apache.commons.lang3.mutable.MutableInt
 
@@ -25,6 +27,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 
 object GpuSemaphore {
+
   private val enabled = {
     val propstr = System.getProperty("com.nvidia.spark.rapids.semaphore.enabled")
     if (propstr != null) {
@@ -87,6 +90,17 @@ object GpuSemaphore {
   }
 
   /**
+   * Dumps the stack traces for any tasks that have accessed the GPU semaphore
+   * and have not completed. The output includes whether the task has the GPU semaphore
+   * held at the time of the stack trace.
+   */
+  def dumpActiveStackTracesToLog(): Unit = {
+    if (enabled) {
+      getInstance.dumpActiveStackTracesToLog()
+    }
+  }
+
+  /**
    * Uninitialize the GPU semaphore.
    * NOTE: This does not wait for active tasks to release!
    */
@@ -100,21 +114,25 @@ object GpuSemaphore {
 
 private final class GpuSemaphore(tasksPerGpu: Int) extends Logging with Arm {
   private val semaphore = new Semaphore(tasksPerGpu)
+
   // Map to track which tasks have acquired the semaphore.
-  private val activeTasks = new ConcurrentHashMap[Long, MutableInt]
+  case class TaskInfo(count: MutableInt, thread: Thread)
+  private val activeTasks = new ConcurrentHashMap[Long, TaskInfo]
 
   def acquireIfNecessary(context: TaskContext, waitMetric: GpuMetric): Unit = {
     withResource(new NvtxWithMetrics("Acquire GPU", NvtxColor.RED, waitMetric)) { _ =>
       val taskAttemptId = context.taskAttemptId()
       val refs = activeTasks.get(taskAttemptId)
-      if (refs == null || refs.getValue == 0) {
+      if (refs == null || refs.count.getValue == 0) {
         logDebug(s"Task $taskAttemptId acquiring GPU")
         semaphore.acquire()
         if (refs != null) {
-          refs.increment()
+          refs.count.increment()
         } else {
           // first time this task has been seen
-          activeTasks.put(taskAttemptId, new MutableInt(1))
+          activeTasks.put(
+            taskAttemptId,
+            TaskInfo(new MutableInt(1), Thread.currentThread()))
           context.addTaskCompletionListener[Unit](completeTask)
         }
         GpuDeviceManager.initializeFromTask()
@@ -127,8 +145,8 @@ private final class GpuSemaphore(tasksPerGpu: Int) extends Logging with Arm {
     try {
       val taskAttemptId = context.taskAttemptId()
       val refs = activeTasks.get(taskAttemptId)
-      if (refs != null && refs.getValue > 0) {
-        if (refs.decrementAndGet() == 0) {
+      if (refs != null && refs.count.getValue > 0) {
+        if (refs.count.decrementAndGet() == 0) {
           logDebug(s"Task $taskAttemptId releasing GPU")
           semaphore.release()
         }
@@ -144,9 +162,39 @@ private final class GpuSemaphore(tasksPerGpu: Int) extends Logging with Arm {
     if (refs == null) {
       throw new IllegalStateException(s"Completion of unknown task $taskAttemptId")
     }
-    if (refs.getValue > 0) {
+    if (refs.count.getValue > 0) {
       logDebug(s"Task $taskAttemptId releasing GPU")
       semaphore.release()
+    }
+  }
+
+  def dumpActiveStackTracesToLog(): Unit = {
+    try {
+      val stackTracesSemaphoreHeld = new mutable.ArrayBuffer[String]()
+      val otherStackTraces = new mutable.ArrayBuffer[String]()
+      activeTasks.forEach { (taskAttemptId, taskInfo) =>
+        val sb = new mutable.StringBuilder()
+        val semaphoreHeld = taskInfo.count.getValue > 0
+        taskInfo.thread.getStackTrace.foreach { stackTraceElement =>
+          sb.append("    " + stackTraceElement + "\n")
+        }
+        if (semaphoreHeld) {
+          stackTracesSemaphoreHeld.append(
+            s"Semaphore held. " +
+              s"Stack trace for task attempt id $taskAttemptId:\n${sb.toString()}")
+        } else {
+          otherStackTraces.append(
+            s"Semaphore not held. " +
+              s"Stack trace for task attempt id $taskAttemptId:\n${sb.toString()}")
+        }
+      }
+      logWarning(s"Dumping stack traces. The semaphore sees ${activeTasks.size()} tasks, " +
+        s"${stackTracesSemaphoreHeld.size} are holding onto the semaphore. " +
+        stackTracesSemaphoreHeld.mkString("\n", "\n", "\n") +
+        otherStackTraces.mkString("\n", "\n", "\n"))
+    } catch {
+      case t: Throwable =>
+        logWarning("Unable to obtain stack traces in the semaphore.", t)
     }
   }
 

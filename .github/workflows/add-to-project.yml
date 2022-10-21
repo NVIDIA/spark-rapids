@@ -12,19 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: Add new issues to project
+name: Add new issues and pull requests to project
 
 on:
   issues:
+    types:
+      - opened
+  pull_request_target:
     types:
       - opened
 
 jobs:
   add-to-project:
     if: github.repository == 'NVIDIA/spark-rapids'
-    name: Add new issues to project
+    name: Add new issues and pull requests to project
     runs-on: ubuntu-latest
     steps:
+      # TODO: update project version when new release supports node 16 instead of 12
       - uses: actions/add-to-project@v0.3.0
         with:
           project-url: https://github.com/orgs/NVIDIA/projects/4
