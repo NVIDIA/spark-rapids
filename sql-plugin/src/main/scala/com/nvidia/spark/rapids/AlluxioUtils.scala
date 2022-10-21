@@ -89,7 +89,9 @@ object AlluxioUtils extends Logging with Arm {
   private var alluxioMasterHostAndPort: Option[String] = None
   private var alluxioPathsToReplaceMap: Option[Map[String, String]] = None
   private var alluxioHome: String = "/opt/alluxio-2.8.0"
-  private var isInit: Boolean = false
+  private var alluxioBucketRegex: Option[String] = None
+  private var isInitReplaceMap: Boolean = false
+  private var isInitMountPointsForAutoMount: Boolean = false
 
   def checkAlluxioNotSupported(rapidsConf: RapidsConf): Unit = {
     if (rapidsConf.isParquetPerFileReadEnabled &&
@@ -97,6 +99,18 @@ object AlluxioUtils extends Logging with Arm {
       throw new IllegalArgumentException("Alluxio is currently not supported with the PERFILE " +
         "reader, please use one of the other reader types.")
     }
+  }
+
+  /**
+   * Returns whether alluxio convert time algorithm should be enabled
+   * Note: should also check whether the auto-mount or replace path is enabled.
+   *
+   * @param conf the rapids conf
+   * @return Returns whether alluxio convert time algorithm should be enabled
+   */
+  def enabledAlluxioReplacementAlgoConvertTime(conf: RapidsConf): Boolean = {
+    conf.isAlluxioReplacementAlgoConvertTime &&
+        (conf.getAlluxioAutoMountEnabled || conf.getAlluxioPathsToReplace.isDefined)
   }
 
   def isAlluxioAutoMountTaskTime(rapidsConf: RapidsConf,
@@ -161,8 +175,15 @@ object AlluxioUtils extends Logging with Arm {
       alluxioHome = scala.util.Properties.envOrElse("ALLUXIO_HOME", "/opt/alluxio-2.8.0")
       checkAlluxioNotSupported(conf)
 
-      if (!isInit) {
-        if (conf.getAlluxioAutoMountEnabled) {
+      if (isConfiguredReplacementMap(conf)) {
+        // replace-map is enabled, if set this will invalid the auto-mount
+        if (!isInitReplaceMap) {
+          alluxioPathsToReplaceMap = getReplacementMapOption(conf)
+          isInitReplaceMap = true
+        }
+      } else if (conf.getAlluxioAutoMountEnabled) {
+        // auto-mount is enabled
+        if (!isInitMountPointsForAutoMount) {
           val (alluxioMasterHostStr, alluxioMasterPortStr) = readAlluxioMasterAndPort
           if (alluxioMasterHostStr == null) {
             throw new RuntimeException(
@@ -171,6 +192,7 @@ object AlluxioUtils extends Logging with Arm {
           alluxioMasterHost = Some(alluxioMasterHostStr)
           alluxioMasterPort = Some(alluxioMasterPortStr.toInt)
           alluxioMasterHostAndPort = Some(alluxioMasterHostStr + ":" + alluxioMasterPortStr)
+          alluxioBucketRegex = Some(conf.getAlluxioBucketRegex)
           // load mounted point by call Alluxio client.
           try {
             val (access_key, secret_key) = getKeyAndSecret(hadoopConf, runtimeConf)
@@ -183,10 +205,10 @@ object AlluxioUtils extends Logging with Arm {
           } catch {
             case NonFatal(e) => logWarning(s"Failed to get alluxio mount table", e)
           }
-        } else {
-          alluxioPathsToReplaceMap = getReplacementMapOption(conf)
+          isInitMountPointsForAutoMount = true
         }
-        isInit = true
+      } else {
+        // disabled Alluxio feature, do nothing
       }
     }
   }
@@ -332,15 +354,16 @@ object AlluxioUtils extends Logging with Arm {
   private def genFuncForAutoMountReplacement(
       alluxioUser: String,
       runtimeConf: RuntimeConfig,
-      hadoopConf: Configuration,
-      alluxioBucketRegex: String): Option[Path => AlluxioPathReplaceConvertTime] = {
+      hadoopConf: Configuration): Option[Path => AlluxioPathReplaceConvertTime] = {
+    assert(alluxioMasterHostAndPort.isDefined)
+    assert(alluxioBucketRegex.isDefined)
+
     Some((f: Path) => {
       val pathStr = f.toString
-      val res = if (pathStr.matches(alluxioBucketRegex)) {
+      val res = if (pathStr.matches(alluxioBucketRegex.get)) {
         val (access_key, secret_key) = getKeyAndSecret(hadoopConf, runtimeConf)
         val (scheme, bucket) = getSchemeAndBucketFromPath(pathStr)
         autoMountBucket(alluxioUser, scheme, bucket, access_key, secret_key)
-        assert(alluxioMasterHostAndPort.isDefined)
         AlluxioPathReplaceConvertTime(
           new Path(replaceSchemeWithAlluxio(pathStr, scheme, alluxioMasterHostAndPort.get)),
           Some(scheme))
@@ -383,6 +406,10 @@ object AlluxioUtils extends Logging with Arm {
     })
   }
 
+  private def isConfiguredReplacementMap(conf: RapidsConf): Boolean = {
+    conf.getAlluxioPathsToReplace.isDefined
+  }
+
   private def getReplacementMapOption(conf: RapidsConf): Option[Map[String, String]] = {
     val alluxioPathsReplace: Option[Seq[String]] = conf.getAlluxioPathsToReplace
     // alluxioPathsReplace: Seq("key->value", "key1->value1")
@@ -413,9 +440,7 @@ object AlluxioUtils extends Logging with Arm {
     if (conf.getAlluxioPathsToReplace.isDefined) {
       genFuncForPathReplacement(alluxioPathsToReplaceMap)
     } else if (conf.getAlluxioAutoMountEnabled) {
-      val alluxioBucketRegex: String = conf.getAlluxioBucketRegex
-      genFuncForAutoMountReplacement(conf.getAlluxioUser, runtimeConf, hadoopConf,
-        alluxioBucketRegex)
+      genFuncForAutoMountReplacement(conf.getAlluxioUser, runtimeConf, hadoopConf)
     } else {
       None
     }
@@ -463,13 +488,12 @@ object AlluxioUtils extends Logging with Arm {
       hadoopConf: Configuration,
       runtimeConf: RuntimeConfig): Option[Map[String, String]] = {
     val alluxioAutoMountEnabled = conf.getAlluxioAutoMountEnabled
-    val alluxioBucketRegex: String = conf.getAlluxioBucketRegex
     initAlluxioInfo(conf, hadoopConf, runtimeConf)
     if (alluxioAutoMountEnabled) {
       val (access_key, secret_key) = getKeyAndSecret(hadoopConf, runtimeConf)
       val replacedSchemes = pds.flatMap { pd =>
         pd.files.map(_.getPath.toString).flatMap { file =>
-          if (file.matches(alluxioBucketRegex)) {
+          if (file.matches(alluxioBucketRegex.get)) {
             val (scheme, bucket) = getSchemeAndBucketFromPath(file)
             autoMountBucket(conf.getAlluxioUser, scheme, bucket, access_key, secret_key)
             Some(scheme)
