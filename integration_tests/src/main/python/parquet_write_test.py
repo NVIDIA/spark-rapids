@@ -88,6 +88,7 @@ parquet_ts_write_options = ['INT96', 'TIMESTAMP_MICROS', 'TIMESTAMP_MILLIS']
 
 @pytest.mark.order(1) # at the head of xdist worker queue if pytest-order is installed
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/6865')
 def test_write_round_trip(spark_tmp_path, parquet_gens):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -196,6 +197,7 @@ def test_compress_write_round_trip(spark_tmp_path, compress):
 
 @pytest.mark.order(2)
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/6865')
 def test_write_save_table(spark_tmp_path, parquet_gens, spark_tmp_table_factory):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -213,6 +215,7 @@ def write_parquet_sql_from(spark, df, data_path, write_to_table):
 
 @pytest.mark.order(2)
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/6865')
 def test_write_sql_save_table(spark_tmp_path, parquet_gens, spark_tmp_table_factory):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -438,6 +441,7 @@ def test_non_empty_ctas(spark_tmp_path, spark_tmp_table_factory, allow_non_empty
     with_gpu_session(test_it, conf)
 
 @pytest.mark.parametrize('parquet_gens', parquet_write_gens_list, ids=idfn)
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/6865')
 def test_write_empty_parquet_round_trip(spark_tmp_path, parquet_gens):
     def create_empty_df(spark, path):
         gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
@@ -523,7 +527,9 @@ def test_concurrent_writer(spark_tmp_path):
 
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="is only supported in Spark 320+")
-def test_fallback_to_single_writer_from_concurrent_writer(spark_tmp_path):
+@allow_non_gpu(any=True)
+@pytest.mark.parametrize('aqe_enabled', [True, False])
+def test_fallback_to_single_writer_from_concurrent_writer(spark_tmp_path, aqe_enabled):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: get_25_partitions_df(spark)  # df has 25 partitions for (c1, c2)
@@ -534,7 +540,8 @@ def test_fallback_to_single_writer_from_concurrent_writer(spark_tmp_path):
         copy_and_update(
             # 10 < 25, will fall back to single writer
             {"spark.sql.maxConcurrentOutputFileWriters": 10},
-            {"spark.rapids.sql.concurrentWriterPartitionFlushSize": 64 * 1024 * 1024}
+            {"spark.rapids.sql.concurrentWriterPartitionFlushSize": 64 * 1024 * 1024},
+            {"spark.sql.adaptive.enabled": aqe_enabled},
         ))
 
 

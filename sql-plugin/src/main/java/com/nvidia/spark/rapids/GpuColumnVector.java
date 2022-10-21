@@ -998,6 +998,29 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   }
 
   /**
+   * Remove columns from the batch.  The order of the remaining columns is preserved.
+   * dropList[] has an entry for each column in the batch which indicates whether the column should
+   * be skipped.  The reference counts are incremented for the retained columns.
+   * <br/>
+   * For example if we had <pre>dropColumns({A, B, C, D}, {true, false, true, false})</pre>
+   * The result would be a batch with <pre>{B, D}</pre>
+   */
+  public static ColumnarBatch dropColumns(ColumnarBatch cb, boolean[] dropList) {
+    int numRows = cb.numRows();
+    int numColumns = cb.numCols();
+    assert numColumns == dropList.length;
+    ArrayList<ColumnVector> columns = new ArrayList<>();
+    for (int i = 0; i < numColumns; i++) {
+      if (dropList[i] == false) {
+        columns.add(cb.column(i));
+      }
+    }
+    ColumnarBatch ret =
+        new ColumnarBatch(columns.toArray(new ColumnVector[columns.size()]),numRows);
+    return incRefCounts(ret);
+  }
+
+  /**
    * Get the underlying Spark compatible columns from the batch.  This does not increment any
    * reference counts so if you want to use these columns after the batch is closed
    * you will need to do that on your own.

@@ -208,14 +208,22 @@ abstract class AppBase(
   }
 
   private val UDFRegex = ".*UDF.*"
-  private val UDFKeywords = Map(UDFRegex -> "UDF")
+
+  private val potentialIssuesRegexMap = Map(
+    UDFRegex -> "UDF", 
+    ".*current_timestamp\\(.*\\).*" -> "TIMEZONE current_timestamp()",
+    ".*to_timestamp\\(.*\\).*" -> "TIMEZONE to_timestamp()",
+    ".*hour\\(.*\\).*" -> "TIMEZONE hour()",
+    ".*minute\\(.*\\).*" -> "TIMEZONE minute()",
+    ".*second\\(.*\\).*" -> "TIMEZONE second()"
+  )
 
   def containsUDF(desc: String): Boolean = {
     desc.matches(UDFRegex)
   }
 
   protected def findPotentialIssues(desc: String): Set[String] =  {
-    val potentialIssuesRegexs = UDFKeywords
+    val potentialIssuesRegexs = potentialIssuesRegexMap
     val issues = potentialIssuesRegexs.filterKeys(desc.matches(_))
     issues.values.toSet
   }

@@ -362,7 +362,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
     @Override
     protected FilePartitionReaderBase createRapidsReader(PartitionedFile[] pFiles,
         StructType partitionSchema) {
-      ArrayList<ParquetSingleDataBlockMeta> clippedBlocks = new ArrayList();
+      ArrayList<ParquetSingleDataBlockMeta> clippedBlocks = new ArrayList<>();
       files.values().forEach(fst -> {
         FilteredParquetFileInfo filteredInfo = filterParquetBlocks(fst);
         List<ParquetSingleDataBlockMeta> fileSingleMetas =
