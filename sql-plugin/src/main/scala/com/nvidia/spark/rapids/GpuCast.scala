@@ -747,45 +747,53 @@ object GpuCast extends Arm {
     val spaceStr = " "
     val nullStr = if (legacyCastToString) ""  else "null"
     val sepStr = if (legacyCastToString) "," else ", "
-    val numRows = input.getRowCount.toInt
-
     withResource(
       Seq(emptyStr, spaceStr, nullStr, sepStr).safeMap(Scalar.fromString)
     ){ case Seq(empty, space, nullRep, sep) =>
-      withResource(ColumnVector.fromScalar(sep, numRows)) {sepCol =>
-        withResource(input.getChildColumnView(0)) { childCol =>
-          withResource {
-            // add `' '` to all not null elements when `legacyCastToString = true`
-            withResource(childCol) { strChildContainsNull =>
-              withResource(strChildContainsNull.replaceNulls(nullRep)) { strChild =>
-                if (legacyCastToString) {// add a space string to each non-null element
-                  val numElements = strChildContainsNull.getRowCount.toInt
-                  withResource(ColumnVector.fromScalar(space, numElements)) { spaceVec =>
-                    withResource(ColumnVector.stringConcatenate(Array(spaceVec, strChild))
-                    ) { hasSpaces =>
-                      withResource(strChildContainsNull.isNotNull) {_.ifElse(hasSpaces, strChild)}
-                    }
-                  }
-                }
-                else { strChild.incRefCount }
-              }
+
+      val withSpacesIfLegacy = if (!legacyCastToString) {
+        withResource(input.getChildColumnView(0)) {
+          _.replaceNulls(nullRep)
+        }
+      } else {
+        // add a space string to each non-null element
+        val childCol = input.getChildColumnView(0)
+        val numElements = childCol.getRowCount.toInt
+        val strChild = closeOnExcept(childCol) {
+          _.replaceNulls(nullRep)
+        }
+        val childNotNull = withResource(childCol) {
+          _.isNotNull
+        }
+        withResource(strChild) { _ =>
+          val hasSpaces = withResource(ColumnVector.fromScalar(space, numElements)) { spaceCol =>
+            ColumnVector.stringConcatenate(Array(spaceCol, strChild))
+          }
+          withResource(hasSpaces) { _ =>
+            withResource(childNotNull) {
+              _.ifElse(hasSpaces, strChild)
             }
-          } {strChildCol =>
-            withResource(input.replaceListChild(strChildCol)) {strArrayCol =>
-              withResource(
-                strArrayCol.stringConcatenateListElements(sepCol)) { strColContainsNull =>
-                withResource(strColContainsNull.replaceNulls(empty)) {strCol =>
-                  // If the first char of a string is ' ', remove it (only for legacyCastToString = true)
-                  if (legacyCastToString){
-                    withResource(strCol.substring(0,1)) { firstChars =>
-                      withResource(strCol.substring(1)) { remain =>
-                        withResource(firstChars.equalTo(space)) {_.ifElse(remain, strCol)}
-                      }
-                    }
-                  }
-                  else { strCol.incRefCount }
-                }
-              }
+          }
+        }
+      }
+      val concatenated = withResource(withSpacesIfLegacy) { strChildCol =>
+        withResource(input.replaceListChild(strChildCol)) { strArrayCol =>
+          withResource(ColumnVector.fromScalar(sep, input.getRowCount.toInt)) {
+            strArrayCol.stringConcatenateListElements
+          }
+        }
+      }
+      val strCol = withResource(concatenated) {
+        _.replaceNulls(empty)
+      }
+      if (!legacyCastToString) {
+        strCol
+      } else {
+        // If the first char of a string is ' ', remove it (only for legacyCastToString = true)
+        withResource(strCol) { _ =>
+          withResource(strCol.startsWith(space)) { startsWithSpace =>
+            withResource(strCol.substring(1)) { remain =>
+              startsWithSpace.ifElse(remain, strCol)
             }
           }
         }
