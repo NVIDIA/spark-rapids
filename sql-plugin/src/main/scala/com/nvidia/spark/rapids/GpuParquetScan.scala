@@ -1623,14 +1623,10 @@ class MultiFileParquetPartitionReader(
       return true
     }
 
-    val schemaNextFile =
-      nextBlockInfo.schema.asGroupType().getFields.asScala.map(_.getName)
-    val schemaCurrentfile =
-      currentBlockInfo.schema.asGroupType().getFields.asScala.map(_.getName)
-
-    if (!schemaNextFile.sameElements(schemaCurrentfile)) {
+    if (!nextBlockInfo.schema.equals(currentBlockInfo.schema)) {
       logInfo(s"File schema for the next file ${nextBlockInfo.filePath}" +
-        s" doesn't match current ${currentBlockInfo.filePath}, splitting it into another batch!")
+        s" schema ${nextBlockInfo.schema} doesn't match current ${currentBlockInfo.filePath}" +
+        s" schema ${currentBlockInfo.schema}, splitting it into another batch!")
       return true
     }
     false

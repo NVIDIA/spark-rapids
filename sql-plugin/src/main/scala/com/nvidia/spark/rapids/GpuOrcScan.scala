@@ -1977,20 +1977,16 @@ class MultiFileOrcPartitionReader(
   override def checkIfNeedToSplitDataBlock(
       currentBlockInfo: SingleDataBlockInfo,
       nextBlockInfo: SingleDataBlockInfo): Boolean = {
-    val schemaNextFile =
-      nextBlockInfo.schema.getFieldNames.asScala
-    val schemaCurrentfile =
-      currentBlockInfo.schema.getFieldNames.asScala
-
-    if (!schemaNextFile.sameElements(schemaCurrentfile)) {
-      logInfo(s"Orc File schema for the next file ${nextBlockInfo.filePath}" +
-        s" doesn't match current ${currentBlockInfo.filePath}, splitting it into another batch!")
+    if (!nextBlockInfo.schema.equals(currentBlockInfo.schema)) {
+      logInfo(s"ORC schema for the next file ${nextBlockInfo.filePath}" +
+        s" schema ${nextBlockInfo.schema} doesn't match current ${currentBlockInfo.filePath}" +
+        s" schema ${currentBlockInfo.schema}, splitting it into another batch!")
       return true
     }
 
     if (currentBlockInfo.dataBlock.ctx.compressionKind !=
         nextBlockInfo.dataBlock.ctx.compressionKind) {
-      logInfo(s"Orc File compression for the next file ${nextBlockInfo.filePath}" +
+      logInfo(s"ORC File compression for the next file ${nextBlockInfo.filePath}" +
         s" doesn't match current ${currentBlockInfo.filePath}, splitting it into another batch!")
       return true
     }
@@ -2006,7 +2002,7 @@ class MultiFileOrcPartitionReader(
     }
 
     if (!ret) {
-      logInfo(s"Orc requested column ids for the next file ${nextBlockInfo.filePath}" +
+      logInfo(s"ORC requested column ids for the next file ${nextBlockInfo.filePath}" +
         s" doesn't match current ${currentBlockInfo.filePath}, splitting it into another batch!")
       return true
     }
