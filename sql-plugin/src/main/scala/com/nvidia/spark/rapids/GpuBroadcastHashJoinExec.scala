@@ -147,6 +147,9 @@ case class GpuBroadcastHashJoinExec(
       bqse.plan.asInstanceOf[ReusedExchangeExec].child.asInstanceOf[GpuBroadcastExchangeExec]
     case gpu: GpuBroadcastExchangeExec => gpu
     case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuBroadcastExchangeExec]
+    case _ => 
+      logWarning(s"what is this? ${buildPlan.getClass}")
+      throw new AssertionError("Match error here")
   }
 
   override def doExecute(): RDD[InternalRow] =

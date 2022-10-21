@@ -177,4 +177,8 @@ trait SparkShims {
   def supportsColumnarAdaptivePlans: Boolean
 
   def columnarAdaptivePlan(a: AdaptiveSparkPlanExec, goal: CoalesceSizeGoal): SparkPlan
+
+  def applyInitialShimPlanRules(plan: SparkPlan, conf: RapidsConf): SparkPlan = plan
+
+  def applyFinalShimPlanRules(plan: SparkPlan): SparkPlan = plan
 }
