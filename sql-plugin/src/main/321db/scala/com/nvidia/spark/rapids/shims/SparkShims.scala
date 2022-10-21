@@ -140,7 +140,7 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
             val options = wrapped.relation.options
 
             val (location, alluxioPathsToReplaceMap) =
-              if (conf.isAlluxioReplacementAlgoConvertTime) {
+              if (AlluxioUtils.enabledAlluxioReplacementAlgoConvertTime(conf)) {
                 AlluxioUtils.replacePathIfNeeded(
                   conf,
                   wrapped.relation,

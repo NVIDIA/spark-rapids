@@ -32,7 +32,7 @@ import org.apache.spark.util.Utils
 /**
  * Python UDF Runner for cogrouped UDFs, designed for `GpuFlatMapCoGroupsInPandasExec` only.
  *
- * It sends Arrow bathes from two different DataFrames, groups them in Python,
+ * It sends Arrow batches from two different DataFrames, groups them in Python,
  * and receive it back in JVM as batches of single DataFrame.
  */
 class GpuCoGroupedArrowPythonRunner(
@@ -45,7 +45,7 @@ class GpuCoGroupedArrowPythonRunner(
     conf: Map[String, String],
     batchSize: Int,
     val semWait: GpuMetric,
-    val pythonOutSchema: StructType)
+    pythonOutSchema: StructType)
   extends GpuPythonRunnerBase[(ColumnarBatch, ColumnarBatch)](funcs, evalType, argOffsets)
     with GpuPythonArrowOutput {
 
@@ -117,4 +117,8 @@ class GpuCoGroupedArrowPythonRunner(
       } // end of writeGroup
     }
   } // end of newWriterThread
+
+  def toBatch(table: Table): ColumnarBatch = {
+    GpuColumnVector.from(table, GpuColumnVector.extractTypes(pythonOutSchema))
+  }
 }
