@@ -609,10 +609,9 @@ case class GpuArrayRepeat(left: Expression, right: Expression) extends GpuBinary
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     // The primary issue of array_repeat is to workaround the null and negative count.
-    // Spark returns a null (list) when encountering a null count, while cudf::repeat simply
-    // throws an exception.
-    // Spark returns a empty list when encountering a negative count, while cudf::repeat simply
-    // throws an exception.
+    // Spark returns a null (list) when encountering a null count, and an
+    // empty list when encountering a negative count.
+    // cudf does not handle these cases properly.
 
     // Step 1. replace invalid counts
     //  null -> 0
@@ -627,7 +626,7 @@ case class GpuArrayRepeat(left: Expression, right: Expression) extends GpuBinary
     // Step 2. perform cuDF repeat
     val repeated = closeOnExcept(refinedCount) { cnt =>
       withResource(new Table(lhs.getBase)) { table =>
-        table.repeat(cnt, true).getColumn(0)
+        table.repeat(cnt).getColumn(0)
       }
     }
     // Step 3. generate list offsets from refined counts

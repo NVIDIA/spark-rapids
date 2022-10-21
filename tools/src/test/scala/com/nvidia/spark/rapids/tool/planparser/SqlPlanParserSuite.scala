@@ -24,7 +24,7 @@ import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
 import org.apache.spark.sql.expressions.Window
-import org.apache.spark.sql.functions.{broadcast, ceil, col, collect_list, count, explode, hex, json_tuple, round, row_number, sum}
+import org.apache.spark.sql.functions.{ceil, col, collect_list, count, explode, floor, hex, json_tuple, round, row_number, sum}
 import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.qualification.QualificationAppInfo
 import org.apache.spark.sql.types.StringType
@@ -396,28 +396,31 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
-  test("Parse Execs - BroadcastHashJoin, BroadcastNestedLoopJoin and ShuffledHashJoin") {
+  test("Parse Execs and supported exprs - BroadcastHashJoin, " +
+    "BroadcastNestedLoopJoin and ShuffledHashJoin") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
         import spark.implicits._
-        val df1 = spark.sparkContext.parallelize(List(1, 2, 3, 4)).toDF
-        val df2 = spark.sparkContext.parallelize(List(4, 5, 6, 2)).toDF
+        val df1 = Seq((1, "ABC", 1.2), (2, "DEF", 2.3), (3, "GHI", 1.4)).toDF(
+          "emp_id", "name", "dept")
+        val df2 = Seq(("Fin", 1.2, "ABC"), ("IT", 2.3, "DEF")).toDF(
+          "dept_name", "dept_id", "name")
         // BroadcastHashJoin
-        df1.join(broadcast(df2), "value").collect
+        df1.join(df2, df1("name") === df2("name") &&
+          ceil(df1("dept")) === ceil(df2("dept_id")), "left_outer").collect
         // ShuffledHashJoin
         df1.createOrReplaceTempView("t1")
         df2.createOrReplaceTempView("t2")
-        spark.sql("SELECT /*+ SHUFFLE_HASH(t1) */ * FROM t1 INNER JOIN t2 ON " +
-            "t1.value = t2.value").collect
+        spark.sql("select /*+ SHUFFLE_HASH(t1) */ * from t1 " +
+          "INNER JOIN t2 ON t1.name = t2.name AND CEIL(t1.DEPT) = CEIL(t2.DEPT_ID)").collect
         // BroadcastNestedLoopJoin
-        val nums = spark.range(2)
-        val letters = ('a' to 'c').map(_.toString).toDF("letter")
-        nums.crossJoin(letters)
+        df1.join(df2, ceil(df1("dept")) <= ceil(df2("dept_id"))
+          && floor(df1("dept")) <= floor(df2("dept_id")), "inner")
       }
+
       val pluginTypeChecker = new PluginTypeChecker()
       val app = createAppFromEventlog(eventLog)
       assert(app.sqlPlans.size == 5)
-      val supportedExecs = Array("BroadcastHashJoin", "BroadcastNestedLoopJoin", "ShuffledHashJoin")
       val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
         SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, "", pluginTypeChecker, app)
       }
@@ -428,6 +431,70 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       assertSizeAndSupported(1, broadcastNestedJoin)
       val shj = allExecInfo.filter(_.exec == "ShuffledHashJoin")
       assertSizeAndSupported(1, shj)
+    }
+  }
+
+  test("Expressions not supported in  BroadcastHashJoin, BroadcastNestedLoopJoin " +
+    "and ShuffledHashJoin") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
+        import spark.implicits._
+        val df1 = Seq((1, "ABC", 1.2), (2, "DEF", 2.3), (3, "GHI", 1.4)).toDF(
+          "emp_id", "name", "dept")
+        val df2 = Seq(("Fin", 1.2, "ABC"), ("IT", 2.3, "DEF")).toDF(
+          "dept_name", "dept_id", "name")
+        // BroadcastHashJoin
+        // hex is not supported in GPU yet.
+        df1.join(df2, df1("name") === df2("name") &&
+          hex(df1("dept")) === hex(df2("dept_id")), "left_outer").collect
+        // ShuffledHashJoin
+        df1.createOrReplaceTempView("t1")
+        df2.createOrReplaceTempView("t2")
+        spark.sql("select /*+ SHUFFLE_HASH(t1) */ * from t1 " +
+          "INNER JOIN t2 ON t1.name = t2.name AND HEX(t1.DEPT) = HEX(t2.DEPT_ID)").collect
+        // BroadcastNestedLoopJoin
+        df1.join(df2, ceil(df1("dept")) <= ceil(df2("dept_id"))
+          && hex(df1("dept")) <= hex(df2("dept_id")), "inner")
+      }
+
+      val pluginTypeChecker = new PluginTypeChecker()
+      val app = createAppFromEventlog(eventLog)
+      assert(app.sqlPlans.size == 5)
+      val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+        SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, "", pluginTypeChecker, app)
+      }
+      val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
+      val bhj = allExecInfo.filter(_.exec == "BroadcastHashJoin")
+      assertSizeAndNotSupported(1, bhj)
+      val broadcastNestedJoin = allExecInfo.filter(_.exec == "BroadcastNestedLoopJoin")
+      assertSizeAndNotSupported(1, broadcastNestedJoin)
+      val shj = allExecInfo.filter(_.exec == "ShuffledHashJoin")
+       assertSizeAndNotSupported(1, shj)
+    }
+  }
+
+  test("Expressions not supported in SortMergeJoin") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
+        import spark.implicits._
+        spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "-1") // force SortMergeJoin
+        val df1 = Seq((1, "ABC", 1.2), (2, "DEF", 2.3), (3, "GHI", 1.4)).toDF(
+          "emp_id", "name", "dept")
+        val df2 = Seq(("Fin", 1.2, "ABC"), ("IT", 2.3, "DEF")).toDF(
+          "dept_name", "dept_id", "name")
+        // hex is not supported in GPU yet.
+        df1.join(df2, df1("name") === df2("name") &&
+          hex(df1("dept")) === hex(df2("dept_id")), "left_outer")
+      }
+      val pluginTypeChecker = new PluginTypeChecker()
+      val app = createAppFromEventlog(eventLog)
+      assert(app.sqlPlans.size == 1)
+      val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+        SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, "", pluginTypeChecker, app)
+      }
+      val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
+      val smj = allExecInfo.filter(_.exec == "SortMergeJoin")
+      assertSizeAndNotSupported(1, smj)
     }
   }
 

@@ -55,7 +55,7 @@ class GpuGroupUDFArrowPythonRunner(
     conf: Map[String, String],
     batchSize: Long,
     val semWait: GpuMetric,
-    val pythonOutSchema: StructType)
+    pythonOutSchema: StructType)
   extends GpuPythonRunnerBase[ColumnarBatch](funcs, evalType, argOffsets)
     with GpuPythonArrowOutput {
 
@@ -122,5 +122,9 @@ class GpuGroupUDFArrowPythonRunner(
         }
       }
     }
+  }
+
+  def toBatch(table: Table): ColumnarBatch = {
+    GpuColumnVector.from(table, GpuColumnVector.extractTypes(pythonOutSchema))
   }
 }
