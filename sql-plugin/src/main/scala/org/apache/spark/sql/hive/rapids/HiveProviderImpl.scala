@@ -17,13 +17,16 @@
 package org.apache.spark.sql.hive.rapids
 
 import com.nvidia.spark.RapidsUDF
-import com.nvidia.spark.rapids.{DataWritingCommandRule, ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuOverrides, HiveProvider, OptimizedCreateHiveTableAsSelectCommandMeta, RapidsConf, RepeatingParamCheck, TypeSig}
+import com.nvidia.spark.rapids.{DataWritingCommandRule, ExecChecks, ExecRule, ExprChecks, ExprMeta, ExprRule, GpuExec, GpuExpression, GpuOverrides, HiveProvider, OptimizedCreateHiveTableAsSelectCommandMeta, RapidsConf, RepeatingParamCheck, SparkPlanMeta, TypeSig}
 import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
 
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.catalog.CatalogStorageFormat
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
-import org.apache.spark.sql.hive.execution.OptimizedCreateHiveTableAsSelectCommand
+import org.apache.spark.sql.hive.execution.{HiveTableScanExec, OptimizedCreateHiveTableAsSelectCommand}
+import org.apache.spark.sql.types.{ArrayType, BinaryType, MapType, StructType}
 
 class HiveProviderImpl extends HiveProvider {
 
@@ -127,4 +130,68 @@ class HiveProviderImpl extends HiveProvider {
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }
+
+  override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
+    Seq(
+      GpuOverrides.exec[HiveTableScanExec](
+        desc = "Scan Exec to read Hive delimited text tables",
+        ExecChecks(
+          (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
+              TypeSig.DECIMAL_128 + TypeSig.BINARY).nested(),
+          TypeSig.all),
+        (p, conf, parent, r) => new SparkPlanMeta[HiveTableScanExec](p, conf, parent, r) {
+
+          def flagUnsupportedType(dataColumn: AttributeReference): Unit =
+            willNotWorkOnGpu(s"Column ${dataColumn.name} of type ${dataColumn.dataType} " +
+              s"is unsupported for Hive text tables. ")
+
+          def flagIfUnsupportedType(dataColumn: AttributeReference): Unit =
+            dataColumn.dataType match {
+              // Unsupported types.
+              case ArrayType(_, _) => flagUnsupportedType(dataColumn)
+              case StructType(_)   => flagUnsupportedType(dataColumn)
+              case MapType(_,_,_)  => flagUnsupportedType(dataColumn)
+              case BinaryType      => flagUnsupportedType(dataColumn)
+              // All else are supported.
+              case _               =>
+            }
+
+          def flagIfUnsupportedStorageFormat(storage: CatalogStorageFormat): Unit = {
+            val textInputFormat      = "org.apache.hadoop.mapred.TextInputFormat"
+            val ignoreKeyOPFormat    = "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat"
+            val lazySimpleSerDe      = "org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe"
+            val serializationKey     = "serialization.format"
+            val ctrlASeparatedFormat = "1" // Implying '^A' field delimiter.
+            if (  storage.inputFormat.getOrElse("")                  != textInputFormat
+               || storage.outputFormat.getOrElse("")                 != ignoreKeyOPFormat
+               || storage.serde.getOrElse("")                        != lazySimpleSerDe
+               || storage.properties.getOrElse(serializationKey, "") != ctrlASeparatedFormat)
+              {
+                willNotWorkOnGpu("Only \'^A\' separated text input is currently supported.")
+              }
+          }
+
+          override def convertToGpu(): GpuExec = {
+            GpuHiveTableScanExec(wrapped.requestedAttributes,
+                                 wrapped.relation,
+                                 wrapped.partitionPruningPred)
+          }
+
+          override def tagPlanForGpu(): Unit = {
+            val tableRelation = wrapped.relation
+
+            // Bail out for unsupported column types.
+            tableRelation.dataCols.foreach(flagIfUnsupportedType)
+
+            // Check that the table and all participating partitions
+            // are '^A' separated.
+            flagIfUnsupportedStorageFormat(tableRelation.tableMeta.storage)
+            if (tableRelation.isPartitioned) {
+              tableRelation.prunedPartitions.getOrElse(Seq.empty)
+                                            .map(_.storage)
+                                            .foreach(flagIfUnsupportedStorageFormat)
+            }
+          }
+        })
+    ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[SparkPlan]), r) }.toMap
 }
