@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,26 +23,26 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, PythonU
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.python._
 
-class GpuMapInPandasExecMeta(
-    mapPandas: MapInPandasExec,
+class GpuPythonMapInArrowExecMeta(
+    mapArrow: PythonMapInArrowExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends SparkPlanMeta[MapInPandasExec](mapPandas, conf, parent, rule) {
+  extends SparkPlanMeta[PythonMapInArrowExec](mapArrow, conf, parent, rule) {
 
   override def replaceMessage: String = "partially run on GPU"
   override def noReplacementPossibleMessage(reasons: String): String =
     s"cannot run even partially on the GPU because $reasons"
 
   private val udf: BaseExprMeta[PythonUDF] = GpuOverrides.wrapExpr(
-    mapPandas.func.asInstanceOf[PythonUDF], conf, Some(this))
+    mapArrow.func.asInstanceOf[PythonUDF], conf, Some(this))
   private val resultAttrs: Seq[BaseExprMeta[Attribute]] =
-    mapPandas.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+    mapArrow.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 
   override val childExprs: Seq[BaseExprMeta[_]] = resultAttrs :+ udf
 
   override def convertToGpu(): GpuExec =
-    GpuMapInPandasExec(
+    GpuPythonMapInArrowExec(
       udf.convertToGpu(),
       resultAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
       childPlans.head.convertIfNeeded()
@@ -50,17 +50,17 @@ class GpuMapInPandasExecMeta(
 }
 
 /*
- * A relation produced by applying a function that takes an iterator of pandas DataFrames
- * and outputs an iterator of pandas DataFrames.
+ * A relation produced by applying a function that takes an iterator of PyArrow's record
+ * batches and outputs an iterator of PyArrow's record batches.
  *
  * This GpuMapInPandasExec aims at accelerating the data transfer between
  * JVM and Python, and scheduling GPU resources for its Python processes.
  *
  */
-case class GpuMapInPandasExec(
+case class GpuPythonMapInArrowExec(
     func: Expression,
     output: Seq[Attribute],
     child: SparkPlan) extends GpuMapInBatchExec {
 
-  override protected val pythonEvalType: Int = PythonEvalType.SQL_MAP_PANDAS_ITER_UDF
+  override protected val pythonEvalType: Int = PythonEvalType.SQL_MAP_ARROW_ITER_UDF
 }
