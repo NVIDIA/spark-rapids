@@ -21,7 +21,7 @@ import org.apache.spark.sql.catalyst.trees.Origin
 import org.apache.spark.sql.errors.{QueryCompilationErrors, QueryExecutionErrors}
 import org.apache.spark.sql.types.DataType
 
-trait RapidsErrorUtilsFor33Xand34X {
+trait RapidsErrorUtilsFor330plus {
 
   def mapKeyNotExistError(
       key: String,

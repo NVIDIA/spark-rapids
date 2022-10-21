@@ -20,7 +20,7 @@ import org.apache.spark.sql.catalyst.trees.SQLQueryContext
 import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.types.{Decimal, DecimalType}
 
-object RapidsErrorUtils extends RapidsErrorUtilsFor33Xand34X {
+object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
 
   def invalidArrayIndexError(
       index: Int,

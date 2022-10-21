@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids.shims
 import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.types.{Decimal, DecimalType}
 
-object RapidsErrorUtils extends RapidsErrorUtilsFor33Xand34X {
+object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
 
   def invalidArrayIndexError(index: Int, numElements: Int,
       isElementAtF: Boolean = false): ArrayIndexOutOfBoundsException = {
