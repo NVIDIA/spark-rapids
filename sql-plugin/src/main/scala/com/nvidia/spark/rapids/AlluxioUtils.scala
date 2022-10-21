@@ -93,38 +93,6 @@ object AlluxioUtils extends Logging with Arm {
   private var isInitReplaceMap: Boolean = false
   private var isInitMountPointsForAutoMount: Boolean = false
 
-  def checkAlluxioNotSupported(rapidsConf: RapidsConf): Unit = {
-    if (rapidsConf.isParquetPerFileReadEnabled &&
-      (rapidsConf.getAlluxioAutoMountEnabled || rapidsConf.getAlluxioPathsToReplace.isDefined)) {
-      throw new IllegalArgumentException("Alluxio is currently not supported with the PERFILE " +
-        "reader, please use one of the other reader types.")
-    }
-  }
-
-  /**
-   * Returns whether alluxio convert time algorithm should be enabled
-   * Note: should also check whether the auto-mount or replace path is enabled.
-   *
-   * @param conf the rapids conf
-   * @return Returns whether alluxio convert time algorithm should be enabled
-   */
-  def enabledAlluxioReplacementAlgoConvertTime(conf: RapidsConf): Boolean = {
-    conf.isAlluxioReplacementAlgoConvertTime &&
-        (conf.getAlluxioAutoMountEnabled || conf.getAlluxioPathsToReplace.isDefined)
-  }
-
-  def isAlluxioAutoMountTaskTime(rapidsConf: RapidsConf,
-      fileFormat: FileFormat): Boolean = {
-      rapidsConf.getAlluxioAutoMountEnabled && rapidsConf.isAlluxioReplacementAlgoTaskTime &&
-        fileFormat.isInstanceOf[ParquetFileFormat]
-  }
-
-  def isAlluxioPathsToReplaceTaskTime(rapidsConf: RapidsConf,
-      fileFormat: FileFormat): Boolean = {
-    rapidsConf.getAlluxioPathsToReplace.isDefined && rapidsConf.isAlluxioReplacementAlgoTaskTime &&
-      fileFormat.isInstanceOf[ParquetFileFormat]
-  }
-
   private def checkAlluxioMounted(
       hadoopConfiguration: Configuration,
       alluxio_path: String): Unit = {
@@ -173,9 +141,9 @@ object AlluxioUtils extends Logging with Arm {
     this.synchronized {
       // left outside isInit to allow changing at runtime
       alluxioHome = scala.util.Properties.envOrElse("ALLUXIO_HOME", "/opt/alluxio-2.8.0")
-      checkAlluxioNotSupported(conf)
+      AlluxioCfgUtils.checkAlluxioNotSupported(conf)
 
-      if (isConfiguredReplacementMap(conf)) {
+      if (AlluxioCfgUtils.isConfiguredReplacementMap(conf)) {
         // replace-map is enabled, if set this will invalid the auto-mount
         if (!isInitReplaceMap) {
           alluxioPathsToReplaceMap = getReplacementMapOption(conf)
@@ -404,10 +372,6 @@ object AlluxioUtils extends Logging with Arm {
         AlluxioPathReplaceTaskTime(pathStr, false)
       }
     })
-  }
-
-  private def isConfiguredReplacementMap(conf: RapidsConf): Boolean = {
-    conf.getAlluxioPathsToReplace.isDefined
   }
 
   private def getReplacementMapOption(conf: RapidsConf): Option[Map[String, String]] = {
