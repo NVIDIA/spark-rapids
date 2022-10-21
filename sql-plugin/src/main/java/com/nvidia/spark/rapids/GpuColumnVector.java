@@ -258,7 +258,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return new HostColumnVector.StructType(nullable, children);
     } else if (spark instanceof BinaryType) {
       return new HostColumnVector.ListType(
-          nullable, new HostColumnVector.BasicType(nullable, DType.UINT8));
+          nullable, new HostColumnVector.BasicType(false, DType.UINT8));
     } else {
       // Only works for basic types
       return new HostColumnVector.BasicType(nullable, getNonNestedRapidsType(spark));
