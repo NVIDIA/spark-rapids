@@ -46,12 +46,14 @@ class GpuBatchDataReader extends BaseDataReader<ColumnarBatch> {
   private final Configuration conf;
   private final int maxBatchSizeRows;
   private final long maxBatchSizeBytes;
+
+  private final long targetBatchSizeBytes;
   private final String parquetDebugDumpPrefix;
   private final scala.collection.immutable.Map<String, GpuMetric> metrics;
 
   GpuBatchDataReader(CombinedScanTask task, Table table, Schema expectedSchema, boolean caseSensitive,
                      Configuration conf, int maxBatchSizeRows, long maxBatchSizeBytes,
-                     String parquetDebugDumpPrefix,
+                     long targetBatchSizeBytes, String parquetDebugDumpPrefix,
                      scala.collection.immutable.Map<String, GpuMetric> metrics) {
     super(table, task);
     this.expectedSchema = expectedSchema;
@@ -60,6 +62,7 @@ class GpuBatchDataReader extends BaseDataReader<ColumnarBatch> {
     this.conf = conf;
     this.maxBatchSizeRows = maxBatchSizeRows;
     this.maxBatchSizeBytes = maxBatchSizeBytes;
+    this.targetBatchSizeBytes = targetBatchSizeBytes;
     this.parquetDebugDumpPrefix = parquetDebugDumpPrefix;
     this.metrics = metrics;
   }
@@ -92,6 +95,7 @@ class GpuBatchDataReader extends BaseDataReader<ColumnarBatch> {
           .withConfiguration(conf)
           .withMaxBatchSizeRows(maxBatchSizeRows)
           .withMaxBatchSizeBytes(maxBatchSizeBytes)
+          .withTargetBatchSizeBytes(targetBatchSizeBytes)
           .withDebugDumpPrefix(parquetDebugDumpPrefix)
           .withMetrics(metrics);
 

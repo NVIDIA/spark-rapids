@@ -1040,10 +1040,16 @@ class GpuOrcPartitionReader(
   with OrcPartitionReaderBase {
 
   override def next(): Boolean = {
-    batch.foreach(_.close())
-    batch = None
+    if (batchReader.hasNext) {
+      return true
+    }
+    batchReader.close()
+    batchReader = EmptyColumnarBatchReader
     if (ctx.blockIterator.hasNext) {
-      batch = readBatch()
+      batchReader = readBatch() match {
+        case Some(batch) => SingleColumnarBatchReader(batch)
+        case _ => EmptyColumnarBatchReader
+      }
     } else {
       metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
     }
@@ -1054,7 +1060,7 @@ class GpuOrcPartitionReader(
     // advertises `hasNext` as false when we return false here. No downstream tasks should
     // try to call next after `hasNext` returns false, and any task that produces some kind of
     // data when `hasNext` is false is responsible to get the semaphore themselves.
-    batch.isDefined
+    batchReader.hasNext
   }
 
   override def close(): Unit = {
@@ -1728,8 +1734,8 @@ class MultiFileCloudOrcPartitionReader(
    * @param fileBufsAndMeta the file HostMemoryBuffer read from a PartitionedFile
    * @return Option[ColumnarBatch] which has been decoded by GPU
    */
-  override def readBatch(fileBufsAndMeta: HostMemoryBuffersWithMetaDataBase):
-      Option[ColumnarBatch] = {
+  override def readBatches(fileBufsAndMeta: HostMemoryBuffersWithMetaDataBase):
+      ColumnarBatchReader = {
     fileBufsAndMeta match {
       case meta: HostMemoryEmptyMetaData =>
         // Not reading any data, but add in partition data if needed
@@ -1743,22 +1749,29 @@ class MultiFileCloudOrcPartitionReader(
             GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
           new ColumnarBatch(nullColumns, rows)
         }
-        addPartitionValues(Some(batch), meta.partitionedFile.partitionValues, partitionSchema)
+        SingleColumnarBatchReader(addPartitionValues(batch,
+          meta.partitionedFile.partitionValues, partitionSchema))
 
       case buffer: HostMemoryBuffersWithMetaData =>
         val memBuffersAndSize = buffer.memBuffersAndSizes
         val (hostBuffer, size) = memBuffersAndSize.head
-        val nextBatch = addPartitionValues(
-          decodeToBatch(hostBuffer, size, buffer.updatedReadSchema, buffer.requestedMapping,
-            filterHandler.isCaseSensitive, files),
-          buffer.partitionedFile.partitionValues, partitionSchema)
+        val batchReader = decodeToBatch(hostBuffer, size, buffer.updatedReadSchema,
+          buffer.requestedMapping, filterHandler.isCaseSensitive, files) match {
+          case Some(batch) =>
+            val tmp = addPartitionValues(batch,
+            buffer.partitionedFile.partitionValues, partitionSchema)
+            SingleColumnarBatchReader(tmp)
+          case _ =>
+            EmptyColumnarBatchReader
+        }
+
         if (memBuffersAndSize.length > 1) {
           val updatedBuffers = memBuffersAndSize.drop(1)
           currentFileHostBuffers = Some(buffer.copy(memBuffersAndSizes = updatedBuffers))
         } else {
           currentFileHostBuffers = None
         }
-        nextBatch
+        batchReader
 
       case _ => throw new RuntimeException("Wrong HostMemoryBuffersWithMetaData")
     }
@@ -2124,14 +2137,24 @@ class MultiFileOrcPartitionReader(
    * @param clippedSchema the clipped schema
    * @return Table
    */
-  override def readBufferToTable(
+  override def readBufferToTablesAndClose(
       dataBuffer: HostMemoryBuffer,
       dataSize: Long,
       clippedSchema: SchemaBase,
       readSchema: StructType,
-      extraInfo: ExtraInfo): Table =
-    decodeToTable(dataBuffer, dataSize, clippedSchema, extraInfo.requestedMapping,
-      isCaseSensitive, files)
+      extraInfo: ExtraInfo): TableReader = withResource(dataBuffer) { _ =>
+    val tableReader = new SingleTableReader(decodeToTable(dataBuffer, dataSize, clippedSchema,
+      extraInfo.requestedMapping, isCaseSensitive, files))
+    WrappedTableReader(tableReader, table => {
+      maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
+      if (readDataSchema.length < table.getNumberOfColumns) {
+        throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
+            s"but read ${table.getNumberOfColumns}")
+      }
+      metrics(NUM_OUTPUT_BATCHES) += 1
+      table
+    })
+  }
 
   /**
    * Write a header for a specific file format. If there is no header for the file format,

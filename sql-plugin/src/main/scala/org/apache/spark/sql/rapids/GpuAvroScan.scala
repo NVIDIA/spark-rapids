@@ -531,14 +531,20 @@ class GpuAvroPartitionReader(
   private val blockIterator: BufferedIterator[BlockInfo] = blockMeta.blocks.iterator.buffered
 
   override def next(): Boolean = {
-    batch.foreach(_.close())
-    batch = None
+    if (batchReader.hasNext) {
+      return true
+    }
+    batchReader.close()
+    batchReader = EmptyColumnarBatchReader
     if (!isDone) {
       if (!blockIterator.hasNext) {
         isDone = true
         metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
       } else {
-        batch = readBatch()
+        batchReader = readBatch() match {
+          case Some(batch) => SingleColumnarBatchReader(batch)
+          case _ => EmptyColumnarBatchReader
+        }
       }
     }
 
@@ -548,7 +554,7 @@ class GpuAvroPartitionReader(
     // advertises `hasNext` as false when we return false here. No downstream tasks should
     // try to call next after `hasNext` returns false, and any task that produces some kind of
     // data when `hasNext` is false is responsible to get the semaphore themselves.
-    batch.isDefined
+    batchReader.hasNext
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
@@ -621,8 +627,8 @@ class GpuMultiFileCloudAvroPartitionReader(
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, filters,
     execMetrics, ignoreCorruptFiles) with MultiFileReaderFunctions with GpuAvroReaderBase {
 
-  override def readBatch(fileBufsAndMeta: HostMemoryBuffersWithMetaDataBase):
-      Option[ColumnarBatch] = fileBufsAndMeta match {
+  override def readBatches(fileBufsAndMeta: HostMemoryBuffersWithMetaDataBase):
+      ColumnarBatchReader = fileBufsAndMeta match {
     case buffer: AvroHostBuffersWithMeta =>
       val bufsAndSizes = buffer.memBuffersAndSizes
       val (dataBuf, dataSize) = bufsAndSizes.head
@@ -632,12 +638,16 @@ class GpuMultiFileCloudAvroPartitionReader(
         // Someone is going to process this data, even if it is just a row count
         GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
         val emptyBatch = new ColumnarBatch(Array.empty, dataSize.toInt)
-        addPartitionValues(Some(emptyBatch), partitionValues, partitionSchema)
+        Some(addPartitionValues(emptyBatch, partitionValues, partitionSchema))
       } else {
         val maybeBatch = sendToGpu(dataBuf, dataSize, files)
         // we have to add partition values here for this batch, we already verified that
         // it's not different for all the blocks in this batch
-        addPartitionValues(maybeBatch, partitionValues, partitionSchema)
+        if (maybeBatch.isDefined) {
+          Some(addPartitionValues(maybeBatch.get, partitionValues, partitionSchema))
+        } else {
+          None
+        }
       }
        // Update the current buffers
       closeOnExcept(optBatch) { _ =>
@@ -648,7 +658,11 @@ class GpuMultiFileCloudAvroPartitionReader(
           currentFileHostBuffers = None
         }
       }
-      optBatch
+      if (optBatch.isDefined) {
+        SingleColumnarBatchReader(optBatch.get)
+      } else {
+        EmptyColumnarBatchReader
+      }
     case t =>
       throw new RuntimeException(s"Unknown avro buffer type: ${t.getClass.getSimpleName}")
   }
@@ -907,10 +921,22 @@ class GpuMultiFileAvroPartitionReader(
     (buffer, footerOffset)
   }
 
-  override def readBufferToTable(dataBuffer: HostMemoryBuffer, dataSize: Long,
-      clippedSchema: SchemaBase,  readSchema: StructType, extraInfo: ExtraInfo): Table = {
-    sendToGpuUnchecked(dataBuffer, dataSize, splits)
+  override def readBufferToTablesAndClose(dataBuffer: HostMemoryBuffer, dataSize: Long,
+      clippedSchema: SchemaBase,  readSchema: StructType, extraInfo: ExtraInfo): TableReader = {
+    val tableReader = withResource(dataBuffer) { _ =>
+      new SingleTableReader(sendToGpuUnchecked(dataBuffer, dataSize, splits))
+    }
+    WrappedTableReader(tableReader, table => {
+      maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
+      if (readDataSchema.length < table.getNumberOfColumns) {
+        throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
+            s"but read ${table.getNumberOfColumns}")
+      }
+      metrics(NUM_OUTPUT_BATCHES) += 1
+      table
+    })
   }
+
 
   override final def getFileFormatShortName: String = "AVRO"
 

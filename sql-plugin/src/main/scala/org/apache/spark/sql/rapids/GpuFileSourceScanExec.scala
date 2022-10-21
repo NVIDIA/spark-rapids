@@ -425,7 +425,7 @@ case class GpuFileSourceScanExec(
     } else {
       Map.empty[String, GpuMetric]
     }
-  } ++ staticMetrics ++ semaphoreMetrics
+  } ++ staticMetrics ++ spillMetrics
 
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
