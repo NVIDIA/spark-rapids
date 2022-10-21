@@ -407,25 +407,7 @@ case class GpuSortArray(base: Expression, ascendingOrder: Expression)
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): cudf.ColumnVector = {
     val isDescending = isDescendingOrder(rhs)
-    val base = lhs.getBase()
-    withResource(base.getChildColumnView(0)) {child =>
-      withResource(child.copyToColumnVector()) {child =>
-        // When the average length of array is > 100
-        // and there are `-Nan`s in the data, the sort ordering
-        // of `Nan`s is inconsistent. So we need to normalize the data
-        // before sorting. This workaround can be removed after
-        // solving https://github.com/rapidsai/cudf/issues/11630
-        val normalizedChild = ColumnCastUtil.deepTransform(child) {
-          case (cv, _) if cv.getType == cudf.DType.FLOAT32 || cv.getType == cudf.DType.FLOAT64 =>
-              cv.normalizeNANsAndZeros()
-        }
-        withResource(normalizedChild) {normalizedChild =>
-          withResource(base.replaceListChild(normalizedChild)) {normalizedList =>
-            normalizedList.listSortRows(isDescending, true)
-          }
-        }
-      }
-    }
+    lhs.getBase.listSortRows(isDescending, true)
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): cudf.ColumnVector = {
@@ -627,10 +609,9 @@ case class GpuArrayRepeat(left: Expression, right: Expression) extends GpuBinary
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     // The primary issue of array_repeat is to workaround the null and negative count.
-    // Spark returns a null (list) when encountering a null count, while cudf::repeat simply
-    // throws an exception.
-    // Spark returns a empty list when encountering a negative count, while cudf::repeat simply
-    // throws an exception.
+    // Spark returns a null (list) when encountering a null count, and an
+    // empty list when encountering a negative count.
+    // cudf does not handle these cases properly.
 
     // Step 1. replace invalid counts
     //  null -> 0
@@ -645,7 +626,7 @@ case class GpuArrayRepeat(left: Expression, right: Expression) extends GpuBinary
     // Step 2. perform cuDF repeat
     val repeated = closeOnExcept(refinedCount) { cnt =>
       withResource(new Table(lhs.getBase)) { table =>
-        table.repeat(cnt, true).getColumn(0)
+        table.repeat(cnt).getColumn(0)
       }
     }
     // Step 3. generate list offsets from refined counts

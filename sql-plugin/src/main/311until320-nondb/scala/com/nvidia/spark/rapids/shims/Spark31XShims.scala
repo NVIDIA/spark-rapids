@@ -352,7 +352,7 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
             val options = wrapped.relation.options
 
             val (location, alluxioPathsToReplaceMap) =
-              if (conf.isAlluxioReplacementAlgoConvertTime) {
+              if (AlluxioUtils.enabledAlluxioReplacementAlgoConvertTime(conf)) {
                 AlluxioUtils.replacePathIfNeeded(
                   conf,
                   wrapped.relation,

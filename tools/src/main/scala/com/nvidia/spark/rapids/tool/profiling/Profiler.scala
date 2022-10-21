@@ -286,7 +286,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
 
     val collect = new CollectInformation(apps)
     val appInfo = collect.getAppInfo
-    val appEventLogPath = collect.getAppEventLogPath
+    val appLogPath = collect.getAppLogPath
     val dsInfo = collect.getDataSourceInfo
     val execInfo = collect.getExecutorInfo
     val jobInfo = collect.getJobInfo
@@ -354,10 +354,10 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
           s"to $outputDir in $duration second(s)\n")
       }
     }
-    (ApplicationSummaryInfo(appInfo, appEventLogPath, dsInfo, execInfo, jobInfo, rapidsProps, 
+    (ApplicationSummaryInfo(appInfo, dsInfo, execInfo, jobInfo, rapidsProps, 
       rapidsJar, sqlMetrics, jsMetAgg, sqlTaskAggMetrics, durAndCpuMet, skewInfo, failedTasks, 
       failedStages, failedJobs, removedBMs, removedExecutors, unsupportedOps, sparkProps, 
-      sqlStageInfo, wholeStage, maxTaskInputInfo), compareRes)
+      sqlStageInfo, wholeStage, maxTaskInputInfo, appLogPath), compareRes)
   }
 
   def writeOutput(profileOutputWriter: ProfileOutputWriter,
@@ -394,7 +394,6 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
       }
       val reduced = ApplicationSummaryInfo(
         appsSum.flatMap(_.appInfo).sortBy(_.appIndex),
-        appsSum.flatMap(_.appEventLogPath).sortBy(_.appIndex),
         appsSum.flatMap(_.dsInfo).sortBy(_.appIndex),
         appsSum.flatMap(_.execInfo).sortBy(_.appIndex),
         appsSum.flatMap(_.jobInfo).sortBy(_.appIndex),
@@ -414,7 +413,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         combineProps(rapidsOnly=false, appsSum).sortBy(_.key),
         appsSum.flatMap(_.sqlStageInfo).sortBy(_.duration)(Ordering[Option[Long]].reverse),
         appsSum.flatMap(_.wholeStage).sortBy(_.appIndex),
-        appsSum.flatMap(_.maxTaskInputBytesRead).sortBy(_.appIndex)
+        appsSum.flatMap(_.maxTaskInputBytesRead).sortBy(_.appIndex),
+        appsSum.flatMap(_.appLogPath).sortBy(_.appIndex)
       )
       Seq(reduced)
     } else {
@@ -423,7 +423,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     sums.foreach { app =>
       profileOutputWriter.writeText("### A. Information Collected ###")
       profileOutputWriter.write("Application Information", app.appInfo)
-      profileOutputWriter.write("Application Log Path Mapping", app.appEventLogPath)
+      profileOutputWriter.write("Application Log Path Mapping", app.appLogPath)
       profileOutputWriter.write("Data Source Information", app.dsInfo)
       profileOutputWriter.write("Executor Information", app.execInfo)
       profileOutputWriter.write("Job Information", app.jobInfo)

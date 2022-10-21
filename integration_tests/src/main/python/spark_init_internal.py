@@ -15,6 +15,7 @@
 import logging
 import os
 import re
+import stat
 import sys
 
 logging.basicConfig(
@@ -81,7 +82,23 @@ def pyspark_ready():
         return False
 
 
+def global_init():
+    logging.info("Executing global initialization tasks before test launches")
+    create_tmp_hive()
+
+def create_tmp_hive():
+    path = os.environ.get('PYSP_TEST_spark_hadoop_hive_exec_scratchdir', '/tmp/hive')
+    mode = stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO
+    logging.info(f"Creating directory {path} with permissions {oct(mode)}")
+    os.makedirs(path, mode, exist_ok=True)
+    os.chmod(path, mode)
+
 def pytest_sessionstart(session):
+    # initializations that must happen globally once before tests start
+    # if xdist in the coordinator, if not xdist in the pytest process
+    if not running_with_xdist(session, is_worker=True):
+        global_init()
+
     if running_with_xdist(session, is_worker = True):
         logging.info("Initializing findspark because running with xdist worker")
         findspark_init()

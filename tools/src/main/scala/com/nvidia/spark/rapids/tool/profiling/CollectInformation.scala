@@ -46,11 +46,10 @@ class CollectInformation(apps: Seq[ApplicationInfo]) extends Logging {
     }
   }
 
-  def getAppEventLogPath: Seq[AppEventLogPath] = {
+  def getAppLogPath: Seq[AppLogPathProfileResults] = {
     val allRows = apps.map { app =>
       val a = app.appInfo
-      AppEventLogPath(app.index, a.appName, a.appId,
-        app.eventLogPath)
+      AppLogPathProfileResults(app.index, a.appName, a.appId, app.eventLogPath)
     }
     if (allRows.size > 0) {
       allRows.sortBy(cols => (cols.appIndex))

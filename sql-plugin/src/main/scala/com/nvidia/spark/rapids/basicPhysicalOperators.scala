@@ -29,7 +29,7 @@ import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskCon
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Descending, Expression, NamedExpression, NullIntolerant, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, AttributeSeq, Descending, Expression, NamedExpression, NullIntolerant, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning, SinglePartition, UnknownPartitioning}
 import org.apache.spark.sql.execution.{ProjectExec, SampleExec, SparkPlan}
 import org.apache.spark.sql.rapids.{GpuPartitionwiseSampledRDD, GpuPoissonSampler, GpuPredicateHelper}
@@ -262,27 +262,66 @@ case class GpuProjectAstExec(
 /**
  * Do projections in a tiered fashion, where earlier tiers contain sub-expressions that are
  * referenced in later tiers.  Each tier adds columns to the original batch corresponding
- * to the output of the sub-expressions.
+ * to the output of the sub-expressions.  It also removes columns that are no longer needed,
+ * based on inputAttrTiers for the current tier and the next tier.
  * Example of how this is processed:
  *   Original projection expressions:
  *   (((a + b) + c) * e), (((a + b) + d) * f), (a + e), (c + f)
  *   Input columns for tier 1: a, b, c, d, e, f  (original projection inputs)
  *   Tier 1: (a + b) as ref1
- *   Input columns for tier 2: a, b, c, d, e, f, ref1
+ *   Input columns for tier 2: a, c, d, e, f, ref1
  *   Tier 2: (ref1 + c) as ref2, (ref1 + d) as ref3
- *   Input columns for tier 3: a, b, c, d, e, f, ref1, ref2, ref3
+ *   Input columns for tier 3: a, c, e, f, ref2, ref3
  *   Tier 3: (ref2 * e), (ref3 * f), (a + e), (c + f)
  */
- case class GpuTieredProject(val exprSets: Seq[Seq[GpuExpression]]) extends Arm {
+ case class GpuTieredProject(exprTiers: Seq[Seq[GpuExpression]],
+    inputAttrTiers: Seq[AttributeSeq]) extends Arm {
 
-  @tailrec
-  private def projectTier(boundExprs: Seq[Seq[GpuExpression]],
-      cb: ColumnarBatch, doClose: Boolean): ColumnarBatch = {
-    boundExprs match {
-      case Nil => {
-        cb
+  // Determine which attributes in the first AttributeSeq can be skipped when
+  // building the list of attributes for the next AttributeSeq.
+  // Returns a list of boolean values the same size as the first
+  // sequence, where the values are true if the corresponding attribute can be skipped.
+  // The indices of these attributes correspond to the columns that were bound via
+  // GpuBindReferences.bindGpuReference.
+  private def getColumnSkips(inputTiers: Seq[AttributeSeq]): Array[Boolean] = inputTiers match {
+    case Nil => Array.emptyBooleanArray
+    case curTier :: Nil =>
+      // For the last tier, fill with all true (skip) values, because the output
+      // of the last tier does not include any input columns.
+      Array.fill(curTier.attrs.size)(true)
+    case curTier :: tail =>
+      val curAttrs = curTier.attrs
+      val nextAttrs = tail.head.attrs
+      // This is equivalent to:
+      // skipList = curAttrs.map(a => if (nextAttrs.contains(a)) false else true)
+      // but this should be faster
+      val skipList = new Array[Boolean](curAttrs.size)
+      var curIdx = 0
+      var nextIdx = 0
+      while (curIdx < curAttrs.size) {
+        if (nextAttrs(nextIdx) == curAttrs(curIdx)) {
+          skipList(curIdx) = false
+          nextIdx += 1
+        } else {
+          skipList(curIdx) = true
+        }
+        curIdx += 1
       }
-      case exprSet :: tail => {
+      skipList
+  }
+
+  def tieredProject(batch: ColumnarBatch): ColumnarBatch = {
+    @tailrec
+    def recurse(boundExprs: Seq[Seq[GpuExpression]], attrTiers: Seq[AttributeSeq],
+        cb: ColumnarBatch, isFirst: Boolean): ColumnarBatch = boundExprs match {
+      case Nil =>
+        if (isFirst) {
+          // if there are no bound expressions, return an empty ColumnarBatch.
+          new ColumnarBatch(Array.empty, cb.numRows())
+        } else {
+          cb
+        }
+      case exprSet :: tail =>
         val projectCb = withResource(new NvtxRange("project tier", NvtxColor.ORANGE)) { _ =>
           closeOnExcept(GpuProjectExec.project(cb, exprSet)) { projectResult =>
             projectResult
@@ -291,18 +330,19 @@ case class GpuProjectAstExec(
         val nextCb = if (tail.isEmpty) {
           projectCb
         } else {
+          val columnSkips = getColumnSkips(attrTiers)
           withResource(projectCb) { newCols =>
-            GpuColumnVector.combineColumns(cb, newCols)
+            withResource(GpuColumnVector.dropColumns(cb, columnSkips)) { remainingCb =>
+              GpuColumnVector.combineColumns(remainingCb, newCols)
+            }
           }
         }
-        if (doClose) cb.close()
-        projectTier(tail, nextCb, true)
-      }
+        // Close intermediate batches
+        if (!isFirst) cb.close()
+        recurse(tail, attrTiers.tail, nextCb, false)
     }
-  }
-
-  def tieredProject(batch: ColumnarBatch): ColumnarBatch = {
-    projectTier(exprSets, batch, false)
+    // Process tiers sequentially
+    recurse(exprTiers, inputAttrTiers, batch, true)
   }
 }
 

@@ -135,4 +135,19 @@ object ToolUtils extends Logging {
   }
 }
 
+object JoinType {
+  val Inner = "Inner"
+  val Cross = "Cross"
+  val LeftOuter = "LeftOuter"
+  val RightOuter = "RightOuter"
+  val FullOuter = "FullOuter"
+  val LeftSemi = "LeftSemi"
+  val LeftAnti = "LeftAnti"
+}
+
+object BuildSide {
+  val BuildLeft = "BuildLeft"
+  val BuildRight = "BuildRight"
+}
+
 case class GpuEventLogException(message: String) extends Exception(message)
