@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids.shims
 
-import com.databricks.sql.execution.ReuseExchangeAndSubquery
-// import org.apache.spark.sql.execution.reuse.ReuseExchangeAndSubquery
 import com.databricks.sql.execution.window.RunningWindowFunctionExec
 import com.databricks.sql.optimizer.PlanDynamicPruningFilters
 import com.nvidia.spark.rapids._
@@ -85,7 +83,7 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
   override def isWindowFunctionExec(plan: SparkPlan): Boolean =
     plan.isInstanceOf[WindowExecBase] || plan.isInstanceOf[RunningWindowFunctionExec]
 
-  override def applyInitialShimPlanRules(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+  override def applyShimPlanRules(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
     if (plan.conf.adaptiveExecutionEnabled) {
       plan // AQE+DPP cooperation ensures the optimization runs early
     } else {
@@ -97,20 +95,6 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
         rule.apply(sp)
       }
     }
-  }
-
-  override def applyFinalShimPlanRules(plan: SparkPlan): SparkPlan = {
-    if (plan.conf.adaptiveExecutionEnabled) {
-      plan // AQE+DPP cooperation ensures the optimization runs early
-    } else {
-      val rules = Seq(
-        ReuseExchangeAndSubquery
-      )
-      rules.foldLeft(plan) { case (sp, rule) =>
-        rule.apply(sp)
-      }
-    }
-
   }
 
   private val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
@@ -203,9 +187,17 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
             val convertBroadcast = (bc: SubqueryBroadcastExec) => {
               val meta = GpuOverrides.wrapAndTagPlan(bc, conf)
               meta.tagForExplain()
-              val converted = meta.convertIfNeeded()
-              logWarning(s"DPP: converted to $converted")
-              converted.asInstanceOf[BaseSubqueryExec]
+              val converted = meta.convertIfNeeded() 
+              converted match {
+                case e: GpuExec =>
+                  val updated = (new GpuTransitionOverrides()).apply(converted)
+                  updated match {
+                    case g: GpuBringBackToHost =>
+                      g.child.asInstanceOf[BaseSubqueryExec]
+                  }
+                case _ =>
+                  converted.asInstanceOf[BaseSubqueryExec]
+              }
             }
 
             wrapped.partitionFilters.map { filter =>

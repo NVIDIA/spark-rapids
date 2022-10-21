@@ -565,7 +565,6 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         var updatedPlan = insertHashOptimizeSorts(plan)
         updatedPlan = updateScansForInput(updatedPlan)
         updatedPlan = insertColumnarFromGpu(updatedPlan)
-        updatedPlan = SparkShimImpl.applyFinalShimPlanRules(updatedPlan)
         updatedPlan = insertCoalesce(updatedPlan)
         // only insert shuffle coalesces when using normal shuffle
         if (!GpuShuffleEnv.useGPUShuffle(rapidsConf)) {
