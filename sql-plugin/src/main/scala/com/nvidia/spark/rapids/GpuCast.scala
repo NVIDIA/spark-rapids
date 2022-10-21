@@ -815,31 +815,28 @@ object GpuCast extends Arm {
     withResource(
       Seq(leftStr, rightStr, emptyStr, nullStr).safeMap(Scalar.fromString)
     ){ case Seq(left, right, empty, nullRep) =>
-
-      /*
-       * Add brackets to each string. Ex: ["1, 2, 3", "4, 5"] => ["[1, 2, 3]", "[4, 5]"]
-       */
-      def addBrackets(strVec: ColumnVector): ColumnVector = {
-        withResource(
-          Seq(left, right).safeMap(s => ColumnVector.fromScalar(s, numRows))
-        ) { case Seq(leftColumn, rightColumn) =>
-          ColumnVector.stringConcatenate(empty, nullRep, Array(leftColumn, strVec, rightColumn))
-        }
-      }
-
       val strChildContainsNull = withResource(input.getChildColumnView(0)) {child =>
         doCast(
           child, elementType, StringType, ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
       }
 
-      withResource(strChildContainsNull) {strChildContainsNull =>
-        withResource(input.replaceListChild(strChildContainsNull)) {strArrayCol =>
-          withResource(concatenateStringArrayElements(strArrayCol, legacyCastToString)) {strCol =>
-            withResource(addBrackets(strCol)) {
-              _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
-            }
-          }
+      val concatenated = withResource(strChildContainsNull) { _ =>
+        withResource(input.replaceListChild(strChildContainsNull)) {
+          concatenateStringArrayElements(_, legacyCastToString)
         }
+      }
+
+      // Add brackets to each string. Ex: ["1, 2, 3", "4, 5"] => ["[1, 2, 3]", "[4, 5]"]
+      val hasBrackets = withResource(concatenated) { _ =>
+        withResource(
+          Seq(left, right).safeMap(ColumnVector.fromScalar(_, numRows))
+        ) { case Seq(leftColumn, rightColumn) =>
+          ColumnVector.stringConcatenate(empty, nullRep, Array(leftColumn, concatenated,
+            rightColumn))
+        }
+      }
+      withResource(hasBrackets) {
+        _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
       }
     }
   }
@@ -898,19 +895,21 @@ object GpuCast extends Arm {
       }
 
       // concatenate elements
-      withResource(strElements) {strElements =>
-        withResource(input.replaceListChild(strElements)) {strArrayCol =>
-          withResource(concatenateStringArrayElements(strArrayCol, legacyCastToString)) {strCol =>
-            withResource(
-              Seq(leftScalar, rightScalar).safeMap(ColumnVector.fromScalar(_, numRows))
-            ) {case Seq(leftCol, rightCol) =>
-              withResource(ColumnVector.stringConcatenate(
-                emptyScalar, nullScalar, Array(leftCol, strCol, rightCol))) {
-                _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
-              }
-            }
-          }
+      val strCol = withResource(strElements) { _ =>
+        withResource(input.replaceListChild(strElements)) {
+          concatenateStringArrayElements(_, legacyCastToString)
         }
+      }
+      val resPreValidityFix = withResource(strCol) { _ =>
+        withResource(
+          Seq(leftScalar, rightScalar).safeMap(ColumnVector.fromScalar(_, numRows))
+        ) { case Seq(leftCol, rightCol) =>
+          ColumnVector.stringConcatenate(
+            emptyScalar, nullScalar, Array(leftCol, strCol, rightCol))
+        }
+      }
+      withResource(resPreValidityFix) {
+        _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
       }
     }
   }
