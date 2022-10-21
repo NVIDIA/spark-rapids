@@ -752,53 +752,43 @@ object GpuCast extends Arm {
     withResource(
       Seq(emptyStr, spaceStr, nullStr, sepStr).safeMap(Scalar.fromString)
     ){ case Seq(empty, space, nullRep, sep) =>
-
-      // add `' '` to all not null elements when `legacyCastToString = true`
-      def addSpaces(strChildContainsNull: ColumnView): ColumnView = {
-        withResource(strChildContainsNull) { strChildContainsNull =>
-          withResource(strChildContainsNull.replaceNulls(nullRep)) { strChild =>
-            if (legacyCastToString) {// add a space string to each non-null element
-              val numElements = strChildContainsNull.getRowCount.toInt
-              withResource(ColumnVector.fromScalar(space, numElements)) { spaceVec =>
-                withResource(ColumnVector.stringConcatenate(Array(spaceVec, strChild))
-                ) { hasSpaces =>
-                  withResource(strChildContainsNull.isNotNull) {_.ifElse(hasSpaces, strChild)}
+      withResource(ColumnVector.fromScalar(sep, numRows)) {sepCol =>
+        withResource(input.getChildColumnView(0)) { childCol =>
+          withResource {
+            // add `' '` to all not null elements when `legacyCastToString = true`
+            withResource(childCol) { strChildContainsNull =>
+              withResource(strChildContainsNull.replaceNulls(nullRep)) { strChild =>
+                if (legacyCastToString) {// add a space string to each non-null element
+                  val numElements = strChildContainsNull.getRowCount.toInt
+                  withResource(ColumnVector.fromScalar(space, numElements)) { spaceVec =>
+                    withResource(ColumnVector.stringConcatenate(Array(spaceVec, strChild))
+                    ) { hasSpaces =>
+                      withResource(strChildContainsNull.isNotNull) {_.ifElse(hasSpaces, strChild)}
+                    }
+                  }
+                }
+                else { strChild.incRefCount }
+              }
+            }
+          } {strChildCol =>
+            withResource(input.replaceListChild(strChildCol)) {strArrayCol =>
+              withResource(
+                strArrayCol.stringConcatenateListElements(sepCol)) { strColContainsNull =>
+                withResource(strColContainsNull.replaceNulls(empty)) {strCol =>
+                  // If the first char of a string is ' ', remove it (only for legacyCastToString = true)
+                  if (legacyCastToString){
+                    withResource(strCol.substring(0,1)) { firstChars =>
+                      withResource(strCol.substring(1)) { remain =>
+                        withResource(firstChars.equalTo(space)) {_.ifElse(remain, strCol)}
+                      }
+                    }
+                  }
+                  else { strCol.incRefCount }
                 }
               }
             }
-            else { strChild.incRefCount }
           }
         }
-      }
-
-      // If the first char of a string is ' ', remove it (only for legacyCastToString = true)
-      def removeFirstSpace(strCol: ColumnVector): ColumnVector = {
-        if (legacyCastToString){
-          withResource(strCol.substring(0,1)) { firstChars =>
-            withResource(strCol.substring(1)) { remain =>
-              withResource(firstChars.equalTo(space)) {_.ifElse(remain, strCol)}
-            }
-          }
-        }
-        else {strCol.incRefCount}
-      }
-
-      val strChildCol = withResource(input.getChildColumnView(0)) {
-        addSpaces
-      }
-      val strArrayCol = withResource(strChildCol) {
-        input.replaceListChild
-      }
-      val strColContainsNull = withResource(strArrayCol) { _ =>
-        withResource(ColumnVector.fromScalar(sep, numRows)) {
-          strArrayCol.stringConcatenateListElements
-        }
-      }
-      val strCol = withResource(strColContainsNull) {
-        _.replaceNulls(empty)
-      }
-      withResource(strCol) {
-        removeFirstSpace
       }
     }
   }
@@ -834,18 +824,14 @@ object GpuCast extends Arm {
           child, elementType, StringType, ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
       }
 
-      val strArrayCol = withResource(strChildContainsNull) {
-        input.replaceListChild
-      }
-      val strCol = withResource(strArrayCol) {
-        concatenateStringArrayElements(_, legacyCastToString)
-      }
-      val strColWithBrackets = withResource(strCol) {
-        addBrackets
-      }
-
-      withResource(strColWithBrackets) {
-        _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
+      withResource(strChildContainsNull) {strChildContainsNull =>
+        withResource(input.replaceListChild(strChildContainsNull)) {strArrayCol =>
+          withResource(concatenateStringArrayElements(strArrayCol, legacyCastToString)) {strCol =>
+            withResource(addBrackets(strCol)) {
+              _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
+            }
+          }
+        }
       }
     }
   }
@@ -904,23 +890,19 @@ object GpuCast extends Arm {
       }
 
       // concatenate elements
-      val strArrayCol = withResource(strElements) {
-        input.replaceListChild
-      }
-      val strCol = withResource(strArrayCol) {
-        concatenateStringArrayElements(_, legacyCastToString)
-      }
-      val Seq(leftCol, rightCol) = closeOnExcept(strCol) { _ =>
-        Seq(leftScalar, rightScalar).safeMap {
-          ColumnVector.fromScalar(_, numRows)
+      withResource(strElements) {strElements =>
+        withResource(input.replaceListChild(strElements)) {strArrayCol =>
+          withResource(concatenateStringArrayElements(strArrayCol, legacyCastToString)) {strCol =>
+            withResource(
+              Seq(leftScalar, rightScalar).safeMap(ColumnVector.fromScalar(_, numRows))
+            ) {case Seq(leftCol, rightCol) =>
+              withResource(ColumnVector.stringConcatenate(
+                emptyScalar, nullScalar, Array(leftCol, strCol, rightCol))) {
+                _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
+              }
+            }
+          }
         }
-      }
-      val cols = Array[ColumnView](leftCol, strCol, rightCol)
-      val concatCol = withResource(cols) { _ =>
-        ColumnVector.stringConcatenate(emptyScalar, nullScalar, cols)
-      }
-      withResource(concatCol) {
-        _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
       }
     }
   }
