@@ -48,6 +48,11 @@ object AlluxioCfgUtils {
         (conf.getAlluxioAutoMountEnabled || conf.getAlluxioPathsToReplace.isDefined)
   }
 
+  def enabledAlluxioReplacementAlgoTaskTime(conf: RapidsConf): Boolean = {
+    conf.isAlluxioReplacementAlgoTaskTime &&
+        (conf.getAlluxioAutoMountEnabled || conf.getAlluxioPathsToReplace.isDefined)
+  }
+
   def isAlluxioAutoMountTaskTime(rapidsConf: RapidsConf,
       fileFormat: FileFormat): Boolean = {
     rapidsConf.getAlluxioAutoMountEnabled && rapidsConf.isAlluxioReplacementAlgoTaskTime &&
