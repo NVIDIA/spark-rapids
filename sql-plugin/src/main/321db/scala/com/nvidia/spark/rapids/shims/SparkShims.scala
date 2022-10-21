@@ -189,20 +189,29 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
               meta.tagForExplain()
               val converted = meta.convertIfNeeded() 
               // Because the PlanSubqueries rule is not called (and does not work as expected),
-              // we actually have to fully convert the subquery plan as the plugin would intend 
-              // (in this case calling GpuTransitionOverrides to insert GpuCoalesceBatches, etc.)
-              // to match the other size of the join to reuse the BroadcastExchange.
-
+              // we might actually have to fully convert the subquery plan as the plugin would 
+              // intend (in this case calling GpuTransitionOverrides to insert GpuCoalesceBatches, 
+              // etc.) // to match the other size of the join to reuse the BroadcastExchange.
+              // This happens when SubqueryBroadcast has the original (Gpu)BroadcastExchangeExec
               // Normally, Spark would call PlanSubqueries, and send this subplan into the plugin
               // already, and we would already have a partially converted GPU plan here (also,
               // hence the removal of GpuColumnarToRow in Apache Spark)
+              // This 
               converted match {
-                case e: GpuSubqueryBroadcastExec =>
-                  val updated = (new GpuTransitionOverrides()).apply(converted)
-                  updated match {
-                    case g: GpuBringBackToHost =>
-                      g.child.asInstanceOf[BaseSubqueryExec]
-                  }
+                case e: GpuSubqueryBroadcastExec => e.child match {
+                  // If the GpuBroadcastExchange is here, then we will need to run the transition 
+                  // overrides here
+                  case _: GpuBroadcastExchangeExec =>
+                    val updated = (new GpuTransitionOverrides()).apply(converted)
+                    updated match {
+                      case g: GpuBringBackToHost =>
+                        g.child.asInstanceOf[BaseSubqueryExec]
+                    }
+                  // Otherwise, if this SubqueryBroadcast is using a ReusedExchange, then we don't
+                  // do anything more
+                  case _: ReusedExchangeExec => 
+                    converted.asInstanceOf[BaseSubqueryExec]
+                }
                 case _ =>
                   converted.asInstanceOf[BaseSubqueryExec]
               }
