@@ -19,17 +19,9 @@ package org.apache.spark.sql.rapids.shims
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.trees.Origin
 import org.apache.spark.sql.errors.{QueryCompilationErrors, QueryExecutionErrors}
-import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
+import org.apache.spark.sql.types.DataType
 
-object RapidsErrorUtils {
-  def invalidArrayIndexError(index: Int, numElements: Int,
-      isElementAtF: Boolean = false): ArrayIndexOutOfBoundsException = {
-    if (isElementAtF) {
-      QueryExecutionErrors.invalidElementAtIndexError(index, numElements)
-    } else {
-      QueryExecutionErrors.invalidArrayIndexError(index, numElements)
-    }
-  }
+trait RapidsErrorUtilsFor330plus {
 
   def mapKeyNotExistError(
       key: String,
@@ -48,28 +40,6 @@ object RapidsErrorUtils {
 
   def divOverflowError(origin: Origin): ArithmeticException = {
     QueryExecutionErrors.overflowInIntegralDivideError(origin.context)
-  }
-
-  def arithmeticOverflowError(
-      message: String,
-      hint: String = "",
-      errorContext: String = ""): ArithmeticException = {
-    QueryExecutionErrors.arithmeticOverflowError(message, hint, errorContext)
-  }
-
-  def cannotChangeDecimalPrecisionError(      
-      value: Decimal,
-      toType: DecimalType,
-      context: String = ""): ArithmeticException = {
-    QueryExecutionErrors.cannotChangeDecimalPrecisionError(
-      value, toType.precision, toType.scale, context
-    )
-  }
-
-  def overflowInIntegralDivideError(context: String = ""): ArithmeticException = {
-    QueryExecutionErrors.arithmeticOverflowError(
-      "Overflow in integral divide", "try_divide", context
-    )
   }
 
   def foundDuplicateFieldInCaseInsensitiveModeError(
