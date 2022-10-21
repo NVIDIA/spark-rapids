@@ -85,7 +85,7 @@ object ZOrderRules {
         }
       })
 
-  def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+  def openSourceExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     try {
       val interleaveClazz =
         ShimLoader.loadClass("org.apache.spark.sql.delta.expressions.InterleaveBits")
@@ -108,6 +108,7 @@ object ZOrderRules {
         ShimLoader.loadClass("org.apache.spark.sql.delta.expressions.PartitionerExpr")
             .asInstanceOf[Class[Expression]]
       val partRule = partExprRule(partExprClass)
+
       Map(interleaveClazz -> interleaveRule,
         partExprClass -> partRule)
     } catch {
@@ -115,4 +116,42 @@ object ZOrderRules {
         Map.empty
     }
   }
+
+  def databricksExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+    try {
+      val hilbertClazz =
+        ShimLoader.loadClass("com.databricks.sql.expressions.HilbertLongIndex")
+            .asInstanceOf[Class[Expression]]
+      val hilbertRule = expr[Expression](
+        "Hilbert long index as a part of Databrick's deltalake zorder",
+        ExprChecks.projectOnly(
+          TypeSig.LONG,
+          TypeSig.LONG,
+          repeatingParamCheck =
+            Some(RepeatingParamCheck("input",
+              TypeSig.INT,
+              TypeSig.INT))),
+        (a, conf, p, r) => new ExprMeta[Expression](a, conf, p, r) {
+          override def convertToGpu(): GpuExpression = {
+            val numBitsField = hilbertClazz.getDeclaredField("numBits")
+            numBitsField.setAccessible(true)
+            val numBits = numBitsField.get(a).asInstanceOf[java.lang.Integer]
+            GpuHilbertLongIndex(numBits, childExprs.map(_.convertToGpu()))
+          }
+        })
+
+      val partExprClass =
+        ShimLoader.loadClass("com.databricks.sql.expressions.PartitionerExpr")
+            .asInstanceOf[Class[Expression]]
+      val partRule = partExprRule(partExprClass)
+      Map(hilbertClazz -> hilbertRule,
+        partExprClass -> partRule)
+    } catch {
+      case _: ClassNotFoundException =>
+        Map.empty
+    }
+  }
+
+  def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
+    openSourceExprs ++ databricksExprs
 }
