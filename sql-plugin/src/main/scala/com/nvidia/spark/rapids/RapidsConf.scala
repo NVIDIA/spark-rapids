@@ -1423,6 +1423,7 @@ object RapidsConf {
       "\"gs://bar/b.csv\" will be replaced to \"alluxio://0.1.2.3:19998/bar/b.csv\". " +
       "To use this config, you have to mount the buckets to Alluxio by yourself. " +
       "If you set this config, spark.rapids.alluxio.automount.enabled won't be valid.")
+    .startupOnly()
     .stringConf
     .toSequence
     .createOptional
