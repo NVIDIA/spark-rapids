@@ -175,7 +175,10 @@ else
         TEST_PARALLEL_OPTS=("-n" "$TEST_PARALLEL")
     fi
 
-    RUN_DIR=${RUN_DIR-$(mktemp -p "$SCRIPTPATH"/target -d run_dir-$(date +%Y%m%d%H%M%S)-XXXX)}
+    TARGET_DIR="$SCRIPTPATH"/target
+    mkdir -p "$TARGET_DIR"
+
+    RUN_DIR=${RUN_DIR-$(mktemp -p "$TARGET_DIR" -d run_dir-$(date +%Y%m%d%H%M%S)-XXXX)}
     mkdir -p "$RUN_DIR"
     cd "$RUN_DIR"
 
