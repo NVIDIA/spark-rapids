@@ -32,7 +32,7 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec}
+import org.apache.spark.sql.execution.exchange.{Exchange, BroadcastExchangeExec, ReusedExchangeExec}
 import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
 import org.apache.spark.sql.execution.python.WindowInPandasExec
 import org.apache.spark.sql.execution.window.WindowExecBase
@@ -191,24 +191,25 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
               // Because the PlanSubqueries rule is not called (and does not work as expected),
               // we might actually have to fully convert the subquery plan as the plugin would 
               // intend (in this case calling GpuTransitionOverrides to insert GpuCoalesceBatches, 
-              // etc.) // to match the other size of the join to reuse the BroadcastExchange.
+              // etc.) to match the other side of the join to reuse the BroadcastExchange.
               // This happens when SubqueryBroadcast has the original (Gpu)BroadcastExchangeExec
-              // Normally, Spark would call PlanSubqueries, and send this subplan into the plugin
-              // already, and we would already have a partially converted GPU plan here (also,
-              // hence the removal of GpuColumnarToRow in Apache Spark)
-              // This 
               converted match {
                 case e: GpuSubqueryBroadcastExec => e.child match {
                   // If the GpuBroadcastExchange is here, then we will need to run the transition 
                   // overrides here
                   case _: GpuBroadcastExchangeExec =>
-                    val updated = (new GpuTransitionOverrides()).apply(converted)
+                    var updated = ApplyColumnarRulesAndInsertTransitions(Seq(), true)
+                        .apply(converted)
+                    updated = (new GpuTransitionOverrides()).apply(updated)
                     updated match {
                       case g: GpuBringBackToHost =>
-                        g.child.asInstanceOf[BaseSubqueryExec]
+                        val p = g.child.asInstanceOf[BaseSubqueryExec]
+                        logWarning(s"DPP CANONICAL BCAST:\n${p.child.asInstanceOf[Exchange].canonicalized}")
+                        logWarning(s"DPP CANONICAL BCAST HASH: ${p.child.asInstanceOf[Exchange].canonicalized.hashCode}")
+                        p
                     }
                   // Otherwise, if this SubqueryBroadcast is using a ReusedExchange, then we don't
-                  // do anything more
+                  // do anything further
                   case _: ReusedExchangeExec => 
                     converted.asInstanceOf[BaseSubqueryExec]
                 }

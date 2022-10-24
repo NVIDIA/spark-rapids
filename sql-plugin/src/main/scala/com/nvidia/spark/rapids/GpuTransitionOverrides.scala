@@ -32,6 +32,8 @@ import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNes
 import org.apache.spark.sql.rapids.{ExternalSource, GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
 
+import org.apache.spark.sql.rapids.execution.reuse.ReuseExchangeAndSubquery
+
 /**
  * Rules that run after the row to columnar and columnar to row transitions have been inserted.
  * These rules insert transitions to and from the GPU, and then optimize various transitions.
@@ -592,6 +594,17 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         }
 
         logWarning(s"TRANSITION UPDATED:\n $updatedPlan")
+        updatedPlan.foreachUp { n =>
+          n.children.foreach {
+            case p: GpuBroadcastExchangeExecBase =>
+              logWarning(s"GPU BCAST PARENT: ${n.nodeName}")
+              logWarning(s"GPU CANONICAL BCAST:\n${p.canonicalized}")
+              logWarning(s"GPU CANONICAL BCAST HASH: ${p.canonicalized.hashCode}")
+            case _ =>
+          }
+        }
+        logWarning(s"trying reuse: ${ReuseExchangeAndSubquery.apply(updatedPlan)}")
+
 
         if (rapidsConf.logQueryTransformations) {
           logWarning(s"Transformed query:" +
