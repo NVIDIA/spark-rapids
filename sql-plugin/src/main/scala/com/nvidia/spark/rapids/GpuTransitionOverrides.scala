@@ -32,7 +32,7 @@ import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNes
 import org.apache.spark.sql.rapids.{ExternalSource, GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
 
-import org.apache.spark.sql.rapids.execution.reuse.ReuseExchangeAndSubquery
+import org.apache.spark.sql.execution.reuse.ReuseExchangeAndSubquery
 
 /**
  * Rules that run after the row to columnar and columnar to row transitions have been inserted.
