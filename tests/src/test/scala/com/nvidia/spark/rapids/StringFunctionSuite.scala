@@ -143,7 +143,7 @@ object TestCodepoints {
   }
   // print out a warning if we're on an unsupported version
   if (getActiveUnicodeVersion() == SupportedUnicodeVersion.UNICODE_UNSUPPORTED) {
-    printf("WARNING : Unsupported version of Java (%s). You may encounted unexpected " +
+    printf("WARNING : Unsupported version of Java (%s). You may encounter unexpected " +
       "test failures\n", System.getProperties().getProperty("java.specification.version"))
   }
 
