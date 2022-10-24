@@ -31,15 +31,17 @@ import org.apache.spark.sql.functions._
  * java 11 :  unicode 10.0
  * java 12 :  unicode 11.0    (unsupported)
  * java 13 :  unicode 12.1
+ * java 17 :  unicode 13.0
  *
  */
 object SupportedUnicodeVersion extends Enumeration {
   val UNICODE_6 = 0
   val UNICODE_10 = 1
-  val UNICODE_12 = 2  
-  
-  val NUM_UNICODE_VERSIONS = 3  
-  val UNICODE_UNSUPPORTED = 4
+  val UNICODE_12 = 2
+  val UNICODE_13 = 3
+
+  val NUM_UNICODE_VERSIONS = 4
+  val UNICODE_UNSUPPORTED = 5
 
   val currentSupportedVersion = UNICODE_12
 }
@@ -72,7 +74,10 @@ object CudfIncompatibleCodepoints {
                                         42900),
 
                                   // java 13, unicode 12
-                                  List())
+                                  List(),
+
+                                  // java 17, unicode 13
+                                  List(42952, 42954, 42998))
 
   val lowercaseIncompatible = Array[List[Int]](
                                   // Java 8 / unicode 6.2
@@ -92,7 +97,10 @@ object CudfIncompatibleCodepoints {
                                   List(),
 
                                   // java 13, unicode 12
-                                  List())
+                                  List(),
+
+                                  // java 17, unicode 13
+                                  List(42951, 42953, 42997))
 }
 
 /* 
@@ -106,6 +114,7 @@ object CudfIncompatibleCodepoints {
  * java 11 :  unicode 10.0
  * java 12 :  unicode 11.0    (unsupported)
  * java 13 :  unicode 12.1
+ * java 17 :  unicode 13.0
  *
  */
 object TestCodepoints {
@@ -128,6 +137,7 @@ object TestCodepoints {
     vp(0).toInt match {
       case 11 => SupportedUnicodeVersion.UNICODE_10
       case 13 => SupportedUnicodeVersion.UNICODE_12
+      case 17 => SupportedUnicodeVersion.UNICODE_13
       case _ => SupportedUnicodeVersion.UNICODE_UNSUPPORTED
     }    
   }
