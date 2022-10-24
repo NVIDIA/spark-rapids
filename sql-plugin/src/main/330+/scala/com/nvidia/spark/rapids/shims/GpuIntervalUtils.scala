@@ -300,10 +300,8 @@ object GpuIntervalUtils extends Arm {
     }
 
     withResource(negatives) { _ =>
-      withResource(Scalar.fromLong(1L)) { posOne =>
-        withResource(Scalar.fromLong(-1L)) { negOne =>
-          negatives.ifElse(negOne, posOne)
-        }
+      withResource(Seq(1L, -1L).safeMap(Scalar.fromLong)) { case Seq(posOne, negOne) =>
+        negatives.ifElse(negOne, posOne)
       }
     }
   }
