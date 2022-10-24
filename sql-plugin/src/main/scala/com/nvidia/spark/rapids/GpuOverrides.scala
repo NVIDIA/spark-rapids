@@ -4340,9 +4340,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         t => f"Plan conversion to the GPU took $t%.2f ms") {
         var updatedPlan = updateForAdaptivePlan(plan, conf)
         updatedPlan = SparkShimImpl.applyShimPlanRules(updatedPlan, conf)
-        logWarning(s"SHIM PLAN:\n$updatedPlan")
         updatedPlan = applyOverrides(updatedPlan, conf)
-        logWarning(s"NEW PLAN:\n$updatedPlan")
         if (conf.logQueryTransformations) {
           val logPrefix = context.map(str => s"[$str]").getOrElse("")
           logWarning(s"${logPrefix}Transformed query:" +

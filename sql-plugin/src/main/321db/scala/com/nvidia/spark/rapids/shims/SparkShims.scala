@@ -32,9 +32,10 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
-import org.apache.spark.sql.execution.exchange.{Exchange, BroadcastExchangeExec, ReusedExchangeExec}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec}
 import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
 import org.apache.spark.sql.execution.python.WindowInPandasExec
+import org.apache.spark.sql.execution.reuse.ReuseExchangeAndSubquery
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastExchangeExec, GpuSubqueryBroadcastExec}
@@ -97,6 +98,15 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
     }
   }
 
+  override def applyPostShimPlanRules(plan: SparkPlan): SparkPlan = {
+    val rules = Seq(
+      ReuseExchangeAndSubquery,
+    )
+    rules.foldLeft(plan) { case (sp, rule) =>
+      rule.apply(sp)
+    }
+  }
+
   private val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(
       GpuOverrides.exec[SubqueryBroadcastExec](
@@ -111,7 +121,6 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
 
           override def tagPlanForGpu(): Unit = s.child match {
             case ex @ BroadcastExchangeExec(_, child) =>
-              logWarning("DPP+DB")
               val exMeta = new GpuBroadcastMeta(ex.copy(child = child), conf, p, r)
               exMeta.tagForGpu()
               if (exMeta.canThisBeReplaced) {
@@ -120,8 +129,6 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
                 willNotWorkOnGpu("underlying BroadcastExchange can not run in the GPU.")
               }
             case bqse: BroadcastQueryStageExec =>
-              logWarning("DPP+DB+AQE")
-              logWarning(s"plan: ${bqse.plan}")
               bqse.plan match {
                 case reuse: ReusedExchangeExec =>
                   reuse.child match {
@@ -133,7 +140,6 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
                   }
               }
             case _ =>
-              logWarning(s"what is child: ${s.child.getClass}")
               willNotWorkOnGpu("the subquery to broadcast can not entirely run in the GPU.")
           }
           /**
@@ -203,10 +209,7 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
                     updated = (new GpuTransitionOverrides()).apply(updated)
                     updated match {
                       case g: GpuBringBackToHost =>
-                        val p = g.child.asInstanceOf[BaseSubqueryExec]
-                        logWarning(s"DPP CANONICAL BCAST:\n${p.child.asInstanceOf[Exchange].canonicalized}")
-                        logWarning(s"DPP CANONICAL BCAST HASH: ${p.child.asInstanceOf[Exchange].canonicalized.hashCode}")
-                        p
+                        g.child.asInstanceOf[BaseSubqueryExec]
                     }
                   // Otherwise, if this SubqueryBroadcast is using a ReusedExchange, then we don't
                   // do anything further
@@ -221,7 +224,6 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
             wrapped.partitionFilters.map { filter =>
               filter.transformDown {
                 case dpe @ DynamicPruningExpression(inSub: InSubqueryExec) =>
-                  logWarning(s"DPE: inSub plan: ${inSub.plan}")
                   inSub.plan match {
                     case bc: SubqueryBroadcastExec =>
                       dpe.copy(inSub.copy(plan = convertBroadcast(bc)))
