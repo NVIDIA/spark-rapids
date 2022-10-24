@@ -344,26 +344,6 @@ class AutoTuner(
     !limitedLogicRecommendations.contains(prop)
   }
 
-//  private def findPropertyInProfPropertyResults(
-//      key: String,
-//      props: Seq[RapidsPropertyProfileResult]): Option[String] = {
-//    props.collectFirst {
-//      case entry: RapidsPropertyProfileResult
-//        if entry.key == key && entry.rows(1) != "null" => entry.rows(1)
-//    }
-//  }
-//  def getSparkPropertyFromProfile(propKey: String): Option[String] = {
-//    appInfo match {
-//      case None => None
-//      case Some(profInfo) =>
-//        val resFromProfSparkProps =findPropertyInProfPropertyResults(propKey, profInfo.sparkProps)
-//        resFromProfSparkProps match {
-//          case None => findPropertyInProfPropertyResults(propKey, profInfo.rapidsProps)
-//          case Some(_) => resFromProfSparkProps
-//        }
-//    }
-//  }
-
   def getPropertyValue(key: String): Option[String] = {
     val fromProfile = appInfoProvider.getProperty(key)
     fromProfile match {
@@ -900,7 +880,8 @@ object AutoTuner extends Logging {
    * existing file. This can be used in testing.
    *
    * @param clusterProps the cluster properties as string.
-   * @param appInfo Optional of the profiling container.
+   * @param singleAppProvider the wrapper implementation that accesses the properties of the profile
+   *                          results.
    * @return a new AutoTuner object.
    */
   def buildAutoTunerFromProps(
