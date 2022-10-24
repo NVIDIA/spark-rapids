@@ -1489,8 +1489,7 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
 
 // Parquet schema wrapper
 private case class ParquetSchemaWrapper(schema: MessageType) extends SchemaBase {
-
-  override def fieldNames: Array[String] = schema.getFields.asScala.map(_.getName).toArray
+  override def isEmpty: Boolean = schema.getFields.isEmpty
 }
 
 // Parquet BlockMetaData wrapper

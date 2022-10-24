@@ -1804,7 +1804,7 @@ trait OrcCodecWritingHelper extends Arm {
 // Orc schema wrapper
 private case class OrcSchemaWrapper(schema: TypeDescription) extends SchemaBase {
 
-  override def fieldNames: Array[String] = schema.getFieldNames.asScala.toArray
+  override def isEmpty: Boolean = schema.getFieldNames.isEmpty
 }
 
 case class OrcStripeWithMeta(stripe: OrcOutputStripe, ctx: OrcPartitionReaderContext)
