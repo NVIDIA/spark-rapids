@@ -95,3 +95,30 @@ jobs:
           -DskipTests
           -Dskip
           -Dmaven.javadoc.skip
+
+  verify-modules-with-jdk11:
+    needs: get-noSnapshot-versions-from-dist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2 # refs/pull/:prNumber/merge
+
+      - name: Setup Java and Maven Env
+        uses: actions/setup-java@v3
+        with:
+          distribution: adopt
+          java-version: 11
+      
+      - name: Build JDK11
+        run: >
+          mvn -Dmaven.wagon.http.retryHandler.count=3 -B verify
+          -P 'individual,pre-merge'
+          -Dbuildver=${{ needs.get-noSnapshot-versions-from-dist.outputs.sparkHeadVersion }}
+          -Dmaven.compiler.release=11
+          -Dmaven.compiler.source=11
+          -Dmaven.compiler.target=11
+          -Dscala.plugin.version=4.6.1
+          -DallowConventionalDistJar=true
+          -DskipTests
+          -Dskip
+          -Dmaven.javadoc.skip
+          
