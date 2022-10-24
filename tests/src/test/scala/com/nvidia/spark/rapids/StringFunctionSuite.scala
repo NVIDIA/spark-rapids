@@ -31,7 +31,7 @@ import org.apache.spark.sql.functions._
  * java 11 :  unicode 10.0
  * java 12 :  unicode 11.0    (unsupported)
  * java 13 :  unicode 12.1
- * java 17 :  unicode 13.0
+ * java 17 :  unicode 13.0    (unsupported)
  *
  */
 object SupportedUnicodeVersion extends Enumeration {
@@ -114,7 +114,7 @@ object CudfIncompatibleCodepoints {
  * java 11 :  unicode 10.0
  * java 12 :  unicode 11.0    (unsupported)
  * java 13 :  unicode 12.1
- * java 17 :  unicode 13.0
+ * java 17 :  unicode 13.0    (unsupported)
  *
  */
 object TestCodepoints {
