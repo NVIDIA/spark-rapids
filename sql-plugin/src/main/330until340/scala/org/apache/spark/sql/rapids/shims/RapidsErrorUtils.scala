@@ -16,10 +16,18 @@
 
 package org.apache.spark.sql.rapids.shims
 
+import org.apache.spark.sql.catalyst.trees.Origin
 import org.apache.spark.sql.errors.QueryExecutionErrors
-import org.apache.spark.sql.types.{Decimal, DecimalType}
+import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
 
 object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
+
+  def mapKeyNotExistError(
+      key: String,
+      keyType: DataType,
+      origin: Origin): NoSuchElementException = {
+    QueryExecutionErrors.mapKeyNotExistError(key, keyType, origin.context)
+  }
 
   def invalidArrayIndexError(index: Int, numElements: Int,
       isElementAtF: Boolean = false): ArrayIndexOutOfBoundsException = {

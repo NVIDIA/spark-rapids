@@ -16,11 +16,20 @@
 
 package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.sql.catalyst.trees.SQLQueryContext
+import org.apache.spark.sql.catalyst.trees.{Origin, SQLQueryContext}
 import org.apache.spark.sql.errors.QueryExecutionErrors
-import org.apache.spark.sql.types.{Decimal, DecimalType}
+import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
 
 object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
+
+  def mapKeyNotExistError(
+      key: String,
+      keyType: DataType,
+      origin: Origin): NoSuchElementException = {
+    throw new UnsupportedOperationException(
+      "`mapKeyNotExistError` has been removed since Spark 3.4.0. "
+    )
+  }
 
   def invalidArrayIndexError(
       index: Int,
