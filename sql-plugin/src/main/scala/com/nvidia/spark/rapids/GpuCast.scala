@@ -768,10 +768,8 @@ object GpuCast extends Arm {
           val hasSpaces = withResource(ColumnVector.fromScalar(space, numElements)) { spaceCol =>
             ColumnVector.stringConcatenate(Array(spaceCol, strChild))
           }
-          withResource(hasSpaces) { _ =>
-            withResource(childNotNull) {
-              _.ifElse(hasSpaces, strChild)
-            }
+          withResource(hasSpaces) {
+            childNotNull.ifElse(_, strChild)
           }
         }
       }
