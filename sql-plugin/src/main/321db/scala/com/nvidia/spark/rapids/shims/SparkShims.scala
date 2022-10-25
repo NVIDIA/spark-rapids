@@ -38,7 +38,7 @@ import org.apache.spark.sql.execution.python.WindowInPandasExec
 import org.apache.spark.sql.execution.reuse.ReuseExchangeAndSubquery
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastMeta, GpuBroadcastExchangeExec, GpuSubqueryBroadcastExec}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuBroadcastMeta, GpuSubqueryBroadcastExec}
 import org.apache.spark.sql.rapids.shims.GpuFileScanRDD
 import org.apache.spark.sql.types._
 
@@ -90,7 +90,7 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
     } else {
       val sparkSession = plan.session
       val rules = Seq(
-        PlanDynamicPruningFilters(sparkSession),
+        PlanDynamicPruningFilters(sparkSession)
       )
       rules.foldLeft(plan) { case (sp, rule) =>
         rule.apply(sp)
@@ -100,7 +100,7 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
 
   override def applyPostShimPlanRules(plan: SparkPlan): SparkPlan = {
     val rules = Seq(
-      ReuseExchangeAndSubquery,
+      ReuseExchangeAndSubquery
     )
     rules.foldLeft(plan) { case (sp, rule) =>
       rule.apply(sp)

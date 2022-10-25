@@ -61,11 +61,11 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
 
   override def applyShimPlanRules(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
     if (plan.conf.adaptiveExecutionEnabled) {
-      plan // AQE+DPP cooperation ensures the optimization runs early
+      plan // no need to handle DPP here since it doesn't cooperate with AQE
     } else {
       val sparkSession = SparkSession.getActiveSession.orNull
       val rules = Seq(
-        PlanDynamicPruningFilters(sparkSession),
+        PlanDynamicPruningFilters(sparkSession)
       )
       rules.foldLeft(plan) { case (sp, rule) =>
         rule.apply(sp)
@@ -75,7 +75,7 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
 
   override def applyPostShimPlanRules(plan: SparkPlan): SparkPlan = {
     val rules = Seq(
-      ReuseExchangeAndSubquery,
+      ReuseExchangeAndSubquery
     )
     rules.foldLeft(plan) { case (sp, rule) =>
       rule.apply(sp)
