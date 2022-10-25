@@ -1859,11 +1859,10 @@ case class GpuStringInstr(str: Expression, substr: Expression)
     throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    withResource(lhs.getBase.stringLocate(rhs.getBase)) {
-      strLocateRes =>
-        withResource(Scalar.fromInt(1)) { sv1 =>
-          strLocateRes.add(sv1)
-        }
+    withResource(lhs.getBase.stringLocate(rhs.getBase)) { strLocateRes =>
+      withResource(Scalar.fromInt(1)) { sv1 =>
+        strLocateRes.add(sv1)
+      }
     }
   }
 
