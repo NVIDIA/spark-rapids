@@ -185,69 +185,6 @@ object GpuCast extends Arm {
 
   val INVALID_NUMBER_MSG: String = "At least one value is either null or is an invalid number"
 
-  def sanitizeStringToFloat(
-      input: ColumnVector,
-      ansiEnabled: Boolean): ColumnVector = {
-
-    // This regex is just strict enough to filter out known edge cases that would result
-    // in incorrect values. We further filter out invalid values using the cuDF isFloat method.
-    val VALID_FLOAT_REGEX =
-      "^" +                             // start of line
-        "[Nn][Aa][Nn]" +                // NaN
-        "|" +
-        "(" +
-          "[+\\-]?" +                   // optional sign preceding Inf or numeric
-          "(" +
-            "([Ii][Nn][Ff]" +           // Inf, Infinity
-            "([Ii][Nn][Ii][Tt][Yy])?)" +
-            "|" +
-            "(" +
-              "(" +
-                "([0-9]+)|" +           // digits, OR
-                "([0-9]*\\.[0-9]+)|" +  // decimal with optional leading and mandatory trailing, OR
-                "([0-9]+\\.[0-9]*)" +   // decimal with mandatory leading and optional trailing
-              ")" +
-              "([eE][+\\-]?[0-9]+)?" +  // exponent
-              "[fFdD]?" +               // floating-point designator
-            ")" +
-          ")" +
-        ")" +
-      "$"                               // end of line
-
-    withResource(input.lstrip()) { stripped =>
-      withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
-        // filter out strings containing breaking whitespace
-        val withoutWhitespace = withResource(ColumnVector.fromStrings("\r", "\n")) {
-          verticalWhitespace =>
-            withResource(stripped.contains(verticalWhitespace)) {
-              _.ifElse(nullString, stripped)
-            }
-        }
-        // filter out any strings that are not valid floating point numbers according
-        // to the regex pattern
-        val floatOrNull = withResource(withoutWhitespace) { _ =>
-          withResource(withoutWhitespace.matchesRe(VALID_FLOAT_REGEX)) { isFloat =>
-            if (ansiEnabled) {
-              withResource(isFloat.all()) { allMatch =>
-                // Check that all non-null values are valid floats.
-                if (allMatch.isValid && !allMatch.getBoolean) {
-                  throw new NumberFormatException(GpuCast.INVALID_NUMBER_MSG)
-                }
-                withoutWhitespace.incRefCount()
-              }
-            } else {
-              isFloat.ifElse(withoutWhitespace, nullString)
-            }
-          }
-        }
-        // strip floating-point designator 'f' or 'd' but don't strip the 'f' from 'Inf'
-        withResource(floatOrNull) {
-          _.stringReplaceWithBackrefs("([^nN])[fFdD]$", "\\1")
-        }
-      }
-    }
-  }
-
   def doCast(
       input: ColumnView,
       fromDataType: DataType,
