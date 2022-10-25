@@ -329,6 +329,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.SpecifiedWindowFrame"></a>spark.rapids.sql.expression.SpecifiedWindowFrame| |Specification of the width of the group (or "frame") of input rows around which a window function is evaluated|true|None|
 <a name="sql.expression.Sqrt"></a>spark.rapids.sql.expression.Sqrt|`sqrt`|Square root|true|None|
 <a name="sql.expression.StartsWith"></a>spark.rapids.sql.expression.StartsWith| |Starts with|true|None|
+<a name="sql.expression.StringInstr"></a>spark.rapids.sql.expression.StringInstr|`instr`|Instr string operator|true|None|
 <a name="sql.expression.StringLPad"></a>spark.rapids.sql.expression.StringLPad|`lpad`|Pad a string on the left|true|None|
 <a name="sql.expression.StringLocate"></a>spark.rapids.sql.expression.StringLocate|`position`, `locate`|Substring search operator|true|None|
 <a name="sql.expression.StringRPad"></a>spark.rapids.sql.expression.StringRPad|`rpad`|Pad a string on the right|true|None|
