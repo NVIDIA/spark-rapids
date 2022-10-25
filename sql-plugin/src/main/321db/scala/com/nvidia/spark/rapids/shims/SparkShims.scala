@@ -120,6 +120,12 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
           override val childPlans: Seq[SparkPlanMeta[SparkPlan]] = Nil
 
           override def tagPlanForGpu(): Unit = s.child match {
+            // DPP: For AQE off, in this case, we handle DPP by converting the underlying 
+            // BroadcastExchangeExec to GpuBroadcastExchangeExec
+            // This is slightly different from the Apache Spark case, because Spark 
+            // sends the underlying plan into the plugin in advance via the PlanSubqueries rule
+            // here, we have the full non-GPU subquery plan, so we convert the whole
+            // thing here.
             case ex @ BroadcastExchangeExec(_, child) =>
               val exMeta = new GpuBroadcastMeta(ex.copy(child = child), conf, p, r)
               exMeta.tagForGpu()
@@ -128,6 +134,11 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
               } else {
                 willNotWorkOnGpu("underlying BroadcastExchange can not run in the GPU.")
               }
+            // DPP: For AQE on, we have an almost completely different scenario then before, 
+            // Databricks uses a BroadcastQueryStageExec and already does the reuse work for us 
+            // (in a slightly different way). The ReusedExchange is now a part of the 
+            // SubqueryBroadcast, so we send it back here as underlying the 
+            // GpuSubqueryBroadcastExchangeExec
             case bqse: BroadcastQueryStageExec =>
               bqse.plan match {
                 case reuse: ReusedExchangeExec =>
@@ -208,8 +219,10 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
                         .apply(converted)
                     updated = (new GpuTransitionOverrides()).apply(updated)
                     updated match {
-                      case g: GpuBringBackToHost =>
-                        g.child.asInstanceOf[BaseSubqueryExec]
+                      case h: GpuBringBackToHost =>
+                        h.child.asInstanceOf[BaseSubqueryExec]
+                      case c2r: GpuColumnarToRowExec =>
+                        c2r.child.asInstanceOf[BaseSubqueryExec]
                     }
                   // Otherwise, if this SubqueryBroadcast is using a ReusedExchange, then we don't
                   // do anything further

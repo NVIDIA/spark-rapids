@@ -16,7 +16,9 @@
 
 package com.nvidia.spark.rapids.shims
 
+import com.databricks.sql.execution.ReuseExchangeAndSubquery
 import com.databricks.sql.execution.window.RunningWindowFunctionExec
+import com.databricks.sql.optimizer.PlanDynamicPruningFilters
 import com.nvidia.spark.rapids._
 import org.apache.hadoop.fs.FileStatus
 
@@ -28,7 +30,7 @@ import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.errors.attachTree
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
-import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, IdentityBroadcastMode}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution._
@@ -39,10 +41,12 @@ import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.v2.ShowCurrentNamespaceExec
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
-import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec}
+import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.rapids._
+import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.shims._
 import org.apache.spark.sql.types._
@@ -54,6 +58,29 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
 
   override def isWindowFunctionExec(plan: SparkPlan): Boolean =
     plan.isInstanceOf[WindowExecBase] || plan.isInstanceOf[RunningWindowFunctionExec]
+
+  override def applyShimPlanRules(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+    if (plan.conf.adaptiveExecutionEnabled) {
+      plan // AQE+DPP cooperation ensures the optimization runs early
+    } else {
+      val sparkSession = SparkSession.getActiveSession.orNull
+      val rules = Seq(
+        PlanDynamicPruningFilters(sparkSession),
+      )
+      rules.foldLeft(plan) { case (sp, rule) =>
+        rule.apply(sp)
+      }
+    }
+  }
+
+  override def applyPostShimPlanRules(plan: SparkPlan): SparkPlan = {
+    val rules = Seq(
+      ReuseExchangeAndSubquery,
+    )
+    rules.foldLeft(plan) { case (sp, rule) =>
+      rule.apply(sp)
+    }
+  }
 
   override def ansiCastRule: ExprRule[_ <: Expression] = {
     GpuOverrides.expr[AnsiCast](
@@ -155,6 +182,61 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(
+      GpuOverrides.exec[SubqueryBroadcastExec](
+        "Plan to collect and transform the broadcast key values",
+        ExecChecks(TypeSig.all, TypeSig.all),
+        (s, conf, p, r) => new SparkPlanMeta[SubqueryBroadcastExec](s, conf, p, r) {
+          private var broadcastBuilder: () => SparkPlan = _
+
+          override val childExprs: Seq[BaseExprMeta[_]] = Nil
+
+          override val childPlans: Seq[SparkPlanMeta[SparkPlan]] = Nil
+
+          override def tagPlanForGpu(): Unit = s.child match {
+            // DPP: For AQE off, in this case, we handle DPP by converting the underlying 
+            // BroadcastExchangeExec to GpuBroadcastExchangeExec
+            // This is slightly different from the Apache Spark case, because Spark 
+            // sends the underlying plan into the plugin in advance via the PlanSubqueries rule
+            // here, we have the full non-GPU subquery plan, so we convert the whole
+            // thing here.
+            case ex @ BroadcastExchangeExec(_, child) =>
+              val exMeta = new GpuBroadcastMeta(ex.copy(child = child), conf, p, r)
+              exMeta.tagForGpu()
+              if (exMeta.canThisBeReplaced) {
+                broadcastBuilder = () => exMeta.convertToGpu()
+              } else {
+                willNotWorkOnGpu("underlying BroadcastExchange can not run in the GPU.")
+              }
+            // DPP: AQE does not cooperate in Spark versions < 3.2.0, which applies to 
+            // Databricks 9.1
+            case _ =>
+              willNotWorkOnGpu("the subquery to broadcast can not entirely run in the GPU.")
+          }
+          /**
+          * Simply returns the original plan. Because its only child, BroadcastExchange, doesn't
+          * need to change if SubqueryBroadcastExec falls back to the CPU.
+          */
+          override def convertToCpu(): SparkPlan = s
+
+          override def convertToGpu(): GpuExec = {
+            GpuSubqueryBroadcastExec(s.name, s.index, s.buildKeys, broadcastBuilder())(
+              getBroadcastModeKeyExprs)
+          }
+
+          /** Extract the broadcast mode key expressions if there are any. */
+          private def getBroadcastModeKeyExprs: Option[Seq[Expression]] = {
+            val broadcastMode = s.child match {
+              case b: BroadcastExchangeExec =>
+                b.mode
+            }
+
+            broadcastMode match {
+              case HashedRelationBroadcastMode(keys, _) => Some(keys)
+              case IdentityBroadcastMode => None
+              case m => throw new UnsupportedOperationException(s"Unknown broadcast mode $m")
+            }
+          }
+        }),
       GpuOverrides.exec[WindowInPandasExec](
         "The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between" +
           " the Java process and the Python process. It also supports scheduling GPU resources" +
@@ -205,9 +287,35 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
             val convertBroadcast = (bc: SubqueryBroadcastExec) => {
               val meta = GpuOverrides.wrapAndTagPlan(bc, conf)
               meta.tagForExplain()
-              meta.convertIfNeeded().asInstanceOf[BaseSubqueryExec]
+              val converted = meta.convertIfNeeded() 
+              // Because the PlanSubqueries rule is not called (and does not work as expected),
+              // we might actually have to fully convert the subquery plan as the plugin would 
+              // intend (in this case calling GpuTransitionOverrides to insert GpuCoalesceBatches, 
+              // etc.) to match the other side of the join to reuse the BroadcastExchange.
+              // This happens when SubqueryBroadcast has the original (Gpu)BroadcastExchangeExec
+              converted match {
+                case e: GpuSubqueryBroadcastExec => e.child match {
+                  // If the GpuBroadcastExchange is here, then we will need to run the transition 
+                  // overrides here
+                  case _: GpuBroadcastExchangeExec =>
+                    var updated = ApplyColumnarRulesAndInsertTransitions(Seq())
+                        .apply(converted)
+                    updated = (new GpuTransitionOverrides()).apply(updated)
+                    updated match {
+                      case h: GpuBringBackToHost =>
+                        h.child.asInstanceOf[BaseSubqueryExec]
+                      case c2r: GpuColumnarToRowExec =>
+                        c2r.child.asInstanceOf[BaseSubqueryExec]
+                    }
+                  // Otherwise, if this SubqueryBroadcast is using a ReusedExchange, then we don't
+                  // do anything further
+                  case _: ReusedExchangeExec => 
+                    converted.asInstanceOf[BaseSubqueryExec]
+                }
+                case _ =>
+                  converted.asInstanceOf[BaseSubqueryExec]
+              }
             }
-            logWarning(s"DPE: 31xdb shim: partitionFilters: ${wrapped.partitionFilters}")
             wrapped.partitionFilters.map { filter =>
               filter.transformDown {
                 case dpe @ DynamicPruningExpression(inSub: InSubqueryExec) =>
