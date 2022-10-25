@@ -92,8 +92,9 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
   }
 
   private def getUnusedProvider: AppSummaryInfoBaseProvider = {
-    new AppInfoProviderMockTest(0.0, Seq(), Seq(), mutable.Map[String, String](), None)
+    new AppSummaryInfoBaseProvider()
   }
+
   private def getMockInfoProvider(maxInput: Double,
       spilledMetrics: Seq[Long],
       jvmGCFractions: Seq[Double],
