@@ -78,7 +78,6 @@ case class GpuRoundRobinPartitioning(numPartitions: Int)
       }
       val ret: Array[ColumnarBatch] =
         sliceInternalGpuOrCpuAndClose(numRows, partitionIndexes, partitionColumns)
-      // Close the partition columns we copied them as a part of the slice
       ret.zipWithIndex.filter(_._1 != null)
     } finally {
       totalRange.close()
