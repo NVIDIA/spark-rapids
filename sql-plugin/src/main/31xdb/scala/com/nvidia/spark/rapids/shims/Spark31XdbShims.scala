@@ -306,6 +306,8 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
                         h.child.asInstanceOf[BaseSubqueryExec]
                       case c2r: GpuColumnarToRowExec =>
                         c2r.child.asInstanceOf[BaseSubqueryExec]
+                      case _: GpuSubqueryBroadcastExec =>
+                        updated.asInstanceOf[BaseSubqueryExec]
                     }
                   // Otherwise, if this SubqueryBroadcast is using a ReusedExchange, then we don't
                   // do anything further

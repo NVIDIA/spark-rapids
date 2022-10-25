@@ -135,12 +135,25 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
                 willNotWorkOnGpu("underlying BroadcastExchange can not run in the GPU.")
               }
             // DPP: For AQE on, we have an almost completely different scenario then before, 
-            // Databricks uses a BroadcastQueryStageExec and already does the reuse work for us 
-            // (in a slightly different way). The ReusedExchange is now a part of the 
-            // SubqueryBroadcast, so we send it back here as underlying the 
-            // GpuSubqueryBroadcastExchangeExec
+            // Databricks uses a BroadcastQueryStageExec and either:
+            //  1) provide an underlying BroadcastExchangeExec that we will have to convert
+            //     somehow
+            //  2) might already do the reuse work for us. The ReusedExchange is now a 
+            //     part of the SubqueryBroadcast, so we send it back here as underlying the 
+            //     GpuSubqueryBroadcastExchangeExec
             case bqse: BroadcastQueryStageExec =>
               bqse.plan match {
+                case ex: BroadcastExchangeExec =>
+                  val exMeta = new GpuBroadcastMeta(ex, conf, p, r)
+                  exMeta.tagForGpu()
+                  if (exMeta.canThisBeReplaced) {
+                    broadcastBuilder = () => exMeta.convertToGpu()
+                    // broadcastBuilder = () =>
+                    //   SparkShimImpl.columnarAdaptivePlan(
+                    //     a, TargetSize(conf.gpuTargetBatchSizeBytes))
+                  } else {
+                    willNotWorkOnGpu("underlying BroadcastExchange can not run in the GPU.")
+                  }
                 case reuse: ReusedExchangeExec =>
                   reuse.child match {
                     case gpuExchange: GpuBroadcastExchangeExec =>
@@ -171,6 +184,8 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
                 b.mode
               case bqse: BroadcastQueryStageExec =>
                 bqse.plan match {
+                  case b: BroadcastExchangeExec =>
+                    b.mode
                   case reuse: ReusedExchangeExec =>
                     reuse.child match {
                       case g: GpuBroadcastExchangeExec =>
@@ -223,6 +238,8 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
                         h.child.asInstanceOf[BaseSubqueryExec]
                       case c2r: GpuColumnarToRowExec =>
                         c2r.child.asInstanceOf[BaseSubqueryExec]
+                      case _: GpuSubqueryBroadcastExec =>
+                        updated.asInstanceOf[BaseSubqueryExec]
                     }
                   // Otherwise, if this SubqueryBroadcast is using a ReusedExchange, then we don't
                   // do anything further
