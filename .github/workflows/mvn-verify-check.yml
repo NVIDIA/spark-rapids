@@ -100,7 +100,7 @@ jobs:
     needs: get-noSnapshot-versions-from-dist
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2 # refs/pull/:prNumber/merge
+      - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
       - name: Setup Java and Maven Env
         uses: actions/setup-java@v3
