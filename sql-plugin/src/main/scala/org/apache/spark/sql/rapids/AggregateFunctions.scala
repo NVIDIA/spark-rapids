@@ -31,6 +31,7 @@ import org.apache.spark.sql.catalyst.util.{ArrayData, GenericArrayData, TypeUtil
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import com.nvidia.spark.rapids.shims.TypeUtilsShims
 
 /**
  * Trait that all aggregate functions implement.
@@ -1081,7 +1082,7 @@ abstract class GpuSum(
   override def children: Seq[Expression] = child :: Nil
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType)
   override def checkInputDataTypes(): TypeCheckResult =
-    TypeUtils.checkForNumericExpr(child.dataType, "function gpu sum")
+    TypeUtilsShims.checkForNumericExpr(child.dataType, "function gpu sum")
 
   // GENERAL WINDOW FUNCTION
   // Spark 3.2.0+ stopped casting the input data to the output type before the sum operation
@@ -1572,7 +1573,7 @@ abstract class GpuAverage(child: Expression, sumDataType: DataType) extends GpuA
   override def children: Seq[Expression] = child :: Nil
 
   override def checkInputDataTypes(): TypeCheckResult =
-    TypeUtils.checkForNumericExpr(child.dataType, "function gpu average")
+    TypeUtilsShims.checkForNumericExpr(child.dataType, "function gpu average")
 
   override def nullable: Boolean = true
 
