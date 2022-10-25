@@ -17,6 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import java.io.File
+import java.sql.Date
 
 import scala.collection.JavaConverters.mapAsJavaMapConverter
 import scala.concurrent.duration._
@@ -166,34 +167,76 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     answer.map(prepareRow)
   }
 
-  private def compare(obj1: Any, obj2: Any): Boolean = (obj1, obj2) match {
-    case (null, null) => true
-    case (null, _) => false
-    case (_, null) => false
+  private def compare(obj1: Any, obj2: Any): (Boolean, String) = (obj1, obj2) match {
+    case (null, null) => (true, "")
+    case (null, _) => (false, s"NULL NOT EQUAL NULL != $obj2/(${obj2.getClass})")
+    case (_, null) => (false, s"NULL NOT EQUAL $obj1/(${obj1.getClass}) != NULL")
     case (a: Array[_], b: Array[_]) =>
-      a.length == b.length && a.zip(b).forall { case (l, r) => compare(l, r)}
+      if (a.length != b.length) {
+        (false, s"LENGTHS NOT EQUAL ${a.length} ${b.length}\n${a.toList}\n${b.toList}")
+      } else {
+        val problems = a.zip(b).map { case (l, r) => compare(l, r)}.filter(!_._1).map(_._2)
+        if (problems.isEmpty) {
+          (true, "")
+        } else {
+          (false, problems.mkString("\n"))
+        }
+      }
     case (a: Map[_, _], b: Map[_, _]) =>
-      a.size == b.size && a.keys.forall { aKey =>
-        b.keys.find(bKey => compare(aKey, bKey)).exists(bKey => compare(a(aKey), b(bKey)))
+      if (a.size != b.size) {
+        (false, s"LENGTHS NOT EQUAL ${a.size} ${b.size}\n${a.toList}\n${b.toList}")
+      } else {
+        val problems = a.keys.flatMap { aKey =>
+          b.keys.find(bKey => compare(aKey, bKey)._1)
+              .map(bKey => compare(a(aKey), b(bKey)))
+        }.filter(!_._1).map(_._2)
+        if (problems.isEmpty) {
+          (true, "")
+        } else {
+          (false, problems.mkString("\n"))
+        }
       }
     case (a: Iterable[_], b: Iterable[_]) =>
-      a.size == b.size && a.zip(b).forall { case (l, r) => compare(l, r)}
+      if (a.size != b.size) {
+        (false, s"LENGTHS NOT EQUAL ${a.size} ${b.size}\n${a.toList}\n${b.toList}")
+      } else {
+        val problems = a.zip(b).map { case (l, r) => compare(l, r)}.filter(!_._1).map(_._2)
+        if (problems.isEmpty) {
+          (true, "")
+        } else {
+          (false, problems.mkString("\n"))
+        }
+      }
     case (a: Product, b: Product) =>
       compare(a.productIterator.toSeq, b.productIterator.toSeq)
     case (a: Row, b: Row) =>
       compare(a.toSeq, b.toSeq)
     // 0.0 == -0.0, turn float/double to bits before comparison, to distinguish 0.0 and -0.0.
     case (a: Double, b: Double) =>
-      java.lang.Double.doubleToRawLongBits(a) == java.lang.Double.doubleToRawLongBits(b)
+      if (java.lang.Double.doubleToRawLongBits(a) == java.lang.Double.doubleToRawLongBits(b)) {
+        (true, "")
+      } else {
+        (false, s"DOUBLES NOT EQUAL $a $b")
+      }
     case (a: Float, b: Float) =>
-      java.lang.Float.floatToRawIntBits(a) == java.lang.Float.floatToRawIntBits(b)
-    case (a, b) => a == b
+      if (java.lang.Float.floatToRawIntBits(a) == java.lang.Float.floatToRawIntBits(b)) {
+        (true, "")
+      } else {
+        (false, s"FLOATS NOT EQUAL $a $b")
+      }
+    case (a, b) =>
+      if (a == b) {
+        (true, "")
+      } else {
+        (false, s"VALUES NOT EQUAL $a $b")
+      }
   }
 
   def sameRows(
       expectedAnswer: Seq[Row],
       sparkAnswer: Seq[Row]): Unit = {
-    assert(compare(prepareAnswer(expectedAnswer), prepareAnswer(sparkAnswer)))
+    val areEqual = compare(prepareAnswer(expectedAnswer), prepareAnswer(sparkAnswer))
+    assert(areEqual._1, areEqual._2)
   }
 
   test("STRING") {
@@ -776,4 +819,41 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
 //      }
 //    })
 //  }
+
+  test("Date") {
+    withGpuSparkSession(spark => {
+      val schema =
+        """message spark {
+          |  required int32 date_test (DATE);
+          |}
+        """.stripMargin
+
+      withTempDir(spark) { dir =>
+        val testPath = dir + "/DATE_TEST.parquet"
+        writeDirect(testPath, schema, { rc =>
+          rc.message {
+            rc.field("date_test", 0) {
+              rc.addInteger(1)
+            }
+          }
+        }, { rc =>
+          rc.message {
+            rc.field("date_test", 0) {
+              rc.addInteger(2)
+            }
+          }
+        })
+
+        val data = spark.read.parquet(testPath).collect()
+        System.err.println(s"DATA: ${data.toList}")
+        data.foreach { row =>
+          row.toSeq.foreach { value =>
+            System.err.println(s"GOT: $value ${value.getClass}")
+          }
+        }
+        sameRows(Seq(Row(new Date(1 * 24 * 60 * 60 * 1000)),
+          Row(new Date(2 * 24 * 60 * 60 * 1000))), data)
+      }
+    })
+  }
 }
