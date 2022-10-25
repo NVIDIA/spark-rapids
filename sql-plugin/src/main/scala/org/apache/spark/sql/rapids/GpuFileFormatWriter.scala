@@ -81,8 +81,8 @@ object GpuFileFormatWriter extends Logging {
   }
 
   /** Describes how concurrent output writers should be executed. */
-  case class GpuConcurrentOutputWriterSpec(maxWriters: Int, exec: GpuExec,
-      sortOrder: Seq[SortOrder])
+  case class GpuConcurrentOutputWriterSpec(maxWriters: Int, output: Seq[Attribute],
+      batchSize: Long, sortOrder: Seq[SortOrder])
 
   /**
    * Basic work flow of this command is:
@@ -222,8 +222,9 @@ object GpuFileFormatWriter extends Logging {
           requiredOrdering
               .map(attr => SortOrder(attr, Ascending)), finalOutputSpec.outputColumns)
         if (concurrentWritersEnabled) {
+          val batchSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(sparkSession.sessionState.conf)
           (empty2NullPlan.executeColumnar(),
-              Some(GpuConcurrentOutputWriterSpec(maxWriters, empty2NullPlan.asInstanceOf[GpuExec],
+              Some(GpuConcurrentOutputWriterSpec(maxWriters, empty2NullPlan.output, batchSize,
                 orderingExpr)))
         } else {
           val sortType = if (useStableSort) {

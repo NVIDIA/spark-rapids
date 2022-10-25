@@ -45,10 +45,12 @@ class GpuWorkerProps(
     this("0m", 0, "None")
   }
   def isMissingInfo: Boolean = {
-    count == 0 || memory.startsWith("0") || name == "None"
+    memory == null || memory.isEmpty || name == null || name.isEmpty ||
+       count == 0 || memory.startsWith("0") || name == "None"
   }
   def isEmpty: Boolean = {
-    count == 0 && memory.startsWith("0") && name == "None"
+    count == 0 && (memory == null || memory.isEmpty || memory.startsWith("0")) &&
+      (name == null || name.isEmpty || name == "None")
   }
   /**
    * If the GPU count is missing, it will set 1 as a default value
@@ -64,7 +66,7 @@ class GpuWorkerProps(
     }
   }
   def setDefaultGpuNameIfMissing: Boolean = {
-    if (name == "None") {
+    if (name == null || name.isEmpty || name == "None") {
       name = AutoTuner.DEF_WORKER_GPU_NAME
       true
     } else {
@@ -75,13 +77,13 @@ class GpuWorkerProps(
   /**
    * If the GPU memory is missing, it will sets a default valued based on the GPU device and the
    * static HashMap [[AutoTuner.DEF_WORKER_GPU_MEMORY_MB]].
-   * If it is still missing, it sets a default to 16384m.
+   * If it is still missing, it sets a default to 15109m.
    *
    * @return true if the value has been updated.
    */
   def setDefaultGpuMemIfMissing: Boolean = {
-    if (memory.startsWith("0")) {
-      memory = AutoTuner.DEF_WORKER_GPU_MEMORY_MB.getOrElse(getName, "16384m")
+    if (memory == null || memory.isEmpty || memory.startsWith("0")) {
+      memory = AutoTuner.DEF_WORKER_GPU_MEMORY_MB.getOrElse(getName, "15109m")
       true
     } else {
       false
@@ -129,7 +131,7 @@ class SystemClusterProps(
   }
   def isEmpty: Boolean = {
     // consider the object incorrect if either numCores or memory are not set.
-    numCores <= 0 || memory.startsWith("0")
+    memory == null || memory.isEmpty || numCores <= 0 || memory.startsWith("0")
   }
   def setDefaultNumWorkersIfMissing(): Boolean = {
     if (numWorkers <= 0) {
@@ -649,8 +651,10 @@ class AutoTuner(
   }
 
   /**
-   * Calculate max partition bytes using task input size and existing setting for maxPartitionBytes.
-   * Note that this won't apply the same on iceberg.
+   * Calculate max partition bytes using the max task input size and existing setting
+   * for maxPartitionBytes. Note that this won't apply the same on iceberg.
+   * The max bytes here does not distinguish between GPU and CPU reads so we could
+   * improve that in the future.
    * Eg,
    * MIN_PARTITION_BYTES_RANGE = 128m, MAX_PARTITION_BYTES_RANGE = 256m
    * (1) Input:  maxPartitionBytes = 512m
@@ -662,26 +666,29 @@ class AutoTuner(
    */
   private def calculateMaxPartitionBytes(maxPartitionBytes: String): String = {
     val app = appInfo.get
+    // Autotuner only supports a single app right now, so we get whatever value is here
+    val inputBytesMax = if (app.maxTaskInputBytesRead.nonEmpty) {
+      app.maxTaskInputBytesRead.head.maxTaskInputBytesRead / 1024 / 1024
+    } else {
+      0.0
+    }
     val maxPartitionBytesNum = convertToMB(maxPartitionBytes)
-    if (app.sqlTaskAggMetrics.isEmpty) { // avoid division by zero
+    if (inputBytesMax == 0.0) {
       maxPartitionBytesNum.toString
     } else {
-      val taskInputSizeInBytes =
-        app.sqlTaskAggMetrics.map(_.inputBytesReadAvg).sum / app.sqlTaskAggMetrics.size
-      val taskInputSizeInMB = taskInputSizeInBytes / (1024 * 1024)
-      if (taskInputSizeInMB > 0 &&
-        taskInputSizeInMB < MIN_PARTITION_BYTES_RANGE_MB) {
+      if (inputBytesMax > 0 &&
+        inputBytesMax < MIN_PARTITION_BYTES_RANGE_MB) {
         // Increase partition size
         val calculatedMaxPartitionBytes = Math.min(
           maxPartitionBytesNum *
-            (MIN_PARTITION_BYTES_RANGE_MB / taskInputSizeInMB),
+            (MIN_PARTITION_BYTES_RANGE_MB / inputBytesMax),
           MAX_PARTITION_BYTES_BOUND_MB)
         calculatedMaxPartitionBytes.toLong.toString
-      } else if (taskInputSizeInMB > MAX_PARTITION_BYTES_RANGE_MB) {
+      } else if (inputBytesMax > MAX_PARTITION_BYTES_RANGE_MB) {
         // Decrease partition size
         val calculatedMaxPartitionBytes = Math.min(
           maxPartitionBytesNum /
-            (taskInputSizeInMB / MAX_PARTITION_BYTES_RANGE_MB),
+            (inputBytesMax / MAX_PARTITION_BYTES_RANGE_MB),
           MAX_PARTITION_BYTES_BOUND_MB)
         calculatedMaxPartitionBytes.toLong.toString
       } else {

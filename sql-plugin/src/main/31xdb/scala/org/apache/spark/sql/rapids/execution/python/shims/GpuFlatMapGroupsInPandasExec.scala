@@ -154,13 +154,7 @@ case class GpuFlatMapGroupsInPandasExec(
             // The whole group data should be written in a single call, so here is unlimited
             Int.MaxValue,
             spillCallback.semaphoreWaitTime,
-            onDataWriteFinished = null,
-            pythonOutputSchema,
-            // We can not assert the result batch from Python has the same row number with the
-            // input batch. Because Grouped Map UDF allows the output of arbitrary length.
-            // So try to read as many as possible by specifying `minReadTargetBatchSize` as
-            // `Int.MaxValue` here.
-            Int.MaxValue)
+            pythonOutputSchema)
         } else {
           new GpuArrowPythonRunner(
             chainedFunc,
@@ -171,9 +165,7 @@ case class GpuFlatMapGroupsInPandasExec(
             pythonRunnerConf,
             Int.MaxValue,
             spillCallback.semaphoreWaitTime,
-            onDataWriteFinished = null,
-            pythonOutputSchema,
-            Int.MaxValue)
+            pythonOutputSchema)
         }
 
         executePython(pyInputIter, localOutput, pyRunner, mNumOutputRows, mNumOutputBatches)

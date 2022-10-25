@@ -906,6 +906,7 @@
                                         <source>${project.basedir}/src/main/320+-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/321+/scala</source>
                                         <source>${project.basedir}/src/main/330+/scala</source>
+                                        <source>${project.basedir}/src/main/330+-noncdh/scala</source>
                                         <source>${project.basedir}/src/main/post320-treenode/scala</source>
                                     </sources>
                                 </configuration>
@@ -1297,6 +1298,20 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>2.12.4</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <executions>
+                        <execution>
+                            <id>default-compile</id>
+                            <phase>none</phase>
+                        </execution>
+                        <execution>
+                            <id>default-test-compile</id>
+                            <phase>none</phase>
+                        </execution>
+                    </executions>
                 </plugin>
                 <plugin>
                     <groupId>net.alchim31.maven</groupId>

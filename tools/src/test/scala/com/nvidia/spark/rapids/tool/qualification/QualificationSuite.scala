@@ -1046,19 +1046,39 @@ class QualificationSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
-  test("--help at end of command line arguments") {
-    val qualLogDir = ToolTestUtils.getTestResourcePath("spark-events-qualification")
-    val logFiles = Array(s"$qualLogDir/gpu_eventlog")
-    TrampolineUtil.withTempDir { outpath =>
-      val allArgs = Array(
-        "--output-directory",
-        outpath.getAbsolutePath())
-      val lastArgs = Array("--help")
+  test("test potential problems timestamp") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "timezone") { spark =>
+        import spark.implicits._
+        val testData = Seq((1, 1662519019), (2, 1662519020)).toDF("id", "timestamp")
+        spark.sparkContext.setJobDescription("timestamp functions as potential problems")
+        testData.createOrReplaceTempView("t1")
+        spark.sql("SELECT id, hour(current_timestamp()), second(to_timestamp(timestamp)) FROM t1")
+      }
 
-      val appArgs = new QualificationArgs(allArgs ++ logFiles ++ lastArgs)
-      val (exit, appSum) = QualificationMain.mainInternal(appArgs)
-      assert(exit == 0)
-      assert(appSum.size == 0)
+      // run the qualification tool
+      TrampolineUtil.withTempDir { outpath =>
+        val appArgs = new QualificationArgs(Array(
+          "--output-directory",
+          outpath.getAbsolutePath,
+          eventLog))
+
+        val (exit, sumInfo) =
+          QualificationMain.mainInternal(appArgs)
+        assert(exit == 0)
+  
+        // the code above that runs the Spark query stops the Sparksession
+        // so create a new one to read in the csv file
+        createSparkSession()
+
+        // validate that the SQL description in the csv file escapes commas properly
+        val outputResults = s"$outpath/rapids_4_spark_qualification_output/" +
+          s"rapids_4_spark_qualification_output.csv"
+        val outputActual = readExpectedFile(new File(outputResults))
+        assert(outputActual.collect().size == 1)
+        assert(outputActual.select("Potential Problems").first.getString(0) == 
+          "TIMEZONE to_timestamp():TIMEZONE hour():TIMEZONE current_timestamp():TIMEZONE second()")
+      }
     }
   }
 }

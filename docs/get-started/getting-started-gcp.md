@@ -7,7 +7,15 @@ parent: Getting-Started
 
 # Getting started with RAPIDS Accelerator on GCP Dataproc
  [Google Cloud Dataproc](https://cloud.google.com/dataproc) is Google Cloud's fully managed Apache
- Spark and Hadoop service.  This guide will walk through the steps to:
+ Spark and Hadoop service.  The quick start guide will go through:
+
+* [Quick Start Prerequisites](#quick-start-prerequisites) 
+* [Qualify CPU workloads for GPU acceleration](#qualify-cpu-workloads-for-gpu-acceleration)
+* [Bootstrap GPU cluster with optimized settings](#bootstrap-gpu-cluster-with-optimized-settings)
+* [Tune applications on GPU cluster](#tune-applications-on-gpu-cluster)
+* [Diagnose GPU Cluster](#diagnose-gpu-cluster)
+
+The advanced guide will walk through the steps to:
 
 * [Create a Dataproc Cluster Accelerated by GPUs](#create-a-dataproc-cluster-accelerated-by-gpus)
 * [Run Pyspark or Scala ETL and XGBoost training Notebook on a Dataproc Cluster Accelerated by
@@ -15,6 +23,196 @@ parent: Getting-Started
 * [Submit the same sample ETL application as a Spark job to a Dataproc Cluster Accelerated by
   GPUs](#submit-spark-jobs-to-a-dataproc-cluster-accelerated-by-gpus)
 * [Build custom Dataproc image to accelerate cluster initialization time](#build-custom-dataproc-image-to-accelerate-cluster-init-time)
+
+## Quick Start Prerequisites
+
+* gcloud CLI is installed: https://cloud.google.com/sdk/docs/install
+* python 3.8+
+* `pip install spark-rapids-user-tools`
+
+## Qualify CPU Workloads for GPU Acceleration
+
+The [qualification tool](https://nvidia.github.io/spark-rapids/docs/spark-qualification-tool.html) is launched on a Dataproc cluster that has applications that have already run.
+The tool will output the applications recommended for acceleration along with estimated speed-up
+and cost saving metrics.  Additionally, it will provide information on how to launch a GPU-
+accelerated cluster to take advantage of the speed-up and cost savings.
+
+Usage: `spark_rapids_dataproc qualification --cluster <cluster-name> --region <region>`
+
+Help (to see all options available): `spark_rapids_dataproc qualification --help`
+
+Example output:
+```
++----+------------+--------------------------------+----------------------+-----------------+-----------------+---------------+-----------------+
+|    | App Name   | App ID                         | Recommendation       |   Estimated GPU |   Estimated GPU |           App |   Estimated GPU |
+|    |            |                                |                      |         Speedup |     Duration(s) |   Duration(s) |      Savings(%) |
+|----+------------+--------------------------------+----------------------+-----------------+-----------------+---------------+-----------------|
+|  0 | query24    | application_1664888311321_0011 | Strongly Recommended |            3.49 |          257.18 |        897.68 |           59.70 |
+|  1 | query78    | application_1664888311321_0009 | Strongly Recommended |            3.35 |          113.89 |        382.35 |           58.10 |
+|  2 | query23    | application_1664888311321_0010 | Strongly Recommended |            3.08 |          325.77 |       1004.28 |           54.37 |
+|  3 | query64    | application_1664888311321_0008 | Strongly Recommended |            2.91 |          150.81 |        440.30 |           51.82 |
+|  4 | query50    | application_1664888311321_0003 | Recommended          |            2.47 |          101.54 |        250.95 |           43.08 |
+|  5 | query16    | application_1664888311321_0005 | Recommended          |            2.36 |          106.33 |        251.95 |           40.63 |
+|  6 | query38    | application_1664888311321_0004 | Recommended          |            2.29 |           67.37 |        154.33 |           38.59 |
+|  7 | query87    | application_1664888311321_0006 | Recommended          |            2.25 |           75.67 |        170.69 |           37.64 |
+|  8 | query51    | application_1664888311321_0002 | Recommended          |            1.53 |           53.94 |         82.63 |            8.18 |
++----+------------+--------------------------------+----------------------+-----------------+-----------------+---------------+-----------------+
+To launch a GPU-accelerated cluster with Spark RAPIDS, add the following to your cluster creation script:
+        --initialization-actions=gs://goog-dataproc-initialization-actions-us-central1/gpu/install_gpu_driver.sh,gs://goog-dataproc-initialization-actions-us-central1/rapids/rapids.sh \
+        --worker-accelerator type=nvidia-tesla-t4,count=2 \
+        --metadata gpu-driver-provider="NVIDIA" \
+        --metadata rapids-runtime=SPARK \
+        --cuda-version=11.5
+```
+
+## Bootstrap GPU Cluster with Optimized Settings
+
+The bootstrap tool will apply optimized settings for the RAPIDS Accelerator on Apache Spark on a 
+GPU cluster for Dataproc.  The tool will fetch the characteristics of the cluster -- including 
+number of workers, worker cores, worker memory, and GPU accelerator type and count.  It will use
+the cluster properties to then determine the optimal settings for running GPU-accelerated Spark 
+applications.
+
+Usage: `spark_rapids_dataproc bootstrap --cluster <cluster-name> --region <region>`
+
+Help (to see all options available): `spark_rapids_dataproc bootstrap --help`
+
+Example output: 
+```
+##### BEGIN : RAPIDS bootstrap settings for gpu-cluster
+spark.executor.cores=16
+spark.executor.memory=32768m
+spark.executor.memoryOverhead=7372m
+spark.rapids.sql.concurrentGpuTasks=2
+spark.rapids.memory.pinnedPool.size=4096m
+spark.sql.files.maxPartitionBytes=512m
+spark.task.resource.gpu.amount=0.0625
+##### END : RAPIDS bootstrap settings for gpu-cluster
+```
+
+A detailed description for bootstrap settings with usage information is available in the [RAPIDS Accelerator for Apache Spark Configuration](https://nvidia.github.io/spark-rapids/docs/configs.html) and [Spark Configuration](https://spark.apache.org/docs/latest/configuration.html) page.
+
+## Tune Applications on GPU Cluster
+
+Once Spark applications have been run on the GPU cluster, the [profiling tool](https://nvidia.github.io/spark-rapids/docs/spark-profiling-tool.html) can be run to 
+analyze the event logs of the applications to determine if more optimal settings should be
+configured.  The tool will output a per-application set of config settings to be adjusted for
+enhanced performance.
+
+Usage: `spark_rapids_dataproc profiling --cluster <cluster-name> --region <region>`
+
+Help (to see all options available): `spark_rapids_dataproc profiling --help`
+
+Example output:
+```
++--------------------------------+--------------------------------------------------+--------------------------------------------------------------------------------------------------+
+| App ID                         | Recommendations                                  | Comments                                                                                         |
++================================+==================================================+==================================================================================================+
+| application_1664894105643_0011 | --conf spark.executor.cores=16                   | - 'spark.task.resource.gpu.amount' was not set.                                                  |
+|                                | --conf spark.executor.memory=32768m              | - 'spark.rapids.sql.concurrentGpuTasks' was not set.                                             |
+|                                | --conf spark.executor.memoryOverhead=7372m       | - 'spark.rapids.memory.pinnedPool.size' was not set.                                             |
+|                                | --conf spark.rapids.memory.pinnedPool.size=4096m | - 'spark.executor.memoryOverhead' was not set.                                                   |
+|                                | --conf spark.rapids.sql.concurrentGpuTasks=2     | - 'spark.sql.files.maxPartitionBytes' was not set.                                               |
+|                                | --conf spark.sql.files.maxPartitionBytes=1571m   | - 'spark.sql.shuffle.partitions' was not set.                                                    |
+|                                | --conf spark.sql.shuffle.partitions=200          |                                                                                                  |
+|                                | --conf spark.task.resource.gpu.amount=0.0625     |                                                                                                  |
++--------------------------------+--------------------------------------------------+--------------------------------------------------------------------------------------------------+
+| application_1664894105643_0002 | --conf spark.executor.cores=16                   | - 'spark.task.resource.gpu.amount' was not set.                                                  |
+|                                | --conf spark.executor.memory=32768m              | - 'spark.rapids.sql.concurrentGpuTasks' was not set.                                             |
+|                                | --conf spark.executor.memoryOverhead=7372m       | - 'spark.rapids.memory.pinnedPool.size' was not set.                                             |
+|                                | --conf spark.rapids.memory.pinnedPool.size=4096m | - 'spark.executor.memoryOverhead' was not set.                                                   |
+|                                | --conf spark.rapids.sql.concurrentGpuTasks=2     | - 'spark.sql.files.maxPartitionBytes' was not set.                                               |
+|                                | --conf spark.sql.files.maxPartitionBytes=3844m   | - 'spark.sql.shuffle.partitions' was not set.                                                    |
+|                                | --conf spark.sql.shuffle.partitions=200          |                                                                                                  |
+|                                | --conf spark.task.resource.gpu.amount=0.0625     |                                                                                                  |
++--------------------------------+--------------------------------------------------+--------------------------------------------------------------------------------------------------+
+```
+
+## Diagnose GPU Cluster
+
+The diagnostic tool can be run to check a GPU cluster with RAPIDS Accelerator for Apache Spark
+is healthy and ready for Spark jobs, such as checking the version of installed NVIDIA driver,
+cuda-toolkit, RAPIDS Accelerator and running Spark test jobs etc. This tool also can
+be used by the frontline support team for basic diagnostic and troubleshooting before escalating
+to NVIDIA RAPIDS Accelerator for Apache Spark engineering team.
+
+Usage: `spark_rapids_dataproc diagnostic --cluster <cluster-name> --region <region>`
+
+Help (to see all options available): `spark_rapids_dataproc diagnostic --help`
+
+Example output:
+
+```text
+*** Running diagnostic function "nv_driver" ***
+Warning: Permanently added 'compute.9009746126288801979' (ECDSA) to the list of known hosts.
+Fri Oct 14 05:17:55 2022
++-----------------------------------------------------------------------------+
+| NVIDIA-SMI 460.106.00   Driver Version: 460.106.00   CUDA Version: 11.2     |
+|-------------------------------+----------------------+----------------------+
+| GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |
+|                               |                      |               MIG M. |
+|===============================+======================+======================|
+|   0  Tesla T4            On   | 00000000:00:04.0 Off |                    0 |
+| N/A   48C    P8    10W /  70W |      0MiB / 15109MiB |      0%      Default |
+|                               |                      |                  N/A |
++-------------------------------+----------------------+----------------------+
+
++-----------------------------------------------------------------------------+
+| Processes:                                                                  |
+|  GPU   GI   CI        PID   Type   Process name                  GPU Memory |
+|        ID   ID                                                   Usage      |
+|=============================================================================|
+|  No running processes found                                                 |
++-----------------------------------------------------------------------------+
+NVRM version: NVIDIA UNIX x86_64 Kernel Module  460.106.00  Tue Sep 28 12:05:58 UTC 2021
+GCC version:  gcc version 7.5.0 (Ubuntu 7.5.0-3ubuntu1~18.04)
+Connection to 34.68.242.247 closed.
+*** Check "nv_driver": PASS ***
+*** Running diagnostic function "nv_driver" ***
+Warning: Permanently added 'compute.6788823627063447738' (ECDSA) to the list of known hosts.
+Fri Oct 14 05:18:02 2022
++-----------------------------------------------------------------------------+
+| NVIDIA-SMI 460.106.00   Driver Version: 460.106.00   CUDA Version: 11.2     |
+|-------------------------------+----------------------+----------------------+
+| GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |
+|                               |                      |               MIG M. |
+|===============================+======================+======================|
+|   0  Tesla T4            On   | 00000000:00:04.0 Off |                    0 |
+| N/A   35C    P8     9W /  70W |      0MiB / 15109MiB |      0%      Default |
+|                               |                      |                  N/A |
++-------------------------------+----------------------+----------------------+
+
++-----------------------------------------------------------------------------+
+| Processes:                                                                  |
+|  GPU   GI   CI        PID   Type   Process name                  GPU Memory |
+|        ID   ID                                                   Usage      |
+|=============================================================================|
+|  No running processes found                                                 |
++-----------------------------------------------------------------------------+
+NVRM version: NVIDIA UNIX x86_64 Kernel Module  460.106.00  Tue Sep 28 12:05:58 UTC 2021
+GCC version:  gcc version 7.5.0 (Ubuntu 7.5.0-3ubuntu1~18.04)
+Connection to 34.123.223.104 closed.
+*** Check "nv_driver": PASS ***
+*** Running diagnostic function "cuda_version" ***
+Connection to 34.68.242.247 closed.
+found cuda major version: 11
+*** Check "cuda_version": PASS ***
+*** Running diagnostic function "cuda_version" ***
+Connection to 34.123.223.104 closed.
+found cuda major version: 11
+*** Check "cuda_version": PASS ***
+...
+********************************************************************************
+Overall check result: PASS
+```
+
+Please note that the diagnostic tool supports the following:
+
+* Dataproc 2.0 with image of Debian 10 or Ubuntu 18.04 (Rocky8 support is coming soon)
+* GPU cluster that must have 1 worker node at least. Single node cluster (1 master, 0 workers) is
+  not supported
 
 ## Create a Dataproc Cluster Accelerated by GPUs
  
@@ -67,8 +265,8 @@ The script below will initialize with the following:
     export REGION=[Your Preferred GCP Region]
     export GCS_BUCKET=[Your GCS Bucket]
     export CLUSTER_NAME=[Your Cluster Name]
-    export NUM_GPUS=4
-    export NUM_WORKERS=5
+    export NUM_GPUS=2
+    export NUM_WORKERS=4
 
 gcloud dataproc clusters create $CLUSTER_NAME  \
     --region=$REGION \
@@ -85,6 +283,10 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --enable-component-gateway \
     --subnet=default
 ```
+
+Explanation of parameters:
+* NUM_GPUS = number of GPUs to attach to each worker node in the cluster
+* NUM_WORKERS = number of Spark worker nodes in the cluster
 
 This takes around 10-15 minutes to complete.  You can navigate to the Dataproc clusters tab in the
 Google Cloud Console to see the progress.
@@ -105,7 +307,7 @@ If you'd like to further accelerate init time to 4-5 minutes, create a custom Da
     export GCS_BUCKET=[Your GCS Bucket]
     export CLUSTER_NAME=[Your Cluster Name]
     export NUM_GPUS=1
-    export NUM_WORKERS=5
+    export NUM_WORKERS=4
 
 gcloud dataproc clusters create $CLUSTER_NAME  \
     --region=$REGION \
@@ -125,6 +327,10 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --subnet=default
 ``` 
 
+Explanation of parameters:
+* NUM_GPUS = number of GPUs to attach to each worker node in the cluster
+* NUM_WORKERS = number of Spark worker nodes in the cluster
+
 To change the MIG instance profile you can specify either the profile id or profile name via the
 metadata parameter `MIG_CGI`. Below is an example of using a profile name and a profile id.
 
@@ -133,12 +339,19 @@ metadata parameter `MIG_CGI`. Below is an example of using a profile name and a 
 ```
 
 This may take around 10-15 minutes to complete.  You can navigate to the Dataproc clusters tab in
-the Google Cloud Console to see the progress.
+the Google Cloud Console to see the progress.  
 
 ![Dataproc Cluster](../img/GCP/dataproc-cluster.png)
 
 If you'd like to further accelerate init time to 4-5 minutes, create a custom Dataproc image using
 [this](#build-custom-dataproc-image-to-accelerate-cluster-init-time) guide. 
+
+### Cluster creation troubleshooting
+If you encounter an error related to GPUs not being available because of your account quotas, please 
+go to this page for updating your quotas: [Quotas and limits](https://cloud.google.com/compute/quotas).
+
+If you encounter an error related to GPUs not available in the specific region or zone, you will 
+need to update the REGION or ZONE parameter in the cluster creation command.
 
 ## Run PySpark or Scala Notebook on a Dataproc Cluster Accelerated by GPUs
 To use notebooks with a Dataproc cluster, click on the cluster name under the Dataproc cluster tab

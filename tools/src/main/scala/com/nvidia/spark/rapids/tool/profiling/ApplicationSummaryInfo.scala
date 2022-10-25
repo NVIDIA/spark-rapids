@@ -36,4 +36,6 @@ case class ApplicationSummaryInfo(
     val unsupportedOps: Seq[UnsupportedOpsProfileResult],
     val sparkProps: Seq[RapidsPropertyProfileResult],
     val sqlStageInfo: Seq[SQLStageInfoProfileResult],
-    val wholeStage: Seq[WholeStageCodeGenResults])
+    val wholeStage: Seq[WholeStageCodeGenResults],
+    val maxTaskInputBytesRead: Seq[SQLMaxTaskInputSizes],
+    val appLogPath: Seq[AppLogPathProfileResults])
