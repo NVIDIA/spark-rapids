@@ -29,7 +29,6 @@ import org.apache.parquet.hadoop.api.WriteSupport
 import org.apache.parquet.hadoop.api.WriteSupport.WriteContext
 import org.apache.parquet.io.api.{Binary, RecordConsumer}
 import org.apache.parquet.schema.{MessageType, MessageTypeParser}
-import org.apache.spark.SparkConf
 import org.scalatest.concurrent.Eventually
 
 import org.apache.spark.sql.{Row, SparkSession}
@@ -257,11 +256,45 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     })
   }
 
+//  // The java code on the CPU does not support UUID at all, so this test is not working, or fully
+//  // done
+//  test("UUID") {
+//    withCpuSparkSession(spark => {
+//      val schema =
+//        """message spark {
+//          |  required fixed_len_byte_array(16) uuid_test (UUID),
+//          |}
+//        """.stripMargin
+//
+//      withTempDir(spark) { dir =>
+//        val testPath = dir + "/UUID_TEST.parquet"
+//        writeDirect(testPath, schema, { rc =>
+//          rc.message {
+//            rc.field("uuid_test", 0) {
+//              rc.addBinary(Binary.fromConstantByteArray(
+//                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+//                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0A)))
+//            }
+//          }
+//        })
+//
+//        val data = spark.read.parquet(testPath).collect()
+//        // TODO not sure
+//        //sameRows(Seq(Row("A")), data)
+//      }
+//    })
+//  }
+
+  // TODO should we test overflow cases for INT_8 etc. It is implementation specific what
+  //  to do in those cases but we probably want to match what spark does....
   test("int32") {
     withGpuSparkSession(spark => {
       val schema =
         """message spark {
+          |  required int32 byte_test (INT_8);
+          |  required int32 short_test (INT_16);
           |  required int32 int_test;
+          |  required int32 int_test2 (INT_32);
           |}
         """.stripMargin
 
@@ -269,20 +302,156 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
         val testPath = dir + "/INT32_TEST.parquet"
         writeDirect(testPath, schema, { rc =>
           rc.message {
-            rc.field("int_test", 0) {
+            rc.field("byte_test", 0) {
+              rc.addInteger(22)
+            }
+            rc.field("short_test", 1) {
+              rc.addInteger(300)
+            }
+            rc.field("int_test", 2) {
+              rc.addInteger(1)
+            }
+            rc.field("int_test2", 3) {
+              rc.addInteger(3)
+            }
+          }
+        }, { rc =>
+          rc.message {
+            rc.field("byte_test", 0) {
+              rc.addInteger(-21)
+            }
+            rc.field("short_test", 1) {
+              rc.addInteger(-301)
+            }
+            rc.field("int_test", 2) {
+              rc.addInteger(-2)
+            }
+            rc.field("int_test2", 3) {
+              rc.addInteger(-4)
+            }
+          }
+        })
+
+        val data = spark.read.parquet(testPath).collect()
+        sameRows(Seq(Row(22, 300, 1, 3),
+          Row(-21, -301, -2, -4)), data)
+      }
+    })
+  }
+
+  test("int32 - unsigned") {
+    withGpuSparkSession(spark => {
+      // TODO the UINT is not supported on older version of spark. Need to figure out where it is
+      //  supported so the test works properly
+      val schema =
+      """message spark {
+        |  required int32 ubyte_test (UINT_8);
+        |  required int32 ushort_test (UINT_16);
+        |  required int32 uint_test (UINT_32);
+        |}
+        """.stripMargin
+
+      withTempDir(spark) { dir =>
+        val testPath = dir + "/UINT32_TEST.parquet"
+        writeDirect(testPath, schema, { rc =>
+          rc.message {
+            rc.field("ubyte_test", 0) {
+              rc.addInteger(22)
+            }
+            rc.field("ushort_test", 1) {
+              rc.addInteger(300)
+            }
+            rc.field("uint_test", 2) {
               rc.addInteger(1)
             }
           }
         }, { rc =>
           rc.message {
-            rc.field("int_test", 0) {
+            rc.field("ubyte_test", 0) {
+              rc.addInteger(21)
+            }
+            rc.field("ushort_test", 1) {
+              rc.addInteger(301)
+            }
+            rc.field("uint_test", 2) {
               rc.addInteger(2)
             }
           }
         })
 
         val data = spark.read.parquet(testPath).collect()
-        sameRows(Seq(Row(1), Row(2)), data)
+        sameRows(Seq(Row(22, 300, 1),
+          Row(21, 301, 2)), data)
+      }
+    })
+  }
+
+  test("int64") {
+    withGpuSparkSession(spark => {
+      val schema =
+        """message spark {
+          |  required int64 int_test;
+          |  required int64 int_test2 (INT_64);
+          |}
+        """.stripMargin
+
+      withTempDir(spark) { dir =>
+        val testPath = dir + "/INT64_TEST.parquet"
+        writeDirect(testPath, schema, { rc =>
+          rc.message {
+            rc.field("int_test", 0) {
+              rc.addLong(22)
+            }
+            rc.field("int_test2", 1) {
+              rc.addLong(300)
+            }
+          }
+        }, { rc =>
+          rc.message {
+            rc.field("int_test", 0) {
+              rc.addLong(-21)
+            }
+            rc.field("int_test2", 1) {
+              rc.addLong(-301)
+            }
+          }
+        })
+
+        val data = spark.read.parquet(testPath).collect()
+        sameRows(Seq(Row(22, 300),
+          Row(-21, -301)), data)
+      }
+    })
+  }
+
+  test("int64 - unsigned") {
+    withGpuSparkSession(spark => {
+      // TODO the UINT is not supported on older version of spark. Need to figure out where it is
+      //  supported so the test works properly
+      val schema =
+      """message spark {
+        |  required int64 uint_test (UINT_64);
+        |}
+        """.stripMargin
+
+      withTempDir(spark) { dir =>
+        val testPath = dir + "/UINT64_TEST.parquet"
+        writeDirect(testPath, schema, { rc =>
+          rc.message {
+            rc.field("uint_test", 0) {
+              rc.addLong(22)
+            }
+          }
+        }, { rc =>
+          rc.message {
+            rc.field("uint_test", 0) {
+              rc.addLong(21)
+            }
+          }
+        })
+
+        val data = spark.read.parquet(testPath).collect()
+        sameRows(Seq(Row(22), Row(21)), data)
       }
     })
   }
@@ -355,6 +524,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     })
   }
 
+  //https://github.com/NVIDIA/spark-rapids/issues/6915
   test("FIXED_LEN_BYTE_ARRAY(16) Decimal") {
     withGpuSparkSession(spark => {
       val schema =
@@ -471,96 +641,110 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     })
   }
 
-  test("binary Decimal") {
-    withGpuSparkSession(spark => {
-      val schema =
-        """message spark {
-          |  required binary int_test (DECIMAL(9,2));
-          |  required binary long_test (DECIMAL(15,0));
-          |  required binary bin_test (DECIMAL(35,4));
-          |}
-        """.stripMargin
-
-      withTempDir(spark) { dir =>
-        val testPath = dir + "/BINARY_DEC_TEST.parquet"
-        writeDirect(testPath, schema, { rc =>
-          rc.message {
-            rc.field("int_test", 0) {
-              rc.addBinary(Binary.fromConstantByteArray(
-                Array(0x00, 0x00, 0x00, 0x01)))
-            }
-            rc.field("long_test", 1) {
-              rc.addBinary(Binary.fromConstantByteArray(
-                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
-            }
-            rc.field("bin_test", 2) {
-              rc.addBinary(Binary.fromConstantByteArray(
-                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
-            }
-          }
-        }, { rc =>
-          rc.message {
-            rc.field("int_test", 0) {
-              rc.addBinary(Binary.fromConstantByteArray(
-                Array(0x02)))
-            }
-            rc.field("long_test", 1) {
-              rc.addBinary(Binary.fromConstantByteArray(
-                Array(0x00, 0x02)))
-            }
-
-            rc.field("bin_test", 2) {
-              rc.addBinary(Binary.fromConstantByteArray(
-                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02)))
-            }
-          }
-        })
-
-        val data = spark.read.parquet(testPath).collect()
-        sameRows(Seq(Row(BigDecimal("0.01"), BigDecimal("1"), BigDecimal("0.0001")),
-          Row(BigDecimal("0.02"), BigDecimal("2"), BigDecimal("0.0002"))), data)
-      }
-    },
-      // To make the CPU happy we need to turn off the vectorized reader
-      new SparkConf().set("spark.sql.parquet.enableVectorizedReader", "false"))
-  }
-
-  // This bypasses the rapids accelerator code and gets errors in CUDF itself.
-  test("binary Decimal2") {
-    withGpuSparkSession(spark => {
-      val schema =
-        """message spark {
-          |  required binary bin_test (DECIMAL(19,0));
-          |}
-        """.stripMargin
-
-      withTempDir(spark) { dir =>
-        val testPath = dir + "/BINARY_DEC2_TEST.parquet"
-        writeDirect(testPath, schema, { rc =>
-          rc.message {
-            rc.field("bin_test", 0) {
-              rc.addBinary(Binary.fromConstantByteArray(
-                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
-            }
-          }
-        }, { rc =>
-          rc.message {
-            rc.field("bin_test", 0) {
-              rc.addBinary(Binary.fromConstantByteArray(
-                Array(0x02)))
-            }
-          }
-        })
-
-        val data = spark.read.parquet(testPath).collect()
-        sameRows(Seq(Row(BigDecimal("1")),
-          Row(BigDecimal("2"))), data)
-      }
-    },
-      // To make the CPU happy we need to turn off the vectorized reader
-      new SparkConf().set("spark.sql.parquet.enableVectorizedReader", "false"))
-  }
+//  //https://github.com/NVIDIA/spark-rapids/issues/6915
+//  test("binary Decimal") {
+//    withGpuSparkSession(spark => {
+//      val schema =
+//        """message spark {
+//          |  required binary int_test (DECIMAL(9,2));
+//          |  required binary long_test (DECIMAL(15,0));
+//          |  required binary bin_test (DECIMAL(35,4));
+//          |}
+//        """.stripMargin
+//
+//      withTempDir(spark) { dir =>
+//        val testPath = dir + "/BINARY_DEC_TEST.parquet"
+//        writeDirect(testPath, schema, { rc =>
+//          rc.message {
+//            rc.field("int_test", 0) {
+//              rc.addBinary(Binary.fromConstantByteArray(
+//                Array(0x00, 0x00, 0x00, 0x01)))
+//            }
+//            rc.field("long_test", 1) {
+//              rc.addBinary(Binary.fromConstantByteArray(
+//                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
+//            }
+//            rc.field("bin_test", 2) {
+//              rc.addBinary(Binary.fromConstantByteArray(
+//                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+//                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
+//            }
+//          }
+//        }, { rc =>
+//          rc.message {
+//            rc.field("int_test", 0) {
+//              rc.addBinary(Binary.fromConstantByteArray(
+//                Array(0x02)))
+//            }
+//            rc.field("long_test", 1) {
+//              rc.addBinary(Binary.fromConstantByteArray(
+//                Array(0x00, 0x02)))
+//            }
+//
+//            rc.field("bin_test", 2) {
+//              rc.addBinary(Binary.fromConstantByteArray(
+//                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02)))
+//            }
+//          }
+//        })
+//
+//        val data = spark.read.parquet(testPath).collect()
+//        sameRows(Seq(Row(BigDecimal("0.01"), BigDecimal("1"), BigDecimal("0.0001")),
+//          Row(BigDecimal("0.02"), BigDecimal("2"), BigDecimal("0.0002"))), data)
+//      }
+//    },
+//      // To make the CPU happy we need to turn off the vectorized reader
+//      new SparkConf().set("spark.sql.parquet.enableVectorizedReader", "false"))
+//  }
+//
+//  //https://github.com/NVIDIA/spark-rapids/issues/6915
+//  // This bypasses the rapids accelerator code and gets errors in CUDF itself.
+//  test("binary Decimal2") {
+//    withGpuSparkSession(spark => {
+//      val schema =
+//        """message spark {
+//          |  required binary bin_test (DECIMAL(19,0));
+//          |}
+//        """.stripMargin
+//
+//      withTempDir(spark) { dir =>
+//        val testPath = dir + "/BINARY_DEC2_TEST.parquet"
+//        writeDirect(testPath, schema, { rc =>
+//          rc.message {
+//            rc.field("bin_test", 0) {
+//              rc.addBinary(Binary.fromConstantByteArray(
+//                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
+//            }
+//          }
+//        }, { rc =>
+//          rc.message {
+//            rc.field("bin_test", 0) {
+//              rc.addBinary(Binary.fromConstantByteArray(
+//                Array(0x02)))
+//            }
+//          }
+//        }, { rc =>
+//          rc.message {
+//            rc.field("bin_test", 0) {
+//              // This one will do an overflow in the size of the binary data,
+//              // but the top bytes are zero so it is okay
+//              rc.addBinary(Binary.fromConstantByteArray(
+//                Array(
+//                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+//                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03)))
+//            }
+//          }
+//        })
+//
+//        val data = spark.read.parquet(testPath).collect()
+//        sameRows(Seq(Row(BigDecimal("1")),
+//          Row(BigDecimal("2")),
+//          Row(BigDecimal("3"))), data)
+//      }
+//    },
+//      // To make the CPU happy we need to turn off the vectorized reader
+//      new SparkConf().set("spark.sql.parquet.enableVectorizedReader", "false"))
+//  }
 
 //  test("SINGLE_GROUP_ARRAY") {
 //    withCpuSparkSession(spark => {
