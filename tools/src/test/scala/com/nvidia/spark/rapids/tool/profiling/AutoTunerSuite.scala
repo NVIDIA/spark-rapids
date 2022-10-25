@@ -32,7 +32,6 @@ class AppInfoProviderMockTest(val maxInput: Double,
     val jvmGCFractions: Seq[Double],
     val propsFromLog: mutable.Map[String, String],
     val sparkVersion: Option[String]) extends AppSummaryInfoBaseProvider {
-  // max input of the app in bytes
   override def getMaxInput: Double = maxInput
   override def getSpilledMetrics: Seq[Long] = spilledMetrics
   override def getJvmGCFractions: Seq[Double] = jvmGCFractions
@@ -92,20 +91,20 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
     rawString.split("\n").drop(1).mkString("\n")
   }
 
-  private def getMockInfoProvider: AppInfoProviderMockTest = {
+  private def getUnusedProvider: AppSummaryInfoBaseProvider = {
     new AppInfoProviderMockTest(0.0, Seq(), Seq(), mutable.Map[String, String](), None)
   }
   private def getMockInfoProvider(maxInput: Double,
       spilledMetrics: Seq[Long],
       jvmGCFractions: Seq[Double],
       propsFromLog: mutable.Map[String, String],
-      sparkVersion: Option[String]): AppInfoProviderMockTest = {
-    new AppInfoProviderMockTest(maxInput,spilledMetrics, jvmGCFractions, propsFromLog, sparkVersion)
+      sparkVersion: Option[String]): AppSummaryInfoBaseProvider = {
+    new AppInfoProviderMockTest(maxInput, spilledMetrics, jvmGCFractions, propsFromLog,
+      sparkVersion)
   }
 
   test("Load non-existing cluster properties") {
-    val autoTuner: AutoTuner = AutoTuner.buildAutoTuner("non-existing.yaml",
-      getMockInfoProvider)
+    val autoTuner = AutoTuner.buildAutoTuner("non-existing.yaml", getUnusedProvider)
     val (properties, comments) = autoTuner.getRecommendedProperties()
     val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
     val expectedResults =
@@ -125,8 +124,7 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   test("Load cluster properties with CPU cores 0") {
     val dataprocWorkerInfo = buildWorkerInfoAsString(None, Some(0))
-    val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo,
-      getMockInfoProvider)
+    val autoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, getUnusedProvider)
     val (properties, comments) = autoTuner.getRecommendedProperties()
     val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
     // scalastyle:off line.size.limit
@@ -148,8 +146,7 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   test("Load cluster properties with CPU memory missing") {
     val dataprocWorkerInfo = buildWorkerInfoAsString(None, Some(32), None)
-    val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo,
-      getMockInfoProvider)
+    val autoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, getUnusedProvider)
     val (properties, comments) = autoTuner.getRecommendedProperties()
     val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
     // scalastyle:off line.size.limit
@@ -169,11 +166,9 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
     assert(expectedResults == autoTunerOutput)
   }
 
-
   test("Load cluster properties with CPU memory 0") {
     val dataprocWorkerInfo = buildWorkerInfoAsString(None, Some(32), Some("0m"))
-    val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo,
-      getMockInfoProvider)
+    val autoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, getUnusedProvider)
     val (properties, comments) = autoTuner.getRecommendedProperties()
     val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
     // scalastyle:off line.size.limit
@@ -195,8 +190,7 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
 
   test("Load cluster properties with number of workers 0") {
     val dataprocWorkerInfo = buildWorkerInfoAsString(None, Some(32), Some("122880MiB"), Some(0))
-    val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo,
-      getMockInfoProvider)
+    val autoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, getUnusedProvider)
     val (properties, comments) = autoTuner.getRecommendedProperties()
     val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
     val expectedResults =
@@ -241,8 +235,7 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val sparkProps = defaultDataprocProps.++(customProps)
     val dataprocWorkerInfo = buildWorkerInfoAsString(Some(sparkProps), Some(32),
       Some("122880MiB"), Some(4), Some(0))
-    val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo,
-      getMockInfoProvider)
+    val autoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, getUnusedProvider)
     val (properties, comments) = autoTuner.getRecommendedProperties()
     val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
     val expectedResults =
@@ -274,8 +267,7 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val sparkProps = defaultDataprocProps.++(customProps)
     val dataprocWorkerInfo =
       buildWorkerInfoAsString(Some(sparkProps), Some(32), Some("122880MiB"), Some(4), Some(2), None)
-    val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo,
-      getMockInfoProvider)
+    val autoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, getUnusedProvider)
     val (properties, comments) = autoTuner.getRecommendedProperties()
     val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
     val expectedResults =
@@ -303,8 +295,7 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val sparkProps = defaultDataprocProps.++(customProps)
     val dataprocWorkerInfo = buildWorkerInfoAsString(Some(sparkProps), Some(32),
       Some("122880MiB"), Some(4), Some(2), Some("0M"))
-    val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo,
-      getMockInfoProvider)
+    val autoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, getUnusedProvider)
     val (properties, comments) = autoTuner.getRecommendedProperties()
     val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
     val expectedResults =
@@ -331,8 +322,7 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val sparkProps = defaultDataprocProps.++(customProps)
     val dataprocWorkerInfo = buildWorkerInfoAsString(Some(sparkProps), Some(32),
       Some("122880MiB"), Some(4), Some(2), Some("0MiB"), None)
-    val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo,
-      getMockInfoProvider)
+    val autoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, getUnusedProvider)
     val (properties, comments) = autoTuner.getRecommendedProperties()
     val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
     val expectedResults =
@@ -361,8 +351,7 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val sparkProps = defaultDataprocProps.++(customProps)
     val dataprocWorkerInfo = buildWorkerInfoAsString(Some(sparkProps), Some(32),
       Some("122880MiB"), Some(4), Some(2), Some("0MiB"), Some("GPU-X"))
-    val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo,
-      getMockInfoProvider)
+    val autoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, getUnusedProvider)
     val (properties, comments) = autoTuner.getRecommendedProperties()
     val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
     val expectedResults =
@@ -396,8 +385,7 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
           |Comments:
           |- 'spark.sql.shuffle.partitions' was not set.
           |""".stripMargin
-    val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo,
-      getMockInfoProvider)
+    val autoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, getUnusedProvider)
     val (properties, comments) = autoTuner.getRecommendedProperties()
     val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
     assert(expectedResults == autoTunerOutput)
@@ -426,8 +414,7 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
           |Comments:
           |- 'spark.sql.shuffle.partitions' was not set.
           |""".stripMargin
-    val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo,
-      getMockInfoProvider)
+    val autoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, getUnusedProvider)
     val (properties, comments) = autoTuner.getRecommendedProperties()
     val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
     assert(expectedResults == autoTunerOutput)
@@ -460,21 +447,22 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
           |- 'spark.sql.shuffle.partitions' was not set.
           |- 'spark.sql.adaptive.enabled' should be enabled for better performance.
           |""".stripMargin
-    val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo,
-      getMockInfoProvider)
+    val autoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, getUnusedProvider)
     val (properties, comments) = autoTuner.getRecommendedProperties()
     val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
     assert(expectedResults == autoTunerOutput)
   }
 
-  test("test with app mock 001") {
+  // Test that the properties from the eventlogs will be used to calculate the recommendations.
+  // For example, the output should recommend "spark.executor.cores" -> 8. Although the cluster
+  // "spark.executor.cores" is the same as the recommended value, the property is set to 16 in
+  // the eventlogs.
+  test("AutoTuner gives precedence to properties from eventlogs") {
     val customProps = mutable.LinkedHashMap(
       "spark.executor.cores" -> "8",
       "spark.executor.memory" -> "47222m",
       "spark.rapids.sql.concurrentGpuTasks" -> "2",
       "spark.task.resource.gpu.amount" -> "0.0625")
-    val dataprocWorkerInfo = buildWorkerInfoAsString(Some(customProps), Some(32),
-      Some("212992MiB"), Some(5), Some(4), Some("15109MiB"), Some("Tesla T4"))
     // mock the properties loaded from eventLog
     val logEventsProps: mutable.Map[String, String] =
       mutable.LinkedHashMap[String, String](
@@ -489,10 +477,11 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
         "spark.rapids.memory.pinnedPool.size" -> "5g",
         "spark.rapids.sql.enabled" -> "true",
         "spark.rapids.sql.concurrentGpuTasks" -> "4")
-
-    val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo,
-      getMockInfoProvider(8126464.0, Seq(0), Seq(0.004), logEventsProps,
-        Some("3.1.1")))
+    val dataprocWorkerInfo = buildWorkerInfoAsString(Some(customProps), Some(32),
+      Some("212992MiB"), Some(5), Some(4), Some("15109MiB"), Some("Tesla T4"))
+    val infoProvider = getMockInfoProvider(8126464.0, Seq(0), Seq(0.004), logEventsProps,
+      Some("3.1.1"))
+    val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, infoProvider)
     val (properties, comments) = autoTuner.getRecommendedProperties()
     val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
     // scalastyle:off line.size.limit
@@ -517,14 +506,14 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
     assert(expectedResults == autoTunerOutput)
   }
 
-  test("test with app mock 002") {
+  // Changing the maxInput of tasks should reflect on the maxPartitions recommendations.
+  // Values used in setting the properties are taken from sample eventlogs.
+  test("Recommendation of maxPartitions is calculated based on maxInput of tasks") {
     val customProps = mutable.LinkedHashMap(
       "spark.executor.cores" -> "8",
       "spark.executor.memory" -> "47222m",
       "spark.rapids.sql.concurrentGpuTasks" -> "2",
       "spark.task.resource.gpu.amount" -> "0.0625")
-    val dataprocWorkerInfo = buildWorkerInfoAsString(Some(customProps), Some(32),
-      Some("212992MiB"), Some(5), Some(4), Some("15109MiB"), Some("Tesla T4"))
     // mock the properties loaded from eventLog
     val logEventsProps: mutable.Map[String, String] =
       mutable.LinkedHashMap[String, String](
@@ -539,7 +528,9 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
         "spark.rapids.memory.pinnedPool.size" -> "5g",
         "spark.rapids.sql.enabled" -> "true",
         "spark.rapids.sql.concurrentGpuTasks" -> "1")
-    val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo,
+    val dataprocWorkerInfo = buildWorkerInfoAsString(Some(customProps), Some(32),
+      Some("212992MiB"), Some(5), Some(4), Some("15109MiB"), Some("Tesla T4"))
+    val autoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo,
       getMockInfoProvider(3.7449728E7, Seq(0, 0), Seq(0.01, 0.0), logEventsProps,
         Some("3.1.1")))
     val (properties, comments) = autoTuner.getRecommendedProperties()
@@ -566,14 +557,16 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
     assert(expectedResults == autoTunerOutput)
   }
 
-  test("test with app mock 003 - GC Fraction appears in comments") {
+  // When GCFraction is higher AutoTuner.MAX_JVM_GCTIME_FRACTION, the output should contain
+  // a comment recommending to consider different GC algorithms.
+  // This test triggers that case by injecting a sequence of jvmGCFraction with average higher
+  // than the static threshold of 0.3.
+  test("Output contains GC comments when GC Fraction is higher than threshold") {
     val customProps = mutable.LinkedHashMap(
       "spark.executor.cores" -> "8",
       "spark.executor.memory" -> "47222m",
       "spark.rapids.sql.concurrentGpuTasks" -> "2",
       "spark.task.resource.gpu.amount" -> "0.0625")
-    val dataprocWorkerInfo = buildWorkerInfoAsString(Some(customProps), Some(32),
-      Some("212992MiB"), Some(5), Some(4), Some("15109MiB"), Some("Tesla T4"))
     // mock the properties loaded from eventLog
     val logEventsProps: mutable.Map[String, String] =
       mutable.LinkedHashMap[String, String](
@@ -588,9 +581,11 @@ class AutoTunerSuite extends FunSuite with BeforeAndAfterEach with Logging {
         "spark.rapids.memory.pinnedPool.size" -> "5g",
         "spark.rapids.sql.enabled" -> "true",
         "spark.rapids.sql.concurrentGpuTasks" -> "1")
-    val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo,
-      getMockInfoProvider(3.7449728E7, Seq(0, 0), Seq(0.4, 0.4), logEventsProps,
-        Some("3.1.1")))
+    val dataprocWorkerInfo = buildWorkerInfoAsString(Some(customProps), Some(32),
+      Some("212992MiB"), Some(5), Some(4), Some("15109MiB"), Some("Tesla T4"))
+    val infoProvider = getMockInfoProvider(3.7449728E7, Seq(0, 0), Seq(0.4, 0.4), logEventsProps,
+      Some("3.1.1"))
+    val autoTuner: AutoTuner = AutoTuner.buildAutoTunerFromProps(dataprocWorkerInfo, infoProvider)
     val (properties, comments) = autoTuner.getRecommendedProperties()
     val autoTunerOutput = Profiler.getAutoTunerResultsAsString(properties, comments)
     // scalastyle:off line.size.limit

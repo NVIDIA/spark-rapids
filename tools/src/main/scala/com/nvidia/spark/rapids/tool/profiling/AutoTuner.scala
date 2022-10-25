@@ -634,7 +634,7 @@ class AutoTuner(
    *     Output: newMaxPartitionBytes = 2g / (512m/128m) = 512m
    */
   private def calculateMaxPartitionBytes(maxPartitionBytes: String): String = {
-    // Autotuner only supports a single app right now, so we get whatever value is here
+    // AutoTuner only supports a single app right now, so we get whatever value is here
     val inputBytesMax = appInfoProvider.getMaxInput / 1024 / 1024
     val maxPartitionBytesNum = convertToMB(maxPartitionBytes)
     if (inputBytesMax == 0.0) {

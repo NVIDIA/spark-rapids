@@ -41,7 +41,6 @@ case class ApplicationSummaryInfo(
     val appLogPath: Seq[AppLogPathProfileResults])
 
 trait AppInfoPropertyGetter {
-  def isAppDefined: Boolean = true
   def getSparkProperty(propKey: String): Option[String]
   def getRapidsProperty(propKey: String): Option[String]
   def getProperty(propKey: String): Option[String]
@@ -57,20 +56,25 @@ trait AppInfoSQLMaxTaskInputSizes {
   def getMaxInput: Double
 }
 
-abstract class AppSummaryInfoBaseProvider extends AppInfoPropertyGetter
+/**
+ * A base class definition that provides an empty implementation of the profile results embedded in
+ * [[ApplicationSummaryInfo]].
+ */
+class AppSummaryInfoBaseProvider extends AppInfoPropertyGetter
   with AppInfoSqlTaskAggMetricsVisitor
   with AppInfoSQLMaxTaskInputSizes {
   override def getSparkProperty(propKey: String): Option[String] = None
   override def getRapidsProperty(propKey: String): Option[String] = None
-  override def getProperty(propKey: String): Option[String]
-  override def getSparkVersion: Option[String]
-  override def getMaxInput: Double
-  override def getJvmGCFractions: Seq[Double]
-  override def getSpilledMetrics: Seq[Long]
+  override def getProperty(propKey: String): Option[String] = None
+  override def getSparkVersion: Option[String] = None
+  override def getMaxInput: Double = 0.0
+  override def getJvmGCFractions: Seq[Double] = Seq()
+  override def getSpilledMetrics: Seq[Long] = Seq()
 }
 
 /**
- * A wrapper class to process the information embedded in ApplicationSummaryInfo.
+ * A wrapper class to process the information embedded in a valid instance of
+ * [[ApplicationSummaryInfo]].
  * Note that this class does not handle combined mode and assume that the profiling results belong
  * to a single app.
  * @param app the object resulting from profiling a single app.
@@ -112,7 +116,7 @@ class SingleAppSummaryInfoProvider(val app: ApplicationSummaryInfo)
     }
   }
 
-  def getSpilledMetrics: Seq[Long] = {
+  override def getSpilledMetrics: Seq[Long] = {
     app.sqlTaskAggMetrics.map { task =>
       task.diskBytesSpilledSum + task.memoryBytesSpilledSum
     }
