@@ -315,9 +315,9 @@ object GpuIntervalUtils extends Arm {
    */
   private def getMicrosFromDecimal(sign: ColumnVector, decimal: ColumnVector): ColumnVector = {
     val decimalType64_6 = DType.create(DType.DTypeEnum.DECIMAL64, -6)
-    val timesMillion = withResource(decimal.castTo(decimalType64_6)) { decimal =>
-      withResource(Scalar.fromLong(1000000L)) { million =>
-        decimal.mul(million)
+    val timesMillion = withResource(Scalar.fromLong(1000000L)) { million =>
+      withResource(decimal.castTo(decimalType64_6)) {
+        _.mul(million)
       }
     }
     val timesMillionLongs = withResource(timesMillion) {

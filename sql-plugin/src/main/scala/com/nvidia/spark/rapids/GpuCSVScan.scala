@@ -356,8 +356,8 @@ class CSVPartitionReader(
       (isTrueRes, isValidBoolRes)
     }
     withResource(Seq(isTrue, isValidBool)) { _ =>
-      withResource(Scalar.fromNull(DType.BOOL8)) { nullBool =>
-        isValidBool.ifElse(isTrue, nullBool)
+      withResource(Scalar.fromNull(DType.BOOL8)) {
+        isValidBool.ifElse(isTrue, _)
       }
     }
   }
