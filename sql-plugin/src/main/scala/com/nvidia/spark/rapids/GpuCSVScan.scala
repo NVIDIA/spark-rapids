@@ -344,22 +344,20 @@ class CSVPartitionReader(
       _.lower()
     }
 
-    val isTrue = closeOnExcept(lowerStripped) { _ =>
-      withResource(Scalar.fromString(true.toString)) {
+    val (isTrue, isValidBool) = withResource(lowerStripped) { _ =>
+      val isTrueRes = withResource(Scalar.fromString(true.toString)) {
         lowerStripped.equalTo
       }
-    }
-
-    withResource(isTrue) { _ =>
-      val isValidBool = withResource(lowerStripped) { _ =>
+      val isValidBoolRes = closeOnExcept(isTrueRes) { _ =>
         withResource(ColumnVector.fromStrings(true.toString, false.toString)) {
           lowerStripped.contains
         }
       }
-      withResource(isValidBool) { _ =>
-        withResource(Scalar.fromNull(DType.BOOL8)) { nullBool =>
-          isValidBool.ifElse(isTrue, nullBool)
-        }
+      (isTrueRes, isValidBoolRes)
+    }
+    withResource(Seq(isTrue, isValidBool)) { _ =>
+      withResource(Scalar.fromNull(DType.BOOL8)) { nullBool =>
+        isValidBool.ifElse(isTrue, nullBool)
       }
     }
   }
