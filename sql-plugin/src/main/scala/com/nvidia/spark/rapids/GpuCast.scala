@@ -759,13 +759,12 @@ object GpuCast extends Arm {
         // add a space string to each non-null element
         val childCol = input.getChildColumnView(0)
         val numElements = childCol.getRowCount.toInt
-        val strChild = closeOnExcept(childCol) {
-          _.replaceNulls(nullRep)
+        val (strChild, childNotNull) = withResource(childCol) { _ =>
+          closeOnExcept(childCol.replaceNulls(nullRep)) {
+            (_, childCol.isNotNull())
+          }
         }
-        val childNotNull = withResource(childCol) {
-          _.isNotNull
-        }
-        withResource(strChild) { _ =>
+        withResource(Seq(strChild, childNotNull)) { _ =>
           val hasSpaces = withResource(ColumnVector.fromScalar(space, numElements)) { spaceCol =>
             ColumnVector.stringConcatenate(Array(spaceCol, strChild))
           }
