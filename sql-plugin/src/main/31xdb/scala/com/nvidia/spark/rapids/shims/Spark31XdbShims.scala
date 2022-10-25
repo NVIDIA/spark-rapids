@@ -61,7 +61,7 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
 
   override def applyShimPlanRules(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
     if (plan.conf.adaptiveExecutionEnabled) {
-      plan // no need to handle DPP here since it doesn't cooperate with AQE
+      plan // AQE+DPP cooperation ensures the optimization runs early
     } else {
       val sparkSession = SparkSession.getActiveSession.orNull
       val rules = Seq(
@@ -74,11 +74,15 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
   }
 
   override def applyPostShimPlanRules(plan: SparkPlan): SparkPlan = {
-    val rules = Seq(
-      ReuseExchangeAndSubquery
-    )
-    rules.foldLeft(plan) { case (sp, rule) =>
-      rule.apply(sp)
+    if (plan.conf.adaptiveExecutionEnabled) {
+      plan // no need to handle DPP here since it doesn't cooperate with AQE
+    } else {
+      val rules = Seq(
+        ReuseExchangeAndSubquery
+      )
+      rules.foldLeft(plan) { case (sp, rule) =>
+        rule.apply(sp)
+      }
     }
   }
 
@@ -207,8 +211,35 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
               } else {
                 willNotWorkOnGpu("underlying BroadcastExchange can not run in the GPU.")
               }
-            // DPP: AQE does not cooperate in Spark versions < 3.2.0, which applies to 
-            // Databricks 9.1
+            // DPP: For AQE on, we have an almost completely different scenario then before, 
+            // Databricks uses a BroadcastQueryStageExec and either:
+            //  1) provide an underlying BroadcastExchangeExec that we will have to convert
+            //     somehow
+            //  2) might already do the reuse work for us. The ReusedExchange is now a 
+            //     part of the SubqueryBroadcast, so we send it back here as underlying the 
+            //     GpuSubqueryBroadcastExchangeExec
+            case bqse: BroadcastQueryStageExec =>
+              bqse.plan match {
+                case ex: BroadcastExchangeExec =>
+                  val exMeta = new GpuBroadcastMeta(ex, conf, p, r)
+                  exMeta.tagForGpu()
+                  if (exMeta.canThisBeReplaced) {
+                    broadcastBuilder = () => exMeta.convertToGpu()
+                    // broadcastBuilder = () =>
+                    //   SparkShimImpl.columnarAdaptivePlan(
+                    //     a, TargetSize(conf.gpuTargetBatchSizeBytes))
+                  } else {
+                    willNotWorkOnGpu("underlying BroadcastExchange can not run in the GPU.")
+                  }
+                case reuse: ReusedExchangeExec =>
+                  reuse.child match {
+                    case gpuExchange: GpuBroadcastExchangeExec =>
+                      // A BroadcastExchange has already been replaced, so it can run on the GPU
+                      broadcastBuilder = () => reuse
+                    case _ =>
+                      willNotWorkOnGpu("underlying BroadcastExchange can not run in the GPU.")
+                  }
+              }
             case _ =>
               willNotWorkOnGpu("the subquery to broadcast can not entirely run in the GPU.")
           }
@@ -228,6 +259,18 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
             val broadcastMode = s.child match {
               case b: BroadcastExchangeExec =>
                 b.mode
+              case bqse: BroadcastQueryStageExec =>
+                bqse.plan match {
+                  case b: BroadcastExchangeExec =>
+                    b.mode
+                  case reuse: ReusedExchangeExec =>
+                    reuse.child match {
+                      case g: GpuBroadcastExchangeExec =>
+                        g.mode
+                    }
+                  case _ =>
+                    throw new AssertionError("should not reach here")
+                }
             }
 
             broadcastMode match {
