@@ -119,7 +119,37 @@ _statements = [
         WHERE dim.filter = {2}
     )
     GROUP BY key
-    """
+    """,
+    '''
+    WITH fact_table AS (
+        SELECT fact.key as key, sum(fact.value) as value
+        FROM {0} fact
+        WHERE fact.value > 0
+        GROUP BY fact.key
+        ORDER BY fact.key
+    ),
+    dim_table AS (
+        SELECT dim.key as key, dim.value as value, dim.filter as filter
+        FROM {1} dim
+        WHERE ex_key = 3
+        ORDER BY dim.key
+    )
+    SELECT key, max(value)
+    FROM (
+        SELECT f.key as key, f.value as value
+        FROM fact_table f
+        JOIN dim_table d
+        ON f.key = d.key
+        WHERE d.filter = {2}
+    UNION ALL
+        SELECT f.key as key, f.value as value
+        FROM fact_table f
+        JOIN dim_table d
+        ON f.key = d.key
+        WHERE d.filter = {2}
+    )
+    GROUP BY key
+    '''
 ]
 
 
