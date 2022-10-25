@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf
 import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NaNEquality, NullEquality, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, ShimExpression, ShimUnaryExpression}
+import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, ShimExpression, ShimUnaryExpression, TypeUtilsShims}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -31,7 +31,6 @@ import org.apache.spark.sql.catalyst.util.{ArrayData, GenericArrayData, TypeUtil
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import com.nvidia.spark.rapids.shims.TypeUtilsShims
 
 /**
  * Trait that all aggregate functions implement.
