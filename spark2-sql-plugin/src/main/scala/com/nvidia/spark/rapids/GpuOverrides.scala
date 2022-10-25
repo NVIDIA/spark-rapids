@@ -2348,6 +2348,17 @@ object GpuOverrides extends Logging {
           ParamCheck("start", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
       (in, conf, p, r) => new TernaryExprMeta[StringLocate](in, conf, p, r) {
       }),
+    expr[StringInstr](
+      "Instr string operator",
+      ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
+        Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("substr", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+      (in, conf, p, r) => new BinaryExprMeta[StringInstr](in, conf, p, r) {
+        override def convertToGpu(
+            str: Expression,
+            substr: Expression): GpuExpression =
+          GpuStringInstr(str, substr)
+      }),
     expr[Substring](
       "Substring operator",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY,
