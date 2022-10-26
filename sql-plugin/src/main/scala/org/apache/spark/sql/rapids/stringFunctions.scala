@@ -844,7 +844,7 @@ object GpuRegExpUtils {
     Charset.defaultCharset().name() match {
       case "UTF-8" =>
         // supported
-      case _ => 
+      case _ =>
         meta.willNotWorkOnGpu(s"regular expression support is disabled because the GPU only " +
         "supports the UTF-8 charset when using regular expressions")
     }
@@ -858,8 +858,8 @@ object GpuRegExpUtils {
   }
 
   /**
-   * Recursively check if pattern contains only zero-match repetitions 
-   * ?, *, {0,}, or {0,n} or any combination of them. 
+   * Recursively check if pattern contains only zero-match repetitions
+   * ?, *, {0,}, or {0,n} or any combination of them.
    */
   def isEmptyRepetition(pattern: String): Boolean = {
     def isASTEmptyRepetition(regex: RegexAST): Boolean = {
@@ -871,7 +871,7 @@ object GpuRegExpUtils {
           case _ => false
         }
         case RegexGroup(_, term) =>
-          isASTEmptyRepetition(term) 
+          isASTEmptyRepetition(term)
         case RegexSequence(parts) =>
           parts.forall(isASTEmptyRepetition)
         // cuDF does not support repetitions adjacent to a choice (eg. "a*|a"), but if
@@ -883,7 +883,7 @@ object GpuRegExpUtils {
   }
 
   /**
-   * Returns the number of groups in regexp 
+   * Returns the number of groups in regexp
    * (includes both capturing and non-capturing groups)
    */
   def countGroups(pattern: String): Int = {
@@ -912,7 +912,7 @@ class GpuRLikeMeta(
         case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
           try {
             // verify that we support this regex and can transpile it to cuDF format
-            val (transpiledAST, _) = 
+            val (transpiledAST, _) =
                 new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(str.toString, None)
             GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
             pattern = Some(transpiledAST.toRegexString)
@@ -1025,8 +1025,8 @@ case class GpuRegExpReplace(
 
   def this(srcExpr: Expression, searchExpr: Expression, javaRegexpPattern: String,
     cudfRegexPattern: String, cudfReplacementString: String) = {
-    
-    this(srcExpr, searchExpr, GpuLiteral("", StringType), javaRegexpPattern, 
+
+    this(srcExpr, searchExpr, GpuLiteral("", StringType), javaRegexpPattern,
       cudfRegexPattern, cudfReplacementString)
   }
 
@@ -1034,10 +1034,10 @@ case class GpuRegExpReplace(
       strExpr: GpuColumnVector,
       searchExpr: GpuScalar,
       replaceExpr: GpuScalar): ColumnVector = {
-    // For empty strings and a regex containing only a zero-match repetition, 
-    // the behavior in some versions of Spark is different. 
+    // For empty strings and a regex containing only a zero-match repetition,
+    // the behavior in some versions of Spark is different.
     // see https://github.com/NVIDIA/spark-rapids/issues/5456
-    if (RegExpShim.reproduceEmptyStringBug() && 
+    if (RegExpShim.reproduceEmptyStringBug() &&
         GpuRegExpUtils.isEmptyRepetition(javaRegexpPattern)) {
       val isEmpty = withResource(strExpr.getBase.getCharLengths) { len =>
         withResource(Scalar.fromInt(0)) { zero =>
@@ -1102,8 +1102,8 @@ class GpuRegExpExtractMeta(
         try {
           val javaRegexpPattern = str.toString
           // verify that we support this regex and can transpile it to cuDF format
-          val (transpiledAST, _) = 
-            new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(javaRegexpPattern, None) 
+          val (transpiledAST, _) =
+            new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(javaRegexpPattern, None)
           GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
           pattern = Some(transpiledAST.toRegexString)
           numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
@@ -1189,16 +1189,17 @@ case class GpuRegExpExtract(
     // | 'a1a'  | '1'   | '1'   |
     // | '1a1'  | ''    | NULL  |
 
-    withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
-      withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
-        withResource(str.getBase.containsRe(cudfRegexPattern)) { matches =>
-          withResource(str.getBase.isNull) { isNull =>
-            withResource(str.getBase.extractRe(extractPattern)) { extract =>
-              withResource(matches.ifElse(extract.getColumn(groupIndex), emptyString)) {
-                isNull.ifElse(nullString, _)
-              }
-            }
-          }
+    withResource(
+      Seq[String]("", null).safeMap(GpuScalar.from(_, DataTypes.StringType))
+    ) { case Seq(emptyString, nullString) =>
+      val groupCol = withResource(str.getBase.extractRe(extractPattern)) { extract =>
+        withResource(str.getBase.containsRe(cudfRegexPattern)) {
+          _.ifElse(extract.getColumn(groupIndex), emptyString)
+        }
+      }
+      withResource(groupCol) { _ =>
+        withResource(str.getBase.isNull) {
+          _.ifElse(nullString, groupCol)
         }
       }
     }
@@ -1223,7 +1224,7 @@ class GpuRegExpExtractAllMeta(
         try {
           val javaRegexpPattern = str.toString
           // verify that we support this regex and can transpile it to cuDF format
-          val (transpiledAST, _) = 
+          val (transpiledAST, _) =
             new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(javaRegexpPattern, None)
           GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
           pattern = Some(transpiledAST.toRegexString)
@@ -1283,10 +1284,10 @@ case class GpuRegExpExtractAll(
       idx: GpuScalar): ColumnVector = {
 
     idx.getValue.asInstanceOf[Int] match {
-      case 0 => 
+      case 0 =>
         str.getBase.extractAllRecord(cudfRegexPattern, 0)
       case intIdx =>
-        // Extract matches corresponding to idx. cuDF's extract_all_record does not support 
+        // Extract matches corresponding to idx. cuDF's extract_all_record does not support
         // group idx, so we must manually extract the relevant matches. Example:
         // Given the pattern (\d+)-(\d+) and idx=1
         //
@@ -1298,13 +1299,13 @@ case class GpuRegExpExtractAll(
         // 2nd element afterwards from the cuDF list
 
         val rowCount = str.getRowCount
-        
+
         val extractedWithNulls = withResource(
           str.getBase.extractAllRecord(cudfRegexPattern, intIdx)) { allExtracted =>
             withResource(allExtracted.countElements) { listSizes =>
               withResource(listSizes.max) { maxSize =>
                 val maxSizeInt = maxSize.getInt
-                val stringCols = Range(intIdx - 1, maxSizeInt, numGroups).safeMap { 
+                val stringCols = Range(intIdx - 1, maxSizeInt, numGroups).safeMap {
                   i =>
                     withResource(Scalar.fromInt(i)) { scalarIndex =>
                       withResource(ColumnVector.fromScalar(scalarIndex, rowCount.toInt)) {
@@ -1320,23 +1321,25 @@ case class GpuRegExpExtractAll(
           }
         // Filter out null values in the lists
         val extractedStrings = withResource(extractedWithNulls) { _ =>
-          withResource(extractedWithNulls.getListOffsetsView) { offsetsCol =>
+          val booleanMask = withResource(extractedWithNulls.getListOffsetsView) { offsetsCol =>
             withResource(extractedWithNulls.getChildColumnView(0)) { stringCol =>
               withResource(stringCol.isNotNull) { isNotNull =>
-                withResource(isNotNull.makeListFromOffsets(rowCount, offsetsCol)) { booleanMask =>
-                  extractedWithNulls.applyBooleanMask(booleanMask)
-                }
+                isNotNull.makeListFromOffsets(rowCount, offsetsCol)
               }
             }
           }
+          withResource(booleanMask) {
+            extractedWithNulls.applyBooleanMask
+          }
         }
+
         // If input is null, output should also be null
         withResource(extractedStrings) { s =>
-          withResource(GpuScalar.from(null, DataTypes.createArrayType(DataTypes.StringType))) { 
+          withResource(GpuScalar.from(null, DataTypes.createArrayType(DataTypes.StringType))) {
             nullStringList =>
               withResource(str.getBase.isNull) { isInputNull =>
                 isInputNull.ifElse(nullStringList, s)
-              }              
+              }
           }
         }
     }
@@ -1643,7 +1646,7 @@ class GpuStringSplitMeta(
         isRegExp = isRe
       case _ => throwUncheckedDelimiterException()
     }
-    
+
     // if this is a valid regular expression, then we should check the configuration
     // whether to run this on the GPU
     if (isRegExp) {
@@ -1686,9 +1689,9 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression,
       case 1 =>
         // Short circuit GPU and just return a list containing the original input string
         withResource(str.getBase.isNull) { isNull =>
-          withResource(GpuScalar.from(null, DataTypes.createArrayType(DataTypes.StringType))) { 
+          withResource(GpuScalar.from(null, DataTypes.createArrayType(DataTypes.StringType))) {
             nullStringList =>
-              withResource(ColumnVector.makeList(str.getBase)) { list => 
+              withResource(ColumnVector.makeList(str.getBase)) { list =>
                   isNull.ifElse(nullStringList, list)
               }
           }

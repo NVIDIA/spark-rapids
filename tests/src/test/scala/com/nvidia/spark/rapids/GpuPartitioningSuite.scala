@@ -118,9 +118,13 @@ class GpuPartitioningSuite extends FunSuite with Arm {
         override val numPartitions: Int = partitionIndices.length
       }
       withResource(buildBatch()) { batch =>
+        // `sliceInternalOnGpuAndClose` will close the batch, but in this test we want to
+        // reuse it
+        GpuColumnVector.incRefCounts(batch)
         val columns = GpuColumnVector.extractColumns(batch)
         val numRows = batch.numRows
-        withResource(gp.sliceInternalOnGpu(numRows, partitionIndices, columns)) { partitions =>
+        withResource(
+            gp.sliceInternalOnGpuAndClose(numRows, partitionIndices, columns)) { partitions =>
           partitions.zipWithIndex.foreach { case (partBatch, partIndex) =>
             val startRow = partitionIndices(partIndex)
             val endRow = if (partIndex < partitionIndices.length - 1) {
@@ -153,10 +157,14 @@ class GpuPartitioningSuite extends FunSuite with Arm {
           override val numPartitions: Int = partitionIndices.length
         }
         withResource(buildBatch()) { batch =>
+          // `sliceInternalOnGpuAndClose` will close the batch, but in this test we want to
+          // reuse it
+          GpuColumnVector.incRefCounts(batch)
           val columns = GpuColumnVector.extractColumns(batch)
           val sparkTypes = GpuColumnVector.extractTypes(batch)
           val numRows = batch.numRows
-          withResource(gp.sliceInternalOnGpu(numRows, partitionIndices, columns)) { partitions =>
+          withResource(
+              gp.sliceInternalOnGpuAndClose(numRows, partitionIndices, columns)) { partitions =>
             partitions.zipWithIndex.foreach { case (partBatch, partIndex) =>
               val startRow = partitionIndices(partIndex)
               val endRow = if (partIndex < partitionIndices.length - 1) {
