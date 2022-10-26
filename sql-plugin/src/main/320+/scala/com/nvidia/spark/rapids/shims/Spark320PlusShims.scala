@@ -53,7 +53,7 @@ import org.apache.spark.unsafe.types.CalendarInterval
 /**
  * Shim base class that can be compiled with every supported 3.2.0+
  */
-trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
+trait Spark320PlusShims extends SparkBaseShim with RebaseShims with Logging {
 
   def getWindowExpressions(winPy: WindowInPandasExec): Seq[NamedExpression]
 

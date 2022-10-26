@@ -19,7 +19,7 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Expression}
 
-trait Spark320until340Shims extends SparkShims {
+trait Spark320until340Shims extends SparkBaseShim {
 
   override def ansiCastRule: ExprRule[ _ <: Expression] = {
     GpuOverrides.expr[AnsiCast](

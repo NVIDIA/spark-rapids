@@ -18,10 +18,11 @@ package com.nvidia.spark.rapids.shims
 
 import scala.collection.mutable.ListBuffer
 
-import com.nvidia.spark.rapids.{ExecChecks, ExecRule, SparkPlanMeta, SparkShims, TypeSig}
+import com.nvidia.spark.rapids.{ExecChecks, ExecRule, ExprChecks, ExprRule, GpuExpression, GpuOverrides, GpuPromotePrecision, SparkPlanMeta, SparkShims, TypeSig, UnaryExprMeta}
 import com.nvidia.spark.rapids.GpuOverrides.exec
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.expressions.{Expression, PromotePrecision}
 import org.apache.spark.sql.catalyst.util.{DateFormatter, DateTimeUtils}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, CustomShuffleReaderExec, QueryStageExec, ShuffleQueryStageExec}
@@ -124,5 +125,17 @@ trait Spark31XdbShimsBase extends SparkShims {
 
   override def leafNodeDefaultParallelism(ss: SparkSession): Int = {
     ss.sparkContext.defaultParallelism
+  }
+
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+    Seq(
+      GpuOverrides.expr[PromotePrecision](
+        "PromotePrecision before arithmetic operations between DecimalType data",
+        ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_128,
+          TypeSig.DECIMAL_128),
+        (a, conf, p, r) => new UnaryExprMeta[PromotePrecision](a, conf, p, r) {
+          override def convertToGpu(child: Expression): GpuExpression = GpuPromotePrecision(child)
+        })
+    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }
 }

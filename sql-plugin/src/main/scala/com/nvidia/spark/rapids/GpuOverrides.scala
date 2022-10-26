@@ -896,13 +896,6 @@ object GpuOverrides extends Logging {
           }
         }
       }),
-    expr[PromotePrecision](
-      "PromotePrecision before arithmetic operations between DecimalType data",
-      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_128,
-        TypeSig.DECIMAL_128),
-      (a, conf, p, r) => new UnaryExprMeta[PromotePrecision](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuPromotePrecision(child)
-      }),
     expr[CheckOverflow](
       "CheckOverflow after arithmetic operations between DecimalType data",
       ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_128,
@@ -930,39 +923,6 @@ object GpuOverrides extends Logging {
                   throw new IllegalArgumentException(s"Unexpected decimal literal value $other")
               }
               expr.asInstanceOf[LiteralExprMeta].withNewLiteral(Literal(value, newType))
-            // Avoid unapply for PromotePrecision and Cast because it changes between Spark versions
-            case p: PromotePrecision if p.child.isInstanceOf[CastBase] &&
-                p.child.dataType.isInstanceOf[DecimalType] =>
-              val c = p.child.asInstanceOf[CastBase]
-              val to = c.dataType.asInstanceOf[DecimalType]
-              val fromType = DecimalUtil.optionallyAsDecimalType(c.child.dataType)
-              fromType match {
-                case Some(from) =>
-                  val minScale = math.min(from.scale, to.scale)
-                  val fromWhole = from.precision - from.scale
-                  val toWhole = to.precision - to.scale
-                  val minWhole = if (to.scale < from.scale) {
-                    // If the scale is getting smaller in the worst case we need an
-                    // extra whole part to handle rounding up.
-                    math.min(fromWhole + 1, toWhole)
-                  } else {
-                    math.min(fromWhole, toWhole)
-                  }
-                  val newToType = DecimalType(minWhole + minScale, minScale)
-                  if (newToType == from) {
-                    // We can remove the cast totally
-                    val castExpr = expr.childExprs.head
-                    castExpr.childExprs.head
-                  } else if (newToType == to) {
-                    // The cast is already ideal
-                    expr
-                  } else {
-                    val castExpr = expr.childExprs.head.asInstanceOf[CastExprMeta[_]]
-                    castExpr.withToTypeOverride(newToType)
-                  }
-                case _ =>
-                  expr
-              }
             case _ => expr
           }
         private[this] lazy val binExpr = childExprs.head
@@ -3606,7 +3566,7 @@ object GpuOverrides extends Logging {
   // Shim expressions should be last to allow overrides with shim-specific versions
   val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
     commonExpressions ++ TimeStamp.getExprs ++ GpuHiveOverrides.exprs ++
-        SparkShimImpl.getExprs ++ ZOrderRules.exprs
+        ZOrderRules.exprs ++ SparkShimImpl.getExprs
 
   def wrapScan[INPUT <: Scan](
       scan: INPUT,
