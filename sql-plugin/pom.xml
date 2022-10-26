@@ -422,6 +422,23 @@
                 </dependency>
             </dependencies>
         </profile>
+        <profile>
+            <id>release340</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>340</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>org.apache.orc</groupId>
+                    <artifactId>orc-core</artifactId>
+                    <classifier>shaded-protobuf</classifier>
+                    <version>1.8.0</version>
+                </dependency>
+            </dependencies>
+        </profile>
 
     </profiles>
 

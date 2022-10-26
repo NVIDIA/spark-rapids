@@ -21,3 +21,18 @@ import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex
 object FileIndexOptionsShims {
   val BASE_PATH_PARAM = PartitioningAwareFileIndex.BASE_PATH_PARAM
 }
+
+class CodedOutputStreamShim(x: org.apache.orc.impl.OutStream) {
+  val realCodedOutputStream = com.google.protobuf.CodedOutputStream.newInstance(x)
+  def writeAndFlush(obj: Any) = {
+    obj.asInstanceOf[com.google.protobuf.AbstractMessage].writeTo(realCodedOutputStream)
+    realCodedOutputStream.flush()
+    x.flush()
+  }
+}
+
+object CodedOutputStreamShim {
+  def apply(x: org.apache.orc.impl.OutStream) = {
+    new CodedOutputStreamShim(x)
+  }
+}
