@@ -1844,3 +1844,34 @@ case class GpuStringToMap(strExpr: Expression,
     }
   }
 }
+
+case class GpuStringInstr(str: Expression, substr: Expression)
+  extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant  {
+  // Locate the position of the first occurrence of substr column in the given string.
+  // returns null if one of the arguments is null
+  // returns zero if not found
+  // return values are 1 based.
+  override def dataType: DataType = IntegerType
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType)
+  override def left: Expression = str
+  override def right: Expression = substr
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
+    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    withResource(lhs.getBase.stringLocate(rhs.getBase)) { strLocateRes =>
+      withResource(Scalar.fromInt(1)) { sv1 =>
+        strLocateRes.add(sv1)
+      }
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, str.dataType)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+  }
+}
