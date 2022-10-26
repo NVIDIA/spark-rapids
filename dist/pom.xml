@@ -74,6 +74,11 @@
         <premergeUTF8.buildvers>
             320
         </premergeUTF8.buildvers>
+        <jdk11.buildvers>
+            312
+            321
+            331
+        </jdk11.buildvers>
         <dist.jar.name>${project.build.directory}/${project.build.finalName}-${cuda.version}.jar</dist.jar.name>
     </properties>
     <profiles>
@@ -115,6 +120,14 @@
             <properties>
                 <included_buildvers>
                     ${premergeUTF8.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
+            <id>jdk11</id>
+            <properties>
+                <included_buildvers>
+                    ${jdk11.buildvers}
                 </included_buildvers>
             </properties>
         </profile>

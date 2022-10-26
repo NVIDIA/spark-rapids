@@ -29,6 +29,7 @@ jobs:
     outputs:
       sparkHeadVersion: ${{ steps.noSnapshotVersionsStep.outputs.headVersion }}
       sparkTailVersions: ${{ steps.noSnapshotVersionsStep.outputs.tailVersions }}
+      sparkJDK11Versions: ${{ steps.noSnapshotVersionsStep.outputs.jdk11Versions }}
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
@@ -48,6 +49,7 @@ jobs:
           svJsonStr=$(printf {\"include\":[%s]} $svArrBody)
           echo "headVersion=$SPARK_BASE_SHIM_VERSION" >> $GITHUB_OUTPUT
           echo "tailVersions=$svJsonStr" >> $GITHUB_OUTPUT
+          echo "jdk11Versions=$SPARK_SHIM_VERSIONS_JDK11" >> $GITHUB_OUTPUT
 
   package-aggregator:
     needs: get-noSnapshot-versions-from-dist
@@ -99,6 +101,9 @@ jobs:
   verify-modules-with-jdk11:
     needs: get-noSnapshot-versions-from-dist
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        version: ${{ needs.get-noSnapshot-versions-from-dist.outputs.sparkJDK11Versions }}
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
@@ -112,7 +117,7 @@ jobs:
         run: >
           mvn -Dmaven.wagon.http.retryHandler.count=3 -B verify
           -P 'individual,pre-merge'
-          -Dbuildver=${{ needs.get-noSnapshot-versions-from-dist.outputs.sparkHeadVersion }}
+          -Dbuildver=${{ matrix.version }}
           -Dmaven.compiler.release=11
           -Dmaven.compiler.source=11
           -Dmaven.compiler.target=11
