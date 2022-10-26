@@ -737,7 +737,7 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
       rawOut: HostMemoryOutputStream,
       footerStartOffset: Long,
       numRows: Long,
-      protoWriter: shims.CodedOutputStreamShim) = {
+      protoWriter: shims.OrcProtoWriterShim) = {
 
     val startPoint = rawOut.getPos
 
@@ -1766,7 +1766,7 @@ trait OrcCodecWritingHelper extends Arm {
   def withCodecOutputStream[T](
       ctx: OrcPartitionReaderContext,
       out: HostMemoryOutputStream)
-    (block: (WritableByteChannel, shims.CodedOutputStreamShim) => T): T = {
+    (block: (WritableByteChannel, shims.OrcProtoWriterShim) => T): T = {
 
     withResource(Channels.newChannel(out)) { outChannel =>
       val outReceiver = new PhysicalWriter.OutputReceiver {
@@ -1785,7 +1785,7 @@ trait OrcCodecWritingHelper extends Arm {
         }
         withResource(OrcShims.newOrcOutStream(
           getClass.getSimpleName, orcBufferSize, codec, outReceiver)) { codecStream =>
-          val protoWriter = shims.CodedOutputStreamShim(codecStream)
+          val protoWriter = shims.OrcProtoWriterShim(codecStream)
           block(outChannel, protoWriter)
         }
       } finally {

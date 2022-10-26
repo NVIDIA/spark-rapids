@@ -1,3 +1,4 @@
+
 /*
  * Copyright (c) 2022, NVIDIA CORPORATION.
  *
@@ -16,8 +17,24 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex
+import org.apache.orc.com.google.protobuf.{AbstractMessage, CodedOutputStream}
+import org.apache.orc.impl.OutStream
 
-object FileIndexOptionsShims {
-  val BASE_PATH_PARAM = PartitioningAwareFileIndex.BASE_PATH_PARAM
+class OrcProtoWriterShim(orcOutStream: OutStream) {
+  val proxied = CodedOutputStream.newInstance(orcOutStream)
+  def writeAndFlush(obj: Any): Unit = obj match {
+    case m: AbstractMessage =>
+      m.writeTo(proxied)
+      proxied.flush()
+      orcOutStream.flush()
+    case _ =>
+      require(obj.isInstanceOf[AbstractMessage],
+        s"Unexpected protobuf message type: $obj")
+  }
+}
+
+object OrcProtoWriterShim {
+  def apply(orcOutStream: OutStream) = {
+    new OrcProtoWriterShim(orcOutStream)
+  }
 }
