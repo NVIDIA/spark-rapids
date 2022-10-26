@@ -2354,10 +2354,6 @@ object GpuOverrides extends Logging {
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("substr", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
       (in, conf, p, r) => new BinaryExprMeta[StringInstr](in, conf, p, r) {
-        override def convertToGpu(
-            str: Expression,
-            substr: Expression): GpuExpression =
-          GpuStringInstr(str, substr)
       }),
     expr[Substring](
       "Substring operator",
