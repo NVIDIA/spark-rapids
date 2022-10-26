@@ -170,6 +170,12 @@ trait SparkShims {
   def ansiCastRule: ExprRule[_ <: Expression]
 
   /**
+   * Remove TimeZoneId for Cast if needsTimeZone return false.
+   * CastBase was removed in Spark 3.4.0 so the type match needs to be handled separately
+   */
+  def ignoreTimeZone(cast: Expression): Expression
+
+  /**
    * Determine if the Spark version allows the supportsColumnar flag to be overridden
    * in AdaptiveSparkPlanExec. This feature was introduced in Spark 3.2 as part of
    * SPARK-35881.

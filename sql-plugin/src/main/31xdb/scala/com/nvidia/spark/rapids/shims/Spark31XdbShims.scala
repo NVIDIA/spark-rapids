@@ -113,6 +113,14 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
         parent = p, rule = r, doFloatToIntCheck = true, stringToAnsiDate = true))
   }
 
+  override def ignoreTimeZone(e: Expression): Expression = e match {
+    case c: CastBase if c.timeZoneId.nonEmpty && !c.needsTimeZone =>
+      c.withTimeZone(null)
+    case c: GpuCast if c.timeZoneId.nonEmpty && !c.needsTimeZone =>
+      c.withTimeZone(null)
+    case _ => e
+  }
+
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[Cast](
         "Convert a column of one type of data into another type",
