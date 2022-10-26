@@ -22,7 +22,6 @@ import java.sql.Timestamp
 import java.time.LocalDateTime
 import java.util.TimeZone
 
-import ai.rapids.cudf.ColumnVector
 import scala.collection.JavaConverters._
 import scala.util.{Failure, Random, Success, Try}
 
