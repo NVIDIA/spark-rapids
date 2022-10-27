@@ -1531,6 +1531,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val AQE_CBO_JOIN_REORDERING = conf("spark.rapids.sql.cbo.joinReordering")
+    .internal()
+    .doc("Enable join reordering based on statistics from completed query stages " +
+      "when AQE is enabled")
+    .booleanConf
+    .createWithDefault(true)
+
   val OPTIMIZER_ENABLED = conf("spark.rapids.sql.optimizer.enabled")
       .internal()
       .doc("Enable cost-based optimizer that will attempt to avoid " +
@@ -2152,6 +2159,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     DEFAULT_CLOUD_SCHEMES ++ get(CLOUD_SCHEMES).getOrElse(Seq.empty)
 
   lazy val optimizerEnabled: Boolean = get(OPTIMIZER_ENABLED)
+
+  lazy val aqeJoinReordering: Boolean = get(AQE_CBO_JOIN_REORDERING)
 
   lazy val optimizerExplain: String = get(OPTIMIZER_EXPLAIN)
 

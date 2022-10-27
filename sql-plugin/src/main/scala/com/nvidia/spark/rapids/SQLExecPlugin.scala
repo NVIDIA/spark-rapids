@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.optimizer.GpuCostBasedJoinReorder
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -28,6 +30,13 @@ class SQLExecPlugin extends (SparkSessionExtensions => Unit) with Logging {
   override def apply(extensions: SparkSessionExtensions): Unit = {
     extensions.injectColumnar(columnarOverrides)
     extensions.injectQueryStagePrepRule(queryStagePrepOverrides)
+
+    // apply join reordering during logical plan optimization
+    extensions.injectOptimizerRule(_ => GpuCostBasedJoinReorder)
+
+    // apply join reordering during AQE reoptimization
+    // TODO enable this in shim layer for 3.2.3, 3.3.2, 3.4.0
+    //extensions.injectRuntimeOptimizerRule(_ => GpuCostBasedJoinReorder)
   }
 
   private def columnarOverrides(sparkSession: SparkSession): ColumnarRule = {
