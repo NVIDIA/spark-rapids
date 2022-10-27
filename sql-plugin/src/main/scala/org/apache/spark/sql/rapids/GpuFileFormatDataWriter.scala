@@ -543,7 +543,7 @@ class GpuDynamicPartitionDataSingleWriter(
               // concat the caches and this `batch`
               val concat = withResource(subTables) { _ =>
                 // append `batch` to sub tables
-                subTables += GpuColumnVector.from(batch)
+                subTables += table
                 withResource(Table.concatenate(subTables: _*)) { concat =>
                   GpuColumnVector.from(concat, outDataTypes)
                 }
