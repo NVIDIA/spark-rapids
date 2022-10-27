@@ -20,6 +20,7 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 
 import com.nvidia.spark.rapids.shims.SparkShimImpl
+import org.apache.hadoop.fs.FileUtil.fullyDelete
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.{JobContext, TaskAttemptContext}
 import org.apache.parquet.hadoop.ParquetFileReader
@@ -80,7 +81,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
         }
       })
     } finally {
-      tempFile.delete()
+      fullyDelete(tempFile)
     }
   }
 
@@ -98,7 +99,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
         assertResult("0000000001")(firstRow.getString(0))
       })
     } finally {
-      tempFile.delete()
+      fullyDelete(tempFile)
     }
   }
 
@@ -133,7 +134,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
           })
       })
     } finally {
-      tempFile.delete()
+      fullyDelete(tempFile)
     }
   }
 
@@ -156,7 +157,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
           })
       })
     } finally {
-      tempFile.delete()
+      fullyDelete(tempFile)
     }
   }
 
@@ -188,7 +189,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
             })
         })
       } finally {
-        tempFile.delete()
+        fullyDelete(tempFile)
       }
     }
   }
