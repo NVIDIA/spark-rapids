@@ -76,6 +76,18 @@
 
     <profiles>
         <profile>
+            <id>release312</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>312</value>
+                </property>
+            </activation>
+            <properties>
+                <spark.shim.sources>${spark31X.sources},${spark312.sources}</spark.shim.sources>
+            </properties>
+        </profile>
+        <profile>
             <id>release321cdh</id>
             <activation>
                 <property>
@@ -461,6 +473,22 @@
               <artifactId>maven-antrun-plugin</artifactId>
               <executions>
                 <execution>
+                    <id>generate-source-dir-props</id>
+                    <phase>initialize</phase>
+                    <goals><goal>run</goal></goals>
+                    <configuration>
+                        <exportAntProperties>true</exportAntProperties>
+                        <target>
+                            <pathconvert property="spark31X.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main" includes="311+-nondb/*,311until320*/*,pre320*/*"/>
+                            </pathconvert>
+                            <pathconvert property="spark312.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main" includes="312-nondb/*"/>
+                            </pathconvert>
+                        </target>
+                    </configuration>
+                </execution>
+                <execution>
                   <id>copy-notice</id>
                   <goals>
                     <goal>run</goal>
@@ -515,12 +543,12 @@
                 <artifactId>build-helper-maven-plugin</artifactId>
                 <executions>
                     <execution>
-                        <id>add-profile-src-30+</id>
-                        <phase>generate-sources</phase> <!-- add extra source code before compile -->
-                    </execution>
-                    <execution>
-                        <id>add-profile-src-31+</id>
-                        <phase>generate-sources</phase> <!-- add extra source code before compile -->
+                        <id>add-profile-src</id>
+                        <phase>generate-sources</phase>
+                        <goals><goal>add-source</goal></goals>
+                        <configuration>
+                            <sources>${spark.shim.sources}</sources>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
