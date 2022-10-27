@@ -1198,15 +1198,16 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
         throw new IllegalStateException("INTERNAL ERROR: Should never have a situation where " +
             "prev and previousOver do not match.")
     }
-    withResource(ret) { ret =>
-      withResource(decimalOverflowOnAdd) { decimalOverflowOnAdd =>
-        withResource(DecimalUtil.outOfBounds(ret, dt)) { valOutOfBounds =>
-          withResource(valOutOfBounds.or(decimalOverflowOnAdd)) { outOfBounds =>
-            closeOnExcept(GpuCast.fixDecimalBounds(ret, outOfBounds, isAnsi)) { replaced =>
-              updateState(replaced, Some(outOfBounds))
-              replaced
-            }
-          }
+    withResource(ret) { _ =>
+      val outOfBounds = withResource(decimalOverflowOnAdd) { _ =>
+        withResource(DecimalUtil.outOfBounds(ret, dt)) {
+          _.or(decimalOverflowOnAdd)
+        }
+      }
+      withResource(outOfBounds) { _ =>
+        closeOnExcept(GpuCast.fixDecimalBounds(ret, outOfBounds, isAnsi)) { replaced =>
+          updateState(replaced, Some(outOfBounds))
+          replaced
         }
       }
     }

@@ -257,7 +257,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       }
       return new HostColumnVector.StructType(nullable, children);
     } else if (spark instanceof BinaryType) {
-      return new HostColumnVector.ListType(nullable, convertFrom(DataTypes.ByteType, false));
+      return new HostColumnVector.ListType(
+          nullable, new HostColumnVector.BasicType(false, DType.UINT8));
     } else {
       // Only works for basic types
       return new HostColumnVector.BasicType(nullable, getNonNestedRapidsType(spark));
@@ -489,6 +490,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     } else if (type instanceof StringType) {
       return DType.STRING;
     } else if (type instanceof BinaryType) {
+      // FIXME: this should not be here, we should be able remove or throw
       return DType.LIST;
     } else if (type instanceof NullType) {
       // INT8 is used for both in this case
@@ -718,7 +720,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       }
       try (ColumnView tmp = cv.getChildColumnView(0)) {
         DType tmpType = tmp.getType();
-        return tmpType.equals(DType.INT8) || tmpType.equals(DType.UINT8);
+        return tmpType.equals(DType.UINT8);
       }
     } else {
       // Unexpected type

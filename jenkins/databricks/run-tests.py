@@ -47,7 +47,7 @@ def main():
         print("Copying test report tarball back")
         report_path_prefix = params.jar_path if params.jar_path else "/home/ubuntu/spark-rapids"
         rsync_command = "rsync -I -Pave \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2200 -i %s\"" \
-            " ubuntu@%s:%s/integration_tests/target/run_dir/TEST-pytest-*.xml ./" % \
+            " ubuntu@%s:%s/integration_tests/target/run_dir*/TEST-pytest-*.xml ./" % \
             (params.private_key_file, master_addr, report_path_prefix)
         print("rsync command: %s" % rsync_command)
         subprocess.check_call(rsync_command, shell = True)

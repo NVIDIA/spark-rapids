@@ -333,14 +333,12 @@ class JsonPartitionReader(
    * JSON only supports unquoted lower-case "true" and "false" as valid boolean values.
    */
   override def castStringToBool(input: ColumnVector): ColumnVector = {
-    withResource(Scalar.fromString("true")) { t =>
-      withResource(Scalar.fromString("false")) { f =>
-        withResource(input.equalTo(t)) { isTrue =>
-          withResource(input.equalTo(f)) { isFalse =>
-            withResource(isTrue.or(isFalse)) { isValidBool =>
-              withResource(Scalar.fromNull(DType.BOOL8)) { nullBool =>
-                isValidBool.ifElse(isTrue, nullBool)
-              }
+    withResource(Scalar.fromString(true.toString)) { t =>
+      withResource(Scalar.fromNull(DType.BOOL8)) { nullBool =>
+        withResource(ColumnVector.fromStrings(true.toString, false.toString)) { boolStrings =>
+          withResource(input.contains(boolStrings)) { isValidBool =>
+            withResource(input.equalTo(t)) {
+              isValidBool.ifElse(_, nullBool)
             }
           }
         }

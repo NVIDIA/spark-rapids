@@ -321,11 +321,11 @@ class RecommendationEntry(val name: String,
  *
  * @param clusterProps The cluster properties including cores, mem, GPU, and software
  *                     (see [[ClusterProperties]]).
- * @param appInfo the container holding the profiling result.
+ * @param appInfoProvider the container holding the profiling result.
  */
 class AutoTuner(
     val clusterProps: ClusterProperties,
-    val appInfo: Option[ApplicationSummaryInfo])  extends Logging {
+    val appInfoProvider: AppSummaryInfoBaseProvider)  extends Logging {
 
   import AutoTuner._
 
@@ -344,28 +344,8 @@ class AutoTuner(
     !limitedLogicRecommendations.contains(prop)
   }
 
-  private def findPropertyInProfPropertyResults(
-      key: String,
-      props: Seq[RapidsPropertyProfileResult]): Option[String] = {
-    props.collectFirst {
-      case entry: RapidsPropertyProfileResult
-        if entry.key == key && entry.rows(1) != "null" => entry.rows(1)
-    }
-  }
-  def getSparkPropertyFromProfile(propKey: String): Option[String] = {
-    appInfo match {
-      case None => None
-      case Some(profInfo) =>
-        val resFromProfSparkProps = findPropertyInProfPropertyResults(propKey, profInfo.sparkProps)
-        resFromProfSparkProps match {
-          case None => findPropertyInProfPropertyResults(propKey, profInfo.rapidsProps)
-          case Some(_) => resFromProfSparkProps
-        }
-    }
-  }
-
   def getPropertyValue(key: String): Option[String] = {
-    val fromProfile = getSparkPropertyFromProfile(key)
+    val fromProfile = appInfoProvider.getProperty(key)
     fromProfile match {
       case None => Option(clusterProps.softwareProperties.get(key))
       case Some(_) => fromProfile
@@ -523,13 +503,6 @@ class AutoTuner(
     (pinnedMem, executorMemOverhead)
   }
 
-  private def getSparkVersion: Option[String] = {
-    appInfo match {
-      case Some(app) => Option(app.appInfo.head.sparkVersion)
-      case None => None
-    }
-  }
-
   /**
    * Find the label of the memory.overhead based on the spark master configuration and the spark
    * version.
@@ -545,7 +518,7 @@ class AutoTuner(
         if (sparkMaster.contains("yarn")) {
           defaultLabel
         } else if (sparkMaster.contains("k8s")) {
-          getSparkVersion match {
+          appInfoProvider.getSparkVersion match {
             case Some(version) =>
               if (compareSparkVersion(version, "3.3.0") > 0) {
                 "spark.executor.memoryOverheadFactor"
@@ -637,15 +610,11 @@ class AutoTuner(
     if (aqeEnabled == "False") {
       appendComment(commentsForMissingProps("spark.sql.adaptive.enabled"))
     }
-    if (appInfo.isDefined) {
-      val jvmGCFraction = appInfo.get.sqlTaskAggMetrics.map {
-        taskMetrics => taskMetrics.jvmGCTimeSum * 1.0 / taskMetrics.executorCpuTime
-      }
-      if (jvmGCFraction.nonEmpty) { // avoid zero division
-        if ((jvmGCFraction.sum / jvmGCFraction.size) > MAX_JVM_GCTIME_FRACTION) {
-          appendComment("Average JVM GC time is very high. " +
-            "Other Garbage Collectors can be used for better performance.")
-        }
+    val jvmGCFraction = appInfoProvider.getJvmGCFractions
+    if (jvmGCFraction.nonEmpty) { // avoid zero division
+      if ((jvmGCFraction.sum / jvmGCFraction.size) > MAX_JVM_GCTIME_FRACTION) {
+        appendComment("Average JVM GC time is very high. " +
+          "Other Garbage Collectors can be used for better performance.")
       }
     }
   }
@@ -665,13 +634,8 @@ class AutoTuner(
    *     Output: newMaxPartitionBytes = 2g / (512m/128m) = 512m
    */
   private def calculateMaxPartitionBytes(maxPartitionBytes: String): String = {
-    val app = appInfo.get
-    // Autotuner only supports a single app right now, so we get whatever value is here
-    val inputBytesMax = if (app.maxTaskInputBytesRead.nonEmpty) {
-      app.maxTaskInputBytesRead.head.maxTaskInputBytesRead / 1024 / 1024
-    } else {
-      0.0
-    }
+    // AutoTuner only supports a single app right now, so we get whatever value is here
+    val inputBytesMax = appInfoProvider.getMaxInput / 1024 / 1024
     val maxPartitionBytesNum = convertToMB(maxPartitionBytes)
     if (inputBytesMax == 0.0) {
       maxPartitionBytesNum.toString
@@ -708,11 +672,7 @@ class AutoTuner(
       getPropertyValue("spark.sql.files.maxPartitionBytes").getOrElse(MAX_PARTITION_BYTES)
     val recommended =
       if (isCalculationEnabled("spark.sql.files.maxPartitionBytes")) {
-        appInfo match {
-          case None => s"${convertToMB(maxPartitionProp)}"
-          case Some(_) =>
-            calculateMaxPartitionBytes(maxPartitionProp)
-        }
+        calculateMaxPartitionBytes(maxPartitionProp)
       } else {
         s"${convertToMB(maxPartitionProp)}"
       }
@@ -732,16 +692,12 @@ class AutoTuner(
       getPropertyValue(lookup).getOrElse(DEF_SHUFFLE_PARTITIONS).toInt
     // TODO: Need to look at other metrics for GPU spills (DEBUG mode), and batch sizes metric
     if (isCalculationEnabled(lookup)) {
-      appInfo.foreach { app =>
-        val totalSpilledMetrics = app.sqlTaskAggMetrics.map { task =>
-          task.diskBytesSpilledSum + task.memoryBytesSpilledSum
-        }.sum
-        if (totalSpilledMetrics > 0) {
-          shufflePartitions *= DEF_SHUFFLE_PARTITION_MULTIPLIER
-          // Could be memory instead of partitions
-          appendOptionalComment(lookup,
-            s"'$lookup' should be increased since spilling occurred.")
-        }
+      val totalSpilledMetrics = appInfoProvider.getSpilledMetrics.sum
+      if (totalSpilledMetrics > 0) {
+        shufflePartitions *= DEF_SHUFFLE_PARTITION_MULTIPLIER
+        // Could be memory instead of partitions
+        appendOptionalComment(lookup,
+          s"'$lookup' should be increased since spilling occurred.")
       }
     }
     appendRecommendation("spark.sql.shuffle.partitions", s"$shufflePartitions")
@@ -885,7 +841,7 @@ object AutoTuner extends Logging {
 
   private def handleException(
       ex: Exception,
-      appInfo: Option[ApplicationSummaryInfo]): AutoTuner = {
+      appInfo: AppSummaryInfoBaseProvider): AutoTuner = {
     logError("Exception: " + ex.getStackTrace.mkString("Array(", ", ", ")"))
     val tuning = new AutoTuner(new ClusterProperties(), appInfo)
     val msg = ex match {
@@ -924,30 +880,31 @@ object AutoTuner extends Logging {
    * existing file. This can be used in testing.
    *
    * @param clusterProps the cluster properties as string.
-   * @param appInfo Optional of the profiling container.
+   * @param singleAppProvider the wrapper implementation that accesses the properties of the profile
+   *                          results.
    * @return a new AutoTuner object.
    */
   def buildAutoTunerFromProps(
       clusterProps: String,
-      appInfo: Option[ApplicationSummaryInfo]): AutoTuner = {
+      singleAppProvider: AppSummaryInfoBaseProvider): AutoTuner = {
     try {
       val clusterPropsOpt = loadClusterPropertiesFromContent(clusterProps)
-      new AutoTuner(clusterPropsOpt.getOrElse(new ClusterProperties()), appInfo)
+      new AutoTuner(clusterPropsOpt.getOrElse(new ClusterProperties()), singleAppProvider)
     } catch {
       case e: Exception =>
-        handleException(e, appInfo)
+        handleException(e, singleAppProvider)
     }
   }
 
   def buildAutoTuner(
       filePath: String,
-      appInfo: Option[ApplicationSummaryInfo]): AutoTuner = {
+      singleAppProvider: AppSummaryInfoBaseProvider): AutoTuner = {
     try {
       val clusterPropsOpt = loadClusterProps(filePath)
-      new AutoTuner(clusterPropsOpt.getOrElse(new ClusterProperties()), appInfo)
+      new AutoTuner(clusterPropsOpt.getOrElse(new ClusterProperties()), singleAppProvider)
     } catch {
       case e: Exception =>
-        handleException(e, appInfo)
+        handleException(e, singleAppProvider)
     }
   }
 
