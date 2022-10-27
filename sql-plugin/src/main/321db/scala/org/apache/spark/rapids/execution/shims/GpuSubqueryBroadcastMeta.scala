@@ -43,9 +43,9 @@ class GpuSubqueryBroadcastMeta(
     // DPP: For AQE off, in this case, we handle DPP by converting the underlying 
     // BroadcastExchangeExec to GpuBroadcastExchangeExec
     // This is slightly different from the Apache Spark case, because Spark 
-    // sends the underlying plan into the plugin in advance via the PlanSubqueries rule
-    // here, we have the full non-GPU subquery plan, so we convert the whole
-    // thing here.
+    // sends the underlying plan into the plugin in advance via the PlanSubqueries rule.
+    // Here, we have the full non-GPU subquery plan, so we convert the whole
+    // thing.
     case ex @ BroadcastExchangeExec(_, child) =>
       val exMeta = new GpuBroadcastMeta(ex.copy(child = child), conf, p, r)
       exMeta.tagForGpu()
