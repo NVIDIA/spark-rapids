@@ -25,7 +25,7 @@ case class GpuJoinEstimation(join: Join) extends Logging {
       case Inner | LeftOuter | RightOuter | FullOuter =>
         estimateInnerOuterJoin()
       case Cross =>
-        println("GpuJoinEstimation.CrossJoin")
+        logDebug("GpuJoinEstimation.CrossJoin")
         estimateInnerOuterJoin().map(s => s.copy(rowCount = s.rowCount.map(r => r*r)))
       case LeftSemi | LeftAnti =>
         estimateLeftSemiAntiJoin()
@@ -44,11 +44,10 @@ case class GpuJoinEstimation(join: Join) extends Logging {
    */
   private def estimateInnerOuterJoin(): Option[Statistics] = {
 
-    println(s"=== GpuJoinEstimation.estimateInnerOuterJoin() ===\n$join")
-
     val x = join match {
+      //TODO reinstate this
 //      case _ if !rowCountsExist(join.left, join.right) =>
-//        println("GpuJoinEstimation.estimateInnerOuterJoin() no row counts")
+//        logDebug("GpuJoinEstimation.estimateInnerOuterJoin() no row counts")
 //        None
 
       // TODO shim ExtractEquiJoinKeys or just copy it into this repo
@@ -58,7 +57,7 @@ case class GpuJoinEstimation(join: Join) extends Logging {
 
         // spark 3.3
       //case ExtractEquiJoinKeys(joinType, leftKeys, rightKeys, _, _, _, _, _) =>
-        println("GpuJoinEstimation.estimateInnerOuterJoin() ExtractEquiJoinKeys")
+        logDebug("GpuJoinEstimation.estimateInnerOuterJoin() ExtractEquiJoinKeys")
 
         // 1. Compute join selectivity
         val joinKeyPairs = extractJoinKeysWithColStats(leftKeys, rightKeys)
@@ -147,7 +146,7 @@ case class GpuJoinEstimation(join: Join) extends Logging {
           attributeStats = outputAttrStats))
 
       case _ =>
-        println("GpuJoinEstimation.estimateInnerOuterJoin() cartesian product")
+        logDebug("GpuJoinEstimation.estimateInnerOuterJoin() cartesian product")
 
         // When there is no equi-join condition, we do estimation like cartesian product.
         val inputAttrStats = AttributeMap(
@@ -166,7 +165,7 @@ case class GpuJoinEstimation(join: Join) extends Logging {
           attributeStats = inputAttrStats))
     }
 
-    println(s"GpuJoinEstimation.estimateInnerOuterJoin() -> $x")
+    logDebug(s"GpuJoinEstimation.estimateInnerOuterJoin() -> $x")
 
     x
   }

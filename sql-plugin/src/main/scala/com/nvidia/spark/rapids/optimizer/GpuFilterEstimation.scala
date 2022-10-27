@@ -45,17 +45,17 @@ case class GpuFilterEstimation(plan: Filter) extends Logging {
    */
   def estimate: Option[Statistics] = {
     if (childStats.rowCount.isEmpty) {
-      println("GpuFilterEstimation childStats.rowCount.isEmpty")
+      logDebug("GpuFilterEstimation childStats.rowCount.isEmpty")
       return None
     }
 
     // Estimate selectivity of this filter predicate, and update column stats if needed.
     // For not-supported condition, set filter selectivity to a conservative estimate 100%
     val filterSelectivity = calculateFilterSelectivity(plan.condition).getOrElse(1.0)
-    println(s"GpuFilterEstimation filterSelectivity = $filterSelectivity")
+    logDebug(s"GpuFilterEstimation filterSelectivity = $filterSelectivity")
 
     val filteredRowCount: BigInt = ceil(BigDecimal(childStats.rowCount.get) * filterSelectivity)
-    println(s"GpuFilterEstimation filteredRowCount = $filteredRowCount")
+    logDebug(s"GpuFilterEstimation filteredRowCount = $filteredRowCount")
 
     val newColStats = if (filteredRowCount == 0) {
       // The output is empty, we don't need to keep column stats.

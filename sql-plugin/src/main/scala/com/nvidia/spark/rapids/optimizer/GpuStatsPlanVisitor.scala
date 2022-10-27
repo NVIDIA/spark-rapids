@@ -1,5 +1,6 @@
 package com.nvidia.spark.rapids.optimizer
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.execution.adaptive.{LogicalQueryStage, QueryStageExec}
@@ -9,7 +10,7 @@ import org.apache.spark.sql.types.{DataTypes, StructType}
 /**
  * A [[LogicalPlanVisitor]] that computes the statistics for the cost-based optimizer.
  */
-object GpuStatsPlanVisitor extends LogicalPlanVisitor[Statistics] {
+object GpuStatsPlanVisitor extends LogicalPlanVisitor[Statistics] with Logging {
 
   private def fallback(p: LogicalPlan): Statistics = default(p)
 
@@ -18,20 +19,20 @@ object GpuStatsPlanVisitor extends LogicalPlanVisitor[Statistics] {
         case qs: QueryStageExec => qs.plan match {
           case e: GpuShuffleExchangeExec =>
             // access GPU stats directly
-            println(s"Using GPU stats for completed query stage: $physicalPlan")
+            logDebug(s"Using GPU stats for completed query stage: $physicalPlan")
             e.runtimeStatistics
           case _ =>
-            println(s"Falling back to Spark stats for completed query stage: $physicalPlan")
+            logDebug(s"Falling back to Spark stats for completed query stage: $physicalPlan")
             inferRowCount(logicalPlan.schema, logicalPlan.stats) // fallback to Spark stats
         }
         case _ =>
-          println(s"Falling back to Spark stats for completed query stage: $physicalPlan")
+          logDebug(s"Falling back to Spark stats for completed query stage: $physicalPlan")
           inferRowCount(logicalPlan.schema, logicalPlan.stats) // fallback to Spark stats
     }
     case p: LogicalRelation =>
       val stats = inferRowCount(p.schema, p.computeStats())
       val relation = p.relation.asInstanceOf[HadoopFsRelation]
-      println(s"GpuStatsPlanVisitor " +
+      logDebug(s"GpuStatsPlanVisitor " +
         s"rel=${relation.location.inputFiles.head} " +
         s"rowCount=${stats.rowCount}")
       stats
@@ -86,7 +87,7 @@ object GpuStatsPlanVisitor extends LogicalPlanVisitor[Statistics] {
 
   override def visitFilter(p: Filter): Statistics = {
     val stats = GpuFilterEstimation(p).estimate.getOrElse(fallback(p))
-    println(s"Filter: stats=$stats")
+    logDebug(s"Filter: stats=$stats")
     stats
   }
 
@@ -108,7 +109,7 @@ object GpuStatsPlanVisitor extends LogicalPlanVisitor[Statistics] {
 
   override def visitJoin(p: Join): Statistics = {
     val stats = GpuJoinEstimation(p).estimate.getOrElse(fallback(p))
-    println(s"Join: stats=$stats")
+    logDebug(s"Join: stats=$stats")
     stats
   }
 
@@ -118,7 +119,7 @@ object GpuStatsPlanVisitor extends LogicalPlanVisitor[Statistics] {
 
   override def visitProject(p: Project): Statistics = {
     val stats = GpuProjectEstimation.estimate(p).getOrElse(fallback(p))
-    println(s"Projection: stats=$stats")
+    logDebug(s"Projection: stats=$stats")
     stats
   }
 

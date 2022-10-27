@@ -17,6 +17,7 @@
 
 package com.nvidia.spark.rapids.optimizer
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeMap}
 import org.apache.spark.sql.catalyst.plans.logical.{ColumnStat, Statistics, Union}
 import org.apache.spark.sql.types._
@@ -26,7 +27,7 @@ import org.apache.spark.sql.types._
  * and estimate min and max stats for each column by finding the overall min and max of that
  * column coming from its children.
  */
-object GpuUnionEstimation {
+object GpuUnionEstimation extends Logging {
 
   private def createStatComparator(dt: DataType): (Any, Any) => Boolean = dt match {
     case ByteType => (a: Any, b: Any) =>
@@ -67,7 +68,7 @@ object GpuUnionEstimation {
   }
 
   def estimate(union: Union): Option[Statistics] = {
-    println("GpuUnionEstimation.estimate() BEGIN")
+    logDebug("GpuUnionEstimation.estimate() BEGIN")
     val sizeInBytes = union.children.map(ch => JoinReorderUtils
       .statsWithRowCount(ch).sizeInBytes).sum
     val outputRows = //if (rowCountsExist(union.children: _*)) {
@@ -94,7 +95,7 @@ object GpuUnionEstimation {
         rowCount = outputRows,
         attributeStats = newAttrStats))
 
-    println(s"GpuUnionEstimation.estimate() END -> $x")
+    logDebug(s"GpuUnionEstimation.estimate() END -> $x")
 
     x
   }

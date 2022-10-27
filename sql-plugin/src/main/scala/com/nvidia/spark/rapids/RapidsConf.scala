@@ -1533,10 +1533,10 @@ object RapidsConf {
 
   val AQE_CBO_JOIN_REORDERING = conf("spark.rapids.sql.cbo.joinReordering")
     .internal()
-    .doc("Enable join reordering based on statistics from completed query stages " +
-      "when AQE is enabled")
+    .doc("Enable join reordering based on estimated statistics from file sources and " +
+      "from completed query stages")
     .booleanConf
-    .createWithDefault(true)
+    .createWithDefault(false)
 
   val OPTIMIZER_ENABLED = conf("spark.rapids.sql.optimizer.enabled")
       .internal()

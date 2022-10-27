@@ -42,10 +42,10 @@ object GpuCostBasedJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
   override val ruleName: String = "org.apache.spark.sql.catalyst.optimizer.CostBasedJoinReorder"
 
   def apply(plan: LogicalPlan): LogicalPlan = {
-    println(s"GpuCostBasedJoinReorder.apply() $plan")
+    logDebug(s"GpuCostBasedJoinReorder.apply() $plan")
     val conf = new RapidsConf(plan.conf)
     if (!conf.aqeJoinReordering) {
-      println(s"GpuCostBasedJoinReorder disabled")
+      logDebug(s"GpuCostBasedJoinReorder disabled")
       plan
     } else {
       val result = plan.transformDownWithPruning(_.containsPattern(INNER_LIKE_JOIN), ruleId) {
@@ -72,7 +72,6 @@ object GpuCostBasedJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
       if (items.size > 2 && items.size <= conf.joinReorderDPThreshold && conditions.nonEmpty) {
         JoinReorderDP.search(conf, items, conditions, output)
       } else {
-        println("reorder() skip")
         plan
       }
     // Set consecutive join nodes ordered.
@@ -184,7 +183,7 @@ object JoinReorderDP extends PredicateHelper with Logging {
     }
 
     val durationInMs = (System.nanoTime() - startTime) / (1000 * 1000)
-    println(s"Join reordering finished. Duration: $durationInMs ms, number of items: " +
+    logDebug(s"Join reordering finished. Duration: $durationInMs ms, number of items: " +
       s"${items.length}, number of plans in memo: ${foundPlans.map(_.size).sum}")
 
     // The last level must have one and only one plan, because all items are joinable.
@@ -516,7 +515,7 @@ object JoinReorderUtils {
     // based on schema and data size
 //    plan.invalidateStatsCache()
     val stats = GpuStatsPlanVisitor.visit(plan)
-    //println(s"statsWithRowCount() ${plan.simpleStringWithNodeId()} returning $stats")
+    // logDebug(s"statsWithRowCount() ${plan.simpleStringWithNodeId()} returning $stats")
     stats // replaces BasicStatsPlanVisitor
 
   }
