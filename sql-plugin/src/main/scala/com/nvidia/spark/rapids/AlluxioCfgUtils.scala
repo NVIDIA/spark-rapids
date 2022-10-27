@@ -22,9 +22,11 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 /*
  * Utils for the alluxio configurations.
  * If alluxio feature is disabled, we can tolerate the client jar is absent.
- * Use this pattern to solve the `NoClassDefFoundError` in `MortgageSparkSuite`:
- * if (AlluxioCfgUtils.isAlluxioEnabled) { AlluxioCfgUtils does not import any alluxio class
- *     AlluxioUtils.doSomething();  // AlluxioUtils imported alluxio classes
+ * Use the following pattern to avoid `NoClassDefFoundError` if alluxio feature is disabled:
+ * if(AlluxioCfgUtils.enabledAlluxio* functions) {
+ *     // AlluxioCfgUtils does not import any alluxio class
+ *     // Only AlluxioUtils imports alluxio classes
+ *     AlluxioUtils.doSomething;
  * }
  */
 object AlluxioCfgUtils {

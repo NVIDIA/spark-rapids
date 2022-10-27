@@ -255,7 +255,7 @@ object AlluxioUtils extends Logging with Arm {
         logDebug(s"Already mounted bucket $remote_path to $local_bucket in Alluxio")
       } else {
         throw new RuntimeException(s"Found a same bucket name in $remote_path " +
-            s"and ${mountedBuckets(local_bucket)}")
+          s"and ${mountedBuckets(local_bucket)}")
       }
     }
   }
