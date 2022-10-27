@@ -784,7 +784,7 @@ class AppFilterSuite extends FunSuite {
     }
   }
   
-  test("Test missing start event") {
+  test("Test filtering eventlog with missing start event") {
     TrampolineUtil.withTempDir { outpath =>
       TrampolineUtil.withTempDir { tmpEventLogDir =>
 
