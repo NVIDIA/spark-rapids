@@ -314,7 +314,7 @@ class Analysis(apps: Seq[ApplicationInfo]) {
 
   def getMaxTaskInputSizeBytes(): Seq[SQLMaxTaskInputSizes] = {
     apps.map { app =>
-      val maxOfSql = app.sqlIdToInfo.map { case (sqlId, _) =>
+      val maxOfSqls = app.sqlIdToInfo.map { case (sqlId, _) =>
         val jcs = app.jobIdToInfo.filter { case (_, jc) =>
           jc.sqlID.getOrElse(-1) == sqlId
         }
@@ -331,8 +331,13 @@ class Analysis(apps: Seq[ApplicationInfo]) {
             tasksInSQL.map(_.input_bytesRead).max
           }
         }
-      }.max
-      SQLMaxTaskInputSizes(app.index, app.appId, maxOfSql)
+      }
+      val maxVal = if (maxOfSqls.nonEmpty) {
+        maxOfSqls.max
+      } else {
+        0
+      }
+      SQLMaxTaskInputSizes(app.index, app.appId, maxVal)
     }
   }
 

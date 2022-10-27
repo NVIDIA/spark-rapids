@@ -148,8 +148,10 @@ object SparkSessionHolder extends Logging {
 trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   import SparkSessionHolder.withSparkSession
 
-  def enableCsvConf(): SparkConf = {
-    new SparkConf()
+  def enableCsvConf(): SparkConf = enableCsvConf(new SparkConf())
+
+  def enableCsvConf(conf: SparkConf): SparkConf = {
+    conf
       .set(RapidsConf.ENABLE_READ_CSV_FLOATS.key, "true")
       .set(RapidsConf.ENABLE_READ_CSV_DOUBLES.key, "true")
       .set(RapidsConf.ENABLE_READ_CSV_DECIMALS.key, "true")
