@@ -228,7 +228,10 @@ class GpuSorter(
   /**
    * Merge multiple batches together. All of these batches should be the output of
    * `appendProjectedColumns` and the output of this will also be in that same format.
-   * @param batches the batches to sort
+   *
+   * After this function is called, the argument `spillableBatches` should not be used.
+   *
+   * @param spillableBatches the spillable batches to sort
    * @param sortTime metric for the time spent doing the merge sort
    * @return the sorted data.
    */
@@ -239,7 +242,7 @@ class GpuSorter(
       if (spillableBatches.length == 1) {
         // Single batch no need for a merge sort
         withResource(spillableBatches) { _ =>
-          spillableBatches.head.getColumnarBatch()
+          spillableBatches.remove(0).getColumnarBatch()
         }
       } else {
         closeOnExcept(spillableBatches) { _ =>
