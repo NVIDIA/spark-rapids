@@ -284,7 +284,7 @@ class GpuBroadcastMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule) extends
-  SparkPlanMeta[BroadcastExchangeExec](exchange, conf, parent, rule) with Logging {
+  SparkPlanMeta[BroadcastExchangeExec](exchange, conf, parent, rule) {
 
   override def tagPlanForGpu(): Unit = {
     if (!TrampolineUtil.isSupportedRelation(exchange.mode)) {
