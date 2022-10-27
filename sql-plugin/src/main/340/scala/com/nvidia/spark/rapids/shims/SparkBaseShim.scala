@@ -25,7 +25,7 @@ import org.apache.spark.sql.catalyst.expressions.Expression
  */
 trait SparkBaseShim extends SparkShims {
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+    // return an empty Map
     Map.empty[Class[_ <: Expression], ExprRule[_ <: Expression]]
-    //noop
   }
 }
