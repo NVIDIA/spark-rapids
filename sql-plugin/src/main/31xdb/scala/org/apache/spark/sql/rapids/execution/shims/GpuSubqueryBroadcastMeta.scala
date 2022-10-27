@@ -22,7 +22,6 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.physical.IdentityBroadcastMode
 import org.apache.spark.sql.execution.{SparkPlan, SubqueryBroadcastExec}
 import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec}
-
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec}
 import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
 import org.apache.spark.sql.rapids.execution._
