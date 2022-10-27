@@ -61,6 +61,15 @@ case class GpuCheckOverflow(child: Expression,
   }
 }
 
+/**
+ * A GPU substitution of PromotePrecision, which is a NOOP in Spark too.
+ */
+case class GpuPromotePrecision(child: Expression) extends GpuUnaryExpression {
+  override protected def doColumnar(input: GpuColumnVector): ColumnVector =
+    input.getBase.incRefCount()
+  override def dataType: DataType = child.dataType
+}
+
 case class GpuUnscaledValue(child: Expression) extends GpuUnaryExpression {
   override def dataType: DataType = LongType
   override def toString: String = s"UnscaledValue($child)"
