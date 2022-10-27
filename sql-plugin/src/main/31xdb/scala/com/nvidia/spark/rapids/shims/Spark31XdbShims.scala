@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids.shims
 
-// import com.databricks.sql.execution.ReuseExchangeAndSubquery
 import com.databricks.sql.execution.window.RunningWindowFunctionExec
 import com.databricks.sql.optimizer.PlanDynamicPruningFilters
 import com.nvidia.spark.rapids._
