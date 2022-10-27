@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,30 +24,31 @@ class LimitExecSuite extends SparkQueryCompareTestSuite {
 
  /** CollectLimitExec is off by default, turn it on for tests */
   def enableCollectLimitExec(conf: SparkConf = new SparkConf()): SparkConf = {
-    enableCsvConf().set("spark.rapids.sql.exec.CollectLimitExec", "true")
+    enableCsvConf(conf).set("spark.rapids.sql.exec.CollectLimitExec", "true")
   }
 
-  testSparkResultsAreEqual("limit more than rows", intCsvDf,
+  IGNORE_ORDER_testSparkResultsAreEqual("limit more than rows", intCsvDf,
       conf = enableCollectLimitExec()) {
       frame => frame.limit(10).repartition(2)
   }
 
-  testSparkResultsAreEqual("limit less than rows equal to batchSize", intCsvDf,
+  IGNORE_ORDER_testSparkResultsAreEqual("limit less than rows equal to batchSize", intCsvDf,
     conf = enableCollectLimitExec(makeBatchedBytes(1))) {
     frame => frame.limit(1).repartition(2)
   }
 
-  testSparkResultsAreEqual("limit less than rows applied with batches pending", intCsvDf,
+  IGNORE_ORDER_testSparkResultsAreEqual("limit less than rows applied with batches pending",
+    intCsvDf,
     conf = enableCollectLimitExec(makeBatchedBytes(3))) {
     frame => frame.limit(2).repartition(2)
   }
 
-  testSparkResultsAreEqual("limit with no real columns", intCsvDf,
+  IGNORE_ORDER_testSparkResultsAreEqual("limit with no real columns", intCsvDf,
     conf = enableCollectLimitExec(makeBatchedBytes(3)), repart = 0) {
     frame => frame.limit(2).selectExpr("pi()")
   }
 
-  testSparkResultsAreEqual("collect with limit", testData,
+  IGNORE_ORDER_testSparkResultsAreEqual("collect with limit", testData,
     conf = enableCollectLimitExec()) {
     frame => {
       import frame.sparkSession.implicits._
@@ -56,7 +57,7 @@ class LimitExecSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  testSparkResultsAreEqual("collect with limit, repart=4", testData,
+  IGNORE_ORDER_testSparkResultsAreEqual("collect with limit, repart=4", intCsvDf,
     conf = enableCollectLimitExec(), repart = 4) {
     frame => {
       import frame.sparkSession.implicits._
@@ -69,7 +70,7 @@ class LimitExecSuite extends SparkQueryCompareTestSuite {
     FuzzerUtils.generateDataFrame(spark, FuzzerUtils.createSchema(Seq(DataTypes.IntegerType)), 100)
   }
 
-  testSparkResultsAreEqual("nested limit", testNested, conf = new SparkConf()
+  IGNORE_ORDER_testSparkResultsAreEqual("nested limit", testNested, conf = new SparkConf()
       .set("spark.sql.execution.sortBeforeRepartition", "false")) {
     frame => {
       frame.limit(2).repartition(2)
