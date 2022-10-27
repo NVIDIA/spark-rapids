@@ -1173,8 +1173,8 @@
         <spark321db.version>3.2.1-databricks</spark321db.version>
         <spark322.version>3.2.2</spark322.version>
         <spark330.version>3.3.0</spark330.version>
-        <spark332.version>3.3.2-SNAPSHOT</spark332.version>
         <spark331.version>3.3.1</spark331.version>
+        <spark332.version>3.3.2-SNAPSHOT</spark332.version>
         <spark340.version>3.4.0-SNAPSHOT</spark340.version>
         <spark330cdh.version>3.3.0.3.3.7180.0-274</spark330cdh.version>
         <mockito.version>3.6.0</mockito.version>
