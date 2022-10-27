@@ -87,7 +87,7 @@ def global_init():
     create_tmp_hive()
 
 def create_tmp_hive():
-    path = '/tmp/hive'
+    path = os.environ.get('PYSP_TEST_spark_hadoop_hive_exec_scratchdir', '/tmp/hive')
     mode = stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO
     logging.info(f"Creating directory {path} with permissions {oct(mode)}")
     os.makedirs(path, mode, exist_ok=True)

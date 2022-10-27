@@ -21,7 +21,7 @@ import java.net.URI
 import java.util.concurrent.{Callable, TimeUnit}
 
 import scala.annotation.tailrec
-import scala.collection.JavaConverters.{asScalaBufferConverter, mapAsScalaMapConverter}
+import scala.collection.JavaConverters.mapAsScalaMapConverter
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap}
 import scala.language.implicitConversions
 import scala.math.max
@@ -1019,8 +1019,7 @@ case class AvroExtraInfo() extends ExtraInfo
 
 /** avro schema wrapper */
 case class AvroSchemaWrapper(schema: Schema) extends SchemaBase {
-
-  override def fieldNames: Array[String] = schema.getFields.asScala.map(_.name()).toArray
+  override def isEmpty: Boolean = schema.getFields.isEmpty
 }
 
 /** avro BlockInfo wrapper */

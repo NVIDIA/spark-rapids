@@ -30,7 +30,11 @@ case class SortMergeJoinExecParser(
   override def parse: ExecInfo = {
     // SortMergeJoin doesn't have duration
     val duration = None
-    val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
+    val exprString = node.desc.replaceFirst("SortMergeJoin ", "")
+    val (expressions, supportedJoinType) = SQLPlanParser.parseEquijoinsExpressions(exprString)
+    val notSupportedExprs = expressions.filterNot(expr => checker.isExprSupported(expr))
+    val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName) &&
+      notSupportedExprs.isEmpty && supportedJoinType) {
       (checker.getSpeedupFactor(fullExecName), true)
     } else {
       (1.0, false)

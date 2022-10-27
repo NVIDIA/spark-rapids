@@ -116,7 +116,7 @@ abstract class ExistenceJoinIterator(
       val numExistsTrueRows = existsScatterMap.getRowCount.toInt
       withResource(existsScatterMap.toColumnView(0, numExistsTrueRows)) { existsView =>
         withResource(Scalar.fromBool(true)) { trueScalar =>
-          withResource(Table.scatter(Array(trueScalar), existsView, allFalseTable, false)) {
+          withResource(Table.scatter(Array(trueScalar), existsView, allFalseTable)) {
             _.getColumn(0).incRefCount()
           }
         }
