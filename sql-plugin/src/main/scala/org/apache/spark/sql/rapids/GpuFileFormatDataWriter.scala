@@ -534,39 +534,39 @@ class GpuDynamicPartitionDataSingleWriter(
               }
             }
 
-          withResource(GpuColumnVector.from(table, outDataTypes)) { batch =>
-            if (savedStatus.isDefined && savedStatus.get.tableCaches.nonEmpty) {
-              // convert caches seq to tables and close caches seq
-              val subTables = convertSpillBatchesToTables(savedStatus.get.tableCaches)
-              // clear the caches
-              savedStatus.get.tableCaches.clear()
-              // concat the caches and this `batch`
-              val concat = withResource(subTables) { _ =>
-                // append `batch` to sub tables
-                subTables += table
-                withResource(Table.concatenate(subTables: _*)) { concat =>
-                  GpuColumnVector.from(concat, outDataTypes)
-                }
+          if (savedStatus.isDefined && savedStatus.get.tableCaches.nonEmpty) {
+            // convert caches seq to tables and close caches seq
+            val subTables = convertSpillBatchesToTables(savedStatus.get.tableCaches)
+            // clear the caches
+            savedStatus.get.tableCaches.clear()
+            // concat the caches and this `batch`
+            val concat = withResource(subTables) { _ =>
+              // append `batch` to sub tables
+              subTables += table
+              withResource(Table.concatenate(subTables: _*)) { concat =>
+                GpuColumnVector.from(concat, outDataTypes)
               }
-              // write concat table
-              if (!needSplitBatch(
-                maxRecordsPerFile,
-                currentWriterStatus.recordsInFile,
-                concat.numRows))
-              {
-                statsTrackers.foreach(_.newBatch(concat))
-                currentWriterStatus.recordsInFile += concat.numRows()
-                // the `write` function will close `concat`
-                currentWriterStatus.outputWriter.write(
-                  concat,
-                  statsTrackers
-                )
-              } else {
-                withResource(concat){ _ =>
-                  writeBatch(concat)
-                }
-              }
+            }
+            // write concat table
+            if (!needSplitBatch(
+              maxRecordsPerFile,
+              currentWriterStatus.recordsInFile,
+              concat.numRows))
+            {
+              statsTrackers.foreach(_.newBatch(concat))
+              currentWriterStatus.recordsInFile += concat.numRows()
+              // the `write` function will close `concat`
+              currentWriterStatus.outputWriter.write(
+                concat,
+                statsTrackers
+              )
             } else {
+              withResource(concat){ _ =>
+                writeBatch(concat)
+              }
+            }
+          } else {
+            withResource(GpuColumnVector.from(table, outDataTypes)) { batch =>
               if (!needSplitBatch(
                 maxRecordsPerFile,
                 currentWriterStatus.recordsInFile,
