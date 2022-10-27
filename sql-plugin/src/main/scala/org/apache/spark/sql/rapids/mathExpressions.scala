@@ -48,7 +48,7 @@ case class GpuToDegrees(child: Expression) extends GpuUnaryMathExpression("DEGRE
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
     // Spark's implementation of toDegrees is directly using toDegrees(angrad) in Java,
-    // In jdk8, toDegrees implemention is angrad * 180.0 / PI, while since jdk9, 
+    // In jdk8, toDegrees implemention is angrad * 180.0 / PI, while since jdk9,
     // toDegrees is angrad * DEGREES_TO_RADIANS, where DEGREES_TO_RADIANS is 180.0/PI.
     // So when jdk8 or earlier is used, toDegrees will produce different result on GPU,
     // where it will not overflow when input is very large.
@@ -80,16 +80,19 @@ case class GpuAcoshCompat(child: Expression) extends GpuUnaryMathExpression("ACO
     // to match Spark's
     // StrictMath.log(x + math.sqrt(x * x - 1.0))
     val base = input.getBase
-    withResource(base.mul(base)) { squared =>
-      withResource(Scalar.fromDouble(1.0)) { one =>
-        withResource(squared.sub(one)) { squaredMinOne =>
-          withResource(squaredMinOne.sqrt()) { sqrt =>
-            withResource(base.add(sqrt)) { sum =>
-              sum.log()
-            }
-          }
-        }
+    val squaredMinOne = withResource(base.mul(base)) { squared =>
+      withResource(Scalar.fromDouble(1.0)) {
+        squared.sub
       }
+    }
+    val sqrt = withResource(squaredMinOne) {
+      _.sqrt()
+    }
+    val sum = withResource(sqrt) {
+      base.add
+    }
+    withResource(sum) {
+      _.log()
     }
   }
 
@@ -119,18 +122,22 @@ case class GpuAsinhImproved(child: Expression) extends CudfUnaryMathExpression("
 case class GpuAsinhCompat(child: Expression) extends GpuUnaryMathExpression("ASINH") {
   override def outputTypeOverride: DType = DType.FLOAT64
 
-  def computeBasic(input: ColumnVector): ColumnVector =
-    withResource(input.mul(input)) { squared =>
-      withResource(Scalar.fromDouble(1.0)) { one =>
-        withResource(squared.add(one)) { squaredPlusOne =>
-          withResource(squaredPlusOne.sqrt()) { sqrt =>
-            withResource(input.add(sqrt)) { sum =>
-              sum.log()
-            }
-          }
-        }
-      }
+  def computeBasic(input: ColumnVector): ColumnVector = {
+    val squaredPlusOne = withResource(input.mul(input)) { squared =>
+       withResource(Scalar.fromDouble(1.0)) {
+        squared.add
+       }
     }
+    val sqrt = withResource(squaredPlusOne) {
+      _.sqrt()
+    }
+    val sum = withResource(sqrt) {
+      input.add
+    }
+    withResource(sum) {
+      _.log()
+    }
+  }
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
     // Typically we would just use UnaryOp.ARCSINH, but there are corner cases where cudf
@@ -426,9 +433,9 @@ case class GpuCot(child: Expression) extends GpuUnaryMathExpression("COT") {
 object GpuHypot extends Arm {
   def chooseXandY(lhs: ColumnVector, rhs: ColumnVector): Seq[ColumnVector] = {
     withResource(lhs.abs) { lhsAbs =>
-      withResource(rhs.abs) { rhsAbs => 
+      withResource(rhs.abs) { rhsAbs =>
         withResource(lhsAbs.greaterThan(rhsAbs)) { lhsGreater =>
-          closeOnExcept(lhsGreater.ifElse(lhsAbs, rhsAbs)) { x => 
+          closeOnExcept(lhsGreater.ifElse(lhsAbs, rhsAbs)) { x =>
             Seq(x, lhsGreater.ifElse(rhsAbs, lhsAbs))
           }
         }
@@ -452,7 +459,7 @@ object GpuHypot extends Arm {
     }
   }
 
-  def eitherNan(x: ColumnVector, 
+  def eitherNan(x: ColumnVector,
                 y: ColumnVector): ColumnVector = {
     withResource(x.isNan) { xIsNan =>
       withResource(y.isNan) { yIsNan =>
@@ -475,17 +482,17 @@ object GpuHypot extends Arm {
       yOverX.mul(yOverX)
     }
 
-    val onePlusTerm = withResource(yOverXSquared) { _ => 
+    val onePlusTerm = withResource(yOverXSquared) { _ =>
       withResource(Scalar.fromDouble(1)) { one =>
         one.add(yOverXSquared)
       }
     }
 
-    val onePlusTermSqrt = withResource(onePlusTerm) { _ => 
+    val onePlusTermSqrt = withResource(onePlusTerm) { _ =>
       onePlusTerm.sqrt
-    } 
+    }
 
-    withResource(onePlusTermSqrt) { _ => 
+    withResource(onePlusTermSqrt) { _ =>
       x.mul(onePlusTermSqrt)
     }
   }
@@ -496,7 +503,7 @@ case class GpuHypot(left: Expression, right: Expression) extends CudfBinaryMathE
   override def binaryOp: BinaryOp = BinaryOp.ADD
 
   // naive implementation of hypot
-  // r = sqrt(lhs^2 + rhs^2) 
+  // r = sqrt(lhs^2 + rhs^2)
   // This is prone to overflow with regards either square term
   // However, we can reduce it to
   // r = sqrt(x^2 + y^2) = x * sqrt(1 + (y/x)^2)
@@ -514,20 +521,20 @@ case class GpuHypot(left: Expression, right: Expression) extends CudfBinaryMathE
       val zeroOrBase = withResource(Scalar.fromDouble(0)) { zero =>
         withResource(GpuHypot.both(zero, x, y)) { bothZero =>
           withResource(GpuHypot.computeHypot(x, y)) { hypotComputed =>
-            bothZero.ifElse(zero, hypotComputed) 
+            bothZero.ifElse(zero, hypotComputed)
           }
         }
       }
 
       val nanOrRest = withResource(zeroOrBase) { _ =>
-        withResource(Scalar.fromDouble(Double.NaN)) { nan => 
+        withResource(Scalar.fromDouble(Double.NaN)) { nan =>
           withResource(GpuHypot.eitherNan(x, y)) { eitherNan =>
             eitherNan.ifElse(nan, zeroOrBase)
           }
         }
       }
 
-      val infOrRest = withResource(nanOrRest) { _ => 
+      val infOrRest = withResource(nanOrRest) { _ =>
           withResource(Scalar.fromDouble(Double.PositiveInfinity)) { inf =>
           withResource(GpuHypot.either(inf, x, y)) { eitherInf =>
             eitherInf.ifElse(inf, nanOrRest)
@@ -536,7 +543,7 @@ case class GpuHypot(left: Expression, right: Expression) extends CudfBinaryMathE
       }
 
       withResource(infOrRest) { _ =>
-        withResource(Scalar.fromNull(x.getType)) { nullS => 
+        withResource(Scalar.fromNull(x.getType)) { nullS =>
           withResource(GpuHypot.eitherNull(x, y)) { eitherNull =>
             eitherNull.ifElse(nullS, infOrRest)
           }
@@ -797,13 +804,13 @@ private object RoundingErrorUtil extends Arm {
    * Wrapper of the `cannotChangeDecimalPrecisionError` of RapidsErrorUtils.
    *
    * @param values A decimal column which contains values that try to cast.
-   * @param outOfBounds A boolean column that indicates which value cannot be casted. 
+   * @param outOfBounds A boolean column that indicates which value cannot be casted.
    * Users must make sure that there is at least one `true` in this column.
    * @param fromType The current decimal type.
    * @param toType The type to cast.
    * @param context The error context, default value is "".
    */
-  def cannotChangeDecimalPrecisionError(      
+  def cannotChangeDecimalPrecisionError(
       values: GpuColumnVector,
       outOfBounds: ColumnVector,
       fromType: DecimalType,
@@ -814,7 +821,7 @@ private object RoundingErrorUtil extends Arm {
         .find(i => !hcv.isNull(i) && hcv.getBoolean(i))
         .get
     }
-    val value = withResource(values.copyToHost()){hcv =>  
+    val value = withResource(values.copyToHost()){hcv =>
       hcv.getDecimal(row_id.toInt, fromType.precision, fromType.scale)
     }
     RapidsErrorUtils.cannotChangeDecimalPrecisionError(value, toType)

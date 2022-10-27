@@ -332,13 +332,16 @@ case class GpuArrayExists(
     transformedCV: cudf.ColumnView,
     result: cudf.ColumnView
   ): GpuColumnVector = {
-    withResource(cudf.Scalar.fromBool(false)) { falseScalar =>
-      withResource(cudf.Scalar.fromInt(0)) { zeroScalar =>
-        withResource(transformedCV.countElements()) { elementCounts =>
-          withResource(elementCounts.equalTo(zeroScalar)) { isEmptyList =>
-            GpuColumnVector.from(isEmptyList.ifElse(falseScalar, result), dataType)
-          }
-        }
+
+    val isEmptyList = withResource(cudf.Scalar.fromInt(0)) { zeroScalar =>
+      withResource(transformedCV.countElements()) {
+        _.equalTo(zeroScalar)
+      }
+    }
+
+    withResource(isEmptyList) { _ =>
+      withResource(cudf.Scalar.fromBool(false)) { falseScalar =>
+        GpuColumnVector.from(isEmptyList.ifElse(falseScalar, result), dataType)
       }
     }
   }

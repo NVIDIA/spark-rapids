@@ -127,6 +127,17 @@ def test_locate():
                 'locate("A", a, 500)',
                 'locate("_", a, NULL)'))
 
+def test_instr():
+    gen = mk_str_gen('.{0,3}Z_Z.{0,3}A.{0,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'instr(a, "Z")',
+                'instr(a, "A")',
+                'instr(a, "_")',
+                'instr(a, NULL)',
+                'instr(NULL, "A")',
+                'instr(NULL, NULL)'))
+
 def test_contains():
     gen = mk_str_gen('.{0,3}Z?_Z?.{0,3}A?.{0,3}')
     assert_gpu_and_cpu_are_equal_collect(

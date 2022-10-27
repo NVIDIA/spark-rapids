@@ -112,6 +112,25 @@ def test_parquet_read_coalescing_multiple_files(spark_tmp_path, parquet_gens, re
             conf=all_confs)
 
 
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_parquet_read_avoid_coalesce_incompatible_files(spark_tmp_path, v1_enabled_list):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    def setup_table(spark):
+        df1 = spark.createDataFrame([(("a", "b"),)], "x: struct<y: string, z: string>")
+        df1.write.parquet(data_path + "/data1")
+        df2 = spark.createDataFrame([(("a",),)], "x: struct<z: string>")
+        df2.write.parquet(data_path + "/data2")
+    with_cpu_session(setup_table, conf=rebase_write_corrected_conf)
+    # Configure confs to read as a single task
+    all_confs = copy_and_update(coalesce_parquet_file_reader_multithread_filter_conf, {
+        "spark.sql.sources.useV1SourceList": v1_enabled_list,
+        "spark.sql.files.minPartitionNum": "1"})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read\
+            .schema("x STRUCT<y: string, z: string>")\
+            .option("recursiveFileLookup", "true").parquet(data_path),
+        conf=all_confs)
+
 @pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)

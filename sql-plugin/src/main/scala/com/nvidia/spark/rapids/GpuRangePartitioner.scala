@@ -220,19 +220,15 @@ case class GpuRangePartitioner(
   override def columnarEval(batch: ColumnarBatch): Any = {
     if (rangeBounds.nonEmpty) {
       val (parts, partitionColumns) = computeBoundsAndClose(batch)
-      withResource(partitionColumns) { partitionColumns =>
-        val slicedCb = sliceInternalGpuOrCpu(partitionColumns.head.getRowCount.toInt,
-          parts, partitionColumns)
-        slicedCb.zipWithIndex.filter(_._1 != null)
-      }
+      val slicedCb = sliceInternalGpuOrCpuAndClose(partitionColumns.head.getRowCount.toInt,
+        parts, partitionColumns)
+      slicedCb.zipWithIndex.filter(_._1 != null)
     } else {
-      withResource(batch) { cb =>
-        // Nothing needs to be sliced but a contiguous table is needed for GPU shuffle which
-        // slice will produce.
-        val sliced = sliceInternalGpuOrCpu(cb.numRows, Array(0),
-          GpuColumnVector.extractColumns(cb))
-        sliced.zipWithIndex.filter(_._1 != null)
-      }
+      // Nothing needs to be sliced but a contiguous table is needed for GPU shuffle which
+      // slice will produce.
+      val sliced = sliceInternalGpuOrCpuAndClose(batch.numRows, Array(0),
+        GpuColumnVector.extractColumns(batch))
+      sliced.zipWithIndex.filter(_._1 != null)
     }
   }
 }
