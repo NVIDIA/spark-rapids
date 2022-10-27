@@ -25,7 +25,6 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreePattern._
 import org.apache.spark.sql.execution.{BaseSubqueryExec, ExecSubqueryExpression, ReusedSubqueryExec, SparkPlan}
 import org.apache.spark.sql.execution.exchange.{Exchange, ReusedExchangeExec}
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExec
 
 /**
@@ -44,7 +43,6 @@ import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExec
  * in one go.
  */
 case object ReuseGpuBroadcastExchangeAndSubquery extends Rule[SparkPlan] {
-  def conf: SQLConf = SQLConf.get
 
   def apply(plan: SparkPlan): SparkPlan = {
     if (conf.exchangeReuseEnabled || conf.subqueryReuseEnabled) {
