@@ -241,8 +241,8 @@ class GpuSorter(
     withResource(new NvtxWithMetrics("merge sort", NvtxColor.DARK_GREEN, sortTime)) { _ =>
       if (spillableBatches.length == 1) {
         // Single batch no need for a merge sort
-        withResource(spillableBatches) { _ =>
-          spillableBatches.remove(0).getColumnarBatch()
+        withResource(spillableBatches.remove(0)) { sb =>
+          sb.getColumnarBatch()
         }
       } else {
         closeOnExcept(spillableBatches) { _ =>
