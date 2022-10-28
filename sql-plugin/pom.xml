@@ -490,6 +490,11 @@
                                     <include name="313/*"/>
                                 </dirset>
                             </pathconvert>
+                            <pathconvert property="spark314.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <include name="314/*"/>
+                                </dirset>
+                            </pathconvert>
                         </target>
                     </configuration>
                 </execution>
