@@ -17,7 +17,6 @@
 package org.apache.spark.rapids
 
 import org.apache.spark.SparkDateTimeException
-import org.apache.spark.sql.catalyst.trees.SQLQueryContext
 import org.apache.spark.sql.internal.SQLConf
 
 object ShimTrampolineUtil {
@@ -26,8 +25,6 @@ object ShimTrampolineUtil {
     val errorClass = "CAST_INVALID_INPUT"
     val messageParameters = Map("expression" -> infOrNan, "sourceType" -> "DOUBLE",
       "targetType" -> "TIMESTAMP", "ansiConfig" -> SQLConf.ANSI_ENABLED.key)
-    val context: SQLQueryContext = null
-    val summary: String = ""
-    new SparkDateTimeException(errorClass, messageParameters, null, "")
+    new SparkDateTimeException(errorClass, messageParameters, Array.empty, "")
   }
 }
