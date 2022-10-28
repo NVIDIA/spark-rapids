@@ -551,7 +551,13 @@
                             </pathconvert>
                             <pathconvert property="spark331.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
-                                    <include name="331*"/>
+                                    <include name="331*/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <pathconvert property="spark332.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <include name="331+/*"/>
+                                    <include name="332/*"/>
                                 </dirset>
                             </pathconvert>
                         </target>
