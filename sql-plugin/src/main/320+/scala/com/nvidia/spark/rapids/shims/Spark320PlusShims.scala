@@ -123,7 +123,7 @@ trait Spark320PlusShims extends SparkBaseShim with RebaseShims with Logging {
   override def isWindowFunctionExec(plan: SparkPlan): Boolean = plan.isInstanceOf[WindowExecBase]
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    val exprs = Seq(
+    val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
       GpuOverrides.expr[Cast](
         "Convert a column of one type of data into another type",
         new CastChecks(),

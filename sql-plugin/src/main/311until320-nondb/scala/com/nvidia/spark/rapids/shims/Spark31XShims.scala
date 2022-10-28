@@ -280,13 +280,6 @@ abstract class Spark31XShims extends Spark31Xuntil33XShims with Logging {
         (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
           // ANSI support for ABS was added in 3.2.0 SPARK-33275
           override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, false)
-        }),
-      GpuOverrides.expr[PromotePrecision](
-        "PromotePrecision before arithmetic operations between DecimalType data",
-        ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_128,
-          TypeSig.DECIMAL_128),
-        (a, conf, p, r) => new UnaryExprMeta[PromotePrecision](a, conf, p, r) {
-          override def convertToGpu(child: Expression): GpuExpression = GpuPromotePrecision(child)
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     exprs ++ super.getExprs
