@@ -210,6 +210,7 @@ Sqrt,4
 StartsWith,4
 StddevPop,4
 StddevSamp,4
+StringInstr,4
 StringLPad,4
 StringLocate,4
 StringRPad,4

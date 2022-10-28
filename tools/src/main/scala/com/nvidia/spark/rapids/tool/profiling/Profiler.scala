@@ -466,7 +466,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
 
       if (useAutoTuner) {
         val workerInfoPath = appArgs.workerInfo.getOrElse(AutoTuner.DEFAULT_WORKER_INFO_PATH)
-        val autoTuner: AutoTuner = AutoTuner.buildAutoTuner(workerInfoPath, Some(app))
+        val autoTuner: AutoTuner = AutoTuner.buildAutoTuner(workerInfoPath,
+          new SingleAppSummaryInfoProvider(app))
         // the autotuner allows skipping some properties
         // e.g. getRecommendedProperties(Some(Seq("spark.executor.instances"))) skips the
         // recommendation related to executor instances.

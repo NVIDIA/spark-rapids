@@ -14,20 +14,21 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark331
+package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.SparkShimVersion
+import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
+import org.apache.spark.sql.types.{DataType, NullType, NumericType}
 
-object SparkShimServiceProvider {
-  val VERSION = SparkShimVersion(3, 3, 1)
-  val VERSIONNAMES = Seq(s"$VERSION")
-}
-
-class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
-
-  override def getShimVersion: SparkShimVersion = SparkShimServiceProvider.VERSION
-
-  def matchesVersion(version: String): Boolean = {
-    SparkShimServiceProvider.VERSIONNAMES.contains(version)
+/**
+ * Reimplement the function `checkForNumericExpr` which has been removed since
+ * Spark 3.4.0
+ */
+object TypeUtilsShims {
+  def checkForNumericExpr(dt: DataType, caller: String): TypeCheckResult = {
+    if (dt.isInstanceOf[NumericType] || dt == NullType) {
+      TypeCheckResult.TypeCheckSuccess
+    } else {
+      TypeCheckResult.TypeCheckFailure(s"$caller requires numeric types, not ${dt.catalogString}")
+    }
   }
 }
