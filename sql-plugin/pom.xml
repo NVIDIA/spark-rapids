@@ -532,6 +532,28 @@
                                     <include name="322/*"/>
                                 </dirset>
                             </pathconvert>
+                            <pathconvert property="spark33X.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <include name="311+-nondb/*"/>
+                                    <include name="311until340*/*"/>
+                                    <include name="320+*/*"/>
+                                    <include name="320until340*/*"/>
+                                    <include name="321+*/*"/>
+                                    <include name="330+*/*"/>
+                                    <include name="330until*/*"/>
+                                    <include name="post320-treenode/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <pathconvert property="spark330.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <include name="330/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <pathconvert property="spark331.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <include name="331*"/>
+                                </dirset>
+                            </pathconvert>
                         </target>
                     </configuration>
                 </execution>
