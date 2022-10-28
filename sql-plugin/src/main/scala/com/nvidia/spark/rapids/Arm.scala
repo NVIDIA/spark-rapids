@@ -69,7 +69,7 @@ trait Arm {
     }
   }
 
-  /** Executes the provided code block and then closes the array buffer of resources */
+  /** Executes the provided code block and then closes the abstract collection of resources */
   def withResource[T <: AutoCloseable, V]
       (r: util.AbstractCollection[T])
       (block: util.AbstractCollection[T] => V): V = {
@@ -78,19 +78,6 @@ trait Arm {
       block(r)
     } finally {
       r.asScala.toSeq.safeClose()
-    }
-  }
-
-  def closeOnExcept[T <: AutoCloseable, V]
-      (r: util.AbstractCollection[T])
-      (block: util.AbstractCollection[T] => V): V = {
-    import collection.JavaConverters._
-    try {
-      block(r)
-    } catch {
-      case t: Throwable =>
-        r.asScala.toSeq.safeClose(t)
-        throw t
     }
   }
 
@@ -162,6 +149,21 @@ trait Arm {
         throw t
     }
   }
+
+  /** Executes the provided code block, closing the resources only if an exception occurs */
+  def closeOnExcept[T <: AutoCloseable, V]
+      (r: util.AbstractCollection[T])
+      (block: util.AbstractCollection[T] => V): V = {
+    import collection.JavaConverters._
+    try {
+      block(r)
+    } catch {
+      case t: Throwable =>
+        r.asScala.toSeq.safeClose(t)
+        throw t
+    }
+  }
+
 
   /** Executes the provided code block, freeing the RapidsBuffer only if an exception occurs */
   def freeOnExcept[T <: RapidsBuffer, V](r: T)(block: T => V): V = {
