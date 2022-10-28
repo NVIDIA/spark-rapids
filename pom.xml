@@ -248,27 +248,8 @@
                 <spark.test.version>${spark314.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark31X.sources},${spark314.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/314/scala</spark.shim.test.sources>
             </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-test-profile-src-314</id>
-                                <goals><goal>add-test-source</goal></goals>
-                                <phase>generate-test-sources</phase>
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/test/314/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
             <modules>
                 <module>common</module>
                 <module>dist</module>
@@ -295,27 +276,8 @@
                 <spark.test.version>${spark320.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark32X.sources},${spark320.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/320/scala</spark.shim.test.sources>
             </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-test-profile-src-320</id>
-                                <goals><goal>add-test-source</goal></goals>
-                                <phase>generate-test-sources</phase>
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/test/320/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
             <modules>
                 <module>common</module>
                 <module>dist</module>
@@ -341,27 +303,8 @@
                 <spark.test.version>${spark321.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark32X.sources},${spark321.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/321/scala</spark.shim.test.sources>
             </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-test-profile-src-321</id>
-                                <goals><goal>add-test-source</goal></goals>
-                                <phase>generate-test-sources</phase>
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/test/321/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
             <modules>
                 <module>common</module>
                 <module>dist</module>
@@ -386,50 +329,9 @@
                 <spark.version>${spark321cdh.version}</spark.version>
                 <spark.test.version>${spark321cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
+                <spark.shim.sources>${spark321cdh.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/321cdh/scala</spark.shim.test.sources>
             </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-profile-src-31+</id>
-                                <goals><goal>add-source</goal></goals>
-                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/main/321cdh/scala</source>
-                                        <source>${project.basedir}/src/main/311+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/311until330-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/320+/java</source>
-                                        <source>${project.basedir}/src/main/311until340-all/scala</source>
-                                        <source>${project.basedir}/src/main/320+/scala</source>
-                                        <source>${project.basedir}/src/main/320+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/320until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/320until330-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/320until340-all/scala</source>
-                                        <source>${project.basedir}/src/main/321+/scala</source>
-                                        <source>${project.basedir}/src/main/321until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/post320-treenode/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <id>add-test-profile-src-321cdh</id>
-                                <goals><goal>add-test-source</goal></goals>
-                                <phase>generate-test-sources</phase>
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/test/321cdh/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
             <repositories>
                 <repository>
                     <id>cloudera-repo</id>
@@ -461,27 +363,8 @@
                 <spark.test.version>${spark322.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark32X.sources},${spark322.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/322/scala</spark.shim.test.sources>
             </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-test-profile-src-322</id>
-                                <goals><goal>add-test-source</goal></goals>
-                                <phase>generate-test-sources</phase>
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/test/322/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
             <modules>
                 <module>common</module>
                 <module>dist</module>
@@ -544,27 +427,8 @@
                 <spark.test.version>${spark330.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark33X.sources},${spark330.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/330/scala</spark.shim.test.sources>
             </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-test-profile-src-330</id>
-                                <goals><goal>add-test-source</goal></goals>
-                                <phase>generate-test-sources</phase>
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/test/330/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
             <modules>
                 <module>common</module>
                 <module>dist</module>
@@ -590,27 +454,8 @@
                 <spark.test.version>${spark331.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark33X.sources},${spark331.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/331/scala</spark.shim.test.sources>
             </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-test-profile-src-331</id>
-                                <goals><goal>add-test-source</goal></goals>
-                                <phase>generate-test-sources</phase>
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/test/331/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
             <modules>
                 <module>common</module>
                 <module>dist</module>
@@ -636,27 +481,8 @@
                 <spark.test.version>${spark332.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark33X.sources},${spark332.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/332/scala</spark.shim.test.sources>
             </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-test-profile-src-332</id>
-                                <goals><goal>add-test-source</goal></goals>
-                                <phase>generate-test-sources</phase>
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/test/332/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
             <modules>
                 <module>common</module>
                 <module>dist</module>
@@ -682,27 +508,8 @@
                 <spark.test.version>${spark340.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
                 <spark.shim.sources>${spark34X.sources},${spark340.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/340/scala</spark.shim.test.sources>
             </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-test-profile-src-340</id>
-                                <goals><goal>add-test-source</goal></goals>
-                                <phase>generate-test-sources</phase>
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/test/340/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
             <modules>
                 <module>common</module>
                 <module>dist</module>
@@ -727,46 +534,9 @@
                 <spark.version>${spark330cdh.version}</spark.version>
                 <spark.test.version>${spark330cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.99.7.1.8.0-801</parquet.hadoop.version>
+                <spark.shim.sources>${spark330cdh.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/330cdh/scala</spark.shim.test.sources>
             </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-profile-src-31+</id>
-                                <goals><goal>add-source</goal></goals>
-                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/main/330cdh/scala</source>
-                                        <source>${project.basedir}/src/main/311+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/320+/scala</source>
-                                        <source>${project.basedir}/src/main/311until340-all/scala</source>
-                                        <source>${project.basedir}/src/main/320+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/320until340-all/scala</source>
-                                        <source>${project.basedir}/src/main/321+/scala</source>
-                                        <source>${project.basedir}/src/main/330until340/scala</source>
-                                        <source>${project.basedir}/src/main/330+/scala</source>
-                                        <source>${project.basedir}/src/main/post320-treenode/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <id>add-test-profile-src-330cdh</id>
-                                <goals><goal>add-test-source</goal></goals>
-                                <phase>generate-test-sources</phase>
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/test/330cdh/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
             <repositories>
                 <repository>
                     <id>cloudera-repo</id>

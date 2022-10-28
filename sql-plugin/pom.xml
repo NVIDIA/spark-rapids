@@ -497,12 +497,14 @@
                             </pathconvert>
                             <pathconvert property="spark32X.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
-                                    <include name="311+-nondb/*"/>
-                                    <include name="311until330*/*"/>
-                                    <include name="311until340*/*"/>
-                                    <include name="320until*/*"/>
-                                    <include name="320+*/*"/>
-                                    <include name="post320-treenode/*"/>
+                                    <patternset id="spark32X.pattern">
+                                        <include name="311+-nondb/*"/>
+                                        <include name="311until330*/*"/>
+                                        <include name="311until340*/*"/>
+                                        <include name="320until*/*"/>
+                                        <include name="320+*/*"/>
+                                        <include name="post320-treenode/*"/>
+                                    </patternset>
                                 </dirset>
                             </pathconvert>
                             <pathconvert property="spark320.sources" pathsep=",">
@@ -526,14 +528,16 @@
                             </pathconvert>
                             <pathconvert property="spark33X.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
-                                    <include name="311+-nondb/*"/>
-                                    <include name="311until340*/*"/>
-                                    <include name="320+*/*"/>
-                                    <include name="320until340*/*"/>
-                                    <include name="321+*/*"/>
-                                    <include name="330+*/*"/>
-                                    <include name="330until*/*"/>
-                                    <include name="post320-treenode/*"/>
+                                    <patternset id="spark33X.pattern">
+                                        <include name="311+-nondb/*"/>
+                                        <include name="311until340*/*"/>
+                                        <include name="320+*/*"/>
+                                        <include name="320until340*/*"/>
+                                        <include name="321+*/*"/>
+                                        <include name="330+*/*"/>
+                                        <include name="330until*/*"/>
+                                        <include name="post320-treenode/*"/>
+                                    </patternset>
                                 </dirset>
                             </pathconvert>
                             <pathconvert property="spark330.sources" pathsep=",">
@@ -566,6 +570,22 @@
                             <pathconvert property="spark340.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
                                     <include name="340/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <pathconvert property="spark321cdh.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <patternset refid="spark32X.pattern"/>
+                                    <include name="321+*/*"/>
+                                    <include name="321until*/*"/>
+                                    <include name="321cdh/*"/>
+                                    <exclude name="*noncdh/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <pathconvert property="spark330cdh.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <patternset refid="spark33X.pattern"/>
+                                    <include name="330cdh/*"/>
+                                    <exclude name="*noncdh/*"/>
                                 </dirset>
                             </pathconvert>
                         </target>
@@ -631,6 +651,16 @@
                         <goals><goal>add-source</goal></goals>
                         <configuration>
                             <sources>${spark.shim.sources}</sources>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>add-shim-test-sources</id>
+                        <phase>generate-test-sources</phase>
+                        <goals><goal>add-test-source</goal></goals>
+                        <configuration>
+                            <sources>
+                                <source>${spark.shim.test.sources}</source>
+                            </sources>
                         </configuration>
                     </execution>
                 </executions>
