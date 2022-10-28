@@ -16,13 +16,18 @@
 
 package com.nvidia.spark.rapids.shims
 
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.internal.SQLConf
 
 /** Utility methods for manipulating Catalyst classes involved in Adaptive Query Execution */
 object AQEUtils {
+  type RuleBuilder = SparkSession => Rule[LogicalPlan]
+
   /** Return a new QueryStageExec reuse instance with updated output attributes */
   def newReuseInstance(sqse: ShuffleQueryStageExec, newOutput: Seq[Attribute]): QueryStageExec = {
     val reusedExchange = ReusedExchangeExec(newOutput, sqse.shuffle)
@@ -34,5 +39,10 @@ object AQEUtils {
   // that.
   def isAdaptiveExecutionSupportedInSparkVersion(conf: SQLConf): Boolean = {
     conf.getConf(SQLConf.ADAPTIVE_EXECUTION_ENABLED)
+  }
+
+  def injectRuntimeOptimizerRule(rule: RuleBuilder): Unit = {
+    throw new UnsupportedOperationException(
+      "This version of Spark does not support injecting runtime optimizations")
   }
 }
