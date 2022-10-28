@@ -245,44 +245,45 @@ abstract class Spark31XShims extends Spark31Xuntil33XShims with Logging {
         parent = p, rule = r, doFloatToIntCheck = true, stringToAnsiDate = false))
   }
 
+  def get31xExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+    GpuOverrides.expr[Cast](
+      "Convert a column of one type of data into another type",
+      new CastChecks(),
+      (cast, conf, p, r) => new CastExprMeta[Cast](cast,
+        SparkSession.active.sessionState.conf.ansiEnabled, conf, p, r,
+        doFloatToIntCheck = true, stringToAnsiDate = false)),
+    GpuOverrides.expr[Average](
+      "Average aggregate operator",
+      ExprChecks.fullAgg(
+        TypeSig.DOUBLE + TypeSig.DECIMAL_128,
+        TypeSig.DOUBLE + TypeSig.DECIMAL_128,
+        Seq(ParamCheck("input",
+          TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128,
+          TypeSig.cpuNumeric))),
+      (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
+        override def tagAggForGpu(): Unit = {
+          GpuOverrides.checkAndTagFloatAgg(a.child.dataType, conf, this)
+        }
+
+        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+          GpuAverage(childExprs.head)
+
+        // Average is not supported in ANSI mode right now, no matter the type
+        override val ansiTypeToCheck: Option[DataType] = None
+      }),
+    GpuOverrides.expr[Abs](
+      "Absolute value",
+      ExprChecks.unaryProjectAndAstInputMatchesOutput(
+        TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric,
+        TypeSig.cpuNumeric),
+      (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
+        // ANSI support for ABS was added in 3.2.0 SPARK-33275
+        override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, false)
+      })
+  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
-      GpuOverrides.expr[Cast](
-        "Convert a column of one type of data into another type",
-        new CastChecks(),
-        (cast, conf, p, r) => new CastExprMeta[Cast](cast,
-          SparkSession.active.sessionState.conf.ansiEnabled, conf, p, r,
-          doFloatToIntCheck = true, stringToAnsiDate = false)),
-      GpuOverrides.expr[Average](
-        "Average aggregate operator",
-        ExprChecks.fullAgg(
-          TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-          TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-          Seq(ParamCheck("input",
-            TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128,
-            TypeSig.cpuNumeric))),
-        (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
-          override def tagAggForGpu(): Unit = {
-            GpuOverrides.checkAndTagFloatAgg(a.child.dataType, conf, this)
-          }
-
-          override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
-            GpuAverage(childExprs.head)
-
-          // Average is not supported in ANSI mode right now, no matter the type
-          override val ansiTypeToCheck: Option[DataType] = None
-        }),
-      GpuOverrides.expr[Abs](
-        "Absolute value",
-        ExprChecks.unaryProjectAndAstInputMatchesOutput(
-          TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric,
-          TypeSig.cpuNumeric),
-        (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
-          // ANSI support for ABS was added in 3.2.0 SPARK-33275
-          override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, false)
-        })
-    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
-    exprs ++ super.getExprs
+    get31xExprs ++ super.getExprs
   }
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
