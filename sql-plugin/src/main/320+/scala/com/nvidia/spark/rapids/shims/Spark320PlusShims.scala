@@ -122,7 +122,7 @@ trait Spark320PlusShims extends SparkBaseShim with RebaseShims with Logging {
 
   override def isWindowFunctionExec(plan: SparkPlan): Boolean = plan.isInstanceOf[WindowExecBase]
 
-  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+  override def get320Exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[Cast](
       "Convert a column of one type of data into another type",
       new CastChecks(),
@@ -232,7 +232,11 @@ trait Spark320PlusShims extends SparkBaseShim with RebaseShims with Logging {
             TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL_64 +
               TypeSig.DAYTIME, TypeSig.numericAndInterval))),
       (windowExpression, conf, p, r) => new GpuWindowExpressionMeta(windowExpression, conf, p, r))
-  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap ++ super.getExprs
+  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+    get320Exprs ++ super.getExprs
+  }
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(
