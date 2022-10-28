@@ -103,7 +103,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        version: ${{ needs.get-noSnapshot-versions-from-dist.outputs.sparkJDK11Versions }}
+        spakr-version: ${{ fromJSON(needs.get-noSnapshot-versions-from-dist.outputs.sparkJDK11Versions) }}
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
