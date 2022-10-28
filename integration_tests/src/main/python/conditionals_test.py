@@ -126,7 +126,7 @@ def test_nvl(data_gen):
 # in both cpu and gpu runs.
 #      E: java.lang.AssertionError: assertion failed: each serializer expression should contain\
 #         at least one `BoundReference`
-@pytest.mark.parametrize('data_gen', all_gens + all_nested_gens_nonempty_struct, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_gens + all_nested_gens_nonempty_struct + map_gens_sample, ids=idfn)
 def test_coalesce(data_gen):
     num_cols = 20
     s1 = gen_scalar(data_gen, force_no_nulls=not isinstance(data_gen, NullGen))
