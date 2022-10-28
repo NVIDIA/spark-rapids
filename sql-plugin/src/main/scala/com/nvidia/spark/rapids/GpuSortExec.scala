@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import java.util
 import java.util.{Comparator, LinkedList, PriorityQueue}
 
 import scala.collection.mutable.ArrayBuffer
@@ -421,12 +422,12 @@ case class GpuOutOfCoreSortIterator(
     while (!pending.isEmpty && sortedSize < targetSize) {
       // Keep going until we have enough data to return
       var bytesLeftToFetch = targetSize
-      val pendingSort = new ArrayBuffer[SpillableColumnarBatch]()
+      val pendingSort = new util.ArrayDeque[SpillableColumnarBatch]()
       closeOnExcept(pendingSort) { _ =>
         while (!pending.isEmpty &&
             (bytesLeftToFetch - pending.peek().buffer.sizeInBytes >= 0 || pendingSort.isEmpty)) {
           val buffer = pending.poll().buffer
-          pendingSort += buffer
+          pendingSort.add(buffer)
           bytesLeftToFetch -= buffer.sizeInBytes
         }
       }

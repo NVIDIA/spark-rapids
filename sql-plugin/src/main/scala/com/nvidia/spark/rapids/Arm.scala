@@ -15,6 +15,8 @@
  */
 package com.nvidia.spark.rapids
 
+import java.util
+
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -64,6 +66,31 @@ trait Arm {
       block(r)
     } finally {
       r.safeClose()
+    }
+  }
+
+  /** Executes the provided code block and then closes the array buffer of resources */
+  def withResource[T <: AutoCloseable, V]
+      (r: util.AbstractCollection[T])
+      (block: util.AbstractCollection[T] => V): V = {
+    import collection.JavaConverters._
+    try {
+      block(r)
+    } finally {
+      r.asScala.toSeq.safeClose()
+    }
+  }
+
+  def closeOnExcept[T <: AutoCloseable, V]
+      (r: util.AbstractCollection[T])
+      (block: util.AbstractCollection[T] => V): V = {
+    import collection.JavaConverters._
+    try {
+      block(r)
+    } catch {
+      case t: Throwable =>
+        r.asScala.toSeq.safeClose(t)
+        throw t
     }
   }
 

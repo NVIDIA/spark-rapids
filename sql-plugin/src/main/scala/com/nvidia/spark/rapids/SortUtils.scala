@@ -16,8 +16,9 @@
 
 package com.nvidia.spark.rapids
 
+import java.util
+
 import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, NvtxColor, OrderByArg, Table}
 
@@ -236,23 +237,24 @@ class GpuSorter(
    * @return the sorted data.
    */
   final def mergeSortAndClose(
-      spillableBatches: ArrayBuffer[SpillableColumnarBatch],
+      spillableBatches: util.ArrayDeque[SpillableColumnarBatch],
       sortTime: GpuMetric): ColumnarBatch = {
+    import collection.JavaConverters._
     withResource(new NvtxWithMetrics("merge sort", NvtxColor.DARK_GREEN, sortTime)) { _ =>
-      if (spillableBatches.length == 1) {
+      if (spillableBatches.size == 1) {
         // Single batch no need for a merge sort
-        withResource(spillableBatches.remove(0)) { sb =>
+        withResource(spillableBatches.removeFirst()) { sb =>
           sb.getColumnarBatch()
         }
       } else {
         closeOnExcept(spillableBatches) { _ =>
           val merged = {
-            val tablesToMerge = new ArrayBuffer[Table]()
-            while (spillableBatches.nonEmpty || tablesToMerge.size > 1) {
+            val tablesToMerge = new util.ArrayDeque[Table]()
+            while (!spillableBatches.isEmpty || tablesToMerge.size > 1) {
               // pop a spillable batch if there is one to pop
               var spillableCandidate: Option[SpillableColumnarBatch] = None
-              if (spillableBatches.nonEmpty) {
-                spillableCandidate = Some(spillableBatches.remove(0))
+              if (!spillableBatches.isEmpty) {
+                spillableCandidate = Some(spillableBatches.removeFirst())
               }
 
               // optionally add a table to `tablesToMerge`
@@ -261,13 +263,13 @@ class GpuSorter(
                   _.foreach { sb =>
                     // materialize a potentially spilled batch
                     withResource(sb.getColumnarBatch()) { batch =>
-                      tablesToMerge.append(GpuColumnVector.from(batch))
+                      tablesToMerge.add(GpuColumnVector.from(batch))
                     }
                   }
                 }
               }
 
-              if (tablesToMerge.length > 1) {
+              if (tablesToMerge.size > 1) {
                 // In the current version of cudf merge does not work for lists and maps.
                 // This should be fixed by https://github.com/rapidsai/cudf/issues/8050
                 // Nested types in sort key columns is not supported either.
@@ -275,28 +277,28 @@ class GpuSorter(
                   // so as a work around we concatenate all of the data together and then sort it.
                   // It is slower, but it works
                   val concatenated = withResource(tablesToMerge) { _ =>
-                    Table.concatenate(tablesToMerge.toArray: _*)
+                    Table.concatenate(tablesToMerge.asScala.toArray: _*)
                   }
                   // we no longer care about the old tables, we closed them
                   tablesToMerge.clear()
 
                   // add a table to be merged with the next spillable batch
                   withResource(concatenated) { _ =>
-                    tablesToMerge.append(concatenated.orderBy(cudfOrdering: _*))
+                    tablesToMerge.add(concatenated.orderBy(cudfOrdering: _*))
                   }
                 } else {
                   val merged = withResource(tablesToMerge) { _ =>
-                    Table.merge(tablesToMerge.toArray, cudfOrdering: _*)
+                    Table.merge(tablesToMerge.asScala.toArray, cudfOrdering: _*)
                   }
                   // we no longer care about the old tables, we closed them
                   tablesToMerge.clear()
 
                   // add the result to be merged with the next spillable batch
-                  tablesToMerge.append(merged)
+                  tablesToMerge.add(merged)
                 }
               }
             }
-            tablesToMerge.remove(0)
+            tablesToMerge.removeFirst()
           }
           withResource(merged) { merged =>
             GpuColumnVector.from(merged, projectedBatchTypes)
