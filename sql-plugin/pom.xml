@@ -495,6 +495,21 @@
                                     <include name="314/*"/>
                                 </dirset>
                             </pathconvert>
+                            <pathconvert property="spark32X.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <include name="311+-nondb/*"/>
+                                    <include name="311until330*/*"/>
+                                    <include name="311until340*/*"/>
+                                    <include name="320until*/*"/>
+                                    <include name="320+*/*"/>
+                                    <include name="post320-treenode/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <pathconvert property="spark320.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <include name="320/*"/>
+                                </dirset>
+                            </pathconvert>
                         </target>
                     </configuration>
                 </execution>

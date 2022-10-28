@@ -294,6 +294,7 @@
                 <spark.version>${spark320.version}</spark.version>
                 <spark.test.version>${spark320.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.1</parquet.hadoop.version>
+                <spark.shim.sources>${spark32X.sources},${spark320.sources}</spark.shim.sources>
             </properties>
             <build>
                 <plugins>
@@ -301,30 +302,6 @@
                         <groupId>org.codehaus.mojo</groupId>
                         <artifactId>build-helper-maven-plugin</artifactId>
                         <executions>
-                            <execution>
-                                <id>add-profile-src-31+</id>
-                                <goals><goal>add-source</goal></goals>
-                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/main/320/scala</source>
-                                        <source>${project.basedir}/src/main/311+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/311until330-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/311until340-all/scala</source>
-                                        <source>${project.basedir}/src/main/320/scala</source>
-                                        <source>${project.basedir}/src/main/320+/java</source>
-                                        <source>${project.basedir}/src/main/320+/scala</source>
-                                        <source>${project.basedir}/src/main/320+-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/320+-noncdh/scala</source>
-                                        <source>${project.basedir}/src/main/320until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/320until330-nondb/scala</source>
-                                        <source>${project.basedir}/src/main/320until330-noncdh/scala</source>
-                                        <source>${project.basedir}/src/main/320until340-all/scala</source>
-                                        <source>${project.basedir}/src/main/post320-treenode/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
                             <execution>
                                 <id>add-test-profile-src-320</id>
                                 <goals><goal>add-test-source</goal></goals>
