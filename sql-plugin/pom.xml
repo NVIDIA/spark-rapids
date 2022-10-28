@@ -76,18 +76,6 @@
 
     <profiles>
         <profile>
-            <id>release312</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>312</value>
-                </property>
-            </activation>
-            <properties>
-                <spark.shim.sources>${spark31X.sources},${spark312.sources}</spark.shim.sources>
-            </properties>
-        </profile>
-        <profile>
             <id>release321cdh</id>
             <activation>
                 <property>
@@ -473,17 +461,34 @@
               <artifactId>maven-antrun-plugin</artifactId>
               <executions>
                 <execution>
-                    <id>generate-source-dir-props</id>
-                    <phase>initialize</phase>
+                    <id>create-source-path-properties</id>
                     <goals><goal>run</goal></goals>
+                    <phase>initialize</phase>
                     <configuration>
                         <exportAntProperties>true</exportAntProperties>
                         <target>
                             <pathconvert property="spark31X.sources" pathsep=",">
-                                <dirset dir="${project.basedir}/src/main" includes="311+-nondb/*,311until320*/*,pre320*/*"/>
+                                <dirset dir="${project.basedir}/src/main">
+                                    <include name="311+-nondb/*"/>
+                                    <include name="311until*/*"/>
+                                    <include name="pre320-treenode/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <!-- TODO loop? -->
+                            <pathconvert property="spark311.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <include name="311-nondb/*"/>
+                                </dirset>
                             </pathconvert>
                             <pathconvert property="spark312.sources" pathsep=",">
-                                <dirset dir="${project.basedir}/src/main" includes="312-nondb/*"/>
+                                <dirset dir="${project.basedir}/src/main">
+                                    <include name="312-nondb/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <pathconvert property="spark313.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <include name="313/*"/>
+                                </dirset>
                             </pathconvert>
                         </target>
                     </configuration>
@@ -543,7 +548,7 @@
                 <artifactId>build-helper-maven-plugin</artifactId>
                 <executions>
                     <execution>
-                        <id>add-profile-src</id>
+                        <id>add-shim-sources</id>
                         <phase>generate-sources</phase>
                         <goals><goal>add-source</goal></goals>
                         <configuration>
