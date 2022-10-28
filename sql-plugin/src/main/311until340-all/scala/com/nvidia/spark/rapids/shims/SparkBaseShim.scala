@@ -25,7 +25,7 @@ import org.apache.spark.sql.catalyst.expressions.{Expression, PromotePrecision}
  */
 trait SparkBaseShim extends SparkShims {
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    Seq(
+    val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
       GpuOverrides.expr[PromotePrecision](
         "PromotePrecision before arithmetic operations between DecimalType data",
         ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_128,
@@ -34,5 +34,6 @@ trait SparkBaseShim extends SparkShims {
           override def convertToGpu(child: Expression): GpuExpression = GpuPromotePrecision(child)
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+    exprs
   }
 }

@@ -122,117 +122,120 @@ trait Spark320PlusShims extends SparkBaseShim with RebaseShims with Logging {
 
   override def isWindowFunctionExec(plan: SparkPlan): Boolean = plan.isInstanceOf[WindowExecBase]
 
-  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
-    GpuOverrides.expr[Cast](
-      "Convert a column of one type of data into another type",
-      new CastChecks(),
-      (cast, conf, p, r) => new CastExprMeta[Cast](cast,
-        SparkSession.active.sessionState.conf.ansiEnabled, conf, p, r,
-        doFloatToIntCheck = true, stringToAnsiDate = true)),
-    GpuOverrides.expr[Average](
-      "Average aggregate operator",
-      ExprChecks.fullAgg(
-        TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-        TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-        // NullType is not technically allowed by Spark, but in practice in 3.2.0
-        // it can show up
-        Seq(ParamCheck("input",
-          TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128 + TypeSig.NULL,
-          TypeSig.numericAndInterval + TypeSig.NULL))),
-      (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
-        override def tagAggForGpu(): Unit = {
-          GpuOverrides.checkAndTagFloatAgg(a.child.dataType, conf, this)
-        }
-
-        override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
-          GpuAverage(childExprs.head)
-
-        // Average is not supported in ANSI mode right now, no matter the type
-        override val ansiTypeToCheck: Option[DataType] = None
-      }),
-    GpuOverrides.expr[Abs](
-      "Absolute value",
-      ExprChecks.unaryProjectAndAstInputMatchesOutput(
-        TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric,
-        TypeSig.cpuNumeric),
-      (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
-        val ansiEnabled = SQLConf.get.ansiEnabled
-
-        override def tagSelfForAst(): Unit = {
-          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
-            willNotWorkInAst("AST unary minus does not support ANSI mode.")
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+    val exprs = Seq(
+      GpuOverrides.expr[Cast](
+        "Convert a column of one type of data into another type",
+        new CastChecks(),
+        (cast, conf, p, r) => new CastExprMeta[Cast](cast,
+          SparkSession.active.sessionState.conf.ansiEnabled, conf, p, r,
+          doFloatToIntCheck = true, stringToAnsiDate = true)),
+      GpuOverrides.expr[Average](
+        "Average aggregate operator",
+        ExprChecks.fullAgg(
+          TypeSig.DOUBLE + TypeSig.DECIMAL_128,
+          TypeSig.DOUBLE + TypeSig.DECIMAL_128,
+          // NullType is not technically allowed by Spark, but in practice in 3.2.0
+          // it can show up
+          Seq(ParamCheck("input",
+            TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128 + TypeSig.NULL,
+            TypeSig.numericAndInterval + TypeSig.NULL))),
+        (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
+          override def tagAggForGpu(): Unit = {
+            GpuOverrides.checkAndTagFloatAgg(a.child.dataType, conf, this)
           }
-        }
 
-        // ANSI support for ABS was added in 3.2.0 SPARK-33275
-        override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, ansiEnabled)
-      }),
-    GpuOverrides.expr[Literal](
-      "Holds a static value from the query",
-      ExprChecks.projectAndAst(
-        TypeSig.astTypes,
-        (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.CALENDAR
-            + TypeSig.BINARY + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT
-            + TypeSig.ansiIntervals)
-            .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +
-                TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
-        TypeSig.all),
-      (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
-    GpuOverrides.expr[TimeAdd](
-      "Adds interval to timestamp",
-      ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
-        ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
-        ("interval", TypeSig.lit(TypeEnum.DAYTIME) + TypeSig.lit(TypeEnum.CALENDAR),
-          TypeSig.DAYTIME + TypeSig.CALENDAR)),
-      (timeAdd, conf, p, r) => new BinaryExprMeta[TimeAdd](timeAdd, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          GpuOverrides.extractLit(timeAdd.interval).foreach { lit =>
-            lit.dataType match {
-              case CalendarIntervalType =>
-                val intvl = lit.value.asInstanceOf[CalendarInterval]
-                if (intvl.months != 0) {
-                  willNotWorkOnGpu("interval months isn't supported")
-                }
-              case _: DayTimeIntervalType => // Supported
+          override def convertToGpu(childExprs: Seq[Expression]): GpuExpression =
+            GpuAverage(childExprs.head)
+
+          // Average is not supported in ANSI mode right now, no matter the type
+          override val ansiTypeToCheck: Option[DataType] = None
+        }),
+      GpuOverrides.expr[Abs](
+        "Absolute value",
+        ExprChecks.unaryProjectAndAstInputMatchesOutput(
+          TypeSig.implicitCastsAstTypes, TypeSig.gpuNumeric,
+          TypeSig.cpuNumeric),
+        (a, conf, p, r) => new UnaryAstExprMeta[Abs](a, conf, p, r) {
+          val ansiEnabled = SQLConf.get.ansiEnabled
+
+          override def tagSelfForAst(): Unit = {
+            if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+              willNotWorkInAst("AST unary minus does not support ANSI mode.")
             }
           }
-        }
 
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuTimeAdd(lhs, rhs)
-      }),
-    GpuOverrides.expr[SpecifiedWindowFrame](
-      "Specification of the width of the group (or \"frame\") of input rows " +
-        "around which a window function is evaluated",
-      ExprChecks.projectOnly(
-        TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME,
-        TypeSig.numericAndInterval,
-        Seq(
-          ParamCheck("lower",
-            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME
-              + TypeSig.DECIMAL_128,
-            TypeSig.numericAndInterval),
-          ParamCheck("upper",
-            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME
-              + TypeSig.DECIMAL_128,
-            TypeSig.numericAndInterval))),
-      (windowFrame, conf, p, r) => new GpuSpecifiedWindowFrameMeta(windowFrame, conf, p, r)),
-    GpuOverrides.expr[WindowExpression](
-      "Calculates a return value for every input row of a table based on a group (or " +
-        "\"window\") of rows",
-      ExprChecks.windowOnly(
-        (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-          TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
-        TypeSig.all,
-        Seq(ParamCheck("windowFunction",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+          // ANSI support for ABS was added in 3.2.0 SPARK-33275
+          override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, ansiEnabled)
+        }),
+      GpuOverrides.expr[Literal](
+        "Holds a static value from the query",
+        ExprChecks.projectAndAst(
+          TypeSig.astTypes,
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.CALENDAR
+              + TypeSig.BINARY + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT
+              + TypeSig.ansiIntervals)
+              .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +
+                  TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
           TypeSig.all),
-          ParamCheck("windowSpec",
-            TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL_64 +
-              TypeSig.DAYTIME, TypeSig.numericAndInterval))),
-      (windowExpression, conf, p, r) => new GpuWindowExpressionMeta(windowExpression, conf, p, r))
-  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+        (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
+      GpuOverrides.expr[TimeAdd](
+        "Adds interval to timestamp",
+        ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+          ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+          ("interval", TypeSig.lit(TypeEnum.DAYTIME) + TypeSig.lit(TypeEnum.CALENDAR),
+              TypeSig.DAYTIME + TypeSig.CALENDAR)),
+        (timeAdd, conf, p, r) => new BinaryExprMeta[TimeAdd](timeAdd, conf, p, r) {
+          override def tagExprForGpu(): Unit = {
+            GpuOverrides.extractLit(timeAdd.interval).foreach { lit =>
+              lit.dataType match {
+                case CalendarIntervalType =>
+                  val intvl = lit.value.asInstanceOf[CalendarInterval]
+                  if (intvl.months != 0) {
+                    willNotWorkOnGpu("interval months isn't supported")
+                  }
+                case _: DayTimeIntervalType => // Supported
+              }
+            }
+          }
+
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuTimeAdd(lhs, rhs)
+        }),
+      GpuOverrides.expr[SpecifiedWindowFrame](
+        "Specification of the width of the group (or \"frame\") of input rows " +
+            "around which a window function is evaluated",
+        ExprChecks.projectOnly(
+          TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME,
+          TypeSig.numericAndInterval,
+          Seq(
+            ParamCheck("lower",
+              TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME
+                  + TypeSig.DECIMAL_128,
+              TypeSig.numericAndInterval),
+            ParamCheck("upper",
+              TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME
+                  + TypeSig.DECIMAL_128,
+              TypeSig.numericAndInterval))),
+        (windowFrame, conf, p, r) => new GpuSpecifiedWindowFrameMeta(windowFrame, conf, p, r)),
+      GpuOverrides.expr[WindowExpression](
+        "Calculates a return value for every input row of a table based on a group (or " +
+            "\"window\") of rows",
+        ExprChecks.windowOnly(
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+              TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+          TypeSig.all,
+          Seq(ParamCheck("windowFunction",
+            (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+                TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+            TypeSig.all),
+            ParamCheck("windowSpec",
+              TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL_64 +
+                  TypeSig.DAYTIME, TypeSig.numericAndInterval))),
+        (windowExpression, conf, p, r) => new GpuWindowExpressionMeta(windowExpression, conf, p, r))
+    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+    exprs ++ super.getExprs
+  }
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(
