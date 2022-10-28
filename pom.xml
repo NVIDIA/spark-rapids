@@ -101,7 +101,8 @@
                 <spark.version>${spark311.version}</spark.version>
                 <spark.test.version>${spark311.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
-                <spark.shim.sources>${spark31X.sources},${spark311.sources}</spark.shim.sources>
+                <spark.shim.sources>${spark311.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>common</module>
@@ -193,7 +194,8 @@
                 <spark.version>${spark312.version}</spark.version>
                 <spark.test.version>${spark312.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
-                <spark.shim.sources>${spark31X.sources},${spark312.sources}</spark.shim.sources>
+                <spark.shim.sources>${spark312.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>common</module>
@@ -220,7 +222,8 @@
                 <spark.version>${spark313.version}</spark.version>
                 <spark.test.version>${spark313.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
-                <spark.shim.sources>${spark31X.sources},${spark313.sources}</spark.shim.sources>
+                <spark.shim.sources>${spark313.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>common</module>
@@ -247,8 +250,8 @@
                 <spark.version>${spark314.version}</spark.version>
                 <spark.test.version>${spark314.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
-                <spark.shim.sources>${spark31X.sources},${spark314.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/314/scala</spark.shim.test.sources>
+                <spark.shim.sources>${spark314.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>common</module>
@@ -275,8 +278,8 @@
                 <spark.version>${spark320.version}</spark.version>
                 <spark.test.version>${spark320.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.1</parquet.hadoop.version>
-                <spark.shim.sources>${spark32X.sources},${spark320.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/320/scala</spark.shim.test.sources>
+                <spark.shim.sources>${spark320.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>common</module>
@@ -302,8 +305,8 @@
                 <spark.version>${spark321.version}</spark.version>
                 <spark.test.version>${spark321.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
-                <spark.shim.sources>${spark32X.sources},${spark321.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/321/scala</spark.shim.test.sources>
+                <spark.shim.sources>${spark321.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>common</module>
@@ -330,7 +333,7 @@
                 <spark.test.version>${spark321cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark321cdh.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/321cdh/scala</spark.shim.test.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <repositories>
                 <repository>
@@ -362,8 +365,8 @@
                 <spark.version>${spark322.version}</spark.version>
                 <spark.test.version>${spark322.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
-                <spark.shim.sources>${spark32X.sources},${spark322.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/322/scala</spark.shim.test.sources>
+                <spark.shim.sources>${spark322.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>common</module>
@@ -426,8 +429,8 @@
                 <spark.version>${spark330.version}</spark.version>
                 <spark.test.version>${spark330.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
-                <spark.shim.sources>${spark33X.sources},${spark330.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/330/scala</spark.shim.test.sources>
+                <spark.shim.sources>${spark330.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>common</module>
@@ -453,8 +456,8 @@
                 <spark.version>${spark331.version}</spark.version>
                 <spark.test.version>${spark331.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
-                <spark.shim.sources>${spark33X.sources},${spark331.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/331/scala</spark.shim.test.sources>
+                <spark.shim.sources>${spark331.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>common</module>
@@ -480,8 +483,8 @@
                 <spark.version>${spark332.version}</spark.version>
                 <spark.test.version>${spark332.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
-                <spark.shim.sources>${spark33X.sources},${spark332.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/332/scala</spark.shim.test.sources>
+                <spark.shim.sources>${spark332.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>common</module>
@@ -507,8 +510,8 @@
                 <spark.version>${spark340.version}</spark.version>
                 <spark.test.version>${spark340.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
-                <spark.shim.sources>${spark34X.sources},${spark340.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/340/scala</spark.shim.test.sources>
+                <spark.shim.sources>${spark340.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>common</module>
@@ -535,7 +538,7 @@
                 <spark.test.version>${spark330cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.99.7.1.8.0-801</parquet.hadoop.version>
                 <spark.shim.sources>${spark330cdh.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/330cdh/scala</spark.shim.test.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <repositories>
                 <repository>

@@ -467,116 +467,102 @@
                     <configuration>
                         <exportAntProperties>true</exportAntProperties>
                         <target>
-                            <pathconvert property="spark31X.sources" pathsep=",">
-                                <dirset dir="${project.basedir}/src/main">
-                                    <include name="311+-nondb/*"/>
-                                    <include name="311until*/*"/>
-                                    <include name="pre320-treenode/*"/>
-                                </dirset>
-                            </pathconvert>
-                            <!-- TODO loop? -->
                             <pathconvert property="spark311.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
+                                    <patternset id="spark31X.pattern">
+                                        <include name="311+-nondb/*"/>
+                                        <include name="311until*/*"/>
+                                        <include name="pre320-treenode/*"/>
+                                    </patternset>
                                     <include name="311-nondb/*"/>
                                 </dirset>
                             </pathconvert>
                             <pathconvert property="spark312.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
+                                    <patternset refid="spark31X.pattern"/>
                                     <include name="312-nondb/*"/>
                                 </dirset>
                             </pathconvert>
                             <pathconvert property="spark313.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
+                                    <patternset refid="spark31X.pattern"/>
                                     <include name="313/*"/>
                                 </dirset>
                             </pathconvert>
                             <pathconvert property="spark314.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
+                                    <patternset refid="spark31X.pattern"/>
                                     <include name="314/*"/>
-                                </dirset>
-                            </pathconvert>
-                            <pathconvert property="spark32X.sources" pathsep=",">
-                                <dirset dir="${project.basedir}/src/main">
-                                    <patternset id="spark32X.pattern">
-                                        <include name="311+-nondb/*"/>
-                                        <include name="311until330*/*"/>
-                                        <include name="311until340*/*"/>
-                                        <include name="320until*/*"/>
-                                        <include name="320+*/*"/>
-                                        <include name="post320-treenode/*"/>
-                                    </patternset>
                                 </dirset>
                             </pathconvert>
                             <pathconvert property="spark320.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
+                                    <patternset id="spark32X.pattern">
+                                        <include name="320until*/*"/>
+                                        <include name="320+*/*"/>
+                                        <include name="post320-treenode/*"/>
+                                        <patternset refid="spark31X.pattern"/>
+                                        <exclude name="*until320*/*"/>
+                                        <exclude name="pre320-treenode/*"/>
+                                    </patternset>
                                     <include name="320/*"/>
                                 </dirset>
                             </pathconvert>
                             <pathconvert property="spark321.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
-                                    <include name="321+*/*"/>
-                                    <include name="321until*/*"/>
+                                    <patternset id="spark321+.pattern">
+                                        <patternset refid="spark32X.pattern"/>
+                                        <include name="321+*/*"/>
+                                        <include name="321until*/*"/>
+                                    </patternset>
                                     <include name="321/*"/>
                                 </dirset>
                             </pathconvert>
                             <pathconvert property="spark322.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
-                                    <include name="321+*/*"/>
-                                    <include name="321until*/*"/>
+                                    <patternset refid="spark321+.pattern"/>
                                     <include name="322/*"/>
-                                </dirset>
-                            </pathconvert>
-                            <pathconvert property="spark33X.sources" pathsep=",">
-                                <dirset dir="${project.basedir}/src/main">
-                                    <patternset id="spark33X.pattern">
-                                        <include name="311+-nondb/*"/>
-                                        <include name="311until340*/*"/>
-                                        <include name="320+*/*"/>
-                                        <include name="320until340*/*"/>
-                                        <include name="321+*/*"/>
-                                        <include name="330+*/*"/>
-                                        <include name="330until*/*"/>
-                                        <include name="post320-treenode/*"/>
-                                    </patternset>
                                 </dirset>
                             </pathconvert>
                             <pathconvert property="spark330.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
+                                    <patternset id="spark33X.pattern">
+                                        <patternset refid="spark321+.pattern"/>
+                                        <include name="330+*/*"/>
+                                        <include name="330until*/*"/>
+                                        <exclude name="*until330*/*"/>
+                                    </patternset>
                                     <include name="330/*"/>
                                 </dirset>
                             </pathconvert>
                             <pathconvert property="spark331.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
-                                    <include name="331*/*"/>
+                                    <patternset id="spark331+.pattern">
+                                        <patternset refid="spark33X.pattern"/>
+                                        <include name="331+*/*"/>
+                                    </patternset>
+                                    <include name="331/*"/>
                                 </dirset>
                             </pathconvert>
                             <pathconvert property="spark332.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
-                                    <include name="331+/*"/>
+                                    <patternset refid="spark331+.pattern"/>
                                     <include name="332/*"/>
-                                </dirset>
-                            </pathconvert>
-                            <pathconvert property="spark34X.sources" pathsep=",">
-                                <dirset dir="${project.basedir}/src/main">
-                                    <include name="311+-nondb/*"/>
-                                    <include name="320+*/*"/>
-                                    <include name="321+*/*"/>
-                                    <include name="330+*/*"/>
-                                    <include name="331+*/*"/>
-                                    <include name="340+*/*"/>
-                                    <include name="post320-treenode/*"/>
                                 </dirset>
                             </pathconvert>
                             <pathconvert property="spark340.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
+                                    <patternset id="spark34X.pattern">
+                                        <patternset refid="spark331+.pattern"/>
+                                        <exclude name="*until340*/*"/>
+                                        <include name="340+*/*"/>
+                                    </patternset>
                                     <include name="340/*"/>
                                 </dirset>
                             </pathconvert>
                             <pathconvert property="spark321cdh.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
-                                    <patternset refid="spark32X.pattern"/>
-                                    <include name="321+*/*"/>
-                                    <include name="321until*/*"/>
+                                    <patternset refid="spark321+.pattern"/>
                                     <include name="321cdh/*"/>
                                     <exclude name="*noncdh/*"/>
                                 </dirset>
