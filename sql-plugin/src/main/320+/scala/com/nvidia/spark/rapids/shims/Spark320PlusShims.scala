@@ -175,8 +175,8 @@ trait Spark320PlusShims extends SparkBaseShim with RebaseShims with Logging {
           (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.CALENDAR
               + TypeSig.BINARY + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT
               + TypeSig.ansiIntervals)
-              .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +
-                  TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
+              .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY
+                  + TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
           TypeSig.all),
         (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
       GpuOverrides.expr[TimeAdd](
