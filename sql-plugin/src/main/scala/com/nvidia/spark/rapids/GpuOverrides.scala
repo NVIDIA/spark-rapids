@@ -4349,18 +4349,20 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     if (conf.isSqlEnabled && conf.isSqlExecuteOnGPU) {
       GpuOverrides.logDuration(conf.shouldExplain,
         t => f"Plan conversion to the GPU took $t%.2f ms") {
-        val updatedPlan = updateForAdaptivePlan(plan, conf)
-        val newPlan = applyOverrides(updatedPlan, conf)
+        var updatedPlan = updateForAdaptivePlan(plan, conf)
+        updatedPlan = SparkShimImpl.applyShimPlanRules(updatedPlan, conf)
+        updatedPlan = applyOverrides(updatedPlan, conf)
         if (conf.logQueryTransformations) {
           val logPrefix = context.map(str => s"[$str]").getOrElse("")
           logWarning(s"${logPrefix}Transformed query:" +
-            s"\nOriginal Plan:\n$plan\nTransformed Plan:\n$newPlan")
+            s"\nOriginal Plan:\n$plan\nTransformed Plan:\n$updatedPlan")
         }
-        newPlan
+        updatedPlan
       }
     } else if (conf.isSqlEnabled && conf.isSqlExplainOnlyEnabled) {
       // this mode logs the explain output and returns the original CPU plan
-      val updatedPlan = updateForAdaptivePlan(plan, conf)
+      var updatedPlan = updateForAdaptivePlan(plan, conf)
+      updatedPlan = SparkShimImpl.applyShimPlanRules(updatedPlan, conf)
       GpuOverrides.explainCatalystSQLPlan(updatedPlan, conf)
       plan
     } else {
