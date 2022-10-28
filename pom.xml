@@ -340,7 +340,7 @@
                 <spark.version>${spark321.version}</spark.version>
                 <spark.test.version>${spark321.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
-                <spark.shim.sources>${spark321X.sources},${spark321.sources}</spark.shim.sources>
+                <spark.shim.sources>${spark32X.sources},${spark321.sources}</spark.shim.sources>
             </properties>
             <build>
                 <plugins>
@@ -460,7 +460,7 @@
                 <spark.version>${spark322.version}</spark.version>
                 <spark.test.version>${spark322.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
-                <spark.shim.sources>${spark321X.sources},${spark322.sources}</spark.shim.sources>
+                <spark.shim.sources>${spark32X.sources},${spark322.sources}</spark.shim.sources>
             </properties>
             <build>
                 <plugins>
