@@ -19,12 +19,12 @@ package com.nvidia.spark.rapids.shims
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
-import org.apache.spark.sql.catalyst.expressions.{Cast, Expression}
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
 import org.apache.spark.sql.execution.{CollectLimitExec, GlobalLimitExec, SparkPlan}
 import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
 
-object SparkShimImpl extends Spark331PlusShims {
+object SparkShimImpl extends Spark340PlusShims {
   override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
 
   private val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
@@ -63,12 +63,4 @@ object SparkShimImpl extends Spark331PlusShims {
 
   // AnsiCast is removed from Spark3.4.0
   override def ansiCastRule: ExprRule[_ <: Expression] = null
-
-  override def ignoreTimeZone(e: Expression): Expression = e match {
-    case c: Cast if c.timeZoneId.nonEmpty && !c.needsTimeZone =>
-      c.withTimeZone(null)
-    case c: GpuCast if c.timeZoneId.nonEmpty && !c.needsTimeZone =>
-      c.withTimeZone(null)
-    case _ => e
-  }
 }
