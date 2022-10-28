@@ -157,16 +157,30 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
       csvFileWriter.write(QualOutputWriter.constructDetailedHeader(headersAndSizes,
         QualOutputWriter.CSV_DELIMITER, false))
       val appIdMaxSize = QualOutputWriter.getAppIdSize(sums)
-      sums.foreach { sumInfo =>
-        val rows = QualOutputWriter.constructPerSqlInfo(sumInfo, headersAndSizes,
+      val sortedInfo = sortPerSqlInfo(sums)
+      sortedInfo.foreach { sumInfo =>
+        val row = QualOutputWriter.constructPerSqlSummaryInfo(sumInfo, headersAndSizes,
           appIdMaxSize, ",", false, maxSQLDescLength)
-        rows.foreach(csvFileWriter.write(_))
+        csvFileWriter.write(row)
       }
     } finally {
       csvFileWriter.close()
     }
   }
 
+  private def sortPerSqlInfo(
+      sums: Seq[QualificationSummaryInfo]): Seq[EstimatedPerSQLSummaryInfo] = {
+    val estSumPerSql = sums.flatMap(_.perSQLEstimatedInfo).flatten
+    val sortedAsc = estSumPerSql.sortBy(sum => {
+      (sum.info.recommendation, sum.info.estimatedGpuSpeedup,
+        sum.info.estimatedGpuTimeSaved, sum.info.appDur, sum.info.appId)
+    })
+    if (QualificationArgs.isOrderAsc(prettyPrintOrder)) {
+      sortedAsc
+    } else {
+      sortedAsc.reverse
+    }
+  }
   private def writePerSqlTextSummary(writer: ToolTextFileWriter,
       sums: Seq[QualificationSummaryInfo],
       numOutputRows: Int, maxSQLDescLength: Int): Unit = {
@@ -189,17 +203,8 @@ class QualOutputWriter(outputDir: String, reportReadSchema: Boolean,
       print(entireHeader)
       print(s"$sep\n")
     }
-    val estSumPerSql = sums.flatMap(_.perSQLEstimatedInfo).flatten
-    val sortedAsc = estSumPerSql.sortBy(sum => {
-      (sum.info.recommendation, sum.info.estimatedGpuSpeedup,
-        sum.info.estimatedGpuTimeSaved, sum.info.appDur, sum.info.appId)
-    })
-    val sorted = if (QualificationArgs.isOrderAsc(prettyPrintOrder)) {
-      sortedAsc
-    } else {
-      sortedAsc.reverse
-    }
-    val finalSums = sorted.take(numOutputRows)
+    val sortedInfo = sortPerSqlInfo(sums)
+    val finalSums = sortedInfo.take(numOutputRows)
     finalSums.foreach { estInfo =>
       val wStr = QualOutputWriter.constructPerSqlSummaryInfo(estInfo, headersAndSizes,
         appIdSize, TEXT_DELIMITER, true, maxSQLDescLength)
@@ -707,23 +712,6 @@ object QualOutputWriter {
         .map(_.map(constructExecInfoBuffer(_, appId, delimiter, prettyPrint, headersAndSizes)))
         .getOrElse(Seq.empty)
       children :+ constructExecInfoBuffer(info, appId, delimiter, prettyPrint, headersAndSizes)
-    }
-  }
-
-  def constructPerSqlInfo(
-      sumInfo: QualificationSummaryInfo,
-      headersAndSizes: LinkedHashMap[String, Int],
-      appIdMaxSize: Int,
-      delimiter: String = TEXT_DELIMITER,
-      prettyPrint: Boolean,
-      maxSQLDescLength: Int): Seq[String] = {
-    sumInfo.perSQLEstimatedInfo match {
-      case Some(infos) =>
-        infos.map { info =>
-          constructPerSqlSummaryInfo(info, headersAndSizes, appIdMaxSize, delimiter, prettyPrint,
-            maxSQLDescLength)
-        }
-      case None => Seq.empty
     }
   }
 
