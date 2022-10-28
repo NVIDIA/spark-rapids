@@ -234,10 +234,10 @@ case class GpuJoinEstimation(join: Join) extends Logging {
 
   /** Returns join cardinality and the column stat for this pair of join keys. */
   private def computeByNdv(
-                            leftKey: AttributeReference,
-                            rightKey: AttributeReference,
-                            min: Option[Any],
-                            max: Option[Any]): (BigInt, ColumnStat) = {
+      leftKey: AttributeReference,
+      rightKey: AttributeReference,
+      min: Option[Any],
+      max: Option[Any]): (BigInt, ColumnStat) = {
     val leftKeyStat = leftStats.attributeStats(leftKey)
     val rightKeyStat = rightStats.attributeStats(rightKey)
     val maxNdv = leftKeyStat.distinctCount.get.max(rightKeyStat.distinctCount.get)
@@ -263,12 +263,12 @@ case class GpuJoinEstimation(join: Join) extends Logging {
 
   /** Compute join cardinality using equi-height histograms. */
   private def computeByHistogram(
-                                  leftKey: AttributeReference,
-                                  rightKey: AttributeReference,
-                                  leftHistogram: Histogram,
-                                  rightHistogram: Histogram,
-                                  newMin: Option[Any],
-                                  newMax: Option[Any]): (BigInt, ColumnStat) = {
+      leftKey: AttributeReference,
+      rightKey: AttributeReference,
+      leftHistogram: Histogram,
+      rightHistogram: Histogram,
+      newMin: Option[Any],
+      newMax: Option[Any]): (BigInt, ColumnStat) = {
     val overlappedRanges = getOverlappedRanges(
       leftHistogram = leftHistogram,
       rightHistogram = rightHistogram,
@@ -310,10 +310,10 @@ case class GpuJoinEstimation(join: Join) extends Logging {
    * Propagate or update column stats for output attributes.
    */
   private def updateOutputStats(
-                                 outputRows: BigInt,
-                                 output: Seq[Attribute],
-                                 oldAttrStats: AttributeMap[ColumnStat],
-                                 keyStatsAfterJoin: AttributeMap[ColumnStat]): Seq[(Attribute, ColumnStat)] = {
+      outputRows: BigInt,
+      output: Seq[Attribute],
+      oldAttrStats: AttributeMap[ColumnStat],
+      keyStatsAfterJoin: AttributeMap[ColumnStat]): Seq[(Attribute, ColumnStat)] = {
     val outputAttrStats = new ArrayBuffer[(Attribute, ColumnStat)]()
     val leftRows = leftStats.rowCount.get
     val rightRows = rightStats.rowCount.get
@@ -338,8 +338,8 @@ case class GpuJoinEstimation(join: Join) extends Logging {
   }
 
   private def extractJoinKeysWithColStats(
-                                           leftKeys: Seq[Expression],
-                                           rightKeys: Seq[Expression]): Seq[(AttributeReference, AttributeReference)] = {
+      leftKeys: Seq[Expression],
+      rightKeys: Seq[Expression]): Seq[(AttributeReference, AttributeReference)] = {
     leftKeys.zip(rightKeys).collect {
       // Currently we don't deal with equal joins like key1 = key2 + 5.
       // Note: join keys from EqualNullSafe also fall into this case (Coalesce), consider to

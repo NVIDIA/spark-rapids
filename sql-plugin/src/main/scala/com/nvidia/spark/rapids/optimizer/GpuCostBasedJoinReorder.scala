@@ -31,9 +31,12 @@ import org.apache.spark.sql.catalyst.trees.TreePattern.INNER_LIKE_JOIN
 import org.apache.spark.sql.internal.SQLConf
 
 /**
- * Cost-based join reorder.
- * We may have several join reorder algorithms in the future. This class is the entry of these
- * algorithms, and chooses which one to use.
+ * Copied from Spark's CostBasedJoinReorder.
+ *
+ * Modifications:
+ *
+ * - Call GpuStatsPlanVisitor to get stats for child, instead of calling child.stats
+ *
  */
 object GpuCostBasedJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
 
@@ -111,10 +114,10 @@ object GpuCostBasedJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
 
 /** This is a mimic class for a join node that has been ordered. */
 case class OrderedJoin(
-                        left: LogicalPlan,
-                        right: LogicalPlan,
-                        joinType: JoinType,
-                        condition: Option[Expression]) extends BinaryNode {
+      left: LogicalPlan,
+      right: LogicalPlan,
+      joinType: JoinType,
+      condition: Option[Expression]) extends BinaryNode {
   override def output: Seq[Attribute] = left.output ++ right.output
   override protected def withNewChildrenInternal(
       newLeft: LogicalPlan, newRight: LogicalPlan): OrderedJoin =
@@ -151,10 +154,10 @@ case class OrderedJoin(
 object JoinReorderDP extends PredicateHelper with Logging {
 
   def search(
-              conf: SQLConf,
-              items: Seq[LogicalPlan],
-              conditions: ExpressionSet,
-              output: Seq[Attribute]): LogicalPlan = {
+      conf: SQLConf,
+      items: Seq[LogicalPlan],
+      conditions: ExpressionSet,
+      output: Seq[Attribute]): LogicalPlan = {
 
     val startTime = System.nanoTime()
     // Level i maintains all found plans for i + 1 items.
@@ -212,11 +215,11 @@ object JoinReorderDP extends PredicateHelper with Logging {
 
   /** Find all possible plans at the next level, based on existing levels. */
   private def searchLevel(
-                           existingLevels: Seq[JoinPlanMap],
-                           conf: SQLConf,
-                           conditions: ExpressionSet,
-                           topOutput: AttributeSet,
-                           filters: Option[JoinGraphInfo]): JoinPlanMap = {
+      existingLevels: Seq[JoinPlanMap],
+      conf: SQLConf,
+      conditions: ExpressionSet,
+      topOutput: AttributeSet,
+      filters: Option[JoinGraphInfo]): JoinPlanMap = {
 
     val nextLevel = new JoinPlanMap
     var k = 0
@@ -272,12 +275,12 @@ object JoinReorderDP extends PredicateHelper with Logging {
    * @return Builds and returns a new JoinPlan if both conditions hold. Otherwise, returns None.
    */
   private def buildJoin(
-                         oneJoinPlan: JoinPlan,
-                         otherJoinPlan: JoinPlan,
-                         conf: SQLConf,
-                         conditions: ExpressionSet,
-                         topOutput: AttributeSet,
-                         filters: Option[JoinGraphInfo]): Option[JoinPlan] = {
+      oneJoinPlan: JoinPlan,
+      otherJoinPlan: JoinPlan,
+      conf: SQLConf,
+      conditions: ExpressionSet,
+      topOutput: AttributeSet,
+      filters: Option[JoinGraphInfo]): Option[JoinPlan] = {
 
     if (oneJoinPlan.itemIds.intersect(otherJoinPlan.itemIds).nonEmpty) {
       // Should not join two overlapping item sets.
@@ -347,19 +350,16 @@ object JoinReorderDP extends PredicateHelper with Logging {
    * @param planCost The cost of this plan tree is the sum of costs of all intermediate joins.
    */
   case class JoinPlan(
-                       itemIds: Set[Int],
-                       plan: LogicalPlan,
-                       joinConds: ExpressionSet,
-                       planCost: Cost) {
+      itemIds: Set[Int],
+      plan: LogicalPlan,
+      joinConds: ExpressionSet,
+      planCost: Cost) {
 
     /** Get the cost of the root node of this plan tree. */
     def rootCost(conf: SQLConf): Cost = {
       if (itemIds.size > 1) {
-        // BEGIN AQE JOIN REORDERING CHANGE
         val rootStats = GpuStatsPlanVisitor.visit(plan)
-        // END AQE JOIN REORDERING CHANGE
-        // TODO the getOrElse(0) seems like a regression
-        Cost(rootStats.rowCount.getOrElse(0), rootStats.sizeInBytes)
+        Cost(rootStats.rowCount.get, rootStats.sizeInBytes)
       } else {
         // If the plan is a leaf item, it has zero cost.
         Cost(0, 0)
@@ -423,10 +423,10 @@ object JoinReorderDPFilters {
    * can be used to filter Cartesian products.
    */
   def buildJoinGraphInfo(
-                          conf: SQLConf,
-                          items: Seq[LogicalPlan],
-                          conditions: ExpressionSet,
-                          itemIndex: Seq[(LogicalPlan, Int)]): Option[JoinGraphInfo] = {
+      conf: SQLConf,
+      items: Seq[LogicalPlan],
+      conditions: ExpressionSet,
+      itemIndex: Seq[(LogicalPlan, Int)]): Option[JoinGraphInfo] = {
 
     if (conf.joinReorderDPStarFilter) {
       // Compute the tables in a star-schema relationship.
@@ -482,9 +482,9 @@ object JoinReorderDPFilters {
    * @param filters Star and non-star plans represented as sets of plan ids
    */
   def starJoinFilter(
-                      oneSideJoinPlan: Set[Int],
-                      otherSideJoinPlan: Set[Int],
-                      filters: JoinGraphInfo) : Boolean = {
+      oneSideJoinPlan: Set[Int],
+      otherSideJoinPlan: Set[Int],
+      filters: JoinGraphInfo) : Boolean = {
     val starJoins = filters.starJoins
     val nonStarJoins = filters.nonStarJoins
     val join = oneSideJoinPlan.union(otherSideJoinPlan)
