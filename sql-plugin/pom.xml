@@ -527,6 +527,11 @@
                                     <include name="321/*"/>
                                 </dirset>
                             </pathconvert>
+                            <pathconvert property="spark322.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <include name="322/*"/>
+                                </dirset>
+                            </pathconvert>
                         </target>
                     </configuration>
                 </execution>
