@@ -21,6 +21,13 @@ import org.apache.spark.sql.catalyst.expressions.AttributeMap
 import org.apache.spark.sql.catalyst.plans.logical.{Project, Statistics}
 import org.apache.spark.sql.catalyst.plans.logical.statsEstimation.EstimationUtils
 
+/**
+ * Copied from Spark's ProjectEstimation.scala
+ *
+ * Modifications:
+ *
+ * - Call GpuStatsPlanVisitor to get stats for child, instead of calling child.stats
+ */
 object GpuProjectEstimation {
   import EstimationUtils._
 

@@ -11,6 +11,16 @@ import org.apache.spark.sql.catalyst.plans.logical.{ColumnStat, Histogram, Join,
 import org.apache.spark.sql.catalyst.plans.logical.statsEstimation.EstimationUtils._
 import org.apache.spark.sql.catalyst.plans.logical.statsEstimation.ValueInterval
 
+/**
+ * Copied from Spark's JoinEstimation.scala
+ *
+ * Modifications:
+ *
+ * - Call GpuStatsPlanVisitor to get stats for child, instead of calling child.stats
+ * - Removed check that join inputs have row count estimates, because they always do now
+ * - Made estimate cross joins much more expensive
+ * - Made estimate for non-equi-join joins much more expensive - TODO: need to revisit this and see if it is really needed
+ */
 case class GpuJoinEstimation(join: Join) extends Logging {
 
   private val leftStats = GpuStatsPlanVisitor.visit(join.left)
@@ -35,22 +45,13 @@ case class GpuJoinEstimation(join: Join) extends Logging {
     }
   }
 
-//  def rowCountsExist(plans: LogicalPlan*): Unit = {
-//    plans.forall(plan =>  .stats.rowCount.isDefined)
-//
-//  }
   /**
    * Estimate output size and number of rows after a join operator, and update output column stats.
    */
   private def estimateInnerOuterJoin(): Option[Statistics] = {
 
     val x = join match {
-      //TODO reinstate this
-//      case _ if !rowCountsExist(join.left, join.right) =>
-//        logDebug("GpuJoinEstimation.estimateInnerOuterJoin() no row counts")
-//        None
-
-      // TODO shim ExtractEquiJoinKeys or just copy it into this repo
+      // TODO shim ExtractEquiJoinKeys
 
       // spark 3.2
       case ExtractEquiJoinKeys(joinType, leftKeys, rightKeys, _, _, _, _) =>

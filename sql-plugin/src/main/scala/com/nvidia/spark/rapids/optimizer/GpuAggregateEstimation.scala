@@ -18,10 +18,16 @@
 package com.nvidia.spark.rapids.optimizer
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeMap}
-import org.apache.spark.sql.catalyst.plans.logical.statsEstimation.EstimationUtils
 import org.apache.spark.sql.catalyst.plans.logical.{Aggregate, Statistics}
+import org.apache.spark.sql.catalyst.plans.logical.statsEstimation.EstimationUtils
 
-
+/**
+ * Copied from Spark's AggregateEstimation.scala
+ *
+ * Modifications:
+ *
+ * - Call GpuStatsPlanVisitor to get stats for child, instead of calling child.stats
+ */
 object GpuAggregateEstimation {
   import org.apache.spark.sql.catalyst.plans.logical.statsEstimation.EstimationUtils._
 

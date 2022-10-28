@@ -28,6 +28,13 @@ import org.apache.spark.sql.catalyst.plans.logical.statsEstimation.{EstimationUt
 import org.apache.spark.sql.catalyst.plans.logical.statsEstimation.EstimationUtils._
 import org.apache.spark.sql.types._
 
+/**
+ * Copied from Spark's FilterEstimation.scala
+ *
+ * Modifications:
+ *
+ * - Call GpuStatsPlanVisitor to get stats for child, instead of calling child.stats
+ */
 case class GpuFilterEstimation(plan: Filter) extends Logging {
 
   private val childStats = GpuStatsPlanVisitor.visit(plan.child)

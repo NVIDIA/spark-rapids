@@ -189,8 +189,11 @@ object JoinReorderDP extends PredicateHelper with Logging {
     // The last level must have one and only one plan, because all items are joinable.
     assert(foundPlans.size == items.length && foundPlans.last.size == 1)
     foundPlans.last.head._2.plan match {
-      case p @ Project(projectList, j: Join) if projectList != output =>
-        assert(topOutputSet == p.outputSet)
+      case p @ Project(projectList, _: Join) if projectList != output =>
+        // TODO some queries are failing here
+        if (topOutputSet != p.outputSet) {
+          throw new RuntimeException(s"topOutputSet = $topOutputSet, p.outputSet = ${p.outputSet}")
+        }
         // Keep the same order of final output attributes.
         p.copy(projectList = output)
       case finalPlan if !sameOutput(finalPlan, output) =>
@@ -353,7 +356,7 @@ object JoinReorderDP extends PredicateHelper with Logging {
     def rootCost(conf: SQLConf): Cost = {
       if (itemIds.size > 1) {
         // BEGIN AQE JOIN REORDERING CHANGE
-        val rootStats = JoinReorderUtils.statsWithRowCount(plan)
+        val rootStats = GpuStatsPlanVisitor.visit(plan)
         // END AQE JOIN REORDERING CHANGE
         // TODO the getOrElse(0) seems like a regression
         Cost(rootStats.rowCount.getOrElse(0), rootStats.sizeInBytes)
@@ -505,19 +508,3 @@ object JoinReorderDPFilters {
  * extended with the set of connected/unconnected plans.
  */
 case class JoinGraphInfo (starJoins: Set[Int], nonStarJoins: Set[Int])
-
-// BEGIN AQE JOIN REORDERING CHANGE
-object JoinReorderUtils {
-
-  def statsWithRowCount(plan: LogicalPlan): Statistics = {
-    // AQE POC change:
-    // JoinReordering requires row count statistics so we estimate the row count
-    // based on schema and data size
-//    plan.invalidateStatsCache()
-    val stats = GpuStatsPlanVisitor.visit(plan)
-    // logDebug(s"statsWithRowCount() ${plan.simpleStringWithNodeId()} returning $stats")
-    stats // replaces BasicStatsPlanVisitor
-
-  }
-}
-// END AQE JOIN REORDERING CHANGE

@@ -9,6 +9,8 @@ import org.apache.spark.sql.types.{DataTypes, StructType}
 
 /**
  * A [[LogicalPlanVisitor]] that computes the statistics for the cost-based optimizer.
+ *
+ * Copied from Spark's BasicStatsPlanVisitor and modified to call GPU versions of estimation logic.
  */
 object GpuStatsPlanVisitor extends LogicalPlanVisitor[Statistics] with Logging {
 

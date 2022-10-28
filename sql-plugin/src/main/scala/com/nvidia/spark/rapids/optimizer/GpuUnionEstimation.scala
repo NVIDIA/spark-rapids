@@ -23,9 +23,13 @@ import org.apache.spark.sql.catalyst.plans.logical.{ColumnStat, Statistics, Unio
 import org.apache.spark.sql.types._
 
 /**
- * Estimate the number of output rows by doing the sum of output rows for each child of union,
- * and estimate min and max stats for each column by finding the overall min and max of that
- * column coming from its children.
+ * Copied from Spark's UnionEstimation.scala
+ *
+ * Modifications:
+ *
+ * - Call GpuStatsPlanVisitor to get stats for child, instead of calling child.stats
+ * - Removed check that union inputs have row count estimates, because they always do now
+ * - Commented out TimestampNTZType and AnsiIntervalType temporarily (TODO: fix this)
  */
 object GpuUnionEstimation extends Logging {
 
@@ -69,13 +73,8 @@ object GpuUnionEstimation extends Logging {
 
   def estimate(union: Union): Option[Statistics] = {
     logDebug("GpuUnionEstimation.estimate() BEGIN")
-    val sizeInBytes = union.children.map(ch => JoinReorderUtils
-      .statsWithRowCount(ch).sizeInBytes).sum
-    val outputRows = //if (rowCountsExist(union.children: _*)) {
-      Some(union.children.map(ch => JoinReorderUtils.statsWithRowCount(ch).rowCount.get).sum)
-//    } else {
-//      None
-//    }
+    val sizeInBytes = union.children.map(ch => GpuStatsPlanVisitor.visit(ch).sizeInBytes).sum
+    val outputRows = Some(union.children.map(ch => GpuStatsPlanVisitor.visit(ch).rowCount.get).sum)
 
     val newMinMaxStats = computeMinMaxStats(union)
     val newNullCountStats = computeNullCountStats(union)
@@ -107,7 +106,7 @@ object GpuUnionEstimation extends Logging {
         // checks if all the children has min/max stats for an attribute
         attrs.zipWithIndex.forall {
           case (attr, childIndex) =>
-            val attrStats = JoinReorderUtils.statsWithRowCount(union.children(childIndex))
+            val attrStats = GpuStatsPlanVisitor.visit(union.children(childIndex))
               .attributeStats
             attrStats.get(attr).isDefined && attrStats(attr).hasMinMaxStats
         }
@@ -118,7 +117,7 @@ object GpuUnionEstimation extends Logging {
         val statComparator = createStatComparator(dataType)
         val minMaxValue = attrs.zipWithIndex.foldLeft[(Option[Any], Option[Any])]((None, None)) {
           case ((minVal, maxVal), (attr, childIndex)) =>
-            val colStat = JoinReorderUtils.statsWithRowCount(union.children(childIndex))
+            val colStat = GpuStatsPlanVisitor.visit(union.children(childIndex))
               .attributeStats(attr)
             val min = if (minVal.isEmpty || statComparator(colStat.min.get, minVal.get)) {
               colStat.min
@@ -142,19 +141,19 @@ object GpuUnionEstimation extends Logging {
     val attrToComputeNullCount = union.children.map(_.output).transpose.zipWithIndex.filter {
       case (attrs, _) => attrs.zipWithIndex.forall {
         case (attr, childIndex) =>
-          val attrStats = JoinReorderUtils.statsWithRowCount(union.children(childIndex))
+          val attrStats = GpuStatsPlanVisitor.visit(union.children(childIndex))
             .attributeStats
           attrStats.get(attr).isDefined && attrStats(attr).nullCount.isDefined
       }
     }
     attrToComputeNullCount.map {
       case (attrs, outputIndex) =>
-        val firstStat = JoinReorderUtils.statsWithRowCount(union.children.head)
+        val firstStat = GpuStatsPlanVisitor.visit(union.children.head)
           .attributeStats(attrs.head)
         val firstNullCount = firstStat.nullCount.get
         val colWithNullStatValues = attrs.zipWithIndex.tail.foldLeft[BigInt](firstNullCount) {
           case (totalNullCount, (attr, childIndex)) =>
-            val colStat = JoinReorderUtils.statsWithRowCount(union.children(childIndex))
+            val colStat = GpuStatsPlanVisitor.visit(union.children(childIndex))
               .attributeStats(attr)
             totalNullCount + colStat.nullCount.get
         }
