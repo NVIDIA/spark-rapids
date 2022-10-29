@@ -142,35 +142,10 @@
                 <hadoop.client.version>2.7.4</hadoop.client.version>
                 <rat.consoleOutput>true</rat.consoleOutput>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
+                <spark.shim.sources>${spark312db.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>add-profile-src-31+</id>
-                                <goals><goal>add-source</goal></goals>
-                                <phase>none</phase>  <!--Disable it for all submodules, only sql-plugin needs to enable it -->
-                                <configuration>
-                                    <sources>
-                                        <source>${project.basedir}/src/main/312db/scala</source>
-                                        <source>${project.basedir}/src/main/311+-db/scala</source>
-                                        <source>${project.basedir}/src/main/311until320-all/java</source>
-                                        <source>${project.basedir}/src/main/311until320-all/scala</source>
-                                        <source>${project.basedir}/src/main/311until320-noncdh/scala</source>
-                                        <source>${project.basedir}/src/main/311until330-all/scala</source>
-                                        <source>${project.basedir}/src/main/311until340-all/scala</source>
-                                        <source>${project.basedir}/src/main/31xdb/scala</source>
-                                        <source>${project.basedir}/src/main/post320-treenode/scala</source>
-                                    </sources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
+
             <modules>
                 <module>common</module>
                 <module>dist</module>
@@ -405,6 +380,8 @@
                 <hadoop.client.version>3.3.1</hadoop.client.version>
                 <rat.consoleOutput>true</rat.consoleOutput>
                 <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
+                <spark.shim.sources>${spark321db.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>common</module>
