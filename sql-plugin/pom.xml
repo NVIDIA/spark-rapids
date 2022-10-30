@@ -578,6 +578,8 @@
                                 <dirset dir="${project.basedir}/src/main">
                                     <patternset id="spark311db+.pattern">
                                         <patternset refid="spark311+.pattern"/>
+                                        <exclude name="pre320-treenode/*"/>
+                                        <include name="post320-treenode/*"/>
                                         <include name="31xdb/*"/>
                                         <include name="311+-db/*"/>
                                         <exclude name="*nondb*/*"/>
