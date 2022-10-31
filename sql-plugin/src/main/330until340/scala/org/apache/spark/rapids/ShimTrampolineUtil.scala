@@ -24,6 +24,6 @@ object ShimTrampolineUtil {
     // These are the arguments required by SparkDateTimeException class to create error message.
     val errorClass = "CAST_INVALID_INPUT"
     val messageParameters = Array("DOUBLE", "TIMESTAMP", SQLConf.ANSI_ENABLED.key)
-    new SparkDateTimeException(errorClass, Array(infOrNan) ++ messageParameters)
+    throw new SparkDateTimeException(errorClass, Array(infOrNan) ++ messageParameters)
   }
 }

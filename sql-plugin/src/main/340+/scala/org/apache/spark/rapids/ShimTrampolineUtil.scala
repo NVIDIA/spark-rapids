@@ -25,6 +25,6 @@ object ShimTrampolineUtil {
     val errorClass = "CAST_INVALID_INPUT"
     val messageParameters = Map("expression" -> infOrNan, "sourceType" -> "DOUBLE",
       "targetType" -> "TIMESTAMP", "ansiConfig" -> SQLConf.ANSI_ENABLED.key)
-    new SparkDateTimeException(errorClass, messageParameters, Array.empty, "")
+    throw new SparkDateTimeException(errorClass, messageParameters, Array.empty, "")
   }
 }
