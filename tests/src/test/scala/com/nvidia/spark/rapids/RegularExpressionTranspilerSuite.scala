@@ -478,27 +478,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assertCpuGpuMatchesRegexpReplace(patterns, inputs)
   }
 
-  test("regexp_split - character class repetition - ? and * - fall back to CPU") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4884
-    val patterns = Seq(raw"[1a-zA-Z]?", raw"[1a-zA-Z]*")
-    patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexSplitMode,
-        "regexp_split on GPU does not support repetition with ? or * " +
-        "consistently with Spark"
-      )
-    )
-  }
-
-  test("regexp_split - fall back to CPU for {0,n}, or {0,}") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4884
-    val patterns = Seq("a{0,}", raw"\02{0,}", "a{0,2}", raw"\02{0,10}")
-    patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexSplitMode,
-        "regexp_split on GPU does not support repetition with {0,} or {0,n} " +
-        "consistently with Spark")
-    )
-  }
-
   test("compare CPU and GPU: regexp find fuzz test with limited chars") {
     // testing with this limited set of characters finds issues much
     // faster than using the full ASCII set
@@ -666,6 +645,35 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       assertNoTranspileToSplittableString(patterns)
       doStringSplitTest(patterns, data, limit)
     }
+  }
+
+  test("regexp_split - character class repetition - ? and *") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4884
+    val patterns = Set(raw"[a-z][0-9]?", raw"[a-z][0-9]*")
+    val data = Seq("a", "aa", "a1a1", "a1b2", "a1b")
+    for (limit <- Seq(Integer.MIN_VALUE, -2, -1)) {
+      doStringSplitTest(patterns, data, limit)
+    }
+  }
+
+  test("regexp_split - character class repetition - ? and * - fall back to CPU") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4884
+    val patterns = Seq(raw"[1a-zA-Z]?", raw"[1a-zA-Z]*")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexSplitMode,
+        "regexp_split on GPU does not support empty match repetition consistently with Spark"
+      )
+    )
+  }
+
+  test("regexp_split - fall back to CPU for {0,n}, or {0,}") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/4884
+    val patterns = Seq("a{0,}", raw"\02{0,}", "a{0,2}", raw"\02{0,10}")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexSplitMode,
+        "regexp_split on GPU does not support empty match repetition consistently with Spark"
+      )
+    )
   }
 
   test("string split - limit < 0") {
