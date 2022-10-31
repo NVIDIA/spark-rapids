@@ -41,6 +41,7 @@ import com.nvidia.spark.rapids.RegexParser.toReadableString
  * - https://matt.might.net/articles/parsing-regex-with-recursive-descent/
  */
 class RegexParser(pattern: String) {
+  private val regexPunct = "!\"#$%&'()*+,-./:;<=>?@\\^_`{|}~"
 
   /** index of current position within the string being parsed */
   private var pos = 0
@@ -425,6 +426,12 @@ class RegexParser(pattern: String) {
             // escape character \e
             consumeExpected(ch)
             RegexChar('\u001b')
+          case _ if regexPunct.contains(ch) => 
+            // other punctuation
+            // note that this may include metacharacters from earlier, this is just to
+            // handle characters not covered by the previous cases earlier
+            consumeExpected(ch)
+            RegexEscaped(ch)
           case other =>
             throw new RegexUnsupportedException(
               s"Invalid or unsupported escape character '$other'", Some(pos - 1))
@@ -458,7 +465,7 @@ class RegexParser(pattern: String) {
           ListBuffer(getCharacters("Alpha"), getCharacters("Digit")).flatten
         case "Punct" =>
           val res:ListBuffer[RegexCharacterClassComponent] = 
-              ListBuffer("!\"#$%&'()*+,-./:;<=>?@\\^_`{|}~".map(RegexChar): _*)
+              ListBuffer(regexPunct.map(RegexChar): _*)
           res ++= ListBuffer(RegexEscaped('['), RegexEscaped(']'))
         case "Graph" => 
           ListBuffer(getCharacters("Alnum"), getCharacters("Punct")).flatten
@@ -660,6 +667,7 @@ object RegexSplitMode extends RegexMode
  */
 class CudfRegexTranspiler(mode: RegexMode) {
   private val regexMetaChars = ".$^[]\\|?*+(){}"
+  private val regexPunct = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
 
   private def countCaptureGroups(regex: RegexAST): Int = {
     regex match {
@@ -712,7 +720,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
   
   def transpileToSplittableString(e: RegexAST): Option[String] = {
     e match {
-      case RegexEscaped(ch) if regexMetaChars.contains(ch) => Some(ch.toString)
+      case RegexEscaped(ch) if regexPunct.contains(ch) => Some(ch.toString)
       case RegexChar(ch) if !regexMetaChars.contains(ch) => Some(ch.toString)
       case RegexSequence(parts) =>
         parts.foldLeft[Option[String]](Some("")) { (all, x) => 
@@ -1154,6 +1162,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
             RegexChar('\u0085'), RegexChar('\u2028'), RegexChar('\u2029')
           ))
           RegexGroup(true, RegexChoice(l, r))
+        case _ if regexPunct.contains(ch) && !regexMetaChars.contains(ch) =>
+          RegexChar(ch)
         case _ =>
           regex
       }

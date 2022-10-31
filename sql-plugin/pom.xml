@@ -72,6 +72,11 @@
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-avro_${scala.binary.version}</artifactId>
         </dependency>
+        <dependency>
+            <!-- Used for Alluxio mounting -->
+            <groupId>org.alluxio</groupId>
+            <artifactId>alluxio-shaded-client</artifactId>
+        </dependency>
     </dependencies>
 
     <profiles>

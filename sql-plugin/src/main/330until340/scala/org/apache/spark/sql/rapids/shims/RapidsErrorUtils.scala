@@ -16,6 +16,7 @@
 
 package org.apache.spark.sql.rapids.shims
 
+import org.apache.spark.rapids.ShimTrampolineUtil
 import org.apache.spark.sql.catalyst.trees.Origin
 import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
@@ -58,5 +59,9 @@ object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
     QueryExecutionErrors.arithmeticOverflowError(
       "Overflow in integral divide", "try_divide", context
     )
+  }
+
+  def throwSparkDateTimeException(infOrNan: String): Unit = {
+    ShimTrampolineUtil.dateTimeException(infOrNan)
   }
 }
