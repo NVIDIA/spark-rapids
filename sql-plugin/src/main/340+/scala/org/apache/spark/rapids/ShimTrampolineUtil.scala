@@ -20,11 +20,11 @@ import org.apache.spark.SparkDateTimeException
 import org.apache.spark.sql.internal.SQLConf
 
 object ShimTrampolineUtil {
-  def dateTimeException(infOrNan: String) = {
+  def dateTimeException(infOrNan: String): SparkDateTimeException = {
     // These are the arguments required by SparkDateTimeException class to create error message.
     val errorClass = "CAST_INVALID_INPUT"
     val messageParameters = Map("expression" -> infOrNan, "sourceType" -> "DOUBLE",
       "targetType" -> "TIMESTAMP", "ansiConfig" -> SQLConf.ANSI_ENABLED.key)
-    throw new SparkDateTimeException(errorClass, messageParameters, Array.empty, "")
+    new SparkDateTimeException(errorClass, messageParameters, Array.empty, "")
   }
 }

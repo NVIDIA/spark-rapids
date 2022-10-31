@@ -16,6 +16,7 @@
 
 package org.apache.spark.sql.rapids.shims
 
+import org.apache.spark.SparkDateTimeException
 import org.apache.spark.rapids.ShimTrampolineUtil
 import org.apache.spark.sql.catalyst.trees.{Origin, SQLQueryContext}
 import org.apache.spark.sql.errors.QueryExecutionErrors
@@ -66,7 +67,7 @@ object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
     )
   }
 
-  def throwSparkDateTimeException(infOrNan: String): Unit = {
+  def throwSparkDateTimeException(infOrNan: String): SparkDateTimeException = {
     ShimTrampolineUtil.dateTimeException(infOrNan)
   }
 }
