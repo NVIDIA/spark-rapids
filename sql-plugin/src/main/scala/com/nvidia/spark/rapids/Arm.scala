@@ -15,8 +15,6 @@
  */
 package com.nvidia.spark.rapids
 
-import java.util
-
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -71,8 +69,8 @@ trait Arm {
 
   /** Executes the provided code block and then closes the abstract collection of resources */
   def withResource[T <: AutoCloseable, V]
-      (r: util.AbstractCollection[T])
-      (block: util.AbstractCollection[T] => V): V = {
+      (r: java.util.AbstractCollection[T])
+      (block: java.util.AbstractCollection[T] => V): V = {
     import collection.JavaConverters._
     try {
       block(r)
@@ -152,8 +150,8 @@ trait Arm {
 
   /** Executes the provided code block, closing the resources only if an exception occurs */
   def closeOnExcept[T <: AutoCloseable, V]
-      (r: util.AbstractCollection[T])
-      (block: util.AbstractCollection[T] => V): V = {
+      (r: java.util.AbstractCollection[T])
+      (block: java.util.AbstractCollection[T] => V): V = {
     import collection.JavaConverters._
     try {
       block(r)
