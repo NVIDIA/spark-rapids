@@ -169,6 +169,7 @@ def test_split_optimized_no_re_combined():
             'split(a, "\\\\}Z")'),
             conf=_regexp_conf)
 
+# See https://github.com/NVIDIA/spark-rapids/issues/6958 for issue with zero-width match
 @allow_non_gpu('ProjectExec', 'StringSplit')
 def test_split_unsupported_fallback():
     data_gen = mk_str_gen('([bf]o{0,2}:){1,7}') \
