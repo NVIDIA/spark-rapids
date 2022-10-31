@@ -821,23 +821,24 @@ class CudfRegexTranspiler(mode: RegexMode) {
   }
 
   private def negateCharacterClass(components: Seq[RegexCharacterClassComponent]): RegexAST = {
-    // There are differences between cuDF and Java handling of newlines
-    // for negative character matches. The expression `[^a]` will match
+    // There are differences between cuDF and Java handling of `\r`
+    // in negated character classes. The expression `[^a]` will match
     // `\r` in Java but not in cuDF, so we replace `[^a]` with
-    // `(?:[\r]|[^a])`. We also have to take into account whether any
-    // newline characters are included in the character range.
+    // `(?:[\r]|[^a])`.
     //
     // Examples:
     //
     // `[^a]`     => `(?:[\r]|[^a])`
-    // `[^a\r]`   => `(?:[\n]|[^a])`
-    // `[^a\n]`   => `(?:[\r]|[^a])`
-    // `[^a\r\n]` => `[^a]`
+    // `[^a\n]`   => `(?:[\r]|[^a\n])`
+    //
+    // If the negated character class contains `\r` then there is no transformation:
+    //
+    // `[^a\r]`   => `[^a\r]`
+    // `[^a\r\n]` => `[^a\r\n]`
 
-    val distinctComponents = components.distinct
-    val linefeedCharsInPattern = distinctComponents.flatMap {
-      case RegexChar(ch) if ch == '\r' => Seq(ch)
-      case RegexEscaped(ch) if ch == 'r' => Seq('\r')
+    val componentsWithoutLinefeed = components.filterNot {
+      case RegexChar(ch) => ch == '\r'
+      case RegexEscaped(ch) => ch == 'r'
       case RegexCharacterRange(startRegex, RegexChar(end)) =>
         val start = startRegex match {
           case RegexChar(ch) => ch
@@ -847,25 +848,20 @@ class CudfRegexTranspiler(mode: RegexMode) {
             s"Unexpected expression at start of character range: ${other.toRegexString}", 
             other.position)
         }
-        if (start <= '\r' && end >= '\r') {
-          Seq('\r')
-        } else {
-          Seq.empty
-        }
-      case _ => Seq.empty
+        start <= '\r' && end >= '\r'
+      case _ =>
+        false
     }
 
-    val onlyLinefeedChars = distinctComponents.length == linefeedCharsInPattern.length
-    val negatedNewlines = Seq('\r').diff(linefeedCharsInPattern.distinct)
-
-    if (negatedNewlines.isEmpty) {
-      RegexCharacterClass(negated = true, ListBuffer(distinctComponents: _*))
+    if (componentsWithoutLinefeed.length != components.length) {
+      // no modification needed in this case
+      RegexCharacterClass(negated = true, ListBuffer(components: _*))
     } else {
       RegexGroup(capture = false,
         RegexChoice(
           RegexCharacterClass(negated = false,
-            characters = ListBuffer(negatedNewlines.map(RegexChar): _*)),
-          RegexCharacterClass(negated = true, ListBuffer(distinctComponents: _*))))
+            characters = ListBuffer(RegexChar('\r'))),
+          RegexCharacterClass(negated = true, ListBuffer(components: _*))))
     }
   }
 
@@ -1704,7 +1700,7 @@ sealed case class RegexChar(ch: Char) extends RegexCharacterClassComponent {
     this.position = Some(position)
   }
   override def children(): Seq[RegexAST] = Seq.empty
-  override def toRegexString: String = s"$ch"
+  override def toRegexString: String = ch.toString
 }
 
 sealed case class RegexEscaped(a: Char) extends RegexCharacterClassComponent{

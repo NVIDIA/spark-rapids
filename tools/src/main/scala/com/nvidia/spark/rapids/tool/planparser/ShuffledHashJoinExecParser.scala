@@ -34,7 +34,11 @@ case class ShuffledHashJoinExecParser(
     // TODO - Its partial duration only. We need a way to specify it as partial.
     val accumId = node.metrics.find(_.name == "time to build hash map total").map(_.accumulatorId)
     val maxDuration = SQLPlanParser.getTotalDuration(accumId, app)
-    val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
+    val exprString = node.desc.replaceFirst("ShuffledHashJoin ", "")
+    val (expressions, supportedJoinType) = SQLPlanParser.parseEquijoinsExpressions(exprString)
+    val notSupportedExprs = expressions.filterNot(expr => checker.isExprSupported(expr))
+    val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName) &&
+      notSupportedExprs.isEmpty && supportedJoinType) {
       (checker.getSpeedupFactor(fullExecName), true)
     } else {
       (1.0, false)

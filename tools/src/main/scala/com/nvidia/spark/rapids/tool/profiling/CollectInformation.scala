@@ -46,6 +46,18 @@ class CollectInformation(apps: Seq[ApplicationInfo]) extends Logging {
     }
   }
 
+  def getAppLogPath: Seq[AppLogPathProfileResults] = {
+    val allRows = apps.map { app =>
+      val a = app.appInfo
+      AppLogPathProfileResults(app.index, a.appName, a.appId, app.eventLogPath)
+    }
+    if (allRows.size > 0) {
+      allRows.sortBy(cols => (cols.appIndex))
+    } else {
+      Seq.empty
+    }
+  }
+
   // get rapids-4-spark and cuDF jar if CPU Mode is on.
   def getRapidsJARInfo: Seq[RapidsJarProfileResult] = {
     val allRows = apps.flatMap { app =>

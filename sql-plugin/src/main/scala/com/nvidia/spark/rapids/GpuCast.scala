@@ -284,14 +284,14 @@ object GpuCast extends Arm {
               if (ansiMode) {
                 toDataType match {
                   case IntegerType =>
-                    assertValuesInRange(cv, Scalar.fromInt(Int.MinValue),
-                      Scalar.fromInt(Int.MaxValue), errorMsg = GpuCast.OVERFLOW_MESSAGE)
+                    assertValuesInRange[Long](cv, Int.MinValue.toLong,
+                      Int.MaxValue.toLong, errorMsg = GpuCast.OVERFLOW_MESSAGE)
                   case ShortType =>
-                    assertValuesInRange(cv, Scalar.fromShort(Short.MinValue),
-                      Scalar.fromShort(Short.MaxValue), errorMsg = GpuCast.OVERFLOW_MESSAGE)
+                    assertValuesInRange[Long](cv, Short.MinValue.toLong,
+                      Short.MaxValue.toLong, errorMsg = GpuCast.OVERFLOW_MESSAGE)
                   case ByteType =>
-                    assertValuesInRange(cv, Scalar.fromByte(Byte.MinValue),
-                      Scalar.fromByte(Byte.MaxValue), errorMsg = GpuCast.OVERFLOW_MESSAGE)
+                    assertValuesInRange[Long](cv, Byte.MinValue.toLong,
+                      Byte.MaxValue.toLong, errorMsg = GpuCast.OVERFLOW_MESSAGE)
                 }
               }
               cv.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
@@ -344,45 +344,82 @@ object GpuCast extends Arm {
         }
 
       // ansi cast from larger-than-integer integral-like types, to integer
-      case (t @(LongType | _: DecimalType), IntegerType) if ansiMode =>
-        assertValuesInRange(input, GpuScalar.from(Int.MinValue, t),
-          GpuScalar.from(Int.MaxValue, t))
+      case (LongType | _: DecimalType, IntegerType) if ansiMode =>
+        fromDataType match {
+          case LongType =>
+            assertValuesInRange[Long](input, Int.MinValue.toLong, Int.MaxValue.toLong)
+          case _ =>
+            assertValuesInRange[BigDecimal](input, BigDecimal(Int.MinValue),
+              BigDecimal(Int.MaxValue))
+        }
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from larger-than-short integral-like types, to short
-      case (t @(LongType | IntegerType | _: DecimalType), ShortType) if ansiMode =>
-        assertValuesInRange(input, GpuScalar.from(Short.MinValue, t),
-          GpuScalar.from(Short.MaxValue, t))
+      case (LongType | IntegerType | _: DecimalType, ShortType) if ansiMode =>
+        fromDataType match {
+          case LongType =>
+            assertValuesInRange[Long](input, Short.MinValue.toLong, Short.MaxValue.toLong)
+          case IntegerType =>
+            assertValuesInRange[Int](input, Short.MinValue.toInt, Short.MaxValue.toInt)
+          case _ =>
+            assertValuesInRange[BigDecimal](input, BigDecimal(Short.MinValue),
+              BigDecimal(Short.MaxValue))
+        }
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from larger-than-byte integral-like types, to byte
-      case (t @ (LongType | IntegerType | ShortType | _: DecimalType), ByteType) if ansiMode =>
-        assertValuesInRange(input, GpuScalar.from(Byte.MinValue, t),
-          GpuScalar.from(Byte.MaxValue, t))
+      case (LongType | IntegerType | ShortType | _: DecimalType, ByteType) if ansiMode =>
+        fromDataType match {
+          case LongType =>
+            assertValuesInRange[Long](input, Byte.MinValue.toLong, Byte.MaxValue.toLong)
+          case IntegerType =>
+            assertValuesInRange[Int](input, Byte.MinValue.toInt, Byte.MaxValue.toInt)
+          case ShortType =>
+            assertValuesInRange[Short](input, Byte.MinValue.toShort, Byte.MaxValue.toShort)
+          case _ =>
+            assertValuesInRange[BigDecimal](input, BigDecimal(Byte.MinValue),
+              BigDecimal(Byte.MaxValue))
+        }
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from floating-point types, to byte
       case (FloatType | DoubleType, ByteType) if ansiMode =>
-        assertValuesInRange(input, Scalar.fromByte(Byte.MinValue),
-          Scalar.fromByte(Byte.MaxValue))
+        fromDataType match {
+          case FloatType =>
+            assertValuesInRange[Float](input, Byte.MinValue.toFloat, Byte.MaxValue.toFloat)
+          case DoubleType =>
+            assertValuesInRange[Double](input, Byte.MinValue.toDouble, Byte.MaxValue.toDouble)
+        }
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from floating-point types, to short
       case (FloatType | DoubleType, ShortType) if ansiMode =>
-        assertValuesInRange(input, Scalar.fromShort(Short.MinValue),
-          Scalar.fromShort(Short.MaxValue))
+        fromDataType match {
+          case FloatType =>
+            assertValuesInRange[Float](input, Short.MinValue.toFloat, Short.MaxValue.toFloat)
+          case DoubleType =>
+            assertValuesInRange[Double](input, Short.MinValue.toDouble, Short.MaxValue.toDouble)
+        }
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from floating-point types, to integer
       case (FloatType | DoubleType, IntegerType) if ansiMode =>
-        assertValuesInRange(input, Scalar.fromInt(Int.MinValue),
-          Scalar.fromInt(Int.MaxValue))
+        fromDataType match {
+          case FloatType =>
+            assertValuesInRange[Float](input, Int.MinValue.toFloat, Int.MaxValue.toFloat)
+          case DoubleType =>
+            assertValuesInRange[Double](input, Int.MinValue.toDouble, Int.MaxValue.toDouble)
+        }
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       // ansi cast from floating-point types, to long
       case (FloatType | DoubleType, LongType) if ansiMode =>
-        assertValuesInRange(input, Scalar.fromLong(Long.MinValue),
-          Scalar.fromLong(Long.MaxValue))
+        fromDataType match {
+          case FloatType =>
+            assertValuesInRange[Float](input, Long.MinValue.toFloat, Long.MaxValue.toFloat)
+          case DoubleType =>
+            assertValuesInRange[Double](input, Long.MinValue.toDouble, Long.MaxValue.toDouble)
+        }
         input.castTo(GpuColumnVector.getNonNestedRapidsType(toDataType))
 
       case (FloatType | DoubleType, TimestampType) =>
@@ -558,44 +595,59 @@ object GpuCast extends Arm {
    * Asserts that all values in a column are within the specific range.
    *
    * @param values ColumnVector to be performed with range check
-   * @param minValue Named parameter for function to create Scalar representing range minimum value
-   * @param maxValue Named parameter for function to create Scalar representing range maximum value
+   * @param minValue Range minimum value of input type T
+   * @param maxValue Range maximum value of input type T
    * @param inclusiveMin Whether the min value is included in the valid range or not
    * @param inclusiveMax Whether the max value is included in the valid range or not
    * @param errorMsg Specify the message in the `IllegalStateException`
    * @throws IllegalStateException if any values in the column are not within the specified range
    */
-  private def assertValuesInRange(values: ColumnView,
-      minValue: => Scalar,
-      maxValue: => Scalar,
+  private def assertValuesInRange[T](values: ColumnView,
+      minValue: T,
+      maxValue: T,
       inclusiveMin: Boolean = true,
       inclusiveMax: Boolean = true,
-      errorMsg:String = GpuCast.OVERFLOW_MESSAGE): Unit = {
+      errorMsg:String = GpuCast.OVERFLOW_MESSAGE)
+      (implicit ord: Ordering[T]): Unit = {
 
-    def throwIfAny(cv: ColumnView): Unit = {
-      withResource(cv) { cv =>
-        withResource(cv.any()) { isAny =>
-          if (isAny.isValid && isAny.getBoolean) {
+    def throwIfAnyNan(): Unit = {
+      withResource(values.isNan()) { valuesIsNan =>
+        withResource(valuesIsNan.any()) { anyNan =>
+          if (anyNan.isValid && anyNan.getBoolean) {
             throw RapidsErrorUtils.arithmeticOverflowError(errorMsg)
           }
         }
       }
     }
 
-    withResource(minValue) { minValue =>
-      throwIfAny(if (inclusiveMin) {
-        values.lessThan(minValue)
-      } else {
-        values.lessOrEqualTo(minValue)
-      })
+    def throwIfOutOfRange(minInput: T, maxInput: T): Unit = {
+      if (inclusiveMin && ord.compare(minInput, minValue) < 0 ||
+          !inclusiveMin && ord.compare(minInput, minValue) <= 0 ||
+          inclusiveMax && ord.compare(maxInput, maxValue) > 0 ||
+          !inclusiveMax && ord.compare(maxInput, maxValue) >= 0) {
+        throw RapidsErrorUtils.arithmeticOverflowError(errorMsg)
+      }
     }
 
-    withResource(maxValue) { maxValue =>
-      throwIfAny(if (inclusiveMax) {
-        values.greaterThan(maxValue)
-      } else {
-        values.greaterOrEqualTo(maxValue)
-      })
+    def getValue(s: Scalar): T = (s.getType match {
+      case DType.FLOAT64 => s.getDouble
+      case DType.FLOAT32 => s.getFloat
+      case DType.STRING => s.getJavaString
+      case dt if dt.isDecimalType => BigDecimal(s.getBigDecimal)
+      case dt if dt.isBackedByLong => s.getLong
+      case dt if dt.isBackedByInt => s.getInt
+      case dt if dt.isBackedByShort => s.getShort
+      case dt if dt.isBackedByByte => s.getByte
+      case _ => throw new IllegalArgumentException("Unsupported scalar type")
+    }).asInstanceOf[T]
+
+    withResource(values.min()) { minInput =>
+      withResource(values.max()) { maxInput =>
+        if (values.getType == DType.FLOAT32 || values.getType == DType.FLOAT64) {
+          throwIfAnyNan()
+        }
+        throwIfOutOfRange(getValue(minInput), getValue(maxInput))
+      }
     }
   }
 
@@ -695,52 +747,49 @@ object GpuCast extends Arm {
     val spaceStr = " "
     val nullStr = if (legacyCastToString) ""  else "null"
     val sepStr = if (legacyCastToString) "," else ", "
-    val numRows = input.getRowCount.toInt
-
     withResource(
       Seq(emptyStr, spaceStr, nullStr, sepStr).safeMap(Scalar.fromString)
     ){ case Seq(empty, space, nullRep, sep) =>
 
-      // add `' '` to all not null elements when `legacyCastToString = true`
-      def addSpaces(strChildContainsNull: ColumnView): ColumnView = {
-        withResource(strChildContainsNull) { strChildContainsNull =>
-          withResource(strChildContainsNull.replaceNulls(nullRep)) { strChild =>
-            if (legacyCastToString) {// add a space string to each non-null element
-              val numElements = strChildContainsNull.getRowCount.toInt
-              withResource(ColumnVector.fromScalar(space, numElements)) { spaceVec =>
-                withResource(ColumnVector.stringConcatenate(Array(spaceVec, strChild))
-                ) { hasSpaces =>
-                  withResource(strChildContainsNull.isNotNull) {_.ifElse(hasSpaces, strChild)}
-                }
-              }
+      val withSpacesIfLegacy = if (!legacyCastToString) {
+        withResource(input.getChildColumnView(0)) {
+          _.replaceNulls(nullRep)
+        }
+      } else {
+        // add a space string to each non-null element
+        val (strChild, childNotNull, numElements) =
+          withResource(input.getChildColumnView(0)) { childCol =>
+            closeOnExcept(childCol.replaceNulls(nullRep)) {
+              (_, childCol.isNotNull(), childCol.getRowCount.toInt)
             }
-            else { strChild.incRefCount }
+          }
+        withResource(Seq(strChild, childNotNull)) { _ =>
+          val hasSpaces = withResource(ColumnVector.fromScalar(space, numElements)) { spaceCol =>
+            ColumnVector.stringConcatenate(Array(spaceCol, strChild))
+          }
+          withResource(hasSpaces) {
+            childNotNull.ifElse(_, strChild)
           }
         }
       }
-
-      // If the first char of a string is ' ', remove it (only for legacyCastToString = true)
-      def removeFirstSpace(strCol: ColumnVector): ColumnVector = {
-        if (legacyCastToString){
-          withResource(strCol.substring(0,1)) { firstChars =>
+      val concatenated = withResource(withSpacesIfLegacy) { strChildCol =>
+        withResource(input.replaceListChild(strChildCol)) { strArrayCol =>
+          withResource(ColumnVector.fromScalar(sep, input.getRowCount.toInt)) {
+            strArrayCol.stringConcatenateListElements
+          }
+        }
+      }
+      val strCol = withResource(concatenated) {
+        _.replaceNulls(empty)
+      }
+      if (!legacyCastToString) {
+        strCol
+      } else {
+        // If the first char of a string is ' ', remove it (only for legacyCastToString = true)
+        withResource(strCol) { _ =>
+          withResource(strCol.startsWith(space)) { startsWithSpace =>
             withResource(strCol.substring(1)) { remain =>
-              withResource(firstChars.equalTo(space)) {_.ifElse(remain, strCol)}
-            }
-          }
-        }
-        else {strCol.incRefCount}
-      }
-
-      withResource(ColumnVector.fromScalar(sep, numRows)) {sepCol =>
-        withResource(input.getChildColumnView(0)) { childCol =>
-          withResource(addSpaces(childCol)) {strChildCol =>
-            withResource(input.replaceListChild(strChildCol)) {strArrayCol =>
-              withResource(
-                strArrayCol.stringConcatenateListElements(sepCol)) { strColContainsNull =>
-                withResource(strColContainsNull.replaceNulls(empty)) {strCol =>
-                  removeFirstSpace(strCol)
-                }
-              }
+              startsWithSpace.ifElse(remain, strCol)
             }
           }
         }
@@ -762,31 +811,28 @@ object GpuCast extends Arm {
     withResource(
       Seq(leftStr, rightStr, emptyStr, nullStr).safeMap(Scalar.fromString)
     ){ case Seq(left, right, empty, nullRep) =>
-
-      /*
-       * Add brackets to each string. Ex: ["1, 2, 3", "4, 5"] => ["[1, 2, 3]", "[4, 5]"]
-       */
-      def addBrackets(strVec: ColumnVector): ColumnVector = {
-        withResource(
-          Seq(left, right).safeMap(s => ColumnVector.fromScalar(s, numRows))
-        ) { case Seq(leftColumn, rightColumn) =>
-          ColumnVector.stringConcatenate(empty, nullRep, Array(leftColumn, strVec, rightColumn))
-        }
-      }
-
       val strChildContainsNull = withResource(input.getChildColumnView(0)) {child =>
         doCast(
           child, elementType, StringType, ansiMode, legacyCastToString, stringToDateAnsiModeEnabled)
       }
 
-      withResource(strChildContainsNull) {strChildContainsNull =>
-        withResource(input.replaceListChild(strChildContainsNull)) {strArrayCol =>
-          withResource(concatenateStringArrayElements(strArrayCol, legacyCastToString)) {strCol =>
-            withResource(addBrackets(strCol)) {
-              _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
-            }
-          }
+      val concatenated = withResource(strChildContainsNull) { _ =>
+        withResource(input.replaceListChild(strChildContainsNull)) {
+          concatenateStringArrayElements(_, legacyCastToString)
         }
+      }
+
+      // Add brackets to each string. Ex: ["1, 2, 3", "4, 5"] => ["[1, 2, 3]", "[4, 5]"]
+      val hasBrackets = withResource(concatenated) { _ =>
+        withResource(
+          Seq(left, right).safeMap(ColumnVector.fromScalar(_, numRows))
+        ) { case Seq(leftColumn, rightColumn) =>
+          ColumnVector.stringConcatenate(empty, nullRep, Array(leftColumn, concatenated,
+            rightColumn))
+        }
+      }
+      withResource(hasBrackets) {
+        _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
       }
     }
   }
@@ -845,19 +891,21 @@ object GpuCast extends Arm {
       }
 
       // concatenate elements
-      withResource(strElements) {strElements =>
-        withResource(input.replaceListChild(strElements)) {strArrayCol =>
-          withResource(concatenateStringArrayElements(strArrayCol, legacyCastToString)) {strCol =>
-            withResource(
-              Seq(leftScalar, rightScalar).safeMap(ColumnVector.fromScalar(_, numRows))
-            ) {case Seq(leftCol, rightCol) =>
-              withResource(ColumnVector.stringConcatenate(
-                emptyScalar, nullScalar, Array(leftCol, strCol, rightCol))) {
-                _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
-              }
-            }
-          }
+      val strCol = withResource(strElements) { _ =>
+        withResource(input.replaceListChild(strElements)) {
+          concatenateStringArrayElements(_, legacyCastToString)
         }
+      }
+      val resPreValidityFix = withResource(strCol) { _ =>
+        withResource(
+          Seq(leftScalar, rightScalar).safeMap(ColumnVector.fromScalar(_, numRows))
+        ) { case Seq(leftCol, rightCol) =>
+          ColumnVector.stringConcatenate(
+            emptyScalar, nullScalar, Array(leftCol, strCol, rightCol))
+        }
+      }
+      withResource(resPreValidityFix) {
+        _.mergeAndSetValidity(BinaryOp.BITWISE_AND, input)
       }
     }
   }
@@ -954,30 +1002,31 @@ object GpuCast extends Arm {
     val trueStrings = Seq("t", "true", "y", "yes", "1")
     val falseStrings = Seq("f", "false", "n", "no", "0")
     val boolStrings = trueStrings ++ falseStrings
-
     // determine which values are valid bool strings
     withResource(ColumnVector.fromStrings(boolStrings: _*)) { boolStrings =>
-      withResource(input.strip()) { stripped =>
-        withResource(stripped.lower()) { lower =>
-          withResource(lower.contains(boolStrings)) { validBools =>
-            // in ansi mode, fail if any values are not valid bool strings
-            if (ansiEnabled) {
-              withResource(validBools.all()) { isAllBool =>
-                if (isAllBool.isValid && !isAllBool.getBoolean) {
-                  throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
-                }
-              }
-            }
-            // replace non-boolean values with null
-            withResource(Scalar.fromNull(DType.STRING)) { nullString =>
-              withResource(validBools.ifElse(lower, nullString)) { sanitizedInput =>
-                // return true, false, or null, as appropriate
-                withResource(ColumnVector.fromStrings(trueStrings: _*)) { cvTrue =>
-                  sanitizedInput.contains(cvTrue)
-                }
+      val lowerStripped = withResource(input.strip()) {
+        _.lower()
+      }
+      val sanitizedInput = withResource(lowerStripped) { _ =>
+        withResource(lowerStripped.contains(boolStrings)) { validBools =>
+          // in ansi mode, fail if any values are not valid bool strings
+          if (ansiEnabled) {
+            withResource(validBools.all()) { isAllBool =>
+              if (isAllBool.isValid && !isAllBool.getBoolean) {
+                throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
               }
             }
           }
+          // replace non-boolean values with null
+          withResource(Scalar.fromNull(DType.STRING)) {
+            validBools.ifElse(lowerStripped, _)
+          }
+        }
+      }
+      withResource(sanitizedInput) { _ =>
+        // return true, false, or null, as appropriate
+        withResource(ColumnVector.fromStrings(trueStrings: _*)) {
+          sanitizedInput.contains
         }
       }
     }
@@ -1020,13 +1069,14 @@ object GpuCast extends Arm {
               }
             }
           }
-          withResource(sanitized.castTo(dType)) { casted =>
-            withResource(Scalar.fromNull(dType)) { nulls =>
-              withResource(isFloat.ifElse(casted, nulls)) { floatsOnly =>
-                withResource(FloatUtils.getNanScalar(dType)) { nan =>
-                  isNan.ifElse(nan, floatsOnly)
-                }
-              }
+          val floatsOnly = withResource(sanitized.castTo(dType)) { casted =>
+            withResource(Scalar.fromNull(dType)) {
+              isFloat.ifElse(casted, _)
+            }
+          }
+          withResource(floatsOnly) { _ =>
+            withResource(FloatUtils.getNanScalar(dType)) {
+              isNan.ifElse(_, floatsOnly)
             }
           }
         }
@@ -1079,16 +1129,18 @@ object GpuCast extends Arm {
 
   private def checkResultForAnsiMode(input: ColumnVector, result: ColumnVector,
       errMessage: String): ColumnVector = {
-    closeOnExcept(result) { finalResult =>
-      withResource(input.isNotNull) { wasNotNull =>
-        withResource(finalResult.isNull) { isNull =>
-          withResource(wasNotNull.and(isNull)) { notConverted =>
-            withResource(notConverted.any()) { notConvertedAny =>
-              if (notConvertedAny.isValid && notConvertedAny.getBoolean) {
-                throw new DateTimeException(errMessage)
-              }
-            }
-          }
+    closeOnExcept(result) { _ =>
+      val notConverted = withResource(input.isNotNull()) { inputNotNull =>
+        withResource(result.isNull()) { resultIsNull =>
+          inputNotNull.and(resultIsNull)
+        }
+      }
+      val notConvertedAny = withResource(notConverted) {
+        _.any()
+      }
+      withResource(notConvertedAny) { _ =>
+        if (notConvertedAny.isValid && notConvertedAny.getBoolean) {
+          throw new DateTimeException(errMessage)
         }
       }
     }
@@ -1192,21 +1244,19 @@ object GpuCast extends Arm {
     withResource(orElse) { orElse =>
 
       // valid dates must match the regex and either of the cuDF formats
-      val isCudfMatch = withResource(input.isTimestamp(cudfFormat1)) { isTimestamp1 =>
-        withResource(input.isTimestamp(cudfFormat2)) { isTimestamp2 =>
-          withResource(input.isTimestamp(cudfFormat3)) { isTimestamp3 =>
-            withResource(input.isTimestamp(cudfFormat4)) { isTimestamp4 =>
-              withResource(isTimestamp1.or(isTimestamp2)) { isTimestamp12 =>
-                withResource(isTimestamp12.or(isTimestamp3)) { isTimestamp123 =>
-                  isTimestamp123.or(isTimestamp4)
-                }
-              }
-            }
+      val isCudfMatch = Seq(
+        cudfFormat2,
+        cudfFormat3,
+        cudfFormat4
+      ).foldLeft(input.isTimestamp(cudfFormat1)) { (isTimestamp, nextFormat) =>
+        withResource(isTimestamp) { _ =>
+          withResource(input.isTimestamp(nextFormat)) { nextIsTimeStamp =>
+            isTimestamp.or(nextIsTimeStamp)
           }
         }
       }
 
-      val isValidTimestamp = withResource(isCudfMatch) { isCudfMatch =>
+      val isValidTimestamp = withResource(isCudfMatch) { _ =>
         withResource(input.matchesRe(TIMESTAMP_REGEX_FULL)) { isRegexMatch =>
           isCudfMatch.and(isRegexMatch)
         }
@@ -1372,9 +1422,9 @@ object GpuCast extends Arm {
         val containerScaleBound = DType.DECIMAL128_MAX_PRECISION - (dt.scale + 1)
         val bound = math.pow(10, (dt.precision - dt.scale) min containerScaleBound)
         if (ansiMode) {
-          assertValuesInRange(rounded,
-            minValue = Scalar.fromDouble(-bound),
-            maxValue = Scalar.fromDouble(bound),
+          assertValuesInRange[Double](rounded,
+            minValue = -bound,
+            maxValue = bound,
             inclusiveMin = false,
             inclusiveMax = false)
           rounded.incRefCount()
@@ -1524,16 +1574,16 @@ object GpuCast extends Arm {
       }
     }
 
-    withResource(updatedMaxRet) { updatedMax =>
-      withResource(Scalar.fromLong(minSeconds)) { minSecondsS =>
-        withResource(longInput.lessThan(minSecondsS)) { lessThanMinSeconds =>
-          withResource(Scalar.fromLong(Long.MinValue)) { longMinS =>
-            withResource(lessThanMinSeconds.ifElse(longMinS, updatedMax)) { cv =>
-              cv.castTo(GpuColumnVector.getNonNestedRapidsType(toType))
-            }
+    val cv = withResource(updatedMaxRet) { updatedMax =>
+      withResource(Seq(minSeconds, Long.MinValue).safeMap(Scalar.fromLong)) {
+        case Seq(minSecondsS, longMinS) =>
+          withResource(longInput.lessThan(minSecondsS)){
+            _.ifElse(longMinS, updatedMax)
           }
-        }
       }
+    }
+    withResource(cv) {
+      _.castTo(GpuColumnVector.getNonNestedRapidsType(toType))
     }
   }
 }

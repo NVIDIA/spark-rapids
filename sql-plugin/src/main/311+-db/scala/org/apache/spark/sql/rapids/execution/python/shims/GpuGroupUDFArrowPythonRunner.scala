@@ -28,7 +28,7 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python._
 import org.apache.spark.sql.execution.python.PythonUDFRunner
-import org.apache.spark.sql.rapids.execution.python.{BufferToStreamWriter, GpuArrowPythonRunner}
+import org.apache.spark.sql.rapids.execution.python.{BufferToStreamWriter, GpuArrowPythonRunner, GpuPythonArrowOutput, GpuPythonRunnerBase}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.Utils
@@ -54,12 +54,10 @@ class GpuGroupUDFArrowPythonRunner(
     timeZoneId: String,
     conf: Map[String, String],
     batchSize: Long,
-    semWait: GpuMetric,
-    onDataWriteFinished: () => Unit,
-    override val pythonOutSchema: StructType,
-    minReadTargetBatchSize: Int)
-    extends GpuArrowPythonRunner(funcs, evalType, argOffsets, pythonInSchema, timeZoneId, conf,
-      batchSize, semWait, onDataWriteFinished, pythonOutSchema, minReadTargetBatchSize) {
+    val semWait: GpuMetric,
+    pythonOutSchema: StructType)
+  extends GpuPythonRunnerBase[ColumnarBatch](funcs, evalType, argOffsets)
+    with GpuPythonArrowOutput {
 
   protected override def newWriterThread(
       env: SparkEnv,
@@ -91,7 +89,7 @@ class GpuGroupUDFArrowPythonRunner(
             GpuSemaphore.releaseIfNecessary(TaskContext.get())
           })
           // Flatten the names of nested struct columns, required by cudf Arrow IPC writer.
-          flattenNames(pythonInSchema).foreach { case (name, nullable) =>
+          GpuArrowPythonRunner.flattenNames(pythonInSchema).foreach { case (name, nullable) =>
               if (nullable) {
                 builder.withColumnNames(name)
               } else {
@@ -121,19 +119,12 @@ class GpuGroupUDFArrowPythonRunner(
           // tell serializer we are done
           dataOut.writeInt(0)
           dataOut.flush()
-          if (onDataWriteFinished != null) onDataWriteFinished()
         }
       }
-
-      private def flattenNames(d: DataType, nullable: Boolean=true): Seq[(String, Boolean)] =
-        d match {
-          case s: StructType =>
-            s.flatMap(sf => Seq((sf.name, sf.nullable)) ++ flattenNames(sf.dataType, sf.nullable))
-          case m: MapType =>
-            flattenNames(m.keyType, nullable) ++ flattenNames(m.valueType, nullable)
-          case a: ArrayType => flattenNames(a.elementType, nullable)
-          case _ => Nil
-      }
     }
+  }
+
+  def toBatch(table: Table): ColumnarBatch = {
+    GpuColumnVector.from(table, GpuColumnVector.extractTypes(pythonOutSchema))
   }
 }

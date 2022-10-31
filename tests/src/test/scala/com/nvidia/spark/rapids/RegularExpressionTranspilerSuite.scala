@@ -32,15 +32,21 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("transpiler detects invalid cuDF patterns that cuDF now supports") {
     // these patterns compile in cuDF since https://github.com/rapidsai/cudf/pull/11654 was merged
-    // but we still reject them because we see failures in fuzz testing if we allow them
+    // but we still reject them because the behavior is not consistent with Java
+
+    // The test "AST fuzz test - regexp_replace" hangs if we stop rejecting these patterns
     for (pattern <- Seq("\t+|a", "(\t+|a)Dc$1", "\n[^\r\n]x*|^3x")) {
       assertUnsupported(pattern, RegexFindMode,
         "cuDF does not support repetition on one side of a choice")
     }
+
+    //The test "AST fuzz test - regexp_find" fails if we stop rejecting these patterns.
     for (pattern <- Seq("$|$[^\n]2]}|B")) {
       assertUnsupported(pattern, RegexFindMode,
         "End of line/string anchor is not supported in this context")
     }
+
+    // The test "AST fuzz test - regexp_replace" hangs if we stop rejecting these patterns
     for (pattern <- Seq("a^|b", "w$|b", "]*\\wWW$|zb", "(\\A|\\05)?")) {
       assertUnsupported(pattern, RegexFindMode,
         "cuDF does not support terms ending with line anchors on one side of a choice")
@@ -147,7 +153,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
   test("cuDF does not support quantifier syntax when not quantifying anything") {
     // note that we could choose to transpile and escape the '{' and '}' characters
-    val patterns = Seq("{1,2}", "{1,}", "{1}")
+    val patterns = Seq("{1,2}", "{1,}", "{1}", "{2,1}")
     patterns.foreach(pattern => {
       assertUnsupported(pattern, RegexFindMode,
         "Token preceding '{' is not quantifiable near index 0")
@@ -525,10 +531,32 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
+  test("negated character class newline handling") {
+    // tests behavior of com.nvidia.spark.rapids.CudfRegexTranspiler.negateCharacterClass
+
+    def test(pattern: String, expected: String): Unit = {
+      val t = new CudfRegexTranspiler(RegexFindMode)
+      val (actual, _) = t.transpile(pattern, None)
+      assert(toReadableString(expected) === toReadableString(actual))
+    }
+
+    test(raw"[^a]", raw"(?:[\r]|[^a])")
+    test(raw"[^a\n]", raw"(?:[\r]|[^a\n])")
+    test(raw"[^a\r]", raw"[^a\r]")
+    test(raw"[^a\r\n]", raw"[^a\r\n]")
+  }
+
   test("compare CPU and GPU: regexp replace negated character class") {
-    val inputs = Seq("a", "b", "a\nb", "a\r\nb\n\rc\rd", "\r", "\r\n", "\n")
-    val patterns = Seq("[^z]", "[^\r]", "[^\n]", "[^\r]", "[^\r\n]",
-      "[^a\n]", "[^b\r]", "[^bc\r\n]", "[^\\r\\n]", "[^\r\r]", "[^\r\n\r]", "[^\n\n\r\r]")
+    val inputs = Seq(
+      "a", "a\r", "a\n", "a\r\n", "a\n\r",
+      "b", "b\r", "b\n", "b\r\n", "b\n\r",
+      "a\nb", "b", "a\r\nb\n\rc\rd", "\r", "\r\n", "\n")
+    val patterns = Seq(
+      "[^a]", "[^a\r]", "[^a\n]", "[^a\r\n]",
+      "[a]", "[a\r]", "[a\n]", "[a\r\n]",
+      "[^b]", "[^b\r]", "[^b\n]", "[^b\r\n]",
+      "[^z]", "[^\r]", "[^\n]", "[^\r]",
+      "[^\r\n]", "[^b\r]", "[^bc\r\n]", "[^\\r\\n]", "[^\r\r]", "[^\r\n\r]", "[^\n\n\r\r]")
     assertCpuGpuMatchesRegexpReplace(patterns, inputs)
   }
 

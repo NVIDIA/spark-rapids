@@ -14,20 +14,14 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.shims
+package org.apache.spark.sql.execution.datasources.rapids
 
-import org.apache.spark.SparkUpgradeException
+import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.connector.expressions.filter.Predicate
+import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Strategy
 
-object SparkUpgradeExceptionShims {
-
-  def newSparkUpgradeException(
-      version: String,
-      message: String,
-      cause: Throwable): SparkUpgradeException = {
-    new SparkUpgradeException(
-      "INCONSISTENT_BEHAVIOR_CROSS_VERSION",
-      Array(version, message),
-      cause)
-  }
-
+object DataSourceStrategyUtils {
+  // Trampoline utility to access protected translateRuntimeFilterV2
+  def translateRuntimeFilter(expr: Expression): Option[Predicate] =
+    DataSourceV2Strategy.translateRuntimeFilterV2(expr)
 }

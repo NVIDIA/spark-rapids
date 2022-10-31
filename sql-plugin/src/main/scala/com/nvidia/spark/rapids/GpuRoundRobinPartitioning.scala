@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import java.util.Random
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.TaskContext
@@ -78,9 +77,7 @@ case class GpuRoundRobinPartitioning(numPartitions: Int)
         }
       }
       val ret: Array[ColumnarBatch] =
-        sliceInternalGpuOrCpu(numRows, partitionIndexes, partitionColumns)
-      partitionColumns.safeClose()
-      // Close the partition columns we copied them as a part of the slice
+        sliceInternalGpuOrCpuAndClose(numRows, partitionIndexes, partitionColumns)
       ret.zipWithIndex.filter(_._1 != null)
     } finally {
       totalRange.close()

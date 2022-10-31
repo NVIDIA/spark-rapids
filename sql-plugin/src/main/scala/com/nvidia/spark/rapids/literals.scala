@@ -242,7 +242,8 @@ object GpuScalar extends Arm with Logging {
           resolveElementType(StructType(
             Seq(StructField("key", keyType), StructField("value", valueType)))))
       case BinaryType =>
-        Scalar.listFromNull(GpuColumnVector.convertFrom(ByteType, false))
+        Scalar.listFromNull(
+          new HostColumnVector.BasicType(false, DType.UINT8))
       case _ => Scalar.fromNull(GpuColumnVector.getNonNestedRapidsType(nullType))
     }
     case decType: DecimalType =>
@@ -367,11 +368,12 @@ object GpuScalar extends Arm with Logging {
     }
     case BinaryType => v match {
       case data: Array[Byte] =>
-        withResource(columnVectorFromLiterals(data, ByteType)) { list =>
+        withResource(ColumnVector.fromUnsignedBytes(data: _*)) { list =>
           Scalar.listFromColumnView(list)
         }
+
       case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
-          s" for BinaryType, expecting Array[Byte]")
+        s" for BinaryType, expecting Array[Byte]")
     }
     case GpuUnsignedIntegerType => v match {
       case i: Int =>  Scalar.fromUnsignedInt(i)

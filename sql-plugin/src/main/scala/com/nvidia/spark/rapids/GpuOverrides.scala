@@ -24,7 +24,7 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
-import com.nvidia.spark.rapids.shims.{AQEUtils, GpuBatchScanExec, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{AQEUtils, DeltaLakeUtils, GpuBatchScanExec, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
@@ -64,6 +64,7 @@ import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.execution.python.shims.GpuFlatMapGroupsInPandasExecMeta
 import org.apache.spark.sql.rapids.shims.GpuTimeAdd
+import org.apache.spark.sql.rapids.zorder.ZOrderRules
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 
@@ -1479,11 +1480,11 @@ object GpuOverrides extends Logging {
       "Returns the first non-null argument if exists. Otherwise, null",
       ExprChecks.projectOnly(
         (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY +
-          GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
+          TypeSig.MAP + GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
         TypeSig.all,
         repeatingParamCheck = Some(RepeatingParamCheck("param",
           (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY +
-              GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
+            TypeSig.MAP + GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCoalesce(childExprs.map(_.convertToGpu()))
@@ -3048,6 +3049,17 @@ object GpuOverrides extends Logging {
             val2: Expression): GpuExpression =
           GpuStringLocate(val0, val1, val2)
       }),
+    expr[StringInstr](
+      "Instr string operator",
+      ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
+        Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
+            ParamCheck("substr", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+      (in, conf, p, r) => new BinaryExprMeta[StringInstr](in, conf, p, r) {
+        override def convertToGpu(
+            str: Expression,
+            substr: Expression): GpuExpression =
+          GpuStringInstr(str, substr)
+      }),
     expr[Substring](
       "Substring operator",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY,
@@ -3594,7 +3606,7 @@ object GpuOverrides extends Logging {
   // Shim expressions should be last to allow overrides with shim-specific versions
   val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
     commonExpressions ++ TimeStamp.getExprs ++ GpuHiveOverrides.exprs ++
-        SparkShimImpl.getExprs
+        SparkShimImpl.getExprs ++ ZOrderRules.exprs
 
   def wrapScan[INPUT <: Scan](
       scan: INPUT,
@@ -4061,11 +4073,12 @@ object GpuOverrides extends Logging {
               e.evalType)
         }),
     exec[FlatMapCoGroupsInPandasExec](
-      "The backend for CoGrouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
-        " scheduling GPU resources for the Python process when enabled",
-      ExecChecks.hiddenHack(),
+      "The backend for CoGrouped Aggregation Pandas UDF. Accelerates the data transfer" +
+        " between the Java process and the Python process. It also supports scheduling GPU" +
+        " resources for the Python process when enabled.",
+      ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
       (flatCoPy, conf, p, r) => new GpuFlatMapCoGroupsInPandasExecMeta(flatCoPy, conf, p, r))
-        .disabledByDefault("Performance is not ideal now"),
+        .disabledByDefault("Performance is not ideal with many small groups"),
     exec[FlatMapGroupsInPandasExec](
       "The backend for Flat Map Groups Pandas UDF, Accelerates the data transfer between the" +
         " Java process and the Python process. It also supports scheduling GPU resources" +
@@ -4336,18 +4349,20 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     if (conf.isSqlEnabled && conf.isSqlExecuteOnGPU) {
       GpuOverrides.logDuration(conf.shouldExplain,
         t => f"Plan conversion to the GPU took $t%.2f ms") {
-        val updatedPlan = updateForAdaptivePlan(plan, conf)
-        val newPlan = applyOverrides(updatedPlan, conf)
+        var updatedPlan = updateForAdaptivePlan(plan, conf)
+        updatedPlan = SparkShimImpl.applyShimPlanRules(updatedPlan, conf)
+        updatedPlan = applyOverrides(updatedPlan, conf)
         if (conf.logQueryTransformations) {
           val logPrefix = context.map(str => s"[$str]").getOrElse("")
           logWarning(s"${logPrefix}Transformed query:" +
-            s"\nOriginal Plan:\n$plan\nTransformed Plan:\n$newPlan")
+            s"\nOriginal Plan:\n$plan\nTransformed Plan:\n$updatedPlan")
         }
-        newPlan
+        updatedPlan
       }
     } else if (conf.isSqlEnabled && conf.isSqlExplainOnlyEnabled) {
       // this mode logs the explain output and returns the original CPU plan
-      val updatedPlan = updateForAdaptivePlan(plan, conf)
+      var updatedPlan = updateForAdaptivePlan(plan, conf)
+      updatedPlan = SparkShimImpl.applyShimPlanRules(updatedPlan, conf)
       GpuOverrides.explainCatalystSQLPlan(updatedPlan, conf)
       plan
     } else {
@@ -4382,8 +4397,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
    */
   def isDeltaLakeMetadataQuery(plan: SparkPlan): Boolean = {
     val deltaLogScans = PlanUtils.findOperators(plan, {
-      case f: FileSourceScanExec if f.requiredSchema.fields
-         .exists(_.name.startsWith("_databricks_internal")) =>
+      case f: FileSourceScanExec if DeltaLakeUtils.isDatabricksDeltaLakeScan(f) =>
         logDebug(s"Fallback for FileSourceScanExec with _databricks_internal: $f")
         true
       case f: FileSourceScanExec =>
