@@ -183,6 +183,10 @@ The version-specific directory names have one of the following forms / use cases
 - `src/main/post320-treenode` contains shims for the Catalyst `TreeNode` class after the
   [children trait specialization in Apache Spark 3.2.0](https://issues.apache.org/jira/browse/SPARK-34906).
 
+For each Spark shim, we use Ant path patterns to compute the property
+`spark${buildver}.sources` in [sql-plugin/pom.xml](./sql-plugin/pom.xml) that is
+picked up as additional source code roots. When possible path patterns are reused using
+the conventions outlined in the pom.
 
 ### Setting up an Integrated Development Environment
 
