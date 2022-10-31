@@ -17,8 +17,8 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.orc.com.google.protobuf.{AbstractMessage, CodedOutputStream}
 import org.apache.orc.impl.OutStream
+import org.apache.orc.protobuf.{AbstractMessage, CodedOutputStream}
 
 class OrcProtoWriterShim(orcOutStream: OutStream) {
   val proxied = CodedOutputStream.newInstance(orcOutStream)
