@@ -62,7 +62,7 @@ object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
     )
   }
 
-  def throwSparkDateTimeException(infOrNan: String): SparkDateTimeException = {
+  def sparkDateTimeException(infOrNan: String): SparkDateTimeException = {
     ShimTrampolineUtil.dateTimeException(infOrNan)
   }
 }

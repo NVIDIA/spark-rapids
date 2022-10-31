@@ -47,7 +47,7 @@ object AnsiUtil extends Arm {
         s"'try_cast'. If necessary set ${SQLConf.ANSI_ENABLED.key} to false to bypass this error."
 
     def throwSparkDateTimeException(infOrNan: String): Unit = {
-      throw RapidsErrorUtils.throwSparkDateTimeException(infOrNan)
+      throw RapidsErrorUtils.sparkDateTimeException(infOrNan)
     }
 
     def throwOverflowException: Unit = {
