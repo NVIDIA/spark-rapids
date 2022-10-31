@@ -17,9 +17,9 @@
 package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.SparkDateTimeException
-import org.apache.spark.rapids.ShimTrampolineUtil
 import org.apache.spark.sql.catalyst.trees.Origin
 import org.apache.spark.sql.errors.QueryExecutionErrors
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
 
 object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
@@ -63,6 +63,9 @@ object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
   }
 
   def sparkDateTimeException(infOrNan: String): SparkDateTimeException = {
-    ShimTrampolineUtil.dateTimeException(infOrNan)
+    // These are the arguments required by SparkDateTimeException class to create error message.
+    val errorClass = "CAST_INVALID_INPUT"
+    val messageParameters = Array("DOUBLE", "TIMESTAMP", SQLConf.ANSI_ENABLED.key)
+    new SparkDateTimeException(errorClass, Array(infOrNan) ++ messageParameters)
   }
 }
