@@ -127,6 +127,9 @@ def test_split_optimized_no_re():
             'split(a, "\\\\|")',
             'split(a, "\\\\{")',
             'split(a, "\\\\}")',
+            'split(a, "\\\\%")',
+            'split(a, "\\\\;")',
+            'split(a, "\\\\/")',
             'split(a, "\\\\$\\\\|")'),
             conf=_regexp_conf)
 
@@ -377,7 +380,7 @@ def test_regexp_replace_character_set_negated():
         conf=_regexp_conf)
 
 def test_regexp_extract():
-    gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}')
+    gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}/?[abcd]{1,3}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'regexp_extract(a, "([0-9]+)", 1)',
@@ -385,7 +388,9 @@ def test_regexp_extract():
                 'regexp_extract(a, "([0-9])([abcd]+)", 2)',
                 'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)\\z", 1)',
                 'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)\\z", 2)',
-                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)\\z", 3)'),
+                'regexp_extract(a, "^([a-d]*)([0-9]*)([a-d]*)\\z", 3)',
+                'regexp_extract(a, "^([a-d]*)([0-9]*)\\\\/([a-d]*)", 3)',
+                'regexp_extract(a, "^([a-d]*)([0-9]*)(\\\\/[a-d]*)", 3)'),
         conf=_regexp_conf)
 
 def test_regexp_extract_no_match():
@@ -650,10 +655,13 @@ def test_rlike_fallback_empty_group():
         conf=_regexp_conf)
 
 def test_rlike_escape():
-    gen = mk_str_gen('[ab]{0,2}[\\-\\+]{0,2}')
+    gen = mk_str_gen('[ab]{0,2};?[\\-\\+]{0,2}/?')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
-                'a rlike "a[\\\\-]"'),
+                'a rlike "a[\\\\-]"',
+                'a rlike "a\\\\;[\\\\-]"',
+                'a rlike "a[\\\\-]\\\\/"',
+                'a rlike "b\\\\;[\\\\-]\\\\/"'),
         conf=_regexp_conf)
 
 def test_rlike_multi_line():
