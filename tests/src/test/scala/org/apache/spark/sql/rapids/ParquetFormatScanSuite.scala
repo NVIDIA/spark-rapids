@@ -110,6 +110,41 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
   }
 
   /**
+   * Writes arbitrary messages conforming to a given `messageType` to a Parquet file located by
+   * `path`. Records are produced by `recordWriters`.
+   */
+  def writeDirectMessage(path: String,
+      messageType: MessageType,
+      recordWriters: (RecordConsumer => Unit)*): Unit = {
+    writeDirect(path, messageType, Map.empty[String, String], recordWriters: _*)
+  }
+
+  /**
+   * Writes arbitrary messages conforming to a given `messageType` to a Parquet file located by
+   * `path` with given user-defined key-value `metadata`. Records are produced by `recordWriters`.
+   */
+  def writeDirect(
+      path: String,
+      messageType: MessageType,
+      metadata: Map[String, String],
+      recordWriters: (RecordConsumer => Unit)*): Unit = {
+    val testWriteSupport = new DirectWriteSupport(messageType, metadata)
+    /**
+     * Provide a builder for constructing a parquet writer - after PARQUET-248 directly constructing
+     * the writer is deprecated and should be done through a builder. The default builders include
+     * Avro - but for raw Parquet writing we must create our own builder.
+     */
+    class ParquetWriterBuilder() extends
+        ParquetWriter.Builder[RecordConsumer => Unit, ParquetWriterBuilder](new Path(path)) {
+      override def getWriteSupport(conf: Configuration) = testWriteSupport
+
+      override def self() = this
+    }
+    val parquetWriter = new ParquetWriterBuilder().build()
+    try recordWriters.foreach(parquetWriter.write) finally parquetWriter.close()
+  }
+
+  /**
    * Writes arbitrary messages conforming to a given `schema` to a Parquet file located by `path`.
    * Records are produced by `recordWriters`.
    */
@@ -126,21 +161,8 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
       schema: String,
       metadata: Map[String, String],
       recordWriters: (RecordConsumer => Unit)*): Unit = {
-    val messageType = MessageTypeParser.parseMessageType(schema)
-    val testWriteSupport = new DirectWriteSupport(messageType, metadata)
-    /**
-     * Provide a builder for constructing a parquet writer - after PARQUET-248 directly constructing
-     * the writer is deprecated and should be done through a builder. The default builders include
-     * Avro - but for raw Parquet writing we must create our own builder.
-     */
-    class ParquetWriterBuilder() extends
-        ParquetWriter.Builder[RecordConsumer => Unit, ParquetWriterBuilder](new Path(path)) {
-      override def getWriteSupport(conf: Configuration) = testWriteSupport
-
-      override def self() = this
-    }
-    val parquetWriter = new ParquetWriterBuilder().build()
-    try recordWriters.foreach(parquetWriter.write) finally parquetWriter.close()
+    val messageType: MessageType = MessageTypeParser.parseMessageType(schema)
+    writeDirect(path, messageType, metadata, recordWriters: _*)
   }
 
   // We need to call prepareRow recursively to handle schemas with struct types.
@@ -396,10 +418,9 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
       }, conf = conf)
     }
 
-    // The JAVA code being used does not support UUID at all...
+    // Older parquet JAVA code does not support UUID at all, and on the newer versions that do
+    // support Spark does not support the UUID type.
 
-    // TODO should we test overflow cases for INT_8 etc. It is implementation specific what
-    //  to do in those cases but we probably want to match what spark does....
     test(s"int32 $parserType") {
       withGpuSparkSession(spark => {
         val schema =
@@ -494,6 +515,39 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
           val data = spark.read.parquet(testPath).collect()
           sameRows(Seq(Row(22, 300, 1),
             Row(21, 301, 2)), data)
+        }
+      }, conf = conf)
+    }
+
+    test(s"int32 - int8 OVERFLOW $parserType") {
+      // This is not a part of the spec. I just wanted to see if we were doing the same thing
+      // as spark in this odd corner case, and it looks like we are...
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required int32 byte_test (INT_8);
+            |}
+        """.stripMargin
+
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/INT32_INT8_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("byte_test", 0) {
+                rc.addInteger(Byte.MinValue - 10)
+              }
+            }
+          }, { rc =>
+            rc.message {
+              rc.field("byte_test", 0) {
+                rc.addInteger(Short.MaxValue)
+              }
+            }
+          })
+
+          val data = spark.read.parquet(testPath).collect()
+          // Spark is returning a -1 for this case...
+          sameRows(Seq(Row(118), Row(-1)), data)
         }
       }, conf = conf)
     }
@@ -892,9 +946,6 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
 
     // TIME_MILLIS and TIME_MICROS are not supported by Spark
 
-    // TODO add a test for nanos if we can for versions that support it.
-    // TODO add a test for isAdjustedToUTC = false for versions that support it.
-
     test(s"Timestamp (MILLIS AND MICROS) $parserType") {
       withGpuSparkSession(spark => {
         val schema =
@@ -924,12 +975,42 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
       }, conf = conf)
     }
 
-    // TODO check about this in 3.3+...
+    // NANO TIMESTAMPS ARE NOT SUPPORTED BY SPARK
+
+    test(s"nz timestamp (MILLIS AND MICROS) $parserType") {
+      assumeSpark330orLater
+      withCpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required int64 millis_test (TIMESTAMP(MILLIS, false));
+            |  required int64 micros_test (TIMESTAMP(MICROS, false));
+            |}
+        """.stripMargin
+
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/TIMESTAMP_MM_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("millis_test", 0) {
+                rc.addLong(1000)
+              }
+              rc.field("micros_test", 1) {
+                rc.addLong(2)
+              }
+            }
+          })
+
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(Timestamp.valueOf("1970-01-01 00:00:01.0"),
+            Timestamp.valueOf("1970-01-01 00:00:00.000002"))), data)
+        }
+      }, conf = conf)
+    }
+
     // INTERVAL is not supported by Spark
     // TIME is not supported by Spark
 
     // LISTS
-
     test(s"BASIC LIST $parserType") {
       withGpuSparkSession(spark => {
         val schema =
