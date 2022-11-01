@@ -51,6 +51,10 @@ verbose_level=0
 
 heap_size=$JVM_DEFAULT_HEAP_SIZE
 declare -A qualification_path_map
+#define extra arguments passed to the unit tests if any
+declare -A extra_arguments_map
+# define the unit tests that generate more than one CSV file to check against
+declare -A extended_csv_output_map
 
 show_help()
 {
@@ -291,6 +295,16 @@ define_qualification_tests_map()
   qualification_path_map[read_dsv2_expectation]="${prof_log_prefix}/eventlog_dsv2.zstd"
   qualification_path_map[complex_dec_expectation]="${qual_log_prefix}/complex_dec_eventlog.zstd"
   qualification_path_map[nested_dsv2_expectation]="${qual_log_prefix}/eventlog_nested_dsv2"
+
+  # define unit test with extra arguments
+  extra_arguments_map[nds_q86_test_expectation]="--per-sql"
+  extra_arguments_map[nds_q86_fail_test_expectation]="--per-sql"
+  extra_arguments_map[qual_test_simple_expectation]="--per-sql"
+
+  # define unit tests with extra csv output files
+  extended_csv_output_map[nds_q86_test_expectation]="_persql"
+  extended_csv_output_map[nds_q86_fail_test_expectation]="_persql"
+  extended_csv_output_map[qual_test_simple_expectation]="_persql"
 }
 
 process_qualification_output()
@@ -305,14 +319,24 @@ process_qualification_output()
     (( failed_tests++ ))
   else
     mkdir -p "${CSV_OUT_DIR}"
-    output_file="$qual_out_dir/rapids_4_spark_qualification_output.csv"
-    csv_output_file="${CSV_OUT_DIR}/${2}.csv"
-    log_info "Start copying output of ${2}"
-    cp "$output_file" "$csv_output_file"
-    log_info "\tSource: $output_file \n\tDestination: $csv_output_file"
-
-    expected_csv_file="${QUAL_REF_DIR}/${key}.csv"
-    compare_pair_files "$expected_csv_file" "$csv_output_file"
+    csv_postfix_arr=(".csv")
+    if [[ -n "${extended_csv_output_map[$key]}" ]]
+    then
+      post_fix="${extended_csv_output_map[$key]}"
+      log_debug "$key has extra csv file  $post_fix"
+      csv_postfix_arr+=("${post_fix}.csv")
+    fi
+    for i in "${!csv_postfix_arr[@]}"; do
+      postfix="${csv_postfix_arr[$i]}"
+      log_info "one of the the new file is ${postfix}"
+      output_file="$qual_out_dir/rapids_4_spark_qualification_output${postfix}"
+      csv_output_file="${CSV_OUT_DIR}/${2}${postfix}"
+      log_info "Start copying output of ${2}"
+      cp "$output_file" "$csv_output_file"
+      log_info "\tSource: $output_file \n\tDestination: $csv_output_file"
+      expected_csv_file="${QUAL_REF_DIR}/${key}${postfix}"
+      compare_pair_files "$expected_csv_file" "$csv_output_file"
+    done
   fi
 }
 
@@ -368,7 +392,16 @@ run_qualification_tool()
 
     ## set the arguments
     jvm_args="-Xmx${1} -cp $RAPIDS_CLASS_PATH"
-    qual_tool_args="--no-html-report --output-directory file:${output_dir}"
+
+    # get any extra argument
+    extra_args=""
+    if [[ -n "${extra_arguments_map[$key]}" ]]
+    then
+       log_debug "$key has extra arguments  $extra_args"
+       extra_args="${extra_arguments_map[$key]}"
+    fi
+
+    qual_tool_args="${extra_args} --no-html-report --output-directory file:${output_dir}"
 
     ## run the tool
     java ${jvm_args} com.nvidia.spark.rapids.tool.qualification.QualificationMain \
