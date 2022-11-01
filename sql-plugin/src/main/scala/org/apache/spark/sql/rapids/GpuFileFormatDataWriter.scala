@@ -567,24 +567,20 @@ class GpuDynamicPartitionDataSingleWriter(
                 writeBatch(concat)
               }
             }
+          } else if (!needSplitBatch(
+            maxRecordsPerFile,
+            currentWriterStatus.recordsInFile,
+            table.getRowCount().toInt))
+          {
+            val batch  = GpuColumnVector.from(table, outDataTypes)
+            closeOnExcept(batch) { _ =>
+              statsTrackers.foreach(_.newBatch(batch))
+              currentWriterStatus.recordsInFile += batch.numRows()
+            }
+            currentWriterStatus.outputWriter.write(batch, statsTrackers)
           } else {
             withResource(GpuColumnVector.from(table, outDataTypes)) { batch =>
-              if (!needSplitBatch(
-                maxRecordsPerFile,
-                currentWriterStatus.recordsInFile,
-                batch.numRows))
-              {
-                statsTrackers.foreach(_.newBatch(batch))
-                currentWriterStatus.recordsInFile += batch.numRows()
-                // increase the reference count of `batch` here because
-                // the `write` function will close `batch`.
-                currentWriterStatus.outputWriter.write(
-                  GpuColumnVector.incRefCounts(batch),
-                  statsTrackers
-                )
-              } else {
-                writeBatch(batch)
-              }
+              writeBatch(batch)
             }
           }
         }
