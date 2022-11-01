@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.shims
 
 import com.databricks.sql.execution.window.RunningWindowFunctionExec
+import com.databricks.sql.optimizer.PlanDynamicPruningFilters
 import com.nvidia.spark.rapids._
 import org.apache.hadoop.fs.FileStatus
 
@@ -43,7 +44,9 @@ import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.rapids._
+import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
+import org.apache.spark.sql.rapids.execution.shims.{GpuSubqueryBroadcastMeta, ReuseGpuBroadcastExchangeAndSubquery}
 import org.apache.spark.sql.rapids.shims._
 import org.apache.spark.sql.types._
 
@@ -54,6 +57,33 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
 
   override def isWindowFunctionExec(plan: SparkPlan): Boolean =
     plan.isInstanceOf[WindowExecBase] || plan.isInstanceOf[RunningWindowFunctionExec]
+
+  override def applyShimPlanRules(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+    if (plan.conf.adaptiveExecutionEnabled) {
+      plan // AQE+DPP cooperation ensures the optimization runs early
+    } else {
+      val sparkSession = SparkSession.getActiveSession.orNull
+      val rules = Seq(
+        PlanDynamicPruningFilters(sparkSession)
+      )
+      rules.foldLeft(plan) { case (sp, rule) =>
+        rule.apply(sp)
+      }
+    }
+  }
+
+  override def applyPostShimPlanRules(plan: SparkPlan): SparkPlan = {
+    if (plan.conf.adaptiveExecutionEnabled) {
+      plan // AQE+DPP cooperation ensures the optimization runs early
+    } else {
+      val rules = Seq(
+        ReuseGpuBroadcastExchangeAndSubquery
+      )
+      rules.foldLeft(plan) { case (sp, rule) =>
+        rule.apply(sp)
+      }
+    }
+  }
 
   override def ansiCastRule: ExprRule[_ <: Expression] = {
     GpuOverrides.expr[AnsiCast](
@@ -155,6 +185,11 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(
+      GpuOverrides.exec[SubqueryBroadcastExec](
+        "Plan to collect and transform the broadcast key values",
+        ExecChecks(TypeSig.all, TypeSig.all),
+        (s, conf, p, r) => new GpuSubqueryBroadcastMeta(s, conf, p, r)
+      ),
       GpuOverrides.exec[WindowInPandasExec](
         "The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between" +
           " the Java process and the Python process. It also supports scheduling GPU resources" +
@@ -205,7 +240,36 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
             val convertBroadcast = (bc: SubqueryBroadcastExec) => {
               val meta = GpuOverrides.wrapAndTagPlan(bc, conf)
               meta.tagForExplain()
-              meta.convertIfNeeded().asInstanceOf[BaseSubqueryExec]
+              val converted = meta.convertIfNeeded() 
+              // Because the PlanSubqueries rule is not called (and does not work as expected),
+              // we might actually have to fully convert the subquery plan as the plugin would 
+              // intend (in this case calling GpuTransitionOverrides to insert GpuCoalesceBatches, 
+              // etc.) to match the other side of the join to reuse the BroadcastExchange.
+              // This happens when SubqueryBroadcast has the original (Gpu)BroadcastExchangeExec
+              converted match {
+                case e: GpuSubqueryBroadcastExec => e.child match {
+                  // If the GpuBroadcastExchange is here, then we will need to run the transition 
+                  // overrides here
+                  case _: GpuBroadcastExchangeExec =>
+                    var updated = ApplyColumnarRulesAndInsertTransitions(Seq())
+                        .apply(converted)
+                    updated = (new GpuTransitionOverrides()).apply(updated)
+                    updated match {
+                      case h: GpuBringBackToHost =>
+                        h.child.asInstanceOf[BaseSubqueryExec]
+                      case c2r: GpuColumnarToRowExec =>
+                        c2r.child.asInstanceOf[BaseSubqueryExec]
+                      case _: GpuSubqueryBroadcastExec =>
+                        updated.asInstanceOf[BaseSubqueryExec]
+                    }
+                  // Otherwise, if this SubqueryBroadcast is using a ReusedExchange, then we don't
+                  // do anything further
+                  case _: ReusedExchangeExec => 
+                    converted.asInstanceOf[BaseSubqueryExec]
+                }
+                case _ =>
+                  converted.asInstanceOf[BaseSubqueryExec]
+              }
             }
             wrapped.partitionFilters.map { filter =>
               filter.transformDown {
@@ -247,7 +311,7 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
             val options = wrapped.relation.options
 
             val (location, alluxioPathsToReplaceMap) =
-              if (AlluxioUtils.enabledAlluxioReplacementAlgoConvertTime(conf)) {
+              if (AlluxioCfgUtils.enabledAlluxioReplacementAlgoConvertTime(conf)) {
                 AlluxioUtils.replacePathIfNeeded(
                   conf,
                   wrapped.relation,
