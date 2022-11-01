@@ -691,7 +691,7 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
       val formatter = TimestampFormatter.getFractionFormatter(
         DateTimeUtils.getZoneId(SQLConf.get.sessionLocalTimeZone))
       s"TIMESTAMP('${formatter.format(v)}')"
-    case (v: Array[Byte], BinaryType) => s"X'${ApacheHex.encodeHex(v, false)}'"
+    case (v: Array[Byte], BinaryType) => s"X'${ApacheHex.encodeHexString(v, false)}'"
     case _ => value.toString
   }
 
