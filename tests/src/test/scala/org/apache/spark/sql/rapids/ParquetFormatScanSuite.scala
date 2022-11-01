@@ -329,6 +329,36 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     })
   }
 
+  test("BINARY") {
+    withGpuSparkSession(spark => {
+      val schema =
+        """message spark {
+          |  required BINARY bin_test;
+          |}
+        """.stripMargin
+
+      withTempDir(spark) { dir =>
+        val testPath = dir + "/BIN_TEST.parquet"
+        writeDirect(testPath, schema, { rc =>
+          rc.message {
+            rc.field("bin_test", 0) {
+              rc.addBinary(Binary.fromConstantByteArray(Array[Byte](1, 2, 3)))
+            }
+          }
+        }, { rc =>
+          rc.message {
+            rc.field("bin_test", 0) {
+              rc.addBinary(Binary.fromConstantByteArray(Array[Byte](4, 5, 6)))
+            }
+          }
+        })
+
+        val data = spark.read.parquet(testPath).collect()
+        sameRows(Seq(Row(Array[Byte](1, 2, 3)), Row(Array[Byte](4, 5, 6))), data)
+      }
+    })
+  }
+
   test("BSON") {
     withGpuSparkSession(spark => {
       val schema =
@@ -848,37 +878,6 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
 //      new SparkConf().set("spark.sql.parquet.enableVectorizedReader", "false"))
 //  }
 
-//  test("SINGLE_GROUP_ARRAY") {
-//    withCpuSparkSession(spark => {
-//      val avroStyleSchema =
-//        """message avro_style {
-//          |  required group f (LIST) {
-//          |    repeated int32 array;
-//          |  }
-//          |}
-//        """.stripMargin
-//
-//      withTempDir(spark) { dir =>
-//        val testPath = dir + "/BOBBY_TEST.parquet"
-//        writeDirect(testPath, avroStyleSchema, { rc =>
-//          rc.message {
-//            rc.field("f", 0) {
-//              rc.group {
-//                rc.field("array", 0) {
-//                  rc.addInteger(0)
-//                  rc.addInteger(1)
-//                }
-//              }
-//            }
-//          }
-//        })
-//
-//        val data = spark.read.parquet(testPath).collect()
-//        assert(data == Array(Row(Array(0, 1))))
-//      }
-//    })
-//  }
-
   test("Date") {
     withGpuSparkSession(spark => {
       val schema =
@@ -973,6 +972,115 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
 //        }
 //        sameRows(Seq(Row(Timestamp.valueOf("1970-01-01 00:00:01.0"),
 //          Timestamp.valueOf("1970-01-01 00:00:00.000002"))), data)
+//      }
+//    })
+//  }
+
+  // LISTS
+
+  test("BASIC LIST") {
+    withGpuSparkSession(spark => {
+      val schema =
+        """message spark {
+          |  required group my_list (LIST) {
+          |    repeated group list {
+          |      required int32 element;
+          |    }
+          |  }
+          |  optional group other_name_list (LIST) {
+          |    repeated group element {
+          |      required binary str (UTF8);
+          |    }
+          |  }
+          |}
+          """.stripMargin
+
+      withTempDir(spark) { dir =>
+        val testPath = dir + "/BASIC_LIST_TEST.parquet"
+        writeDirect(testPath, schema, { rc =>
+          rc.message {
+            rc.field("my_list", 0) {
+              rc.field("list", 0) {
+                rc.field("element", 0) {
+                  rc.addInteger(0)
+                  rc.addInteger(1)
+                }
+              }
+            }
+            rc.field("other_name_list", 1) {
+              rc.field("element", 0) {
+                rc.field("str", 0) {
+                  rc.addBinary(Binary.fromString("TEST"))
+                  rc.addBinary(Binary.fromString("NAME"))
+                }
+              }
+            }
+          }
+        })
+
+        val data = spark.read.parquet(testPath).collect()
+        sameRows(Seq(Row(Array(0, 1), Array("TEST", "NAME"))), data)
+      }
+    })
+  }
+
+//  test("NO GROUP LIST") {
+//    withCpuSparkSession(spark => {
+//      val schema =
+//        """message spark {
+//          |  repeated int32 data;
+//          |  repeated binary str (UTF8);
+//          |}
+//            """.stripMargin
+//
+//      withTempDir(spark) { dir =>
+//        val testPath = dir + "/NO_GROUP_LIST_TEST.parquet"
+//        writeDirect(testPath, schema, { rc =>
+//          rc.message {
+//            rc.field("data", 0) {
+//              rc.addInteger(0)
+//              rc.addInteger(1)
+//            }
+//            rc.field("str", 1) {
+//              rc.addBinary(Binary.fromString("TEST"))
+//            }
+//          }
+//        })
+//
+//        val data = spark.read.parquet(testPath).collect()
+//        sameRows(Seq(Row(Array(0, 1), Array("TEST"))), data)
+//      }
+//    })
+//  }
+
+
+//  test("SINGLE GROUP LIST") {
+//    withCpuSparkSession(spark => {
+//      val avroStyleSchema =
+//        """message avro_style {
+//          |  required group f (LIST) {
+//          |    repeated int32 array;
+//          |  }
+//          |}
+//          """.stripMargin
+//
+//      withTempDir(spark) { dir =>
+//        val testPath = dir + "/BOBBY_TEST.parquet"
+//        writeDirect(testPath, avroStyleSchema, { rc =>
+//          rc.message {
+//            rc.field("f", 0) {
+//              rc.group {
+//                rc.field("array", 0) {
+//                  rc.addInteger(0)
+//                  rc.addInteger(1)
+//                }
+//              }
+//            }
+//          }
+//        })
+//
+//        val data = spark.read.parquet(testPath).collect()
+//        sameRows(Seq(Row(Array(0, 1))), data)
 //      }
 //    })
 //  }
