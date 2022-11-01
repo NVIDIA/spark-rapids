@@ -28,7 +28,7 @@ import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector, Scalar}
 import ai.rapids.cudf.ast
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.shims.{GpuTypeShims, SparkShimImpl}
-import org.apache.commons.codec.binary.Hex
+import org.apache.commons.codec.binary.{Hex => ApacheHex}
 import org.json4s.JsonAST.{JField, JNull, JString}
 
 import org.apache.spark.internal.Logging
@@ -622,7 +622,7 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
 
   override def toString: String = value match {
     case null => "null"
-    case binary: Array[Byte] => s"0x" + Hex.encodeHex(binary, false)
+    case binary: Array[Byte] => s"0x" + ApacheHex.encodeHex(binary, false)
     case other => other.toString
   }
 
@@ -691,7 +691,7 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
       val formatter = TimestampFormatter.getFractionFormatter(
         DateTimeUtils.getZoneId(SQLConf.get.sessionLocalTimeZone))
       s"TIMESTAMP('${formatter.format(v)}')"
-    case (v: Array[Byte], BinaryType) => s"X'${Hex.encodeHex(v, false)}'"
+    case (v: Array[Byte], BinaryType) => s"X'${ApacheHex.encodeHex(v, false)}'"
     case _ => value.toString
   }
 
