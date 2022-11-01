@@ -500,7 +500,7 @@ object RapidsConf {
           "high compression ratios in the data.")
       .internal()
       .booleanConf
-      .createWithDefault(true)
+      .createWithDefault(false)
 
   val MAX_READER_BATCH_SIZE_BYTES = conf("spark.rapids.sql.reader.batchSizeBytes")
     .doc("Soft limit on the maximum number of bytes the reader reads per batch. " +
