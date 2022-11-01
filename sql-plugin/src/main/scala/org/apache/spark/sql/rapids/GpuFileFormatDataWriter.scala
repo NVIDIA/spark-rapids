@@ -988,13 +988,13 @@ class GpuDynamicPartitionDataConcurrentWriter(
                   status.writerStatus.outputWriter = w
                   status.writerStatus.recordsInFile = 0L
                 }
-                withResource(b.getTable()) {tab =>
-                  val bc = GpuColumnVector.from(tab, dataTypes)
-                  statsTrackers.foreach(_.newBatch(bc))
-                  status.writerStatus.recordsInFile += b.getRowCount()
-                  status.writerStatus.outputWriter.write(bc, statsTrackers)
-                  needNewWriter = true
+                val bc = withResource(b.getTable()) {tab =>
+                  GpuColumnVector.from(tab, dataTypes)
                 }
+                statsTrackers.foreach(_.newBatch(bc))
+                status.writerStatus.recordsInFile += b.getRowCount()
+                status.writerStatus.outputWriter.write(bc, statsTrackers)
+                needNewWriter = true
               })
             }
           }
