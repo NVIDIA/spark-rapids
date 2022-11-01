@@ -17,7 +17,9 @@
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.catalyst.FileSourceOptions
+import org.apache.spark.sql.catalyst.expressions.SortOrder
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
+import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 import org.apache.spark.sql.execution.datasources.v2.FilePartitionReaderFactory
 
 abstract class ShimFilePartitionReaderFactory(
@@ -28,4 +30,8 @@ abstract class ShimFilePartitionReaderFactory(
   // This is a quick fix to enable the 340 shims, later we may add a shim for
   // this new added 'FileSourceOptions'.
   override val options = new FileSourceOptions(CaseInsensitiveMap(parameters))
+}
+
+trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase {
+  override def ordering: Option[Seq[SortOrder]] = None
 }
