@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import java.io.File
-import java.sql.Date
+import java.sql.{Date, Timestamp}
 
 import scala.collection.JavaConverters.mapAsJavaMapConverter
 import scala.concurrent.duration._
@@ -299,6 +299,67 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     })
   }
 
+  test("JSON") {
+    withGpuSparkSession(spark => {
+      val schema =
+        """message spark {
+          |  required BINARY json_test (JSON);
+          |}
+        """.stripMargin
+
+      withTempDir(spark) { dir =>
+        val testPath = dir + "/JSON_TEST.parquet"
+        writeDirect(testPath, schema, { rc =>
+          rc.message {
+            rc.field("json_test", 0) {
+              rc.addBinary(Binary.fromString("{}"))
+            }
+          }
+        }, { rc =>
+          rc.message {
+            rc.field("json_test", 0) {
+              rc.addBinary(Binary.fromString("{\"a\": 100}"))
+            }
+          }
+        })
+
+        val data = spark.read.parquet(testPath).collect()
+        sameRows(Seq(Row("{}"), Row("{\"a\": 100}")), data)
+      }
+    })
+  }
+
+  test("BSON") {
+    withGpuSparkSession(spark => {
+      val schema =
+        """message spark {
+          |  required BINARY bson_test (BSON);
+          |}
+        """.stripMargin
+
+      // Yes this is not actually valid BSON data
+      withTempDir(spark) { dir =>
+        val testPath = dir + "/BSON_TEST.parquet"
+        writeDirect(testPath, schema, { rc =>
+          rc.message {
+            rc.field("bson_test", 0) {
+              rc.addBinary(Binary.fromConstantByteArray(Array[Byte](1, 2, 3)))
+            }
+          }
+        }, { rc =>
+          rc.message {
+            rc.field("bson_test", 0) {
+              rc.addBinary(Binary.fromConstantByteArray(Array[Byte](4, 5, 6)))
+            }
+          }
+        })
+
+        val data = spark.read.parquet(testPath).collect()
+        sameRows(Seq(Row(Array[Byte](1, 2, 3)), Row(Array[Byte](4, 5, 6))), data)
+      }
+    })
+  }
+
 //  // The java code on the CPU does not support UUID at all, so this test is not working, or fully
 //  // done
 //  test("UUID") {
@@ -383,9 +444,8 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
   }
 
   test("int32 - unsigned") {
+    assumeSpark320orLater
     withGpuSparkSession(spark => {
-      // TODO the UINT is not supported on older version of spark. Need to figure out where it is
-      //  supported so the test works properly
       val schema =
       """message spark {
         |  required int32 ubyte_test (UINT_8);
@@ -468,9 +528,8 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
   }
 
   test("int64 - unsigned") {
+    assumeSpark320orLater
     withGpuSparkSession(spark => {
-      // TODO the UINT is not supported on older version of spark. Need to figure out where it is
-      //  supported so the test works properly
       val schema =
       """message spark {
         |  required int64 uint_test (UINT_64);
@@ -845,15 +904,77 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
         })
 
         val data = spark.read.parquet(testPath).collect()
-        System.err.println(s"DATA: ${data.toList}")
-        data.foreach { row =>
-          row.toSeq.foreach { value =>
-            System.err.println(s"GOT: $value ${value.getClass}")
-          }
-        }
         sameRows(Seq(Row(new Date(1 * 24 * 60 * 60 * 1000)),
           Row(new Date(2 * 24 * 60 * 60 * 1000))), data)
       }
     })
   }
+
+  // TIME_MILLIS and TIME_MICROS are not supported by Spark
+
+  // TODO add a test for nanos if we can for versions that support it.
+  // TODO add a test for isAdjustedToUTC = false for versions that support it.
+
+  test("Timestamp (MILLIS AND MICROS)") {
+    withGpuSparkSession(spark => {
+      val schema =
+        """message spark {
+          |  required int64 millis_test (TIMESTAMP_MILLIS);
+          |  required int64 micros_test (TIMESTAMP_MICROS);
+          |}
+        """.stripMargin
+
+      withTempDir(spark) { dir =>
+        val testPath = dir + "/TIMESTAMP_MM_TEST.parquet"
+        writeDirect(testPath, schema, { rc =>
+          rc.message {
+            rc.field("millis_test", 0) {
+              rc.addLong(1000)
+            }
+            rc.field("micros_test", 1) {
+              rc.addLong(2)
+            }
+          }
+        })
+
+        val data = spark.read.parquet(testPath).collect()
+        sameRows(Seq(Row(Timestamp.valueOf("1970-01-01 00:00:01.0"),
+          Timestamp.valueOf("1970-01-01 00:00:00.000002"))), data)
+      }
+    })
+  }
+
+  // INTERVAL is not supported by Spark
+
+//  test("Time MILLS") {
+//    withCpuSparkSession(spark => {
+//      val schema =
+//        """message spark {
+//          |  required int64 millis_test (TIME_MICROS);
+//          |}
+//        """.stripMargin
+//
+//      withTempDir(spark) { dir =>
+//        val testPath = dir + "/TIME_MILLIS_TEST.parquet"
+//        writeDirect(testPath, schema, { rc =>
+//          rc.message {
+//            rc.field("millis_test", 0) {
+//              rc.addLong(1000)
+//            }
+//          }
+//        })
+//
+//        val data = spark.read.parquet(testPath).collect()
+//        System.err.println(s"DATA: ${data.toList}")
+//        data.foreach { row =>
+//          row.toSeq.foreach { value =>
+//            System.err.println(s"GOT: $value ${value.getClass}")
+//          }
+//        }
+//        sameRows(Seq(Row(Timestamp.valueOf("1970-01-01 00:00:01.0"),
+//          Timestamp.valueOf("1970-01-01 00:00:00.000002"))), data)
+//      }
+//    })
+//  }
+
 }
