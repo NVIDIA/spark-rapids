@@ -755,7 +755,6 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     //https://github.com/NVIDIA/spark-rapids/issues/6915
     ignore(s"binary Decimal $parserType") {
       withGpuSparkSession(spark => {
-      withGpuSparkSession(spark => {
         val schema =
           """message spark {
             |  required binary int_test (DECIMAL(9,2));
