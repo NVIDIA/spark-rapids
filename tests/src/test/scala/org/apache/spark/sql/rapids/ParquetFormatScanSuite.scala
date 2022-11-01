@@ -30,6 +30,7 @@ import org.apache.parquet.hadoop.api.WriteSupport
 import org.apache.parquet.hadoop.api.WriteSupport.WriteContext
 import org.apache.parquet.io.api.{Binary, RecordConsumer}
 import org.apache.parquet.schema.{MessageType, MessageTypeParser}
+import org.apache.spark.SparkConf
 import org.scalatest.concurrent.Eventually
 
 import org.apache.spark.sql.{Row, SparkSession}
@@ -135,6 +136,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     class ParquetWriterBuilder() extends
         ParquetWriter.Builder[RecordConsumer => Unit, ParquetWriterBuilder](new Path(path)) {
       override def getWriteSupport(conf: Configuration) = testWriteSupport
+
       override def self() = this
     }
     val parquetWriter = new ParquetWriterBuilder().build()
@@ -175,7 +177,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
       if (a.length != b.length) {
         (false, s"LENGTHS NOT EQUAL ${a.length} ${b.length}\n${a.toList}\n${b.toList}")
       } else {
-        val problems = a.zip(b).map { case (l, r) => compare(l, r)}.filter(!_._1).map(_._2)
+        val problems = a.zip(b).map { case (l, r) => compare(l, r) }.filter(!_._1).map(_._2)
         if (problems.isEmpty) {
           (true, "")
         } else {
@@ -200,7 +202,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
       if (a.size != b.size) {
         (false, s"LENGTHS NOT EQUAL ${a.size} ${b.size}\n${a.toList}\n${b.toList}")
       } else {
-        val problems = a.zip(b).map { case (l, r) => compare(l, r)}.filter(!_._1).map(_._2)
+        val problems = a.zip(b).map { case (l, r) => compare(l, r) }.filter(!_._1).map(_._2)
         if (problems.isEmpty) {
           (true, "")
         } else {
@@ -239,850 +241,804 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     assert(areEqual._1, areEqual._2)
   }
 
-  test("STRING") {
-    withGpuSparkSession(spark => {
-      val schema =
-        """message spark {
-          |  required BINARY str_test (UTF8);
-          |}
+  Seq("NATIVE", "JAVA").foreach { parserType =>
+    val conf = new SparkConf()
+        .set("spark.rapids.sql.format.parquet.reader.footer.type", parserType)
+
+    test(s"STRING $parserType") {
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required BINARY str_test (UTF8);
+            |}
         """.stripMargin
 
-      withTempDir(spark) { dir =>
-        val testPath = dir + "/STRING_TEST.parquet"
-        writeDirect(testPath, schema, { rc =>
-          rc.message {
-            rc.field("str_test", 0) {
-              rc.addBinary(Binary.fromString("TEST"))
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/STRING_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("str_test", 0) {
+                rc.addBinary(Binary.fromString("TEST"))
+              }
             }
-          }
-        }, { rc =>
-          rc.message {
-            rc.field("str_test", 0) {
-              rc.addBinary(Binary.fromString("STRING"))
+          }, { rc =>
+            rc.message {
+              rc.field("str_test", 0) {
+                rc.addBinary(Binary.fromString("STRING"))
+              }
             }
-          }
-        })
+          })
 
-        val data = spark.read.parquet(testPath).collect()
-        sameRows(Seq(Row("TEST"), Row("STRING")), data)
-      }
-    })
-  }
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row("TEST"), Row("STRING")), data)
+        }
+      }, conf = conf)
+    }
 
-  test("ENUM") {
-    withGpuSparkSession(spark => {
-      val schema =
-        """message spark {
-          |  required BINARY enum_test (ENUM);
-          |}
+    test(s"ENUM $parserType") {
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required BINARY enum_test (ENUM);
+            |}
         """.stripMargin
 
-      withTempDir(spark) { dir =>
-        val testPath = dir + "/ENUM_TEST.parquet"
-        writeDirect(testPath, schema, { rc =>
-          rc.message {
-            rc.field("enum_test", 0) {
-              rc.addBinary(Binary.fromString("A"))
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/ENUM_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("enum_test", 0) {
+                rc.addBinary(Binary.fromString("A"))
+              }
             }
-          }
-        }, { rc =>
-          rc.message {
-            rc.field("enum_test", 0) {
-              rc.addBinary(Binary.fromString("B"))
+          }, { rc =>
+            rc.message {
+              rc.field("enum_test", 0) {
+                rc.addBinary(Binary.fromString("B"))
+              }
             }
-          }
-        })
+          })
 
-        val data = spark.read.parquet(testPath).collect()
-        sameRows(Seq(Row("A"), Row("B")), data)
-      }
-    })
-  }
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row("A"), Row("B")), data)
+        }
+      }, conf = conf)
+    }
 
-  test("JSON") {
-    withGpuSparkSession(spark => {
-      val schema =
-        """message spark {
-          |  required BINARY json_test (JSON);
-          |}
+    test(s"JSON $parserType") {
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required BINARY json_test (JSON);
+            |}
         """.stripMargin
 
-      withTempDir(spark) { dir =>
-        val testPath = dir + "/JSON_TEST.parquet"
-        writeDirect(testPath, schema, { rc =>
-          rc.message {
-            rc.field("json_test", 0) {
-              rc.addBinary(Binary.fromString("{}"))
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/JSON_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("json_test", 0) {
+                rc.addBinary(Binary.fromString("{}"))
+              }
             }
-          }
-        }, { rc =>
-          rc.message {
-            rc.field("json_test", 0) {
-              rc.addBinary(Binary.fromString("{\"a\": 100}"))
+          }, { rc =>
+            rc.message {
+              rc.field("json_test", 0) {
+                rc.addBinary(Binary.fromString("{\"a\": 100}"))
+              }
             }
-          }
-        })
+          })
 
-        val data = spark.read.parquet(testPath).collect()
-        sameRows(Seq(Row("{}"), Row("{\"a\": 100}")), data)
-      }
-    })
-  }
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row("{}"), Row("{\"a\": 100}")), data)
+        }
+      }, conf = conf)
+    }
 
-  test("BINARY") {
-    withGpuSparkSession(spark => {
-      val schema =
-        """message spark {
-          |  required BINARY bin_test;
-          |}
+    test(s"BINARY $parserType") {
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required BINARY bin_test;
+            |}
         """.stripMargin
 
-      withTempDir(spark) { dir =>
-        val testPath = dir + "/BIN_TEST.parquet"
-        writeDirect(testPath, schema, { rc =>
-          rc.message {
-            rc.field("bin_test", 0) {
-              rc.addBinary(Binary.fromConstantByteArray(Array[Byte](1, 2, 3)))
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/BIN_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("bin_test", 0) {
+                rc.addBinary(Binary.fromConstantByteArray(Array[Byte](1, 2, 3)))
+              }
             }
-          }
-        }, { rc =>
-          rc.message {
-            rc.field("bin_test", 0) {
-              rc.addBinary(Binary.fromConstantByteArray(Array[Byte](4, 5, 6)))
+          }, { rc =>
+            rc.message {
+              rc.field("bin_test", 0) {
+                rc.addBinary(Binary.fromConstantByteArray(Array[Byte](4, 5, 6)))
+              }
             }
-          }
-        })
+          })
 
-        val data = spark.read.parquet(testPath).collect()
-        sameRows(Seq(Row(Array[Byte](1, 2, 3)), Row(Array[Byte](4, 5, 6))), data)
-      }
-    })
-  }
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(Array[Byte](1, 2, 3)), Row(Array[Byte](4, 5, 6))), data)
+        }
+      }, conf = conf)
+    }
 
-  test("BSON") {
-    withGpuSparkSession(spark => {
-      val schema =
-        """message spark {
-          |  required BINARY bson_test (BSON);
-          |}
+    test(s"BSON $parserType") {
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required BINARY bson_test (BSON);
+            |}
         """.stripMargin
 
-      // Yes this is not actually valid BSON data
-      withTempDir(spark) { dir =>
-        val testPath = dir + "/BSON_TEST.parquet"
-        writeDirect(testPath, schema, { rc =>
-          rc.message {
-            rc.field("bson_test", 0) {
-              rc.addBinary(Binary.fromConstantByteArray(Array[Byte](1, 2, 3)))
+        // Yes this is not actually valid BSON data
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/BSON_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("bson_test", 0) {
+                rc.addBinary(Binary.fromConstantByteArray(Array[Byte](1, 2, 3)))
+              }
             }
-          }
-        }, { rc =>
-          rc.message {
-            rc.field("bson_test", 0) {
-              rc.addBinary(Binary.fromConstantByteArray(Array[Byte](4, 5, 6)))
+          }, { rc =>
+            rc.message {
+              rc.field("bson_test", 0) {
+                rc.addBinary(Binary.fromConstantByteArray(Array[Byte](4, 5, 6)))
+              }
             }
-          }
-        })
+          })
 
-        val data = spark.read.parquet(testPath).collect()
-        sameRows(Seq(Row(Array[Byte](1, 2, 3)), Row(Array[Byte](4, 5, 6))), data)
-      }
-    })
-  }
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(Array[Byte](1, 2, 3)), Row(Array[Byte](4, 5, 6))), data)
+        }
+      }, conf = conf)
+    }
 
-//  // The java code on the CPU does not support UUID at all, so this test is not working, or fully
-//  // done
-//  test("UUID") {
-//    withCpuSparkSession(spark => {
-//      val schema =
-//        """message spark {
-//          |  required fixed_len_byte_array(16) uuid_test (UUID),
-//          |}
-//        """.stripMargin
-//
-//      withTempDir(spark) { dir =>
-//        val testPath = dir + "/UUID_TEST.parquet"
-//        writeDirect(testPath, schema, { rc =>
-//          rc.message {
-//            rc.field("uuid_test", 0) {
-//              rc.addBinary(Binary.fromConstantByteArray(
-//                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-//                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0A)))
-//            }
-//          }
-//        })
-//
-//        val data = spark.read.parquet(testPath).collect()
-//        // TODO not sure
-//        //sameRows(Seq(Row("A")), data)
-//      }
-//    })
-//  }
+    // The JAVA code being used does not support UUID at all...
 
-  // TODO should we test overflow cases for INT_8 etc. It is implementation specific what
-  //  to do in those cases but we probably want to match what spark does....
-  test("int32") {
-    withGpuSparkSession(spark => {
-      val schema =
-        """message spark {
-          |  required int32 byte_test (INT_8);
-          |  required int32 short_test (INT_16);
-          |  required int32 int_test;
-          |  required int32 int_test2 (INT_32);
-          |}
+    // TODO should we test overflow cases for INT_8 etc. It is implementation specific what
+    //  to do in those cases but we probably want to match what spark does....
+    test(s"int32 $parserType") {
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required int32 byte_test (INT_8);
+            |  required int32 short_test (INT_16);
+            |  required int32 int_test;
+            |  required int32 int_test2 (INT_32);
+            |}
         """.stripMargin
 
-      withTempDir(spark) { dir =>
-        val testPath = dir + "/INT32_TEST.parquet"
-        writeDirect(testPath, schema, { rc =>
-          rc.message {
-            rc.field("byte_test", 0) {
-              rc.addInteger(22)
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/INT32_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("byte_test", 0) {
+                rc.addInteger(22)
+              }
+              rc.field("short_test", 1) {
+                rc.addInteger(300)
+              }
+              rc.field("int_test", 2) {
+                rc.addInteger(1)
+              }
+              rc.field("int_test2", 3) {
+                rc.addInteger(3)
+              }
             }
-            rc.field("short_test", 1) {
-              rc.addInteger(300)
+          }, { rc =>
+            rc.message {
+              rc.field("byte_test", 0) {
+                rc.addInteger(-21)
+              }
+              rc.field("short_test", 1) {
+                rc.addInteger(-301)
+              }
+              rc.field("int_test", 2) {
+                rc.addInteger(-2)
+              }
+              rc.field("int_test2", 3) {
+                rc.addInteger(-4)
+              }
             }
-            rc.field("int_test", 2) {
-              rc.addInteger(1)
-            }
-            rc.field("int_test2", 3) {
-              rc.addInteger(3)
-            }
-          }
-        }, { rc =>
-          rc.message {
-            rc.field("byte_test", 0) {
-              rc.addInteger(-21)
-            }
-            rc.field("short_test", 1) {
-              rc.addInteger(-301)
-            }
-            rc.field("int_test", 2) {
-              rc.addInteger(-2)
-            }
-            rc.field("int_test2", 3) {
-              rc.addInteger(-4)
-            }
-          }
-        })
+          })
 
-        val data = spark.read.parquet(testPath).collect()
-        sameRows(Seq(Row(22, 300, 1, 3),
-          Row(-21, -301, -2, -4)), data)
-      }
-    })
-  }
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(22, 300, 1, 3),
+            Row(-21, -301, -2, -4)), data)
+        }
+      }, conf = conf)
+    }
 
-  test("int32 - unsigned") {
-    assumeSpark320orLater
-    withGpuSparkSession(spark => {
-      val schema =
-      """message spark {
-        |  required int32 ubyte_test (UINT_8);
-        |  required int32 ushort_test (UINT_16);
-        |  required int32 uint_test (UINT_32);
-        |}
+    test(s"int32 - unsigned $parserType") {
+      assumeSpark320orLater
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required int32 ubyte_test (UINT_8);
+            |  required int32 ushort_test (UINT_16);
+            |  required int32 uint_test (UINT_32);
+            |}
         """.stripMargin
 
-      withTempDir(spark) { dir =>
-        val testPath = dir + "/UINT32_TEST.parquet"
-        writeDirect(testPath, schema, { rc =>
-          rc.message {
-            rc.field("ubyte_test", 0) {
-              rc.addInteger(22)
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/UINT32_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("ubyte_test", 0) {
+                rc.addInteger(22)
+              }
+              rc.field("ushort_test", 1) {
+                rc.addInteger(300)
+              }
+              rc.field("uint_test", 2) {
+                rc.addInteger(1)
+              }
             }
-            rc.field("ushort_test", 1) {
-              rc.addInteger(300)
+          }, { rc =>
+            rc.message {
+              rc.field("ubyte_test", 0) {
+                rc.addInteger(21)
+              }
+              rc.field("ushort_test", 1) {
+                rc.addInteger(301)
+              }
+              rc.field("uint_test", 2) {
+                rc.addInteger(2)
+              }
             }
-            rc.field("uint_test", 2) {
-              rc.addInteger(1)
-            }
-          }
-        }, { rc =>
-          rc.message {
-            rc.field("ubyte_test", 0) {
-              rc.addInteger(21)
-            }
-            rc.field("ushort_test", 1) {
-              rc.addInteger(301)
-            }
-            rc.field("uint_test", 2) {
-              rc.addInteger(2)
-            }
-          }
-        })
+          })
 
-        val data = spark.read.parquet(testPath).collect()
-        sameRows(Seq(Row(22, 300, 1),
-          Row(21, 301, 2)), data)
-      }
-    })
-  }
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(22, 300, 1),
+            Row(21, 301, 2)), data)
+        }
+      }, conf = conf)
+    }
 
-  test("int64") {
-    withGpuSparkSession(spark => {
-      val schema =
-        """message spark {
-          |  required int64 int_test;
-          |  required int64 int_test2 (INT_64);
-          |}
+    test(s"int64 $parserType") {
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required int64 int_test;
+            |  required int64 int_test2 (INT_64);
+            |}
         """.stripMargin
 
-      withTempDir(spark) { dir =>
-        val testPath = dir + "/INT64_TEST.parquet"
-        writeDirect(testPath, schema, { rc =>
-          rc.message {
-            rc.field("int_test", 0) {
-              rc.addLong(22)
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/INT64_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("int_test", 0) {
+                rc.addLong(22)
+              }
+              rc.field("int_test2", 1) {
+                rc.addLong(300)
+              }
             }
-            rc.field("int_test2", 1) {
-              rc.addLong(300)
+          }, { rc =>
+            rc.message {
+              rc.field("int_test", 0) {
+                rc.addLong(-21)
+              }
+              rc.field("int_test2", 1) {
+                rc.addLong(-301)
+              }
             }
-          }
-        }, { rc =>
-          rc.message {
-            rc.field("int_test", 0) {
-              rc.addLong(-21)
-            }
-            rc.field("int_test2", 1) {
-              rc.addLong(-301)
-            }
-          }
-        })
+          })
 
-        val data = spark.read.parquet(testPath).collect()
-        sameRows(Seq(Row(22, 300),
-          Row(-21, -301)), data)
-      }
-    })
-  }
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(22, 300),
+            Row(-21, -301)), data)
+        }
+      }, conf = conf)
+    }
 
-  test("int64 - unsigned") {
-    assumeSpark320orLater
-    withGpuSparkSession(spark => {
-      val schema =
-      """message spark {
-        |  required int64 uint_test (UINT_64);
-        |}
+    test(s"int64 - unsigned $parserType") {
+      assumeSpark320orLater
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required int64 uint_test (UINT_64);
+            |}
         """.stripMargin
 
-      withTempDir(spark) { dir =>
-        val testPath = dir + "/UINT64_TEST.parquet"
-        writeDirect(testPath, schema, { rc =>
-          rc.message {
-            rc.field("uint_test", 0) {
-              rc.addLong(22)
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/UINT64_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("uint_test", 0) {
+                rc.addLong(22)
+              }
             }
-          }
-        }, { rc =>
-          rc.message {
-            rc.field("uint_test", 0) {
-              rc.addLong(21)
+          }, { rc =>
+            rc.message {
+              rc.field("uint_test", 0) {
+                rc.addLong(21)
+              }
             }
-          }
-        })
+          })
 
-        val data = spark.read.parquet(testPath).collect()
-        sameRows(Seq(Row(22), Row(21)), data)
-      }
-    })
-  }
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(22), Row(21)), data)
+        }
+      }, conf = conf)
+    }
 
-  test("int32 Decimal") {
-    withGpuSparkSession(spark => {
-      val schema =
-        """message spark {
-          |  required int32 int_test (DECIMAL(9,2));
-          |}
+    test(s"int32 Decimal $parserType") {
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required int32 int_test (DECIMAL(9,2));
+            |}
         """.stripMargin
 
-      withTempDir(spark) { dir =>
-        val testPath = dir + "/DEC32_TEST.parquet"
-        writeDirect(testPath, schema, { rc =>
-          rc.message {
-            rc.field("int_test", 0) {
-              rc.addInteger(1)
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/DEC32_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("int_test", 0) {
+                rc.addInteger(1)
+              }
             }
-          }
-        }, { rc =>
-          rc.message {
-            rc.field("int_test", 0) {
-              rc.addInteger(2)
+          }, { rc =>
+            rc.message {
+              rc.field("int_test", 0) {
+                rc.addInteger(2)
+              }
             }
-          }
-        })
+          })
 
-        val data = spark.read.parquet(testPath).collect()
-        sameRows(Seq(Row(BigDecimal("0.01")), Row(BigDecimal("0.02"))), data)
-      }
-    })
-  }
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(BigDecimal("0.01")), Row(BigDecimal("0.02"))), data)
+        }
+      }, conf = conf)
+    }
 
-  test("int64 Decimal") {
-    withGpuSparkSession(spark => {
-      val schema =
-        """message spark {
-          |  required int64 int_test (DECIMAL(9,2));
-          |  required int64 long_test (DECIMAL(15,0));
-          |}
+    test(s"int64 Decimal $parserType") {
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required int64 int_test (DECIMAL(9,2));
+            |  required int64 long_test (DECIMAL(15,0));
+            |}
         """.stripMargin
 
-      withTempDir(spark) { dir =>
-        val testPath = dir + "/DEC64_TEST.parquet"
-        writeDirect(testPath, schema, { rc =>
-          rc.message {
-            rc.field("int_test", 0) {
-              rc.addLong(1)
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/DEC64_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("int_test", 0) {
+                rc.addLong(1)
+              }
+              rc.field("long_test", 1) {
+                rc.addLong(100)
+              }
             }
-            rc.field("long_test", 1) {
-              rc.addLong(100)
+          }, { rc =>
+            rc.message {
+              rc.field("int_test", 0) {
+                rc.addLong(2)
+              }
+              rc.field("long_test", 1) {
+                rc.addLong(201)
+              }
             }
-          }
-        }, { rc =>
-          rc.message {
-            rc.field("int_test", 0) {
-              rc.addLong(2)
-            }
-            rc.field("long_test", 1) {
-              rc.addLong(201)
-            }
-          }
-        })
+          })
 
-        val data = spark.read.parquet(testPath).collect()
-        sameRows(Seq(Row(BigDecimal("0.01"), BigDecimal("100")),
-          Row(BigDecimal("0.02"), BigDecimal("201"))), data)
-      }
-    })
-  }
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(BigDecimal("0.01"), BigDecimal("100")),
+            Row(BigDecimal("0.02"), BigDecimal("201"))), data)
+        }
+      }, conf = conf)
+    }
 
-  //https://github.com/NVIDIA/spark-rapids/issues/6915
-  test("FIXED_LEN_BYTE_ARRAY(16) Decimal") {
-    withGpuSparkSession(spark => {
-      val schema =
-        """message spark {
-          |  required fixed_len_byte_array(16) int_test (DECIMAL(9,2));
-          |  required fixed_len_byte_array(16) long_test (DECIMAL(15,0));
-          |  required fixed_len_byte_array(16) bin_test (DECIMAL(38,4));
-          |}
+    //https://github.com/NVIDIA/spark-rapids/issues/6915
+    test(s"FIXED_LEN_BYTE_ARRAY(16) Decimal $parserType") {
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required fixed_len_byte_array(16) int_test (DECIMAL(9,2));
+            |  required fixed_len_byte_array(16) long_test (DECIMAL(15,0));
+            |  required fixed_len_byte_array(16) bin_test (DECIMAL(38,4));
+            |}
         """.stripMargin
 
-      withTempDir(spark) { dir =>
-        val testPath = dir + "/FIXED_BIN16_DEC_TEST.parquet"
-        writeDirect(testPath, schema, { rc =>
-          rc.message {
-            rc.field("int_test", 0) {
-              rc.addBinary(Binary.fromConstantByteArray(
-                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/FIXED_BIN16_DEC_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("int_test", 0) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
+              }
+              rc.field("long_test", 1) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
+              }
+              rc.field("bin_test", 2) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
+              }
             }
-            rc.field("long_test", 1) {
-              rc.addBinary(Binary.fromConstantByteArray(
-                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
-            }
-            rc.field("bin_test", 2) {
-              rc.addBinary(Binary.fromConstantByteArray(
-                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
-            }
-          }
-        }, { rc =>
-          rc.message {
-            rc.field("int_test", 0) {
-              rc.addBinary(Binary.fromConstantByteArray(
-                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02)))
-            }
-            rc.field("long_test", 1) {
-              rc.addBinary(Binary.fromConstantByteArray(
-                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02)))
-            }
+          }, { rc =>
+            rc.message {
+              rc.field("int_test", 0) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02)))
+              }
+              rc.field("long_test", 1) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02)))
+              }
 
-            rc.field("bin_test", 2) {
-              rc.addBinary(Binary.fromConstantByteArray(
-                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02)))
+              rc.field("bin_test", 2) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02)))
+              }
             }
-          }
-        })
+          })
 
-        val data = spark.read.parquet(testPath).collect()
-        sameRows(Seq(Row(BigDecimal("0.01"), BigDecimal("1"), BigDecimal("0.0001")),
-          Row(BigDecimal("0.02"), BigDecimal("2"), BigDecimal("0.0002"))), data)
-      }
-    })
-  }
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(BigDecimal("0.01"), BigDecimal("1"), BigDecimal("0.0001")),
+            Row(BigDecimal("0.02"), BigDecimal("2"), BigDecimal("0.0002"))), data)
+        }
+      }, conf = conf)
+    }
 
-  test("FIXED_LEN_BYTE_ARRAY(15) Decimal") {
-    withGpuSparkSession(spark => {
-      val schema =
-        """message spark {
-          |  required fixed_len_byte_array(15) int_test (DECIMAL(9,2));
-          |  required fixed_len_byte_array(15) long_test (DECIMAL(15,0));
-          |  required fixed_len_byte_array(15) bin_test (DECIMAL(35,4));
-          |}
+    test(s"FIXED_LEN_BYTE_ARRAY(15) Decimal $parserType") {
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required fixed_len_byte_array(15) int_test (DECIMAL(9,2));
+            |  required fixed_len_byte_array(15) long_test (DECIMAL(15,0));
+            |  required fixed_len_byte_array(15) bin_test (DECIMAL(35,4));
+            |}
         """.stripMargin
 
-      withTempDir(spark) { dir =>
-        val testPath = dir + "/FIXED_BIN15_DEC_TEST.parquet"
-        writeDirect(testPath, schema, { rc =>
-          rc.message {
-            rc.field("int_test", 0) {
-              rc.addBinary(Binary.fromConstantByteArray(
-                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/FIXED_BIN15_DEC_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("int_test", 0) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
+              }
+              rc.field("long_test", 1) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
+              }
+              rc.field("bin_test", 2) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
+              }
             }
-            rc.field("long_test", 1) {
-              rc.addBinary(Binary.fromConstantByteArray(
-                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
-            }
-            rc.field("bin_test", 2) {
-              rc.addBinary(Binary.fromConstantByteArray(
-                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
-            }
-          }
-        }, { rc =>
-          rc.message {
-            rc.field("int_test", 0) {
-              rc.addBinary(Binary.fromConstantByteArray(
-                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02)))
-            }
-            rc.field("long_test", 1) {
-              rc.addBinary(Binary.fromConstantByteArray(
-                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02)))
-            }
+          }, { rc =>
+            rc.message {
+              rc.field("int_test", 0) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02)))
+              }
+              rc.field("long_test", 1) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02)))
+              }
 
-            rc.field("bin_test", 2) {
-              rc.addBinary(Binary.fromConstantByteArray(
-                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02)))
+              rc.field("bin_test", 2) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02)))
+              }
             }
-          }
-        })
+          })
 
-        val data = spark.read.parquet(testPath).collect()
-        sameRows(Seq(Row(BigDecimal("0.01"), BigDecimal("1"), BigDecimal("0.0001")),
-          Row(BigDecimal("0.02"), BigDecimal("2"), BigDecimal("0.0002"))), data)
-      }
-    })
-  }
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(BigDecimal("0.01"), BigDecimal("1"), BigDecimal("0.0001")),
+            Row(BigDecimal("0.02"), BigDecimal("2"), BigDecimal("0.0002"))), data)
+        }
+      }, conf = conf)
+    }
 
-//  //https://github.com/NVIDIA/spark-rapids/issues/6915
-//  test("binary Decimal") {
-//    withGpuSparkSession(spark => {
-//      val schema =
-//        """message spark {
-//          |  required binary int_test (DECIMAL(9,2));
-//          |  required binary long_test (DECIMAL(15,0));
-//          |  required binary bin_test (DECIMAL(35,4));
-//          |}
-//        """.stripMargin
-//
-//      withTempDir(spark) { dir =>
-//        val testPath = dir + "/BINARY_DEC_TEST.parquet"
-//        writeDirect(testPath, schema, { rc =>
-//          rc.message {
-//            rc.field("int_test", 0) {
-//              rc.addBinary(Binary.fromConstantByteArray(
-//                Array(0x00, 0x00, 0x00, 0x01)))
-//            }
-//            rc.field("long_test", 1) {
-//              rc.addBinary(Binary.fromConstantByteArray(
-//                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
-//            }
-//            rc.field("bin_test", 2) {
-//              rc.addBinary(Binary.fromConstantByteArray(
-//                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-//                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
-//            }
-//          }
-//        }, { rc =>
-//          rc.message {
-//            rc.field("int_test", 0) {
-//              rc.addBinary(Binary.fromConstantByteArray(
-//                Array(0x02)))
-//            }
-//            rc.field("long_test", 1) {
-//              rc.addBinary(Binary.fromConstantByteArray(
-//                Array(0x00, 0x02)))
-//            }
-//
-//            rc.field("bin_test", 2) {
-//              rc.addBinary(Binary.fromConstantByteArray(
-//                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02)))
-//            }
-//          }
-//        })
-//
-//        val data = spark.read.parquet(testPath).collect()
-//        sameRows(Seq(Row(BigDecimal("0.01"), BigDecimal("1"), BigDecimal("0.0001")),
-//          Row(BigDecimal("0.02"), BigDecimal("2"), BigDecimal("0.0002"))), data)
-//      }
-//    },
-//      // To make the CPU happy we need to turn off the vectorized reader
-//      new SparkConf().set("spark.sql.parquet.enableVectorizedReader", "false"))
-//  }
-//
-//  //https://github.com/NVIDIA/spark-rapids/issues/6915
-//  // This bypasses the rapids accelerator code and gets errors in CUDF itself.
-//  test("binary Decimal2") {
-//    withGpuSparkSession(spark => {
-//      val schema =
-//        """message spark {
-//          |  required binary bin_test (DECIMAL(19,0));
-//          |}
-//        """.stripMargin
-//
-//      withTempDir(spark) { dir =>
-//        val testPath = dir + "/BINARY_DEC2_TEST.parquet"
-//        writeDirect(testPath, schema, { rc =>
-//          rc.message {
-//            rc.field("bin_test", 0) {
-//              rc.addBinary(Binary.fromConstantByteArray(
-//                Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
-//            }
-//          }
-//        }, { rc =>
-//          rc.message {
-//            rc.field("bin_test", 0) {
-//              rc.addBinary(Binary.fromConstantByteArray(
-//                Array(0x02)))
-//            }
-//          }
-//        }, { rc =>
-//          rc.message {
-//            rc.field("bin_test", 0) {
-//              // This one will do an overflow in the size of the binary data,
-//              // but the top bytes are zero so it is okay
-//              rc.addBinary(Binary.fromConstantByteArray(
-//                Array(
-//                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-//                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03)))
-//            }
-//          }
-//        })
-//
-//        val data = spark.read.parquet(testPath).collect()
-//        sameRows(Seq(Row(BigDecimal("1")),
-//          Row(BigDecimal("2")),
-//          Row(BigDecimal("3"))), data)
-//      }
-//    },
-//      // To make the CPU happy we need to turn off the vectorized reader
-//      new SparkConf().set("spark.sql.parquet.enableVectorizedReader", "false"))
-//  }
+    //https://github.com/NVIDIA/spark-rapids/issues/6915
+    test(s"binary Decimal $parserType") {
+      // TODO switch to withGpuSparkSession when this is fixed
+      withCpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required binary int_test (DECIMAL(9,2));
+            |  required binary long_test (DECIMAL(15,0));
+            |  required binary bin_test (DECIMAL(35,4));
+            |}
+            """.stripMargin
 
-  test("Date") {
-    withGpuSparkSession(spark => {
-      val schema =
-        """message spark {
-          |  required int32 date_test (DATE);
-          |}
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/BINARY_DEC_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("int_test", 0) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0x00, 0x00, 0x00, 0x01)))
+              }
+              rc.field("long_test", 1) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
+              }
+              rc.field("bin_test", 2) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
+              }
+            }
+          }, { rc =>
+            rc.message {
+              rc.field("int_test", 0) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0x02)))
+              }
+              rc.field("long_test", 1) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0x00, 0x02)))
+              }
+
+              rc.field("bin_test", 2) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02)))
+              }
+            }
+          })
+
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(BigDecimal("0.01"), BigDecimal("1"), BigDecimal("0.0001")),
+            Row(BigDecimal("0.02"), BigDecimal("2"), BigDecimal("0.0002"))), data)
+        }
+      },
+        // To make the CPU happy we need to turn off the vectorized reader
+        new SparkConf().set("spark.sql.parquet.enableVectorizedReader", "false")
+            .set("spark.rapids.sql.format.parquet.reader.footer.type", parserType))
+    }
+
+    //https://github.com/NVIDIA/spark-rapids/issues/6915
+    // This bypasses the rapids accelerator code and gets errors in CUDF itself.
+    test(s"binary Decimal2 $parserType") {
+      // TODO switch to withGpuSparkSession when this is fixed
+      withCpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required binary bin_test (DECIMAL(19,0));
+            |}
+            """.stripMargin
+
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/BINARY_DEC2_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("bin_test", 0) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
+              }
+            }
+          }, { rc =>
+            rc.message {
+              rc.field("bin_test", 0) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0x02)))
+              }
+            }
+          }, { rc =>
+            rc.message {
+              rc.field("bin_test", 0) {
+                // This one will do an overflow in the size of the binary data,
+                // but the top bytes are zero so it is okay
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03)))
+              }
+            }
+          })
+
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(BigDecimal("1")),
+            Row(BigDecimal("2")),
+            Row(BigDecimal("3"))), data)
+        }
+      },
+        // To make the CPU happy we need to turn off the vectorized reader
+        new SparkConf().set("spark.sql.parquet.enableVectorizedReader", "false")
+            .set("spark.rapids.sql.format.parquet.reader.footer.type", parserType))
+    }
+
+    test(s"Date $parserType") {
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required int32 date_test (DATE);
+            |}
         """.stripMargin
 
-      withTempDir(spark) { dir =>
-        val testPath = dir + "/DATE_TEST.parquet"
-        writeDirect(testPath, schema, { rc =>
-          rc.message {
-            rc.field("date_test", 0) {
-              rc.addInteger(1)
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/DATE_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("date_test", 0) {
+                rc.addInteger(1)
+              }
             }
-          }
-        }, { rc =>
-          rc.message {
-            rc.field("date_test", 0) {
-              rc.addInteger(2)
+          }, { rc =>
+            rc.message {
+              rc.field("date_test", 0) {
+                rc.addInteger(2)
+              }
             }
-          }
-        })
+          })
 
-        val data = spark.read.parquet(testPath).collect()
-        sameRows(Seq(Row(new Date(1 * 24 * 60 * 60 * 1000)),
-          Row(new Date(2 * 24 * 60 * 60 * 1000))), data)
-      }
-    })
-  }
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(new Date(1 * 24 * 60 * 60 * 1000)),
+            Row(new Date(2 * 24 * 60 * 60 * 1000))), data)
+        }
+      }, conf = conf)
+    }
 
-  // TIME_MILLIS and TIME_MICROS are not supported by Spark
+    // TIME_MILLIS and TIME_MICROS are not supported by Spark
 
-  // TODO add a test for nanos if we can for versions that support it.
-  // TODO add a test for isAdjustedToUTC = false for versions that support it.
+    // TODO add a test for nanos if we can for versions that support it.
+    // TODO add a test for isAdjustedToUTC = false for versions that support it.
 
-  test("Timestamp (MILLIS AND MICROS)") {
-    withGpuSparkSession(spark => {
-      val schema =
-        """message spark {
-          |  required int64 millis_test (TIMESTAMP_MILLIS);
-          |  required int64 micros_test (TIMESTAMP_MICROS);
-          |}
+    test(s"Timestamp (MILLIS AND MICROS) $parserType") {
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required int64 millis_test (TIMESTAMP_MILLIS);
+            |  required int64 micros_test (TIMESTAMP_MICROS);
+            |}
         """.stripMargin
 
-      withTempDir(spark) { dir =>
-        val testPath = dir + "/TIMESTAMP_MM_TEST.parquet"
-        writeDirect(testPath, schema, { rc =>
-          rc.message {
-            rc.field("millis_test", 0) {
-              rc.addLong(1000)
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/TIMESTAMP_MM_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("millis_test", 0) {
+                rc.addLong(1000)
+              }
+              rc.field("micros_test", 1) {
+                rc.addLong(2)
+              }
             }
-            rc.field("micros_test", 1) {
-              rc.addLong(2)
-            }
-          }
-        })
+          })
 
-        val data = spark.read.parquet(testPath).collect()
-        sameRows(Seq(Row(Timestamp.valueOf("1970-01-01 00:00:01.0"),
-          Timestamp.valueOf("1970-01-01 00:00:00.000002"))), data)
-      }
-    })
-  }
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(Timestamp.valueOf("1970-01-01 00:00:01.0"),
+            Timestamp.valueOf("1970-01-01 00:00:00.000002"))), data)
+        }
+      }, conf = conf)
+    }
 
-  // INTERVAL is not supported by Spark
+    // INTERVAL is not supported by Spark
+    // TIME is not supported by Spark
 
-//  test("Time MILLS") {
-//    withCpuSparkSession(spark => {
-//      val schema =
-//        """message spark {
-//          |  required int64 millis_test (TIME_MICROS);
-//          |}
-//        """.stripMargin
-//
-//      withTempDir(spark) { dir =>
-//        val testPath = dir + "/TIME_MILLIS_TEST.parquet"
-//        writeDirect(testPath, schema, { rc =>
-//          rc.message {
-//            rc.field("millis_test", 0) {
-//              rc.addLong(1000)
-//            }
-//          }
-//        })
-//
-//        val data = spark.read.parquet(testPath).collect()
-//        System.err.println(s"DATA: ${data.toList}")
-//        data.foreach { row =>
-//          row.toSeq.foreach { value =>
-//            System.err.println(s"GOT: $value ${value.getClass}")
-//          }
-//        }
-//        sameRows(Seq(Row(Timestamp.valueOf("1970-01-01 00:00:01.0"),
-//          Timestamp.valueOf("1970-01-01 00:00:00.000002"))), data)
-//      }
-//    })
-//  }
+    // LISTS
 
-  // LISTS
-
-  test("BASIC LIST") {
-    withGpuSparkSession(spark => {
-      val schema =
-        """message spark {
-          |  required group my_list (LIST) {
-          |    repeated group list {
-          |      required int32 element;
-          |    }
-          |  }
-          |  optional group other_name_list (LIST) {
-          |    repeated group element {
-          |      required binary str (UTF8);
-          |    }
-          |  }
-          |}
+    test(s"BASIC LIST $parserType") {
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required group my_list (LIST) {
+            |    repeated group list {
+            |      required int32 element;
+            |    }
+            |  }
+            |  optional group other_name_list (LIST) {
+            |    repeated group element {
+            |      required binary str (UTF8);
+            |    }
+            |  }
+            |}
           """.stripMargin
 
-      withTempDir(spark) { dir =>
-        val testPath = dir + "/BASIC_LIST_TEST.parquet"
-        writeDirect(testPath, schema, { rc =>
-          rc.message {
-            rc.field("my_list", 0) {
-              rc.field("list", 0) {
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/BASIC_LIST_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("my_list", 0) {
+                rc.field("list", 0) {
+                  rc.field("element", 0) {
+                    rc.addInteger(0)
+                    rc.addInteger(1)
+                  }
+                }
+              }
+              rc.field("other_name_list", 1) {
                 rc.field("element", 0) {
-                  rc.addInteger(0)
-                  rc.addInteger(1)
+                  rc.field("str", 0) {
+                    rc.addBinary(Binary.fromString("TEST"))
+                    rc.addBinary(Binary.fromString("NAME"))
+                  }
                 }
               }
             }
-            rc.field("other_name_list", 1) {
-              rc.field("element", 0) {
-                rc.field("str", 0) {
-                  rc.addBinary(Binary.fromString("TEST"))
-                  rc.addBinary(Binary.fromString("NAME"))
-                }
-              }
-            }
-          }
-        })
+          })
 
-        val data = spark.read.parquet(testPath).collect()
-        sameRows(Seq(Row(Array(0, 1), Array("TEST", "NAME"))), data)
-      }
-    })
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(Array(0, 1), Array("TEST", "NAME"))), data)
+        }
+      }, conf = conf)
+    }
+
+    // TODO file issue for this...
+    test(s"NO GROUP LIST $parserType") {
+      // TODO switch to withGpuSession when this is fixed
+      withCpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  repeated int32 data;
+            |  repeated binary str (UTF8);
+            |}
+                """.stripMargin
+
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/NO_GROUP_LIST_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("data", 0) {
+                rc.addInteger(0)
+                rc.addInteger(1)
+              }
+              rc.field("str", 1) {
+                rc.addBinary(Binary.fromString("TEST"))
+              }
+            }
+          })
+
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(Array(0, 1), Array("TEST"))), data)
+        }
+      }, conf = conf)
+    }
+
+    // TODO file issue for this...
+    test(s"SINGLE GROUP LIST $parserType") {
+      // TODO switch to withGpuSession when this is fixed
+      withCpuSparkSession(spark => {
+        val avroStyleSchema =
+          """message avro_style {
+            |  required group f (LIST) {
+            |    repeated int32 array;
+            |  }
+            |}
+              """.stripMargin
+
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/BOBBY_TEST.parquet"
+          writeDirect(testPath, avroStyleSchema, { rc =>
+            rc.message {
+              rc.field("f", 0) {
+                rc.group {
+                  rc.field("array", 0) {
+                    rc.addInteger(0)
+                    rc.addInteger(1)
+                  }
+                }
+              }
+            }
+          })
+
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(Array(0, 1))), data)
+        }
+      }, conf = conf)
+    }
   }
-
-//  test("NO GROUP LIST") {
-//    withCpuSparkSession(spark => {
-//      val schema =
-//        """message spark {
-//          |  repeated int32 data;
-//          |  repeated binary str (UTF8);
-//          |}
-//            """.stripMargin
-//
-//      withTempDir(spark) { dir =>
-//        val testPath = dir + "/NO_GROUP_LIST_TEST.parquet"
-//        writeDirect(testPath, schema, { rc =>
-//          rc.message {
-//            rc.field("data", 0) {
-//              rc.addInteger(0)
-//              rc.addInteger(1)
-//            }
-//            rc.field("str", 1) {
-//              rc.addBinary(Binary.fromString("TEST"))
-//            }
-//          }
-//        })
-//
-//        val data = spark.read.parquet(testPath).collect()
-//        sameRows(Seq(Row(Array(0, 1), Array("TEST"))), data)
-//      }
-//    })
-//  }
-
-
-//  test("SINGLE GROUP LIST") {
-//    withCpuSparkSession(spark => {
-//      val avroStyleSchema =
-//        """message avro_style {
-//          |  required group f (LIST) {
-//          |    repeated int32 array;
-//          |  }
-//          |}
-//          """.stripMargin
-//
-//      withTempDir(spark) { dir =>
-//        val testPath = dir + "/BOBBY_TEST.parquet"
-//        writeDirect(testPath, avroStyleSchema, { rc =>
-//          rc.message {
-//            rc.field("f", 0) {
-//              rc.group {
-//                rc.field("array", 0) {
-//                  rc.addInteger(0)
-//                  rc.addInteger(1)
-//                }
-//              }
-//            }
-//          }
-//        })
-//
-//        val data = spark.read.parquet(testPath).collect()
-//        sameRows(Seq(Row(Array(0, 1))), data)
-//      }
-//    })
-//  }
-
 }
