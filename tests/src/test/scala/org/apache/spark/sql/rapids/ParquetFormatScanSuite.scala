@@ -753,9 +753,9 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     }
 
     //https://github.com/NVIDIA/spark-rapids/issues/6915
-    test(s"binary Decimal $parserType") {
-      // TODO switch to withGpuSparkSession when this is fixed
-      withCpuSparkSession(spark => {
+    ignore(s"binary Decimal $parserType") {
+      withGpuSparkSession(spark => {
+      withGpuSparkSession(spark => {
         val schema =
           """message spark {
             |  required binary int_test (DECIMAL(9,2));
@@ -812,9 +812,8 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
 
     //https://github.com/NVIDIA/spark-rapids/issues/6915
     // This bypasses the rapids accelerator code and gets errors in CUDF itself.
-    test(s"binary Decimal2 $parserType") {
-      // TODO switch to withGpuSparkSession when this is fixed
-      withCpuSparkSession(spark => {
+    ignore(s"binary Decimal2 $parserType") {
+      withGpuSparkSession(spark => {
         val schema =
           """message spark {
             |  required binary bin_test (DECIMAL(19,0));
@@ -926,6 +925,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
       }, conf = conf)
     }
 
+    // TODO check about this in 3.3+...
     // INTERVAL is not supported by Spark
     // TIME is not supported by Spark
 
@@ -978,9 +978,8 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     }
 
     // TODO file issue for this...
-    test(s"NO GROUP LIST $parserType") {
-      // TODO switch to withGpuSession when this is fixed
-      withCpuSparkSession(spark => {
+    ignore(s"NO GROUP LIST $parserType") {
+      withGpuSparkSession(spark => {
         val schema =
           """message spark {
             |  repeated int32 data;
@@ -1009,9 +1008,8 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     }
 
     // TODO file issue for this...
-    test(s"SINGLE GROUP LIST $parserType") {
-      // TODO switch to withGpuSession when this is fixed
-      withCpuSparkSession(spark => {
+    ignore(s"SINGLE GROUP LIST $parserType") {
+      withGpuSparkSession(spark => {
         val schema =
           """message avro_style {
             |  required group f (LIST) {
@@ -1021,7 +1019,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
               """.stripMargin
 
         withTempDir(spark) { dir =>
-          val testPath = dir + "/BOBBY_TEST.parquet"
+          val testPath = dir + "/SINGLE_GROUP_LIST_TEST.parquet"
           writeDirect(testPath, schema, { rc =>
             rc.message {
               rc.field("f", 0) {
@@ -1042,9 +1040,8 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     }
 
     // TODO file issue for this...
-    test(s"SINGLE GROUP TUPLE LIST $parserType") {
-      // TODO switch to withGpuSession when this is fixed
-      withCpuSparkSession(spark => {
+    ignore(s"SINGLE GROUP TUPLE LIST $parserType") {
+      withGpuSparkSession(spark => {
         val schema =
           """message test {
             |  required group my_list (LIST) {
@@ -1077,6 +1074,219 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
 
           val data = spark.read.parquet(testPath).collect()
           sameRows(Seq(Row(Array(Row("TEST", 0), Row("DATA", 1)))), data)
+        }
+      }, conf = conf)
+    }
+
+    // TODO file issue for this...
+    ignore(s"SPECIAL ARRAY LIST $parserType") {
+      // From the parquet spec
+      // If the repeated field is a group with one field and is named either array or uses the
+      // LIST-annotated group's name with _tuple appended then the repeated type is the element
+      // type and elements are required.
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required group my_list (LIST) {
+            |    repeated group array {
+            |      required int32 item;
+            |    }
+            |  }
+            |}
+          """.stripMargin
+
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/SPECIAL_ARRAY_LIST_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("my_list", 0) {
+                rc.field("array", 0) {
+                  rc.field("item", 0) {
+                    rc.addInteger(0)
+                    rc.addInteger(1)
+                  }
+                }
+              }
+            }
+          })
+
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(Array(Row(0), Row(1)))), data)
+        }
+      }, conf = conf)
+    }
+
+    // TODO file issue for this...
+    ignore(s"SPECIAL _TUPLE LIST $parserType") {
+      // From the parquet spec
+      // If the repeated field is a group with one field and is named either array or uses the
+      // LIST-annotated group's name with _tuple appended then the repeated type is the element
+      // type and elements are required.
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required group my_list (LIST) {
+            |    repeated group my_list_tuple {
+            |      required int32 item;
+            |    }
+            |  }
+            |}
+          """.stripMargin
+
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/SPECIAL_TUPLE_LIST_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("my_list", 0) {
+                rc.field("my_list_tuple", 0) {
+                  rc.field("item", 0) {
+                    rc.addInteger(0)
+                    rc.addInteger(1)
+                  }
+                }
+              }
+            }
+          })
+
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(Array(Row(0), Row(1)))), data)
+        }
+      }, conf = conf)
+    }
+
+    // MAPS
+
+    test(s"BASIC MAP $parserType") {
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required group my_map (MAP) {
+            |    repeated group key_value {
+            |      required int32 key;
+            |      required int32 value;
+            |    }
+            |  }
+            |  required group my_other_map (MAP) {
+            |    repeated group keys_and_values {
+            |      required int32 primary;
+            |      required int32 secondary;
+            |    }
+            |  }
+            |}
+          """.stripMargin
+
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/BASIC_MAP_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("my_map", 0) {
+                rc.field("key_value", 0) {
+                  rc.field("key", 0) {
+                    rc.addInteger(0)
+                    rc.addInteger(1)
+                  }
+                  rc.field("value", 1) {
+                    rc.addInteger(2)
+                    rc.addInteger(3)
+                  }
+                }
+              }
+              rc.field("my_other_map", 1) {
+                rc.field("keys_and_values", 0) {
+                  rc.field("primary", 0) {
+                    rc.addInteger(0)
+                    rc.addInteger(1)
+                  }
+                  rc.field("secondary", 1) {
+                    rc.addInteger(2)
+                    rc.addInteger(3)
+                  }
+                }
+              }
+            }
+          })
+
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(Map(0 -> 2, 1 -> 3), Map(0 -> 2, 1 -> 3))), data)
+        }
+      }, conf = conf)
+    }
+
+    test(s"DUPLICATE KEY MAP $parserType") {
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required group my_map (MAP) {
+            |    repeated group key_value {
+            |      required int32 key;
+            |      required int32 value;
+            |    }
+            |  }
+            |}
+          """.stripMargin
+
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/BASIC_MAP_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("my_map", 0) {
+                rc.field("key_value", 0) {
+                  rc.field("key", 0) {
+                    rc.addInteger(0)
+                    rc.addInteger(0)
+                  }
+                  rc.field("value", 1) {
+                    rc.addInteger(2)
+                    rc.addInteger(3)
+                  }
+                }
+              }
+            }
+          })
+
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(Map(0 -> 3))), data)
+        }
+      }, conf = conf)
+    }
+
+    // Spec says that value can be "omitted" but Spark does not support it.
+
+    // TODO file an issue for this...
+    ignore(s"MAP_KEY_VALUE $parserType") {
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required group my_map (MAP_KEY_VALUE) {
+            |    repeated group map {
+            |      required int32 key;
+            |      required int32 value;
+            |    }
+            |  }
+            |}
+          """.stripMargin
+
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/MAP_KEY_VALUE_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("my_map", 0) {
+                rc.field("map", 0) {
+                  rc.field("key", 0) {
+                    rc.addInteger(0)
+                    rc.addInteger(1)
+                  }
+                  rc.field("value", 1) {
+                    rc.addInteger(2)
+                    rc.addInteger(3)
+                  }
+                }
+              }
+            }
+          })
+
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(Map(0 -> 2, 1 -> 3))), data)
         }
       }, conf = conf)
     }
