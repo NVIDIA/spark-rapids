@@ -1480,11 +1480,11 @@ object GpuOverrides extends Logging {
       "Returns the first non-null argument if exists. Otherwise, null",
       ExprChecks.projectOnly(
         (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY +
-          GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
+          TypeSig.MAP + GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
         TypeSig.all,
         repeatingParamCheck = Some(RepeatingParamCheck("param",
           (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY +
-              GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
+            TypeSig.MAP + GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCoalesce(childExprs.map(_.convertToGpu()))
@@ -3049,6 +3049,17 @@ object GpuOverrides extends Logging {
             val2: Expression): GpuExpression =
           GpuStringLocate(val0, val1, val2)
       }),
+    expr[StringInstr](
+      "Instr string operator",
+      ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
+        Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
+            ParamCheck("substr", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+      (in, conf, p, r) => new BinaryExprMeta[StringInstr](in, conf, p, r) {
+        override def convertToGpu(
+            str: Expression,
+            substr: Expression): GpuExpression =
+          GpuStringInstr(str, substr)
+      }),
     expr[Substring](
       "Substring operator",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY,
@@ -4338,18 +4349,20 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     if (conf.isSqlEnabled && conf.isSqlExecuteOnGPU) {
       GpuOverrides.logDuration(conf.shouldExplain,
         t => f"Plan conversion to the GPU took $t%.2f ms") {
-        val updatedPlan = updateForAdaptivePlan(plan, conf)
-        val newPlan = applyOverrides(updatedPlan, conf)
+        var updatedPlan = updateForAdaptivePlan(plan, conf)
+        updatedPlan = SparkShimImpl.applyShimPlanRules(updatedPlan, conf)
+        updatedPlan = applyOverrides(updatedPlan, conf)
         if (conf.logQueryTransformations) {
           val logPrefix = context.map(str => s"[$str]").getOrElse("")
           logWarning(s"${logPrefix}Transformed query:" +
-            s"\nOriginal Plan:\n$plan\nTransformed Plan:\n$newPlan")
+            s"\nOriginal Plan:\n$plan\nTransformed Plan:\n$updatedPlan")
         }
-        newPlan
+        updatedPlan
       }
     } else if (conf.isSqlEnabled && conf.isSqlExplainOnlyEnabled) {
       // this mode logs the explain output and returns the original CPU plan
-      val updatedPlan = updateForAdaptivePlan(plan, conf)
+      var updatedPlan = updateForAdaptivePlan(plan, conf)
+      updatedPlan = SparkShimImpl.applyShimPlanRules(updatedPlan, conf)
       GpuOverrides.explainCatalystSQLPlan(updatedPlan, conf)
       plan
     } else {

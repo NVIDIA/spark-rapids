@@ -16,8 +16,10 @@
 
 package org.apache.spark.sql.rapids.shims
 
+import org.apache.spark.SparkDateTimeException
 import org.apache.spark.sql.catalyst.trees.{Origin, SQLQueryContext}
 import org.apache.spark.sql.errors.QueryExecutionErrors
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
 
 object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
@@ -63,5 +65,13 @@ object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
     QueryExecutionErrors.arithmeticOverflowError(
       "Overflow in integral divide", "try_divide", context
     )
+  }
+
+  def sparkDateTimeException(infOrNan: String): SparkDateTimeException = {
+    // These are the arguments required by SparkDateTimeException class to create error message.
+    val errorClass = "CAST_INVALID_INPUT"
+    val messageParameters = Map("expression" -> infOrNan, "sourceType" -> "DOUBLE",
+      "targetType" -> "TIMESTAMP", "ansiConfig" -> SQLConf.ANSI_ENABLED.key)
+    new SparkDateTimeException(errorClass, messageParameters, Array.empty, "")
   }
 }

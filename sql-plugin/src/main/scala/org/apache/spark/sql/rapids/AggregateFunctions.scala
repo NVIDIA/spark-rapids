@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf
 import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NaNEquality, NullEquality, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, ShimExpression, ShimUnaryExpression}
+import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, ShimExpression, ShimUnaryExpression, TypeUtilsShims}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
@@ -1081,7 +1081,7 @@ abstract class GpuSum(
   override def children: Seq[Expression] = child :: Nil
   override def inputTypes: Seq[AbstractDataType] = Seq(NumericType)
   override def checkInputDataTypes(): TypeCheckResult =
-    TypeUtils.checkForNumericExpr(child.dataType, "function gpu sum")
+    TypeUtilsShims.checkForNumericExpr(child.dataType, "function gpu sum")
 
   // GENERAL WINDOW FUNCTION
   // Spark 3.2.0+ stopped casting the input data to the output type before the sum operation
@@ -1572,7 +1572,7 @@ abstract class GpuAverage(child: Expression, sumDataType: DataType) extends GpuA
   override def children: Seq[Expression] = child :: Nil
 
   override def checkInputDataTypes(): TypeCheckResult =
-    TypeUtils.checkForNumericExpr(child.dataType, "function gpu average")
+    TypeUtilsShims.checkForNumericExpr(child.dataType, "function gpu average")
 
   override def nullable: Boolean = true
 

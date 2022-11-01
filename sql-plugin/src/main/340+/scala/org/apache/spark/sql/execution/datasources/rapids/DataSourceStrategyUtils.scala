@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims;
+package org.apache.spark.sql.execution.datasources.rapids
 
-import org.apache.spark.sql.connector.read.SupportsRuntimeFiltering;
+import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.connector.expressions.filter.Predicate
+import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Strategy
 
-/**
- * Shim interface for Apache Spark's SupportsRuntimeFiltering interface
- * which was added in Spark 3.2.0.
- */
-public interface ShimSupportsRuntimeFiltering extends SupportsRuntimeFiltering {
+object DataSourceStrategyUtils {
+  // Trampoline utility to access protected translateRuntimeFilterV2
+  def translateRuntimeFilter(expr: Expression): Option[Predicate] =
+    DataSourceV2Strategy.translateRuntimeFilterV2(expr)
 }
