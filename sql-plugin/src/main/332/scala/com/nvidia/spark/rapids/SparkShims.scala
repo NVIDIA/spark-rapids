@@ -14,12 +14,10 @@
  * limitations under the License.
  */
 
-package org.apache.spark.rapids
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.SparkDateTimeException
+import com.nvidia.spark.rapids._
 
-object ShimTrampolineUtil {
-  def dateTimeException(errorClass: String, messageParameters: Array[String]) = {
-    new SparkDateTimeException(errorClass, messageParameters)
-  }
+object SparkShimImpl extends Spark331PlusShims with Spark320until340Shims {
+  override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
 }
