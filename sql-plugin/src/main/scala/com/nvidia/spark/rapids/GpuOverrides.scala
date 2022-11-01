@@ -2588,12 +2588,11 @@ object GpuOverrides extends Logging {
       (in, conf, p, r) => new GetMapValueMeta(in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (isLit(in.left) && (!isLit(in.right))) {
-          willNotWorkOnGpu("Looking up Map Scalars with Key Vectors " +
+            willNotWorkOnGpu("Looking up Map Scalars with Key Vectors " +
               "is not currently unsupported.")
+          }
         }
-    }
-      }
-    ),
+      }),
     expr[ElementAt](
       "Returns element of array at given(1-based) index in value if column is array. " +
         "Returns value for the given key in value if column is map.",
