@@ -77,7 +77,6 @@
         <jdk11.buildvers>
             312
             321
-            331
         </jdk11.buildvers>
         <dist.jar.name>${project.build.directory}/${project.build.finalName}-${cuda.version}.jar</dist.jar.name>
     </properties>
