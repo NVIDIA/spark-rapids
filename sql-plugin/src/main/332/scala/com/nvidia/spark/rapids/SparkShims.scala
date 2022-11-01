@@ -14,20 +14,10 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.shims
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.SparkUpgradeException
+import com.nvidia.spark.rapids._
 
-object SparkUpgradeExceptionShims {
-
-  def newSparkUpgradeException(
-      version: String,
-      message: String,
-      cause: Throwable): SparkUpgradeException = {
-    new SparkUpgradeException(
-      "INCONSISTENT_BEHAVIOR_CROSS_VERSION",
-      Array(version, message),
-      cause)
-  }
-
+object SparkShimImpl extends Spark331PlusShims with Spark320until340Shims {
+  override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
 }

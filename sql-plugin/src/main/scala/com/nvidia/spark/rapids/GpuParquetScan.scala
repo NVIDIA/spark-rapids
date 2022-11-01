@@ -950,7 +950,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   private val filterHandler = GpuParquetFileFilterHandler(sqlConf)
   private val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
   private val numFilesFilterParallel = rapidsConf.numFilesFilterParallel
-  private val alluxioReplacementTaskTime = rapidsConf.isAlluxioReplacementAlgoTaskTime
+  private val alluxioReplacementTaskTime =
+    AlluxioCfgUtils.enabledAlluxioReplacementAlgoTaskTime(rapidsConf)
 
   // We can't use the coalescing files reader when InputFileName, InputFileBlockStart,
   // or InputFileBlockLength because we are combining all the files into a single buffer
@@ -1123,7 +1124,6 @@ case class GpuParquetPartitionReaderFactory(
 
   private val filterHandler = GpuParquetFileFilterHandler(sqlConf)
   private val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
-  private val alluxioReplacementTaskTime = rapidsConf.isAlluxioReplacementAlgoTaskTime
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
@@ -1489,8 +1489,7 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
 
 // Parquet schema wrapper
 private case class ParquetSchemaWrapper(schema: MessageType) extends SchemaBase {
-
-  override def fieldNames: Array[String] = schema.getFields.asScala.map(_.getName).toArray
+  override def isEmpty: Boolean = schema.getFields.isEmpty
 }
 
 // Parquet BlockMetaData wrapper
@@ -1623,14 +1622,10 @@ class MultiFileParquetPartitionReader(
       return true
     }
 
-    val schemaNextFile =
-      nextBlockInfo.schema.asGroupType().getFields.asScala.map(_.getName)
-    val schemaCurrentfile =
-      currentBlockInfo.schema.asGroupType().getFields.asScala.map(_.getName)
-
-    if (!schemaNextFile.sameElements(schemaCurrentfile)) {
+    if (!nextBlockInfo.schema.equals(currentBlockInfo.schema)) {
       logInfo(s"File schema for the next file ${nextBlockInfo.filePath}" +
-        s" doesn't match current ${currentBlockInfo.filePath}, splitting it into another batch!")
+        s" schema ${nextBlockInfo.schema} doesn't match current ${currentBlockInfo.filePath}" +
+        s" schema ${currentBlockInfo.schema}, splitting it into another batch!")
       return true
     }
     false

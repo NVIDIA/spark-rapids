@@ -707,18 +707,19 @@ object GpuDivModLike extends Arm {
   def isDivOverflow(left: GpuColumnVector, right: GpuColumnVector): Boolean = {
     left.dataType() match {
       case LongType =>
-        withResource(Scalar.fromLong(Long.MinValue)) { minLong =>
-          withResource(left.getBase.equalTo(minLong)) { eqToMinLong =>
-            withResource(Scalar.fromInt(-1)) { minusOne =>
-              withResource(right.getBase.equalTo(minusOne)) { eqToMinusOne =>
-                withResource(eqToMinLong.and(eqToMinusOne)) { overFlowVector =>
-                  withResource(overFlowVector.any()) { isOverFlow =>
-                    isOverFlow.isValid && isOverFlow.getBoolean
-                  }
-                }
+        val overFlowVector = withResource(Seq(Long.MinValue, -1).safeMap(Scalar.fromLong)) {
+          case Seq(minLong, minusOne) =>
+            withResource(left.getBase.equalTo(minLong)) { eqToMinLong =>
+              withResource(right.getBase.equalTo(minusOne)) {
+                eqToMinLong.and
               }
             }
-          }
+        }
+        val overFlowVectorAny = withResource(overFlowVector) {
+          _.any()
+        }
+        withResource(overFlowVectorAny) { isOverFlow =>
+          isOverFlow.isValid && isOverFlow.getBoolean
         }
       case _ => false
     }

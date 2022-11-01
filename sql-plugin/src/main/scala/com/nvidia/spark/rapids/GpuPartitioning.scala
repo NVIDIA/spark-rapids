@@ -49,14 +49,17 @@ trait GpuPartitioning extends Partitioning with Arm {
     ret
   }
 
-  def sliceInternalOnGpu(numRows: Int, partitionIndexes: Array[Int],
+  def sliceInternalOnGpuAndClose(numRows: Int, partitionIndexes: Array[Int],
       partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
     // The first index will always be 0, so we need to skip it.
     val batches = if (numRows > 0) {
       val parts = partitionIndexes.slice(1, partitionIndexes.length)
       closeOnExcept(new ArrayBuffer[ColumnarBatch](numPartitions)) { splits =>
-        val table = new Table(partitionColumns.map(_.getBase).toArray: _*)
-        val contiguousTables = withResource(table)(t => t.contiguousSplit(parts: _*))
+        val contiguousTables = withResource(partitionColumns) { _ =>
+          withResource(new Table(partitionColumns.map(_.getBase).toArray: _*)) { table =>
+            table.contiguousSplit(parts: _*)
+          }
+        }
         GpuShuffleEnv.rapidsShuffleCodec match {
           case Some(codec) =>
             compressSplits(splits, codec, contiguousTables)
@@ -80,13 +83,15 @@ trait GpuPartitioning extends Partitioning with Arm {
     batches
   }
 
-  def sliceInternalOnCpu(numRows: Int, partitionIndexes: Array[Int],
+  def sliceInternalOnCpuAndClose(numRows: Int, partitionIndexes: Array[Int],
       partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
     // We need to make sure that we have a null count calculated ahead of time.
     // This should be a temp work around.
     partitionColumns.foreach(_.getBase.getNullCount)
 
-    val hostPartColumns = partitionColumns.map(_.copyToHost())
+    val hostPartColumns = withResource(partitionColumns) { _ =>
+      partitionColumns.map(_.copyToHost())
+    }
     try {
       // Leaving the GPU for a while
       GpuSemaphore.releaseIfNecessary(TaskContext.get())
@@ -105,7 +110,7 @@ trait GpuPartitioning extends Partitioning with Arm {
     }
   }
 
-  def sliceInternalGpuOrCpu(numRows: Int, partitionIndexes: Array[Int],
+  def sliceInternalGpuOrCpuAndClose(numRows: Int, partitionIndexes: Array[Int],
       partitionColumns: Array[GpuColumnVector]): Array[ColumnarBatch] = {
     val sliceOnGpu = usesGPUShuffle
     val nvtxRangeKey = if (sliceOnGpu) {
@@ -117,9 +122,9 @@ trait GpuPartitioning extends Partitioning with Arm {
     // for large number of small splits.
     withResource(new NvtxRange(nvtxRangeKey, NvtxColor.CYAN)) { _ =>
       if (sliceOnGpu) {
-        sliceInternalOnGpu(numRows, partitionIndexes, partitionColumns)
+        sliceInternalOnGpuAndClose(numRows, partitionIndexes, partitionColumns)
       } else {
-        sliceInternalOnCpu(numRows, partitionIndexes, partitionColumns)
+        sliceInternalOnCpuAndClose(numRows, partitionIndexes, partitionColumns)
       }
     }
   }

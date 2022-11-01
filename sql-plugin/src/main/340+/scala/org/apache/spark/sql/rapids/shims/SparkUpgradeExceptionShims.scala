@@ -14,12 +14,19 @@
  * limitations under the License.
  */
 
-package org.apache.spark.rapids
+package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.SparkDateTimeException
+import org.apache.spark.SparkUpgradeException
 
-object ShimTrampolineUtil {
-  def dateTimeException(errorClass: String, messageParameters: Array[String]) = {
-    new SparkDateTimeException(errorClass, messageParameters)
+object SparkUpgradeExceptionShims {
+
+  def newSparkUpgradeException(
+      version: String,
+      message: String,
+      cause: Throwable): SparkUpgradeException = {
+    new SparkUpgradeException(
+      "INCONSISTENT_BEHAVIOR_CROSS_VERSION",
+      Map(version -> message),
+      cause)
   }
 }
