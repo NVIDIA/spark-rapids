@@ -719,8 +719,7 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
     } else {
       null
     }
-    val regexStr = escapeLikeRegex(likeStr, escapeChar)
-    lhs.getBase.matchesRe(regexStr)
+    lhs.getBase.like(Scalar.fromString(likeStr), Scalar.fromString(Character.toString(escapeChar)))
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
