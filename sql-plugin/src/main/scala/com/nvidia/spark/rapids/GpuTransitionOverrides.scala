@@ -211,7 +211,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
    *       not unusual.
    */
   def optimizeCoalesce(plan: SparkPlan): SparkPlan = plan match {
-    case c2r @ GpuColumnarToRowExec(gpuCoalesce: GpuCoalesceBatches, _, _)
+    case c2r @ GpuColumnarToRowExec(gpuCoalesce: GpuCoalesceBatches, _)
       if !isGpuShuffleLike(gpuCoalesce.child) =>
         // Don't build a batch if we are just going to go back to ROWS
         // and there isn't a GPU shuffle involved
