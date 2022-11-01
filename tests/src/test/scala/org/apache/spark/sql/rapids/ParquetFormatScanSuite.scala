@@ -30,9 +30,9 @@ import org.apache.parquet.hadoop.api.WriteSupport
 import org.apache.parquet.hadoop.api.WriteSupport.WriteContext
 import org.apache.parquet.io.api.{Binary, RecordConsumer}
 import org.apache.parquet.schema.{MessageType, MessageTypeParser}
-import org.apache.spark.SparkConf
 import org.scalatest.concurrent.Eventually
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.util.Utils
 
@@ -1012,7 +1012,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
     test(s"SINGLE GROUP LIST $parserType") {
       // TODO switch to withGpuSession when this is fixed
       withCpuSparkSession(spark => {
-        val avroStyleSchema =
+        val schema =
           """message avro_style {
             |  required group f (LIST) {
             |    repeated int32 array;
@@ -1022,7 +1022,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
 
         withTempDir(spark) { dir =>
           val testPath = dir + "/BOBBY_TEST.parquet"
-          writeDirect(testPath, avroStyleSchema, { rc =>
+          writeDirect(testPath, schema, { rc =>
             rc.message {
               rc.field("f", 0) {
                 rc.group {
@@ -1037,6 +1037,46 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
 
           val data = spark.read.parquet(testPath).collect()
           sameRows(Seq(Row(Array(0, 1))), data)
+        }
+      }, conf = conf)
+    }
+
+    // TODO file issue for this...
+    test(s"SINGLE GROUP TUPLE LIST $parserType") {
+      // TODO switch to withGpuSession when this is fixed
+      withCpuSparkSession(spark => {
+        val schema =
+          """message test {
+            |  required group my_list (LIST) {
+            |    repeated group element {
+            |      required binary str (UTF8);
+            |      required int32 num;
+            |    }
+            |  }
+            |}
+              """.stripMargin
+
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/SINGLE_GROUP_TUPLE_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("my_list", 0) {
+                rc.field("element", 0) {
+                  rc.field("str", 0) {
+                    rc.addBinary(Binary.fromString("TEST"))
+                    rc.addBinary(Binary.fromString("DATA"))
+                  }
+                  rc.field("num", 1) {
+                    rc.addInteger(0)
+                    rc.addInteger(1)
+                  }
+                }
+              }
+            }
+          })
+
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(Array(Row("TEST", 0), Row("DATA", 1)))), data)
         }
       }, conf = conf)
     }
