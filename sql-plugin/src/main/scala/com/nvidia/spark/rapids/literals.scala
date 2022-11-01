@@ -622,7 +622,7 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
 
   override def toString: String = value match {
     case null => "null"
-    case binary: Array[Byte] => s"0x" + ApacheHex.encodeHex(binary, false)
+    case binary: Array[Byte] => s"0x${ApacheHex.encodeHexString(binary, false)}"
     case other => other.toString
   }
 
