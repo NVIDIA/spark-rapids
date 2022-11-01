@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{GpuCast}
+import com.nvidia.spark.rapids.GpuCast
 
 import org.apache.spark.sql.catalyst.expressions.{Cast, Expression}
 
