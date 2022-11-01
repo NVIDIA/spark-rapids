@@ -622,7 +622,7 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
 
   override def toString: String = value match {
     case null => "null"
-    case binary: Array[Byte] => s"0x${ApacheHex.encodeHexString(binary, false)}"
+    case binary: Array[Byte] => s"0x${ApacheHex.encodeHex(binary, false).mkString}"
     case other => other.toString
   }
 
@@ -691,7 +691,7 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
       val formatter = TimestampFormatter.getFractionFormatter(
         DateTimeUtils.getZoneId(SQLConf.get.sessionLocalTimeZone))
       s"TIMESTAMP('${formatter.format(v)}')"
-    case (v: Array[Byte], BinaryType) => s"X'${ApacheHex.encodeHexString(v, false)}'"
+    case (v: Array[Byte], BinaryType) => s"X'${ApacheHex.encodeHex(v, false).mkString}'"
     case _ => value.toString
   }
 
