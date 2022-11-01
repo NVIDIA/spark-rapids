@@ -22,7 +22,8 @@ import java.sql.{Date, Timestamp}
 import scala.collection.JavaConverters.mapAsJavaMapConverter
 import scala.concurrent.duration._
 
-import com.nvidia.spark.rapids.SparkQueryCompareTestSuite
+import ai.rapids.cudf
+import com.nvidia.spark.rapids.{GpuColumnVector, SparkQueryCompareTestSuite}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.parquet.hadoop.ParquetWriter
@@ -31,8 +32,8 @@ import org.apache.parquet.hadoop.api.WriteSupport.WriteContext
 import org.apache.parquet.io.api.{Binary, RecordConsumer}
 import org.apache.parquet.schema.{MessageType, MessageTypeParser}
 import org.scalatest.concurrent.Eventually
-
 import org.apache.spark.SparkConf
+
 import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.util.Utils
 
@@ -1057,7 +1058,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
       }, conf = conf)
     }
 
-    // TODO file issue for this...
+    // https://github.com/NVIDIA/spark-rapids/issues/6967
     ignore(s"NO GROUP LIST $parserType") {
       withGpuSparkSession(spark => {
         val schema =
@@ -1081,13 +1082,17 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
             }
           })
 
+          withResource(cudf.Table.readParquet(new File(testPath))) { table =>
+            GpuColumnVector.debug("DIRECT READ", table)
+          }
+
           val data = spark.read.parquet(testPath).collect()
           sameRows(Seq(Row(Array(0, 1), Array("TEST"))), data)
         }
       }, conf = conf)
     }
 
-    // TODO file issue for this...
+    // https://github.com/NVIDIA/spark-rapids/issues/6967
     ignore(s"SINGLE GROUP LIST $parserType") {
       withGpuSparkSession(spark => {
         val schema =
@@ -1113,13 +1118,17 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
             }
           })
 
+          withResource(cudf.Table.readParquet(new File(testPath))) { table =>
+            GpuColumnVector.debug("DIRECT READ", table)
+          }
+
           val data = spark.read.parquet(testPath).collect()
           sameRows(Seq(Row(Array(0, 1))), data)
         }
       }, conf = conf)
     }
 
-    // TODO file issue for this...
+    // https://github.com/NVIDIA/spark-rapids/issues/6967
     ignore(s"SINGLE GROUP TUPLE LIST $parserType") {
       withGpuSparkSession(spark => {
         val schema =
@@ -1152,13 +1161,17 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
             }
           })
 
+          withResource(cudf.Table.readParquet(new File(testPath))) { table =>
+            GpuColumnVector.debug("DIRECT READ", table)
+          }
+
           val data = spark.read.parquet(testPath).collect()
           sameRows(Seq(Row(Array(Row("TEST", 0), Row("DATA", 1)))), data)
         }
       }, conf = conf)
     }
 
-    // TODO file issue for this...
+    // https://github.com/NVIDIA/spark-rapids/issues/6968
     ignore(s"SPECIAL ARRAY LIST $parserType") {
       // From the parquet spec
       // If the repeated field is a group with one field and is named either array or uses the
@@ -1190,13 +1203,17 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
             }
           })
 
+          withResource(cudf.Table.readParquet(new File(testPath))) { table =>
+            GpuColumnVector.debug("DIRECT READ", table)
+          }
+
           val data = spark.read.parquet(testPath).collect()
           sameRows(Seq(Row(Array(Row(0), Row(1)))), data)
         }
       }, conf = conf)
     }
 
-    // TODO file issue for this...
+    // https://github.com/NVIDIA/spark-rapids/issues/6968
     ignore(s"SPECIAL _TUPLE LIST $parserType") {
       // From the parquet spec
       // If the repeated field is a group with one field and is named either array or uses the
@@ -1227,6 +1244,10 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
               }
             }
           })
+
+          withResource(cudf.Table.readParquet(new File(testPath))) { table =>
+            GpuColumnVector.debug("DIRECT READ", table)
+          }
 
           val data = spark.read.parquet(testPath).collect()
           sameRows(Seq(Row(Array(Row(0), Row(1)))), data)
@@ -1332,7 +1353,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
 
     // Spec says that value can be "omitted" but Spark does not support it.
 
-    // TODO file an issue for this...
+    // https://github.com/NVIDIA/spark-rapids/issues/6970
     ignore(s"MAP_KEY_VALUE $parserType") {
       withGpuSparkSession(spark => {
         val schema =
@@ -1364,6 +1385,10 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
               }
             }
           })
+
+          withResource(cudf.Table.readParquet(new File(testPath))) { table =>
+            GpuColumnVector.debug("DIRECT READ", table)
+          }
 
           val data = spark.read.parquet(testPath).collect()
           sameRows(Seq(Row(Map(0 -> 2, 1 -> 3))), data)
