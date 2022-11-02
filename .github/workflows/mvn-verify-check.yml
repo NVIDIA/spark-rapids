@@ -29,6 +29,7 @@ jobs:
     outputs:
       sparkHeadVersion: ${{ steps.noSnapshotVersionsStep.outputs.headVersion }}
       sparkTailVersions: ${{ steps.noSnapshotVersionsStep.outputs.tailVersions }}
+      sparkJDK11Versions: ${{ steps.noSnapshotVersionsStep.outputs.jdk11Versions }}
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
@@ -48,6 +49,10 @@ jobs:
           svJsonStr=$(printf {\"include\":[%s]} $svArrBody)
           echo "headVersion=$SPARK_BASE_SHIM_VERSION" >> $GITHUB_OUTPUT
           echo "tailVersions=$svJsonStr" >> $GITHUB_OUTPUT
+          jdkVersionArrBody=$(printf ",{\"spark-version\":\"%s\"}" "${SPARK_SHIM_VERSIONS_JDK11[@]}")
+          jdkVersionArrBody=${jdkVersionArrBody:1}
+          jdkVersionJsonStr=$(printf {\"include\":[%s]} $jdkVersionArrBody)
+          echo "jdk11Versions=$jdkVersionJsonStr" >> $GITHUB_OUTPUT
 
   package-aggregator:
     needs: get-noSnapshot-versions-from-dist
@@ -95,3 +100,32 @@ jobs:
           -DskipTests
           -Dskip
           -Dmaven.javadoc.skip
+
+  verify-modules-with-jdk11:
+    needs: get-noSnapshot-versions-from-dist
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJSON(needs.get-noSnapshot-versions-from-dist.outputs.sparkJDK11Versions) }}
+    steps:
+      - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
+
+      - name: Setup Java and Maven Env
+        uses: actions/setup-java@v3
+        with:
+          distribution: adopt
+          java-version: 11
+      
+      - name: Build JDK11
+        run: >
+          mvn -Dmaven.wagon.http.retryHandler.count=3 -B verify
+          -P 'individual,pre-merge'
+          -Dbuildver=${{ matrix.spark-version }}
+          -Dmaven.compiler.release=11
+          -Dmaven.compiler.source=11
+          -Dmaven.compiler.target=11
+          -Dscala.plugin.version=4.6.1
+          -DallowConventionalDistJar=true
+          -DskipTests
+          -Dskip
+          -Dmaven.javadoc.skip
+          
