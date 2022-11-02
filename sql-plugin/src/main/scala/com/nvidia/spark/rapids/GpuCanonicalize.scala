@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.shims.CastIgnoreTimeZoneShim
+
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
@@ -54,13 +56,10 @@ object GpuCanonicalize {
   }
 
   /** Remove TimeZoneId for Cast if needsTimeZone return false. */
-  private def ignoreTimeZone(e: Expression): Expression = e match {
-    case c: TimeZoneAwareExpression
-      if c.prettyName.contains("Cast") &&
-        c.timeZoneId.nonEmpty &&
-        !Cast.needsTimeZone(c.children.head.dataType, c.dataType) =>
+  def ignoreTimeZone(e: Expression): Expression = e match {
+    case c: GpuCast if c.timeZoneId.nonEmpty && !c.needsTimeZone =>
       c.withTimeZone(null)
-    case _ => e
+    case _ => CastIgnoreTimeZoneShim.ignoreTimeZone(e)
   }
 
   /** Collects adjacent commutative operations. */
