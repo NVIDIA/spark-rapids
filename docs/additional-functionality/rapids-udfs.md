@@ -194,8 +194,8 @@ exclusive mode to assign GPUs under Spark. To disable exclusive mode, use
 Please note: every type of Pandas UDF on Spark is run by a specific Spark execution plan. RAPIDS
 Accelerator has a 1-1 mapping support for each of them.
 
-  |Spark Execution Plan| Data Transfer Accelerated |Use Case|
-  |---------------------------|----------|--------|
+  |Spark Execution Plan|Data Transfer Accelerated|Use Case|
+  |---------------------|----------|--------|
   |ArrowEvalPythonExec|yes|[Series to Series](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#series-to-series), [Iterator of Series to Iterator of Series](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#iterator-of-series-to-iterator-of-series) and [Iterator of Multiple Series to Iterator of Series](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#iterator-of-multiple-series-to-iterator-of-series)|
   |MapInPandasExec|yes|[Map](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#map)|
   |WindowInPandasExec|yes|[Window](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#series-to-scalar)|
