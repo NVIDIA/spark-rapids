@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.util.{Comparator, LinkedList, PriorityQueue}
 
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable.{ArrayBuffer, ArrayStack}
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.GpuMetric._
@@ -34,8 +34,6 @@ import org.apache.spark.sql.execution.{SortExec, SparkPlan}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
-import scala.collection.mutable
 
 sealed trait SortExecType extends Serializable
 
@@ -423,7 +421,7 @@ case class GpuOutOfCoreSortIterator(
     while (!pending.isEmpty && sortedSize < targetSize) {
       // Keep going until we have enough data to return
       var bytesLeftToFetch = targetSize
-      val pendingSort = new mutable.ArrayStack[SpillableColumnarBatch]()
+      val pendingSort = new ArrayStack[SpillableColumnarBatch]()
       closeOnExcept(pendingSort) { _ =>
         while (!pending.isEmpty &&
             (bytesLeftToFetch - pending.peek().buffer.sizeInBytes >= 0 || pendingSort.isEmpty)) {
