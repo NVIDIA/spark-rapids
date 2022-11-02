@@ -17,7 +17,7 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.catalyst.expressions.{AnsiCast, CastBase, Expression}
+import org.apache.spark.sql.catalyst.expressions.{AnsiCast, Expression}
 
 trait Spark320until340Shims extends SparkShims {
 
@@ -81,13 +81,5 @@ trait Spark320until340Shims extends SparkShims {
       },
       (cast, conf, p, r) => new CastExprMeta[AnsiCast](cast, ansiEnabled = true, conf = conf,
         parent = p, rule = r, doFloatToIntCheck = true, stringToAnsiDate = true))
-  }
-
-  override def ignoreTimeZone(e: Expression): Expression = e match {
-    case c: CastBase if c.timeZoneId.nonEmpty && !c.needsTimeZone =>
-      c.withTimeZone(null)
-    case c: GpuCast if c.timeZoneId.nonEmpty && !c.needsTimeZone =>
-      c.withTimeZone(null)
-    case _ => e
   }
 }
