@@ -172,7 +172,6 @@ exclusive mode to assign GPUs under Spark. To disable exclusive mode, use
 2. Currently, the Python files are packed into the RAPIDS Accelerator jar.
 
     On Yarn, you need to add
-
     ```shell
     ...
     --py-files ${SPARK_RAPIDS_PLUGIN_JAR} \
