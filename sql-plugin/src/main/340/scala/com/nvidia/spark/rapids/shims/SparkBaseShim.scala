@@ -28,50 +28,7 @@ import org.apache.spark.sql.rapids.{GpuDecimalDivide, GpuDecimalMultiply}
  */
 trait SparkBaseShim extends SparkShims {
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
-      expr[CheckOverflow](
-        "CheckOverflow after arithmetic operations between DecimalType data",
-        ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_128,
-          TypeSig.DECIMAL_128),
-        (a, conf, p, r) => new ExprMeta[CheckOverflow](a, conf, p, r) {
-          private[this] lazy val binExpr = childExprs.head
-          private[this] lazy val lhs = binExpr.childExprs.head
-          private[this] lazy val rhs = binExpr.childExprs(1)
-          private[this] lazy val lhsDecimalType =
-            DecimalUtil.asDecimalType(lhs.wrapped.asInstanceOf[Expression].dataType)
-          private[this] lazy val rhsDecimalType =
-            DecimalUtil.asDecimalType(rhs.wrapped.asInstanceOf[Expression].dataType)
-
-          override def convertToGpu(): GpuExpression = {
-            // Prior to Spark 3.4.0
-            // Division and Multiplication of Decimal types is a little odd. Spark will cast the
-            // inputs to a common wider value where the scale is the max of the two input scales,
-            // and the precision is max of the two input non-scale portions + the new scale. Then it
-            // will do the divide or multiply as a BigDecimal value but lie about the return type.
-            // Finally here in CheckOverflow it will reset the scale and check the precision so that
-            // Spark knows it fits in the final desired result.
-            // Here we try to strip out the extra casts, etc to get to as close to the original
-            // query as possible. This lets us then calculate what CUDF needs to get the correct
-            // answer, which in some cases is a lot smaller.
-
-            a.child match {
-              case _: Divide =>
-                // GpuDecimalDivide includes the overflow check in it.
-                GpuDecimalDivide(lhs.convertToGpu(), rhs.convertToGpu(), wrapped.dataType)
-              case _: Multiply =>
-                // GpuDecimal*Multiply includes the overflow check in it
-                val intermediatePrecision =
-                  GpuDecimalMultiply.nonRoundedIntermediatePrecision(lhsDecimalType,
-                    rhsDecimalType, a.dataType)
-                GpuDecimalMultiply(lhs.convertToGpu(), rhs.convertToGpu(), wrapped.dataType,
-                  useLongMultiply = intermediatePrecision > DType.DECIMAL128_MAX_PRECISION)
-              case _ =>
-                GpuCheckOverflow(childExprs.head.convertToGpu(),
-                  wrapped.dataType, wrapped.nullOnOverflow)
-            }
-          }
-        })
-    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
-    exprs
+    // return an empty Map
+    Map.empty[Class[_ <: Expression], ExprRule[_ <: Expression]]
   }
 }
