@@ -63,4 +63,5 @@ object SparkShimImpl extends Spark331PlusShims {
 
   // AnsiCast is removed from Spark3.4.0
   override def ansiCastRule: ExprRule[_ <: Expression] = null
+
 }
