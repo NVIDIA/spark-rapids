@@ -475,7 +475,6 @@ class GpuDynamicPartitionDataSingleWriter(
 
       paths.toArray.zip(splits).foreach(combined => {
         val table = combined._2.getTable
-        val batch = GpuColumnVector.from(table, outDataTypes)
         val partPath = combined._1
 
         // If fall back from for `GpuDynamicPartitionDataConcurrentWriter`, we should get the
@@ -520,15 +519,10 @@ class GpuDynamicPartitionDataSingleWriter(
           val subTables = convertSpillBatchesToTables(savedStatus.get.tableCaches)
           // clear the caches
           savedStatus.get.tableCaches.clear()
-          // concat the caches and this `batch`
+          // concat the caches and this `table`
           val concat = withResource(subTables) { _ =>
-            withResource(batch) { _ =>
-              // append `batch` to sub tables
-              subTables += GpuColumnVector.from(batch)
-            }
-            withResource(Table.concatenate(subTables: _*)) { concat =>
-              GpuColumnVector.from(concat, outDataTypes)
-            }
+            subTables += table
+            GpuColumnVector.from(Table.concatenate(subTables: _*), outDataTypes)
           }
           // write concat table
           if (!needSplitBatch(
@@ -540,23 +534,20 @@ class GpuDynamicPartitionDataSingleWriter(
             currentWriterStatus.recordsInFile += concat.numRows()
             currentWriterStatus.outputWriter.write(concat, statsTrackers)
           } else {
-            withResource(concat){concat =>  
-              writeBatch(concat, maxRecordsPerFile, partPath)
-            }
+            writeBatch(concat, maxRecordsPerFile, partPath)
           }
         } else {
           if (!needSplitBatch(
             maxRecordsPerFile,
             currentWriterStatus.recordsInFile,
-            batch.numRows))
+            table.getRowCount()))
           {
+            val batch = GpuColumnVector.from(table, outDataTypes)
             statsTrackers.foreach(_.newBatch(batch))
             currentWriterStatus.recordsInFile += batch.numRows()
             currentWriterStatus.outputWriter.write(batch, statsTrackers)
           } else {
-            withResource(batch){batch =>  
-              writeBatch(batch, maxRecordsPerFile, partPath)
-            }
+            writeTable(table, outDataTypes, maxRecordsPerFile, partPath)
           }
         }
       })
@@ -585,49 +576,70 @@ class GpuDynamicPartitionDataSingleWriter(
     }
   }
 
-  // function to write batch.
-  // note: the batch will be closed in this function.
+  /**
+   * Write a Batch.
+   *
+   * Note: The `batch` will be closed in this function.
+   *
+   * @param batch the batch to be written
+   * @param maxRecordsPerFile the max number of rows per file
+   * @param partPath the partition directory
+   */
   private def writeBatch(batch: ColumnarBatch, maxRecordsPerFile: Long, partPath: String) = {
-    withResource(GpuColumnVector.from(batch)) {table =>
-      val splitIndexes = getSplitIndexes(
-        maxRecordsPerFile,
-        currentWriterStatus.recordsInFile,
-        table.getRowCount()
-      )
+    val (table, dataTypes) = withResource(batch) { _ =>
+      (GpuColumnVector.from(batch), GpuColumnVector.extractTypes(batch))
+    }
+    writeTable(table, dataTypes, maxRecordsPerFile, partPath)
+  }
 
-      val dataTypes = GpuColumnVector.extractTypes(batch)
 
-      var needNewWriter =
-        currentWriterStatus.recordsInFile >= maxRecordsPerFile
-      withResource(table.contiguousSplit(splitIndexes: _*)) {tabs =>
-        tabs.foreach(b => {
-          if (needNewWriter) {
-            currentWriterStatus.fileCounter += 1
-            assert(currentWriterStatus.fileCounter <= MAX_FILE_COUNTER,
-              s"File counter ${currentWriterStatus.fileCounter} " +
-                s"is beyond max value $MAX_FILE_COUNTER")
+  /**
+   * Write a Table.
+   *
+   * Note: The `table` will be closed in this function.
+   *
+   * @param table the table to be written
+   * @param outDataTypes the data types of the table
+   * @param maxRecordsPerFile the max number of rows per file
+   * @param partPath the partition directory
+   */
+  private def writeTable(
+    table: Table, outDataTypes: Array[DataType], maxRecordsPerFile: Long, partPath: String) = {
+    val splitIndexes = getSplitIndexes(
+      maxRecordsPerFile,
+      currentWriterStatus.recordsInFile,
+      table.getRowCount()
+    )
+    var needNewWriter = currentWriterStatus.recordsInFile >= maxRecordsPerFile
 
-            // will create a new file, close the old writer
-            val previousWriterStatus = currentWriterStatus
-            if (previousWriterStatus != null) {
-              releaseWriter(previousWriterStatus.outputWriter)
-            }
+    val tabs = withResource(table) { _ => table.contiguousSplit(splitIndexes: _*)}
+    withResource(tabs) { _ =>
+      tabs.foreach(b => {
+        if (needNewWriter) {
+          currentWriterStatus.fileCounter += 1
+          assert(currentWriterStatus.fileCounter <= MAX_FILE_COUNTER,
+            s"File counter ${currentWriterStatus.fileCounter} " +
+              s"is beyond max value $MAX_FILE_COUNTER")
 
-            // create a new writer and update the writer in the status
-            currentWriterStatus.outputWriter =
-              newWriter(partPath, None, currentWriterStatus.fileCounter)
-            currentWriterStatus.recordsInFile = 0
+          // will create a new file, close the old writer
+          if (currentWriterStatus != null) {
+            releaseWriter(currentWriterStatus.outputWriter)
           }
-          withResource(b.getTable()) {tab =>
-            val bc = GpuColumnVector.from(tab, dataTypes)
-            statsTrackers.foreach(_.newBatch(bc))
 
-            currentWriterStatus.recordsInFile += b.getRowCount()
-            currentWriterStatus.outputWriter.write(bc, statsTrackers)
-            needNewWriter = true
-          }
-        })
-      }
+          // create a new writer and update the writer in the status
+          currentWriterStatus.outputWriter =
+            newWriter(partPath, None, currentWriterStatus.fileCounter)
+          currentWriterStatus.recordsInFile = 0
+        }
+        withResource(b.getTable()) {tab =>
+          val bc = GpuColumnVector.from(tab, outDataTypes)
+          statsTrackers.foreach(_.newBatch(bc))
+
+          currentWriterStatus.recordsInFile += b.getRowCount()
+          currentWriterStatus.outputWriter.write(bc, statsTrackers)
+          needNewWriter = true
+        }
+      })
     }
   }
 
