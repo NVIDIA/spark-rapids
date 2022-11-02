@@ -43,7 +43,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
  */
 object GpuCanonicalize {
   def execute(e: Expression): Expression = {
-    expressionReorder(ignoreTimeZone(ignoreNamesTypes(e)))
+    expressionReorder(ignoreTimeZoneInCast(ignoreNamesTypes(e)))
   }
 
   /** Remove names and nullability from types, and names from `GetStructField`. */
@@ -56,7 +56,7 @@ object GpuCanonicalize {
   }
 
   /** Remove TimeZoneId for Cast if needsTimeZone return false. */
-  def ignoreTimeZone(e: Expression): Expression = e match {
+  def ignoreTimeZoneInCast(e: Expression): Expression = e match {
     case c: GpuCast if c.timeZoneId.nonEmpty && !c.needsTimeZone =>
       c.withTimeZone(null)
     case _ => CastIgnoreTimeZoneShim.ignoreTimeZone(e)
