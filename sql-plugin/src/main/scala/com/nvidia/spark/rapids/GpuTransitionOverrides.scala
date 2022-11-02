@@ -591,6 +591,11 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           validateExecsInGpuPlan(updatedPlan, rapidsConf)
         }
 
+        // Some distributions of Spark don't properly transform the plan after the
+        // plugin performs its final transformations of the plan. In this case, we 
+        // need to apply any remaining rules that should have been applied.
+        updatedPlan = SparkShimImpl.applyPostShimPlanRules(updatedPlan)
+
         if (rapidsConf.logQueryTransformations) {
           logWarning(s"Transformed query:" +
             s"\nOriginal Plan:\n$plan\nTransformed Plan:\n$updatedPlan")

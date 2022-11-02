@@ -648,9 +648,10 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("string split - optimized") {
-    val patterns = Set("\\.", "\\$", "\\[", "\\(", "\\}", "\\+", "\\\\", ",", ";", "cd", "c\\|d")
+    val patterns = Set("\\.", "\\$", "\\[", "\\(", "\\}", "\\+", "\\\\", ",", ";", "cd", "c\\|d",
+        "\\%", "\\;", "\\/")
     val data = Seq("abc.def", "abc$def", "abc[def]", "abc(def)", "abc{def}", "abc+def", "abc\\def",
-        "abc,def", "abc;def", "abcdef", "abc|def")
+        "abc,def", "abc;def", "abcdef", "abc|def", "abc%def")
     for (limit <- Seq(Integer.MIN_VALUE, -2, -1)) {
       assertTranspileToSplittableString(patterns)
       doStringSplitTest(patterns, data, limit)

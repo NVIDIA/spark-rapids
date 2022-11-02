@@ -276,7 +276,11 @@ class AppFilterImpl(
 
     val startAppInfo = new FilterAppInfo(path, hadoopConf)
     val appInfo = AppFilterReturnParameters(startAppInfo, path)
-    appsForFiltering.add(appInfo)
+    if (startAppInfo.appStartInfo.isEmpty) {
+      logWarning("Cannot process file due to missing start event: " + path) 
+    } else {
+      appsForFiltering.add(appInfo)
+    }
   }
 }
 
