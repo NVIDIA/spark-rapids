@@ -221,7 +221,7 @@ else
     fi
 
     export PYSP_TEST_spark_driver_extraJavaOptions="-ea -Duser.timezone=UTC $COVERAGE_SUBMIT_FLAGS"
-    export PYSP_TEST_spark_executor_extraJavaOptions='-ea -Duser.timezone=UTC'
+    export PYSP_TEST_spark_executor_extraJavaOptions='-ea -Duser.timezone=UTC -Dai.rapids.refcount.debug=true'
     export PYSP_TEST_spark_ui_showConsoleProgress='false'
     export PYSP_TEST_spark_sql_session_timeZone='UTC'
     export PYSP_TEST_spark_sql_shuffle_partitions='4'
@@ -268,6 +268,7 @@ else
         export PYSP_TEST_spark_master="local[$LOCAL_PARALLEL,$SPARK_TASK_MAXFAILURES]"
       fi
     fi
+    export PYSP_TEST_spark_master="spark://alebox-outside:7077"
 
     # If you want to change the amount of GPU memory allocated you have to change it here
     # and where TEST_PARALLEL is calculated

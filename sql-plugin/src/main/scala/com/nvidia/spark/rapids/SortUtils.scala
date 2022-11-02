@@ -244,46 +244,54 @@ class GpuSorter(
           sb.getColumnarBatch()
         }
       } else {
+        val tablesToMerge = new mutable.ArrayStack[Table]()
         closeOnExcept(spillableBatches) { _ =>
-          val merged = {
-            val tablesToMerge = new mutable.ArrayStack[Table]()
-            while (spillableBatches.nonEmpty || tablesToMerge.size > 1) {
-              // pop a spillable batch if there is one to pop
-              var spillableCandidate: Option[SpillableColumnarBatch] = None
-              if (spillableBatches.nonEmpty) {
-                spillableCandidate = Some(spillableBatches.pop())
-              }
-
-              // optionally add a table to `tablesToMerge`
-              closeOnExcept(tablesToMerge) { _ =>
-                withResource(spillableCandidate) {
-                  _.foreach { sb =>
-                    // materialize a potentially spilled batch
-                    withResource(sb.getColumnarBatch()) { batch =>
-                      tablesToMerge.push(GpuColumnVector.from(batch))
+          val merged: Table = {
+            // In the current version of cudf merge does not work for lists and maps.
+            // This should be fixed by https://github.com/rapidsai/cudf/issues/8050
+            // Nested types in sort key columns is not supported either.
+            if (hasNestedInKeyColumns || hasUnsupportedNestedInRideColumns) {
+              // so as a work around we concatenate all of the data together and then sort it.
+              // It is slower, but it works
+              val concatenated = closeOnExcept(tablesToMerge) { _ =>
+                while (spillableBatches.nonEmpty) {
+                  withResource(spillableBatches.pop()) { sb =>
+                    withResource(sb.getColumnarBatch()) { cb =>
+                      tablesToMerge.push(GpuColumnVector.from(cb))
                     }
                   }
                 }
+                val concatenated = withResource(tablesToMerge) { _ =>
+                  Table.concatenate(tablesToMerge: _*)
+                }
+                // we no longer care about the old tables, we closed them
+                tablesToMerge.clear()
+                concatenated
               }
+              withResource(concatenated) { _ =>
+                concatenated.orderBy(cudfOrdering: _*)
+              }
+            } else {
+              while (spillableBatches.nonEmpty || tablesToMerge.size > 1) {
+                // pop a spillable batch if there is one to pop
+                var spillableCandidate: Option[SpillableColumnarBatch] = None
+                if (spillableBatches.nonEmpty) {
+                  spillableCandidate = Some(spillableBatches.pop())
+                }
 
-              if (tablesToMerge.size > 1) {
-                // In the current version of cudf merge does not work for lists and maps.
-                // This should be fixed by https://github.com/rapidsai/cudf/issues/8050
-                // Nested types in sort key columns is not supported either.
-                if (hasNestedInKeyColumns || hasUnsupportedNestedInRideColumns) {
-                  // so as a work around we concatenate all of the data together and then sort it.
-                  // It is slower, but it works
-                  val concatenated = withResource(tablesToMerge) { _ =>
-                    Table.concatenate(tablesToMerge.toArray: _*)
+                // optionally add a table to `tablesToMerge`
+                closeOnExcept(tablesToMerge) { _ =>
+                  withResource(spillableCandidate) {
+                    _.foreach { sb =>
+                      // materialize a potentially spilled batch
+                      withResource(sb.getColumnarBatch()) { batch =>
+                        tablesToMerge.push(GpuColumnVector.from(batch))
+                      }
+                    }
                   }
-                  // we no longer care about the old tables, we closed them
-                  tablesToMerge.clear()
+                }
 
-                  // add a table to be merged with the next spillable batch
-                  withResource(concatenated) { _ =>
-                    tablesToMerge.push(concatenated.orderBy(cudfOrdering: _*))
-                  }
-                } else {
+                if (tablesToMerge.size > 1) {
                   val merged = withResource(tablesToMerge) { _ =>
                     Table.merge(tablesToMerge.toArray, cudfOrdering: _*)
                   }
@@ -294,8 +302,8 @@ class GpuSorter(
                   tablesToMerge.push(merged)
                 }
               }
+              tablesToMerge.pop()
             }
-            tablesToMerge.pop()
           }
           withResource(merged) { merged =>
             GpuColumnVector.from(merged, projectedBatchTypes)
