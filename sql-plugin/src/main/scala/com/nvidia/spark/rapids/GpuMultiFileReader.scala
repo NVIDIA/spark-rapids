@@ -296,6 +296,14 @@ case class SingleColumnarBatchReader(batch: ColumnarBatch) extends ColumnarBatch
   }
 }
 
+/**
+ * The caching batch reader will fully read all of the tables output by the TableReader. If there
+ * are more than one Table it will make them all spillable as it reads them. Once all of the tables
+ * are read the TableReader is closed. The reason for this is to allow the TableReader to hold onto
+ * some GPU resources without the need to make those resources spillable, but lets the rest of Spark
+ * still process the data. In the common case we should have split up the input data properly so
+ * only a single table is output by the TableReader. This allows us to bypass making it spillable.
+ */
 class CachingBatchReader(reader: TableReader,
     dataTypes: Array[DataType],
     spillCallback: SpillCallback) extends ColumnarBatchReader with Arm {

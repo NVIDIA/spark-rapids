@@ -979,7 +979,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     }
     new MultiFileCloudParquetPartitionReader(conf, files, filterFunc, isCaseSensitive,
       debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes, targetBatchSizeBytes,
-      metrics, partitionSchema, numThreads, maxNumFileProcessed,
+      useChunkedReader, metrics, partitionSchema, numThreads, maxNumFileProcessed,
       ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId,
       alluxioPathReplacementMap.getOrElse(Map.empty), alluxioReplacementTaskTime)
   }
@@ -1122,6 +1122,7 @@ case class GpuParquetPartitionReaderFactory(
   private val maxReadBatchSizeRows = rapidsConf.maxReadBatchSizeRows
   private val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
   private val targetSizeBytes = rapidsConf.gpuTargetBatchSizeBytes
+  private val useChunkedReader = rapidsConf.chunkedReaderEnabled
   private val footerReadType = GpuParquetScan.footerReaderHeuristic(
     rapidsConf.parquetReaderFooterType, dataSchema, readDataSchema)
 
@@ -1151,9 +1152,9 @@ case class GpuParquetPartitionReaderFactory(
     }
     new ParquetPartitionReader(conf, file, singleFileInfo.filePath, singleFileInfo.blocks,
       singleFileInfo.schema, isCaseSensitive, readDataSchema,
-      debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes, targetSizeBytes, metrics,
-      singleFileInfo.isCorrectedInt96RebaseMode, singleFileInfo.isCorrectedRebaseMode,
-      singleFileInfo.hasInt96Timestamps, readUseFieldId)
+      debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes, targetSizeBytes,
+      useChunkedReader, metrics, singleFileInfo.isCorrectedInt96RebaseMode,
+      singleFileInfo.isCorrectedRebaseMode, singleFileInfo.hasInt96Timestamps, readUseFieldId)
   }
 }
 
@@ -1745,6 +1746,7 @@ class MultiFileCloudParquetPartitionReader(
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     targetBatchSizeBytes: Long,
+    useChunkedReader: Boolean,
     override val execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
     numThreads: Int,
@@ -1969,7 +1971,7 @@ class MultiFileCloudParquetPartitionReader(
       // about to start using the GPU
       GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
 
-      ParquetTableReader(conf, targetBatchSizeBytes, parseOpts, hostBuffer, 0,
+      MakeParquetTableReader(useChunkedReader, conf, targetBatchSizeBytes, parseOpts, hostBuffer, 0,
         dataSize, metrics,
         isCorrectInt96RebaseMode, isCorrectRebaseMode, hasInt96Timestamps,
         isSchemaCaseSensitive, useFieldId, readDataSchema, clippedSchema, None,
@@ -1988,7 +1990,7 @@ class MultiFileCloudParquetPartitionReader(
 
 object MakeParquetTableReader extends Arm {
   def apply(
-      chunkedReaderEnabled: Boolean,
+      useChunkedReader: Boolean,
       conf: Configuration,
       chunkSizeByteLimit: Long,
       opts: ParquetOptions,
@@ -2005,7 +2007,7 @@ object MakeParquetTableReader extends Arm {
       clippedParquetSchema: MessageType,
       filePath: Option[Path],
       onTableSize: Long => Unit): TableReader = {
-    if (chunkedReaderEnabled) {
+    if (useChunkedReader) {
       ParquetTableReader(conf, chunkSizeByteLimit, opts, buffer, offset, len, metrics,
         isCorrectedInt96RebaseMode, isCorrectedRebaseMode, hasInt96Timestamps,
         isSchemaCaseSensitive, useFieldId, readDataSchema, clippedParquetSchema,
@@ -2124,6 +2126,7 @@ class ParquetPartitionReader(
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     targetBatchSizeBytes: Long,
+    useChunkedReader: Boolean,
     override val execMetrics: Map[String, GpuMetric],
     isCorrectedInt96RebaseMode: Boolean,
     isCorrectedRebaseMode: Boolean,
@@ -2204,9 +2207,10 @@ class ParquetPartitionReader(
         // about to start using the GPU
         GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
 
-        ParquetTableReader(conf, targetBatchSizeBytes, parseOpts, dataBuffer, 0, dataSize, metrics,
-          isCorrectedInt96RebaseMode, isCorrectedRebaseMode, hasInt96Timestamps,
-          isSchemaCaseSensitive, useFieldId, readDataSchema, clippedParquetSchema, Some(filePath),
+        MakeParquetTableReader(useChunkedReader, conf, targetBatchSizeBytes, parseOpts, dataBuffer,
+          0, dataSize, metrics, isCorrectedInt96RebaseMode, isCorrectedRebaseMode,
+          hasInt96Timestamps, isSchemaCaseSensitive, useFieldId, readDataSchema,
+          clippedParquetSchema, Some(filePath),
           tableSize => maxDeviceMemory = max(tableSize, maxDeviceMemory))
       }
     }

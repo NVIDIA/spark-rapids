@@ -289,7 +289,7 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
     BatchReader(ReadTask task, scala.collection.immutable.Map<String, GpuMetric> metrics) {
       super(task.task, task.table(), task.expectedSchema(), task.isCaseSensitive(),
           task.getConfiguration(), task.getMaxBatchSizeRows(), task.getMaxBatchSizeBytes(),
-          task.getTargetBatchSizeBytes(),
+          task.getTargetBatchSizeBytes(), task.useChunkedReader(),
           task.getParquetDebugDumpPrefix(), metrics);
     }
   }

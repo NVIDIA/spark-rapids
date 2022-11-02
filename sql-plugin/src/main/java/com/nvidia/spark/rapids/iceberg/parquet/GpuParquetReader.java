@@ -85,8 +85,8 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
   private final Configuration conf;
   private final int maxBatchSizeRows;
   private final long maxBatchSizeBytes;
-
   private final long targetBatchSizeBytes;
+  private final boolean useChunkedReader;
   private final String debugDumpPrefix;
   private final scala.collection.immutable.Map<String, GpuMetric> metrics;
 
@@ -95,8 +95,8 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
       NameMapping nameMapping, Expression filter, boolean caseSensitive,
       Map<Integer, ?> idToConstant, GpuDeleteFilter deleteFilter,
       PartitionedFile partFile, Configuration conf, int maxBatchSizeRows,
-      long maxBatchSizeBytes, long targetBatchSizeBytes, String debugDumpPrefix,
-      scala.collection.immutable.Map<String, GpuMetric> metrics) {
+      long maxBatchSizeBytes, long targetBatchSizeBytes, boolean useChunkedReader,
+      String debugDumpPrefix, scala.collection.immutable.Map<String, GpuMetric> metrics) {
     this.input = input;
     this.expectedSchema = expectedSchema;
     this.options = options;
@@ -110,6 +110,7 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
     this.maxBatchSizeRows = maxBatchSizeRows;
     this.maxBatchSizeBytes = maxBatchSizeBytes;
     this.targetBatchSizeBytes = targetBatchSizeBytes;
+    this.useChunkedReader = useChunkedReader;
     this.debugDumpPrefix = debugDumpPrefix;
     this.metrics = metrics;
   }
@@ -135,7 +136,7 @@ public class GpuParquetReader extends CloseableGroup implements CloseableIterabl
       ParquetPartitionReader parquetPartReader = new ParquetPartitionReader(conf, partFile,
           new Path(input.location()), clippedBlocks, fileReadSchema, caseSensitive,
           partReaderSparkSchema, debugDumpPrefix, maxBatchSizeRows, maxBatchSizeBytes,
-          targetBatchSizeBytes, metrics,
+          targetBatchSizeBytes, useChunkedReader, metrics,
           true, // isCorrectedInt96RebaseMode
           true, // isCorrectedRebaseMode
           true, // hasInt96Timestamps
