@@ -14,12 +14,14 @@
  * limitations under the License.
  */
 
-package org.apache.spark.rapids
+package org.apache.spark.sql.execution.datasources.rapids
 
-import org.apache.spark.SparkDateTimeException
+import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.connector.expressions.filter.Predicate
+import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Strategy
 
-object ShimTrampolineUtil {
-  def dateTimeException(errorClass: String, messageParameters: Array[String]) = {
-    new SparkDateTimeException(errorClass, messageParameters)
-  }
+object DataSourceStrategyUtils {
+  // Trampoline utility to access protected translateRuntimeFilterV2
+  def translateRuntimeFilter(expr: Expression): Option[Predicate] =
+    DataSourceV2Strategy.translateRuntimeFilterV2(expr)
 }

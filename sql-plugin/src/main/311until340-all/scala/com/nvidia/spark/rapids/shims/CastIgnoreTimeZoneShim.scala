@@ -14,13 +14,15 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims;
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.connector.read.SupportsRuntimeFiltering;
+import org.apache.spark.sql.catalyst.expressions.{CastBase, Expression}
 
-/**
- * Shim interface for Apache Spark's SupportsRuntimeFiltering interface
- * which was added in Spark 3.2.0.
- */
-public interface ShimSupportsRuntimeFiltering extends SupportsRuntimeFiltering {
+object CastIgnoreTimeZoneShim {
+  /** Remove TimeZoneId for Cast if needsTimeZone return false. */
+  def ignoreTimeZone(e: Expression): Expression = e match {
+    case c: CastBase if c.timeZoneId.nonEmpty && !c.needsTimeZone =>
+      c.withTimeZone(null)
+    case _ => e
+  }
 }

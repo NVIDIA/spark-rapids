@@ -72,6 +72,11 @@
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-avro_${scala.binary.version}</artifactId>
         </dependency>
+        <dependency>
+            <!-- Used for Alluxio mounting -->
+            <groupId>org.alluxio</groupId>
+            <artifactId>alluxio-shaded-client</artifactId>
+        </dependency>
     </dependencies>
 
     <profiles>
@@ -461,6 +466,196 @@
               <artifactId>maven-antrun-plugin</artifactId>
               <executions>
                 <execution>
+                    <id>create-source-path-properties</id>
+                    <goals><goal>run</goal></goals>
+                    <phase>initialize</phase>
+                    <configuration>
+                        <exportAntProperties>true</exportAntProperties>
+                        <target>
+                            <!--
+                                Rules for adding new shim directories:
+                                ######################################
+                                1. Keep includes sorted
+                                2. Top path components such as 311until320-all should not use
+                                wildcards until a robust pattern is developed that allows
+                                refactoring for new shims without breaking build for
+                                exisiting shims
+                                3. Using wild cards to pick up scala and java with a single entry
+                                311until320-all/* is allowed
+                                4. Using wildcards for trivial excludes is allowed
+                                  - *nondb* dirs in db shims
+                                  - *until330* in 330
+                                5. Begin with a common reusable pattern, and put the unique includeds
+                                and excludes at the end
+                                6. At the same pattern-nesting level list includes before excludes
+                            -->
+
+                            <!-- upstream Spark shims -->
+                            <pathconvert property="spark311.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <patternset id="spark311+.pattern">
+                                        <include name="311+-nondb/*"/>
+                                        <include name="311until320-all/*"/>
+                                        <include name="311until320-noncdh/*"/>
+                                        <include name="311until320-nondb/*"/>
+                                        <include name="311until330-all/*"/>
+                                        <include name="311until330-nondb/*"/>
+                                        <include name="311until340-all/*"/>
+                                        <include name="311until340-nondb/*"/>
+                                        <include name="pre320-treenode/*"/>
+                                    </patternset>
+                                    <include name="311-nondb/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <pathconvert property="spark312.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <patternset refid="spark311+.pattern"/>
+                                    <include name="312-nondb/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <pathconvert property="spark313.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <patternset refid="spark311+.pattern"/>
+                                    <include name="313/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <pathconvert property="spark314.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <patternset refid="spark311+.pattern"/>
+                                    <include name="314/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <pathconvert property="spark320.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <patternset id="spark320+.pattern">
+                                        <!-- inherit from 311+ with exceptions -->
+                                        <patternset refid="spark311+.pattern"/>
+                                        <exclude name="*until320*/*"/>
+                                        <exclude name="pre320-treenode/*"/>
+
+                                        <!-- uniquely 320+ -->
+                                        <include name="320+/*"/>
+                                        <include name="320+-noncdh/*"/>
+                                        <include name="320+-nondb/*"/>
+                                        <include name="320until330-all/*"/>
+                                        <include name="320until330-noncdh/*"/>
+                                        <include name="320until330-nondb/*"/>
+                                        <include name="320until340-all/*"/>
+                                        <include name="post320-treenode/*"/>
+                                    </patternset>
+                                    <include name="320/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <pathconvert property="spark321.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <patternset id="spark321+.pattern">
+                                        <patternset refid="spark320+.pattern"/>
+                                        <include name="321+/*"/>
+                                        <include name="321until330-all/*"/>
+                                    </patternset>
+                                    <include name="321/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <pathconvert property="spark322.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <patternset refid="spark321+.pattern"/>
+                                    <include name="322/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <pathconvert property="spark330.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <patternset id="spark330+.pattern">
+                                        <!-- inherit from 321+ with exceptions -->
+                                        <patternset refid="spark321+.pattern"/>
+                                        <exclude name="*until330*/*"/>
+
+                                        <!-- uniquely 330+ -->
+                                        <include name="330+/*"/>
+                                        <include name="330+-noncdh/*"/>
+                                        <include name="330until340/*"/>
+                                    </patternset>
+                                    <include name="330/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <pathconvert property="spark331.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <patternset id="spark331+.pattern">
+                                        <patternset refid="spark330+.pattern"/>
+                                        <include name="331+/*"/>
+                                    </patternset>
+                                    <include name="331/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <pathconvert property="spark332.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <patternset refid="spark331+.pattern"/>
+                                    <include name="332/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <pathconvert property="spark340.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <patternset id="spark340+.pattern">
+                                        <!-- inherit from 331+ with exceptions -->
+                                        <patternset refid="spark331+.pattern"/>
+                                        <exclude name="*until340*/*"/>
+
+                                        <!-- uniquely 340+ -->
+                                        <include name="340+/*"/>
+                                    </patternset>
+                                    <include name="340/*"/>
+                                </dirset>
+                            </pathconvert>
+
+                            <!-- Spark vendor shims -->
+                            <pathconvert property="spark321cdh.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <!-- inherit from 321+ upstream except noncdh -->
+                                    <patternset refid="spark321+.pattern"/>
+                                    <exclude name="*noncdh*/*"/>
+
+                                    <include name="321cdh/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <pathconvert property="spark330cdh.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <!-- inherit from 330+ upstream except noncdh -->
+                                    <patternset refid="spark330+.pattern"/>
+                                    <exclude name="*noncdh*/*"/>
+
+                                    <include name="330cdh/*"/>
+                                </dirset>
+                            </pathconvert>
+
+                            <pathconvert property="spark312db.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <!-- inherit 311+ except nondb -->
+                                    <patternset refid="spark311+.pattern"/>
+                                    <exclude name="pre320-treenode/*"/>
+                                    <exclude name="*nondb*/*"/>
+
+                                    <include name="311+-db/*"/>
+                                    <include name="31xdb/*"/>
+                                    <include name="post320-treenode/*"/>
+
+                                    <include name="312db/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <pathconvert property="spark321db.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <patternset id="spark321db+.pattern">
+                                        <!-- inherit 321+ except nondb -->
+                                        <patternset refid="spark321+.pattern"/>
+                                        <exclude name="*nondb*/*"/>
+
+                                        <include name="311+-db/*"/>
+                                    </patternset>
+                                    <include name="321db/*"/>
+                                </dirset>
+                            </pathconvert>
+                        </target>
+                    </configuration>
+                </execution>
+                <execution>
                   <id>copy-notice</id>
                   <goals>
                     <goal>run</goal>
@@ -515,12 +710,22 @@
                 <artifactId>build-helper-maven-plugin</artifactId>
                 <executions>
                     <execution>
-                        <id>add-profile-src-30+</id>
-                        <phase>generate-sources</phase> <!-- add extra source code before compile -->
+                        <id>add-shim-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals><goal>add-source</goal></goals>
+                        <configuration>
+                            <sources>${spark.shim.sources}</sources>
+                        </configuration>
                     </execution>
                     <execution>
-                        <id>add-profile-src-31+</id>
-                        <phase>generate-sources</phase> <!-- add extra source code before compile -->
+                        <id>add-shim-test-sources</id>
+                        <phase>generate-test-sources</phase>
+                        <goals><goal>add-test-source</goal></goals>
+                        <configuration>
+                            <sources>
+                                <source>${spark.shim.test.sources}</source>
+                            </sources>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
