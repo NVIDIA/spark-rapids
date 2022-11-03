@@ -531,19 +531,18 @@ class GpuAvroPartitionReader(
   private val blockIterator: BufferedIterator[BlockInfo] = blockMeta.blocks.iterator.buffered
 
   override def next(): Boolean = {
-    if (batchReader.hasNext) {
+    if (batchIter.hasNext) {
       return true
     }
-    batchReader.close()
-    batchReader = EmptyColumnarBatchReader
+    batchIter = EmptyGpuColumnarBatchIterator
     if (!isDone) {
       if (!blockIterator.hasNext) {
         isDone = true
         metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
       } else {
-        batchReader = readBatch() match {
-          case Some(batch) => SingleColumnarBatchReader(batch)
-          case _ => EmptyColumnarBatchReader
+        batchIter = readBatch() match {
+          case Some(batch) => new SingleGpuColumnarBatchIterator(batch)
+          case _ => EmptyGpuColumnarBatchIterator
         }
       }
     }
@@ -554,7 +553,7 @@ class GpuAvroPartitionReader(
     // advertises `hasNext` as false when we return false here. No downstream tasks should
     // try to call next after `hasNext` returns false, and any task that produces some kind of
     // data when `hasNext` is false is responsible to get the semaphore themselves.
-    batchReader.hasNext
+    batchIter.hasNext
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
@@ -628,7 +627,7 @@ class GpuMultiFileCloudAvroPartitionReader(
     execMetrics, ignoreCorruptFiles) with MultiFileReaderFunctions with GpuAvroReaderBase {
 
   override def readBatches(fileBufsAndMeta: HostMemoryBuffersWithMetaDataBase):
-      ColumnarBatchReader = fileBufsAndMeta match {
+    Iterator[ColumnarBatch] = fileBufsAndMeta match {
     case buffer: AvroHostBuffersWithMeta =>
       val bufsAndSizes = buffer.memBuffersAndSizes
       val (dataBuf, dataSize) = bufsAndSizes.head
@@ -659,9 +658,9 @@ class GpuMultiFileCloudAvroPartitionReader(
         }
       }
       if (optBatch.isDefined) {
-        SingleColumnarBatchReader(optBatch.get)
+        new SingleGpuColumnarBatchIterator(optBatch.get)
       } else {
-        EmptyColumnarBatchReader
+        EmptyGpuColumnarBatchIterator
       }
     case t =>
       throw new RuntimeException(s"Unknown avro buffer type: ${t.getClass.getSimpleName}")
@@ -922,11 +921,12 @@ class GpuMultiFileAvroPartitionReader(
   }
 
   override def readBufferToTablesAndClose(dataBuffer: HostMemoryBuffer, dataSize: Long,
-      clippedSchema: SchemaBase,  readSchema: StructType, extraInfo: ExtraInfo): TableReader = {
+      clippedSchema: SchemaBase,  readSchema: StructType,
+      extraInfo: ExtraInfo): GpuDataProducer[Table] = {
     val tableReader = withResource(dataBuffer) { _ =>
-      new SingleTableReader(sendToGpuUnchecked(dataBuffer, dataSize, splits))
+      new SingleGpuDataProducer(sendToGpuUnchecked(dataBuffer, dataSize, splits))
     }
-    WrappedTableReader(tableReader, table => {
+    GpuDataProducer.wrap(tableReader) { table =>
       maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
       if (readDataSchema.length < table.getNumberOfColumns) {
         throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
@@ -934,9 +934,8 @@ class GpuMultiFileAvroPartitionReader(
       }
       metrics(NUM_OUTPUT_BATCHES) += 1
       table
-    })
+    }
   }
-
 
   override final def getFileFormatShortName: String = "AVRO"
 

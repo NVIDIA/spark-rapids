@@ -26,6 +26,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.sources.Filter
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuMultiFileReaderSuite extends FunSuite with Arm {
   test("avoid infinite loop when host buffers empty") {
@@ -57,8 +58,8 @@ class GpuMultiFileReaderSuite extends FunSuite with Arm {
         () => null
       }
 
-      override def readBatches(h: HostMemoryBuffersWithMetaDataBase): ColumnarBatchReader =
-        EmptyColumnarBatchReader
+      override def readBatches(h: HostMemoryBuffersWithMetaDataBase): Iterator[ColumnarBatch] =
+        EmptyGpuColumnarBatchIterator
 
       override def getFileFormatShortName: String = ""
     }

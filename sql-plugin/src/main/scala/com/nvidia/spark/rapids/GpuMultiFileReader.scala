@@ -44,7 +44,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.InputFileUtils
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.{DataType, StructType}
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector => SparkVector}
 import org.apache.spark.util.SerializableConfiguration
 
@@ -268,108 +268,6 @@ abstract class MultiFilePartitionReaderFactoryBase(
       canUseMultiThreadReader, filePaths, allCloudSchemes, alluxioPathReplacementMap.isDefined)
 }
 
-abstract class ColumnarBatchReader extends Iterator[ColumnarBatch] with AutoCloseable
-object EmptyColumnarBatchReader extends ColumnarBatchReader {
-  override def hasNext: Boolean = false
-
-  override def next(): ColumnarBatch = {
-    throw new NoSuchElementException()
-  }
-
-  override def close(): Unit = {}
-}
-
-case class SingleColumnarBatchReader(batch: ColumnarBatch) extends ColumnarBatchReader {
-  private var isRead: Boolean = false
-
-  override def hasNext: Boolean = !isRead
-
-  override def next(): ColumnarBatch = {
-    isRead = true
-    batch
-  }
-
-  override def close(): Unit = {
-    if (!isRead) {
-      batch.close()
-    }
-  }
-}
-
-/**
- * The caching batch reader will fully read all of the tables output by the TableReader. If there
- * are more than one Table it will make them all spillable as it reads them. Once all of the tables
- * are read the TableReader is closed. The reason for this is to allow the TableReader to hold onto
- * some GPU resources without the need to make those resources spillable, but lets the rest of Spark
- * still process the data. In the common case we should have split up the input data properly so
- * only a single table is output by the TableReader. This allows us to bypass making it spillable.
- */
-class CachingBatchReader(reader: TableReader,
-    dataTypes: Array[DataType],
-    spillCallback: SpillCallback) extends ColumnarBatchReader with Arm {
-
-  private[this] var notSpillableBatch: Option[ColumnarBatch] = None
-  private[this] val pending: mutable.Queue[SpillableColumnarBatch] = mutable.Queue.empty
-
-  private[this] def makeSpillableAndClose(table: Table): SpillableColumnarBatch = {
-    withResource(table) { _ =>
-      SpillableColumnarBatch(GpuColumnVector.from(table, dataTypes),
-        SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-        spillCallback)
-    }
-  }
-
-  { // Constructor...
-    withResource(reader) { _ =>
-      if (reader.hasNext) {
-        // Special case for the first one.
-        closeOnExcept(reader.next()) { firstTable =>
-          if (!reader.hasNext) {
-            notSpillableBatch = Some(GpuColumnVector.from(firstTable, dataTypes))
-            firstTable.close()
-          } else {
-            pending += makeSpillableAndClose(firstTable)
-            reader.foreach { t =>
-              pending += makeSpillableAndClose(t)
-            }
-          }
-        }
-      }
-    }
-  }
-
-  override def hasNext: Boolean = notSpillableBatch.nonEmpty || pending.nonEmpty
-
-  override def next(): ColumnarBatch = {
-    if (notSpillableBatch.isDefined) {
-      val ret = notSpillableBatch.get
-      notSpillableBatch = None
-      ret
-    } else {
-      if (pending.isEmpty) {
-        throw new NoSuchElementException()
-      }
-      withResource(pending.dequeue()) { spillable =>
-        spillable.getColumnarBatch()
-      }
-    }
-  }
-
-  override def close(): Unit = {
-    notSpillableBatch.foreach(_.close())
-    pending.foreach(_.close())
-  }
-}
-
-case class WrappedColumnarBatchReader(reader: ColumnarBatchReader,
-    modifyAndClose: ColumnarBatch => ColumnarBatch) extends ColumnarBatchReader {
-  override def hasNext: Boolean = reader.hasNext
-
-  override def next(): ColumnarBatch = modifyAndClose(reader.next())
-
-  override def close(): Unit = reader.close()
-}
-
 /**
  * The base class for PartitionReader
  *
@@ -383,16 +281,15 @@ abstract class FilePartitionReaderBase(conf: Configuration, execMetrics: Map[Str
 
   protected var isDone: Boolean = false
   protected var maxDeviceMemory: Long = 0
-  protected var batchReader: ColumnarBatchReader = EmptyColumnarBatchReader
+  protected var batchIter: Iterator[ColumnarBatch] = EmptyGpuColumnarBatchIterator
   protected lazy val spillCallback: SpillCallback = makeSpillCallback(execMetrics)
 
   override def get(): ColumnarBatch = {
-    batchReader.next()
+    batchIter.next()
   }
 
   override def close(): Unit = {
-    batchReader.close()
-    batchReader = EmptyColumnarBatchReader
+    batchIter = EmptyGpuColumnarBatchIterator
     isDone = true
   }
 
@@ -523,10 +420,9 @@ abstract class MultiFileCloudPartitionReaderBase(
   /**
    * Decode HostMemoryBuffers in GPU
    * @param fileBufsAndMeta the file HostMemoryBuffer read from a PartitionedFile
-   * @return Option[ColumnarBatch] which has been decoded by GPU
+   * @return an iterator of batches that were decoded
    */
-  def readBatches(
-    fileBufsAndMeta: HostMemoryBuffersWithMetaDataBase): ColumnarBatchReader
+  def readBatches(fileBufsAndMeta: HostMemoryBuffersWithMetaDataBase): Iterator[ColumnarBatch]
 
   /**
    * File format short name used for logging and other things to uniquely identity
@@ -541,14 +437,13 @@ abstract class MultiFileCloudPartitionReaderBase(
       if (!isInitted) {
         initAndStartReaders()
       }
-      if (batchReader.hasNext) {
+      if (batchIter.hasNext) {
         // leave early we have something more to be read
         return true
       }
 
-      batchReader.close()
       // Temporary until we get more to read
-      batchReader = EmptyColumnarBatchReader
+      batchIter = EmptyGpuColumnarBatchIterator
       // if we have batch left from the last file read return it
       if (currentFileHostBuffers.isDefined) {
         if (getSizeOfHostBuffers(currentFileHostBuffers.get) == 0) {
@@ -556,12 +451,12 @@ abstract class MultiFileCloudPartitionReaderBase(
           next()
         } else {
           val file = currentFileHostBuffers.get.partitionedFile.filePath
-          batchReader = try {
+          batchIter = try {
             readBatches(currentFileHostBuffers.get)
           } catch {
             case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
               logWarning(s"Skipped the corrupted file: $file", e)
-              EmptyColumnarBatchReader
+              EmptyGpuColumnarBatchIterator
           }
         }
       } else {
@@ -598,12 +493,12 @@ abstract class MultiFileCloudPartitionReaderBase(
             next()
           } else {
             val file = fileBufsAndMeta.partitionedFile.filePath
-            batchReader = try {
+            batchIter = try {
               readBatches(fileBufsAndMeta)
             } catch {
               case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
                 logWarning(s"Skipped the corrupted file: $file", e)
-                EmptyColumnarBatchReader
+                EmptyGpuColumnarBatchIterator
             }
 
             // the data is copied to GPU so submit another task if we were limited
@@ -618,7 +513,7 @@ abstract class MultiFileCloudPartitionReaderBase(
 
     // this shouldn't happen but if somehow the batch is None and we still
     // have work left skip to the next file
-    if (batchReader.isEmpty && filesToRead > 0 && !isDone) {
+    if (batchIter.isEmpty && filesToRead > 0 && !isDone) {
       next()
     }
 
@@ -628,7 +523,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     // advertises `hasNext` as false when we return false here. No downstream tasks should
     // try to call next after `hasNext` returns false, and any task that produces some kind of
     // data when `hasNext` is false is responsible to get the semaphore themselves.
-    batchReader.hasNext
+    batchIter.hasNext
   }
 
   private def getSizeOfHostBuffers(fileInfo: HostMemoryBuffersWithMetaDataBase): Long = {
@@ -659,8 +554,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     // in cases close got called early for like limit() calls
     isDone = true
     closeCurrentFileHostBuffers()
-    batchReader.close()
-    batchReader = EmptyColumnarBatchReader
+    batchIter = EmptyGpuColumnarBatchIterator
     tasks.asScala.foreach { task =>
       if (task.isDone()) {
         task.get.memBuffersAndSizes.foreach { case (buf, _) =>
@@ -726,41 +620,6 @@ trait SingleDataBlockInfo {
 class BatchContext(
   val origChunkedBlocks: mutable.LinkedHashMap[Path, ArrayBuffer[DataBlockBase]],
   val schema: SchemaBase) {}
-
-abstract class TableReader extends Iterator[Table] with AutoCloseable
-object EmptyTableReader extends TableReader {
-  override def hasNext: Boolean = false
-
-  override def next(): Table = throw new NoSuchElementException()
-
-  override def close(): Unit = {}
-}
-
-class SingleTableReader(t: Table) extends TableReader {
-  private var isRead = false
-
-  override def hasNext: Boolean = !isRead
-
-  override def next(): Table = {
-    isRead = true
-    t
-  }
-
-  override def close(): Unit = {
-    if (!isRead) {
-      t.close()
-    }
-  }
-}
-
-case class WrappedTableReader(reader: TableReader,
-    modifyAndClose: Table => Table) extends TableReader {
-  override def hasNext: Boolean = reader.hasNext
-
-  override def next(): Table = modifyAndClose(reader.next())
-
-  override def close(): Unit = reader.close()
-}
 
 /**
  * The abstracted multi-file coalescing reading class, which tries to coalesce small
@@ -898,8 +757,11 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * @param extraInfo the extra information for specific file format
    * @return Table
    */
-  def readBufferToTablesAndClose(dataBuffer: HostMemoryBuffer, dataSize: Long,
-      clippedSchema: SchemaBase, readSchema: StructType, extraInfo: ExtraInfo): TableReader
+  def readBufferToTablesAndClose(dataBuffer: HostMemoryBuffer,
+      dataSize: Long,
+      clippedSchema: SchemaBase,
+      readSchema: StructType,
+      extraInfo: ExtraInfo): GpuDataProducer[Table]
 
   /**
    * Write a header for a specific file format. If there is no header for the file format,
@@ -964,17 +826,16 @@ abstract class MultiFileCoalescingPartitionReaderBase(
   }
 
   override def next(): Boolean = {
-    if (batchReader.hasNext) {
+    if (batchIter.hasNext) {
       return true
     }
-    batchReader.close()
-    batchReader = EmptyColumnarBatchReader
+    batchIter = EmptyGpuColumnarBatchIterator
     if (!isDone) {
       if (!blockIterator.hasNext) {
         isDone = true
         metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
       } else {
-        batchReader = readBatch()
+        batchIter = readBatch()
       }
     }
 
@@ -985,16 +846,16 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     // advertises `hasNext` as false when we return false here. No downstream tasks should
     // try to call next after `hasNext` returns false, and any task that produces some kind of
     // data when `hasNext` is false is responsible to get the semaphore themselves.
-    batchReader.hasNext
+    batchIter.hasNext
   }
 
-  private def readBatch(): ColumnarBatchReader = {
+  private def readBatch(): Iterator[ColumnarBatch] = {
     withResource(new NvtxRange(s"$getFileFormatShortName readBatch", NvtxColor.GREEN)) { _ =>
       val currentChunkMeta = populateCurrentBlockChunk()
-      val batchReader = if (currentChunkMeta.clippedSchema.isEmpty) {
+      val batchIter = if (currentChunkMeta.clippedSchema.isEmpty) {
         // not reading any data, so return a degenerate ColumnarBatch with the row count
         if (currentChunkMeta.numTotalRows == 0) {
-          EmptyColumnarBatchReader
+          EmptyGpuColumnarBatchIterator
         } else {
           val rows = currentChunkMeta.numTotalRows.toInt
           // Someone is going to process this data, even if it is just a row count
@@ -1002,24 +863,22 @@ abstract class MultiFileCoalescingPartitionReaderBase(
           val nullColumns = currentChunkMeta.readSchema.safeMap(f =>
             GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
           val emptyBatch = new ColumnarBatch(nullColumns.toArray, rows)
-          SingleColumnarBatchReader(emptyBatch)
+          new SingleGpuColumnarBatchIterator(emptyBatch)
         }
       } else {
         val colTypes = currentChunkMeta.readSchema.fields.map(f => f.dataType)
         val tableReader = readToTable(currentChunkMeta.currentChunk, currentChunkMeta.clippedSchema,
           currentChunkMeta.readSchema, currentChunkMeta.extraInfo)
-        new CachingBatchReader(tableReader, colTypes, spillCallback)
+        new CachingGpuBatchIterator(tableReader, colTypes, spillCallback)
       }
-      WrappedColumnarBatchReader(batchReader,
-        cb => {
-          // we have to add partition values here for this batch, we already verified that
-          // its not different for all the blocks in this batch
-          withResource(addAllPartitionValues(cb, currentChunkMeta.allPartValues,
-            currentChunkMeta.rowsPerPartition, partitionSchema)) { withParts =>
-            finalizeOutputBatch(withParts, currentChunkMeta.extraInfo)
-          }
+      batchIter.map { cb =>
+        // we have to add partition values here for this batch, we already verified that
+        // its not different for all the blocks in this batch
+        withResource(addAllPartitionValues(cb, currentChunkMeta.allPartValues,
+          currentChunkMeta.rowsPerPartition, partitionSchema)) { withParts =>
+          finalizeOutputBatch(withParts, currentChunkMeta.extraInfo)
         }
-      )
+      }
     }
   }
 
@@ -1027,7 +886,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       currentChunkedBlocks: Seq[(Path, DataBlockBase)],
       clippedSchema: SchemaBase,
       readDataSchema: StructType,
-      extraInfo: ExtraInfo): TableReader = {
+      extraInfo: ExtraInfo): GpuDataProducer[Table] = {
     if (currentChunkedBlocks.isEmpty) {
       return EmptyTableReader
     }

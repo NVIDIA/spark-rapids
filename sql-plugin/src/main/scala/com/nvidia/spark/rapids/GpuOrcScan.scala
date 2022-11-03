@@ -429,7 +429,6 @@ object GpuOrcScan extends Arm {
     Math.multiplyExact(a, b)
   }
 
-
   /**
    * Convert the integer vector into timestamp(microseconds) vector.
    * @param col The integer columnar vector.
@@ -1040,15 +1039,14 @@ class GpuOrcPartitionReader(
   with OrcPartitionReaderBase {
 
   override def next(): Boolean = {
-    if (batchReader.hasNext) {
+    if (batchIter.hasNext) {
       return true
     }
-    batchReader.close()
-    batchReader = EmptyColumnarBatchReader
+    batchIter = EmptyGpuColumnarBatchIterator
     if (ctx.blockIterator.hasNext) {
-      batchReader = readBatch() match {
-        case Some(batch) => SingleColumnarBatchReader(batch)
-        case _ => EmptyColumnarBatchReader
+      batchIter = readBatch() match {
+        case Some(batch) => new SingleGpuColumnarBatchIterator(batch)
+        case _ => EmptyGpuColumnarBatchIterator
       }
     } else {
       metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
@@ -1060,7 +1058,7 @@ class GpuOrcPartitionReader(
     // advertises `hasNext` as false when we return false here. No downstream tasks should
     // try to call next after `hasNext` returns false, and any task that produces some kind of
     // data when `hasNext` is false is responsible to get the semaphore themselves.
-    batchReader.hasNext
+    batchIter.hasNext
   }
 
   override def close(): Unit = {
@@ -1732,10 +1730,10 @@ class MultiFileCloudOrcPartitionReader(
    * Decode HostMemoryBuffers in GPU
    *
    * @param fileBufsAndMeta the file HostMemoryBuffer read from a PartitionedFile
-   * @return Option[ColumnarBatch] which has been decoded by GPU
+   * @return the decoded batches
    */
   override def readBatches(fileBufsAndMeta: HostMemoryBuffersWithMetaDataBase):
-      ColumnarBatchReader = {
+      Iterator[ColumnarBatch] = {
     fileBufsAndMeta match {
       case meta: HostMemoryEmptyMetaData =>
         // Not reading any data, but add in partition data if needed
@@ -1749,7 +1747,7 @@ class MultiFileCloudOrcPartitionReader(
             GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
           new ColumnarBatch(nullColumns, rows)
         }
-        SingleColumnarBatchReader(addPartitionValues(batch,
+        new SingleGpuColumnarBatchIterator(addPartitionValues(batch,
           meta.partitionedFile.partitionValues, partitionSchema))
 
       case buffer: HostMemoryBuffersWithMetaData =>
@@ -1760,9 +1758,9 @@ class MultiFileCloudOrcPartitionReader(
           case Some(batch) =>
             val tmp = addPartitionValues(batch,
             buffer.partitionedFile.partitionValues, partitionSchema)
-            SingleColumnarBatchReader(tmp)
+            new SingleGpuColumnarBatchIterator(tmp)
           case _ =>
-            EmptyColumnarBatchReader
+            EmptyGpuColumnarBatchIterator
         }
 
         if (memBuffersAndSize.length > 1) {
@@ -2142,10 +2140,10 @@ class MultiFileOrcPartitionReader(
       dataSize: Long,
       clippedSchema: SchemaBase,
       readSchema: StructType,
-      extraInfo: ExtraInfo): TableReader = withResource(dataBuffer) { _ =>
-    val tableReader = new SingleTableReader(decodeToTable(dataBuffer, dataSize, clippedSchema,
+      extraInfo: ExtraInfo): GpuDataProducer[Table] = withResource(dataBuffer) { _ =>
+    val tableReader = new SingleGpuDataProducer(decodeToTable(dataBuffer, dataSize, clippedSchema,
       extraInfo.requestedMapping, isCaseSensitive, files))
-    WrappedTableReader(tableReader, table => {
+    GpuDataProducer.wrap(tableReader) { table =>
       maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
       if (readDataSchema.length < table.getNumberOfColumns) {
         throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
@@ -2153,7 +2151,7 @@ class MultiFileOrcPartitionReader(
       }
       metrics(NUM_OUTPUT_BATCHES) += 1
       table
-    })
+    }
   }
 
   /**
