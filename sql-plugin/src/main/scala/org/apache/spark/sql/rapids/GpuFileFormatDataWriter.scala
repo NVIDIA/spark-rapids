@@ -517,24 +517,27 @@ class GpuDynamicPartitionDataSingleWriter(
         if (savedStatus.isDefined && savedStatus.get.tableCaches.nonEmpty) {
           // convert caches seq to tables and close caches seq
           val subTables = convertSpillBatchesToTables(savedStatus.get.tableCaches)
-          // clear the caches
-          savedStatus.get.tableCaches.clear()
           // concat the caches and this `table`
           val concat = withResource(subTables) { _ =>
+            // clear the caches
+            savedStatus.get.tableCaches.clear()
             subTables += table
-            GpuColumnVector.from(Table.concatenate(subTables: _*), outDataTypes)
+            Table.concatenate(subTables: _*)
           }
           // write concat table
           if (!needSplitBatch(
             maxRecordsPerFile,
             currentWriterStatus.recordsInFile,
-            concat.numRows))
+            concat.getRowCount()))
           {
-            statsTrackers.foreach(_.newBatch(concat))
-            currentWriterStatus.recordsInFile += concat.numRows()
-            currentWriterStatus.outputWriter.write(concat, statsTrackers)
+            val batch  = GpuColumnVector.from(concat, outDataTypes)
+            closeOnExcept(batch) { _ =>
+              statsTrackers.foreach(_.newBatch(batch))
+              currentWriterStatus.recordsInFile += batch.numRows()
+            }
+            currentWriterStatus.outputWriter.write(batch, statsTrackers)
           } else {
-            writeBatch(concat, maxRecordsPerFile, partPath)
+            writeTable(concat, outDataTypes,  maxRecordsPerFile, partPath)
           }
         } else {
           if (!needSplitBatch(
@@ -543,8 +546,10 @@ class GpuDynamicPartitionDataSingleWriter(
             table.getRowCount()))
           {
             val batch = GpuColumnVector.from(table, outDataTypes)
-            statsTrackers.foreach(_.newBatch(batch))
-            currentWriterStatus.recordsInFile += batch.numRows()
+            closeOnExcept(batch) { _ =>
+              statsTrackers.foreach(_.newBatch(batch))
+              currentWriterStatus.recordsInFile += batch.numRows()
+            }
             currentWriterStatus.outputWriter.write(batch, statsTrackers)
           } else {
             writeTable(table, outDataTypes, maxRecordsPerFile, partPath)
@@ -577,23 +582,6 @@ class GpuDynamicPartitionDataSingleWriter(
   }
 
   /**
-   * Write a Batch.
-   *
-   * Note: The `batch` will be closed in this function.
-   *
-   * @param batch the batch to be written
-   * @param maxRecordsPerFile the max number of rows per file
-   * @param partPath the partition directory
-   */
-  private def writeBatch(batch: ColumnarBatch, maxRecordsPerFile: Long, partPath: String) = {
-    val (table, dataTypes) = withResource(batch) { _ =>
-      (GpuColumnVector.from(batch), GpuColumnVector.extractTypes(batch))
-    }
-    writeTable(table, dataTypes, maxRecordsPerFile, partPath)
-  }
-
-
-  /**
    * Write a Table.
    *
    * Note: The `table` will be closed in this function.
@@ -612,7 +600,9 @@ class GpuDynamicPartitionDataSingleWriter(
     )
     var needNewWriter = currentWriterStatus.recordsInFile >= maxRecordsPerFile
 
-    val tabs = withResource(table) { _ => table.contiguousSplit(splitIndexes: _*)}
+    val tabs = withResource(table) { _ =>
+      table.contiguousSplit(splitIndexes: _*)
+    }
     withResource(tabs) { _ =>
       tabs.foreach(b => {
         if (needNewWriter) {
@@ -631,14 +621,13 @@ class GpuDynamicPartitionDataSingleWriter(
             newWriter(partPath, None, currentWriterStatus.fileCounter)
           currentWriterStatus.recordsInFile = 0
         }
-        withResource(b.getTable()) {tab =>
-          val bc = GpuColumnVector.from(tab, outDataTypes)
+        val bc = GpuColumnVector.from(b.getTable(), outDataTypes)
+        closeOnExcept(bc) { _ =>
           statsTrackers.foreach(_.newBatch(bc))
-
           currentWriterStatus.recordsInFile += b.getRowCount()
-          currentWriterStatus.outputWriter.write(bc, statsTrackers)
-          needNewWriter = true
         }
+        currentWriterStatus.outputWriter.write(bc, statsTrackers)
+        needNewWriter = true
       })
     }
   }
