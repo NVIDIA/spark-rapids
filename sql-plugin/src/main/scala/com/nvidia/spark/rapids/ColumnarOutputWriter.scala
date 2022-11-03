@@ -88,10 +88,11 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
    * Persists a columnar batch. Invoked on the executor side. When writing to dynamically
    * partitioned tables, dynamic partition columns are not included in columns to be written.
    *
-   * NOTE: This method will close the `batch`. We do this because we want
-   * the batch gets closed after the GPU has finished encoding the data but before
-   * it is written to the distributed filesystem, so we can release the GPU semaphore
-   * and allow other tasks to start/continue processing.
+   * NOTE: This method will close `batch`. We do this because we want
+   * to free GPU memory after the GPU has finished encoding the data but before
+   * it is written to the distributed filesystem. The GPU semaphore is released
+   * during the distributed filesystem transfer to allow other tasks to start/continue
+   * GPU processing.
    */
   def write(batch: ColumnarBatch, statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
     var needToCloseBatch = true
