@@ -54,7 +54,8 @@
         </noSnapshot.buildvers>
         <snapshot.buildvers>
             314,
-            332
+            332,
+            340
         </snapshot.buildvers>
         <databricks.buildvers>
             312db,
@@ -169,7 +170,7 @@
             </properties>
         </profile>
         <profile>
-            <id>snapshotsOnly</id>
+            <id>snapshotOnly</id>
             <properties>
                 <included_buildvers>
                     ${snapshot.buildvers}

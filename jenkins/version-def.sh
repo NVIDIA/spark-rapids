@@ -62,8 +62,8 @@ SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 # PnoSnapshots: noSnapshots only
 set_env_var_SPARK_SHIM_VERSIONS_ARR -PnoSnapshots
 SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
-# PsnapshotsOnly : snapshots only
-set_env_var_SPARK_SHIM_VERSIONS_ARR -PsnapshotsOnly
+# PsnapshotOnly : snapshots only
+set_env_var_SPARK_SHIM_VERSIONS_ARR -PsnapshotOnly
 SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 
 # PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.

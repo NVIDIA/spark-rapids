@@ -60,7 +60,7 @@ jobs:
         run: |
           set -x
           . jenkins/version-def.sh
-          svArrBody=$(printf ",{\"spark-version\":\"%s\"}" "${SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY @]}")
+          svArrBody=$(printf ",{\"spark-version\":\"%s\"}" "${SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]}")
           svArrBody=${svArrBody:1}
           svJsonStr=$(printf {\"include\":[%s]} $svArrBody)
           echo "snapshotVersions=$svJsonStr" >> $GITHUB_OUTPUT
