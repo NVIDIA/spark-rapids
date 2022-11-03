@@ -128,10 +128,11 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
   /**
    * Writes the columnar batch and returns the time in ns taken to write
    *
-   * NOTE: This method will close the `batch`. We do this because we want
-   * the batch gets closed after the GPU has finished encoding the data but before
-   * it is written to the distributed filesystem, so we can release the GPU semaphore
-   * and allow other tasks to start/continue processing.
+   * NOTE: This method will close `batch`. We do this because we want
+   * to free GPU memory after the GPU has finished encoding the data but before
+   * it is written to the distributed filesystem. The GPU semaphore is released
+   * during the distributed filesystem transfer to allow other tasks to start/continue
+   * GPU processing.
    *
    * @param batch Columnar batch that needs to be written
    * @return time in ns taken to write the batch
