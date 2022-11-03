@@ -653,6 +653,7 @@
         <maven.clean.plugin.version>3.1.0</maven.clean.plugin.version>
         <maven.scalastyle.skip>false</maven.scalastyle.skip>
         <dist.jar.compress>true</dist.jar.compress>
+        <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
     </properties>
 
     <dependencyManagement>
