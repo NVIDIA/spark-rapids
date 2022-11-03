@@ -21,6 +21,8 @@ import com.nvidia.spark.rapids.ExprRule
 import org.apache.spark.sql.catalyst.expressions.Expression
 
 class DecimalArithmeticOverrides {
-  def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
+  def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+    // We don't override PromotePrecision or CheckOverflow for Spark 3.4
     Map.empty[Class[_ <: Expression], ExprRule[_ <: Expression]]
+  }
 }

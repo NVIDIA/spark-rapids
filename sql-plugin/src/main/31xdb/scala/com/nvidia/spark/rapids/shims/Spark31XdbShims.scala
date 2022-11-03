@@ -145,14 +145,14 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[Cast](
-      "Convert a column of one type of data into another type",
-      new CastChecks(),
-      // 312db supports Ansi mode when casting string to date, this means that an exception
-      // will be thrown when casting an invalid value to date in Ansi mode.
-      // Set `stringToAnsiDate` = true
-      (cast, conf, p, r) => new CastExprMeta[Cast](cast,
-        SparkSession.active.sessionState.conf.ansiEnabled, conf, p, r,
-        doFloatToIntCheck = true, stringToAnsiDate = true)),
+        "Convert a column of one type of data into another type",
+        new CastChecks(),
+        // 312db supports Ansi mode when casting string to date, this means that an exception
+        // will be thrown when casting an invalid value to date in Ansi mode.
+        // Set `stringToAnsiDate` = true
+        (cast, conf, p, r) => new CastExprMeta[Cast](cast,
+          SparkSession.active.sessionState.conf.ansiEnabled, conf, p, r,
+          doFloatToIntCheck = true, stringToAnsiDate = true)),
     GpuOverrides.expr[Average](
       "Average aggregate operator",
       ExprChecks.fullAgg(

@@ -247,11 +247,11 @@ abstract class Spark31XShims extends Spark31Xuntil33XShims with Logging {
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[Cast](
-      "Convert a column of one type of data into another type",
-      new CastChecks(),
-      (cast, conf, p, r) => new CastExprMeta[Cast](cast,
-        SparkSession.active.sessionState.conf.ansiEnabled, conf, p, r,
-        doFloatToIntCheck = true, stringToAnsiDate = false)),
+        "Convert a column of one type of data into another type",
+        new CastChecks(),
+        (cast, conf, p, r) => new CastExprMeta[Cast](cast,
+          SparkSession.active.sessionState.conf.ansiEnabled, conf, p, r,
+          doFloatToIntCheck = true, stringToAnsiDate = false)),
     GpuOverrides.expr[Average](
       "Average aggregate operator",
       ExprChecks.fullAgg(
