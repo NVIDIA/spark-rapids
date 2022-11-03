@@ -259,6 +259,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
         opName = "concat test",
         useArrowCopyOpt = false)
     coalesceIter.foreach { batch =>
+      // The main point of the test is to verify there's no double-close of a host batch.
       withResource(batch) { _ =>
         assertResult(1)(batch.numCols())
         assertResult(2)(batch.numRows())
