@@ -568,6 +568,8 @@ def test_regexp_replace_digit():
             'regexp_replace(a, "\\\\D", "x")',
             'regexp_replace(a, "[0-9]", "x")',
             'regexp_replace(a, "[^0-9]", "x")',
+            'regexp_replace(a, "[\\\\d]", "x")',
+            'regexp_replace(a, "[a\\\\d]{0,2}", "x")',
         ),
         conf=_regexp_conf)
 
