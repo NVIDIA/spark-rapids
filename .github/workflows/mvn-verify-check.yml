@@ -30,6 +30,7 @@ jobs:
       sparkHeadVersion: ${{ steps.noSnapshotVersionsStep.outputs.headVersion }}
       sparkTailVersions: ${{ steps.noSnapshotVersionsStep.outputs.tailVersions }}
       sparkJDK11Versions: ${{ steps.noSnapshotVersionsStep.outputs.jdk11Versions }}
+      sparkSnapshotOnlyVersions: ${{ steps.snapshotVersionsStep.outputs.snapshotVersions }}
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
@@ -53,6 +54,16 @@ jobs:
           jdkVersionArrBody=${jdkVersionArrBody:1}
           jdkVersionJsonStr=$(printf {\"include\":[%s]} $jdkVersionArrBody)
           echo "jdk11Versions=$jdkVersionJsonStr" >> $GITHUB_OUTPUT
+
+      - name: Snapshot versions only
+        id: snapshotVersionsStep
+        run: |
+          set -x
+          . jenkins/version-def.sh
+          svArrBody=$(printf ",{\"spark-version\":\"%s\"}" "${SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY @]}")
+          svArrBody=${svArrBody:1}
+          svJsonStr=$(printf {\"include\":[%s]} $svArrBody)
+          echo "snapshotVersions=$svJsonStr" >> $GITHUB_OUTPUT
 
   package-aggregator:
     needs: get-noSnapshot-versions-from-dist
@@ -78,6 +89,32 @@ jobs:
           -Dmaven.javadoc.skip
           -Dmaven.scalastyle.skip=true
           -Drat.skip=true
+          
+  package-snapshotsOnly-aggregator:
+    needs: get-noSnapshot-versions-from-dist
+    strategy:
+      matrix: ${{ fromJSON(needs.get-noSnapshot-versions-from-dist.outputs.sparkSnapshotOnlyVersions) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
+
+      - name: Setup Java and Maven Env
+        continue-on-error: true
+        uses: actions/setup-java@v3
+        with:
+          distribution: adopt
+          java-version: 8
+
+      - name: package aggregator check for snapshot builds
+        run: >
+          mvn -Dmaven.wagon.http.retryHandler.count=3 -B package -pl aggregator -am
+          -P 'individual,pre-merge'
+          -Dbuildver=${{ matrix.spark-version }}
+          -DskipTests
+          -Dskip
+          -Dmaven.javadoc.skip
+          -Dmaven.scalastyle.skip=true
+          -Drat.skip=true        
 
   verify-all-modules-with-headSparkVersion:
     needs: get-noSnapshot-versions-from-dist
