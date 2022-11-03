@@ -287,4 +287,4 @@ Search 'pandas' for a quick navigation jump.
 
 ### mapInArrow
 [mapInArrow](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.DataFrame.mapInArrow.html#pyspark.sql.DataFrame.mapInArrow) is a PySpark API introduced in Spark 3.3.0.
-The RAPIDS Accelerator supports acceleration for `mapInArrow` in the same way with the Pandas UDF.
+The RAPIDS Accelerator supports acceleration for `mapInArrow` in the same way as Pandas UDF.
