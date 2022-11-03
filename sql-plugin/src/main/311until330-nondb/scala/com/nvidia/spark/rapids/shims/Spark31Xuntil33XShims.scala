@@ -22,7 +22,7 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.v2._
 
-trait Spark31Xuntil33XShims extends SparkBaseShim {
+trait Spark31Xuntil33XShims extends SparkShims {
 
   def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = {
     GpuOverrides.neverReplaceExec[ShowCurrentNamespaceExec]("Namespace metadata operation")

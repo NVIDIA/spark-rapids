@@ -245,7 +245,7 @@ abstract class Spark31XShims extends Spark31Xuntil33XShims with Logging {
         parent = p, rule = r, doFloatToIntCheck = true, stringToAnsiDate = false))
   }
 
-  def get31xExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[Cast](
       "Convert a column of one type of data into another type",
       new CastChecks(),
@@ -281,10 +281,6 @@ abstract class Spark31XShims extends Spark31Xuntil33XShims with Logging {
         override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, false)
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
-
-  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    get31xExprs ++ super.getExprs
-  }
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(

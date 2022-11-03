@@ -16,19 +16,11 @@
 
 package com.nvidia.spark.rapids.shims
 
-import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.{DecimalUtil, ExprChecks, ExprMeta, ExprRule, GpuCheckOverflow, GpuExpression, SparkShims, TypeSig}
-import com.nvidia.spark.rapids.GpuOverrides.expr
+import com.nvidia.spark.rapids.ExprRule
 
-import org.apache.spark.sql.catalyst.expressions.{CheckOverflow, Divide, Expression, Multiply}
-import org.apache.spark.sql.rapids.{GpuDecimalDivide, GpuDecimalMultiply}
+import org.apache.spark.sql.catalyst.expressions.Expression
 
-/**
- * Base class of every Shim
- */
-trait SparkBaseShim extends SparkShims {
-  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    // return an empty Map
+class DecimalArithmeticOverrides {
+  def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
     Map.empty[Class[_ <: Expression], ExprRule[_ <: Expression]]
-  }
 }
