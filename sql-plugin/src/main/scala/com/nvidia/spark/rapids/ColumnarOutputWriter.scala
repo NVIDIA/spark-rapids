@@ -89,7 +89,7 @@ abstract class ColumnarOutputWriter(context: TaskAttemptContext,
    * partitioned tables, dynamic partition columns are not included in columns to be written.
    * NOTE: It is the writer's responsibility to close the batch.
    */
-  def write(batch: ColumnarBatch, statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
+  def writeAndClose(batch: ColumnarBatch, statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
     var needToCloseBatch = true
     try {
       val writeStartTimestamp = System.nanoTime

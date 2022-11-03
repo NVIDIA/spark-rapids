@@ -169,7 +169,7 @@ class GpuSingleDirectoryDataWriter(
     if (!needSplitBatch(maxRecordsPerFile, recordsInFile, batch.numRows())) {
       statsTrackers.foreach(_.newBatch(batch))
       recordsInFile += batch.numRows()
-      currentWriter.write(batch, statsTrackers)
+      currentWriter.writeAndClose(batch, statsTrackers)
     } else {
       withResource(batch) { batch =>
         withResource(GpuColumnVector.from(batch)) {table => 
@@ -194,7 +194,7 @@ class GpuSingleDirectoryDataWriter(
                 val bc = GpuColumnVector.from(tab, dataTypes)
                 statsTrackers.foreach(_.newBatch(bc))
                 recordsInFile += b.getRowCount()
-                currentWriter.write(bc, statsTrackers)
+                currentWriter.writeAndClose(bc, statsTrackers)
                 needNewWriter = true
               }
             })
@@ -535,7 +535,7 @@ class GpuDynamicPartitionDataSingleWriter(
               statsTrackers.foreach(_.newBatch(batch))
               currentWriterStatus.recordsInFile += batch.numRows()
             }
-            currentWriterStatus.outputWriter.write(batch, statsTrackers)
+            currentWriterStatus.outputWriter.writeAndClose(batch, statsTrackers)
           } else {
             writeTable(concat, outDataTypes,  maxRecordsPerFile, partPath)
           }
@@ -550,7 +550,7 @@ class GpuDynamicPartitionDataSingleWriter(
               statsTrackers.foreach(_.newBatch(batch))
               currentWriterStatus.recordsInFile += batch.numRows()
             }
-            currentWriterStatus.outputWriter.write(batch, statsTrackers)
+            currentWriterStatus.outputWriter.writeAndClose(batch, statsTrackers)
           } else {
             writeTable(table, outDataTypes, maxRecordsPerFile, partPath)
           }
@@ -626,7 +626,7 @@ class GpuDynamicPartitionDataSingleWriter(
           statsTrackers.foreach(_.newBatch(bc))
           currentWriterStatus.recordsInFile += b.getRowCount()
         }
-        currentWriterStatus.outputWriter.write(bc, statsTrackers)
+        currentWriterStatus.outputWriter.writeAndClose(bc, statsTrackers)
         needNewWriter = true
       })
     }
@@ -965,7 +965,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
       if (!needSplitBatch(maxRecordsPerFile, status.writerStatus.recordsInFile, batch.numRows())) {
         statsTrackers.foreach(_.newBatch(batch))
         status.writerStatus.recordsInFile += batch.numRows()
-        status.writerStatus.outputWriter.write(batch, statsTrackers)
+        status.writerStatus.outputWriter.writeAndClose(batch, statsTrackers)
       } else {
         withResource(batch) { batch =>
           withResource(GpuColumnVector.from(batch)) {table =>
@@ -997,7 +997,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
                 }
                 statsTrackers.foreach(_.newBatch(cb))
                 status.writerStatus.recordsInFile += b.getRowCount()
-                status.writerStatus.outputWriter.write(cb, statsTrackers)
+                status.writerStatus.outputWriter.writeAndClose(cb, statsTrackers)
                 needNewWriter = true
               })
             }
