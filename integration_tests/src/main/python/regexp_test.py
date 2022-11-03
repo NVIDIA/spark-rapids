@@ -44,6 +44,9 @@ def test_split_re_negative_limit():
             'split(a, "[^o]", -1)',
             'split(a, "[o]{1,2}", -1)',
             'split(a, "[bf]", -1)',
+            'split(a, "b[o]+", -1)',
+            'split(a, "b[o]*", -1)',
+            'split(a, "b[o]?", -1)',
             'split(a, "[o]", -2)'),
             conf=_regexp_conf)
 
@@ -58,6 +61,9 @@ def test_split_re_zero_limit():
             'split(a, "[^o]", 0)',
             'split(a, "[o]{1,2}", 0)',
             'split(a, "[bf]", 0)',
+            'split(a, "f[o]+", 0)',
+            'split(a, "f[o]*", 0)',
+            'split(a, "f[o]?", 0)',
             'split(a, "[o]", 0)'),
         conf=_regexp_conf)
 
@@ -72,6 +78,9 @@ def test_split_re_one_limit():
             'split(a, "[^o]", 1)',
             'split(a, "[o]{1,2}", 1)',
             'split(a, "[bf]", 1)',
+            'split(a, "b[o]+", 1)',
+            'split(a, "b[o]*", 1)',
+            'split(a, "b[o]?", 1)',
             'split(a, "[o]", 1)'),
         conf=_regexp_conf)
 
@@ -86,6 +95,9 @@ def test_split_re_positive_limit():
             'split(a, "[^o]", 55)',
             'split(a, "[o]{1,2}", 999)',
             'split(a, "[bf]", 2)',
+            'split(a, "f[o]+", 2)',
+            'split(a, "f[o]*", 9)',
+            'split(a, "f[o]?", 5)',
             'split(a, "[o]", 5)'),
             conf=_regexp_conf)
 
@@ -103,6 +115,9 @@ def test_split_re_no_limit():
             'split(a, "[o]")',
             'split(a, "^(boo|foo):$")',
             'split(a, "[bf]$:")',
+            'split(a, "b[o]+")',
+            'split(a, "b[o]*")',
+            'split(a, "b[o]?")',
             'split(a, "b^")',
             'split(a, "^[o]")'),
             conf=_regexp_conf)
@@ -153,6 +168,19 @@ def test_split_optimized_no_re_combined():
             'split(a, "\\\\{Z")',
             'split(a, "\\\\}Z")'),
             conf=_regexp_conf)
+
+# See https://github.com/NVIDIA/spark-rapids/issues/6958 for issue with zero-width match
+@allow_non_gpu('ProjectExec', 'StringSplit')
+def test_split_unsupported_fallback():
+    data_gen = mk_str_gen('([bf]o{0,2}:){1,7}') \
+        .with_special_case('boo:and:foo')
+    assert_gpu_sql_fallback_collect(
+        lambda spark : unary_op_df(spark, data_gen),
+        'StringSplit',
+        'string_split_table',
+        'select ' +
+        'split(a, "o*"),' +
+        'split(a, "o?") from string_split_table')
 
 def test_split_regexp_disabled_no_fallback():
     conf = { 'spark.rapids.sql.regexp.enabled': 'false' }
