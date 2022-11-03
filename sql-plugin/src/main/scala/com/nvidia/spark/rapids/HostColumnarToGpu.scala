@@ -289,6 +289,9 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     onDeck = None
     ret
   }
+  override protected def cleanupInputBatch(batch: ColumnarBatch): Unit = {
+    // Host batches are closed by the producer not the consumer, so nothing to do.
+  }
 }
 
 /**
