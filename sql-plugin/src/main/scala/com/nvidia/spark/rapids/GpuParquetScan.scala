@@ -950,8 +950,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   private val filterHandler = GpuParquetFileFilterHandler(sqlConf)
   private val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
   private val numFilesFilterParallel = rapidsConf.numFilesFilterParallel
-  private val alluxioReplacementTaskTime =
-    AlluxioCfgUtils.enabledAlluxioReplacementAlgoTaskTime(rapidsConf)
+  private val alluxioReplacement = AlluxioCfgUtils.enabledAlluxio(rapidsConf)
 
   // We can't use the coalescing files reader when InputFileName, InputFileBlockStart,
   // or InputFileBlockLength because we are combining all the files into a single buffer
@@ -980,7 +979,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       metrics, partitionSchema, numThreads, maxNumFileProcessed,
       ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId,
-      alluxioPathReplacementMap.getOrElse(Map.empty), alluxioReplacementTaskTime)
+      alluxioPathReplacementMap.getOrElse(Map.empty), alluxioReplacement)
   }
 
   private def filterBlocksForCoalescingReader(
@@ -1045,7 +1044,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       conf: Configuration): PartitionReader[ColumnarBatch] = {
     // update the file paths for Alluxio if needed, the coalescing reader doesn't support
     // input_file_name so no need to track what the non Alluxio file name is
-    val files = if (alluxioReplacementTaskTime) {
+    val files = if (alluxioReplacement) {
       AlluxioUtils.updateFilesTaskTimeIfAlluxio(origFiles, alluxioPathReplacementMap).map(_.toRead)
     } else {
       // Since coalescing reader isn't supported if input_file_name is used, so won't

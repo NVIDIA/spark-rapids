@@ -38,36 +38,20 @@ object AlluxioCfgUtils {
     }
   }
 
-  /**
-   * Returns whether alluxio convert time algorithm should be enabled
-   * Note: should also check whether the auto-mount or replace path is enabled.
-   *
-   * @param conf the rapids conf
-   * @return Returns whether alluxio convert time algorithm should be enabled
-   */
-  def enabledAlluxioReplacementAlgoConvertTime(conf: RapidsConf): Boolean = {
-    conf.isAlluxioReplacementAlgoConvertTime &&
-        (conf.getAlluxioAutoMountEnabled || conf.getAlluxioPathsToReplace.isDefined)
-  }
+  def enabledAlluxio(conf: RapidsConf): Boolean =
+    conf.getAlluxioAutoMountEnabled || conf.getAlluxioPathsToReplace.isDefined
 
-  def enabledAlluxioReplacementAlgoTaskTime(conf: RapidsConf): Boolean = {
-    conf.isAlluxioReplacementAlgoTaskTime &&
-        (conf.getAlluxioAutoMountEnabled || conf.getAlluxioPathsToReplace.isDefined)
-  }
-
-  def isAlluxioAutoMountTaskTime(rapidsConf: RapidsConf,
+  def enabledAlluxioAutoMount(rapidsConf: RapidsConf,
       fileFormat: FileFormat): Boolean = {
-    rapidsConf.getAlluxioAutoMountEnabled && rapidsConf.isAlluxioReplacementAlgoTaskTime &&
-        fileFormat.isInstanceOf[ParquetFileFormat]
+    rapidsConf.getAlluxioAutoMountEnabled && fileFormat.isInstanceOf[ParquetFileFormat]
   }
 
-  def isAlluxioPathsToReplaceTaskTime(rapidsConf: RapidsConf,
+  def enabledAlluxioPathsToReplace(rapidsConf: RapidsConf,
       fileFormat: FileFormat): Boolean = {
-    rapidsConf.getAlluxioPathsToReplace.isDefined && rapidsConf.isAlluxioReplacementAlgoTaskTime &&
-        fileFormat.isInstanceOf[ParquetFileFormat]
+    rapidsConf.getAlluxioPathsToReplace.isDefined && fileFormat.isInstanceOf[ParquetFileFormat]
   }
 
-  def isConfiguredReplacementMap(conf: RapidsConf): Boolean = {
+  def enabledReplacementMap(conf: RapidsConf): Boolean = {
     conf.getAlluxioPathsToReplace.isDefined
   }
 }

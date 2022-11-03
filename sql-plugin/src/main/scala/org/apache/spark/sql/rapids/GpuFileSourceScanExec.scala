@@ -61,7 +61,6 @@ import org.apache.spark.util.collection.BitSet
  *                               off in GpuTransitionOverrides if InputFileName,
  *                               InputFileBlockStart, or InputFileBlockLength are used
  * @param disableBucketedScan Disable bucketed scan based on physical query plan.
- * @param alluxioPathsMap Map containing mapping of DFS scheme to Alluxio scheme
  */
 case class GpuFileSourceScanExec(
     @transient relation: HadoopFsRelation,
@@ -73,14 +72,12 @@ case class GpuFileSourceScanExec(
     dataFilters: Seq[Expression],
     tableIdentifier: Option[TableIdentifier],
     disableBucketedScan: Boolean = false,
-    queryUsesInputFile: Boolean = false,
-    alluxioPathsMap: Option[Map[String, String]])(@transient val rapidsConf: RapidsConf)
+    queryUsesInputFile: Boolean = false)(@transient val rapidsConf: RapidsConf)
     extends GpuDataSourceScanExec with GpuExec {
   import GpuMetric._
 
-  // this is set only when we either explicitly replaced a path for CONVERT_TIME
-  // or when TASK_TIME if one of the paths will be replaced
-  private var alluxioPathReplacementMap: Option[Map[String, String]] = alluxioPathsMap
+  // this is set if one of the paths will be replaced
+  private var alluxioPathReplacementMap: Option[Map[String, String]] = None
 
   private val isPerFileReadEnabled = relation.fileFormat match {
     case _: ParquetFileFormat => rapidsConf.isParquetPerFileReadEnabled
@@ -120,11 +117,11 @@ case class GpuFileSourceScanExec(
     val startTime = System.nanoTime()
     val pds = relation.location.listFiles(
         partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
-    if (AlluxioCfgUtils.isAlluxioAutoMountTaskTime(rapidsConf, relation.fileFormat)) {
+    if (AlluxioCfgUtils.enabledAlluxioAutoMount(rapidsConf, relation.fileFormat)) {
       alluxioPathReplacementMap = AlluxioUtils.autoMountIfNeeded(rapidsConf, pds,
         relation.sparkSession.sparkContext.hadoopConfiguration,
         relation.sparkSession.conf)
-    } else if (AlluxioCfgUtils.isAlluxioPathsToReplaceTaskTime(rapidsConf, relation.fileFormat)) {
+    } else if (AlluxioCfgUtils.enabledAlluxioPathsToReplace(rapidsConf, relation.fileFormat)) {
       // this is not ideal, here we check to see if we will replace any paths, which is an
       // extra iteration through paths
       alluxioPathReplacementMap = AlluxioUtils.checkIfNeedsReplaced(rapidsConf, pds,
@@ -635,8 +632,7 @@ case class GpuFileSourceScanExec(
       optionalNumCoalescedBuckets,
       QueryPlan.normalizePredicates(dataFilters, output),
       None,
-      queryUsesInputFile,
-      alluxioPathsMap = alluxioPathsMap)(rapidsConf)
+      queryUsesInputFile)(rapidsConf)
   }
 
 }

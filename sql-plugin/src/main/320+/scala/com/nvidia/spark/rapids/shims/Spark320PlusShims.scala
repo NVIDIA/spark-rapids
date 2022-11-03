@@ -384,16 +384,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       val sparkSession = wrapped.relation.sparkSession
       val options = wrapped.relation.options
 
-      val (location, alluxioPathsToReplaceMap) =
-        if (AlluxioCfgUtils.enabledAlluxioReplacementAlgoConvertTime(conf)) {
-          AlluxioUtils.replacePathIfNeeded(
-            conf,
-            wrapped.relation,
-            partitionFilters,
-            wrapped.dataFilters)
-      } else {
-        (wrapped.relation.location, None)
-      }
+      val location = wrapped.relation.location
 
       val newRelation = HadoopFsRelation(
         location,
@@ -412,9 +403,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         wrapped.optionalNumCoalescedBuckets,
         wrapped.dataFilters,
         wrapped.tableIdentifier,
-        wrapped.disableBucketedScan,
-        queryUsesInputFile = false,
-        alluxioPathsToReplaceMap)(conf)
+        wrapped.disableBucketedScan)(conf)
     }
   }
 

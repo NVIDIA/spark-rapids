@@ -310,16 +310,7 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
 
-            val (location, alluxioPathsToReplaceMap) =
-              if (AlluxioCfgUtils.enabledAlluxioReplacementAlgoConvertTime(conf)) {
-                AlluxioUtils.replacePathIfNeeded(
-                  conf,
-                  wrapped.relation,
-                  partitionFilters,
-                  wrapped.dataFilters)
-              } else {
-                (wrapped.relation.location, None)
-              }
+            val location = wrapped.relation.location
 
             val newRelation = HadoopFsRelation(
               location,
@@ -339,9 +330,7 @@ abstract class Spark31XdbShims extends Spark31XdbShimsBase with Logging {
               None,
               wrapped.dataFilters,
               wrapped.tableIdentifier,
-              wrapped.disableBucketedScan,
-              queryUsesInputFile = false,
-              alluxioPathsToReplaceMap)(conf)
+              wrapped.disableBucketedScan)(conf)
             }
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
