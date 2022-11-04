@@ -161,41 +161,6 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  test("set maxRecordsPerFile with partition concurrent fallback to single writer") {
-    val tempFile = File.createTempFile("maxRecords", ".parquet")
-
-    Seq(("40", 40), ("200", 80)).foreach{ case (maxRecordsPerFile, expectedRecordsPerFile) =>
-      val conf = new SparkConf()
-        .set("spark.sql.files.maxRecordsPerFile", maxRecordsPerFile)
-        .set("spark.sql.maxConcurrentOutputFileWriters", "10")
-      try {
-        SparkSessionHolder.withSparkSession(conf, spark => {
-          import spark.implicits._
-          val df = (1 to 1600).map(i => (i, i % 20)).toDF()
-          // 20 > 10, so fallback to single writer
-          df
-            .repartition(1)
-            .write
-            .mode("overwrite")
-            .partitionBy("_2")
-            .parquet(tempFile.getAbsolutePath())
-
-          // check the whole number of rows
-          assertResult(1600) (spark.read.parquet(tempFile.getAbsolutePath()).count())
-          // check number of rows in each file
-          listAllFiles(tempFile)
-            .map(f => f.getAbsolutePath())
-            .filter(p => p.endsWith("parquet"))
-            .map(p => {
-              assertResult(expectedRecordsPerFile) (spark.read.parquet(p).count())
-            })
-        })
-      } finally {
-        fullyDelete(tempFile)
-      }
-    }
-  }
-
   test("set maxRecordsPerFile with partition concurrently") {
     val tempFile = File.createTempFile("maxRecords", ".parquet")
 

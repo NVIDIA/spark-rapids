@@ -537,7 +537,7 @@ class GpuDynamicPartitionDataSingleWriter(
             }
             currentWriterStatus.outputWriter.writeAndClose(batch, statsTrackers)
           } else {
-            writeTable(concat, outDataTypes,  maxRecordsPerFile, partPath)
+            writeTableAndClose(concat, outDataTypes,  maxRecordsPerFile, partPath)
           }
         } else {
           if (!needSplitBatch(
@@ -552,7 +552,7 @@ class GpuDynamicPartitionDataSingleWriter(
             }
             currentWriterStatus.outputWriter.writeAndClose(batch, statsTrackers)
           } else {
-            writeTable(table, outDataTypes, maxRecordsPerFile, partPath)
+            writeTableAndClose(table, outDataTypes, maxRecordsPerFile, partPath)
           }
         }
       })
@@ -591,7 +591,7 @@ class GpuDynamicPartitionDataSingleWriter(
    * @param maxRecordsPerFile the max number of rows per file
    * @param partPath the partition directory
    */
-  private def writeTable(
+  private def writeTableAndClose(
     table: Table, outDataTypes: Array[DataType], maxRecordsPerFile: Long, partPath: String) = {
     val splitIndexes = getSplitIndexes(
       maxRecordsPerFile,
