@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  get-noSnapshot-versions-from-dist:
+  get-all-versions-from-dist:
     runs-on: ubuntu-latest
     outputs:
       sparkHeadVersion: ${{ steps.noSnapshotVersionsStep.outputs.headVersion }}
@@ -66,9 +66,9 @@ jobs:
           echo "snapshotVersions=$svJsonStr" >> $GITHUB_OUTPUT
 
   package-aggregator:
-    needs: get-noSnapshot-versions-from-dist
+    needs: get-all-versions-from-dist
     strategy:
-      matrix: ${{ fromJSON(needs.get-noSnapshot-versions-from-dist.outputs.sparkTailVersions) }}
+      matrix: ${{ fromJSON(needs.get-all-versions-from-dist.outputs.sparkTailVersions) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
@@ -91,9 +91,9 @@ jobs:
           -Drat.skip=true
           
   package-snapshotsOnly-aggregator:
-    needs: get-noSnapshot-versions-from-dist
+    needs: get-all-versions-from-dist
     strategy:
-      matrix: ${{ fromJSON(needs.get-noSnapshot-versions-from-dist.outputs.sparkSnapshotOnlyVersions) }}
+      matrix: ${{ fromJSON(needs.get-all-versions-from-dist.outputs.sparkSnapshotOnlyVersions) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
@@ -116,7 +116,7 @@ jobs:
           -Drat.skip=true        
 
   verify-all-modules-with-headSparkVersion:
-    needs: get-noSnapshot-versions-from-dist
+    needs: get-all-versions-from-dist
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
@@ -132,7 +132,7 @@ jobs:
         run: >
           mvn -Dmaven.wagon.http.retryHandler.count=3 -B verify
           -P 'individual,pre-merge'
-          -Dbuildver=${{ needs.get-noSnapshot-versions-from-dist.outputs.sparkHeadVersion }}
+          -Dbuildver=${{ needs.get-all-versions-from-dist.outputs.sparkHeadVersion }}
           -DskipTests
           -Dskip
           -Dmaven.javadoc.skip
@@ -141,7 +141,7 @@ jobs:
     needs: get-noSnapshot-versions-from-dist
     runs-on: ubuntu-latest
     strategy:
-      matrix: ${{ fromJSON(needs.get-noSnapshot-versions-from-dist.outputs.sparkJDK11Versions) }}
+      matrix: ${{ fromJSON(needs.get-all-versions-from-dist.outputs.sparkJDK11Versions) }}
     steps:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
