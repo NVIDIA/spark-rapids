@@ -32,7 +32,7 @@ object GpuProjectEstimation {
   import EstimationUtils._
 
   def estimate(project: Project): Option[Statistics] = {
-    val childStats = GpuStatsPlanVisitor.visit(project.child)
+    val childStats = GpuStatsPlanVisitor.visitCached(project.child)
     val aliasStats = EstimationUtils.getAliasStats(project.expressions, childStats.attributeStats)
 
     val outputAttrStats =

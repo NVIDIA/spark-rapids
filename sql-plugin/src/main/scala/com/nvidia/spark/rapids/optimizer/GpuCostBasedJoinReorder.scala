@@ -353,13 +353,14 @@ object JoinReorderDP extends PredicateHelper with Logging {
 
     /** Get the cost of the root node of this plan tree. */
     def rootCost(conf: SQLConf): Cost = {
-      if (itemIds.size > 1) {
-        val rootStats = GpuStatsPlanVisitor.visit(plan)
+      //TODO this was treating unions as leaf nodes and assigning zero cost
+      //if (itemIds.size > 1) {
+        val rootStats = GpuStatsPlanVisitor.visitCached(plan)
         Cost(rootStats.rowCount.get, rootStats.sizeInBytes)
-      } else {
-        // If the plan is a leaf item, it has zero cost.
-        Cost(0, 0)
-      }
+//      } else {
+//        // If the plan is a leaf item, it has zero cost.
+//        Cost(0, 0)
+//      }
     }
 
     /**

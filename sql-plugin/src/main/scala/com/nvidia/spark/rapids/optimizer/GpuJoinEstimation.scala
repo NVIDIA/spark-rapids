@@ -23,8 +23,8 @@ import org.apache.spark.sql.catalyst.plans.logical.statsEstimation.ValueInterval
  */
 case class GpuJoinEstimation(join: Join) extends Logging {
 
-  private val leftStats = GpuStatsPlanVisitor.visit(join.left)
-  private val rightStats = GpuStatsPlanVisitor.visit(join.right)
+  private val leftStats = GpuStatsPlanVisitor.visitCached(join.left)
+  private val rightStats = GpuStatsPlanVisitor.visitCached(join.right)
 
   /**
    * Estimate statistics after join. Return `None` if the join type is not supported, or we don't
@@ -196,7 +196,10 @@ case class GpuJoinEstimation(join: Join) extends Logging {
   private def computeCardinalityAndStats(keyPairs: Seq[(AttributeReference, AttributeReference)])
   : (BigInt, AttributeMap[ColumnStat]) = {
     // If there's no column stats available for join keys, estimate as cartesian product.
-    var joinCard: BigInt = leftStats.rowCount.get * rightStats.rowCount.get
+
+    //TODO modified
+    var joinCard: BigInt = (1000 + leftStats.rowCount.get + rightStats.rowCount.get) / 2
+
     val keyStatsAfterJoin = new mutable.HashMap[Attribute, ColumnStat]()
     var i = 0
     while (i < keyPairs.length && joinCard != 0) {
@@ -354,7 +357,7 @@ case class GpuJoinEstimation(join: Join) extends Logging {
     // column stats. Now we just propagate the statistics from left side. We should do more
     // accurate estimation when advanced stats (e.g. histograms) are available.
     if (rowCountsExist(join.left)) {
-      val leftStats = GpuStatsPlanVisitor.visit(join.left)
+      val leftStats = GpuStatsPlanVisitor.visitCached(join.left)
       // Propagate the original column stats for cartesian product
       val outputRows = leftStats.rowCount.get
       Some(Statistics(

@@ -37,7 +37,7 @@ import org.apache.spark.sql.types._
  */
 case class GpuFilterEstimation(plan: Filter) extends Logging {
 
-  private val childStats = GpuStatsPlanVisitor.visit(plan.child)
+  private val childStats = GpuStatsPlanVisitor.visitCached(plan.child)
 
   private val colStatsMap = ColumnStatsMap(childStats.attributeStats)
 

@@ -36,7 +36,7 @@ object GpuAggregateEstimation {
    * column stats for aggregate expressions.
    */
   def estimate(agg: Aggregate): Option[Statistics] = {
-    val childStats = GpuStatsPlanVisitor.visit(agg.child)
+    val childStats = GpuStatsPlanVisitor.visitCached(agg.child)
     // Check if we have column stats for all group-by columns.
     val colStatsExist = agg.groupingExpressions.forall { e =>
       e.isInstanceOf[Attribute] &&

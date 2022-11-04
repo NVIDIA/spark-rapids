@@ -3,6 +3,7 @@ package com.nvidia.spark.rapids.optimizer
 import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.sql.catalyst.plans.logical._
+import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.adaptive.{LogicalQueryStage, QueryStageExec}
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, LogicalRelation}
 import org.apache.spark.sql.types.{DataTypes, StructType}
@@ -13,6 +14,19 @@ import org.apache.spark.sql.types.{DataTypes, StructType}
  * Copied from Spark's BasicStatsPlanVisitor and modified to call GPU versions of estimation logic.
  */
 object GpuStatsPlanVisitor extends LogicalPlanVisitor[Statistics] with Logging {
+
+  private val statsTag = new TreeNodeTag[Statistics]("rapids.stats")
+
+  def visitCached(p: LogicalPlan): Statistics = {
+    p.getTagValue(statsTag) match {
+      case Some(stats) =>
+        stats
+      case _ =>
+        val stats = visit(p)
+        p.setTagValue(statsTag, stats)
+        stats
+    }
+  }
 
   private def fallback(p: LogicalPlan): Statistics = default(p)
 
@@ -31,6 +45,10 @@ object GpuStatsPlanVisitor extends LogicalPlanVisitor[Statistics] with Logging {
           logDebug(s"Falling back to Spark stats for completed query stage: $physicalPlan")
           inferRowCount(logicalPlan.schema, logicalPlan.stats) // fallback to Spark stats
     }
+    case _: LocalRelation =>
+      // LocalRelation is inserted by PruneFilters when there is a predicate that is always false
+      //TODO this maybe is no longer needed here
+      Statistics(sizeInBytes = 0, rowCount = Some(0))
     case p: LogicalRelation =>
       val stats = inferRowCount(p.schema, p.computeStats())
       val relation = p.relation.asInstanceOf[HadoopFsRelation]
