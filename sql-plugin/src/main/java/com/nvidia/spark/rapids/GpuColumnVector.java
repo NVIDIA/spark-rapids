@@ -269,7 +269,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     protected StructField[] fields;
 
     public abstract void close();
-    public abstract void copyColumnar(ColumnVector cv, int colNum, boolean nullable, int rows);
+
+    public abstract void copyColumnar(ColumnVector cv, int colNum, int rows);
 
     protected abstract ColumnVector buildAndPutOnDevice(int builderIndex);
     protected abstract int buildersLength();
@@ -327,10 +328,12 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       }
     }
 
+    @Override
     protected int buildersLength() {
       return builders.length;
     }
 
+    @Override
     protected ColumnVector buildAndPutOnDevice(int builderIndex) {
       ai.rapids.cudf.ColumnVector cv = builders[builderIndex].buildAndPutOnDevice();
       GpuColumnVector gcv = new GpuColumnVector(fields[builderIndex].dataType(), cv);
@@ -339,7 +342,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return gcv;
     }
 
-    public void copyColumnar(ColumnVector cv, int colNum, boolean ignored, int rows) {
+    @Override
+    public void copyColumnar(ColumnVector cv, int colNum, int rows) {
       referenceHolders[colNum].addReferences(
         HostColumnarToGpu.arrowColumnarCopy(cv, builder(colNum), rows)
       );
@@ -392,18 +396,21 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       }
     }
 
-    public void copyColumnar(ColumnVector cv, int colNum, boolean nullable, int rows) {
-      HostColumnarToGpu.columnarCopy(cv, builder(colNum), rows);
+    @Override
+    public void copyColumnar(ColumnVector cv, int colNum, int rows) {
+      HostColumnarToGpu.columnarCopy(cv, builder(colNum), fields[colNum].dataType(), rows);
     }
 
     public ai.rapids.cudf.HostColumnVector.ColumnBuilder builder(int i) {
       return builders[i];
     }
 
+    @Override
     protected int buildersLength() {
       return builders.length;
     }
 
+    @Override
     protected ColumnVector buildAndPutOnDevice(int builderIndex) {
       ai.rapids.cudf.ColumnVector cv = builders[builderIndex].buildAndPutOnDevice();
       GpuColumnVector gcv = new GpuColumnVector(fields[builderIndex].dataType(), cv);
