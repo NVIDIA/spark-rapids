@@ -309,7 +309,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
           val numRows = batch.numRows()
           val gcbBuilder = new GpuColumnarBatchBuilder(structSchema, numRows)
           for (i <- 0 until batch.numCols()) {
-            gcbBuilder.copyColumnar(batch.column(i), i, structSchema(i).nullable, numRows)
+            gcbBuilder.copyColumnar(batch.column(i), i, numRows)
           }
           gcbBuilder.build(numRows)
         } else {

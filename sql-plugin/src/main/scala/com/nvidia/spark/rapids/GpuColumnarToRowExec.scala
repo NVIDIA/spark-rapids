@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder, UnsafeProjection, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection, UnsafeRow}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
 import org.apache.spark.sql.rapids.execution.GpuColumnToRowMapPartitionsRDD
@@ -285,17 +285,13 @@ object CudfRowTransitions {
 
 case class GpuColumnarToRowExec(
     child: SparkPlan,
-    exportColumnarRdd: Boolean = false,
-    postProjection: Seq[NamedExpression] = Seq.empty)
+    exportColumnarRdd: Boolean = false)
     extends ShimUnaryExecNode with ColumnarToRowTransition with GpuExec {
   import GpuMetric._
   // We need to do this so the assertions don't fail
   override def supportsColumnar = false
 
-  override def output: Seq[Attribute] = postProjection match {
-    case expressions if expressions.isEmpty => child.output
-    case expressions => expressions.map(_.toAttribute)
-  }
+  override def output: Seq[Attribute] = child.output
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
@@ -318,23 +314,12 @@ case class GpuColumnarToRowExec(
       opTime, streamTime)
 
     val cdata = child.executeColumnar()
-    val rdata = if (exportColumnarRdd) {
+    if (exportColumnarRdd) {
       // If we are exporting columnar rdd we need an easy way for the code that walks the
       // RDDs to know where the columnar to row transition is happening.
       GpuColumnToRowMapPartitionsRDD.mapPartitions(cdata, f)
     } else {
       cdata.mapPartitions(f)
-    }
-
-    postProjection match {
-      case transformations if transformations.nonEmpty =>
-        rdata.mapPartitionsWithIndex { case (index, iterator) =>
-          val projection = UnsafeProjection.create(transformations, child.output)
-          projection.initialize(index)
-          iterator.map(projection)
-        }
-      case _ =>
-        rdata
     }
   }
 }
