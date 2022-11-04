@@ -105,7 +105,6 @@ jobs:
           java-version: 8
 
       - name: package aggregator check for snapshot builds
-        continue-on-error: true
         run: >
           mvn -Dmaven.wagon.http.retryHandler.count=3 -B package -pl aggregator -am
           -P 'individual,pre-merge'
