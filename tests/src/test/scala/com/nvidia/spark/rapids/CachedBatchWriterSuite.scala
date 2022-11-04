@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
 import ai.rapids.cudf.{ColumnVector, CompressionType, DType, Table, TableWriter}
 import org.apache.hadoop.mapreduce.{RecordWriter, TaskAttemptContext}
@@ -73,10 +73,6 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
   }
 
   test("convert large InternalRow iterator to cached batch single col") {
-    // Allow printing "A HOST BUFFER WAS LEAKED"
-    // see comments in ColumnarBatchToCachedBatchIterator
-    // TaskContext.get is null in unit test
-    // Option(TaskContext.get).foreach(_.addTaskCompletionListener[Unit](_ => hostBatch.close()))
     withResource(new TestResources()) { resources =>
       val (_, spyGpuCol0) = getCudfAndGpuVectors(resources)
       val cb = new ColumnarBatch(Array(spyGpuCol0), ROWS)
@@ -88,10 +84,6 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
   }
 
   test("convert large InternalRow iterator to cached batch multi-col") {
-    // Allow printing "A HOST BUFFER WAS LEAKED"
-    // see comments in ColumnarBatchToCachedBatchIterator
-    // TaskContext.get is null in unit test
-    // Option(TaskContext.get).foreach(_.addTaskCompletionListener[Unit](_ => hostBatch.close()))
     withResource(new TestResources()) { resources1 =>
       val (_, spyGpuCol0) = getCudfAndGpuVectors(resources1)
       withResource(new TestResources()) { resources2 =>
@@ -243,13 +235,18 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
     }
     when(mockParquetOutputFileFormat.getRecordWriter(any(), any())).thenReturn(mockRecordWriter)
     val cachedBatchIter = producer.getColumnarBatchToCachedBatchIterator
-    cachedBatchIter.asInstanceOf[producer.ColumnarBatchToCachedBatchIterator]
-      .setParquetOutputFileFormat(mockParquetOutputFileFormat)
+    val cbToCachedIter = cachedBatchIter.asInstanceOf[producer.ColumnarBatchToCachedBatchIterator]
+    cbToCachedIter.setParquetOutputFileFormat(mockParquetOutputFileFormat)
     var totalRows = 0
+    val hostBatches = new ListBuffer[ColumnarBatch]()
     while (cachedBatchIter.hasNext) {
       val cb = cachedBatchIter.next()
       totalRows += cb.numRows
+      if (!hostBatches.contains(cbToCachedIter.hostBatch)) {
+        hostBatches += cbToCachedIter.hostBatch
+      }
     }
+    hostBatches.foreach(_.close())
     assert(totalRows == ROWS)
     assert(totalSize == ROWS * schema.indices.length * 1024L)
   }

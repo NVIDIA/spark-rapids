@@ -1096,6 +1096,9 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
      * is called on this iterator
      */
     class ColumnarBatchToCachedBatchIterator extends InternalRowToCachedBatchIterator {
+      // Exposing this just for tests to close the batch
+      var hostBatch: ColumnarBatch = null
+
       override def getIterator: Iterator[InternalRow] = {
 
         new Iterator[InternalRow] {
@@ -1103,7 +1106,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
           Option(TaskContext.get).foreach(_.addTaskCompletionListener[Unit](_ => hostBatch.close()))
 
           val batch: ColumnarBatch = iter.asInstanceOf[Iterator[ColumnarBatch]].next
-          val hostBatch = if (batch.column(0).isInstanceOf[GpuColumnVector]) {
+          hostBatch = if (batch.column(0).isInstanceOf[GpuColumnVector]) {
             withResource(batch) { batch =>
               new ColumnarBatch(batch.safeMap(_.copyToHost()).toArray, batch.numRows())
             }
