@@ -93,6 +93,7 @@ jobs:
   package-snapshotsOnly-aggregator:
     needs: get-all-versions-from-dist
     strategy:
+      fail-fast: false
       matrix: ${{ fromJSON(needs.get-all-versions-from-dist.outputs.sparkSnapshotOnlyVersions) }}
     runs-on: ubuntu-latest
     steps:
