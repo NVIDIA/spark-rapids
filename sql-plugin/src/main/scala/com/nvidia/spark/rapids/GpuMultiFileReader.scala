@@ -869,7 +869,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
         val colTypes = currentChunkMeta.readSchema.fields.map(f => f.dataType)
         val tableReader = readToTable(currentChunkMeta.currentChunk, currentChunkMeta.clippedSchema,
           currentChunkMeta.readSchema, currentChunkMeta.extraInfo)
-        new CachingGpuBatchIterator(tableReader, colTypes, spillCallback)
+        CachedGpuBatchIterator(tableReader, colTypes, spillCallback)
       }
       batchIter.map { cb =>
         // we have to add partition values here for this batch, we already verified that

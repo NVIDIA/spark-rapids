@@ -20,7 +20,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
- * An abstract columnar batch iterator that gives options for auto closing the
+ * An abstract columnar batch iterator that gives options for auto closing
  * when the associated task completes. Also provides idempotent close semantics.
  *
  * This iterator follows the semantics of GPU RDD columnar batch iterators too in that
@@ -48,15 +48,16 @@ abstract class GpuColumnarBatchIterator(closeWithTask: Boolean)
     isClosed = true
   }
 
-  def doClose(): Unit = {}
+  def doClose(): Unit
 }
 
 object EmptyGpuColumnarBatchIterator extends GpuColumnarBatchIterator(false) {
   override def hasNext: Boolean = false
   override def next(): ColumnarBatch = throw new NoSuchElementException()
+  override def doClose(): Unit = {}
 }
 
-class SingleGpuColumnarBatchIterator(var batch: ColumnarBatch)
+class SingleGpuColumnarBatchIterator(private var batch: ColumnarBatch)
     extends GpuColumnarBatchIterator(true) {
   override def hasNext: Boolean = batch != null
 

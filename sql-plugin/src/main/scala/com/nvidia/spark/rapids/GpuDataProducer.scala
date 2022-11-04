@@ -35,7 +35,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  *
  * @tparam T what it is that we are wrapping
  */
-abstract class GpuDataProducer[T] extends AutoCloseable {
+trait GpuDataProducer[T] extends AutoCloseable {
   /**
    * Returns true if there is more data to be read or false if there is not.
    */
@@ -76,22 +76,19 @@ class EmptyGpuDataProducer[T] extends GpuDataProducer[T] {
   override def close(): Unit = {}
 }
 
-class SingleGpuDataProducer[T](data: T) extends GpuDataProducer[T] {
-  private var isRead = false
-
-  override def hasNext: Boolean = !isRead
+class SingleGpuDataProducer[T <: AnyRef](private var data: T) extends GpuDataProducer[T] {
+  override def hasNext: Boolean = data != null
 
   override def next: T = {
-    isRead = true
-    data
+    val ret = data
+    data = null.asInstanceOf[T]
+    ret
   }
 
   override def close(): Unit = {
-    if (!isRead) {
-      data match {
-        case a: AutoCloseable => a.close()
-        case _ =>
-      }
+    data match {
+      case a: AutoCloseable => a.close()
+      case _ =>
     }
   }
 }
@@ -112,6 +109,27 @@ class WrappedGpuDataProducer[T, U](
 
 object EmptyTableReader extends EmptyGpuDataProducer[Table]
 
+class CachedGpuBatchIterator private(pending: mutable.Queue[SpillableColumnarBatch])
+    extends GpuColumnarBatchIterator(true) with Arm {
+
+  override def hasNext: Boolean = pending.nonEmpty
+
+  override def next(): ColumnarBatch = {
+    if (pending.isEmpty) {
+      throw new NoSuchElementException()
+    }
+    withResource(pending.dequeue()) { spillable =>
+      val ret = spillable.getColumnarBatch()
+      spillable.close()
+      ret
+    }
+  }
+
+  override def doClose(): Unit = {
+    pending.foreach(_.close())
+  }
+}
+
 /**
  * Provides a transition between a GpuDataProducer[Table] and an Iterator[ColumnarBatch]. Because
  * of the disconnect in semantics between a GpuDataProducer and generally how we use
@@ -122,15 +140,10 @@ object EmptyTableReader extends EmptyGpuDataProducer[Table]
  * held and will not be released before the first table is consumed. This is also fitting with
  * the semantics of how we use an Iterator[ColumnarBatch] pointing to GPU data.
  */
-class CachingGpuBatchIterator(
-    producer: GpuDataProducer[Table],
-    dataTypes: Array[DataType],
-    spillCallback: SpillCallback) extends GpuColumnarBatchIterator(true) with Arm {
-
-  private[this] var notSpillableBatch: Option[ColumnarBatch] = None
-  private[this] val pending: mutable.Queue[SpillableColumnarBatch] = mutable.Queue.empty
-
-  private[this] def makeSpillableAndClose(table: Table): SpillableColumnarBatch = {
+object CachedGpuBatchIterator extends Arm {
+  private[this] def makeSpillableAndClose(table: Table,
+      dataTypes: Array[DataType],
+      spillCallback: SpillCallback): SpillableColumnarBatch = {
     withResource(table) { _ =>
       SpillableColumnarBatch(GpuColumnVector.from(table, dataTypes),
         SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
@@ -138,44 +151,30 @@ class CachingGpuBatchIterator(
     }
   }
 
-  { // Constructor...
+  def apply(producer: GpuDataProducer[Table],
+      dataTypes: Array[DataType],
+      spillCallback: SpillCallback): GpuColumnarBatchIterator = {
     withResource(producer) { _ =>
       if (producer.hasNext) {
         // Special case for the first one.
         closeOnExcept(producer.next) { firstTable =>
           if (!producer.hasNext) {
-            notSpillableBatch = Some(GpuColumnVector.from(firstTable, dataTypes))
+            val ret =
+              new SingleGpuColumnarBatchIterator(GpuColumnVector.from(firstTable, dataTypes))
             firstTable.close()
+            ret
           } else {
-            pending += makeSpillableAndClose(firstTable)
+            val pending = mutable.Queue.empty[SpillableColumnarBatch]
+            pending += makeSpillableAndClose(firstTable, dataTypes, spillCallback)
             producer.foreach { t =>
-              pending += makeSpillableAndClose(t)
+              pending += makeSpillableAndClose(t, dataTypes, spillCallback)
             }
+            new CachedGpuBatchIterator(pending)
           }
         }
+      } else {
+        EmptyGpuColumnarBatchIterator
       }
     }
-  }
-
-  override def hasNext: Boolean = notSpillableBatch.nonEmpty || pending.nonEmpty
-
-  override def next(): ColumnarBatch = {
-    if (notSpillableBatch.isDefined) {
-      val ret = notSpillableBatch.get
-      notSpillableBatch = None
-      ret
-    } else {
-      if (pending.isEmpty) {
-        throw new NoSuchElementException()
-      }
-      withResource(pending.dequeue()) { spillable =>
-        spillable.getColumnarBatch()
-      }
-    }
-  }
-
-  override def doClose(): Unit = {
-    notSpillableBatch.foreach(_.close())
-    pending.foreach(_.close())
   }
 }

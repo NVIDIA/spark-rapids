@@ -1979,7 +1979,7 @@ class MultiFileCloudParquetPartitionReader(
 
     closeOnExcept(tableReader) { _ =>
       val colTypes = readDataSchema.fields.map(f => f.dataType)
-      new CachingGpuBatchIterator(tableReader, colTypes, spillCallback).map { batch =>
+      CachedGpuBatchIterator(tableReader, colTypes, spillCallback).map { batch =>
         addPartitionValues(batch, partedFile.partitionValues, partitionSchema)
       }
     }
@@ -2175,7 +2175,7 @@ class ParquetPartitionReader(
         }
       } else {
         val colTypes = readDataSchema.fields.map(f => f.dataType)
-        new CachingGpuBatchIterator(readToTables(currentChunkedBlocks), colTypes,
+        CachedGpuBatchIterator(readToTables(currentChunkedBlocks), colTypes,
           spillCallback).map { batch =>
           logDebug(s"GPU batch size: ${GpuColumnVector.getTotalDeviceMemoryUsed(batch)} bytes")
           batch
