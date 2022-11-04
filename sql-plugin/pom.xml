@@ -501,6 +501,7 @@
                                         <include name="311until330-all/*"/>
                                         <include name="311until330-nondb/*"/>
                                         <include name="311until340-all/*"/>
+                                        <include name="311until340-nondb/*"/>
                                         <include name="pre320-treenode/*"/>
                                     </patternset>
                                     <include name="311-nondb/*"/>
