@@ -19,6 +19,8 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 import scala.util.hashing.byteswap32
 
+import ai.rapids.cudf
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.rdd.{PartitionPruningRDD, RDD}
@@ -178,42 +180,55 @@ case class GpuRangePartitioner(
   override def children: Seq[Expression] = Seq.empty
   override val numPartitions: Int = rangeBounds.length + 1
 
-  private[this] def computeBoundsAndClose(cb: ColumnarBatch): (Array[Int], ColumnarBatch) = {
-    withResource(cb) { cb =>
-      withResource(
-        sorter.appendProjectedAndSort(cb, NoopMetric)) { sortedTbl =>
-        val parts = withResource(
-          GpuColumnVector.from(sortedTbl, sorter.projectedBatchTypes)) { sorted =>
-          val retCv = withResource(converters.convertBatch(rangeBounds,
-            TrampolineUtil.fromAttributes(sorter.projectedBatchSchema))) { ranges =>
-            sorter.upperBound(sorted, ranges)
-          }
-          withResource(retCv) { retCv =>
-            // The first entry must always be 0, which upper bound is not doing
-            Array(0) ++ GpuColumnVector.toIntArray(retCv)
-          }
-        }
-        (parts, sorter.removeProjectedColumns(sortedTbl))
+  /**
+   * Produce the integer partition to put the data into.
+   * @param cb the input data
+   * @return the partition id for each item.
+   */
+  def computePartitionIndexes(cb: ColumnarBatch): cudf.ColumnVector = {
+    withResource(converters.convertBatch(rangeBounds,
+      TrampolineUtil.fromAttributes(sorter.projectedBatchSchema))) { ranges =>
+      withResource(sorter.appendProjectedColumns(cb)) { withExtraColumns =>
+        sorter.lowerBound(ranges, withExtraColumns)
       }
+    }
+  }
+
+  def computeBoundsAndClose(batch: ColumnarBatch): (Array[Int], Array[GpuColumnVector]) = {
+    val types = GpuColumnVector.extractTypes(batch)
+    val partedTable = withResource(batch) { batch =>
+      val parts = withResource(new NvtxRange("Calculate part", NvtxColor.CYAN)) { _ =>
+        computePartitionIndexes(batch)
+      }
+      withResource(parts) { parts =>
+        withResource(GpuColumnVector.from(batch)) { table =>
+          table.partition(parts, numPartitions)
+        }
+      }
+    }
+    withResource(partedTable) { partedTable =>
+      val parts = partedTable.getPartitions
+      val tp = partedTable.getTable
+      val columns = (0 until partedTable.getNumberOfColumns.toInt).zip(types).map {
+        case (index, sparkType) =>
+          GpuColumnVector.from(tp.getColumn(index).incRefCount(), sparkType)
+      }
+      (parts, columns.toArray)
     }
   }
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     if (rangeBounds.nonEmpty) {
-      val (parts, sortedBatch) = computeBoundsAndClose(batch)
-      withResource(sortedBatch) { sortedBatch =>
-        val partitionColumns = GpuColumnVector.extractColumns(sortedBatch)
-        val slicedCb = sliceInternalGpuOrCpu(sortedBatch.numRows(), parts, partitionColumns)
-        slicedCb.zipWithIndex.filter(_._1 != null)
-      }
+      val (parts, partitionColumns) = computeBoundsAndClose(batch)
+      val slicedCb = sliceInternalGpuOrCpuAndClose(partitionColumns.head.getRowCount.toInt,
+        parts, partitionColumns)
+      slicedCb.zipWithIndex.filter(_._1 != null)
     } else {
-      withResource(batch) { cb =>
-        // Nothing needs to be sliced but a contiguous table is needed for GPU shuffle which
-        // slice will produce.
-        val sliced = sliceInternalGpuOrCpu(cb.numRows, Array(0),
-          GpuColumnVector.extractColumns(cb))
-        sliced.zipWithIndex.filter(_._1 != null)
-      }
+      // Nothing needs to be sliced but a contiguous table is needed for GPU shuffle which
+      // slice will produce.
+      val sliced = sliceInternalGpuOrCpuAndClose(batch.numRows, Array(0),
+        GpuColumnVector.extractColumns(batch))
+      sliced.zipWithIndex.filter(_._1 != null)
     }
   }
 }

@@ -29,8 +29,12 @@ case class BroadcastNestedLoopJoinExecParser(
 
   override def parse: ExecInfo = {
     // BroadcastNestedLoopJoin doesn't have duration
+    val exprString = node.desc.replaceFirst("BroadcastNestedLoopJoin ", "")
+    val (expressions, supportedJoinType) = SQLPlanParser.parseNestedLoopJoinExpressions(exprString)
+    val notSupportedExprs = expressions.filterNot(expr => checker.isExprSupported(expr))
     val duration = None
-    val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName)) {
+    val (speedupFactor, isSupported) = if (checker.isExecSupported(fullExecName) &&
+      notSupportedExprs.isEmpty && supportedJoinType) {
       (checker.getSpeedupFactor(fullExecName), true)
     } else {
       (1.0, false)

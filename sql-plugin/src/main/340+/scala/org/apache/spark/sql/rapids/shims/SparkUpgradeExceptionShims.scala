@@ -26,8 +26,7 @@ object SparkUpgradeExceptionShims {
       cause: Throwable): SparkUpgradeException = {
     new SparkUpgradeException(
       "INCONSISTENT_BEHAVIOR_CROSS_VERSION",
-      Array(version, message),
+      Map(version -> message),
       cause)
   }
-
 }

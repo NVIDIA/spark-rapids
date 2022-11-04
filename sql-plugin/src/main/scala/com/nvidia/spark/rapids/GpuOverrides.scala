@@ -24,7 +24,7 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
-import com.nvidia.spark.rapids.shims.{AQEUtils, GpuBatchScanExec, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{AQEUtils, DecimalArithmeticOverrides, DeltaLakeUtils, GetMapValueMeta, GpuBatchScanExec, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
@@ -64,6 +64,7 @@ import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.rapids.execution.python.shims.GpuFlatMapGroupsInPandasExecMeta
 import org.apache.spark.sql.rapids.shims.GpuTimeAdd
+import org.apache.spark.sql.rapids.zorder.ZOrderRules
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.{CalendarInterval, UTF8String}
 
@@ -895,112 +896,7 @@ object GpuOverrides extends Logging {
           }
         }
       }),
-    expr[PromotePrecision](
-      "PromotePrecision before arithmetic operations between DecimalType data",
-      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_128,
-        TypeSig.DECIMAL_128),
-      (a, conf, p, r) => new UnaryExprMeta[PromotePrecision](a, conf, p, r) {
-        override def convertToGpu(child: Expression): GpuExpression = GpuPromotePrecision(child)
-      }),
-    expr[CheckOverflow](
-      "CheckOverflow after arithmetic operations between DecimalType data",
-      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_128,
-        TypeSig.DECIMAL_128),
-      (a, conf, p, r) => new ExprMeta[CheckOverflow](a, conf, p, r) {
-        private[this] def extractOrigParam(expr: BaseExprMeta[_]): BaseExprMeta[_] =
-          expr.wrapped match {
-            case lit: Literal if lit.dataType.isInstanceOf[DecimalType] =>
-              // Lets figure out if we can make the Literal value smaller
-              val (newType, value) = lit.value match {
-                case null =>
-                  (DecimalType(0, 0), null)
-                case dec: Decimal =>
-                  val stripped = Decimal(dec.toJavaBigDecimal.stripTrailingZeros())
-                  val p = stripped.precision
-                  val s = stripped.scale
-                  val t = if (s < 0 && !SQLConf.get.allowNegativeScaleOfDecimalEnabled) {
-                    // need to adjust to avoid errors about negative scale
-                    DecimalType(p - s, 0)
-                  } else {
-                    DecimalType(p, s)
-                  }
-                  (t, stripped)
-                case other =>
-                  throw new IllegalArgumentException(s"Unexpected decimal literal value $other")
-              }
-              expr.asInstanceOf[LiteralExprMeta].withNewLiteral(Literal(value, newType))
-            // Avoid unapply for PromotePrecision and Cast because it changes between Spark versions
-            case p: PromotePrecision if p.child.isInstanceOf[CastBase] &&
-                p.child.dataType.isInstanceOf[DecimalType] =>
-              val c = p.child.asInstanceOf[CastBase]
-              val to = c.dataType.asInstanceOf[DecimalType]
-              val fromType = DecimalUtil.optionallyAsDecimalType(c.child.dataType)
-              fromType match {
-                case Some(from) =>
-                  val minScale = math.min(from.scale, to.scale)
-                  val fromWhole = from.precision - from.scale
-                  val toWhole = to.precision - to.scale
-                  val minWhole = if (to.scale < from.scale) {
-                    // If the scale is getting smaller in the worst case we need an
-                    // extra whole part to handle rounding up.
-                    math.min(fromWhole + 1, toWhole)
-                  } else {
-                    math.min(fromWhole, toWhole)
-                  }
-                  val newToType = DecimalType(minWhole + minScale, minScale)
-                  if (newToType == from) {
-                    // We can remove the cast totally
-                    val castExpr = expr.childExprs.head
-                    castExpr.childExprs.head
-                  } else if (newToType == to) {
-                    // The cast is already ideal
-                    expr
-                  } else {
-                    val castExpr = expr.childExprs.head.asInstanceOf[CastExprMeta[_]]
-                    castExpr.withToTypeOverride(newToType)
-                  }
-                case _ =>
-                  expr
-              }
-            case _ => expr
-          }
-        private[this] lazy val binExpr = childExprs.head
-        private[this] lazy val lhs = extractOrigParam(binExpr.childExprs.head)
-        private[this] lazy val rhs = extractOrigParam(binExpr.childExprs(1))
-        private[this] lazy val lhsDecimalType =
-          DecimalUtil.asDecimalType(lhs.wrapped.asInstanceOf[Expression].dataType)
-        private[this] lazy val rhsDecimalType =
-          DecimalUtil.asDecimalType(rhs.wrapped.asInstanceOf[Expression].dataType)
 
-        override def convertToGpu(): GpuExpression = {
-          // Prior to Spark 3.4.0
-          // Division and Multiplication of Decimal types is a little odd. Spark will cast the
-          // inputs to a common wider value where the scale is the max of the two input scales,
-          // and the precision is max of the two input non-scale portions + the new scale. Then it
-          // will do the divide or multiply as a BigDecimal value but lie about the return type.
-          // Finally here in CheckOverflow it will reset the scale and check the precision so that
-          // Spark knows it fits in the final desired result.
-          // Here we try to strip out the extra casts, etc to get to as close to the original
-          // query as possible. This lets us then calculate what CUDF needs to get the correct
-          // answer, which in some cases is a lot smaller.
-
-          a.child match {
-            case _: Divide =>
-              // GpuDecimalDivide includes the overflow check in it.
-              GpuDecimalDivide(lhs.convertToGpu(), rhs.convertToGpu(), wrapped.dataType)
-            case _: Multiply =>
-              // GpuDecimal*Multiply includes the overflow check in it
-              val intermediatePrecision =
-                GpuDecimalMultiply.nonRoundedIntermediatePrecision(lhsDecimalType,
-                  rhsDecimalType, a.dataType)
-              GpuDecimalMultiply(lhs.convertToGpu(), rhs.convertToGpu(), wrapped.dataType,
-                useLongMultiply = intermediatePrecision > DType.DECIMAL128_MAX_PRECISION)
-            case _ =>
-              GpuCheckOverflow(childExprs.head.convertToGpu(),
-                wrapped.dataType, wrapped.nullOnOverflow)
-          }
-        }
-      }),
     expr[ToDegrees](
       "Converts radians to degrees",
       ExprChecks.mathUnary,
@@ -1479,11 +1375,11 @@ object GpuOverrides extends Logging {
       "Returns the first non-null argument if exists. Otherwise, null",
       ExprChecks.projectOnly(
         (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY +
-          GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
+          TypeSig.MAP + GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
         TypeSig.all,
         repeatingParamCheck = Some(RepeatingParamCheck("param",
           (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY +
-              GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
+            TypeSig.MAP + GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuCoalesce(childExprs.map(_.convertToGpu()))
@@ -2584,15 +2480,13 @@ object GpuOverrides extends Logging {
           TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY),
           TypeSig.MAP.nested(TypeSig.all)),
         ("key", TypeSig.commonCudfTypes + TypeSig.DECIMAL_128, TypeSig.all)),
-      (in, conf, p, r) => new BinaryExprMeta[GetMapValue](in, conf, p, r) {
+      (in, conf, p, r) => new GetMapValueMeta(in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (isLit(in.left) && (!isLit(in.right))) {
             willNotWorkOnGpu("Looking up Map Scalars with Key Vectors " +
               "is not currently unsupported.")
           }
         }
-        override def convertToGpu(map: Expression, key: Expression): GpuExpression =
-          GpuGetMapValue(map, key, in.failOnError)
       }),
     expr[ElementAt](
       "Returns element of array at given(1-based) index in value if column is array. " +
@@ -3047,6 +2941,17 @@ object GpuOverrides extends Logging {
             val1: Expression,
             val2: Expression): GpuExpression =
           GpuStringLocate(val0, val1, val2)
+      }),
+    expr[StringInstr](
+      "Instr string operator",
+      ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
+        Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
+            ParamCheck("substr", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+      (in, conf, p, r) => new BinaryExprMeta[StringInstr](in, conf, p, r) {
+        override def convertToGpu(
+            str: Expression,
+            substr: Expression): GpuExpression =
+          GpuStringInstr(str, substr)
       }),
     expr[Substring](
       "Substring operator",
@@ -3594,7 +3499,7 @@ object GpuOverrides extends Logging {
   // Shim expressions should be last to allow overrides with shim-specific versions
   val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
     commonExpressions ++ TimeStamp.getExprs ++ GpuHiveOverrides.exprs ++
-        SparkShimImpl.getExprs
+        ZOrderRules.exprs ++ DecimalArithmeticOverrides.exprs ++ SparkShimImpl.getExprs
 
   def wrapScan[INPUT <: Scan](
       scan: INPUT,
@@ -4061,11 +3966,12 @@ object GpuOverrides extends Logging {
               e.evalType)
         }),
     exec[FlatMapCoGroupsInPandasExec](
-      "The backend for CoGrouped Aggregation Pandas UDF, it runs on CPU itself now but supports" +
-        " scheduling GPU resources for the Python process when enabled",
-      ExecChecks.hiddenHack(),
+      "The backend for CoGrouped Aggregation Pandas UDF. Accelerates the data transfer" +
+        " between the Java process and the Python process. It also supports scheduling GPU" +
+        " resources for the Python process when enabled.",
+      ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
       (flatCoPy, conf, p, r) => new GpuFlatMapCoGroupsInPandasExecMeta(flatCoPy, conf, p, r))
-        .disabledByDefault("Performance is not ideal now"),
+        .disabledByDefault("Performance is not ideal with many small groups"),
     exec[FlatMapGroupsInPandasExec](
       "The backend for Flat Map Groups Pandas UDF, Accelerates the data transfer between the" +
         " Java process and the Python process. It also supports scheduling GPU resources" +
@@ -4336,18 +4242,20 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
     if (conf.isSqlEnabled && conf.isSqlExecuteOnGPU) {
       GpuOverrides.logDuration(conf.shouldExplain,
         t => f"Plan conversion to the GPU took $t%.2f ms") {
-        val updatedPlan = updateForAdaptivePlan(plan, conf)
-        val newPlan = applyOverrides(updatedPlan, conf)
+        var updatedPlan = updateForAdaptivePlan(plan, conf)
+        updatedPlan = SparkShimImpl.applyShimPlanRules(updatedPlan, conf)
+        updatedPlan = applyOverrides(updatedPlan, conf)
         if (conf.logQueryTransformations) {
           val logPrefix = context.map(str => s"[$str]").getOrElse("")
           logWarning(s"${logPrefix}Transformed query:" +
-            s"\nOriginal Plan:\n$plan\nTransformed Plan:\n$newPlan")
+            s"\nOriginal Plan:\n$plan\nTransformed Plan:\n$updatedPlan")
         }
-        newPlan
+        updatedPlan
       }
     } else if (conf.isSqlEnabled && conf.isSqlExplainOnlyEnabled) {
       // this mode logs the explain output and returns the original CPU plan
-      val updatedPlan = updateForAdaptivePlan(plan, conf)
+      var updatedPlan = updateForAdaptivePlan(plan, conf)
+      updatedPlan = SparkShimImpl.applyShimPlanRules(updatedPlan, conf)
       GpuOverrides.explainCatalystSQLPlan(updatedPlan, conf)
       plan
     } else {
@@ -4382,8 +4290,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
    */
   def isDeltaLakeMetadataQuery(plan: SparkPlan): Boolean = {
     val deltaLogScans = PlanUtils.findOperators(plan, {
-      case f: FileSourceScanExec if f.requiredSchema.fields
-         .exists(_.name.startsWith("_databricks_internal")) =>
+      case f: FileSourceScanExec if DeltaLakeUtils.isDatabricksDeltaLakeScan(f) =>
         logDebug(s"Fallback for FileSourceScanExec with _databricks_internal: $f")
         true
       case f: FileSourceScanExec =>
