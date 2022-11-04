@@ -653,6 +653,14 @@
         <maven.clean.plugin.version>3.1.0</maven.clean.plugin.version>
         <maven.scalastyle.skip>false</maven.scalastyle.skip>
         <dist.jar.compress>true</dist.jar.compress>
+
+        <!--
+            If true, disables verification that all Shims be built as of one and the same git
+            commit hash. Do not use for CI!
+
+            It is intended only for local builds of the dist module when combining locally-built shims
+            with the ones deployed to a remote Maven repo
+        -->
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
     </properties>
 

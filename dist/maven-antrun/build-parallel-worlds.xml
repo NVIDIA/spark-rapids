@@ -172,7 +172,7 @@
                 <ac:if>
                     <istrue value="${ignore.shim.revisions.check}"/>
                     <ac:then>
-                        <echo>ignore.shim.revisions.check=${ignore.shim.revisions.check}: Igoring shim revision check failure ${checkShimRevisionsError}</echo>
+                        <echo>ignore.shim.revisions.check=${ignore.shim.revisions.check}: Ignoring shim revision check failure ${checkShimRevisionsError}</echo>
                     </ac:then>
                     <ac:else>
                         <fail>${checkShimRevisionsError}</fail>
