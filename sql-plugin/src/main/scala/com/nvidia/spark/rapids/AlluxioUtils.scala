@@ -570,13 +570,15 @@ object AlluxioUtils extends Logging {
           (fi, didReplaceAnyRoots ++ replacedPrefixes)
       }
 
-      // If we know the type of file index, try to reuse as much of the existing
+      // Before this change https://github.com/NVIDIA/spark-rapids/pull/6806,
+      // if we know the type of file index, try to reuse as much of the existing
       // FileIndex as we can to keep from having to recalculate it and potentially
-      // mess it up. Things like partitioning are already included and some of the
-      // Spark infer code didn't handle certain types properly. Here we try to just
-      // update the paths to the new Alluxio path. If its not a type of file index
-      // we know then fall back to inferring. The latter happens on certain CSPs
-      // like Databricks where they have customer file index types.
+      // mess it up. But this causes always reading old files, see the issue of this PR.
+      //
+      // Now, because we have the Task time replacement algorithm,
+      // just fall back to inferring partitioning for all FileIndex types except
+      // CatalogFileIndex.
+      // We use this approach to handle all the file index types for all CSPs like Databricks.
       relation.location match {
         case cfi: CatalogFileIndex =>
           logDebug("Handling CatalogFileIndex")
