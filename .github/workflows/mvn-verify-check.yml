@@ -138,7 +138,7 @@ jobs:
           -Dmaven.javadoc.skip
 
   verify-modules-with-jdk11:
-    needs: get-noSnapshot-versions-from-dist
+    needs: get-all-versions-from-dist
     runs-on: ubuntu-latest
     strategy:
       matrix: ${{ fromJSON(needs.get-all-versions-from-dist.outputs.sparkJDK11Versions) }}
