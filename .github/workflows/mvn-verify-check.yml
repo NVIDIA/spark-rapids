@@ -99,13 +99,13 @@ jobs:
       - uses: actions/checkout@v3 # refs/pull/:prNumber/merge
 
       - name: Setup Java and Maven Env
-        continue-on-error: true
         uses: actions/setup-java@v3
         with:
           distribution: adopt
           java-version: 8
 
       - name: package aggregator check for snapshot builds
+        continue-on-error: true
         run: >
           mvn -Dmaven.wagon.http.retryHandler.count=3 -B package -pl aggregator -am
           -P 'individual,pre-merge'
