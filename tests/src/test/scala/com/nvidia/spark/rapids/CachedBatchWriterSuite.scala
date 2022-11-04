@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import scala.collection.mutable
-import scala.collection.mutable.{ArrayBuffer, ListBuffer}
+import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, CompressionType, DType, Table, TableWriter}
 import org.apache.hadoop.mapreduce.{RecordWriter, TaskAttemptContext}
@@ -235,18 +235,13 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
     }
     when(mockParquetOutputFileFormat.getRecordWriter(any(), any())).thenReturn(mockRecordWriter)
     val cachedBatchIter = producer.getColumnarBatchToCachedBatchIterator
-    val cbToCachedIter = cachedBatchIter.asInstanceOf[producer.ColumnarBatchToCachedBatchIterator]
-    cbToCachedIter.setParquetOutputFileFormat(mockParquetOutputFileFormat)
+    cachedBatchIter.asInstanceOf[producer.ColumnarBatchToCachedBatchIterator]
+        .setParquetOutputFileFormat(mockParquetOutputFileFormat)
     var totalRows = 0
-    val hostBatches = new ListBuffer[ColumnarBatch]()
     while (cachedBatchIter.hasNext) {
       val cb = cachedBatchIter.next()
       totalRows += cb.numRows
-      if (!hostBatches.contains(cbToCachedIter.hostBatch)) {
-        hostBatches += cbToCachedIter.hostBatch
-      }
     }
-    hostBatches.foreach(_.close())
     assert(totalRows == ROWS)
     assert(totalSize == ROWS * schema.indices.length * 1024L)
   }

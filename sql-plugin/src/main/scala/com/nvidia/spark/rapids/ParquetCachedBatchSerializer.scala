@@ -1021,7 +1021,13 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
         }
       }
 
-      override def hasNext: Boolean = queue.nonEmpty || iter.hasNext
+      override def hasNext: Boolean = {
+        if (queue.isEmpty && !iter.hasNext) {
+          // iterator has exhausted, we should close the batches
+          closeableRowIterators.foreach(_.close())
+        }
+        queue.nonEmpty || iter.hasNext
+      }
 
       private val queue = new mutable.Queue[CachedBatch]()
 
@@ -1030,12 +1036,17 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
         attr.dataType.defaultSize
       }.sum
 
+      private val closeableRowIterators = new ListBuffer[AutoCloseable]()
+
       override def next(): CachedBatch = {
         if (queue.isEmpty) {
           // to store a row if we have read it but there is no room in the parquet file to put it
           // we will put it in the next CachedBatch
           var leftOverRow: Option[InternalRow] = None
           val rowIterator = getIterator
+          if (rowIterator.isInstanceOf[AutoCloseable]) {
+            closeableRowIterators += rowIterator.asInstanceOf[AutoCloseable]
+          }
           while (rowIterator.hasNext || leftOverRow.nonEmpty) {
             // Each partition will be a single parquet file
             var rows = 0
@@ -1095,18 +1106,13 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
      * relationship. Each ColumnarBatch is converted to a single ParquetCachedBatch when next()
      * is called on this iterator
      */
-    class ColumnarBatchToCachedBatchIterator extends InternalRowToCachedBatchIterator {
-      // Exposing this just for tests to close the batch
-      var hostBatch: ColumnarBatch = null
+    class ColumnarBatchToCachedBatchIterator extends InternalRowToCachedBatchIterator
+        with AutoCloseable {
+      val hostBatches = new ListBuffer[ColumnarBatch]()
 
-      override def getIterator: Iterator[InternalRow] = {
-
-        new Iterator[InternalRow] {
-          // We have to check for null context because of the unit test
-          Option(TaskContext.get).foreach(_.addTaskCompletionListener[Unit](_ => hostBatch.close()))
-
+      override def getIterator: Iterator[InternalRow] = new Iterator[InternalRow] {
           val batch: ColumnarBatch = iter.asInstanceOf[Iterator[ColumnarBatch]].next
-          hostBatch = if (batch.column(0).isInstanceOf[GpuColumnVector]) {
+          val hostBatch = if (batch.column(0).isInstanceOf[GpuColumnVector]) {
             withResource(batch) { batch =>
               new ColumnarBatch(batch.safeMap(_.copyToHost()).toArray, batch.numRows())
             }
@@ -1119,11 +1125,12 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
           override def next: InternalRow = rowIterator.next
 
           override def hasNext: Boolean = rowIterator.hasNext
+      }
 
-        }
+      override def close(): Unit = {
+        hostBatches.foreach(_.close())
       }
     }
-
   }
 
   // We want to change the original schema to have the new names as well
