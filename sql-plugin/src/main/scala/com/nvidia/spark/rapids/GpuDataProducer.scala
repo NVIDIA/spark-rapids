@@ -80,6 +80,9 @@ class SingleGpuDataProducer[T <: AnyRef](private var data: T) extends GpuDataPro
   override def hasNext: Boolean = data != null
 
   override def next: T = {
+    if (data == null) {
+      throw new NoSuchElementException()
+    }
     val ret = data
     data = null.asInstanceOf[T]
     ret

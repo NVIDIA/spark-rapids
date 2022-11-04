@@ -62,6 +62,9 @@ class SingleGpuColumnarBatchIterator(private var batch: ColumnarBatch)
   override def hasNext: Boolean = batch != null
 
   override def next(): ColumnarBatch = {
+    if (batch == null) {
+      throw new NoSuchElementException()
+    }
     val ret = batch
     batch = null
     ret
