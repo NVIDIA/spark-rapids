@@ -169,20 +169,19 @@ exclusive mode to assign GPUs under Spark. To disable exclusive mode, use
     nvidia-smi -i 0 -c Default # Set GPU 0 to default mode, run as root.
     ```
 
-2. Currently the Python files are packed into the RAPIDS Accelerator jar.
+2. Currently, the Python files are packed into the RAPIDS Accelerator jar.
 
     On Yarn, you need to add
     ```shell
     ...
-    --py-files ${SPARK_RAPIDS_PLUGIN_JAR}
+    --py-files ${SPARK_RAPIDS_PLUGIN_JAR} \
     ```
-
 
     On Standalone, you need to add
     ```shell
     ...
     --conf spark.executorEnv.PYTHONPATH=${SPARK_RAPIDS_PLUGIN_JAR} \
-    --py-files ${SPARK_RAPIDS_PLUGIN_JAR}
+    --py-files ${SPARK_RAPIDS_PLUGIN_JAR} \
     ```
 
 3. Enable GPU Assignment(Scheduling) for Pandas UDF.
@@ -193,17 +192,16 @@ exclusive mode to assign GPUs under Spark. To disable exclusive mode, use
     ```
 
 Please note: every type of Pandas UDF on Spark is run by a specific Spark execution plan. RAPIDS
-Accelerator has a 1-1 mapping support for each of them. Not all Pandas UDF types are data-transfer
-accelerated at present:
+Accelerator has a 1-1 mapping support for each of them.
 
-  | Spark Execution Plan|Data Transfer Accelerated|Use Case|
+  |Spark Execution Plan|Data Transfer Accelerated|Use Case|
   |----------------------|----------|--------|
   |ArrowEvalPythonExec|yes|[Series to Series](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#series-to-series), [Iterator of Series to Iterator of Series](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#iterator-of-series-to-iterator-of-series) and [Iterator of Multiple Series to Iterator of Series](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#iterator-of-multiple-series-to-iterator-of-series)|
   |MapInPandasExec|yes|[Map](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#map)|
-  | WindowInPandasExec|yes|[Window](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#series-to-scalar)|
-  | FlatMapGroupsInPandasExec|no|[Grouped Map](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#grouped-map)|
-  | AggregateInPandasExec|no|[Aggregate](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#series-to-scalar)|
-  |FlatMapCoGroupsInPandasExec|no|[Co-grouped Map](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#co-grouped-map)|
+  |WindowInPandasExec|yes|[Window](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#series-to-scalar)|
+  |FlatMapGroupsInPandasExec|yes|[Grouped Map](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#grouped-map)|
+  |AggregateInPandasExec|yes|[Aggregate](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#series-to-scalar)|
+  |FlatMapCoGroupsInPandasExec|yes|[Co-grouped Map](https://spark.apache.org/docs/latest/api/python/user_guide/sql/arrow_pandas.html#co-grouped-map)|
 
 
 ### Other Configuration
@@ -221,7 +219,6 @@ The following configuration settings are also relevant for GPU scheduling for Pa
     `spark.rapids.memory.gpu.allocFraction` and `spark.rapids.memory.gpu.maxAllocFraction` except
     these specify the GPU pool size for the _Python processes_. Half of the GPU _available_ memory
     will be used by default if it is not specified.
-
 
 2. Limit of concurrent Python processes
 
@@ -286,3 +283,8 @@ The following configuration settings are also relevant for GPU scheduling for Pa
 To find details on the above Python configuration settings, please see the 
 [RAPIDS Accelerator for Apache Spark Configuration Guide](../configs.md). 
 Search 'pandas' for a quick navigation jump.
+
+
+### mapInArrow
+[mapInArrow](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.DataFrame.mapInArrow.html#pyspark.sql.DataFrame.mapInArrow) is a PySpark API introduced in Spark 3.3.0.
+The RAPIDS Accelerator supports acceleration for `mapInArrow` in the same way as Pandas UDF.

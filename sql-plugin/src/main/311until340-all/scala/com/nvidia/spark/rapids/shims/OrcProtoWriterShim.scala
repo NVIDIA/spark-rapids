@@ -16,6 +16,24 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.execution.LeafExecNode
+import com.google.protobuf.{AbstractMessage, CodedOutputStream}
+import org.apache.orc.impl.OutStream
 
-trait ShimLeafExecNode extends LeafExecNode
+class OrcProtoWriterShim(orcOutStream: OutStream) {
+  val proxied = CodedOutputStream.newInstance(orcOutStream)
+  def writeAndFlush(obj: Any): Unit = obj match {
+    case m: AbstractMessage =>
+      m.writeTo(proxied)
+      proxied.flush()
+      orcOutStream.flush()
+    case _ =>
+      require(obj.isInstanceOf[AbstractMessage],
+        s"Unexpected protobuf message type: $obj")
+  }
+}
+
+object OrcProtoWriterShim {
+  def apply(orcOutStream: OutStream) = {
+    new OrcProtoWriterShim(orcOutStream)
+  }
+}
