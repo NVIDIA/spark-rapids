@@ -714,12 +714,9 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
       "Cannot have a scalar as left side operand in Like")
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    val likeStr = if (rhs.isValid) {
-      rhs.getValue.asInstanceOf[UTF8String].toString
-    } else {
-      null
+    withResource(Scalar.fromString(Character.toString(escapeChar))) { escapeScalar =>
+      lhs.getBase.like(rhs.getBase, escapeScalar)
     }
-    lhs.getBase.like(Scalar.fromString(likeStr), Scalar.fromString(Character.toString(escapeChar)))
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
@@ -731,44 +728,6 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType)
 
   override def dataType: DataType = BooleanType
-  /**
-   * Validate and convert SQL 'like' pattern to a cuDF regular expression.
-   *
-   * Underscores (_) are converted to '.' including newlines and percent signs (%)
-   * are converted to '.*' including newlines, other characters are quoted literally or escaped.
-   * An invalid pattern will throw an `IllegalArgumentException`.
-   *
-   * @param pattern the SQL pattern to convert
-   * @param escapeChar the escape string contains one character.
-   * @return the equivalent cuDF regular expression of the pattern
-   */
-  def escapeLikeRegex(pattern: String, escapeChar: Char): String = {
-    val in = pattern.toIterator
-    val out = new StringBuilder()
-
-    def fail(message: String) = throw new IllegalArgumentException(
-      s"the pattern '$pattern' is invalid, $message")
-
-    import CudfRegexp.cudfQuote
-
-    while (in.hasNext) {
-      in.next match {
-        case c1 if c1 == escapeChar && in.hasNext =>
-          val c = in.next
-          c match {
-            case '_' | '%' => out ++= cudfQuote(c)
-            // special case for cudf
-            case c if c == escapeChar => out ++= cudfQuote(c)
-            case _ => fail(s"the escape character is not allowed to precede '$c'")
-          }
-        case c if c == escapeChar => fail("it is not allowed to end with the escape character")
-        case '_' => out ++= "(?:.|\n)"
-        case '%' => out ++= "(?:.|\n)*"
-        case c => out ++= cudfQuote(c)
-      }
-    }
-    out.result() + "\\Z" // makes this match for cuDF expected format for `matchesRe`
-  }
 }
 
 object GpuRegExpUtils {
