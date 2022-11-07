@@ -920,7 +920,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
      * relationship. Each partition represents a single parquet file, so we encode it
      * and return the CachedBatch when next is called.
      */
-    class InternalRowToCachedBatchIterator extends Iterator[CachedBatch]() {
+    class InternalRowToCachedBatchIterator extends Iterator[CachedBatch]() with AutoCloseable {
 
       var parquetOutputFileFormat = new ParquetOutputFileFormat()
 
@@ -932,6 +932,10 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       // is there a type that spark doesn't support by default in the schema?
       val hasUnsupportedType: Boolean = origCachedAttributes.exists { attribute =>
         !PCBSSchemaHelper.isTypeSupportedByParquet(attribute.dataType)
+      }
+
+      override def close(): Unit = {
+        // We don't have any off heap vectors, so nothing to clean
       }
 
       def getIterator: Iterator[InternalRow] = {
@@ -1023,8 +1027,8 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
 
       override def hasNext: Boolean = {
         if (queue.isEmpty && !iter.hasNext) {
-          // iterator has exhausted, we should close the batches
-          closeableRowIterators.foreach(_.close())
+          // iterator has exhausted, we should clean up
+          close()
         }
         queue.nonEmpty || iter.hasNext
       }
@@ -1036,17 +1040,12 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
         attr.dataType.defaultSize
       }.sum
 
-      private val closeableRowIterators = new ListBuffer[AutoCloseable]()
-
       override def next(): CachedBatch = {
         if (queue.isEmpty) {
           // to store a row if we have read it but there is no room in the parquet file to put it
           // we will put it in the next CachedBatch
           var leftOverRow: Option[InternalRow] = None
           val rowIterator = getIterator
-          if (rowIterator.isInstanceOf[AutoCloseable]) {
-            closeableRowIterators += rowIterator.asInstanceOf[AutoCloseable]
-          }
           while (rowIterator.hasNext || leftOverRow.nonEmpty) {
             // Each partition will be a single parquet file
             var rows = 0

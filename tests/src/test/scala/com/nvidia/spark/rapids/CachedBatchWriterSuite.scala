@@ -236,7 +236,7 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
     when(mockParquetOutputFileFormat.getRecordWriter(any(), any())).thenReturn(mockRecordWriter)
     val cachedBatchIter = producer.getColumnarBatchToCachedBatchIterator
     cachedBatchIter.asInstanceOf[producer.ColumnarBatchToCachedBatchIterator]
-        .setParquetOutputFileFormat(mockParquetOutputFileFormat)
+      .setParquetOutputFileFormat(mockParquetOutputFileFormat)
     var totalRows = 0
     while (cachedBatchIter.hasNext) {
       val cb = cachedBatchIter.next()
