@@ -2,14 +2,14 @@ package com.nvidia.spark.rapids.optimizer
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeMap, AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.planning.ExtractEquiJoinKeys
 import org.apache.spark.sql.catalyst.plans._
-import org.apache.spark.sql.catalyst.plans.logical.{ColumnStat, Histogram, Join, Statistics}
+import org.apache.spark.sql.catalyst.plans.logical.{ColumnStat, Filter, Histogram, Join, LogicalPlan, Project, Statistics}
 import org.apache.spark.sql.catalyst.plans.logical.statsEstimation.EstimationUtils._
 import org.apache.spark.sql.catalyst.plans.logical.statsEstimation.ValueInterval
+import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, LogicalRelation}
 
 /**
  * Copied from Spark's JoinEstimation.scala
@@ -67,6 +67,34 @@ case class GpuJoinEstimation(join: Join) extends Logging {
         // 2. Estimate the number of output rows
         val leftRows = leftStats.rowCount.get
         val rightRows = rightStats.rowCount.get
+
+        def getHadoopRel(p: LogicalPlan): Option[HadoopFsRelation] = {
+          p match {
+            case Project(_, l: LogicalRelation) => l.relation match {
+              case l: HadoopFsRelation => Some(l)
+              case _ => None
+            }
+            case Project(_, Filter(_, l: LogicalRelation)) => l.relation match {
+              case l: HadoopFsRelation => Some(l)
+              case _ => None
+            }
+            case _ => None
+          }
+        }
+
+        (getHadoopRel(join.left), getHadoopRel(join.right)) match {
+          case (Some(l: HadoopFsRelation), Some(r: HadoopFsRelation)) =>
+            val ll = l.location.inputFiles.sorted
+            val rr = r.location.inputFiles.sorted
+            val sameLoc = ll sameElements rr
+            logDebug(s"join locations same? $sameLoc:\n${ll.mkString}\n${rr.mkString}")
+            if (sameLoc) {
+              return Some(Statistics(rowCount = Some(leftRows.pow(2)),
+                sizeInBytes = leftStats.sizeInBytes.pow(2)))
+            }
+          case _ =>
+            logDebug("not hadoop relation")
+        }
 
         // Make sure outputRows won't be too small based on join type.
         val outputRows = joinType match {

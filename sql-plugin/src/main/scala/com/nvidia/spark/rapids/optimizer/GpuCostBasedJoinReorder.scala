@@ -185,15 +185,22 @@ object JoinReorderDP extends PredicateHelper with Logging {
       foundPlans += searchLevel(foundPlans.toSeq, conf, conditions, topOutputSet, filters)
     }
 
+    // debug logging
+    for (maps <- foundPlans) {
+      for (plan <- maps.values) {
+        logDebug(s"Plan cost = ${plan.planCost}: $plan")
+      }
+    }
+
     val durationInMs = (System.nanoTime() - startTime) / (1000 * 1000)
-    logDebug(s"Join reordering finished. Duration: $durationInMs ms, number of items: " +
+    println(s"Join reordering finished. Duration: $durationInMs ms, number of items: " +
       s"${items.length}, number of plans in memo: ${foundPlans.map(_.size).sum}")
 
     // The last level must have one and only one plan, because all items are joinable.
     assert(foundPlans.size == items.length && foundPlans.last.size == 1)
-    foundPlans.last.head._2.plan match {
+    val chosenPlan = foundPlans.last.head._2.plan match {
       case p@Project(projectList, j: Join)
-          if projectList != output && topOutputSet == p.outputSet =>
+        if projectList != output && topOutputSet == p.outputSet =>
         // Keep the same order of final output attributes.
         p.copy(projectList = output)
       case finalPlan if !sameOutput(finalPlan, output) =>
@@ -201,6 +208,8 @@ object JoinReorderDP extends PredicateHelper with Logging {
       case finalPlan =>
         finalPlan
     }
+    logDebug(s"chosen plan: $chosenPlan")
+    chosenPlan
   }
 
   private def sameOutput(plan: LogicalPlan, expectedOutput: Seq[Attribute]): Boolean = {
