@@ -241,7 +241,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
                                           directories: Seq[(URI, InternalRow)],
                                           readSchema: StructType,
                                           sparkSession: SparkSession,
-                                          hadoopConf: Configuration): RDD[InternalRow] = {
+                                          hadoopConf: Configuration): RDD[ColumnarBatch] = {
     def isNonEmptyDataFile(f: FileStatus): Boolean = {
       if (!f.isFile || f.getLen == 0) {
         false
@@ -275,6 +275,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
     //                (https://github.com/NVIDIA/spark-rapids/issues/7017)
     //                Currently assuming per-file reading.
     SparkShimImpl.getFileScanRDD(sparkSession, readFile, filePartitions, readSchema)
+                 .asInstanceOf[RDD[ColumnarBatch]]
   }
 
   private def createReadRDDForTable(
@@ -283,7 +284,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
                 readSchema: StructType,
                 sparkSession: SparkSession,
                 hadoopConf: Configuration
-              ) = {
+              ): RDD[ColumnarBatch] = {
     val tableLocation: URI = hiveTableRelation.tableMeta.storage.locationUri.getOrElse{
       throw new UnsupportedOperationException("Table path not set.")
     }
@@ -303,7 +304,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
                 readSchema: StructType,
                 sparkSession: SparkSession,
                 hadoopConf: Configuration
-              ): RDD[InternalRow] = {
+              ): RDD[ColumnarBatch] = {
     val partitionColTypes = hiveTableRelation.partitionCols.map(_.dataType)
     val dirsWithPartValues = prunedPartitions.map { p =>
       // No need to check if partition directory exists.
@@ -324,7 +325,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
       dirsWithPartValues, readSchema, sparkSession, hadoopConf)
   }
 
-  lazy val inputRDD: RDD[InternalRow] = {
+  lazy val inputRDD: RDD[ColumnarBatch] = {
     // Assume Delimited text.
     // Note: The populated `options` aren't strictly required for text, currently.
     //       These are added in case they are required for table read in the future,
@@ -360,7 +361,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val scanTime = gpuLongMetric("scanTime")
-    inputRDD.asInstanceOf[RDD[ColumnarBatch]].mapPartitionsInternal { batches =>
+    inputRDD.mapPartitionsInternal { batches =>
       new Iterator[ColumnarBatch] {
 
         override def hasNext: Boolean = {
