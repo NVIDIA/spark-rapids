@@ -374,7 +374,7 @@ class GpuParquetWriter(
    * NOTE: It is the writer's responsibility to close the batch.
    */
   override def writeAndClose(batch: ColumnarBatch,
-                     statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
+                             statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
     val newBatch = withResource(batch) { batch =>
       val transformedCols = GpuColumnVector.extractColumns(batch).safeMap { cv =>
         new GpuColumnVector(cv.dataType, deepTransformColumn(cv.getBase, cv.dataType))
