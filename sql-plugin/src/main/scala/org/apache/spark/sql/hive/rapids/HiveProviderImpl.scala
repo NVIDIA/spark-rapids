@@ -139,7 +139,7 @@ class HiveProviderImpl extends HiveProvider {
           TypeSig.all),
         (p, conf, parent, r) => new SparkPlanMeta[HiveTableScanExec](p, conf, parent, r) {
 
-          def flagIfUnsupportedStorageFormat(storage: CatalogStorageFormat): Unit = {
+          private def flagIfUnsupportedStorageFormat(storage: CatalogStorageFormat): Unit = {
             val textInputFormat      = "org.apache.hadoop.mapred.TextInputFormat"
             val lazySimpleSerDe      = "org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe"
             val serializationKey     = "serialization.format"
@@ -172,13 +172,19 @@ class HiveProviderImpl extends HiveProvider {
             }
           }
 
-          override def convertToGpu(): GpuExec = {
-            GpuHiveTableScanExec(wrapped.requestedAttributes,
-                                 wrapped.relation,
-                                 wrapped.partitionPruningPred)
+          private def checkIfEnabled(): Unit = {
+            if (!conf.isHiveDelimitedTextEnabled) {
+              willNotWorkOnGpu("Hive Text I/O has been disabled. To enable this, " +
+                               s"set ${RapidsConf.ENABLE_HIVE_TEXT} to true")
+            }
+            if (!conf.isHiveDelimitedTextReadEnabled) {
+              willNotWorkOnGpu("Reading Hive delimited text tables has been disabled. " +
+                               s"To enable this, set ${RapidsConf.ENABLE_HIVE_TEXT_READ} to true")
+            }
           }
 
           override def tagPlanForGpu(): Unit = {
+            checkIfEnabled()
             val tableRelation = wrapped.relation
             // Check that the table and all participating partitions
             // are '^A' separated.
@@ -188,6 +194,12 @@ class HiveProviderImpl extends HiveProvider {
                                             .map(_.storage)
                                             .foreach(flagIfUnsupportedStorageFormat)
             }
+          }
+
+          override def convertToGpu(): GpuExec = {
+            GpuHiveTableScanExec(wrapped.requestedAttributes,
+              wrapped.relation,
+              wrapped.partitionPruningPred)
           }
         })
     ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[SparkPlan]), r) }.toMap
