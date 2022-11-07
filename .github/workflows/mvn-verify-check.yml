@@ -44,12 +44,12 @@ jobs:
         run: |
           set -x
           . jenkins/version-def.sh
-          svArrBodyNoSnapshot=$(printf ",{\"spark-version\":\"%s\",\"isSnapshot\":\"false\"}" "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}")
+          svArrBodyNoSnapshot=$(printf ",{\"spark-version\":\"%s\",\"isSnapshot\": false}" "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}")
           svArrBodyNoSnapshot=${svArrBodyNoSnapshot:1}
-          svArrBodySnapshot=$(printf ",{\"spark-version\":\"%s\",\"isSnapshot\":\"true\"}" "${SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]}")
+          svArrBodySnapshot=$(printf ",{\"spark-version\":\"%s\",\"isSnapshot\": true}" "${SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY[@]}")
 
           # add snapshot versions which are not in snapshot property in pom file
-          svArrBodySnapshot+=$(printf ",{\"spark-version\":\"%s\",\"isSnapshot\":\"true\"}" 340)
+          svArrBodySnapshot+=$(printf ",{\"spark-version\":\"%s\",\"isSnapshot\": true}" 340)
           svArrBodySnapshot=${svArrBodySnapshot:1}
           svJsonStr=$(printf {\"include\":[%s]} $svArrBodyNoSnapshot,$svArrBodySnapshot)
           echo "headVersion=$SPARK_BASE_SHIM_VERSION" >> $GITHUB_OUTPUT
@@ -61,7 +61,7 @@ jobs:
 
   package-aggregator:
     needs: get-shim-versions-from-dist
-    continue-on-error: ${{ matrix.isSnapshot }}
+    #continue-on-error: ${{ matrix.isSnapshot }}
     strategy:
       matrix: ${{ fromJSON(needs.get-shim-versions-from-dist.outputs.sparkTailVersions) }}
       fail-fast: false
