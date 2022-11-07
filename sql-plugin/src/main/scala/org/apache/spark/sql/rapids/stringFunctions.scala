@@ -1103,12 +1103,12 @@ class GpuRegExpExtractMeta(
       case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
         try {
           val javaRegexpPattern = str.toString
+          numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
           // verify that we support this regex and can transpile it to cuDF format
           val (transpiledAST, _) =
             new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(javaRegexpPattern, None)
           GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
           pattern = Some(transpiledAST.toRegexString)
-          numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
         } catch {
           case e: RegexUnsupportedException =>
             if (conf.isCpuRowBasedEnabled) {
@@ -1144,11 +1144,11 @@ class GpuRegExpExtractMeta(
       str: Expression,
       regexp: Expression,
       idx: Expression): GpuExpression = {
-    val cudfPattern = pattern.getOrElse(
-      throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern"))
     if (useRowFallback) {
       GpuRegExpExtractWithFallback(str, regexp, idx)
     } else {
+      val cudfPattern = pattern.getOrElse(
+        throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern"))
       GpuRegExpExtract(str, regexp, idx, cudfPattern)
     }
   }

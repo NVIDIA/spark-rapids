@@ -18,13 +18,14 @@ package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{Dataset, Row, SparkSession}
+import org.apache.spark.sql.internal.SQLConf
 
 class RowBasedExpressionSuite extends SparkQueryCompareTestSuite {
 
-  def enableRowBasedExpression(): SparkConf = {
+  def enableRowBasedExpression: SparkConf = {
     return new SparkConf()
-      .set("spark.rapids.sql.adaptive", "false")
-      .set("spark.rapids.sql.expressions.rowBasedEvaluator.enabled", "true")
+      .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
+      .set(RapidsConf.ENABLE_CPU_ROW_BASED_EXPRESSIONS.key, "true")
   }
   
   def simpleDF(spark: SparkSession): Dataset[Row] = {
@@ -36,7 +37,7 @@ class RowBasedExpressionSuite extends SparkQueryCompareTestSuite {
       val df = simpleDF(spark).selectExpr("regexp_extract(id, \"(!\\\\w+)\\\\d+([0-5]{0,2})\", 1)")
       val gpuPlan = df.queryExecution.executedPlan
       assert(gpuPlan.toString.contains("gpuwrapped[regexp_extract]"))
-     })
+     }, enableRowBasedExpression)
   }
   
 }

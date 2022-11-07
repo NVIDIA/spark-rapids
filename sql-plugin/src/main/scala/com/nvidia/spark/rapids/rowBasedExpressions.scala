@@ -30,7 +30,6 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
   */
 trait GpuWrappedRowBasedExpression[SparkExpr <: Expression]
     extends GpuExpression
-    // with ShimExpression
     with Logging { 
 
   def rowExpression: SparkExpr
