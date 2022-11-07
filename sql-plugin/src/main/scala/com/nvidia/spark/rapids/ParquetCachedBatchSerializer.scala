@@ -1109,21 +1109,34 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
         with AutoCloseable {
       val hostBatches = new ListBuffer[ColumnarBatch]()
 
-      override def getIterator: Iterator[InternalRow] = new Iterator[InternalRow] {
-          val batch: ColumnarBatch = iter.asInstanceOf[Iterator[ColumnarBatch]].next
-          val hostBatch = if (batch.column(0).isInstanceOf[GpuColumnVector]) {
-            withResource(batch) { batch =>
-              new ColumnarBatch(batch.safeMap(_.copyToHost()).toArray, batch.numRows())
-            }
-          } else {
-            batch
+      Option(TaskContext.get).foreach(_.addTaskCompletionListener[Unit] { _ =>
+        hostBatches.foreach { hb =>
+          try {
+            hb.close()
+          } catch {
+            case e: IllegalStateException
+              if e.getMessage.startsWith("Close called too many times ") =>
+            // swallow the exception as this must be because we exhausted the iterator
           }
+        }
+      })
 
-          val rowIterator = hostBatch.rowIterator().asScala
+      override def getIterator: Iterator[InternalRow] = new Iterator[InternalRow] {
+        val batch: ColumnarBatch = iter.asInstanceOf[Iterator[ColumnarBatch]].next
+        val hostBatch = if (batch.column(0).isInstanceOf[GpuColumnVector]) {
+          withResource(batch) { batch =>
+            new ColumnarBatch(batch.safeMap(_.copyToHost()).toArray, batch.numRows())
+          }
+        } else {
+          batch
+        }
+        hostBatches += hostBatch
 
-          override def next: InternalRow = rowIterator.next
+        val rowIterator = hostBatch.rowIterator().asScala
 
-          override def hasNext: Boolean = rowIterator.hasNext
+        override def next: InternalRow = rowIterator.next
+
+        override def hasNext: Boolean = rowIterator.hasNext
       }
 
       override def close(): Unit = {
