@@ -144,6 +144,20 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
+  test("cuDF does not support positive or negative lookahead") {
+    val negPatterns = Seq("a(!b)", "a(!b)c?")
+    negPatterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode,
+        "Negative lookahead groups are not supported")
+    )
+
+    val posPatterns = Seq("a(=b)", "a(=b)c?")
+    posPatterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode,
+        "Positive lookahead groups are not supported")
+    )
+  }
+
   test("cuDF does not support empty sequence") {
     val patterns = Seq("", "a|", "()")
     patterns.foreach(pattern =>
@@ -1144,7 +1158,7 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true,
   }
 
   private def group(depth: Int) = {
-    RegexGroup(capture = rr.nextBoolean(), generate(depth + 1))
+    RegexGroup(capture = rr.nextBoolean(), generate(depth + 1), None)
   }
 
   private def repetition(depth: Int) = {
