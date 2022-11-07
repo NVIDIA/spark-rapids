@@ -191,10 +191,11 @@ object JoinReorderDP extends PredicateHelper with Logging {
 
     // The last level must have one and only one plan, because all items are joinable.
     assert(foundPlans.size == items.length && foundPlans.last.size == 1)
-
-    // TODO this has been modified compared to Spark and needs more investigation
-    //  to make sure this is what we want
     foundPlans.last.head._2.plan match {
+      case p@Project(projectList, j: Join) if projectList != output =>
+        assert(topOutputSet == p.outputSet)
+        // Keep the same order of final output attributes.
+        p.copy(projectList = output)
       case finalPlan if !sameOutput(finalPlan, output) =>
         Project(output, finalPlan)
       case finalPlan =>
