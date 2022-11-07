@@ -160,7 +160,7 @@ class RegexParser(pattern: String) {
   }
 
   private def parseGroup(): RegexAST = {
-    val captureGroup = if (pos + 1 < pattern.length
+    var captureGroup = if (pos + 1 < pattern.length
         && pattern.charAt(pos) == '?'
         && pattern.charAt(pos+1) == ':') {
       pos += 2
@@ -171,7 +171,11 @@ class RegexParser(pattern: String) {
     val lookahead = if (pos + 1 < pattern.length
         && "!=".contains(pattern.charAt(pos))) {
       pos += 1
-      Some(pattern.charAt(pos-1) == '=')
+      captureGroup = false
+      pattern.charAt(pos-1) match {
+        case '=' => Some(RegexPositiveLookahead)
+        case '!' => Some(RegexNegativeLookahead)
+      }
     } else {
       None
     }
@@ -665,6 +669,10 @@ sealed trait RegexMode
 object RegexFindMode extends RegexMode
 object RegexReplaceMode extends RegexMode
 object RegexSplitMode extends RegexMode
+
+sealed trait RegexLookahead
+object RegexNegativeLookahead extends RegexLookahead
+object RegexPositiveLookahead extends RegexLookahead
 
 sealed class RegexRewriteFlags(val emptyRepetition: Boolean)
 
@@ -1499,9 +1507,13 @@ class CudfRegexTranspiler(mode: RegexMode) {
         RegexChoice(ll, rr)
 
       case g @ RegexGroup(_, _, Some(lookahead)) =>
-        val lookaheadType = if (lookahead) "Positive" else "Negative"
-        throw new RegexUnsupportedException(
-          s"${lookaheadType} lookahead groups are not supported", g.position)
+        val msg = lookahead match {
+          case RegexPositiveLookahead =>
+            "Positive lookahead groups are not supported"
+          case RegexNegativeLookahead =>
+            "Negative lookahead groups are not supported"
+        }
+        throw new RegexUnsupportedException(msg, g.position)
 
       case RegexGroup(capture, term, _) =>
         term match {
@@ -1642,7 +1654,8 @@ sealed case class RegexSequence(parts: ListBuffer[RegexAST]) extends RegexAST {
   override def toRegexString: String = parts.map(_.toRegexString).mkString
 }
 
-sealed case class RegexGroup(capture: Boolean, term: RegexAST, val lookahead: Option[Boolean])
+sealed case class RegexGroup(capture: Boolean, term: RegexAST,
+    val lookahead: Option[RegexLookahead])
     extends RegexAST {
   def this(capture: Boolean, term: RegexAST) {
     this(capture, term, None)
@@ -1651,13 +1664,19 @@ sealed case class RegexGroup(capture: Boolean, term: RegexAST, val lookahead: Op
     this(capture, term, None)
     this.position = Some(position)
   }
-  def this(capture: Boolean, term: RegexAST, position: Int, lookahead: Option[Boolean]) {
+  def this(capture: Boolean, term: RegexAST, position: Int, lookahead: Option[RegexLookahead]) {
     this(capture, term, lookahead)
     this.position = Some(position)
   }
   override def children(): Seq[RegexAST] = Seq(term)
   override def toRegexString: String = if (capture) {
     s"(${term.toRegexString})"
+  } else if (lookahead.isDefined) {
+    lookahead match {
+      case Some(RegexPositiveLookahead) => s"(=${term.toRegexString})"
+      case Some(RegexNegativeLookahead) => s"(!${term.toRegexString})"
+      case _ => throw new IllegalStateException("Should not reach here")
+    }
   } else {
     s"(?:${term.toRegexString})"
   }
