@@ -2212,6 +2212,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isRegExpEnabled: Boolean = get(ENABLE_REGEXP)
 
+  lazy val isCpuRowBasedEnabled: Boolean = get(ENABLE_CPU_ROW_BASED_EXPRESSIONS)
+
   lazy val maxRegExpStateMemory: Long =  {
     val size = get(REGEXP_MAX_STATE_MEMORY_BYTES)
     if (size > 3 * gpuTargetBatchSizeBytes) {

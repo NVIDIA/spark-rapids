@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.HostColumnVector
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{ShimBinaryExpression, ShimExpression, ShimTernaryExpression, ShimUnaryExpression}
+import com.nvidia.spark.rapids.shims.{ShimBinaryExpression, ShimTernaryExpression, ShimUnaryExpression}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions._
@@ -30,14 +30,14 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
   */
 trait GpuWrappedRowBasedExpression[SparkExpr <: Expression]
     extends GpuExpression
-    with ShimExpression
+    // with ShimExpression
     with Logging { 
 
   def rowExpression: SparkExpr
 
-  def checkNull: Boolean
+  def nullSafe: Boolean
 
-  override def prettyName: String = s"gpuwrapped(${rowExpression.prettyName})"
+  override def prettyName: String = s"gpuwrapped[${rowExpression.prettyName}]"
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     val cpuExprStart = System.nanoTime
@@ -53,12 +53,6 @@ trait GpuWrappedRowBasedExpression[SparkExpr <: Expression]
       val retType = GpuColumnVector.convertFrom(dataType, nullable)
       val retRow = new GenericInternalRow(size = 1)
       closeOnExcept(new HostColumnVector.ColumnBuilder(retType, batch.numRows)) { builder =>
-        /**
-         * This `nullSafe` is for https://github.com/NVIDIA/spark-rapids/issues/3942.
-         * And more details can be found from
-         *     https://github.com/NVIDIA/spark-rapids/pull/3997#issuecomment-957650846
-         */
-        val nullSafe = checkNull && GpuUserDefinedFunction.hostColumnAssertionEnabled
         new ColumnarToRowIterator(
             Iterator.single(new ColumnarBatch(argCols.toArray, batch.numRows())),
             NoopMetric,
@@ -87,19 +81,16 @@ trait GpuWrappedRowBasedExpression[SparkExpr <: Expression]
 }
 
 trait GpuWrappedRowBasedUnaryExpression[SparkUnaryExpr <: UnaryExpression]
-    extends GpuUnaryExpression 
-    with ShimUnaryExpression
+    extends ShimUnaryExpression
     with GpuWrappedRowBasedExpression[SparkUnaryExpr] {
 }
 
 trait GpuWrappedRowBasedBinaryExpression[SparkBinaryExpr <: BinaryExpression]
-    extends GpuBinaryExpression 
-    with ShimBinaryExpression
+    extends ShimBinaryExpression
     with GpuWrappedRowBasedExpression[SparkBinaryExpr] {
 }
 
 trait GpuWrappedRowBasedTernaryExpression[SparkTernaryExpr <: TernaryExpression]
-    extends GpuTernaryExpression 
-    with ShimTernaryExpression
+    extends ShimTernaryExpression
     with GpuWrappedRowBasedExpression[SparkTernaryExpr] {
 }

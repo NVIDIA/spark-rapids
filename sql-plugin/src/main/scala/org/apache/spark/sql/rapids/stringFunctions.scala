@@ -1088,6 +1088,8 @@ class GpuRegExpExtractMeta(
   private var pattern: Option[String] = None
   private var numGroups = 0
 
+  private var useRowFallback = false
+
   override def tagExprForGpu(): Unit = {
     GpuRegExpUtils.tagForRegExpEnabled(this)
 
@@ -1109,7 +1111,11 @@ class GpuRegExpExtractMeta(
           numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
         } catch {
           case e: RegexUnsupportedException =>
-            willNotWorkOnGpu(e.getMessage)
+            if (conf.isCpuRowBasedEnabled) {
+              useRowFallback = true
+            } else {
+              willNotWorkOnGpu(e.getMessage)
+            }
         }
       case _ =>
         willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
@@ -1119,7 +1125,11 @@ class GpuRegExpExtractMeta(
       case Literal(value, DataTypes.IntegerType) =>
         val idx = value.asInstanceOf[Int]
         if (idx < 0) {
-          willNotWorkOnGpu("the specified group index cannot be less than zero")
+          if (conf.isCpuRowBasedEnabled) {
+            useRowFallback = true
+          } else {
+            willNotWorkOnGpu("the specified group index cannot be less than zero")
+          }
         }
         if (idx > numGroups) {
           willNotWorkOnGpu(
@@ -1136,7 +1146,11 @@ class GpuRegExpExtractMeta(
       idx: Expression): GpuExpression = {
     val cudfPattern = pattern.getOrElse(
       throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern"))
-    GpuRegExpExtract(str, regexp, idx, cudfPattern)
+    if (useRowFallback) {
+      GpuRegExpExtractWithFallback(str, regexp, idx)
+    } else {
+      GpuRegExpExtract(str, regexp, idx, cudfPattern)
+    }
   }
 }
 
@@ -1204,6 +1218,25 @@ case class GpuRegExpExtract(
       }
     }
   }
+}
+
+case class GpuRegExpExtractWithFallback(
+    subject: Expression,
+    regexp: Expression,
+    idx: Expression) extends GpuWrappedRowBasedTernaryExpression[RegExpExtract]
+    with ImplicitCastInputTypes with NullIntolerant {
+ 
+  override def dataType: DataType = StringType
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType, IntegerType)
+  override def first: Expression = subject
+  override def second: Expression = regexp
+  override def third: Expression = idx
+
+  override def rowExpression: RegExpExtract = RegExpExtract(first, second, third)
+
+  override def nullSafe: Boolean = true
+  
 }
 
 class GpuRegExpExtractAllMeta(

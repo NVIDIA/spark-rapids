@@ -17,17 +17,25 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.Row
+import org.apache.spark.sql.{Dataset, Row, SparkSession}
 
 class RowBasedExpressionSuite extends SparkQueryCompareTestSuite {
 
   def enableRowBasedExpression(): SparkConf = {
-    return new SparkConf().set("spark.rapids.sql.expressions.rowBasedEvaluator.enabled", "true")
+    return new SparkConf()
+      .set("spark.rapids.sql.adaptive", "false")
+      .set("spark.rapids.sql.expressions.rowBasedEvaluator.enabled", "true")
+  }
+  
+  def simpleDF(spark: SparkSession): Dataset[Row] = {
+    spark.range(0, 1000).selectExpr("cast(id AS STRING) as id")
   }
 
   test("gpuwrapped expression is in the final plan") {
      withGpuSparkSession(spark => {
-
+      val df = simpleDF(spark).selectExpr("regexp_extract(id, \"(!\\\\w+)\\\\d+([0-5]{0,2})\", 1)")
+      val gpuPlan = df.queryExecution.executedPlan
+      assert(gpuPlan.toString.contains("gpuwrapped[regexp_extract]"))
      })
   }
   
