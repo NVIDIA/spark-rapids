@@ -50,7 +50,25 @@ import org.apache.spark.sql.types.{BooleanType, DataType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
-
+/**
+ * RAPIDS replacement for the [[org.apache.spark.sql.hive.execution.HiveTableScanExec]],
+ * for supporting reading Hive delimited text format.
+ *
+ * While the HiveTableScanExec supports all the data formats that Hive does,
+ * the GpuHiveTableScanExec currently supports only text tables.
+ *
+ * This GpuExec supports reading from Hive tables under the following conditions:
+ *   1. The table is stored as TEXTFILE (i.e. input-format == TextInputFormat,
+ *      serde == LazySimpleSerDe).
+ *   2. The table contains only columns of primitive types. Specifically, STRUCT,
+ *      ARRAY, MAP, and BINARY are not supported.
+ *   3. The table uses Hive's default record delimiters ('Ctrl-A'),
+ *      and line delimiters ('\n').
+ *
+ * @param requestedAttributes Columns to be read from the table
+ * @param hiveTableRelation The Hive table to be scanned
+ * @param partitionPruningPredicate Partition-pruning predicate for Hive partitioned tables
+ */
 case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
                                 hiveTableRelation: HiveTableRelation,
                                 partitionPruningPredicate: Seq[Expression])
@@ -68,12 +86,14 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
 
   val partitionAttributes: Seq[AttributeReference] = hiveTableRelation.partitionCols
 
+  // CPU expression to prune Hive partitions, based on [[partitionPruningPredicate]].
   // Bind all partition key attribute references in the partition pruning predicate for later
   // evaluation.
-  private lazy val boundPruningPred = partitionPruningPredicate.reduceLeftOption(And).map { pred =>
-    require(pred.dataType == BooleanType,
-      s"Data type of predicate $pred must be ${BooleanType.catalogString} rather than " +
-        s"${pred.dataType.catalogString}.")
+  private lazy val boundPartitionPruningPredOnCPU =
+    partitionPruningPredicate.reduceLeftOption(And).map { pred =>
+      require(pred.dataType == BooleanType,
+        s"Data type of predicate $pred must be ${BooleanType.catalogString} rather than " +
+          s"${pred.dataType.catalogString}.")
 
     BindReferences.bindReference(pred, hiveTableRelation.partitionCols)
   }
@@ -95,7 +115,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
    * @return Partitions that are involved in the query plan.
    */
   private[hive] def prunePartitions(partitions: Seq[HivePartition]): Seq[HivePartition] = {
-    boundPruningPred match {
+    boundPartitionPruningPredOnCPU match {
       case None => partitions
       case Some(shouldKeep) => partitions.filter { part =>
         val dataTypes = hiveTableRelation.partitionCols.map(_.dataType)
@@ -225,8 +245,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
     def isNonEmptyDataFile(f: FileStatus): Boolean = {
       if (!f.isFile || f.getLen == 0) {
         false
-      }
-      else {
+      } else {
         val name = f.getPath.getName
         !((name.startsWith("_") && !name.contains("=")) || name.startsWith("."))
       }
@@ -253,6 +272,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
     }
 
     // TODO [future]: Handle small-file optimization.
+    //                (https://github.com/NVIDIA/spark-rapids/issues/7017)
     //                Currently assuming per-file reading.
     SparkShimImpl.getFileScanRDD(sparkSession, readFile, filePartitions, readSchema)
   }
@@ -329,8 +349,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
     val rdd = if (hiveTableRelation.isPartitioned) {
       createReadRDDForPartitions(reader, hiveTableRelation, requestedOutputDataSchema,
                                  sparkSession, hadoopConf)
-    }
-    else {
+    } else {
       createReadRDDForTable(reader, hiveTableRelation, requestedOutputDataSchema,
                             sparkSession, hadoopConf)
     }
