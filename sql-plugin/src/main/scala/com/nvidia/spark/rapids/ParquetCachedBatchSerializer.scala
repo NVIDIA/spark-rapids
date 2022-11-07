@@ -1110,15 +1110,8 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       val hostBatches = new ListBuffer[ColumnarBatch]()
 
       Option(TaskContext.get).foreach(_.addTaskCompletionListener[Unit] { _ =>
-        hostBatches.foreach { hb =>
-          try {
-            hb.close()
-          } catch {
-            case e: IllegalStateException
-              if e.getMessage.startsWith("Close called too many times ") =>
-            // swallow the exception as this must be because we exhausted the iterator
-          }
-        }
+        hostBatches.foreach(_.close())
+        hostBatches.clear()
       })
 
       override def getIterator: Iterator[InternalRow] = new Iterator[InternalRow] {
@@ -1141,6 +1134,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
 
       override def close(): Unit = {
         hostBatches.foreach(_.close())
+        hostBatches.clear()
       }
     }
   }

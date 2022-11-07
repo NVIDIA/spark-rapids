@@ -242,8 +242,6 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
       val cb = cachedBatchIter.next()
       totalRows += cb.numRows
     }
-    assertThrows[IllegalStateException](
-      cachedBatchIter.asInstanceOf[producer.ColumnarBatchToCachedBatchIterator].close())
     assert(totalRows == ROWS)
     assert(totalSize == ROWS * schema.indices.length * 1024L)
   }
