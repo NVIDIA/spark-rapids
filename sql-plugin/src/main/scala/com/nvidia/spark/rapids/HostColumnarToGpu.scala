@@ -107,9 +107,15 @@ object HostColumnarToGpu extends Logging {
     referenceManagers.result().asJava
   }
 
-  def columnarCopy(cv: ColumnVector,
-      b: ai.rapids.cudf.HostColumnVector.ColumnBuilder, rows: Int): Unit = {
-    cv.dataType() match {
+  // Data type is passed explicitly to allow overriding the reported type from the column vector.
+  // There are cases where the type reported by the column vector does not match the data.
+  // See https://github.com/apache/iceberg/issues/6116.
+  def columnarCopy(
+      cv: ColumnVector,
+      b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,
+      dataType: DataType,
+      rows: Int): Unit = {
+    dataType match {
       case NullType =>
         ColumnarCopyHelper.nullCopy(b, rows)
       case BooleanType if cv.isInstanceOf[ArrowColumnVector] =>
@@ -148,7 +154,7 @@ object HostColumnarToGpu extends Logging {
             }
         }
       case other if GpuTypeShims.isColumnarCopySupportedForType(other) =>
-        GpuTypeShims.columnarCopy(cv, b, rows)
+        GpuTypeShims.columnarCopy(cv, b, other, rows)
       case t =>
         throw new UnsupportedOperationException(
           s"Converting to GPU for $t is not currently supported")
@@ -243,7 +249,7 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     withResource(new MetricRange(copyBufTime)) { _ =>
       val rows = batch.numRows()
       for (i <- 0 until batch.numCols()) {
-        batchBuilder.copyColumnar(batch.column(i), i, schema.fields(i).nullable, rows)
+        batchBuilder.copyColumnar(batch.column(i), i, rows)
       }
       totalRows += rows
     }
@@ -288,6 +294,9 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     val ret = onDeck.get
     onDeck = None
     ret
+  }
+  override protected def cleanupInputBatch(batch: ColumnarBatch): Unit = {
+    // Host batches are closed by the producer not the consumer, so nothing to do.
   }
 }
 

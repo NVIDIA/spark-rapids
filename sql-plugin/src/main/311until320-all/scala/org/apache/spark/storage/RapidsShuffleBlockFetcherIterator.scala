@@ -791,6 +791,7 @@ private class RapidsBufferReleasingInputStream(
   extends InputStream {
   private[this] var closed = false
 
+  @scala.annotation.nowarn("msg=method closeQuietly in class IOUtils is deprecated")
   override def read(): Int = {
     try {
       delegate.read()
@@ -813,6 +814,7 @@ private class RapidsBufferReleasingInputStream(
 
   override def mark(readlimit: Int): Unit = delegate.mark(readlimit)
 
+  @scala.annotation.nowarn("msg=method closeQuietly in class IOUtils is deprecated")
   override def skip(n: Long): Long = {
     try {
       delegate.skip(n)
@@ -825,6 +827,7 @@ private class RapidsBufferReleasingInputStream(
 
   override def markSupported(): Boolean = delegate.markSupported()
 
+  @scala.annotation.nowarn("msg=method closeQuietly in class IOUtils is deprecated")
   override def read(b: Array[Byte]): Int = {
     try {
       delegate.read(b)
@@ -835,6 +838,7 @@ private class RapidsBufferReleasingInputStream(
     }
   }
 
+  @scala.annotation.nowarn("msg=method closeQuietly in class IOUtils is deprecated")
   override def read(b: Array[Byte], off: Int, len: Int): Int = {
     try {
       delegate.read(b, off, len)

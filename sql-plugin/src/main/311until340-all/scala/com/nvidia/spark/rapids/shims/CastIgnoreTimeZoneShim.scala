@@ -16,6 +16,13 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.execution.LeafExecNode
+import org.apache.spark.sql.catalyst.expressions.{CastBase, Expression}
 
-trait ShimLeafExecNode extends LeafExecNode
+object CastIgnoreTimeZoneShim {
+  /** Remove TimeZoneId for Cast if needsTimeZone return false. */
+  def ignoreTimeZone(e: Expression): Expression = e match {
+    case c: CastBase if c.timeZoneId.nonEmpty && !c.needsTimeZone =>
+      c.withTimeZone(null)
+    case _ => e
+  }
+}
