@@ -90,7 +90,7 @@ object GpuOrcFileFormat extends Logging {
 
     val orcOptions = new OrcOptions(options, sqlConf)
     orcOptions.compressionCodec match {
-      case "NONE" | "SNAPPY" =>
+      case "NONE" | "SNAPPY" | "ZSTD" =>
       case c => meta.willNotWorkOnGpu(s"compression codec $c is not supported")
     }
 
