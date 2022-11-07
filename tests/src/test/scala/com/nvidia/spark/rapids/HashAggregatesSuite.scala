@@ -290,7 +290,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   testExpectedException[AnalysisException](
       "avg literals bools fail",
-      _.getMessage.startsWith("cannot resolve"),
+      _.getMessage.toLowerCase.contains("cannot resolve"),
       longsFromCSVDf,
       conf = floatAggConf) {
     frame => frame.agg(avg(lit(true)).alias("t"), avg(lit(false)).alias("f"))
