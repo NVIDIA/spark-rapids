@@ -201,7 +201,7 @@ class DecimalUnitTest extends GpuUnitTests {
         GpuColumnVector.getNonNestedRapidsType(cv.dataType()))
       withResource(new HostColumnVector.ColumnBuilder(dt, cv.getRowCount)) { builder =>
         withResource(cv.copyToHost()) { hostCV =>
-          HostColumnarToGpu.columnarCopy(hostCV, builder, cv.getRowCount.toInt)
+          HostColumnarToGpu.columnarCopy(hostCV, builder, cv.dataType(), cv.getRowCount.toInt)
           withResource(builder.build()) { actual =>
             val expected = hostCV.getBase
             assertResult(expected.getType)(actual.getType)
@@ -225,7 +225,7 @@ class DecimalUnitTest extends GpuUnitTests {
         GpuColumnVector.getNonNestedRapidsType(cv.dataType()))
       withResource(new HostColumnVector.ColumnBuilder(dt, cv.getRowCount)) { builder =>
         withResource(cv.copyToHost()) { hostCV =>
-          HostColumnarToGpu.columnarCopy(hostCV, builder, cv.getRowCount.toInt)
+          HostColumnarToGpu.columnarCopy(hostCV, builder, cv.dataType(), cv.getRowCount.toInt)
           withResource(builder.build()) { actual =>
             val expected = hostCV.getBase
             assertResult(DType.create(DType.DTypeEnum.DECIMAL64, expected.getType.getScale)
