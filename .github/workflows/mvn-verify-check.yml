@@ -78,7 +78,7 @@ jobs:
       - name: package tests check
         run: >
           mvn -Dmaven.wagon.http.retryHandler.count=3 -B package
-          -pl integration_tests -am -pl tests -am
+          -pl integration_tests,tests -am
           -P 'individual,pre-merge'
           -Dbuildver=${{ matrix.spark-version }}
           -DskipTests
