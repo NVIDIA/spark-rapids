@@ -1644,10 +1644,10 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(value = true)
 
-  val FALLBACK_DELTA_CHECKPOINT = conf("spark.rapids.sql.fallbackDeltaCheckpoint")
-    .doc("Fall back to the CPU when we see Delta Lake _delta_log Parquet checkpoint files " +
-      "being read. Many times we see the overhead of doing columnar conversions very high for " +
-      "these queries.")
+  val DETECT_DELTA_CHECKPOINT_QUERIES = conf("spark.rapids.sql.detectDeltaCheckpointQueries")
+    .doc("Queries against Delta Lake _delta_log checkpoint Parquet files are not efficient on " +
+      "the GPU. When this option is enabled, the plugin will attempt to detect these queries " +
+      "and fall back to the CPU.")
     .booleanConf
     .createWithDefault(value = true)
 
@@ -2228,7 +2228,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isDetectDeltaLogQueries: Boolean = get(DETECT_DELTA_LOG_QUERIES)
 
-  lazy val fallbackDeltaCheckpoint: Boolean = get(FALLBACK_DELTA_CHECKPOINT)
+  lazy val isDetectDeltaCheckpointQueries: Boolean = get(DETECT_DELTA_CHECKPOINT_QUERIES)
 
   lazy val concurrentWriterPartitionFlushSize:Long = get(CONCURRENT_WRITER_PARTITION_FLUSH_SIZE)
 
