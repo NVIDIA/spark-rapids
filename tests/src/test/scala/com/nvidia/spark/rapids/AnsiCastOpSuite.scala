@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.{SparkConf, SparkException}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Cast, Expression, NamedExpression}
 import org.apache.spark.sql.execution.ProjectExec
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
@@ -833,14 +833,15 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     }
 
     def isAnsiCast(c: Expression): Boolean = {
-      // prior to Spark 3.4.0 we could use CastBase as argument type, but starting 3.4.0 the type is
-      // the case class Cast.
-      // prior to Spark 3.3.0 we could use toString to see if the name of
-      // the cast was "cast" or "ansi_cast" but now the name is always "cast"
-      // so we need to use reflection to access the protected field "ansiEnabled"
-      val m = c.getClass.getDeclaredField("ansiEnabled")
-      m.setAccessible(true)
-      m.getBoolean(c)
+      if (cmpSparkVersion(3, 4, 0) < 0) {
+        // prior to Spark 3.4.0 ansiEnabled is protected, so we need to use
+        // reflection to access the protected field "ansiEnabled"
+        val m = c.getClass.getDeclaredField("ansiEnabled")
+        m.setAccessible(true)
+        m.getBoolean(c)
+      } else {
+        c.asInstanceOf[Cast].ansiEnabled
+      }
     }
 
     def isAnsiCastInTableInsert(expr: Expression, cpuSession: Boolean): Boolean = {
