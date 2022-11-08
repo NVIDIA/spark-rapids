@@ -1235,7 +1235,8 @@ case class GpuRegExpExtractWithFallback(
   override def second: Expression = regexp
   override def third: Expression = idx
 
-  override def rowExpression: RegExpExtract = RegExpExtract(first, second, third)
+  override def ternaryExpression(first: Expression,
+      second: Expression, third: Expression): RegExpExtract = RegExpExtract(first, second, third)
 
   override def nullSafe: Boolean = true
   

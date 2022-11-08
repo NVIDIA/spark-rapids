@@ -20,9 +20,13 @@ import ai.rapids.cudf.HostColumnVector
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{ShimBinaryExpression, ShimTernaryExpression, ShimUnaryExpression}
 
+import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.serializer.JavaSerializer
+import org.apache.spark.sql.catalyst.analysis.ResolveTimeZone
 
 /**
   * This trait enables expressions that might conditionally be evaluated on a row-basis (ie CPU)
@@ -32,19 +36,41 @@ trait GpuWrappedRowBasedExpression[SparkExpr <: Expression]
     extends GpuExpression
     with Logging { 
 
-  def rowExpression: SparkExpr
+  def rowExpression(children: Seq[Expression]): SparkExpr
 
   def nullSafe: Boolean
+
+  private def prepareEvaluation(expression: Expression): Expression = {
+    val serializer = new JavaSerializer(new SparkConf()).newInstance
+    val resolver = ResolveTimeZone
+    val expr = resolver.resolveTimeZones(expression)
+    serializer.deserialize(serializer.serialize(expr))
+  }
+
+  private def evaluateWithoutCodegen(
+    expression: Expression, inputRow: InternalRow = EmptyRow): Any = {
+    expression.foreach {
+      case n: Nondeterministic => n.initialize(0)
+      case _ =>
+    }
+    expression.eval(inputRow)
+  }
+
+  private def evalRow(children: Seq[Expression], inputRow: InternalRow): Any = {
+    def expr = prepareEvaluation(rowExpression(children))
+    evaluateWithoutCodegen(expr, inputRow)
+  }
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     val cpuExprStart = System.nanoTime
     val prepareArgsEnd = System.nanoTime
 
+    val childTypes = children.map(_.dataType)
     // These child columns will be closed by `ColumnarToRowIterator`.
     val argCols = children.safeMap(GpuExpressionsUtils.columnarEvalToColumn(_, batch))
     try {
       // 1 Convert the argument columns to row.
-      // 2 Evaluate the CPU UDF row by row and cache the result.
+      // 2 Evaluate the CPU Spark expression row by row and cache the result.
       // 3 Build a result column from the cache.
       val retConverter = GpuRowToColumnConverter.getConverterForType(dataType, nullable)
       val retType = GpuColumnVector.convertFrom(dataType, nullable)
@@ -57,14 +83,18 @@ trait GpuWrappedRowBasedExpression[SparkExpr <: Expression]
             NoopMetric,
             NoopMetric,
             nullSafe).foreach { row =>
-          retRow.update(0, rowExpression.eval(row))
+          // convert the children to literals for evaluation
+          val newChildren = childTypes.zip(row.toSeq(childTypes)).map { case (dt, value) =>
+            Literal.create(value, dt)
+          }
+          retRow.update(0, evalRow(newChildren, row))
           retConverter.append(retRow, 0, builder)
         }
         closeOnExcept(builder.buildAndPutOnDevice()) { resultCol =>
           val cpuRunningTime = System.nanoTime - prepareArgsEnd
           // Use log to record the eclipsed time for the Expression running before
           // figuring out how to support Spark metrics in this expression.
-          logDebug(s"It took ${cpuRunningTime} ns to run Expression ${rowExpression.prettyName}, " +
+          logDebug(s"It took ${cpuRunningTime} ns to run Expression, " +
             s"and ${prepareArgsEnd - cpuExprStart} ns to get the input from children.")
           GpuColumnVector.from(resultCol, dataType)
         }
@@ -80,14 +110,30 @@ trait GpuWrappedRowBasedExpression[SparkExpr <: Expression]
 trait GpuWrappedRowBasedUnaryExpression[SparkUnaryExpr <: UnaryExpression]
     extends ShimUnaryExpression
     with GpuWrappedRowBasedExpression[SparkUnaryExpr] {
+
+    def rowExpression(children: Seq[Expression]): SparkUnaryExpr = 
+      unaryExpression(children(0))
+
+    def unaryExpression(child: Expression): SparkUnaryExpr
 }
 
 trait GpuWrappedRowBasedBinaryExpression[SparkBinaryExpr <: BinaryExpression]
     extends ShimBinaryExpression
     with GpuWrappedRowBasedExpression[SparkBinaryExpr] {
+
+    def rowExpression(children: Seq[Expression]): SparkBinaryExpr = 
+      binaryExpression(children(0), children(1))
+
+    def binaryExpression(left: Expression, right: Expression): SparkBinaryExpr
 }
 
 trait GpuWrappedRowBasedTernaryExpression[SparkTernaryExpr <: TernaryExpression]
     extends ShimTernaryExpression
     with GpuWrappedRowBasedExpression[SparkTernaryExpr] {
+
+    def rowExpression(children: Seq[Expression]): SparkTernaryExpr = 
+      ternaryExpression(children(0), children(1), children(2))
+
+    def ternaryExpression(first: Expression,
+        second: Expression, third: Expression): SparkTernaryExpr
 }

@@ -850,3 +850,16 @@ def test_regexp_memory_ok():
             'spark.rapids.sql.batchSizeBytes': '20' # 1 row in the batch
         }
     )
+
+def test_regexp_extract_negative_lookahead():
+    gen = mk_str_gen('[abcd]{0,4}')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'regexp_extract(a, "a(!b)(c)", 1)',
+            'regexp_extract(a, "a(!b)(cd)", 1)'
+        ),
+        conf={
+            'spark.rapids.sql.regexp.enabled': 'true',
+            'spark.rapids.sql.expressions.rowBasedEvaluator.enabled': 'true'
+        }
+    )

@@ -78,5 +78,11 @@ class RowBasedExpressionSuite extends SparkQueryCompareTestSuite {
       assert(project.isDefined)
      }, enableRowBasedExpression)
   }
+
+  testSparkResultsAreEqual("execution on CPU while holding the GPU semaphore", 
+      simpleDF,
+      conf = enableRowBasedExpression) { frame =>
+    frame.selectExpr("regexp_extract(id, \"(!\\\\w+)\\\\d+([0-5]{0,2})\", 1)")
+  }
   
 }
