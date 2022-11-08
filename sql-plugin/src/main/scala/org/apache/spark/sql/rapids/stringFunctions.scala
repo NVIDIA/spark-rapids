@@ -1228,6 +1228,8 @@ case class GpuRegExpExtractWithFallback(
  
   override def dataType: DataType = StringType
 
+  override def prettyName: String = "regexp_extract"
+
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType, IntegerType)
   override def first: Expression = subject
   override def second: Expression = regexp

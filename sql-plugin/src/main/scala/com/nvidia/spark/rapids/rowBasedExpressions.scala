@@ -36,8 +36,6 @@ trait GpuWrappedRowBasedExpression[SparkExpr <: Expression]
 
   def nullSafe: Boolean
 
-  override def prettyName: String = s"gpuwrapped[${rowExpression.prettyName}]"
-
   override def columnarEval(batch: ColumnarBatch): Any = {
     val cpuExprStart = System.nanoTime
     val prepareArgsEnd = System.nanoTime
