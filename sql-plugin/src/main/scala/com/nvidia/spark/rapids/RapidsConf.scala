@@ -306,7 +306,7 @@ object RapidsReaderType extends Enumeration {
   val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
 }
 
-object :RapidsConf {
+object RapidsConf {
   val MULTITHREAD_READ_NUM_THREADS_DEFAULT = 20
   private val registeredConfs = new ListBuffer[ConfEntry[_]]()
 

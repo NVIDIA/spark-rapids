@@ -464,7 +464,8 @@ class HMBInputFile(buffer: HostMemoryBuffer) extends InputFile {
   override def newStream(): SeekableInputStream = new HMBSeekableInputStream(buffer, getLength)
 }
 
-private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) extends Arm {
+private case class GpuParquetFileFilterHandler(
+    @transient sqlConf: SQLConf) extends Arm with Logging {
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   private val enableParquetFilterPushDown: Boolean = sqlConf.parquetFilterPushDown
   private val pushDownDate = sqlConf.parquetFilterPushDownDate
@@ -609,7 +610,7 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
   def filterBlocks(
       footerReader: ParquetFooterReaderType.Value,
       file: PartitionedFile,
-      conf : Configuration,
+      conf: Configuration,
       filters: Array[Filter],
       readDataSchema: StructType): ParquetFileInfoWithBlockMeta = {
     withResource(new NvtxRange("filterBlocks", NvtxColor.PURPLE)) { _ =>
@@ -623,21 +624,21 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
         }
       }
       val footer = try {
-         footerReader match {
+        footerReader match {
           case ParquetFooterReaderType.NATIVE =>
             val serialized = withResource(readAndFilterFooter(file, conf,
               readDataSchema, filePath)) { tableFooter =>
-                if (tableFooter.getNumColumns <= 0) {
-                  // Special case because java parquet reader does not like having 0 columns.
-                  val numRows = tableFooter.getNumRows
-                  val block = new BlockMetaData()
-                  block.setRowCount(numRows)
-                  val schema = new MessageType("root")
-                  return ParquetFileInfoWithBlockMeta(filePath, Seq(block), file.partitionValues,
-                    schema, readDataSchema, false, false, false)
-                }
+              if (tableFooter.getNumColumns <= 0) {
+                // Special case because java parquet reader does not like having 0 columns.
+                val numRows = tableFooter.getNumRows
+                val block = new BlockMetaData()
+                block.setRowCount(numRows)
+                val schema = new MessageType("root")
+                return ParquetFileInfoWithBlockMeta(filePath, Seq(block), file.partitionValues,
+                  schema, readDataSchema, false, false, false)
+              }
 
-                tableFooter.serializeThriftFile()
+              tableFooter.serializeThriftFile()
             }
             withResource(serialized) { serialized =>
               withResource(new NvtxRange("readFilteredFooter", NvtxColor.YELLOW)) { _ =>
@@ -950,6 +951,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   private val filterHandler = GpuParquetFileFilterHandler(sqlConf)
   private val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
   private val numFilesFilterParallel = rapidsConf.numFilesFilterParallel
+  private val combineThresholdSize = rapidsConf.getParquetMultithreadedCombineThreshold
+  private val combineWaitTime = rapidsConf.getParquetMultithreadedCombineWaitTime
   private val alluxioReplacementTaskTime =
     AlluxioCfgUtils.enabledAlluxioReplacementAlgoTaskTime(rapidsConf)
 
@@ -974,13 +977,15 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       files: Array[PartitionedFile],
       conf: Configuration): PartitionReader[ColumnarBatch] = {
     val filterFunc = (file: PartitionedFile) => {
-      filterHandler.filterBlocks(footerReadType, file, conf, filters, readDataSchema)
+      filterHandler.filterBlocks(footerReadType, file, conf,
+        filters, readDataSchema)
     }
     new MultiFileCloudParquetPartitionReader(conf, files, filterFunc, isCaseSensitive,
       debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes,
       metrics, partitionSchema, numThreads, maxNumFileProcessed,
       ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId,
-      alluxioPathReplacementMap.getOrElse(Map.empty), alluxioReplacementTaskTime)
+      alluxioPathReplacementMap.getOrElse(Map.empty), alluxioReplacementTaskTime,
+      combineThresholdSize, combineWaitTime, queryUsesInputFile)
   }
 
   private def filterBlocksForCoalescingReader(
@@ -1213,6 +1218,7 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       out: OutputStream,
       blocks: Seq[BlockMetaData],
       schema: MessageType): Unit = {
+    // logWarning("blocks are: " + blocks.mkString(","))
     val fileMeta = new FileMetaData(schema, Collections.emptyMap[String, String],
       ParquetPartitionReader.PARQUET_CREATOR)
     val metadataConverter = new ParquetMetadataConverter
@@ -1339,14 +1345,16 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
     val copyRanges = new ArrayBuffer[CopyRange]
     val outputBlocks = computeBlockMetaData(blocks, realStartOffset, Some(copyRanges))
     val copyBuffer = new Array[Byte](copyBufferSize)
-    copyRanges.foreach(copyRange => copyDataRange(copyRange, in, out, copyBuffer))
+    copyRanges.foreach { copyRange =>
+      copyDataRange(copyRange, in, out, copyBuffer)
+    }
     outputBlocks
   }
 
   protected def readPartFile(
       blocks: Seq[BlockMetaData],
       clippedSchema: MessageType,
-      filePath: Path): (HostMemoryBuffer, Long) = {
+      filePath: Path): (HostMemoryBuffer, Long, Seq[BlockMetaData]) = {
     withResource(new NvtxRange("Parquet buffer file split", NvtxColor.YELLOW)) { _ =>
       withResource(filePath.getFileSystem(conf).open(filePath)) { in =>
         val estTotalSize = calculateParquetOutputSize(blocks, clippedSchema, false)
@@ -1356,7 +1364,6 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
           val outputBlocks = copyBlocksData(in, out, blocks, out.getPos)
           val footerPos = out.getPos
           writeFooter(out, outputBlocks, clippedSchema)
-
           BytesUtils.writeIntLittleEndian(out, (out.getPos - footerPos).toInt)
           out.write(ParquetPartitionReader.PARQUET_MAGIC)
           // check we didn't go over memory
@@ -1364,7 +1371,7 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
             throw new QueryExecutionException(s"Calculated buffer size $estTotalSize is to " +
               s"small, actual written: ${out.getPos}")
           }
-          (hmb, out.getPos)
+          (hmb, out.getPos, outputBlocks)
         }
       }
     }
@@ -1577,12 +1584,11 @@ class MultiFileParquetPartitionReader(
       blocks: ArrayBuffer[DataBlockBase],
       offset: Long)
     extends Callable[(Seq[DataBlockBase], Long)] {
-
     override def call(): (Seq[DataBlockBase], Long) = {
       TrampolineUtil.setTaskContext(taskContext)
       try {
         val startBytesRead = fileSystemBytesRead()
-        val res = withResource(outhmb) { _ =>
+        val outputBlocks = withResource(outhmb) { _ =>
           withResource(new HostMemoryOutputStream(outhmb)) { out =>
             withResource(file.getFileSystem(conf).open(file)) { in =>
               copyBlocksData(in, out, blocks, offset)
@@ -1590,7 +1596,7 @@ class MultiFileParquetPartitionReader(
           }
         }
         val bytesRead = fileSystemBytesRead() - startBytesRead
-        (res, bytesRead)
+        (outputBlocks, bytesRead)
       } catch {
         case e: FileNotFoundException if ignoreMissingFiles =>
           logWarning(s"Skipped missing file: ${file.toString}", e)
@@ -1739,6 +1745,9 @@ class MultiFileParquetPartitionReader(
  * @param useFieldId Whether to use field id for column matching
  * @param alluxioPathReplacementMap Map containing mapping of DFS scheme to Alluxio scheme
  * @param alluxioReplacementTaskTime Whether the Alluxio replacement algorithm is set to task time
+ * @param combineThresholdSize
+ * @param combineWaitTime
+ * @param queryUsesInputFile
  */
 class MultiFileCloudParquetPartitionReader(
     override val conf: Configuration,
@@ -1756,10 +1765,160 @@ class MultiFileCloudParquetPartitionReader(
     ignoreCorruptFiles: Boolean,
     useFieldId: Boolean,
     alluxioPathReplacementMap: Map[String, String],
-    alluxioReplacementTaskTime: Boolean)
+    alluxioReplacementTaskTime: Boolean,
+    combineThresholdSize: Long,
+    combineWaitTime: Int,
+    queryUsesInputFile: Boolean)
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, null,
-    execMetrics, ignoreCorruptFiles, alluxioPathReplacementMap, alluxioReplacementTaskTime)
+    execMetrics, ignoreCorruptFiles, alluxioPathReplacementMap, alluxioReplacementTaskTime,
+    combineThresholdSize, combineWaitTime)
     with ParquetPartitionReaderBase {
+
+  override def combineHMBs(results: ArrayBuffer[HostMemoryBuffersWithMetaDataBase])
+  : HostMemoryBuffersWithMetaDataBase = {
+    // this size includes the written header and footer on each buffer, do we need
+    // to calculate footer differently?
+    // footer can still be larger when combined - multiple by 2 for temp
+    val tmpTotalSize = results.map { hbWithMeta =>
+      hbWithMeta.memBuffersAndSizes.map(_.bytes).sum
+    }.sum
+
+    // TODO - also check to make have buffers
+    val allBlocks = results.flatMap(_.memBuffersAndSizes.flatMap(_.blockMeta))
+    val footerSize = calculateParquetFooterSize(allBlocks,
+      results.head.memBuffersAndSizes.head.schema)
+    logWarning(s"footer estimated size was: ${footerSize}")
+
+    val extraMemory = {
+      // we want to add extra memory because the ColumnChunks saved in the Footer have 2 fields
+      // file_offset and data_page_offset that get much larger when we are combining files.
+      // Here we estimate that by taking the number of columns * number of blocks which should be
+      // the number of column chunks and then saying there are 2 fields that could be larger and
+      // assume max size of those would be 8 bytes worst case. So we probably allocate to much here
+      // but it shouldn't be by a huge amount and its better then having to realloc and copy.
+      val numCols = allBlocks.head.getColumns().size()
+      val numColumnChunks = numCols * allBlocks.size
+      numColumnChunks * 2 * 8
+    }
+    // TODO - check this estimation
+    val initTotalSize = tmpTotalSize + footerSize + extraMemory
+
+    // TODO handle empty
+    val anyEmpty = results.exists(_.isInstanceOf[HostMemoryEmptyMetaData])
+    if (initTotalSize == 0 || anyEmpty) {
+      throw new Exception("trying to combine empty metadata")
+    }
+
+    // TODO - don't allocate buffer is 0 size and handle empty
+    closeOnExcept(HostMemoryBuffer.allocate(initTotalSize)) { newHmb =>
+      // write header
+      var offset = withResource(new HostMemoryOutputStream(newHmb)) { out =>
+        out.write(ParquetPartitionReader.PARQUET_MAGIC)
+        out.getPos
+      }
+      // val out = new HostMemoryOutputStream(newHmb)
+      var currentSchema: MessageType = null
+      val allPartValues = new ArrayBuffer[(Long, InternalRow)]()
+      val allOutputBlocks = new ArrayBuffer[BlockMetaData]()
+
+      // copy the actual data
+      results.map { hbWithMeta =>
+        val partValues = hbWithMeta.partitionedFile.partitionValues
+        val totalNumRows = hbWithMeta.memBuffersAndSizes.map(_.numRows).sum
+        allPartValues.append((totalNumRows, partValues))
+        hbWithMeta.memBuffersAndSizes.map { hmbInfo =>
+          // can't use size in hbmInfo because that includes footers
+          // val sizeOfBlockData = hmbInfo.blockMeta.map(_.getTotalByteSize).sum
+          // val footerPos = hmbInfo.footerPos
+          if (currentSchema != null && hmbInfo.schema != currentSchema) {
+            throw new Exception("schema is different")
+          }
+          currentSchema = hmbInfo.schema
+
+          val copyAmount = hmbInfo.blockMeta.map { meta =>
+            meta.getColumns.asScala.map(_.getTotalSize).sum
+          }.sum
+          if (hbWithMeta.isInstanceOf[HostMemoryEmptyMetaData]) {
+            // no data so don't copy
+          } else {
+            // val copyAmount = footerPos - ParquetPartitionReader.PARQUET_MAGIC.size
+            newHmb.copyFromHostBuffer(offset, hmbInfo.hmb,
+              ParquetPartitionReader.PARQUET_MAGIC.size, copyAmount)
+            val outputBlocks = computeBlockMetaData(hmbInfo.blockMeta, offset, None)
+            allOutputBlocks ++= outputBlocks
+            offset += copyAmount
+            hmbInfo.hmb.close()
+          }
+        }
+      }
+      // write footer
+      val lenLeft = initTotalSize - offset
+
+      // TODO do we need to potentially copy if initial size estimate to small
+      /*
+      var buf: HostMemoryBuffer = buffer
+      val totalBufferSize = if (bufferSize > initTotalSize) {
+        // Just ensure to close buffer when there is an exception
+        closeOnExcept(buffer) { _ =>
+          logWarning(s"The original estimated size $initTotalSize is too small, " +
+            s"reallocating and copying data to bigger buffer size: $bufferSize")
+        }
+        // Copy the old buffer to a new allocated bigger buffer and close the old buffer
+        buf = withResource(buffer) { _ =>
+          withResource(new HostMemoryInputStream(buffer, footerOffset)) { in =>
+            // realloc memory and copy
+            closeOnExcept(HostMemoryBuffer.allocate(bufferSize)) { newhmb =>
+              withResource(new HostMemoryOutputStream(newhmb)) { out =>
+                IOUtils.copy(in, out)
+              }
+              newhmb
+            }
+          }
+        }
+        bufferSize
+      } else {
+        initTotalSize
+      }
+       */
+
+
+      if (lenLeft < 0) {
+        throw new Exception(s" initial total size is to small: $initTotalSize")
+      }
+
+      val footerOutPos = offset
+      withResource(newHmb.slice(offset, lenLeft)) { footerHmbSlice =>
+        withResource(new HostMemoryOutputStream(footerHmbSlice)) { footerOut =>
+          // logWarning(s" going to write footer Tom, location: $lenLeft initial: $initTotalSize")
+          writeFooter(footerOut, allOutputBlocks, currentSchema)
+          logWarning(s"footer actual size was: ${footerOut.getPos} estimated was  $footerSize")
+          BytesUtils.writeIntLittleEndian(footerOut, footerOut.getPos.toInt)
+          footerOut.write(ParquetPartitionReader.PARQUET_MAGIC)
+          offset += footerOut.getPos
+        }
+      }
+
+      if (!results(0).isInstanceOf[HostMemoryBuffersWithMetaData]) {
+        throw new Exception("type of results should have been HostMemoryBuffersWithMetaData")
+      }
+      val meta = results(0).asInstanceOf[HostMemoryBuffersWithMetaData]
+      logWarning(s"combined files to total size $offset  initial $initTotalSize")
+      val newHmbBufferInfo = HostMemoryBufferInfo(newHmb, offset, allPartValues.map(_._1).sum,
+        Seq.empty, currentSchema)
+      HostMemoryBuffersWithMetaData(
+        meta.partitionedFile,
+        meta.origPartitionedFile, // TODO - this shouldn't matter since already read
+        Array(newHmbBufferInfo),
+        offset,
+        meta.isCorrectRebaseMode, // TODO - need to add checks for these to see if different?
+        meta.isCorrectInt96RebaseMode, // TODO - need to add checks for these to see if different?
+        meta.hasInt96Timestamps,
+        currentSchema,
+        meta.readSchema,
+        Some(allPartValues))
+    }
+
+  }
 
   private case class HostMemoryEmptyMetaData(
       override val partitionedFile: PartitionedFile,
@@ -1770,21 +1929,25 @@ class MultiFileCloudParquetPartitionReader(
       isCorrectInt96RebaseMode: Boolean,
       hasInt96Timestamps: Boolean,
       clippedSchema: MessageType,
-      readSchema: StructType) extends HostMemoryBuffersWithMetaDataBase {
-    override def memBuffersAndSizes: Array[(HostMemoryBuffer, Long)] =
-      Array(null.asInstanceOf[HostMemoryBuffer] -> bufferSize)
+      readSchema: StructType,
+      numRows: Long) extends HostMemoryBuffersWithMetaDataBase {
+    override def memBuffersAndSizes: Array[HostMemoryBufferInfo] =
+      Array(HostMemoryBufferInfo(null.asInstanceOf[HostMemoryBuffer], bufferSize,
+        numRows, Seq.empty, null))
   }
 
   case class HostMemoryBuffersWithMetaData(
       override val partitionedFile: PartitionedFile,
       override val origPartitionedFile: Option[PartitionedFile],
-      override val memBuffersAndSizes: Array[(HostMemoryBuffer, Long)],
+      override val memBuffersAndSizes: Array[HostMemoryBufferInfo],
       override val bytesRead: Long,
       isCorrectRebaseMode: Boolean,
       isCorrectInt96RebaseMode: Boolean,
       hasInt96Timestamps: Boolean,
       clippedSchema: MessageType,
-      readSchema: StructType) extends HostMemoryBuffersWithMetaDataBase
+      readSchema: StructType,
+      override val allPartValues: Option[ArrayBuffer[(Long, InternalRow)]]
+  ) extends HostMemoryBuffersWithMetaDataBase
 
   private class ReadBatchRunner(
       file: PartitionedFile,
@@ -1809,34 +1972,39 @@ class MultiFileCloudParquetPartitionReader(
       } catch {
         case e: FileNotFoundException if ignoreMissingFiles =>
           logWarning(s"Skipped missing file: ${file.filePath}", e)
-          HostMemoryEmptyMetaData(file, origPartitionedFile, 0, 0,  false, false, false, null, null)
+          HostMemoryEmptyMetaData(file, origPartitionedFile, 0, 0, false, false, false, null,
+            null, 0)
         // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
         case e: FileNotFoundException if !ignoreMissingFiles => throw e
         case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
           logWarning(
             s"Skipped the rest of the content in the corrupted file: ${file.filePath}", e)
-          HostMemoryEmptyMetaData(file, origPartitionedFile, 0, 0,  false, false, false, null, null)
+          HostMemoryEmptyMetaData(file, origPartitionedFile, 0, 0, false, false, false, null,
+            null, 0)
       } finally {
         TrampolineUtil.unsetTaskContext()
       }
     }
 
+
     private def doRead(): HostMemoryBuffersWithMetaDataBase = {
       val startingBytesRead = fileSystemBytesRead()
-      val hostBuffers = new ArrayBuffer[(HostMemoryBuffer, Long)]
+      val hostBuffers = new ArrayBuffer[HostMemoryBufferInfo]
       var filterTime = 0L
       var bufferStartTime = 0L
+      val tid = TaskContext.get().taskAttemptId()
       val result = try {
         val filterStartTime = System.nanoTime()
         val fileBlockMeta = filterFunc(file)
         filterTime = System.nanoTime() - filterStartTime
+
         bufferStartTime = System.nanoTime()
         if (fileBlockMeta.blocks.isEmpty) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead
           // no blocks so return null buffer and size 0
           HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
             fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
-            fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
+            fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema, 0)
         } else {
           blockChunkIter = fileBlockMeta.blocks.iterator.buffered
           if (isDone) {
@@ -1844,45 +2012,54 @@ class MultiFileCloudParquetPartitionReader(
             // got close before finishing
             HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
               fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
-              fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
+              fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema, 0)
           } else {
             if (fileBlockMeta.schema.getFieldCount == 0) {
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               val numRows = fileBlockMeta.blocks.map(_.getRowCount).sum.toInt
-              // overload size to be number of rows with null buffer
+              // overload size to be number of rows with null buffer - TODO - even though we
+              // added numRows here the bytes still overloaded and use somewhere else
               HostMemoryEmptyMetaData(file, origPartitionedFile, numRows, bytesRead,
                 fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
-                fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
+                fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema,
+                numRows)
             } else {
               val filePath = new Path(new URI(file.filePath))
               while (blockChunkIter.hasNext) {
                 val blocksToRead = populateCurrentBlockChunk(blockChunkIter,
                   maxReadBatchSizeRows, maxReadBatchSizeBytes, fileBlockMeta.readSchema)
-                hostBuffers += readPartFile(blocksToRead, fileBlockMeta.schema, filePath)
+                val (dataBuffer, dataSize, blockMeta) =
+                  readPartFile(blocksToRead, fileBlockMeta.schema, filePath)
+                val numRows = blocksToRead.map(_.getRowCount).sum.toInt
+                hostBuffers += HostMemoryBufferInfo(dataBuffer, dataSize,
+                  numRows, blockMeta, fileBlockMeta.schema)
               }
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               if (isDone) {
                 // got close before finishing
-                hostBuffers.foreach(_._1.safeClose())
+                hostBuffers.foreach(_.hmb.safeClose())
                 HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
                   fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
-                  fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema)
+                  fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema,
+                  fileBlockMeta.readSchema, 0)
               } else {
-
                 HostMemoryBuffersWithMetaData(file, origPartitionedFile, hostBuffers.toArray,
                   bytesRead, fileBlockMeta.isCorrectedRebaseMode,
                   fileBlockMeta.isCorrectedInt96RebaseMode, fileBlockMeta.hasInt96Timestamps,
-                  fileBlockMeta.schema, fileBlockMeta.readSchema)
+                  fileBlockMeta.schema, fileBlockMeta.readSchema, None)
               }
             }
           }
         }
       } catch {
         case e: Throwable =>
-          hostBuffers.foreach(_._1.safeClose())
+          logError("Exception occurred", e)
+          hostBuffers.foreach(_.hmb.safeClose())
           throw e
       }
       val bufferTime = System.nanoTime() - bufferStartTime
+      logWarning("buffer time was: " + bufferTime + " start time: " + bufferStartTime +
+        " now is: " + System.nanoTime() + s"taskid: $tid")
       result.setMetrics(filterTime, bufferTime)
       result
     }
@@ -1925,7 +2102,7 @@ class MultiFileCloudParquetPartitionReader(
     fileBufsAndMeta match {
       case meta: HostMemoryEmptyMetaData =>
         // Not reading any data, but add in partition data if needed
-        val rows = meta.bufferSize.toInt
+        val rows = meta.numRows.toInt
         val batch = if (rows == 0) {
           new ColumnarBatch(Array.empty, 0)
         } else {
@@ -1939,10 +2116,11 @@ class MultiFileCloudParquetPartitionReader(
 
       case buffer: HostMemoryBuffersWithMetaData =>
         val memBuffersAndSize = buffer.memBuffersAndSizes
-        val (hostBuffer, size) = memBuffersAndSize.head
+        val hmbAndInfo = memBuffersAndSize.head
         val nextBatch = readBufferToTable(buffer.isCorrectRebaseMode,
           buffer.isCorrectInt96RebaseMode, buffer.hasInt96Timestamps, buffer.clippedSchema,
-          buffer.readSchema, buffer.partitionedFile, hostBuffer, size)
+          buffer.readSchema, buffer.partitionedFile, hmbAndInfo.hmb, hmbAndInfo.bytes,
+          buffer.allPartValues)
         if (memBuffersAndSize.length > 1) {
           val updatedBuffers = memBuffersAndSize.drop(1)
           currentFileHostBuffers = Some(buffer.copy(memBuffersAndSizes = updatedBuffers))
@@ -1962,7 +2140,8 @@ class MultiFileCloudParquetPartitionReader(
       readDataSchema: StructType,
       partedFile: PartitionedFile,
       hostBuffer: HostMemoryBuffer,
-      dataSize: Long): Option[ColumnarBatch] = {
+      dataSize: Long,
+      allPartValues: Option[ArrayBuffer[(Long, InternalRow)]]): Option[ColumnarBatch] = {
     val table = withResource(hostBuffer) { _ =>
 
       // Dump parquet data into a file
@@ -1995,12 +2174,85 @@ class MultiFileCloudParquetPartitionReader(
       maybeBatch.foreach { batch =>
         logDebug(s"GPU batch size: ${GpuColumnVector.getTotalDeviceMemoryUsed(batch)} bytes")
       }
-      // we have to add partition values here for this batch, we already verified that
-      // its not different for all the blocks in this batch
-      addPartitionValues(maybeBatch, partedFile.partitionValues, partitionSchema)
+      // add all part values properly
+      // TODO - do more testing on this
+      if (allPartValues.isDefined) {
+        // we have to add partition values here for this batch, we already verified that
+        // its not different for all the blocks in this batch
+        val rowsPerPartition = allPartValues.get.map(_._1).toArray
+        val allPartInternalRows = allPartValues.get.map(_._2).toArray
+        addAllPartitionValues(maybeBatch, allPartInternalRows, rowsPerPartition, partitionSchema)
+      } else {
+        // we have to add partition values here for this batch, we already verified that
+        // its not different for all the blocks in this batch
+        addPartitionValues(maybeBatch, partedFile.partitionValues, partitionSchema)
+      }
     } finally {
       table.foreach(_.close())
     }
+  }
+
+  // TODO - see if can reuse some of this between coalescing reader and here
+  private def addAllPartitionValues(
+      batch: Option[ColumnarBatch],
+      inPartitionValues: Array[InternalRow],
+      rowsPerPartition: Array[Long],
+      partitionSchema: StructType): Option[ColumnarBatch] = {
+    assert(rowsPerPartition.length == inPartitionValues.length)
+    if (partitionSchema.nonEmpty) {
+      batch.map { cb =>
+        val numPartitions = inPartitionValues.length
+        if (numPartitions > 1) {
+          concatAndAddPartitionColsToBatch(cb, rowsPerPartition, inPartitionValues)
+        } else {
+          // single partition, add like other readers
+          addPartitionValues(Some(cb), inPartitionValues.head, partitionSchema).get
+        }
+      }
+    } else {
+      batch
+    }
+  }
+
+  private def concatAndAddPartitionColsToBatch(
+      cb: ColumnarBatch,
+      rowsPerPartition: Array[Long],
+      inPartitionValues: Array[InternalRow]): ColumnarBatch = {
+    withResource(cb) { _ =>
+      closeOnExcept(buildAndConcatPartitionColumns(rowsPerPartition, inPartitionValues)) {
+        allPartCols =>
+          ColumnarPartitionReaderWithPartitionValues.addGpuColumVectorsToBatch(cb, allPartCols)
+      }
+    }
+  }
+
+  private def buildAndConcatPartitionColumns(
+      rowsPerPartition: Array[Long],
+      inPartitionValues: Array[InternalRow]): Array[GpuColumnVector] = {
+    val numCols = partitionSchema.fields.length
+    val allPartCols = new Array[GpuColumnVector](numCols)
+    // build the partitions vectors for all partitions within each column
+    // and concatenate those together then go to the next column
+    for ((field, colIndex) <- partitionSchema.fields.zipWithIndex) {
+      val dataType = field.dataType
+      withResource(new Array[GpuColumnVector](inPartitionValues.length)) {
+        partitionColumns =>
+          for ((rowsInPart, partIndex) <- rowsPerPartition.zipWithIndex) {
+            val partInternalRow = inPartitionValues(partIndex)
+            val partValueForCol = partInternalRow.get(colIndex, dataType)
+            val partitionScalar = GpuScalar.from(partValueForCol, dataType)
+            withResource(partitionScalar) { scalar =>
+              partitionColumns(partIndex) = GpuColumnVector.from(
+                ai.rapids.cudf.ColumnVector.fromScalar(scalar, rowsInPart.toInt),
+                dataType)
+            }
+          }
+          val baseOfCols = partitionColumns.map(_.getBase)
+          allPartCols(colIndex) = GpuColumnVector.from(
+            ColumnVector.concatenate(baseOfCols: _*), field.dataType)
+      }
+    }
+    allPartCols
   }
 }
 
@@ -2098,7 +2350,7 @@ class ParquetPartitionReader(
     if (currentChunkedBlocks.isEmpty) {
       return None
     }
-    val (dataBuffer, dataSize) = metrics(BUFFER_TIME).ns {
+    val (dataBuffer, dataSize, _) = metrics(BUFFER_TIME).ns {
       readPartFile(currentChunkedBlocks, clippedParquetSchema, filePath)
     }
     try {

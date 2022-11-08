@@ -33,7 +33,7 @@ class GpuMultiFileReaderSuite extends FunSuite with Arm {
     val conf = new Configuration(false)
     val membuffers =
       Array(HostMemoryBufferInfo(
-        HostMemoryBuffer.allocate(0), 0L, 0, Seq.empty, null, 0, Seq.empty))
+        HostMemoryBuffer.allocate(0), 0L, 0, Seq.empty, null))
     val multiFileReader = new MultiFileCloudPartitionReaderBase(
       conf,
       inputFiles = Array.empty,
