@@ -306,7 +306,7 @@ object RapidsReaderType extends Enumeration {
   val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
 }
 
-object RapidsConf {
+object :RapidsConf {
   val MULTITHREAD_READ_NUM_THREADS_DEFAULT = 20
   private val registeredConfs = new ListBuffer[ConfEntry[_]]()
 
@@ -843,6 +843,20 @@ object RapidsConf {
     .transform(_.toUpperCase(java.util.Locale.ROOT))
     .checkValues(RapidsReaderType.values.map(_.toString))
     .createWithDefault(RapidsReaderType.AUTO.toString)
+
+  val PARQUET_MULTITHREADED_COMBINE_THRESHOLD =
+  conf ("spark.rapids.sql.format.parquet.multithreaded.combine.threshold")
+  .doc ("When using the multithreaded parquet reader, if other files are already ready," +
+  "combine them together up to this threadhold size before sending down to GPU.")
+  .bytesConf (ByteUnit.BYTE)
+  .createWithDefault (67108864L) // 64mb
+
+  val PARQUET_MULTITHREADED_COMBINE_WAIT_TIME =
+  conf ("spark.rapids.sql.format.parquet.multithrecp aded.combine.waitTime")
+  .doc ("When using the multithreaded parquet reader with combine mode, how long" +
+  "to wait for more files to finish if haven't met size yet.")
+  .integerConf
+  .createWithDefault (20) // ms
 
   /** List of schemes that are always considered cloud storage schemes */
   private lazy val DEFAULT_CLOUD_SCHEMES =
@@ -1999,6 +2013,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val maxNumParquetFilesParallel: Int = get(PARQUET_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
 
   lazy val isParquetReadEnabled: Boolean = get(ENABLE_PARQUET_READ)
+
+  lazy val getParquetMultithreadedCombineThreshold: Long =
+    get(PARQUET_MULTITHREADED_COMBINE_THRESHOLD)
+
+  lazy val getParquetMultithreadedCombineWaitTime: Int =
+    get(PARQUET_MULTITHREADED_COMBINE_WAIT_TIME)
 
   lazy val isParquetWriteEnabled: Boolean = get(ENABLE_PARQUET_WRITE)
 

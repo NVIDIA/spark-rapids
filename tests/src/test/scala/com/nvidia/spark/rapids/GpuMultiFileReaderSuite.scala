@@ -31,7 +31,9 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 class GpuMultiFileReaderSuite extends FunSuite with Arm {
   test("avoid infinite loop when host buffers empty") {
     val conf = new Configuration(false)
-    val membuffers = Array((HostMemoryBuffer.allocate(0), 0L))
+    val membuffers =
+      Array(HostMemoryBufferInfo(
+        HostMemoryBuffer.allocate(0), 0L, 0, Seq.empty, null, 0, Seq.empty))
     val multiFileReader = new MultiFileCloudPartitionReaderBase(
       conf,
       inputFiles = Array.empty,
@@ -45,7 +47,7 @@ class GpuMultiFileReaderSuite extends FunSuite with Arm {
       currentFileHostBuffers = Some(new HostMemoryBuffersWithMetaDataBase {
         override def partitionedFile: PartitionedFile =
           PartitionedFile(InternalRow.empty, "", 0, 0)
-        override def memBuffersAndSizes: Array[(HostMemoryBuffer, Long)] = membuffers
+        override def memBuffersAndSizes: Array[HostMemoryBufferInfo] = membuffers
         override def bytesRead: Long = 0
       })
 
