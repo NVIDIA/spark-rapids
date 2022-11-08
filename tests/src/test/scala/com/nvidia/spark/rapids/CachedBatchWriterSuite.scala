@@ -27,6 +27,7 @@ import org.mockito.invocation.InvocationOnMock
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
+import org.apache.spark.sql.columnar.CachedBatch
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -234,15 +235,17 @@ class CachedBatchWriterSuite extends SparkQueryCompareTestSuite {
       }
     }
     when(mockParquetOutputFileFormat.getRecordWriter(any(), any())).thenReturn(mockRecordWriter)
-    val cachedBatchIter = producer.getColumnarBatchToCachedBatchIterator
-    cachedBatchIter.asInstanceOf[producer.ColumnarBatchToCachedBatchIterator]
-      .setParquetOutputFileFormat(mockParquetOutputFileFormat)
-    var totalRows = 0
-    while (cachedBatchIter.hasNext) {
-      val cb = cachedBatchIter.next()
-      totalRows += cb.numRows
+    withResource(producer.getColumnarBatchToCachedBatchIterator
+        .asInstanceOf[Iterator[CachedBatch] with AutoCloseable]) { cachedBatchIter =>
+        cachedBatchIter.asInstanceOf[producer.ColumnarBatchToCachedBatchIterator]
+            .setParquetOutputFileFormat(mockParquetOutputFileFormat)
+        var totalRows = 0
+        while (cachedBatchIter.hasNext) {
+          val cb = cachedBatchIter.next()
+          totalRows += cb.numRows
+        }
+      assert(totalRows == ROWS)
     }
-    assert(totalRows == ROWS)
     assert(totalSize == ROWS * schema.indices.length * 1024L)
   }
 }
