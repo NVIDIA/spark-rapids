@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, TernaryExpression, UnaryExpression}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, QuaternaryExpression, TernaryExpression, UnaryExpression}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, UnaryCommand}
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan, UnaryExecNode}
 
@@ -43,6 +43,17 @@ trait ShimTernaryExpression extends TernaryExpression {
       newThird: Expression
   ): Expression = {
     legacyWithNewChildren(Seq(newFirst, newSecond, newThird))
+  }
+}
+
+trait ShimQuaternaryExpression extends QuaternaryExpression {
+  override def withNewChildrenInternal(
+    newFirst: Expression,
+    newSecond: Expression,
+    newThird: Expression,
+    newFourth: Expression
+  ): Expression = {
+    legacyWithNewChildren(Seq(newFirst, newSecond, newThird, newFourth))
   }
 }
 
