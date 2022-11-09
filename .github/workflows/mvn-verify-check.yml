@@ -38,6 +38,7 @@ jobs:
         with:
           distribution: adopt
           java-version: 8
+          cache: maven
 
       - name: all shim versions
         id: allShimVersionsStep
@@ -74,6 +75,7 @@ jobs:
         with:
           distribution: adopt
           java-version: 8
+          cache: maven
 
       - name: package aggregator check
         run: >
@@ -98,6 +100,7 @@ jobs:
         with:
           distribution: adopt
           java-version: 8
+          cache: maven
 
       # includes RAT, code style and doc-gen checks of default shim
       - name: verify all modules with lowest-supported Spark version
@@ -122,7 +125,8 @@ jobs:
         with:
           distribution: adopt
           java-version: 11
-      
+          cache: maven
+
       - name: Build JDK11
         run: >
           mvn -Dmaven.wagon.http.retryHandler.count=3 -B verify
@@ -136,4 +140,3 @@ jobs:
           -DskipTests
           -Dskip
           -Dmaven.javadoc.skip
-          
