@@ -91,9 +91,12 @@ $MVN -B $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dbuildver=24X clean install -
 # Note this does not run any integration tests
 # Deploy jars unless SKIP_DEPLOY is 'true'
 
+# option to skip unit tests. Used in our CI to separate test runs in parallel stages
+SKIP_TESTS=${SKIP_TESTS:-"false"}
 for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
     $MVN -U -B clean install -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
         -Dcuda.version=$CUDA_CLASSIFIER \
+        -DskipTests=$SKIP_TESTS \
         -Dbuildver="${buildver}"
     distWithReducedPom "install"
     [[ $SKIP_DEPLOY != 'true' ]] && \
@@ -109,7 +112,8 @@ $MVN -B clean install -pl '!tools' \
     -Dbuildver=$SPARK_BASE_SHIM_VERSION \
     $MVN_URM_MIRROR \
     -Dmaven.repo.local=$M2DIR \
-    -Dcuda.version=$CUDA_CLASSIFIER
+    -Dcuda.version=$CUDA_CLASSIFIER \
+    -DskipTests=$SKIP_TESTS
 
 distWithReducedPom "install"
 
@@ -119,6 +123,7 @@ if [[ $SKIP_DEPLOY != 'true' ]]; then
     # this deploy includes 'tools' that is unconditionally built with Spark 3.1.1
     $MVN -B deploy -pl '!dist' \
         -Dbuildver=$SPARK_BASE_SHIM_VERSION \
+        -DskipTests=$SKIP_TESTS \
         $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
         -Dcuda.version=$CUDA_CLASSIFIER \
         -DpomFile=${TOOL_PL}/dependency-reduced-pom.xml
