@@ -79,10 +79,34 @@ class RowBasedExpressionSuite extends SparkQueryCompareTestSuite {
      }, enableRowBasedExpression)
   }
 
-  testSparkResultsAreEqual("execution on CPU while holding the GPU semaphore", 
+  testSparkResultsAreEqual("rlike execution on CPU while holding the GPU semaphore", 
+      simpleDF,
+      conf = enableRowBasedExpression) { frame =>
+    frame.selectExpr("id RLIKE \"(!\\\\w+)\\\\d+([0-5]{0,2})\"")
+  }
+
+  testSparkResultsAreEqual("regexp_extract execution on CPU while holding the GPU semaphore", 
       simpleDF,
       conf = enableRowBasedExpression) { frame =>
     frame.selectExpr("regexp_extract(id, \"(!\\\\w+)\\\\d+([0-5]{0,2})\", 1)")
+  }
+
+  testSparkResultsAreEqual("regexp_extract_all execution on CPU while holding the GPU semaphore", 
+      simpleDF,
+      conf = enableRowBasedExpression) { frame =>
+    frame.selectExpr("regexp_extract_all(id, \"(!\\\\w+)\\\\d+([0-5]{0,2})\", 1)")
+  }
+
+  testSparkResultsAreEqual("regexp_replace execution on CPU while holding the GPU semaphore", 
+      simpleDF,
+      conf = enableRowBasedExpression) { frame =>
+    frame.selectExpr("regexp_replace(id, \"(!\\\\w+)\\\\d+([0-5]{0,2})\", \"foo\", 2)")
+  }
+
+  testSparkResultsAreEqual("split execution on CPU while holding the GPU semaphore", 
+      simpleDF,
+      conf = enableRowBasedExpression) { frame =>
+    frame.selectExpr("split(id, \"(!\\\\w+)\\\\d+([0-5]{0,2})\", 2)")
   }
   
 }

@@ -29,7 +29,6 @@ import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression,
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
-import _root_.org.apache.spark.sql.catalyst.expressions.QuaternaryExpression
 
 abstract class GpuUnaryString2StringExpression extends GpuUnaryExpression with ExpectsInputTypes {
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
@@ -1121,8 +1120,13 @@ case class GpuRegExpReplaceWithFallback(
     searchExpr: Expression,
     replaceExpr: Expression,
     pos: Expression) 
-    extends GpuWrappedRowBasedExpression[RegExpReplace]
+    extends GpuWrappedRowBasedQuaternaryExpression[RegExpReplace]
     with ImplicitCastInputTypes {
+
+    override def first: Expression = srcExpr
+    override def second: Expression = searchExpr
+    override def third: Expression = replaceExpr
+    override def fourth: Expression = pos
 
     override def prettyName: String = "regexp_replace"
 
@@ -1131,12 +1135,7 @@ case class GpuRegExpReplaceWithFallback(
     override def dataType: DataType = StringType
 
     override def rowExpression(children: Seq[Expression]): RegExpReplace = 
-      if (children.length > 3) {
-        RegExpReplace(children(0), children(1), children(2), children(3))
-
-      } else {
-        RegExpReplace(children(0), children(1), children(2))
-      }
+      RegExpReplace(children(0), children(1), children(2), children(3))
 
     override def nullSafe: Boolean = true
 
@@ -1323,12 +1322,12 @@ class GpuRegExpExtractAllMeta(
       case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
         try {
           val javaRegexpPattern = str.toString
+          numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
           // verify that we support this regex and can transpile it to cuDF format
           val (transpiledAST, _) =
             new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(javaRegexpPattern, None)
           GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
           pattern = Some(transpiledAST.toRegexString)
-          numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
         } catch {
           case e: RegexUnsupportedException =>
             if (conf.isCpuRowBasedEnabled) {
@@ -1458,7 +1457,7 @@ case class GpuRegExpExtractAllWithFallback(str: Expression, regexp: Expression, 
     extends GpuWrappedRowBasedTernaryExpression[RegExpExtractAll]
     with ImplicitCastInputTypes with NullIntolerant {
 
-  override def dataType: DataType = StringType
+  override def dataType: DataType = ArrayType(StringType, containsNull = true)
 
   override def prettyName: String = "regexp_extract_all"
 
@@ -1884,7 +1883,7 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression,
 
 case class GpuStringSplitWithFallback(str: Expression, regex: Expression, limit: Expression)
     extends GpuWrappedRowBasedTernaryExpression[StringSplit] with ImplicitCastInputTypes {
-  override def dataType: DataType = StringType
+  override def dataType: DataType = ArrayType(StringType, containsNull = false)
 
   override def prettyName: String = "split"
 
@@ -1894,7 +1893,7 @@ case class GpuStringSplitWithFallback(str: Expression, regex: Expression, limit:
   override def third: Expression = limit
 
   override def ternaryExpression(first: Expression,
-      second: Expression, third: Expression): RegExpExtract = RegExpExtract(first, second, third)
+      second: Expression, third: Expression): StringSplit = StringSplit(first, second, third)
 
   override def nullSafe: Boolean = true
 }

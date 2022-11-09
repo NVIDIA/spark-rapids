@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.HostColumnVector
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{ShimBinaryExpression, ShimTernaryExpression, ShimUnaryExpression}
+import com.nvidia.spark.rapids.shims.{ShimBinaryExpression, ShimQuaternaryExpression, ShimTernaryExpression, ShimUnaryExpression}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
@@ -139,3 +139,7 @@ trait GpuWrappedRowBasedTernaryExpression[SparkTernaryExpr <: TernaryExpression]
     def ternaryExpression(first: Expression,
         second: Expression, third: Expression): SparkTernaryExpr
 }
+
+trait GpuWrappedRowBasedQuaternaryExpression[SparkQuaternaryExpr <: QuaternaryExpression]
+    extends ShimQuaternaryExpression
+    with GpuWrappedRowBasedExpression[SparkQuaternaryExpr]
