@@ -39,7 +39,8 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.CastSupport
 import org.apache.spark.sql.catalyst.catalog.HiveTableRelation
 import org.apache.spark.sql.catalyst.csv.CSVOptions
-import org.apache.spark.sql.catalyst.expressions.{And, Attribute, AttributeMap, AttributeReference, AttributeSet, BindReferences, Expression, Literal}
+import org.apache.spark.sql.catalyst.expressions.{And, Attribute, AttributeMap, AttributeReference, AttributeSeq, AttributeSet, BindReferences, Expression, Literal}
+import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.{ExecSubqueryExpression, LeafExecNode, PartitionedFileUtil, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionDirectory, PartitionedFile}
@@ -379,6 +380,14 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
         }
       }
     }
+  }
+
+  override def doCanonicalize(): GpuHiveTableScanExec = {
+    val input: AttributeSeq = hiveTableRelation.output
+    GpuHiveTableScanExec(
+      requestedAttributes.map(QueryPlan.normalizeExpressions(_, input)),
+      hiveTableRelation.canonicalized.asInstanceOf[HiveTableRelation],
+      QueryPlan.normalizePredicates(partitionPruningPredicate, input))
   }
 }
 
