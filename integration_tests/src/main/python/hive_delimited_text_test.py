@@ -23,7 +23,7 @@ from marks import *
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, is_before_spark_330
 
-_acq_schema = StructType([
+acq_schema = StructType([
     StructField('loan_id', LongType()),
     StructField('orig_channel', StringType()),
     StructField('seller_name', StringType()),
@@ -50,14 +50,43 @@ _acq_schema = StructType([
     StructField('mortgage_insurance_type', DoubleType()),
     StructField('relocation_mortgage_indicator', StringType())])
 
-_simple_schema = StructType([
-    StructField("name", StringType()),
-    StructField("age", IntegerType()),
-    StructField("score", FloatType()),
-])
+perf_schema = StructType([
+    StructField('loan_id', LongType()),
+    StructField('monthly_reporting_period', StringType()),
+    StructField('servicer', StringType()),
+    StructField('interest_rate', DoubleType()),
+    StructField('current_actual_upb', DoubleType()),
+    StructField('loan_age', DoubleType()),
+    StructField('remaining_months_to_legal_maturity', DoubleType()),
+    StructField('adj_remaining_months_to_maturity', DoubleType()),
+    StructField('maturity_date', StringType()),
+    StructField('msa', DoubleType()),
+    StructField('current_loan_delinquency_status', IntegerType()),
+    StructField('mod_flag', StringType()),
+    StructField('zero_balance_code', StringType()),
+    StructField('zero_balance_effective_date', StringType()),
+    StructField('last_paid_installment_date', StringType()),
+    StructField('foreclosed_after', StringType()),
+    StructField('disposition_date', StringType()),
+    StructField('foreclosure_costs', DoubleType()),
+    StructField('prop_preservation_and_repair_costs', DoubleType()),
+    StructField('asset_recovery_costs', DoubleType()),
+    StructField('misc_holding_expenses', DoubleType()),
+    StructField('holding_taxes', DoubleType()),
+    StructField('net_sale_proceeds', DoubleType()),
+    StructField('credit_enhancement_proceeds', DoubleType()),
+    StructField('repurchase_make_whole_proceeds', StringType()),
+    StructField('other_foreclosure_proceeds', DoubleType()),
+    StructField('non_interest_bearing_upb', DoubleType()),
+    StructField('principal_forgiveness_upb', StringType()),
+    StructField('repurchase_make_whole_proceeds_flag', StringType()),
+    StructField('foreclosure_principal_write_off_amount', StringType()),
+    StructField('servicing_activity_indicator', StringType())])
 
 
-def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options={}):
+def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None):
+    if options is None:
+        options = {}
     opts = options
     if schema is not None:
         opts = copy_and_update(options, {'schema': schema})
@@ -70,10 +99,11 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options={}):
 
 
 @approximate_float
-@pytest.mark.parametrize('name,schema', [
-    ('hive-delim-text/Acquisition_2007Q3', _acq_schema)
+@pytest.mark.parametrize('name,schema,options', [
+    ('hive-delim-text/Acquisition_2007Q3', acq_schema, {}),
+    ('hive-delim-text/Performance_2007Q3', perf_schema, {'serialization.null.format': ''})  # TODO: String null format.
 ], ids=idfn)
-def test_basic_hive_text_read(std_input_path, name, schema, spark_tmp_table_factory):
+def test_basic_hive_text_read(std_input_path, name, schema, spark_tmp_table_factory, options):
     assert_gpu_and_cpu_are_equal_collect(read_hive_text_sql(std_input_path + '/' + name,
-                                                            schema, spark_tmp_table_factory, {}),
+                                                            schema, spark_tmp_table_factory, options),
                                          conf={})
