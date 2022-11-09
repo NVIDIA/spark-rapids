@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{RegExpShim, ShimExpression}
 
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, InputFileName, Literal, NullIntolerant, Predicate, RegExpExtract, RegExpExtractAll, RLike, StringSplit, StringToMap, SubstringIndex, TernaryExpression}
+import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, InputFileName, Literal, NullIntolerant, Predicate, RegExpExtract, RegExpExtractAll, RegExpReplace, RLike, StringSplit, StringToMap, SubstringIndex, TernaryExpression}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
@@ -772,6 +772,13 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
   }
 }
 
+
+// once generic row-based fallback is enabled, this should be merged into 
+// ExprMeta
+trait GpuRegExpMeta[T <: Expression] extends ExprMeta[T] {
+  var useRowFallback = false
+}
+
 object GpuRegExpUtils {
   private def parseAST(pattern: String): RegexAST = {
     new RegexParser(pattern).parse()
@@ -835,7 +842,7 @@ object GpuRegExpUtils {
     b.toString
   }
 
-  def tagForRegExpEnabled(meta: ExprMeta[_]): Unit = {
+  def tagForRegExpEnabled(meta: GpuRegExpMeta[_]): Unit = {
     if (!meta.conf.isRegExpEnabled) {
       meta.willNotWorkOnGpu(s"regular expression support is disabled. " +
         s"Set ${RapidsConf.ENABLE_REGEXP}=true to enable it")
@@ -850,10 +857,14 @@ object GpuRegExpUtils {
     }
   }
 
-  def validateRegExpComplexity(meta: ExprMeta[_], regex: RegexAST): Unit = {
+  def validateRegExpComplexity(meta: GpuRegExpMeta[_], regex: RegexAST): Unit = {
     if(!RegexComplexityEstimator.isValid(meta.conf, regex)) {
-      meta.willNotWorkOnGpu(s"estimated memory needed for regular expression exceeds the maximum." +
-        s" Set ${RapidsConf.REGEXP_MAX_STATE_MEMORY_BYTES} to change it.")
+      if (meta.conf.isCpuRowBasedEnabled) {
+        meta.useRowFallback = true
+      } else {
+        meta.willNotWorkOnGpu(s"estimated memory needed for regular expression exceeds the maximum." +
+          s" Set ${RapidsConf.REGEXP_MAX_STATE_MEMORY_BYTES} to change it.")
+      }
     }
   }
 
@@ -902,7 +913,8 @@ class GpuRLikeMeta(
     expr: RLike,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule) extends BinaryExprMeta[RLike](expr, conf, parent, rule) {
+    rule: DataFromReplacementRule) extends BinaryExprMeta[RLike](expr, conf, parent, rule)
+        with GpuRegExpMeta[RLike] {
 
     private var pattern: Option[String] = None
 
@@ -914,11 +926,15 @@ class GpuRLikeMeta(
             // verify that we support this regex and can transpile it to cuDF format
             val (transpiledAST, _) =
                 new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(str.toString, None)
-            GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
             pattern = Some(transpiledAST.toRegexString)
+            GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
           } catch {
             case e: RegexUnsupportedException =>
-              willNotWorkOnGpu(e.getMessage)
+              if (conf.isCpuRowBasedEnabled) {
+                useRowFallback = true
+              } else {
+                willNotWorkOnGpu(e.getMessage)
+              }
           }
         case _ =>
           willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
@@ -926,8 +942,12 @@ class GpuRLikeMeta(
     }
 
     override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-      GpuRLike(lhs, rhs, pattern.getOrElse(
-        throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern")))
+      if (useRowFallback) {
+        GpuRLikeWithFallback(lhs, rhs)
+      } else {
+        GpuRLike(lhs, rhs, pattern.getOrElse(
+          throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern")))
+      }
     }
 }
 
@@ -957,6 +977,22 @@ case class GpuRLike(left: Expression, right: Expression, pattern: String)
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType)
 
   override def dataType: DataType = BooleanType
+}
+
+case class GpuRLikeWithFallback(left: Expression, right: Expression)
+    extends GpuWrappedRowBasedBinaryExpression[RLike]
+    with ImplicitCastInputTypes with NullIntolerant {
+
+  override def dataType: DataType = BooleanType
+
+  override def toString: String = s"$left gpurlike $right"
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType)
+
+  override def binaryExpression(left: Expression, right: Expression): RLike = RLike(left, right)
+
+  override def nullSafe: Boolean = false
+
 }
 
 abstract class GpuRegExpTernaryBase extends GpuTernaryExpression {
@@ -1007,6 +1043,7 @@ abstract class GpuRegExpTernaryBase extends GpuTernaryExpression {
   }
 
 }
+
 
 case class GpuRegExpReplace(
     srcExpr: Expression,
@@ -1078,17 +1115,40 @@ case class GpuRegExpReplaceWithBackref(
 
 }
 
+case class GpuRegExpReplaceWithFallback(
+    srcExpr: Expression,
+    searchExpr: Expression,
+    replaceExpr: Expression,
+    pos: Expression) 
+    extends GpuWrappedRowBasedQuaternaryExpression[RegExpReplace] with ImplicitCastInputTypes {
+
+    override def prettyName: String = "regexp_replace"
+
+    override def inputTypes: Seq[DataType] = Seq(StringType)
+
+    override def dataType: DataType = StringType
+
+    override def first: Expression = srcExpr
+    override def second: Expression = searchExpr
+    override def third: Expression = replaceExpr
+    
+    override def ternaryExpression(first: Expression, 
+        second: Expression, third: Expression): RegExpReplace = RegExpReplace(first, second, third)
+
+    override def nullSafe: Boolean = true
+
+}
+
 class GpuRegExpExtractMeta(
     expr: RegExpExtract,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends TernaryExprMeta[RegExpExtract](expr, conf, parent, rule) {
+  extends TernaryExprMeta[RegExpExtract](expr, conf, parent, rule)
+  with GpuRegExpMeta[RegExpExtract] {
 
   private var pattern: Option[String] = None
   private var numGroups = 0
-
-  private var useRowFallback = false
 
   override def tagExprForGpu(): Unit = {
     GpuRegExpUtils.tagForRegExpEnabled(this)
@@ -1247,7 +1307,8 @@ class GpuRegExpExtractAllMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends TernaryExprMeta[RegExpExtractAll](expr, conf, parent, rule) {
+  extends TernaryExprMeta[RegExpExtractAll](expr, conf, parent, rule)
+  with GpuRegExpMeta[RegExpExtractAll] {
 
   private var pattern: Option[String] = None
   private var numGroups = 0
@@ -1617,7 +1678,8 @@ abstract class StringSplitRegExpMeta[INPUT <: TernaryExpression](expr: INPUT,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends TernaryExprMeta[INPUT](expr, conf, parent, rule) {
+  extends TernaryExprMeta[INPUT](expr, conf, parent, rule)
+  with GpuRegExpMeta[INPUT] {
   import GpuOverrides._
 
   /**

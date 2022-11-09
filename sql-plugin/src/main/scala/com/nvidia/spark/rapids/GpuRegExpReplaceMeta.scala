@@ -16,7 +16,7 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, RegExpReplace}
-import org.apache.spark.sql.rapids.{GpuRegExpReplace, GpuRegExpReplaceWithBackref, GpuRegExpUtils, GpuStringReplace}
+import org.apache.spark.sql.rapids.{GpuRegExpMeta, GpuRegExpReplace, GpuRegExpReplaceWithBackref, GpuRegExpUtils, GpuStringReplace}
 import org.apache.spark.sql.types.DataTypes
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -25,7 +25,8 @@ class GpuRegExpReplaceMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends QuaternaryExprMeta[RegExpReplace](expr, conf, parent, rule) {
+  extends QuaternaryExprMeta[RegExpReplace](expr, conf, parent, rule)
+  with GpuRegExpMeta[RegExpReplace] {
 
   private var javaPattern: Option[String] = None
   private var cudfPattern: Option[String] = None
@@ -58,7 +59,11 @@ class GpuRegExpReplaceMeta(
             }
           } catch {
             case e: RegexUnsupportedException =>
-              willNotWorkOnGpu(e.getMessage)
+              if (conf.isCpuRowBasedEnabled) {
+                useRowFallback = true
+              } else {
+                willNotWorkOnGpu(e.getMessage)
+              }
           }
         }
 

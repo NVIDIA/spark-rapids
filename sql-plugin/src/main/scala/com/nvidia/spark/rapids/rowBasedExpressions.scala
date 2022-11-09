@@ -67,11 +67,10 @@ trait GpuWrappedRowBasedExpression[SparkExpr <: Expression]
 
     val childTypes = children.map(_.dataType)
     // These child columns will be closed by `ColumnarToRowIterator`.
+    // 1 Evaluate all the children GpuExpressions to columns
     val argCols = children.safeMap(GpuExpressionsUtils.columnarEvalToColumn(_, batch))
     try {
-      // 1 Convert the argument columns to row.
-      // 2 Evaluate the CPU Spark expression row by row and cache the result.
-      // 3 Build a result column from the cache.
+      // 2 Convert the argument columns to row.
       val retConverter = GpuRowToColumnConverter.getConverterForType(dataType, nullable)
       val retType = GpuColumnVector.convertFrom(dataType, nullable)
       val retRow = new GenericInternalRow(size = 1)
@@ -83,18 +82,21 @@ trait GpuWrappedRowBasedExpression[SparkExpr <: Expression]
             NoopMetric,
             NoopMetric,
             nullSafe).foreach { row =>
-          // convert the children to literals for evaluation
+          // 3 Row by row, convert the argument row to literal expressions to pass to the 
+          //   CPU Spark expression, then evaluate the CPU Spark expression and cache the 
+          //   result row.
           val newChildren = childTypes.zip(row.toSeq(childTypes)).map { case (dt, value) =>
             Literal.create(value, dt)
           }
           retRow.update(0, evalRow(newChildren, row))
           retConverter.append(retRow, 0, builder)
         }
+        // 4 Build a result column from the cache of result rows
         closeOnExcept(builder.buildAndPutOnDevice()) { resultCol =>
           val cpuRunningTime = System.nanoTime - prepareArgsEnd
           // Use log to record the eclipsed time for the Expression running before
           // figuring out how to support Spark metrics in this expression.
-          logDebug(s"It took ${cpuRunningTime} ns to run Expression, " +
+          logDebug(s"It took ${cpuRunningTime} ns to run Expression ${prettyName}, " +
             s"and ${prepareArgsEnd - cpuExprStart} ns to get the input from children.")
           GpuColumnVector.from(resultCol, dataType)
         }

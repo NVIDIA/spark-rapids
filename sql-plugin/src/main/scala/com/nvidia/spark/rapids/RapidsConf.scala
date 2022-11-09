@@ -1141,7 +1141,7 @@ object RapidsConf {
     .createWithDefault(Integer.MAX_VALUE)
 
   val ENABLE_CPU_ROW_BASED_EXPRESSIONS = 
-    conf("spark.rapids.sql.expressions.rowBasedEvaluator.enabled")
+    conf("spark.rapids.sql.expressions.rowBasedEval.enabled")
     .doc("When set to true, this enables expressions that cannot run on the GPU to fallback " +
       "to the CPU in a more optimal fashion by sending only the data needed between GPU and " +
       "CPU inside a query operation, instead of falling back the entire operation to CPU. " +
