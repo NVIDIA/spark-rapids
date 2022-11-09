@@ -25,6 +25,7 @@ import org.apache.spark.sql.catalyst.optimizer.StarSchemaDetection
 import org.apache.spark.sql.catalyst.plans.{Inner, InnerLike, JoinType}
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.rules.Rule
+import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.catalyst.trees.TreePattern.INNER_LIKE_JOIN
 import org.apache.spark.sql.internal.SQLConf
 
@@ -40,7 +41,9 @@ import java.util.concurrent.TimeUnit
  */
 object GpuCostBasedJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
 
-  var totalTimeMillis = 0L
+  private val alreadyOptimized = new TreeNodeTag[Boolean]("rapids.join.reordering")
+
+  private var totalTimeMillis = 0L
 
   //TODO this is an ugly hack but not sure how we are supposed to inject our own rules and have
   // them work with RuleIdCollection in Spark
@@ -52,7 +55,13 @@ object GpuCostBasedJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
     if (!conf.aqeJoinReordering) {
       logDebug(s"GpuCostBasedJoinReorder disabled")
       plan
+    } else if (plan.getTagValue(alreadyOptimized).isDefined) {
+      // TODO could make this behavior configurable e.g. add a one-shot optimization option
+      // TODO this approach is not going to be compatible with AQE re-optimization
+      logDebug(s"GpuCostBasedJoinReorder already applied")
+      plan
     } else {
+      plan.setTagValue(alreadyOptimized, true)
       val t0 = System.nanoTime()
       val result = plan.transformDownWithPruning(_.containsPattern(INNER_LIKE_JOIN), ruleId) {
         // Start reordering with a joinable item, which is an InnerLike join with conditions.
