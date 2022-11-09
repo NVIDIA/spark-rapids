@@ -160,13 +160,26 @@
               failonerror="false">
             <arg value="${included_buildvers}"/>
         </exec>
-        <fail message="exec check-shims-revisions.sh failed, exit code is ${build-parallel-worlds.checkRevisionsExitCode}, error msg is ${build-parallel-worlds.checkRevisionsErrorMsg}">
-            <condition>
-                <not>
-                    <equals arg1="${build-parallel-worlds.checkRevisionsExitCode}" arg2="0"/>
-                </not>
-            </condition>
-        </fail>
+        <ac:if>
+            <not>
+                <equals arg1="${build-parallel-worlds.checkRevisionsExitCode}" arg2="0"/>
+            </not>
+            <ac:then>
+                <property
+                    name="checkShimRevisionsError"
+                    value="check-shims-revisions.sh failed: exitCode=${build-parallel-worlds.checkRevisionsExitCode} error=${build-parallel-worlds.checkRevisionsErrorMsg}"
+                />
+                <ac:if>
+                    <istrue value="${ignore.shim.revisions.check}"/>
+                    <ac:then>
+                        <echo>ignore.shim.revisions.check=${ignore.shim.revisions.check}: Ignoring shim revision check failure ${checkShimRevisionsError}</echo>
+                    </ac:then>
+                    <ac:else>
+                        <fail>${checkShimRevisionsError}</fail>
+                    </ac:else>
+                </ac:if>
+            </ac:then>
+        </ac:if>
 
         <exec executable="${project.basedir}/scripts/binary-dedupe.sh"
               dir="${project.build.directory}"

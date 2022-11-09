@@ -169,6 +169,14 @@
             </properties>
         </profile>
         <profile>
+            <id>snapshotOnly</id>
+            <properties>
+                <included_buildvers>
+                    ${snapshot.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
             <id>snapshotsWithDatabricks</id>
             <properties>
                 <included_buildvers>

@@ -233,6 +233,40 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     (new ColumnarBatch(columnVectors.toArray), schema)
   }
 
+  test("test host coalesce close semantics") {
+    val hostData = Seq(Seq(1, 2), Nil)
+    val batchFactory: Iterator[Seq[Int]] => ColumnarBatch = { iter =>
+      val hostColumn =
+        new RapidsHostColumnVector(IntegerType, HostColumnVector.fromInts(iter.next():_ *))
+      new ColumnarBatch(Array(hostColumn), hostColumn.getRowCount.toInt)
+    }
+    val hostBatchIter = new AutoCloseColumnBatchIterator[Seq[Int]](hostData.iterator, batchFactory)
+    val coalesceIter =
+      new HostToGpuCoalesceIterator(
+        hostBatchIter,
+        TargetSize(1000),
+        new StructType().add("ints", IntegerType),
+        numInputRows = NoopMetric,
+        numInputBatches = NoopMetric,
+        numOutputRows = NoopMetric,
+        numOutputBatches = NoopMetric,
+        streamTime = NoopMetric,
+        concatTime = NoopMetric,
+        copyBufTime = NoopMetric,
+        semTime = NoopMetric,
+        opTime = NoopMetric,
+        peakDevMemory = NoopMetric,
+        opName = "concat test",
+        useArrowCopyOpt = false)
+    coalesceIter.foreach { batch =>
+      // The main point of the test is to verify there's no double-close of a host batch.
+      withResource(batch) { _ =>
+        assertResult(1)(batch.numCols())
+        assertResult(2)(batch.numRows())
+      }
+    }
+  }
+
   test("test HostToGpuCoalesceIterator with arrow valid") {
     val (batch, schema) = setupArrowBatch(false)
     val iter = Iterator.single(batch)

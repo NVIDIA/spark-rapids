@@ -309,7 +309,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
           val numRows = batch.numRows()
           val gcbBuilder = new GpuColumnarBatchBuilder(structSchema, numRows)
           for (i <- 0 until batch.numCols()) {
-            gcbBuilder.copyColumnar(batch.column(i), i, structSchema(i).nullable, numRows)
+            gcbBuilder.copyColumnar(batch.column(i), i, numRows)
           }
           gcbBuilder.build(numRows)
         } else {
@@ -920,7 +920,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
      * relationship. Each partition represents a single parquet file, so we encode it
      * and return the CachedBatch when next is called.
      */
-    class InternalRowToCachedBatchIterator extends Iterator[CachedBatch]() {
+    class InternalRowToCachedBatchIterator extends Iterator[CachedBatch]() with AutoCloseable {
 
       var parquetOutputFileFormat = new ParquetOutputFileFormat()
 
@@ -932,6 +932,10 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       // is there a type that spark doesn't support by default in the schema?
       val hasUnsupportedType: Boolean = origCachedAttributes.exists { attribute =>
         !PCBSSchemaHelper.isTypeSupportedByParquet(attribute.dataType)
+      }
+
+      override def close(): Unit = {
+        // We don't have any off heap vectors, so nothing to clean
       }
 
       def getIterator: Iterator[InternalRow] = {
@@ -1021,7 +1025,13 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
         }
       }
 
-      override def hasNext: Boolean = queue.nonEmpty || iter.hasNext
+      override def hasNext: Boolean = {
+        if (queue.isEmpty && !iter.hasNext) {
+          // iterator has exhausted, we should clean up
+          close()
+        }
+        queue.nonEmpty || iter.hasNext
+      }
 
       private val queue = new mutable.Queue[CachedBatch]()
 
@@ -1095,32 +1105,38 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
      * relationship. Each ColumnarBatch is converted to a single ParquetCachedBatch when next()
      * is called on this iterator
      */
-    class ColumnarBatchToCachedBatchIterator extends InternalRowToCachedBatchIterator {
-      override def getIterator: Iterator[InternalRow] = {
+    class ColumnarBatchToCachedBatchIterator extends InternalRowToCachedBatchIterator
+        with AutoCloseable {
+      val hostBatches = new ListBuffer[ColumnarBatch]()
 
-        new Iterator[InternalRow] {
-          // We have to check for null context because of the unit test
-          Option(TaskContext.get).foreach(_.addTaskCompletionListener[Unit](_ => hostBatch.close()))
+      Option(TaskContext.get).foreach(_.addTaskCompletionListener[Unit] { _ =>
+        hostBatches.foreach(_.close())
+        hostBatches.clear()
+      })
 
-          val batch: ColumnarBatch = iter.asInstanceOf[Iterator[ColumnarBatch]].next
-          val hostBatch = if (batch.column(0).isInstanceOf[GpuColumnVector]) {
-            withResource(batch) { batch =>
-              new ColumnarBatch(batch.safeMap(_.copyToHost()).toArray, batch.numRows())
-            }
-          } else {
-            batch
+      override def getIterator: Iterator[InternalRow] = new Iterator[InternalRow] {
+        val batch: ColumnarBatch = iter.asInstanceOf[Iterator[ColumnarBatch]].next
+        val hostBatch = if (batch.column(0).isInstanceOf[GpuColumnVector]) {
+          withResource(batch) { batch =>
+            new ColumnarBatch(batch.safeMap(_.copyToHost()).toArray, batch.numRows())
           }
-
-          val rowIterator = hostBatch.rowIterator().asScala
-
-          override def next: InternalRow = rowIterator.next
-
-          override def hasNext: Boolean = rowIterator.hasNext
-
+        } else {
+          batch
         }
+        hostBatches += hostBatch
+
+        val rowIterator = hostBatch.rowIterator().asScala
+
+        override def next: InternalRow = rowIterator.next
+
+        override def hasNext: Boolean = rowIterator.hasNext
+      }
+
+      override def close(): Unit = {
+        hostBatches.foreach(_.close())
+        hostBatches.clear()
       }
     }
-
   }
 
   // We want to change the original schema to have the new names as well
