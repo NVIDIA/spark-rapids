@@ -23,8 +23,8 @@ import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, LogicalRela
  */
 case class GpuJoinEstimation(join: Join) extends Logging {
 
-  private val leftStats = GpuStatsPlanVisitor.visitCached(join.left)
-  private val rightStats = GpuStatsPlanVisitor.visitCached(join.right)
+  private val leftStats = GpuStatsPlanVisitor.visit(join.left)
+  private val rightStats = GpuStatsPlanVisitor.visit(join.right)
 
   /**
    * Estimate statistics after join. Return `None` if the join type is not supported, or we don't
@@ -385,7 +385,7 @@ case class GpuJoinEstimation(join: Join) extends Logging {
     // column stats. Now we just propagate the statistics from left side. We should do more
     // accurate estimation when advanced stats (e.g. histograms) are available.
     if (rowCountsExist(join.left)) {
-      val leftStats = GpuStatsPlanVisitor.visitCached(join.left)
+      val leftStats = GpuStatsPlanVisitor.visit(join.left)
       // Propagate the original column stats for cartesian product
       val outputRows = leftStats.rowCount.get
       Some(Statistics(

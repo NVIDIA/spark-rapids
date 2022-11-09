@@ -73,8 +73,8 @@ object GpuUnionEstimation extends Logging {
 
   def estimate(union: Union): Option[Statistics] = {
     logDebug("GpuUnionEstimation.estimate() BEGIN")
-    val sizeInBytes = union.children.map(ch => GpuStatsPlanVisitor.visitCached(ch).sizeInBytes).sum
-    val outputRows = Some(union.children.map(ch => GpuStatsPlanVisitor.visitCached(ch).rowCount.get).sum)
+    val sizeInBytes = union.children.map(ch => GpuStatsPlanVisitor.visit(ch).sizeInBytes).sum
+    val outputRows = Some(union.children.map(ch => GpuStatsPlanVisitor.visit(ch).rowCount.get).sum)
 
     val newMinMaxStats = computeMinMaxStats(union)
     val newNullCountStats = computeNullCountStats(union)
@@ -106,7 +106,7 @@ object GpuUnionEstimation extends Logging {
         // checks if all the children has min/max stats for an attribute
         attrs.zipWithIndex.forall {
           case (attr, childIndex) =>
-            val attrStats = GpuStatsPlanVisitor.visitCached(union.children(childIndex))
+            val attrStats = GpuStatsPlanVisitor.visit(union.children(childIndex))
               .attributeStats
             attrStats.get(attr).isDefined && attrStats(attr).hasMinMaxStats
         }
@@ -117,7 +117,7 @@ object GpuUnionEstimation extends Logging {
         val statComparator = createStatComparator(dataType)
         val minMaxValue = attrs.zipWithIndex.foldLeft[(Option[Any], Option[Any])]((None, None)) {
           case ((minVal, maxVal), (attr, childIndex)) =>
-            val colStat = GpuStatsPlanVisitor.visitCached(union.children(childIndex))
+            val colStat = GpuStatsPlanVisitor.visit(union.children(childIndex))
               .attributeStats(attr)
             val min = if (minVal.isEmpty || statComparator(colStat.min.get, minVal.get)) {
               colStat.min
@@ -141,19 +141,19 @@ object GpuUnionEstimation extends Logging {
     val attrToComputeNullCount = union.children.map(_.output).transpose.zipWithIndex.filter {
       case (attrs, _) => attrs.zipWithIndex.forall {
         case (attr, childIndex) =>
-          val attrStats = GpuStatsPlanVisitor.visitCached(union.children(childIndex))
+          val attrStats = GpuStatsPlanVisitor.visit(union.children(childIndex))
             .attributeStats
           attrStats.get(attr).isDefined && attrStats(attr).nullCount.isDefined
       }
     }
     attrToComputeNullCount.map {
       case (attrs, outputIndex) =>
-        val firstStat = GpuStatsPlanVisitor.visitCached(union.children.head)
+        val firstStat = GpuStatsPlanVisitor.visit(union.children.head)
           .attributeStats(attrs.head)
         val firstNullCount = firstStat.nullCount.get
         val colWithNullStatValues = attrs.zipWithIndex.tail.foldLeft[BigInt](firstNullCount) {
           case (totalNullCount, (attr, childIndex)) =>
-            val colStat = GpuStatsPlanVisitor.visitCached(union.children(childIndex))
+            val colStat = GpuStatsPlanVisitor.visit(union.children(childIndex))
               .attributeStats(attr)
             totalNullCount + colStat.nullCount.get
         }

@@ -17,12 +17,12 @@ object GpuStatsPlanVisitor extends LogicalPlanVisitor[Statistics] with Logging {
 
   private val statsTag = new TreeNodeTag[Statistics]("rapids.stats")
 
-  def visitCached(p: LogicalPlan): Statistics = {
+  override def visit(p: LogicalPlan): Statistics = {
     p.getTagValue(statsTag) match {
       case Some(stats) =>
         stats
       case _ =>
-        val stats = visit(p)
+        val stats = super.visit(p)
         p.setTagValue(statsTag, stats)
         stats
     }
