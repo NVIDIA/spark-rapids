@@ -19,14 +19,15 @@ package com.nvidia.spark.rapids
 import java.io.FileNotFoundException
 import java.util.Properties
 
-import scala.collection.JavaConverters.mapAsScalaMapConverter
+import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.io.BufferedSource
 import scala.util.control.NonFatal
 
 import alluxio.AlluxioURI
+import alluxio.client.file.URIStatus
 import alluxio.conf.{AlluxioProperties, InstancedConfiguration, PropertyKey}
-import alluxio.grpc.MountPOptions
+import alluxio.grpc.{FileSystemMasterCommonPOptions, FreePOptions, ListStatusPOptions, MountPOptions, SetAttributePOptions}
 import alluxio.wire.MountPointInfo
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -91,6 +92,13 @@ object AlluxioUtils extends Logging with Arm {
   private var alluxioBucketRegex: Option[String] = None
   private var isInitReplaceMap: Boolean = false
   private var isInitMountPointsForAutoMount: Boolean = false
+  private var alluxioLargeFileThreshold: Long = -1L
+
+  // bucket name to large tables map.
+  // update this map when mounting bucket.
+  // update this map when get mount table.
+  // large tables are like: /<bucket>/path/to/table
+  private val largeTableMap = mutable.Map[String, mutable.Set[String]]()
 
   private def checkAlluxioMounted(
       hadoopConfiguration: Configuration,
@@ -140,6 +148,11 @@ object AlluxioUtils extends Logging with Arm {
     this.synchronized {
       // left outside isInit to allow changing at runtime
       alluxioHome = scala.util.Properties.envOrElse("ALLUXIO_HOME", "/opt/alluxio-2.8.0")
+      if (alluxioLargeFileThreshold != -1L) {
+        // set only once
+        alluxioLargeFileThreshold = conf.getAlluxioLargeFileThreshold
+      }
+
       AlluxioCfgUtils.checkAlluxioNotSupported(conf)
 
       if (AlluxioCfgUtils.isConfiguredReplacementMap(conf)) {
@@ -163,11 +176,22 @@ object AlluxioUtils extends Logging with Arm {
           // load mounted point by call Alluxio client.
           try {
             val (access_key, secret_key) = getKeyAndSecret(hadoopConf, runtimeConf)
-            val mountPoints = getExistS3MountPoints(conf.getAlluxioUser, access_key, secret_key)
-            mountPoints.foreach { case (alluxioPath, mountPoint) =>
-              val s3Path = mountPoint.getUfsUri
-              mountedBuckets(alluxioPath) = s3Path
-              logInfo(s"Found mounted bucket $s3Path to $alluxioPath")
+            val clientConf = getS3ClientConf(conf.getAlluxioUser, access_key, secret_key)
+            // get s3 mount points by alluxio client
+            withResource(alluxio.client.file.FileSystem.Factory.create(clientConf)) { fs =>
+              val mountPoints = getExistS3MountPoints(fs)
+              mountPoints.foreach { case (alluxioPath, mountPoint) =>
+                val s3Path = mountPoint.getUfsUri
+                // record map info from alluxio path to s3 path
+                mountedBuckets(alluxioPath) = s3Path
+                // alluxioPath is like: /bucket
+                val bucket = alluxioPath.substring(1)
+                // find large large tables,
+                // do not check if `spark.rapids.alluxio.slow.disk` is enabled,
+                // always collect the large files info.
+                markLargeTables(bucket, fs)
+                logInfo(s"Found mounted bucket $s3Path to $alluxioPath")
+              }
             }
           } catch {
             case NonFatal(e) => logWarning(s"Failed to get alluxio mount table", e)
@@ -205,18 +229,162 @@ object AlluxioUtils extends Logging with Arm {
   }
 
   private def getExistS3MountPoints(
-      alluxioUser: String,
-      s3AccessKey: Option[String],
-      s3SecretKey: Option[String]): mutable.Map[String, MountPointInfo] = {
-    val conf = getS3ClientConf(alluxioUser, s3AccessKey, s3SecretKey)
+      fs: alluxio.client.file.FileSystem): mutable.Map[String, MountPointInfo] = {
     // get s3 mount points by alluxio client
-    withResource(alluxio.client.file.FileSystem.Factory.create(conf)) { fs =>
-      val mountTable = fs.getMountTable
-      mountTable.asScala.filter { case (_, mountPoint) =>
-        // checked the alluxio code, the type should be s3
-        // anyway let's keep both of them
-        mountPoint.getUfsType == "s3" || mountPoint.getUfsType == "s3a"
+    val mountTable = fs.getMountTable
+    mountTable.asScala.filter { case (_, mountPoint) =>
+      // checked the alluxio code, the type should be s3
+      // anyway let's keep both of them
+      mountPoint.getUfsType == "s3" || mountPoint.getUfsType == "s3a"
+    }
+  }
+
+  def getParent(path: String): String = {
+    if (path.contains("/")) {
+      path.substring(0, path.lastIndexOf("/"))
+    } else {
+      path
+    }
+  }
+
+  def getName(path: String): String = {
+    if (path.contains("/")) {
+      path.substring(path.lastIndexOf("/") + 1)
+    } else {
+      path
+    }
+  }
+
+  /**
+   * filter all the data files
+   *
+   * @param statusList file status
+   * @return
+   */
+  def getDataFilePaths(statusList: Array[URIStatus]): Array[URIStatus] = {
+    statusList.filter { e =>
+      GpuPartitioningUtils.isDataPath(e.getName) &&
+        e.getPath.endsWith(".parquet")
+    }
+  }
+
+  /**
+   * Scan the files in a bucket and get the parent directory for table paths.
+   * If has multiple parent paths, return the parent path that contains the more files.
+   * Here we assume tables are put together.
+   * e.g:
+   * /root/
+   * t1/
+   * a.parquet
+   * t2/
+   * a.parquet
+   * b.parquet
+   * /root2/
+   * t1/
+   * a.parquet
+   * returns /root
+   *
+   * @param paths the file paths in a bucket
+   * @return the root path that contains the tables
+   */
+  def getParentPathForTables(paths: Array[String]): Option[String] = {
+    val parentPathToCountMap = paths.map { e =>
+      // get table root path
+      var path = getParent(e)
+      var name = getName(path)
+      while (name.contains("=")) {
+        // it's a partition directory
+        path = getParent(path)
+        name = getName(path)
       }
+      path
+    }.map { tablePath =>
+      // get parent path of table path
+      getParent(tablePath)
+    }.map { parentPath =>
+      // add count attribute for the parent path
+      (parentPath, 1)
+    }.groupBy { case (parentPath, count) =>
+      // group by parentPath path
+      parentPath
+    }.map { case (parentPath, entries) =>
+      // sum the count
+      (parentPath, entries.size)
+    }
+
+    if (parentPathToCountMap.size > 0) {
+      // return the parentPath that contains more files
+      Some(parentPathToCountMap.maxBy { case (parentPath, count) =>
+        count
+      }._1)
+    } else {
+      None
+    }
+  }
+
+  /**
+   * Find large tables.
+   * If the avg file size for a table is bigger than the threshold, then the table is a large table.
+   *
+   * @param status    file status in a bucket
+   * @param threshold the threshold of large table
+   * @return a large table set
+   */
+  def findLargeTables(status: Array[URIStatus], threshold: Long): mutable.Set[String] = {
+    val tableSet = mutable.Set[String]()
+    // filter non-data files
+    val dataFilePaths = getDataFilePaths(status)
+
+    // find the parent path of tables
+    val parentPathOption = getParentPathForTables(dataFilePaths.map(e => e.getPath))
+    if (parentPathOption.isEmpty) {
+      return tableSet
+    }
+
+    val parentPath = parentPathOption.get
+    dataFilePaths.filter { e =>
+      e.getPath.startsWith(parentPath)
+    }.map { e =>
+      // get table name of the file, get the file size
+      val rightPart = e.getPath.substring(parentPath.size + 1)
+      val table = rightPart.substring(0, rightPart.indexOf("/"))
+      (table, e.getLength)
+    }.groupBy { case (table, size) =>
+      // group by table, one table contains multiple files
+      table
+    }.map { case (table, entries) =>
+      // calculate the avg file size for a table
+      val avgSize = entries.map(e => e._2).sum / entries.length
+      (table, avgSize)
+    }.filter { case (table, avgSize) =>
+      // filter large table
+      avgSize > threshold
+    }.foreach { case (table, avgSize) =>
+      // add the big tables to a set
+      tableSet.add(parentPath + "/" + table)
+    }
+    tableSet
+  }
+
+  def markLargeTables(bucket: String, fs: alluxio.client.file.FileSystem): Unit = {
+    // 1. list all file status, this may take some time if has lots of files.
+    val option = ListStatusPOptions.newBuilder().setRecursive(true).build()
+    val statusList = fs.listStatus(
+      new AlluxioURI(ALLUXIO_SCHEME + alluxioMasterHostAndPort.get + "/" + bucket), option)
+
+    // 2. find and set large tables
+    largeTableMap(bucket) = findLargeTables(statusList.asScala.toArray, alluxioLargeFileThreshold)
+
+    // 3. Set never sync large tables; recursively free the alluxio cache for large tables
+    val neverSync: Long = -1L
+    val syncOption: FileSystemMasterCommonPOptions =
+      FileSystemMasterCommonPOptions.newBuilder.setSyncIntervalMs(neverSync).build
+    val options: SetAttributePOptions = SetAttributePOptions.newBuilder
+      .setCommonOptions(syncOption).setRecursive(true).build()
+    val freeOption = FreePOptions.newBuilder.setRecursive(true).build
+    for (largeTable <- largeTableMap(bucket)) {
+      fs.setAttribute(new AlluxioURI(largeTable), options)
+      fs.free(new AlluxioURI(largeTable), freeOption)
     }
   }
 
@@ -242,10 +410,15 @@ object AlluxioUtils extends Logging with Arm {
             val mountOptionsBuilder = MountPOptions.newBuilder().setReadOnly(true)
             s3AccessKey.foreach(e => mountOptionsBuilder.putProperties("s3a.accessKeyId", e))
             s3SecretKey.foreach(e => mountOptionsBuilder.putProperties("s3a.secretKey", e))
+            // mount new bucket
             fs.mount(new AlluxioURI(local_bucket), new AlluxioURI(remote_path),
               mountOptionsBuilder.build())
             logInfo(s"Mounted bucket $remote_path to $local_bucket in Alluxio")
             mountedBuckets(local_bucket) = remote_path
+
+            // collect the large tables and update the `largeTableMap`
+            val bucket = local_bucket.substring(1)
+            markLargeTables(bucket, fs)
           }
         } catch {
           case NonFatal(e) =>
@@ -656,5 +829,47 @@ object AlluxioUtils extends Logging with Arm {
       None
     }
     (location, mapIfReplacedPaths)
+  }
+
+  def isLargeTable(map: mutable.Map[String, mutable.Set[String]],
+      bucket: String, path: String): Boolean = {
+    val largeSetOption = map.get(bucket)
+    largeSetOption.exists { set =>
+      set.exists { largeTable =>
+        path.startsWith(largeTable)
+      }
+    }
+  }
+
+  def directlyReadLargeTableFromS3(
+      paths: Seq[Path], conf: RapidsConf, relation: HadoopFsRelation): Boolean = {
+    if (conf.enableAlluxioSlowDisk) {
+      // if enabled directly reading from s3 for large files
+      val hadoopConf = relation.sparkSession.sparkContext.hadoopConfiguration
+      val runtimeConf = relation.sparkSession.conf
+      initAlluxioInfo(conf, hadoopConf, runtimeConf)
+      directlyReadLargeTableFromS3(largeTableMap, paths)
+    } else {
+      false
+    }
+  }
+
+  def directlyReadLargeTableFromS3(map: mutable.Map[String, mutable.Set[String]],
+      paths: Seq[Path]): Boolean = {
+    val existNonS3 = paths.exists { p =>
+      !(p.toUri.getScheme.equals("s3") || p.toUri.getScheme.equals("s3a"))
+    }
+    if (existNonS3) {
+      return false
+    }
+
+    val existNonLargeTable = paths.exists { p =>
+      // s3://bucket/path/to/table or s3a://bucket/path/to/table => /bucket/path/to/table
+      val path = p.toString.replaceFirst("s3[a]?://", "/")
+      val bucket = path.split("/")(1)
+      !AlluxioUtils.isLargeTable(map, bucket, path)
+    }
+
+    !existNonLargeTable
   }
 }

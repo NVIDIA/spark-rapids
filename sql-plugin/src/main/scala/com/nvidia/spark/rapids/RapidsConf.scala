@@ -1475,6 +1475,25 @@ object RapidsConf {
     .checkValues(Set("CONVERT_TIME", "TASK_TIME"))
     .createWithDefault("TASK_TIME")
 
+  val ALLUXIO_LARGE_FILE_THRESHOLD = conf("spark.rapids.alluxio.large.file.threshold")
+    .doc("The threshold is ued to identify whether average size of files is large " +
+      "when reading from S3. If reading large files from S3 and the alluxio disk is slow, " +
+      "directly reading from S3 is better than reading caches from Alluxio, " +
+      "because S3 network bandwidth is faster than local disk. " +
+      "This improvement takes effect when spark.rapids.alluxio.slow.disk is enabled. " +
+      "This value will be read only once, reset it will not take effect")
+    .startupOnly()
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(8 * 1024 * 1024) // 8M
+
+  val ALLUXIO_SLOW_DISK = conf("spark.rapids.alluxio.slow.disk")
+    .doc("Indicates whether the alluxio disk is slow. If it's true and reading S3 large " +
+      "files, Rapids Accelerator reads from S3 directly instead of reading from Alluxio caches. " +
+      "Refer to spark.rapids.alluxio.large.file.threshold which defines a threshold that " +
+      "identifying whether files are large.")
+    .booleanConf
+    .createWithDefault(false)
+
   // USER FACING DEBUG CONFIGS
 
   val SHUFFLE_COMPRESSION_MAX_BATCH_MEMORY =
@@ -2188,6 +2207,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isAlluxioReplacementAlgoTaskTime: Boolean =
     get(ALLUXIO_REPLACEMENT_ALGO) == "TASK_TIME"
+
+  lazy val getAlluxioLargeFileThreshold: Long = get(ALLUXIO_LARGE_FILE_THRESHOLD)
+
+  lazy val enableAlluxioSlowDisk: Boolean = get(ALLUXIO_SLOW_DISK)
 
   lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
 

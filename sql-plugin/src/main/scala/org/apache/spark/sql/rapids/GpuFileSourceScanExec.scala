@@ -79,7 +79,9 @@ case class GpuFileSourceScanExec(
   import GpuMetric._
 
   // this is set only when we either explicitly replaced a path for CONVERT_TIME
-  // or when TASK_TIME if one of the paths will be replaced
+  // or when TASK_TIME if one of the paths will be replaced.
+  // If read large s3 files on lower disk cluster, should read directly from s3 and
+  // update `alluxioPathReplacementMap` to None.
   private var alluxioPathReplacementMap: Option[Map[String, String]] = alluxioPathsMap
 
   private val isPerFileReadEnabled = relation.fileFormat match {
@@ -115,6 +117,17 @@ case class GpuFileSourceScanExec(
   private def isDynamicPruningFilter(e: Expression): Boolean =
     e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
 
+  private def updateAlluxioPathReplacementMap(partitions: Seq[PartitionDirectory]): Unit = {
+    val paths = partitions.flatMap { pd =>
+      pd.files
+    }.map { file =>
+      file.getPath
+    }
+    if (AlluxioUtils.directlyReadLargeTableFromS3(paths, rapidsConf, relation)) {
+      alluxioPathReplacementMap = None
+    }
+  }
+
   @transient lazy val selectedPartitions: Array[PartitionDirectory] = {
     val optimizerMetadataTimeNs = relation.location.metadataOpsTimeNs.getOrElse(0L)
     val startTime = System.nanoTime()
@@ -126,10 +139,14 @@ case class GpuFileSourceScanExec(
       alluxioPathReplacementMap = AlluxioUtils.checkIfNeedsReplaced(rapidsConf, pds,
         relation.sparkSession.sparkContext.hadoopConfiguration,
         relation.sparkSession.conf)
+      // if should directly read from s3, should set `alluxioPathReplacementMap` as None
+      updateAlluxioPathReplacementMap(pds)
     } else if (AlluxioCfgUtils.isAlluxioAutoMountTaskTime(rapidsConf, relation.fileFormat)) {
       alluxioPathReplacementMap = AlluxioUtils.autoMountIfNeeded(rapidsConf, pds,
         relation.sparkSession.sparkContext.hadoopConfiguration,
         relation.sparkSession.conf)
+      // if should directly read from s3, should set `alluxioPathReplacementMap` as None
+      updateAlluxioPathReplacementMap(pds)
     }
 
     logDebug(s"File listing and possibly replace with Alluxio path " +

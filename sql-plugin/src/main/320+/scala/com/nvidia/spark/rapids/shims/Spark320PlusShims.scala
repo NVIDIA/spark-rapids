@@ -383,15 +383,20 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
     override def convertToGpu(): GpuExec = {
       val sparkSession = wrapped.relation.sparkSession
       val options = wrapped.relation.options
+      val rootPaths = wrapped.relation.location.rootPaths
 
       val (location, alluxioPathsToReplaceMap) =
-        if (AlluxioCfgUtils.enabledAlluxioReplacementAlgoConvertTime(conf)) {
+        if (AlluxioCfgUtils.enabledAlluxioReplacementAlgoConvertTime(conf) &&
+          !AlluxioUtils.directlyReadLargeTableFromS3(rootPaths, conf, wrapped.relation)
+        ) {
+          // it's convert time algorithm and some paths are not large tables
           AlluxioUtils.replacePathIfNeeded(
             conf,
             wrapped.relation,
             partitionFilters,
             wrapped.dataFilters)
       } else {
+        // it's not convert time algorithm or read large tables, do not replace
         (wrapped.relation.location, None)
       }
 
