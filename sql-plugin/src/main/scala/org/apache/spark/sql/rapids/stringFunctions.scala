@@ -29,6 +29,7 @@ import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression,
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
+import _root_.org.apache.spark.sql.catalyst.expressions.QuaternaryExpression
 
 abstract class GpuUnaryString2StringExpression extends GpuUnaryExpression with ExpectsInputTypes {
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType)
@@ -1120,7 +1121,8 @@ case class GpuRegExpReplaceWithFallback(
     searchExpr: Expression,
     replaceExpr: Expression,
     pos: Expression) 
-    extends GpuWrappedRowBasedQuaternaryExpression[RegExpReplace] with ImplicitCastInputTypes {
+    extends GpuWrappedRowBasedExpression[RegExpReplace]
+    with ImplicitCastInputTypes {
 
     override def prettyName: String = "regexp_replace"
 
@@ -1128,12 +1130,13 @@ case class GpuRegExpReplaceWithFallback(
 
     override def dataType: DataType = StringType
 
-    override def first: Expression = srcExpr
-    override def second: Expression = searchExpr
-    override def third: Expression = replaceExpr
-    
-    override def ternaryExpression(first: Expression, 
-        second: Expression, third: Expression): RegExpReplace = RegExpReplace(first, second, third)
+    override def rowExpression(children: Seq[Expression]): RegExpReplace = 
+      if (children.length > 3) {
+        RegExpReplace(children(0), children(1), children(2), children(3))
+
+      } else {
+        RegExpReplace(children(0), children(1), children(2))
+      }
 
     override def nullSafe: Boolean = true
 
@@ -1328,7 +1331,11 @@ class GpuRegExpExtractAllMeta(
           numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
         } catch {
           case e: RegexUnsupportedException =>
-            willNotWorkOnGpu(e.getMessage)
+            if (conf.isCpuRowBasedEnabled) {
+              useRowFallback = true
+            } else {
+              willNotWorkOnGpu(e.getMessage)
+            }
         }
       case _ =>
         willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
@@ -1353,9 +1360,13 @@ class GpuRegExpExtractAllMeta(
       str: Expression,
       regexp: Expression,
       idx: Expression): GpuExpression = {
-    val cudfPattern = pattern.getOrElse(
-      throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern"))
-    GpuRegExpExtractAll(str, regexp, idx, numGroups, cudfPattern)
+    if (useRowFallback) {
+      GpuRegExpExtractAllWithFallback(str, regexp, idx)
+    } else {
+      val cudfPattern = pattern.getOrElse(
+        throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern"))
+      GpuRegExpExtractAll(str, regexp, idx, numGroups, cudfPattern)
+    }
   }
 }
 
@@ -1441,6 +1452,26 @@ case class GpuRegExpExtractAll(
         }
     }
   }
+}
+
+case class GpuRegExpExtractAllWithFallback(str: Expression, regexp: Expression, idx: Expression)
+    extends GpuWrappedRowBasedTernaryExpression[RegExpExtractAll]
+    with ImplicitCastInputTypes with NullIntolerant {
+
+  override def dataType: DataType = StringType
+
+  override def prettyName: String = "regexp_extract_all"
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType, IntegerType)
+  override def first: Expression = str
+  override def second: Expression = regexp
+  override def third: Expression = idx
+
+  override def ternaryExpression(first: Expression,
+      second: Expression, third: Expression): RegExpExtractAll =
+      RegExpExtractAll(first, second, third)
+
+  override def nullSafe: Boolean = true
 }
 
 class SubstringIndexMeta(
@@ -1713,7 +1744,11 @@ abstract class StringSplitRegExpMeta[INPUT <: TernaryExpression](expr: INPUT,
               isRegExp = true
             } catch {
               case e: RegexUnsupportedException =>
-                willNotWorkOnGpu(e.getMessage)
+                if (conf.isCpuRowBasedEnabled) {
+                  useRowFallback = true
+                } else {
+                  willNotWorkOnGpu(e.getMessage)
+                }
             }
         }
       }
@@ -1762,7 +1797,11 @@ class GpuStringSplitMeta(
       str: Expression,
       regexp: Expression,
       limit: Expression): GpuExpression = {
-    GpuStringSplit(str, regexp, limit, pattern, isRegExp)
+    if (useRowFallback) {
+      GpuStringSplitWithFallback(str, regexp, limit) 
+    } else {
+      GpuStringSplit(str, regexp, limit, pattern, isRegExp)
+    }
   }
 }
 
@@ -1841,6 +1880,23 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression,
       regex: GpuColumnVector,
       limit: GpuScalar): ColumnVector =
     throw new IllegalStateException("This is not supported yet")
+}
+
+case class GpuStringSplitWithFallback(str: Expression, regex: Expression, limit: Expression)
+    extends GpuWrappedRowBasedTernaryExpression[StringSplit] with ImplicitCastInputTypes {
+  override def dataType: DataType = StringType
+
+  override def prettyName: String = "split"
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType, IntegerType)
+  override def first: Expression = str
+  override def second: Expression = regex
+  override def third: Expression = limit
+
+  override def ternaryExpression(first: Expression,
+      second: Expression, third: Expression): RegExpExtract = RegExpExtract(first, second, third)
+
+  override def nullSafe: Boolean = true
 }
 
 class GpuStringToMapMeta(expr: StringToMap,

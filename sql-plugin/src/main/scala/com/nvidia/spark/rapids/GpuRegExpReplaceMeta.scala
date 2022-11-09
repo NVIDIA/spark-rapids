@@ -16,7 +16,7 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, RegExpReplace}
-import org.apache.spark.sql.rapids.{GpuRegExpMeta, GpuRegExpReplace, GpuRegExpReplaceWithBackref, GpuRegExpUtils, GpuStringReplace}
+import org.apache.spark.sql.rapids.{GpuRegExpMeta, GpuRegExpReplace, GpuRegExpReplaceWithBackref, GpuRegExpReplaceWithFallback, GpuRegExpUtils, GpuStringReplace}
 import org.apache.spark.sql.types.DataTypes
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -73,7 +73,11 @@ class GpuRegExpReplaceMeta(
 
     GpuOverrides.extractLit(expr.pos).foreach { lit =>
       if (lit.value.asInstanceOf[Int] != 1) {
-        willNotWorkOnGpu("only a search starting position of 1 is supported")
+        if (conf.isCpuRowBasedEnabled) {
+          useRowFallback = true
+        } else {
+          willNotWorkOnGpu("only a search starting position of 1 is supported")
+        }
       }
     }
   }
@@ -89,15 +93,19 @@ class GpuRegExpReplaceMeta(
     if (canUseGpuStringReplace) {
       GpuStringReplace(lhs, regexp, rep)
     } else {
-      (javaPattern, cudfPattern, replacement) match {
-        case (Some(javaPattern), Some(cudfPattern), Some(cudfReplacement)) =>
-          if (containsBackref) {
-            GpuRegExpReplaceWithBackref(lhs, cudfPattern, cudfReplacement)
-          } else {
-            GpuRegExpReplace(lhs, regexp, rep, javaPattern, cudfPattern, cudfReplacement)
-          }
-        case _ =>
-          throw new IllegalStateException("Expression has not been tagged correctly")
+      if (useRowFallback) {
+        GpuRegExpReplaceWithFallback(lhs, regexp, rep, pos)
+      } else {
+        (javaPattern, cudfPattern, replacement) match {
+          case (Some(javaPattern), Some(cudfPattern), Some(cudfReplacement)) =>
+            if (containsBackref) {
+              GpuRegExpReplaceWithBackref(lhs, cudfPattern, cudfReplacement)
+            } else {
+              GpuRegExpReplace(lhs, regexp, rep, javaPattern, cudfPattern, cudfReplacement)
+            }
+          case _ =>
+            throw new IllegalStateException("Expression has not been tagged correctly")
+        }
       }
     }
   }
