@@ -25,6 +25,7 @@ import scala.util.control.NonFatal
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
 import com.nvidia.spark.rapids.shims.{AQEUtils, DecimalArithmeticOverrides, DeltaLakeUtils, GetMapValueMeta, GpuBatchScanExec, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
+import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
@@ -4288,15 +4289,22 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
    *  to have to copy the data to GPU and then back off after it does the scan on
    *  Delta Table Checkpoint, so have the entire plan fallback to CPU at that point.
    */
-  def isDeltaLakeMetadataQuery(plan: SparkPlan): Boolean = {
+  def isDeltaLakeMetadataQuery(plan: SparkPlan, detectDeltaCheckpoint: Boolean): Boolean = {
     val deltaLogScans = PlanUtils.findOperators(plan, {
       case f: FileSourceScanExec if DeltaLakeUtils.isDatabricksDeltaLakeScan(f) =>
         logDebug(s"Fallback for FileSourceScanExec with _databricks_internal: $f")
         true
       case f: FileSourceScanExec =>
+        val checkDeltaFunc = (name: String) => if (detectDeltaCheckpoint) {
+          name.contains("/_delta_log/") && name.endsWith(".json") ||
+            (name.endsWith(".parquet") && new Path(name).getName().contains("checkpoint"))
+        } else {
+          name.contains("/_delta_log/") && name.endsWith(".json")
+        }
+
         // example filename: "file:/tmp/delta-table/_delta_log/00000000000000000000.json"
         val found = f.relation.inputFiles.exists { name =>
-          name.contains("/_delta_log/") && name.endsWith(".json")
+          checkDeltaFunc(name)
         }
         if (found) {
           logDebug(s"Fallback for FileSourceScanExec delta log: $f")
@@ -4345,7 +4353,8 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
 
   private def applyOverrides(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
     val wrap = GpuOverrides.wrapAndTagPlan(plan, conf)
-    if (conf.isDetectDeltaLogQueries && isDeltaLakeMetadataQuery(plan)) {
+    val detectDeltaCheckpoint = conf.isDetectDeltaCheckpointQueries
+    if (conf.isDetectDeltaLogQueries && isDeltaLakeMetadataQuery(plan, detectDeltaCheckpoint)) {
       wrap.entirePlanWillNotWork("Delta Lake metadata queries are not efficient on GPU")
     }
     val reasonsToNotReplaceEntirePlan = wrap.getReasonsNotToReplaceEntirePlan
