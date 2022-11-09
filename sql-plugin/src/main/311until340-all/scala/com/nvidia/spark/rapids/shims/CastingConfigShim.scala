@@ -16,13 +16,24 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.catalyst.expressions.{Cast, Expression}
+import org.apache.spark.sql.catalyst.expressions.{CastBase, Expression}
 
-object CastIgnoreTimeZoneShim {
+object CastingConfigShim {
   /** Remove TimeZoneId for Cast if needsTimeZone return false. */
   def ignoreTimeZone(e: Expression): Expression = e match {
-    case c: Cast if c.timeZoneId.nonEmpty && !c.needsTimeZone =>
+    case c: CastBase if c.timeZoneId.nonEmpty && !c.needsTimeZone =>
       c.withTimeZone(null)
     case _ => e
+  }
+
+  def ansiEnabled(e: Expression): Boolean = {
+      // prior to Spark 3.4.0 we could use CastBase as argument type, but starting 3.4.0 the type is
+      // the case class Cast.
+      // prior to Spark 3.3.0 we could use toString to see if the name of
+      // the cast was "cast" or "ansi_cast" but now the name is always "cast"
+      // so we need to use reflection to access the protected field "ansiEnabled"
+      val m = e.getClass.getDeclaredField("ansiEnabled")
+      m.setAccessible(true)
+      m.getBoolean(e)
   }
 }
