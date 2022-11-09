@@ -18,9 +18,7 @@
 package com.nvidia.spark.rapids.optimizer
 
 import scala.collection.mutable
-
 import com.nvidia.spark.rapids.RapidsConf
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{And, Attribute, AttributeSet, Expression, ExpressionSet, PredicateHelper}
 import org.apache.spark.sql.catalyst.optimizer.StarSchemaDetection
@@ -29,6 +27,8 @@ import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreePattern.INNER_LIKE_JOIN
 import org.apache.spark.sql.internal.SQLConf
+
+import java.util.concurrent.TimeUnit
 
 /**
  * Copied from Spark's CostBasedJoinReorder.
@@ -39,6 +39,8 @@ import org.apache.spark.sql.internal.SQLConf
  *
  */
 object GpuCostBasedJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
+
+  var totalTimeMillis = 0L
 
   //TODO this is an ugly hack but not sure how we are supposed to inject our own rules and have
   // them work with RuleIdCollection in Spark
@@ -51,6 +53,7 @@ object GpuCostBasedJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
       logDebug(s"GpuCostBasedJoinReorder disabled")
       plan
     } else {
+      val t0 = System.nanoTime()
       val result = plan.transformDownWithPruning(_.containsPattern(INNER_LIKE_JOIN), ruleId) {
         // Start reordering with a joinable item, which is an InnerLike join with conditions.
         // Avoid reordering if a join hint is present.
@@ -61,9 +64,14 @@ object GpuCostBasedJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
           reorder(p, p.output)
       }
       // After reordering is finished, convert OrderedJoin back to Join.
-      result transform {
+      val x = result transform {
         case OrderedJoin(left, right, jt, cond) => Join(left, right, jt, cond, JoinHint.NONE)
       }
+      val t1 = System.nanoTime()
+      val elapsedTimeMillis = TimeUnit.MILLISECONDS.convert(t1 - t0, TimeUnit.NANOSECONDS)
+      totalTimeMillis += elapsedTimeMillis
+      println(s"GpuCostBasedJoinReorder took $elapsedTimeMillis millis ($totalTimeMillis total)")
+      x
     }
   }
 
@@ -193,7 +201,7 @@ object JoinReorderDP extends PredicateHelper with Logging {
     }
 
     val durationInMs = (System.nanoTime() - startTime) / (1000 * 1000)
-    println(s"Join reordering finished. Duration: $durationInMs ms, number of items: " +
+    logDebug(s"Join reordering finished. Duration: $durationInMs ms, number of items: " +
       s"${items.length}, number of plans in memo: ${foundPlans.map(_.size).sum}")
 
     // The last level must have one and only one plan, because all items are joinable.
