@@ -274,14 +274,16 @@ object AlluxioUtils extends Logging with Arm {
    * Here we assume tables are put together.
    * e.g:
    * /root/
-   * t1/
-   * a.parquet
-   * t2/
-   * a.parquet
-   * b.parquet
+   *    t1/
+   *      a.parquet
+   *      b.parquet
+   *    t2/
+   *      a.parquet
+   *      b.parquet
    * /root2/
-   * t1/
-   * a.parquet
+   *    t1/
+   *      a.parquet
+   *
    * returns /root
    *
    * @param paths the file paths in a bucket
