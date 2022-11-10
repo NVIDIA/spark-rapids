@@ -603,6 +603,7 @@
                                         <include name="340+/*"/>
                                     </patternset>
                                     <include name="340/*"/>
+                                    <include name="340+-nondb/*"/>
                                 </dirset>
                             </pathconvert>
 
@@ -650,6 +651,19 @@
                                         <include name="311+-db/*"/>
                                     </patternset>
                                     <include name="321db/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <pathconvert property="spark330db.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <patternset id="spark330db+.pattern">
+                                        <!-- 330db backports features from 340+ -->
+                                        <!-- inherit 340+ except nondb -->
+                                        <patternset refid="spark340+.pattern"/>
+                                        <exclude name="*nondb*/*"/>
+
+                                        <include name="311+-db/*"/>
+                                    </patternset>
+                                    <include name="330db/*"/>
                                 </dirset>
                             </pathconvert>
                         </target>

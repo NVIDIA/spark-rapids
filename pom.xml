@@ -422,6 +422,46 @@
             </modules>
         </profile>
         <profile>
+            <!-- Note Databricks requires 2 properties -Ddatabricks and -Dbuildver=330db -->
+            <!-- Note that 330db backports many features from Spark3.4.0 -->
+            <id>release330db</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>330db</value>
+                </property>
+            </activation>
+            <properties>
+                <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
+                <scala.plugin.version>3.4.4</scala.plugin.version>
+                <shim.module.name>spark330db</shim.module.name>
+                <spark.version.classifier>spark330db</spark.version.classifier>
+                <!--
+                     Note that we are using the Spark version for all of the Databricks dependencies as well.
+                     The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
+                     This is to make it easier and not have to change version numbers for each individual dependency
+                     and deal with differences between Databricks versions
+                -->
+                <spark.version>${spark330db.version}</spark.version>
+                <spark.test.version>${spark330db.version}</spark.test.version>
+                <hadoop.client.version>3.3.1</hadoop.client.version>
+                <rat.consoleOutput>true</rat.consoleOutput>
+                <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
+                <spark.shim.sources>${spark330db.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
+            </properties>
+            <modules>
+                <module>common</module>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
+                <module>aggregator</module>
+            </modules>
+        </profile>
+        <profile>
             <id>release331</id>
             <activation>
                 <property>
@@ -633,6 +673,7 @@
         <spark321db.version>3.2.1-databricks</spark321db.version>
         <spark322.version>3.2.2</spark322.version>
         <spark330.version>3.3.0</spark330.version>
+        <spark330db.version>3.3.0-databricks</spark330db.version>
         <spark331.version>3.3.1</spark331.version>
         <spark332.version>3.3.2-SNAPSHOT</spark332.version>
         <spark340.version>3.4.0-SNAPSHOT</spark340.version>
