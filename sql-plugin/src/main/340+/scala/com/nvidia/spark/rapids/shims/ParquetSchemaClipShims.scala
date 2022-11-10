@@ -161,7 +161,7 @@ object ParquetSchemaClipShims {
             }
           case timestamp: TimestampLogicalTypeAnnotation
             if timestamp.getUnit == TimeUnit.MICROS || timestamp.getUnit == TimeUnit.MILLIS =>
-            if (timestamp.isAdjustedToUTC || !SQLConf.get.parquetTimestampNTZEnabled) {
+            if (timestamp.isAdjustedToUTC || !ParquetTimestampNTZShims.getParquetTimestampNTZEnabled) {
               TimestampType
             } else {
               TimestampNTZType
