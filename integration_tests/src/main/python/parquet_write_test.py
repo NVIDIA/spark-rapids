@@ -567,3 +567,6 @@ def test_write_empty_data_single_writer(spark_tmp_path):
     with_gpu_session(lambda spark: spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
                      .write.mode("overwrite").partitionBy('c1', 'c2').parquet(data_path))
     with_cpu_session(lambda spark: spark.read.parquet(data_path).collect())
+
+
+

@@ -198,20 +198,29 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
           override def convertToGpu(): GpuExec = {
             val sparkSession = wrapped.relation.sparkSession
             val options = wrapped.relation.options
-            val rootPaths = wrapped.relation.location.rootPaths
-
             val (location, alluxioPathsToReplaceMap) =
-              if (AlluxioCfgUtils.enabledAlluxioReplacementAlgoConvertTime(conf) &&
-                !AlluxioUtils.directlyReadLargeTableFromS3(rootPaths, conf, wrapped.relation)
-              ) {
-                // it's convert time algorithm and some paths are not large tables
-                AlluxioUtils.replacePathIfNeeded(
-                  conf,
-                  wrapped.relation,
-                  partitionFilters,
-                  wrapped.dataFilters)
+              if (AlluxioCfgUtils.enabledAlluxioReplacementAlgoConvertTime(conf)) {
+                val shouldReadFromS3 = wrapped.relation.location match {
+                  case inMemory: InMemoryFileIndex =>
+                    val pds = inMemory.listFiles(Seq(), Seq())
+                    AlluxioUtils.shouldReadDirectlyFromS3(conf, pds)
+                  case _ =>
+                    false
+                }
+
+                if (!shouldReadFromS3) {
+                  // it's convert time algorithm and some paths are not large tables
+                  AlluxioUtils.replacePathIfNeeded(
+                    conf,
+                    wrapped.relation,
+                    partitionFilters,
+                    wrapped.dataFilters)
+                } else {
+                  // convert time algorithm and read large files
+                  (wrapped.relation.location, None)
+                }
               } else {
-                // it's not convert time algorithm or read large tables, do not replace
+                // it's not convert time algorithm or read large files, do not replace
                 (wrapped.relation.location, None)
               }
 

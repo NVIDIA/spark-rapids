@@ -1476,23 +1476,24 @@ object RapidsConf {
     .createWithDefault("TASK_TIME")
 
   val ALLUXIO_LARGE_FILE_THRESHOLD = conf("spark.rapids.alluxio.large.file.threshold")
-    .doc("The threshold is ued to identify whether average size of files is large " +
-      "when reading from S3. If reading large files from S3 and the alluxio disk is slow, " +
+    .doc("The threshold is used to identify whether average size of files is large " +
+      "when reading from S3. If reading large files from S3 and " +
+      "the disks used by Alluxio are slow, " +
       "directly reading from S3 is better than reading caches from Alluxio, " +
       "because S3 network bandwidth is faster than local disk. " +
-      "This improvement takes effect when spark.rapids.alluxio.slow.disk is enabled. " +
-      "This value will be read only once, reset it will not take effect")
-    .startupOnly()
+      "This improvement takes effect when spark.rapids.alluxio.slow.disk is enabled.")
     .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(8 * 1024 * 1024) // 8M
+    .createWithDefault(64 * 1024 * 1024) // 64M
 
   val ALLUXIO_SLOW_DISK = conf("spark.rapids.alluxio.slow.disk")
-    .doc("Indicates whether the alluxio disk is slow. If it's true and reading S3 large " +
-      "files, Rapids Accelerator reads from S3 directly instead of reading from Alluxio caches. " +
+    .doc("Indicates whether the disks used by Alluxio are slow. " +
+      "If it's true and reading S3 large files, " +
+      "Rapids Accelerator reads from S3 directly instead of reading from Alluxio caches. " +
       "Refer to spark.rapids.alluxio.large.file.threshold which defines a threshold that " +
-      "identifying whether files are large.")
+      "identifying whether files are large. " +
+      "Typically, it's slow disks if spead is less than 300M/second.")
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   // USER FACING DEBUG CONFIGS
 

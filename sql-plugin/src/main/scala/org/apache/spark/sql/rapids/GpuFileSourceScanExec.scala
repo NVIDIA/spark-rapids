@@ -80,8 +80,8 @@ case class GpuFileSourceScanExec(
 
   // this is set only when we either explicitly replaced a path for CONVERT_TIME
   // or when TASK_TIME if one of the paths will be replaced.
-  // If read large s3 files on lower disk cluster, should read directly from s3 and
-  // update `alluxioPathReplacementMap` to None.
+  // If reading large s3 files on a cluster with slower disks,
+  // should update this to None and read directly from s3 to get faster.
   private var alluxioPathReplacementMap: Option[Map[String, String]] = alluxioPathsMap
 
   private val isPerFileReadEnabled = relation.fileFormat match {
@@ -117,36 +117,31 @@ case class GpuFileSourceScanExec(
   private def isDynamicPruningFilter(e: Expression): Boolean =
     e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
 
-  private def updateAlluxioPathReplacementMap(partitions: Seq[PartitionDirectory]): Unit = {
-    val paths = partitions.flatMap { pd =>
-      pd.files
-    }.map { file =>
-      file.getPath
-    }
-    if (AlluxioUtils.directlyReadLargeTableFromS3(paths, rapidsConf, relation)) {
-      alluxioPathReplacementMap = None
-    }
-  }
-
   @transient lazy val selectedPartitions: Array[PartitionDirectory] = {
     val optimizerMetadataTimeNs = relation.location.metadataOpsTimeNs.getOrElse(0L)
     val startTime = System.nanoTime()
     val pds = relation.location.listFiles(
         partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
     if (AlluxioCfgUtils.isAlluxioPathsToReplaceTaskTime(rapidsConf, relation.fileFormat)) {
-      // this is not ideal, here we check to see if we will replace any paths, which is an
-      // extra iteration through paths
-      alluxioPathReplacementMap = AlluxioUtils.checkIfNeedsReplaced(rapidsConf, pds,
-        relation.sparkSession.sparkContext.hadoopConfiguration,
-        relation.sparkSession.conf)
       // if should directly read from s3, should set `alluxioPathReplacementMap` as None
-      updateAlluxioPathReplacementMap(pds)
+      if (AlluxioUtils.shouldReadDirectlyFromS3(rapidsConf, pds)) {
+        alluxioPathReplacementMap = None
+      } else {
+        // this is not ideal, here we check to see if we will replace any paths, which is an
+        // extra iteration through paths
+        alluxioPathReplacementMap = AlluxioUtils.checkIfNeedsReplaced(rapidsConf, pds,
+          relation.sparkSession.sparkContext.hadoopConfiguration,
+          relation.sparkSession.conf)
+      }
     } else if (AlluxioCfgUtils.isAlluxioAutoMountTaskTime(rapidsConf, relation.fileFormat)) {
-      alluxioPathReplacementMap = AlluxioUtils.autoMountIfNeeded(rapidsConf, pds,
-        relation.sparkSession.sparkContext.hadoopConfiguration,
-        relation.sparkSession.conf)
       // if should directly read from s3, should set `alluxioPathReplacementMap` as None
-      updateAlluxioPathReplacementMap(pds)
+      if (AlluxioUtils.shouldReadDirectlyFromS3(rapidsConf, pds)) {
+        alluxioPathReplacementMap = None
+      } else {
+        alluxioPathReplacementMap = AlluxioUtils.autoMountIfNeeded(rapidsConf, pds,
+          relation.sparkSession.sparkContext.hadoopConfiguration,
+          relation.sparkSession.conf)
+      }
     }
 
     logDebug(s"File listing and possibly replace with Alluxio path " +
