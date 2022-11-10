@@ -476,7 +476,9 @@ abstract class MultiFileCloudPartitionReaderBase(
   override def next(): Boolean = {
     withResource(new NvtxRange(getFileFormatShortName + " readBatch", NvtxColor.GREEN)) { _ =>
       if (!isInitted) {
-        initAndStartReaders()
+        withResource(new NvtxRange(getFileFormatShortName + " initReaders", NvtxColor.GREEN)) { _ =>
+          initAndStartReaders()
+        }
       }
       batch.foreach(_.close())
       batch = None
@@ -534,15 +536,24 @@ abstract class MultiFileCloudPartitionReaderBase(
 
           if (canUseCombine) {
             var sizeRead = 0L
-            readReadyFiles(0)
+            withResource(new NvtxRange(getFileFormatShortName + " readReadyFiles",
+              NvtxColor.GREEN)) { _ =>
+              readReadyFiles(0)
+            }
             if (results.isEmpty) {
               // none were ready yet so wait as long as need for first one
-              val res = fcs.take().get()
+              val res = withResource(new NvtxRange(getFileFormatShortName + " wait first",
+                NvtxColor.GREEN)) { _ =>
+                fcs.take().get()
+              }
               sizeRead += res.memBuffersAndSizes.map(_.bytes).sum
               filesToRead -= 1
               results.append(res)
               // check if others ready as well
-              readReadyFiles(sizeRead)
+              withResource(new NvtxRange(getFileFormatShortName + " read ready 2",
+                NvtxColor.GREEN)) { _ =>
+                readReadyFiles(sizeRead)
+              }
             }
           } else {
             val res = fcs.take().get()
@@ -552,7 +563,10 @@ abstract class MultiFileCloudPartitionReaderBase(
 
           val fileBufsAndMeta = if (results.size > 1) {
             val startCombineTime = System.currentTimeMillis()
-            val combinedRes = combineHMBs(results)
+            val combinedRes = withResource(new NvtxRange(getFileFormatShortName + " combineHmbs",
+              NvtxColor.GREEN)) { _ =>
+              combineHMBs(results)
+            }
             logWarning(s"took ${(System.currentTimeMillis() - startCombineTime)} " +
               s"ms to do combine of ${results.size}")
             combinedRes
@@ -588,7 +602,10 @@ abstract class MultiFileCloudPartitionReaderBase(
           } else {
             val file = fileBufsAndMeta.partitionedFile.filePath
             batch = try {
-              readBatch(fileBufsAndMeta)
+              withResource(new NvtxRange(getFileFormatShortName + " actual read batch",
+                NvtxColor.GREEN)) { _ =>
+                readBatch(fileBufsAndMeta)
+              }
             } catch {
               case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
                 logWarning(s"Skipped the corrupted file: ${file}", e)
