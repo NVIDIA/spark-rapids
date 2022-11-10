@@ -18,7 +18,7 @@ from pyspark.sql.types import *
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from marks import ignore_order, allow_non_gpu
-from spark_session import with_cpu_session, is_databricks_runtime, is_before_spark_320
+from spark_session import with_cpu_session
 
 _adaptive_conf = { "spark.sql.adaptive.enabled": "true" }
 
@@ -122,16 +122,12 @@ def test_aqe_struct_self_join(spark_tmp_table_factory):
             resultdf_name, resultdf_name))
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_adaptive_conf)
 
+# see https://github.com/NVIDIA/spark-rapids/issues/7037
 @ignore_order(local=True)
-@allow_non_gpu('DataWritingCommandExec','ColumnarToRowExec')
-@pytest.mark.parametrize('dpp_enabled', [
-    'false',
-    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
-                                                  reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
-], ids=idfn)
-def test_aqe_issue_7037(dpp_enabled, spark_tmp_path):
+@allow_non_gpu('BroadcastNestedLoopJoinExec', 'BroadcastExchangeExec', 'ColumnarToRowExec', 'Cast', 'DateSub')
+def test_aqe_issue_7037(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    def do_it(spark):
+    def prep(spark):
         data = [
             (("Adam ", "", "Green"), "1", "M", 1000),
             (("Bob ", "Middle", "Green"), "2", "M", 2000),
@@ -151,6 +147,10 @@ def test_aqe_issue_7037(dpp_enabled, spark_tmp_path):
 
         df2.printSchema
         df2.write.format("parquet").mode("overwrite").save(data_path)
+
+    with_cpu_session(prep)
+
+    def do_it(spark):
         newdf2 = spark.read.parquet(data_path)
         newdf2.createOrReplaceTempView("df2")
 
@@ -168,8 +168,10 @@ def test_aqe_issue_7037(dpp_enabled, spark_tmp_path):
             """
         )
 
-    conf = copy_and_update(_adaptive_conf,
-        {'spark.sql.optimizer.dynamicPartitionPruning.enabled': dpp_enabled }
-    )
+    conf = {
+        'spark.rapids.sql.debug.logTransformations': 'true',
+        'spark.sql.adaptive.enabled': 'true',
+    }
 
-    assert_gpu_and_cpu_are_equal_collect(do_it, conf=_adaptive_conf)
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
+    # assert_gpu_and_cpu_are_equal_collect(do_it, conf=_adaptive_conf)
