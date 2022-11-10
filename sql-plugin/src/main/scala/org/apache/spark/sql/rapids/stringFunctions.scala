@@ -17,10 +17,11 @@
 package org.apache.spark.sql.rapids
 
 import java.nio.charset.Charset
+import java.util.Optional
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, PadSide, Scalar, Table}
+import ai.rapids.cudf.{BinaryOp, BinaryOperable, ColumnVector, ColumnView, DType, PadSide, Scalar, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{RegExpShim, ShimExpression}
@@ -460,34 +461,169 @@ case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
     this(str, pos, GpuLiteral(Integer.MAX_VALUE, IntegerType))
   }
 
-  override def doColumnar(
-      val0: GpuColumnVector,
-      val1: GpuColumnVector,
-      val2: GpuColumnVector): ColumnVector =
-        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  private[this] def computeStarts(strs: ColumnView, poses: ColumnView): ColumnVector = {
+    // CPU:
+    //     start = (pos < 0) ? pos + str_size : ((pos > 0) ? pos - 1 : 0)
+    // 1) pos + str_size
+    val negConvertedPoses = withResource(strs.getCharLengths) { strSizes =>
+      // cudf `substring(column, column, column)` treats negative start always as 0, so
+      // need to do the similar calculation as CPU here.
+      poses.add(strSizes, DType.INT32)
+    }
+    withResource(negConvertedPoses) { _ =>
+      val negPosFlags = withResource(Scalar.fromInt(0)) { zero =>
+        poses.lessThan(zero)
+      }
+      withResource(negPosFlags) { _ =>
+        // 2) (pos > 0) ? pos -1 : 0
+        val subOne = "__device__ inline void f(int* out,int pos){*out=(pos>0)?(pos-1):pos;}"
+        withResource(poses.transform(subOne, false)) { zeroBasedPoses =>
+          negPosFlags.ifElse(negConvertedPoses, zeroBasedPoses)
+        }
+      }
+    }
+  }
 
-  override def doColumnar(
-      val0: GpuScalar,
-      val1: GpuColumnVector,
-      val2: GpuColumnVector): ColumnVector =
-        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  private[this] def computeEnds(starts: BinaryOperable, lens: BinaryOperable): ColumnVector = {
+    // CPU:
+    //     end = start + length
+    //   , along with integer overflow check
+    val endLongCol = withResource(starts.add(lens, DType.INT64)) { endColAsLong =>
+      // If (end < 0), end = 0, let cudf return empty string.
+      // If (end > Int.MaxValue), end = Int.MaxValue, let cudf return string
+      //   from start until the string end.
+      // To align with the CPU's behavior.
+      withResource(Scalar.fromLong(0L)) { zero =>
+        withResource(Scalar.fromLong(Int.MaxValue.toLong)) { maxInt =>
+          endColAsLong.clamp(zero, maxInt)
+        }
+      }
+    }
+    withResource(endLongCol) { _ =>
+      endLongCol.castTo(DType.INT32)
+    }
+  }
 
-  override def doColumnar(val0: GpuScalar, val1: GpuScalar, val2: GpuColumnVector): ColumnVector =
-    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  private[this] def substringColumn(strs: ColumnView, starts: ColumnView,
+      ends: ColumnView): ColumnVector = {
+    // cudf does not allow nulls in starts and ends.
+    val noNullStarts = new ColumnView(starts.getType, starts.getRowCount, Optional.of(0L),
+      starts.getData, null)
+    withResource(noNullStarts) { _ =>
+      val noNullEnds = new ColumnView(ends.getType, ends.getRowCount, Optional.of(0L),
+        ends.getData, null)
+      withResource(noNullEnds) { _ =>
+        // Spark returns null if any of (str, pos, len) is null, and `ends`'s null mask
+        // should cover pos and len.
+        withResource(strs.mergeAndSetValidity(BinaryOp.BITWISE_AND, strs, ends)) { rets =>
+          rets.substring(noNullStarts, noNullEnds)
+        }
+      }
+    }
+  }
 
-  override def doColumnar(val0: GpuScalar, val1: GpuColumnVector, val2: GpuScalar): ColumnVector =
-    throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(strCol: GpuColumnVector, posCol: GpuColumnVector,
+      lenCol: GpuColumnVector): ColumnVector = {
+    val strs = strCol.getBase
+    val poses = posCol.getBase
+    val lens = lenCol.getBase
+    withResource(computeStarts(strs, poses)) { starts =>
+      withResource(computeEnds(starts, lens)) { ends =>
+        substringColumn(strs, starts, ends)
+      }
+    }
+  }
 
-  override def doColumnar(
-      val0: GpuColumnVector,
-      val1: GpuScalar,
-      val2: GpuColumnVector): ColumnVector =
-        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
+  override def doColumnar(strS: GpuScalar, posCol: GpuColumnVector,
+      lenCol: GpuColumnVector): ColumnVector = {
+    val numRows = posCol.getRowCount.toInt
+    withResource(GpuColumnVector.from(strS, numRows, strS.dataType)) { strCol =>
+      doColumnar(strCol, posCol, lenCol)
+    }
+  }
 
-  override def doColumnar(column: GpuColumnVector, position: GpuScalar,
-      length: GpuScalar): ColumnVector = {
-    val pos = position.getValue.asInstanceOf[Int]
-    val len = length.getValue.asInstanceOf[Int]
+  override def doColumnar(strCol: GpuColumnVector, posS: GpuScalar,
+      lenCol: GpuColumnVector): ColumnVector = {
+    val strs = strCol.getBase
+    val lens = lenCol.getBase
+    val pos = posS.getValue.asInstanceOf[Int]
+    // CPU:
+    //     start = (pos < 0) ? pos + str_size : ((pos > 0) ? pos - 1 : 0)
+    val starts = if (pos < 0) {
+      withResource(strs.getCharLengths) { strSizes =>
+        withResource(Scalar.fromInt(pos)) { posS =>
+          posS.add(strSizes, DType.INT32)
+        }
+      }
+    } else { // pos >= 0
+      val start = if (pos > 0) pos - 1 else 0
+      withResource(Scalar.fromInt(start)) { startS =>
+        ColumnVector.fromScalar(startS, strs.getRowCount.toInt)
+      }
+    }
+
+    withResource(starts) { _ =>
+      withResource(computeEnds(starts, lens)) { ends =>
+        substringColumn(strs, starts, ends)
+      }
+    }
+  }
+
+  override def doColumnar (strS: GpuScalar, posS: GpuScalar,
+      lenCol: GpuColumnVector): ColumnVector = {
+    val strValue = strS.getValue.asInstanceOf[UTF8String]
+    val pos = posS.getValue.asInstanceOf[Int]
+    val lens = lenCol.getBase
+    val numRows = lenCol.getRowCount.toInt
+    // CPU:
+    //     start = (pos < 0) ? pos + str_size : ((pos > 0) ? pos - 1 : 0)
+    val start = if (pos < 0) {
+      pos + strValue.numChars()
+    } else if (pos > 0) {
+      pos - 1
+    } else 0
+
+    val starts = withResource(Scalar.fromInt(start)) { startS =>
+      ColumnVector.fromScalar(startS, numRows)
+    }
+
+    withResource(starts) { _ =>
+      withResource(computeEnds(starts, lens)) { ends =>
+        withResource(ColumnVector.fromScalar(strS.getBase, numRows)) { strs =>
+          substringColumn(strs, starts, ends)
+        }
+      }
+    }
+  }
+
+  override def doColumnar(strCol: GpuColumnVector, posCol: GpuColumnVector,
+      lenS: GpuScalar): ColumnVector = {
+    val strs = strCol.getBase
+    val poses = posCol.getBase
+    val numRows =  strCol.getRowCount.toInt
+    withResource(computeStarts(strs, poses)) { starts =>
+      val ends = withResource(ColumnVector.fromScalar(lenS.getBase, numRows)) { lens =>
+        computeEnds(starts, lens)
+      }
+      withResource(ends) { _ =>
+        substringColumn(strs, starts, ends)
+      }
+    }
+  }
+
+  override def doColumnar(strS: GpuScalar, posCol: GpuColumnVector,
+      lenS: GpuScalar): ColumnVector = {
+    val numRows = posCol.getRowCount.toInt
+    withResource(GpuColumnVector.from(strS, numRows, strS.dataType)) { strCol =>
+      doColumnar(strCol, posCol, lenS)
+    }
+  }
+
+  override def doColumnar(strCol: GpuColumnVector, posS: GpuScalar,
+      lenS: GpuScalar): ColumnVector = {
+    val strs = strCol.getBase
+    val pos = posS.getValue.asInstanceOf[Int]
+    val len = lenS.getValue.asInstanceOf[Int]
     val (start, endOpt) = if (len <= 0) {
       // Spark returns empty string if length is negative or zero
       (0, Some(0))
@@ -511,22 +647,15 @@ case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
       // e.g. `substring("abc", -3, 4)` outputs "abc".
       (pos, None)
     }
-    val col = column.getBase
-    endOpt.map(col.substring(start, _)).getOrElse(col.substring(start))
+    endOpt.map(strs.substring(start, _)).getOrElse(strs.substring(start))
   }
 
-  override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,
-      val2: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(val0, numRows, str.dataType)) { val0Col =>
-      doColumnar(val0Col, val1, val2)
+  override def doColumnar(numRows: Int, strS: GpuScalar, posS: GpuScalar,
+      lenS: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(strS, numRows, strS.dataType)) { strCol =>
+      doColumnar(strCol, posS, lenS)
     }
   }
-
-  override def doColumnar(
-      val0: GpuColumnVector,
-      val1: GpuColumnVector,
-      val2: GpuScalar): ColumnVector =
-        throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 }
 
 case class GpuInitCap(child: Expression) extends GpuUnaryExpression with ImplicitCastInputTypes {
