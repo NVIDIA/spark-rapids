@@ -13,12 +13,12 @@
 # limitations under the License.
 
 import pytest
-from pyspark.sql.functions import when, col
+from pyspark.sql.functions import when, col, current_date, current_timestamp
 from pyspark.sql.types import *
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from marks import ignore_order, allow_non_gpu
-from spark_session import with_cpu_session
+from spark_session import with_cpu_session, is_databricks_runtime, is_before_spark_320
 
 _adaptive_conf = { "spark.sql.adaptive.enabled": "true" }
 
@@ -121,3 +121,55 @@ def test_aqe_struct_self_join(spark_tmp_table_factory):
         return spark.sql("select a.* from {} a, {} b where a.name=b.name".format(
             resultdf_name, resultdf_name))
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_adaptive_conf)
+
+@ignore_order(local=True)
+@allow_non_gpu('DataWritingCommandExec','ColumnarToRowExec')
+@pytest.mark.parametrize('dpp_enabled', [
+    'false',
+    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
+                                                  reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
+], ids=idfn)
+def test_aqe_issue_7037(dpp_enabled, spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    def do_it(spark):
+        data = [
+            (("Adam ", "", "Green"), "1", "M", 1000),
+            (("Bob ", "Middle", "Green"), "2", "M", 2000),
+            (("Cathy ", "", "Green"), "3", "F", 3000)
+        ]
+        schema = (StructType()
+                  .add("name", StructType()
+                       .add("firstname", StringType())
+                       .add("middlename", StringType())
+                       .add("lastname", StringType()))
+                  .add("id", StringType())
+                  .add("gender", StringType())
+                  .add("salary", IntegerType()))
+
+        df = spark.createDataFrame(spark.sparkContext.parallelize(data),schema)
+        df2 = df.withColumn("dt",current_date().alias("dt")).withColumn("ts",current_timestamp().alias("ts"))
+
+        df2.printSchema
+        df2.write.format("parquet").mode("overwrite").save(data_path)
+        newdf2 = spark.read.parquet(data_path)
+        newdf2.createOrReplaceTempView("df2")
+
+        return spark.sql(
+            """
+            select *
+                from (
+                    select distinct a.salary
+                    from df2 a inner join (select max(date(ts)) as state_start from df2) b
+                    on date(a.ts) > b.state_start - 2)
+                where salary in (
+                    select salary from (select a.salary
+                    from df2 a inner join (select max(date(ts)) as state_start from df2) b on date(a.ts) > b.state_start - 2
+                    limit 1))
+            """
+        )
+
+    conf = copy_and_update(_adaptive_conf,
+        {'spark.sql.optimizer.dynamicPartitionPruning.enabled': dpp_enabled }
+    )
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=_adaptive_conf)
