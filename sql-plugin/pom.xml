@@ -662,6 +662,7 @@
                                         <exclude name="*nondb*/*"/>
 
                                         <include name="311+-db/*"/>
+                                        <include name="321db/*"/>
                                     </patternset>
                                     <include name="330db/*"/>
                                 </dirset>
