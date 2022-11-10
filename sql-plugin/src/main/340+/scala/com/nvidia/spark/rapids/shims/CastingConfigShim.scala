@@ -27,7 +27,5 @@ object CastingConfigShim {
   }
 
   // Use public member of Cast class rather than reflection
-  def ansiEnabled(e: Expression): Boolean = {
-    e.asInstanceOf[Cast].ansiEnabled
-  }
+  def publicAnsiEnabled(e: Expression): Boolean = e.asInstanceOf[Cast].ansiEnabled
 }

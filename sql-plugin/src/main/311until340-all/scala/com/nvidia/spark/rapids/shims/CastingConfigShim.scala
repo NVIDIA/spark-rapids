@@ -26,14 +26,6 @@ object CastingConfigShim {
     case _ => e
   }
 
-  def ansiEnabled(e: Expression): Boolean = {
-      // prior to Spark 3.4.0 we could use CastBase as argument type, but starting 3.4.0 the type is
-      // the case class Cast.
-      // prior to Spark 3.3.0 we could use toString to see if the name of
-      // the cast was "cast" or "ansi_cast" but now the name is always "cast"
-      // so we need to use reflection to access the protected field "ansiEnabled"
-      val m = e.getClass.getDeclaredField("ansiEnabled")
-      m.setAccessible(true)
-      m.getBoolean(e)
-  }
+  // Before 340 ansiEnabled is private, so return false
+  def publicAnsiEnabled(e: Expression): Boolean = false
 }

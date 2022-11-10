@@ -832,7 +832,20 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
       c.getClass == sparkClzz
     }
 
-    def isAnsiCast(c: Expression): Boolean = CastingConfigShim.ansiEnabled(c)
+    def isAnsiCast(c: Expression): Boolean = {
+      // prior to Spark 3.3.0 we could use toString to see if the name of
+      // the cast was "cast" or "ansi_cast" but now the name is always "cast"
+      // so we need to use reflection to access the protected field "ansiEnabled"
+      // starting in Spark 3.4.0, ansiEnabled was moved to a public field and
+      // "cast" + "ansi_cast" were merged
+      if (cmpSparkVersion(3, 4, 0) < 0) {
+        val m = c.getClass.getDeclaredField("ansiEnabled")
+        m.setAccessible(true)
+        m.getBoolean(c)
+      } else {
+        CastingConfigShim.publicAnsiEnabled(c)
+      }
+    }
 
     def isAnsiCastInTableInsert(expr: Expression, cpuSession: Boolean): Boolean = {
       // Use reflection to avoid using shims for Spark-3.3.1+ in the form of:
