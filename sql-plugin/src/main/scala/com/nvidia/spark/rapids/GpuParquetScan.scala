@@ -1797,9 +1797,6 @@ class MultiFileCloudParquetPartitionReader(
         val partValues = hbWithMeta.partitionedFile.partitionValues
         allPartValues.append((totalNumRows, partValues))
       }
-      val combinedMemBuffsAndSizes = results.flatMap { hmbInfo =>
-        hmbInfo.memBuffersAndSizes
-      }
       // TODO handle without return and need to be HostMemoryEmptyMetaData
       return HostMemoryEmptyMetaData(meta.partitionedFile, // just pick one since not used
         meta.origPartitionedFile,
