@@ -17,8 +17,12 @@
 
 package com.nvidia.spark.rapids.optimizer
 
+import java.util.concurrent.TimeUnit
+
 import scala.collection.mutable
+
 import com.nvidia.spark.rapids.RapidsConf
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{And, Attribute, AttributeSet, Expression, ExpressionSet, PredicateHelper}
 import org.apache.spark.sql.catalyst.optimizer.StarSchemaDetection
@@ -28,8 +32,6 @@ import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.catalyst.trees.TreePattern.INNER_LIKE_JOIN
 import org.apache.spark.sql.internal.SQLConf
-
-import java.util.concurrent.TimeUnit
 
 /**
  * Copied from Spark's CostBasedJoinReorder.

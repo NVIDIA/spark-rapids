@@ -1,7 +1,25 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.nvidia.spark.rapids.optimizer
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeMap, AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.planning.ExtractEquiJoinKeys
@@ -19,7 +37,7 @@ import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, LogicalRela
  * - Call GpuStatsPlanVisitor to get stats for child, instead of calling child.stats
  * - Removed check that join inputs have row count estimates, because they always do now
  * - Made estimate cross joins much more expensive
- * - Made estimate for non-equi-join joins much more expensive - TODO: need to revisit this and see if it is really needed
+ * - Made estimate for non-equi-join joins much more expensive
  */
 case class GpuJoinEstimation(join: Join) extends Logging {
 
@@ -106,7 +124,8 @@ case class GpuJoinEstimation(join: Join) extends Logging {
             rightRows.max(numInnerJoinedRows)
           case FullOuter =>
             // T(A FOJ B) = T(A LOJ B) + T(A ROJ B) - T(A IJ B)
-            leftRows.max(numInnerJoinedRows) + rightRows.max(numInnerJoinedRows) - numInnerJoinedRows
+            leftRows.max(numInnerJoinedRows) +
+              rightRows.max(numInnerJoinedRows) - numInnerJoinedRows
           case _ =>
             assert(joinType == Inner || joinType == Cross)
             // Don't change for inner or cross join
@@ -117,7 +136,7 @@ case class GpuJoinEstimation(join: Join) extends Logging {
         val inputAttrStats = AttributeMap(
           leftStats.attributeStats.toSeq ++ rightStats.attributeStats.toSeq)
         val attributesWithStat = join.output.filter(a =>
-          inputAttrStats.get(a).map(_.hasCountStats).getOrElse(false))
+          inputAttrStats.get(a).exists(_.hasCountStats))
         val (fromLeft, fromRight) = attributesWithStat.partition(join.left.outputSet.contains(_))
 
         val outputStats: Seq[(Attribute, ColumnStat)] = if (outputRows == 0) {
