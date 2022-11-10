@@ -184,6 +184,10 @@ def test_all_null_int96(spark_tmp_path):
         conf=confs)
 
 parquet_write_compress_options = ['none', 'uncompressed', 'snappy']
+# zstd is available in spark 3.2.0 and later.
+if not is_before_spark_320():
+    parquet_write_compress_options.append('zstd')
+
 @pytest.mark.parametrize('compress', parquet_write_compress_options)
 def test_compress_write_round_trip(spark_tmp_path, compress):
     data_path = spark_tmp_path + '/PARQUET_DATA'

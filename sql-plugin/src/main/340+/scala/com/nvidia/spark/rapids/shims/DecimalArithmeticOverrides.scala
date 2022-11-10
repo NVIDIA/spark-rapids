@@ -16,6 +16,13 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.execution.LeafExecNode
+import com.nvidia.spark.rapids.ExprRule
 
-trait ShimLeafExecNode extends LeafExecNode
+import org.apache.spark.sql.catalyst.expressions.Expression
+
+object DecimalArithmeticOverrides {
+  def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+    // We don't override PromotePrecision or CheckOverflow for Spark 3.4
+    Map.empty[Class[_ <: Expression], ExprRule[_ <: Expression]]
+  }
+}

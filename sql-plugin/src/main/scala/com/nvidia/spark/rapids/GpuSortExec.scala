@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.util.{Comparator, LinkedList, PriorityQueue}
 
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable.{ArrayBuffer, ArrayStack}
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.GpuMetric._
@@ -169,16 +169,16 @@ case class GpuSortEachBatchIterator(
 
   override def next(): ColumnarBatch = {
     withResource(iter.next()) { cb =>
-        withResource(new NvtxWithMetrics("sort op", NvtxColor.WHITE, opTime)) { _ =>
-          val ret = sorter.fullySortBatch(cb, sortTime, peakDevMemory)
-          outputBatches += 1
-          outputRows += ret.numRows()
-          if (singleBatch) {
-            GpuColumnVector.tagAsFinalBatch(ret)
-          } else {
-            ret
-          }
+      withResource(new NvtxWithMetrics("sort op", NvtxColor.WHITE, opTime)) { _ =>
+        val ret = sorter.fullySortBatch(cb, sortTime, peakDevMemory)
+        outputBatches += 1
+        outputRows += ret.numRows()
+        if (singleBatch) {
+          GpuColumnVector.tagAsFinalBatch(ret)
+        } else {
+          ret
         }
+      }
     }
   }
 }
@@ -421,29 +421,18 @@ case class GpuOutOfCoreSortIterator(
     while (!pending.isEmpty && sortedSize < targetSize) {
       // Keep going until we have enough data to return
       var bytesLeftToFetch = targetSize
-      val mergedBatch = withResource(ArrayBuffer[SpillableColumnarBatch]()) { pendingSort =>
+      val pendingSort = new ArrayStack[SpillableColumnarBatch]()
+      closeOnExcept(pendingSort) { _ =>
         while (!pending.isEmpty &&
             (bytesLeftToFetch - pending.peek().buffer.sizeInBytes >= 0 || pendingSort.isEmpty)) {
           val buffer = pending.poll().buffer
-          pendingSort += buffer
+          pendingSort.push(buffer)
           bytesLeftToFetch -= buffer.sizeInBytes
         }
-        withResource(ArrayBuffer[ColumnarBatch]()) { batches =>
-          pendingSort.foreach { tmp =>
-            val batch = tmp.getColumnarBatch()
-            memUsed += GpuColumnVector.getTotalDeviceMemoryUsed(batch)
-            batches += batch
-          }
-          if (batches.size == 1) {
-            // Single batch no need for a merge sort
-            GpuColumnVector.incRefCounts(batches.head)
-          } else {
-            val ret = sorter.mergeSort(batches.toArray, sortTime)
-            memUsed += GpuColumnVector.getTotalDeviceMemoryUsed(ret)
-            ret
-          }
-        }
       }
+      val mergedBatch = sorter.mergeSortAndClose(pendingSort, sortTime)
+      memUsed += GpuColumnVector.getTotalDeviceMemoryUsed(mergedBatch)
+
       // We now have closed the input tables to merge sort so reset the memory used
       // we will ignore the upper bound and the single column because it should not have much
       // of an impact, but if we wanted to be exact we would look at those too.
@@ -468,8 +457,8 @@ case class GpuOutOfCoreSortIterator(
           }
         }
         if (sortSplitOffset == mergedBatch.numRows() && sorted.isEmpty &&
-            (GpuColumnVector.getTotalDeviceMemoryUsed(mergedBatch) >= targetSize ||
-                pending.isEmpty)) {
+          (GpuColumnVector.getTotalDeviceMemoryUsed(mergedBatch) >= targetSize ||
+            pending.isEmpty)) {
           // This is a special case where we have everything we need to output already so why
           // bother with another contig split just to put it into the queue
           withResource(GpuColumnVector.from(mergedBatch)) { mergedTbl =>
@@ -529,6 +518,7 @@ case class GpuOutOfCoreSortIterator(
       }
       withResource(new NvtxWithMetrics("Sort next output batch", NvtxColor.CYAN, opTime)) { _ =>
         val ret = mergeSortEnoughToOutput().getOrElse(concatOutput())
+
         outputBatches += 1
         outputRows += ret.numRows()
         peakDevMemory.set(Math.max(peakMemory, peakDevMemory.value))

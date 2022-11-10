@@ -2039,8 +2039,13 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
   def assumeSpark320orLater: Assertion =
     assume(VersionUtils.isSpark320OrLater, "Spark version not 3.2.0+")
 
+  lazy val isSpark330OrLater: Boolean = cmpSparkVersion(3, 3, 0) >= 0
+
   def assumePriorToSpark330: Assertion =
-    assume(cmpSparkVersion(3,3,0) < 0, "Spark version not before 3.3.0")
+    assume(!isSpark330OrLater, "Spark version not before 3.3.0")
+
+  def assumeSpark330orLater: Assertion =
+    assume(isSpark330OrLater, "Spark version not 3.3.0+")
 
   def cmpSparkVersion(major: Int, minor: Int, bugfix: Int): Int = {
     val sparkShimVersion = SparkShimImpl.getSparkShimVersion
