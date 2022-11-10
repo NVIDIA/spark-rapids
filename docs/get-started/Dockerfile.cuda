@@ -57,6 +57,12 @@ COPY spark/data /opt/spark/data
 COPY rapids-4-spark_2.12-*.jar /opt/sparkRapidsPlugin
 COPY getGpusResources.sh /opt/sparkRapidsPlugin
 
+# Add necessary jars to support AWS s3 storage access
+ADD https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.1/hadoop-aws-3.3.1.jar /opt/spark/jars
+ADD https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.11.655/aws-java-sdk-bundle-1.11.655.jar /opt/spark/jars
+RUN chmod 644 /opt/spark/jars/hadoop-aws-3.3.1.jar && \
+    chmod 644 /opt/spark/jars/aws-java-sdk-bundle-1.11.655.jar
+
 RUN mkdir /opt/spark/python
 # TODO: Investigate running both pip and pip3 via virtualenvs
 RUN apt-get update && \
