@@ -354,8 +354,9 @@ abstract class Spark31XShims extends Spark31Xuntil33XShims with Logging {
               if (AlluxioCfgUtils.enabledAlluxioReplacementAlgoConvertTime(conf)) {
                 val shouldReadFromS3 = wrapped.relation.location match {
                   case inMemory: InMemoryFileIndex =>
-                    val pds = inMemory.listFiles(Seq(), Seq())
-                    AlluxioUtils.shouldReadDirectlyFromS3(conf, pds)
+                    // List all the partitions to reduce overhead, pass in 2 empty filters.
+                    // Subsequent process will do the right partition pruning.
+                    val pds = inMemory.listFiles(Seq.empty, Seq.empty)
                   case _ =>
                     false
                 }
