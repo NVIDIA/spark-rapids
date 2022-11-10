@@ -851,6 +851,34 @@ def test_regexp_memory_ok():
         }
     )
 
+def test_rlike_both_gpu_and_row_based():
+    gen = mk_str_gen('[abcd]{0,4}')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'a rlike "[cd]"',
+            'a rlike "(!ab)[cd]"'
+        ),
+        conf={
+            'spark.rapids.sql.regexp.enabled': 'true',
+            'spark.rapids.sql.expressions.rowBasedEval.enabled': 'true'
+        }
+    )
+
+def test_regexp_replace_pos_two_or_more():
+    gen = mk_str_gen('[abcd]{0,4}')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'regexp_replace(a, "ab+", "foo", 2)',
+            'regexp_replace(a, "[a-z]", "foo", 3)',
+            'regexp_replace(a, "[c]+", "foo", 2)',
+            'regexp_replace(a, "[cd]", "foo", 3)',
+        ),
+        conf={
+            'spark.rapids.sql.regexp.enabled': 'true',
+            'spark.rapids.sql.expressions.rowBasedEval.enabled': 'true'
+        }
+    )
+
 def test_regexp_extract_lookahead():
     gen = mk_str_gen('[abcd]{0,4}')
     assert_gpu_and_cpu_are_equal_collect(

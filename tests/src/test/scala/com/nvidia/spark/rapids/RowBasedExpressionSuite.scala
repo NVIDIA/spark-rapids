@@ -58,21 +58,74 @@ class RowBasedExpressionSuite extends SparkQueryCompareTestSuite {
      }, fallbackProject)
   }
 
-  test("gpuwrapped expression is in the final plan") {
+  test("gpuwrapped expression is in the final plan: regexp_extract") {
      withGpuSparkSession(spark => {
+      // uses unsupported regexp negative lookahead
       val df = simpleDF(spark).selectExpr("regexp_extract(id, \"(!\\\\w+)\\\\d+([0-5]{0,2})\", 1)")
       val gpuPlan = df.queryExecution.executedPlan
       
       val project = gpuPlan.find {
-        case GpuProjectExec(projectList, child) => 
+        case GpuProjectExec(projectList, child) =>
           val boundRefs = GpuBindReferences.bindGpuReferences(projectList, child.output)
           boundRefs.exists {
             case GpuAlias(c, _) =>
               c.isInstanceOf[GpuRegExpExtractWithFallback]
             case _: GpuRegExpExtractWithFallback => true
+            case _ =>
+              false
+          }
+        case _ => false
+      }
+      assert(project.isDefined)
+     }, enableRowBasedExpression)
+  }
+
+  test("gpuwrapped expression is in the final plan: regexp_replace") {
+     withGpuSparkSession(spark => {
+      // uses unsupported pos arg > 1
+      val df = simpleDF(spark).selectExpr("regexp_replace(id, \"\\\\d+([0-5]{0,2})\", \"foo\", 2)")
+      val gpuPlan = df.queryExecution.executedPlan
+
+      val project = gpuPlan.find {
+        case GpuProjectExec(projectList, child) =>
+          val boundRefs = GpuBindReferences.bindGpuReferences(projectList, child.output)
+          boundRefs.exists {
+            case GpuAlias(c, _) =>
+              c.isInstanceOf[GpuRegExpReplaceWithFallback]
+            case _: GpuRegExpReplaceWithFallback => true
+            case _ =>
+              false
+          }
+        case _ => false
+      }
+      assert(project.isDefined)
+     }, enableRowBasedExpression)
+  }
+
+  test("gpuwrapped and gpu expression is in the final plan: rlike") {
+     withGpuSparkSession(spark => {
+      // uses unsupported pos arg > 1
+      val df = simpleDF(spark)
+          .selectExpr("id RLIKE \"(!\\\\w+)\\\\d+([0-5]{0,2})\"", "id RLIKE \"\\\\d+([0-5]{0,2})\"")
+      val gpuPlan = df.queryExecution.executedPlan
+      val project = gpuPlan.find {
+        case GpuProjectExec(projectList, child) =>
+          val boundRefs = GpuBindReferences.bindGpuReferences(projectList, child.output)
+          val fallback = boundRefs.exists {
+            case GpuAlias(c, _) =>
+              c.isInstanceOf[GpuRLikeWithFallback]
+            case _: GpuRLikeWithFallback => true
             case _ => 
               false
           }
+          val onDevice = boundRefs.exists {
+            case GpuAlias(c, _) =>
+              c.isInstanceOf[GpuRLike]
+            case _: GpuRLike => true
+            case _ => 
+              false
+          }
+          fallback && onDevice
         case _ => false
       }
       assert(project.isDefined)
