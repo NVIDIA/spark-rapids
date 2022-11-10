@@ -757,7 +757,7 @@ object RapidsConf {
       .createWithDefault(false)
 
   val ENABLE_TIERED_PROJECT = conf("spark.rapids.sql.tiered.project.enabled")
-      .doc("Enable tiered project for aggregations.")
+      .doc("Enable tiered projections.")
       .internal()
       .booleanConf
       .createWithDefault(true)
