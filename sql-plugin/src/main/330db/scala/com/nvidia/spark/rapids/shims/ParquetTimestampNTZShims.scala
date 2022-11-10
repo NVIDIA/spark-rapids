@@ -21,11 +21,10 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.spark.sql.internal.SQLConf
 
 object ParquetTimestampNTZShims {
-
   def setupTimestampNTZConfig(conf: Configuration, sqlConf: SQLConf): Unit = {
-    // This timestamp_NTZ flag is introduced in Spark 3.4.0
-    conf.setBoolean(
-      SQLConf.PARQUET_TIMESTAMP_NTZ_ENABLED.key,
-      sqlConf.parquetTimestampNTZEnabled)
+    // This timestamp_NTZ flag is introduced in Spark 3.4.0.
+    // do nothing
   }
+
+  def getParquetTimestampNTZEnabled: Boolean = false
 }
