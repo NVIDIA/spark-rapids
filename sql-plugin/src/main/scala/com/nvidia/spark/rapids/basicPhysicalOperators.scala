@@ -355,15 +355,12 @@ case class GpuProjectAstExec(
   }
 
   def tieredProjectAndClose(cb: ColumnarBatch, opTime: GpuMetric): ColumnarBatch = {
-    val nvtxRange = new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, opTime)
-    try {
-      tieredProject(cb)
-    } finally {
-      cb.close()
-      nvtxRange.close()
+    withResource(cb) { cb =>
+      withResource(new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, opTime)) { _ =>
+        tieredProject(cb)
+      }
     }
   }
-
 }
 
 /**
