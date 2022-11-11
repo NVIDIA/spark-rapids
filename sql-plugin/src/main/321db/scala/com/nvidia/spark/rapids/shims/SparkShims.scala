@@ -205,6 +205,7 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
                     // List all the partitions to reduce overhead, pass in 2 empty filters.
                     // Subsequent process will do the right partition pruning.
                     val pds = inMemory.listFiles(Seq.empty, Seq.empty)
+                    AlluxioUtils.shouldReadDirectlyFromS3(conf, pds)
                   case _ =>
                     false
                 }
