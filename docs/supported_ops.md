@@ -13705,7 +13705,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>Literal value only</em></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -13726,7 +13726,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>Literal value only</em></td>
+<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
