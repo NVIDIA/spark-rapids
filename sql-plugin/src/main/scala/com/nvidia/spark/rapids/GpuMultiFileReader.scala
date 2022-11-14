@@ -122,10 +122,10 @@ object MultiFileReaderThreadPool extends Logging {
 
   private def initThreadPool(
       maxThreads: Int,
-      keepAliveSeconds: Long = 60): ThreadPoolExecutor = synchronized {
-    if (threadPool.isEmpty) {
+      keepAliveSeconds: Long = 60,
+      tcId: Long = 0): ThreadPoolExecutor = synchronized {
       val threadFactory = new ThreadFactoryBuilder()
-          .setNameFormat("multithreaded file reader worker-%d")
+          .setNameFormat(s"multithreaded file reader worker-%d-$tcId")
           .setDaemon(true)
           .build()
 
@@ -138,18 +138,15 @@ object MultiFileReaderThreadPool extends Logging {
         threadFactory)
       threadPoolExecutor.allowCoreThreadTimeOut(true)
       logDebug(s"Using $maxThreads for the multithreaded reader thread pool")
-      threadPool = Some(threadPoolExecutor)
-    }
-
-    threadPool.get
+      threadPoolExecutor
   }
 
   /**
    * Get the existing thread pool or create one with the given thread count if it does not exist.
    * @note The thread number will be ignored if the thread pool is already created.
    */
-  def getOrCreateThreadPool(numThreads: Int): ThreadPoolExecutor = {
-    threadPool.getOrElse(initThreadPool(numThreads))
+  def getOrCreateThreadPool(numThreads: Int, tcId: Long = 0): ThreadPoolExecutor = {
+    initThreadPool(numThreads, tcId = tcId)
   }
 }
 
@@ -412,8 +409,13 @@ abstract class MultiFileCloudPartitionReaderBase(
     val tc = TaskContext.get
     synchronized {
       if (fcs == null) {
-        val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
-        fcs = new ExecutorCompletionService[HostMemoryBuffersWithMetaDataBase](threadPool)
+        withResource(
+          new NvtxRange(getFileFormatShortName + s" threadpool create ${tc.taskAttemptId()}",
+            NvtxColor.GREEN)) { _ =>
+          val threadPool =
+            MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads, tc.taskAttemptId())
+          fcs = new ExecutorCompletionService[HostMemoryBuffersWithMetaDataBase](threadPool)
+        }
       }
     }
     // TODO - do we want to try sorting by file size?
