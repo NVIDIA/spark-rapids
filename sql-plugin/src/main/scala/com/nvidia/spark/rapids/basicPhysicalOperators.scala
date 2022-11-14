@@ -61,7 +61,7 @@ class GpuProjectExecMeta(
         }
       }
     }
-    GpuProjectExec(gpuExprs, gpuChild)
+    GpuProjectExec(gpuExprs, gpuChild, conf.isTieredProjectEnabled)
   }
 }
 
@@ -128,7 +128,8 @@ case class GpuProjectExec(
    // serde: https://github.com/scala/scala/blob/2.12.x/src/library/scala/collection/
    //   immutable/List.scala#L516
    projectList: List[NamedExpression],
-   child: SparkPlan
+   child: SparkPlan,
+   useTieredProject : Boolean = false
  ) extends ShimUnaryExecNode with GpuExec {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
@@ -147,12 +148,20 @@ case class GpuProjectExec(
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
-    val boundProjectList = GpuBindReferences.bindGpuReferences(projectList, child.output)
+    val (boundProjectList, boundProjectListTiered) = if (useTieredProject) {
+      (None, Some(GpuBindReferences.bindGpuReferencesTiered(projectList, child.output)))
+    } else {
+      (Some(GpuBindReferences.bindGpuReferences(projectList, child.output)), None)
+    }
     val rdd = child.executeColumnar()
     rdd.map { cb =>
       numOutputBatches += 1
       numOutputRows += cb.numRows()
-      GpuProjectExec.projectAndClose(cb, boundProjectList, opTime)
+      if (useTieredProject) {
+        boundProjectListTiered.get.tieredProjectAndClose(cb, opTime)
+      } else {
+        GpuProjectExec.projectAndClose(cb, boundProjectList.get, opTime)
+      }
     }
   }
 
@@ -343,6 +352,14 @@ case class GpuProjectAstExec(
     }
     // Process tiers sequentially
     recurse(exprTiers, inputAttrTiers, batch, true)
+  }
+
+  def tieredProjectAndClose(cb: ColumnarBatch, opTime: GpuMetric): ColumnarBatch = {
+    withResource(cb) { cb =>
+      withResource(new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, opTime)) { _ =>
+        tieredProject(cb)
+      }
+    }
   }
 }
 
