@@ -522,7 +522,8 @@ abstract class MultiFileCloudPartitionReaderBase(
                     results.append(waitFuture.get())
                     currSize += waitFuture.get().memBuffersAndSizes.map(_.bytes).sum
                     if (currSize > combineThresholdSize) {
-                      logWarning(s"current size is now $currSize for ${results.size} left is $filesToRead")
+                      logWarning(s"current size is now $currSize for ${results.size} left " +
+                        s"is $filesToRead task ${TaskContext.get().taskAttemptId()}")
                     }
                     filesToRead -= 1
                   } else {
@@ -535,11 +536,15 @@ abstract class MultiFileCloudPartitionReaderBase(
                 results.append(hmbFuture.get())
                 currSize += hmbFuture.get().memBuffersAndSizes.map(_.bytes).sum
                 if (currSize > combineThresholdSize) {
-                  logWarning(s"current size is now $currSize for ${results.size} left is $filesToRead")
+                  logWarning(s"c2 urrent size is now $currSize for ${results.size} left" +
+                    s" is $filesToRead task ${TaskContext.get().taskAttemptId()}")
                 }
                 filesToRead -= 1
               }
             }
+            logWarning(s"done readReady Files task ${TaskContext.get().taskAttemptId()} " +
+              s"takemore $takeMore currSize $currSize filestoread $filesToRead" +
+              s" wait time $combineWaitTime")
           }
 
           if (canUseCombine) {
@@ -576,14 +581,14 @@ abstract class MultiFileCloudPartitionReaderBase(
               combineHMBs(results)
             }
             logWarning(s"took ${(System.currentTimeMillis() - startCombineTime)} " +
-              s"ms to do combine of ${results.size}")
+              s"ms to do combine of ${results.size} task ${TaskContext.get().taskAttemptId()}")
             combinedRes
           } else {
             require(results.size == 1)
             results(0)
           }
           val blockedTime = System.nanoTime() - startTime
-          logWarning(s"blocked time is $blockedTime")
+          logWarning(s"blocked time is $blockedTime task ${TaskContext.get().taskAttemptId()}")
           metrics.get(FILTER_TIME).foreach {
             _ += (blockedTime * fileBufsAndMeta.getFilterTimePct).toLong
           }
