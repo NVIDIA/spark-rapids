@@ -329,12 +329,21 @@ def test_substring():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'SUBSTRING(a, 1, 5)',
+                'SUBSTRING(a, 5, 2147483647)',
+                'SUBSTRING(a, 5, -2147483648)',
                 'SUBSTRING(a, 1)',
                 'SUBSTRING(a, -3)',
                 'SUBSTRING(a, 3, -2)',
                 'SUBSTRING(a, 100)',
+                'SUBSTRING(a, -100)',
                 'SUBSTRING(a, NULL)',
                 'SUBSTRING(a, 1, NULL)',
+                'SUBSTRING(a, -5, 0)',
+                'SUBSTRING(a, -5, 4)',
+                'SUBSTRING(a, 10, 0)',
+                'SUBSTRING(a, -50, 10)',
+                'SUBSTRING(a, -10, -1)',
+                'SUBSTRING(a, 0, 10)',
                 'SUBSTRING(a, 0, 0)'))
 
 def test_repeat_scalar_and_column():
