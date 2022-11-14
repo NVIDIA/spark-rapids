@@ -953,6 +953,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   private val numFilesFilterParallel = rapidsConf.numFilesFilterParallel
   private val combineThresholdSize = rapidsConf.getParquetMultithreadedCombineThreshold
   private val combineWaitTime = rapidsConf.getParquetMultithreadedCombineWaitTime
+  logWarning(s"combine wait time is $combineWaitTime and threadhold size is $combineThresholdSize")
   private val alluxioReplacementTaskTime =
     AlluxioCfgUtils.enabledAlluxioReplacementAlgoTaskTime(rapidsConf)
 
