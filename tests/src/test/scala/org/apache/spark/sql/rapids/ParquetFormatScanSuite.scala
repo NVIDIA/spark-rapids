@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids
 
 import java.io.File
 import java.sql.{Date, Timestamp}
+import java.time.LocalDateTime
 
 import scala.collection.JavaConverters.mapAsJavaMapConverter
 import scala.concurrent.duration._
@@ -980,7 +981,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
 
     test(s"nz timestamp (MILLIS AND MICROS) $parserType") {
       assumeSpark330orLater
-      withCpuSparkSession(spark => {
+      withGpuSparkSession(spark => {
         val schema =
           """message spark {
             |  required int64 millis_test (TIMESTAMP(MILLIS, false));
@@ -1005,9 +1006,44 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
           sameRows(Seq(Row(Timestamp.valueOf("1970-01-01 00:00:01.0"),
             Timestamp.valueOf("1970-01-01 00:00:00.000002"))), data)
         }
-      }, conf = conf)
+      },
+        // disable timestampNTZ for parquet for 3.4+ tests to pass
+        new SparkConf().set("spark.sql.parquet.timestampNTZ.enabled", "false")
+            .set("spark.rapids.sql.format.parquet.reader.footer.type", parserType))
     }
 
+    // This is not a supported feature in 3.4.0 yet for the plugin
+    ignore(s"nz timestamp spark enabled (MILLIS AND MICROS) $parserType") {
+      assumeSpark340orLater
+      withGpuSparkSession(spark => {
+        val schema =
+          """message spark {
+            |  required int64 millis_test (TIMESTAMP(MILLIS, false));
+            |  required int64 micros_test (TIMESTAMP(MICROS, false));
+            |}
+        """.stripMargin
+
+        withTempDir(spark) { dir =>
+          val testPath = dir + "/TIMESTAMP_MM_TEST.parquet"
+          writeDirect(testPath, schema, { rc =>
+            rc.message {
+              rc.field("millis_test", 0) {
+                rc.addLong(1000)
+              }
+              rc.field("micros_test", 1) {
+                rc.addLong(2)
+              }
+            }
+          })
+
+          val data = spark.read.parquet(testPath).collect()
+          sameRows(Seq(Row(LocalDateTime.parse("1970-01-01T00:00:01.0"),
+            LocalDateTime.parse("1970-01-01T00:00:00.000002"))), data)
+        }
+      },
+        new SparkConf().set("spark.sql.parquet.timestampNTZ.enabled", "true")
+            .set("spark.rapids.sql.format.parquet.reader.footer.type", parserType))
+    }
     // INTERVAL is not supported by Spark
     // TIME is not supported by Spark
 
