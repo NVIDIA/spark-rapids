@@ -521,6 +521,9 @@ abstract class MultiFileCloudPartitionReaderBase(
                   if (waitFuture != null) {
                     results.append(waitFuture.get())
                     currSize += waitFuture.get().memBuffersAndSizes.map(_.bytes).sum
+                    if (currSize > combineThresholdSize) {
+                      logWarning(s"current size is now $currSize for ${results.size} left is $filesToRead")
+                    }
                     filesToRead -= 1
                   } else {
                     takeMore = false
@@ -531,6 +534,9 @@ abstract class MultiFileCloudPartitionReaderBase(
               } else {
                 results.append(hmbFuture.get())
                 currSize += hmbFuture.get().memBuffersAndSizes.map(_.bytes).sum
+                if (currSize > combineThresholdSize) {
+                  logWarning(s"current size is now $currSize for ${results.size} left is $filesToRead")
+                }
                 filesToRead -= 1
               }
             }
