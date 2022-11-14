@@ -83,6 +83,46 @@ perf_schema = StructType([
     StructField('foreclosure_principal_write_off_amount', StringType()),
     StructField('servicing_activity_indicator', StringType())])
 
+timestamp_schema = StructType([
+    StructField('ts', TimestampType())])
+
+date_schema = StructType([
+    StructField('date', DateType())])
+
+trucks_schema = StructType([
+    StructField('make', StringType()),
+    StructField('model', StringType()),
+    StructField('year', IntegerType()),
+    StructField('price', StringType()),
+    StructField('comment', StringType())])
+
+byte_schema = StructType([
+    StructField('number', ByteType())])
+
+short_schema = StructType([
+    StructField('number', ShortType())])
+
+int_schema = StructType([
+    StructField('number', IntegerType())])
+
+long_schema = StructType([
+    StructField('number', LongType())])
+
+float_schema = StructType([
+    StructField('number', FloatType())])
+
+double_schema = StructType([
+    StructField('number', DoubleType())])
+
+decimal_10_2_schema = StructType([
+    StructField('number', DecimalType(10, 2))])
+
+decimal_10_3_schema = StructType([
+    StructField('number', DecimalType(10, 3))])
+
+number_as_string_schema = StructType([
+    StructField('number', StringType())])
+
 
 def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None):
     if options is None:
@@ -100,8 +140,52 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
 
 @approximate_float
 @pytest.mark.parametrize('name,schema,options', [
+
+    # Numeric Reads.
+    ('hive-delim-text/simple-int-values', byte_schema, {}),
+    ('hive-delim-text/simple-int-values', short_schema, {}),
+    ('hive-delim-text/simple-int-values', int_schema, {}),
+    ('hive-delim-text/simple-int-values', long_schema, {}),
+    ('hive-delim-text/simple-int-values', float_schema, {}),
+    ('hive-delim-text/simple-int-values', double_schema, {}),
+    ('hive-delim-text/simple-int-values', decimal_10_2_schema, {}),
+    ('hive-delim-text/simple-int-values', decimal_10_3_schema, {}),
+    ('hive-delim-text/simple-int-values', number_as_string_schema, {}),
+
+    # Custom datasets
     ('hive-delim-text/Acquisition_2007Q3', acq_schema, {}),
-    ('hive-delim-text/Performance_2007Q3', perf_schema, {'serialization.null.format': ''})  # TODO: String null format.
+    # TODO: string.null.format='\N'
+    ('hive-delim-text/Performance_2007Q3', perf_schema, {'serialization.null.format': ''}),
+    ('hive-delim-text/trucks-1', trucks_schema, {}),
+    # TODO: GPU removes quotes around strings. Also, GPU skips empty lines.
+    pytest.param('hive-delim-text/trucks-err', trucks_schema, {},
+                 marks=pytest.mark.xfail(reason="GPU skips empty lines, and removes quotes.")),
+
+    # Date/Time
+    ('hive-delim-text/timestamp', timestamp_schema, {}),
+    ('hive-delim-text/date', date_schema, {}),
+
+    # TODO: GPU reads all input. CPU return null on all but 1 row
+    #       (formatted exactly right for timestamp).
+    #  1. Document round trip works.
+    #  2. Document failure cases on Github issues
+    pytest.param('hive-delim-text/timestamp-err', timestamp_schema, {},
+                 marks=pytest.mark.xfail(reason="GPU timestamp reads are more permissive than CPU.")),
+
+    # TODO: GPU forgives spaces, but throws on month=50. CPU nulls spaces, nulls month=50.
+    #  1. Document round trip works.
+    #  2. Document failure cases on Github issues
+    pytest.param('hive-delim-text/date-err', date_schema, {},
+                 marks=pytest.mark.xfail(reason="GPU read trims date string whitespace, "
+                                                "and errors out on invalid dates.")),
+
+    # Test that lines beginning with comments ('#') aren't skipped.
+    ('hive-delim-text/comments', StructType([StructField("str", StringType()),
+                                             StructField("num", IntegerType()),
+                                             StructField("another_str", StringType())]), {}),
+
+    # TODO: \r, \r\n. (Done in LineRecordReader.) Test with generated strings.
+
 ], ids=idfn)
 def test_basic_hive_text_read(std_input_path, name, schema, spark_tmp_table_factory, options):
     assert_gpu_and_cpu_are_equal_collect(read_hive_text_sql(std_input_path + '/' + name,
