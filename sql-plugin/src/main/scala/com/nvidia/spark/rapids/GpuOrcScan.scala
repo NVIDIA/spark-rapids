@@ -832,7 +832,9 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
       try {
         Table.readORC(parseOpts, hostBuf, 0, bufSize)
       } catch {
-        case e => logDebug(s"Exception thrown from calling readORC: $e, file = ?, file size = ?")
+        case e : Throwable => 
+          logDebug(s"Exception thrown from calling readORC: $e, file = ?, file size = ?")
+          null
       }
     }
     // Execute the schema evolution
