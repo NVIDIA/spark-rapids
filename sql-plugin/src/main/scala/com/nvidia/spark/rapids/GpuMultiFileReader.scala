@@ -124,6 +124,7 @@ object MultiFileReaderThreadPool extends Logging {
       maxThreads: Int,
       keepAliveSeconds: Long = 60,
       tcId: Long = 0): ThreadPoolExecutor = synchronized {
+    if (threadPool.isEmpty) {
       val threadFactory = new ThreadFactoryBuilder()
           .setNameFormat(s"multithreaded file reader worker-%d-$tcId")
           .setDaemon(true)
@@ -138,7 +139,10 @@ object MultiFileReaderThreadPool extends Logging {
         threadFactory)
       threadPoolExecutor.allowCoreThreadTimeOut(true)
       logDebug(s"Using $maxThreads for the multithreaded reader thread pool")
-      threadPoolExecutor
+      threadPool = Some(threadPoolExecutor)
+    }
+
+    threadPool.get
   }
 
   /**
@@ -146,7 +150,7 @@ object MultiFileReaderThreadPool extends Logging {
    * @note The thread number will be ignored if the thread pool is already created.
    */
   def getOrCreateThreadPool(numThreads: Int, tcId: Long = 0): ThreadPoolExecutor = {
-    initThreadPool(numThreads, tcId = tcId)
+    threadPool.getOrElse(initThreadPool(numThreads))
   }
 }
 
