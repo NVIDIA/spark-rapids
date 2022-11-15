@@ -20,6 +20,7 @@ import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTestUtils}
 import com.nvidia.spark.rapids.tool.qualification._
 import org.apache.hadoop.conf.Configuration
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
+import org.scalatest.exceptions.TestFailedException
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
@@ -91,6 +92,31 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val topExecInfo = plans.flatMap(_.execInfo)
     topExecInfo.flatMap { e =>
       e.children.getOrElse(Seq.empty) :+ e
+    }
+  }
+
+  test("Error parser does not cause entire app to fail") {
+    // The purpose of this test is to make sure that the SQLParser won't trigger an exception that
+    // causes the entire app analysis to fail.
+    // In order to simulate unexpected scenarios, the eventlog sqlparse_failure is injected with
+    // faulty expressions.
+    // For example:
+    //    Filter (((value#8 <> 100) AND (value#8 > 50)) OR (value#8 = 0))
+    //    One of the predicates is converted from "<" to "<>".
+    //    The latter is an invalid predicate causing the parser to throw a scala-match error.
+    val eventLog = s"$qualLogDir/sqlparse_failure"
+    val pluginTypeChecker = new PluginTypeChecker()
+    val app = createAppFromEventlog(eventLog)
+    assert(app.sqlPlans.size == 1)
+    try {
+      app.sqlPlans.foreach { case (sqlID, plan) =>
+        SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, "",
+          pluginTypeChecker, app)
+      }
+    } catch {
+      case e : Throwable =>
+        throw new TestFailedException(
+          s"The SQLParser crashed while processing incorrect expression", e, 0)
     }
   }
 
