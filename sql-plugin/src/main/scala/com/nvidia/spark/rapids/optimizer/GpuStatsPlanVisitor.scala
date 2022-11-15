@@ -35,7 +35,7 @@ object GpuStatsPlanVisitor extends LogicalPlanVisitor[Statistics] with Logging {
   private val statsTag = new TreeNodeTag[Statistics]("rapids.stats")
 
   override def visit(p: LogicalPlan): Statistics = {
-    p.getTagValue(statsTag) match {
+    val stats = p.getTagValue(statsTag) match {
       case Some(stats) =>
         stats
       case _ =>
@@ -43,6 +43,8 @@ object GpuStatsPlanVisitor extends LogicalPlanVisitor[Statistics] with Logging {
         p.setTagValue(statsTag, stats)
         stats
     }
+    logDebug(s"${p.getClass.getSimpleName}: stats=$stats")
+    stats
   }
 
   private def fallback(p: LogicalPlan): Statistics = default(p)
@@ -123,9 +125,7 @@ object GpuStatsPlanVisitor extends LogicalPlanVisitor[Statistics] with Logging {
   override def visitExpand(p: Expand): Statistics = fallback(p)
 
   override def visitFilter(p: Filter): Statistics = {
-    val stats = GpuFilterEstimation(p).estimate.getOrElse(fallback(p))
-    logDebug(s"Filter: stats=$stats")
-    stats
+    GpuFilterEstimation(p).estimate.getOrElse(fallback(p))
   }
 
   override def visitGenerate(p: Generate): Statistics = default(p)
@@ -145,9 +145,7 @@ object GpuStatsPlanVisitor extends LogicalPlanVisitor[Statistics] with Logging {
   }
 
   override def visitJoin(p: Join): Statistics = {
-    val stats = GpuJoinEstimation(p).estimate.getOrElse(fallback(p))
-    logDebug(s"Join: stats=$stats")
-    stats
+    GpuJoinEstimation(p).estimate.getOrElse(fallback(p))
   }
 
   override def visitLocalLimit(p: LocalLimit): Statistics = fallback(p)
@@ -155,9 +153,7 @@ object GpuStatsPlanVisitor extends LogicalPlanVisitor[Statistics] with Logging {
   override def visitPivot(p: Pivot): Statistics = default(p)
 
   override def visitProject(p: Project): Statistics = {
-    val stats = GpuProjectEstimation.estimate(p).getOrElse(fallback(p))
-    logDebug(s"Projection: stats=$stats")
-    stats
+    GpuProjectEstimation.estimate(p).getOrElse(fallback(p))
   }
 
   override def visitRepartition(p: Repartition): Statistics = fallback(p)
