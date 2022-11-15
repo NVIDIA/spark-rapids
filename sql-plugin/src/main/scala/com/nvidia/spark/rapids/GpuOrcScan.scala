@@ -830,10 +830,12 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
         metrics(GPU_DECODE_TIME))) { _ =>
       // Table.readORC(parseOpts, hostBuf, 0, bufSize)
       try {
+        logDebug("enter try catch!!")
         Table.readORC(parseOpts, hostBuf, 0, bufSize)
       } catch {
         case e : Throwable => 
-          logDebug(s"Exception thrown from calling readORC: $e, file = ?, file size = ?")
+          logDebug("caught exception!!")
+          logWarning(s"Exception thrown from calling readORC: $e, file = ?, file size = ?")
           null
       }
     }
