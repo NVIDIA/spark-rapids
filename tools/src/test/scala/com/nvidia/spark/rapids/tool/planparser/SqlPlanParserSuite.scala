@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.tool.planparser
 
+import scala.util.control.NonFatal
+
 import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTestUtils}
 import com.nvidia.spark.rapids.tool.qualification._
 import org.apache.hadoop.conf.Configuration
@@ -104,7 +106,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     //    Filter (((value#8 <> 100) AND (value#8 > 50)) OR (value#8 = 0))
     //    One of the predicates is converted from "<" to "<>".
     //    The latter is an invalid predicate causing the parser to throw a scala-match error.
-    val eventLog = s"$qualLogDir/sqlparse_failure"
+    val eventLog = s"$qualLogDir/sqlparse_failure.gz"
     val pluginTypeChecker = new PluginTypeChecker()
     val app = createAppFromEventlog(eventLog)
     assert(app.sqlPlans.size == 1)
@@ -114,9 +116,27 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
           pluginTypeChecker, app)
       }
     } catch {
-      case e : Throwable =>
+      case NonFatal(e) =>
         throw new TestFailedException(
           s"The SQLParser crashed while processing incorrect expression", e, 0)
+    }
+  }
+
+  test("reduce the size of the log") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
+        "WholeStageFilterProject") { spark =>
+        import spark.implicits._
+        val df = spark.sparkContext.makeRDD(1 to 100, 2).toDF
+        val df2 = spark.sparkContext.makeRDD(1 to 100, 2).toDF
+        df.select($"value" as "a")
+          .join(df2.select($"value" as "b"), $"a" === $"b")
+          .filter("(((b < 100) AND (a > 50)) OR (a = 0))")
+          .sort($"b")
+      }
+      val pluginTypeChecker = new PluginTypeChecker()
+      val app = createAppFromEventlog(eventLog)
+      assert(app.sqlPlans.size == 1)
     }
   }
 

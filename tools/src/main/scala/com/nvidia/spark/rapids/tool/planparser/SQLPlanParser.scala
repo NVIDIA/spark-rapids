@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.tool.planparser
 
 import scala.collection.mutable.ArrayBuffer
+import scala.util.control.NonFatal
 import scala.util.matching.Regex
 
 import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
@@ -202,7 +203,7 @@ object SQLPlanParser extends Logging {
         //  - The exec will be considered unsupported.
         //  - No need to add the SQL to the failed SQLs, because this will cause the app to be
         //    labeled as "Not Applicable" which is not preferred at this point.
-        case e: Throwable =>
+        case NonFatal(e) =>
           logWarning(s"Unexpected error parsing plan node ${node.name}. " +
           s" sqlID = ${sqlID}", e)
           new ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
