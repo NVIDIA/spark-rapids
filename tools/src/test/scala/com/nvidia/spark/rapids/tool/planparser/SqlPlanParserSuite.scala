@@ -122,24 +122,6 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
-  test("reduce the size of the log") {
-    TrampolineUtil.withTempDir { eventLogDir =>
-      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
-        "WholeStageFilterProject") { spark =>
-        import spark.implicits._
-        val df = spark.sparkContext.makeRDD(1 to 100, 2).toDF
-        val df2 = spark.sparkContext.makeRDD(1 to 100, 2).toDF
-        df.select($"value" as "a")
-          .join(df2.select($"value" as "b"), $"a" === $"b")
-          .filter("(((b < 100) AND (a > 50)) OR (a = 0))")
-          .sort($"b")
-      }
-      val pluginTypeChecker = new PluginTypeChecker()
-      val app = createAppFromEventlog(eventLog)
-      assert(app.sqlPlans.size == 1)
-    }
-  }
-
   test("WholeStage with Filter, Project, Sort and SortMergeJoin") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
