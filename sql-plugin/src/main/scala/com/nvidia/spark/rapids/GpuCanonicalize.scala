@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.shims.CastIgnoreTimeZoneShim
+import com.nvidia.spark.rapids.shims.CastingConfigShim
 
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.rapids._
@@ -59,7 +59,7 @@ object GpuCanonicalize {
   def ignoreTimeZoneInCast(e: Expression): Expression = e match {
     case c: GpuCast if c.timeZoneId.nonEmpty && !c.needsTimeZone =>
       c.withTimeZone(null)
-    case _ => CastIgnoreTimeZoneShim.ignoreTimeZone(e)
+    case _ => CastingConfigShim.ignoreTimeZone(e)
   }
 
   /** Collects adjacent commutative operations. */
