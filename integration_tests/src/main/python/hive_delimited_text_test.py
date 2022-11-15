@@ -154,12 +154,14 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
 
     # Custom datasets
     ('hive-delim-text/Acquisition_2007Q3', acq_schema, {}),
-    # TODO: string.null.format='\N'
     ('hive-delim-text/Performance_2007Q3', perf_schema, {'serialization.null.format': ''}),
+    pytest.param('hive-delim-text/Performance_2007Q3', perf_schema, {},
+                 marks=pytest.mark.xfail(reason="GPU treats empty strings as nulls."
+                                                "See https://github.com/NVIDIA/spark-rapids/issues/7069.")),
     ('hive-delim-text/trucks-1', trucks_schema, {}),
-    # TODO: GPU removes quotes around strings. Also, GPU skips empty lines.
     pytest.param('hive-delim-text/trucks-err', trucks_schema, {},
-                 marks=pytest.mark.xfail(reason="GPU skips empty lines, and removes quotes.")),
+                 marks=pytest.mark.xfail(reason="GPU skips empty lines, and removes quotes. "
+                                                "See https://github.com/NVIDIA/spark-rapids/issues/7068.")),
 
     # Date/Time
     ('hive-delim-text/timestamp', timestamp_schema, {}),
@@ -186,10 +188,10 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
 
     # Test that carriage returns ('\r'/'^M') are treated similarly to newlines ('\n')
     ('hive-delim-text/carriage-return', StructType([StructField("str", StringType())]), {}),
-    # TODO: When GPU reader encounters \r\r, it treats the space between the two '\r' as an empty line,
-    #       which is skipped. This producers fewer rows than expected, in this test.
     pytest.param('hive-delim-text/carriage-return-err', StructType([StructField("str", StringType())]), {},
-                 marks=pytest.mark.xfail(reason="GPU skips empty lines. Consecutive \r is treated as empty line.")),
+                 marks=pytest.mark.xfail(reason="GPU skips empty lines. Consecutive \r is treated as empty line, "
+                                                "and skipped. This produces fewer rows than expected. "
+                                                "See https://github.com/NVIDIA/spark-rapids/issues/7068.")),
 
 ], ids=idfn)
 def test_basic_hive_text_read(std_input_path, name, schema, spark_tmp_table_factory, options):
