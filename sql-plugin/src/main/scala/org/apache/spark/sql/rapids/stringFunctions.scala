@@ -484,22 +484,35 @@ case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
       val2: GpuColumnVector): ColumnVector =
         throw new UnsupportedOperationException(s"Cannot columnar evaluate expression: $this")
 
-  override def doColumnar(column: GpuColumnVector,
-                          position: GpuScalar,
-                          length: GpuScalar): ColumnVector = {
-    val substringPos = position.getValue.asInstanceOf[Int]
-    val substringLen = length.getValue.asInstanceOf[Int]
-    if (substringLen < 0) { // Spark returns empty string if length is negative
-      column.getBase.substring(0, 0)
-    } else if (substringPos >= 0) { // If position is non negative
-      if (substringPos == 0) {  // calculate substring from first character to length
-        column.getBase.substring(substringPos, substringLen)
-      } else { // calculate substring from position to length
-        column.getBase.substring(substringPos - 1, substringPos + substringLen - 1)
-      }
-    } else { // If position is negative, evaluate from end.
-      column.getBase.substring(substringPos, Integer.MAX_VALUE)
+  override def doColumnar(column: GpuColumnVector, position: GpuScalar,
+      length: GpuScalar): ColumnVector = {
+    val pos = position.getValue.asInstanceOf[Int]
+    val len = length.getValue.asInstanceOf[Int]
+    val (start, endOpt) = if (len <= 0) {
+      // Spark returns empty string if length is negative or zero
+      (0, Some(0))
+    } else if (pos > 0) {
+      // 1-based index, convert to 0-based index
+      val head = pos - 1
+      val tail = if (head.toLong + len > Int.MaxValue) Int.MaxValue else head + len
+      (head, Some(tail))
+    } else if (pos == 0) {
+      // 0-based index, calculate substring from 0 to length
+      (0, Some(len))
+    } else if (pos + len < 0) {
+      // Drop the last "abs(substringPos + substringLen)" chars.
+      // e.g.
+      //    >> substring("abc", -3, 1)
+      //    >> "a"  // dropping the last 2 [= abs(-3+1)] chars.
+      // `pos + len` does not overflow as `pos < 0 && len > 0` here.
+      (pos, Some(pos + len))
+    } else { // pos + len >= 0
+      // Read from start until the end.
+      // e.g. `substring("abc", -3, 4)` outputs "abc".
+      (pos, None)
     }
+    val col = column.getBase
+    endOpt.map(col.substring(start, _)).getOrElse(col.substring(start))
   }
 
   override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,
