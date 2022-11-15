@@ -497,6 +497,7 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
                                hasHeader: Boolean): ai.rapids.cudf.CSVOptions.Builder = {
     super.buildCsvOptions(parsedOptions, schema, hasHeader)
       .withDelim('\u0001') // Record field delimiter '^A'.
+      .withNullValue("\\N")
   }
 
   override def readToTable(dataBuffer: HostMemoryBuffer,
