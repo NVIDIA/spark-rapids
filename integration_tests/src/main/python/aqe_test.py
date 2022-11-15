@@ -175,3 +175,57 @@ def test_aqe_issue_7037(spark_tmp_path):
 
     assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
     # assert_gpu_and_cpu_are_equal_collect(do_it, conf=_adaptive_conf)
+
+# see https://github.com/NVIDIA/spark-rapids/issues/7037
+@ignore_order(local=True)
+@allow_non_gpu('BroadcastNestedLoopJoinExec', 'BroadcastExchangeExec', 'ColumnarToRowExec', 'Cast', 'DateSub')
+def test_aqe_issue_7030(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    def prep(spark):
+        data = [
+            (("Adam ", "", "Green"), "1", "M", 1000),
+            (("Bob ", "Middle", "Green"), "2", "M", 2000),
+            (("Cathy ", "", "Green"), "3", "F", 3000)
+        ]
+        schema = (StructType()
+                  .add("name", StructType()
+                       .add("firstname", StringType())
+                       .add("middlename", StringType())
+                       .add("lastname", StringType()))
+                  .add("id", StringType())
+                  .add("gender", StringType())
+                  .add("salary", IntegerType()))
+
+        df = spark.createDataFrame(spark.sparkContext.parallelize(data),schema)
+        df2 = df.withColumn("dt",current_date().alias("dt")).withColumn("ts",current_timestamp().alias("ts"))
+
+        df2.printSchema
+        df2.write.format("parquet").mode("overwrite").save(data_path)
+
+    with_cpu_session(prep)
+
+    def do_it(spark):
+        newdf2 = spark.read.parquet(data_path)
+        newdf2.createOrReplaceTempView("df2")
+
+        return spark.sql(
+            """
+            select *
+                from (
+                    select a.salary
+                    from df2 a left semi join (select max(date(ts)) as state_start from df2) b
+                    on date(a.ts) > b.state_start - 2)
+                where salary in (
+                    select salary from (select a.salary
+                    from df2 a inner join (select max(date(ts)) as state_start from df2) b on date(a.ts) > b.state_start - 2
+                    limit 1))
+            """
+        )
+
+    conf = {
+        'spark.rapids.sql.debug.logTransformations': 'true',
+        'spark.sql.adaptive.enabled': 'true',
+    }
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
+    # assert_gpu_and_cpu_are_equal_collect(do_it, conf=_adaptive_conf)
