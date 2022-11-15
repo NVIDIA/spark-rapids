@@ -160,8 +160,15 @@ shift
 
 done
 
+case `uname -m` in
+    aarch64|arm64)
+        cpu_arch='arm64';;
+    *)
+        cpu_arch='amd64';;
+esac
+
 # include options to mvn command
-export MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 ${MVN_OPT}"
+export MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 ${MVN_OPT} -Dcpu_arch=${cpu_arch}"
 
 DIST_PROFILE=${DIST_PROFILE:-"noSnapshots"}
 [[ "$MODULE" != "" ]] && MODULE_OPT="--projects $MODULE --also-make" || MODULE_OPT=""

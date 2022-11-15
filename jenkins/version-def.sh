@@ -26,6 +26,13 @@ for VAR in $OVERWRITE_PARAMS; do
 done
 IFS=$PRE_IFS
 
+case `uname -m` in
+    aarch64|arm64)
+        cpu_arch='arm64';;
+    *)
+        cpu_arch='amd64';;
+esac
+
 CUDF_VER=${CUDF_VER:-"22.12.0-SNAPSHOT"}
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-"cuda11"}
 PROJECT_VER=${PROJECT_VER:-"22.12.0-SNAPSHOT"}
@@ -52,7 +59,7 @@ echo "CUDF_VER: $CUDF_VER, CUDA_CLASSIFIER: $CUDA_CLASSIFIER, PROJECT_VER: $PROJ
 # get Spark shim versions from pom
 function set_env_var_SPARK_SHIM_VERSIONS_ARR() {
     PROFILE_OPT=$1
-    SPARK_SHIM_VERSIONS_STR=$(mvn -B help:evaluate -q -pl dist $PROFILE_OPT -Dexpression=included_buildvers -DforceStdout)
+    SPARK_SHIM_VERSIONS_STR=$(mvn -B help:evaluate -q -pl dist $PROFILE_OPT -Dexpression=included_buildvers -DforceStdout -Dcpu_arch=${cpu_arch})
     SPARK_SHIM_VERSIONS_STR=$(echo $SPARK_SHIM_VERSIONS_STR)
     IFS=", " <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS_ARR
 }

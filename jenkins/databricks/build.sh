@@ -60,7 +60,14 @@ SPARK_PLUGIN_JAR_VERSION=`$MVN_CMD help:evaluate -q -pl dist -Dexpression=projec
 SCALA_VERSION=`$MVN_CMD help:evaluate -q -pl dist -Dexpression=scala.binary.version -DforceStdout`
 CUDA_VERSION=`$MVN_CMD help:evaluate -q -pl dist -Dexpression=cuda.version -DforceStdout`
 
-RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
+case `uname -m` in
+    aarch64|arm64)
+        cpu_arch='arm64';;
+    *)
+        cpu_arch='amd64';;
+esac
+
+RAPIDS_BUILT_JAR=rapids-4-spark-${cpu_arch}_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
 
 echo "Scala version is: $SCALA_VERSION"
 # export 'M2DIR' so that shims can get the correct Spark dependency info

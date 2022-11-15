@@ -22,6 +22,13 @@ SPARK_CONF=${SPARK_CONF:-''}
 BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-'3.1.2'}
 [[ -z $SPARK_SHIM_VER ]] && export SPARK_SHIM_VER=spark${BASE_SPARK_VERSION//.}db
 
+case `uname -m` in
+    aarch64|arm64)
+        cpu_arch='arm64';;
+    *)
+        cpu_arch='amd64';;
+esac
+
 # install required packages
 sudo apt -y install zip unzip
 
@@ -113,7 +120,7 @@ if [ -d "$LOCAL_JAR_PATH" ]; then
 
     if [[ "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
         ## Run cudf-udf tests
-        CUDF_UDF_TEST_ARGS="$CUDF_UDF_TEST_ARGS --conf spark.executorEnv.PYTHONPATH=`ls $LOCAL_JAR_PATH/rapids-4-spark_*.jar | grep -v 'tests.jar'`"
+        CUDF_UDF_TEST_ARGS="$CUDF_UDF_TEST_ARGS --conf spark.executorEnv.PYTHONPATH=`ls $LOCAL_JAR_PATH/rapids-4-spark-${cpu_arch}_*.jar | grep -v 'tests.jar'`"
         LOCAL_JAR_PATH=$LOCAL_JAR_PATH SPARK_SUBMIT_FLAGS="$SPARK_CONF $CUDF_UDF_TEST_ARGS" TEST_PARALLEL=1 \
             bash $LOCAL_JAR_PATH/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" -m "cudf_udf" --cudf_udf --test_type=$TEST_TYPE
     fi
@@ -137,7 +144,7 @@ else
 
     if [[ "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
         ## Run cudf-udf tests
-        CUDF_UDF_TEST_ARGS="$CUDF_UDF_TEST_ARGS --conf spark.executorEnv.PYTHONPATH=`ls /home/ubuntu/spark-rapids/dist/target/rapids-4-spark_*.jar | grep -v 'tests.jar'`"
+        CUDF_UDF_TEST_ARGS="$CUDF_UDF_TEST_ARGS --conf spark.executorEnv.PYTHONPATH=`ls /home/ubuntu/spark-rapids/dist/target/rapids-4-spark-${cpu_arch}_*.jar | grep -v 'tests.jar'`"
         SPARK_SUBMIT_FLAGS="$SPARK_CONF $CUDF_UDF_TEST_ARGS" TEST_PARALLEL=1 \
             bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m "cudf_udf" --cudf_udf --test_type=$TEST_TYPE
     fi
