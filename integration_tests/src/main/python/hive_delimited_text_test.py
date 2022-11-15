@@ -184,7 +184,12 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
                                              StructField("num", IntegerType()),
                                              StructField("another_str", StringType())]), {}),
 
-    # TODO: \r, \r\n. (Done in LineRecordReader.) Test with generated strings.
+    # Test that carriage returns ('\r'/'^M') are treated similarly to newlines ('\n')
+    ('hive-delim-text/carriage-return', StructType([StructField("str", StringType())]), {}),
+    # TODO: When GPU reader encounters \r\r, it treats the space between the two '\r' as an empty line,
+    #       which is skipped. This producers fewer rows than expected, in this test.
+    pytest.param('hive-delim-text/carriage-return-err', StructType([StructField("str", StringType())]), {},
+                 marks=pytest.mark.xfail(reason="GPU skips empty lines. Consecutive \r is treated as empty line.")),
 
 ], ids=idfn)
 def test_basic_hive_text_read(std_input_path, name, schema, spark_tmp_table_factory, options):
