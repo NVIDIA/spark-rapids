@@ -464,21 +464,31 @@ case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
   private[this] def computeStarts(strs: ColumnView, poses: ColumnView): ColumnVector = {
     // CPU:
     //     start = (pos < 0) ? pos + str_size : ((pos > 0) ? pos - 1 : 0)
+    // cudf `substring(column, column, column)` treats negative start always as 0, so
+    // need to do the similar calculation as CPU here.
+
     // 1) pos + str_size
     val negConvertedPoses = withResource(strs.getCharLengths) { strSizes =>
-      // cudf `substring(column, column, column)` treats negative start always as 0, so
-      // need to do the similar calculation as CPU here.
       poses.add(strSizes, DType.INT32)
     }
     withResource(negConvertedPoses) { _ =>
-      val negPosFlags = withResource(Scalar.fromInt(0)) { zero =>
-        poses.lessThan(zero)
-      }
-      withResource(negPosFlags) { _ =>
-        // 2) (pos > 0) ? pos -1 : 0
-        val subOne = "__device__ inline void f(int* out,int pos){*out=(pos>0)?(pos-1):pos;}"
-        withResource(poses.transform(subOne, false)) { zeroBasedPoses =>
-          negPosFlags.ifElse(negConvertedPoses, zeroBasedPoses)
+      withResource(Scalar.fromInt(0)) { zero =>
+        // 2) (pos > 0) ? pos - 1 : 0
+        val subOnePoses = withResource(Scalar.fromInt(1)) { one =>
+          poses.sub(one, DType.INT32)
+        }
+        val zeroBasedPoses = withResource(subOnePoses) { _ =>
+          withResource(poses.greaterThan(zero)) { posPosFlags =>
+            // Use "poses" here instead of "zero" as the false path to keep the nulls,
+            // since "ifElse" will erase the null mask of "poses".
+            posPosFlags.ifElse(subOnePoses, poses)
+          }
+        }
+
+        withResource(zeroBasedPoses) { _ =>
+          withResource(poses.lessThan(zero)) { negPosFlags =>
+            negPosFlags.ifElse(negConvertedPoses, zeroBasedPoses)
+          }
         }
       }
     }
@@ -514,7 +524,7 @@ case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
         ends.getData, null)
       withResource(noNullEnds) { _ =>
         // Spark returns null if any of (str, pos, len) is null, and `ends`'s null mask
-        // should cover pos and len.
+        // should already cover pos and len.
         withResource(strs.mergeAndSetValidity(BinaryOp.BITWISE_AND, strs, ends)) { rets =>
           rets.substring(noNullStarts, noNullEnds)
         }
