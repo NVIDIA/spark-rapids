@@ -127,11 +127,9 @@ def test_array_item_with_strict_index(strict_index_enabled, index):
             conf=test_conf)
 
 # No need to test this for multiple data types for array. Only one is enough, but with two kinds of invalid index.
-@pytest.mark.skipif(not (is_before_spark_330() or is_spark_340_or_later()),
-                    reason="In Spark [3.1.1, 3.3.0) U [3.4.0, +inf)  with ANSI mode, it throws exceptions for invalid index")
 @pytest.mark.parametrize('index', [-2, 100, array_neg_index_gen, array_out_index_gen], ids=idfn)
 def test_array_item_ansi_fail_invalid_index(index):
-    message = "SparkArrayIndexOutOfBoundsException" if (is_databricks104_or_later() or is_spark_340_or_later()) else "java.lang.ArrayIndexOutOfBoundsException"
+    message = "SparkArrayIndexOutOfBoundsException" if (is_databricks104_or_later() or is_spark_330_or_later()) else "java.lang.ArrayIndexOutOfBoundsException"
     if isinstance(index, int):
         test_func = lambda spark: unary_op_df(spark, ArrayGen(int_gen)).select(col('a')[index]).collect()
     else:
