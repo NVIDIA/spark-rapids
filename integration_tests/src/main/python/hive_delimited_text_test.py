@@ -158,6 +158,19 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
     ('hive-delim-text/simple-int-values',     make_schema(DecimalType(10, 3)), {}),
     ('hive-delim-text/simple-int-values',     make_schema(StringType()),       {}),
 
+    # Floating Point.
+    ('hive-delim-text/simple-float-values',   make_schema(FloatType()),        {}),
+    ('hive-delim-text/simple-float-values',   make_schema(DoubleType()),        {}),
+    pytest.param('hive-delim-text/simple-float-values', make_schema(ByteType()), {},
+                 marks= pytest.mark.xfail(reason="Strings with alphabets/decimal points are read as null. "
+                                                 "See https://github.com/NVIDIA/spark-rapids/issues/7085")),
+    pytest.param('hive-delim-text/simple-float-values', make_schema(ShortType()), {},
+                 marks=pytest.mark.xfail(reason="Strings with alphabets/decimal points are read as null. "
+                                                "See https://github.com/NVIDIA/spark-rapids/issues/7085")),
+    pytest.param('hive-delim-text/simple-float-values', make_schema(IntegerType()), {},
+                 marks=pytest.mark.xfail(reason="Strings with alphabets/decimal points are read as null. "
+                                                "See https://github.com/NVIDIA/spark-rapids/issues/7085")),
+
     # Custom datasets
     ('hive-delim-text/Acquisition_2007Q3', acq_schema, {}),
     ('hive-delim-text/Performance_2007Q3', perf_schema, {'serialization.null.format': ''}),
