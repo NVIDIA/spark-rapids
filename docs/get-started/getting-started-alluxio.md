@@ -420,3 +420,12 @@ See the master.log and worker.log in this path.
 ### Auto start Alluxio the master and workers
 After installing Alluxio master and workers, it's better to add a systemd service for each process of master and workers.
 Systemd service can automatically start process if process is terminated.
+
+## Alluxio limitations
+### Alluxio does not sync metadata from UFS(e.g. S3) by default
+Alluxio does not sync metadata from S3 by default, so it won't pick up changed files.
+For example:
+If you update a file in the S3 from 1M size to 10M size and Alluxio already cached the 1M size file, Alluxio cluster
+will always use the 1M file.
+If you want to enable sync it has performance impact.
+For details, please search `alluxio.user.file.metadata.sync.interval` in [Alluxio doc](https://docs.alluxio.io/ee/user/stable/en/reference/Properties-List.html).
