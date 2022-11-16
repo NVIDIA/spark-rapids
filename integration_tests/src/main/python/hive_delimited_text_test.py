@@ -96,6 +96,11 @@ trucks_schema = StructType([
     StructField('price', StringType()),
     StructField('comment', StringType())])
 
+
+def make_schema(column_type):
+    return StructType([StructField('number', column_type)])
+
+
 byte_schema = StructType([
     StructField('number', ByteType())])
 
@@ -142,15 +147,16 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
 @pytest.mark.parametrize('name,schema,options', [
 
     # Numeric Reads.
-    ('hive-delim-text/simple-int-values', byte_schema, {}),
-    ('hive-delim-text/simple-int-values', short_schema, {}),
-    ('hive-delim-text/simple-int-values', int_schema, {}),
-    ('hive-delim-text/simple-int-values', long_schema, {}),
-    ('hive-delim-text/simple-int-values', float_schema, {}),
-    ('hive-delim-text/simple-int-values', double_schema, {}),
-    ('hive-delim-text/simple-int-values', decimal_10_2_schema, {}),
-    ('hive-delim-text/simple-int-values', decimal_10_3_schema, {}),
-    ('hive-delim-text/simple-int-values', number_as_string_schema, {}),
+    ('hive-delim-text/simple-boolean-values', make_schema(BooleanType()),      {}),
+    ('hive-delim-text/simple-int-values',     make_schema(ByteType()),         {}),
+    ('hive-delim-text/simple-int-values',     make_schema(ShortType()),        {}),
+    ('hive-delim-text/simple-int-values',     make_schema(IntegerType()),      {}),
+    ('hive-delim-text/simple-int-values',     make_schema(LongType()),         {}),
+    ('hive-delim-text/simple-int-values',     make_schema(FloatType()),        {}),
+    ('hive-delim-text/simple-int-values',     make_schema(DoubleType()),       {}),
+    ('hive-delim-text/simple-int-values',     make_schema(DecimalType(10, 2)), {}),
+    ('hive-delim-text/simple-int-values',     make_schema(DecimalType(10, 3)), {}),
+    ('hive-delim-text/simple-int-values',     make_schema(StringType()),       {}),
 
     # Custom datasets
     ('hive-delim-text/Acquisition_2007Q3', acq_schema, {}),
@@ -192,7 +198,6 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
                  marks=pytest.mark.xfail(reason="GPU skips empty lines. Consecutive \r is treated as empty line, "
                                                 "and skipped. This produces fewer rows than expected. "
                                                 "See https://github.com/NVIDIA/spark-rapids/issues/7068.")),
-
 ], ids=idfn)
 def test_basic_hive_text_read(std_input_path, name, schema, spark_tmp_table_factory, options):
     assert_gpu_and_cpu_are_equal_collect(read_hive_text_sql(std_input_path + '/' + name,
