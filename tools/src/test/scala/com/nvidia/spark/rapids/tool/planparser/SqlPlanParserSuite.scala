@@ -921,9 +921,7 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         Array("substr", "In", "Or", "GreaterThan"),
       // test the operator is at the beginning of expression and not followed by space
       "NOT(isnotnull(d_moy))" ->
-        Array("Not", "isnotnull"),
-      "NOT(isnotnull(d_moy))" ->
-        Array("Not", "isnotnull"),
+        Array("Not", "isnotnull")
     )
     // scalastyle:on line.size.limit
     for ((condExpr, expectedExpression) <- expressionsMap) {
