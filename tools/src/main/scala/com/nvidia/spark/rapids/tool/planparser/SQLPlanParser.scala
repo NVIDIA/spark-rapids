@@ -587,72 +587,89 @@ object SQLPlanParser extends Logging {
     parseConditionalExpressions(exprStr)
   }
 
+  // The scope is to extract expressions from a conditional expression.
+  // Ideally, parsing conditional expressions needs to build a tree. The current implementation is
+  // a simplified version that does not accurately pickup the LHS and RHS of each predicate.
+  // Instead, it extracts function names, and expressions in best effort.
   def parseConditionalExpressions(exprStr: String): Array[String] = {
+    // Captures any word followed by '('
+    // isnotnull(, StringEndsWith(
+    val functionsRegEx = """((\w+))\(""".r
+    // Captures binary operators followed by '('
+    // AND(, OR(, NOT(, =(, <(, >(
+    val binaryOpsNoSpaceRegEx = """(^|\s+)((AND|OR|NOT|IN|=|<=>|<|>|>=|\++|-|\*+))(\(+)""".r
+    // Capture reserved words at the end of expression. Those should be considered literal
+    // and hence are ignored.
+    // Binary operators cannot be at the end of the string, or end of expression.
+    // For example we know that the following AND is a literal value, not the operator AND.
+    // So, we can filter that out from the results.
+    //     PushedFilters: [IsNotNull(c_customer_id), StringEndsWith(c_customer_id,AND)]
+    //     Filter (isnotnull(names#15) AND StartsWith(names#15, AND))
+    // AND), AND$
+    val nonBinaryOperatorsRegEx = """\s+((AND|OR|NOT|=|<=>|<|>|>=|\++|-|\*+))($|\)+)""".r
+    // Capture all "("
+    val parenthesisStartRegEx = """(\(+)""".r
+    // Capture all ")"
+    val parenthesisEndRegEx = """(\)+)""".r
+
     val parsedExpressions = ArrayBuffer[String]()
-    // split on AND/OR/NOT
-    val exprSepAND = if (exprStr.contains("AND")) {
-      exprStr.split(" AND ").map(_.trim)
-    } else {
-      Array(exprStr)
-    }
-    val exprSepOR = if (exprStr.contains(" OR ")) {
-      exprSepAND.flatMap(_.split(" OR ").map(_.trim))
-    } else {
-      exprSepAND
+    var processedExpr = exprStr
+    // Step-1: make sure that any binary operator won't mix up with functionNames
+    // For example AND(, isnotNull()
+    binaryOpsNoSpaceRegEx.findAllMatchIn(exprStr).foreach { m =>
+      // replace things like 'AND(' with 'AND ('
+      val str = s"${m.group(2)}\\(+"
+      processedExpr = str.r.replaceAllIn(processedExpr, s"${m.group(2)} \\(")
     }
 
-    val exprSplit = if (exprStr.contains("NOT ")) {
-      parsedExpressions += "Not"
-      exprSepOR.flatMap(_.split("NOT ").map(_.trim))
-    } else {
-      exprSepOR
+    // Step-2: Extract function names from the expression
+    val functionMatches = functionsRegEx.findAllMatchIn(processedExpr)
+    parsedExpressions ++=
+      functionMatches.map(_.group(1)).filter(_.toLowerCase() != "cast")
+    // remove all function calls. No need to keep them in the expression
+    processedExpr = functionsRegEx.replaceAllIn(processedExpr, " ")
+
+    // Step-3: remove literal variables so we do not treat them as Binary operators
+    // Simply replace them by white space.
+    processedExpr = nonBinaryOperatorsRegEx.replaceAllIn(processedExpr, " ")
+
+    // Step-4: remove remaining parentheses '(', ')' and commas if we had functionCalls
+    if (!functionMatches.isEmpty) {
+      // remove ","
+      processedExpr = processedExpr.replaceAll(",", " ")
     }
+    processedExpr = parenthesisStartRegEx.replaceAllIn(processedExpr, " ")
+    processedExpr = parenthesisEndRegEx.replaceAllIn(processedExpr, " ")
 
-    // Remove parentheses from the beginning and end to get only the expressions
-    val parenRemoved = exprSplit.map(_.replaceAll("""^\(+""", "").replaceAll("""\)\)$""", ")"))
-    val conditionalExprPattern = """([(\w# )]+) ([+=<>|]+) ([(\w# )]+)""".r
-
-    parenRemoved.foreach { case expr =>
-      if (expr.contains(" ")) {
-        // likely some conditional expression
-        // TODO - add in arithmetic stuff (- / * )
-        conditionalExprPattern.findFirstMatchIn(expr) match {
-          case Some(func) =>
-            logDebug(s" found expr: $func")
-            if (func.groupCount < 3) {
-              logError(s"found incomplete expression - $func")
-            }
-            val expressions = Array(func.group(1), func.group(3))
-            // Add function name to result
-            expressions.foreach { expr =>
-              val functionName = getFunctionName(functionPattern, expr)
-              functionName.foreach(parsedExpressions += _)
-            }
-            val predicate = func.group(2)
-            // check for variable
-            if (expressions.exists(_.contains("#"))) {
-              logDebug(s"expr contains # ${expressions(0)} or ${expressions(1)}")
-            }
-            val predStr = predicate match {
-              case "=" => "EqualTo"
-              case "<=>" => "EqualNullSafe"
-              case "<" => "LessThan"
-              case ">" => "GreaterThan"
-              case "<=" => "LessThanOrEqual"
-              case ">=" => "GreaterThanOrEqual"
-              case "+" => "Add"
-            }
-            logDebug(s"predicate string is $predStr")
-            parsedExpressions += predStr
-          // TODO - lookup function name
-          case None => logDebug(s"Incorrect expression - $expr")
-        }
-      } else {
-        // likely some function call, add function name to result
-        val functionName = getFunctionName(functionPattern, expr)
-        functionName.foreach(parsedExpressions += _)
+    // Step-5: now we should have a simplified expression that can be tokenized on white
+    // space delimiter
+    processedExpr.split("\\s+").foreach { token =>
+      token match {
+        case "NOT" => parsedExpressions += "Not"
+        case "=" => parsedExpressions += "EqualTo"
+        case "<=>" => parsedExpressions += "EqualNullSafe"
+        case "<" => parsedExpressions += "LessThan"
+        case ">" => parsedExpressions += "GreaterThan"
+        case "<=" => parsedExpressions += "LessThanOrEqual"
+        case ">=" => parsedExpressions += "GreaterThanOrEqual"
+        case "+" => parsedExpressions += "Add"
+        case "-" => parsedExpressions += "Subtract"
+        case "*" => parsedExpressions += "Multiply"
+        case "IN" => parsedExpressions += "In"
+        case "OR" | "||" =>
+          // Some Spark2.x eventlogs may have '||' instead of 'OR'
+          parsedExpressions += "Or"
+        case "&&" | "AND" =>
+          // Some Spark2.x eventlogs may have '&&' instead of 'AND'
+          parsedExpressions += "And"
+        case t if t.contains("#") =>
+          // This is a variable name. Ignore those ones.
+        case _ =>
+          // anything else could be a literal value or we do not handle yet. Ignore them for now.
+          logDebug(s"Unrecognized Token - $token")
       }
     }
+
     parsedExpressions.distinct.toArray
   }
 }
