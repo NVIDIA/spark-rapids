@@ -60,12 +60,16 @@ SPARK_PLUGIN_JAR_VERSION=`$MVN_CMD help:evaluate -q -pl dist -Dexpression=projec
 SCALA_VERSION=`$MVN_CMD help:evaluate -q -pl dist -Dexpression=scala.binary.version -DforceStdout`
 CUDA_VERSION=`$MVN_CMD help:evaluate -q -pl dist -Dexpression=cuda.version -DforceStdout`
 
-case `uname -m` in
+arch=$(uname -m)
+case ${arch} in
+    x86_64|amd64)
+        cpu_arch='amd64';;
     aarch64|arm64)
         cpu_arch='arm64';;
     *)
-        cpu_arch='amd64';;
+      echo "Non-support cpu architecture: ${arch}"; exit 1;;
 esac
+echo "cpu_arch is ${cpu_arch}"
 
 RAPIDS_BUILT_JAR=rapids-4-spark-${cpu_arch}_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
 

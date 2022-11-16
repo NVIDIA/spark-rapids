@@ -27,12 +27,16 @@ elif [[ $# -gt 1 ]]; then
     exit 1
 fi
 
-case `uname -m` in
+arch=$(uname -m)
+case ${arch} in
+    x86_64|amd64)
+        cpu_arch='amd64';;
     aarch64|arm64)
         cpu_arch='arm64';;
     *)
-        cpu_arch='amd64';;
+      echo "Non-support cpu architecture: ${arch}"; exit 1;;
 esac
+echo "cpu_arch is ${cpu_arch}"
 
 MVN_CMD="mvn -Dmaven.wagon.http.retryHandler.count=3 -Dcpu_arch=${cpu_arch}"
 MVN_BUILD_ARGS="-Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER"

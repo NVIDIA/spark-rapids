@@ -51,12 +51,16 @@ if [ "$DATABRICKS" == true ]; then
     cd spark-rapids
 fi
 
-case `uname -m` in
+arch=$(uname -m)
+case ${arch} in
+    x86_64|amd64)
+        cpu_arch='amd64';;
     aarch64|arm64)
         cpu_arch='arm64';;
     *)
-        cpu_arch='amd64';;
+      echo "Non-support cpu architecture: ${arch}"; exit 1;;
 esac
+echo "cpu_arch is ${cpu_arch}"
 
 ART_ID=`mvn help:evaluate -q -pl $DIST_PL -Dexpression=project.artifactId -DforceStdout -Dcpu_arch=$cpu_arch`
 ART_VER=`mvn help:evaluate -q -pl $DIST_PL -Dexpression=project.version -DforceStdout`

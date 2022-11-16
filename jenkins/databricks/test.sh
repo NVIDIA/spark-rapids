@@ -22,12 +22,16 @@ SPARK_CONF=${SPARK_CONF:-''}
 BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-'3.1.2'}
 [[ -z $SPARK_SHIM_VER ]] && export SPARK_SHIM_VER=spark${BASE_SPARK_VERSION//.}db
 
-case `uname -m` in
+arch=$(uname -m)
+case ${arch} in
+    x86_64|amd64)
+        cpu_arch='amd64';;
     aarch64|arm64)
         cpu_arch='arm64';;
     *)
-        cpu_arch='amd64';;
+      echo "Non-support cpu architecture: ${arch}"; exit 1;;
 esac
+echo "cpu_arch is ${cpu_arch}"
 
 # install required packages
 sudo apt -y install zip unzip

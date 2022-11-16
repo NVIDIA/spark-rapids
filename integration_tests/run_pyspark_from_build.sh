@@ -24,12 +24,16 @@ elif [[ -z "$SPARK_HOME" ]];
 then
     >&2 echo "SPARK_HOME IS NOT SET CANNOT RUN PYTHON INTEGRATION TESTS..."
 else
-    case `uname -m` in
+    arch=$(uname -m)
+    case ${arch} in
+        x86_64|amd64)
+            cpu_arch='amd64';;
         aarch64|arm64)
             cpu_arch='arm64';;
         *)
-            cpu_arch='amd64';;
+          echo "Non-support cpu architecture: ${arch}"; exit 1;;
     esac
+    echo "cpu_arch is ${cpu_arch}"
 
     echo "WILL RUN TESTS WITH SPARK_HOME: ${SPARK_HOME}"
     [[ ! -x "$(command -v zip)" ]] && { echo "fail to find zip command in $PATH"; exit 1; }

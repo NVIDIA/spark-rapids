@@ -160,12 +160,16 @@ shift
 
 done
 
-case `uname -m` in
-    aarch64|arm64)
-        cpu_arch='arm64';;
-    *)
-        cpu_arch='amd64';;
+arch=$(uname -m)
+case ${arch} in
+  x86_64|amd64)
+    cpu_arch='amd64';;
+  aarch64|arm64)
+    cpu_arch='arm64';;
+  *)
+    echo "Non-support cpu architecture: ${arch}"; exit 1;;
 esac
+echo "cpu_arch is ${cpu_arch}"
 
 # include options to mvn command
 export MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 ${MVN_OPT} -Dcpu_arch=${cpu_arch}"

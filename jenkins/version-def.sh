@@ -26,12 +26,16 @@ for VAR in $OVERWRITE_PARAMS; do
 done
 IFS=$PRE_IFS
 
-case `uname -m` in
+arch=$(uname -m)
+case ${arch} in
+    x86_64|amd64)
+        cpu_arch='amd64';;
     aarch64|arm64)
         cpu_arch='arm64';;
     *)
-        cpu_arch='amd64';;
+      echo "Non-support cpu architecture: ${arch}"; exit 1;;
 esac
+echo "cpu_arch is ${cpu_arch}"
 
 CUDF_VER=${CUDF_VER:-"22.12.0-SNAPSHOT"}
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-"cuda11"}
