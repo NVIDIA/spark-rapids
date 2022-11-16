@@ -147,20 +147,20 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
 @pytest.mark.parametrize('name,schema,options', [
 
     # Numeric Reads.
-    ('hive-delim-text/simple-boolean-values', make_schema(BooleanType()),      {}),
-    ('hive-delim-text/simple-int-values',     make_schema(ByteType()),         {}),
-    ('hive-delim-text/simple-int-values',     make_schema(ShortType()),        {}),
-    ('hive-delim-text/simple-int-values',     make_schema(IntegerType()),      {}),
-    ('hive-delim-text/simple-int-values',     make_schema(LongType()),         {}),
-    ('hive-delim-text/simple-int-values',     make_schema(FloatType()),        {}),
-    ('hive-delim-text/simple-int-values',     make_schema(DoubleType()),       {}),
-    ('hive-delim-text/simple-int-values',     make_schema(DecimalType(10, 2)), {}),
-    ('hive-delim-text/simple-int-values',     make_schema(DecimalType(10, 3)), {}),
-    ('hive-delim-text/simple-int-values',     make_schema(StringType()),       {}),
+    ('hive-delim-text/simple-boolean-values', make_schema(BooleanType()),        {}),
+    ('hive-delim-text/simple-int-values',     make_schema(ByteType()),           {}),
+    ('hive-delim-text/simple-int-values',     make_schema(ShortType()),          {}),
+    ('hive-delim-text/simple-int-values',     make_schema(IntegerType()),        {}),
+    ('hive-delim-text/simple-int-values',     make_schema(LongType()),           {}),
+    ('hive-delim-text/simple-int-values',     make_schema(FloatType()),          {}),
+    ('hive-delim-text/simple-int-values',     make_schema(DoubleType()),         {}),
+    ('hive-delim-text/simple-int-values',     make_schema(DecimalType(10, 2)),   {}),
+    ('hive-delim-text/simple-int-values',     make_schema(DecimalType(10, 3)),   {}),
+    ('hive-delim-text/simple-int-values',     make_schema(StringType()),         {}),
 
     # Floating Point.
-    ('hive-delim-text/simple-float-values',   make_schema(FloatType()),        {}),
-    ('hive-delim-text/simple-float-values',   make_schema(DoubleType()),        {}),
+    ('hive-delim-text/simple-float-values',   make_schema(FloatType()),          {}),
+    ('hive-delim-text/simple-float-values',   make_schema(DoubleType()),         {}),
     pytest.param('hive-delim-text/simple-float-values', make_schema(ByteType()), {},
                  marks= pytest.mark.xfail(reason="Strings with alphabets/decimal points are read as null. "
                                                  "See https://github.com/NVIDIA/spark-rapids/issues/7085")),
@@ -185,20 +185,13 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
     # Date/Time
     ('hive-delim-text/timestamp', timestamp_schema, {}),
     ('hive-delim-text/date', date_schema, {}),
-
-    # TODO: GPU reads all input. CPU return null on all but 1 row
-    #       (formatted exactly right for timestamp).
-    #  1. Document round trip works.
-    #  2. Document failure cases on Github issues
     pytest.param('hive-delim-text/timestamp-err', timestamp_schema, {},
-                 marks=pytest.mark.xfail(reason="GPU timestamp reads are more permissive than CPU.")),
-
-    # TODO: GPU forgives spaces, but throws on month=50. CPU nulls spaces, nulls month=50.
-    #  1. Document round trip works.
-    #  2. Document failure cases on Github issues
+                 marks=pytest.mark.xfail(reason="GPU timestamp reads are more permissive than CPU. "
+                                                "See https://github.com/NVIDIA/spark-rapids/issues/7086")),
     pytest.param('hive-delim-text/date-err', date_schema, {},
                  marks=pytest.mark.xfail(reason="GPU read trims date string whitespace, "
-                                                "and errors out on invalid dates.")),
+                                                "and errors out on invalid dates."
+                                                "See https://github.com/NVIDIA/spark-rapids/issues/7089.")),
 
     # Test that lines beginning with comments ('#') aren't skipped.
     ('hive-delim-text/comments', StructType([StructField("str", StringType()),
