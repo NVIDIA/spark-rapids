@@ -98,35 +98,10 @@ trucks_schema = StructType([
 
 
 def make_schema(column_type):
+    """
+    Constructs a table schema with a single column of the specified type
+    """
     return StructType([StructField('number', column_type)])
-
-
-byte_schema = StructType([
-    StructField('number', ByteType())])
-
-short_schema = StructType([
-    StructField('number', ShortType())])
-
-int_schema = StructType([
-    StructField('number', IntegerType())])
-
-long_schema = StructType([
-    StructField('number', LongType())])
-
-float_schema = StructType([
-    StructField('number', FloatType())])
-
-double_schema = StructType([
-    StructField('number', DoubleType())])
-
-decimal_10_2_schema = StructType([
-    StructField('number', DecimalType(10, 2))])
-
-decimal_10_3_schema = StructType([
-    StructField('number', DecimalType(10, 3))])
-
-number_as_string_schema = StructType([
-    StructField('number', StringType())])
 
 
 def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None):
@@ -245,4 +220,36 @@ def test_hive_text_round_trip(spark_tmp_path, data_gen, spark_tmp_table_factory)
     with_cpu_session(lambda spark: create_hive_text_table(spark, gen, table_name))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: read_hive_text_table(spark, table_name),
+            conf={})
+
+
+hive_text_unsupported_gens = [
+    ArrayGen(string_gen),
+    StructGen([('int_field', int_gen), ('string_field', string_gen)]),
+    MapGen(StringGen(nullable=False), string_gen),
+    binary_gen
+]
+
+
+@allow_non_gpu("org.apache.spark.sql.hive.execution.HiveTableScanExec")
+@pytest.mark.parametrize('data_gen', hive_text_unsupported_gens, ids=idfn)
+def test_hive_text_fallback_for_unsupported_types(spark_tmp_path, data_gen, spark_tmp_table_factory):
+    gen = StructGen([('my_field', data_gen)], nullable=False)
+    data_path = spark_tmp_path + '/hive_text_table'
+    table_name = spark_tmp_table_factory.get()
+
+    def create_hive_text_table(spark, column_gen, text_table_name):
+        gen_df(spark, column_gen).repartition(1).createOrReplaceTempView("input_view")
+        spark.sql("DROP TABLE IF EXISTS " + text_table_name)
+        spark.sql("CREATE TABLE " + text_table_name + " STORED AS TEXTFILE " +
+                  "LOCATION '" + data_path + "' " +
+                  "AS SELECT my_field FROM input_view")
+
+    def read_hive_text_table(spark, text_table_name):
+        return spark.sql("SELECT my_field FROM " + text_table_name)
+
+    with_cpu_session(lambda spark: create_hive_text_table(spark, gen, table_name))
+    assert_gpu_fallback_collect(
+            lambda spark: read_hive_text_table(spark, table_name),
+            cpu_fallback_class_name=get_non_gpu_allowed()[0],
             conf={})
