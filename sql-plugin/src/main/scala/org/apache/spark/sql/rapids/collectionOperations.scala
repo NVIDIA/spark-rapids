@@ -1045,7 +1045,7 @@ case class GpuArrayRemove(left: Expression, right: Expression) extends GpuBinary
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     withResource(lhs.getBase.equalTo(rhs.getBase)) { booleanMask =>
-      withResource(lhs.getBase.applyBooleanMask(booleanMask))
+      lhs.getBase.applyBooleanMask(booleanMask)
     }
   }
 
