@@ -662,18 +662,26 @@ object AlluxioUtils extends Logging with Arm {
   // If reading large s3 files on a cluster with slower disks, skip using Alluxio.
   def shouldReadDirectlyFromS3(rapidsConf: RapidsConf, pds: Seq[PartitionDirectory]): Boolean = {
     if (!rapidsConf.enableAlluxioSlowDisk) {
-      return false
-    }
+      false
+    } else {
+      var files = pds.flatMap(pd => pd.files).filter { file =>
+        // skip directory
+        !file.isDirectory
+      }
 
-    val files = pds.flatMap(pd => pd.files).filter { file =>
-      !file.isDirectory
-    }
-    val totalSize = files.map { f =>
-      f.getLen
-    }.sum
+      files = files.filter { f =>
+        // only care about parquet and orc files simply, there are other types of files such as
+        // Delta type.
+        f.getPath.getName.endsWith(".parquet") || f.getPath.getName.endsWith(".orc")
+      }
 
-    val avgSize = if (files.isEmpty) 0 else totalSize / files.length
-    // if files are large
-    avgSize > rapidsConf.getAlluxioLargeFileThreshold
+      val totalSize = files.map { f =>
+        f.getLen
+      }.sum
+
+      val avgSize = if (files.isEmpty) 0 else totalSize / files.length
+      // if files are large
+      avgSize > rapidsConf.getAlluxioLargeFileThreshold
+    }
   }
 }

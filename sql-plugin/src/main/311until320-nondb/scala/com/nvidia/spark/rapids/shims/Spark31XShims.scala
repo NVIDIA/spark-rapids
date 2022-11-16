@@ -356,6 +356,8 @@ abstract class Spark31XShims extends Spark31Xuntil33XShims with Logging {
                   case inMemory: InMemoryFileIndex =>
                     // List all the partitions to reduce overhead, pass in 2 empty filters.
                     // Subsequent process will do the right partition pruning.
+                    // This operation is fast, because it lists files from the caches and the caches
+                    // already exist in the `InMemoryFileIndex`.
                     val pds = inMemory.listFiles(Seq.empty, Seq.empty)
                     AlluxioUtils.shouldReadDirectlyFromS3(conf, pds)
                   case _ =>
