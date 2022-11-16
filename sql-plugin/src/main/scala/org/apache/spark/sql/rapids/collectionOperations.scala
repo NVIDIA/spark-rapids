@@ -1039,6 +1039,37 @@ case class GpuArraysOverlap(left: Expression, right: Expression)
   }
 }
 
+case class GpuArrayRemove(left: Expression, right: Expression) extends GpuBinaryExpression {
+
+  override def dataType: DataType = left.dataType
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    withResource(lhs.getBase.equalTo(rhs.getBase)) { booleanMask =>
+      withResource(lhs.getBase.applyBooleanMask(booleanMask))
+    }
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+      doColumnar(left, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, rhs.dataType)) { right =>
+      doColumnar(lhs, right)
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
+      withResource(GpuColumnVector.from(rhs, numRows, rhs.dataType)) { right =>
+        doColumnar(left, right)
+      }
+    }
+  }
+}
+
 class GpuSequenceMeta(
     expr: Sequence,
     conf: RapidsConf,
