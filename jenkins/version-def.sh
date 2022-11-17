@@ -26,17 +26,6 @@ for VAR in $OVERWRITE_PARAMS; do
 done
 IFS=$PRE_IFS
 
-arch=$(uname -m)
-case ${arch} in
-    x86_64|amd64)
-        cpu_arch='amd64';;
-    aarch64|arm64)
-        cpu_arch='arm64';;
-    *)
-      echo "Unsupport CPU architecture: ${arch}"; exit 1;;
-esac
-echo "cpu_arch is ${cpu_arch}"
-
 CUDF_VER=${CUDF_VER:-"22.12.0-SNAPSHOT"}
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-"cuda11"}
 PROJECT_VER=${PROJECT_VER:-"22.12.0-SNAPSHOT"}
@@ -58,6 +47,17 @@ SPARK_REPO=${SPARK_REPO:-"$URM_URL"}
 
 echo "CUDF_VER: $CUDF_VER, CUDA_CLASSIFIER: $CUDA_CLASSIFIER, PROJECT_VER: $PROJECT_VER \
     SPARK_VER: $SPARK_VER, SCALA_BINARY_VER: $SCALA_BINARY_VER"
+
+arch=$(uname -m)
+case ${arch} in
+    x86_64|amd64)
+        cpu_arch='amd64';;
+    aarch64|arm64)
+        cpu_arch='arm64';;
+    *)
+      echo "Unsupport CPU architecture: ${arch}"; exit 1;;
+esac
+echo "cpu_arch is ${cpu_arch}"
 
 # Spark shim versions
 # get Spark shim versions from pom
