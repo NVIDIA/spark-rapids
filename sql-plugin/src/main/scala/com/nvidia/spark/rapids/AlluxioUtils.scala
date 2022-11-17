@@ -662,6 +662,7 @@ object AlluxioUtils extends Logging with Arm {
   // If reading large s3 files on a cluster with slower disks, skip using Alluxio.
   def shouldReadDirectlyFromS3(rapidsConf: RapidsConf, pds: Seq[PartitionDirectory]): Boolean = {
     if (!rapidsConf.enableAlluxioSlowDisk) {
+      logInfo(s"Skip reading directly from S3 because spark.rapids.alluxio.slow.disk is disabled")
       false
     } else {
       var files = pds.flatMap(pd => pd.files).filter { file =>
@@ -680,8 +681,16 @@ object AlluxioUtils extends Logging with Arm {
       }.sum
 
       val avgSize = if (files.isEmpty) 0 else totalSize / files.length
-      // if files are large
-      avgSize > rapidsConf.getAlluxioLargeFileThreshold
+      if (avgSize > rapidsConf.getAlluxioLargeFileThreshold) {
+        // if files are large
+        logInfo(s"Reading directly from S3, " +
+          s"average file size $avgSize > threshold ${rapidsConf.getAlluxioLargeFileThreshold}")
+        true
+      } else {
+        logInfo(s"Skip reading directly from S3, " +
+          s"average file size $avgSize <= threshold ${rapidsConf.getAlluxioLargeFileThreshold}")
+        false
+      }
     }
   }
 }
