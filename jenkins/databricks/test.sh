@@ -19,7 +19,7 @@ set -ex
 
 LOCAL_JAR_PATH=${LOCAL_JAR_PATH:-''}
 SPARK_CONF=${SPARK_CONF:-''}
-BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-'3.1.2'}
+BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-$(< /databricks/spark/VERSION)}
 [[ -z $SPARK_SHIM_VER ]] && export SPARK_SHIM_VER=spark${BASE_SPARK_VERSION//.}db
 
 # install required packages
