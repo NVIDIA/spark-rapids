@@ -322,8 +322,10 @@ def test_mod_pmod_by_zero(data_gen, overflow_exp):
         exception_str = 'java.lang.ArithmeticException: divide by zero'
     elif is_before_spark_330():
         exception_str = 'SparkArithmeticException: divide by zero'
-    else:
+    elif is_before_spark_340():
         exception_str = 'SparkArithmeticException: Division by zero'
+    else:
+        exception_str = 'SparkArithmeticException: [DIVIDE_BY_ZERO] Division by zero'
         
     assert_gpu_and_cpu_error(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
