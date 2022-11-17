@@ -649,6 +649,7 @@
                                         <exclude name="*nondb*/*"/>
 
                                         <include name="311+-db/*"/>
+                                        <include name="321+-db/*"/>
                                     </patternset>
                                     <include name="321db/*"/>
                                 </dirset>
@@ -660,8 +661,8 @@
                                         <!-- inherit 340+ except nondb -->
                                         <patternset refid="spark340+.pattern"/>
                                         <exclude name="*nondb*/*"/>
-
-                                        <include name="321db/*"/>
+					                <patternset refid="spark321db+.pattern"/>
+							<!--<include name="321db/*"/>-->
                                     </patternset>
                                     <include name="330db/*"/>
                                 </dirset>

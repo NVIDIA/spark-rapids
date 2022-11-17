@@ -41,44 +41,45 @@ import org.apache.spark.sql.rapids.execution.shims.{GpuSubqueryBroadcastMeta, Re
 import org.apache.spark.sql.rapids.shims.GpuFileScanRDD
 import org.apache.spark.sql.types._
 
-object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
+
+object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims with Spark321PlusDBShims {
 
   override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
 
   override def isCastingStringToNegDecimalScaleSupported: Boolean = true
 
-  override def getFileScanRDD(
-      sparkSession: SparkSession,
-      readFunction: PartitionedFile => Iterator[InternalRow],
-      filePartitions: Seq[FilePartition],
-      readDataSchema: StructType,
-      metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
-    new GpuFileScanRDD(sparkSession, readFunction, filePartitions)
-  }
+  // override def getFileScanRDD(
+  //     sparkSession: SparkSession,
+  //     readFunction: PartitionedFile => Iterator[InternalRow],
+  //     filePartitions: Seq[FilePartition],
+  //     readDataSchema: StructType,
+  //     metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
+  //   new GpuFileScanRDD(sparkSession, readFunction, filePartitions)
+  // }
 
-  override def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any = {
-    // In some cases we can be asked to transform when there's no task context, which appears to
-    // be new behavior since Databricks 10.4. A task memory manager must be passed, so if one is
-    // not available we construct one from the main memory manager using a task attempt ID of 0.
-    val memoryManager = Option(TaskContext.get).map(_.taskMemoryManager()).getOrElse {
-      new TaskMemoryManager(SparkEnv.get.memoryManager, 0)
-    }
-    mode.transform(rows, memoryManager)
-  }
+  // override def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any = {
+  //   // In some cases we can be asked to transform when there's no task context, which appears to
+  //   // be new behavior since Databricks 10.4. A task memory manager must be passed, so if one is
+  //   // not available we construct one from the main memory manager using a task attempt ID of 0.
+  //   val memoryManager = Option(TaskContext.get).map(_.taskMemoryManager()).getOrElse {
+  //     new TaskMemoryManager(SparkEnv.get.memoryManager, 0)
+  //   }
+  //   mode.transform(rows, memoryManager)
+  // }
 
-  override def newBroadcastQueryStageExec(
-      old: BroadcastQueryStageExec,
-      newPlan: SparkPlan): BroadcastQueryStageExec =
-    BroadcastQueryStageExec(old.id, newPlan, old.originalPlan, old.isSparkExchange)
+  // override def newBroadcastQueryStageExec(
+  //     old: BroadcastQueryStageExec,
+  //     newPlan: SparkPlan): BroadcastQueryStageExec =
+  //   BroadcastQueryStageExec(old.id, newPlan, old.originalPlan, old.isSparkExchange)
 
-  override def filesFromFileIndex(fileCatalog: PartitioningAwareFileIndex): Seq[FileStatus] = {
-    fileCatalog.allFiles().map(_.toFileStatus)
-  }
+  // override def filesFromFileIndex(fileCatalog: PartitioningAwareFileIndex): Seq[FileStatus] = {
+  //   fileCatalog.allFiles().map(_.toFileStatus)
+  // }
 
-  override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = null
+  // override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = null
 
-  override def getWindowExpressions(winPy: WindowInPandasExec): Seq[NamedExpression] =
-    winPy.projectList
+  // override def getWindowExpressions(winPy: WindowInPandasExec): Seq[NamedExpression] =
+  //   winPy.projectList
 
   override def isWindowFunctionExec(plan: SparkPlan): Boolean =
     plan.isInstanceOf[WindowExecBase] || plan.isInstanceOf[RunningWindowFunctionExec]
@@ -256,10 +257,10 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
    * Case class ShuffleQueryStageExec holds an additional field shuffleOrigin
    * affecting the unapply method signature
    */
-  override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
-    case ShuffleQueryStageExec(_, e: ReusedExchangeExec, _, _) => e
-    case BroadcastQueryStageExec(_, e: ReusedExchangeExec, _, _) => e
-  }
+  // override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
+  //   case ShuffleQueryStageExec(_, e: ReusedExchangeExec, _, _) => e
+  //   case BroadcastQueryStageExec(_, e: ReusedExchangeExec, _, _) => e
+  // }
 }
 
 // Fallback to the default definition of `deterministic`

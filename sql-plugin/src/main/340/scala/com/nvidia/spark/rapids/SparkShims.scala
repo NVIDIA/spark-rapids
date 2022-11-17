@@ -38,7 +38,7 @@ object SparkShimImpl extends Spark331PlusShims {
           override def convertToGpu(): GpuExec =
             GpuGlobalLimitExec(
               globalLimit.limit, childPlans.head.convertIfNeeded(), globalLimit.offset)
-        }),
+         }),
     GpuOverrides.exec[CollectLimitExec](
       "Reduce to single partition and apply limit",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +

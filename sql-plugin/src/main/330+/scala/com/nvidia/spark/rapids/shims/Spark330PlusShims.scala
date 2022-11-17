@@ -36,18 +36,18 @@ import org.apache.spark.sql.rapids.shims.{GpuDivideDTInterval, GpuDivideYMInterv
 import org.apache.spark.sql.types.{CalendarIntervalType, DayTimeIntervalType, DecimalType, StructType}
 import org.apache.spark.unsafe.types.CalendarInterval
 
-trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
+trait Spark330PlusShims extends Spark321PlusShims { //with Spark320PlusNonDBShims {
 
-  override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = null
+  // override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = null
 
-  override def getFileScanRDD(
-      sparkSession: SparkSession,
-      readFunction: PartitionedFile => Iterator[InternalRow],
-      filePartitions: Seq[FilePartition],
-      readDataSchema: StructType,
-      metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
-    new FileScanRDD(sparkSession, readFunction, filePartitions, readDataSchema, metadataColumns)
-  }
+  // override def getFileScanRDD(
+  //     sparkSession: SparkSession,
+  //     readFunction: PartitionedFile => Iterator[InternalRow],
+  //     filePartitions: Seq[FilePartition],
+  //     readDataSchema: StructType,
+  //     metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
+  //   new FileScanRDD(sparkSession, readFunction, filePartitions, readDataSchema, metadataColumns)
+  // }
 
   override def getParquetFilters(
       schema: MessageType,
@@ -267,4 +267,4 @@ trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
 }
 
 // Fallback to the default definition of `deterministic`
-trait GpuDeterministicFirstLastCollectShim extends Expression
+ trait GpuDeterministicFirstLastCollectShim extends Expression

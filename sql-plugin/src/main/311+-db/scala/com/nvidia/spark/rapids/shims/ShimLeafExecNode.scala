@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
+// import org.apache.spark.sql.catalyst.expressions.SortOrder
 import org.apache.spark.sql.execution.LeafExecNode
 import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 
@@ -40,4 +41,8 @@ trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase {
       sizeInBytes = Long.MaxValue
     )
   }
+
+  // override def ordering: Option[Seq[SortOrder]] = None
+
+  override def ordering = None 
 }

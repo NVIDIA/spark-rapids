@@ -17,13 +17,13 @@
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
-
+import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
 import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
 import org.apache.spark.sql.execution.{CollectLimitExec, GlobalLimitExec, SparkPlan}
 
-object SparkShimImpl extends Spark331PlusShims {
+object SparkShimImpl extends Spark331PlusShims with Spark321PlusDBShims {
   override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
 
   private val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
