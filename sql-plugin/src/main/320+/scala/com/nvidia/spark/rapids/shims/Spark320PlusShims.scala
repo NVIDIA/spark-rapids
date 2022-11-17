@@ -302,10 +302,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         plan: SparkPlan,
         predicate: SparkPlan => Boolean,
         accum: ListBuffer[SparkPlan]): Seq[SparkPlan] = {
-
-      println(s"findOperators: ${plan.getClass.getSimpleName}")
       if (predicate(plan)) {
-        println("findOperators: isPredicate")
         accum += plan
       }
       plan match {
@@ -318,11 +315,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       accum
     }
 
-    val x = recurse(plan, predicate, new ListBuffer[SparkPlan]())
-
-    println(s"findOperators: returning $x")
-
-    x
+    recurse(plan, predicate, new ListBuffer[SparkPlan]())
   }
 
   override def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean = plan match {
