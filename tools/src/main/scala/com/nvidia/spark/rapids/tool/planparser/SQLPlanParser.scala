@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.tool.planparser
 
 import scala.collection.mutable.ArrayBuffer
+import scala.util.control.NonFatal
 import scala.util.matching.Regex
 
 import com.nvidia.spark.rapids.tool.qualification.PluginTypeChecker
@@ -108,88 +109,103 @@ object SQLPlanParser extends Logging {
       // this is special because it is a SparkPlanGraphCluster vs SparkPlanGraphNode
       WholeStageExecParser(node.asInstanceOf[SparkPlanGraphCluster], checker, sqlID, app).parse
     } else {
-      val execInfos = node.name match {
-        case "AggregateInPandas" =>
-          AggregateInPandasExecParser(node, checker, sqlID).parse
-        case "ArrowEvalPython" =>
-          ArrowEvalPythonExecParser(node, checker, sqlID).parse
-        case "BatchScan" =>
-          BatchScanExecParser(node, checker, sqlID, app).parse
-        case "BroadcastExchange" =>
-          BroadcastExchangeExecParser(node, checker, sqlID, app).parse
-        case "BroadcastHashJoin" =>
-          BroadcastHashJoinExecParser(node, checker, sqlID).parse
-        case "BroadcastNestedLoopJoin" =>
-          BroadcastNestedLoopJoinExecParser(node, checker, sqlID).parse
-        case "CartesianProduct" =>
-          CartesianProductExecParser(node, checker, sqlID).parse
-        case "Coalesce" =>
-          CoalesceExecParser(node, checker, sqlID).parse
-        case "CollectLimit" =>
-          CollectLimitExecParser(node, checker, sqlID).parse
-        case "ColumnarToRow" =>
-          // ignore ColumnarToRow to row for now as assume everything is columnar
-          new ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
-            isSupported = false, None, Set.empty, shouldRemove=true)
-        case c if (c.contains("CreateDataSourceTableAsSelectCommand")) =>
-          // create data source table doesn't show the format so we can't determine
-          // if we support it
-          new ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
-            isSupported = false, None)
-        case "CustomShuffleReader" | "AQEShuffleRead" =>
-          CustomShuffleReaderExecParser(node, checker, sqlID).parse
-        case "Exchange" =>
-          ShuffleExchangeExecParser(node, checker, sqlID, app).parse
-        case "Expand" =>
-          ExpandExecParser(node, checker, sqlID).parse
-        case "Filter" =>
-          FilterExecParser(node, checker, sqlID).parse
-        case "FlatMapGroupsInPandas" =>
-          FlatMapGroupsInPandasExecParser(node, checker, sqlID).parse
-        case "Generate" =>
-          GenerateExecParser(node, checker, sqlID).parse
-        case "GlobalLimit" =>
-          GlobalLimitExecParser(node, checker, sqlID).parse
-        case "HashAggregate" =>
-          HashAggregateExecParser(node, checker, sqlID, app).parse
-        case "LocalLimit" =>
-          LocalLimitExecParser(node, checker, sqlID).parse
-        case "InMemoryTableScan" =>
-          InMemoryTableScanExecParser(node, checker, sqlID).parse
-        case i if (i.contains("InsertIntoHadoopFsRelationCommand") ||
-          i == "DataWritingCommandExec") =>
-          DataWritingCommandExecParser(node, checker, sqlID).parse
-        case "MapInPandas" =>
-          MapInPandasExecParser(node, checker, sqlID).parse
-        case "ObjectHashAggregate" =>
-          ObjectHashAggregateExecParser(node, checker, sqlID, app).parse
-        case "Project" =>
-          ProjectExecParser(node, checker, sqlID).parse
-        case "Range" =>
-          RangeExecParser(node, checker, sqlID).parse
-        case "Sample" =>
-          SampleExecParser(node, checker, sqlID).parse
-        case "ShuffledHashJoin" =>
-          ShuffledHashJoinExecParser(node, checker, sqlID, app).parse
-        case "Sort" =>
-          SortExecParser(node, checker, sqlID).parse
-        case s if (s.startsWith("Scan")) =>
-          FileSourceScanExecParser(node, checker, sqlID, app).parse
-        case "SortAggregate" =>
-          SortAggregateExecParser(node, checker, sqlID).parse
-        case "SortMergeJoin" =>
-          SortMergeJoinExecParser(node, checker, sqlID).parse
-        case "SubqueryBroadcast" =>
-          SubqueryBroadcastExecParser(node, checker, sqlID, app).parse
-        case "TakeOrderedAndProject" =>
-          TakeOrderedAndProjectExecParser(node, checker, sqlID).parse
-        case "Union" =>
-          UnionExecParser(node, checker, sqlID).parse
-        case "Window" =>
-          WindowExecParser(node, checker, sqlID).parse
-        case "WindowInPandas" =>
-          WindowInPandasExecParser(node, checker, sqlID).parse
-        case _ =>
+      val execInfos = try {
+        node.name match {
+          case "AggregateInPandas" =>
+            AggregateInPandasExecParser(node, checker, sqlID).parse
+          case "ArrowEvalPython" =>
+            ArrowEvalPythonExecParser(node, checker, sqlID).parse
+          case "BatchScan" =>
+            BatchScanExecParser(node, checker, sqlID, app).parse
+          case "BroadcastExchange" =>
+            BroadcastExchangeExecParser(node, checker, sqlID, app).parse
+          case "BroadcastHashJoin" =>
+            BroadcastHashJoinExecParser(node, checker, sqlID).parse
+          case "BroadcastNestedLoopJoin" =>
+            BroadcastNestedLoopJoinExecParser(node, checker, sqlID).parse
+          case "CartesianProduct" =>
+            CartesianProductExecParser(node, checker, sqlID).parse
+          case "Coalesce" =>
+            CoalesceExecParser(node, checker, sqlID).parse
+          case "CollectLimit" =>
+            CollectLimitExecParser(node, checker, sqlID).parse
+          case "ColumnarToRow" =>
+            // ignore ColumnarToRow to row for now as assume everything is columnar
+            new ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
+              isSupported = false, None, Set.empty, shouldRemove = true)
+          case c if (c.contains("CreateDataSourceTableAsSelectCommand")) =>
+            // create data source table doesn't show the format so we can't determine
+            // if we support it
+            new ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
+              isSupported = false, None)
+          case "CustomShuffleReader" | "AQEShuffleRead" =>
+            CustomShuffleReaderExecParser(node, checker, sqlID).parse
+          case "Exchange" =>
+            ShuffleExchangeExecParser(node, checker, sqlID, app).parse
+          case "Expand" =>
+            ExpandExecParser(node, checker, sqlID).parse
+          case "Filter" =>
+            FilterExecParser(node, checker, sqlID).parse
+          case "FlatMapGroupsInPandas" =>
+            FlatMapGroupsInPandasExecParser(node, checker, sqlID).parse
+          case "Generate" =>
+            GenerateExecParser(node, checker, sqlID).parse
+          case "GlobalLimit" =>
+            GlobalLimitExecParser(node, checker, sqlID).parse
+          case "HashAggregate" =>
+            HashAggregateExecParser(node, checker, sqlID, app).parse
+          case "LocalLimit" =>
+            LocalLimitExecParser(node, checker, sqlID).parse
+          case "InMemoryTableScan" =>
+            InMemoryTableScanExecParser(node, checker, sqlID).parse
+          case i if (i.contains("InsertIntoHadoopFsRelationCommand") ||
+            i == "DataWritingCommandExec") =>
+            DataWritingCommandExecParser(node, checker, sqlID).parse
+          case "MapInPandas" =>
+            MapInPandasExecParser(node, checker, sqlID).parse
+          case "ObjectHashAggregate" =>
+            ObjectHashAggregateExecParser(node, checker, sqlID, app).parse
+          case "Project" =>
+            ProjectExecParser(node, checker, sqlID).parse
+          case "Range" =>
+            RangeExecParser(node, checker, sqlID).parse
+          case "Sample" =>
+            SampleExecParser(node, checker, sqlID).parse
+          case "ShuffledHashJoin" =>
+            ShuffledHashJoinExecParser(node, checker, sqlID, app).parse
+          case "Sort" =>
+            SortExecParser(node, checker, sqlID).parse
+          case s if (s.startsWith("Scan")) =>
+            FileSourceScanExecParser(node, checker, sqlID, app).parse
+          case "SortAggregate" =>
+            SortAggregateExecParser(node, checker, sqlID).parse
+          case "SortMergeJoin" =>
+            SortMergeJoinExecParser(node, checker, sqlID).parse
+          case "SubqueryBroadcast" =>
+            SubqueryBroadcastExecParser(node, checker, sqlID, app).parse
+          case "TakeOrderedAndProject" =>
+            TakeOrderedAndProjectExecParser(node, checker, sqlID).parse
+          case "Union" =>
+            UnionExecParser(node, checker, sqlID).parse
+          case "Window" =>
+            WindowExecParser(node, checker, sqlID).parse
+          case "WindowInPandas" =>
+            WindowInPandasExecParser(node, checker, sqlID).parse
+          case _ =>
+            new ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
+              isSupported = false, None)
+        }
+      } catch {
+        // Error parsing expression could trigger an exception. If the exception is not handled,
+        // the application will be skipped. We need to suppress exceptions here to avoid
+        // sacrificing the entire app analysis.
+        // Note that:
+        //  - The exec will be considered unsupported.
+        //  - No need to add the SQL to the failed SQLs, because this will cause the app to be
+        //    labeled as "Not Applicable" which is not preferred at this point.
+        case NonFatal(e) =>
+          logWarning(s"Unexpected error parsing plan node ${node.name}. " +
+          s" sqlID = ${sqlID}", e)
           new ExecInfo(sqlID, node.name, expr = "", 1, duration = None, node.id,
             isSupported = false, None)
       }

@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
 from marks import incompat
-from spark_session import is_before_spark_313, is_before_spark_330, is_spark_330_or_later, is_databricks104_or_later
+from spark_session import is_before_spark_313, is_before_spark_330, is_spark_330_or_later, is_databricks104_or_later, is_spark_340_or_later
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 from pyspark.sql.functions import array_contains, col, element_at, lit
@@ -103,7 +103,7 @@ def test_array_item(data_gen):
 
 
 # No need to test this for multiple data types for array. Only one is enough
-@pytest.mark.skipif(is_before_spark_330(), reason="'strictIndexOperator' is introduced from Spark 3.3.0")
+@pytest.mark.skipif(is_before_spark_330() or is_spark_340_or_later(), reason="'strictIndexOperator' is introduced from Spark 3.3.0 and removed in Spark 3.4.0")
 @pytest.mark.parametrize('strict_index_enabled', [True, False])
 @pytest.mark.parametrize('index', [-2, 100, array_neg_index_gen, array_out_index_gen], ids=idfn)
 def test_array_item_with_strict_index(strict_index_enabled, index):
@@ -126,13 +126,10 @@ def test_array_item_with_strict_index(strict_index_enabled, index):
             test_df,
             conf=test_conf)
 
-
 # No need to test this for multiple data types for array. Only one is enough, but with two kinds of invalid index.
-@pytest.mark.skipif(not is_before_spark_330(),
-                    reason="Only in Spark [3.1.1, 3.3.0) with ANSI mode, it throws exceptions for invalid index")
 @pytest.mark.parametrize('index', [-2, 100, array_neg_index_gen, array_out_index_gen], ids=idfn)
 def test_array_item_ansi_fail_invalid_index(index):
-    message = "SparkArrayIndexOutOfBoundsException" if is_databricks104_or_later() else "java.lang.ArrayIndexOutOfBoundsException"
+    message = "SparkArrayIndexOutOfBoundsException" if (is_databricks104_or_later() or is_spark_330_or_later()) else "java.lang.ArrayIndexOutOfBoundsException"
     if isinstance(index, int):
         test_func = lambda spark: unary_op_df(spark, ArrayGen(int_gen)).select(col('a')[index]).collect()
     else:
@@ -243,7 +240,8 @@ def test_array_element_at_ansi_fail_invalid_index(index):
         test_func = lambda spark: two_col_df(spark, ArrayGen(int_gen), index).selectExpr(
             'element_at(a, b)').collect()
     # For 3.3.0+ strictIndexOperator should not affect element_at
-    test_conf=copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': 'false'})
+    # Since 3.4.0, strictIndexOperator has been removed.
+    test_conf=copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': 'false'}) if is_before_spark_340() else ansi_enabled_conf
     assert_gpu_and_cpu_error(
         test_func,
         conf=test_conf,
