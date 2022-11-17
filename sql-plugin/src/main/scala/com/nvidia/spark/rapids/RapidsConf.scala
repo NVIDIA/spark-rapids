@@ -1082,15 +1082,17 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val ENABLE_HIVE_TEXT = conf("spark.rapids.sql.format.hive.text.enabled")
-    .doc("When set to false disables Hive text table acceleration")
-    .booleanConf
-    .createWithDefault(true)
+  val ENABLE_HIVE_TEXT: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.format.hive.text.enabled")
+      .doc("When set to false disables Hive text table acceleration")
+      .booleanConf
+      .createWithDefault(false)
 
-  val ENABLE_HIVE_TEXT_READ = conf("spark.rapids.sql.format.hive.text.read.enabled")
-    .doc("When set to false disables Hive text table read acceleration")
-    .booleanConf
-    .createWithDefault(true)
+  val ENABLE_HIVE_TEXT_READ: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.format.hive.text.read.enabled")
+      .doc("When set to false disables Hive text table read acceleration")
+      .booleanConf
+      .createWithDefault(false)
 
   val ENABLE_RANGE_WINDOW_BYTES = conf("spark.rapids.sql.window.range.byte.enabled")
     .doc("When the order-by column of a range based window is byte type and " +

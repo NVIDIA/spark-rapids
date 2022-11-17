@@ -12,16 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pytest
-
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_write, \
-    assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from conftest import get_non_gpu_allowed
-from datetime import datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, is_before_spark_330
+from spark_session import with_cpu_session
+
+hive_text_enabled_conf = {"spark.rapids.sql.format.hive.text.enabled": True,
+                          "spark.rapids.sql.format.hive.text.read.enabled": True}
 
 acq_schema = StructType([
     StructField('loan_id', LongType()),
@@ -136,14 +135,9 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
     # Floating Point.
     ('hive-delim-text/simple-float-values',   make_schema(FloatType()),          {}),
     ('hive-delim-text/simple-float-values',   make_schema(DoubleType()),         {}),
-    pytest.param('hive-delim-text/simple-float-values', make_schema(ByteType()), {},
-                 marks= pytest.mark.xfail(reason="Strings with alphabets/decimal points are read as null. "
-                                                 "See https://github.com/NVIDIA/spark-rapids/issues/7085")),
-    pytest.param('hive-delim-text/simple-float-values', make_schema(ShortType()), {},
-                 marks=pytest.mark.xfail(reason="Strings with alphabets/decimal points are read as null. "
-                                                "See https://github.com/NVIDIA/spark-rapids/issues/7085")),
     pytest.param('hive-delim-text/simple-float-values', make_schema(IntegerType()), {},
-                 marks=pytest.mark.xfail(reason="Strings with alphabets/decimal points are read as null. "
+                 marks=pytest.mark.xfail(reason="Strings with alphabets/decimal points are read as null, "
+                                                "when read as integral types."
                                                 "See https://github.com/NVIDIA/spark-rapids/issues/7085")),
 
     # Custom datasets
@@ -183,7 +177,7 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
 def test_basic_hive_text_read(std_input_path, name, schema, spark_tmp_table_factory, options):
     assert_gpu_and_cpu_are_equal_collect(read_hive_text_sql(std_input_path + '/' + name,
                                                             schema, spark_tmp_table_factory, options),
-                                         conf={})
+                                         conf=hive_text_enabled_conf)
 
 
 hive_text_supported_gens = [
@@ -200,6 +194,31 @@ hive_text_supported_gens = [
 ]
 
 
+def create_hive_text_table(spark, column_gen, text_table_name, data_path):
+    """
+    Helper method to create a Hive Text table with contents from the specified
+    column generator.
+    :param spark: Spark context for the test
+    :param column_gen: Data generator for the table's column
+    :param text_table_name: (Temp) Name of the created Hive Text table
+    :param data_path: Data location for the created Hive Text table
+    """
+    gen_df(spark, column_gen).repartition(1).createOrReplaceTempView("input_view")
+    spark.sql("DROP TABLE IF EXISTS " + text_table_name)
+    spark.sql("CREATE TABLE " + text_table_name + " STORED AS TEXTFILE " +
+              "LOCATION '" + data_path + "' " +
+              "AS SELECT my_field FROM input_view")
+
+
+def read_hive_text_table(spark, text_table_name):
+    """
+    Helper method to read the contents of a Hive (Text) table.
+    :param spark: Spark context for the test
+    :param text_table_name: Name of the Hive (Text) table to be read
+    """
+    return spark.sql("SELECT my_field FROM " + text_table_name)
+
+
 @approximate_float
 @pytest.mark.parametrize('data_gen', hive_text_supported_gens, ids=idfn)
 def test_hive_text_round_trip(spark_tmp_path, data_gen, spark_tmp_table_factory):
@@ -207,20 +226,11 @@ def test_hive_text_round_trip(spark_tmp_path, data_gen, spark_tmp_table_factory)
     data_path = spark_tmp_path + '/hive_text_table'
     table_name = spark_tmp_table_factory.get()
 
-    def create_hive_text_table(spark, column_gen, text_table_name):
-        gen_df(spark, column_gen).repartition(1).createOrReplaceTempView("input_view")
-        spark.sql("DROP TABLE IF EXISTS " + text_table_name)
-        spark.sql("CREATE TABLE " + text_table_name + " STORED AS TEXTFILE " +
-                  "LOCATION '" + data_path + "' " +
-                  "AS SELECT my_field FROM input_view")
+    with_cpu_session(lambda spark: create_hive_text_table(spark, gen, table_name, data_path))
 
-    def read_hive_text_table(spark, text_table_name):
-        return spark.sql("SELECT my_field FROM " + text_table_name)
-
-    with_cpu_session(lambda spark: create_hive_text_table(spark, gen, table_name))
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: read_hive_text_table(spark, table_name),
-            conf={})
+            conf=hive_text_enabled_conf)
 
 
 hive_text_unsupported_gens = [
@@ -238,18 +248,24 @@ def test_hive_text_fallback_for_unsupported_types(spark_tmp_path, data_gen, spar
     data_path = spark_tmp_path + '/hive_text_table'
     table_name = spark_tmp_table_factory.get()
 
-    def create_hive_text_table(spark, column_gen, text_table_name):
-        gen_df(spark, column_gen).repartition(1).createOrReplaceTempView("input_view")
-        spark.sql("DROP TABLE IF EXISTS " + text_table_name)
-        spark.sql("CREATE TABLE " + text_table_name + " STORED AS TEXTFILE " +
-                  "LOCATION '" + data_path + "' " +
-                  "AS SELECT my_field FROM input_view")
+    with_cpu_session(lambda spark: create_hive_text_table(spark, gen, table_name, data_path))
 
-    def read_hive_text_table(spark, text_table_name):
-        return spark.sql("SELECT my_field FROM " + text_table_name)
-
-    with_cpu_session(lambda spark: create_hive_text_table(spark, gen, table_name))
     assert_gpu_fallback_collect(
             lambda spark: read_hive_text_table(spark, table_name),
             cpu_fallback_class_name=get_non_gpu_allowed()[0],
-            conf={})
+            conf=hive_text_enabled_conf)
+
+
+@allow_non_gpu("org.apache.spark.sql.hive.execution.HiveTableScanExec")
+@pytest.mark.parametrize('data_gen', [StringGen()], ids=idfn)
+def test_hive_text_default_disabled(spark_tmp_path, data_gen, spark_tmp_table_factory):
+    gen = StructGen([('my_field', data_gen)], nullable=False)
+    data_path = spark_tmp_path + '/hive_text_table'
+    table_name = spark_tmp_table_factory.get()
+
+    with_cpu_session(lambda spark: create_hive_text_table(spark, gen, table_name, data_path))
+
+    assert_gpu_fallback_collect(
+        lambda spark: read_hive_text_table(spark, table_name),
+        cpu_fallback_class_name=get_non_gpu_allowed()[0],
+        conf={})
