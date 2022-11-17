@@ -25,13 +25,14 @@ import com.nvidia.spark.rapids.{GpuExec, GpuMetric}
 import com.nvidia.spark.rapids.GpuMetric.{COLLECT_TIME, DESCRIPTION_COLLECT_TIME, ESSENTIAL_LEVEL, NUM_OUTPUT_ROWS}
 import com.nvidia.spark.rapids.shims.{ShimBroadcastExchangeLike, ShimUnaryExecNode, SparkShimImpl}
 
+import org.apache.spark.SparkException
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{BoundReference, Expression, UnsafeProjection}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
-import org.apache.spark.sql.errors.QueryExecutionErrors
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.util.ThreadUtils
 
@@ -129,7 +130,10 @@ case class GpuBroadcastToRowExec(
           sparkContext.cancelJobGroup(runId.toString)
           relationFuture.cancel(true)
         }
-        throw QueryExecutionErrors.executeBroadcastTimeoutError(timeout, Some(ex))
+        throw new SparkException(s"Could not execute broadcast in $timeout secs. " +
+          s"You can increase the timeout for broadcasts via ${SQLConf.BROADCAST_TIMEOUT.key} or " +
+          s"disable broadcast join by setting ${SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key} to -1",
+          ex)
     }
   }
 

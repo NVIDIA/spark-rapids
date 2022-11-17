@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.shims
 import scala.concurrent.Promise
 
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeLike
 
 /**
@@ -26,6 +27,8 @@ import org.apache.spark.sql.execution.exchange.BroadcastExchangeLike
  * Apache Spark and Databricks.
  */
 trait ShimBroadcastExchangeLike extends BroadcastExchangeLike {
+  @transient final val session = SparkSession.getActiveSession.orNull
+
   @transient
   protected lazy val promise = Promise[Broadcast[Any]]()
 
