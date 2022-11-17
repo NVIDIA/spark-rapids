@@ -16,13 +16,76 @@
 
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.ExprRule
+import ai.rapids.cudf.DType
+import com.nvidia.spark.rapids.{BinaryAstExprMeta, BinaryExprMeta, DecimalUtil, ExprChecks, ExprRule, GpuExpression, TypeEnum, TypeSig}
+import com.nvidia.spark.rapids.GpuOverrides.expr
 
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{Divide, Expression, Multiply}
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.{GpuAnsi, GpuDecimalDivide, GpuDecimalMultiply, GpuDivide, GpuMultiply}
+import org.apache.spark.sql.types.DecimalType
 
 object DecimalArithmeticOverrides {
   def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     // We don't override PromotePrecision or CheckOverflow for Spark 3.4
-    Map.empty[Class[_ <: Expression], ExprRule[_ <: Expression]]
+    Seq(
+      expr[Multiply](
+        "Multiplication",
+        ExprChecks.binaryProjectAndAst(
+          TypeSig.implicitCastsAstTypes,
+          TypeSig.gpuNumeric + TypeSig.psNote(TypeEnum.DECIMAL,
+            "Because of Spark's inner workings the full range of decimal precision " +
+                "(even for 128-bit values) is not supported."),
+          TypeSig.cpuNumeric,
+          ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
+          ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
+        (a, conf, p, r) => new BinaryAstExprMeta[Multiply](a, conf, p, r) {
+          override def tagExprForGpu(): Unit = {
+            if (SQLConf.get.ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+              willNotWorkOnGpu("GPU Multiplication does not support ANSI mode")
+            }
+          }
+
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+            lazy val lhsDecimalType =
+              DecimalUtil.asDecimalType(lhs.dataType)
+            lazy val rhsDecimalType =
+              DecimalUtil.asDecimalType(rhs.dataType)
+
+            a.dataType match {
+              case d: DecimalType =>
+                // GpuDecimal*Multiply includes the overflow check in it
+                val intermediatePrecision =
+                  GpuDecimalMultiply.nonRoundedIntermediatePrecision(lhsDecimalType,
+                    rhsDecimalType, d)
+                GpuDecimalMultiply(lhs, rhs, d,
+                  useLongMultiply = intermediatePrecision > DType.DECIMAL128_MAX_PRECISION)
+              case _ =>
+                GpuMultiply(lhs, rhs)
+            }
+          }
+        }),
+      expr[Divide](
+        "Division",
+        ExprChecks.binaryProject(
+          TypeSig.DOUBLE + TypeSig.DECIMAL_128,
+          TypeSig.DOUBLE + TypeSig.DECIMAL_128,
+          ("lhs", TypeSig.DOUBLE + TypeSig.DECIMAL_128,
+              TypeSig.DOUBLE + TypeSig.DECIMAL_128),
+          ("rhs", TypeSig.DOUBLE + TypeSig.DECIMAL_128,
+              TypeSig.DOUBLE + TypeSig.DECIMAL_128)),
+        (a, conf, p, r) => new BinaryExprMeta[Divide](a, conf, p, r) {
+          // Division of Decimal types is a little odd. To work around some issues with
+          // what Spark does the tagging/checks are in CheckOverflow instead of here.
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          // GpuDecimalDivide includes the overflow check in it.
+            a.dataType match {
+              case d: DecimalType =>
+                GpuDecimalDivide(lhs, rhs, d)
+              case _ =>
+                GpuDivide(lhs, rhs)
+            }
+        })
+    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }
 }
