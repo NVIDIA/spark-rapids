@@ -124,8 +124,8 @@ def test_aqe_struct_self_join(spark_tmp_table_factory):
 
 # see https://github.com/NVIDIA/spark-rapids/issues/7037
 @ignore_order(local=True)
-@allow_non_gpu('BroadcastNestedLoopJoinExec', 'BroadcastExchangeExec', 'ColumnarToRowExec', 'Cast', 'DateSub')
-def test_aqe_issue_7037(spark_tmp_path):
+@allow_non_gpu('BroadcastNestedLoopJoinExec', 'BroadcastExchangeExec', 'Cast', 'DateSub')
+def test_aqe_inner_join_inequality_condition(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     def prep(spark):
         data = [
@@ -169,7 +169,7 @@ def test_aqe_issue_7037(spark_tmp_path):
         )
 
     conf = {
-        'spark.rapids.sql.debug.logTransformations': 'true',
+        # 'spark.rapids.sql.debug.logTransformations': 'true',
         'spark.sql.adaptive.enabled': 'true',
     }
 
@@ -178,8 +178,8 @@ def test_aqe_issue_7037(spark_tmp_path):
 
 # see https://github.com/NVIDIA/spark-rapids/issues/7037
 @ignore_order(local=True)
-@allow_non_gpu('BroadcastNestedLoopJoinExec', 'BroadcastExchangeExec', 'ColumnarToRowExec', 'Cast', 'DateSub')
-def test_aqe_issue_7030(spark_tmp_path):
+@allow_non_gpu('BroadcastNestedLoopJoinExec', 'BroadcastExchangeExec', 'Cast', 'DateSub')
+def test_aqe_left_semi_join_inequality_condition(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     def prep(spark):
         data = [
