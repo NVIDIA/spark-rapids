@@ -24,7 +24,7 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
-import com.nvidia.spark.rapids.shims.{AQEUtils, DecimalArithmeticOverrides, DeltaLakeUtils, GetMapValueMeta, GpuBatchScanExec, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{AQEUtils, DecimalArithmeticOverrides, DeltaLakeUtils, ElementAtMeta, GetMapValueMeta, GpuBatchScanExec, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
@@ -2507,7 +2507,7 @@ object GpuOverrides extends Logging {
               TypeEnum.FLOAT, TypeEnum.DOUBLE, TypeEnum.DATE, TypeEnum.TIMESTAMP,
               TypeEnum.STRING, TypeEnum.DECIMAL), "Unsupported as array index."),
           TypeSig.all)),
-      (in, conf, p, r) => new BinaryExprMeta[ElementAt](in, conf, p, r) {
+      (in, conf, p, r) => new ElementAtMeta(in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           // To distinguish the supported nested type between Array and Map
           val checks = in.left.dataType match {
@@ -2536,9 +2536,6 @@ object GpuOverrides extends Logging {
             case _ => throw new IllegalStateException("Only Array or Map is supported as input.")
           }
           checks.tag(this)
-        }
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          GpuElementAt(lhs, rhs, failOnError = in.failOnError)
         }
       }),
     expr[MapKeys](
