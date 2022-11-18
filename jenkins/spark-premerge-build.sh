@@ -139,9 +139,7 @@ ci_2() {
     $MVN_CMD -U -B $MVN_URM_MIRROR clean package $MVN_BUILD_ARGS -DskipTests=true
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
-    # Temporarily lower the parallelism for https://github.com/NVIDIA/spark-rapids/issues/7092
-    #export TEST_PARALLEL=5
-    export TEST_PARALLEL=2
+    export TEST_PARALLEL=5
     ./integration_tests/run_pyspark_from_build.sh
     # enable avro test separately
     INCLUDE_SPARK_AVRO_JAR=true TEST='avro_test.py' ./integration_tests/run_pyspark_from_build.sh

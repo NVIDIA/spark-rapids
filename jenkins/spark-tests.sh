@@ -164,9 +164,7 @@ if [[ $PARALLEL_TEST == "true" ]]; then
   fi
   # parallelism > 6 could slow down the whole process, so we have a limitation for it
   # this is based on our CI gpu types, so we do not put it into the run_pyspark_from_build.sh
-  # Temporarily lower the parallelism for https://github.com/NVIDIA/spark-rapids/issues/7092
-  #[[ ${PARALLELISM} -gt 6 ]] && PARALLELISM=6
-  [[ ${PARALLELISM} -gt 2 ]] && PARALLELISM=2
+  [[ ${PARALLELISM} -gt 6 ]] && PARALLELISM=6
   MEMORY_FRACTION=$(python -c "print(1/($PARALLELISM + 0.1))")
 
   export TEST_PARALLEL=${PARALLELISM}
