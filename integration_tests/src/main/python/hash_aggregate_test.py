@@ -839,6 +839,7 @@ _replace_modes_single_distinct = [
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
 @pytest.mark.xfail(condition=is_databricks104_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/4963')
+@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/7092')
 def test_hash_groupby_collect_partial_replace_with_distinct_fallback(data_gen,
                                                                      replace_mode,
                                                                      aqe_enabled,
