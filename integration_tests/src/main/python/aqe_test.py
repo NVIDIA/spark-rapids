@@ -138,6 +138,10 @@ joins = [
 ]
 
 # see https://github.com/NVIDIA/spark-rapids/issues/7037
+# basically this happens when a GPU broadcast exchange is reused from 
+# one side of a GPU broadcast join to be used on one side of a CPU 
+# broadcast join. The bug currently manifests in Databricks, but could
+# theoretically show up in other Spark distributions
 @ignore_order(local=True)
 @allow_non_gpu('BroadcastNestedLoopJoinExec', 'BroadcastExchangeExec', 'Cast', 'DateSub')
 @pytest.mark.parametrize('join', joins, ids=idfn)
