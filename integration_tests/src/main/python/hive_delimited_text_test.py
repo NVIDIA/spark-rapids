@@ -233,6 +233,45 @@ def test_hive_text_round_trip(spark_tmp_path, data_gen, spark_tmp_table_factory)
             conf=hive_text_enabled_conf)
 
 
+def create_hive_text_table_partitioned(spark, column_gen, text_table_name, data_path):
+    gen_df(spark, column_gen).repartition(1).createOrReplaceTempView("input_view")
+    spark.sql("DROP TABLE IF EXISTS " + text_table_name)
+    column_type = column_gen.children[0][1].data_type.simpleString()  # Because StructGen([('my_field', gen)]).
+    spark.sql("CREATE TABLE " + text_table_name +
+              "( my_field " + column_type + ") "
+              "PARTITIONED BY (dt STRING) "
+              "STORED AS TEXTFILE "
+              "LOCATION '" + data_path + "' ")
+    spark.sql("INSERT OVERWRITE " + text_table_name + " PARTITION( dt='1' ) "
+              "SELECT my_field FROM input_view")
+    spark.sql("INSERT OVERWRITE " + text_table_name + " PARTITION( dt='2' ) "
+              "SELECT my_field FROM input_view")
+
+
+def read_hive_text_table_partitions(spark, text_table_name):
+    """
+    Helper method to read the contents of a Hive (Text) table.
+    :param spark: Spark context for the test
+    :param text_table_name: Name of the Hive (Text) table to be read
+    """
+    return spark.sql("SELECT my_field FROM " + text_table_name + " WHERE dt='1' ")
+
+
+@approximate_float
+@allow_non_gpu("EqualTo,IsNotNull,Literal")  # Accounts for partition predicate: `WHERE dt='1'`
+@pytest.mark.parametrize('data_gen', hive_text_supported_gens, ids=idfn)
+def test_hive_text_round_trip_partitioned(spark_tmp_path, data_gen, spark_tmp_table_factory):
+    gen = StructGen([('my_field', data_gen)], nullable=False)
+    data_path = spark_tmp_path + '/hive_text_table'
+    table_name = spark_tmp_table_factory.get()
+
+    with_cpu_session(lambda spark: create_hive_text_table_partitioned(spark, gen, table_name, data_path))
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: read_hive_text_table_partitions(spark, table_name),
+        conf=hive_text_enabled_conf)
+
+
 hive_text_unsupported_gens = [
     ArrayGen(string_gen),
     StructGen([('int_field', int_gen), ('string_field', string_gen)]),
