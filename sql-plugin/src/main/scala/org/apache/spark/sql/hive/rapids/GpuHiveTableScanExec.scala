@@ -212,7 +212,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
       maxReaderBatchSizeRows = rapidsConf.maxReadBatchSizeRows,
       maxReaderBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes,
       metrics = allMetrics,
-      options = options
+      params = options
     )
 
     PartitionReaderIterator.buildReader(readerFactory)
@@ -448,14 +448,14 @@ case class GpuHiveTextPartitionReaderFactory(sqlConf: SQLConf,
                                              maxReaderBatchSizeRows: Integer,
                                              maxReaderBatchSizeBytes: Long,
                                              metrics: Map[String, GpuMetric],
-                                             @transient options: Map[String, String])
-  extends ShimFilePartitionReaderFactory(options) {
+                                             @transient params: Map[String, String])
+  extends ShimFilePartitionReaderFactory(params) {
 
   override def buildReader(partitionedFile: PartitionedFile): PartitionReader[InternalRow] = {
     throw new IllegalStateException("Row-based text parsing is not supported on GPU.")
   }
 
-  private val csvOptions = new CSVOptions(options,
+  private val csvOptions = new CSVOptions(params,
                                           sqlConf.csvColumnPruning,
                                           sqlConf.sessionLocalTimeZone,
                                           sqlConf.columnNameOfCorruptRecord)
