@@ -74,4 +74,8 @@ object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
       "targetType" -> "TIMESTAMP", "ansiConfig" -> SQLConf.ANSI_ENABLED.key)
     new SparkDateTimeException(errorClass, messageParameters, Array.empty, "")
   }
+
+  override def intervalDivByZeroError(origin: Origin): ArithmeticException = {
+    QueryExecutionErrors.intervalDividedByZeroError(origin.context)
+  }
 }

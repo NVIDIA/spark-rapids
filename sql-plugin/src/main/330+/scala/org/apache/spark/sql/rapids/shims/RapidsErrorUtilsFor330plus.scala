@@ -30,6 +30,10 @@ trait RapidsErrorUtilsFor330plus {
     QueryExecutionErrors.divideByZeroError(origin.context)
   }
 
+  def intervalDivByZeroError(origin: Origin): ArithmeticException = {
+    divByZeroError(origin)
+  }
+
   def divOverflowError(origin: Origin): ArithmeticException = {
     QueryExecutionErrors.overflowInIntegralDivideError(origin.context)
   }

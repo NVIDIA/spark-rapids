@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{GpuTypeShims, ShimExpression, SparkShimImpl}
 
-import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
+import org.apache.spark.sql.catalyst.analysis.{DecimalPrecision, TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, ExpectsInputTypes, Expression, NullIntolerant}
 import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.sql.internal.SQLConf
@@ -193,6 +193,14 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
   protected def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
     throw new IllegalStateException(
       s"${getClass.getSimpleName} must override `resultDecimalType`.")
+  }
+
+  override def checkInputDataTypes(): TypeCheckResult = (left.dataType, right.dataType) match {
+    case (l: DecimalType, r: DecimalType) if inputType.acceptsType(l) && inputType.acceptsType(r) =>
+      // We allow decimal type inputs with different precision and scale, and use special formulas
+      // to calculate the result precision and scale.
+      TypeCheckResult.TypeCheckSuccess
+    case _ => super.checkInputDataTypes()
   }
 }
 
@@ -387,13 +395,13 @@ case class GpuAdd(
     }
   }
 
-//  override def outputTypeOverride: DType = {
-//    (left.dataType, right.dataType) match {
-//      case (DecimalType.Fixed(p1, s1), DecimalType.Fixed(p2, s2)) =>
-//        DecimalUtil.createCudfDecimal(resultDecimalType(p1, s1, p2, s2))
-//      case _ => super.outputTypeOverride
-//    }
-//  }
+  override def outputTypeOverride: DType = {
+    (left.dataType, right.dataType) match {
+      case (DecimalType.Fixed(p1, s1), DecimalType.Fixed(p2, s2)) =>
+        DecimalUtil.createCudfDecimal(resultDecimalType(p1, s1, p2, s2))
+      case _ => super.outputTypeOverride
+    }
+  }
 
   // scalastyle:off
   // The formula follows Hive which is based on the SQL standard and MS SQL:
@@ -1216,6 +1224,42 @@ case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDiv
   override def checkDivideOverflow: Boolean = left.dataType match {
     case LongType if failOnOverflow => true
     case _ => false
+  }
+
+  private def getCastedVectorIfNeeded(
+      vector: GpuColumnVector,
+      d: DecimalType, c: DType): GpuColumnVector = {
+    if (!vector.dataType.sameType(d)) {
+      GpuColumnVector.from(vector.getBase.castTo(c), d)
+    } else {
+      vector.incRefCount()
+    }
+  }
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    (left.dataType, right.dataType) match {
+      case (ltype: DecimalType, rtype: DecimalType) =>
+        // should match precision
+        val widerDecimalType = DecimalPrecision.widerDecimalType(ltype, rtype)
+        val widerDType = DecimalUtil.createCudfDecimal(widerDecimalType)
+        withResource(getCastedVectorIfNeeded(lhs, widerDecimalType, widerDType)) { newLeft =>
+            withResource(getCastedVectorIfNeeded(rhs, widerDecimalType, widerDType)) { newRight =>
+              super.doColumnar(newLeft, newRight)
+            }
+        }
+      case (_: IntegralType, rtype: DecimalType) =>
+        // cast Integer to decimal
+        val cudfType = DecimalUtil.createCudfDecimal(rtype)
+        withResource(GpuColumnVector.from(lhs.getBase.castTo(cudfType), rtype)) { newLhs =>
+          super.doColumnar(newLhs, rhs)
+        }
+      case (ltype: DecimalType, _: IntegralType) =>
+        // cast Integer to decimal
+        val cudfType = DecimalUtil.createCudfDecimal(ltype)
+        withResource(GpuColumnVector.from(lhs.getBase.castTo(cudfType), ltype)) { newRhs =>
+          super.doColumnar(lhs, newRhs)
+        }
+      case _ => super.doColumnar(lhs, rhs)
+    }
   }
 
   override def dataType: DataType = LongType
