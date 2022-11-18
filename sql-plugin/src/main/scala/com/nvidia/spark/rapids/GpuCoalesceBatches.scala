@@ -276,6 +276,9 @@ abstract class AbstractGpuCoalesceIterator(
    */
   protected def popOnDeck(): ColumnarBatch
 
+  /** Perform the necessary cleanup for an input batch */
+  protected def cleanupInputBatch(batch: ColumnarBatch): Unit = batch.close()
+
   /** Optional row limit */
   var batchRowLimit: Int = 0
 
@@ -286,7 +289,8 @@ abstract class AbstractGpuCoalesceIterator(
 
   override def hasNext: Boolean = {
     while (!hasOnDeck && iter.hasNext) {
-      closeOnExcept(iter.next()) { cb =>
+      val cb = iter.next()
+      try {
         withResource(new MetricRange(opTime)) { _ =>
           val numRows = cb.numRows()
           numInputBatches += 1
@@ -294,9 +298,13 @@ abstract class AbstractGpuCoalesceIterator(
           if (numRows > 0) {
             saveOnDeck(cb)
           } else {
-            cb.close()
+            cleanupInputBatch(cb)
           }
         }
+      } catch {
+        case t: Throwable =>
+          cleanupInputBatch(cb)
+          throw t
       }
     }
     hasOnDeck
@@ -452,7 +460,7 @@ abstract class AbstractGpuCoalesceIterator(
               numBytes = wouldBeBytes
             }
           } else {
-            cb.close()
+            cleanupInputBatch(cb)
           }
         }
       }

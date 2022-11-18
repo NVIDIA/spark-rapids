@@ -16,10 +16,16 @@
 
 package com.nvidia.spark.rapids.tool.planparser
 
+import java.io.{File, PrintWriter}
+
+import scala.io.Source
+import scala.util.control.NonFatal
+
 import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTestUtils}
 import com.nvidia.spark.rapids.tool.qualification._
 import org.apache.hadoop.conf.Configuration
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
+import org.scalatest.exceptions.TestFailedException
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
@@ -91,6 +97,61 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val topExecInfo = plans.flatMap(_.execInfo)
     topExecInfo.flatMap { e =>
       e.children.getOrElse(Seq.empty) :+ e
+    }
+  }
+
+  test("Error parser does not cause entire app to fail") {
+    // The purpose of this test is to make sure that the SQLParser won't trigger an exception that
+    // causes the entire app analysis to fail.
+    // In order to simulate unexpected scenarios, the test modifies the eventlog on the fly by
+    // injecting faulty expressions.
+    //
+    // For example:
+    //    Filter (((value#8 <> 100) AND (value#8 > 50)) OR (value#8 = 0))
+    //    One of the predicates is converted from "<" to "<>".
+    //    The latter is an invalid predicate causing the parser to throw a scala-match error.
+    TrampolineUtil.withTempDir { eventLogDir =>
+      // generate the original eventlog
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
+        "WholeStageFilterProject") { spark =>
+        import spark.implicits._
+        val df = spark.sparkContext.makeRDD(1 to 100, 3).toDF
+        val df2 = spark.sparkContext.makeRDD(1 to 100, 3).toDF
+        df.select($"value" as "a")
+          .join(df2.select($"value" as "b"), $"a" === $"b")
+          .filter("(((b < 100) AND (a > 50)) OR (a = 0))")
+          .sort($"b")
+      }
+      // create a temporary file to write the modified events
+      val faultyEventlog = new File(s"$eventLogDir/faulty_eventlog")
+      val pWriter = new PrintWriter(faultyEventlog)
+      val bufferedSource = Source.fromFile(eventLog)
+      try {
+        bufferedSource.getLines.map( l =>
+          if (l.contains("SparkListenerSQLExecutionStart")) {
+            l.replaceAll("value#2 <", "value#2 <>")
+          } else {
+            l
+          }
+        ).foreach(modifiedLine => pWriter.println(modifiedLine))
+      } finally {
+        bufferedSource.close()
+        pWriter.close()
+      }
+      // start processing the faulty eventlog.
+      val pluginTypeChecker = new PluginTypeChecker()
+      val app = createAppFromEventlog(faultyEventlog.getAbsolutePath)
+      assert(app.sqlPlans.size == 1)
+      try {
+        app.sqlPlans.foreach { case (sqlID, plan) =>
+          SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, "",
+            pluginTypeChecker, app)
+        }
+      } catch {
+        case NonFatal(e) =>
+          throw new TestFailedException(
+            s"The SQLParser crashed while processing incorrect expression", e, 0)
+      }
     }
   }
 

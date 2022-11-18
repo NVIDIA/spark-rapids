@@ -31,7 +31,6 @@ import scala.language.implicitConversions
 import scala.math.max
 
 import ai.rapids.cudf._
-import com.google.protobuf.CodedOutputStream
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.SchemaUtils._
@@ -737,8 +736,7 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
       rawOut: HostMemoryOutputStream,
       footerStartOffset: Long,
       numRows: Long,
-      protoWriter: CodedOutputStream,
-      codecStream: OutStream) = {
+      protoWriter: shims.OrcProtoWriterShim) = {
 
     val startPoint = rawOut.getPos
 
@@ -749,9 +747,7 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
       .setNumberOfRows(numRows)
       .build()
 
-    footer.writeTo(protoWriter)
-    protoWriter.flush()
-    codecStream.flush()
+    protoWriter.writeAndFlush(footer)
 
     val footerLen = rawOut.getPos - startPoint
 
@@ -987,7 +983,7 @@ trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging
     dataOut.writeBytes(OrcFile.MAGIC)
     dataOut.flush()
 
-    withCodecOutputStream(ctx, rawOut) { (outChannel, protoWriter, codecStream) =>
+    withCodecOutputStream(ctx, rawOut) { (outChannel, protoWriter) =>
       var numRows = 0L
       val fileFooterBuilder = OrcProto.Footer.newBuilder
       // write the stripes
@@ -995,16 +991,14 @@ trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging
         stripe.infoBuilder.setOffset(rawOut.getPos)
         copyStripeData(ctx, outChannel, stripe.inputDataRanges)
         val stripeFooterStartOffset = rawOut.getPos
-        stripe.footer.writeTo(protoWriter)
-        protoWriter.flush()
-        codecStream.flush()
+        protoWriter.writeAndFlush(stripe.footer)
         stripe.infoBuilder.setFooterLength(rawOut.getPos - stripeFooterStartOffset)
         fileFooterBuilder.addStripes(stripe.infoBuilder.build())
         numRows += stripe.infoBuilder.getNumberOfRows
       }
 
       writeOrcFileFooter(ctx, fileFooterBuilder, rawOut, rawOut.getPos, numRows,
-        protoWriter, codecStream)
+        protoWriter)
     }
   }
 }
@@ -1783,7 +1777,7 @@ trait OrcCodecWritingHelper extends Arm {
   def withCodecOutputStream[T](
       ctx: OrcPartitionReaderContext,
       out: HostMemoryOutputStream)
-    (block: (WritableByteChannel, CodedOutputStream, OutStream) => T): T = {
+    (block: (WritableByteChannel, shims.OrcProtoWriterShim) => T): T = {
 
     withResource(Channels.newChannel(out)) { outChannel =>
       val outReceiver = new PhysicalWriter.OutputReceiver {
@@ -1802,8 +1796,8 @@ trait OrcCodecWritingHelper extends Arm {
         }
         withResource(OrcShims.newOrcOutStream(
           getClass.getSimpleName, orcBufferSize, codec, outReceiver)) { codecStream =>
-          val protoWriter = CodedOutputStream.newInstance(codecStream)
-          block(outChannel, protoWriter, codecStream)
+          val protoWriter = shims.OrcProtoWriterShim(codecStream)
+          block(outChannel, protoWriter)
         }
       } finally {
         OrcCodecPool.returnCodec(ctx.compressionKind, codec)
@@ -1849,10 +1843,8 @@ private case class OrcDataStripe(stripeMeta: OrcStripeWithMeta) extends DataBloc
     // calculate the true stripe footer size
     withResource(HostMemoryBuffer.allocate(initialSize)) { hmb =>
       withResource(new HostMemoryOutputStream(hmb)) { rawOut =>
-        withCodecOutputStream(ctx, rawOut) { (_, protoWriter, codecStream) =>
-          stripe.footer.writeTo(protoWriter)
-          protoWriter.flush()
-          codecStream.flush()
+        withCodecOutputStream(ctx, rawOut) { (_, protoWriter) =>
+          protoWriter.writeAndFlush(stripe.footer)
           val stripeFooterSize = rawOut.getPos
           stripeDataSize + stripeFooterSize
         }
@@ -1957,16 +1949,14 @@ class MultiFileOrcPartitionReader(
         withResource(new HostMemoryOutputStream(outhmb)) { rawOut =>
           // All stripes are from the same file, so it's safe to use the first stripe's ctx
           val ctx = stripes(0).ctx
-          withCodecOutputStream(ctx, rawOut) { (outChannel, protoWriter, codecStream) =>
+          withCodecOutputStream(ctx, rawOut) { (outChannel, protoWriter) =>
             // write the stripes including INDEX+DATA+STRIPE_FOOTER
             stripes.foreach { stripeWithMeta =>
               val stripe = stripeWithMeta.stripe
               stripe.infoBuilder.setOffset(offset + rawOut.getPos)
               copyStripeData(ctx, outChannel, stripe.inputDataRanges)
               val stripeFooterStartOffset = rawOut.getPos
-              stripe.footer.writeTo(protoWriter)
-              protoWriter.flush()
-              codecStream.flush()
+              protoWriter.writeAndFlush(stripe.footer)
               stripe.infoBuilder.setFooterLength(rawOut.getPos - stripeFooterStartOffset)
             }
           }
@@ -2200,7 +2190,7 @@ class MultiFileOrcPartitionReader(
           // We use the first stripe's ctx
           // What if the codec is different for the files which need to be combined?
           val ctx = stripes(0).ctx
-          withCodecOutputStream(ctx, rawOut) { (_, protoWriter, codecStream) =>
+          withCodecOutputStream(ctx, rawOut) { (_, protoWriter) =>
             var numRows = 0L
             val fileFooterBuilder = OrcProto.Footer.newBuilder
             // get all the StripeInformation and the total number rows
@@ -2210,7 +2200,7 @@ class MultiFileOrcPartitionReader(
             }
 
             writeOrcFileFooter(ctx, fileFooterBuilder, rawOut, footerOffset, numRows,
-              protoWriter, codecStream)
+              protoWriter)
             (buffer, rawOut.getPos + footerOffset)
           }
         }

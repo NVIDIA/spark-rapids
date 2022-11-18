@@ -120,17 +120,18 @@ case class GpuFileSourceScanExec(
     val startTime = System.nanoTime()
     val pds = relation.location.listFiles(
         partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
-    if (AlluxioCfgUtils.isAlluxioAutoMountTaskTime(rapidsConf, relation.fileFormat)) {
-      alluxioPathReplacementMap = AlluxioUtils.autoMountIfNeeded(rapidsConf, pds,
-        relation.sparkSession.sparkContext.hadoopConfiguration,
-        relation.sparkSession.conf)
-    } else if (AlluxioCfgUtils.isAlluxioPathsToReplaceTaskTime(rapidsConf, relation.fileFormat)) {
+    if (AlluxioCfgUtils.isAlluxioPathsToReplaceTaskTime(rapidsConf, relation.fileFormat)) {
       // this is not ideal, here we check to see if we will replace any paths, which is an
       // extra iteration through paths
       alluxioPathReplacementMap = AlluxioUtils.checkIfNeedsReplaced(rapidsConf, pds,
         relation.sparkSession.sparkContext.hadoopConfiguration,
         relation.sparkSession.conf)
+    } else if (AlluxioCfgUtils.isAlluxioAutoMountTaskTime(rapidsConf, relation.fileFormat)) {
+      alluxioPathReplacementMap = AlluxioUtils.autoMountIfNeeded(rapidsConf, pds,
+        relation.sparkSession.sparkContext.hadoopConfiguration,
+        relation.sparkSession.conf)
     }
+
     logDebug(s"File listing and possibly replace with Alluxio path " +
       s"took: ${System.nanoTime() - startTime}")
 

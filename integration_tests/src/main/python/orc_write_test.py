@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write
-from spark_session import is_before_spark_320
+from spark_session import is_before_spark_320, is_spark_cdh
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
@@ -91,6 +91,10 @@ def test_part_write_round_trip(spark_tmp_path, orc_gen):
             conf = {'spark.rapids.sql.format.orc.write.enabled': True})
 
 orc_write_compress_options = ['none', 'uncompressed', 'snappy']
+# zstd is available in spark 3.2.0 and later.
+if not is_before_spark_320() and not is_spark_cdh():
+    orc_write_compress_options.append('zstd')
+
 @pytest.mark.parametrize('compress', orc_write_compress_options)
 def test_compress_write_round_trip(spark_tmp_path, compress):
     data_path = spark_tmp_path + '/ORC_DATA'
