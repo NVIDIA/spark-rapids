@@ -32,8 +32,8 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{BoundReference, Expression, UnsafeProjection}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.util.ThreadUtils
 
 // a version of GpuSubqueryBroadcastExec that implements doExecuteBroadcast
