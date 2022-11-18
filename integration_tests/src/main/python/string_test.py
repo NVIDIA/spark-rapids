@@ -329,13 +329,54 @@ def test_substring():
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'SUBSTRING(a, 1, 5)',
+                'SUBSTRING(a, 5, 2147483647)',
+                'SUBSTRING(a, 5, -2147483648)',
                 'SUBSTRING(a, 1)',
                 'SUBSTRING(a, -3)',
                 'SUBSTRING(a, 3, -2)',
                 'SUBSTRING(a, 100)',
+                'SUBSTRING(a, -100)',
                 'SUBSTRING(a, NULL)',
                 'SUBSTRING(a, 1, NULL)',
+                'SUBSTRING(a, -5, 0)',
+                'SUBSTRING(a, -5, 4)',
+                'SUBSTRING(a, 10, 0)',
+                'SUBSTRING(a, -50, 10)',
+                'SUBSTRING(a, -10, -1)',
+                'SUBSTRING(a, 0, 10)',
                 'SUBSTRING(a, 0, 0)'))
+
+def test_substring_column():
+    str_gen = mk_str_gen('.{0,30}')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: three_col_df(spark, str_gen, int_gen, int_gen).selectExpr(
+            'SUBSTRING(a, b, c)',
+            'SUBSTRING(a, b, 0)',
+            'SUBSTRING(a, b, 5)',
+            'SUBSTRING(a, b, -5)',
+            'SUBSTRING(a, b, 100)',
+            'SUBSTRING(a, b, -100)',
+            'SUBSTRING(a, b, NULL)',
+            'SUBSTRING(a, 0, c)',
+            'SUBSTRING(a, 5, c)',
+            'SUBSTRING(a, -5, c)',
+            'SUBSTRING(a, 100, c)',
+            'SUBSTRING(a, -100, c)',
+            'SUBSTRING(a, NULL, c)',
+            'SUBSTRING(\'abc\', b, c)',
+            'SUBSTRING(\'abc\', 1, c)',
+            'SUBSTRING(\'abc\', 0, c)',
+            'SUBSTRING(\'abc\', 5, c)',
+            'SUBSTRING(\'abc\', -1, c)',
+            'SUBSTRING(\'abc\', -5, c)',
+            'SUBSTRING(\'abc\', NULL, c)',
+            'SUBSTRING(\'abc\', b, 10)',
+            'SUBSTRING(\'abc\', b, -10)',
+            'SUBSTRING(\'abc\', b, 2)',
+            'SUBSTRING(\'abc\', b, 0)',
+            'SUBSTRING(\'abc\', b, NULL)',
+            'SUBSTRING(\'abc\', b)',
+            'SUBSTRING(a, b)'))
 
 def test_repeat_scalar_and_column():
     gen_s = StringGen(nullable=False)

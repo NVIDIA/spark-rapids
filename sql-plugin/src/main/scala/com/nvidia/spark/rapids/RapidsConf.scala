@@ -757,7 +757,7 @@ object RapidsConf {
       .createWithDefault(false)
 
   val ENABLE_TIERED_PROJECT = conf("spark.rapids.sql.tiered.project.enabled")
-      .doc("Enable tiered project for aggregations.")
+      .doc("Enable tiered projections.")
       .internal()
       .booleanConf
       .createWithDefault(true)
@@ -1466,17 +1466,13 @@ object RapidsConf {
     .stringConf
     .createWithDefault("^s3a{0,1}://.*")
 
-  val ALLUXIO_CMD = conf("spark.rapids.alluxio.cmd")
-    .doc("Provide the Alluxio command, which is used to mount or get information. " +
-      "The default value is \"su,ubuntu,-c,/opt/alluxio-2.8.0/bin/alluxio\", it means: " +
-      "run Process(Seq(\"su\", \"ubuntu\", \"-c\", " +
-      "\"/opt/alluxio-2.8.0/bin/alluxio fs mount --readonly /bucket-foo s3://bucket-foo\")), " +
-      "to mount s3://bucket-foo to /bucket-foo. " +
-      "the delimiter \",\" is used to convert to Seq[String] " +
-      "when you need to use a special user to run the mount command.")
-    .stringConf
-    .toSequence
-    .createWithDefault(Seq("su", "ubuntu", "-c", "/opt/alluxio-2.8.0/bin/alluxio"))
+  val ALLUXIO_USER = conf("spark.rapids.alluxio.user")
+      .doc("Alluxio user is set on the Alluxio client, " +
+          "which is used to mount or get information. " +
+          "By default it should be the user that running the Alluxio processes. " +
+          "The default value is ubuntu.")
+      .stringConf
+      .createWithDefault("ubuntu")
 
   val ALLUXIO_REPLACEMENT_ALGO = conf("spark.rapids.alluxio.replacement.algo")
     .doc("The algorithm used when replacing the UFS path with the Alluxio path. CONVERT_TIME " +
@@ -1657,6 +1653,13 @@ object RapidsConf {
     .doc("Queries against Delta Lake _delta_log JSON files are not efficient on the GPU. When " +
       "this option is enabled, the plugin will attempt to detect these queries and fall back " +
       "to the CPU.")
+    .booleanConf
+    .createWithDefault(value = true)
+
+  val DETECT_DELTA_CHECKPOINT_QUERIES = conf("spark.rapids.sql.detectDeltaCheckpointQueries")
+    .doc("Queries against Delta Lake _delta_log checkpoint Parquet files are not efficient on " +
+      "the GPU. When this option is enabled, the plugin will attempt to detect these queries " +
+      "and fall back to the CPU.")
     .booleanConf
     .createWithDefault(value = true)
 
@@ -2199,7 +2202,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val getAlluxioBucketRegex: String = get(ALLUXIO_BUCKET_REGEX)
 
-  lazy val getAlluxioCmd: Seq[String] = get(ALLUXIO_CMD)
+  lazy val getAlluxioUser: String = get(ALLUXIO_USER)
 
   lazy val getAlluxioReplacementAlgo: String = get(ALLUXIO_REPLACEMENT_ALGO)
 
@@ -2240,6 +2243,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isFastSampleEnabled: Boolean = get(ENABLE_FAST_SAMPLE)
 
   lazy val isDetectDeltaLogQueries: Boolean = get(DETECT_DELTA_LOG_QUERIES)
+
+  lazy val isDetectDeltaCheckpointQueries: Boolean = get(DETECT_DELTA_CHECKPOINT_QUERIES)
 
   lazy val concurrentWriterPartitionFlushSize:Long = get(CONCURRENT_WRITER_PARTITION_FLUSH_SIZE)
 

@@ -731,6 +731,7 @@ def test_hash_reduction_collect_set_on_nested_array_type(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)
+@pytest.mark.skip(reason='https://github.com/NVIDIA/spark-rapids/issues/7092,7104')
 def test_hash_groupby_collect_with_single_distinct(data_gen):
     # test collect_ops with other distinct aggregations
     assert_gpu_and_cpu_are_equal_collect(
@@ -787,8 +788,7 @@ _replace_modes_non_distinct = [
 @allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec',
                'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
                'SortArray', 'Alias', 'Literal', 'Count', 'CollectList', 'CollectSet',
-               'GpuToCpuCollectBufferTransition', 'CpuToGpuCollectBufferTransition',
-               'AggregateExpression')
+               'AggregateExpression', 'ProjectExec')
 @pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)
 @pytest.mark.parametrize('replace_mode', _replace_modes_non_distinct, ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
@@ -834,13 +834,13 @@ _replace_modes_single_distinct = [
 @allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec',
                'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
                'SortArray', 'Alias', 'Literal', 'Count', 'CollectList', 'CollectSet',
-               'GpuToCpuCollectBufferTransition', 'CpuToGpuCollectBufferTransition',
-               'AggregateExpression')
+               'AggregateExpression', 'ProjectExec')
 @pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)
 @pytest.mark.parametrize('replace_mode', _replace_modes_single_distinct, ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 @pytest.mark.parametrize('use_obj_hash_agg', ['false', 'true'], ids=idfn)
 @pytest.mark.xfail(condition=is_databricks104_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/4963')
+@pytest.mark.skip(reason='https://github.com/NVIDIA/spark-rapids/issues/7092')
 def test_hash_groupby_collect_partial_replace_with_distinct_fallback(data_gen,
                                                                      replace_mode,
                                                                      aqe_enabled,
@@ -1763,8 +1763,7 @@ def test_groupby_std_variance_nulls(data_gen, conf, ansi_enabled):
                'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
                'StddevPop', 'StddevSamp', 'VariancePop', 'VarianceSamp',
                'SortArray', 'Alias', 'Literal', 'Count',
-               'GpuToCpuCollectBufferTransition', 'CpuToGpuCollectBufferTransition',
-               'AggregateExpression')
+               'AggregateExpression', 'ProjectExec')
 @pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 @pytest.mark.parametrize('replace_mode', _replace_modes_non_distinct, ids=idfn)

@@ -17,8 +17,5 @@
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.execution.LeafExecNode
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 
 trait ShimLeafExecNode extends LeafExecNode
-
-trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase

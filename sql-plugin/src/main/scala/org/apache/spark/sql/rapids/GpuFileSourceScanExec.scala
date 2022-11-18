@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.mutable.HashMap
 
-import com.nvidia.spark.rapids.{AlluxioUtils, GpuExec, GpuMetric, GpuOrcMultiFilePartitionReaderFactory, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, SparkPlanMeta}
+import com.nvidia.spark.rapids.{AlluxioCfgUtils, AlluxioUtils, GpuExec, GpuMetric, GpuOrcMultiFilePartitionReaderFactory, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, SparkPlanMeta}
 import com.nvidia.spark.rapids.shims.{GpuDataSourceRDD, SparkShimImpl}
 import org.apache.hadoop.fs.Path
 
@@ -78,8 +78,6 @@ case class GpuFileSourceScanExec(
     extends GpuDataSourceScanExec with GpuExec {
   import GpuMetric._
 
-  private val isAlluxioReplacementTaskTime = rapidsConf.isAlluxioReplacementAlgoTaskTime
-
   // this is set only when we either explicitly replaced a path for CONVERT_TIME
   // or when TASK_TIME if one of the paths will be replaced
   private var alluxioPathReplacementMap: Option[Map[String, String]] = alluxioPathsMap
@@ -122,15 +120,18 @@ case class GpuFileSourceScanExec(
     val startTime = System.nanoTime()
     val pds = relation.location.listFiles(
         partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
-    if (AlluxioUtils.isAlluxioAutoMountTaskTime(rapidsConf, relation.fileFormat)) {
+    if (AlluxioCfgUtils.isAlluxioPathsToReplaceTaskTime(rapidsConf, relation.fileFormat)) {
+      // this is not ideal, here we check to see if we will replace any paths, which is an
+      // extra iteration through paths
+      alluxioPathReplacementMap = AlluxioUtils.checkIfNeedsReplaced(rapidsConf, pds,
+        relation.sparkSession.sparkContext.hadoopConfiguration,
+        relation.sparkSession.conf)
+    } else if (AlluxioCfgUtils.isAlluxioAutoMountTaskTime(rapidsConf, relation.fileFormat)) {
       alluxioPathReplacementMap = AlluxioUtils.autoMountIfNeeded(rapidsConf, pds,
         relation.sparkSession.sparkContext.hadoopConfiguration,
         relation.sparkSession.conf)
-    } else if (AlluxioUtils.isAlluxioPathsToReplaceTaskTime(rapidsConf, relation.fileFormat)) {
-      // this is not ideal, here we check to see if we will replace any paths, which is an
-      // extra iteration through paths
-      alluxioPathReplacementMap = AlluxioUtils.checkIfNeedsReplaced(rapidsConf, pds)
     }
+
     logDebug(s"File listing and possibly replace with Alluxio path " +
       s"took: ${System.nanoTime() - startTime}")
 

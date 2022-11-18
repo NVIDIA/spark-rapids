@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.shims.CastingConfigShim
+
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
@@ -41,7 +43,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
  */
 object GpuCanonicalize {
   def execute(e: Expression): Expression = {
-    expressionReorder(ignoreTimeZone(ignoreNamesTypes(e)))
+    expressionReorder(ignoreTimeZoneInCast(ignoreNamesTypes(e)))
   }
 
   /** Remove names and nullability from types, and names from `GetStructField`. */
@@ -54,12 +56,10 @@ object GpuCanonicalize {
   }
 
   /** Remove TimeZoneId for Cast if needsTimeZone return false. */
-  def ignoreTimeZone(e: Expression): Expression = e match {
-    case c: CastBase if c.timeZoneId.nonEmpty && !c.needsTimeZone =>
-      c.withTimeZone(null)
+  def ignoreTimeZoneInCast(e: Expression): Expression = e match {
     case c: GpuCast if c.timeZoneId.nonEmpty && !c.needsTimeZone =>
       c.withTimeZone(null)
-    case _ => e
+    case _ => CastingConfigShim.ignoreTimeZone(e)
   }
 
   /** Collects adjacent commutative operations. */

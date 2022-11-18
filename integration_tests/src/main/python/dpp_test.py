@@ -15,10 +15,10 @@
 import pytest
 
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect
-from conftest import spark_tmp_table_factory, is_databricks_runtime
+from conftest import spark_tmp_table_factory
 from data_gen import *
 from marks import ignore_order, allow_non_gpu
-from spark_session import is_before_spark_320, with_cpu_session, is_before_spark_312
+from spark_session import is_before_spark_320, with_cpu_session, is_before_spark_312, is_databricks_runtime
 
 
 def create_dim_table(table_name, table_format, length=500):
@@ -119,7 +119,37 @@ _statements = [
         WHERE dim.filter = {2}
     )
     GROUP BY key
-    """
+    """,
+    '''
+    WITH fact_table AS (
+        SELECT fact.key as key, sum(fact.value) as value
+        FROM {0} fact
+        WHERE fact.value > 0
+        GROUP BY fact.key
+        ORDER BY fact.key
+    ),
+    dim_table AS (
+        SELECT dim.key as key, dim.value as value, dim.filter as filter
+        FROM {1} dim
+        WHERE ex_key = 3
+        ORDER BY dim.key
+    )
+    SELECT key, max(value)
+    FROM (
+        SELECT f.key as key, f.value as value
+        FROM fact_table f
+        JOIN dim_table d
+        ON f.key = d.key
+        WHERE d.filter = {2}
+    UNION ALL
+        SELECT f.key as key, f.value as value
+        FROM fact_table f
+        JOIN dim_table d
+        ON f.key = d.key
+        WHERE d.filter = {2}
+    )
+    GROUP BY key
+    '''
 ]
 
 
@@ -130,10 +160,9 @@ _statements = [
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', [
     'false',
-    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320(),
+    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
                                                   reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
 ], ids=idfn)
-@pytest.mark.skipif(is_databricks_runtime(), reason="DPP can not cooperate with rapids plugin on Databricks runtime")
 def test_dpp_reuse_broadcast_exchange(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, store_format, length=10000)
@@ -149,7 +178,6 @@ def test_dpp_reuse_broadcast_exchange(spark_tmp_table_factory, store_format, s_i
 # The SubqueryBroadcast can work on GPU even if the scan who holds it fallbacks into CPU.
 @ignore_order
 @pytest.mark.allow_non_gpu('FileSourceScanExec')
-@pytest.mark.skipif(is_databricks_runtime(), reason="DPP can not cooperate with rapids plugin on Databricks runtime")
 def test_dpp_reuse_broadcast_exchange_cpu_scan(spark_tmp_table_factory):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, 'parquet', length=10000)
@@ -171,10 +199,9 @@ def test_dpp_reuse_broadcast_exchange_cpu_scan(spark_tmp_table_factory):
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', [
     'false',
-    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320(),
+    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
                                                   reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
 ], ids=idfn)
-@pytest.mark.skipif(is_databricks_runtime(), reason="DPP can not cooperate with rapids plugin on Databricks runtime")
 def test_dpp_bypass(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, store_format)
@@ -196,10 +223,9 @@ def test_dpp_bypass(spark_tmp_table_factory, store_format, s_index, aqe_enabled)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', [
     'false',
-    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320(),
+    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
                                                   reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
 ], ids=idfn)
-@pytest.mark.skipif(is_databricks_runtime(), reason="DPP can not cooperate with rapids plugin on Databricks runtime")
 def test_dpp_via_aggregate_subquery(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, store_format)
@@ -218,10 +244,9 @@ def test_dpp_via_aggregate_subquery(spark_tmp_table_factory, store_format, s_ind
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', [
     'false',
-    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320(),
+    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
                                                   reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
 ], ids=idfn)
-@pytest.mark.skipif(is_databricks_runtime(), reason="DPP can not cooperate with rapids plugin on Databricks runtime")
 def test_dpp_skip(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, store_format)
@@ -240,10 +265,9 @@ def test_dpp_skip(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', [
     'false',
-    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320(),
+    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
                                                   reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
 ], ids=idfn)
-@pytest.mark.skipif(is_databricks_runtime(), reason='DPP can not cooperate with rapids plugin on Databricks runtime')
 @pytest.mark.skipif(is_before_spark_312(), reason="DPP over LikeAny/LikeAll filter not enabled until Spark 3.1.2")
 def test_dpp_like_any(spark_tmp_table_factory, store_format, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
@@ -273,10 +297,9 @@ def test_dpp_like_any(spark_tmp_table_factory, store_format, aqe_enabled):
 # Test handling DPP expressions from a HashedRelation that rearranges columns
 @pytest.mark.parametrize('aqe_enabled', [
     'false',
-    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320(),
+    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
                                                   reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
 ], ids=idfn)
-@pytest.mark.skipif(is_databricks_runtime(), reason='DPP is not supported on Databricks runtime')
 def test_dpp_from_swizzled_hash_keys(spark_tmp_table_factory, aqe_enabled):
     dim_table = spark_tmp_table_factory.get()
     fact_table = spark_tmp_table_factory.get()
@@ -304,10 +327,9 @@ def test_dpp_from_swizzled_hash_keys(spark_tmp_table_factory, aqe_enabled):
 # Test handling DPP subquery that could broadcast EmptyRelation rather than a GPU serialized batch
 @pytest.mark.parametrize('aqe_enabled', [
     'false',
-    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320(),
+    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
                                                   reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
 ], ids=idfn)
-@pytest.mark.skipif(is_databricks_runtime(), reason='DPP is not supported on Databricks runtime')
 def test_dpp_empty_relation(spark_tmp_table_factory, aqe_enabled):
     dim_table = spark_tmp_table_factory.get()
     fact_table = spark_tmp_table_factory.get()

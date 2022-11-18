@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
-package org.apache.spark.rapids
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.SparkDateTimeException
+import org.apache.spark.sql.catalyst.expressions.SortOrder
+import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 
-object ShimTrampolineUtil {
-  def dateTimeException(errorClass: String, messageParameters: Array[String]) = {
-    new SparkDateTimeException(errorClass, messageParameters)
-  }
+trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase {
+  override def ordering: Option[Seq[SortOrder]] = None
 }

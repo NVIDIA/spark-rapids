@@ -49,7 +49,7 @@ import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types._
 
 // 31x nondb shims, used by 311cdh and 31x
-abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with Logging {
+abstract class Spark31XShims extends Spark31Xuntil33XShims with Logging {
   override def parquetRebaseReadKey: String =
     SQLConf.LEGACY_PARQUET_REBASE_MODE_IN_READ.key
   override def parquetRebaseWriteKey: String =
@@ -352,7 +352,7 @@ abstract class Spark31XShims extends SparkShims with Spark31Xuntil33XShims with 
             val options = wrapped.relation.options
 
             val (location, alluxioPathsToReplaceMap) =
-              if (AlluxioUtils.enabledAlluxioReplacementAlgoConvertTime(conf)) {
+              if (AlluxioCfgUtils.enabledAlluxioReplacementAlgoConvertTime(conf)) {
                 AlluxioUtils.replacePathIfNeeded(
                   conf,
                   wrapped.relation,

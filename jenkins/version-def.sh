@@ -62,6 +62,9 @@ SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 # PnoSnapshots: noSnapshots only
 set_env_var_SPARK_SHIM_VERSIONS_ARR -PnoSnapshots
 SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+# PsnapshotOnly : snapshots only
+set_env_var_SPARK_SHIM_VERSIONS_ARR -PsnapshotOnly
+SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 
 # PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
 # regular: noSnapshots + snapshots
@@ -92,5 +95,8 @@ SPARK_SHIM_VERSIONS_PREMERGE_UT_2=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 # utf-8 cases
 set_env_var_SPARK_SHIM_VERSIONS_ARR -PpremergeUTF8
 SPARK_SHIM_VERSIONS_PREMERGE_UTF8=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+# jdk11 cases
+set_env_var_SPARK_SHIM_VERSIONS_ARR -Pjdk11
+SPARK_SHIM_VERSIONS_JDK11=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 
 echo "SPARK_BASE_SHIM_VERSION: $SPARK_BASE_SHIM_VERSION"
