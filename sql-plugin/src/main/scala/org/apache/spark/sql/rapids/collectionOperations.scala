@@ -1044,57 +1044,45 @@ case class GpuArrayRemove(left: Expression, right: Expression) extends GpuBinary
   override def dataType: DataType = left.dataType
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    // val lhsBase = lhs.getBase
-    val rhsBase = rhs.getBase
-
-    val lhsBase = withResource(rhsBase.isNull) { rhsIsNull =>
+    // For every null entry in rhs, replace corresponding row in lhs with null
+    val lhsWithNull = withResource(rhs.getBase.isNull) { rhsIsNull =>
       withResource(GpuScalar.from(null, dataType)) { nullList =>
         rhsIsNull.ifElse(nullList, lhs.getBase)
       }
     }
-
+    // Repeat every entry in rhs n times where n is the number of elements in the corresponding row in lhs
     val repeatedRhs = withResource(GpuScalar.from(0, DataTypes.IntegerType)) { zero =>
-      withResource(lhsBase.countElements) { counts =>
-        withResource(counts.replaceNulls(zero)) { notNullCounts =>
-          withResource(new Table(rhsBase)) { table =>
-            table.repeat(notNullCounts).getColumn(0)
+      withResource(lhsWithNull.countElements) { counts =>
+        // Replace null count with 0
+        withResource(counts.replaceNulls(zero)) { noNullCounts =>
+          withResource(new Table(rhs.getBase)) { table =>
+            table.repeat(noNullCounts).getColumn(0)
           }
         }
       }
     }
-
-    withResource(lhsBase.getListOffsetsView) { offSets =>
-      withResource(lhsBase.getChildColumnView(0)) { flattenLhs =>
-        withResource(repeatedRhs) { flattenRhs =>
-          // GpuColumnVector.debug("lhs", flattenLhs)
-          // GpuColumnVector.debug("rhs", flattenRhs)
-          withResource(flattenLhs.equalToNullAware(flattenRhs)) { flattenBoolMask =>
-          // withResource(flattenLhs.equalTo(flattenRhs)) { flattenBoolMask =>
-            // val isNanMask = withResource(flattenLhs.isNan) { lhsNan =>
-            //   withResource(flattenRhs.isNan) { rhsNan =>
-            //     lhsNan.and(rhsNan)
-            //   }
-            // }
-            
-
-            // val finalMask = if (flattenLhs.getType.isDecimalType) {
-            // val finalMask = if (flattenLhs.isFloat.all.getBoolean) {
-            val finalMask = if (flattenLhs.getType == DType.FLOAT32 || flattenLhs.getType == DType.FLOAT64) {
-              val isNanMask = withResource(flattenLhs.isNan) { lhsNan =>
+    withResource(lhsWithNull) { lhsWithNull =>
+      withResource(lhsWithNull.getListOffsetsView) { offSets =>
+        withResource(lhsWithNull.getChildColumnView(0)) { flattenLhs =>
+          withResource(repeatedRhs) { flattenRhs =>
+            val flattenBoolMask = flattenLhs.equalToNullAware(flattenRhs)
+            val boolMaskWithNan = if (flattenLhs.getType == DType.FLOAT32 || flattenLhs.getType == DType.FLOAT64) {
+              withResource(flattenLhs.isNan) { lhsNan =>
                 withResource(flattenRhs.isNan) { rhsNan =>
-                  lhsNan.and(rhsNan)
+                  withResource(lhsNan.and(rhsNan)) { lhsNanAndRhsNan =>
+                    withResource(flattenBoolMask) { flattenBoolMask =>
+                      lhsNanAndRhsNan.or(flattenBoolMask)
+                    }
+                  }
                 }
               }
-              withResource(isNanMask) { nanMask =>
-                nanMask.or(flattenBoolMask)
-              }
             } else flattenBoolMask
-
-            withResource(finalMask.not){ negateFlattenBoolMask =>
-            // withResource(flattenBoolMask.not){ negateFlattenBoolMask =>
-              withResource(negateFlattenBoolMask.makeListFromOffsets(lhs.getRowCount, offSets)) { boolMask =>
-                // GpuColumnVector.debug("boolMask", boolMask)
-                lhsBase.applyBooleanMask(boolMask)
+            withResource(boolMaskWithNan) { boolMaskWithNan=>
+              withResource(boolMaskWithNan.not){ boolMaskToKeep =>
+                withResource(boolMaskToKeep.makeListFromOffsets(lhs.getRowCount, offSets)) { boolMask =>
+                  // GpuColumnVector.debug("boolMask", boolMask)
+                  lhsWithNull.applyBooleanMask(boolMask)
+                }
               }
             }
           }
