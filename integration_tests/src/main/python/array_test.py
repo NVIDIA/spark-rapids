@@ -20,7 +20,7 @@ from marks import incompat
 from spark_session import is_before_spark_313, is_before_spark_330, is_spark_330_or_later, is_databricks104_or_later, is_spark_340_or_later
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
-from pyspark.sql.functions import array_contains, array_remove, col, element_at, lit
+from pyspark.sql.functions import array_contains, col, element_at, lit
 
 # max_val is a little larger than the default max size(20) of ArrayGen
 # so we can get the out-of-bound indices.
