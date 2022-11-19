@@ -1050,7 +1050,7 @@ case class GpuArrayRemove(left: Expression, right: Expression) extends GpuBinary
         rhsIsNull.ifElse(nullList, lhs.getBase)
       }
     }
-    // Repeat every entry in rhs n times where n is the number of elements in the corresponding row in lhs
+    // Repeat every entry in rhs n times where n is number of elements in corresponding row in lhs
     val repeatedRhs = withResource(GpuScalar.from(0, DataTypes.IntegerType)) { zero =>
       withResource(lhsWithNull.countElements) { counts =>
         // Replace null count with 0
@@ -1065,8 +1065,11 @@ case class GpuArrayRemove(left: Expression, right: Expression) extends GpuBinary
       withResource(lhsWithNull.getListOffsetsView) { offSets =>
         withResource(lhsWithNull.getChildColumnView(0)) { flattenLhs =>
           withResource(repeatedRhs) { flattenRhs =>
+            // Element-wise comparison
             val flattenBoolMask = flattenLhs.equalToNullAware(flattenRhs)
-            val boolMaskWithNan = if (flattenLhs.getType == DType.FLOAT32 || flattenLhs.getType == DType.FLOAT64) {
+            // NaN comparison for arrays of float or double type
+            val boolMaskWithNan = if (flattenLhs.getType == DType.FLOAT32 || 
+                                      flattenLhs.getType == DType.FLOAT64) {
               withResource(flattenLhs.isNan) { lhsNan =>
                 withResource(flattenRhs.isNan) { rhsNan =>
                   withResource(lhsNan.and(rhsNan)) { lhsNanAndRhsNan =>
@@ -1077,11 +1080,12 @@ case class GpuArrayRemove(left: Expression, right: Expression) extends GpuBinary
                 }
               }
             } else flattenBoolMask
-            withResource(boolMaskWithNan) { boolMaskWithNan=>
-              withResource(boolMaskWithNan.not){ boolMaskToKeep =>
-                withResource(boolMaskToKeep.makeListFromOffsets(lhs.getRowCount, offSets)) { boolMask =>
-                  // GpuColumnVector.debug("boolMask", boolMask)
-                  lhsWithNull.applyBooleanMask(boolMask)
+            withResource(boolMaskWithNan) { boolMaskWithNan =>
+              // Negation of the mask shows which elements to keep
+              withResource(boolMaskWithNan.not){ boolMaskKeep =>
+                val boolMaskList = boolMaskKeep.makeListFromOffsets(lhs.getRowCount, offSets)
+                withResource(boolMaskList) { boolMaskList =>
+                  lhsWithNull.applyBooleanMask(boolMaskList)
                 }
               }
             }
