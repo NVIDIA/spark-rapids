@@ -2978,8 +2978,8 @@ object GpuOverrides extends Logging {
       "Substring operator",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY,
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY),
-          ParamCheck("pos", TypeSig.lit(TypeEnum.INT), TypeSig.INT),
-          ParamCheck("len", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
+          ParamCheck("pos", TypeSig.INT, TypeSig.INT),
+          ParamCheck("len", TypeSig.INT, TypeSig.INT))),
       (in, conf, p, r) => new TernaryExprMeta[Substring](in, conf, p, r) {
         override def convertToGpu(
             column: Expression,
