@@ -22,16 +22,16 @@ import com.nvidia.spark.rapids.shims.{ShimBinaryExpression, ShimQuaternaryExpres
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
+import org.apache.spark.serializer.JavaSerializer
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.analysis.ResolveTimeZone
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.serializer.JavaSerializer
-import org.apache.spark.sql.catalyst.analysis.ResolveTimeZone
 
-/**
-  * This trait enables expressions that might conditionally be evaluated on a row-basis (ie CPU)
-  * within the context of GPU operation 
-  */
+/*
+ * This trait enables expressions that might conditionally be evaluated on a row-basis (ie CPU)
+ * within the context of GPU operation 
+ */
 trait GpuWrappedRowBasedExpression[SparkExpr <: Expression]
     extends GpuExpression
     with Logging { 
@@ -88,6 +88,7 @@ trait GpuWrappedRowBasedExpression[SparkExpr <: Expression]
           val newChildren = childTypes.zip(row.toSeq(childTypes)).map { case (dt, value) =>
             Literal.create(value, dt)
           }
+          logWarning(s"new children: $newChildren")
           retRow.update(0, evalRow(newChildren, row))
           retConverter.append(retRow, 0, builder)
         }

@@ -867,8 +867,9 @@ def test_rlike_both_gpu_and_row_based():
 def test_regexp_replace_pos_two_or_more():
     gen = mk_str_gen('[abcd]{0,4}')
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, gen).selectExpr(
-            'regexp_replace(a, "ab+", "foo", 2)',
+        lambda spark: unary_op_df(spark, gen, length=10).selectExpr(
+            'a',
+            # 'regexp_replace(a, "ab+", "foo", 2)',
             'regexp_replace(a, "[a-z]", "foo", 3)',
             'regexp_replace(a, "[c]+", "foo", 2)',
             'regexp_replace(a, "[cd]", "foo", 3)',
@@ -887,6 +888,21 @@ def test_regexp_extract_lookahead():
             'regexp_extract(a, "a(=b)(cd)", 1)',
             'regexp_extract(a, "a(!b)(c)", 1)',
             'regexp_extract(a, "a(!b)(cd)", 1)'
+        ),
+        conf={
+            'spark.rapids.sql.regexp.enabled': 'true',
+            'spark.rapids.sql.expressions.rowBasedEval.enabled': 'true'
+        }
+    )
+
+def test_split_lookahead():
+    gen = mk_str_gen('[abcd]{0,10}')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'split(a, "a(=b)", 1)',
+            'split(a, "a(=b)", 2)',
+            'split(a, "a(!b)", 5)',
+            'split(a, "a(!b)", 3)'
         ),
         conf={
             'spark.rapids.sql.regexp.enabled': 'true',

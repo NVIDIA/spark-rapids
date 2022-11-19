@@ -972,8 +972,8 @@ object GpuRegExpUtils {
       if (meta.conf.isCpuRowBasedEnabled) {
         meta.useRowFallback = true
       } else {
-        meta.willNotWorkOnGpu(s"estimated memory needed for regular expression exceeds the maximum." +
-          s" Set ${RapidsConf.REGEXP_MAX_STATE_MEMORY_BYTES} to change it.")
+        meta.willNotWorkOnGpu(s"estimated memory needed for regular expression exceeds the maximum."
+          + s" Set ${RapidsConf.REGEXP_MAX_STATE_MEMORY_BYTES} to change it.")
       }
     }
   }
@@ -1056,7 +1056,8 @@ class GpuRLikeMeta(
         GpuRLikeWithFallback(lhs, rhs)
       } else {
         GpuRLike(lhs, rhs, pattern.getOrElse(
-          throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern")))
+          throw new IllegalStateException(
+              "Expression has not been tagged with cuDF regex pattern")))
       }
     }
 }

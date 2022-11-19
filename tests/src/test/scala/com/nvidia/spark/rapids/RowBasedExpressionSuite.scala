@@ -19,8 +19,8 @@ package com.nvidia.spark.rapids
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{Dataset, Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.rapids._
 
 class RowBasedExpressionSuite extends SparkQueryCompareTestSuite {
 
@@ -65,7 +65,7 @@ class RowBasedExpressionSuite extends SparkQueryCompareTestSuite {
       val gpuPlan = df.queryExecution.executedPlan
       
       val project = gpuPlan.find {
-        case GpuProjectExec(projectList, child) =>
+        case GpuProjectExec(projectList, child, _) =>
           val boundRefs = GpuBindReferences.bindGpuReferences(projectList, child.output)
           boundRefs.exists {
             case GpuAlias(c, _) =>
@@ -87,7 +87,7 @@ class RowBasedExpressionSuite extends SparkQueryCompareTestSuite {
       val gpuPlan = df.queryExecution.executedPlan
 
       val project = gpuPlan.find {
-        case GpuProjectExec(projectList, child) =>
+        case GpuProjectExec(projectList, child, _) =>
           val boundRefs = GpuBindReferences.bindGpuReferences(projectList, child.output)
           boundRefs.exists {
             case GpuAlias(c, _) =>
@@ -109,7 +109,7 @@ class RowBasedExpressionSuite extends SparkQueryCompareTestSuite {
           .selectExpr("id RLIKE \"(!\\\\w+)\\\\d+([0-5]{0,2})\"", "id RLIKE \"\\\\d+([0-5]{0,2})\"")
       val gpuPlan = df.queryExecution.executedPlan
       val project = gpuPlan.find {
-        case GpuProjectExec(projectList, child) =>
+        case GpuProjectExec(projectList, child, _) =>
           val boundRefs = GpuBindReferences.bindGpuReferences(projectList, child.output)
           val fallback = boundRefs.exists {
             case GpuAlias(c, _) =>
@@ -153,7 +153,7 @@ class RowBasedExpressionSuite extends SparkQueryCompareTestSuite {
   testSparkResultsAreEqual("regexp_replace execution on CPU while holding the GPU semaphore", 
       simpleDF,
       conf = enableRowBasedExpression) { frame =>
-    frame.selectExpr("regexp_replace(id, \"(!\\\\w+)\\\\d+([0-5]{0,2})\", \"foo\", 2)")
+    frame.selectExpr("regexp_replace(id, \"\\\\d+([0-5]{0,2})\", \"foo\", 2)")
   }
 
   testSparkResultsAreEqual("split execution on CPU while holding the GPU semaphore", 
