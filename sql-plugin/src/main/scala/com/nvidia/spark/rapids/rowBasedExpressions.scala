@@ -88,7 +88,6 @@ trait GpuWrappedRowBasedExpression[SparkExpr <: Expression]
           val newChildren = childTypes.zip(row.toSeq(childTypes)).map { case (dt, value) =>
             Literal.create(value, dt)
           }
-          logWarning(s"new children: $newChildren")
           retRow.update(0, evalRow(newChildren, row))
           retConverter.append(retRow, 0, builder)
         }

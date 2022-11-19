@@ -254,6 +254,7 @@ def test_re_replace_repetition():
                 'REGEXP_REPLACE(a, "A{0,}", "PROD")',
                 'REGEXP_REPLACE(a, "T?E?", "PROD")',
                 'REGEXP_REPLACE(a, "A*", "PROD")',
+                'REGEXP_REPLACE(a, "A+", "PROD")',
                 'REGEXP_REPLACE(a, "A{0,5}", "PROD")',
                 'REGEXP_REPLACE(a, "(A*)", "PROD")',
                 'REGEXP_REPLACE(a, "(((A*)))", "PROD")',
@@ -868,8 +869,7 @@ def test_regexp_replace_pos_two_or_more():
     gen = mk_str_gen('[abcd]{0,4}')
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen, length=10).selectExpr(
-            'a',
-            # 'regexp_replace(a, "ab+", "foo", 2)',
+            'regexp_replace(a, "ab+", "foo", 2)',
             'regexp_replace(a, "[a-z]", "foo", 3)',
             'regexp_replace(a, "[c]+", "foo", 2)',
             'regexp_replace(a, "[cd]", "foo", 3)',
