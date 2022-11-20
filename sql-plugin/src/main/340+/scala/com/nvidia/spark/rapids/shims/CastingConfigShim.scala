@@ -16,13 +16,16 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.catalyst.expressions.{CastBase, Expression}
+import org.apache.spark.sql.catalyst.expressions.{Cast, Expression}
 
-object CastIgnoreTimeZoneShim {
+object CastingConfigShim {
   /** Remove TimeZoneId for Cast if needsTimeZone return false. */
   def ignoreTimeZone(e: Expression): Expression = e match {
-    case c: CastBase if c.timeZoneId.nonEmpty && !c.needsTimeZone =>
+    case c: Cast if c.timeZoneId.nonEmpty && !c.needsTimeZone =>
       c.withTimeZone(null)
     case _ => e
   }
+
+  // Use public member of Cast class rather than reflection
+  def publicAnsiEnabled(e: Expression): Boolean = e.asInstanceOf[Cast].ansiEnabled
 }

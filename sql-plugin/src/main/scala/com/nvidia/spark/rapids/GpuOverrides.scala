@@ -2958,8 +2958,8 @@ object GpuOverrides extends Logging {
       "Substring operator",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY,
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY),
-          ParamCheck("pos", TypeSig.lit(TypeEnum.INT), TypeSig.INT),
-          ParamCheck("len", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
+          ParamCheck("pos", TypeSig.INT, TypeSig.INT),
+          ParamCheck("len", TypeSig.INT, TypeSig.INT))),
       (in, conf, p, r) => new TernaryExprMeta[Substring](in, conf, p, r) {
         override def convertToGpu(
             column: Expression,
@@ -4296,8 +4296,8 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         true
       case f: FileSourceScanExec =>
         val checkDeltaFunc = (name: String) => if (detectDeltaCheckpoint) {
-          name.contains("/_delta_log/") && name.endsWith(".json") ||
-            (name.endsWith(".parquet") && new Path(name).getName().contains("checkpoint"))
+          name.contains("/_delta_log/") && (name.endsWith(".json") ||
+            (name.endsWith(".parquet") && new Path(name).getName().contains("checkpoint")))
         } else {
           name.contains("/_delta_log/") && name.endsWith(".json")
         }

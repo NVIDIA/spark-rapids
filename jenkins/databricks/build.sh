@@ -21,7 +21,7 @@ set -e
 ## can be overwritten by shell variables, e.g. "BASE_SPARK_VERSION=3.1.2 MVN_OPT=-DskipTests bash build.sh"
 
 # default SPARK Version
-DEFAULT_SPARK_BASE_VERSION="3.1.2"
+DEFAULT_SPARK_BASE_VERSION=$(< /databricks/spark/VERSION)
 
 # list of supported sparks
 SUPPORTED_SPARKS=("${DEFAULT_SPARK_BASE_VERSION}" "3.2.1" "3.3.0")

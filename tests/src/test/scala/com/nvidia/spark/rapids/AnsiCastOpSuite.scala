@@ -21,7 +21,7 @@ import java.time.DateTimeException
 
 import scala.util.Random
 
-import com.nvidia.spark.rapids.shims.SparkShimImpl
+import com.nvidia.spark.rapids.shims.{CastingConfigShim, SparkShimImpl}
 
 import org.apache.spark.{SparkConf, SparkException}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
@@ -833,14 +833,18 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     }
 
     def isAnsiCast(c: Expression): Boolean = {
-      // prior to Spark 3.4.0 we could use CastBase as argument type, but starting 3.4.0 the type is
-      // the case class Cast.
       // prior to Spark 3.3.0 we could use toString to see if the name of
       // the cast was "cast" or "ansi_cast" but now the name is always "cast"
       // so we need to use reflection to access the protected field "ansiEnabled"
-      val m = c.getClass.getDeclaredField("ansiEnabled")
-      m.setAccessible(true)
-      m.getBoolean(c)
+      // starting in Spark 3.4.0, ansiEnabled was moved to a public field and
+      // "cast" + "ansi_cast" were merged
+      if (cmpSparkVersion(3, 4, 0) < 0) {
+        val m = c.getClass.getDeclaredField("ansiEnabled")
+        m.setAccessible(true)
+        m.getBoolean(c)
+      } else {
+        CastingConfigShim.publicAnsiEnabled(c)
+      }
     }
 
     def isAnsiCastInTableInsert(expr: Expression, cpuSession: Boolean): Boolean = {
