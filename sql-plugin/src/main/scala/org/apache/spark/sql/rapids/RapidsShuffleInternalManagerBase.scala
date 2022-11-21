@@ -697,6 +697,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
               // TODO - is this the same size as acquired?
               logWarning(s"actually memory used is $mem, releasing it")
               limiter.release(mem)
+              popFetchedIfAvailable()
             case _ => 0 // TODO: do we need to handle other types here?
           }
 
