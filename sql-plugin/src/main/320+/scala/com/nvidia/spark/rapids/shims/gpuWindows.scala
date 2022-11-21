@@ -19,7 +19,8 @@ package com.nvidia.spark.rapids.shims
 import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuLiteral, GpuSpecifiedWindowFrameMetaBase, GpuWindowExpressionMetaBase, ParsedBoundary, RapidsConf, RapidsMeta}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, SpecifiedWindowFrame, WindowExpression}
-import org.apache.spark.sql.types._
+import org.apache.spark.sql.rapids.shims.Spark32XShimsUtils
+import org.apache.spark.sql.types.{DataType, DayTimeIntervalType}
 
 class GpuSpecifiedWindowFrameMeta(
     windowFrame: SpecifiedWindowFrame,
@@ -60,14 +61,7 @@ object GpuWindowUtil {
    * @return true to valid, false to invalid
    */
   def isValidRangeFrameType(orderSpecType: DataType, ft: DataType): Boolean = {
-    (orderSpecType, ft) match {
-      case (DateType, IntegerType) => true
-      case (DateType, _: YearMonthIntervalType) => true
-      case (TimestampType | TimestampNTZType, CalendarIntervalType) => true
-      case (TimestampType | TimestampNTZType, _: YearMonthIntervalType) => true
-      case (TimestampType | TimestampNTZType, _: DayTimeIntervalType) => true
-      case (a, b) => a == b
-    }
+    Spark32XShimsUtils.isValidRangeFrameType(orderSpecType, ft)
   }
 
   def getRangeBoundaryValue(boundary: Expression): ParsedBoundary = boundary match {
