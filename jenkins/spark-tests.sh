@@ -28,7 +28,7 @@ case ${arch} in
     aarch64|arm64)
         cpu_arch='arm64';;
     *)
-      echo "Unsupport CPU architecture: ${arch}"; exit 1;;
+      echo "Unsupported CPU architecture: ${arch}"; exit 1;;
 esac
 echo "cpu_arch is ${cpu_arch}"
 
