@@ -59,6 +59,18 @@ case ${arch} in
 esac
 echo "cpu_arch is ${cpu_arch}"
 
+# PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
+# regular: noSnapshots + snapshots
+# pre-release: noSnapshots only
+# arm-base: noSnapshots without cdh shims
+
+# Change PHASE_TYPE to 'arm-base' when building on arm CPU
+if [ "$cpu_arch" == "arm64" ]; then
+    PHASE_TYPE="arm-base"
+else
+    PHASE_TYPE=${PHASE_TYPE:-"regular"}
+fi
+
 # Spark shim versions
 # get Spark shim versions from pom
 function set_env_var_SPARK_SHIM_VERSIONS_ARR() {
@@ -77,11 +89,12 @@ SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 set_env_var_SPARK_SHIM_VERSIONS_ARR -PsnapshotOnly
 SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 
-# PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
-# regular: noSnapshots + snapshots
-# pre-release: noSnapshots only
-PHASE_TYPE=${PHASE_TYPE:-"regular"}
 case $PHASE_TYPE in
+    # Build noSnapshots without cdh shims on the arm CPU
+    arm-base)
+        SPARK_SHIM_VERSIONS=(`echo "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]/3*cdh/}"`)
+        ;;
+
     # SPARK_SHIM_VERSIONS will be used for nightly artifact build
     pre-release)
         SPARK_SHIM_VERSIONS=("${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]}")
