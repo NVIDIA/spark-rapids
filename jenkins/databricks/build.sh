@@ -86,7 +86,16 @@ initialize()
     SPARK_PLUGIN_JAR_VERSION=$($MVN_CMD help:evaluate -q -pl dist -Dexpression=project.version -DforceStdout)
     SCALA_VERSION=$($MVN_CMD help:evaluate -q -pl dist -Dexpression=scala.binary.version -DforceStdout)
     CUDA_VERSION=$($MVN_CMD help:evaluate -q -pl dist -Dexpression=cuda.version -DforceStdout)
-    RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
+    # set the architecture for the current build.
+    arch=$(uname -m)
+    case ${arch} in
+        x86_64|amd64)
+            cpu_arch='amd64';;
+        aarch64|arm64)
+            cpu_arch='arm64';;
+        *) echo "Unsupported CPU architecture: ${arch}"; exit 1;;
+    esac
+    RAPIDS_BUILT_JAR=rapids-4-spark-${cpu_arch}_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
 
     # export 'M2DIR' so that shims can get the correct Spark dependency info
     export M2DIR=/home/ubuntu/.m2/repository
@@ -102,6 +111,7 @@ initialize()
     echo "workspace                                     : ${WORKSPACE}"
     echo "Scala version                                 : ${SCALA_VERSION}"
     echo "CUDA version                                  : ${CUDA_VERSION}"
+    echo "Architecture                                  : ${cpu_arch}"
     echo "Rapids build jar                              : ${RAPIDS_BUILT_JAR}"
     echo "Build Version                                 : ${BUILDVER}"
     printf '+ %*s +\n' 100 '' | tr ' ' =
