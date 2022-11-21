@@ -48,11 +48,22 @@ SPARK_REPO=${SPARK_REPO:-"$URM_URL"}
 echo "CUDF_VER: $CUDF_VER, CUDA_CLASSIFIER: $CUDA_CLASSIFIER, PROJECT_VER: $PROJECT_VER \
     SPARK_VER: $SPARK_VER, SCALA_BINARY_VER: $SCALA_BINARY_VER"
 
+arch=$(uname -m)
+case ${arch} in
+    x86_64|amd64)
+        cpu_arch='amd64';;
+    aarch64|arm64)
+        cpu_arch='arm64';;
+    *)
+      echo "Unsupported CPU architecture: ${arch}"; exit 1;;
+esac
+echo "cpu_arch is ${cpu_arch}"
+
 # Spark shim versions
 # get Spark shim versions from pom
 function set_env_var_SPARK_SHIM_VERSIONS_ARR() {
     PROFILE_OPT=$1
-    SPARK_SHIM_VERSIONS_STR=$(mvn -B help:evaluate -q -pl dist $PROFILE_OPT -Dexpression=included_buildvers -DforceStdout)
+    SPARK_SHIM_VERSIONS_STR=$(mvn -B help:evaluate -q -pl dist $PROFILE_OPT -Dexpression=included_buildvers -DforceStdout -Dcpu_arch=${cpu_arch})
     SPARK_SHIM_VERSIONS_STR=$(echo $SPARK_SHIM_VERSIONS_STR)
     IFS=", " <<< $SPARK_SHIM_VERSIONS_STR read -r -a SPARK_SHIM_VERSIONS_ARR
 }

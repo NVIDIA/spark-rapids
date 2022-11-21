@@ -155,7 +155,7 @@
          </dependency>
         <dependency>
             <groupId>com.nvidia</groupId>
-            <artifactId>rapids-4-spark_${scala.binary.version}</artifactId>
+            <artifactId>rapids-4-spark-${cpu_arch}_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
             <classifier>${cuda.version}</classifier>
             <scope>provided</scope>

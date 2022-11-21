@@ -662,6 +662,11 @@
             with the ones deployed to a remote Maven repo
         -->
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
+        <!--
+            Build on x86_64/amd64 hosts to aggregate rapids-4-spark dist jar with -Dcpu_arch=amd64
+            Build on arm64/aarch64 hosts to aggregate rapids-4-spark dist jar with -Dcpu_arch=arm64
+        -->
+        <cpu_arch>amd64</cpu_arch>
     </properties>
 
     <dependencyManagement>
