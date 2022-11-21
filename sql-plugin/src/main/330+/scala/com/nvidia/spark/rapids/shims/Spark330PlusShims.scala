@@ -40,15 +40,6 @@ trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
 
   override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = null
 
-  override def getFileScanRDD(
-      sparkSession: SparkSession,
-      readFunction: PartitionedFile => Iterator[InternalRow],
-      filePartitions: Seq[FilePartition],
-      readDataSchema: StructType,
-      metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
-    new FileScanRDD(sparkSession, readFunction, filePartitions, readDataSchema, metadataColumns)
-  }
-
   override def getParquetFilters(
       schema: MessageType,
       pushDownDate: Boolean,

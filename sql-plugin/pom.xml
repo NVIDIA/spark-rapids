@@ -571,6 +571,7 @@
 
                                         <!-- uniquely 330+ -->
                                         <include name="330+/*"/>
+                                        <include name="330+-nondb/*"/>
                                         <include name="330+-noncdh/*"/>
                                         <include name="330until340/*"/>
                                     </patternset>
