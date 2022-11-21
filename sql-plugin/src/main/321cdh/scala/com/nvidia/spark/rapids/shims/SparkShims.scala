@@ -39,4 +39,6 @@ object SparkShimImpl extends Spark321PlusShims
       metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
     new FileScanRDD(sparkSession, readFunction, filePartitions)
   }
+
+  override def reproduceEmptyStringBug: Boolean = true
 }

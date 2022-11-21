@@ -59,4 +59,6 @@ object SparkShimImpl extends Spark320PlusShims
   }
 
   override def isCastingStringToNegDecimalScaleSupported: Boolean = false
+
+  override def reproduceEmptyStringBug: Boolean = true
 }

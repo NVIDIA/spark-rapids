@@ -471,4 +471,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
     override def convertToGpu(): GpuExec =
       GpuBatchScanExec(p.output, childScans.head.convertToGpu(), runtimeFilters)
   }
+
+  override def reproduceEmptyStringBug: Boolean = false
 }

@@ -413,4 +413,6 @@ abstract class Spark31XShims extends Spark31Xuntil33XShims with Logging {
     // the [[AvoidAdaptiveTransitionToRow]] operator here
     AvoidAdaptiveTransitionToRow(GpuRowToColumnarExec(a, goal))
   }
+
+  override def reproduceEmptyStringBug: Boolean = false
 }
