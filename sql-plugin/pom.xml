@@ -652,6 +652,12 @@
                                     <include name="321db/*"/>
                                 </dirset>
                             </pathconvert>
+                            <pathconvert property="spark330db.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <include name="post320-treenode/*"/>
+                                    <include name="330db/*"/>
+                                </dirset>
+                            </pathconvert>
                         </target>
                     </configuration>
                 </execution>
