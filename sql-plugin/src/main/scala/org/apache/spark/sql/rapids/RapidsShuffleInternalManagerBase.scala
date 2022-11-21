@@ -1336,10 +1336,9 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
           }
         }
       case _ if taskIdMapsForShuffle.size() > 0 =>
-        logError("unregisterShuffle called with " +
-          s"unexpected resolver ${shuffleBlockResolver} and ${taskIdMapsForShuffle.size()} " +
-          s"blocks data to clean!")
-        taskIdMapsForShuffle.clear()
+        throw new IllegalStateException(
+          "unregisterShuffle called with unexpected resolver " +
+          s"$shuffleBlockResolver and blocks left to be cleaned")
     }
     wrapped.unregisterShuffle(shuffleId)
   }
