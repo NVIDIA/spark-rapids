@@ -292,9 +292,12 @@ set_dep_jars()
     fi
 }
 
-# Install dependency jars to MVN repository and build the RAPIDS plugin using mvn package command.
-run_mvn_cmd()
+# Install dependency jars to MVN repository.
+install_dependencies()
 {
+    set_sw_versions
+    set_jars_prefixes
+    set_dep_jars
     # Please note we are installing all of these dependencies using the Spark version
     # (SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS) to make it easier to specify the dependencies in
     # the pom files
@@ -307,21 +310,16 @@ run_mvn_cmd()
             -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
             -Dpackaging=jar
     done
-
-    # Build the RAPIDS plugin by running package command for databricks
-    mvn -B -Ddatabricks -Dbuildver=$BUILDVER clean package -DskipTests $MVN_OPT
 }
 
 ##########################
-# Main Script starts here
+# Main script starts here
 ##########################
 
 initialize
-set_sw_versions
-set_jars_prefixes
-set_dep_jars
-run_mvn_cmd
+install_dependencies
+# Build the RAPIDS plugin by running package command for databricks
+mvn -B -Ddatabricks -Dbuildver=$BUILDVER clean package -DskipTests $MVN_OPT
 
-set -x
 cd /home/ubuntu
 tar -zcf spark-rapids-built.tgz spark-rapids
