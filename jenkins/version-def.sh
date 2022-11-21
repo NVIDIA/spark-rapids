@@ -48,28 +48,25 @@ SPARK_REPO=${SPARK_REPO:-"$URM_URL"}
 echo "CUDF_VER: $CUDF_VER, CUDA_CLASSIFIER: $CUDA_CLASSIFIER, PROJECT_VER: $PROJECT_VER \
     SPARK_VER: $SPARK_VER, SCALA_BINARY_VER: $SCALA_BINARY_VER"
 
-arch=$(uname -m)
-case ${arch} in
-    x86_64|amd64)
-        cpu_arch='amd64';;
-    aarch64|arm64)
-        cpu_arch='arm64';;
-    *)
-      echo "Unsupported CPU architecture: ${arch}"; exit 1;;
-esac
-echo "cpu_arch is ${cpu_arch}"
 
 # PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
 # regular: noSnapshots + snapshots
 # pre-release: noSnapshots only
 # arm-base: noSnapshots without cdh shims
+PHASE_TYPE=${PHASE_TYPE:-"regular"}
 
-# Change PHASE_TYPE to 'arm-base' when building on arm CPU
-if [ "$cpu_arch" == "arm64" ]; then
-    PHASE_TYPE="arm-base"
-else
-    PHASE_TYPE=${PHASE_TYPE:-"regular"}
-fi
+arch=$(uname -m)
+case ${arch} in
+    x86_64|amd64)
+        cpu_arch='amd64';;
+    aarch64|arm64)
+        cpu_arch='arm64'
+        PHASE_TYPE='arm-base'
+        ;;
+    *)
+      echo "Unsupported CPU architecture: ${arch}"; exit 1;;
+esac
+echo "cpu_arch is ${cpu_arch}"
 
 # Spark shim versions
 # get Spark shim versions from pom
