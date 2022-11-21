@@ -22,7 +22,7 @@ set -ex
 
 SPARKSRCTGZ=${SPARKSRCTGZ:-''}
 # version of Apache Spark we are building against
-BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-'3.1.2'}
+BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-$(< /databricks/spark/VERSION)}
 BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=${BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS:-$BASE_SPARK_VERSION}
 ## '-Pfoo=1,-Dbar=2,...' to '-Pfoo=1 -Dbar=2 ...'
 MVN_OPT=${MVN_OPT//','/' '}
@@ -60,7 +60,18 @@ SPARK_PLUGIN_JAR_VERSION=`$MVN_CMD help:evaluate -q -pl dist -Dexpression=projec
 SCALA_VERSION=`$MVN_CMD help:evaluate -q -pl dist -Dexpression=scala.binary.version -DforceStdout`
 CUDA_VERSION=`$MVN_CMD help:evaluate -q -pl dist -Dexpression=cuda.version -DforceStdout`
 
-RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
+arch=$(uname -m)
+case ${arch} in
+    x86_64|amd64)
+        cpu_arch='amd64';;
+    aarch64|arm64)
+        cpu_arch='arm64';;
+    *)
+      echo "Unsupported CPU architecture: ${arch}"; exit 1;;
+esac
+echo "cpu_arch is ${cpu_arch}"
+
+RAPIDS_BUILT_JAR=rapids-4-spark-${cpu_arch}_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
 
 echo "Scala version is: $SCALA_VERSION"
 # export 'M2DIR' so that shims can get the correct Spark dependency info

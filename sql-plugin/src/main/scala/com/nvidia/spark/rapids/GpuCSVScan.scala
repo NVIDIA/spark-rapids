@@ -295,7 +295,7 @@ class CSVPartitionReader(
   def buildCsvOptions(
       parsedOptions: CSVOptions,
       schema: StructType,
-      hasHeader: Boolean): cudf.CSVOptions = {
+      hasHeader: Boolean): cudf.CSVOptions.Builder = {
     val builder = cudf.CSVOptions.builder()
     builder.withDelim(parsedOptions.delimiter.charAt(0))
     builder.hasHeader(hasHeader)
@@ -304,7 +304,7 @@ class CSVPartitionReader(
     builder.withComment(parsedOptions.comment)
     builder.withNullValue(parsedOptions.nullValue)
     builder.includeColumn(schema.fields.map(_.name): _*)
-    builder.build
+    builder
   }
 
   /**
@@ -325,7 +325,7 @@ class CSVPartitionReader(
       isFirstChunk: Boolean): Table = {
     val hasHeader = isFirstChunk && parsedOptions.headerFlag
     val csvOpts = buildCsvOptions(parsedOptions, readDataSchema, hasHeader)
-    Table.readCSV(cudfSchema, csvOpts, dataBuffer, 0, dataSize)
+    Table.readCSV(cudfSchema, csvOpts.build, dataBuffer, 0, dataSize)
   }
 
   /**

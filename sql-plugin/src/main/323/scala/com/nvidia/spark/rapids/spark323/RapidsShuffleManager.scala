@@ -14,15 +14,13 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.spark323
 
-import org.apache.spark.sql.catalyst.expressions.{Cast, Expression}
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.rapids.shims.spark323.ProxyRapidsShuffleInternalManager
 
-object CastIgnoreTimeZoneShim {
-  /** Remove TimeZoneId for Cast if needsTimeZone return false. */
-  def ignoreTimeZone(e: Expression): Expression = e match {
-    case c: Cast if c.timeZoneId.nonEmpty && !c.needsTimeZone =>
-      c.withTimeZone(null)
-    case _ => e
-  }
+/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
+sealed class RapidsShuffleManager(
+    conf: SparkConf,
+    isDriver: Boolean) extends ProxyRapidsShuffleInternalManager(conf, isDriver) {
 }
