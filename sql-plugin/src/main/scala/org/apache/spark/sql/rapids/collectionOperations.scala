@@ -1102,8 +1102,20 @@ case class GpuArrayRemove(left: Expression, right: Expression) extends GpuBinary
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, rhs.dataType)) { right =>
-      doColumnar(lhs, right)
+    val lhsBase = lhs.getBase
+    withResource(lhsBase.getListOffsetsView) { offSets =>
+      val boolMaskKeep = withResource(lhsBase.getChildColumnView(0)){ lhsFlatten =>
+        withResource(GpuColumnVector.from(rhs, 1, rhs.dataType)) { rhsColumn =>
+          withResource(lhsFlatten.contains(rhsColumn.getBase)) { boolMask =>
+            boolMask.not
+          }
+        }
+      }
+      withResource(boolMaskKeep) { boolMaskKeep =>
+        withResource(boolMaskKeep.makeListFromOffsets(lhs.getRowCount, offSets)) { boolMaskList =>
+          lhsBase.applyBooleanMask(boolMaskList)
+        }
+      }
     }
   }
 

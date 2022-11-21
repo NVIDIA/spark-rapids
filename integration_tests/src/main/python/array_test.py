@@ -650,12 +650,15 @@ def test_array_remove(data_gen):
 def test_array_remove_before_spark313(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
-         ('b', data_gen)],
+        #  ('b', data_gen)],
+         ('b', null_gen)],
          nullable=False)
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen).selectExpr(
             'array_remove(a, b)',
+            'array_remove(a, b[0])',
+            'array_remove(a, null)',
             'array_remove(array(1, 2, 2, 3, null), null)',
             'array_remove(array(1, 2, 2, 3, null), 2)')
     )
