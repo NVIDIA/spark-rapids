@@ -562,6 +562,12 @@
                                     <include name="322/*"/>
                                 </dirset>
                             </pathconvert>
+                            <pathconvert property="spark323.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <patternset refid="spark321+.pattern"/>
+                                    <include name="323/*"/>
+                                </dirset>
+                            </pathconvert>
                             <pathconvert property="spark330.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
                                     <patternset id="spark330+.pattern">
