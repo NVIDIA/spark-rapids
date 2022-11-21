@@ -24,6 +24,17 @@ elif [[ -z "$SPARK_HOME" ]];
 then
     >&2 echo "SPARK_HOME IS NOT SET CANNOT RUN PYTHON INTEGRATION TESTS..."
 else
+    arch=$(uname -m)
+    case ${arch} in
+        x86_64|amd64)
+            cpu_arch='amd64';;
+        aarch64|arm64)
+            cpu_arch='arm64';;
+        *)
+          echo "Unsupported CPU architecture: ${arch}"; exit 1;;
+    esac
+    echo "cpu_arch is ${cpu_arch}"
+
     echo "WILL RUN TESTS WITH SPARK_HOME: ${SPARK_HOME}"
     [[ ! -x "$(command -v zip)" ]] && { echo "fail to find zip command in $PATH"; exit 1; }
     # Spark 3.1.1 includes https://github.com/apache/spark/pull/31540
@@ -48,7 +59,7 @@ else
     # support alternate local jars NOT building from the source code
     if [ -d "$LOCAL_JAR_PATH" ]; then
         AVRO_JARS=$(echo "$LOCAL_JAR_PATH"/spark-avro*.jar)
-        PLUGIN_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark_*.jar)
+        PLUGIN_JARS=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark-${cpu_arch}_*.jar)
         if [ -f $(echo $LOCAL_JAR_PATH/parquet-hadoop*.jar) ]; then
             export INCLUDE_PARQUET_HADOOP_TEST_JAR=true
             PARQUET_HADOOP_TESTS=$(echo $LOCAL_JAR_PATH/parquet-hadoop*.jar)
@@ -71,7 +82,7 @@ else
         # Make sure we have Parquet version >= 1.12 in the dependency
         LOWEST_PARQUET_JAR=$(echo -e "$MIN_PARQUET_JAR\n$PARQUET_HADOOP_TESTS" | sort -V | head -1)
         export INCLUDE_PARQUET_HADOOP_TEST_JAR=$([[ "$LOWEST_PARQUET_JAR" == "$MIN_PARQUET_JAR" ]] && echo true || echo false)
-        PLUGIN_JARS=$(echo "$SCRIPTPATH"/../dist/target/rapids-4-spark_*.jar)
+        PLUGIN_JARS=$(echo "$SCRIPTPATH"/../dist/target/rapids-4-spark-${cpu_arch}_*.jar)
         # the integration-test-spark3xx.jar, should not include the integration-test-spark3xxtest.jar
         TEST_JARS=$(echo "$SCRIPTPATH"/target/rapids-4-spark-integration-tests*-$INTEGRATION_TEST_VERSION.jar)
     fi

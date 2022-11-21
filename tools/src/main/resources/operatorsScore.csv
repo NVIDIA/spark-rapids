@@ -35,6 +35,7 @@ FlatMapGroupsInPandasExec,1.2
 MapInPandasExec,1.2
 WindowInPandasExec,1.2
 WindowExec,3.0
+HiveTableScanExec,3.0
 Abs,4
 Acos,4
 Acosh,4
