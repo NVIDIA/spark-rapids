@@ -288,6 +288,7 @@ final class RapidsShuffleBlockFetcherIterator(
             buf.retain()
             remainingBlocks -= blockId
             blockOOMRetryCounts.remove(blockId)
+            logWarning(s"fetched block size ${buf.size}, remaining coutn is ${remainingBlocks.size}")
             results.put(new SuccessFetchResult(BlockId(blockId), infoMap(blockId)._2,
               address, infoMap(blockId)._1, buf, remainingBlocks.isEmpty))
             logDebug("remainingBlocks: " + remainingBlocks)
@@ -561,6 +562,7 @@ final class RapidsShuffleBlockFetcherIterator(
         shuffleMetrics.incLocalBlocksFetched(1)
         shuffleMetrics.incLocalBytesRead(buf.size)
         buf.retain()
+        logWarning(s"fetched local block size ${buf.size}")
         results.put(new SuccessFetchResult(blockId, mapIndex, blockManager.blockManagerId,
           buf.size(), buf, false))
       } catch {
@@ -750,6 +752,7 @@ final class RapidsShuffleBlockFetcherIterator(
     while (result == null) {
       val startFetchWait = System.nanoTime()
       result = results.take()
+      logWarning(s"results size is ${results.size}")
       val fetchWaitTime = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startFetchWait)
       shuffleMetrics.incFetchWaitTime(fetchWaitTime)
 

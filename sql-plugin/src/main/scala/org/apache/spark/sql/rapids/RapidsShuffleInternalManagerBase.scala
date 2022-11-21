@@ -669,9 +669,9 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
           if (futures.nonEmpty) {
             withResource(new NvtxRange("BatchWait", NvtxColor.CYAN)) { _ =>
               waitTimeStart = System.nanoTime()
+              logWarning(s"next called futures size is ${futures.size}")
               val pending = futures.dequeue().get // wait for one future
               waitTime += System.nanoTime() - waitTimeStart
-
               // if the future returned a block state, we have more work to do
               pending match {
                 case Some(leftOver@BlockState(_, _)) =>
@@ -692,14 +692,25 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
           // here while we wait.
           waitTimeStart = System.nanoTime()
           val res = queued.take()
+          res match {
+            case (_, cb: ColumnarBatch) =>
+              val mem = SerializedTableColumn.getMemoryUsed(cb)
+              // TODO - is this the same size as acquired?
+              logWarning(s"actually memory used is $mem, releasing it")
+              limiter.release(mem)
+            case _ => 0 // TODO: do we need to handle other types here?
+          }
+
           waitTime += System.nanoTime() - waitTimeStart
           res
         }
 
         val uncompressedSize = result match {
-          case (_, cb: ColumnarBatch) => SerializedTableColumn.getMemoryUsed(cb)
+          case (_, cb: ColumnarBatch) =>
+            SerializedTableColumn.getMemoryUsed(cb)
           case _ => 0 // TODO: do we need to handle other types here?
         }
+        logWarning(s"uncompressed size for this is ${uncompressedSize}")
 
         // the deserialization time is approximated by subtracting
         // time waiting for the fetch (`readBlockedTime`) from `fetchTime`
@@ -730,8 +741,10 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
         var didFit = true
         while (blockState.hasNext && didFit) {
           val batch = blockState.next()
+          logWarning(s"queueing another, size ${queued.size()} currentBatchSize ${currentBatchSize}")
           queued.offer(batch)
-          limiter.release(currentBatchSize)
+          // TODO try to only release what we have actually fetched
+          // limiter.release(currentBatchSize)
           // peek at the next batch
           currentBatchSize = blockState.getNextBatchSize
           didFit = limiter.acquire(currentBatchSize)
@@ -747,6 +760,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
     private def popFetchedIfAvailable(): Unit = {
       // If fetcherIterator is not exhausted, we try and get as many
       // ready results.
+      logWarning("popFetchedIfAvailable")
       if (pendingIts.nonEmpty) {
         var continue = true
         while(pendingIts.nonEmpty && continue) {
@@ -754,6 +768,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
           // check if we can handle the head batch now
           if (limiter.acquire(blockState.getNextBatchSize)) {
             // kick off deserialization task
+            logWarning("pendingIts limiter acquired")
             pendingIts.dequeue()
             deserializeTask(blockState)
           } else {
@@ -770,6 +785,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
             // yet, we need to block on the fetch for this case so we have
             // something to return.
             var amountToDrain = Math.max(fetcherIterator.resultCount, 1)
+            logWarning(s"fetcher iterator amount to drain is ${amountToDrain}")
             val fetchTimeStart = System.nanoTime()
 
             // We drain fetched results. That is, we push decode tasks
@@ -782,17 +798,23 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
               // fetch block time accounts for time spent waiting for streams.next()
               val readBlockedStart = System.nanoTime()
               val (blockId: BlockId, inputStream) = fetcherIterator.next()
+              logWarning("calling next on fetcherIterator")
               readBlockedTime += System.nanoTime() - readBlockedStart
 
               val deserStream = serializerInstance.deserializeStream(inputStream)
               val batchIter = deserStream.asKeyValueIterator.asInstanceOf[SerializedBatchIterator]
               val blockState = BlockState(blockId, batchIter)
               // get the next known batch size (there could be multiple batches)
-              if (limiter.acquire(blockState.getNextBatchSize)) {
+              val nextSize = blockState.getNextBatchSize
+              if (limiter.acquire(nextSize)) {
+                logWarning(s"limiter acquired another $nextSize")
                 // we can fit at least the first batch in this block
                 // kick off a deserialization task
                 deserializeTask(blockState)
               } else {
+                logWarning(s"limiter did not acquire another $nextSize futures " +
+                  s"size is ${futures.size}")
+
                 // first batch didn't fit, put iterator aside and stop asking for results
                 // from the fetcher
                 pendingIts.enqueue(blockState)
