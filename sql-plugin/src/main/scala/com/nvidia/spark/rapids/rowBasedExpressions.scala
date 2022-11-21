@@ -21,6 +21,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{ShimBinaryExpression, ShimQuaternaryExpression, ShimTernaryExpression, ShimUnaryExpression}
 
 import org.apache.spark.SparkConf
+import org.apache.spark.SparkException
 import org.apache.spark.internal.Logging
 import org.apache.spark.serializer.JavaSerializer
 import org.apache.spark.sql.catalyst.InternalRow
@@ -103,7 +104,7 @@ trait GpuWrappedRowBasedExpression[SparkExpr <: Expression]
       }
     } catch {
       case e: Exception =>
-        throw e
+        throw new SparkException(s"Failed to execute Expression ${prettyName}", e)
     }
 
   }
