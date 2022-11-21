@@ -126,13 +126,7 @@ def test_aqe_struct_self_join(spark_tmp_table_factory):
 joins = [
     'inner',
     'cross',
-    'left',
-    'left outer',
     'left semi',
-    'right',
-    'right outer',
-    'full',
-    'full outer',
     'left anti',
     'anti'
 ]
