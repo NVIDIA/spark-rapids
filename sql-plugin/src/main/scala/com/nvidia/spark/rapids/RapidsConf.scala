@@ -493,6 +493,15 @@ object RapidsConf {
     .integerConf
     .createWithDefault(Integer.MAX_VALUE)
 
+  val CHUNKED_READER = conf("spark.rapids.sql.reader.chunked")
+      .doc("Should we use a chunked reader where possible. A chunked reader will " +
+          "take input data and potentially output multiple tables instead of a single table. " +
+          "This reduces the maximum memory usage and can work around issues when there is really " +
+          "high compression ratios in the data.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
   val MAX_READER_BATCH_SIZE_BYTES = conf("spark.rapids.sql.reader.batchSizeBytes")
     .doc("Soft limit on the maximum number of bytes the reader reads per batch. " +
       "The readers will read chunks of data until this limit is met or exceeded. " +
@@ -1081,6 +1090,18 @@ object RapidsConf {
     .doc("When set to false disables Iceberg input acceleration")
     .booleanConf
     .createWithDefault(true)
+
+  val ENABLE_HIVE_TEXT: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.format.hive.text.enabled")
+      .doc("When set to false disables Hive text table acceleration")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_HIVE_TEXT_READ: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.format.hive.text.read.enabled")
+      .doc("When set to false disables Hive text table read acceleration")
+      .booleanConf
+      .createWithDefault(false)
 
   val ENABLE_RANGE_WINDOW_BYTES = conf("spark.rapids.sql.window.range.byte.enabled")
     .doc("When the order-by column of a range based window is byte type and " +
@@ -1903,6 +1924,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isImprovedTimestampOpsEnabled: Boolean = get(IMPROVED_TIMESTAMP_OPS)
 
+  lazy val chunkedReaderEnabled: Boolean = get(CHUNKED_READER)
+
   lazy val maxReadBatchSizeRows: Int = get(MAX_READER_BATCH_SIZE_ROWS)
 
   lazy val maxReadBatchSizeBytes: Long = get(MAX_READER_BATCH_SIZE_BYTES)
@@ -2072,6 +2095,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isIcebergEnabled: Boolean = get(ENABLE_ICEBERG)
 
   lazy val isIcebergReadEnabled: Boolean = get(ENABLE_ICEBERG_READ)
+
+  lazy val isHiveDelimitedTextEnabled: Boolean = get(ENABLE_HIVE_TEXT)
+
+  lazy val isHiveDelimitedTextReadEnabled: Boolean = get(ENABLE_HIVE_TEXT_READ)
 
   lazy val shuffleManagerEnabled: Boolean = get(SHUFFLE_MANAGER_ENABLED)
 

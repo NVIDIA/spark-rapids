@@ -37,18 +37,29 @@ if [ -e ${AUDIT_PLUGIN_LOG}]; then
   rm ${AUDIT_PLUGIN_LOG}
 fi
 
+arch=$(uname -m)
+case ${arch} in
+    x86_64|amd64)
+        cpu_arch='amd64';;
+    aarch64|arm64)
+        cpu_arch='arm64';;
+    *)
+      echo "Unsupported CPU architecture: ${arch}"; exit 1;;
+esac
+echo "cpu_arch is ${cpu_arch}"
+
 #Get plugin jar
 ARTF_ROOT="$WORKSPACE/jars"
 MVN_GET_CMD="mvn org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
-    -Dmaven.repo.local=$WORKSPACE/.m2 \
+    -Dmaven.repo.local=$WORKSPACE/.m2 -Dcpu_arch=${cpu_arch} \
     -DrepoUrl=https://urm.nvidia.com/artifactory/sw-spark-maven -Ddest=$ARTF_ROOT"
 
 rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
 # maven download SNAPSHOT jars: rapids-4-spark, spark3.0
 $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
-    -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
+    -DgroupId=com.nvidia -DartifactId=rapids-4-spark-${cpu_arch}_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
 
-RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
+RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark-${cpu_arch}_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
 # Use jdeps to find the dependencies of the rapids-4-spark jar
 DEPS=$(jdeps -include "(com\.nvidia\.spark.*|org\.apache\.spark.*)" -v -e org.apache.spark.* $RAPIDS_PLUGIN_JAR)
 

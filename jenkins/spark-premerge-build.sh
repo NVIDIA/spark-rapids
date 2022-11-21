@@ -27,7 +27,18 @@ elif [[ $# -gt 1 ]]; then
     exit 1
 fi
 
-MVN_CMD="mvn -Dmaven.wagon.http.retryHandler.count=3"
+arch=$(uname -m)
+case ${arch} in
+    x86_64|amd64)
+        cpu_arch='amd64';;
+    aarch64|arm64)
+        cpu_arch='arm64';;
+    *)
+      echo "Unsupported CPU architecture: ${arch}"; exit 1;;
+esac
+echo "cpu_arch is ${cpu_arch}"
+
+MVN_CMD="mvn -Dmaven.wagon.http.retryHandler.count=3 -Dcpu_arch=${cpu_arch}"
 MVN_BUILD_ARGS="-Drat.skip=true -Dmaven.javadoc.skip=true -Dskip -Dmaven.scalastyle.skip=true -Dcuda.version=$CUDA_CLASSIFIER"
 
 mvn_verify() {
@@ -79,7 +90,7 @@ mvn_verify() {
     # things we care about
     SPK_VER=${JACOCO_SPARK_VER:-"311"}
     mkdir -p target/jacoco_classes/
-    FILE=$(ls dist/target/rapids-4-spark_2.12-*.jar | grep -v test | xargs readlink -f)
+    FILE=$(ls dist/target/rapids-4-spark-${cpu_arch}_2.12-*.jar | grep -v test | xargs readlink -f)
     UDF_JAR=$(ls ./udf-compiler/target/spark${SPK_VER}/rapids-4-spark-udf_2.12-*-spark${SPK_VER}.jar | grep -v test | xargs readlink -f)
     pushd target/jacoco_classes/
     jar xf $FILE com org rapids spark3xx-common "spark${JACOCO_SPARK_VER:-311}/"
@@ -176,7 +187,7 @@ elif [[ ${PROJECT_VER} =~ ^23\.02\. ]]; then
 fi
 
 ARTF_ROOT="$WORKSPACE/.download"
-MVN_GET_CMD="$MVN_CMD org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
+MVN_GET_CMD="$MVN_CMD org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B -Dcpu_arch=${cpu_arch} \
     $MVN_URM_MIRROR -DremoteRepositories=$URM_URL \
     -Ddest=$ARTF_ROOT"
 
