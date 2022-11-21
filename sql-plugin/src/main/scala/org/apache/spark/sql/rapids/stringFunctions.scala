@@ -1102,7 +1102,7 @@ case class GpuRLikeWithFallback(left: Expression, right: Expression)
 
   override def binaryExpression(left: Expression, right: Expression): RLike = RLike(left, right)
 
-  override def nullSafe: Boolean = false
+  override def nullSafe: Boolean = true
 
 }
 
