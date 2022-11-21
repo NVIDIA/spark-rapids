@@ -575,7 +575,6 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
     private var inFlight: Long = 0L
 
     def acquire(sz: Long): Boolean = {
-      logWarning(s"try acquiring $sz total $inFlight")
       if (sz == 0) {
         true
       } else {
@@ -591,7 +590,6 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
     }
 
     def release(sz: Long): Unit = synchronized {
-      logWarning(s"releaseing $sz total $inFlight")
       inFlight -= sz
     }
   }
