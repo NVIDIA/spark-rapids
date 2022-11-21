@@ -590,6 +590,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
     }
 
     def release(sz: Long): Unit = synchronized {
+      logWarning(s"released $sz inflight is $inFlight")
       inFlight -= sz
     }
   }
