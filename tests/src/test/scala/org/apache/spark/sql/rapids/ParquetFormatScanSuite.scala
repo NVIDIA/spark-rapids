@@ -808,8 +808,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
       }, conf = conf)
     }
 
-    //https://github.com/NVIDIA/spark-rapids/issues/6915
-    ignore(s"binary Decimal $parserType") {
+    test(s"binary Decimal $parserType") {
       withGpuSparkSession(spark => {
         val schema =
           """message spark {
@@ -865,9 +864,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
             .set("spark.rapids.sql.format.parquet.reader.footer.type", parserType))
     }
 
-    //https://github.com/NVIDIA/spark-rapids/issues/6915
-    // This bypasses the rapids accelerator code and gets errors in CUDF itself.
-    ignore(s"binary Decimal2 $parserType") {
+    test(s"binary Decimal2 $parserType") {
       withGpuSparkSession(spark => {
         val schema =
           """message spark {
