@@ -563,7 +563,7 @@ case class GpuFileSourceScanExec(
       partitions: Seq[FilePartition]): RDD[InternalRow] = {
 
     if (isPerFileReadEnabled) {
-      logInfo("Using the original per file parquet reader")
+      logInfo("Using the original per file reader")
       SparkShimImpl.getFileScanRDD(relation.sparkSession, readFile.get, partitions,
         requiredSchema)
     } else {
