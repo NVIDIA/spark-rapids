@@ -160,8 +160,19 @@ shift
 
 done
 
+arch=$(uname -m)
+case ${arch} in
+  x86_64|amd64)
+    cpu_arch='amd64';;
+  aarch64|arm64)
+    cpu_arch='arm64';;
+  *)
+    echo "Unsupported CPU architecture: ${arch}"; exit 1;;
+esac
+echo "cpu_arch is ${cpu_arch}"
+
 # include options to mvn command
-export MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 ${MVN_OPT}"
+export MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 ${MVN_OPT} -Dcpu_arch=${cpu_arch}"
 
 DIST_PROFILE=${DIST_PROFILE:-"noSnapshots"}
 [[ "$MODULE" != "" ]] && MODULE_OPT="--projects $MODULE --also-make" || MODULE_OPT=""
