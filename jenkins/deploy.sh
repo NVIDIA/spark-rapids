@@ -51,7 +51,18 @@ if [ "$DATABRICKS" == true ]; then
     cd spark-rapids
 fi
 
-ART_ID=`mvn help:evaluate -q -pl $DIST_PL -Dexpression=project.artifactId -DforceStdout`
+arch=$(uname -m)
+case ${arch} in
+    x86_64|amd64)
+        cpu_arch='amd64';;
+    aarch64|arm64)
+        cpu_arch='arm64';;
+    *)
+      echo "Unsupported CPU architecture: ${arch}"; exit 1;;
+esac
+echo "cpu_arch is ${cpu_arch}"
+
+ART_ID=`mvn help:evaluate -q -pl $DIST_PL -Dexpression=project.artifactId -DforceStdout -Dcpu_arch=$cpu_arch`
 ART_VER=`mvn help:evaluate -q -pl $DIST_PL -Dexpression=project.version -DforceStdout`
 CUDA_CLASSIFIER=`mvn help:evaluate -q -pl $DIST_PL -Dexpression=cuda.version -DforceStdout`
 
@@ -69,9 +80,9 @@ if [ "$SIGN_FILE" == true ]; then
     SQL_ART_VER=`mvn help:evaluate -q -pl $SQL_PL -Dexpression=project.version -DforceStdout`
     JS_FPATH="${SQL_PL}/target/spark${FINAL_AGG_VERSION_TOBUILD}/${SQL_ART_ID}-${SQL_ART_VER}"
     SRC_DOC_JARS="-Dsources=${JS_FPATH}-sources.jar -Djavadoc=${JS_FPATH}-javadoc.jar"
-    DEPLOY_CMD="$MVN -B gpg:sign-and-deploy-file -s jenkins/settings.xml -Dgpg.passphrase=$GPG_PASSPHRASE"
+    DEPLOY_CMD="$MVN -B gpg:sign-and-deploy-file -s jenkins/settings.xml -Dgpg.passphrase=$GPG_PASSPHRASE -Dcpu_arch=${cpu_arch}"
 else
-    DEPLOY_CMD="$MVN -B deploy:deploy-file -s jenkins/settings.xml"
+    DEPLOY_CMD="$MVN -B deploy:deploy-file -s jenkins/settings.xml -Dcpu_arch=${cpu_arch}"
 fi
 
 echo "Deploy CMD: $DEPLOY_CMD"
