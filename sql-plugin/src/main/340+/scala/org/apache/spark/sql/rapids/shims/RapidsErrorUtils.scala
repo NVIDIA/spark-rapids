@@ -52,7 +52,7 @@ object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
     QueryExecutionErrors.arithmeticOverflowError(message, hint, errorContext)
   }
 
-  def cannotChangeDecimalPrecisionError(      
+  def cannotChangeDecimalPrecisionError(
       value: Decimal,
       toType: DecimalType,
       context: SQLQueryContext = null): ArithmeticException = {
@@ -72,6 +72,6 @@ object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
     val errorClass = "CAST_INVALID_INPUT"
     val messageParameters = Map("expression" -> infOrNan, "sourceType" -> "DOUBLE",
       "targetType" -> "TIMESTAMP", "ansiConfig" -> SQLConf.ANSI_ENABLED.key)
-    new SparkDateTimeException(errorClass, messageParameters, Array.empty, "")
+    SparkDateTimeExceptionShims.newSparkDateTimeException(errorClass, messageParameters, Array.empty, "")
   }
 }
