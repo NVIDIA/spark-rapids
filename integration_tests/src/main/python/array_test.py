@@ -642,7 +642,7 @@ def test_array_remove_scalar(data_gen):
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
                                       float_gen, double_gen,
                                       string_gen, boolean_gen, date_gen, timestamp_gen] + decimal_gens, ids=idfn)
-def test_array_remove_column(data_gen):
+def test_array_remove(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
         ('b', data_gen)],
