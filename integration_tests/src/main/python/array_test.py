@@ -20,7 +20,7 @@ from marks import incompat
 from spark_session import is_before_spark_313, is_before_spark_330, is_spark_330_or_later, is_databricks104_or_later, is_spark_340_or_later
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
-from pyspark.sql.functions import array_contains, col, element_at, lit
+from pyspark.sql.functions import array_contains, array_remove, col, element_at, lit
 
 # max_val is a little larger than the default max size(20) of ArrayGen
 # so we can get the out-of-bound indices.
@@ -626,28 +626,33 @@ def test_arrays_overlap_before_spark313(data_gen):
             'arrays_overlap(array(), array(1, 2))')
     )
 
-@pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
-                                      float_gen, double_gen,
-                                      string_gen, boolean_gen, date_gen, timestamp_gen] + decimal_gens, ids=idfn)
-@pytest.mark.skipif(is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
-def test_array_remove(data_gen):
+@pytest.mark.parametrize('data_gen', [int_gen], ids=idfn)
+def test_array_remove_scalar(data_gen):
+    arr_gen = ArrayGen(data_gen)
+    scalar_value = gen_scalar(null_gen)
+
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
          ('b', data_gen)],
+        #  ('b', gen_scalar(data_gen))],
          nullable=False)
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen).selectExpr(
-            'array_remove(a, b)',
+            # 'array_remove(a, b)',
+            # 'array_remove(a, {})'.format(scalar_value),
+            'array_remove(a, 1)',
+            'array_remove(a, null)',
             'array_remove(array(1, 2, 2, 3, null), null)',
-            'array_remove(array(1, 2, 2, 3, null), 2)')
+            'array_remove(array(1, 2, 2, 3, null), 2)'
+        )
     )
 
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
-                                      FloatGen(no_nans=True), DoubleGen(no_nans=True),
+                                      float_gen, double_gen,
                                       string_gen, boolean_gen, date_gen, timestamp_gen] + decimal_gens, ids=idfn)
-@pytest.mark.skipif(not is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
-def test_array_remove_before_spark313(data_gen):
+# @pytest.mark.skipif(not is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
+def test_array_remove_column(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
         #  ('b', data_gen)],
@@ -657,7 +662,7 @@ def test_array_remove_before_spark313(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen).selectExpr(
             'array_remove(a, b)',
-            'array_remove(a, b[0])',
+            # 'array_remove(a, b[0])',
             'array_remove(a, null)',
             'array_remove(array(1, 2, 2, 3, null), null)',
             'array_remove(array(1, 2, 2, 3, null), 2)')
