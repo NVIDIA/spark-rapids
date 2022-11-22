@@ -235,7 +235,7 @@ case class GpuSubtract(
 
 case class GpuMultiply(
     left: Expression,
-    right: Expression) extends CudfBinaryArithmetic {
+    right: Expression) extends CudfBinaryArithmetic with DecimalWithPromote {
   assert(!left.dataType.isInstanceOf[DecimalType],
     "DecimalType multiplies need to be handled by GpuDecimalMultiply")
 
@@ -264,8 +264,9 @@ case class GpuMultiply(
   }
 }
 
-trait GpuDivModLikeWithPromote extends GpuDivModLike {
+trait GpuDivModLikeWithPromote extends GpuDivModLike with DecimalWithPromote
 
+trait DecimalWithPromote extends CudfBinaryOperator {
   private def getCastedVectorIfNeeded(
       vector: GpuColumnVector,
       d: DecimalType, c: DType): GpuColumnVector = {
