@@ -1073,7 +1073,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
   protected lazy val blockManager = env.blockManager
   protected lazy val shouldFallThroughOnEverything = {
     val fallThroughReasons = new ListBuffer[String]()
-    if (GpuShuffleEnv.isExternalShuffleEnabled) {
+    if (!rapidsConf.isMultiThreadedShuffleManagerMode && GpuShuffleEnv.isExternalShuffleEnabled) {
       fallThroughReasons += "External Shuffle Service is enabled"
     }
     if (GpuShuffleEnv.isSparkAuthenticateEnabled) {
