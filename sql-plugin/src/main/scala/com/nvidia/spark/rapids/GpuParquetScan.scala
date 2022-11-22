@@ -1865,30 +1865,30 @@ class MultiFileCloudParquetPartitionReader(
       // copy the actual data
       results.map { hbWithMeta =>
 
-
-
         val partValues = hbWithMeta.partitionedFile.partitionValues
         val totalNumRows = hbWithMeta.memBuffersAndSizes.map(_.numRows).sum
         allPartValues.append((totalNumRows, partValues))
-        hbWithMeta.memBuffersAndSizes.map { hmbInfo =>
-          // can't use size in hbmInfo because that includes footers
-          // val sizeOfBlockData = hmbInfo.blockMeta.map(_.getTotalByteSize).sum
-          // val footerPos = hmbInfo.footerPos
-          if (currentSchema != null && hmbInfo.schema != currentSchema) {
-            throw new Exception(s"schema is different current: ${currentSchema} " +
-              s"new is: ${hmbInfo.schema}")
-          }
-          // results are mixed with some empty and some with data
-          if (hmbInfo.schema != null) {
-            currentSchema = hmbInfo.schema
-          }
+        if (hbWithMeta.isInstanceOf[HostMemoryEmptyMetaData]) {
+          logWarning("dealing with empty meta data, skipping copy in combine")
+        } else {
+          hbWithMeta.memBuffersAndSizes.map { hmbInfo =>
+            // results are mixed with some empty and some with data
+            if (hmbInfo.schema != null) {
+              logError("schema is null!!!")
+              currentSchema = hmbInfo.schema
+            }
 
-          val copyAmount = hmbInfo.blockMeta.map { meta =>
-            meta.getColumns.asScala.map(_.getTotalSize).sum
-          }.sum
-          if (hbWithMeta.isInstanceOf[HostMemoryEmptyMetaData]) {
-            // no data so don't copy
-          } else {
+            // can't use size in hbmInfo because that includes footers
+            // val sizeOfBlockData = hmbInfo.blockMeta.map(_.getTotalByteSize).sum
+            // val footerPos = hmbInfo.footerPos
+            if (currentSchema != null && hmbInfo.schema != currentSchema) {
+              throw new Exception(s"schema is different current: ${currentSchema} " +
+                s"new is: ${hmbInfo.schema}")
+            }
+
+            val copyAmount = hmbInfo.blockMeta.map { meta =>
+              meta.getColumns.asScala.map(_.getTotalSize).sum
+            }.sum
             // val copyAmount = footerPos - ParquetPartitionReader.PARQUET_MAGIC.size
             newHmb.copyFromHostBuffer(offset, hmbInfo.hmb,
               ParquetPartitionReader.PARQUET_MAGIC.size, copyAmount)
