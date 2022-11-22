@@ -494,13 +494,11 @@ object RapidsConf {
     .createWithDefault(Integer.MAX_VALUE)
 
   val CHUNKED_READER = conf("spark.rapids.sql.reader.chunked")
-      .doc("Should we use a chunked reader where possible. A chunked reader will " +
-          "take input data and potentially output multiple tables instead of a single table. " +
-          "This reduces the maximum memory usage and can work around issues when there is really " +
-          "high compression ratios in the data.")
-      .internal()
+      .doc("Enable a chunked reader where possible. A chunked reader allows " +
+          "reading highly compressed data that could not be read otherwise, but at the expense " +
+          "of more GPU memory, and in some cases more GPU computation.")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   val MAX_READER_BATCH_SIZE_BYTES = conf("spark.rapids.sql.reader.batchSizeBytes")
     .doc("Soft limit on the maximum number of bytes the reader reads per batch. " +
