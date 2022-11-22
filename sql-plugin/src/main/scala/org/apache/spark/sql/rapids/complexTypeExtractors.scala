@@ -21,19 +21,21 @@ import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuBinaryExpression, Gp
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAnyValidTrue
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.ShimUnaryExpression
+import com.nvidia.spark.rapids.shims._
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ExtractValue, GetArrayStructFields, ImplicitCastInputTypes, NullIntolerant}
-import org.apache.spark.sql.catalyst.trees.TreePattern._
 import org.apache.spark.sql.catalyst.util.{quoteIdentifier, TypeUtils}
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegralType, MapType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[String] = None)
-    extends ShimUnaryExpression with GpuExpression with ExtractValue with NullIntolerant {
+    extends ShimUnaryExpression
+    with GpuExpression
+    with ShimExtractValue
+    with NullIntolerant {
 
   lazy val childSchema: StructType = child.dataType.asInstanceOf[StructType]
 
@@ -72,9 +74,6 @@ case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[Strin
       }
     }
   }
-
-  // Databricks
-  def nodePatternsInternal(): Seq[TreePattern] = Seq.empty
 }
 
 /**
@@ -83,7 +82,9 @@ case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[Strin
  * We need to do type checking here as `ordinal` expression maybe unresolved.
  */
 case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: Boolean)
-    extends GpuBinaryExpression with ExpectsInputTypes with ExtractValue {
+    extends GpuBinaryExpression
+    with ExpectsInputTypes
+    with ShimExtractValue {
 
   // We have done type checking for child in `ExtractValue`, so only need to check the `ordinal`.
   override def inputTypes: Seq[AbstractDataType] = Seq(AnyDataType, IntegralType)
@@ -189,9 +190,6 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
       doColumnar(expandedLhs, rhs)
     }
   }
-
-  // Databricks
-  def nodePatternsInternal(): Seq[TreePattern] = Seq.empty
 }
 
 case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boolean)
@@ -334,7 +332,9 @@ case class GpuGetArrayStructFields(
     field: StructField,
     ordinal: Int,
     numFields: Int,
-    containsNull: Boolean) extends GpuUnaryExpression with ExtractValue with NullIntolerant {
+    containsNull: Boolean) extends GpuUnaryExpression
+    with ShimExtractValue
+    with NullIntolerant {
 
   override def dataType: DataType = ArrayType(field.dataType, containsNull)
   override def toString: String = s"$child.${field.name}"
@@ -352,7 +352,4 @@ case class GpuGetArrayStructFields(
       listView.copyToColumnVector()
     }
   }
-
-  // Databricks
-  def nodePatternsInternal(): Seq[TreePattern] = Seq.empty
 }

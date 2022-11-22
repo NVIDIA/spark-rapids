@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, UnaryCommand}
+import org.apache.spark.sql.catalyst.trees.TreePattern._
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.rapids.GpuAnd
 
@@ -84,4 +85,9 @@ trait ShimPredicateHelper extends PredicateHelper {
       case other => super.splitConjunctivePredicates(condition)
     }
   }
+}
+
+trait ShimExtractValue extends ExtractValue {
+  // Databricks
+  def nodePatternsInternal(): Seq[TreePattern] = Seq.empty
 }

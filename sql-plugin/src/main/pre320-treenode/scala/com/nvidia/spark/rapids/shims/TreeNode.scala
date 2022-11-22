@@ -60,3 +60,5 @@ trait ShimPredicateHelper extends PredicateHelper {
     }
   }
 }
+
+trait ShimExtractValue extends ExtractValue
