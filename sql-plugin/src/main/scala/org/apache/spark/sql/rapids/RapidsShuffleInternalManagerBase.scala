@@ -1076,7 +1076,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
     if (!rapidsConf.isMultiThreadedShuffleManagerMode && GpuShuffleEnv.isExternalShuffleEnabled) {
       fallThroughReasons += "External Shuffle Service is enabled"
     }
-    if (GpuShuffleEnv.isSparkAuthenticateEnabled) {
+    if (!rapidsConf.isMultiThreadedShuffleManagerMode && GpuShuffleEnv.isSparkAuthenticateEnabled) {
       fallThroughReasons += "Spark authentication is enabled"
     }
     if (rapidsConf.isSqlExplainOnlyEnabled) {
