@@ -16,9 +16,10 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, TernaryExpression, UnaryExpression}
+import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.logical.Command
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.rapids.GpuAnd
 
 trait ShimExpression extends Expression
 
@@ -40,3 +41,22 @@ trait ShimUnaryExecNode extends UnaryExecNode
 trait ShimBinaryExecNode extends BinaryExecNode
 
 trait ShimUnaryCommand extends Command
+
+trait ShimPredicateHelper extends PredicateHelper {
+  // SPARK-30027 from 3.2.0
+  // If one expression and its children are null intolerant, it is null intolerant.
+  protected def isNullIntolerant(expr: Expression): Boolean = expr match {
+    case e: NullIntolerant => e.children.forall(isNullIntolerant)
+    case _ => false
+  }
+
+  override protected def splitConjunctivePredicates(
+    condition: Expression
+  ): Seq[Expression] = {
+    condition match {
+      case GpuAnd(cond1, cond2) =>
+        splitConjunctivePredicates(cond1) ++ splitConjunctivePredicates(cond2)
+      case other => super.splitConjunctivePredicates(condition)
+    }
+  }
+}

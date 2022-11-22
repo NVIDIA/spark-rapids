@@ -23,7 +23,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{ShimLeafExecNode, ShimSparkPlan, ShimUnaryExecNode}
+import com.nvidia.spark.rapids.shims._
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
@@ -32,7 +32,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, AttributeSeq, Descending, Expression, NamedExpression, NullIntolerant, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning, SinglePartition, UnknownPartitioning}
 import org.apache.spark.sql.execution.{ProjectExec, SampleExec, SparkPlan}
-import org.apache.spark.sql.rapids.{GpuPartitionwiseSampledRDD, GpuPoissonSampler, GpuPredicateHelper}
+import org.apache.spark.sql.rapids.{GpuPartitionwiseSampledRDD, GpuPoissonSampler}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DataType, LongType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
@@ -424,7 +424,7 @@ case class GpuFilterExec(
     condition: Expression,
     child: SparkPlan,
     override val coalesceAfter: Boolean = true)
-    extends ShimUnaryExecNode with GpuPredicateHelper with GpuExec {
+    extends ShimUnaryExecNode with ShimPredicateHelper with GpuExec {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
@@ -432,12 +432,6 @@ case class GpuFilterExec(
   // Split out all the IsNotNulls from condition.
   private val (notNullPreds, _) = splitConjunctivePredicates(condition).partition {
     case GpuIsNotNull(a) => isNullIntolerant(a) && a.references.subsetOf(child.outputSet)
-    case _ => false
-  }
-
-  // If one expression and its children are null intolerant, it is null intolerant.
-  private def isNullIntolerant(expr: Expression): Boolean = expr match {
-    case e: NullIntolerant => e.children.forall(isNullIntolerant)
     case _ => false
   }
 
