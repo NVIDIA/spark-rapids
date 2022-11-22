@@ -1872,7 +1872,8 @@ class MultiFileCloudParquetPartitionReader(
           // val sizeOfBlockData = hmbInfo.blockMeta.map(_.getTotalByteSize).sum
           // val footerPos = hmbInfo.footerPos
           if (currentSchema != null && hmbInfo.schema != currentSchema) {
-            throw new Exception("schema is different")
+            throw new Exception(s"schema is different current: ${currentSchema} " +
+              s"new is: ${hmbInfo.schema}")
           }
           currentSchema = hmbInfo.schema
 
@@ -2134,6 +2135,69 @@ class MultiFileCloudParquetPartitionReader(
    */
   override final def getFileFormatShortName: String = "Parquet"
 
+
+  private def buildAndConcatPartitionColumns(
+      rowsPerPartition: Array[Long],
+      inPartitionValues: Array[InternalRow]): Array[GpuColumnVector] = {
+    val numCols = partitionSchema.fields.length
+    val allPartCols = new Array[GpuColumnVector](numCols)
+    // build the partitions vectors for all partitions within each column
+    // and concatenate those together then go to the next column
+    for ((field, colIndex) <- partitionSchema.fields.zipWithIndex) {
+      val dataType = field.dataType
+      withResource(new Array[GpuColumnVector](inPartitionValues.length)) {
+        partitionColumns =>
+          for ((rowsInPart, partIndex) <- rowsPerPartition.zipWithIndex) {
+            val partInternalRow = inPartitionValues(partIndex)
+            val partValueForCol = partInternalRow.get(colIndex, dataType)
+            val partitionScalar = GpuScalar.from(partValueForCol, dataType)
+            withResource(partitionScalar) { scalar =>
+              partitionColumns(partIndex) = GpuColumnVector.from(
+                ai.rapids.cudf.ColumnVector.fromScalar(scalar, rowsInPart.toInt),
+                dataType)
+            }
+          }
+          val baseOfCols = partitionColumns.map(_.getBase)
+          allPartCols(colIndex) = GpuColumnVector.from(
+            ColumnVector.concatenate(baseOfCols: _*), field.dataType)
+      }
+    }
+    allPartCols
+  }
+
+  private def concatAndAddPartitionColsToBatch(
+      cb: ColumnarBatch,
+      rowsPerPartition: Array[Long],
+      inPartitionValues: Array[InternalRow]): ColumnarBatch = {
+    withResource(cb) { _ =>
+      closeOnExcept(buildAndConcatPartitionColumns(rowsPerPartition, inPartitionValues)) {
+        allPartCols =>
+          ColumnarPartitionReaderWithPartitionValues.addGpuColumVectorsToBatch(cb, allPartCols)
+      }
+    }
+  }
+
+
+  // TODO - see if can reuse some of this between coalescing reader and here
+  private def addAllPartitionValues(
+      batch: ColumnarBatch,
+      inPartitionValues: Array[InternalRow],
+      rowsPerPartition: Array[Long],
+      partitionSchema: StructType): ColumnarBatch = {
+    assert(rowsPerPartition.length == inPartitionValues.length)
+    if (partitionSchema.nonEmpty) {
+        val numPartitions = inPartitionValues.length
+        if (numPartitions > 1) {
+          concatAndAddPartitionColsToBatch(batch, rowsPerPartition, inPartitionValues)
+        } else {
+          // single partition, add like other readers
+          addPartitionValues(batch, inPartitionValues.head, partitionSchema)
+        }
+    } else {
+      batch
+    }
+  }
+
   /**
    * Decode HostMemoryBuffers by GPU
    *
@@ -2145,7 +2209,7 @@ class MultiFileCloudParquetPartitionReader(
     case meta: HostMemoryEmptyMetaData =>
       // Not reading any data, but add in partition data if needed
       val rows = meta.bufferSize.toInt
-      val batch = if (rows == 0) {
+      val origBatch = if (rows == 0) {
         new ColumnarBatch(Array.empty, 0)
       } else {
         // Someone is going to process this data, even if it is just a row count
@@ -2159,11 +2223,11 @@ class MultiFileCloudParquetPartitionReader(
         // its not different for all the blocks in this batch
         val rowsPerPartition = meta.allPartValues.get.map(_._1).toArray
         val allPartInternalRows = meta.allPartValues.get.map(_._2).toArray
-        addAllPartitionValues(batch, allPartInternalRows, rowsPerPartition, partitionSchema)
+        addAllPartitionValues(origBatch, allPartInternalRows, rowsPerPartition, partitionSchema)
       } else {
         // we have to add partition values here for this batch, we already verified that
         // its not different for all the blocks in this batch
-        addPartitionValues(batch, meta.partitionedFile.partitionValues, partitionSchema)
+        addPartitionValues(origBatch, meta.partitionedFile.partitionValues, partitionSchema)
       }
       new SingleGpuColumnarBatchIterator(batch)
     case buffer: HostMemoryBuffersWithMetaData =>
@@ -2219,11 +2283,11 @@ class MultiFileCloudParquetPartitionReader(
           // its not different for all the blocks in this batch
           val rowsPerPartition = allPartValues.get.map(_._1).toArray
           val allPartInternalRows = allPartValues.get.map(_._2).toArray
-          addAllPartitionValues(maybeBatch, allPartInternalRows, rowsPerPartition, partitionSchema)
+          addAllPartitionValues(batch, allPartInternalRows, rowsPerPartition, partitionSchema)
         } else {
           // we have to add partition values here for this batch, we already verified that
           // its not different for all the blocks in this batch
-          addPartitionValues(maybeBatch, partedFile.partitionValues, partitionSchema)
+          addPartitionValues(batch, partedFile.partitionValues, partitionSchema)
         }
       }
     }
@@ -2338,68 +2402,6 @@ case class ParquetTableReader(
     buffer.close()
   }
 
-  // TODO - see if can reuse some of this between coalescing reader and here
-  private def addAllPartitionValues(
-      batch: Option[ColumnarBatch],
-      inPartitionValues: Array[InternalRow],
-      rowsPerPartition: Array[Long],
-      partitionSchema: StructType): Option[ColumnarBatch] = {
-    assert(rowsPerPartition.length == inPartitionValues.length)
-    if (partitionSchema.nonEmpty) {
-      batch.map { cb =>
-        val numPartitions = inPartitionValues.length
-        if (numPartitions > 1) {
-          concatAndAddPartitionColsToBatch(cb, rowsPerPartition, inPartitionValues)
-        } else {
-          // single partition, add like other readers
-          addPartitionValues(Some(cb), inPartitionValues.head, partitionSchema).get
-        }
-      }
-    } else {
-      batch
-    }
-  }
-
-  private def concatAndAddPartitionColsToBatch(
-      cb: ColumnarBatch,
-      rowsPerPartition: Array[Long],
-      inPartitionValues: Array[InternalRow]): ColumnarBatch = {
-    withResource(cb) { _ =>
-      closeOnExcept(buildAndConcatPartitionColumns(rowsPerPartition, inPartitionValues)) {
-        allPartCols =>
-          ColumnarPartitionReaderWithPartitionValues.addGpuColumVectorsToBatch(cb, allPartCols)
-      }
-    }
-  }
-
-  private def buildAndConcatPartitionColumns(
-      rowsPerPartition: Array[Long],
-      inPartitionValues: Array[InternalRow]): Array[GpuColumnVector] = {
-    val numCols = partitionSchema.fields.length
-    val allPartCols = new Array[GpuColumnVector](numCols)
-    // build the partitions vectors for all partitions within each column
-    // and concatenate those together then go to the next column
-    for ((field, colIndex) <- partitionSchema.fields.zipWithIndex) {
-      val dataType = field.dataType
-      withResource(new Array[GpuColumnVector](inPartitionValues.length)) {
-        partitionColumns =>
-          for ((rowsInPart, partIndex) <- rowsPerPartition.zipWithIndex) {
-            val partInternalRow = inPartitionValues(partIndex)
-            val partValueForCol = partInternalRow.get(colIndex, dataType)
-            val partitionScalar = GpuScalar.from(partValueForCol, dataType)
-            withResource(partitionScalar) { scalar =>
-              partitionColumns(partIndex) = GpuColumnVector.from(
-                ai.rapids.cudf.ColumnVector.fromScalar(scalar, rowsInPart.toInt),
-                dataType)
-            }
-          }
-          val baseOfCols = partitionColumns.map(_.getBase)
-          allPartCols(colIndex) = GpuColumnVector.from(
-            ColumnVector.concatenate(baseOfCols: _*), field.dataType)
-      }
-    }
-    allPartCols
-  }
 }
 
 /**

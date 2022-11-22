@@ -1757,7 +1757,7 @@ class MultiFileCloudOrcPartitionReader(
         val hmbInfo = memBuffersAndSize.head
         val batchReader = decodeToBatch(hmbInfo.hmb, hmbInfo.bytes, buffer.updatedReadSchema,
           buffer.requestedMapping, filterHandler.isCaseSensitive,
-          files, buffer.partitionedFile.partitionValues, partitionSchema) match {
+          files) match {
           case Some(batch) =>
             val tmp = addPartitionValues(batch,
             buffer.partitionedFile.partitionValues, partitionSchema)
