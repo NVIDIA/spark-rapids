@@ -626,44 +626,34 @@ def test_arrays_overlap_before_spark313(data_gen):
             'arrays_overlap(array(), array(1, 2))')
     )
 
-@pytest.mark.parametrize('data_gen', [int_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
 def test_array_remove_scalar(data_gen):
-    arr_gen = ArrayGen(data_gen)
-    scalar_value = gen_scalar(null_gen)
-
     gen = StructGen(
-        [('a', ArrayGen(data_gen, nullable=True)),
-         ('b', data_gen)],
-        #  ('b', gen_scalar(data_gen))],
-         nullable=False)
+        [('a', ArrayGen(data_gen, nullable=True))],
+        nullable=False)
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen).selectExpr(
-            # 'array_remove(a, b)',
-            # 'array_remove(a, {})'.format(scalar_value),
-            'array_remove(a, 1)',
-            'array_remove(a, null)',
-            'array_remove(array(1, 2, 2, 3, null), null)',
-            'array_remove(array(1, 2, 2, 3, null), 2)'
-        )
+            'array_remove(a, -10)',
+            'array_remove(a, 0)',
+            'array_remove(a, 10)')
     )
 
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
                                       float_gen, double_gen,
                                       string_gen, boolean_gen, date_gen, timestamp_gen] + decimal_gens, ids=idfn)
-# @pytest.mark.skipif(not is_before_spark_313(), reason="NaN equality is only handled in Spark 3.1.3+")
-def test_array_remove_column(data_gen):
+def test_array_remove(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
-        #  ('b', data_gen)],
-         ('b', null_gen)],
-         nullable=False)
+        ('b', data_gen)],
+        nullable=False)
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, gen).selectExpr(
             'array_remove(a, b)',
-            # 'array_remove(a, b[0])',
             'array_remove(a, null)',
+            'array_remove(array(), null)',
+            'array_remove(array(), 0)',
             'array_remove(array(1, 2, 2, 3, null), null)',
             'array_remove(array(1, 2, 2, 3, null), 2)')
     )
