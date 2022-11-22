@@ -16,11 +16,19 @@
 #
 
 # This script installs dependencies required to build RAPIDS Accelerator for Apache Spark on DB.
-# Usage: `BASE_SPARK_VERSION=3.2.1 ./jenkins/databricks/build.sh
-# Environments SPARKSRCTGZ, BASE_SPARK_VERSION, BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS, MVN_OPT
-# can be overwritten by shell variables, e.g. "BASE_SPARK_VERSION=3.1.2 MVN_OPT=bash build.sh".
-# Current accepted spark versions: [3.1.2, 3.2.1, 3.3.0].
-#
+# All the environments can be overwritten by shell variables:
+#   SPARKSRCTGZ: Archive file location of the plugin repository. Default is empty.
+#   BASE_SPARK_VERSION: Spark version [3.1.2, 3.2.1, 3.3.0]. Default is pulled from current instance.
+#   BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS: The version of Spark used when we install the
+#       Databricks jars in .m2. Default is {BASE_SPARK_VERSION}.
+#   MVN_OPT: Options to be passed to the MVN commands. Note that "-DskipTests" is hardcoded in the
+#       build command.
+#   SKIP_DEP_INSTALL: Skips installation of dependencies when set to 1. Default is 0.
+# Usage:
+# - build for DB10.4/Spark 3.2.1:
+#       `BASE_SPARK_VERSION=3.2.1 ./jenkins/databricks/build.sh`
+# - Build without dependency installation:
+#       `BASE_SPARK_VERSION=3.2.1 SKIP_DEP_INSTALL=1 ./jenkins/databricks/build.sh`
 # To add support of new runtime:
 #   1. Review `set_jars_prefixes()` to make sure that the prefix of the jar files is set
 #      correctly. If not, then add a new if-else block to set the variables as necessary.
@@ -34,9 +42,6 @@
 #      instructions accordingly.
 
 set -ex
-
-# Default SPARK Version is extracted from DB Spark environment.
-DEFAULT_SPARK_BASE_VERSION=$(< /databricks/spark/VERSION)
 
 # Map of software versions for each dependency.
 declare -A sw_versions
@@ -55,15 +60,14 @@ initialize()
     SPARKSRCTGZ=${SPARKSRCTGZ:-''}
 
     # Version of Apache Spark we are building against
-    BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-${DEFAULT_SPARK_BASE_VERSION}}
+    BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-$(< /databricks/spark/VERSION)}
 
-    BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=${BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS:-$BASE_SPARK_VERSION}
     ## '-Pfoo=1,-Dbar=2,...' to '-Pfoo=1 -Dbar=2 ...'
     MVN_OPT=${MVN_OPT//','/' '}
     BUILDVER=$(echo ${BASE_SPARK_VERSION} | sed 's/\.//g')db
     # the version of Spark used when we install the Databricks jars in .m2
     BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=${BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS:-$BASE_SPARK_VERSION}
-    SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=$BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS-databricks
+    SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS=${BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS}-databricks
 
     # pull normal Spark artifacts and ignore errors then install databricks jars, then build again.
     # this should match the databricks init script.
@@ -87,7 +91,8 @@ initialize()
     SCALA_VERSION=$($MVN_CMD help:evaluate -q -pl dist -Dexpression=scala.binary.version -DforceStdout)
     CUDA_VERSION=$($MVN_CMD help:evaluate -q -pl dist -Dexpression=cuda.version -DforceStdout)
     RAPIDS_BUILT_JAR=rapids-4-spark_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION.jar
-
+    # If set to 1, skips installing dependencies into mvn repo.
+    SKIP_DEP_INSTALL=${SKIP_DEP_INSTALL:-'0'}
     # export 'M2DIR' so that shims can get the correct Spark dependency info
     export M2DIR=/home/ubuntu/.m2/repository
 
@@ -104,6 +109,7 @@ initialize()
     echo "CUDA version                                  : ${CUDA_VERSION}"
     echo "Rapids build jar                              : ${RAPIDS_BUILT_JAR}"
     echo "Build Version                                 : ${BUILDVER}"
+    echo "Skip Dependencies                             : ${SKIP_DEP_INSTALL}"
     printf '+ %*s +\n' 100 '' | tr ' ' =
 }
 
@@ -282,9 +288,12 @@ set_dep_jars()
     fi
 }
 
-# Install dependency jars to MVN repository and build the RAPIDS plugin using mvn package command.
-run_mvn_cmd()
+# Install dependency jars to MVN repository.
+install_dependencies()
 {
+    set_sw_versions
+    set_jars_prefixes
+    set_dep_jars
     # Please note we are installing all of these dependencies using the Spark version
     # (SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS) to make it easier to specify the dependencies in
     # the pom files
@@ -297,21 +306,22 @@ run_mvn_cmd()
             -Dversion=$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS \
             -Dpackaging=jar
     done
-
-    # Build the RAPIDS plugin by running package command for databricks
-    mvn -B -Ddatabricks -Dbuildver=$BUILDVER clean package -DskipTests $MVN_OPT
 }
 
 ##########################
-# Main Script starts here
+# Main script starts here
 ##########################
 
 initialize
-set_sw_versions
-set_jars_prefixes
-set_dep_jars
-run_mvn_cmd
+if [[ $SKIP_DEP_INSTALL == "1" ]]
+then
+    echo "SKIP_DEP_INSTALL is set to $SKIP_DEP_INSTALL. Skipping dependencies."
+else
+    # Install required dependencies.
+    install_dependencies
+fi
+# Build the RAPIDS plugin by running package command for databricks
+mvn -B -Ddatabricks -Dbuildver=$BUILDVER clean package -DskipTests $MVN_OPT
 
-set -x
 cd /home/ubuntu
 tar -zcf spark-rapids-built.tgz spark-rapids
