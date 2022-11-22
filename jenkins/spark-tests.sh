@@ -21,19 +21,8 @@ nvidia-smi
 
 . jenkins/version-def.sh
 
-arch=$(uname -m)
-case ${arch} in
-    x86_64|amd64)
-        cpu_arch='amd64';;
-    aarch64|arm64)
-        cpu_arch='arm64';;
-    *)
-      echo "Unsupported CPU architecture: ${arch}"; exit 1;;
-esac
-echo "cpu_arch is ${cpu_arch}"
-
 ARTF_ROOT="$WORKSPACE/jars"
-MVN_GET_CMD="mvn -Dmaven.wagon.http.retryHandler.count=3 org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B -Dcpu_arch=${cpu_arch} \
+MVN_GET_CMD="mvn -Dmaven.wagon.http.retryHandler.count=3 org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
     -Dmaven.repo.local=$WORKSPACE/.m2 \
     $MVN_URM_MIRROR -Ddest=$ARTF_ROOT"
 
@@ -45,12 +34,12 @@ $MVN_GET_CMD -DremoteRepositories=$PROJECT_TEST_REPO \
     -DgroupId=com.nvidia -DartifactId=rapids-4-spark-integration-tests_$SCALA_BINARY_VER -Dversion=$PROJECT_TEST_VER -Dclassifier=$SHUFFLE_SPARK_SHIM
 if [ "$CUDA_CLASSIFIER"x == x ];then
     $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
-        -DgroupId=com.nvidia -DartifactId=rapids-4-spark-${cpu_arch}_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
-    export RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark-${cpu_arch}_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
+        -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER
+    export RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER.jar"
 else
     $MVN_GET_CMD -DremoteRepositories=$PROJECT_REPO \
-        -DgroupId=com.nvidia -DartifactId=rapids-4-spark-${cpu_arch}_$SCALA_BINARY_VER -Dversion=$PROJECT_VER -Dclassifier=$CUDA_CLASSIFIER
-    export RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark-${cpu_arch}_${SCALA_BINARY_VER}-$PROJECT_VER-${CUDA_CLASSIFIER}.jar"
+        -DgroupId=com.nvidia -DartifactId=rapids-4-spark_$SCALA_BINARY_VER -Dversion=$PROJECT_VER -Dclassifier=$CUDA_CLASSIFIER
+    export RAPIDS_PLUGIN_JAR="$ARTF_ROOT/rapids-4-spark_${SCALA_BINARY_VER}-$PROJECT_VER-${CUDA_CLASSIFIER}.jar"
 fi
 RAPIDS_TEST_JAR="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-$SHUFFLE_SPARK_SHIM.jar"
 
