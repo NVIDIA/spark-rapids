@@ -1864,6 +1864,9 @@ class MultiFileCloudParquetPartitionReader(
 
       // copy the actual data
       results.map { hbWithMeta =>
+
+
+
         val partValues = hbWithMeta.partitionedFile.partitionValues
         val totalNumRows = hbWithMeta.memBuffersAndSizes.map(_.numRows).sum
         allPartValues.append((totalNumRows, partValues))
@@ -1875,7 +1878,10 @@ class MultiFileCloudParquetPartitionReader(
             throw new Exception(s"schema is different current: ${currentSchema} " +
               s"new is: ${hmbInfo.schema}")
           }
-          currentSchema = hmbInfo.schema
+          // results are mixed with some empty and some with data
+          if (hmbInfo.schema != null) {
+            currentSchema = hmbInfo.schema
+          }
 
           val copyAmount = hmbInfo.blockMeta.map { meta =>
             meta.getColumns.asScala.map(_.getTotalSize).sum
@@ -1928,6 +1934,10 @@ class MultiFileCloudParquetPartitionReader(
         throw new Exception(s" initial total size is to small: $initTotalSize")
       }
 
+      if (currentSchema == null) {
+        throw new Exception(s"current schema is null before write footer: ${results.mkString(",")}")
+      }
+
       withResource(newHmb.slice(offset, lenLeft)) { footerHmbSlice =>
         withResource(new HostMemoryOutputStream(footerHmbSlice)) { footerOut =>
           // logWarning(s" going to write footer Tom, location: $lenLeft initial: $initTotalSize")
@@ -1944,6 +1954,7 @@ class MultiFileCloudParquetPartitionReader(
       }
       val meta = results(0).asInstanceOf[HostMemoryBuffersWithMetaData]
       logWarning(s"combined files to total size $offset  initial $initTotalSize")
+
 
       val newHmbBufferInfo = HostMemoryBufferInfo(newHmb, offset, allPartValues.map(_._1).sum,
         Seq.empty, currentSchema)
