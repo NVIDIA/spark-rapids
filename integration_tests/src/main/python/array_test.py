@@ -20,7 +20,7 @@ from marks import incompat
 from spark_session import is_before_spark_313, is_before_spark_330, is_spark_330_or_later, is_databricks104_or_later, is_spark_340_or_later
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
-from pyspark.sql.functions import array_contains, array_remove, col, element_at, lit
+from pyspark.sql.functions import array_contains, col, element_at, lit
 
 # max_val is a little larger than the default max size(20) of ArrayGen
 # so we can get the out-of-bound indices.
@@ -642,7 +642,7 @@ def test_array_remove_scalar(data_gen):
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
                                       float_gen, double_gen,
                                       string_gen, boolean_gen, date_gen, timestamp_gen] + decimal_gens, ids=idfn)
-def test_array_remove(data_gen):
+def test_array_remove_column(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
         ('b', data_gen)],
