@@ -49,7 +49,6 @@ import org.apache.spark.sql.execution.streaming.sources.{RateStreamProvider, Tex
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types.{CalendarIntervalType, DataType, StructType}
-import org.apache.spark.sql.util.SchemaUtils
 import org.apache.spark.util.{HadoopFSUtils, ThreadUtils, Utils}
 
 /**
