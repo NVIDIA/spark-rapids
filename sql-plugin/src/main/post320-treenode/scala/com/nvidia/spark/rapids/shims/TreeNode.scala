@@ -18,9 +18,7 @@ package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, UnaryCommand}
-import org.apache.spark.sql.catalyst.trees.TreePattern._
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan, UnaryExecNode}
-import org.apache.spark.sql.rapids.GpuAnd
 
 trait ShimExpression extends Expression {
   override def withNewChildrenInternal(newChildren: IndexedSeq[Expression]): Expression = {
@@ -70,24 +68,4 @@ trait ShimUnaryCommand extends UnaryCommand {
   override def withNewChildInternal(newChild: LogicalPlan): LogicalPlan = {
     legacyWithNewChildren(Seq(newChild))
   }
-}
-
-trait ShimPredicateHelper extends PredicateHelper {
-  // SPARK-30027 from 3.2.2 provides isNullIntolerant
-
-
-  override protected def splitConjunctivePredicates(
-    condition: Expression
-  ): Seq[Expression] = {
-    condition match {
-      case GpuAnd(cond1, cond2) =>
-        splitConjunctivePredicates(cond1) ++ splitConjunctivePredicates(cond2)
-      case other => super.splitConjunctivePredicates(condition)
-    }
-  }
-}
-
-trait ShimExtractValue extends ExtractValue {
-  // Databricks
-  override def nodePatternsInternal(): Seq[TreePattern] = Seq.empty
 }
