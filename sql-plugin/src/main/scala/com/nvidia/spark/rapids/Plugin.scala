@@ -374,22 +374,19 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   }
 
   override def onTaskFailed(failureReason: TaskFailedReason): Unit = {
+    def containsCudaFatalException(e: Throwable): Boolean = {
+      ExceptionUtils.getThrowableList(e).asScala.exists(e => e match {
+        case _: CudaFatalException => true
+        case _ => false
+      })
+    }
     failureReason match {
       case ef: ExceptionFailure =>
         ef.exception match {
-          case Some(e) => 
-            if (ExceptionUtils.getThrowableList(e).asScala.exists(e => e match {
-              case _: CudaFatalException => true
-              case _ => false
-            })) {
-              logError("Stopping the Executor based on exception being a fatal CUDA error: " +
-                s"${ef.toErrorString}")
-              logGpuDebugInfoAndExit(systemExitCode = 20)
-            }
-            return
-          case _ => ()
-        }
-        ef.exception match {
+          case Some(e) if containsCudaFatalException(e) =>
+            logError("Stopping the Executor based on exception being a fatal CUDA error: " +
+              s"${ef.toErrorString}")
+            logGpuDebugInfoAndExit(systemExitCode = 20)
           case Some(_: CudaException) =>
             logDebug(s"Executor onTaskFailed because of a non-fatal CUDA error: " +
               s"${ef.toErrorString}")
@@ -398,6 +395,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
           case _ =>
             logDebug(s"Executor onTaskFailed: ${ef.toErrorString}")
         }
+
       case other =>
         logDebug(s"Executor onTaskFailed: ${other.toString}")
     }
