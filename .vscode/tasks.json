@@ -20,7 +20,7 @@
     {
       "id": "mvnFlags",
       "description": "custom Maven CLI options",
-      "default": "-pl tests -am -DskipTests",
+      "default": "-pl tests -am -DskipTests -Dbuildver=311",
       "type": "promptString"
     },
     {
