@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import java.nio.charset.Charset
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{Dataset, Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions._
@@ -39,7 +41,8 @@ class RowBasedExpressionSuite extends SparkQueryCompareTestSuite {
   }
 
   test("project should fallback to CPU") {
-     withGpuSparkSession(spark => {
+    assume(isUnicodeEnabled())
+    withGpuSparkSession(spark => {
       val df = simpleDF(spark).selectExpr("regexp_extract(id, \"(!\\\\w+)\\\\d+([0-5]{0,2})\", 1)")
       val gpuPlan = df.queryExecution.executedPlan
       val project = gpuPlan.find {
@@ -55,11 +58,12 @@ class RowBasedExpressionSuite extends SparkQueryCompareTestSuite {
           false
       }
       assert(project.isDefined)
-     }, fallbackProject)
+    }, fallbackProject)
   }
 
   test("gpuwrapped expression is in the final plan: regexp_extract") {
-     withGpuSparkSession(spark => {
+    assume(isUnicodeEnabled())
+    withGpuSparkSession(spark => {
       // uses unsupported regexp negative lookahead
       val df = simpleDF(spark).selectExpr("regexp_extract(id, \"(!\\\\w+)\\\\d+([0-5]{0,2})\", 1)")
       val gpuPlan = df.queryExecution.executedPlan
@@ -77,11 +81,12 @@ class RowBasedExpressionSuite extends SparkQueryCompareTestSuite {
         case _ => false
       }
       assert(project.isDefined)
-     }, enableRowBasedExpression)
-  }
+      }, enableRowBasedExpression)
+    }
 
   test("gpuwrapped expression is in the final plan: regexp_replace") {
-     withGpuSparkSession(spark => {
+    assume(isUnicodeEnabled())
+    withGpuSparkSession(spark => {
       // uses unsupported pos arg > 1
       val df = simpleDF(spark).selectExpr("regexp_replace(id, \"\\\\d+([0-5]{0,2})\", \"foo\", 2)")
       val gpuPlan = df.queryExecution.executedPlan
@@ -99,11 +104,12 @@ class RowBasedExpressionSuite extends SparkQueryCompareTestSuite {
         case _ => false
       }
       assert(project.isDefined)
-     }, enableRowBasedExpression)
+    }, enableRowBasedExpression)
   }
 
   test("gpuwrapped and gpu expression is in the final plan: rlike") {
-     withGpuSparkSession(spark => {
+    assume(isUnicodeEnabled())
+    withGpuSparkSession(spark => {
       // uses unsupported pos arg > 1
       val df = simpleDF(spark)
           .selectExpr("id RLIKE \"(!\\\\w+)\\\\d+([0-5]{0,2})\"", "id RLIKE \"\\\\d+([0-5]{0,2})\"")
@@ -113,53 +119,62 @@ class RowBasedExpressionSuite extends SparkQueryCompareTestSuite {
           val boundRefs = GpuBindReferences.bindGpuReferences(projectList, child.output)
           val fallback = boundRefs.exists {
             case GpuAlias(c, _) =>
-              c.isInstanceOf[GpuRLikeWithFallback]
+                c.isInstanceOf[GpuRLikeWithFallback]
             case _: GpuRLikeWithFallback => true
             case _ => 
-              false
+                false
           }
           val onDevice = boundRefs.exists {
             case GpuAlias(c, _) =>
-              c.isInstanceOf[GpuRLike]
+                c.isInstanceOf[GpuRLike]
             case _: GpuRLike => true
             case _ => 
-              false
+                false
           }
           fallback && onDevice
         case _ => false
       }
       assert(project.isDefined)
-     }, enableRowBasedExpression)
+    }, enableRowBasedExpression)
   }
 
   testSparkResultsAreEqual("rlike execution on CPU while holding the GPU semaphore", 
       simpleDF,
       conf = enableRowBasedExpression) { frame =>
+    assume(isUnicodeEnabled())
     frame.selectExpr("id RLIKE \"(!\\\\w+)\\\\d+([0-5]{0,2})\"")
   }
 
   testSparkResultsAreEqual("regexp_extract execution on CPU while holding the GPU semaphore", 
       simpleDF,
       conf = enableRowBasedExpression) { frame =>
+    assume(isUnicodeEnabled())
     frame.selectExpr("regexp_extract(id, \"(!\\\\w+)\\\\d+([0-5]{0,2})\", 1)")
   }
 
   testSparkResultsAreEqual("regexp_extract_all execution on CPU while holding the GPU semaphore", 
       simpleDF,
       conf = enableRowBasedExpression) { frame =>
+    assume(isUnicodeEnabled())
     frame.selectExpr("regexp_extract_all(id, \"(!\\\\w+)\\\\d+([0-5]{0,2})\", 1)")
   }
 
   testSparkResultsAreEqual("regexp_replace execution on CPU while holding the GPU semaphore", 
       simpleDF,
       conf = enableRowBasedExpression) { frame =>
+    assume(isUnicodeEnabled())
     frame.selectExpr("regexp_replace(id, \"\\\\d+([0-5]{0,2})\", \"foo\", 2)")
   }
 
   testSparkResultsAreEqual("split execution on CPU while holding the GPU semaphore", 
       simpleDF,
       conf = enableRowBasedExpression) { frame =>
+    assume(isUnicodeEnabled())
     frame.selectExpr("split(id, \"(!\\\\w+)\\\\d+([0-5]{0,2})\", 2)")
+  }
+
+  private def isUnicodeEnabled(): Boolean = {
+    Charset.defaultCharset().name() == "UTF-8"
   }
   
 }
