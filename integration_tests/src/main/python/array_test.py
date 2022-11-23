@@ -626,7 +626,8 @@ def test_arrays_overlap_before_spark313(data_gen):
             'arrays_overlap(array(), array(1, 2))')
     )
 
-@pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
+@pytest.mark.parametrize('data_gen', [ByteGen(special_cases=[-10, 0, 10]), ShortGen(special_cases=[-10, 0, 10]), 
+                                      IntegerGen(special_cases=[-10, 0, 10]), LongGen(special_cases=[-10, 0, 10])], ids=idfn)
 def test_array_remove_scalar(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True))],
@@ -636,11 +637,14 @@ def test_array_remove_scalar(data_gen):
         lambda spark: gen_df(spark, gen).selectExpr(
             'array_remove(a, -10)',
             'array_remove(a, 0)',
-            'array_remove(a, 10)')
+            'array_remove(a, 10)'),
+        is_cpu_first=False
     )
 
-@pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
-                                      float_gen, double_gen,
+@pytest.mark.parametrize('data_gen', [ByteGen(special_cases=[5]), ShortGen(special_cases=[5]), 
+                                      IntegerGen(special_cases=[5]), LongGen(special_cases=[5]),
+                                      FloatGen(special_cases=_non_neg_zero_float_special_cases + [-0.0]), 
+                                      DoubleGen(special_cases=_non_neg_zero_double_special_cases + [-0.0]),
                                       string_gen, boolean_gen, date_gen, timestamp_gen] + decimal_gens, ids=idfn)
 def test_array_remove(data_gen):
     gen = StructGen(
@@ -655,5 +659,6 @@ def test_array_remove(data_gen):
             'array_remove(array(), null)',
             'array_remove(array(), 0)',
             'array_remove(array(1, 2, 2, 3, null), null)',
-            'array_remove(array(1, 2, 2, 3, null), 2)')
+            'array_remove(array(1, 2, 2, 3, null), 2)'),
+        is_cpu_first=False
     )

@@ -1128,25 +1128,18 @@ case class GpuArrayRemove(left: Expression, right: Expression) extends GpuBinary
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     val lhsBase = lhs.getBase
-    withResource(lhsBase.getListOffsetsView) { offSets =>
-      // Construct boolean mask where true values correspond to elements to remove
-      val boolMaskRemove = withResource(lhsBase.getChildColumnView(0)){ lhsFlatten =>
-        withResource(GpuColumnVector.from(rhs, 1, rhs.dataType)) { rhsColumn =>
-          withResource(lhsFlatten.contains(rhsColumn.getBase)) { boolMask =>
-            // Replace null with false because these entries should not be removed
-            withResource(GpuScalar.from(false, BooleanType)) { falseScalar =>
-              boolMask.replaceNulls(falseScalar)
-            }
+    // Construct boolean mask where true values correspond to elements to keep
+    val boolMask = withResource(lhsBase.getListOffsetsView) { offSets =>
+      withResource(lhsBase.getChildColumnView(0)){ lhsFlatten =>
+        withResource(lhsFlatten.equalToNullAware(rhs.getBase)) { boolMaskToRemove =>
+          withResource(boolMaskToRemove.not) { boolMaskToKeep =>
+            boolMaskToKeep.makeListFromOffsets(lhs.getRowCount, offSets)
           }
         }
       }
-      withResource(boolMaskRemove) { boolMaskRemove =>
-        withResource(boolMaskRemove.not) { boolMaskKeep =>
-          withResource(boolMaskKeep.makeListFromOffsets(lhs.getRowCount, offSets)) { boolMaskList =>
-            lhsBase.applyBooleanMask(boolMaskList)
-          }
-        }
-      }
+    }
+    withResource(boolMask) { boolMask =>
+      lhsBase.applyBooleanMask(boolMask)
     }
   }
 
