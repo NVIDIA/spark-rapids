@@ -332,29 +332,9 @@ trait DecimalWithPromote extends CudfBinaryOperator {
   }
 }
 
-case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDivModLikeWithPromote {
-  override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
-
-  lazy val failOnOverflow: Boolean =
-    SparkShimImpl.shouldFailDivOverflow
-
-  override def checkDivideOverflow: Boolean = left.dataType match {
-    case LongType if failOnOverflow => true
-    case _ => false
-  }
-
-  override def dataType: DataType = LongType
-  override def outputTypeOverride: DType = DType.INT64
-  // CUDF does not support casting output implicitly for decimal binary ops, so we work around
-  // it here where we want to force the output to be a Long.
-  override def castOutputAtEnd: Boolean = left.dataType.isInstanceOf[DecimalType]
-
-  override def symbol: String = "/"
-
-  override def binaryOp: BinaryOp = BinaryOp.DIV
-
-  override def sqlOperator: String = "div"
-
+case class GpuIntegralDivide(
+    left: Expression,
+    right: Expression) extends GpuIntegralDivideParent(left, right) with DecimalWithPromote {
   override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
     // This follows division rule
     val intDig = p1 - s1 + s2
@@ -363,12 +343,10 @@ case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDiv
   }
 }
 
-case class GpuRemainder(left: Expression, right: Expression) extends GpuDivModLikeWithPromote {
-  override def inputType: AbstractDataType = NumericType
-
-  override def symbol: String = "%"
-
-  override def binaryOp: BinaryOp = BinaryOp.MOD
+case class GpuRemainder(
+    left: Expression,
+    right: Expression)
+    extends GpuRemainderParent(left, right) with DecimalWithPromote {
 
   // scalastyle:off
   // The formula follows Hive which is based on the SQL standard and MS SQL:
@@ -388,16 +366,9 @@ case class GpuRemainder(left: Expression, right: Expression) extends GpuDivModLi
   }
 }
 
-
-case class GpuPmod(left: Expression, right: Expression) extends GpuDivModLikeWithPromote {
-  override def inputType: AbstractDataType = NumericType
-
-  override def binaryOp: BinaryOp = BinaryOp.PMOD
-
-  override def symbol: String = "pmod"
-
-  override def dataType: DataType = left.dataType
-
+case class GpuPmod(
+    left: Expression,
+    right: Expression) extends GpuPmodParent(left, right) with DecimalWithPromote {
   // This follows Remainder rule
   override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
     val resultScale = max(s1, s2)
@@ -408,7 +379,6 @@ case class GpuPmod(left: Expression, right: Expression) extends GpuDivModLikeWit
       DecimalType.bounded(resultPrecision, resultScale)
     }
   }
-
 }
 
 

@@ -18,6 +18,8 @@ package org.apache.spark.sql.rapids
 
 import java.math.BigInteger
 
+import scala.math.{max, min}
+
 import ai.rapids.cudf._
 import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
@@ -873,6 +875,83 @@ object GpuDecimalDivide {
     DecimalType(
       math.min(outputType.precision + 1, DType.DECIMAL128_MAX_PRECISION),
       math.min(outputType.scale + 1, DType.DECIMAL128_MAX_PRECISION))
+  }
+}
+
+abstract class GpuIntegralDivideParent(left: Expression, right: Expression) extends GpuDivModLike {
+  override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
+
+  lazy val failOnOverflow: Boolean =
+    SparkShimImpl.shouldFailDivOverflow
+
+  override def checkDivideOverflow: Boolean = left.dataType match {
+    case LongType if failOnOverflow => true
+    case _ => false
+  }
+
+  override def dataType: DataType = LongType
+  override def outputTypeOverride: DType = DType.INT64
+  // CUDF does not support casting output implicitly for decimal binary ops, so we work around
+  // it here where we want to force the output to be a Long.
+  override def castOutputAtEnd: Boolean = left.dataType.isInstanceOf[DecimalType]
+
+  override def symbol: String = "/"
+
+  override def binaryOp: BinaryOp = BinaryOp.DIV
+
+  override def sqlOperator: String = "div"
+
+  override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
+    // This follows division rule
+    val intDig = p1 - s1 + s2
+    // No precision loss can happen as the result scale is 0.
+    DecimalType.bounded(intDig, 0)
+  }
+}
+
+abstract class GpuRemainderParent(left: Expression, right: Expression) extends GpuDivModLike {
+  override def inputType: AbstractDataType = NumericType
+
+  override def symbol: String = "%"
+
+  override def binaryOp: BinaryOp = BinaryOp.MOD
+
+  // scalastyle:off
+  // The formula follows Hive which is based on the SQL standard and MS SQL:
+  // https://cwiki.apache.org/confluence/download/attachments/27362075/Hive_Decimal_Precision_Scale_Support.pdf
+  // https://msdn.microsoft.com/en-us/library/ms190476.aspx
+  // Result Precision: min(p1-s1, p2-s2) + max(s1, s2)
+  // Result Scale:     max(s1, s2)
+  // scalastyle:on
+  override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
+    val resultScale = max(s1, s2)
+    val resultPrecision = min(p1 - s1, p2 - s2) + resultScale
+    if (allowPrecisionLoss) {
+      DecimalType.adjustPrecisionScale(resultPrecision, resultScale)
+    } else {
+      DecimalType.bounded(resultPrecision, resultScale)
+    }
+  }
+}
+
+abstract class GpuPmodParent(left: Expression, right: Expression) extends GpuDivModLike {
+  override def inputType: AbstractDataType = NumericType
+
+  override def binaryOp: BinaryOp = BinaryOp.PMOD
+
+  override def symbol: String = "pmod"
+
+  override def dataType: DataType = left.dataType
+
+  // This follows Remainder rule
+  override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
+    val resultScale = max(s1, s2)
+    val resultPrecision = min(p1 - s1, p2 - s2) + resultScale
+    if (allowPrecisionLoss) {
+      DecimalType.adjustPrecisionScale(resultPrecision, resultScale)
+    } else {
+      DecimalType.bounded(resultPrecision, resultScale)
+    }
   }
 }
 
