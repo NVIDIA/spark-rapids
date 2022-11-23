@@ -179,12 +179,7 @@ pipeline {
                         major_ver = versions[0].toInteger()
                         minor_ver = versions[1].toInteger()
 
-                        if (major_ver >= 22) {
-                            PREMERGE_CI_2_ARGUMENT = "ci_2"
-                        } else {
-                            error("Unsupported major version: $major_ver")
-                        }
-
+                        PREMERGE_CI_2_ARGUMENT = "ci_2"
                         echo PREMERGE_CI_2_ARGUMENT
                     }
                 }
