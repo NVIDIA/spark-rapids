@@ -22,7 +22,6 @@ import com.nvidia.spark.rapids._
 import org.apache.hadoop.fs.FileStatus
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.errors.attachTree
@@ -154,16 +153,6 @@ abstract class Spark31XShims extends Spark31Xuntil33XShims with Logging {
       "ORC parsing",
       (a, conf, p, r) => new RapidsOrcScanMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
-
-  override def getFileScanRDD(
-      sparkSession: SparkSession,
-      readFunction: PartitionedFile => Iterator[InternalRow],
-      filePartitions: Seq[FilePartition],
-      readDataSchema: StructType,
-      metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
-    new FileScanRDD(sparkSession, readFunction, filePartitions)
-  }
-
   override def hasAliasQuoteFix: Boolean = false
 
   override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
@@ -413,4 +402,6 @@ abstract class Spark31XShims extends Spark31Xuntil33XShims with Logging {
     // the [[AvoidAdaptiveTransitionToRow]] operator here
     AvoidAdaptiveTransitionToRow(GpuRowToColumnarExec(a, goal))
   }
+
+  override def reproduceEmptyStringBug: Boolean = false
 }
