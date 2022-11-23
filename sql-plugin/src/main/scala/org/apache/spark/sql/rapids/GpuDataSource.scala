@@ -47,7 +47,6 @@ import org.apache.spark.sql.execution.datasources.v2.orc.OrcDataSourceV2
 import org.apache.spark.sql.execution.streaming._
 import org.apache.spark.sql.execution.streaming.sources.{RateStreamProvider, TextSocketSourceProvider}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.shims.SchemaUtilsShims
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types.{CalendarIntervalType, DataType, StructType}
 import org.apache.spark.util.{HadoopFSUtils, ThreadUtils, Utils}
