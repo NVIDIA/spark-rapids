@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
-
 import org.apache.hadoop.fs.FileStatus
 
 import org.apache.spark.{SparkEnv, TaskContext}
@@ -28,10 +27,10 @@ import org.apache.spark.sql.catalyst._
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
+import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive._
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.exchange._
-import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.rapids.shims._
 import org.apache.spark.sql.types._
