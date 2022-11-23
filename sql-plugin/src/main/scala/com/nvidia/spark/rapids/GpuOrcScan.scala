@@ -827,15 +827,12 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
 
     val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
         metrics(GPU_DECODE_TIME))) { _ =>
-      // Table.readORC(parseOpts, hostBuf, 0, bufSize)
       try {
-        logDebug("enter try catch!!")
         Table.readORC(parseOpts, hostBuf, 0, bufSize)
       } catch {
-        case e : Throwable => 
-          logDebug("caught exception!!")
-          logWarning(s"Exception thrown from calling readORC: $e, file = ?, file size = ?")
-          null
+        case e: Exception => 
+          throw new IOException(s"""Error when processing file splits  
+                                 [${splits.mkString("; ")}]: $e""", e)
       }
     }
     // Execute the schema evolution

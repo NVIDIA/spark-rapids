@@ -2014,7 +2014,17 @@ object MakeParquetTableProducer extends Arm {
       val table = withResource(buffer) { _ =>
         withResource(new NvtxWithMetrics("Parquet decode", NvtxColor.DARK_GREEN,
           metrics(GPU_DECODE_TIME))) { _ =>
-          Table.readParquet(opts, buffer, offset, len)
+          try {
+            Table.readParquet(opts, buffer, offset, len)
+          } catch {
+            case e: Exception =>
+              val path = filePath match {
+                case Some(path) => s"$path"
+                case None => ""
+              }
+              throw new IOException(s"""Error when processing file 
+                                     [path: $path, range: $offset-${offset + len}]: $e""", e)
+          }
         }
       }
       closeOnExcept(table) { _ =>
