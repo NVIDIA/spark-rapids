@@ -58,7 +58,8 @@ class GpuMultiFileReaderSuite extends FunSuite with Arm {
         () => null
       }
 
-      override def readBatch(h: HostMemoryBuffersWithMetaDataBase): Option[ColumnarBatch] = None
+      override def readBatches(h: HostMemoryBuffersWithMetaDataBase): Iterator[ColumnarBatch] =
+        EmptyGpuColumnarBatchIterator
 
       override def getFileFormatShortName: String = ""
     }
