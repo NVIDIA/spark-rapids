@@ -89,5 +89,5 @@ trait ShimPredicateHelper extends PredicateHelper {
 
 trait ShimExtractValue extends ExtractValue {
   // Databricks
-  def nodePatternsInternal(): Seq[TreePattern] = Seq.empty
+  override def nodePatternsInternal(): Seq[TreePattern] = Seq.empty
 }

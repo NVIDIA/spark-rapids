@@ -41,5 +41,5 @@ trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase {
     )
   }
 
-  override def ordering: Option[Seq[org.apache.spark.sql.catalyst.expressions.SortOrder]] = None
+  def ordering: Option[Seq[org.apache.spark.sql.catalyst.expressions.SortOrder]] = None
 }
