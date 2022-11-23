@@ -17,98 +17,164 @@
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
+
+import org.apache.parquet.schema.MessageType
+
+import org.apache.spark.{SparkEnv, TaskContext}
+import org.apache.spark.memory.TaskMemoryManager
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
-import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
+import org.apache.spark.sql.catalyst._
+import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.plans.physical._
+import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
+import org.apache.spark.sql.execution.datasources._
+import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.rapids.execution.python._
 
-object SparkShimImpl extends Spark320PlusShims {
-  override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
-
-  private val spark331dbExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
-    Seq(
-      GpuOverrides.exec[GlobalLimitExec](
-        "Limiting of results across partitions",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-          TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
-          TypeSig.all),
-        (globalLimit, conf, p, r) =>
-          new SparkPlanMeta[GlobalLimitExec](globalLimit, conf, p, r) {
-            override def convertToGpu(): GpuExec =
-              GpuGlobalLimitExec(
-                globalLimit.limit, childPlans.head.convertIfNeeded(), globalLimit.offset)
-          }),
-      GpuOverrides.exec[CollectLimitExec](
-        "Reduce to single partition and apply limit",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-          TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
-          TypeSig.all),
-        (collectLimit, conf, p, r) => new GpuCollectLimitMeta(collectLimit, conf, p, r) {
-          override def convertToGpu(): GpuExec =
-            GpuGlobalLimitExec(collectLimit.limit,
-              GpuShuffleExchangeExec(
-                GpuSinglePartitioning,
-                GpuLocalLimitExec(collectLimit.limit, childPlans.head.convertIfNeeded()),
-                ENSURE_REQUIREMENTS
-              )(SinglePartition), collectLimit.offset)
-        }
-      ).disabledByDefault("Collect Limit replacement can be slower on the GPU, if huge number " +
-        "of rows in a batch it could help by limiting the number of rows transferred from " +
-        "GPU to CPU")
-    )
-    .map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r))
-    .toMap
-
-  private val spark330PlusExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
-    Seq(
-      GpuOverrides.exec[BatchScanExec](
-        "The backend for most file input",
-        ExecChecks(
-          (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
-              TypeSig.DECIMAL_128 + TypeSig.BINARY +
-              GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
-          TypeSig.all),
-        (p, conf, parent, r) => new BatchScanExecMeta(p, conf, parent, r)),
-      GpuOverrides.exec[FileSourceScanExec](
-        "Reading data from files, often from Hive tables",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-            TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.BINARY +
-            GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
-          TypeSig.all),
-        (fsse, conf, p, r) => new FileSourceScanExecMeta(fsse, conf, p, r)),
-      GpuOverrides.exec[PythonMapInArrowExec](
-        "The backend for Map Arrow Iterator UDF. Accelerates the data transfer between the" +
-          " Java process and the Python process. It also supports scheduling GPU resources" +
-          " for the Python process when enabled.",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
-          TypeSig.all),
-        (mapPy, conf, p, r) => new GpuPythonMapInArrowExecMeta(mapPy, conf, p, r))
-    )
-    .map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r))
-    .toMap
-
-  private val spark320PlusExec = super.getExecs
-
-  override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
-    spark320PlusExec ++ spark330PlusExecs ++ spark331dbExecs
-
+object SparkShimImpl extends Spark320PlusShims
+  with Spark321PlusDBShims
+  with RebaseShims {
   // AnsiCast is removed from Spark3.4.0
   override def ansiCastRule: ExprRule[_ <: Expression] = null
 
-  def getWindowExpressions(winPy: org.apache.spark.sql.execution.python.WindowInPandasExec): Seq[org.apache.spark.sql.catalyst.expressions.NamedExpression] = ???
+  override def getParquetFilters(
+      schema: MessageType,
+      pushDownDate: Boolean,
+      pushDownTimestamp: Boolean,
+      pushDownDecimal: Boolean,
+      pushDownStartWith: Boolean,
+      pushDownInFilterThreshold: Int,
+      caseSensitive: Boolean,
+      lookupFileMeta: String => String,
+      dateTimeRebaseModeFromConf: String): ParquetFilters = {
+    val datetimeRebaseMode = DataSourceUtils
+      .datetimeRebaseSpec(lookupFileMeta, dateTimeRebaseModeFromConf)
+    new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
+      pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
+  }
 
-  // Members declared in com.nvidia.spark.rapids.SparkShims
-  def broadcastModeTransform(mode: org.apache.spark.sql.catalyst.plans.physical.BroadcastMode,toArray: Array[org.apache.spark.sql.catalyst.InternalRow]): Any = ???
-  def filesFromFileIndex(fileCatalog: org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex): Seq[org.apache.hadoop.fs.FileStatus] = ???
-  def getFileScanRDD(sparkSession: org.apache.spark.sql.SparkSession,readFunction: org.apache.spark.sql.execution.datasources.PartitionedFile => Iterator[org.apache.spark.sql.catalyst.InternalRow],filePartitions: Seq[org.apache.spark.sql.execution.datasources.FilePartition],readDataSchema: org.apache.spark.sql.types.StructType,metadataColumns: Seq[org.apache.spark.sql.catalyst.expressions.AttributeReference]): org.apache.spark.rdd.RDD[org.apache.spark.sql.catalyst.InternalRow] = ???
-  def getParquetFilters(schema: org.apache.parquet.schema.MessageType,pushDownDate: Boolean,pushDownTimestamp: Boolean,pushDownDecimal: Boolean,pushDownStartWith: Boolean,pushDownInFilterThreshold: Int,caseSensitive: Boolean,lookupFileMeta: String => String,dateTimeRebaseModeFromConf: String): org.apache.spark.sql.execution.datasources.parquet.ParquetFilters = ???
-  def neverReplaceShowCurrentNamespaceCommand: com.nvidia.spark.rapids.ExecRule[_ <: org.apache.spark.sql.execution.SparkPlan] = ???
-  def newBroadcastQueryStageExec(old: org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec,newPlan: org.apache.spark.sql.execution.SparkPlan): org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec = ???
-  def reusedExchangeExecPfn: PartialFunction[org.apache.spark.sql.execution.SparkPlan,org.apache.spark.sql.execution.exchange.ReusedExchangeExec] = ???
+  // RebaseShims.parquetRebaseReadKey
+  // override def parquetRebaseReadKey: String = super.parquetRebaseReadKey
+
+  // RebaseShims.parquetRebaseWriteKey
+  // override def parquetRebaseWriteKey: String = ???
+
+  // RebaseShims.avroRebaseReadKey$
+  // override def avroRebaseReadKey: String = ???
+
+  // RebaseShims.avroRebaseWriteKey$
+  // override def avroRebaseWriteKey: String = ???
+
+  // RebaseShims.parquetRebaseRead$
+  // override def parquetRebaseRead(conf: org.apache.spark.sql.internal.SQLConf): String = ???
+
+  // RebaseShims.parquetRebaseWrite$
+  // override def parquetRebaseWrite(conf: org.apache.spark.sql.internal.SQLConf): String = ???
+
+  // Spark320PlusShims.v1RepairTableCommand$
+  // override def v1RepairTableCommand(tableName: TableIdentifier): org.apache.spark.sql.execution.command.RunnableCommand = ???
+
+  // RebaseShims.int96ParquetRebaseRead$
+  // override def int96ParquetRebaseRead(conf: org.apache.spark.sql.internal.SQLConf): String = ???
+
+  // RebaseShims.int96ParquetRebaseWrite$
+  // override def int96ParquetRebaseWrite(conf: org.apache.spark.sql.internal.SQLConf): String = ???
+
+  // RebaseShims.int96ParquetRebaseReadKey$
+  // override def int96ParquetRebaseReadKey: String = ???
+
+  // RebaseShims.int96ParquetRebaseWriteKey$
+  // override def int96ParquetRebaseWriteKey: String = ???
+
+  // Spark330PlusShims.getParquetFilters$
+  // override def getParquetFilters(schema: org.apache.parquet.schema.MessageType, pushDownDate: Boolean, pushDownTimestamp: Boolean, pushDownDecimal: Boolean, pushDownStartWith: Boolean, pushDownInFilterThreshold: Int, caseSensitive: Boolean, lookupFileMeta: String => String, dateTimeRebaseModeFromConf: String): org.apache.spark.sql.execution.datasources.parquet.ParquetFilters = ???
+
+  // Spark320PlusShims.isWindowFunctionExec$
+  // override def isWindowFunctionExec(plan: SparkPlan): Boolean = ???
+
+  // Spark320PlusShims.getExprs$
+  // Spark330PlusShims.getExprs$:
+  //  Spark331PlusShims.getExprs$
+  // override def getExprs: Map[Class[_ <: Expression],ExprRule[_ <: Expression]] = ???
+
+  // Spark320PlusShims.getScans$
+  // override def getScans: Map[Class[_ <: Scan],ScanRule[_ <: Scan]] = ???
+
+  // Spark321PlusDBShims.newBroadcastQueryStageExec$
+  // override def newBroadcastQueryStageExec(old: BroadcastQueryStageExec, newPlan: SparkPlan): BroadcastQueryStageExec = ???
+
+  // Spark321PlusDBShims.getFileScanRDD$:
+  // override def getFileScanRDD(sparkSession: SparkSession, readFunction: PartitionedFile => Iterator[InternalRow], filePartitions: Seq[FilePartition], readDataSchema: StructType, metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = ???
+
+  // Spark320PlusShims.shouldFailDivOverflow$
+  // override def shouldFailDivOverflow: Boolean = ???
+
+  // Spark321PlusDBShims.reusedExchangeExecPfn$
+  // override def reusedExchangeExecPfn: PartialFunction[SparkPlan,ReusedExchangeExec] = ???
+
+  // Spark320PlusShims.attachTreeIfSupported$
+  // override def attachTreeIfSupported[TreeType <: TreeNode[_], A](tree: TreeType, msg: String)(f: => A): A = ???
+
+  // Spark320PlusShims.hasAliasQuoteFix$
+  // override def hasAliasQuoteFix: Boolean = ???
+
+  // Spark320PlusShims.hasCastFloatTimestampUpcast$
+  // override def hasCastFloatTimestampUpcast: Boolean = ???
+
+  // Spark321PlusDBShims.filesFromFileIndex$
+  // override def filesFromFileIndex(fileCatalog: PartitioningAwareFileIndex): Seq[FileStatus] = ???
+
+  // Spark320PlusShims.isEmptyRelation$
+  // override def isEmptyRelation(relation: Any): Boolean = ???
+
+  // Spark321PlusDBShims.broadcastModeTransform$
+  // override def broadcastModeTransform(mode: BroadcastMode, toArray: Array[InternalRow]): Any = ???
+
+  // Spark320PlusShims.tryTransformIfEmptyRelation$
+  // override def tryTransformIfEmptyRelation(mode: BroadcastMode): Option[Any] = ???
+
+  // Spark320PlusShims.isAqePlan$
+  // override def isAqePlan(p: SparkPlan): Boolean = ???
+
+  // Spark320PlusShims.isExchangeOp$
+  // override def isExchangeOp(plan: SparkPlanMeta[_]): Boolean = ???
+
+  // Spark320PlusShims.getDateFormatter$
+  // override def getDateFormatter(): DateFormatter = ???
+
+  // Spark320PlusShims.sessionFromPlan$:
+  // override def sessionFromPlan(plan: SparkPlan): SparkSession = ???
+
+  // Spark320PlusShims.isCustomReaderExec$
+  // override def isCustomReaderExec(x: SparkPlan): Boolean = ???
+
+  // Spark320PlusShims.aqeShuffleReaderExec$
+  // override def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan] = ???
+
+  // Spark320PlusShims.findOperators$:
+  // override def findOperators(plan: SparkPlan, predicate: SparkPlan => Boolean): Seq[SparkPlan] = ???
+
+  // Spark320PlusShims.skipAssertIsOnTheGpu$
+  // override def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean = ???
+
+  // Spark320PlusShims.leafNodeDefaultParallelism$
+  // override def leafNodeDefaultParallelism(ss: SparkSession): Int = ???
+
+  // Spark320PlusShims.getAdaptiveInputPlan$
+  // override def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan = ???
+
+  // Spark321PlusDBShims.neverReplaceShowCurrentNamespaceCommand$
+  // override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = ???
+
+  // Spark320PlusShims.supportsColumnarAdaptivePlans$
+  // override def supportsColumnarAdaptivePlans: Boolean = ???
+
+  // Spark320PlusShims.columnarAdaptivePlan$
+  // override def columnarAdaptivePlan(a: AdaptiveSparkPlanExec, goal: CoalesceSizeGoal): SparkPlan = ???
 }
 
 // Fallback to the default definition of `deterministic`

@@ -25,8 +25,6 @@ import org.apache.spark.sql.execution.{CollectLimitExec, GlobalLimitExec, SparkP
 import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
 
 object SparkShimImpl extends Spark331PlusShims {
-  override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
-
   private val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
     GpuOverrides.exec[GlobalLimitExec](
       "Limiting of results across partitions",

@@ -655,6 +655,7 @@
                                         <exclude name="*nondb*/*"/>
 
                                         <include name="311+-db/*"/>
+                                        <include name="321+-db/*"/>
                                     </patternset>
                                     <include name="321db/*"/>
                                 </dirset>
@@ -662,6 +663,7 @@
                             <pathconvert property="spark330db.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
                                     <include name="post320-treenode/*"/>
+                                    <include name="321+-db/*"/>
                                     <include name="330db/*"/>
                                 </dirset>
                             </pathconvert>

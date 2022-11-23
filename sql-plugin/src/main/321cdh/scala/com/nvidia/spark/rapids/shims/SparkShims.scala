@@ -29,8 +29,6 @@ object SparkShimImpl extends Spark321PlusShims
     with Spark320PlusNonDBShims
     with Spark31Xuntil33XShims
     with Spark320until340Shims {
-  override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
-
   override def getFileScanRDD(
       sparkSession: SparkSession,
       readFunction: PartitionedFile => Iterator[InternalRow],

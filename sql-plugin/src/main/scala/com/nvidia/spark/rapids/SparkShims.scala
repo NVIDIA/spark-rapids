@@ -56,7 +56,7 @@ case class DatabricksShimVersion(
 }
 
 trait SparkShims {
-  def getSparkShimVersion: ShimVersion
+  def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
   def parquetRebaseReadKey: String
   def parquetRebaseWriteKey: String
   def avroRebaseReadKey: String
