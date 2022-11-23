@@ -56,10 +56,6 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
   }
 }
 
-object GpuAdd extends GpuAddParent {
-  // Scala requires the companion objects to be in the same file
-}
-
 case class GpuAdd(
     left: Expression,
     right: Expression,
@@ -81,7 +77,7 @@ case class GpuAdd(
           GpuTypeShims.isSupportedYearMonthType(dataType)) {
         // For day time interval, Spark throws an exception when overflow,
         // regardless of whether `SQLConf.get.ansiEnabled` is true or false
-        GpuAdd.basicOpOverflowCheck(lhs, rhs, ret)
+        AddOverflowChecks.basicOpOverflowCheck(lhs, rhs, ret)
       }
 
       if (dataType.isInstanceOf[DecimalType]) {
@@ -96,7 +92,7 @@ case class GpuAdd(
             ret.incRefCount()
           }
         } { ret =>
-          GpuAdd.decimalOpOverflowCheck(lhs, rhs, ret, failOnError)
+          AddOverflowChecks.decimalOpOverflowCheck(lhs, rhs, ret, failOnError)
         }
       } else {
         ret.incRefCount()
@@ -233,37 +229,6 @@ case class GpuSubtract(
   }
 }
 
-case class GpuMultiply(
-    left: Expression,
-    right: Expression) extends CudfBinaryArithmetic with DecimalWithPromote {
-  assert(!left.dataType.isInstanceOf[DecimalType],
-    "DecimalType multiplies need to be handled by GpuDecimalMultiply")
-
-  override def inputType: AbstractDataType = NumericType
-
-  override def symbol: String = "*"
-
-  override def binaryOp: BinaryOp = BinaryOp.MUL
-  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.MUL)
-
-  // scalastyle:off
-  // The formula follows Hive which is based on the SQL standard and MS SQL:
-  // https://cwiki.apache.org/confluence/download/attachments/27362075/Hive_Decimal_Precision_Scale_Support.pdf
-  // https://msdn.microsoft.com/en-us/library/ms190476.aspx
-  // Result Precision: p1 + p2 + 1
-  // Result Scale:     s1 + s2
-  // scalastyle:on
-  override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
-    val resultScale = s1 + s2
-    val resultPrecision = p1 + p2 + 1
-    if (allowPrecisionLoss) {
-      DecimalType.adjustPrecisionScale(resultPrecision, resultScale)
-    } else {
-      DecimalType.bounded(resultPrecision, resultScale)
-    }
-  }
-}
-
 trait GpuDivModLikeWithPromote extends GpuDivModLike with DecimalWithPromote
 
 trait DecimalWithPromote extends CudfBinaryOperator {
@@ -363,48 +328,6 @@ trait DecimalWithPromote extends CudfBinaryOperator {
           super.doColumnar(lhs, newRhs)
         }
       case _ => super.doColumnar(lhs, rhs)
-    }
-  }
-}
-
-case class GpuDivide(left: Expression, right: Expression,
-    failOnErrorOverride: Boolean = SQLConf.get.ansiEnabled)
-      extends GpuDivModLikeWithPromote {
-  assert(!left.dataType.isInstanceOf[DecimalType],
-    "DecimalType divides need to be handled by GpuDecimalDivide")
-
-  override lazy val failOnError: Boolean = failOnErrorOverride
-
-  override def inputType: AbstractDataType = TypeCollection(DoubleType, DecimalType)
-
-  override def symbol: String = "/"
-
-  override def binaryOp: BinaryOp = BinaryOp.TRUE_DIV
-
-  override def outputTypeOverride: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
-
-  // scalastyle:off
-  // The formula follows Hive which is based on the SQL standard and MS SQL:
-  // https://cwiki.apache.org/confluence/download/attachments/27362075/Hive_Decimal_Precision_Scale_Support.pdf
-  // https://msdn.microsoft.com/en-us/library/ms190476.aspx
-  // Result Precision: p1 - s1 + s2 + max(6, s1 + p2 + 1)
-  // Result Scale:     max(6, s1 + p2 + 1)
-  // scalastyle:on
-  override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
-    if (allowPrecisionLoss) {
-      val intDig = p1 - s1 + s2
-      val scale = max(DecimalType.MINIMUM_ADJUSTED_SCALE, s1 + p2 + 1)
-      val prec = intDig + scale
-      DecimalType.adjustPrecisionScale(prec, scale)
-    } else {
-      var intDig = min(DecimalType.MAX_SCALE, p1 - s1 + s2)
-      var decDig = min(DecimalType.MAX_SCALE, max(6, s1 + p2 + 1))
-      val diff = (intDig + decDig) - DecimalType.MAX_SCALE
-      if (diff > 0) {
-        decDig -= diff / 2 + 1
-        intDig = DecimalType.MAX_SCALE - decDig
-      }
-      DecimalType.bounded(intDig + decDig, decDig)
     }
   }
 }

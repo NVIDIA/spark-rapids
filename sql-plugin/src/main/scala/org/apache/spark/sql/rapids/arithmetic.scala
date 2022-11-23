@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids
 import java.math.BigInteger
 
 import ai.rapids.cudf._
+import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{GpuTypeShims, ShimExpression}
@@ -31,7 +32,7 @@ import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-protected trait GpuAddParent extends Arm {
+object AddOverflowChecks extends Arm {
   def basicOpOverflowCheck(
       lhs: BinaryOperable,
       rhs: BinaryOperable,
@@ -250,6 +251,20 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
   }
 }
 
+case class GpuMultiply(
+    left: Expression,
+    right: Expression) extends CudfBinaryArithmetic {
+  assert(!left.dataType.isInstanceOf[DecimalType],
+    "DecimalType multiplies need to be handled by GpuDecimalMultiply")
+
+  override def inputType: AbstractDataType = NumericType
+
+  override def symbol: String = "*"
+
+  override def binaryOp: BinaryOp = BinaryOp.MUL
+  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.MUL)
+}
+
 case class GpuDecimalMultiply(
     left: Expression,
     right: Expression,
@@ -265,9 +280,9 @@ case class GpuDecimalMultiply(
   private[this] lazy val lhsType: DecimalType = DecimalUtil.asDecimalType(left.dataType)
   private[this] lazy val rhsType: DecimalType = DecimalUtil.asDecimalType(right.dataType)
   private[this] lazy val (intermediateLhsType, intermediateRhsType) =
-    GpuDecimalMultiply.intermediateLhsRhsTypes(lhsType, rhsType, dataType)
+    DecimalMultiplyChecks.intermediateLhsRhsTypes(lhsType, rhsType, dataType)
   private[this] lazy val intermediateResultType =
-    GpuDecimalMultiply.intermediateResultType(lhsType, rhsType, dataType)
+    DecimalMultiplyChecks.intermediateResultType(lhsType, rhsType, dataType)
 
   def regularMultiply(batch: ColumnarBatch): Any = {
     val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
@@ -283,7 +298,8 @@ case class GpuDecimalMultiply(
         withResource(castLhs.mul(castRhs,
           GpuColumnVector.getNonNestedRapidsType(intermediateResultType))) { mult =>
           if (useLongMultiply) {
-            withResource(GpuDecimalMultiply.checkForOverflow(castLhs, castRhs)) { wouldOverflow =>
+            withResource(DecimalMultiplyChecks
+                .checkForOverflow(castLhs, castRhs)) { wouldOverflow =>
               if (failOnError) {
                 withResource(wouldOverflow.any()) { anyOverflow =>
                   if (anyOverflow.isValid && anyOverflow.getBoolean) {
@@ -352,7 +368,7 @@ case class GpuDecimalMultiply(
   override def children: Seq[Expression] = Seq(left, right)
 }
 
-object GpuDecimalMultiply extends Arm {
+object DecimalMultiplyChecks extends Arm {
   // For Spark the final desired output is
   // new_scale = lhs.scale + rhs.scale
   // new_precision = lhs.precision + rhs.precision + 1

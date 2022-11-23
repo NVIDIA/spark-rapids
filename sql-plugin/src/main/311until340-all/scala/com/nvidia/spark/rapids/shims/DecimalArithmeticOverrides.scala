@@ -17,12 +17,12 @@
 package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.{BaseExprMeta, BinaryAstExprMeta, BinaryExprMeta, CastExprMeta, DecimalUtil, ExprChecks, ExprMeta, ExprRule, GpuCheckOverflow, GpuExpression, GpuPromotePrecision, LiteralExprMeta, TypeEnum, TypeSig, UnaryExprMeta}
+import com.nvidia.spark.rapids.{BaseExprMeta, BinaryAstExprMeta, BinaryExprMeta, CastExprMeta, DecimalUtil, ExprChecks, ExprMeta, ExprRule, GpuCheckOverflow, GpuExpression, GpuPromotePrecision, LiteralExprMeta, TypeSig, UnaryExprMeta}
 import com.nvidia.spark.rapids.GpuOverrides.expr
 
 import org.apache.spark.sql.catalyst.expressions.{CastBase, CheckOverflow, Divide, Expression, Literal, Multiply, PromotePrecision}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{GpuAnsi, GpuDecimalDivide, GpuDecimalMultiply, GpuDivide, GpuMultiply}
+import org.apache.spark.sql.rapids.{DecimalMultiplyChecks, GpuAnsi, GpuDecimalDivide, GpuDecimalMultiply, GpuDivide, GpuMultiply}
 import org.apache.spark.sql.types.{Decimal, DecimalType}
 
 object DecimalArithmeticOverrides {
@@ -125,7 +125,7 @@ object DecimalArithmeticOverrides {
             case _: Multiply =>
               // GpuDecimal*Multiply includes the overflow check in it
               val intermediatePrecision =
-                GpuDecimalMultiply.nonRoundedIntermediatePrecision(lhsDecimalType,
+                DecimalMultiplyChecks.nonRoundedIntermediatePrecision(lhsDecimalType,
                   rhsDecimalType, a.dataType)
               GpuDecimalMultiply(lhs.convertToGpu(), rhs.convertToGpu(), wrapped.dataType,
                 useLongMultiply = intermediatePrecision > DType.DECIMAL128_MAX_PRECISION)
@@ -139,9 +139,7 @@ object DecimalArithmeticOverrides {
       "Multiplication",
       ExprChecks.binaryProjectAndAst(
         TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric + TypeSig.psNote(TypeEnum.DECIMAL,
-          "Because of Spark's inner workings the full range of decimal precision " +
-              "(even for 128-bit values) is not supported."),
+        TypeSig.gpuNumeric,
         TypeSig.cpuNumeric,
         ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
         ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),

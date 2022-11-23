@@ -32,10 +32,6 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
   override def hasSideEffects: Boolean = super.hasSideEffects || SQLConf.get.ansiEnabled
 }
 
-object GpuAdd extends GpuAddParent {
-  // Scala requires the companion objects to be in the same file
-}
-
 case class GpuAdd(
     left: Expression,
     right: Expression,
@@ -56,11 +52,11 @@ case class GpuAdd(
           GpuTypeShims.isSupportedYearMonthType(dataType)) {
         // For day time interval, Spark throws an exception when overflow,
         // regardless of whether `SQLConf.get.ansiEnabled` is true or false
-        GpuAdd.basicOpOverflowCheck(lhs, rhs, ret)
+        AddOverflowChecks.basicOpOverflowCheck(lhs, rhs, ret)
       }
 
       if (dataType.isInstanceOf[DecimalType]) {
-        GpuAdd.decimalOpOverflowCheck(lhs, rhs, ret, failOnError)
+        AddOverflowChecks.decimalOpOverflowCheck(lhs, rhs, ret, failOnError)
       } else {
         ret.incRefCount()
       }
@@ -167,37 +163,6 @@ case class GpuSubtract(
       }
     }
   }
-}
-
-case class GpuMultiply(
-    left: Expression,
-    right: Expression) extends CudfBinaryArithmetic {
-  assert(!left.dataType.isInstanceOf[DecimalType],
-    "DecimalType multiplies need to be handled by GpuDecimalMultiply")
-
-  override def inputType: AbstractDataType = NumericType
-
-  override def symbol: String = "*"
-
-  override def binaryOp: BinaryOp = BinaryOp.MUL
-  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.MUL)
-}
-
-case class GpuDivide(left: Expression, right: Expression,
-    failOnErrorOverride: Boolean = SQLConf.get.ansiEnabled)
-      extends GpuDivModLike {
-  assert(!left.dataType.isInstanceOf[DecimalType],
-    "DecimalType divides need to be handled by GpuDecimalDivide")
-
-  override lazy val failOnError: Boolean = failOnErrorOverride
-
-  override def inputType: AbstractDataType = TypeCollection(DoubleType, DecimalType)
-
-  override def symbol: String = "/"
-
-  override def binaryOp: BinaryOp = BinaryOp.TRUE_DIV
-
-  override def outputTypeOverride: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
 }
 
 case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDivModLike {
