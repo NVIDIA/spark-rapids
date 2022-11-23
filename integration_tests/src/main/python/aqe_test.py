@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import pytest
-from pyspark.sql.functions import when, col
+from pyspark.sql.functions import when, col, current_date, current_timestamp
 from pyspark.sql.types import *
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
@@ -121,3 +121,66 @@ def test_aqe_struct_self_join(spark_tmp_table_factory):
         return spark.sql("select a.* from {} a, {} b where a.name=b.name".format(
             resultdf_name, resultdf_name))
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_adaptive_conf)
+
+
+joins = [
+    'inner',
+    'cross',
+    'left semi',
+    'left anti',
+    'anti'
+]
+
+# see https://github.com/NVIDIA/spark-rapids/issues/7037
+# basically this happens when a GPU broadcast exchange is reused from 
+# one side of a GPU broadcast join to be used on one side of a CPU 
+# broadcast join. The bug currently manifests in Databricks, but could
+# theoretically show up in other Spark distributions
+@ignore_order(local=True)
+@allow_non_gpu('BroadcastNestedLoopJoinExec', 'BroadcastExchangeExec', 'Cast', 'DateSub')
+@pytest.mark.parametrize('join', joins, ids=idfn)
+def test_aqe_join_reused_exchange_inequality_condition(spark_tmp_path, join):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    def prep(spark):
+        data = [
+            (("Adam ", "", "Green"), "1", "M", 1000),
+            (("Bob ", "Middle", "Green"), "2", "M", 2000),
+            (("Cathy ", "", "Green"), "3", "F", 3000)
+        ]
+        schema = (StructType()
+                  .add("name", StructType()
+                       .add("firstname", StringType())
+                       .add("middlename", StringType())
+                       .add("lastname", StringType()))
+                  .add("id", StringType())
+                  .add("gender", StringType())
+                  .add("salary", IntegerType()))
+
+        df = spark.createDataFrame(spark.sparkContext.parallelize(data),schema)
+        df2 = df.withColumn("dt",current_date().alias("dt")).withColumn("ts",current_timestamp().alias("ts"))
+
+        df2.printSchema
+        df2.write.format("parquet").mode("overwrite").save(data_path)
+
+    with_cpu_session(prep)
+
+    def do_it(spark):
+        newdf2 = spark.read.parquet(data_path)
+        newdf2.createOrReplaceTempView("df2")
+
+        return spark.sql(
+            """
+            select *
+                from (
+                    select distinct a.salary
+                    from df2 a {join} join (select max(date(ts)) as state_start from df2) b
+                    on date(a.ts) > b.state_start - 2)
+                where salary in (
+                    select salary from (select a.salary
+                    from df2 a inner join (select max(date(ts)) as state_start from df2) b on date(a.ts) > b.state_start - 2
+                    limit 1))
+            """.format(join=join)
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=_adaptive_conf)
+
