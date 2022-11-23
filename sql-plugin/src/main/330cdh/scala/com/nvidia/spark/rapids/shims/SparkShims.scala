@@ -16,6 +16,4 @@
 
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids._
-
 object SparkShimImpl extends Spark330PlusNonDBShims with Spark320until340Shims
