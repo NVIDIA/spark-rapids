@@ -260,6 +260,8 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
     case ShuffleQueryStageExec(_, e: ReusedExchangeExec, _, _) => e
     case BroadcastQueryStageExec(_, e: ReusedExchangeExec, _, _) => e
   }
+
+  override def reproduceEmptyStringBug: Boolean = true
 }
 
 // Fallback to the default definition of `deterministic`
