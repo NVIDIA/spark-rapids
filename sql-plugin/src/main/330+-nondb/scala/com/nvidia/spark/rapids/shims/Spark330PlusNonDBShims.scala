@@ -16,20 +16,4 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.execution.datasources._
-import org.apache.spark.sql.types._
-
-trait Spark330PlusNonDBShims extends Spark330PlusShims {
-  override def getFileScanRDD(
-      sparkSession: SparkSession,
-      readFunction: PartitionedFile => Iterator[InternalRow],
-      filePartitions: Seq[FilePartition],
-      readDataSchema: StructType,
-      metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
-    new FileScanRDD(sparkSession, readFunction, filePartitions, readDataSchema, metadataColumns)
-  }
-}
+trait Spark330PlusNonDBShims extends Spark330PlusShims

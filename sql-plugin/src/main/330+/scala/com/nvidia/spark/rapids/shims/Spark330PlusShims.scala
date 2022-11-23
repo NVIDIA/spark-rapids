@@ -20,6 +20,9 @@ import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids._
 import org.apache.parquet.schema.MessageType
 
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
 import org.apache.spark.sql.execution.datasources._
@@ -36,6 +39,15 @@ import org.apache.spark.unsafe.types.CalendarInterval
 trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
 
   override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = null
+
+  override def getFileScanRDD(
+      sparkSession: SparkSession,
+      readFunction: PartitionedFile => Iterator[InternalRow],
+      filePartitions: Seq[FilePartition],
+      readDataSchema: StructType,
+      metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
+    new FileScanRDD(sparkSession, readFunction, filePartitions, readDataSchema, metadataColumns)
+  }
 
   override def getParquetFilters(
       schema: MessageType,
