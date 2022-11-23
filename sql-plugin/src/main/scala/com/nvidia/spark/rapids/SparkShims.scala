@@ -181,4 +181,9 @@ trait SparkShims {
   def applyShimPlanRules(plan: SparkPlan, conf: RapidsConf): SparkPlan = plan
 
   def applyPostShimPlanRules(plan: SparkPlan): SparkPlan = plan
+
+  /**
+   * Handle regexp_replace inconsistency from https://issues.apache.org/jira/browse/SPARK-39107
+   */
+  def reproduceEmptyStringBug: Boolean
 }

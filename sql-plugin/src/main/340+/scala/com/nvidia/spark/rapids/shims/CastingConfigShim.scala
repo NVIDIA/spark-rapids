@@ -16,7 +16,16 @@
 
 package com.nvidia.spark.rapids.shims
 
-object RegExpShim {
-  // Handle regexp_replace inconsistency from https://issues.apache.org/jira/browse/SPARK-39107
-  def reproduceEmptyStringBug(): Boolean = true
+import org.apache.spark.sql.catalyst.expressions.{Cast, Expression}
+
+object CastingConfigShim {
+  /** Remove TimeZoneId for Cast if needsTimeZone return false. */
+  def ignoreTimeZone(e: Expression): Expression = e match {
+    case c: Cast if c.timeZoneId.nonEmpty && !c.needsTimeZone =>
+      c.withTimeZone(null)
+    case _ => e
+  }
+
+  // Use public member of Cast class rather than reflection
+  def publicAnsiEnabled(e: Expression): Boolean = e.asInstanceOf[Cast].ansiEnabled
 }

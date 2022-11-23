@@ -14,15 +14,20 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.spark323
 
-import org.apache.spark.sql.catalyst.expressions.{Cast, Expression}
+import com.nvidia.spark.rapids.SparkShimVersion
 
-object CastIgnoreTimeZoneShim {
-  /** Remove TimeZoneId for Cast if needsTimeZone return false. */
-  def ignoreTimeZone(e: Expression): Expression = e match {
-    case c: Cast if c.timeZoneId.nonEmpty && !c.needsTimeZone =>
-      c.withTimeZone(null)
-    case _ => e
+object SparkShimServiceProvider {
+  val VERSION = SparkShimVersion(3, 2, 3)
+  val VERSIONNAMES = Seq(s"$VERSION", s"$VERSION-SNAPSHOT")
+}
+
+class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
+
+  override def getShimVersion: SparkShimVersion = SparkShimServiceProvider.VERSION
+
+  def matchesVersion(version: String): Boolean = {
+    SparkShimServiceProvider.VERSIONNAMES.contains(version)
   }
 }

@@ -16,13 +16,11 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.catalyst.expressions.{CastBase, Expression}
+import com.nvidia.spark.rapids._
 
-object CastIgnoreTimeZoneShim {
-  /** Remove TimeZoneId for Cast if needsTimeZone return false. */
-  def ignoreTimeZone(e: Expression): Expression = e match {
-    case c: CastBase if c.timeZoneId.nonEmpty && !c.needsTimeZone =>
-      c.withTimeZone(null)
-    case _ => e
-  }
+object SparkShimImpl extends Spark321PlusShims
+    with Spark320PlusNonDBShims
+    with Spark31Xuntil33XShims
+    with Spark320until340Shims {
+  override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
 }

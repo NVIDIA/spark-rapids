@@ -33,7 +33,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.{AlterTableAddPartitionCommand, AlterTableDropPartitionCommand, CommandUtils}
 import org.apache.spark.sql.execution.datasources.{FileFormatWriter, FileIndex, PartitioningUtils}
 import org.apache.spark.sql.internal.SQLConf.PartitionOverwriteMode
-import org.apache.spark.sql.util.SchemaUtils
+import org.apache.spark.sql.rapids.shims.SchemaUtilsShims
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuInsertIntoHadoopFsRelationCommand(
@@ -55,7 +55,7 @@ case class GpuInsertIntoHadoopFsRelationCommand(
 
   override def runColumnar(sparkSession: SparkSession, child: SparkPlan): Seq[ColumnarBatch] = {
     // Most formats don't do well with duplicate columns, so lets not allow that
-    SchemaUtils.checkColumnNameDuplication(
+    SchemaUtilsShims.checkColumnNameDuplication(
       outputColumnNames,
       s"when inserting into $outputPath",
       sparkSession.sessionState.conf.caseSensitiveAnalysis)

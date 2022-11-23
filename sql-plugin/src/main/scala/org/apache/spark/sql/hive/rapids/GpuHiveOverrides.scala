@@ -16,9 +16,10 @@
 
 package org.apache.spark.sql.hive.rapids
 
-import com.nvidia.spark.rapids.{DataWritingCommandRule, ExprRule, HiveProvider, ShimLoader}
+import com.nvidia.spark.rapids.{DataWritingCommandRule, ExecRule, ExprRule, HiveProvider, ShimLoader}
 
 import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.DataWritingCommand
 
 object GpuHiveOverrides {
@@ -40,6 +41,7 @@ object GpuHiveOverrides {
         override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
             DataWritingCommandRule[_ <: DataWritingCommand]] = Map.empty
         override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map.empty
+        override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Map.empty
       }
     }
   }
@@ -57,4 +59,5 @@ object GpuHiveOverrides {
    * This will return an empty mapping if spark-hive is unavailable.
    */
   def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = hiveProvider.getExprs
+  def execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = hiveProvider.getExecs
 }

@@ -426,7 +426,7 @@ case class GpuFileSourceScanExec(
     } else {
       Map.empty[String, GpuMetric]
     }
-  } ++ staticMetrics ++ semaphoreMetrics
+  } ++ staticMetrics ++ spillMetrics
 
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
@@ -563,7 +563,7 @@ case class GpuFileSourceScanExec(
       partitions: Seq[FilePartition]): RDD[InternalRow] = {
 
     if (isPerFileReadEnabled) {
-      logInfo("Using the original per file parquet reader")
+      logInfo("Using the original per file reader")
       SparkShimImpl.getFileScanRDD(relation.sparkSession, readFile.get, partitions,
         requiredSchema)
     } else {
