@@ -29,7 +29,7 @@ import alluxio.conf.{AlluxioProperties, InstancedConfiguration, PropertyKey}
 import alluxio.grpc.MountPOptions
 import alluxio.wire.MountPointInfo
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileStatus, Path}
+import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.RuntimeConfig
