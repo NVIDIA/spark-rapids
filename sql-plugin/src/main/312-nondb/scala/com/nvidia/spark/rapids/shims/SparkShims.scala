@@ -24,6 +24,8 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 object SparkShimImpl extends Spark31XShims {
   override def hasCastFloatTimestampUpcast: Boolean = true
 
+  override def reproduceEmptyStringBug: Boolean = true
+
   override def getParquetFilters(
       schema: MessageType,
       pushDownDate: Boolean,
