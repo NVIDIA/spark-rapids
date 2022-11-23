@@ -395,7 +395,6 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
           case _ =>
             logDebug(s"Executor onTaskFailed: ${ef.toErrorString}")
         }
-
       case other =>
         logDebug(s"Executor onTaskFailed: ${other.toString}")
     }
