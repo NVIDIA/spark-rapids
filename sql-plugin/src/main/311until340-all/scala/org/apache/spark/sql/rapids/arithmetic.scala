@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf._
 import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.{GpuTypeShims, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.GpuTypeShims
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, NullIntolerant}
 import org.apache.spark.sql.internal.SQLConf

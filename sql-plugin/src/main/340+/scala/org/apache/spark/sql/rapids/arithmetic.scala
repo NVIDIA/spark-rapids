@@ -21,7 +21,7 @@ import scala.math.{max, min}
 import ai.rapids.cudf._
 import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.{GpuTypeShims, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.GpuTypeShims
 
 import org.apache.spark.sql.catalyst.analysis.{DecimalPrecision, TypeCheckResult}
 import org.apache.spark.sql.catalyst.expressions.{Expression, NullIntolerant}

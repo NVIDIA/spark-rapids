@@ -18,13 +18,11 @@ package org.apache.spark.sql.rapids
 
 import java.math.BigInteger
 
-import scala.math.{max, min}
-
 import ai.rapids.cudf._
 import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{GpuTypeShims, ShimExpression}
+import com.nvidia.spark.rapids.shims.{GpuTypeShims, ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, ExpectsInputTypes, Expression, NullIntolerant}
@@ -251,20 +249,6 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
 
     super.doColumnar(input)
   }
-}
-
-case class GpuMultiply(
-    left: Expression,
-    right: Expression) extends CudfBinaryArithmetic {
-  assert(!left.dataType.isInstanceOf[DecimalType],
-    "DecimalType multiplies need to be handled by GpuDecimalMultiply")
-
-  override def inputType: AbstractDataType = NumericType
-
-  override def symbol: String = "*"
-
-  override def binaryOp: BinaryOp = BinaryOp.MUL
-  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.MUL)
 }
 
 case class GpuDecimalMultiply(
@@ -610,6 +594,20 @@ object GpuDivModLike extends Arm {
   }
 }
 
+case class GpuMultiply(
+    left: Expression,
+    right: Expression) extends CudfBinaryArithmetic {
+  assert(!left.dataType.isInstanceOf[DecimalType],
+    "DecimalType multiplies need to be handled by GpuDecimalMultiply")
+
+  override def inputType: AbstractDataType = NumericType
+
+  override def symbol: String = "*"
+
+  override def binaryOp: BinaryOp = BinaryOp.MUL
+  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.MUL)
+}
+
 trait GpuDivModLike extends CudfBinaryArithmetic {
   lazy val failOnError: Boolean = SQLConf.get.ansiEnabled
 
@@ -878,7 +876,27 @@ object GpuDecimalDivide {
   }
 }
 
-abstract class GpuIntegralDivideParent(left: Expression, right: Expression) extends GpuDivModLike {
+case class GpuDivide(left: Expression, right: Expression,
+    failOnErrorOverride: Boolean = SQLConf.get.ansiEnabled)
+    extends GpuDivModLike {
+  assert(!left.dataType.isInstanceOf[DecimalType],
+    "DecimalType divides need to be handled by GpuDecimalDivide")
+
+  override lazy val failOnError: Boolean = failOnErrorOverride
+
+  override def inputType: AbstractDataType = TypeCollection(DoubleType, DecimalType)
+
+  override def symbol: String = "/"
+
+  override def binaryOp: BinaryOp = BinaryOp.TRUE_DIV
+
+  override def outputTypeOverride: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
+}
+
+abstract class GpuIntegralDivideParent(
+    left: Expression,
+    right: Expression)
+    extends GpuDivModLike with Serializable {
   override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
 
   lazy val failOnOverflow: Boolean =
@@ -901,40 +919,19 @@ abstract class GpuIntegralDivideParent(left: Expression, right: Expression) exte
 
   override def sqlOperator: String = "div"
 
-  override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
-    // This follows division rule
-    val intDig = p1 - s1 + s2
-    // No precision loss can happen as the result scale is 0.
-    DecimalType.bounded(intDig, 0)
-  }
 }
 
-abstract class GpuRemainderParent(left: Expression, right: Expression) extends GpuDivModLike {
+abstract class GpuRemainderParent(left: Expression, right: Expression)
+    extends GpuDivModLike with Serializable {
   override def inputType: AbstractDataType = NumericType
 
   override def symbol: String = "%"
 
   override def binaryOp: BinaryOp = BinaryOp.MOD
-
-  // scalastyle:off
-  // The formula follows Hive which is based on the SQL standard and MS SQL:
-  // https://cwiki.apache.org/confluence/download/attachments/27362075/Hive_Decimal_Precision_Scale_Support.pdf
-  // https://msdn.microsoft.com/en-us/library/ms190476.aspx
-  // Result Precision: min(p1-s1, p2-s2) + max(s1, s2)
-  // Result Scale:     max(s1, s2)
-  // scalastyle:on
-  override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
-    val resultScale = max(s1, s2)
-    val resultPrecision = min(p1 - s1, p2 - s2) + resultScale
-    if (allowPrecisionLoss) {
-      DecimalType.adjustPrecisionScale(resultPrecision, resultScale)
-    } else {
-      DecimalType.bounded(resultPrecision, resultScale)
-    }
-  }
 }
 
-abstract class GpuPmodParent(left: Expression, right: Expression) extends GpuDivModLike {
+abstract class GpuPmodParent(left: Expression, right: Expression)
+    extends GpuDivModLike with Serializable {
   override def inputType: AbstractDataType = NumericType
 
   override def binaryOp: BinaryOp = BinaryOp.PMOD
@@ -942,17 +939,6 @@ abstract class GpuPmodParent(left: Expression, right: Expression) extends GpuDiv
   override def symbol: String = "pmod"
 
   override def dataType: DataType = left.dataType
-
-  // This follows Remainder rule
-  override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
-    val resultScale = max(s1, s2)
-    val resultPrecision = min(p1 - s1, p2 - s2) + resultScale
-    if (allowPrecisionLoss) {
-      DecimalType.adjustPrecisionScale(resultPrecision, resultScale)
-    } else {
-      DecimalType.bounded(resultPrecision, resultScale)
-    }
-  }
 }
 
 trait GpuGreatestLeastBase extends ComplexTypeMergingExpression with GpuExpression
