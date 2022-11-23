@@ -29,9 +29,10 @@ import org.apache.spark.sql.catalyst._
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
+import org.apache.spark.sql.execution.adaptive._
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.v2._
-import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
+import org.apache.spark.sql.execution.exchange._
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.rapids.execution.python._
@@ -65,5 +66,18 @@ trait Spark321PlusDBShims extends SparkShims {
       readDataSchema: StructType,
       metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
     new GpuFileScanRDD(sparkSession, readFunction, filePartitions)
+  }
+
+  override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = null
+
+  override def newBroadcastQueryStageExec(
+      old: BroadcastQueryStageExec,
+      newPlan: SparkPlan): BroadcastQueryStageExec = {
+    BroadcastQueryStageExec(old.id, newPlan, old.originalPlan, old.isSparkExchange)
+  }
+
+  override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
+    case ShuffleQueryStageExec(_, e: ReusedExchangeExec, _, _) => e
+    case BroadcastQueryStageExec(_, e: ReusedExchangeExec, _, _) => e
   }
 }
