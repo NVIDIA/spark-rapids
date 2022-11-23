@@ -18,14 +18,28 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.v2._
+import org.apache.spark.sql.types.StructType
 
 trait Spark31Xuntil33XShims extends SparkShims {
 
   def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = {
     GpuOverrides.neverReplaceExec[ShowCurrentNamespaceExec]("Namespace metadata operation")
+  }
+
+  override def getFileScanRDD(
+      sparkSession: SparkSession,
+      readFunction: PartitionedFile => Iterator[InternalRow],
+      filePartitions: Seq[FilePartition],
+      readDataSchema: StructType,
+      metadataColumns: Seq[AttributeReference]): RDD[InternalRow] = {
+    new FileScanRDD(sparkSession, readFunction, filePartitions)
   }
 }
 
