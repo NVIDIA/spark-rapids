@@ -670,7 +670,22 @@ object AlluxioUtils extends Logging with Arm {
         !file.isDirectory
       }
 
-      val files = filesWithoutDir.filter(shouldCalculateAverageSize)
+      val files = filesWithoutDir.filter { f =>
+        /**
+         * Determines whether a file should be calculated for the average file size.
+         * This is used to filter out some unrelated files,
+         * such as transaction log files in the Delta file type.
+         * However Delta files has other unrelated
+         * files such as old regular parquet files.
+         * Limitation: This is not OK for Delta file type, json file type, Avro file type......
+         * Currently only care about parquet and orc files.
+         * Note: It's hard to extract this into a method, because in Databricks 312 the files in
+         * `PartitionDirectory` are in type of
+         * `org.apache.spark.sql.execution.datasources.SerializableFileStatus`
+         * instead of `org.apache.hadoop.fs.FileStatus`
+         */
+        f.getPath.getName.endsWith(".parquet") || f.getPath.getName.endsWith(".orc")
+      }
 
       val totalSize = files.map(_.getLen).sum
 
@@ -686,19 +701,5 @@ object AlluxioUtils extends Logging with Arm {
         false
       }
     }
-  }
-
-  /**
-   * Determines whether a file should be calculated for the average file size.
-   * This is used to filter out some unrelated files,
-   * such as transaction log files in the Delta file type. However Delta files has other unrelated
-   * files such as old regular parquet files.
-   * Limitation: This is not OK for Delta file type, json file type, Avro file type......
-   * Currently only care about parquet and orc files.
-   * @param fs file status
-   * @return should count for large files
-   */
-  def shouldCalculateAverageSize(fs: FileStatus): Boolean = {
-    fs.getPath.getName.endsWith(".parquet") || fs.getPath.getName.endsWith(".orc")
   }
 }
