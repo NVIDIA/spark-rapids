@@ -171,7 +171,9 @@ if [[ ${PROJECT_VER} =~ ^22\.12\. ]]; then # enable snapshot builds for active d
   PREMERGE_PROFILES="-Psnapshots,pre-merge"
 elif [[ ${PROJECT_VER} =~ ^23\.02\. ]]; then
   BUILD_MAINTENANCE_VERSION_SNAPSHOTS="true"
-  BUILD_FEATURE_VERSION_SNAPSHOTS="true"
+  # DISABLED FOR NOW THIS SHOULD NOT FAIL THE BUILD UNTIL 3.4.0 is STABLE
+  # BUILD_FEATURE_VERSION_SNAPSHOTS="true"
+  BUILD_FEATURE_VERSION_SNAPSHOTS="false"
   PREMERGE_PROFILES="-Psnapshots,pre-merge"
 fi
 
