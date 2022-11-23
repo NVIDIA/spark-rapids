@@ -390,10 +390,6 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
           case _ => ()
         }
         ef.exception match {
-          case Some(_: CudaFatalException) =>
-            logError("Stopping the Executor based on exception being a fatal CUDA error: " +
-              s"${ef.toErrorString}")
-            logGpuDebugInfoAndExit(systemExitCode = 20)
           case Some(_: CudaException) =>
             logDebug(s"Executor onTaskFailed because of a non-fatal CUDA error: " +
               s"${ef.toErrorString}")
