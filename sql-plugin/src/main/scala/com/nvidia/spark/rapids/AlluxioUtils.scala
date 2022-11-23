@@ -29,7 +29,7 @@ import alluxio.conf.{AlluxioProperties, InstancedConfiguration, PropertyKey}
 import alluxio.grpc.MountPOptions
 import alluxio.wire.MountPointInfo
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.Path
+import org.apache.hadoop.fs.{FileStatus, Path}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.RuntimeConfig
@@ -665,20 +665,14 @@ object AlluxioUtils extends Logging with Arm {
       logInfo(s"Skip reading directly from S3 because spark.rapids.alluxio.slow.disk is disabled")
       false
     } else {
-      var files = pds.flatMap(pd => pd.files).filter { file =>
+      val filesWithoutDir = pds.flatMap(pd => pd.files).filter { file =>
         // skip directory
         !file.isDirectory
       }
 
-      files = files.filter { f =>
-        // only care about parquet and orc files simply, there are other types of files such as
-        // Delta type.
-        f.getPath.getName.endsWith(".parquet") || f.getPath.getName.endsWith(".orc")
-      }
+      val files = filesWithoutDir.filter(shouldCalculateAverageSize)
 
-      val totalSize = files.map { f =>
-        f.getLen
-      }.sum
+      val totalSize = files.map(_.getLen).sum
 
       val avgSize = if (files.isEmpty) 0 else totalSize / files.length
       if (avgSize > rapidsConf.getAlluxioLargeFileThreshold) {
@@ -692,5 +686,19 @@ object AlluxioUtils extends Logging with Arm {
         false
       }
     }
+  }
+
+  /**
+   * Determines whether a file should be calculated for the average file size.
+   * This is used to filter out some unrelated files,
+   * such as transaction log files in the Delta file type. However Delta files has other unrelated
+   * files such as old regular parquet files.
+   * Limitation: This is not OK for Delta file type, json file type, Avro file type......
+   * Currently only care about parquet and orc files.
+   * @param fs file status
+   * @return should count for large files
+   */
+  def shouldCalculateAverageSize(fs: FileStatus): Boolean = {
+    fs.getPath.getName.endsWith(".parquet") || fs.getPath.getName.endsWith(".orc")
   }
 }
