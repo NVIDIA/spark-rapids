@@ -574,8 +574,7 @@
                             <pathconvert property="spark330.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
                                     <patternset id="spark330+.pattern">
-                                        <!-- inherit from 321+ with exceptions -->
-                                        <patternset refid="spark321+.pattern"/>
+                                        <patternset refid="spark322+.pattern"/>
                                         <exclude name="*until330*/*"/>
 
                                         <!-- uniquely 330+ -->
