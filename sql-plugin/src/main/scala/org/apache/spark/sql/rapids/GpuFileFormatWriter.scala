@@ -18,7 +18,6 @@ package org.apache.spark.sql.rapids
 
 import java.util.{Date, UUID}
 
-import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.TimingUtils
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.RapidsFileSourceMetaUtils
@@ -35,41 +34,17 @@ import org.apache.spark.shuffle.FetchFailedException
 import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.catalog.BucketSpec
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet, Expression, NamedExpression, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeSet, SortOrder}
 import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, DateTimeUtils}
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{WriteTaskResult, WriteTaskStats}
 import org.apache.spark.sql.execution.datasources.FileFormatWriter.OutputSpec
-import org.apache.spark.sql.types.{DataType, StringType, StructType}
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.{SerializableConfiguration, Utils}
 
 /** A helper object for writing columnar data out to a location. */
 object GpuFileFormatWriter extends Logging {
-
-  /** A function that converts the empty string to null for partition values. */
-  case class GpuEmpty2Null(child: Expression) extends GpuUnaryExpression {
-    override def nullable: Boolean = true
-
-    override def doColumnar(input: GpuColumnVector): ColumnVector = {
-      var from: ColumnVector = null
-      var to: ColumnVector = null
-      try {
-        from = ColumnVector.fromStrings("")
-        to = ColumnVector.fromStrings(null)
-        input.getBase.findAndReplaceAll(from, to)
-      } finally {
-        if (from != null) {
-          from.close()
-        }
-        if (to != null) {
-          to.close()
-        }
-      }
-    }
-
-    override def dataType: DataType = StringType
-  }
 
   private def verifySchema(format: ColumnarFileFormat, schema: StructType): Unit = {
     schema.foreach { field =>
@@ -129,15 +104,15 @@ object GpuFileFormatWriter extends Logging {
       .map(RapidsFileSourceMetaUtils.cleanupFileSourceMetadataInformation))
     val dataColumns = finalOutputSpec.outputColumns.filterNot(partitionSet.contains)
 
-    var needConvert = false
-    val projectList: List[NamedExpression] = plan.output.map {
-      case p if partitionSet.contains(p) && p.dataType == StringType && p.nullable =>
-        needConvert = true
-        GpuAlias(GpuEmpty2Null(p), p.name)()
-      case other => other
-    }.toList // Force list to avoid recursive Java serialization of lazy list Seq implementation
-
-    val empty2NullPlan = if (needConvert) GpuProjectExec(projectList, plan) else plan
+    val hasGpuEmpty2Null = plan.find(p => GpuV1WriteUtils.hasGpuEmptyToNull(p.expressions))
+      .isDefined
+    val empty2NullPlan = if (hasGpuEmpty2Null) {
+      // Empty2Null has been inserted during logic planning.
+      plan
+    } else {
+      val projectList = GpuV1WriteUtils.convertGpuEmptyToNull(plan.output, partitionSet)
+      if (projectList.nonEmpty) GpuProjectExec(projectList, plan) else plan
+    }
 
     val writerBucketSpec: Option[GpuWriterBucketSpec] = bucketSpec.map { spec =>
       // TODO: Cannot support this until we:
