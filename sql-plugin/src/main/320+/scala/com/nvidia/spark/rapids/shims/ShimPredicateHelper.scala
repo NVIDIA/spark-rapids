@@ -20,9 +20,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.rapids._
 
 trait ShimPredicateHelper extends PredicateHelper {
-  // SPARK-30027 from 3.2.2 provides isNullIntolerant
-
-
+  // SPARK-30027 provides isNullIntolerant
   override protected def splitConjunctivePredicates(
     condition: Expression
   ): Seq[Expression] = {
