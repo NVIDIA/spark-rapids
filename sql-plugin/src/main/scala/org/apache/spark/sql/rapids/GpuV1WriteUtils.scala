@@ -19,29 +19,19 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, NamedExpression}
 import org.apache.spark.sql.types.{DataType, StringType}
 
-object GpuV1WriteUtils extends Logging {
+object GpuV1WriteUtils extends Arm {
 
   /** A function that converts the empty string to null for partition values. */
   case class GpuEmpty2Null(child: Expression) extends GpuUnaryExpression {
     override def nullable: Boolean = true
 
     override def doColumnar(input: GpuColumnVector): ColumnVector = {
-      var from: ColumnVector = null
-      var to: ColumnVector = null
-      try {
-        from = ColumnVector.fromStrings("")
-        to = ColumnVector.fromStrings(null)
-        input.getBase.findAndReplaceAll(from, to)
-      } finally {
-        if (from != null) {
-          from.close()
-        }
-        if (to != null) {
-          to.close()
+      withResource(ColumnVector.fromStrings("")) { from =>
+        withResource(ColumnVector.fromStrings(null)) { to =>
+          input.getBase.findAndReplaceAll(from, to)
         }
       }
     }
