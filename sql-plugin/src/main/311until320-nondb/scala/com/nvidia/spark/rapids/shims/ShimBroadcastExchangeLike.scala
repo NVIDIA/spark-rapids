@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,5 +32,10 @@ trait ShimBroadcastExchangeLike extends BroadcastExchangeLike {
   @transient
   protected lazy val promise = Promise[Broadcast[Any]]()
 
-  override def doCompletionFuture: concurrent.Future[Broadcast[Any]] = promise.future
+  /**
+   * For registering callbacks on `relationFuture`.
+   * Note that calling this field will not start the execution of broadcast job.
+   */
+  @transient
+  lazy val completionFuture: concurrent.Future[Broadcast[Any]] = promise.future
 }
