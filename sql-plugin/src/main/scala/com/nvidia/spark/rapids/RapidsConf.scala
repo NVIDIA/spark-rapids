@@ -1406,7 +1406,9 @@ object RapidsConf {
   val SHUFFLE_MULTITHREADED_MAX_BYTES_IN_FLIGHT =
     conf("spark.rapids.shuffle.multiThreaded.maxBytesInFlight")
       .doc("The size limit, in bytes, that the RAPIDS shuffle manager configured in " +
-          "\"MULTITHREADED\" mode will allow to be deserialized concurrently.")
+          "\"MULTITHREADED\" mode will allow to be deserialized concurrently per task. This is " +
+        "also the maximum amount of memory that will be used per task. This should ideally be " +
+        "at least the same size as the batch size so we don't have to wait to process a single batch."
       .startupOnly()
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(Integer.MAX_VALUE)
