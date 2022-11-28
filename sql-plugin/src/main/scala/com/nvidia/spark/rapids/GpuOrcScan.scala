@@ -1601,14 +1601,14 @@ class MultiFileCloudOrcPartitionReader(
     updatedReadSchema: TypeDescription,
     readSchema: StructType) extends HostMemoryBuffersWithMetaDataBase {
 
-    override def memBuffersAndSizes: Array[HostMemoryBufferInfo] =
-      Array(HostMemoryBufferInfo(null.asInstanceOf[HostMemoryBuffer], bufferSize,
+    override def memBuffersAndSizes: Array[HostMemoryBufferAndMeta] =
+      Array(HostMemoryBufferAndMeta(null.asInstanceOf[HostMemoryBuffer], bufferSize,
         0, Seq.empty, null))
   }
 
   private case class HostMemoryBuffersWithMetaData(
     override val partitionedFile: PartitionedFile,
-    override val memBuffersAndSizes: Array[HostMemoryBufferInfo],
+    override val memBuffersAndSizes: Array[HostMemoryBufferAndMeta],
     override val bytesRead: Long,
     updatedReadSchema: TypeDescription,
     requestedMapping: Option[Array[Int]]) extends HostMemoryBuffersWithMetaDataBase
@@ -1644,7 +1644,7 @@ class MultiFileCloudOrcPartitionReader(
     private def doRead(): HostMemoryBuffersWithMetaDataBase = {
       val startingBytesRead = fileSystemBytesRead()
 
-      val hostBuffers = new ArrayBuffer[HostMemoryBufferInfo]
+      val hostBuffers = new ArrayBuffer[HostMemoryBufferAndMeta]
       val filterStartTime = System.nanoTime()
       val ctx = filterHandler.filterStripes(partFile, dataSchema, readDataSchema,
         partitionSchema)
@@ -1675,7 +1675,7 @@ class MultiFileCloudOrcPartitionReader(
                 val blocksToRead = populateCurrentBlockChunk(blockChunkIter, maxReadBatchSizeRows,
                   maxReadBatchSizeBytes)
                 val info = readPartFile(ctx, blocksToRead)
-                hostBuffers += HostMemoryBufferInfo(info._1, info._2, 0, Seq.empty, null)
+                hostBuffers += HostMemoryBufferAndMeta(info._1, info._2, 0, Seq.empty, null)
               }
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               if (isDone) {

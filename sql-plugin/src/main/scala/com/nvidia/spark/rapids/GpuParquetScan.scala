@@ -1826,8 +1826,12 @@ class MultiFileCloudParquetPartitionReader(
     }
 
 
-    val footerSize = calculateParquetFooterSize(allBlocks,
-      results.head.memBuffersAndSizes.head.schema)
+    // since we know not all of them are empty, find the first valid schema
+    val schemaToUse = results.flatMap(_.memBuffersAndSizes.filter(_.schema != null))
+      .find(_.schema != null)
+      .getOrElse(throw new RuntimeException("Schema is null and should never be!"))
+      .schema
+    val footerSize = calculateParquetFooterSize(allBlocks, schemaToUse)
     logWarning(s"footer estimated size was: ${footerSize}")
 
     val extraMemory = {
@@ -1899,18 +1903,19 @@ class MultiFileCloudParquetPartitionReader(
           }
         }
       }
-      // write footer
+      // length to write footer
       val lenLeft = initTotalSize - offset
 
-      // TODO do we need to potentially copy if initial size estimate to small
+      if (lenLeft < 0) {
+        throw new Exception(s" initial total size is to small: $initTotalSize")
+      }
+
       /*
+      // TODO do we need to potentially copy if initial size estimate to small=
       var buf: HostMemoryBuffer = buffer
-      val totalBufferSize = if (bufferSize > initTotalSize) {
-        // Just ensure to close buffer when there is an exception
-        closeOnExcept(buffer) { _ =>
-          logWarning(s"The original estimated size $initTotalSize is too small, " +
-            s"reallocating and copying data to bigger buffer size: $bufferSize")
-        }
+      val totalBufferSize = if (lenLeft < 0) {
+        logWarning(s"The original estimated size $initTotalSize is too small, " +
+          s"reallocating and copying data to bigger buffer size: $bufferSize")
         // Copy the old buffer to a new allocated bigger buffer and close the old buffer
         buf = withResource(buffer) { _ =>
           withResource(new HostMemoryInputStream(buffer, footerOffset)) { in =>
@@ -1927,12 +1932,10 @@ class MultiFileCloudParquetPartitionReader(
       } else {
         initTotalSize
       }
+
+
+
        */
-
-
-      if (lenLeft < 0) {
-        throw new Exception(s" initial total size is to small: $initTotalSize")
-      }
 
       if (currentSchema == null) {
         throw new Exception(s"current schema is null before write footer: ${results.mkString(",")}")
@@ -1956,7 +1959,7 @@ class MultiFileCloudParquetPartitionReader(
       logWarning(s"combined files to total size $offset  initial $initTotalSize")
 
 
-      val newHmbBufferInfo = HostMemoryBufferInfo(newHmb, offset, allPartValues.map(_._1).sum,
+      val newHmbBufferInfo = HostMemoryBufferAndMeta(newHmb, offset, allPartValues.map(_._1).sum,
         Seq.empty, currentSchema)
       HostMemoryBuffersWithMetaData(
         meta.partitionedFile,
@@ -1986,15 +1989,15 @@ class MultiFileCloudParquetPartitionReader(
       numRows: Long,
       override val allPartValues: Option[ArrayBuffer[(Long, InternalRow)]] = None)
     extends HostMemoryBuffersWithMetaDataBase {
-    override def memBuffersAndSizes: Array[HostMemoryBufferInfo] =
-      Array(HostMemoryBufferInfo(null.asInstanceOf[HostMemoryBuffer], bufferSize,
+    override def memBuffersAndSizes: Array[HostMemoryBufferAndMeta] =
+      Array(HostMemoryBufferAndMeta(null.asInstanceOf[HostMemoryBuffer], bufferSize,
         numRows, Seq.empty, null))
   }
 
   case class HostMemoryBuffersWithMetaData(
       override val partitionedFile: PartitionedFile,
       override val origPartitionedFile: Option[PartitionedFile],
-      override val memBuffersAndSizes: Array[HostMemoryBufferInfo],
+      override val memBuffersAndSizes: Array[HostMemoryBufferAndMeta],
       override val bytesRead: Long,
       isCorrectRebaseMode: Boolean,
       isCorrectInt96RebaseMode: Boolean,
@@ -2044,7 +2047,7 @@ class MultiFileCloudParquetPartitionReader(
 
     private def doRead(): HostMemoryBuffersWithMetaDataBase = {
       val startingBytesRead = fileSystemBytesRead()
-      val hostBuffers = new ArrayBuffer[HostMemoryBufferInfo]
+      val hostBuffers = new ArrayBuffer[HostMemoryBufferAndMeta]
       var filterTime = 0L
       var bufferStartTime = 0L
       val tid = TaskContext.get().taskAttemptId()
@@ -2086,7 +2089,7 @@ class MultiFileCloudParquetPartitionReader(
                 val (dataBuffer, dataSize, blockMeta) =
                   readPartFile(blocksToRead, fileBlockMeta.schema, filePath)
                 val numRows = blocksToRead.map(_.getRowCount).sum.toInt
-                hostBuffers += HostMemoryBufferInfo(dataBuffer, dataSize,
+                hostBuffers += HostMemoryBufferAndMeta(dataBuffer, dataSize,
                   numRows, blockMeta, fileBlockMeta.schema)
               }
               val bytesRead = fileSystemBytesRead() - startingBytesRead

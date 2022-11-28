@@ -201,7 +201,6 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
     private final boolean isParquetPerFileReadEnabled;
     private final boolean queryUsesInputFile;
 
-
     public ReaderFactory(scala.collection.immutable.Map<String, GpuMetric> metrics,
                          RapidsConf rapidsConf, boolean queryUsesInputFile) {
       this.metrics = metrics;
