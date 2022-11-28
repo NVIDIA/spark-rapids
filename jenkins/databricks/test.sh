@@ -64,10 +64,7 @@ export SPARK_CONF_DIR=$PWD
 # Get Python version from environment after lowercase and remove minor.
 # Something like python3.8 for DB10.4 and python3.9 for DB11.3
 sw_versions[PYTHON]=$(python --version | sed 's/[A-Z]/\L&/g;s/ //g' | cut -d . -f 1,2)
-# set Iceberg related versions. See https://iceberg.apache.org/multi-engine-support/#apache-spark
-# Spark 3.3 | Initial Iceberg Version 0.14.0 | Latest Support 1.0.0
-# Spark 3.2 | Initial Iceberg Version 0.13.0 | Latest Support 1.0.0
-# Spark 3.1 | Initial Iceberg Version 0.12.0 | Latest Support 1.0.0
+# Set Iceberg related versions. See https://iceberg.apache.org/multi-engine-support/#apache-spark
 case "$BASE_SPARK_VERSION" in
     "3.3.0")
         sw_versions[ICEBERG]=${ICEBERG_VERSION:-'0.14.1'}

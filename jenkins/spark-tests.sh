@@ -209,17 +209,19 @@ run_iceberg_tests() {
   ICEBERG_VERSION=${ICEBERG_VERSION:-0.13.2}
   # get the major/minor version of Spark
   ICEBERG_SPARK_VER=$(echo $SPARK_VER | cut -d. -f1,2)
+  IS_SPARK_34_OR_LATER=0
+  [[ "$(printf '%s\n' "3.4" "$ICEBERG_SPARK_VER" | sort -V | head -n1)" = "3.4" ]] && IS_SPARK_34_OR_LATER=1
 
-  # Iceberg does not support Spark 3.3+ yet
-  if [[ "$ICEBERG_SPARK_VER" < "3.3" ]]; then
+  # Iceberg does not support Spark 3.4+ yet
+  if [[ "$IS_SPARK_34_OR_LATER" -eq "1" ]]; then
+    echo "Skipping Iceberg tests. Iceberg does not support Spark $ICEBERG_SPARK_VER"
+  else
     PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_2.12:${ICEBERG_VERSION} \
       PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
       PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
       PYSP_TEST_spark_sql_catalog_spark__catalog_type="hadoop" \
       PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="/tmp/spark-warehouse-$RANDOM" \
       ./run_pyspark_from_build.sh -m iceberg --iceberg
-  else
-    echo "Skipping Iceberg tests. Iceberg does not support Spark $ICEBERG_SPARK_VER"
   fi
 }
 
