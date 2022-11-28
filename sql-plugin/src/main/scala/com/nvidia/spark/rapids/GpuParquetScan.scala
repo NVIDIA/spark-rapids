@@ -1875,7 +1875,8 @@ class MultiFileCloudParquetPartitionReader(
         if (hbWithMeta.isInstanceOf[HostMemoryEmptyMetaData]) {
           logWarning("dealing with empty meta data, skipping copy in combine")
         } else {
-          if (metaToUse == null) metaToUse = hbWithMeta
+          // TODO - switch to case
+          if (metaToUse == null) metaToUse = hbWithMeta.asInstanceOf[HostMemoryBuffersWithMetaData]
           hbWithMeta.memBuffersAndSizes.map { hmbInfo =>
             // results are mixed with some empty and some with data
             if (hmbInfo.schema != null) {
