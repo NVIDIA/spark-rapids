@@ -375,10 +375,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
 
   override def onTaskFailed(failureReason: TaskFailedReason): Unit = {
     def containsCudaFatalException(e: Throwable): Boolean = {
-      ExceptionUtils.getThrowableList(e).asScala.exists(e => e match {
-        case _: CudaFatalException => true
-        case _ => false
-      })
+      ExceptionUtils.getThrowableList(e).asScala.exists(e => e.isInstanceOf[CudaFatalException])
     }
     failureReason match {
       case ef: ExceptionFailure =>
