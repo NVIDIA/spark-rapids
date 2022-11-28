@@ -1827,10 +1827,10 @@ class MultiFileCloudParquetPartitionReader(
 
 
     // since we know not all of them are empty, find the first valid schema
-    val schemaToUse = results.flatMap(_.memBuffersAndSizes.filter(_.schema != null))
-      .find(_.schema != null)
-      .getOrElse(throw new RuntimeException("Schema is null and should never be!"))
-      .schema
+    val schemaToUse = results.map(_.memBuffersAndSizes.filter(_.schema != null))
+
+      //.find(_.schema != null)
+      //.getOrElse(throw new RuntimeException("Schema is null and should never be!"))
     val footerSize = calculateParquetFooterSize(allBlocks, schemaToUse)
     logWarning(s"footer estimated size was: ${footerSize}")
 
@@ -1854,6 +1854,7 @@ class MultiFileCloudParquetPartitionReader(
     }
 
 
+    var metaToUse: HostMemoryBuffersWithMetaData = null
     // TODO - don't allocate buffer is 0 size and handle empty
     closeOnExcept(HostMemoryBuffer.allocate(initTotalSize)) { newHmb =>
       // write header
@@ -1868,13 +1869,13 @@ class MultiFileCloudParquetPartitionReader(
 
       // copy the actual data
       results.map { hbWithMeta =>
-
         val partValues = hbWithMeta.partitionedFile.partitionValues
         val totalNumRows = hbWithMeta.memBuffersAndSizes.map(_.numRows).sum
         allPartValues.append((totalNumRows, partValues))
         if (hbWithMeta.isInstanceOf[HostMemoryEmptyMetaData]) {
           logWarning("dealing with empty meta data, skipping copy in combine")
         } else {
+          if (metaToUse == null) metaToUse = hbWithMeta
           hbWithMeta.memBuffersAndSizes.map { hmbInfo =>
             // results are mixed with some empty and some with data
             if (hmbInfo.schema != null) {
@@ -1940,6 +1941,9 @@ class MultiFileCloudParquetPartitionReader(
       if (currentSchema == null) {
         throw new Exception(s"current schema is null before write footer: ${results.mkString(",")}")
       }
+      if (metaToUse == null) {
+        throw new Exception("meta to use is null this shouldn't happen!")
+      }
 
       withResource(newHmb.slice(offset, lenLeft)) { footerHmbSlice =>
         withResource(new HostMemoryOutputStream(footerHmbSlice)) { footerOut =>
@@ -1952,25 +1956,29 @@ class MultiFileCloudParquetPartitionReader(
         }
       }
 
+      /*
       if (!results(0).isInstanceOf[HostMemoryBuffersWithMetaData]) {
-        throw new Exception("type of results should have been HostMemoryBuffersWithMetaData")
+        throw new Exception(s"type of results should have been HostMemoryBuffersWithMetaData instance " +
+          s"but was ${results(0).getClass}")
       }
       val meta = results(0).asInstanceOf[HostMemoryBuffersWithMetaData]
       logWarning(s"combined files to total size $offset  initial $initTotalSize")
+
+       */
 
 
       val newHmbBufferInfo = HostMemoryBufferAndMeta(newHmb, offset, allPartValues.map(_._1).sum,
         Seq.empty, currentSchema)
       HostMemoryBuffersWithMetaData(
-        meta.partitionedFile,
-        meta.origPartitionedFile, // TODO - this shouldn't matter since already read
+        metaToUse.partitionedFile,
+        metaToUse.origPartitionedFile, // TODO - this shouldn't matter since already read
         Array(newHmbBufferInfo),
         offset,
-        meta.isCorrectRebaseMode, // TODO - need to add checks for these to see if different?
-        meta.isCorrectInt96RebaseMode, // TODO - need to add checks for these to see if different?
-        meta.hasInt96Timestamps,
+        metaToUse.isCorrectRebaseMode, // TODO - need to add checks for these to see if different?
+        metaToUse.isCorrectInt96RebaseMode, // TODO - need to add checks for these to see if different?
+        metaToUse.hasInt96Timestamps,
         currentSchema,
-        meta.readSchema,
+        metaToUse.readSchema,
         Some(allPartValues))
     }
 
