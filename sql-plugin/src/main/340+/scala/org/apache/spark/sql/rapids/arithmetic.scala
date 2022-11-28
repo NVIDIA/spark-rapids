@@ -263,18 +263,6 @@ trait DecimalWithPromote extends CudfBinaryOperator {
             super.doColumnar(newLeft, newRight)
           }
         }
-      case (_: IntegralType, rtype: DecimalType) =>
-        // cast Integer to decimal
-        val cudfType = DecimalUtil.createCudfDecimal(rtype)
-        withResource(GpuColumnVector.from(lhs.getBase.castTo(cudfType), rtype)) { newLhs =>
-          super.doColumnar(newLhs, rhs)
-        }
-      case (ltype: DecimalType, _: IntegralType) =>
-        // cast Integer to decimal
-        val cudfType = DecimalUtil.createCudfDecimal(ltype)
-        withResource(GpuColumnVector.from(rhs.getBase.castTo(cudfType), ltype)) { newRhs =>
-          super.doColumnar(lhs, newRhs)
-        }
       case _ => super.doColumnar(lhs, rhs)
     }
   }
@@ -290,17 +278,6 @@ trait DecimalWithPromote extends CudfBinaryOperator {
             super.doColumnar(newLhs, newRhs)
           }
         }
-      case (_: IntegralType, rtype: DecimalType) =>
-        // cast Integer to decimal
-        withResource(getCastedScalarIfNeeded(lhs, rtype)) { newLhs =>
-          super.doColumnar(newLhs, rhs)
-        }
-      case (ltype: DecimalType, _: IntegralType) =>
-        // cast Integer to decimal
-        val cudfType = DecimalUtil.createCudfDecimal(ltype)
-        withResource(GpuColumnVector.from(rhs.getBase.castTo(cudfType), ltype)) { newRhs =>
-          super.doColumnar(lhs, newRhs)
-        }
       case _ => super.doColumnar(lhs, rhs)
     }
   }
@@ -315,17 +292,6 @@ trait DecimalWithPromote extends CudfBinaryOperator {
           withResource(getCastedScalarIfNeeded(rhs, widerDecimalType)) { newRight =>
             super.doColumnar(newLeft, newRight)
           }
-        }
-      case (_: IntegralType, rtype: DecimalType) =>
-        // cast Integer to decimal
-        val cudfType = DecimalUtil.createCudfDecimal(rtype)
-        withResource(GpuColumnVector.from(lhs.getBase.castTo(cudfType), rtype)) { newLhs =>
-          super.doColumnar(newLhs, rhs)
-        }
-      case (ltype: DecimalType, _: IntegralType) =>
-        // cast Integer to decimal
-        withResource(getCastedScalarIfNeeded(rhs, ltype)) { newRhs =>
-          super.doColumnar(lhs, newRhs)
         }
       case _ => super.doColumnar(lhs, rhs)
     }
