@@ -273,7 +273,7 @@ class JsonPartitionReader(
       Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)
     } catch {
       case e: Exception =>
-        throw new IOException(s"Error when processing file [$partFile]: $e", e)
+        throw new IOException(s"Error when processing file [$partFile]", e)
     }
     withResource(jsonTbl) { tbl =>
       val columns = new ListBuffer[ColumnVector]()

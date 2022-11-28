@@ -333,8 +333,7 @@ trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase
         Table.readAvro(readOpts, hostBuf, 0, bufSize)
       } catch {
         case e: Exception =>
-          throw new IOException(s"""Error when processing file splits 
-                                 [${splits.mkString("; ")}]: $e""", e)
+          throw new IOException(s"Error when processing file splits [${splits.mkString("; ")}]", e)
       }
     }
   }

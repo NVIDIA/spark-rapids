@@ -2022,8 +2022,8 @@ object MakeParquetTableProducer extends Arm {
                 case Some(path) => s"$path"
                 case None => ""
               }
-              throw new IOException(s"""Error when processing file 
-                                     [path: $path, range: $offset-${offset + len}]: $e""", e)
+              throw new IOException("Error when processing file " + 
+                  s"[path: $path, range: $offset-${offset + len}]", e)
           }
         }
       }

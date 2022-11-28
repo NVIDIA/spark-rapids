@@ -831,8 +831,7 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
         Table.readORC(parseOpts, hostBuf, 0, bufSize)
       } catch {
         case e: Exception => 
-          throw new IOException(s"""Error when processing file splits  
-                                 [${splits.mkString("; ")}]: $e""", e)
+          throw new IOException(s"Error when processing file splits [${splits.mkString("; ")}]", e)
       }
     }
     // Execute the schema evolution

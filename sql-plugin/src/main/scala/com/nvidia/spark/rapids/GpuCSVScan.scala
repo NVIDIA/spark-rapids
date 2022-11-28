@@ -330,7 +330,7 @@ class CSVPartitionReader(
       Table.readCSV(cudfSchema, csvOpts.build, dataBuffer, 0, dataSize)
     } catch {
       case e: Exception =>
-        throw new IOException(s"Error when processing file [$partFile]: $e", e)
+        throw new IOException(s"Error when processing file [$partFile]", e)
     }
   }
 

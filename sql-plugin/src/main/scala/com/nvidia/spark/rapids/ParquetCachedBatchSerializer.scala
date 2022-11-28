@@ -477,8 +477,8 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
           Table.readParquet(parquetOptions, parquetCB.buffer, 0, parquetCB.sizeInBytes)
         } catch {
           case e: Exception =>
-            throw new IOException(s"""Error when processing file 
-                                   [path: , range: 0-${parquetCB.sizeInBytes}]: $e""", e)
+            throw new IOException("Error when processing file " + 
+                s"[range: 0-${parquetCB.sizeInBytes}]", e)
         }
         withResource(table) { table =>
           withResource {
