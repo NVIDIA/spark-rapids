@@ -262,7 +262,7 @@ efficient to stay on the CPU instead of going back and forth.
 
 ### Is Dynamic Partition Pruning (DPP) Supported?
 
-Yes, DPP still works.  It might not be as efficient as it could be, and we are working to improve it.
+Yes, DPP works.  
 
 ### Is Adaptive Query Execution (AQE) Supported?
 
