@@ -590,7 +590,6 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
     }
 
     def release(sz: Long): Unit = synchronized {
-      logWarning(s"released $sz inflight is $inFlight")
       inFlight -= sz
     }
   }
@@ -696,7 +695,6 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
             case (_, cb: ColumnarBatch) =>
               val mem = SerializedTableColumn.getMemoryUsed(cb)
               // TODO - is this the same size as acquired?
-              logWarning(s"actually memory used is $mem, releasing it")
               limiter.release(mem)
               popFetchedIfAvailable()
             case _ => 0 // TODO: do we need to handle other types here?
@@ -711,7 +709,6 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
             SerializedTableColumn.getMemoryUsed(cb)
           case _ => 0 // TODO: do we need to handle other types here?
         }
-        logWarning(s"uncompressed size for this is ${uncompressedSize}")
 
         // the deserialization time is approximated by subtracting
         // time waiting for the fetch (`readBlockedTime`) from `fetchTime`
