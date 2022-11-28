@@ -143,13 +143,9 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
     # Custom datasets
     ('hive-delim-text/Acquisition_2007Q3', acq_schema, {}),
     ('hive-delim-text/Performance_2007Q3', perf_schema, {'serialization.null.format': ''}),
-    pytest.param('hive-delim-text/Performance_2007Q3', perf_schema, {},
-                 marks=pytest.mark.xfail(reason="GPU treats empty strings as nulls."
-                                                "See https://github.com/NVIDIA/spark-rapids/issues/7069.")),
+    pytest.param('hive-delim-text/Performance_2007Q3', perf_schema, {}),
     ('hive-delim-text/trucks-1', trucks_schema, {}),
-    pytest.param('hive-delim-text/trucks-err', trucks_schema, {},
-                 marks=pytest.mark.xfail(reason="GPU skips empty lines, and removes quotes. "
-                                                "See https://github.com/NVIDIA/spark-rapids/issues/7068.")),
+    pytest.param('hive-delim-text/trucks-err', trucks_schema, {}),
 
     # Date/Time
     ('hive-delim-text/timestamp', timestamp_schema, {}),
@@ -169,10 +165,7 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
 
     # Test that carriage returns ('\r'/'^M') are treated similarly to newlines ('\n')
     ('hive-delim-text/carriage-return', StructType([StructField("str", StringType())]), {}),
-    pytest.param('hive-delim-text/carriage-return-err', StructType([StructField("str", StringType())]), {},
-                 marks=pytest.mark.xfail(reason="GPU skips empty lines. Consecutive \r is treated as empty line, "
-                                                "and skipped. This produces fewer rows than expected. "
-                                                "See https://github.com/NVIDIA/spark-rapids/issues/7068.")),
+    pytest.param('hive-delim-text/carriage-return-err', StructType([StructField("str", StringType())]), {}),
 ], ids=idfn)
 def test_basic_hive_text_read(std_input_path, name, schema, spark_tmp_table_factory, options):
     assert_gpu_and_cpu_are_equal_collect(read_hive_text_sql(std_input_path + '/' + name,

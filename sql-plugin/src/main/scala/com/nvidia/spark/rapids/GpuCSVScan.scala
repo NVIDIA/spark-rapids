@@ -21,7 +21,7 @@ import java.nio.charset.StandardCharsets
 import scala.collection.JavaConverters._
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, Scalar, Schema, Table}
+import ai.rapids.cudf.{ColumnVector, DType, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -280,7 +280,7 @@ case class GpuCSVPartitionReaderFactory(
   }
 }
 
-class CSVPartitionReader(
+abstract class CSVPartitionReaderBase[BUFF <: LineBufferer, FACT <: LineBuffererFactory[BUFF]](
     conf: Configuration,
     partFile: PartitionedFile,
     dataSchema: StructType,
@@ -288,45 +288,11 @@ class CSVPartitionReader(
     parsedOptions: CSVOptions,
     maxRowsPerChunk: Integer,
     maxBytesPerChunk: Long,
-    execMetrics: Map[String, GpuMetric]) extends
-  GpuTextBasedPartitionReader(conf, partFile, dataSchema, readDataSchema,
-    parsedOptions.lineSeparatorInRead, maxRowsPerChunk, maxBytesPerChunk, execMetrics) {
-
-  def buildCsvOptions(
-      parsedOptions: CSVOptions,
-      schema: StructType,
-      hasHeader: Boolean): cudf.CSVOptions.Builder = {
-    val builder = cudf.CSVOptions.builder()
-    builder.withDelim(parsedOptions.delimiter.charAt(0))
-    builder.hasHeader(hasHeader)
-    // TODO parsedOptions.parseMode
-    builder.withQuote(parsedOptions.quote)
-    builder.withComment(parsedOptions.comment)
-    builder.withNullValue(parsedOptions.nullValue)
-    builder.includeColumn(schema.fields.map(_.name): _*)
-    builder
-  }
-
-  /**
-   * Read the host buffer to GPU table
-   *
-   * @param dataBuffer     host buffer to be read
-   * @param dataSize       the size of host buffer
-   * @param cudfSchema     the cudf schema of the data
-   * @param readDataSchema the Spark schema describing what will be read
-   * @param isFirstChunk   if it is the first chunk
-   * @return table
-   */
-  override def readToTable(
-      dataBuffer: HostMemoryBuffer,
-      dataSize: Long,
-      cudfSchema: Schema,
-      readDataSchema: StructType,
-      isFirstChunk: Boolean): Table = {
-    val hasHeader = isFirstChunk && parsedOptions.headerFlag
-    val csvOpts = buildCsvOptions(parsedOptions, readDataSchema, hasHeader)
-    Table.readCSV(cudfSchema, csvOpts.build, dataBuffer, 0, dataSize)
-  }
+    execMetrics: Map[String, GpuMetric],
+    bufferFactory: FACT) extends
+    GpuTextBasedPartitionReader[BUFF, FACT](conf, partFile,
+      dataSchema, readDataSchema, parsedOptions.lineSeparatorInRead, maxRowsPerChunk,
+      maxBytesPerChunk, execMetrics, bufferFactory) {
 
   /**
    * File format short name used for logging and other things to uniquely identity
@@ -364,4 +330,57 @@ class CSVPartitionReader(
 
   override def dateFormat: String = GpuCsvUtils.dateFormatInRead(parsedOptions)
   override def timestampFormat: String = GpuCsvUtils.timestampFormatInRead(parsedOptions)
+}
+
+
+class CSVPartitionReader(
+    conf: Configuration,
+    partFile: PartitionedFile,
+    dataSchema: StructType,
+    readDataSchema: StructType,
+    parsedOptions: CSVOptions,
+    maxRowsPerChunk: Integer,
+    maxBytesPerChunk: Long,
+    execMetrics: Map[String, GpuMetric]) extends
+  CSVPartitionReaderBase[HostLineBufferer, HostLineBuffererFactory.type](conf, partFile,
+    dataSchema, readDataSchema, parsedOptions, maxRowsPerChunk,
+    maxBytesPerChunk, execMetrics, HostLineBuffererFactory) {
+
+  def buildCsvOptions(
+      parsedOptions: CSVOptions,
+      schema: StructType,
+      hasHeader: Boolean): cudf.CSVOptions.Builder = {
+    val builder = cudf.CSVOptions.builder()
+    builder.withDelim(parsedOptions.delimiter.charAt(0))
+    builder.hasHeader(hasHeader)
+    // TODO parsedOptions.parseMode
+    builder.withQuote(parsedOptions.quote)
+    builder.withComment(parsedOptions.comment)
+    builder.withNullValue(parsedOptions.nullValue)
+    builder.includeColumn(schema.fields.map(_.name): _*)
+    builder
+  }
+
+  /**
+   * Read the host buffer to GPU table
+   *
+   * @param dataBuffer     host buffer to be read
+   * @param dataSize       the size of host buffer
+   * @param cudfSchema     the cudf schema of the data
+   * @param readDataSchema the Spark schema describing what will be read
+   * @param isFirstChunk   if it is the first chunk
+   * @return table
+   */
+  override def readToTable(
+      dataBufferer: HostLineBufferer,
+      cudfSchema: Schema,
+      readDataSchema: StructType,
+      isFirstChunk: Boolean): Table = {
+    val hasHeader = isFirstChunk && parsedOptions.headerFlag
+    val csvOpts = buildCsvOptions(parsedOptions, readDataSchema, hasHeader)
+    val dataSize = dataBufferer.getLength
+    withResource(dataBufferer.getBufferAndRelease) { dataBuffer =>
+      Table.readCSV(cudfSchema, csvOpts.build, dataBuffer, 0, dataSize)
+    }
+  }
 }

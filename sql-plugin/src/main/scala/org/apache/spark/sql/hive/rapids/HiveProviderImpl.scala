@@ -145,6 +145,7 @@ class HiveProviderImpl extends HiveProvider {
             val serializationKey     = "serialization.format"
             val ctrlASeparatedFormat = "1" // Implying '^A' field delimiter.
             val lineDelimiterKey     = "line.delim"
+            val escapeDelimiterKey   = "escape.delim"
             val newLine              = "\n"
 
             if (storage.inputFormat.getOrElse("") != textInputFormat) {
@@ -152,23 +153,28 @@ class HiveProviderImpl extends HiveProvider {
                 s"Only $textInputFormat is currently supported.")
             }
 
-            if(storage.serde.getOrElse("") != lazySimpleSerDe) {
+            if (storage.serde.getOrElse("") != lazySimpleSerDe) {
               willNotWorkOnGpu(s"Unsupported serde found: ${storage.serde}. " +
                 s"Only $lazySimpleSerDe is currently supported.")
             }
 
-            if(storage.properties.getOrElse(serializationKey, "") != ctrlASeparatedFormat) {
+            val serializationFormat = storage.properties.getOrElse(serializationKey, "")
+            if (serializationFormat != ctrlASeparatedFormat) {
               willNotWorkOnGpu(s"Unsupported serialization format found: " +
-                s"${storage.properties.getOrElse(serializationKey, "")}. " +
+                s"$serializationFormat. " +
                 s"Only \'^A\' separated text input (i.e. serialization.format=1) " +
                 s"is currently supported.")
             }
 
             val lineTerminator = storage.properties.getOrElse(lineDelimiterKey, newLine)
-            if(lineTerminator != newLine) {
+            if (lineTerminator != newLine) {
               willNotWorkOnGpu(s"Unsupported line terminator found: " +
                 s"$lineTerminator. " +
                 s"Only newline (\\n) separated text input  is currently supported.")
+            }
+
+            if (!storage.properties.getOrElse(escapeDelimiterKey, "").equals("")) {
+              willNotWorkOnGpu("Escapes are not currently supported.")
             }
           }
 
