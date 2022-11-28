@@ -85,9 +85,9 @@ case class GpuDataSource(
   }
 
   bucketSpec.foreach { bucket =>
-    RapidsSchemaUtils.checkColumnNameDuplication(
+    SchemaUtils.checkColumnNameDuplication(
       bucket.bucketColumnNames, "in the bucket definition", equality)
-    RapidsSchemaUtils.checkColumnNameDuplication(
+    SchemaUtils.checkColumnNameDuplication(
       bucket.sortColumnNames, "in the sort definition", equality)
   }
 
@@ -174,7 +174,7 @@ case class GpuDataSource(
     // we have the existing tests for the cases (e.g., `ParquetHadoopFsRelationSuite`).
     // See SPARK-18108 and SPARK-21144 for related discussions.
     try {
-      RapidsSchemaUtils.checkColumnNameDuplication(
+      SchemaUtils.checkColumnNameDuplication(
         (dataSchema ++ partitionSchema).map(_.name),
         "in the data schema and the partition schema",
         equality)
@@ -285,17 +285,17 @@ case class GpuDataSource(
 
     relation match {
       case hs: HadoopFsRelation =>
-        RapidsSchemaUtils.checkSchemaColumnNameDuplication(
+        SchemaUtils.checkSchemaColumnNameDuplication(
           hs.dataSchema,
           "in the data schema",
           equality)
-        RapidsSchemaUtils.checkSchemaColumnNameDuplication(
+        SchemaUtils.checkSchemaColumnNameDuplication(
           hs.partitionSchema,
           "in the partition schema",
            equality)
         DataSourceUtils.verifySchema(hs.fileFormat, hs.dataSchema)
       case _ =>
-        RapidsSchemaUtils.checkSchemaColumnNameDuplication(
+        SchemaUtils.checkSchemaColumnNameDuplication(
           relation.schema,
           "in the data schema",
            equality)
