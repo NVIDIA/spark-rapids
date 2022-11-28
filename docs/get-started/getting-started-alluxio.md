@@ -506,3 +506,6 @@ Then a list is shown:
 ![img](../img/Databricks/list-metrics-result.png)
 Select a metric and then click Graph Tab, then a graph is shown:
 ![img](../img/Databricks/a-metric-graph.png)
+
+### useful metrics for performance monitoring
+TODO: will add useful metrics
