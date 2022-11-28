@@ -1827,10 +1827,10 @@ class MultiFileCloudParquetPartitionReader(
 
 
     // since we know not all of them are empty, find the first valid schema
-    val schemaToUse = results.map(_.memBuffersAndSizes.filter(_.schema != null))
-
-      //.find(_.schema != null)
-      //.getOrElse(throw new RuntimeException("Schema is null and should never be!"))
+    val schemaToUse = results.flatMap(_.memBuffersAndSizes.filter(_.schema != null))
+      .find(_.schema != null)
+      .getOrElse(throw new RuntimeException("Schema is null and should never be!"))
+      .schema
     val footerSize = calculateParquetFooterSize(allBlocks, schemaToUse)
     logWarning(s"footer estimated size was: ${footerSize}")
 
