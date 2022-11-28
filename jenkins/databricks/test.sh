@@ -61,18 +61,20 @@ sudo "$(which pip)" install pytest sre_yield requests pandas pyarrow findspark p
 export SPARK_HOME=/databricks/spark
 # change to not point at databricks confs so we don't conflict with their settings
 export SPARK_CONF_DIR=$PWD
-# Get Python version from environment after lowercase and remove minor.
-# Something like python3.8 for DB10.4 and python3.9 for DB11.3
-sw_versions[PYTHON]=$(python --version | sed 's/[A-Z]/\L&/g;s/ //g' | cut -d . -f 1,2)
+# Get Python version (major.minor). i.e., python3.8 for DB10.4 and python3.9 for DB11.3
+sw_versions[PYTHON]=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
 # Set Iceberg related versions. See https://iceberg.apache.org/multi-engine-support/#apache-spark
 case "$BASE_SPARK_VERSION" in
     "3.3.0")
+        # Available versions https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.3_2.12/
         sw_versions[ICEBERG]=${ICEBERG_VERSION:-'0.14.1'}
         ;;
     "3.2.1")
+        # Available versions https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.2_2.12/
         sw_versions[ICEBERG]=${ICEBERG_VERSION:-'0.13.2'}
         ;;
     "3.1.2")
+        # Available versions https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.2_2.12/
         sw_versions[ICEBERG]=${ICEBERG_VERSION:-'0.13.2'}
         ;;
     *) echo "Unexpected Spark version: $BASE_SPARK_VERSION"; exit 1;;
@@ -83,13 +85,11 @@ sw_versions[ICEBERG_SPARK]=$(echo $BASE_SPARK_VERSION | cut -d. -f1,2)
 sw_versions[ICEBERG_SCALA]=${ICEBERG_SCALA_VERSION:-'2.12'}
 # Get the correct py4j file.
 PY4J_FILE=$(find $SPARK_HOME/python/lib -type f -iname "py4j*.zip")
-export PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/pyspark/:$PY4J_FILE
-if [[ $BASE_SPARK_VERSION == "3.2.1" ]] || [[ $BASE_SPARK_VERSION == "3.3.0" ]]
-then
-  # Databricks Koalas can conflict with the actual Pandas version, so put site packages first.
-  # Note that python directory is pulled from the from the instance.
-  export PYTHONPATH=/databricks/python3/lib/${sw_versions[PYTHON]}/site-packages:$PYTHONPATH
-fi
+# Set the path of python site-packages
+PYTHON_SITE_PACKAGES=/databricks/python3/lib/${sw_versions[PYTHON]}/site-packages
+# Databricks Koalas can conflict with the actual Pandas version, so put site packages first.
+# Note that Koala is deprecated for DB10.4+ and it is recommended to use Pandas API on Spark instead.
+export PYTHONPATH=$PYTHON_SITE_PACKAGES:$SPARK_HOME/python:$SPARK_HOME/python/pyspark/:$PY4J_FILE
 sudo ln -s /databricks/jars/ $SPARK_HOME/jars || true
 sudo chmod 777 /databricks/data/logs/
 sudo chmod 777 /databricks/data/logs/*
