@@ -86,10 +86,6 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
   }
 
   test("sorted partitioned write") {
-    // Skip this test for Spark 3.4.0+
-    // because there are several related bugs in Spark which haven't been fixed yet:
-    // https://issues.apache.org/jira/browse/SPARK-40588
-    // https://issues.apache.org/jira/browse/SPARK-40885
     assume(!isSpark340OrLater,
       "Skipping on Spark 3.4+ because of " +
       "https://issues.apache.org/jira/browse/SPARK-40588 and " +
