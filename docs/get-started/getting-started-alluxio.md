@@ -420,3 +420,89 @@ See the master.log and worker.log in this path.
 ### Auto start Alluxio the master and workers
 After installing Alluxio master and workers, it's better to add a systemd service for each process of master and workers.
 Systemd service can automatically start process if process is terminated.
+
+## Alluxio metrics
+### Monitor Alluxio metrics based on Alluxio Master Web
+Users can view the Alluxio metrics in the Web interface of Alluxio leading master:       
+http://<leading_master_host>:19999/metrics   
+For more details, please refer to section 3.1 of Alluxio doc: [Master Web UI Metrics](https://docs.alluxio.io/os/user/stable/en/operation/Metrics-System.html#default-http-json-sink)      
+The Alluxio Web UI is not available by default on databricks, the following provides a method to view the Web UI by SSH tunnel via jump server.   
+First forward the Alluxio port 19999 to a new port on a jump server, then forward the new port on the jump server to a local port, finally access the local port in the browser.   
+For example:   
+- Forward the port 29999 on jump server to local port 39999 on your own machine.   
+ssh -L 39999:localhost:29999 user@jump-server   
+- Forward the alluxio server 1999 port to the port 29999 on jump server.   
+ssh user@jump-server   
+ssh -L 29999:localhost:19999 alluxio_master_user@alluxio_master_host -p 2200 -i <private_key_file_path>   
+- Finally open http://localhost:39999/metrics on your own machine.   
+
+### Monitor Alluxio metrics based on Grafana and Prometheus
+Refer to section 3.2 of Alluxio doc: [Grafana Web UI with Prometheus](https://docs.alluxio.io/os/user/stable/en/operation/Metrics-System.html#default-http-json-sink)   
+Also the Web UI can be forward to local machine if the Alluxio Web UI is not available on databricks,   
+refer to the tunnel method in the previous section.   
+
+### View Alluxio historic metrics based on Grafana and Prometheus
+After the Databricks cluster is shutdown, the Web UI can not be accessed again, this section describes how to view historic metrics.   
+The main flows are:   
+- Install Prometheus   
+- Configure Alluxio to expose a servlet to serve the Prometheus-typed metrics   
+- Configure Prometheus to pull Prometheus-typed metrics periodically from Alluxio   
+- Save the Prometheus-typed metrics out of Databricks cluster   
+- Install Prometheus and Grafana locally   
+- Restore the saved Prometheus data into local Prometheus   
+- Start the local Prometheus and Grafana to view the historic metrics   
+#### Save Alluxio historic Prometheus-format metrics data out of Databricks
+When creating a Databricks cluster via the Docker container for Databricks.   
+Set PROMETHEUS_COPY_DATA_PATH, for example:   
+`PROMETHEUS_COPY_DATA_PATH=/dbfs/path/to/directory`   
+![img](../img/Databricks/save-prometheus.png)
+This config will enable the following steps:   
+- Install Prometheus   
+- Configure Alluxio to expose a servlet to serve the Prometheus-typed metrics   
+- Configure Prometheus to pull Prometheus-typed metrics periodically from Alluxio   
+- Save the Prometheus-typed metrics out of Databricks cluster   
+#### Install and start Grafana locally
+For example: local machine is Ubuntu.   
+sudo apt-get install -y adduser libfontconfig1   
+wget https://dl.grafana.com/enterprise/release/grafana-enterprise_9.2.6_amd64.deb   
+sudo dpkg -i grafana-enterprise_9.2.6_amd64.deb   
+sudo systemctl start grafana-server   
+sudo systemctl enable grafana-server   
+For more details, refer to [doc](https://grafana.com/grafana/download)   
+#### Install and start Prometheus locally
+wget https://github.com/prometheus/prometheus/releases/download/v2.37.3/prometheus-2.37.3.linux-amd64.tar.gz   
+tar xvfz prometheus-*.tar.gz   
+cd prometheus-*   
+For more details, refer to [doc](https://prometheus.io/docs/prometheus/latest/installation)   
+#### Restore historic metrics into Prometheus
+Copy the saved data into Prometheus.   
+mkdir /path/to/prometheus-root/data   
+Copy the saved files into `data` directory.   
+`ls /path/to/prometheus-root/data` will show files like:   
+`chunks_head  lock  queries.active  wal`
+#### Start Prometheus
+cd <prometheus-root-path>   
+./prometheus   
+#### View historic Alluxio metrics based on Grafana
+The main flows are:   
+1. Create a Prometheus datasource in Grafana, the default URL of Prometheus datasource is: http://localhost:9090. Refer to the [tutorial](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/#add-a-data-source) for help on importing a dashboard.
+![img](../img/Databricks/prometheus-datasource.png)
+2. [Download](https://grafana.com/grafana/dashboards/13467) the Grafana template JSON file for Alluxio.   
+3. Import the template JSON file to create a dashboard. See this [example](https://grafana.com/docs/grafana/latest/dashboards/export-import/#importing-a-dashboard) for importing a dashboard.    
+4. Add the Prometheus data source to Grafana.    
+5. Modify the variables in the dashboard/settings with instructions here and save your dashboard.
+- alluxio_datasource: Your prometheus datasource name used in step 1.
+- masters: alluxio master. It's the Master ‘job_name’ configured in prometheus.yml on Databricks cluster.
+- workers: Currently, it's no use, the Databricks does not collect worker metrics.
+- alluxio_user: ubuntu. The user used to start up Alluxio.
+![img](../img/Databricks/grafana.png)
+For more details, refer to section 3.2 of Alluxio doc: [Grafana Web UI with Prometheus](https://docs.alluxio.io/os/user/stable/en/operation/Metrics-System.html#default-http-json-sink)
+#### View a specific historic Alluxio metrics in Prometheus Web UI
+The graph in the previous may not show all the metrics users care about, the following describes how to view a specific historic Alluxio metric as you want:   
+Open Prometheus Web UI: http://localhost:9090/graph   
+Click the `Open metrics explorer` button.   
+![img](../img/Databricks/list-metrics.png)
+Then a list is shown:   
+![img](../img/Databricks/list-metrics-result.png)
+Select a metric and then click Graph Tab, then a graph is shown:
+![img](../img/Databricks/a-metric-graph.png)
