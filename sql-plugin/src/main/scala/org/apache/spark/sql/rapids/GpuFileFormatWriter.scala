@@ -85,7 +85,9 @@ object GpuFileFormatWriter extends Logging {
       statsTrackers: Seq[ColumnarWriteJobStatsTracker],
       options: Map[String, String],
       useStableSort: Boolean,
-      concurrentWriterPartitionFlushSize: Long): Set[String] = {
+      concurrentWriterPartitionFlushSize: Long,
+      numStaticPartitionCols: Int = 0): Set[String] = {
+    require(partitionColumns.size >= numStaticPartitionCols)
 
     val job = Job.getInstance(hadoopConf)
     job.setOutputKeyClass(classOf[Void])
@@ -152,9 +154,10 @@ object GpuFileFormatWriter extends Logging {
       concurrentWriterPartitionFlushSize = concurrentWriterPartitionFlushSize
     )
 
-    // We should first sort by partition columns, then bucket id, and finally sorting columns.
-    val requiredOrdering =
-      partitionColumns ++ writerBucketSpec.map(_.bucketIdExpression) ++ sortColumns
+    // We should first sort by dynamic partition columns, then bucket id, and finally
+    // sorting columns.
+    val requiredOrdering = partitionColumns.drop(numStaticPartitionCols) ++
+      writerBucketSpec.map(_.bucketIdExpression) ++ sortColumns
     // the sort order doesn't matter
     val actualOrdering = empty2NullPlan.outputOrdering.map(_.child)
     val orderingMatched = if (requiredOrdering.length > actualOrdering.length) {
