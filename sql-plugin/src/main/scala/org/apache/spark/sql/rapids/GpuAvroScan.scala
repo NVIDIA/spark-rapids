@@ -329,7 +329,12 @@ trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase
 
     withResource(new NvtxWithMetrics("Avro decode",
         NvtxColor.DARK_GREEN, metrics(GPU_DECODE_TIME))) { _ =>
-      Table.readAvro(readOpts, hostBuf, 0, bufSize)
+      try {
+        Table.readAvro(readOpts, hostBuf, 0, bufSize)
+      } catch {
+        case e: Exception =>
+          throw new IOException(s"Error when processing file splits [${splits.mkString("; ")}]", e)
+      }
     }
   }
 
