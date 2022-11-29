@@ -178,7 +178,7 @@ def test_aqe_join_reused_exchange_inequality_condition(spark_tmp_path, join):
                 where salary in (
                     select salary from (select a.salary
                     from df2 a inner join (select max(date(ts)) as state_start from df2) b on date(a.ts) > b.state_start - 2
-                    limit 1))
+                    order by a.salary limit 1))
             """.format(join=join)
         )
 
