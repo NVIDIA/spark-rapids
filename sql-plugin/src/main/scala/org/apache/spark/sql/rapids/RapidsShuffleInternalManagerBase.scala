@@ -1330,17 +1330,20 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
 
   override def unregisterShuffle(shuffleId: Int): Boolean = {
     unregisterGpuShuffle(shuffleId)
-    shuffleBlockResolver match {
-      case isbr: IndexShuffleBlockResolver =>
-        Option(taskIdMapsForShuffle.remove(shuffleId)).foreach { mapTaskIds =>
-          mapTaskIds.iterator.foreach { mapTaskId =>
-            isbr.removeDataByMap(shuffleId, mapTaskId)
+    if (!isDriver) {
+      shuffleBlockResolver match {
+        case isbr: IndexShuffleBlockResolver =>
+          Option(taskIdMapsForShuffle.remove(shuffleId)).foreach { mapTaskIds =>
+            mapTaskIds.iterator.foreach { mapTaskId =>
+              isbr.removeDataByMap(shuffleId, mapTaskId)
+            }
           }
-        }
-      case _ if taskIdMapsForShuffle.size() > 0 =>
-        throw new IllegalStateException(
-          "unregisterShuffle called with unexpected resolver " +
-          s"$shuffleBlockResolver and blocks left to be cleaned")
+        case _: GpuShuffleBlockResolver => // noop
+        case _ =>
+          throw new IllegalStateException(
+            "unregisterShuffle called with unexpected resolver " +
+              s"$shuffleBlockResolver and blocks left to be cleaned")
+      }
     }
     wrapped.unregisterShuffle(shuffleId)
   }
