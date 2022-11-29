@@ -284,7 +284,7 @@ In this section, we are using a docker container built using the sample dockerfi
    Currently we support:
 
    | Spark Shim      | spark.shuffle.manager value                              |
------------------|----------------------------------------------------------| -------------------------------------------------------- |
+   | --------------- | -------------------------------------------------------- |
    | 3.1.1           | com.nvidia.spark.rapids.spark311.RapidsShuffleManager    |
    | 3.1.2           | com.nvidia.spark.rapids.spark312.RapidsShuffleManager    |
    | 3.1.3           | com.nvidia.spark.rapids.spark313.RapidsShuffleManager    |
