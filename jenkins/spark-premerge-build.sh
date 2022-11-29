@@ -41,7 +41,8 @@ mvn_verify() {
 
     MVN_INSTALL_CMD="env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR clean install $MVN_BUILD_ARGS -DskipTests -pl aggregator -am"
 
-    for version in "${SPARK_SHIM_VERSIONS_SNAPSHOTS_TAIL[@]}"
+    # For snapshot versions, we do mvn[compile,RAT,scalastyle,docgen] CI in github actions
+    for version in "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}"
     do
         echo "Spark version: $version"
         # build and run unit tests on one specific version for each sub-version (e.g. 320, 330) except base version
@@ -49,12 +50,9 @@ mvn_verify() {
         if [[ "${SPARK_SHIM_VERSIONS_PREMERGE_UT_1[@]}" =~ "$version" ]]; then
             env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS \
               -Dpytest.TEST_TAGS='' -pl '!tools'
-        # build only for nosnapshot versions
+        # build only for other versions
         elif [[ "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}" =~ "$version" ]]; then
             $MVN_INSTALL_CMD -DskipTests -Dbuildver=$version
-        # build only for snapshot versions
-        elif [[ $BUILD_MAINTENANCE_VERSION_SNAPSHOTS == "true" ]]; then
-            $MVN_INSTALL_CMD -Dbuildver=$version
         fi
     done
     
@@ -66,9 +64,6 @@ mvn_verify() {
           -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
     done
     
-    # TODO: move it to BUILD_MAINTENANCE_VERSION_SNAPSHOTS when we resolve all spark340 build issues
-    [[ $BUILD_FEATURE_VERSION_SNAPSHOTS == "true" ]] && $MVN_INSTALL_CMD -DskipTests -Dbuildver=340
-
     # Here run Python integration tests tagged with 'premerge_ci_1' only, that would help balance test duration and memory
     # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'ci_2()' respectively.
     $MVN_CMD -B $MVN_URM_MIRROR $PREMERGE_PROFILES clean verify -Dpytest.TEST_TAGS="premerge_ci_1" \
@@ -160,20 +155,7 @@ nvidia-smi
 
 . jenkins/version-def.sh
 
-# controls whether we build snapshots for the Spark maintenance versions like 3.1.4
-BUILD_MAINTENANCE_VERSION_SNAPSHOTS="false"
-# controls whether we build snapshots for the next Spark major or feature version like 3.4.0 or 4.0.0
-BUILD_FEATURE_VERSION_SNAPSHOTS="false"
 PREMERGE_PROFILES="-PnoSnapshots,pre-merge"
-if [[ ${PROJECT_VER} =~ ^22\.12\. ]]; then # enable snapshot builds for active development branch only
-  BUILD_MAINTENANCE_VERSION_SNAPSHOTS="true"
-  BUILD_FEATURE_VERSION_SNAPSHOTS="false"
-  PREMERGE_PROFILES="-Psnapshots,pre-merge"
-elif [[ ${PROJECT_VER} =~ ^23\.02\. ]]; then
-  BUILD_MAINTENANCE_VERSION_SNAPSHOTS="true"
-  BUILD_FEATURE_VERSION_SNAPSHOTS="true"
-  PREMERGE_PROFILES="-Psnapshots,pre-merge"
-fi
 
 ARTF_ROOT="$WORKSPACE/.download"
 MVN_GET_CMD="$MVN_CMD org.apache.maven.plugins:maven-dependency-plugin:2.8:get -B \
