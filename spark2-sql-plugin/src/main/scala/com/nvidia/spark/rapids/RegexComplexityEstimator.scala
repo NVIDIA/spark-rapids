@@ -22,9 +22,9 @@ object RegexComplexityEstimator {
     regex match {
       case RegexSequence(parts) =>
         parts.map(countStates).sum
-      case RegexGroup(true, term) =>
+      case RegexGroup(true, term, _) =>
         1 + countStates(term)
-      case RegexGroup(false, term) =>
+      case RegexGroup(false, term, _) =>
         countStates(term)
       case RegexCharacterClass(_, _) =>
         1

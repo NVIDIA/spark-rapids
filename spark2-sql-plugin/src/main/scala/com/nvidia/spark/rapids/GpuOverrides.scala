@@ -23,7 +23,7 @@ import scala.reflect.ClassTag
 import scala.util.control.NonFatal
 
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
-import com.nvidia.spark.rapids.shims.{GpuBroadcastHashJoinMeta, GpuShuffledHashJoinMeta, GpuSortMergeJoinMeta, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, GpuWindowSpecDefinitionMeta, OffsetWindowFunctionMeta}
+import com.nvidia.spark.rapids.shims.{DecimalArithmeticOverrides, GetMapValueMeta, GpuBroadcastHashJoinMeta, GpuShuffledHashJoinMeta, GpuSortMergeJoinMeta, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, GpuWindowSpecDefinitionMeta, OffsetWindowFunctionMeta}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, SparkSession}
@@ -755,85 +755,6 @@ object GpuOverrides extends Logging {
             super.print(append, depth, all)
           }
         }
-      }),
-    expr[PromotePrecision](
-      "PromotePrecision before arithmetic operations between DecimalType data",
-      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_128,
-        TypeSig.DECIMAL_128),
-      (a, conf, p, r) => new UnaryExprMeta[PromotePrecision](a, conf, p, r) {
-      }),
-    expr[CheckOverflow](
-      "CheckOverflow after arithmetic operations between DecimalType data",
-      ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_128,
-        TypeSig.DECIMAL_128),
-      (a, conf, p, r) => new ExprMeta[CheckOverflow](a, conf, p, r) {
-        private[this] def extractOrigParam(expr: BaseExprMeta[_]): BaseExprMeta[_] =
-          expr.wrapped match {
-            case lit: Literal if lit.dataType.isInstanceOf[DecimalType] =>
-              // Lets figure out if we can make the Literal value smaller
-              val (newType, value) = lit.value match {
-                case null =>
-                  (DecimalType(0, 0), null)
-                case dec: Decimal =>
-                  val stripped = Decimal(dec.toJavaBigDecimal.stripTrailingZeros())
-                  val p = stripped.precision
-                  val s = stripped.scale
-                  // allowNegativeScaleOfDecimalEnabled is not in 2.x assume its default false
-                  val t = if (s < 0 && !false) {
-                    // need to adjust to avoid errors about negative scale
-                    DecimalType(p - s, 0)
-                  } else {
-                    DecimalType(p, s)
-                  }
-                  (t, stripped)
-                case other =>
-                  throw new IllegalArgumentException(s"Unexpected decimal literal value $other")
-              }
-              expr.asInstanceOf[LiteralExprMeta].withNewLiteral(Literal(value, newType))
-            // Avoid unapply for PromotePrecision and Cast because it changes between Spark versions
-            // Spark 2.X only has Cast, no AnsiCast so no CastBase, hardcode here to Cast
-            case p: PromotePrecision if p.child.isInstanceOf[Cast] &&
-                p.child.dataType.isInstanceOf[DecimalType] =>
-              val c = p.child.asInstanceOf[Cast]
-              val to = c.dataType.asInstanceOf[DecimalType]
-              val fromType = DecimalUtil.optionallyAsDecimalType(c.child.dataType)
-              fromType match {
-                case Some(from) =>
-                  val minScale = math.min(from.scale, to.scale)
-                  val fromWhole = from.precision - from.scale
-                  val toWhole = to.precision - to.scale
-                  val minWhole = if (to.scale < from.scale) {
-                    // If the scale is getting smaller in the worst case we need an
-                    // extra whole part to handle rounding up.
-                    math.min(fromWhole + 1, toWhole)
-                  } else {
-                    math.min(fromWhole, toWhole)
-                  }
-                  val newToType = DecimalType(minWhole + minScale, minScale)
-                  if (newToType == from) {
-                    // We can remove the cast totally
-                    val castExpr = expr.childExprs.head
-                    castExpr.childExprs.head
-                  } else if (newToType == to) {
-                    // The cast is already ideal
-                    expr
-                  } else {
-                    val castExpr = expr.childExprs.head.asInstanceOf[CastExprMeta[_]]
-                    castExpr.withToTypeOverride(newToType)
-                  }
-                case _ =>
-                  expr
-              }
-            case _ => expr
-          }
-        private[this] lazy val binExpr = childExprs.head
-        private[this] lazy val lhs = extractOrigParam(binExpr.childExprs.head)
-        private[this] lazy val rhs = extractOrigParam(binExpr.childExprs(1))
-        private[this] lazy val lhsDecimalType =
-          DecimalUtil.asDecimalType(lhs.wrapped.asInstanceOf[Expression].dataType)
-        private[this] lazy val rhsDecimalType =
-          DecimalUtil.asDecimalType(rhs.wrapped.asInstanceOf[Expression].dataType)
-
       }),
     expr[ToDegrees](
       "Converts radians to degrees",
@@ -2038,7 +1959,7 @@ object GpuOverrides extends Logging {
           TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY),
           TypeSig.MAP.nested(TypeSig.all)),
         ("key", TypeSig.commonCudfTypes + TypeSig.DECIMAL_128, TypeSig.all)),
-      (in, conf, p, r) => new BinaryExprMeta[GetMapValue](in, conf, p, r) {
+      (in, conf, p, r) => new GetMapValueMeta(in, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (isLit(in.left) && (!isLit(in.right))) {
             willNotWorkOnGpu("Looking up Map Scalars with Key Vectors " +
@@ -2359,8 +2280,8 @@ object GpuOverrides extends Logging {
       "Substring operator",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY,
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY),
-          ParamCheck("pos", TypeSig.lit(TypeEnum.INT), TypeSig.INT),
-          ParamCheck("len", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
+          ParamCheck("pos", TypeSig.INT, TypeSig.INT),
+          ParamCheck("len", TypeSig.INT, TypeSig.INT))),
       (in, conf, p, r) => new TernaryExprMeta[Substring](in, conf, p, r) {
       }),
     expr[SubstringIndex](
@@ -2728,9 +2649,10 @@ object GpuOverrides extends Logging {
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 
   // Shim expressions should be last to allow overrides with shim-specific versions
+  // Not include ZOrderRules.exprs
   val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
     commonExpressions ++ TimeStamp.getExprs ++ GpuHiveOverrides.exprs ++
-        ShimGpuOverrides.shimExpressions
+        DecimalArithmeticOverrides.exprs ++ ShimGpuOverrides.shimExpressions
 
   def wrapPart[INPUT <: Partitioning](
       part: INPUT,
@@ -3043,12 +2965,14 @@ object GpuOverrides extends Logging {
           override def noReplacementPossibleMessage(reasons: String): String =
             s"cannot run even partially on the GPU because $reasons"
         }),
+    // Spark 2.x doesn't have FlatMapCoGroupsInPandasExec
     exec[FlatMapGroupsInPandasExec](
       "The backend for Flat Map Groups Pandas UDF, Accelerates the data transfer between the" +
         " Java process and the Python process. It also supports scheduling GPU resources" +
         " for the Python process when enabled.",
       ExecChecks(TypeSig.commonCudfTypes, TypeSig.all),
       (flatPy, conf, p, r) => new GpuFlatMapGroupsInPandasExecMeta(flatPy, conf, p, r)),
+    // Spark 2.x doesn't have MapInPandasExec
     exec[InMemoryTableScanExec](
       "Implementation of InMemoryTableScanExec to use GPU accelerated caching",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT + TypeSig.ARRAY +
@@ -3060,7 +2984,7 @@ object GpuOverrides extends Logging {
   ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[SparkPlan]), r) }.toMap
 
   lazy val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
-    commonExecs ++ ShimGpuOverrides.shimExecs
+    commonExecs ++ ShimGpuOverrides.shimExecs ++ GpuHiveOverrides.execs
 
   def getTimeParserPolicy: TimeParserPolicy = {
     // val key = SQLConf.LEGACY_TIME_PARSER_POLICY.key
