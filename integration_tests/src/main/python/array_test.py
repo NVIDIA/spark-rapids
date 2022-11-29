@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
 from marks import incompat
-from spark_session import is_before_spark_313, is_before_spark_330, is_spark_330_or_later, is_databricks104_or_later, is_spark_340_or_later
+from spark_session import is_before_spark_313, is_before_spark_330, is_spark_330_or_later, is_databricks104_or_later, is_spark_340_or_later, is_databricks113_or_later
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 from pyspark.sql.functions import array_contains, col, element_at, lit
@@ -90,6 +90,7 @@ no_neg_zero_all_basic_gens_no_nans = [byte_gen, short_gen, int_gen, long_gen,
 
 # Merged "test_nested_array_item" with this one since arrays as literals is supported
 @pytest.mark.parametrize('data_gen', array_item_test_gens, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_array_item(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: two_col_df(spark, data_gen, array_index_gen).selectExpr(
@@ -106,6 +107,7 @@ def test_array_item(data_gen):
 @pytest.mark.skipif(is_before_spark_330() or is_spark_340_or_later(), reason="'strictIndexOperator' is introduced from Spark 3.3.0 and removed in Spark 3.4.0")
 @pytest.mark.parametrize('strict_index_enabled', [True, False])
 @pytest.mark.parametrize('index', [-2, 100, array_neg_index_gen, array_out_index_gen], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_array_item_with_strict_index(strict_index_enabled, index):
     message = "SparkArrayIndexOutOfBoundsException"
     if isinstance(index, int):
@@ -128,6 +130,7 @@ def test_array_item_with_strict_index(strict_index_enabled, index):
 
 # No need to test this for multiple data types for array. Only one is enough, but with two kinds of invalid index.
 @pytest.mark.parametrize('index', [-2, 100, array_neg_index_gen, array_out_index_gen], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_array_item_ansi_fail_invalid_index(index):
     message = "SparkArrayIndexOutOfBoundsException" if (is_databricks104_or_later() or is_spark_330_or_later()) else "java.lang.ArrayIndexOutOfBoundsException"
     if isinstance(index, int):
@@ -140,6 +143,7 @@ def test_array_item_ansi_fail_invalid_index(index):
         error_message=message)
 
 
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_array_item_ansi_not_fail_all_null_data():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: three_col_df(spark, array_all_null_gen, array_neg_index_gen, array_out_index_gen).selectExpr(
@@ -194,6 +198,7 @@ def test_orderby_array_of_structs(data_gen):
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
                                       float_gen, double_gen,
                                       string_gen, boolean_gen, date_gen, timestamp_gen], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_array_contains(data_gen):
     arr_gen = ArrayGen(data_gen)
     literal = gen_scalar(data_gen, force_no_nulls=True)
@@ -231,6 +236,7 @@ def test_array_element_at(data_gen):
 
 # No need tests for multiple data types for list data. Only one is enough.
 @pytest.mark.parametrize('index', [100, array_out_index_gen], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_array_element_at_ansi_fail_invalid_index(index):
     message = "ArrayIndexOutOfBoundsException" if is_before_spark_330() else "SparkArrayIndexOutOfBoundsException"
     if isinstance(index, int):
@@ -260,6 +266,7 @@ def test_array_element_at_ansi_not_fail_all_null_data():
 
 @pytest.mark.parametrize('index', [0, array_zero_index_gen], ids=idfn)
 @pytest.mark.parametrize('ansi_enabled', [False, True], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_array_element_at_zero_index_fail(index, ansi_enabled):
     message = "SQL array indices start at 1" if is_before_spark_340() else "[ELEMENT_AT_BY_INDEX_ZERO]"
     if isinstance(index, int):
@@ -375,6 +382,7 @@ def test_sql_array_scalars(query):
 
 
 @pytest.mark.parametrize('data_gen', all_basic_gens + nested_gens_sample, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_get_array_struct_fields(data_gen):
     array_struct_gen = ArrayGen(
         StructGen([['child0', data_gen], ['child1', int_gen]]),
@@ -437,6 +445,7 @@ def test_arrays_zip_corner_cases():
             'arrays_zip(a, array(1, 2, 4, 3), array(5))')
     )
 
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_array_max_q1():
     def q1(spark):
         return spark.sql('SELECT ARRAY_MAX(TRANSFORM(ARRAY_REPEAT(STRUCT(1, 2), 0), s -> s.col2))')

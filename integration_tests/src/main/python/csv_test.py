@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, is_before_spark_330
+from spark_session import with_cpu_session, is_before_spark_330, is_databricks113_or_later
 
 _acq_schema = StructType([
     StructField('loan_id', LongType()),
@@ -486,6 +486,7 @@ def test_csv_save_as_table_fallback(spark_tmp_path, spark_tmp_table_factory):
 @pytest.mark.skipif(is_before_spark_330(), reason='Hidden file metadata columns are a new feature of Spark 330')
 @allow_non_gpu(any = True)
 @pytest.mark.parametrize('metadata_column', ["file_path", "file_name", "file_size", "file_modification_time"])
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_csv_scan_with_hidden_metadata_fallback(spark_tmp_path, metadata_column):
     data_path = spark_tmp_path + "/hidden_metadata.csv"
     with_cpu_session(lambda spark : spark.range(10) \
@@ -505,6 +506,7 @@ def test_csv_scan_with_hidden_metadata_fallback(spark_tmp_path, metadata_column)
 
 @pytest.mark.skipif(is_before_spark_330(), reason='Reading day-time interval type is supported from Spark3.3.0')
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_round_trip_for_interval(spark_tmp_path, v1_enabled_list):
     csv_interval_gens = [
         DayTimeIntervalGen(start_field="day", end_field="day"),

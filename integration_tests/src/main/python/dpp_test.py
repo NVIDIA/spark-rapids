@@ -18,7 +18,7 @@ from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gp
 from conftest import spark_tmp_table_factory
 from data_gen import *
 from marks import ignore_order, allow_non_gpu
-from spark_session import is_before_spark_320, with_cpu_session, is_before_spark_312, is_databricks_runtime
+from spark_session import is_before_spark_320, with_cpu_session, is_before_spark_312, is_databricks_runtime, is_databricks113_or_later
 
 
 def create_dim_table(table_name, table_format, length=500):
@@ -163,6 +163,7 @@ _statements = [
     pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
                                                   reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
 ], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_dpp_reuse_broadcast_exchange(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, store_format, length=10000)
@@ -178,6 +179,7 @@ def test_dpp_reuse_broadcast_exchange(spark_tmp_table_factory, store_format, s_i
 # The SubqueryBroadcast can work on GPU even if the scan who holds it fallbacks into CPU.
 @ignore_order
 @pytest.mark.allow_non_gpu('FileSourceScanExec')
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_dpp_reuse_broadcast_exchange_cpu_scan(spark_tmp_table_factory):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, 'parquet', length=10000)
@@ -202,6 +204,7 @@ def test_dpp_reuse_broadcast_exchange_cpu_scan(spark_tmp_table_factory):
     pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
                                                   reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
 ], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_dpp_bypass(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, store_format)
@@ -226,6 +229,7 @@ def test_dpp_bypass(spark_tmp_table_factory, store_format, s_index, aqe_enabled)
     pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
                                                   reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
 ], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_dpp_via_aggregate_subquery(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, store_format)
@@ -247,6 +251,7 @@ def test_dpp_via_aggregate_subquery(spark_tmp_table_factory, store_format, s_ind
     pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
                                                   reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
 ], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_dpp_skip(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, store_format)
@@ -269,6 +274,7 @@ def test_dpp_skip(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
                                                   reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
 ], ids=idfn)
 @pytest.mark.skipif(is_before_spark_312(), reason="DPP over LikeAny/LikeAll filter not enabled until Spark 3.1.2")
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_dpp_like_any(spark_tmp_table_factory, store_format, aqe_enabled):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, store_format)
@@ -300,6 +306,7 @@ def test_dpp_like_any(spark_tmp_table_factory, store_format, aqe_enabled):
     pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
                                                   reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
 ], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_dpp_from_swizzled_hash_keys(spark_tmp_table_factory, aqe_enabled):
     dim_table = spark_tmp_table_factory.get()
     fact_table = spark_tmp_table_factory.get()
@@ -330,6 +337,7 @@ def test_dpp_from_swizzled_hash_keys(spark_tmp_table_factory, aqe_enabled):
     pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
                                                   reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
 ], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_dpp_empty_relation(spark_tmp_table_factory, aqe_enabled):
     dim_table = spark_tmp_table_factory.get()
     fact_table = spark_tmp_table_factory.get()

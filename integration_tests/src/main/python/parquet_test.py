@@ -23,7 +23,7 @@ import pyarrow as pa
 import pyarrow.parquet as pa_pq
 from pyspark.sql.types import *
 from pyspark.sql.functions import *
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_320, is_before_spark_330, is_spark_321cdh
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_320, is_before_spark_330, is_spark_321cdh, is_databricks113_or_later
 from conftest import is_databricks_runtime
 
 
@@ -690,6 +690,7 @@ def setup_parquet_file_with_column_names(spark, table_name):
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_disorder_read_schema(spark_tmp_table_factory, reader_confs, v1_enabled_list):
     all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     table_name = spark_tmp_table_factory.get()
@@ -885,6 +886,7 @@ def test_parquet_scan_with_aggregation_pushdown_fallback(spark_tmp_path):
 @pytest.mark.skipif(is_before_spark_330(), reason='Hidden file metadata columns are a new feature of Spark 330')
 @allow_non_gpu(any = True)
 @pytest.mark.parametrize('metadata_column', ["file_path", "file_name", "file_size", "file_modification_time"])
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_parquet_scan_with_hidden_metadata_fallback(spark_tmp_path, metadata_column):
     data_path = spark_tmp_path + "/hidden_metadata.parquet"
     with_cpu_session(lambda spark : spark.range(10) \
@@ -1090,6 +1092,7 @@ def test_parquet_read_field_id_global_flags(spark_tmp_path):
         conf=enable_parquet_field_id_read)
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_parquet_read_daytime_interval_cpu_file(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     gen_list = [('_c1', DayTimeIntervalGen())]
@@ -1099,6 +1102,7 @@ def test_parquet_read_daytime_interval_cpu_file(spark_tmp_path):
             lambda spark: spark.read.parquet(data_path))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_parquet_read_daytime_interval_gpu_file(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     gen_list = [('_c1', DayTimeIntervalGen())]

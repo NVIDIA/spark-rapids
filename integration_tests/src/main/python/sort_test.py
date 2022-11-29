@@ -19,7 +19,7 @@ from data_gen import *
 from marks import allow_non_gpu
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_340
+from spark_session import is_before_spark_340, is_databricks113_or_later
 
 # Many Spark versions have issues sorting decimals.
 # https://issues.apache.org/jira/browse/SPARK-40089
@@ -209,6 +209,7 @@ def test_orderby_with_processing_and_limit(data_gen):
 
 # We are not trying all possibilities, just doing a few with numbers so the query works.
 @pytest.mark.parametrize('data_gen', [StructGen([('child0', long_gen)])], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_single_nested_orderby_with_processing_and_limit(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         # avoid ambiguity in the order by statement for floating point by including a as a backup ordering column

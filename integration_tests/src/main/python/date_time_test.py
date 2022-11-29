@@ -18,7 +18,7 @@ from data_gen import *
 from datetime import date, datetime, timezone
 from marks import ignore_order, incompat, allow_non_gpu
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_spark_session, is_before_spark_330
+from spark_session import with_cpu_session, with_spark_session, is_before_spark_330, is_databricks113_or_later
 import pyspark.sql.functions as f
 
 # We only support literal intervals for TimeSub
@@ -42,6 +42,7 @@ def test_timeadd(data_gen):
             .selectExpr("a + (interval {} days {} seconds)".format(days, seconds)))
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_timeadd_daytime_column():
     gen_list = [
         # timestamp column max year is 1000

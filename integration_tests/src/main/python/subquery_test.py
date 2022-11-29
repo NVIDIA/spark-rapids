@@ -16,9 +16,11 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 from marks import *
+from spark_session import is_databricks113_or_later
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_basic_gens, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_scalar_subquery_basics(data_gen):
     # Fix num_slices at 1 to make sure that first/last returns same results under CPU and GPU.
     assert_gpu_and_cpu_are_equal_sql(
@@ -31,6 +33,7 @@ def test_scalar_subquery_basics(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('basic_gen', all_basic_gens, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_scalar_subquery_struct(basic_gen):
     # single-level struct
     gen = [('ss', StructGen([['a', basic_gen], ['b', basic_gen]]))]
@@ -65,6 +68,7 @@ def test_scalar_subquery_struct(basic_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('basic_gen', all_basic_gens, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_scalar_subquery_array(basic_gen):
     # single-level array
     assert_gpu_and_cpu_are_equal_sql(
@@ -101,6 +105,7 @@ def test_scalar_subquery_array(basic_gen):
         ''')
 
 @ignore_order(local=True)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_scalar_subquery_map():
     map_gen = map_string_string_gen[0]
     assert_gpu_and_cpu_are_equal_sql(

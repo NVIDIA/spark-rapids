@@ -15,7 +15,7 @@
 import pytest
 
 from conftest import is_at_least_precommit_run
-from spark_session import is_databricks91_or_later, is_before_spark_330
+from spark_session import is_databricks91_or_later, is_before_spark_330, is_databricks113_or_later
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 try:
@@ -198,6 +198,7 @@ def test_window_aggregate_udf(data_gen, window):
 @ignore_order
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen], ids=idfn)
 @pytest.mark.parametrize('window', udf_windows, ids=window_ids)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_window_aggregate_udf_array_from_python(data_gen, window):
 
     @f.pandas_udf(returnType=ArrayType(LongType()))
@@ -355,6 +356,7 @@ def test_cogroup_apply_fallback():
 @ignore_order
 @pytest.mark.parametrize('data_gen', [LongGen(nullable=False)], ids=idfn)
 @pytest.mark.skipif(is_before_spark_330(), reason='mapInArrow is introduced in Pyspark 3.3.0')
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_map_arrow_apply_udf(data_gen):
     def filter_func(iterator):
         for batch in iterator:

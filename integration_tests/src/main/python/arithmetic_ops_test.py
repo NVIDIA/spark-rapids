@@ -79,6 +79,7 @@ def _get_overflow_df(spark, data, data_type, expr):
     ).selectExpr(expr)
 
 @pytest.mark.parametrize('data_gen', _arith_data_gens, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_addition(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -91,6 +92,7 @@ def test_addition(data_gen):
 
 # If it will not overflow for multiply it is good for add too
 @pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_addition_ansi_no_overflow(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -103,6 +105,7 @@ def test_addition_ansi_no_overflow(data_gen):
             conf=ansi_enabled_conf)
 
 @pytest.mark.parametrize('data_gen', _arith_data_gens, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_subtraction(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -115,6 +118,7 @@ def test_subtraction(data_gen):
 
 # If it will not overflow for multiply it is good for subtract too
 @pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_subtraction_ansi_no_overflow(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -132,6 +136,7 @@ def test_subtraction_ansi_no_overflow(data_gen):
     _decimal_gen_38_10,
     _decimal_gen_38_neg10
     ], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_multiplication(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -154,6 +159,7 @@ def test_multiplication_fallback_when_ansi_enabled(data_gen):
             conf=ansi_enabled_conf)
 
 @pytest.mark.parametrize('data_gen', [float_gen, double_gen, decimal_gen_32bit, DecimalGen(19, 0)], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_multiplication_ansi_enabled(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -162,6 +168,7 @@ def test_multiplication_ansi_enabled(data_gen):
                 f.col('a') * f.col('b')),
             conf=ansi_enabled_conf)
 
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_multiplication_ansi_overflow():
     exception_str = 'ArithmeticException'
     assert_gpu_and_cpu_error(
@@ -174,6 +181,7 @@ def test_multiplication_ansi_overflow():
     DecimalGen(30, 10)], ids=idfn)
 @pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 3), DecimalGen(10, -2), DecimalGen(15, 3),
     DecimalGen(30, 12), DecimalGen(3, -3), DecimalGen(27, 7), DecimalGen(20, -3)], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_multiplication_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, lhs, rhs).select(
@@ -191,6 +199,7 @@ def test_float_multiplication_mixed(lhs, rhs):
 @pytest.mark.parametrize('data_gen', [double_gen, decimal_gen_32bit_neg_scale, DecimalGen(6, 3),
  DecimalGen(5, 5), DecimalGen(6, 0), DecimalGen(7, 4), DecimalGen(15, 0), DecimalGen(18, 0), 
  DecimalGen(17, 2), DecimalGen(16, 4), DecimalGen(38, 21), DecimalGen(21, 17), DecimalGen(3, -2)], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_division(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -203,6 +212,7 @@ def test_division(data_gen):
 
 @pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(4, 1), DecimalGen(5, 0), DecimalGen(5, 1), DecimalGen(10, 5)], ids=idfn)
 @pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(1, -2), DecimalGen(16, 1)], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_division_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, lhs, rhs).select(
@@ -213,12 +223,14 @@ def test_division_mixed(lhs, rhs):
 # instead of increasing the precision. So we have a second test that deals with a few of these use cases
 @pytest.mark.parametrize('rhs', [DecimalGen(30, 10), DecimalGen(28, 18)], ids=idfn)
 @pytest.mark.parametrize('lhs', [DecimalGen(27, 7), DecimalGen(20, -3)], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_division_mixed_larger_dec(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, lhs, rhs).select(
                 f.col('a'), f.col('b'),
                 f.col('a') / f.col('b')))
 
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_special_decimal_division():
     for precision in range(1, 39):
         for scale in range(-3, precision + 1):
@@ -252,6 +264,7 @@ def test_int_division(data_gen):
 
 @pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(5, 4), DecimalGen(3, -2), _decimal_gen_30_2], ids=idfn)
 @pytest.mark.parametrize('rhs', [DecimalGen(13, 2), DecimalGen(6, 3), _decimal_gen_38_0, _decimal_gen_36_neg5], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_int_division_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, lhs, rhs).selectExpr(
@@ -316,6 +329,7 @@ def test_mod_pmod_long_min_value():
     'pmod(cast(-12 as {}), cast(0 as {}))',
     'a % (cast(0 as {}))',
     'cast(-12 as {}) % cast(0 as {})'], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_mod_pmod_by_zero(data_gen, overflow_exp):
     string_type = to_cast_string(data_gen.data_type)
     if is_before_spark_320():
@@ -331,6 +345,7 @@ def test_mod_pmod_by_zero(data_gen, overflow_exp):
         ansi_enabled_conf,
         exception_str)
 
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_cast_neg_to_decimal_err():
     # -12 cannot be represented as decimal(7,7)
     data_gen = _decimal_gen_7_7
@@ -456,6 +471,7 @@ def test_floor(data_gen):
 
 @pytest.mark.skipif(is_before_spark_330(), reason='scale parameter in Floor function is not supported before Spark 3.3.0')
 @pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_floor_scale_zero(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('floor(a, 0)'),
@@ -475,6 +491,7 @@ def test_ceil(data_gen):
 
 @pytest.mark.skipif(is_before_spark_330(), reason='scale parameter in Ceil function is not supported before Spark 3.3.0')
 @pytest.mark.parametrize('data_gen', double_n_long_gens + _arith_decimal_gens_no_neg_scale, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_ceil_scale_zero(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('ceil(a, 0)'),
@@ -878,6 +895,7 @@ def _test_div_by_zero(ansi_mode, expr):
 
 
 @pytest.mark.parametrize('expr', ['1/0', 'a/0', 'a/b'])
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_div_by_zero_ansi(expr):
     _test_div_by_zero(ansi_mode='ansi', expr=expr)
 
@@ -902,6 +920,7 @@ div_overflow_exprs = [
 @pytest.mark.skipif(is_before_spark_320(), reason='https://github.com/apache/spark/pull/32260')
 @pytest.mark.parametrize('expr', div_overflow_exprs)
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_div_overflow_exception_when_ansi(expr, ansi_enabled):
     ansi_conf = {'spark.sql.ansi.enabled': ansi_enabled}
     err_exp = 'java.lang.ArithmeticException' if is_before_spark_330() \
@@ -948,6 +967,7 @@ _data_type_expr_for_add_overflow = [
     ([Decimal('9' * 38)], DecimalType(38,0), 'a + 1')]
 
 @pytest.mark.parametrize('data,tp,expr', _data_type_expr_for_add_overflow, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_add_overflow_with_ansi_enabled(data, tp, expr):
     if isinstance(tp, IntegralType):
         assert_gpu_and_cpu_error(
@@ -977,6 +997,7 @@ _data_type_expr_for_sub_overflow = [
     ]
 
 @pytest.mark.parametrize('data,tp,expr', _data_type_expr_for_sub_overflow, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_subtraction_overflow_with_ansi_enabled(data, tp, expr):
     if isinstance(tp, IntegralType):
         assert_gpu_and_cpu_error(
@@ -1017,6 +1038,7 @@ def test_unary_minus_ansi_overflow_day_time_interval(ansi_enabled):
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_abs_ansi_no_overflow_day_time_interval(ansi_enabled):
     DAY_TIME_GEN_NO_OVER_FLOW = DayTimeIntervalGen(min_value=timedelta(days=-2000*365), max_value=timedelta(days=3000*365))
     assert_gpu_and_cpu_are_equal_collect(
@@ -1025,6 +1047,7 @@ def test_abs_ansi_no_overflow_day_time_interval(ansi_enabled):
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_abs_ansi_overflow_day_time_interval(ansi_enabled):
     """
     We don't check the error messages because they are different on CPU and GPU.
@@ -1083,6 +1106,7 @@ def test_unary_positive_day_time_interval():
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens_for_fallback + [DoubleGen(min_exp=-3, max_exp=5, special_cases=[0.0])], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_day_time_interval_multiply_number(data_gen):
     gen_list = [('_c1', DayTimeIntervalGen(min_value=timedelta(seconds=-20 * 86400), max_value=timedelta(seconds=20 * 86400))),
                 ('_c2', data_gen)]
@@ -1091,6 +1115,7 @@ def test_day_time_interval_multiply_number(data_gen):
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens_for_fallback + [DoubleGen(min_exp=0, max_exp=5, special_cases=[])], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_day_time_interval_division_number_no_overflow1(data_gen):
     gen_list = [('_c1', DayTimeIntervalGen(min_value=timedelta(seconds=-5000 * 365 * 86400), max_value=timedelta(seconds=5000 * 365 * 86400))),
                 ('_c2', data_gen)]
@@ -1100,6 +1125,7 @@ def test_day_time_interval_division_number_no_overflow1(data_gen):
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens_for_fallback + [DoubleGen(min_exp=-5, max_exp=0, special_cases=[])], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_day_time_interval_division_number_no_overflow2(data_gen):
     gen_list = [('_c1', DayTimeIntervalGen(min_value=timedelta(seconds=-20 * 86400), max_value=timedelta(seconds=20 * 86400))),
                 ('_c2', data_gen)]
@@ -1130,6 +1156,7 @@ def _get_overflow_df_2cols(spark, data_types, values, expr):
     (LongType(), [MIN_DAY_TIME_INTERVAL, -1]),
     (IntegerType(), [timedelta(microseconds=LONG_MIN), -1])
 ], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_day_time_interval_division_overflow(data_type, value_pair):
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: _get_overflow_df_2cols(spark, [DayTimeIntervalType(), data_type], value_pair, 'a / b').collect(),
@@ -1143,6 +1170,7 @@ def test_day_time_interval_division_overflow(data_type, value_pair):
     (FloatType(), [MIN_DAY_TIME_INTERVAL, 0.1]),
     (DoubleType(), [MIN_DAY_TIME_INTERVAL, 0.1]),
 ], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_day_time_interval_division_round_overflow(data_type, value_pair):
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: _get_overflow_df_2cols(spark, [DayTimeIntervalType(), data_type], value_pair, 'a / b').collect(),
@@ -1162,6 +1190,7 @@ def test_day_time_interval_division_round_overflow(data_type, value_pair):
     (FloatType(), [timedelta(seconds=0), 0.0]),   # 0 / 0 = NaN
     (DoubleType(), [timedelta(seconds=0), 0.0]),  # 0 / 0 = NaN
 ], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_day_time_interval_divided_by_zero(data_type, value_pair):
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: _get_overflow_df_2cols(spark, [DayTimeIntervalType(), data_type], value_pair, 'a / b').collect(),
@@ -1170,6 +1199,7 @@ def test_day_time_interval_divided_by_zero(data_type, value_pair):
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @pytest.mark.parametrize('zero_literal', ['0', '0.0f', '-0.0f'], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_day_time_interval_divided_by_zero_scalar(zero_literal):
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: _get_overflow_df_1col(spark, DayTimeIntervalType(), [timedelta(seconds=1)], 'a / ' + zero_literal).collect(),
@@ -1187,6 +1217,7 @@ def test_day_time_interval_divided_by_zero_scalar(zero_literal):
     (DoubleType(), 0.0),
     (DoubleType(), -0.0),
 ], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_day_time_interval_scalar_divided_by_zero(data_type, value):
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: _get_overflow_df_1col(spark, data_type, [value], 'INTERVAL 1 SECOND / a').collect(),
@@ -1198,6 +1229,7 @@ def test_day_time_interval_scalar_divided_by_zero(data_type, value):
     (FloatType(), [timedelta(seconds=1), float('NaN')]),
     (DoubleType(), [timedelta(seconds=1), float('NaN')]),
 ], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_day_time_interval_division_nan(data_type, value_pair):
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: _get_overflow_df_2cols(spark, [DayTimeIntervalType(), data_type], value_pair, 'a / b').collect(),

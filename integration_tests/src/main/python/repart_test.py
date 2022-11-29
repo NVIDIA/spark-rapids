@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
-from spark_session import is_before_spark_320, is_before_spark_330
+from spark_session import is_before_spark_320, is_before_spark_330, is_databricks113_or_later
 from data_gen import *
 from marks import ignore_order, allow_non_gpu
 import pyspark.sql.functions as f
@@ -77,6 +77,7 @@ struct_of_maps = StructGen([['child0', BooleanGen()]] + [
                                        StructGen([['child1', MapGen(BooleanGen(nullable=False), boolean_gen)]], nullable=False))], ids=idfn)
 # This tests the union of DF of structs with different types of cols as long as the struct itself
 # isn't null. This is a limitation in cudf because we don't support nested types as literals
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_union_struct_missing_children(data_gen):
     left_gen, right_gen = data_gen
     assert_gpu_and_cpu_are_equal_collect(
@@ -132,6 +133,7 @@ nest_2_two = (StructGen([('b', ArrayGen(base_two[0], 1, 1))]), StructGen([('b', 
                                       nest_1_one, nest_1_two,
                                       nest_2_one, nest_2_two])
 @pytest.mark.skipif(is_before_spark_330(), reason="This is supported only in Spark 3.3.0+")
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_union_by_missing_field_name_in_arrays_structs(gen_pair):
     """
     This tests the union of two DFs of arrays of structs with missing field names.

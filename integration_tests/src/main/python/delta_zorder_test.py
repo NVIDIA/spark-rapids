@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from marks import allow_non_gpu, ignore_order, delta_lake
-from spark_session import is_databricks_runtime, with_cpu_session, with_gpu_session
+from spark_session import is_databricks_runtime, with_cpu_session, with_gpu_session, is_databricks113_or_later
 
 # Almost all of this is the metadata query
 # the important part is to not have InterleaveBits or HilbertLongIndex and PartitionerExpr
@@ -26,6 +26,7 @@ from spark_session import is_databricks_runtime, with_cpu_session, with_gpu_sess
 @allow_non_gpu(any=True)
 @delta_lake
 @ignore_order(local=True)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_delta_zorder(spark_tmp_table_factory):
     table = spark_tmp_table_factory.get()
 

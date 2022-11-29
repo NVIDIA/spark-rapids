@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_err
     assert_gpu_fallback_collect
 from data_gen import *
 from marks import incompat, allow_non_gpu
-from spark_session import is_before_spark_330, is_databricks104_or_later
+from spark_session import is_before_spark_330, is_databricks104_or_later, is_databricks113_or_later
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 
@@ -327,6 +327,7 @@ def test_simple_get_map_value_ansi_fail(data_gen):
                     reason="Only in Spark 3.3.0 + ANSI mode + Strict Index, map key throws on no such element")
 @pytest.mark.parametrize('strict_index', ['true', 'false'])
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_simple_get_map_value_with_strict_index(strict_index, data_gen):
     message = "org.apache.spark.SparkNoSuchElementException"
     test_conf = copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': strict_index})
@@ -409,6 +410,7 @@ def test_get_map_value_element_at_map_string_col_keys(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_element_at_map_string_col_keys_ansi_fail(data_gen):
     keys = StringGen(pattern='NOT_FOUND')
     message = "org.apache.spark.SparkNoSuchElementException" if (not is_before_spark_330() or is_databricks104_or_later()) else "java.util.NoSuchElementException"
@@ -422,6 +424,7 @@ def test_element_at_map_string_col_keys_ansi_fail(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_get_map_value_string_col_keys_ansi_fail(data_gen):
     keys = StringGen(pattern='NOT_FOUND')
     message = "org.apache.spark.SparkNoSuchElementException" if (not is_before_spark_330() or is_databricks104_or_later()) else "java.util.NoSuchElementException"
@@ -458,6 +461,7 @@ def test_element_at_map_timestamp_keys(data_gen):
 
 
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_map_element_at_ansi_fail(data_gen):
     message = "org.apache.spark.SparkNoSuchElementException" if (not is_before_spark_330() or is_databricks104_or_later()) else "java.util.NoSuchElementException"
     # For 3.3.0+ strictIndexOperator should not affect element_at

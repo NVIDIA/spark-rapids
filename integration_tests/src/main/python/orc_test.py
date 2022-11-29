@@ -19,7 +19,7 @@ from asserts import assert_cpu_and_gpu_are_equal_sql_with_capture, assert_gpu_an
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, is_before_spark_320, is_before_spark_330, is_spark_cdh
+from spark_session import with_cpu_session, is_before_spark_320, is_before_spark_330, is_spark_cdh, is_databricks113_or_later
 from parquet_test import _nested_pruning_schemas
 from conftest import is_databricks_runtime
 
@@ -166,6 +166,7 @@ orc_pred_push_gens = [
 @pytest.mark.parametrize('read_func', [read_orc_df, read_orc_sql])
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_pred_push_round_trip(spark_tmp_path, orc_gen, read_func, v1_enabled_list, reader_confs):
     data_path = spark_tmp_path + '/ORC_DATA'
     # Append two struct columns to verify nested predicate pushdown.
@@ -430,6 +431,7 @@ def setup_orc_file_with_column_names(spark, table_name):
     spark.sql(insert_query).collect
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_disorder_read_schema(spark_tmp_table_factory, reader_confs):
     table_name = spark_tmp_table_factory.get()
     with_cpu_session(lambda spark : setup_orc_file_with_column_names(spark, table_name))
@@ -534,6 +536,7 @@ def test_read_with_more_columns(spark_tmp_path, orc_gen, reader_confs, v1_enable
 @pytest.mark.skipif(is_before_spark_330(), reason='Hidden file metadata columns are a new feature of Spark 330')
 @allow_non_gpu(any = True)
 @pytest.mark.parametrize('metadata_column', ["file_path", "file_name", "file_size", "file_modification_time"])
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_orc_scan_with_hidden_metadata_fallback(spark_tmp_path, metadata_column):
     data_path = spark_tmp_path + "/hidden_metadata.orc"
     with_cpu_session(lambda spark : spark.range(10) \

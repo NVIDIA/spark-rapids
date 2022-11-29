@@ -18,6 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from datetime import datetime
 from marks import ignore_order, allow_non_gpu
+from spark_session import is_databricks113_or_later
 from pyspark.sql.types import *
 import pyspark.sql.functions as f
 from pyspark.sql.window import Window
@@ -47,6 +48,7 @@ def test_grouped_sliding_window(data_gen):
 
 @pytest.mark.parametrize('data_gen', integral_gens + [string_gen], ids=idfn)
 @ignore_order
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_grouped_sliding_window_array(data_gen):
     row_gen = StructGen([['ts', _restricted_ts_gen],['data', ArrayGen(data_gen)]], nullable=False)
     assert_gpu_and_cpu_are_equal_collect(

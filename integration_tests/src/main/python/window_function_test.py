@@ -21,7 +21,7 @@ from pyspark.sql.types import *
 from pyspark.sql.types import NumericType
 from pyspark.sql.window import Window
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_320
+from spark_session import is_before_spark_320, is_databricks113_or_later
 
 _grpkey_longs_with_no_nulls = [
     ('a', RepeatSeqGen(LongGen(nullable=False), length=20)),
@@ -205,6 +205,7 @@ def test_decimal_sum_window_no_part(data_gen):
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_decimal_running_sum_window(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: three_col_df(spark, byte_gen, LongRangeGen(), data_gen),
@@ -218,6 +219,7 @@ def test_decimal_running_sum_window(data_gen):
 
 @ignore_order
 @pytest.mark.parametrize('data_gen', decimal_gens, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_decimal_running_sum_window_no_part(data_gen):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark: two_col_df(spark, LongRangeGen(), data_gen),
@@ -352,6 +354,7 @@ def test_window_aggs_for_range_numeric_date(data_gen, batch_size):
                                       _grpkey_longs_with_nullable_decimals,
                                       _grpkey_longs_with_nullable_larger_decimals,
                                       _grpkey_decimals_with_nulls], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_window_aggs_for_rows(data_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
@@ -388,6 +391,7 @@ def test_window_aggs_for_rows(data_gen, batch_size):
 # the order returned should be consistent because the data ends up in a single task (no partitioning)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches 
 @pytest.mark.parametrize('b_gen', all_basic_gens + [decimal_gen_32bit, decimal_gen_128bit], ids=meta_idfn('data:'))
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_window_running_no_part(b_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
@@ -416,6 +420,7 @@ def test_window_running_no_part(b_gen, batch_size):
 # the order returned should be consistent because the data ends up in a single task (no partitioning)
 @approximate_float
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches 
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_running_float_sum_no_part(batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.variableFloatAgg.enabled': True,
@@ -444,6 +449,7 @@ def test_running_float_sum_no_part(batch_size):
 @pytest.mark.parametrize('data_gen',
                          all_basic_gens + [decimal_gen_32bit, orderable_decimal_gen_128bit],
                          ids=meta_idfn('data:'))
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_window_running_rank_no_part(data_gen):
     # Keep the batch size small. We have tested these with operators with exact inputs already, this is mostly
     # testing the fixup operation.
@@ -471,6 +477,7 @@ def test_window_running_rank_no_part(data_gen):
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', all_basic_gens + [decimal_gen_32bit], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_window_running_rank(data_gen):
     # Keep the batch size small. We have tested these with operators with exact inputs already, this is mostly
     # testing the fixup operation.
@@ -497,6 +504,7 @@ def test_window_running_rank(data_gen):
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize('b_gen, c_gen', [(long_gen, x) for x in running_part_and_order_gens] +
         [(x, long_gen) for x in all_basic_gens + [decimal_gen_32bit]], ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_window_running(b_gen, c_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.variableFloatAgg.enabled': True,
@@ -530,6 +538,7 @@ def test_window_running(b_gen, c_gen, batch_size):
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_window_running_float_decimal_sum(batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.variableFloatAgg.enabled': True,
@@ -829,6 +838,7 @@ def test_window_aggs_for_ranges_timestamps(data_gen):
                                       _grpkey_longs_with_nullable_larger_decimals,
                                       _grpkey_longs_with_nullable_largest_decimals],
                          ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_window_aggregations_for_decimal_ranges(data_gen):
     """
     Tests for range window aggregations, with DECIMAL order by columns.
@@ -867,6 +877,7 @@ def test_window_aggregations_for_decimal_ranges(data_gen):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', [_grpkey_longs_with_nullable_largest_decimals],
                          ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_window_aggregations_for_big_decimal_ranges(data_gen):
     """
     Tests for range window aggregations, with DECIMAL order by columns.
@@ -965,6 +976,7 @@ def test_window_aggs_for_rows_collect_list():
 @ignore_order(local=True)
 # This test is more directed at Databricks and their running window optimization instead of ours
 # this is why we do not validate that we inserted in a GpuRunningWindowExec, yet.
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_running_window_function_exec_for_all_aggs():
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, _gen_data_for_collect_list),
@@ -1247,6 +1259,7 @@ def test_nested_part_struct(part_gen):
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
 @pytest.mark.parametrize('ride_along', all_basic_gens + decimal_gens + array_gens_sample + struct_gens_sample + map_gens_sample, ids=idfn)
+@pytest.mark.xfail(condition=is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7184')
 def test_window_ride_along(ride_along):
     assert_gpu_and_cpu_are_equal_sql(
             lambda spark : gen_df(spark, [('a', LongRangeGen()), ('b', ride_along)]),
