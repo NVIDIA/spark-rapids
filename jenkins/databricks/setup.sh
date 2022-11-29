@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+# Setup Spark local environment for integration testing with Databricks cluster
 
 set -xe
 

@@ -14,6 +14,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+# Run integration testing individually by setting environment variable:
+#   TEST=xxx
+# or
+#   TEST_TAGS=xxx
+# More details please refer to './integration_tests/run_pyspark_from_build.sh'.
+# Note, 'setup.sh' should be executed first to setup proper environment.
 
 set -xe
 
