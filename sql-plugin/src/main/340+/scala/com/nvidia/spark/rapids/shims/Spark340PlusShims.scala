@@ -68,7 +68,7 @@ trait Spark340PlusShims extends Spark331PlusShims {
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     val shimExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
       // Empty2Null is pulled out of FileFormatWriter by default since Spark 3.4.0,
-      // so it is visible at the overriding stage.
+      // so it is visible in the overriding stage.
       GpuOverrides.expr[Empty2Null](
         "Converts the empty string to null for writing data",
         ExprChecks.unaryProjectInputMatchesOutput(

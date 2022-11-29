@@ -119,7 +119,7 @@ def test_optimized_hive_ctas_options_fallback(gens, storage_with_opts, spark_tmp
 
 @allow_non_gpu("DataWritingCommandExec")
 @pytest.mark.skipif(not (is_hive_available() and is_spark_33X()),
-                     reason="Requires Hive and Spark 3.3+ to write bucketed Hive tables")
+                    reason="Requires Hive and Spark 3.3.X to write bucketed Hive tables")
 @pytest.mark.parametrize("gens", [_basic_gens], ids=idfn)
 @pytest.mark.parametrize("storage", ["PARQUET", "ORC"], ids=idfn)
 def test_optimized_hive_bucketed_fallback_33X(gens, storage, spark_tmp_table_factory):
@@ -133,10 +133,10 @@ def test_optimized_hive_bucketed_fallback_33X(gens, storage, spark_tmp_table_fac
         "DataWritingCommandExec")
 
 # Since Spark 3.4.0, the internal "SortExec" will be pulled out by default
-# from the FileFormatWriter. Then it is visible at the planning stage.
+# from the FileFormatWriter. Then it is visible in the planning stage.
 @allow_non_gpu("DataWritingCommandExec", "SortExec", "HiveHash")
 @pytest.mark.skipif(not (is_hive_available() and is_spark_340_or_later()),
-                    reason="Requires Hive and Spark 3.3+ to write bucketed Hive tables")
+                    reason="Requires Hive and Spark 3.4+ to write bucketed Hive tables with SortExec pulled out")
 @pytest.mark.parametrize("gens", [_basic_gens], ids=idfn)
 @pytest.mark.parametrize("storage", ["PARQUET", "ORC"], ids=idfn)
 @pytest.mark.parametrize("planned_write", [True, False], ids=idfn)

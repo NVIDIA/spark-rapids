@@ -107,7 +107,7 @@ object GpuFileFormatWriter extends Logging {
     val hasGpuEmpty2Null = plan.find(p => GpuV1WriteUtils.hasGpuEmptyToNull(p.expressions))
       .isDefined
     val empty2NullPlan = if (hasGpuEmpty2Null) {
-      // Empty2Null has been inserted during logic planning.
+      // Empty2Null has been inserted during logic optimization.
       plan
     } else {
       val projectList = GpuV1WriteUtils.convertGpuEmptyToNull(plan.output, partitionSet)
