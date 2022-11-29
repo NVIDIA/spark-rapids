@@ -354,6 +354,12 @@ mostly the user with Alluxio permission. We run the command by user `ubuntu` as 
 If you have a different user and command path, you can redefine it.
 The default value is suitable for the case of running Alluxio with RAPIDS on Databricks.
 
+## Configure whether the disks used by Alluxio are fast
+The default value of `spark.rapids.alluxio.slow.disk` configuration is true, indicating the disks used by Alluxio are slow.   
+The true value enables an improvement which reading from S3 directly to get better performance if the files for reading are large.   
+If the disks are fast, should set it as false to disable this mentioned improvement to get better performance.   
+Typically, if speed of the disks is bigger than 300M/second, set it as false.
+
 ## Alluxio Troubleshooting
 
 This section will give some links about how to configure, tune Alluxio and some troubleshooting.
