@@ -114,14 +114,11 @@ cluster.
     like the CPU side.  Having the value smaller is fine as well.
     Note: Please remove the `spark.task.resource.gpu.amount` config for a single-node Databricks 
     cluster because Spark local mode does not support GPU scheduling.
-
-	The plugin does not work with the Databricks `spark.databricks.delta.optimizeWrite` option.
-
+   
     ```bash
     spark.plugins com.nvidia.spark.SQLPlugin
     spark.task.resource.gpu.amount 0.1
     spark.rapids.memory.pinnedPool.size 2G
-    spark.databricks.delta.optimizeWrite.enabled false
     spark.rapids.sql.concurrentGpuTasks 2
     ```
 
