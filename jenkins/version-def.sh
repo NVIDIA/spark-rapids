@@ -69,7 +69,7 @@ SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 # PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
 # regular: noSnapshots + snapshots
 # pre-release: noSnapshots only
-# specify-shims: specify shim versions to build, e.g., SPECIFY_SHIM_VERSIONS="311 321"
+# *: shim versions to build, e.g., PHASE_TYPE="311 321"
 PHASE_TYPE=${PHASE_TYPE:-"regular"}
 case $PHASE_TYPE in
     # SPARK_SHIM_VERSIONS will be used for nightly artifact build
@@ -77,12 +77,12 @@ case $PHASE_TYPE in
         SPARK_SHIM_VERSIONS=("${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]}")
         ;;
 
-    specify-shims)
-        SPARK_SHIM_VERSIONS=(`echo "$SPECIFY_SHIM_VERSIONS"`)
+    regular)
+        SPARK_SHIM_VERSIONS=("${SPARK_SHIM_VERSIONS_SNAPSHOTS[@]}")
         ;;
 
     *)
-        SPARK_SHIM_VERSIONS=("${SPARK_SHIM_VERSIONS_SNAPSHOTS[@]}")
+        SPARK_SHIM_VERSIONS=(`echo "$PHASE_TYPE"`)
         ;;
 esac
 # base version
