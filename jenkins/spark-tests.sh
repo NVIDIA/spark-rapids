@@ -113,7 +113,9 @@ tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
 # copy python path libs to container /tmp instead of workspace to avoid ephemeral PVC issue
 TMP_PYTHON=/tmp/$(date +"%Y%m%d")
 rm -rf $TMP_PYTHON && cp -r $SPARK_HOME/python $TMP_PYTHON
-export PYTHONPATH=$TMP_PYTHON/python:$TMP_PYTHON/python/pyspark/:$TMP_PYTHON/python/lib/py4j-0.10.9-src.zip
+# Get the correct py4j file.
+PY4J_FILE=$(find $TMP_PYTHON/python/lib -type f -iname "py4j*.zip")
+export PYTHONPATH=$TMP_PYTHON/python:$TMP_PYTHON/python/pyspark/:$PY4J_FILE
 
 # Extract 'value' from conda config string 'key: value'
 CONDA_ROOT=`conda config --show root_prefix | cut -d ' ' -f2`
