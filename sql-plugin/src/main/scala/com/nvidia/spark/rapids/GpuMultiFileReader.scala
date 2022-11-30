@@ -754,10 +754,9 @@ abstract class MultiFileCloudPartitionReaderBase(
         task.cancel(false)
       }
     }
-  }
 
      */
-
+  }
 }
 
 // A trait to describe a data block info
