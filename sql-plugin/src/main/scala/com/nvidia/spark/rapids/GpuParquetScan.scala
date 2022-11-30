@@ -1965,7 +1965,7 @@ class MultiFileCloudParquetPartitionReader(
           throw new Exception("meta to use is null this shouldn't happen!")
         }
 
-        withResource(buf.slice(offset, totalBufferSize)) { footerHmbSlice =>
+        withResource(buf.slice(offset, (totalBufferSize - offset))) { footerHmbSlice =>
           withResource(new HostMemoryOutputStream(footerHmbSlice)) { footerOut =>
             writeFooter(footerOut, allOutputBlocks, currentSchema)
             BytesUtils.writeIntLittleEndian(footerOut, footerOut.getPos.toInt)
