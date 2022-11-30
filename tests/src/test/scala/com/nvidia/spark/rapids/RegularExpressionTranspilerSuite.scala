@@ -239,9 +239,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("string anchors - find") {
-    assume(false, "Skipping due to https://github.com/NVIDIA/spark-rapids/issues/7090")
     val patterns = Seq("\\Atest", "\\A+test", "\\A{1}test", "\\A{1,}test",
-        "(\\A)+test", "(\\A){1}test", "(\\A){1,}test", "test\\z")
+        "(\\A)+test", "(\\A){1}test", "(\\A){1,}test")
     assertCpuGpuMatchesRegexpFind(patterns, Seq("", "test", "atest", "testa",
       "\ntest", "test\n", "\ntest\n"))
   }
@@ -278,15 +277,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("line anchors - replace") {
-    assume(false, "Skipping due to https://github.com/NVIDIA/spark-rapids/issues/7090")
-    val patterns = Seq("^test", "test$", "^test$", "test\\Z", "test\\z")
+    val patterns = Seq("^test", "test$", "^test$", "test\\Z")
     assertCpuGpuMatchesRegexpReplace(patterns, Seq("", "test", "atest", "testa",
       "\ntest", "test\n", "\ntest\n", "\ntest\r\ntest\n"))
   }
 
   test("string anchors - replace") {
-    assume(false, "Skipping due to https://github.com/NVIDIA/spark-rapids/issues/7090")
-    val patterns = Seq("\\Atest", "test\\z", "test\\Z")
+    val patterns = Seq("\\Atest", "test\\Z")
     assertCpuGpuMatchesRegexpReplace(patterns, Seq("", "test", "atest", "testa",
       "\ntest", "test\n", "\ntest\n", "\ntest\r\ntest\n"))
   }
@@ -414,14 +411,14 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test("transpile complex regex 2") {
     val TIMESTAMP_TRUNCATE_REGEX = "^([0-9]{4}-[0-9]{2}-[0-9]{2} " +
       "[0-9]{2}:[0-9]{2}:[0-9]{2})" +
-      "(.[1-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?.\\z"
+      "(.[1-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?.\\Z"
 
     // input and output should be identical except for `.` being replaced 
     // with `[^\n\r\u0085\u2028\u2029]` and `\z` being replaced with `$`
     doTranspileTest(TIMESTAMP_TRUNCATE_REGEX,
       TIMESTAMP_TRUNCATE_REGEX
         .replaceAll("\\.", "[^\n\r\u0085\u2028\u2029]")
-        .replaceAll("\\\\z", "\\$"))
+        .replaceAll("\\\\Z", "(?:\r|\r\n)?\\$"))
   }
 
   test("transpile \\A repetitions") {
@@ -432,9 +429,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("transpile \\z") {
-    doTranspileTest("abc\\z", "abc$")
-    doTranspileTest("abc\\Z\\z", "abc$")
-    doTranspileTest("abc$\\z", "abc$")
+    assertUnsupported("abc\\z", RegexFindMode, "")
   }
 
   test("transpile $") {
