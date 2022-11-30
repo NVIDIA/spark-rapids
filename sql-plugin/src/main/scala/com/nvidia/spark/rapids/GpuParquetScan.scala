@@ -1847,13 +1847,7 @@ class MultiFileCloudParquetPartitionReader(
     } else {
       val first = allNonEmptyHmbs.head
       // find all the files we can combine with the first one
-      val (toCombineHmbs, leftOvers) = allNonEmptyHmbs.partition(result =>
-        result match {
-          case buffer: HostMemoryBuffersWithMetaData => !checkIfNeedToSplit(buffer, first)
-          case _: HostMemoryEmptyMetaData => true
-          case _ => throw new RuntimeException("Unknown HostMemoryBuffersWithMetaDataBase")
-        }
-      )
+      val (toCombineHmbs, leftOvers) = allNonEmptyHmbs.partition(!checkIfNeedToSplit(_, first))
 
       if (leftOvers.nonEmpty) {
         logWarning(s"we have leftovers that something didn't match on, num: ${leftOvers.size}")
