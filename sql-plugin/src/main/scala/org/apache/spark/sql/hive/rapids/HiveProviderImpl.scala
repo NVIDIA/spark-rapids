@@ -149,43 +149,43 @@ class HiveProviderImpl extends HiveProvider {
             val newLine              = "\n"
 
             if (storage.inputFormat.getOrElse("") != textInputFormat) {
-              willNotWorkOnGpu(s"Unsupported input-format found: ${storage.inputFormat}. " +
-                s"Only $textInputFormat is currently supported.")
+              willNotWorkOnGpu(s"unsupported input-format found: ${storage.inputFormat}, " +
+                s"only $textInputFormat is currently supported")
             }
 
             if (storage.serde.getOrElse("") != lazySimpleSerDe) {
-              willNotWorkOnGpu(s"Unsupported serde found: ${storage.serde}. " +
-                s"Only $lazySimpleSerDe is currently supported.")
+              willNotWorkOnGpu(s"unsupported serde found: ${storage.serde}, " +
+                s"only $lazySimpleSerDe is currently supported")
             }
 
             val serializationFormat = storage.properties.getOrElse(serializationKey, "")
             if (serializationFormat != ctrlASeparatedFormat) {
-              willNotWorkOnGpu(s"Unsupported serialization format found: " +
-                s"$serializationFormat. " +
-                s"Only \'^A\' separated text input (i.e. serialization.format=1) " +
-                s"is currently supported.")
+              willNotWorkOnGpu(s"unsupported serialization format found: " +
+                s"$serializationFormat, " +
+                s"only \'^A\' separated text input (i.e. serialization.format=1) " +
+                s"is currently supported")
             }
 
             val lineTerminator = storage.properties.getOrElse(lineDelimiterKey, newLine)
             if (lineTerminator != newLine) {
-              willNotWorkOnGpu(s"Unsupported line terminator found: " +
-                s"$lineTerminator. " +
-                s"Only newline (\\n) separated text input  is currently supported.")
+              willNotWorkOnGpu(s"unsupported line terminator found: " +
+                s"$lineTerminator, " +
+                s"only newline (\\n) separated text input  is currently supported")
             }
 
             if (!storage.properties.getOrElse(escapeDelimiterKey, "").equals("")) {
-              willNotWorkOnGpu("Escapes are not currently supported.")
+              willNotWorkOnGpu("escapes are not currently supported")
             }
           }
 
           private def checkIfEnabled(): Unit = {
             if (!conf.isHiveDelimitedTextEnabled) {
-              willNotWorkOnGpu("Hive Text I/O has been disabled. To enable this, " +
+              willNotWorkOnGpu("hive text I/O has been disabled. To enable this, " +
                                s"set ${RapidsConf.ENABLE_HIVE_TEXT} to true")
             }
             if (!conf.isHiveDelimitedTextReadEnabled) {
-              willNotWorkOnGpu("Reading Hive delimited text tables has been disabled. " +
-                               s"To enable this, set ${RapidsConf.ENABLE_HIVE_TEXT_READ} to true")
+              willNotWorkOnGpu("reading hive delimited text tables has been disabled, " +
+                               s"to enable this, set ${RapidsConf.ENABLE_HIVE_TEXT_READ} to true")
             }
           }
 
