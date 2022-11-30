@@ -402,7 +402,7 @@ abstract class MultiFileCloudPartitionReaderBase(
 
   private val canUseCombine: Boolean = {
     if (queryUsesInputFile) {
-      logInfo("Query uses input file name, can't use combine mode")
+      logWarning("Query uses input file name, can't use combine mode")
       false
     } else {
       if (combineThresholdSize > 0) {
@@ -532,6 +532,7 @@ abstract class MultiFileCloudPartitionReaderBase(
           results.head
         }
 
+        logWarning("using left over files")
         TrampolineUtil.incBytesRead(inputMetrics, fileBufsAndMeta.bytesRead)
         // if we replaced the path with Alluxio, set it to the original filesystem file
         // since Alluxio replacement is supposed to be transparent to the user
@@ -611,6 +612,7 @@ abstract class MultiFileCloudPartitionReaderBase(
           }
 
           if (canUseCombine) {
+            logWarning("USING COMbine")
             var sizeRead = 0L
             readReadyFiles(0)
             if (results.isEmpty) {

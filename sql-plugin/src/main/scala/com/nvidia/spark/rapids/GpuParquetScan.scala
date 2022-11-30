@@ -1773,7 +1773,7 @@ class MultiFileCloudParquetPartitionReader(
     queryUsesInputFile: Boolean)
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, null,
     execMetrics, ignoreCorruptFiles, alluxioPathReplacementMap, alluxioReplacementTaskTime,
-    combineThresholdSize, combineWaitTime)
+    combineThresholdSize, combineWaitTime, queryUsesInputFile)
     with ParquetPartitionReaderBase {
 
   def checkIfNeedToSplit(current: HostMemoryBuffersWithMetaData,
