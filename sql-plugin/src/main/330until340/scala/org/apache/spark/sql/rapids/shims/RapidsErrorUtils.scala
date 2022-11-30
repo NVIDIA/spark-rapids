@@ -68,4 +68,8 @@ object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
     val messageParameters = Array("DOUBLE", "TIMESTAMP", SQLConf.ANSI_ENABLED.key)
     new SparkDateTimeException(errorClass, Array(infOrNan) ++ messageParameters)
   }
+
+  def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
+    new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
+  }
 }

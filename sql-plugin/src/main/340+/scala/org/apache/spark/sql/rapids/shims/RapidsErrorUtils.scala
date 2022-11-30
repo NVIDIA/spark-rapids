@@ -75,4 +75,8 @@ object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
     SparkDateTimeExceptionShims.newSparkDateTimeException(errorClass, messageParameters,
       Array.empty, "")
   }
+
+  def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
+    QueryExecutionErrors.elementAtByIndexZeroError(context = null)
+  }
 }

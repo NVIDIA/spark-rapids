@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from spark_session import is_before_spark_340
-
+from marks import allow_non_gpu
 
 @pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens + array_gens_sample + map_gens_sample + struct_gens_sample, ids=idfn)
 def test_simple_limit(data_gen):
@@ -56,6 +56,7 @@ def test_non_zero_offset(offset):
 
 @pytest.mark.parametrize('limit, offset', [(0, 0), (0, 10), (1024, 500), (2048, 456), (3000, 111), (500, 500), (100, 600)])
 @pytest.mark.skipif(is_before_spark_340(), reason='offset is introduced from Spark 3.4.0')
+@allow_non_gpu('ShuffleExchangeExec') # when limit = 0, ShuffleExchangeExec is not replaced.
 def test_non_zero_offset_with_limit(limit, offset):
     # In CPU version of spark, (limit, offset) can not be negative number.
     # Test case description:

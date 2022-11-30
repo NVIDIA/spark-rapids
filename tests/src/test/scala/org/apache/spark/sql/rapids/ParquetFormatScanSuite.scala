@@ -808,8 +808,7 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
       }, conf = conf)
     }
 
-    //https://github.com/NVIDIA/spark-rapids/issues/6915
-    ignore(s"binary Decimal $parserType") {
+    test(s"binary Decimal $parserType") {
       withGpuSparkSession(spark => {
         val schema =
           """message spark {
@@ -850,14 +849,14 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
 
               rc.field("bin_test", 2) {
                 rc.addBinary(Binary.fromConstantByteArray(
-                  Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02)))
+                  Array(0xFF.toByte)))
               }
             }
           })
 
           val data = spark.read.parquet(testPath).collect()
           sameRows(Seq(Row(BigDecimal("0.01"), BigDecimal("1"), BigDecimal("0.0001")),
-            Row(BigDecimal("0.02"), BigDecimal("2"), BigDecimal("0.0002"))), data)
+            Row(BigDecimal("0.02"), BigDecimal("2"), BigDecimal("-0.0001"))), data)
         }
       },
         // To make the CPU happy we need to turn off the vectorized reader
@@ -865,13 +864,12 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
             .set("spark.rapids.sql.format.parquet.reader.footer.type", parserType))
     }
 
-    //https://github.com/NVIDIA/spark-rapids/issues/6915
-    // This bypasses the rapids accelerator code and gets errors in CUDF itself.
-    ignore(s"binary Decimal2 $parserType") {
+    test(s"binary Decimal2 $parserType") {
       withGpuSparkSession(spark => {
         val schema =
           """message spark {
             |  required binary bin_test (DECIMAL(19,0));
+            |  required binary big_bin_test (DECIMAL(38,0));
             |}
             """.stripMargin
 
@@ -883,10 +881,18 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
                 rc.addBinary(Binary.fromConstantByteArray(
                   Array(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)))
               }
+              rc.field("big_bin_test", 1) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0xFF.toByte)))
+              }
             }
           }, { rc =>
             rc.message {
               rc.field("bin_test", 0) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0x02)))
+              }
+              rc.field("big_bin_test", 1) {
                 rc.addBinary(Binary.fromConstantByteArray(
                   Array(0x02)))
               }
@@ -901,13 +907,17 @@ class ParquetFormatScanSuite extends SparkQueryCompareTestSuite with Eventually 
                     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03)))
               }
+              rc.field("big_bin_test", 1) {
+                rc.addBinary(Binary.fromConstantByteArray(
+                  Array(0x00)))
+              }
             }
           })
 
           val data = spark.read.parquet(testPath).collect()
-          sameRows(Seq(Row(BigDecimal("1")),
-            Row(BigDecimal("2")),
-            Row(BigDecimal("3"))), data)
+          sameRows(Seq(Row(BigDecimal("1"), BigDecimal("-1")),
+            Row(BigDecimal("2"), BigDecimal("2")),
+            Row(BigDecimal("3"), BigDecimal("0"))), data)
         }
       },
         // To make the CPU happy we need to turn off the vectorized reader
