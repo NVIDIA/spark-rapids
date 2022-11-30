@@ -109,8 +109,11 @@ object GpuPartitioningUtils extends SQLConfHelper {
   // SPARK-15895: Metadata files (e.g. Parquet summary files) and temporary files should not be
   // counted as data files, so that they shouldn't participate partition discovery.
   // Copied from PartitioningAwareFileIndex.isDataPath
-  private def isDataPath(path: Path): Boolean = {
-    val name = path.getName
+  def isDataPath(path: Path): Boolean = {
+    isDataPath(path.getName)
+  }
+
+  def isDataPath(name: String): Boolean = {
     !((name.startsWith("_") && !name.contains("=")) || name.startsWith("."))
   }
 

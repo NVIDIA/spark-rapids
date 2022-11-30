@@ -1039,6 +1039,119 @@ case class GpuArraysOverlap(left: Expression, right: Expression)
   }
 }
 
+case class GpuArrayRemove(left: Expression, right: Expression) extends GpuBinaryExpression {
+
+  override def dataType: DataType = left.dataType
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    // Handle special case for null entries in rhs, replace corresponding rows in lhs with null
+    //
+    // lhs: [[1, 2, null], [1, 2, 2], [2, 3]]
+    // rhs: [1, null, 2]
+    // lhsWithNull: [[1, 2, null], null, [2, 3]]
+    val lhsWithNull = withResource(rhs.getBase.isNull) { rhsIsNull =>
+      withResource(GpuScalar.from(null, dataType)) { nullList =>
+        rhsIsNull.ifElse(nullList, lhs.getBase)
+      }
+    }
+    // Repeat entries in rhs N times as N is number of elements in corresponding row in lhsWithNull
+    //
+    // lhsWithNull: [[1, 2, null], null, [2, 3]]
+    // rhs: [1, null, 2]
+    // repeatedRhs: [1, 1, 1, 2, 2]
+    val repeatedRhs = explodeRhs(rhs.getBase, lhsWithNull.countElements)
+    withResource(lhsWithNull) { lhsWithNull =>
+      // Construct boolean mask where true values correspond to entries to keep
+      //
+      // lhsWithNull: [[1, 2, null], null, [2, 3]]
+      // repeatedRhs: [1, 1, 1, 2, 2]
+      // boolMask: [[F, T, T], null, [F, T]]
+      val boolMask = constructBooleanMask(lhsWithNull.getChildColumnView(0), repeatedRhs,
+                                          lhsWithNull.getListOffsetsView, lhs.getRowCount)
+      withResource(boolMask) { boolMask =>
+        lhsWithNull.applyBooleanMask(boolMask)
+      }
+    }
+  }
+
+  private def explodeRhs(rhs: ColumnVector, counts: ColumnVector): ColumnVector = {
+    withResource(counts) { counts =>
+      withResource(GpuScalar.from(0, DataTypes.IntegerType)) { zero =>
+        withResource(counts.replaceNulls(zero)) { noNullCounts =>
+          withResource(new Table(rhs)) { table =>
+            table.repeat(noNullCounts).getColumn(0)
+          }
+        }
+      }
+    }
+  }
+
+  private def constructBooleanMask(lhs: ColumnView, rhs: ColumnView, 
+                                   offSets: ColumnView, rowCount: Long): ColumnVector = {
+    withResource(lhs) { lhs =>
+      withResource(rhs) { rhs =>
+        val boolMaskNoNans = lhs.equalToNullAware(rhs)
+        val boolMaskWithNans = if (lhs.getType == DType.FLOAT32 || lhs.getType == DType.FLOAT64) {
+            // Compare NaN values for arrays with float or double type
+            withResource(booleanMaskNansOnly(lhs, rhs)) { boolMaskNansOnly =>
+              withResource(boolMaskNoNans) { boolMaskNoNans =>
+                boolMaskNoNans.or(boolMaskNansOnly)
+              }
+            }
+          } else {
+            boolMaskNoNans
+          }
+        withResource(boolMaskWithNans) { boolMaskWithNans =>
+          withResource(boolMaskWithNans.not) { boolMaskToKeep =>
+            withResource(offSets) { offSets =>
+              boolMaskToKeep.makeListFromOffsets(rowCount, offSets)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private def booleanMaskNansOnly(lhs: ColumnView, rhs: ColumnView): ColumnVector = {
+    withResource(lhs.isNan) { lhsIsNan =>
+      withResource(rhs.isNan) { rhsIsNan =>
+        lhsIsNan.and(rhsIsNan)
+      }
+    }
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+      doColumnar(left, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    val lhsBase = lhs.getBase
+    // Construct boolean mask where true values correspond to elements to keep
+    val boolMask = withResource(lhsBase.getListOffsetsView) { offSets =>
+      withResource(lhsBase.getChildColumnView(0)){ lhsFlatten =>
+        withResource(lhsFlatten.equalToNullAware(rhs.getBase)) { boolMaskToRemove =>
+          withResource(boolMaskToRemove.not) { boolMaskToKeep =>
+            boolMaskToKeep.makeListFromOffsets(lhs.getRowCount, offSets)
+          }
+        }
+      }
+    }
+    withResource(boolMask) { boolMask =>
+      lhsBase.applyBooleanMask(boolMask)
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
+      withResource(GpuColumnVector.from(rhs, numRows, rhs.dataType)) { right =>
+        doColumnar(left, right)
+      }
+    }
+  }
+}
+
 class GpuSequenceMeta(
     expr: Sequence,
     conf: RapidsConf,
