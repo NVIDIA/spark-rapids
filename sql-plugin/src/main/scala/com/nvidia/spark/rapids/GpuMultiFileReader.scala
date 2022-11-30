@@ -573,6 +573,7 @@ abstract class MultiFileCloudPartitionReaderBase(
           }
 
           val fileBufsAndMeta = if (results.size > 1) {
+            logInfo(s"Using Combine mode and actually combining, num files ${results.size}")
             val startCombineTime = System.currentTimeMillis()
             val combinedRes = withResource(new NvtxRange(getFileFormatShortName + " combineHmbs",
               NvtxColor.GREEN)) { _ =>
