@@ -297,7 +297,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("line anchor $ - find") {
-    assume(false, "Skipping due to https://github.com/NVIDIA/spark-rapids/issues/7090")
     val patterns = Seq("a$", "a$b", "\f$", "$\f")
     val inputs = Seq("a", "a\n", "a\r", "a\r\n", "a\u0085\n", "a\f", "\f", "\r", "\u0085", "\u2028",
         "\u2029", "\n", "\r\n", "\r\n\r", "\r\n\u0085", "\u0085\r", "\u2028\n", "\u2029\n", "\n\r",
@@ -312,7 +311,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("string anchor \\Z - find") {
-    assume(false, "Skipping due to https://github.com/NVIDIA/spark-rapids/issues/7090")
     val patterns = Seq("a\\Z", "a\\Zb", "a\\Z+", "\f\\Z", "\\Z\f")
     val inputs = Seq("a", "a\n", "a\r", "a\r\n", "a\u0085\n", "a\f", "\f", "\r", "\u0085", "\u2028",
         "\u2029", "\n", "\r\n", "\r\n\r", "\r\n\u0085", "\u0085\r", "\u2028\n", "\u2029\n", "\n\r",
@@ -440,14 +438,14 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("transpile $") {
-    doTranspileTest("a$", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
+    doTranspileTest("a$", "a(?:\r|\r\n)?$")
   }
 
   test("transpile \\Z") {
-    doTranspileTest("a\\Z", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
-    doTranspileTest("a\\Z+", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
-    doTranspileTest("a\\Z{1}", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
-    doTranspileTest("a\\Z{1,}", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
+    doTranspileTest("a\\Z", "a(?:\r|\r\n)?$")
+    doTranspileTest("a\\Z+", "a(?:\r|\r\n)?$")
+    doTranspileTest("a\\Z{1}", "a(?:\r|\r\n)?$")
+    doTranspileTest("a\\Z{1,}", "a(?:\r|\r\n)?$")
   }
 
   test("transpile predefined character classes") {

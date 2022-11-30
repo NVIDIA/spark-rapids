@@ -844,7 +844,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     } else {
       RegexGroup(capture = capture,
         RegexChoice(
-          RegexCharacterClass(negated = false, characters = terminatorChars),
+          RegexChar('\r'),
           RegexSequence(ListBuffer(RegexChar('\r'), RegexChar('\n')))), None)
     }
   }
