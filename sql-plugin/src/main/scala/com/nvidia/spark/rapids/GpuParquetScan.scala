@@ -38,6 +38,7 @@ import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.ParquetFooter
 import com.nvidia.spark.rapids.shims.{GpuParquetCrypto, GpuTypeShims, ParquetSchemaClipShims, ParquetStringPredShims, ShimFilePartitionReaderFactory, SparkShimImpl}
+import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FSDataInputStream, Path}
@@ -1223,7 +1224,6 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
       out: OutputStream,
       blocks: Seq[BlockMetaData],
       schema: MessageType): Unit = {
-    // logWarning("blocks are: " + blocks.mkString(","))
     val fileMeta = new FileMetaData(schema, Collections.emptyMap[String, String],
       ParquetPartitionReader.PARQUET_CREATOR)
     val metadataConverter = new ParquetMetadataConverter
@@ -1526,6 +1526,7 @@ private case class ParquetSingleDataBlockMeta(
   readSchema: StructType,
   extraInfo: ParquetExtraInfo) extends SingleDataBlockInfo
 
+
 /**
  * A PartitionReader that can read multiple Parquet files up to the certain size. It will
  * coalesce small files together and copy the block data in a separate thread pool to speed
@@ -1777,154 +1778,162 @@ class MultiFileCloudParquetPartitionReader(
     combineThresholdSize, combineWaitTime)
     with ParquetPartitionReaderBase {
 
-  override def combineHMBs(results: ArrayBuffer[HostMemoryBuffersWithMetaDataBase])
-  : HostMemoryBuffersWithMetaDataBase = {
-    // this size includes the written header and footer on each buffer, do we need
-    // to calculate footer differently?
-    // footer can still be larger when combined - multiple by 2 for temp
-    val tmpTotalSize = results.map { hbWithMeta =>
-      hbWithMeta.memBuffersAndSizes.map(_.bytes).sum
-    }.sum
+  def checkIfNeedToSplit(current: HostMemoryBuffersWithMetaData,
+      next: HostMemoryBuffersWithMetaData): Boolean = {
+    // We need to ensure all files we are going to combine have the same datetime
+    // rebase mode.
+    if (next.isCorrectRebaseMode !=
+      current.isCorrectRebaseMode &&
+      next.isCorrectInt96RebaseMode !=
+        current.isCorrectInt96RebaseMode) {
+      logInfo(s"datetime rebase mode for the next file ${next.partitionedFile.filePath} " +
+        s"is different than current file ${current.partitionedFile.filePath}, splitting " +
+        "into another batch.")
+      return true
+    }
 
-    val allBlocks = results.flatMap(_.memBuffersAndSizes.flatMap(_.blockMeta))
-    if (allBlocks.isEmpty) {
-      // we don't have any actual blocks just combine metadata
-      // TODO check before casting
-      val allEmptyMeta = results.map(_.asInstanceOf[HostMemoryEmptyMetaData])
-      val meta = allEmptyMeta(0)
+    // check actual file schema not the Spark read schema
+    if (next.memBuffersAndSizes.size < 1 || current.memBuffersAndSizes.size < 1) {
+      throw new RuntimeException("HostMemoryBuffersWithMetaData has no host buffers!")
+    }
+    val nextSchema = next.memBuffersAndSizes.head.schema
+    val currentSchema = current.memBuffersAndSizes.head.schema
+    if (!nextSchema.equals(currentSchema)) {
+      logInfo(s"File schema for the next file ${next.partitionedFile.filePath}" +
+        s" schema ${nextSchema} doesn't match current " +
+        s"${current.partitionedFile.filePath} schema ${currentSchema}, " +
+        "splitting it into another batch!")
+      return true
+    }
+    false
+  }
+
+  override def combineHMBs(resultsInput: Array[HostMemoryBuffersWithMetaDataBase])
+  : HostMemoryBuffersWithMetaDataBase = {
+
+    val (emptyHmbsTmp, nonEmptyHmbsTmp) = resultsInput.partition( result =>
+      result match {
+        case _: HostMemoryEmptyMetaData => true
+        case _: HostMemoryBuffersWithMetaData => false
+        case _ => throw new RuntimeException("Unknown HostMemoryBuffersWithMetaDataBase")
+      }
+    )
+    val allEmptyHmbs: Array[HostMemoryEmptyMetaData] =
+      emptyHmbsTmp.map(_.asInstanceOf[HostMemoryEmptyMetaData])
+    val allNonEmptyHmbs: Array[HostMemoryBuffersWithMetaData] =
+      nonEmptyHmbsTmp.map(_.asInstanceOf[HostMemoryBuffersWithMetaData])
+
+    if (allNonEmptyHmbs.isEmpty) {
+      // we don't have any actual data blocks just combine metadata
+      val meta = allEmptyHmbs.head
       val allPartValues = new ArrayBuffer[(Long, InternalRow)]()
-      results.foreach { hbWithMeta =>
+      allEmptyHmbs.foreach { hbWithMeta =>
         val totalNumRows = hbWithMeta.memBuffersAndSizes.map(_.numRows).sum
         val partValues = hbWithMeta.partitionedFile.partitionValues
         allPartValues.append((totalNumRows, partValues))
       }
-      // TODO handle without return and need to be HostMemoryEmptyMetaData
-      return HostMemoryEmptyMetaData(meta.partitionedFile, // just pick one since not used
+      HostMemoryEmptyMetaData(meta.partitionedFile, // just pick one since not used
         meta.origPartitionedFile,
-        allEmptyMeta.map(_.bufferSize).sum,
-        allEmptyMeta.map(_.bytesRead).sum,
-        meta.isCorrectRebaseMode, // TODO - need to add checks for these to see if different?
-        meta.isCorrectInt96RebaseMode, // TODO - need to add checks for these to see if different?
-        meta.hasInt96Timestamps,
+        allEmptyHmbs.map(_.bufferSize).sum,
+        allEmptyHmbs.map(_.bytesRead).sum,
+        meta.isCorrectRebaseMode, // these shouldn't matter since data is empty - TODO?
+        meta.isCorrectInt96RebaseMode, // these shouldn't matter since data is empty
+        meta.hasInt96Timestamps, // these shouldn't matter since data is empty
         meta.clippedSchema,
         meta.readSchema,
-        allEmptyMeta.map(_.numRows).sum,
+        allEmptyHmbs.map(_.numRows).sum,
         Some(allPartValues)
       )
-      /* return HostMemoryBuffersWithMetaData(
-        meta.partitionedFile, // just pick one since not used
-        meta.origPartitionedFile, // not used
-        combinedMemBuffsAndSizes.toArray,
-        0,
-        meta.isCorrectRebaseMode, // TODO - need to add checks for these to see if different?
-        meta.isCorrectInt96RebaseMode, // TODO - need to add checks for these to see if different?
-        meta.hasInt96Timestamps,
-        meta.clippedSchema,
-        meta.readSchema,
-        Some(allPartValues))
-*/
-    }
+    } else {
+      val first = allNonEmptyHmbs.head
+      // find all the files we can combine with the first one
+      val (toCombineHmbs, leftOvers) = allNonEmptyHmbs.partition(result =>
+        result match {
+          case buffer: HostMemoryBuffersWithMetaData => !checkIfNeedToSplit(buffer, first)
+          case _: HostMemoryEmptyMetaData => true
+          case _ => throw new RuntimeException("Unknown HostMemoryBuffersWithMetaDataBase")
+        }
+      )
 
-
-    // since we know not all of them are empty, find the first valid schema
-    val schemaToUse = results.flatMap(_.memBuffersAndSizes.filter(_.schema != null))
-      .find(_.schema != null)
-      .getOrElse(throw new RuntimeException("Schema is null and should never be!"))
-      .schema
-    val footerSize = calculateParquetFooterSize(allBlocks, schemaToUse)
-    logWarning(s"footer estimated size was: ${footerSize}")
-
-    val extraMemory = {
-      // we want to add extra memory because the ColumnChunks saved in the Footer have 2 fields
-      // file_offset and data_page_offset that get much larger when we are combining files.
-      // Here we estimate that by taking the number of columns * number of blocks which should be
-      // the number of column chunks and then saying there are 2 fields that could be larger and
-      // assume max size of those would be 8 bytes worst case. So we probably allocate to much here
-      // but it shouldn't be by a huge amount and its better then having to realloc and copy.
-      val numCols = allBlocks.head.getColumns().size()
-      val numColumnChunks = numCols * allBlocks.size
-      numColumnChunks * 2 * 8
-    }
-    // TODO - check this estimation
-    val initTotalSize = tmpTotalSize + footerSize + extraMemory
-
-    // shouldn't hit total size 0 now
-    if (initTotalSize == 0) {
-      throw new Exception("trying to combine empty metadata")
-    }
-
-
-    var metaToUse: HostMemoryBuffersWithMetaData = null
-    // TODO - don't allocate buffer is 0 size and handle empty
-    closeOnExcept(HostMemoryBuffer.allocate(initTotalSize)) { newHmb =>
-      // write header
-      var offset = withResource(new HostMemoryOutputStream(newHmb)) { out =>
-        out.write(ParquetPartitionReader.PARQUET_MAGIC)
-        out.getPos
+      if (leftOvers.nonEmpty) {
+        logWarning(s"we have leftovers that something didn't match on, num: ${leftOvers.size}")
+        leftOverFiles = Some(leftOvers.toArray)
       }
-      // val out = new HostMemoryOutputStream(newHmb)
-      var currentSchema: MessageType = null
-      val allPartValues = new ArrayBuffer[(Long, InternalRow)]()
-      val allOutputBlocks = new ArrayBuffer[BlockMetaData]()
 
-      // copy the actual data
-      results.map { hbWithMeta =>
-        val partValues = hbWithMeta.partitionedFile.partitionValues
-        val totalNumRows = hbWithMeta.memBuffersAndSizes.map(_.numRows).sum
-        allPartValues.append((totalNumRows, partValues))
-        if (hbWithMeta.isInstanceOf[HostMemoryEmptyMetaData]) {
-          // can't use size in hbmInfo because that includes footers
-          // val sizeOfBlockData = hmbInfo.blockMeta.map(_.getTotalByteSize).sum
-          // val footerPos = hmbInfo.footerPos
+      // this size includes the written header and footer on each buffer, do we need
+      // to calculate footer differently?
+      // footer can still be larger when combined - multiple by 2 for temp
+      val tmpTotalSize = toCombineHmbs.map { hbWithMeta =>
+        hbWithMeta.memBuffersAndSizes.map(_.bytes).sum
+      }.sum
 
-          logWarning("dealing with empty meta data, skipping copy in combine")
-        } else {
-          // TODO - switch to case
-          if (metaToUse == null) metaToUse = hbWithMeta.asInstanceOf[HostMemoryBuffersWithMetaData]
+      // since we know not all of them are empty, find the first valid schema, we know all
+      // these have the same schema since we already separated
+      val schemaToUse = toCombineHmbs.flatMap(_.memBuffersAndSizes.filter(_.schema != null))
+        .find(_.schema != null)
+        .getOrElse(throw new RuntimeException("Schema is null and should never be!"))
+        .schema
+      val allBlocks = toCombineHmbs.flatMap(_.memBuffersAndSizes.flatMap(_.blockMeta))
+      val footerSize = calculateParquetFooterSize(allBlocks, schemaToUse)
+      logWarning(s"footer estimated size was: ${footerSize}")
+
+      // TODO - same as coalescing, combine logic
+      val extraMemory = {
+        // we want to add extra memory because the ColumnChunks saved in the Footer have 2 fields
+        // file_offset and data_page_offset that get much larger when we are combining files.
+        // Here we estimate that by taking the number of columns * number of blocks which should be
+        // the number of column chunks and then saying there are 2 fields that could be larger and
+        // assume max size of those would be 8 bytes worst case. So we probably allocate to
+        // much here but it shouldn't be by a huge amount and its better then having to realloc and
+        // copy.
+        val numCols = allBlocks.head.getColumns().size()
+        val numColumnChunks = numCols * allBlocks.size
+        numColumnChunks * 2 * 8
+      }
+      // TODO - check this estimation
+      val initTotalSize = tmpTotalSize + footerSize + extraMemory
+
+      // shouldn't hit total size 0 now
+      if (initTotalSize == 0) {
+        throw new RuntimeException("trying to combine empty metadata")
+      }
+
+      val metaToUse = toCombineHmbs.head
+      closeOnExcept(HostMemoryBuffer.allocate(initTotalSize)) { combinedHmb =>
+        // write header
+        var offset = withResource(new HostMemoryOutputStream(combinedHmb)) { out =>
+          out.write(ParquetPartitionReader.PARQUET_MAGIC)
+          out.getPos
+        }
+        var currentSchema: MessageType = null
+        val allPartValues = new ArrayBuffer[(Long, InternalRow)]()
+        val allOutputBlocks = new ArrayBuffer[BlockMetaData]()
+
+        // first add information for partition values for empty blocks
+        allEmptyHmbs.foreach { hbWithMeta =>
+          val partValues = hbWithMeta.partitionedFile.partitionValues
+          val totalNumRows = hbWithMeta.memBuffersAndSizes.map(_.numRows).sum
+          allPartValues.append((totalNumRows, partValues))
+        }
+
+        // copy the actual data
+        toCombineHmbs.map { hbWithMeta =>
+          val partValues = hbWithMeta.partitionedFile.partitionValues
+          val totalNumRows = hbWithMeta.memBuffersAndSizes.map(_.numRows).sum
+          allPartValues.append((totalNumRows, partValues))
           hbWithMeta.memBuffersAndSizes.map { hmbInfo =>
-            // results are mixed with some empty and some with data
-            if (hmbInfo.schema != null) {
-              // logError("schema is null!!!")
-              currentSchema = hmbInfo.schema
-            }
-
-            // can't use size in hbmInfo because that includes footers
-            // val sizeOfBlockData = hmbInfo.blockMeta.map(_.getTotalByteSize).sum
-            // val footerPos = hmbInfo.footerPos
-            if (currentSchema != null && hmbInfo.schema != currentSchema) {
+            // TODO -  we already checked schema should never hit here - remove it
+            if (currentSchema != null && !hmbInfo.schema.equals(currentSchema)) {
               throw new Exception(s"schema is different current: ${currentSchema} " +
                 s"new is: ${hmbInfo.schema}")
             }
-
-            /*
-            def checkIfNeedToSplitDataBlock(currentBlockInfo: SingleDataBlockInfo,
-                nextBlockInfo: SingleDataBlockInfo): Boolean = {
-              // We need to ensure all files we are going to combine have the same datetime
-              // rebase mode.
-              if (nextBlockInfo.extraInfo.isCorrectedRebaseMode !=
-                currentBlockInfo.extraInfo.isCorrectedRebaseMode &&
-                nextBlockInfo.extraInfo.isCorrectedInt96RebaseMode !=
-                  currentBlockInfo.extraInfo.isCorrectedInt96RebaseMode) {
-                logInfo(s"datetime rebase mode for the next file ${nextBlockInfo.filePath} is different " +
-                  s"then current file ${currentBlockInfo.filePath}, splitting into another batch.")
-                return true
-              }
-
-              if (!nextBlockInfo.schema.equals(currentBlockInfo.schema)) {
-                logInfo(s"File schema for the next file ${nextBlockInfo.filePath}" +
-                  s" schema ${nextBlockInfo.schema} doesn't match current ${currentBlockInfo.filePath}" +
-                  s" schema ${currentBlockInfo.schema}, splitting it into another batch!")
-                return true
-              }
-              false
+            if (hmbInfo.schema == null) {
+              currentSchema = hmbInfo.schema
             }
-*/
-
             val copyAmount = hmbInfo.blockMeta.map { meta =>
               meta.getColumns.asScala.map(_.getTotalSize).sum
             }.sum
-            // val copyAmount = footerPos - ParquetPartitionReader.PARQUET_MAGIC.size
-            newHmb.copyFromHostBuffer(offset, hmbInfo.hmb,
+            combinedHmb.copyFromHostBuffer(offset, hmbInfo.hmb,
               ParquetPartitionReader.PARQUET_MAGIC.size, copyAmount)
             val outputBlocks = computeBlockMetaData(hmbInfo.blockMeta, offset, None)
             allOutputBlocks ++= outputBlocks
@@ -1932,85 +1941,63 @@ class MultiFileCloudParquetPartitionReader(
             hmbInfo.hmb.close()
           }
         }
-      }
-      // length to write footer
-      val lenLeft = initTotalSize - offset
-
-      if (lenLeft < 0) {
-        throw new Exception(s" initial total size is to small: $initTotalSize")
-      }
-
-      /*
-      // TODO do we need to potentially copy if initial size estimate to small=
-      var buf: HostMemoryBuffer = buffer
-      val totalBufferSize = if (lenLeft < 0) {
-        logWarning(s"The original estimated size $initTotalSize is too small, " +
-          s"reallocating and copying data to bigger buffer size: $bufferSize")
-        // Copy the old buffer to a new allocated bigger buffer and close the old buffer
-        buf = withResource(buffer) { _ =>
-          withResource(new HostMemoryInputStream(buffer, footerOffset)) { in =>
-            // realloc memory and copy
-            closeOnExcept(HostMemoryBuffer.allocate(bufferSize)) { newhmb =>
-              withResource(new HostMemoryOutputStream(newhmb)) { out =>
-                IOUtils.copy(in, out)
+        val actualFooterSize = calculateParquetFooterSize(allOutputBlocks, schemaToUse)
+        var buf: HostMemoryBuffer = combinedHmb
+        val totalBufferSize = if ((initTotalSize - offset) < actualFooterSize) {
+          val newBufferSize = offset + actualFooterSize + 4 + 4
+          logWarning(s"The original estimated size $initTotalSize is too small, " +
+            s"reallocating and copying data to bigger buffer size: $newBufferSize")
+          // Copy the old buffer to a new allocated bigger buffer and close the old buffer
+          buf = withResource(combinedHmb) { _ =>
+            withResource(new HostMemoryInputStream(combinedHmb, offset)) { in =>
+              // realloc memory and copy
+              closeOnExcept(HostMemoryBuffer.allocate(newBufferSize)) { newhmb =>
+                withResource(new HostMemoryOutputStream(newhmb)) { out =>
+                  IOUtils.copy(in, out)
+                }
+                newhmb
               }
-              newhmb
             }
           }
+          newBufferSize
+        } else {
+          initTotalSize
         }
-        bufferSize
-      } else {
-        initTotalSize
-      }
 
-
-
-       */
-
-      if (currentSchema == null) {
-        throw new Exception(s"current schema is null before write footer: ${results.mkString(",")}")
-      }
-      if (metaToUse == null) {
-        throw new Exception("meta to use is null this shouldn't happen!")
-      }
-
-      withResource(newHmb.slice(offset, lenLeft)) { footerHmbSlice =>
-        withResource(new HostMemoryOutputStream(footerHmbSlice)) { footerOut =>
-          // logWarning(s" going to write footer Tom, location: $lenLeft initial: $initTotalSize")
-          writeFooter(footerOut, allOutputBlocks, currentSchema)
-         //  logWarning(s"footer actual size was: ${footerOut.getPos} estimated was  $footerSize")
-          BytesUtils.writeIntLittleEndian(footerOut, footerOut.getPos.toInt)
-          footerOut.write(ParquetPartitionReader.PARQUET_MAGIC)
-          offset += footerOut.getPos
+        // TODO - remove the following checks
+        if (currentSchema == null) {
+          throw new Exception(s"current schema is null before write" +
+            s" footer: ${toCombineHmbs.mkString(",")}")
         }
+        if (metaToUse == null) {
+          throw new Exception("meta to use is null this shouldn't happen!")
+        }
+
+        withResource(buf.slice(offset, totalBufferSize)) { footerHmbSlice =>
+          withResource(new HostMemoryOutputStream(footerHmbSlice)) { footerOut =>
+            writeFooter(footerOut, allOutputBlocks, currentSchema)
+            BytesUtils.writeIntLittleEndian(footerOut, footerOut.getPos.toInt)
+            footerOut.write(ParquetPartitionReader.PARQUET_MAGIC)
+            offset += footerOut.getPos
+          }
+        }
+
+        // we don't need the metadata after this as we already combined
+        val newHmbBufferInfo = HostMemoryBufferAndMeta(buf, offset, allPartValues.map(_._1).sum,
+          Seq.empty, currentSchema)
+        HostMemoryBuffersWithMetaData(
+          metaToUse.partitionedFile,
+          metaToUse.origPartitionedFile, // this doesn't matter since already read
+          Array(newHmbBufferInfo),
+          offset,
+          metaToUse.isCorrectRebaseMode,
+          metaToUse.isCorrectInt96RebaseMode,
+          metaToUse.hasInt96Timestamps,
+          currentSchema,
+          metaToUse.readSchema,
+          Some(allPartValues))
       }
-
-      /*
-      if (!results(0).isInstanceOf[HostMemoryBuffersWithMetaData]) {
-        throw new Exception(s"type of results should have been HostMemoryBuffersWithMetaData instance " +
-          s"but was ${results(0).getClass}")
-      }
-      val meta = results(0).asInstanceOf[HostMemoryBuffersWithMetaData]
-      logWarning(s"combined files to total size $offset  initial $initTotalSize")
-
-       */
-
-
-      val newHmbBufferInfo = HostMemoryBufferAndMeta(newHmb, offset, allPartValues.map(_._1).sum,
-        Seq.empty, currentSchema)
-      HostMemoryBuffersWithMetaData(
-        metaToUse.partitionedFile,
-        metaToUse.origPartitionedFile, // TODO - this shouldn't matter since already read
-        Array(newHmbBufferInfo),
-        offset,
-        metaToUse.isCorrectRebaseMode, // TODO - need to add checks for these to see if different?
-        metaToUse.isCorrectInt96RebaseMode, // TODO - need to add checks for these to see if different?
-        metaToUse.hasInt96Timestamps,
-        currentSchema,
-        metaToUse.readSchema,
-        Some(allPartValues))
     }
-
   }
 
   private case class HostMemoryEmptyMetaData(
@@ -2116,7 +2103,6 @@ class MultiFileCloudParquetPartitionReader(
               val numRows = fileBlockMeta.blocks.map(_.getRowCount).sum.toInt
               // overload size to be number of rows with null buffer - TODO - even though we
               // added numRows here the bytes still overloaded and use somewhere else
-              logWarning("fiedl count is 0 so emtpy meta")
               HostMemoryEmptyMetaData(file, origPartitionedFile, numRows, bytesRead,
                 fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
                 fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema,
@@ -2135,7 +2121,6 @@ class MultiFileCloudParquetPartitionReader(
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               if (isDone) {
                 // got close before finishing
-                logWarning("close before finish 2 so empty meta")
                 hostBuffers.foreach(_.hmb.safeClose())
                 HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
                   fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,

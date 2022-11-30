@@ -377,6 +377,7 @@ abstract class MultiFileCloudPartitionReaderBase(
 
   private var filesToRead = 0
   protected var currentFileHostBuffers: Option[HostMemoryBuffersWithMetaDataBase] = None
+  protected var leftOverFiles: Option[Array[HostMemoryBuffersWithMetaDataBase]] = None
   private var isInitted = false
   private val tasksToRun = new Queue[Callable[HostMemoryBuffersWithMetaDataBase]]()
   private[this] val inputMetrics = Option(TaskContext.get).map(_.taskMetrics().inputMetrics)
@@ -438,7 +439,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     filesToRead = files.length
   }
 
-  def combineHMBs(results: ArrayBuffer[HostMemoryBuffersWithMetaDataBase])
+  def combineHMBs(results: Array[HostMemoryBuffersWithMetaDataBase])
     : HostMemoryBuffersWithMetaDataBase = {
     if (results.size < 1) {
       throw new Exception("Expect at least one host memory buffer")
@@ -501,11 +502,63 @@ abstract class MultiFileCloudPartitionReaderBase(
           batchIter = try {
             readBatches(currentFileHostBuffers.get)
           } catch {
-            case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
+            case e@(_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
               logWarning(s"Skipped the corrupted file: $file", e)
               EmptyGpuColumnarBatchIterator
           }
         }
+      } else if (leftOverFiles.isDefined) {
+        // this means we already grabbed some but something between files was incompatible
+        // and couldn't be combined. Just try to combine what is left again.
+
+        val results = leftOverFiles.get
+        // unset leftOverFiles because it will get reset in combineHMBs again if needed
+        leftOverFiles = None
+        val fileBufsAndMeta = if (results.size > 1) {
+          logInfo(s"Using Combine mode and actually combining, num files ${results.size}")
+          val startCombineTime = System.currentTimeMillis()
+          val combinedRes = withResource(new NvtxRange(getFileFormatShortName + " combineHmbs",
+            NvtxColor.GREEN)) { _ =>
+            combineHMBs(results)
+          }
+          logWarning(s"took ${(System.currentTimeMillis() - startCombineTime)} " +
+            s"ms to do combine of ${results.size} task ${TaskContext.get().taskAttemptId()}")
+          combinedRes
+        } else {
+          require(results.size == 1)
+          results.head
+        }
+
+        TrampolineUtil.incBytesRead(inputMetrics, fileBufsAndMeta.bytesRead)
+        // if we replaced the path with Alluxio, set it to the original filesystem file
+        // since Alluxio replacement is supposed to be transparent to the user
+        val inputFileToSet =
+        fileBufsAndMeta.origPartitionedFile.getOrElse(fileBufsAndMeta.partitionedFile)
+        InputFileUtils.setInputFileBlock(
+          inputFileToSet.filePath,
+          inputFileToSet.start,
+          inputFileToSet.length)
+
+        if (getSizeOfHostBuffers(fileBufsAndMeta) == 0) {
+          // if sizes are 0 means no rows and no data so skip to next file
+          // file data was empty so submit another task if any were waiting
+          closeCurrentFileHostBuffers()
+          addNextTaskIfNeeded()
+          next()
+        } else {
+          val file = fileBufsAndMeta.partitionedFile.filePath
+          batchIter = try {
+            readBatches(fileBufsAndMeta)
+          } catch {
+            case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
+              logWarning(s"Skipped the corrupted file: $file", e)
+              EmptyGpuColumnarBatchIterator
+          }
+
+          // the data is copied to GPU so submit another task if we were limited
+          addNextTaskIfNeeded()
+        }
+
       } else {
         if (filesToRead > 0 && !isDone) {
           // Filter time here includes the buffer time as well since those
@@ -577,14 +630,14 @@ abstract class MultiFileCloudPartitionReaderBase(
             val startCombineTime = System.currentTimeMillis()
             val combinedRes = withResource(new NvtxRange(getFileFormatShortName + " combineHmbs",
               NvtxColor.GREEN)) { _ =>
-              combineHMBs(results)
+              combineHMBs(results.toArray)
             }
             logWarning(s"took ${(System.currentTimeMillis() - startCombineTime)} " +
               s"ms to do combine of ${results.size} task ${TaskContext.get().taskAttemptId()}")
             combinedRes
           } else {
             require(results.size == 1)
-            results(0)
+            results.head
           }
           val blockedTime = System.nanoTime() - startTime
           // logWarning(s"blocked time is $blockedTime task ${TaskContext.get().taskAttemptId()}")
