@@ -1,9 +1,9 @@
 ---
 layout: page
-title: Contact US
+title: Contact Us
 nav_order: 16
 ---
-# Contact US
+# Contact Us
 
 ## Technical Support
 If you need any help or have questions on this product, please contact us :
