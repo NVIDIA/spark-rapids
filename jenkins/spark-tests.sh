@@ -215,8 +215,8 @@ run_iceberg_tests() {
   [[ "$(printf '%s\n' "3.3" "$ICEBERG_SPARK_VER" | sort -V | head -n1)" = "3.3" ]] && IS_SPARK_33_OR_LATER=1
 
   # RAPIDS-iceberg does not support Spark 3.3+ yet
-  if [[ "$IS_SPARK_33_OR_LATER" -eq "1" ]]; then
-    echo "!!!! Skipping Iceberg tests. Iceberg does not support Spark $ICEBERG_SPARK_VER"
+  if [[ "$IS_SPARK_33_OR_LATER" = "1" ]]; then
+    echo "!!!! Skipping Iceberg tests. GPU acceleration of Iceberg is not supported on $ICEBERG_SPARK_VER"
   else
     PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
       PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
