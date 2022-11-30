@@ -739,6 +739,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     batchIter = EmptyGpuColumnarBatchIterator
 
     // TODO clean up with completion service? - test this
+    /*
     tasks.asScala.foreach { task =>
       if (task.isDone()) {
         task.get.memBuffersAndSizes.foreach { hmbInfo =>
@@ -754,6 +755,8 @@ abstract class MultiFileCloudPartitionReaderBase(
       }
     }
   }
+
+     */
 
 }
 
