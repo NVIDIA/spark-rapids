@@ -383,6 +383,8 @@ abstract class MultiFileCloudPartitionReaderBase(
   private[this] val inputMetrics = Option(TaskContext.get).map(_.taskMetrics().inputMetrics)
       .getOrElse(TrampolineUtil.newInputMetrics())
   private var fcs: ExecutorCompletionService[HostMemoryBuffersWithMetaDataBase] = null
+  // track the tasks so that we can cleanup
+  private val tasks = new java.util.ArrayList[Future[HostMemoryBuffersWithMetaDataBase]]()
 
   private val files: Array[PartitionedFileInfoOptAlluxio] = {
     if (alluxioPathReplacementMap.nonEmpty) {
@@ -428,7 +430,8 @@ abstract class MultiFileCloudPartitionReaderBase(
     for (i <- 0 until limit) {
       val file = files(i)
       logDebug(s"MultiFile reader using file ${file.toRead}, orig file is ${file.original}")
-      fcs.submit(getBatchRunner(tc, file.toRead, file.original, conf, filters))
+      val futureRunner = fcs.submit(getBatchRunner(tc, file.toRead, file.original, conf, filters))
+      tasks.add(futureRunner)
     }
     // queue up any left to add once others finish
     for (i <- limit until files.length) {
@@ -612,7 +615,10 @@ abstract class MultiFileCloudPartitionReaderBase(
             readReadyFiles(0)
             if (results.isEmpty) {
               // none were ready yet so wait as long as need for first one
-              val hostBuffersWithMeta = fcs.take().get()
+              val hostBuffersWithMetaFut = fcs.take()
+              tasks.remove(hostBuffersWithMetaFut)
+              logWarning(s"tasks size is now ${tasks.size}")
+              val hostBuffersWithMeta = hostBuffersWithMetaFut.get()
               sizeRead += hostBuffersWithMeta.memBuffersAndSizes.map(_.bytes).sum
               filesToRead -= 1
               results.append(hostBuffersWithMeta)
@@ -620,9 +626,12 @@ abstract class MultiFileCloudPartitionReaderBase(
               readReadyFiles(sizeRead)
             }
           } else {
-            val res = fcs.take().get()
+            val hostBuffersWithMetaFut = fcs.take()
+            tasks.remove(hostBuffersWithMetaFut)
+            logWarning(s"tasks size is now ${tasks.size}")
+            val hostBuffersWithMeta = hostBuffersWithMetaFut.get()
             filesToRead -= 1
-            results.append(res)
+            results.append(hostBuffersWithMeta)
           }
 
           val fileBufsAndMeta = if (results.size > 1) {
@@ -706,7 +715,8 @@ abstract class MultiFileCloudPartitionReaderBase(
   private def addNextTaskIfNeeded(): Unit = {
     if (tasksToRun.nonEmpty && !isDone) {
       val runner = tasksToRun.dequeue()
-      fcs.submit(runner)
+      val futureRunner = fcs.submit(runner)
+      tasks.add(futureRunner)
     }
   }
 
@@ -727,8 +737,8 @@ abstract class MultiFileCloudPartitionReaderBase(
     isDone = true
     closeCurrentFileHostBuffers()
     batchIter = EmptyGpuColumnarBatchIterator
-    // TODO clean up with completion service?
-    /*
+
+    // TODO clean up with completion service? - test this
     tasks.asScala.foreach { task =>
       if (task.isDone()) {
         task.get.memBuffersAndSizes.foreach { hmbInfo =>
@@ -743,8 +753,6 @@ abstract class MultiFileCloudPartitionReaderBase(
         task.cancel(false)
       }
     }
-
-     */
   }
 
 }

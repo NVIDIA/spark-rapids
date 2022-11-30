@@ -1363,12 +1363,10 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
     withResource(new NvtxRange("Parquet buffer file split", NvtxColor.YELLOW)) { _ =>
       withResource(filePath.getFileSystem(conf).open(filePath)) { in =>
         val estTotalSize = calculateParquetOutputSize(blocks, clippedSchema, false)
-        logWarning(s"estimated total size $filePath is $estTotalSize")
         closeOnExcept(HostMemoryBuffer.allocate(estTotalSize)) { hmb =>
           val out = new HostMemoryOutputStream(hmb)
           out.write(ParquetPartitionReader.PARQUET_MAGIC)
           val outputBlocks = copyBlocksData(in, out, blocks, out.getPos)
-          logWarning(s"done copy blocks data $filePath")
           val footerPos = out.getPos
           writeFooter(out, outputBlocks, clippedSchema)
           BytesUtils.writeIntLittleEndian(out, (out.getPos - footerPos).toInt)
@@ -2062,7 +2060,6 @@ class MultiFileCloudParquetPartitionReader(
       }
     }
 
-
     private def doRead(): HostMemoryBuffersWithMetaDataBase = {
       val startingBytesRead = fileSystemBytesRead()
       val hostBuffers = new ArrayBuffer[HostMemoryBufferAndMeta]
@@ -2136,8 +2133,6 @@ class MultiFileCloudParquetPartitionReader(
           throw e
       }
       val bufferTime = System.nanoTime() - bufferStartTime
-      logWarning("buffer time was: " + bufferTime + " start time: " + bufferStartTime +
-        " now is: " + System.nanoTime() + s"taskid: $tid")
       result.setMetrics(filterTime, bufferTime)
       result
     }
