@@ -1873,6 +1873,10 @@ class MultiFileCloudParquetPartitionReader(
         val totalNumRows = hbWithMeta.memBuffersAndSizes.map(_.numRows).sum
         allPartValues.append((totalNumRows, partValues))
         if (hbWithMeta.isInstanceOf[HostMemoryEmptyMetaData]) {
+          // can't use size in hbmInfo because that includes footers
+          // val sizeOfBlockData = hmbInfo.blockMeta.map(_.getTotalByteSize).sum
+          // val footerPos = hmbInfo.footerPos
+
           logWarning("dealing with empty meta data, skipping copy in combine")
         } else {
           // TODO - switch to case
@@ -1891,6 +1895,30 @@ class MultiFileCloudParquetPartitionReader(
               throw new Exception(s"schema is different current: ${currentSchema} " +
                 s"new is: ${hmbInfo.schema}")
             }
+
+            /*
+            def checkIfNeedToSplitDataBlock(currentBlockInfo: SingleDataBlockInfo,
+                nextBlockInfo: SingleDataBlockInfo): Boolean = {
+              // We need to ensure all files we are going to combine have the same datetime
+              // rebase mode.
+              if (nextBlockInfo.extraInfo.isCorrectedRebaseMode !=
+                currentBlockInfo.extraInfo.isCorrectedRebaseMode &&
+                nextBlockInfo.extraInfo.isCorrectedInt96RebaseMode !=
+                  currentBlockInfo.extraInfo.isCorrectedInt96RebaseMode) {
+                logInfo(s"datetime rebase mode for the next file ${nextBlockInfo.filePath} is different " +
+                  s"then current file ${currentBlockInfo.filePath}, splitting into another batch.")
+                return true
+              }
+
+              if (!nextBlockInfo.schema.equals(currentBlockInfo.schema)) {
+                logInfo(s"File schema for the next file ${nextBlockInfo.filePath}" +
+                  s" schema ${nextBlockInfo.schema} doesn't match current ${currentBlockInfo.filePath}" +
+                  s" schema ${currentBlockInfo.schema}, splitting it into another batch!")
+                return true
+              }
+              false
+            }
+*/
 
             val copyAmount = hmbInfo.blockMeta.map { meta =>
               meta.getColumns.asScala.map(_.getTotalSize).sum
@@ -2069,6 +2097,7 @@ class MultiFileCloudParquetPartitionReader(
         if (fileBlockMeta.blocks.isEmpty) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead
           // no blocks so return null buffer and size 0
+          logWarning("do read has no blocks so empty meta")
           HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
             fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
             fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema, 0)
@@ -2077,6 +2106,7 @@ class MultiFileCloudParquetPartitionReader(
           if (isDone) {
             val bytesRead = fileSystemBytesRead() - startingBytesRead
             // got close before finishing
+            logWarning("close before finishing so empty meta")
             HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
               fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
               fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema, 0)
@@ -2086,6 +2116,7 @@ class MultiFileCloudParquetPartitionReader(
               val numRows = fileBlockMeta.blocks.map(_.getRowCount).sum.toInt
               // overload size to be number of rows with null buffer - TODO - even though we
               // added numRows here the bytes still overloaded and use somewhere else
+              logWarning("fiedl count is 0 so emtpy meta")
               HostMemoryEmptyMetaData(file, origPartitionedFile, numRows, bytesRead,
                 fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
                 fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema,
@@ -2104,6 +2135,7 @@ class MultiFileCloudParquetPartitionReader(
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               if (isDone) {
                 // got close before finishing
+                logWarning("close before finish 2 so empty meta")
                 hostBuffers.foreach(_.hmb.safeClose())
                 HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
                   fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
