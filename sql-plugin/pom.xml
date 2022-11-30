@@ -466,6 +466,32 @@
               <artifactId>maven-antrun-plugin</artifactId>
               <executions>
                 <execution>
+                    <id>create-shim-symlikns</id>
+                    <phase>generate-sources</phase>
+                    <goals><goal>run</goal></goals>
+                    <configuration>
+                        <target>
+                            <pathconvert property="spark.shim.classes" pathsep=" ">
+                                <fileset dir="${project.basedir}/src/main">
+                                    <containsregexp expression="// spark-releases.*:${buildver}:"/>
+                                    <include name="**/*.java"/>
+                                    <include name="**/*.scala"/>
+                                    <!-- exclude unshimmed files -->
+                                    <exclude name="scala/**"/>
+                                    <exclude name="java/**"/>
+                                </fileset>
+                            </pathconvert>
+                            <property name="spark.shim.dest" value="${project.basedir}/target/${spark.version.classifier}/src"/>
+                            <mkdir dir="${spark.shim.dest}"/>
+                            <exec executable="ln" failonerror="true">
+                                <arg value="-s"/>
+                                <arg line="${spark.shim.classes}"/>
+                                <arg value="${spark.shim.dest}"/>
+                            </exec>
+                        </target>
+                    </configuration>
+                </execution>
+                <execution>
                     <id>create-source-path-properties</id>
                     <goals><goal>run</goal></goals>
                     <phase>initialize</phase>
