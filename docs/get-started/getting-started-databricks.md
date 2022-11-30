@@ -146,7 +146,7 @@ cluster.
 ## RAPIDS Accelerator for Apache Spark Docker container for Databricks
 
 Github repo [spark-rapids-container](https://github.com/NVIDIA/spark-rapids-container) provides the 
-Dockerfile and scripts to build a custom Docker containers with RAPIDS Accelerator for Apache Spark.
+Dockerfile and scripts to build custom Docker containers with RAPIDS Accelerator for Apache Spark.
 
 Please refer to [Databricks doc](https://github.com/NVIDIA/spark-rapids-container/tree/main/Databricks) 
 for more details.
