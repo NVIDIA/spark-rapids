@@ -200,7 +200,7 @@ run_delta_lake_tests() {
   if [ -z "$DELTA_LAKE_VER" ]; then
     echo "Skipping Delta Lake tests. $SPARK_VER"
   else
-    PYSP_TEST_spark_jars_packages="io.delta:delta-core_2.12:$DELTA_LAKE_VER" \
+    PYSP_TEST_spark_jars_packages="io.delta:delta-core_${SCALA_BINARY_VER}:$DELTA_LAKE_VER" \
       PYSP_TEST_spark_sql_extensions="io.delta.sql.DeltaSparkSessionExtension" \
       PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.spark.sql.delta.catalog.DeltaCatalog" \
       ./run_pyspark_from_build.sh -m delta_lake --delta_lake
@@ -211,14 +211,14 @@ run_iceberg_tests() {
   ICEBERG_VERSION=${ICEBERG_VERSION:-0.13.2}
   # get the major/minor version of Spark
   ICEBERG_SPARK_VER=$(echo $SPARK_VER | cut -d. -f1,2)
-  IS_SPARK_34_OR_LATER=0
-  [[ "$(printf '%s\n' "3.4" "$ICEBERG_SPARK_VER" | sort -V | head -n1)" = "3.4" ]] && IS_SPARK_34_OR_LATER=1
+  IS_SPARK_33_OR_LATER=0
+  [[ "$(printf '%s\n' "3.3" "$ICEBERG_SPARK_VER" | sort -V | head -n1)" = "3.3" ]] && IS_SPARK_33_OR_LATER=1
 
-  # Iceberg does not support Spark 3.4+ yet
-  if [[ "$IS_SPARK_34_OR_LATER" -eq "1" ]]; then
-    echo "Skipping Iceberg tests. Iceberg does not support Spark $ICEBERG_SPARK_VER"
+  # RAPIDS-iceberg does not support Spark 3.3+ yet
+  if [[ "$IS_SPARK_33_OR_LATER" -eq "1" ]]; then
+    echo "!!!! Skipping Iceberg tests. Iceberg does not support Spark $ICEBERG_SPARK_VER"
   else
-    PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_2.12:${ICEBERG_VERSION} \
+    PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
       PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
       PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
       PYSP_TEST_spark_sql_catalog_spark__catalog_type="hadoop" \
@@ -234,7 +234,7 @@ run_avro_tests() {
   # version of Apache Spark which requires accessing the snapshot repository to
   # fetch the spark-avro jar.
   rm -vf $LOCAL_JAR_PATH/spark-avro*.jar
-  PYSP_TEST_spark_jars_packages="org.apache.spark:spark-avro_2.12:${SPARK_VER}" \
+  PYSP_TEST_spark_jars_packages="org.apache.spark:spark-avro_${SCALA_BINARY_VER}:${SPARK_VER}" \
     PYSP_TEST_spark_jars_repositories="https://repository.apache.org/snapshots" \
     ./run_pyspark_from_build.sh -k avro
 }

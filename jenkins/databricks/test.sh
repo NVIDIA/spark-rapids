@@ -22,7 +22,7 @@
 #   BASE_SPARK_VERSION: Spark version [3.1.2, 3.2.1, 3.3.0]. Default is pulled from current instance.
 #   ICEBERG_VERSION: The iceberg version. To find the list of supported ICEBERG versions,
 #                    check https://iceberg.apache.org/multi-engine-support/#apache-spark
-#   ICEBERG_SCALA_VERSION: Scala version used by ICEBERG jars. Default is 2.12.
+#   SCALA_BINARY_VER: Scala version of the provided binaries. Default is 2.12.
 #   TEST_MODE: Can be one of the following (`DEFAULT` is the default value):
 #       - DEFAULT: all tests except cudf_udf tests
 #       - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
@@ -45,6 +45,7 @@ declare -A sw_versions
 LOCAL_JAR_PATH=${LOCAL_JAR_PATH:-''}
 SPARK_CONF=${SPARK_CONF:-''}
 BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-$(< /databricks/spark/VERSION)}
+SCALA_BINARY_VER=${SCALA_BINARY_VER:-'2.12'}
 [[ -z $SPARK_SHIM_VER ]] && export SPARK_SHIM_VER=spark${BASE_SPARK_VERSION//.}db
 
 # install required packages
@@ -81,8 +82,6 @@ case "$BASE_SPARK_VERSION" in
 esac
 # Set the iceberg_spark to something like 3.3 for DB11.3, 3.2 for DB10.4
 sw_versions[ICEBERG_SPARK]=$(echo $BASE_SPARK_VERSION | cut -d. -f1,2)
-# Set ICEBERG scala version.
-sw_versions[ICEBERG_SCALA]=${ICEBERG_SCALA_VERSION:-'2.12'}
 # Get the correct py4j file.
 PY4J_FILE=$(find $SPARK_HOME/python/lib -type f -iname "py4j*.zip")
 # Set the path of python site-packages
@@ -131,7 +130,7 @@ PCBS_CONF="com.nvidia.spark.ParquetCachedBatchSerializer"
 # Classloader config is here to work around classloader issues with
 # --packages in distributed setups, should be fixed by
 # https://github.com/NVIDIA/spark-rapids/pull/5646
-ICEBERG_CONFS="--packages org.apache.iceberg:iceberg-spark-runtime-${sw_versions[ICEBERG_SPARK]}_${sw_versions[ICEBERG_SCALA]}:${sw_versions[ICEBERG]} \
+ICEBERG_CONFS="--packages org.apache.iceberg:iceberg-spark-runtime-${sw_versions[ICEBERG_SPARK]}_${SCALA_BINARY_VER}:${sw_versions[ICEBERG]} \
  --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
  --conf spark.sql.catalog.spark_catalog=org.apache.iceberg.spark.SparkSessionCatalog \
  --conf spark.sql.catalog.spark_catalog.type=hadoop \
