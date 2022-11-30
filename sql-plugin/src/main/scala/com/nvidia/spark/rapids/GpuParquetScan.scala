@@ -1919,7 +1919,7 @@ class MultiFileCloudParquetPartitionReader(
               throw new Exception(s"schema is different current: ${currentSchema} " +
                 s"new is: ${hmbInfo.schema}")
             }
-            if (hmbInfo.schema == null) {
+            if (hmbInfo.schema != null) {
               currentSchema = hmbInfo.schema
             }
             val copyAmount = hmbInfo.blockMeta.map { meta =>
