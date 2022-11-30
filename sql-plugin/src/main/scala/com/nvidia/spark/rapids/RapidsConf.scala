@@ -1491,7 +1491,9 @@ object RapidsConf {
       "Rapids Accelerator reads from S3 directly instead of reading from Alluxio caches. " +
       "Refer to spark.rapids.alluxio.large.file.threshold which defines a threshold that " +
       "identifying whether files are large. " +
-      "Typically, it's slow disks if speed is less than 300M/second.")
+      "Typically, it's slow disks if speed is less than 300M/second. " +
+      "If using convert time spark.rapids.alluxio.replacement.algo, " +
+      "this may not apply to all file types like Delta files")
     .booleanConf
     .createWithDefault(true)
 
