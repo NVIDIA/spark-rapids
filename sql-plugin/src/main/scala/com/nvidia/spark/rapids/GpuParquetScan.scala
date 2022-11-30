@@ -855,8 +855,9 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
         dt == DataTypes.BinaryType || canReadAsBinaryDecimal(pt, dt) =>
         return
 
-      case PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY if canReadAsIntDecimal(pt, dt) ||
-        canReadAsLongDecimal(pt, dt) || canReadAsBinaryDecimal(pt, dt) =>
+      case PrimitiveTypeName.BINARY | PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY
+        if canReadAsIntDecimal(pt, dt) || canReadAsLongDecimal(pt, dt) ||
+            canReadAsBinaryDecimal(pt, dt) =>
         return
 
       case _ =>
@@ -2014,7 +2015,17 @@ object MakeParquetTableProducer extends Arm {
       val table = withResource(buffer) { _ =>
         withResource(new NvtxWithMetrics("Parquet decode", NvtxColor.DARK_GREEN,
           metrics(GPU_DECODE_TIME))) { _ =>
-          Table.readParquet(opts, buffer, offset, len)
+          try {
+            Table.readParquet(opts, buffer, offset, len)
+          } catch {
+            case e: Exception =>
+              val path = filePath match {
+                case Some(path) => s"$path"
+                case None => ""
+              }
+              throw new IOException("Error when processing file " + 
+                  s"[path: $path, range: $offset-${offset + len}]", e)
+          }
         }
       }
       closeOnExcept(table) { _ =>

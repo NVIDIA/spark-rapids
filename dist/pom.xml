@@ -48,13 +48,13 @@
             321,
             321cdh,
             322,
+            323,
             330,
             331,
             330cdh
         </noSnapshot.buildvers>
         <snapshot.buildvers>
             314,
-            323,
             332
         </snapshot.buildvers>
         <databricks.buildvers>

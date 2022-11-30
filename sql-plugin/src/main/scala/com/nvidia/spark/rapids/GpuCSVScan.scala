@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.IOException
 import java.nio.charset.StandardCharsets
 
 import scala.collection.JavaConverters._
@@ -365,7 +366,6 @@ class CSVPartitionReader(
    * Read the host buffer to GPU table
    *
    * @param dataBuffer     host buffer to be read
-   * @param dataSize       the size of host buffer
    * @param cudfSchema     the cudf schema of the data
    * @param readDataSchema the Spark schema describing what will be read
    * @param isFirstChunk   if it is the first chunk
@@ -379,8 +379,13 @@ class CSVPartitionReader(
     val hasHeader = isFirstChunk && parsedOptions.headerFlag
     val csvOpts = buildCsvOptions(parsedOptions, readDataSchema, hasHeader)
     val dataSize = dataBufferer.getLength
-    withResource(dataBufferer.getBufferAndRelease) { dataBuffer =>
-      Table.readCSV(cudfSchema, csvOpts.build, dataBuffer, 0, dataSize)
+    try {
+      withResource(dataBufferer.getBufferAndRelease) { dataBuffer =>
+        Table.readCSV(cudfSchema, csvOpts.build, dataBuffer, 0, dataSize)
+      }
+    } catch {
+      case e: Exception =>
+        throw new IOException(s"Error when processing file [$partFile]", e)
     }
   }
 }
