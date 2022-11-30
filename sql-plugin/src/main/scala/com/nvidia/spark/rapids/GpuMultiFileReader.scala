@@ -524,14 +524,14 @@ abstract class MultiFileCloudPartitionReaderBase(
                 if (combineWaitTime > 0) {
                   val startTime = System.currentTimeMillis()
                   val waitFuture = fcs.poll(combineWaitTime, TimeUnit.MILLISECONDS)
-                  logWarning(s"Waited ${System.currentTimeMillis() - startTime}ms")
+                  // logWarning(s"Waited ${System.currentTimeMillis() - startTime}ms")
                   if (waitFuture != null) {
                     results.append(waitFuture.get())
                     currSize += waitFuture.get().memBuffersAndSizes.map(_.bytes).sum
-                    if (currSize > combineThresholdSize) {
+                   /* if (currSize > combineThresholdSize) {
                       logWarning(s"current size is now $currSize for ${results.size} left " +
                         s"is $filesToRead task ${TaskContext.get().taskAttemptId()}")
-                    }
+                    } */
                     filesToRead -= 1
                   } else {
                     takeMore = false
@@ -542,16 +542,16 @@ abstract class MultiFileCloudPartitionReaderBase(
               } else {
                 results.append(hmbFuture.get())
                 currSize += hmbFuture.get().memBuffersAndSizes.map(_.bytes).sum
-                if (currSize > combineThresholdSize) {
+                /*if (currSize > combineThresholdSize) {
                   logWarning(s"c2 urrent size is now $currSize for ${results.size} left" +
                     s" is $filesToRead task ${TaskContext.get().taskAttemptId()}")
-                }
+                }*/
                 filesToRead -= 1
               }
             }
-            logWarning(s"done readReady Files task ${TaskContext.get().taskAttemptId()} " +
-              s"takemore $takeMore currSize $currSize filestoread $filesToRead" +
-              s" wait time $combineWaitTime")
+          //  logWarning(s"done readReady Files task ${TaskContext.get().taskAttemptId()} " +
+          //    s"takemore $takeMore currSize $currSize filestoread $filesToRead" +
+          //    s" wait time $combineWaitTime")
           }
 
           if (canUseCombine) {
@@ -586,7 +586,7 @@ abstract class MultiFileCloudPartitionReaderBase(
             results(0)
           }
           val blockedTime = System.nanoTime() - startTime
-          logWarning(s"blocked time is $blockedTime task ${TaskContext.get().taskAttemptId()}")
+          // logWarning(s"blocked time is $blockedTime task ${TaskContext.get().taskAttemptId()}")
           metrics.get(FILTER_TIME).foreach {
             _ += (blockedTime * fileBufsAndMeta.getFilterTimePct).toLong
           }

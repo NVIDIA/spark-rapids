@@ -397,6 +397,7 @@ def test_parquet_read_round_trip_legacy(spark_tmp_path, parquet_gens, v1_enabled
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
 
+@ignore_order
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):

@@ -856,7 +856,7 @@ object RapidsConf {
   val PARQUET_MULTITHREADED_COMBINE_THRESHOLD =
   conf ("spark.rapids.sql.format.parquet.multithreaded.combine.threshold")
   .doc ("When using the multithreaded parquet reader, if other files are already ready," +
-  "combine them together up to this threadhold size before sending down to GPU.")
+  "combine them together up to this threshold size before sending down to GPU.")
   .bytesConf (ByteUnit.BYTE)
   .createWithDefault (67108864L) // 64mb
 

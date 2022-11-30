@@ -1880,7 +1880,7 @@ class MultiFileCloudParquetPartitionReader(
           hbWithMeta.memBuffersAndSizes.map { hmbInfo =>
             // results are mixed with some empty and some with data
             if (hmbInfo.schema != null) {
-              logError("schema is null!!!")
+              // logError("schema is null!!!")
               currentSchema = hmbInfo.schema
             }
 
@@ -1950,7 +1950,7 @@ class MultiFileCloudParquetPartitionReader(
         withResource(new HostMemoryOutputStream(footerHmbSlice)) { footerOut =>
           // logWarning(s" going to write footer Tom, location: $lenLeft initial: $initTotalSize")
           writeFooter(footerOut, allOutputBlocks, currentSchema)
-          logWarning(s"footer actual size was: ${footerOut.getPos} estimated was  $footerSize")
+         //  logWarning(s"footer actual size was: ${footerOut.getPos} estimated was  $footerSize")
           BytesUtils.writeIntLittleEndian(footerOut, footerOut.getPos.toInt)
           footerOut.write(ParquetPartitionReader.PARQUET_MAGIC)
           offset += footerOut.getPos
