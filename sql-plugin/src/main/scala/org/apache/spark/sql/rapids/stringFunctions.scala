@@ -1298,41 +1298,18 @@ case class GpuRegExpExtract(
     // | NULL   | NULL  | NULL  |
     // | 'a1a'  | '1'   | '1'   |
     // | '1a1'  | ''    | NULL  |
-
-    withResource(
-      Seq[String]("", null).safeMap(GpuScalar.from(_, DataTypes.StringType))
-    ) { case Seq(emptyString, nullString) =>
-      // Navin I think it would be faster if we could replace the containsRe call with
-      // input.isNull && !output.isNull. What do you think?
-      // think we just need to check if the input is NULL to output NULL, and then the
-      // first column of the table output from extractRe
-
-      // if input !null and output null
-
-      val groupCol = withResource(str.getBase.extractRe(extractPattern)) { extract =>
-        withResource(extract.getColumn(groupIndex).isNull) { outputNulls =>
-          withResource(str.getBase.isNotNull) { inputNotNulls =>
-            withResource(outputNulls.and(inputNotNulls)) { shouldBeEmpty =>
-              shouldBeEmpty.ifElse(emptyString, extract.getColumn(groupIndex))
-            }
+    withResource(str.getBase.extractRe(extractPattern)) { extract =>
+      val outputNullAndInputNotNull =
+        withResource(extract.getColumn(groupIndex).isNull) { outputNull =>
+          withResource(str.getBase.isNotNull) { inputNotNull =>
+            outputNull.and(inputNotNull)
           }
         }
-
-        /*
-        withResource(str.getBase.containsRe(cudfRegexPattern)) {
-          _.ifElse(extract.getColumn(groupIndex), emptyString)
-        }
-
-         */
-      }
-      /*
-      withResource(groupCol) { _ =>
-        withResource(str.getBase.isNull) {
-          _.ifElse(nullString, groupCol)
+      withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
+        withResource(outputNullAndInputNotNull) {
+          _.ifElse(emptyString, extract.getColumn(groupIndex))
         }
       }
-       */
-      groupCol
     }
   }
 }
