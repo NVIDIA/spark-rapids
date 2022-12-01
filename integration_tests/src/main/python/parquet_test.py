@@ -110,7 +110,7 @@ reader_opt_confs_native = [native_parquet_file_reader_conf, native_multithreaded
 
 reader_opt_confs_no_native = [original_parquet_file_reader_conf, multithreaded_parquet_file_reader_conf,
                     coalesce_parquet_file_reader_conf, coalesce_parquet_file_reader_multithread_filter_conf,
-                    noorder_multithreaded_parquet_file_reader_conf]#, combining_multithreaded_parquet_file_reader_conf]
+                    noorder_multithreaded_parquet_file_reader_conf, combining_multithreaded_parquet_file_reader_conf]
 
 reader_opt_confs = reader_opt_confs_native + reader_opt_confs_no_native
 
@@ -486,7 +486,7 @@ def test_parquet_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reade
             conf=all_confs)
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
-@pytest.mark.parametrize('v1_enabled_list', ["parquet"])
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
     # we should go with a more standard set of generators
@@ -556,7 +556,8 @@ def test_parquet_input_meta(spark_tmp_path, v1_enabled_list, reader_confs):
     with_cpu_session(
             lambda spark : unary_op_df(spark, long_gen).write.parquet(second_data_path))
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path)\
                     .filter(f.col('a') > 0)\
