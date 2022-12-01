@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+// spark-distros:312db:
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.execution.FileSourceScanExec

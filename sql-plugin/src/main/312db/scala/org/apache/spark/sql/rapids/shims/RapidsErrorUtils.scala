@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+// spark-distros:312db:
 package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.sql.AnalysisException
@@ -55,7 +56,7 @@ object RapidsErrorUtils {
     new ArithmeticException(message)
   }
 
-  def cannotChangeDecimalPrecisionError(      
+  def cannotChangeDecimalPrecisionError(
       value: Decimal,
       toType: DecimalType,
       context: String = ""): ArithmeticException = {
