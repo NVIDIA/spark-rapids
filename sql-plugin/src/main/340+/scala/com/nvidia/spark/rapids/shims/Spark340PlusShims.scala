@@ -19,12 +19,14 @@ package com.nvidia.spark.rapids.shims
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{ElementAt, Expression}
 import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
 import org.apache.spark.sql.execution.{CollectLimitExec, GlobalLimitExec, SparkPlan}
 import org.apache.spark.sql.execution.datasources.V1WritesUtils.Empty2Null
 import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
+import org.apache.spark.sql.rapids.GpuElementAt
 import org.apache.spark.sql.rapids.GpuV1WriteUtils.GpuEmpty2Null
+import org.apache.spark.sql.types.{ArrayType, MapType}
 
 trait Spark340PlusShims extends Spark331PlusShims {
 
@@ -76,7 +78,59 @@ trait Spark340PlusShims extends Spark331PlusShims {
         (a, conf, p, r) => new UnaryExprMeta[Empty2Null](a, conf, p, r) {
           override def convertToGpu(child: Expression): GpuExpression = GpuEmpty2Null(child)
         }
-      )
+      ),
+      GpuOverrides.expr[ElementAt](
+        "Returns element of array at given(1-based) index in value if column is array. " +
+          "Returns value for the given key in value if column is map.",
+        ExprChecks.binaryProject(
+          (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
+            TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY).nested(), TypeSig.all,
+          ("array/map", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
+            TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY) +
+            TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT +
+              TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY)
+              .withPsNote(TypeEnum.MAP ,"If it's map, only primitive key types are supported."),
+            TypeSig.ARRAY.nested(TypeSig.all) + TypeSig.MAP.nested(TypeSig.all)),
+          ("index/key", (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128)
+            .withPsNote(
+              Seq(TypeEnum.BOOLEAN, TypeEnum.BYTE, TypeEnum.SHORT, TypeEnum.LONG,
+                TypeEnum.FLOAT, TypeEnum.DOUBLE, TypeEnum.DATE, TypeEnum.TIMESTAMP,
+                TypeEnum.STRING, TypeEnum.DECIMAL), "Unsupported as array index."),
+            TypeSig.all)),
+        (in, conf, p, r) => new BinaryExprMeta[ElementAt](in, conf, p, r) {
+          override def tagExprForGpu(): Unit = {
+            // To distinguish the supported nested type between Array and Map
+            val checks = in.left.dataType match {
+              case _: MapType =>
+                // Match exactly with the checks for GetMapValue
+                ExprChecks.binaryProject(
+                  (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
+                    TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY).nested(),
+                  TypeSig.all,
+                  ("map",
+                    TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT +
+                      TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY),
+                    TypeSig.MAP.nested(TypeSig.all)),
+                  ("key", TypeSig.commonCudfTypes + TypeSig.DECIMAL_128, TypeSig.all))
+              case _: ArrayType =>
+                // Match exactly with the checks for GetArrayItem
+                ExprChecks.binaryProject(
+                  (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
+                    TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY).nested(),
+                  TypeSig.all,
+                  ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
+                    TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP +
+                    TypeSig.BINARY),
+                    TypeSig.ARRAY.nested(TypeSig.all)),
+                  ("ordinal", TypeSig.INT, TypeSig.INT))
+              case _ => throw new IllegalStateException("Only Array or Map is supported as input.")
+            }
+            checks.tag(this)
+          }
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+            GpuElementAt(lhs, rhs, failOnError = in.failOnError && lhs.dataType.isInstanceOf[ArrayType])
+          }
+        }),
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ shimExprs
   }
