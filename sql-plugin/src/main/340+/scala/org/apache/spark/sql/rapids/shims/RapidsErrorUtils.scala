@@ -75,7 +75,7 @@ object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
     new SparkDateTimeException(errorClass, messageParameters, Array.empty, "")
   }
 
-  override def intervalDivByZeroError(origin: Origin): ArithmeticException = {
-    QueryExecutionErrors.intervalDividedByZeroError(origin.context)
+  def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
+    QueryExecutionErrors.elementAtByIndexZeroError(context = null)
   }
 }

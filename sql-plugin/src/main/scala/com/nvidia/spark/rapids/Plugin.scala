@@ -28,6 +28,7 @@ import scala.util.matching.Regex
 
 import ai.rapids.cudf.{CudaException, CudaFatalException, CudfException, MemoryCleaner}
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
+import org.apache.commons.lang3.exception.ExceptionUtils
 
 import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskFailedReason}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
@@ -373,10 +374,13 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   }
 
   override def onTaskFailed(failureReason: TaskFailedReason): Unit = {
+    def containsCudaFatalException(e: Throwable): Boolean = {
+      ExceptionUtils.getThrowableList(e).asScala.exists(e => e.isInstanceOf[CudaFatalException])
+    }
     failureReason match {
       case ef: ExceptionFailure =>
         ef.exception match {
-          case Some(_: CudaFatalException) =>
+          case Some(e) if containsCudaFatalException(e) =>
             logError("Stopping the Executor based on exception being a fatal CUDA error: " +
               s"${ef.toErrorString}")
             logGpuDebugInfoAndExit(systemExitCode = 20)

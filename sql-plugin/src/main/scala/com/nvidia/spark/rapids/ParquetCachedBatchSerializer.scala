@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.InputStream
+import java.io.{InputStream, IOException}
 import java.nio.ByteBuffer
 
 import scala.collection.JavaConverters._
@@ -473,8 +473,14 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
       case parquetCB: ParquetCachedBatch =>
         val parquetOptions = ParquetOptions.builder()
             .includeColumn(selectedAttributes.map(_.name).asJavaCollection).build()
-        withResource(Table.readParquet(parquetOptions, parquetCB.buffer, 0,
-          parquetCB.sizeInBytes)) { table =>
+        val table = try {
+          Table.readParquet(parquetOptions, parquetCB.buffer, 0, parquetCB.sizeInBytes)
+        } catch {
+          case e: Exception =>
+            throw new IOException("Error when processing file " + 
+                s"[range: 0-${parquetCB.sizeInBytes}]", e)
+        }
+        withResource(table) { table =>
           withResource {
             for (i <- 0 until table.getNumberOfColumns) yield {
               ColumnCastUtil.ifTrueThenDeepConvertTypeAtoTypeB(table.getColumn(i),

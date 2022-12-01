@@ -237,8 +237,9 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assertCpuGpuMatchesRegexpReplace(Seq("[\t-\r]", "[\b-\t123\n]", raw"[\\u002d-\u007a]"), 
       inputs)
   }
-  
+
   test("string anchors - find") {
+    assume(false, "Skipping due to https://github.com/NVIDIA/spark-rapids/issues/7090")
     val patterns = Seq("\\Atest", "\\A+test", "\\A{1}test", "\\A{1,}test",
         "(\\A)+test", "(\\A){1}test", "(\\A){1,}test", "test\\z")
     assertCpuGpuMatchesRegexpFind(patterns, Seq("", "test", "atest", "testa",
@@ -277,12 +278,14 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("line anchors - replace") {
+    assume(false, "Skipping due to https://github.com/NVIDIA/spark-rapids/issues/7090")
     val patterns = Seq("^test", "test$", "^test$", "test\\Z", "test\\z")
     assertCpuGpuMatchesRegexpReplace(patterns, Seq("", "test", "atest", "testa",
       "\ntest", "test\n", "\ntest\n", "\ntest\r\ntest\n"))
   }
 
   test("string anchors - replace") {
+    assume(false, "Skipping due to https://github.com/NVIDIA/spark-rapids/issues/7090")
     val patterns = Seq("\\Atest", "test\\z", "test\\Z")
     assertCpuGpuMatchesRegexpReplace(patterns, Seq("", "test", "atest", "testa",
       "\ntest", "test\n", "\ntest\n", "\ntest\r\ntest\n"))
@@ -294,6 +297,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("line anchor $ - find") {
+    assume(false, "Skipping due to https://github.com/NVIDIA/spark-rapids/issues/7090")
     val patterns = Seq("a$", "a$b", "\f$", "$\f")
     val inputs = Seq("a", "a\n", "a\r", "a\r\n", "a\u0085\n", "a\f", "\f", "\r", "\u0085", "\u2028",
         "\u2029", "\n", "\r\n", "\r\n\r", "\r\n\u0085", "\u0085\r", "\u2028\n", "\u2029\n", "\n\r",
@@ -308,6 +312,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("string anchor \\Z - find") {
+    assume(false, "Skipping due to https://github.com/NVIDIA/spark-rapids/issues/7090")
     val patterns = Seq("a\\Z", "a\\Zb", "a\\Z+", "\f\\Z", "\\Z\f")
     val inputs = Seq("a", "a\n", "a\r", "a\r\n", "a\u0085\n", "a\f", "\f", "\r", "\u0085", "\u2028",
         "\u2029", "\n", "\r\n", "\r\n\r", "\r\n\u0085", "\u0085\r", "\u2028\n", "\u2029\n", "\n\r",
