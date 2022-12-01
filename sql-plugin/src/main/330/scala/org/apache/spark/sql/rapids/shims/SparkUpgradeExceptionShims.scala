@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,15 +14,21 @@
  * limitations under the License.
  */
 
-// spark-distros:330:
+// spark-distros:330:331:331cdh:332:
 
-package com.nvidia.spark.rapids.spark330
+package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.shims.spark330.ProxyRapidsShuffleInternalManager
+import org.apache.spark.SparkUpgradeException
 
-/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
-sealed class RapidsShuffleManager(
-    conf: SparkConf,
-    isDriver: Boolean) extends ProxyRapidsShuffleInternalManager(conf, isDriver) {
+object SparkUpgradeExceptionShims {
+
+  def newSparkUpgradeException(
+      version: String,
+      message: String,
+      cause: Throwable): SparkUpgradeException = {
+    new SparkUpgradeException(
+      "INCONSISTENT_BEHAVIOR_CROSS_VERSION",
+      Array(version, message),
+      cause)
+  }
 }

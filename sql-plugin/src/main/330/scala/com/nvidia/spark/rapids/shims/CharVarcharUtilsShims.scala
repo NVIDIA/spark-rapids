@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,15 +14,16 @@
  * limitations under the License.
  */
 
-// spark-distros:330:
+// spark-distros:330:330cdh:331:332:340:
 
-package com.nvidia.spark.rapids.spark330
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.shims.spark330.ProxyRapidsShuffleInternalManager
+import org.apache.spark.sql.catalyst.util.CharVarcharUtils
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.types.StructType
 
-/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
-sealed class RapidsShuffleManager(
-    conf: SparkConf,
-    isDriver: Boolean) extends ProxyRapidsShuffleInternalManager(conf, isDriver) {
+object CharVarcharUtilsShims {
+  def getRawSchema(schema: StructType, conf: SQLConf): StructType = {
+    CharVarcharUtils.getRawSchema(schema, conf)
+  }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,12 +14,18 @@
  * limitations under the License.
  */
 
-// spark-distros:330:
+// spark-distros:330:330cdh:331:332:340:
 
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids._
+import org.apache.spark.sql.catalyst.expressions.{Attribute, FileSourceMetadataAttribute}
 
-object SparkShimImpl extends Spark330PlusShims with Spark320until340Shims {
-  override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
+object RapidsFileSourceMetaUtils {
+  /**
+   * Cleanup the internal metadata information of an attribute if it is
+   * a 'FileSourceMetadataAttribute', it will remove both 'METADATA_COL_ATTR_KEY' and
+   * 'FILE_SOURCE_METADATA_COL_ATTR_KEY' from the attribute 'Metadata'
+   */
+  def cleanupFileSourceMetadataInformation(attr: Attribute): Attribute =
+    FileSourceMetadataAttribute.cleanupFileSourceMetadataInformation(attr)
 }
