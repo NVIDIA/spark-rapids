@@ -13,11 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+// spark-distros:321cdh:
 package com.nvidia.spark.rapids.shims
 
 object GpuParquetCrypto {
   /**
-   * Columnar encryption was added in Spark 3.2.0 but CDH doesn't have Parquet 1.12. 
+   * Columnar encryption was added in Spark 3.2.0 but CDH doesn't have Parquet 1.12.
    */
   def isColumnarCryptoException(e: Throwable): Boolean = false
 }

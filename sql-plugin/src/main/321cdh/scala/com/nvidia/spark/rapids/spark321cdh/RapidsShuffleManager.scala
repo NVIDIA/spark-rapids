@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+// spark-distros:321cdh:
+
 package com.nvidia.spark.rapids.spark321cdh
 
 import org.apache.spark.SparkConf
