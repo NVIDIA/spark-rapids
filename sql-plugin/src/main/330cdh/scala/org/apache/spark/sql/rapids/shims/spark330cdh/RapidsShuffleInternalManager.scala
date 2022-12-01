@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+// spark-distros:330cdh:
+
 package org.apache.spark.sql.rapids.shims.spark330cdh
 
 import org.apache.spark.SparkConf

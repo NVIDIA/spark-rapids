@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+// spark-distros:330cdh:
+
 package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.{ColumnView, DType}

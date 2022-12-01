@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// spark-distros:330:331:331cdh:332:
+// spark-distros:330:330cdh:331:332:
 
 package org.apache.spark.sql.rapids.shims
 
