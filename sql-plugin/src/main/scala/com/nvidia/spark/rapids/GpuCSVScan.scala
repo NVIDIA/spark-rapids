@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.IOException
 import java.nio.charset.StandardCharsets
 
 import scala.collection.JavaConverters._
@@ -295,7 +296,7 @@ class CSVPartitionReader(
   def buildCsvOptions(
       parsedOptions: CSVOptions,
       schema: StructType,
-      hasHeader: Boolean): cudf.CSVOptions = {
+      hasHeader: Boolean): cudf.CSVOptions.Builder = {
     val builder = cudf.CSVOptions.builder()
     builder.withDelim(parsedOptions.delimiter.charAt(0))
     builder.hasHeader(hasHeader)
@@ -304,7 +305,7 @@ class CSVPartitionReader(
     builder.withComment(parsedOptions.comment)
     builder.withNullValue(parsedOptions.nullValue)
     builder.includeColumn(schema.fields.map(_.name): _*)
-    builder.build
+    builder
   }
 
   /**
@@ -325,7 +326,12 @@ class CSVPartitionReader(
       isFirstChunk: Boolean): Table = {
     val hasHeader = isFirstChunk && parsedOptions.headerFlag
     val csvOpts = buildCsvOptions(parsedOptions, readDataSchema, hasHeader)
-    Table.readCSV(cudfSchema, csvOpts, dataBuffer, 0, dataSize)
+    try {
+      Table.readCSV(cudfSchema, csvOpts.build, dataBuffer, 0, dataSize)
+    } catch {
+      case e: Exception =>
+        throw new IOException(s"Error when processing file [$partFile]", e)
+    }
   }
 
   /**

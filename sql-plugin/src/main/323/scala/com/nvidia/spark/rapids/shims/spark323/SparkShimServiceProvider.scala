@@ -14,9 +14,20 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims.spark323
 
-object RegExpShim {
-  // Handle regexp_replace inconsistency from https://issues.apache.org/jira/browse/SPARK-39107
-  def reproduceEmptyStringBug(): Boolean = true
+import com.nvidia.spark.rapids.SparkShimVersion
+
+object SparkShimServiceProvider {
+  val VERSION = SparkShimVersion(3, 2, 3)
+  val VERSIONNAMES = Seq(s"$VERSION")
+}
+
+class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceProvider {
+
+  override def getShimVersion: SparkShimVersion = SparkShimServiceProvider.VERSION
+
+  def matchesVersion(version: String): Boolean = {
+    SparkShimServiceProvider.VERSIONNAMES.contains(version)
+  }
 }

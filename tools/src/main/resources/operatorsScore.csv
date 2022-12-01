@@ -35,6 +35,7 @@ FlatMapGroupsInPandasExec,1.2
 MapInPandasExec,1.2
 WindowInPandasExec,1.2
 WindowExec,3.0
+HiveTableScanExec,3.0
 Abs,4
 Acos,4
 Acosh,4
@@ -49,6 +50,7 @@ ArrayExists,4
 ArrayIntersect,4
 ArrayMax,4
 ArrayMin,4
+ArrayRemove,4
 ArrayRepeat,4
 ArrayTransform,4
 ArrayUnion,4

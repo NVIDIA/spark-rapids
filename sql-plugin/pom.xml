@@ -22,12 +22,12 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>22.12.0-SNAPSHOT</version>
+        <version>23.02.0-SNAPSHOT</version>
     </parent>
     <artifactId>rapids-4-spark-sql_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin</name>
     <description>The RAPIDS SQL plugin for Apache Spark</description>
-    <version>22.12.0-SNAPSHOT</version>
+    <version>23.02.0-SNAPSHOT</version>
 
     <dependencies>
         <dependency>
@@ -560,6 +560,12 @@
                                 <dirset dir="${project.basedir}/src/main">
                                     <patternset refid="spark321+.pattern"/>
                                     <include name="322/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <pathconvert property="spark323.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <patternset refid="spark321+.pattern"/>
+                                    <include name="323/*"/>
                                 </dirset>
                             </pathconvert>
                             <pathconvert property="spark330.sources" pathsep=",">

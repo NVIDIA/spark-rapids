@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.tool.planparser
 
 import java.io.{File, PrintWriter}
 
+import scala.collection.mutable
 import scala.io.Source
 import scala.util.control.NonFatal
 
@@ -889,6 +890,48 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val execInfo = getAllExecsFromPlan(parsedPlans.toSeq)
       val hashAggregate = execInfo.filter(_.exec == "HashAggregate")
       assertSizeAndSupported(2, hashAggregate, 4.5)
+    }
+  }
+
+  test("Parsing Conditional Expressions") {
+    // scalastyle:off line.size.limit
+    val expressionsMap: mutable.HashMap[String, Array[String]] = mutable.HashMap(
+      "(((lower(partition_act#90) = moduleview) && (isnotnull(productarr#22) && NOT (productarr#22=[]))) || (lower(moduletype#13) = saveforlater))" ->
+        Array("lower", "isnotnull", "EqualTo", "And",  "Not", "Or"),
+      "(IsNotNull(c_customer_id))" ->
+        Array("IsNotNull"),
+      "(isnotnull(names#15) AND StartsWith(names#15, OR))" ->
+        Array("isnotnull", "And", "StartsWith"),
+      "((isnotnull(s_state#68) AND (s_state#68 = TN)) OR (hex(cast(value#0 as bigint)) = B))" ->
+        Array("isnotnull", "And", "Or", "hex", "EqualTo"),
+      // Test that AND followed by '(' without space can be parsed
+      "((isnotnull(s_state#68) AND(s_state#68 = TN)) OR (hex(cast(value#0 as bigint)) = B))" ->
+        Array("isnotnull", "And", "Or", "hex", "EqualTo"),
+      "(((isnotnull(d_year#498) AND isnotnull(d_moy#500)) AND (d_year#498 = 1998)) AND (d_moy#500 = 12))" ->
+        Array("isnotnull", "And", "EqualTo"),
+      "IsNotNull(d_year) AND IsNotNull(d_moy) AND EqualTo(d_year,1998) AND EqualTo(d_moy,12)" ->
+        Array("IsNotNull", "And", "EqualTo"),
+      // check that a predicate with a single variable name is fine
+      "flagVariable" ->
+        Array(),
+      // check that a predicate with a single function call
+      "isnotnull(c_customer_sk#412)" ->
+        Array("isnotnull"),
+      "((substr(ca_zip#457, 1, 5) IN (85669,86197,88274,83405,86475,85392,85460,80348,81792) OR ca_state#456 IN (CA,WA,GA)) OR (cs_sales_price#20 > 500.00))" ->
+        Array("substr", "In", "Or", "GreaterThan"),
+      // test the operator is at the beginning of expression and not followed by space
+      "NOT(isnotnull(d_moy))" ->
+        Array("Not", "isnotnull")
+    )
+    // scalastyle:on line.size.limit
+    for ((condExpr, expectedExpression) <- expressionsMap) {
+      val parsedExpressionsMine = SQLPlanParser.parseConditionalExpressions(condExpr)
+      val currOutput = parsedExpressionsMine.sorted
+      val expectedOutput = expectedExpression.sorted
+      assert(currOutput sameElements expectedOutput,
+        s"The parsed expressions are not as expected. Expression: ${condExpr}, " +
+          s"Expected: ${expectedOutput.mkString}, " +
+          s"Output: ${currOutput.mkString}")
     }
   }
 }
