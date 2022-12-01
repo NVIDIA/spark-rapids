@@ -41,7 +41,7 @@ object RapidsErrorUtils {
     QueryExecutionErrors.mapKeyNotExistError(key)
   }
 
-  def sqlArrayIndexNotStartAtOneError(): ArrayIndexOutOfBoundsException = {
+  def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
     new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
   }
 

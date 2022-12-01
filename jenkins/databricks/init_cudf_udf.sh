@@ -20,14 +20,16 @@
 
 CUDF_VER=${CUDF_VER:-23.02}
 
-# Need to explictly add conda into PATH environment, to activate conda environment.
+# Need to explicitly add conda into PATH environment, to activate conda environment.
 export PATH=/databricks/conda/bin:$PATH
+# Set Python for the running instance
+PYTHON_VERSION=$(${PYSPARK_PYTHON} -c 'import sys; print("{}.{}".format(sys.version_info.major, sys.version_info.minor))')
 
 base=$(conda info --base)
 # Create and activate 'cudf-udf' conda env for cudf-udf tests
 conda create -y -n cudf-udf && source activate && conda activate cudf-udf
 # Use mamba to install cudf-udf packages to speed up conda resolve time
-conda install -c conda-forge mamba python=3.8
+conda install -c conda-forge mamba python=$PYTHON_VERSION
 ${base}/envs/cudf-udf/bin/mamba remove -y c-ares zstd libprotobuf pandas
 ${base}/envs/cudf-udf/bin/mamba install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults cudf=$CUDF_VER cudatoolkit=11.0
 conda deactivate

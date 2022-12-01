@@ -76,4 +76,8 @@ object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
       "targetType" -> "TIMESTAMP", "ansiConfig" -> SQLConf.ANSI_ENABLED.key)
     new SparkDateTimeException(errorClass, messageParameters, Array.empty, "")
   }
+
+  def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
+    QueryExecutionErrors.elementAtByIndexZeroError(context = null)
+  }
 }

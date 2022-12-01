@@ -367,6 +367,18 @@
             </properties>
         </profile>
         <profile>
+            <id>release323</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>323</value>
+                </property>
+            </activation>
+            <properties>
+                <spark.shim.test.sources>${project.basedir}/src/test/320+-noncdh-nondb/scala</spark.shim.test.sources>
+            </properties>
+        </profile>
+        <profile>
             <id>release330</id>
             <activation>
                 <property>

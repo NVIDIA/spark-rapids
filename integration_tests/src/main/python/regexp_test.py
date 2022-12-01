@@ -287,6 +287,7 @@ def test_re_replace_backrefs():
         ),
         conf=_regexp_conf)
 
+@pytest.mark.skip(reason='https://github.com/NVIDIA/spark-rapids/issues/7090')
 def test_re_replace_anchors():
     gen = mk_str_gen('.{0,2}TEST[\ud720 A]{0,5}TEST[\r\n\u0085\u2028\u2029]?') \
         .with_special_case("TEST") \
