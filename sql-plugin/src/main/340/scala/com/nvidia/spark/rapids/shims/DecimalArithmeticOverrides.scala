@@ -14,19 +14,17 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids.shims
+// spark-distros:340:
 
-import org.apache.spark.SparkUpgradeException
+package com.nvidia.spark.rapids.shims
 
-object SparkUpgradeExceptionShims {
+import com.nvidia.spark.rapids.ExprRule
 
-  def newSparkUpgradeException(
-      version: String,
-      message: String,
-      cause: Throwable): SparkUpgradeException = {
-    new SparkUpgradeException(
-      "INCONSISTENT_BEHAVIOR_CROSS_VERSION",
-      Map(version -> message),
-      cause)
+import org.apache.spark.sql.catalyst.expressions.Expression
+
+object DecimalArithmeticOverrides {
+  def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+    // We don't override PromotePrecision or CheckOverflow for Spark 3.4
+    Map.empty[Class[_ <: Expression], ExprRule[_ <: Expression]]
   }
 }

@@ -14,10 +14,13 @@
  * limitations under the License.
  */
 
+// spark-distros:340:
+
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.execution.datasources.FileIndexOptions
+import org.apache.spark.sql.catalyst.expressions.SortOrder
+import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 
-object FileIndexOptionsShims {
-  val BASE_PATH_PARAM = FileIndexOptions.BASE_PATH_PARAM
+trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase {
+  override def ordering: Option[Seq[SortOrder]] = None
 }

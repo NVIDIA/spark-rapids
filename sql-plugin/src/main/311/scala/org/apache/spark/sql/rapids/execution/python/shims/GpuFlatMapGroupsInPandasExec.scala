@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// spark-distros:311:312:313:314:320:321:321cdh:322:323:330:330cdh:331:332:
+// spark-distros:311:312:313:314:320:321:321cdh:322:323:330:330cdh:331:332:340:
 package org.apache.spark.sql.rapids.execution.python.shims
 
 import com.nvidia.spark.rapids._

@@ -1,3 +1,4 @@
+
 /*
  * Copyright (c) 2022, NVIDIA CORPORATION.
  *
@@ -14,11 +15,28 @@
  * limitations under the License.
  */
 
+// spark-distros:340:
+
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.catalyst.expressions.SortOrder
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
+import org.apache.orc.impl.OutStream
+import org.apache.orc.protobuf.{AbstractMessage, CodedOutputStream}
 
-trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase {
-  override def ordering: Option[Seq[SortOrder]] = None
+class OrcProtoWriterShim(orcOutStream: OutStream) {
+  val proxied = CodedOutputStream.newInstance(orcOutStream)
+  def writeAndFlush(obj: Any): Unit = obj match {
+    case m: AbstractMessage =>
+      m.writeTo(proxied)
+      proxied.flush()
+      orcOutStream.flush()
+    case _ =>
+      require(obj.isInstanceOf[AbstractMessage],
+        s"Unexpected protobuf message type: $obj")
+  }
+}
+
+object OrcProtoWriterShim {
+  def apply(orcOutStream: OutStream) = {
+    new OrcProtoWriterShim(orcOutStream)
+  }
 }

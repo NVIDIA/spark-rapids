@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+// spark-distros:340:
+
 package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.SparkDateTimeException
@@ -52,7 +54,7 @@ object RapidsErrorUtils extends RapidsErrorUtilsFor330plus {
     QueryExecutionErrors.arithmeticOverflowError(message, hint, errorContext)
   }
 
-  def cannotChangeDecimalPrecisionError(      
+  def cannotChangeDecimalPrecisionError(
       value: Decimal,
       toType: DecimalType,
       context: SQLQueryContext = null): ArithmeticException = {

@@ -14,18 +14,23 @@
  * limitations under the License.
  */
 
+// spark-distros:340:
+
 package com.nvidia.spark.rapids.shims
 
-import org.apache.hadoop.conf.Configuration
+import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
+import org.apache.spark.sql.types.{DataType, NullType, NumericType}
 
-import org.apache.spark.sql.internal.SQLConf
-
-object ParquetTimestampNTZShims {
-
-  def setupTimestampNTZConfig(conf: Configuration, sqlConf: SQLConf): Unit = {
-    // This timestamp_NTZ flag is introduced in Spark 3.4.0
-    conf.setBoolean(
-      SQLConf.PARQUET_TIMESTAMP_NTZ_ENABLED.key,
-      sqlConf.parquetTimestampNTZEnabled)
+/**
+ * Reimplement the function `checkForNumericExpr` which has been removed since
+ * Spark 3.4.0
+ */
+object TypeUtilsShims {
+  def checkForNumericExpr(dt: DataType, caller: String): TypeCheckResult = {
+    if (dt.isInstanceOf[NumericType] || dt == NullType) {
+      TypeCheckResult.TypeCheckSuccess
+    } else {
+      TypeCheckResult.TypeCheckFailure(s"$caller requires numeric types, not ${dt.catalogString}")
+    }
   }
 }

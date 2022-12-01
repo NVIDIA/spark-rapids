@@ -14,15 +14,12 @@
  * limitations under the License.
  */
 
+// spark-distros:340:
+
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.execution.datasources.FileIndexOptions
 
-object ParquetStringPredShims {
-
-  /**
-   * Parquet supports more operations as string push-down filters from Spark 3.4.0.
-   * So a new config is introduced.
-   */
-  def pushDown(conf: SQLConf): Boolean = conf.parquetFilterPushDownStringPredicate
+object FileIndexOptionsShims {
+  val BASE_PATH_PARAM = FileIndexOptions.BASE_PATH_PARAM
 }

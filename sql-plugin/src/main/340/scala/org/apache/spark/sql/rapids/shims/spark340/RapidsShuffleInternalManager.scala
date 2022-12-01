@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+// spark-distros:340:
+
 package org.apache.spark.sql.rapids.shims.spark340
 
 import org.apache.spark.SparkConf

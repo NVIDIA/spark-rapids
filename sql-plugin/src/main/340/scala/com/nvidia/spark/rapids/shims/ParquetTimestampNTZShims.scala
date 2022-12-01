@@ -1,4 +1,3 @@
-
 /*
  * Copyright (c) 2022, NVIDIA CORPORATION.
  *
@@ -15,26 +14,20 @@
  * limitations under the License.
  */
 
+// spark-distros:340:
+
 package com.nvidia.spark.rapids.shims
 
-import org.apache.orc.impl.OutStream
-import org.apache.orc.protobuf.{AbstractMessage, CodedOutputStream}
+import org.apache.hadoop.conf.Configuration
 
-class OrcProtoWriterShim(orcOutStream: OutStream) {
-  val proxied = CodedOutputStream.newInstance(orcOutStream)
-  def writeAndFlush(obj: Any): Unit = obj match {
-    case m: AbstractMessage =>
-      m.writeTo(proxied)
-      proxied.flush()
-      orcOutStream.flush()
-    case _ =>
-      require(obj.isInstanceOf[AbstractMessage],
-        s"Unexpected protobuf message type: $obj")
-  }
-}
+import org.apache.spark.sql.internal.SQLConf
 
-object OrcProtoWriterShim {
-  def apply(orcOutStream: OutStream) = {
-    new OrcProtoWriterShim(orcOutStream)
+object ParquetTimestampNTZShims {
+
+  def setupTimestampNTZConfig(conf: Configuration, sqlConf: SQLConf): Unit = {
+    // This timestamp_NTZ flag is introduced in Spark 3.4.0
+    conf.setBoolean(
+      SQLConf.PARQUET_TIMESTAMP_NTZ_ENABLED.key,
+      sqlConf.parquetTimestampNTZEnabled)
   }
 }

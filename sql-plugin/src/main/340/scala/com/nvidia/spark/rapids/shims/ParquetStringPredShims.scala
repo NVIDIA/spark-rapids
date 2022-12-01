@@ -14,14 +14,17 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.execution.datasources.rapids
+// spark-distros:340:
 
-import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.connector.expressions.filter.Predicate
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Strategy
+package com.nvidia.spark.rapids.shims
 
-object DataSourceStrategyUtils {
-  // Trampoline utility to access protected translateRuntimeFilterV2
-  def translateRuntimeFilter(expr: Expression): Option[Predicate] =
-    DataSourceV2Strategy.translateRuntimeFilterV2(expr)
+import org.apache.spark.sql.internal.SQLConf
+
+object ParquetStringPredShims {
+
+  /**
+   * Parquet supports more operations as string push-down filters from Spark 3.4.0.
+   * So a new config is introduced.
+   */
+  def pushDown(conf: SQLConf): Boolean = conf.parquetFilterPushDownStringPredicate
 }

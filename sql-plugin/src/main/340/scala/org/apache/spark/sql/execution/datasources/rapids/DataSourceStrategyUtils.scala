@@ -14,21 +14,16 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+// spark-distros:340:
 
-import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.types.{DataType, NullType, NumericType}
+package org.apache.spark.sql.execution.datasources.rapids
 
-/**
- * Reimplement the function `checkForNumericExpr` which has been removed since
- * Spark 3.4.0
- */
-object TypeUtilsShims {
-  def checkForNumericExpr(dt: DataType, caller: String): TypeCheckResult = {
-    if (dt.isInstanceOf[NumericType] || dt == NullType) {
-      TypeCheckResult.TypeCheckSuccess
-    } else {
-      TypeCheckResult.TypeCheckFailure(s"$caller requires numeric types, not ${dt.catalogString}")
-    }
-  }
+import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.connector.expressions.filter.Predicate
+import org.apache.spark.sql.execution.datasources.v2.DataSourceV2Strategy
+
+object DataSourceStrategyUtils {
+  // Trampoline utility to access protected translateRuntimeFilterV2
+  def translateRuntimeFilter(expr: Expression): Option[Predicate] =
+    DataSourceV2Strategy.translateRuntimeFilterV2(expr)
 }
