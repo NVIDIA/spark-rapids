@@ -40,11 +40,25 @@ import org.apache.spark.sql.rapids.{ExceptionTimeParserPolicy, GpuToTimestamp, L
 import org.apache.spark.sql.types.{DataTypes, DecimalType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+/**
+ * We read text files in one line at a time from Spark. This provides an abstraction in how those
+ * lines are buffered before being processed on the GPU.
+ */
 trait LineBufferer extends AutoCloseable {
+  /**
+   * Get the current size of the data that has been buffered.
+   */
   def getLength: Long
+
+  /**
+   * Add a new line of bytes to the data to process.
+   */
   def add(line: Array[Byte], offset: Int, len: Int): Unit
 }
 
+/**
+ * Factory to create a LineBufferer instance that can be used to buffer lines being read in.
+ */
 trait LineBuffererFactory[BUFF <: LineBufferer] {
   def createBufferer(estimatedSize: Long, lineSeparatorInRead: Array[Byte]): BUFF
 }
@@ -55,6 +69,10 @@ object HostLineBuffererFactory extends LineBuffererFactory[HostLineBufferer] {
     new HostLineBufferer(estimatedSize, lineSeparatorInRead)
 }
 
+/**
+ * Buffer the lines in a single HostMemoryBuffer with the separator inserted inbetween each of
+ * the lines.
+ */
 class HostLineBufferer(size: Long, separator: Array[Byte]) extends LineBufferer with Arm {
   private var buffer = HostMemoryBuffer.allocate(size)
   private var location: Long = 0
@@ -100,13 +118,16 @@ class HostLineBufferer(size: Long, separator: Array[Byte]) extends LineBufferer 
   }
 }
 
-object HostStringBuffererFactory extends LineBuffererFactory[HostStringBufferer] {
+object HostStringColBuffererFactory extends LineBuffererFactory[HostStringColBufferer] {
   override def createBufferer(estimatedSize: Long,
-      lineSeparatorInRead: Array[Byte]): HostStringBufferer =
-    new HostStringBufferer(estimatedSize, lineSeparatorInRead)
+      lineSeparatorInRead: Array[Byte]): HostStringColBufferer =
+    new HostStringColBufferer(estimatedSize, lineSeparatorInRead)
 }
 
-class HostStringBufferer(size: Long, separator: Array[Byte]) extends LineBufferer with Arm {
+/**
+ * Buffer the lines as a HostColumnVector of strings, one per line.
+ */
+class HostStringColBufferer(size: Long, separator: Array[Byte]) extends LineBufferer with Arm {
   // We had to jump through some hoops so that we could grow the string columns dynamically
   //  might be nice to have this in CUDF, but this works fine too.
   private var dataBuffer = HostMemoryBuffer.allocate(size)

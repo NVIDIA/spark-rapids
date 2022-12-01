@@ -365,7 +365,7 @@ class CSVPartitionReader(
   /**
    * Read the host buffer to GPU table
    *
-   * @param dataBuffer     host buffer to be read
+   * @param dataBufferer   buffered data to be parsed
    * @param cudfSchema     the cudf schema of the data
    * @param readDataSchema the Spark schema describing what will be read
    * @param isFirstChunk   if it is the first chunk
