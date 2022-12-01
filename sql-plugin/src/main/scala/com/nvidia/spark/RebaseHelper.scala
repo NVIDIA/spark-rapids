@@ -30,12 +30,14 @@ object RebaseHelper extends Arm {
     //  https://github.com/NVIDIA/spark-rapids/issues/1126
     val dtype = column.getType
     if (dtype == DType.TIMESTAMP_DAYS) {
-      withResource(Scalar.timestampDaysFromInt(startDay)) { minGood =>
-        withResource(column.lessThan(minGood)) { hasBad =>
-          withResource(hasBad.any()) { a =>
-            a.isValid && a.getBoolean
-          }
-        }
+      val hasBad = withResource(Scalar.timestampDaysFromInt(startDay)) {
+        column.lessThan
+      }
+      val anyBad = withResource(hasBad) {
+        _.any()
+      }
+      withResource(anyBad) { _ =>
+        anyBad.isValid && anyBad.getBoolean
       }
     } else {
       false

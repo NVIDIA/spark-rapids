@@ -16,6 +16,7 @@
 
 package org.apache.spark.sql.catalyst.json.rapids
 
+import java.io.IOException
 import java.nio.charset.StandardCharsets
 
 import scala.collection.JavaConverters._
@@ -268,7 +269,13 @@ class JsonPartitionReader(
     val jsonOpts = buildJsonOptions(parsedOptions)
     // cuDF does not yet support reading a subset of columns so we have
     // to apply the read schema projection here
-    withResource(Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)) { tbl =>
+    val jsonTbl = try {
+      Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)
+    } catch {
+      case e: Exception =>
+        throw new IOException(s"Error when processing file [$partFile]", e)
+    }
+    withResource(jsonTbl) { tbl =>
       val columns = new ListBuffer[ColumnVector]()
       closeOnExcept(columns) { _ =>
         for (name <- readDataSchema.fieldNames) {
@@ -333,14 +340,12 @@ class JsonPartitionReader(
    * JSON only supports unquoted lower-case "true" and "false" as valid boolean values.
    */
   override def castStringToBool(input: ColumnVector): ColumnVector = {
-    withResource(Scalar.fromString("true")) { t =>
-      withResource(Scalar.fromString("false")) { f =>
-        withResource(input.equalTo(t)) { isTrue =>
-          withResource(input.equalTo(f)) { isFalse =>
-            withResource(isTrue.or(isFalse)) { isValidBool =>
-              withResource(Scalar.fromNull(DType.BOOL8)) { nullBool =>
-                isValidBool.ifElse(isTrue, nullBool)
-              }
+    withResource(Scalar.fromString(true.toString)) { t =>
+      withResource(Scalar.fromNull(DType.BOOL8)) { nullBool =>
+        withResource(ColumnVector.fromStrings(true.toString, false.toString)) { boolStrings =>
+          withResource(input.contains(boolStrings)) { isValidBool =>
+            withResource(input.equalTo(t)) {
+              isValidBool.ifElse(_, nullBool)
             }
           }
         }

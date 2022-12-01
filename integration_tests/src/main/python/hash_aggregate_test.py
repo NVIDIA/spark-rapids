@@ -787,8 +787,7 @@ _replace_modes_non_distinct = [
 @allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec',
                'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
                'SortArray', 'Alias', 'Literal', 'Count', 'CollectList', 'CollectSet',
-               'GpuToCpuCollectBufferTransition', 'CpuToGpuCollectBufferTransition',
-               'AggregateExpression')
+               'AggregateExpression', 'ProjectExec')
 @pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)
 @pytest.mark.parametrize('replace_mode', _replace_modes_non_distinct, ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
@@ -834,8 +833,7 @@ _replace_modes_single_distinct = [
 @allow_non_gpu('ObjectHashAggregateExec', 'SortAggregateExec',
                'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
                'SortArray', 'Alias', 'Literal', 'Count', 'CollectList', 'CollectSet',
-               'GpuToCpuCollectBufferTransition', 'CpuToGpuCollectBufferTransition',
-               'AggregateExpression')
+               'AggregateExpression', 'ProjectExec')
 @pytest.mark.parametrize('data_gen', _full_gen_data_for_collect_op, ids=idfn)
 @pytest.mark.parametrize('replace_mode', _replace_modes_single_distinct, ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
@@ -1763,8 +1761,7 @@ def test_groupby_std_variance_nulls(data_gen, conf, ansi_enabled):
                'ShuffleExchangeExec', 'HashPartitioning', 'SortExec',
                'StddevPop', 'StddevSamp', 'VariancePop', 'VarianceSamp',
                'SortArray', 'Alias', 'Literal', 'Count',
-               'GpuToCpuCollectBufferTransition', 'CpuToGpuCollectBufferTransition',
-               'AggregateExpression')
+               'AggregateExpression', 'ProjectExec')
 @pytest.mark.parametrize('data_gen', _init_list_with_nans_and_no_nans, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 @pytest.mark.parametrize('replace_mode', _replace_modes_non_distinct, ids=idfn)

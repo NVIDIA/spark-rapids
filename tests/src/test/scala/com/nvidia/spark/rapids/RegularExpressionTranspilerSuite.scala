@@ -144,6 +144,20 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
+  test("cuDF does not support positive or negative lookahead") {
+    val negPatterns = Seq("a(!b)", "a(!b)c?")
+    negPatterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode,
+        "Negative lookahead groups are not supported")
+    )
+
+    val posPatterns = Seq("a(=b)", "a(=b)c?")
+    posPatterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexFindMode,
+        "Positive lookahead groups are not supported")
+    )
+  }
+
   test("cuDF does not support empty sequence") {
     val patterns = Seq("", "a|", "()")
     patterns.foreach(pattern =>
@@ -445,9 +459,9 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
   }
 
-  test("compare CPU and GPU: character range including escaped + and -") {
-    val patterns = Seq(raw"a[\-\+]", raw"a[\+\-]", raw"a[a-b\-]")
-    val inputs = Seq("a+", "a-", "a", "a-+", "a[a-b-]")
+  test("compare CPU and GPU: character range including escaped + and - and d") {
+    val patterns = Seq(raw"a[\-\+]", raw"a[\+\-]", raw"a[a-b\-]", raw"a[\d]", raw"a[\d\+]")
+    val inputs = Seq("a+", "a-", "a", "a-+", "a[a-b-]", "a0", "a0+")
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
   }
 
@@ -476,27 +490,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val patterns = Seq("\\d", "\\d+")
     val inputs = Seq("a", "1", "12", "a12z", "1az2")
     assertCpuGpuMatchesRegexpReplace(patterns, inputs)
-  }
-
-  test("regexp_split - character class repetition - ? and * - fall back to CPU") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4884
-    val patterns = Seq(raw"[1a-zA-Z]?", raw"[1a-zA-Z]*")
-    patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexSplitMode,
-        "regexp_split on GPU does not support repetition with ? or * " +
-        "consistently with Spark"
-      )
-    )
-  }
-
-  test("regexp_split - fall back to CPU for {0,n}, or {0,}") {
-    // see https://github.com/NVIDIA/spark-rapids/issues/4884
-    val patterns = Seq("a{0,}", raw"\02{0,}", "a{0,2}", raw"\02{0,10}")
-    patterns.foreach(pattern =>
-      assertUnsupported(pattern, RegexSplitMode,
-        "regexp_split on GPU does not support repetition with {0,} or {0,n} " +
-        "consistently with Spark")
-    )
   }
 
   test("compare CPU and GPU: regexp find fuzz test with limited chars") {
@@ -648,9 +641,10 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("string split - optimized") {
-    val patterns = Set("\\.", "\\$", "\\[", "\\(", "\\}", "\\+", "\\\\", ",", ";", "cd", "c\\|d")
+    val patterns = Set("\\.", "\\$", "\\[", "\\(", "\\}", "\\+", "\\\\", ",", ";", "cd", "c\\|d",
+        "\\%", "\\;", "\\/")
     val data = Seq("abc.def", "abc$def", "abc[def]", "abc(def)", "abc{def}", "abc+def", "abc\\def",
-        "abc,def", "abc;def", "abcdef", "abc|def")
+        "abc,def", "abc;def", "abcdef", "abc|def", "abc%def")
     for (limit <- Seq(Integer.MIN_VALUE, -2, -1)) {
       assertTranspileToSplittableString(patterns)
       doStringSplitTest(patterns, data, limit)
@@ -665,6 +659,43 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       assertNoTranspileToSplittableString(patterns)
       doStringSplitTest(patterns, data, limit)
     }
+  }
+
+  test("regexp_split - character class repetition - ? and *") {
+    val patterns = Set(raw"[a-z][0-9]?", raw"[a-z][0-9]*")
+    val data = Seq("a", "aa", "a1a1", "a1b2", "a1b")
+    for (limit <- Seq(Integer.MIN_VALUE, -2, -1)) {
+      doStringSplitTest(patterns, data, limit)
+    }
+  }
+
+  test("regexp_split - repetition with {0,n}, or {0,}") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/6958
+    val patterns = Set("ba{0,}", raw"a\02{0,}", "ba{0,2}", raw"b\02{0,10}")
+    val data = Seq("abaa", "baba", "ba\u0002b", "ab\u0002b\u0002a")
+    for (limit <- Seq(Integer.MIN_VALUE, -2, -1)) {
+      doStringSplitTest(patterns, data, limit)
+    }
+  }
+
+  test("regexp_split - character class repetition - ? and * - fall back to CPU") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/6958
+    val patterns = Seq(raw"[1a-zA-Z]?", raw"[1a-zA-Z]*")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexSplitMode,
+        "regexp_split on GPU does not support empty match repetition consistently with Spark"
+      )
+    )
+  }
+
+  test("regexp_split - fall back to CPU for {0,n}, or {0,}") {
+    // see https://github.com/NVIDIA/spark-rapids/issues/6958
+    val patterns = Seq("a{0,}", raw"\02{0,}", "a{0,2}", raw"\02{0,10}")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexSplitMode,
+        "regexp_split on GPU does not support empty match repetition consistently with Spark"
+      )
+    )
   }
 
   test("string split - limit < 0") {
@@ -1127,7 +1158,7 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true,
   }
 
   private def group(depth: Int) = {
-    RegexGroup(capture = rr.nextBoolean(), generate(depth + 1))
+    RegexGroup(capture = rr.nextBoolean(), generate(depth + 1), None)
   }
 
   private def repetition(depth: Int) = {

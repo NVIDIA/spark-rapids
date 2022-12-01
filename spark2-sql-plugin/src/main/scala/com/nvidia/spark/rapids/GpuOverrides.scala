@@ -1224,11 +1224,11 @@ object GpuOverrides extends Logging {
       "Returns the first non-null argument if exists. Otherwise, null",
       ExprChecks.projectOnly(
         (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY +
-          GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
+          TypeSig.MAP + GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
         TypeSig.all,
         repeatingParamCheck = Some(RepeatingParamCheck("param",
           (_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY +
-              GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
+            TypeSig.MAP + GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
       }),
@@ -2347,6 +2347,13 @@ object GpuOverrides extends Logging {
           ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("start", TypeSig.lit(TypeEnum.INT), TypeSig.INT))),
       (in, conf, p, r) => new TernaryExprMeta[StringLocate](in, conf, p, r) {
+      }),
+    expr[StringInstr](
+      "Instr string operator",
+      ExprChecks.projectOnly(TypeSig.INT, TypeSig.INT,
+        Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("substr", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+      (in, conf, p, r) => new BinaryExprMeta[StringInstr](in, conf, p, r) {
       }),
     expr[Substring](
       "Substring operator",

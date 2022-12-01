@@ -18,7 +18,7 @@ package org.apache.spark.sql.rapids
 
 import java.io.{File, FileInputStream}
 import java.util.Optional
-import java.util.concurrent.{Callable, ExecutionException, Executors, Future, LinkedBlockingQueue}
+import java.util.concurrent.{Callable, ConcurrentHashMap, ExecutionException, Executors, Future, LinkedBlockingQueue}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 
 import scala.collection.mutable
@@ -44,7 +44,7 @@ import org.apache.spark.sql.rapids.shims.{GpuShuffleBlockResolver, RapidsShuffle
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.{RapidsShuffleBlockFetcherIterator, _}
 import org.apache.spark.util.{CompletionIterator, Utils}
-import org.apache.spark.util.collection.ExternalSorter
+import org.apache.spark.util.collection.{ExternalSorter, OpenHashSet}
 
 class GpuShuffleHandle[K, V](
     val wrapped: ShuffleHandle,
@@ -671,7 +671,6 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
               waitTimeStart = System.nanoTime()
               val pending = futures.dequeue().get // wait for one future
               waitTime += System.nanoTime() - waitTimeStart
-
               // if the future returned a block state, we have more work to do
               pending match {
                 case Some(leftOver@BlockState(_, _)) =>
@@ -692,6 +691,13 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
           // here while we wait.
           waitTimeStart = System.nanoTime()
           val res = queued.take()
+          res match {
+            case (_, cb: ColumnarBatch) =>
+              limiter.release(SerializedTableColumn.getMemoryUsed(cb))
+              popFetchedIfAvailable()
+            case _ => 0 // TODO: do we need to handle other types here?
+          }
+
           waitTime += System.nanoTime() - waitTimeStart
           res
         }
@@ -731,7 +737,6 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
         while (blockState.hasNext && didFit) {
           val batch = blockState.next()
           queued.offer(batch)
-          limiter.release(currentBatchSize)
           // peek at the next batch
           currentBatchSize = blockState.getNextBatchSize
           didFit = limiter.acquire(currentBatchSize)
@@ -1013,7 +1018,7 @@ class RapidsCachingWriter[K, V](
  *       `ShuffleManager` and `SortShuffleManager` classes. When configuring
  *       Apache Spark to use the RAPIDS shuffle manager,
  */
-class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
+abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     extends ShuffleManager with Arm with RapidsShuffleHeartbeatHandler with Logging {
 
   def getServerId: BlockManagerId = server.fold(blockManager.blockManagerId)(_.getId)
@@ -1073,11 +1078,13 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
   protected lazy val blockManager = env.blockManager
   protected lazy val shouldFallThroughOnEverything = {
     val fallThroughReasons = new ListBuffer[String]()
-    if (GpuShuffleEnv.isExternalShuffleEnabled) {
-      fallThroughReasons += "External Shuffle Service is enabled"
-    }
-    if (GpuShuffleEnv.isSparkAuthenticateEnabled) {
-      fallThroughReasons += "Spark authentication is enabled"
+    if (!rapidsConf.isMultiThreadedShuffleManagerMode) {
+      if (GpuShuffleEnv.isExternalShuffleEnabled) {
+        fallThroughReasons += "External Shuffle Service is enabled"
+      }
+      if (GpuShuffleEnv.isSparkAuthenticateEnabled) {
+        fallThroughReasons += "Spark authentication is enabled"
+      }
     }
     if (rapidsConf.isSqlExplainOnlyEnabled) {
       fallThroughReasons += "Plugin is in explain only mode"
@@ -1167,6 +1174,20 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     Some(executorComponents)
   }
 
+  /**
+   * A mapping from shuffle ids to the task ids of mappers producing output for those shuffles.
+   */
+  protected val taskIdMapsForShuffle = new ConcurrentHashMap[Int, OpenHashSet[Long]]()
+
+  private def trackMapTaskForCleanup(shuffleId: Int, mapId: Long): Unit = {
+    // this uses OpenHashSet as it is copied from Spark
+    val mapTaskIds = taskIdMapsForShuffle.computeIfAbsent(
+      shuffleId, _ => new OpenHashSet[Long](16))
+    mapTaskIds.synchronized {
+      mapTaskIds.add(mapId)
+    }
+  }
+
   override def getWriter[K, V](
       handle: ShuffleHandle, mapId: Long, context: TaskContext,
     metricsReporter: ShuffleWriteMetricsReporter): ShuffleWriter[K, V] = {
@@ -1194,6 +1215,8 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
               gpuDep.metrics,
               // cast the handle with specific generic types due to type-erasure
               gpuDep.asInstanceOf[GpuShuffleDependency[K, V, V]])
+            // we need to track this mapId so we can clean it up later on unregisterShuffle
+            trackMapTaskForCleanup(handle.shuffleId, context.taskAttemptId())
             new RapidsShuffleThreadedWriter[K, V](
               blockManager,
               handleWithMetrics,
@@ -1312,6 +1335,21 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
 
   override def unregisterShuffle(shuffleId: Int): Boolean = {
     unregisterGpuShuffle(shuffleId)
+    if (!isDriver) {
+      shuffleBlockResolver match {
+        case isbr: IndexShuffleBlockResolver =>
+          Option(taskIdMapsForShuffle.remove(shuffleId)).foreach { mapTaskIds =>
+            mapTaskIds.iterator.foreach { mapTaskId =>
+              isbr.removeDataByMap(shuffleId, mapTaskId)
+            }
+          }
+        case _: GpuShuffleBlockResolver => // noop
+        case _ =>
+          throw new IllegalStateException(
+            "unregisterShuffle called with unexpected resolver " +
+              s"$shuffleBlockResolver and blocks left to be cleaned")
+      }
+    }
     wrapped.unregisterShuffle(shuffleId)
   }
 

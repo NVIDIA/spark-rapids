@@ -72,8 +72,8 @@ class RegularExpressionParserSuite extends FunSuite {
   test("group") {
       assert(parse("(a)(b)") ===
         RegexSequence(ListBuffer(
-          RegexGroup(capture = true, RegexSequence(ListBuffer(RegexChar('a')))),
-          RegexGroup(capture = true, RegexSequence(ListBuffer(RegexChar('b')))))))
+          RegexGroup(capture = true, RegexSequence(ListBuffer(RegexChar('a'))), None),
+          RegexGroup(capture = true, RegexSequence(ListBuffer(RegexChar('b'))), None))))
   }
 
   test("character class") {
@@ -123,7 +123,7 @@ class RegularExpressionParserSuite extends FunSuite {
                 RegexCharacterRange(RegexChar('A'), RegexChar('Z')))),
               SimpleQuantifier('+')
             )
-          ))
+          )), None
         ),
         RegexEscaped(']')
       ))
@@ -167,13 +167,13 @@ class RegularExpressionParserSuite extends FunSuite {
     assert(parse("(3?)+") ===
       RegexSequence(ListBuffer(RegexRepetition(RegexGroup(capture = true, 
           RegexSequence(ListBuffer(RegexRepetition(RegexChar('3'), 
-          SimpleQuantifier('?'))))),SimpleQuantifier('+')))))
+          SimpleQuantifier('?')))), None),SimpleQuantifier('+')))))
   }
 
   test("repetition with group containing escape character") {
     assert(parse(raw"(\A)+") ===
       RegexSequence(ListBuffer(RegexRepetition(RegexGroup(capture = true,
-          RegexSequence(ListBuffer(RegexEscaped('A')))),
+          RegexSequence(ListBuffer(RegexEscaped('A'))), None),
           SimpleQuantifier('+'))))
     )
   }
@@ -182,7 +182,7 @@ class RegularExpressionParserSuite extends FunSuite {
     assert(parse("(\t+|a)") == RegexSequence(ListBuffer(
       RegexGroup(capture = true, RegexChoice(RegexSequence(ListBuffer(
         RegexRepetition(RegexChar('\t'),SimpleQuantifier('+')))),
-        RegexSequence(ListBuffer(RegexChar('a'))))))))
+        RegexSequence(ListBuffer(RegexChar('a')))), None))))
   }
 
   test("group containing quantifier") {
@@ -193,7 +193,7 @@ class RegularExpressionParserSuite extends FunSuite {
 
     assert(parse("(?:a?)") === RegexSequence(ListBuffer(
       RegexGroup(capture = false, RegexSequence(ListBuffer(
-        RegexRepetition(RegexChar('a'), SimpleQuantifier('?'))))))))
+        RegexRepetition(RegexChar('a'), SimpleQuantifier('?')))), None))))
   }
 
   test("complex expression") {
@@ -225,7 +225,7 @@ class RegularExpressionParserSuite extends FunSuite {
               RegexGroup(capture = true, RegexSequence(ListBuffer(
                 RegexRepetition(RegexCharacterClass(negated = false, ListBuffer(
                   RegexCharacterRange(RegexChar('0'), RegexChar('9')))), 
-                SimpleQuantifier('+'))))))),
+                SimpleQuantifier('+')))), None))),
               RegexChoice(RegexSequence(ListBuffer(
                 RegexGroup(capture = true, RegexSequence(ListBuffer(
                   RegexRepetition(
@@ -235,7 +235,7 @@ class RegularExpressionParserSuite extends FunSuite {
                 RegexRepetition(
                     RegexCharacterClass(negated = false, ListBuffer(
                       RegexCharacterRange(RegexChar('0'), RegexChar('9')))),
-                    SimpleQuantifier('+'))))))), RegexSequence(ListBuffer(
+                    SimpleQuantifier('+')))), None))), RegexSequence(ListBuffer(
                 RegexGroup(capture = true, RegexSequence(ListBuffer(
                 RegexRepetition(
                     RegexCharacterClass(negated = false, ListBuffer(
@@ -243,7 +243,7 @@ class RegularExpressionParserSuite extends FunSuite {
                     SimpleQuantifier('+')), RegexEscaped('.'),
                 RegexRepetition(RegexCharacterClass(negated = false,
                     ListBuffer(RegexCharacterRange(RegexChar('0'), RegexChar('9')))),
-                    SimpleQuantifier('*')))))))))),
+                    SimpleQuantifier('*')))), None))))), None),
                   RegexRepetition(
               RegexGroup(capture = true, RegexSequence(ListBuffer(
                 RegexCharacterClass(negated = false, ListBuffer(RegexChar('e'), RegexChar('E'))),
@@ -251,10 +251,10 @@ class RegularExpressionParserSuite extends FunSuite {
                     ListBuffer(RegexChar('+'), RegexEscaped('-'))),SimpleQuantifier('?')),
                   RegexRepetition(RegexCharacterClass(negated = false,
                   ListBuffer(RegexCharacterRange(RegexChar('0'), RegexChar('9')))),
-                  SimpleQuantifier('+'))))), SimpleQuantifier('?')),
+                  SimpleQuantifier('+')))), None), SimpleQuantifier('?')),
             RegexRepetition(RegexCharacterClass(negated = false, ListBuffer(
               RegexChar('f'), RegexChar('F'), RegexChar('d'), RegexChar('D'))),
-              SimpleQuantifier('?'))))))),
+              SimpleQuantifier('?')))), None))),
           RegexChoice(RegexSequence(ListBuffer(
             RegexChar('I'), RegexChar('n'), RegexChar('f'))),
             RegexSequence(ListBuffer(
@@ -263,7 +263,7 @@ class RegularExpressionParserSuite extends FunSuite {
               RegexCharacterClass(negated = false,
                 ListBuffer(RegexChar('a'), RegexChar('A'))),
               RegexCharacterClass(negated = false,
-                ListBuffer(RegexChar('n'), RegexChar('N')))))))),
+                ListBuffer(RegexChar('n'), RegexChar('N'))))))), None),
     RegexChar('$'))))
   }
   

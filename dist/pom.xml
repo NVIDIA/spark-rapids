@@ -48,12 +48,14 @@
             321,
             321cdh,
             322,
+            323,
             330,
+            331,
             330cdh
         </noSnapshot.buildvers>
         <snapshot.buildvers>
             314,
-            331
+            332
         </snapshot.buildvers>
         <databricks.buildvers>
             312db,
@@ -74,6 +76,11 @@
         <premergeUTF8.buildvers>
             320
         </premergeUTF8.buildvers>
+        <jdk11.buildvers>
+            312,
+            321,
+            331
+        </jdk11.buildvers>
         <dist.jar.name>${project.build.directory}/${project.build.finalName}-${cuda.version}.jar</dist.jar.name>
     </properties>
     <profiles>
@@ -119,6 +126,14 @@
             </properties>
         </profile>
         <profile>
+            <id>jdk11</id>
+            <properties>
+                <included_buildvers>
+                    ${jdk11.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
             <!--
             https://spark.apache.org/versioning-policy.html
             Spark's semantic versioning [MAJOR].[FEATURE].[MAINTENANCE]
@@ -150,6 +165,14 @@
             <properties>
                 <included_buildvers>
                     ${noSnapshot.buildvers},
+                    ${snapshot.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
+            <id>snapshotOnly</id>
+            <properties>
+                <included_buildvers>
                     ${snapshot.buildvers}
                 </included_buildvers>
             </properties>

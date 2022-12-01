@@ -783,4 +783,34 @@ class AppFilterSuite extends FunSuite {
       }
     }
   }
+  
+  test("Test filtering eventlog with missing start event") {
+    TrampolineUtil.withTempDir { outpath =>
+      TrampolineUtil.withTempDir { tmpEventLogDir =>
+
+        val fileNames = appsFullWithFsToTest.map { app =>
+          val elogFile = Paths.get(tmpEventLogDir.getAbsolutePath,
+            s"${app.appName}-${app.uniqueId}-eventlog")
+          // scalastyle:off line.size.limit
+          val supText =
+            s"""{"Event":"SparkListenerLogStart","Spark Version":"3.1.1"}""".stripMargin
+          // scalastyle:on line.size.limit
+          Files.write(elogFile, supText.getBytes(StandardCharsets.UTF_8))
+          new File(elogFile.toString).setLastModified(app.fsTime)
+          elogFile.toString
+        }
+
+        val allArgs = Array(
+          "--output-directory",
+          outpath.getAbsolutePath(),
+          "--filter-criteria",
+          "1-newest"
+        )
+        val appArgs = new QualificationArgs(allArgs ++ fileNames)
+        val (exit, appSum) = QualificationMain.mainInternal(appArgs)
+        assert(exit == 0)
+        assert(appSum.size == 0)
+      }
+    }
+  }
 }
