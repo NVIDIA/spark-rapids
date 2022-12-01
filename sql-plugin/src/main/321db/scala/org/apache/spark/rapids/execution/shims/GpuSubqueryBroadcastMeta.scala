@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+// spark-distros:321db:
+
 package org.apache.spark.sql.rapids.execution.shims
 
 import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuExec, RapidsConf, RapidsMeta, SparkPlanMeta}
@@ -39,9 +41,9 @@ class GpuSubqueryBroadcastMeta(
   override val childPlans: Seq[SparkPlanMeta[SparkPlan]] = Nil
 
   override def tagPlanForGpu(): Unit = s.child match {
-    // DPP: For AQE off, in this case, we handle DPP by converting the underlying 
+    // DPP: For AQE off, in this case, we handle DPP by converting the underlying
     // BroadcastExchangeExec to GpuBroadcastExchangeExec.
-    // This is slightly different from the Apache Spark case, because Spark 
+    // This is slightly different from the Apache Spark case, because Spark
     // sends the underlying plan into the plugin in advance via the PlanSubqueries rule.
     // Here, we have the full non-GPU subquery plan, so we convert the whole
     // thing.
@@ -53,12 +55,12 @@ class GpuSubqueryBroadcastMeta(
       } else {
         willNotWorkOnGpu("underlying BroadcastExchange can not run in the GPU.")
       }
-    // DPP: For AQE on, we have an almost completely different scenario then before, 
+    // DPP: For AQE on, we have an almost completely different scenario then before,
     // Databricks uses a BroadcastQueryStageExec and either:
     //  1) provide an underlying BroadcastExchangeExec that we will have to convert
     //     somehow
-    //  2) might already do the reuse work for us. The ReusedExchange is now a 
-    //     part of the SubqueryBroadcast, so we send it back here as underlying the 
+    //  2) might already do the reuse work for us. The ReusedExchange is now a
+    //     part of the SubqueryBroadcast, so we send it back here as underlying the
     //     GpuSubqueryBroadcastExchangeExec
     case bqse: BroadcastQueryStageExec =>
       bqse.plan match {
