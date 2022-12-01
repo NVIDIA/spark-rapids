@@ -171,22 +171,20 @@ The following acronyms may appear in directory names:
 |db     |Databricks  |312db  |Databricks Spark based on Spark 3.1.2         |
 |cdh    |Cloudera CDH|321cdh |Cloudera CDH Spark based on Apache Spark 3.2.1|
 
-The version-specific directory names have one of the following forms / use cases:
 - `src/main/312/scala` contains Scala source code for a single Spark version, 3.1.2 in this case
-- `src/main/312+-apache/scala`contains Scala source code for *upstream* **Apache** Spark builds,
-   only beginning with version Spark 3.1.2, and + signifies there is no upper version boundary
-   among the supported versions
-- `src/main/311until320-all` contains code that applies to all shims between 3.1.1 *inclusive*,
-3.2.0 *exclusive*
-- `src/main/pre320-treenode` contains shims for the Catalyst `TreeNode` class before the
-  [children trait specialization in Apache Spark 3.2.0](https://issues.apache.org/jira/browse/SPARK-34906).
-- `src/main/post320-treenode` contains shims for the Catalyst `TreeNode` class after the
-  [children trait specialization in Apache Spark 3.2.0](https://issues.apache.org/jira/browse/SPARK-34906).
 
-For each Spark shim, we use Ant path patterns to compute the property
-`spark${buildver}.sources` in [sql-plugin/pom.xml](./sql-plugin/pom.xml) that is
-picked up as additional source code roots. When possible path patterns are reused using
-the conventions outlined in the pom.
+Shim source files have a top-level comment
+
+```scala
+// spark-distros:311:312:313:
+```
+
+to indicate all Spark Distribution versions they apply to. A particular shim file
+conventionally physically resides in the earliest shim's directory it applies to.
+
+During the build all files belonging to a shim 3XY are symlinked from the build output
+directory target/spark3XY/src
+
 
 ### Setting up an Integrated Development Environment
 
