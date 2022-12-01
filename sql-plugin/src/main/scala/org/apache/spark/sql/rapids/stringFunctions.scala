@@ -24,7 +24,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{BinaryOp, BinaryOperable, ColumnVector, ColumnView, DType, PadSide, Scalar, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{RegExpShim, ShimExpression}
+import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, ImplicitCastInputTypes, InputFileName, Literal, NullIntolerant, Predicate, RegExpExtract, RegExpExtractAll, RegExpReplace, RLike, StringSplit, StringToMap, SubstringIndex, TernaryExpression}
 import org.apache.spark.sql.types._
@@ -1185,7 +1185,7 @@ case class GpuRegExpReplace(
     // For empty strings and a regex containing only a zero-match repetition,
     // the behavior in some versions of Spark is different.
     // see https://github.com/NVIDIA/spark-rapids/issues/5456
-    if (RegExpShim.reproduceEmptyStringBug() &&
+    if (SparkShimImpl.reproduceEmptyStringBug &&
         GpuRegExpUtils.isEmptyRepetition(javaRegexpPattern)) {
       val isEmpty = withResource(strExpr.getBase.getCharLengths) { len =>
         withResource(Scalar.fromInt(0)) { zero =>

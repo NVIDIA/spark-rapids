@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import java.io.FileNotFoundException
 import java.util.Properties
 
-import scala.collection.JavaConverters.mapAsScalaMapConverter
+import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.io.BufferedSource
 import scala.util.control.NonFatal
@@ -122,7 +122,7 @@ object AlluxioUtils extends Logging with Arm {
       val alluxio_port = prop.getProperty("alluxio.master.rpc.port", "19998")
       (alluxio_master, alluxio_port)
     } catch {
-      case e: FileNotFoundException =>
+      case _: FileNotFoundException =>
         throw new RuntimeException(s"Not found Alluxio config in " +
           s"$alluxioHome/conf/alluxio-site.properties, " +
           "please check if ALLUXIO_HOME is set correctly")
@@ -163,11 +163,16 @@ object AlluxioUtils extends Logging with Arm {
           // load mounted point by call Alluxio client.
           try {
             val (access_key, secret_key) = getKeyAndSecret(hadoopConf, runtimeConf)
-            val mountPoints = getExistS3MountPoints(conf.getAlluxioUser, access_key, secret_key)
-            mountPoints.foreach { case (alluxioPath, mountPoint) =>
-              val s3Path = mountPoint.getUfsUri
-              mountedBuckets(alluxioPath) = s3Path
-              logInfo(s"Found mounted bucket $s3Path to $alluxioPath")
+            val clientConf = getS3ClientConf(conf.getAlluxioUser, access_key, secret_key)
+            // get s3 mount points by alluxio client
+            withResource(alluxio.client.file.FileSystem.Factory.create(clientConf)) { fs =>
+              val mountPoints = getExistS3MountPoints(fs)
+              mountPoints.foreach { case (alluxioPath, mountPoint) =>
+                val s3Path = mountPoint.getUfsUri
+                // record map info from alluxio path to s3 path
+                mountedBuckets(alluxioPath) = s3Path
+                logInfo(s"Found mounted bucket $s3Path to $alluxioPath")
+              }
             }
           } catch {
             case NonFatal(e) => logWarning(s"Failed to get alluxio mount table", e)
@@ -205,18 +210,13 @@ object AlluxioUtils extends Logging with Arm {
   }
 
   private def getExistS3MountPoints(
-      alluxioUser: String,
-      s3AccessKey: Option[String],
-      s3SecretKey: Option[String]): mutable.Map[String, MountPointInfo] = {
-    val conf = getS3ClientConf(alluxioUser, s3AccessKey, s3SecretKey)
+      fs: alluxio.client.file.FileSystem): mutable.Map[String, MountPointInfo] = {
     // get s3 mount points by alluxio client
-    withResource(alluxio.client.file.FileSystem.Factory.create(conf)) { fs =>
-      val mountTable = fs.getMountTable
-      mountTable.asScala.filter { case (_, mountPoint) =>
-        // checked the alluxio code, the type should be s3
-        // anyway let's keep both of them
-        mountPoint.getUfsType == "s3" || mountPoint.getUfsType == "s3a"
-      }
+    val mountTable = fs.getMountTable
+    mountTable.asScala.filter { case (_, mountPoint) =>
+      // checked the alluxio code, the type should be s3
+      // anyway let's keep both of them
+      mountPoint.getUfsType == "s3" || mountPoint.getUfsType == "s3a"
     }
   }
 
@@ -242,6 +242,7 @@ object AlluxioUtils extends Logging with Arm {
             val mountOptionsBuilder = MountPOptions.newBuilder().setReadOnly(true)
             s3AccessKey.foreach(e => mountOptionsBuilder.putProperties("s3a.accessKeyId", e))
             s3SecretKey.foreach(e => mountOptionsBuilder.putProperties("s3a.secretKey", e))
+            // mount new bucket
             fs.mount(new AlluxioURI(local_bucket), new AlluxioURI(remote_path),
               mountOptionsBuilder.build())
             logInfo(s"Mounted bucket $remote_path to $local_bucket in Alluxio")
@@ -287,7 +288,7 @@ object AlluxioUtils extends Logging with Arm {
   private def replaceSchemeWithAlluxio(file: String, scheme: String, masterPort: String): String = {
     // replace s3://foo/.. to alluxio://alluxioMasterHostAndPort/foo/...
     val newFile = file.replaceFirst(scheme, ALLUXIO_SCHEME + masterPort + "/")
-    logDebug(s"Replace $file to ${newFile}")
+    logDebug(s"Replace $file to $newFile")
     newFile
   }
 
@@ -366,9 +367,9 @@ object AlluxioUtils extends Logging with Arm {
           s"for each file path")
       } else if (matchedSet.size == 1) {
         AlluxioPathReplaceTaskTime(
-          pathStr.replaceFirst(matchedSet.head._1, matchedSet.head._2), true)
+          pathStr.replaceFirst(matchedSet.head._1, matchedSet.head._2), wasReplaced = true)
       } else {
-        AlluxioPathReplaceTaskTime(pathStr, false)
+        AlluxioPathReplaceTaskTime(pathStr, wasReplaced = false)
       }
     })
   }
@@ -481,8 +482,8 @@ object AlluxioUtils extends Logging with Arm {
       hadoopConf: Configuration,
       runtimeConf: RuntimeConfig): Option[Map[String, String]] = {
     initAlluxioInfo(conf, hadoopConf, runtimeConf)
-    val anyToReplace = pds.map { pd =>
-      pd.files.map(_.getPath.toString).map { file =>
+    val anyToReplace = pds.exists { pd =>
+      pd.files.map(_.getPath.toString).exists { file =>
         val matchedSet = alluxioPathsToReplaceMap.get.filter(a => file.startsWith(a._1))
         if (matchedSet.size > 1) {
           // never reach here since replaceMap is a Map
@@ -494,8 +495,8 @@ object AlluxioUtils extends Logging with Arm {
         } else {
           false
         }
-      }.contains(true)
-    }.contains(true)
+      }
+    }
     if (anyToReplace) {
       alluxioPathsToReplaceMap
     } else {
@@ -510,8 +511,8 @@ object AlluxioUtils extends Logging with Arm {
     pfs.map { pf =>
       val file = pf.filePath
       // pathsToReplace contain strings of exact paths to replace
-      val matchedSet = pathsToReplace.filter { case (_, alluxPattern) =>
-        file.startsWith(alluxPattern)
+      val matchedSet = pathsToReplace.filter { case (_, alluxioPattern) =>
+        file.startsWith(alluxioPattern)
       }
       if (matchedSet.size > 1) {
         // never reach here since replaceMap is a Map
@@ -656,5 +657,49 @@ object AlluxioUtils extends Logging with Arm {
       None
     }
     (location, mapIfReplacedPaths)
+  }
+
+  // If reading large s3 files on a cluster with slower disks, skip using Alluxio.
+  def shouldReadDirectlyFromS3(rapidsConf: RapidsConf, pds: Seq[PartitionDirectory]): Boolean = {
+    if (!rapidsConf.enableAlluxioSlowDisk) {
+      logInfo(s"Skip reading directly from S3 because spark.rapids.alluxio.slow.disk is disabled")
+      false
+    } else {
+      val filesWithoutDir = pds.flatMap(pd => pd.files).filter { file =>
+        // skip directory
+        !file.isDirectory
+      }
+
+      val files = filesWithoutDir.filter { f =>
+        /**
+         * Determines whether a file should be calculated for the average file size.
+         * This is used to filter out some unrelated files,
+         * such as transaction log files in the Delta file type.
+         * However Delta files has other unrelated
+         * files such as old regular parquet files.
+         * Limitation: This is not OK for Delta file type, json file type, Avro file type......
+         * Currently only care about parquet and orc files.
+         * Note: It's hard to extract this into a method, because in Databricks 312 the files in
+         * `PartitionDirectory` are in type of
+         * `org.apache.spark.sql.execution.datasources.SerializableFileStatus`
+         * instead of `org.apache.hadoop.fs.FileStatus`
+         */
+        f.getPath.getName.endsWith(".parquet") || f.getPath.getName.endsWith(".orc")
+      }
+
+      val totalSize = files.map(_.getLen).sum
+
+      val avgSize = if (files.isEmpty) 0 else totalSize / files.length
+      if (avgSize > rapidsConf.getAlluxioLargeFileThreshold) {
+        // if files are large
+        logInfo(s"Reading directly from S3, " +
+          s"average file size $avgSize > threshold ${rapidsConf.getAlluxioLargeFileThreshold}")
+        true
+      } else {
+        logInfo(s"Skip reading directly from S3, " +
+          s"average file size $avgSize <= threshold ${rapidsConf.getAlluxioLargeFileThreshold}")
+        false
+      }
+    }
   }
 }

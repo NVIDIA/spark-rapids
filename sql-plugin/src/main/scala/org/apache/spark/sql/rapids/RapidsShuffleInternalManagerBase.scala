@@ -671,7 +671,6 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
               waitTimeStart = System.nanoTime()
               val pending = futures.dequeue().get // wait for one future
               waitTime += System.nanoTime() - waitTimeStart
-
               // if the future returned a block state, we have more work to do
               pending match {
                 case Some(leftOver@BlockState(_, _)) =>
@@ -692,6 +691,13 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
           // here while we wait.
           waitTimeStart = System.nanoTime()
           val res = queued.take()
+          res match {
+            case (_, cb: ColumnarBatch) =>
+              limiter.release(SerializedTableColumn.getMemoryUsed(cb))
+              popFetchedIfAvailable()
+            case _ => 0 // TODO: do we need to handle other types here?
+          }
+
           waitTime += System.nanoTime() - waitTimeStart
           res
         }
@@ -731,7 +737,6 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
         while (blockState.hasNext && didFit) {
           val batch = blockState.next()
           queued.offer(batch)
-          limiter.release(currentBatchSize)
           // peek at the next batch
           currentBatchSize = blockState.getNextBatchSize
           didFit = limiter.acquire(currentBatchSize)
@@ -1073,11 +1078,13 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
   protected lazy val blockManager = env.blockManager
   protected lazy val shouldFallThroughOnEverything = {
     val fallThroughReasons = new ListBuffer[String]()
-    if (GpuShuffleEnv.isExternalShuffleEnabled) {
-      fallThroughReasons += "External Shuffle Service is enabled"
-    }
-    if (GpuShuffleEnv.isSparkAuthenticateEnabled) {
-      fallThroughReasons += "Spark authentication is enabled"
+    if (!rapidsConf.isMultiThreadedShuffleManagerMode) {
+      if (GpuShuffleEnv.isExternalShuffleEnabled) {
+        fallThroughReasons += "External Shuffle Service is enabled"
+      }
+      if (GpuShuffleEnv.isSparkAuthenticateEnabled) {
+        fallThroughReasons += "Spark authentication is enabled"
+      }
     }
     if (rapidsConf.isSqlExplainOnlyEnabled) {
       fallThroughReasons += "Plugin is in explain only mode"
@@ -1328,17 +1335,20 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
 
   override def unregisterShuffle(shuffleId: Int): Boolean = {
     unregisterGpuShuffle(shuffleId)
-    shuffleBlockResolver match {
-      case isbr: IndexShuffleBlockResolver =>
-        Option(taskIdMapsForShuffle.remove(shuffleId)).foreach { mapTaskIds =>
-          mapTaskIds.iterator.foreach { mapTaskId =>
-            isbr.removeDataByMap(shuffleId, mapTaskId)
+    if (!isDriver) {
+      shuffleBlockResolver match {
+        case isbr: IndexShuffleBlockResolver =>
+          Option(taskIdMapsForShuffle.remove(shuffleId)).foreach { mapTaskIds =>
+            mapTaskIds.iterator.foreach { mapTaskId =>
+              isbr.removeDataByMap(shuffleId, mapTaskId)
+            }
           }
-        }
-      case _ if taskIdMapsForShuffle.size() > 0 =>
-        throw new IllegalStateException(
-          "unregisterShuffle called with unexpected resolver " +
-          s"$shuffleBlockResolver and blocks left to be cleaned")
+        case _: GpuShuffleBlockResolver => // noop
+        case _ =>
+          throw new IllegalStateException(
+            "unregisterShuffle called with unexpected resolver " +
+              s"$shuffleBlockResolver and blocks left to be cleaned")
+      }
     }
     wrapped.unregisterShuffle(shuffleId)
   }

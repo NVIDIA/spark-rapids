@@ -254,13 +254,18 @@ class AdaptiveQueryExecSuite
         _.isInstanceOf[GpuDataWritingCommandExec])
       assert(writeCommand.isDefined)
 
-      // the read should be an adaptive plan
-      val adaptiveSparkPlanExec = TestUtils.findOperator(writeCommand.get,
-        _.isInstanceOf[AdaptiveSparkPlanExec])
-        .get.asInstanceOf[AdaptiveSparkPlanExec]
+      if (cmpSparkVersion(3,4,0) < 0) {
+        // the read should be an adaptive plan prior to Spark 3.4.0
+        val adaptiveSparkPlanExec = TestUtils.findOperator(writeCommand.get,
+          _.isInstanceOf[AdaptiveSparkPlanExec])
+          .get.asInstanceOf[AdaptiveSparkPlanExec]
 
-      // assert that at least part of the adaptive plan ran on GPU
-      assert(TestUtils.findOperator(adaptiveSparkPlanExec, _.isInstanceOf[GpuExec]).isDefined)
+        // assert that at least part of the adaptive plan ran on GPU
+        assert(TestUtils.findOperator(adaptiveSparkPlanExec, _.isInstanceOf[GpuExec]).isDefined)
+      } else {
+        assert(TestUtils.findOperator(writeCommand.get,
+          _.isInstanceOf[GpuFileSourceScanExec]).isDefined)
+      }
     }, conf)
   }
 
@@ -297,14 +302,19 @@ class AdaptiveQueryExecSuite
           _.isInstanceOf[DataWritingCommandExec])
         assert(writeCommand.isDefined)
 
-        // the read should be an adaptive plan
-        val adaptiveSparkPlanExec = TestUtils.findOperator(writeCommand.get,
-          _.isInstanceOf[AdaptiveSparkPlanExec])
+        if (cmpSparkVersion(3, 4, 0) < 0) {
+          // the read should be an adaptive plan prior to Spark 3.4.0
+          val adaptiveSparkPlanExec = TestUtils.findOperator(writeCommand.get,
+            _.isInstanceOf[AdaptiveSparkPlanExec])
             .get.asInstanceOf[AdaptiveSparkPlanExec]
 
-        // even though the write couldn't run on GPU, the read should have done
-        assert(TestUtils.findOperator(adaptiveSparkPlanExec.executedPlan,
-          _.isInstanceOf[GpuExec]).isDefined)
+          // even though the write couldn't run on GPU, the read should have done
+          assert(TestUtils.findOperator(adaptiveSparkPlanExec.executedPlan,
+            _.isInstanceOf[GpuExec]).isDefined)
+        } else {
+          assert(TestUtils.findOperator(writeCommand.get,
+            _.isInstanceOf[GpuFileSourceScanExec]).isDefined)
+        }
 
     }, conf)
   }
@@ -343,25 +353,32 @@ class AdaptiveQueryExecSuite
         _.isInstanceOf[GpuDataWritingCommandExec])
       assert(writeCommand.isDefined)
 
-      // the read should be an adaptive plan
-      val adaptiveSparkPlanExec = TestUtils.findOperator(writeCommand.get,
-        _.isInstanceOf[AdaptiveSparkPlanExec])
+      if (cmpSparkVersion(3, 4, 0) < 0) {
+        // the read should be an adaptive plan prior to Spark 3.4.0
+        val adaptiveSparkPlanExec = TestUtils.findOperator(writeCommand.get,
+          _.isInstanceOf[AdaptiveSparkPlanExec])
           .get.asInstanceOf[AdaptiveSparkPlanExec]
 
-      if (SparkShimImpl.supportsColumnarAdaptivePlans) {
-        // we avoid the transition entirely with Spark 3.2+ due to the changes in SPARK-35881 to
-        // support columnar adaptive plans
-        assert(adaptiveSparkPlanExec
-          .executedPlan
-          .isInstanceOf[GpuFileSourceScanExec])
-      } else {
-        val transition = adaptiveSparkPlanExec
+        if (SparkShimImpl.supportsColumnarAdaptivePlans) {
+          // we avoid the transition entirely with Spark 3.2+ due to the changes in SPARK-35881 to
+          // support columnar adaptive plans
+          assert(adaptiveSparkPlanExec
+            .executedPlan
+            .isInstanceOf[GpuFileSourceScanExec])
+        } else {
+          val transition = adaptiveSparkPlanExec
             .executedPlan
             .asInstanceOf[GpuColumnarToRowExec]
 
-        // although the plan contains a GpuColumnarToRowExec, we bypass it in
-        // AvoidAdaptiveTransitionToRow so the metrics should reflect that
-        assert(transition.metrics("numOutputRows").value === 0)
+          // although the plan contains a GpuColumnarToRowExec, we bypass it in
+          // AvoidAdaptiveTransitionToRow so the metrics should reflect that
+          assert(transition.metrics("numOutputRows").value === 0)
+        }
+      } else {
+        // there is no transition since Spark 3.4.0
+        val transition = TestUtils.findOperator(writeCommand.get,
+          _.isInstanceOf[GpuColumnarToRowExec])
+        assert(transition.isEmpty)
       }
     }, conf)
   }
