@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
-// spark-distros:320:
-package com.nvidia.spark.rapids.spark320
+// spark-distros:320:321:321cdh:321db:322:323:330:330cdh:331:332:
 
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.shims.spark320.ProxyRapidsShuffleInternalManager
+package org.apache.spark.sql.rapids.execution
 
-/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
-sealed class RapidsShuffleManager(
-    conf: SparkConf,
-    isDriver: Boolean) extends ProxyRapidsShuffleInternalManager(conf, isDriver) {
+import org.apache.spark.sql.types.{DataType, StructType}
+
+object ShimTrampolineUtil {
+
+  def unionLikeMerge(left: DataType, right: DataType): DataType =
+    StructType.unionLikeMerge(left, right)
 }

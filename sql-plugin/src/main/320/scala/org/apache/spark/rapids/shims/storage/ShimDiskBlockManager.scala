@@ -14,14 +14,19 @@
  * limitations under the License.
  */
 
-// spark-distros:320:
-package com.nvidia.spark.rapids.spark320
+// spark-distros:320:321:321cdh:321db:322:323:330:330cdh:331:332:
+
+package org.apache.spark.rapids.shims.storage
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.shims.spark320.ProxyRapidsShuffleInternalManager
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.storage.DiskBlockManager
 
-/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
-sealed class RapidsShuffleManager(
-    conf: SparkConf,
-    isDriver: Boolean) extends ProxyRapidsShuffleInternalManager(conf, isDriver) {
-}
+
+class ShimDiskBlockManager(
+  conf: SparkConf,
+  deleteFilesOnStop: Boolean) extends DiskBlockManager(
+    conf,
+    deleteFilesOnStop,
+    TrampolineUtil.isDriver(conf)
+  )

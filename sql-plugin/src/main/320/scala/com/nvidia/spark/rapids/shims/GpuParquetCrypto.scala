@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,14 +14,19 @@
  * limitations under the License.
  */
 
-// spark-distros:320:
-package com.nvidia.spark.rapids.spark320
+// spark-distros:320:321:321db:322:323:330:331:332:
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.shims.spark320.ProxyRapidsShuffleInternalManager
+import org.apache.parquet.crypto.ParquetCryptoRuntimeException
 
-/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
-sealed class RapidsShuffleManager(
-    conf: SparkConf,
-    isDriver: Boolean) extends ProxyRapidsShuffleInternalManager(conf, isDriver) {
+object GpuParquetCrypto {
+  /**
+   * Columnar encryption was added in Spark 3.2.0
+   */
+  def isColumnarCryptoException(e: Throwable): Boolean = {
+    e match {
+      case crypto: ParquetCryptoRuntimeException => true
+      case _ => false
+    }
+  }
 }

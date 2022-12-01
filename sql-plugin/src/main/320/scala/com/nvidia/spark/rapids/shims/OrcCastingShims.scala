@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,14 +14,18 @@
  * limitations under the License.
  */
 
-// spark-distros:320:
-package com.nvidia.spark.rapids.spark320
+// spark-distros:320:321:321db:322:323:330:331:332:
 
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.shims.spark320.ProxyRapidsShuffleInternalManager
+package com.nvidia.spark.rapids.shims
 
-/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
-sealed class RapidsShuffleManager(
-    conf: SparkConf,
-    isDriver: Boolean) extends ProxyRapidsShuffleInternalManager(conf, isDriver) {
+import ai.rapids.cudf.{ColumnView, DType}
+import com.nvidia.spark.rapids.GpuOrcScan
+
+
+object OrcCastingShims {
+
+  def castIntegerToTimestamp(col: ColumnView, colType: DType): ColumnView = {
+    // For spark >= 320 (except spark-321-cdh), they consider the integers in `col` as seconds
+    GpuOrcScan.castIntegersToTimestamp(col, colType, DType.TIMESTAMP_SECONDS)
+  }
 }

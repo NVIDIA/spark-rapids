@@ -14,14 +14,17 @@
  * limitations under the License.
  */
 
-// spark-distros:320:
-package com.nvidia.spark.rapids.spark320
+// spark-distros:320:321:321cdh:321db:322:323:330:330cdh:331:332:
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.shims.spark320.ProxyRapidsShuffleInternalManager
+import com.nvidia.spark.rapids.{RapidsConf, RapidsMeta}
 
-/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
-sealed class RapidsShuffleManager(
-    conf: SparkConf,
-    isDriver: Boolean) extends ProxyRapidsShuffleInternalManager(conf, isDriver) {
+object YearParseUtil {
+  def tagParseStringAsDate(conf: RapidsConf, meta: RapidsMeta[_, _, _]): Unit = {
+    if (conf.hasExtendedYearValues) {
+      meta.willNotWorkOnGpu("Parsing the full rage of supported years is not supported. " +
+          "If your years are limited to 4 positive digits set " +
+          s"${RapidsConf.HAS_EXTENDED_YEAR_VALUES} to false.")
+    }
+  }
 }
