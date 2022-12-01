@@ -6,7 +6,7 @@ nav_order: 16
 # Contact Us
 
 ## Technical Support
-If you need any help or have questions on this product, please contact us :
+If you need any help or have questions on this product, please contact us:
 <a href="mailto:spark-rapids-support@nvidia.com">spark-rapids-support@nvidia.com</a>
 
 ## Issues and Discussions
