@@ -68,7 +68,9 @@ parquet_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_
 # test with original parquet file reader, the multi-file parallel reader for cloud, and coalesce file reader for
 # non-cloud
 original_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'PERFILE'}
-multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED'}
+multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
+        'spark.rapids.sql.format.parquet.multithreaded.combine.threshold': '0',
+        'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': 'true'}
 coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING'}
 coalesce_parquet_file_reader_multithread_filter_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.coalescing.reader.numFilterParallel': '2',
@@ -79,12 +81,24 @@ coalesce_parquet_file_reader_multithread_filter_conf = {'spark.rapids.sql.format
 native_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'PERFILE',
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
 native_multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
-        'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
+        'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE',
+        'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': 'true'}
 native_coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
 native_coalesce_parquet_file_reader_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE',
         'spark.rapids.sql.reader.chunked': True}
+noorder_multithreaded_parquet_file_reader_conf = pytest.param(
+        {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
+        'spark.rapids.sql.format.parquet.multithreaded.combine.threshold': '0',
+        'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': 'false'},
+        marks=ignore_order(local=True))
+# TODO - make sure combine mode actually exercised
+combining_multithreaded_parquet_file_reader_conf = pytest.param(
+        {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
+         'spark.rapids.sql.format.parquet.multithreaded.combine.threshold': '67108864',
+         'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': 'false'},
+        marks=ignore_order(local=True))
 
 
 # For now the native configs are not compatible with spark.sql.parquet.writeLegacyFormat written files
@@ -95,7 +109,8 @@ reader_opt_confs_native = [native_parquet_file_reader_conf, native_multithreaded
                     native_coalesce_parquet_file_reader_chunked_conf]
 
 reader_opt_confs_no_native = [original_parquet_file_reader_conf, multithreaded_parquet_file_reader_conf,
-                    coalesce_parquet_file_reader_conf, coalesce_parquet_file_reader_multithread_filter_conf]
+                    coalesce_parquet_file_reader_conf, coalesce_parquet_file_reader_multithread_filter_conf,
+                    noorder_multithreaded_parquet_file_reader_conf]#, combining_multithreaded_parquet_file_reader_conf]
 
 reader_opt_confs = reader_opt_confs_native + reader_opt_confs_no_native
 
@@ -397,7 +412,6 @@ def test_parquet_read_round_trip_legacy(spark_tmp_path, parquet_gens, v1_enabled
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
 
-@ignore_order
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
@@ -427,7 +441,6 @@ def test_parquet_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader
 
 
 # In this we are reading the data, but only reading the key the data was partitioned by
-@ignore_order
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_partitioned_read_just_partitions(spark_tmp_path, v1_enabled_list, reader_confs):
@@ -447,7 +460,6 @@ def test_parquet_partitioned_read_just_partitions(spark_tmp_path, v1_enabled_lis
             lambda spark : spark.read.parquet(data_path).select("key"),
             conf=all_confs)
 
-@ignore_order
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reader_confs):
@@ -473,9 +485,8 @@ def test_parquet_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reade
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
 
-@ignore_order
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
-@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@pytest.mark.parametrize('v1_enabled_list', ["parquet"])
 def test_parquet_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
     # we should go with a more standard set of generators
@@ -498,7 +509,6 @@ def test_parquet_read_merge_schema(spark_tmp_path, v1_enabled_list, reader_confs
             lambda spark : spark.read.option('mergeSchema', 'true').parquet(data_path),
             conf=all_confs)
 
-@ignore_order
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_read_merge_schema_from_conf(spark_tmp_path, v1_enabled_list, reader_confs):
@@ -536,7 +546,6 @@ def test_read_parquet_with_empty_clipped_schema(spark_tmp_path, v1_enabled_list,
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(schema).parquet(data_path), conf=all_confs)
 
-@ignore_order
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_input_meta(spark_tmp_path, v1_enabled_list, reader_confs):
@@ -557,7 +566,6 @@ def test_parquet_input_meta(spark_tmp_path, v1_enabled_list, reader_confs):
                         'input_file_block_length()'),
             conf=all_confs)
 
-@ignore_order
 @allow_non_gpu('ProjectExec', 'Alias', 'InputFileName', 'InputFileBlockStart', 'InputFileBlockLength',
                'FilterExec', 'And', 'IsNotNull', 'GreaterThan', 'Literal',
                'FileSourceScanExec', 'ColumnarToRowExec',

@@ -339,7 +339,8 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
           false, // alluxioReplacementTaskTime
           -1, // combineThresholdsize
           -1, // combineWaitTime
-          queryUsesInputFile
+          queryUsesInputFile,
+          true
       );
     }
 

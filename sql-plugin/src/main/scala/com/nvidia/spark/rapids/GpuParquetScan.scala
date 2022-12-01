@@ -955,6 +955,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   private val numFilesFilterParallel = rapidsConf.numFilesFilterParallel
   private val combineThresholdSize = rapidsConf.getParquetMultithreadedCombineThreshold
   private val combineWaitTime = rapidsConf.getParquetMultithreadedCombineWaitTime
+  private val keepReadsInOrder = rapidsConf.getParquetMultithreadedReaderKeepOrder
   logWarning(s"combine wait time is $combineWaitTime and threadhold size is $combineThresholdSize")
   private val alluxioReplacementTaskTime =
     AlluxioCfgUtils.enabledAlluxioReplacementAlgoTaskTime(rapidsConf)
@@ -988,7 +989,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       useChunkedReader, metrics, partitionSchema, numThreads, maxNumFileProcessed,
       ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId,
       alluxioPathReplacementMap.getOrElse(Map.empty), alluxioReplacementTaskTime,
-      combineThresholdSize, combineWaitTime, queryUsesInputFile)
+      combineThresholdSize, combineWaitTime, queryUsesInputFile, keepReadsInOrder)
   }
 
   private def filterBlocksForCoalescingReader(
@@ -1748,6 +1749,7 @@ class MultiFileParquetPartitionReader(
  * @param combineThresholdSize
  * @param combineWaitTime
  * @param queryUsesInputFile
+ * @param keepReadsInOrder
  */
 class MultiFileCloudParquetPartitionReader(
     override val conf: Configuration,
@@ -1770,10 +1772,11 @@ class MultiFileCloudParquetPartitionReader(
     alluxioReplacementTaskTime: Boolean,
     combineThresholdSize: Long,
     combineWaitTime: Int,
-    queryUsesInputFile: Boolean)
+    queryUsesInputFile: Boolean,
+    keepReadsInOrder: Boolean)
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, null,
     execMetrics, ignoreCorruptFiles, alluxioPathReplacementMap, alluxioReplacementTaskTime,
-    combineThresholdSize, combineWaitTime, queryUsesInputFile)
+    combineThresholdSize, combineWaitTime, queryUsesInputFile, keepReadsInOrder)
     with ParquetPartitionReaderBase {
 
   def checkIfNeedToSplit(current: HostMemoryBuffersWithMetaData,
