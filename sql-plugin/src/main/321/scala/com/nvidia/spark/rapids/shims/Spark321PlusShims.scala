@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+// spark-distros:321:321cdh:321db:322:323:330:330cdh:331:332:
+
 package com.nvidia.spark.rapids.shims
 
 import org.apache.parquet.schema.MessageType
