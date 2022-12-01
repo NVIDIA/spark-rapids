@@ -47,9 +47,9 @@ import org.apache.spark.sql.execution.datasources.v2.orc.OrcDataSourceV2
 import org.apache.spark.sql.execution.streaming._
 import org.apache.spark.sql.execution.streaming.sources.{RateStreamProvider, TextSocketSourceProvider}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.shims.SchemaUtilsShims
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types.{CalendarIntervalType, DataType, StructType}
-import org.apache.spark.sql.util.SchemaUtils
 import org.apache.spark.util.{HadoopFSUtils, ThreadUtils, Utils}
 
 /**
@@ -86,9 +86,9 @@ case class GpuDataSource(
   }
 
   bucketSpec.foreach { bucket =>
-    SchemaUtils.checkColumnNameDuplication(
+    SchemaUtilsShims.checkColumnNameDuplication(
       bucket.bucketColumnNames, "in the bucket definition", equality)
-    SchemaUtils.checkColumnNameDuplication(
+    SchemaUtilsShims.checkColumnNameDuplication(
       bucket.sortColumnNames, "in the sort definition", equality)
   }
 
@@ -175,7 +175,7 @@ case class GpuDataSource(
     // we have the existing tests for the cases (e.g., `ParquetHadoopFsRelationSuite`).
     // See SPARK-18108 and SPARK-21144 for related discussions.
     try {
-      SchemaUtils.checkColumnNameDuplication(
+      SchemaUtilsShims.checkColumnNameDuplication(
         (dataSchema ++ partitionSchema).map(_.name),
         "in the data schema and the partition schema",
         equality)
@@ -286,17 +286,17 @@ case class GpuDataSource(
 
     relation match {
       case hs: HadoopFsRelation =>
-        SchemaUtils.checkSchemaColumnNameDuplication(
+        SchemaUtilsShims.checkSchemaColumnNameDuplication(
           hs.dataSchema,
           "in the data schema",
           equality)
-        SchemaUtils.checkSchemaColumnNameDuplication(
+        SchemaUtilsShims.checkSchemaColumnNameDuplication(
           hs.partitionSchema,
           "in the partition schema",
            equality)
         DataSourceUtils.verifySchema(hs.fileFormat, hs.dataSchema)
       case _ =>
-        SchemaUtils.checkSchemaColumnNameDuplication(
+        SchemaUtilsShims.checkSchemaColumnNameDuplication(
           relation.schema,
           "in the data schema",
            equality)

@@ -20,6 +20,7 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 
 import com.nvidia.spark.rapids.shims.SparkShimImpl
+import org.apache.hadoop.fs.FileUtil.fullyDelete
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.{JobContext, TaskAttemptContext}
 import org.apache.parquet.hadoop.ParquetFileReader
@@ -80,11 +81,16 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
         }
       })
     } finally {
-      tempFile.delete()
+      fullyDelete(tempFile)
     }
   }
 
   test("sorted partitioned write") {
+    assume(!isSpark340OrLater,
+      "Skipping on Spark 3.4+ because of " +
+      "https://issues.apache.org/jira/browse/SPARK-40588 and " +
+      "https://issues.apache.org/jira/browse/SPARK-40885")
+
     val conf = new SparkConf().set(RapidsConf.SQL_ENABLED.key, "true")
     val tempFile = File.createTempFile("partitioned", ".parquet")
     try {
@@ -98,7 +104,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
         assertResult("0000000001")(firstRow.getString(0))
       })
     } finally {
-      tempFile.delete()
+      fullyDelete(tempFile)
     }
   }
 
@@ -133,7 +139,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
           })
       })
     } finally {
-      tempFile.delete()
+      fullyDelete(tempFile)
     }
   }
 
@@ -156,7 +162,40 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
           })
       })
     } finally {
-      tempFile.delete()
+      fullyDelete(tempFile)
+    }
+  }
+
+  test("set maxRecordsPerFile with partition concurrently") {
+    val tempFile = File.createTempFile("maxRecords", ".parquet")
+
+    Seq(("40", 40), ("200", 80)).foreach{ case (maxRecordsPerFile, expectedRecordsPerFile) =>
+      val conf = new SparkConf()
+        .set("spark.sql.files.maxRecordsPerFile", maxRecordsPerFile)
+        .set("spark.sql.maxConcurrentOutputFileWriters", "30")
+      try {
+        SparkSessionHolder.withSparkSession(conf, spark => {
+          import spark.implicits._
+          val df = (1 to 1600).map(i => (i, i % 20)).toDF()
+          df
+            .repartition(1)
+            .write
+            .mode("overwrite")
+            .partitionBy("_2")
+            .parquet(tempFile.getAbsolutePath())
+          // check the whole number of rows
+          assertResult(1600) (spark.read.parquet(tempFile.getAbsolutePath()).count())
+          // check number of rows in each file
+          listAllFiles(tempFile)
+            .map(f => f.getAbsolutePath())
+            .filter(p => p.endsWith("parquet"))
+            .map(p => {
+              assertResult(expectedRecordsPerFile) (spark.read.parquet(p).count())
+            })
+        })
+      } finally {
+        fullyDelete(tempFile)
+      }
     }
   }
 

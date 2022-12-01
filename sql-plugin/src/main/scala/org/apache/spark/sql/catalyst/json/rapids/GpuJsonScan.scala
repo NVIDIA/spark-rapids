@@ -16,6 +16,7 @@
 
 package org.apache.spark.sql.catalyst.json.rapids
 
+import java.io.IOException
 import java.nio.charset.StandardCharsets
 
 import scala.collection.JavaConverters._
@@ -268,7 +269,13 @@ class JsonPartitionReader(
     val jsonOpts = buildJsonOptions(parsedOptions)
     // cuDF does not yet support reading a subset of columns so we have
     // to apply the read schema projection here
-    withResource(Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)) { tbl =>
+    val jsonTbl = try {
+      Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)
+    } catch {
+      case e: Exception =>
+        throw new IOException(s"Error when processing file [$partFile]", e)
+    }
+    withResource(jsonTbl) { tbl =>
       val columns = new ListBuffer[ColumnVector]()
       closeOnExcept(columns) { _ =>
         for (name <- readDataSchema.fieldNames) {

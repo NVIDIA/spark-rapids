@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.mutable.HashMap
 
-import com.nvidia.spark.rapids.{AlluxioUtils, GpuExec, GpuMetric, GpuOrcMultiFilePartitionReaderFactory, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, SparkPlanMeta}
+import com.nvidia.spark.rapids.{AlluxioCfgUtils, AlluxioUtils, GpuExec, GpuMetric, GpuOrcMultiFilePartitionReaderFactory, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, SparkPlanMeta}
 import com.nvidia.spark.rapids.shims.{GpuDataSourceRDD, SparkShimImpl}
 import org.apache.hadoop.fs.Path
 
@@ -78,10 +78,10 @@ case class GpuFileSourceScanExec(
     extends GpuDataSourceScanExec with GpuExec {
   import GpuMetric._
 
-  private val isAlluxioReplacementTaskTime = rapidsConf.isAlluxioReplacementAlgoTaskTime
-
   // this is set only when we either explicitly replaced a path for CONVERT_TIME
-  // or when TASK_TIME if one of the paths will be replaced
+  // or when TASK_TIME if one of the paths will be replaced.
+  // If reading large s3 files on a cluster with slower disks,
+  // should update this to None and read directly from s3 to get faster.
   private var alluxioPathReplacementMap: Option[Map[String, String]] = alluxioPathsMap
 
   private val isPerFileReadEnabled = relation.fileFormat match {
@@ -122,15 +122,28 @@ case class GpuFileSourceScanExec(
     val startTime = System.nanoTime()
     val pds = relation.location.listFiles(
         partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
-    if (AlluxioUtils.isAlluxioAutoMountTaskTime(rapidsConf, relation.fileFormat)) {
-      alluxioPathReplacementMap = AlluxioUtils.autoMountIfNeeded(rapidsConf, pds,
-        relation.sparkSession.sparkContext.hadoopConfiguration,
-        relation.sparkSession.conf)
-    } else if (AlluxioUtils.isAlluxioPathsToReplaceTaskTime(rapidsConf, relation.fileFormat)) {
-      // this is not ideal, here we check to see if we will replace any paths, which is an
-      // extra iteration through paths
-      alluxioPathReplacementMap = AlluxioUtils.checkIfNeedsReplaced(rapidsConf, pds)
+    if (AlluxioCfgUtils.isAlluxioPathsToReplaceTaskTime(rapidsConf, relation.fileFormat)) {
+      // if should directly read from s3, should set `alluxioPathReplacementMap` as None
+      if (AlluxioUtils.shouldReadDirectlyFromS3(rapidsConf, pds)) {
+        alluxioPathReplacementMap = None
+      } else {
+        // this is not ideal, here we check to see if we will replace any paths, which is an
+        // extra iteration through paths
+        alluxioPathReplacementMap = AlluxioUtils.checkIfNeedsReplaced(rapidsConf, pds,
+          relation.sparkSession.sparkContext.hadoopConfiguration,
+          relation.sparkSession.conf)
+      }
+    } else if (AlluxioCfgUtils.isAlluxioAutoMountTaskTime(rapidsConf, relation.fileFormat)) {
+      // if should directly read from s3, should set `alluxioPathReplacementMap` as None
+      if (AlluxioUtils.shouldReadDirectlyFromS3(rapidsConf, pds)) {
+        alluxioPathReplacementMap = None
+      } else {
+        alluxioPathReplacementMap = AlluxioUtils.autoMountIfNeeded(rapidsConf, pds,
+          relation.sparkSession.sparkContext.hadoopConfiguration,
+          relation.sparkSession.conf)
+      }
     }
+
     logDebug(s"File listing and possibly replace with Alluxio path " +
       s"took: ${System.nanoTime() - startTime}")
 
@@ -425,7 +438,7 @@ case class GpuFileSourceScanExec(
     } else {
       Map.empty[String, GpuMetric]
     }
-  } ++ staticMetrics ++ semaphoreMetrics
+  } ++ staticMetrics ++ spillMetrics
 
   override protected def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
@@ -562,7 +575,7 @@ case class GpuFileSourceScanExec(
       partitions: Seq[FilePartition]): RDD[InternalRow] = {
 
     if (isPerFileReadEnabled) {
-      logInfo("Using the original per file parquet reader")
+      logInfo("Using the original per file reader")
       SparkShimImpl.getFileScanRDD(relation.sparkSession, readFile.get, partitions,
         requiredSchema)
     } else {

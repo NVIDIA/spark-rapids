@@ -31,7 +31,6 @@ import scala.language.implicitConversions
 import scala.math.max
 
 import ai.rapids.cudf._
-import com.google.protobuf.CodedOutputStream
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.SchemaUtils._
@@ -429,7 +428,6 @@ object GpuOrcScan extends Arm {
     Math.multiplyExact(a, b)
   }
 
-
   /**
    * Convert the integer vector into timestamp(microseconds) vector.
    * @param col The integer columnar vector.
@@ -738,8 +736,7 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
       rawOut: HostMemoryOutputStream,
       footerStartOffset: Long,
       numRows: Long,
-      protoWriter: CodedOutputStream,
-      codecStream: OutStream) = {
+      protoWriter: shims.OrcProtoWriterShim) = {
 
     val startPoint = rawOut.getPos
 
@@ -750,9 +747,7 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
       .setNumberOfRows(numRows)
       .build()
 
-    footer.writeTo(protoWriter)
-    protoWriter.flush()
-    codecStream.flush()
+    protoWriter.writeAndFlush(footer)
 
     val footerLen = rawOut.getPos - startPoint
 
@@ -832,7 +827,12 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
 
     val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
         metrics(GPU_DECODE_TIME))) { _ =>
-      Table.readORC(parseOpts, hostBuf, 0, bufSize)
+      try {
+        Table.readORC(parseOpts, hostBuf, 0, bufSize)
+      } catch {
+        case e: Exception => 
+          throw new IOException(s"Error when processing file splits [${splits.mkString("; ")}]", e)
+      }
     }
     // Execute the schema evolution
     SchemaUtils.evolveSchemaIfNeededAndClose(table, tableSchema, readDataSchema,
@@ -988,7 +988,7 @@ trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging
     dataOut.writeBytes(OrcFile.MAGIC)
     dataOut.flush()
 
-    withCodecOutputStream(ctx, rawOut) { (outChannel, protoWriter, codecStream) =>
+    withCodecOutputStream(ctx, rawOut) { (outChannel, protoWriter) =>
       var numRows = 0L
       val fileFooterBuilder = OrcProto.Footer.newBuilder
       // write the stripes
@@ -996,16 +996,14 @@ trait OrcPartitionReaderBase extends OrcCommonFunctions with Logging
         stripe.infoBuilder.setOffset(rawOut.getPos)
         copyStripeData(ctx, outChannel, stripe.inputDataRanges)
         val stripeFooterStartOffset = rawOut.getPos
-        stripe.footer.writeTo(protoWriter)
-        protoWriter.flush()
-        codecStream.flush()
+        protoWriter.writeAndFlush(stripe.footer)
         stripe.infoBuilder.setFooterLength(rawOut.getPos - stripeFooterStartOffset)
         fileFooterBuilder.addStripes(stripe.infoBuilder.build())
         numRows += stripe.infoBuilder.getNumberOfRows
       }
 
       writeOrcFileFooter(ctx, fileFooterBuilder, rawOut, rawOut.getPos, numRows,
-        protoWriter, codecStream)
+        protoWriter)
     }
   }
 }
@@ -1040,10 +1038,15 @@ class GpuOrcPartitionReader(
   with OrcPartitionReaderBase {
 
   override def next(): Boolean = {
-    batch.foreach(_.close())
-    batch = None
+    if (batchIter.hasNext) {
+      return true
+    }
+    batchIter = EmptyGpuColumnarBatchIterator
     if (ctx.blockIterator.hasNext) {
-      batch = readBatch()
+      batchIter = readBatch() match {
+        case Some(batch) => new SingleGpuColumnarBatchIterator(batch)
+        case _ => EmptyGpuColumnarBatchIterator
+      }
     } else {
       metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
     }
@@ -1054,7 +1057,7 @@ class GpuOrcPartitionReader(
     // advertises `hasNext` as false when we return false here. No downstream tasks should
     // try to call next after `hasNext` returns false, and any task that produces some kind of
     // data when `hasNext` is false is responsible to get the semaphore themselves.
-    batch.isDefined
+    batchIter.hasNext
   }
 
   override def close(): Unit = {
@@ -1726,10 +1729,10 @@ class MultiFileCloudOrcPartitionReader(
    * Decode HostMemoryBuffers in GPU
    *
    * @param fileBufsAndMeta the file HostMemoryBuffer read from a PartitionedFile
-   * @return Option[ColumnarBatch] which has been decoded by GPU
+   * @return the decoded batches
    */
-  override def readBatch(fileBufsAndMeta: HostMemoryBuffersWithMetaDataBase):
-      Option[ColumnarBatch] = {
+  override def readBatches(fileBufsAndMeta: HostMemoryBuffersWithMetaDataBase):
+      Iterator[ColumnarBatch] = {
     fileBufsAndMeta match {
       case meta: HostMemoryEmptyMetaData =>
         // Not reading any data, but add in partition data if needed
@@ -1743,22 +1746,29 @@ class MultiFileCloudOrcPartitionReader(
             GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
           new ColumnarBatch(nullColumns, rows)
         }
-        addPartitionValues(Some(batch), meta.partitionedFile.partitionValues, partitionSchema)
+        new SingleGpuColumnarBatchIterator(addPartitionValues(batch,
+          meta.partitionedFile.partitionValues, partitionSchema))
 
       case buffer: HostMemoryBuffersWithMetaData =>
         val memBuffersAndSize = buffer.memBuffersAndSizes
         val (hostBuffer, size) = memBuffersAndSize.head
-        val nextBatch = addPartitionValues(
-          decodeToBatch(hostBuffer, size, buffer.updatedReadSchema, buffer.requestedMapping,
-            filterHandler.isCaseSensitive, files),
-          buffer.partitionedFile.partitionValues, partitionSchema)
+        val batchReader = decodeToBatch(hostBuffer, size, buffer.updatedReadSchema,
+          buffer.requestedMapping, filterHandler.isCaseSensitive, files) match {
+          case Some(batch) =>
+            val tmp = addPartitionValues(batch,
+            buffer.partitionedFile.partitionValues, partitionSchema)
+            new SingleGpuColumnarBatchIterator(tmp)
+          case _ =>
+            EmptyGpuColumnarBatchIterator
+        }
+
         if (memBuffersAndSize.length > 1) {
           val updatedBuffers = memBuffersAndSize.drop(1)
           currentFileHostBuffers = Some(buffer.copy(memBuffersAndSizes = updatedBuffers))
         } else {
           currentFileHostBuffers = None
         }
-        nextBatch
+        batchReader
 
       case _ => throw new RuntimeException("Wrong HostMemoryBuffersWithMetaData")
     }
@@ -1772,7 +1782,7 @@ trait OrcCodecWritingHelper extends Arm {
   def withCodecOutputStream[T](
       ctx: OrcPartitionReaderContext,
       out: HostMemoryOutputStream)
-    (block: (WritableByteChannel, CodedOutputStream, OutStream) => T): T = {
+    (block: (WritableByteChannel, shims.OrcProtoWriterShim) => T): T = {
 
     withResource(Channels.newChannel(out)) { outChannel =>
       val outReceiver = new PhysicalWriter.OutputReceiver {
@@ -1791,8 +1801,8 @@ trait OrcCodecWritingHelper extends Arm {
         }
         withResource(OrcShims.newOrcOutStream(
           getClass.getSimpleName, orcBufferSize, codec, outReceiver)) { codecStream =>
-          val protoWriter = CodedOutputStream.newInstance(codecStream)
-          block(outChannel, protoWriter, codecStream)
+          val protoWriter = shims.OrcProtoWriterShim(codecStream)
+          block(outChannel, protoWriter)
         }
       } finally {
         OrcCodecPool.returnCodec(ctx.compressionKind, codec)
@@ -1838,10 +1848,8 @@ private case class OrcDataStripe(stripeMeta: OrcStripeWithMeta) extends DataBloc
     // calculate the true stripe footer size
     withResource(HostMemoryBuffer.allocate(initialSize)) { hmb =>
       withResource(new HostMemoryOutputStream(hmb)) { rawOut =>
-        withCodecOutputStream(ctx, rawOut) { (_, protoWriter, codecStream) =>
-          stripe.footer.writeTo(protoWriter)
-          protoWriter.flush()
-          codecStream.flush()
+        withCodecOutputStream(ctx, rawOut) { (_, protoWriter) =>
+          protoWriter.writeAndFlush(stripe.footer)
           val stripeFooterSize = rawOut.getPos
           stripeDataSize + stripeFooterSize
         }
@@ -1946,16 +1954,14 @@ class MultiFileOrcPartitionReader(
         withResource(new HostMemoryOutputStream(outhmb)) { rawOut =>
           // All stripes are from the same file, so it's safe to use the first stripe's ctx
           val ctx = stripes(0).ctx
-          withCodecOutputStream(ctx, rawOut) { (outChannel, protoWriter, codecStream) =>
+          withCodecOutputStream(ctx, rawOut) { (outChannel, protoWriter) =>
             // write the stripes including INDEX+DATA+STRIPE_FOOTER
             stripes.foreach { stripeWithMeta =>
               val stripe = stripeWithMeta.stripe
               stripe.infoBuilder.setOffset(offset + rawOut.getPos)
               copyStripeData(ctx, outChannel, stripe.inputDataRanges)
               val stripeFooterStartOffset = rawOut.getPos
-              stripe.footer.writeTo(protoWriter)
-              protoWriter.flush()
-              codecStream.flush()
+              protoWriter.writeAndFlush(stripe.footer)
               stripe.infoBuilder.setFooterLength(rawOut.getPos - stripeFooterStartOffset)
             }
           }
@@ -2124,14 +2130,24 @@ class MultiFileOrcPartitionReader(
    * @param clippedSchema the clipped schema
    * @return Table
    */
-  override def readBufferToTable(
+  override def readBufferToTablesAndClose(
       dataBuffer: HostMemoryBuffer,
       dataSize: Long,
       clippedSchema: SchemaBase,
       readSchema: StructType,
-      extraInfo: ExtraInfo): Table =
-    decodeToTable(dataBuffer, dataSize, clippedSchema, extraInfo.requestedMapping,
-      isCaseSensitive, files)
+      extraInfo: ExtraInfo): GpuDataProducer[Table] = withResource(dataBuffer) { _ =>
+    val tableReader = new SingleGpuDataProducer(decodeToTable(dataBuffer, dataSize, clippedSchema,
+      extraInfo.requestedMapping, isCaseSensitive, files))
+    GpuDataProducer.wrap(tableReader) { table =>
+      maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
+      if (readDataSchema.length < table.getNumberOfColumns) {
+        throw new QueryExecutionException(s"Expected ${readDataSchema.length} columns " +
+            s"but read ${table.getNumberOfColumns}")
+      }
+      metrics(NUM_OUTPUT_BATCHES) += 1
+      table
+    }
+  }
 
   /**
    * Write a header for a specific file format. If there is no header for the file format,
@@ -2179,7 +2195,7 @@ class MultiFileOrcPartitionReader(
           // We use the first stripe's ctx
           // What if the codec is different for the files which need to be combined?
           val ctx = stripes(0).ctx
-          withCodecOutputStream(ctx, rawOut) { (_, protoWriter, codecStream) =>
+          withCodecOutputStream(ctx, rawOut) { (_, protoWriter) =>
             var numRows = 0L
             val fileFooterBuilder = OrcProto.Footer.newBuilder
             // get all the StripeInformation and the total number rows
@@ -2189,7 +2205,7 @@ class MultiFileOrcPartitionReader(
             }
 
             writeOrcFileFooter(ctx, fileFooterBuilder, rawOut, footerOffset, numRows,
-              protoWriter, codecStream)
+              protoWriter)
             (buffer, rawOut.getPos + footerOffset)
           }
         }

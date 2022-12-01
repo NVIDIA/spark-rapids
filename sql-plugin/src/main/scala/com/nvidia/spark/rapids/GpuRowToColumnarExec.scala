@@ -25,7 +25,7 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, BoundReference, NamedExpression, SortOrder, SpecializedGetters, UnsafeProjection, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, BoundReference, SortOrder, SpecializedGetters, UnsafeRow}
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodeAndComment, CodeFormatter, CodegenContext, CodeGenerator, GenerateUnsafeProjection}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.SparkPlan
@@ -382,10 +382,8 @@ private[rapids] object GpuRowToColumnConverter {
     override def append(row: SpecializedGetters,
         column: Int,
         builder: ai.rapids.cudf.HostColumnVector.ColumnBuilder): Double = {
-      val child = builder.getChild(0)
       val bytes = row.getBinary(column)
-      bytes.foreach(child.append)
-      builder.endList()
+      builder.appendByteList(bytes)
       bytes.length + OFFSET
     }
 
@@ -863,16 +861,11 @@ object GeneratedInternalRowToCudfRowIterator extends Logging {
 /**
  * GPU version of row to columnar transition.
  */
-case class GpuRowToColumnarExec(child: SparkPlan,
-    goal: CoalesceSizeGoal,
-    preProcessing: Seq[NamedExpression] = Seq.empty)
+case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
   extends ShimUnaryExecNode with GpuExec {
   import GpuMetric._
 
-  override def output: Seq[Attribute] = preProcessing match {
-    case expressions if expressions.isEmpty => child.output
-    case expressions => expressions.map(_.toAttribute)
-  }
+  override def output: Seq[Attribute] = child.output
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
@@ -905,16 +898,7 @@ case class GpuRowToColumnarExec(child: SparkPlan,
     val opTime = gpuLongMetric(OP_TIME)
     val semaphoreWaitTime = gpuLongMetric(SEMAPHORE_WAIT_TIME)
     val localGoal = goal
-    val rowBased = preProcessing match {
-      case transformations if transformations.nonEmpty =>
-        child.execute().mapPartitionsWithIndex { case (index, iterator) =>
-          val projection = UnsafeProjection.create(transformations, child.output)
-          projection.initialize(index)
-          iterator.map(projection)
-        }
-      case _ =>
-        child.execute()
-    }
+    val rowBased = child.execute()
 
     // cache in a local to avoid serializing the plan
     val localSchema = schema

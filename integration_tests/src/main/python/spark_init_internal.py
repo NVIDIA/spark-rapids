@@ -90,8 +90,11 @@ def create_tmp_hive():
     path = os.environ.get('PYSP_TEST_spark_hadoop_hive_exec_scratchdir', '/tmp/hive')
     mode = stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO
     logging.info(f"Creating directory {path} with permissions {oct(mode)}")
-    os.makedirs(path, mode, exist_ok=True)
-    os.chmod(path, mode)
+    try:
+        os.makedirs(path, mode, exist_ok=True)
+        os.chmod(path, mode)
+    except Exception as e:
+        logging.warn(f"Failed to setup the hive scratch dir {path}. Error {e}")
 
 def pytest_sessionstart(session):
     # initializations that must happen globally once before tests start

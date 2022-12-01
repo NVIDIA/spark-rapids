@@ -493,6 +493,13 @@ object RapidsConf {
     .integerConf
     .createWithDefault(Integer.MAX_VALUE)
 
+  val CHUNKED_READER = conf("spark.rapids.sql.reader.chunked")
+      .doc("Enable a chunked reader where possible. A chunked reader allows " +
+          "reading highly compressed data that could not be read otherwise, but at the expense " +
+          "of more GPU memory, and in some cases more GPU computation.")
+      .booleanConf
+      .createWithDefault(true)
+
   val MAX_READER_BATCH_SIZE_BYTES = conf("spark.rapids.sql.reader.batchSizeBytes")
     .doc("Soft limit on the maximum number of bytes the reader reads per batch. " +
       "The readers will read chunks of data until this limit is met or exceeded. " +
@@ -757,7 +764,7 @@ object RapidsConf {
       .createWithDefault(false)
 
   val ENABLE_TIERED_PROJECT = conf("spark.rapids.sql.tiered.project.enabled")
-      .doc("Enable tiered project for aggregations.")
+      .doc("Enable tiered projections.")
       .internal()
       .booleanConf
       .createWithDefault(true)
@@ -1082,6 +1089,18 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_HIVE_TEXT: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.format.hive.text.enabled")
+      .doc("When set to false disables Hive text table acceleration")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_HIVE_TEXT_READ: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.format.hive.text.read.enabled")
+      .doc("When set to false disables Hive text table read acceleration")
+      .booleanConf
+      .createWithDefault(false)
+
   val ENABLE_RANGE_WINDOW_BYTES = conf("spark.rapids.sql.window.range.byte.enabled")
     .doc("When the order-by column of a range based window is byte type and " +
       "the range boundary calculated for a value has overflow, CPU and GPU will get " +
@@ -1385,7 +1404,10 @@ object RapidsConf {
   val SHUFFLE_MULTITHREADED_MAX_BYTES_IN_FLIGHT =
     conf("spark.rapids.shuffle.multiThreaded.maxBytesInFlight")
       .doc("The size limit, in bytes, that the RAPIDS shuffle manager configured in " +
-          "\"MULTITHREADED\" mode will allow to be deserialized concurrently.")
+          "\"MULTITHREADED\" mode will allow to be deserialized concurrently per task. This is " +
+        "also the maximum amount of memory that will be used per task. This should ideally be " +
+        "at least the same size as the batch size so we don't have to wait to process a " +
+        "single batch.")
       .startupOnly()
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(Integer.MAX_VALUE)
@@ -1454,17 +1476,13 @@ object RapidsConf {
     .stringConf
     .createWithDefault("^s3a{0,1}://.*")
 
-  val ALLUXIO_CMD = conf("spark.rapids.alluxio.cmd")
-    .doc("Provide the Alluxio command, which is used to mount or get information. " +
-      "The default value is \"su,ubuntu,-c,/opt/alluxio-2.8.0/bin/alluxio\", it means: " +
-      "run Process(Seq(\"su\", \"ubuntu\", \"-c\", " +
-      "\"/opt/alluxio-2.8.0/bin/alluxio fs mount --readonly /bucket-foo s3://bucket-foo\")), " +
-      "to mount s3://bucket-foo to /bucket-foo. " +
-      "the delimiter \",\" is used to convert to Seq[String] " +
-      "when you need to use a special user to run the mount command.")
-    .stringConf
-    .toSequence
-    .createWithDefault(Seq("su", "ubuntu", "-c", "/opt/alluxio-2.8.0/bin/alluxio"))
+  val ALLUXIO_USER = conf("spark.rapids.alluxio.user")
+      .doc("Alluxio user is set on the Alluxio client, " +
+          "which is used to mount or get information. " +
+          "By default it should be the user that running the Alluxio processes. " +
+          "The default value is ubuntu.")
+      .stringConf
+      .createWithDefault("ubuntu")
 
   val ALLUXIO_REPLACEMENT_ALGO = conf("spark.rapids.alluxio.replacement.algo")
     .doc("The algorithm used when replacing the UFS path with the Alluxio path. CONVERT_TIME " +
@@ -1478,6 +1496,28 @@ object RapidsConf {
     .stringConf
     .checkValues(Set("CONVERT_TIME", "TASK_TIME"))
     .createWithDefault("TASK_TIME")
+
+  val ALLUXIO_LARGE_FILE_THRESHOLD = conf("spark.rapids.alluxio.large.file.threshold")
+    .doc("The threshold is used to identify whether average size of files is large " +
+      "when reading from S3. If reading large files from S3 and " +
+      "the disks used by Alluxio are slow, " +
+      "directly reading from S3 is better than reading caches from Alluxio, " +
+      "because S3 network bandwidth is faster than local disk. " +
+      "This improvement takes effect when spark.rapids.alluxio.slow.disk is enabled.")
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(64 * 1024 * 1024) // 64M
+
+  val ALLUXIO_SLOW_DISK = conf("spark.rapids.alluxio.slow.disk")
+    .doc("Indicates whether the disks used by Alluxio are slow. " +
+      "If it's true and reading S3 large files, " +
+      "Rapids Accelerator reads from S3 directly instead of reading from Alluxio caches. " +
+      "Refer to spark.rapids.alluxio.large.file.threshold which defines a threshold that " +
+      "identifying whether files are large. " +
+      "Typically, it's slow disks if speed is less than 300M/second. " +
+      "If using convert time spark.rapids.alluxio.replacement.algo, " +
+      "this may not apply to all file types like Delta files")
+    .booleanConf
+    .createWithDefault(true)
 
   // USER FACING DEBUG CONFIGS
 
@@ -1648,6 +1688,13 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(value = true)
 
+  val DETECT_DELTA_CHECKPOINT_QUERIES = conf("spark.rapids.sql.detectDeltaCheckpointQueries")
+    .doc("Queries against Delta Lake _delta_log checkpoint Parquet files are not efficient on " +
+      "the GPU. When this option is enabled, the plugin will attempt to detect these queries " +
+      "and fall back to the CPU.")
+    .booleanConf
+    .createWithDefault(value = true)
+
   val NUM_FILES_FILTER_PARALLEL = conf("spark.rapids.sql.coalescing.reader.numFilterParallel")
     .doc("This controls the number of files the coalescing reader will run " +
       "in each thread when it filters blocks for reading. If this value is greater than zero " +
@@ -1704,7 +1751,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-22.12.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-23.02.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -1900,6 +1947,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isImprovedTimestampOpsEnabled: Boolean = get(IMPROVED_TIMESTAMP_OPS)
 
+  lazy val chunkedReaderEnabled: Boolean = get(CHUNKED_READER)
+
   lazy val maxReadBatchSizeRows: Int = get(MAX_READER_BATCH_SIZE_ROWS)
 
   lazy val maxReadBatchSizeBytes: Long = get(MAX_READER_BATCH_SIZE_BYTES)
@@ -2070,6 +2119,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isIcebergReadEnabled: Boolean = get(ENABLE_ICEBERG_READ)
 
+  lazy val isHiveDelimitedTextEnabled: Boolean = get(ENABLE_HIVE_TEXT)
+
+  lazy val isHiveDelimitedTextReadEnabled: Boolean = get(ENABLE_HIVE_TEXT_READ)
+
   lazy val shuffleManagerEnabled: Boolean = get(SHUFFLE_MANAGER_ENABLED)
 
   lazy val shuffleManagerMode: String = get(SHUFFLE_MANAGER_MODE)
@@ -2183,7 +2236,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val getAlluxioBucketRegex: String = get(ALLUXIO_BUCKET_REGEX)
 
-  lazy val getAlluxioCmd: Seq[String] = get(ALLUXIO_CMD)
+  lazy val getAlluxioUser: String = get(ALLUXIO_USER)
 
   lazy val getAlluxioReplacementAlgo: String = get(ALLUXIO_REPLACEMENT_ALGO)
 
@@ -2192,6 +2245,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isAlluxioReplacementAlgoTaskTime: Boolean =
     get(ALLUXIO_REPLACEMENT_ALGO) == "TASK_TIME"
+
+  lazy val getAlluxioLargeFileThreshold: Long = get(ALLUXIO_LARGE_FILE_THRESHOLD)
+
+  lazy val enableAlluxioSlowDisk: Boolean = get(ALLUXIO_SLOW_DISK)
 
   lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
 
@@ -2224,6 +2281,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isFastSampleEnabled: Boolean = get(ENABLE_FAST_SAMPLE)
 
   lazy val isDetectDeltaLogQueries: Boolean = get(DETECT_DELTA_LOG_QUERIES)
+
+  lazy val isDetectDeltaCheckpointQueries: Boolean = get(DETECT_DELTA_CHECKPOINT_QUERIES)
 
   lazy val concurrentWriterPartitionFlushSize:Long = get(CONCURRENT_WRITER_PARTITION_FLUSH_SIZE)
 

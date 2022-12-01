@@ -45,4 +45,6 @@ object SparkShimImpl extends Spark31XdbShims {
   override def isCastingStringToNegDecimalScaleSupported: Boolean = false
 
   override def hasCastFloatTimestampUpcast: Boolean = true
+
+  override def reproduceEmptyStringBug: Boolean = true
 }
