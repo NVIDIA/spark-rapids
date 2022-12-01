@@ -448,12 +448,17 @@ For example:
 
 ### Monitor Alluxio live metrics based on Grafana with Prometheus
 
-#### Save Alluxio historic Prometheus format metrics
+#### Config Prometheus when creating Databricks cluster
 When creating a Databricks cluster via the Docker container for Databricks,   
-Set PROMETHEUS_COPY_DATA_PATH, for example:   
-`PROMETHEUS_COPY_DATA_PATH=/dbfs/path/to/directory`   
-![img](../img/Databricks/save-prometheus.png)
-The cluster will install Prometheus and save Prometheus-format metrics into the path specified.  
+Set Environment variable ENABLE_ALLUXIO and PROMETHEUS_COPY_DATA_PATH, for example:   
+```
+ENABLE_ALLUXIO=1
+PROMETHEUS_COPY_DATA_PATH=/dbfs/chongg/dblogs-prometheus
+``` 
+![img](../img/Databricks/save-prometheus.png)   
+The cluster will install Prometheus, configure Prometheus to collect the metrics into its own storage,    
+and also save Prometheus-format metrics into the path specified for back up purpose.    
+Note: If not set `ENABLE_ALLUXIO`, `PROMETHEUS_COPY_DATA_PATH` will not take effect.   
 For more details, refer to [spark-rapids-Databricks-container](https://github.com/NVIDIA/spark-rapids-container/tree/dev/Databricks)
 
 #### Install and start Grafana locally
@@ -481,7 +486,7 @@ It's similar to the tunnel method described in [the previous section](#Monitor A
 #### Config local Grafana to monitor the live metrics
 The main flows are:   
 1. Create a Prometheus datasource in Grafana,   
-   the default URL of Prometheus datasource is: http://localhost:39090.   
+   the URL of Prometheus datasource is: http://localhost:39090, note: the SSH tunnel port.   
    Refer to the [tutorial](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/#add-a-data-source) for help on importing a dashboard.   
    ![img](../img/Databricks/prometheus-datasource.png)   
 2. [Download](https://grafana.com/grafana/dashboards/13467) the Grafana template JSON file for Alluxio.   
@@ -518,7 +523,7 @@ The differences are:
 
 The steps are as following:   
 
-#### [Save Alluxio historic Prometheus-format metrics](#Save Alluxio historic Prometheus format metrics)
+#### [Save Alluxio historic Prometheus-format metrics](#Config Prometheus when creating Databricks cluster)
 
 #### [Install and start Grafana locally](#Install and start Grafana locally)
 
@@ -558,6 +563,3 @@ Refer to [the section](#View a specific live Alluxio metrics in Prometheus Web U
 The difference is:   
 The prometheus datasource is local instead of the remote prometheus on Databricks cluster.   
 Open Prometheus Web UI: http://localhost:9090/graph.   
-
-### Useful metrics for performance monitoring
-TODO: will add useful metrics   
