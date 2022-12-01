@@ -14,9 +14,27 @@
  * limitations under the License.
  */
 
-// spark-distros:311:312:313:314:320:321:321cdh:322:323:330:330cdh:331:332:
+// spark-distros:311:312:312db:313:314:
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import org.apache.orc.Reader
 
-trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase
+object OrcShims extends OrcShims311until320Base {
+
+  // the ORC Reader in non CDH Spark is closeable
+  def withReader[T <: AutoCloseable, V](r: T)(block: T => V): V = {
+    try {
+      block(r)
+    } finally {
+      r.safeClose()
+    }
+  }
+
+  // the ORC Reader in non CDH Spark is closeable
+  def closeReader(reader: Reader): Unit = {
+    if (reader != null) {
+      reader.close()
+    }
+  }
+}

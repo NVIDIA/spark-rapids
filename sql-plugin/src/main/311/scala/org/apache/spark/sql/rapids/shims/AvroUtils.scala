@@ -14,9 +14,20 @@
  * limitations under the License.
  */
 
-// spark-distros:311:312:313:314:320:321:321cdh:322:323:330:330cdh:331:332:
-package com.nvidia.spark.rapids.shims
+// spark-distros:311:312:312db:313:314:
 
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
+package org.apache.spark.sql.rapids.shims
 
-trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase
+import com.nvidia.spark.rapids.RapidsMeta
+
+import org.apache.spark.sql.avro.AvroOptions
+
+object AvroUtils {
+
+  def tagSupport(
+    parsedOptions: AvroOptions,
+    meta: RapidsMeta[_, _, _]): Unit = {
+
+  }
+
+}

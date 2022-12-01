@@ -14,9 +14,20 @@
  * limitations under the License.
  */
 
-// spark-distros:311:312:313:314:320:321:321cdh:322:323:330:330cdh:331:332:
+// spark-distros:311:312:312db:313:314:320:321:321cdh:321db:322:323
+
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
+import org.apache.hadoop.conf.Configuration
 
-trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase
+import org.apache.spark.sql.internal.SQLConf
+
+object ParquetFieldIdShims {
+  /** Updates the Hadoop configuration with the Parquet field ID write setting from SQLConf */
+  def setupParquetFieldIdWriteConfig(conf: Configuration, sqlConf: SQLConf): Unit = {
+    // Parquet field ID support configs are not supported until Spark 3.3
+  }
+
+  /** Parquet field ID support configs are not supported until Spark 3.3 */
+  def getParquetIdWriteEnabled(sqlConf: SQLConf): Boolean = false
+}

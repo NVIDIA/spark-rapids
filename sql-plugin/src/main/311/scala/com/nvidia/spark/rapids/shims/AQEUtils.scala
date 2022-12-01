@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,16 @@
 // spark-distros:311:312:313:314:320:321:321cdh:322:323:330:330cdh:331:332:
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
+import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.execution.adaptive.{QueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.internal.SQLConf
 
-trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase
+/** Utility methods for manipulating Catalyst classes involved in Adaptive Query Execution */
+object AQEUtils {
+  /** Return a new QueryStageExec reuse instance with updated output attributes */
+  def newReuseInstance(sqse: ShuffleQueryStageExec, newOutput: Seq[Attribute]): QueryStageExec = {
+    sqse.newReuseInstance(sqse.id, newOutput)
+  }
+
+  def isAdaptiveExecutionSupportedInSparkVersion(conf: SQLConf): Boolean = true
+}

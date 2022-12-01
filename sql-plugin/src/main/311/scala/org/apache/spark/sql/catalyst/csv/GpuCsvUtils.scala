@@ -14,9 +14,11 @@
  * limitations under the License.
  */
 
-// spark-distros:311:312:313:314:320:321:321cdh:322:323:330:330cdh:331:332:
-package com.nvidia.spark.rapids.shims
+// spark-distros:311:312:313:314:320:321:321cdh:322:323
 
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
+package org.apache.spark.sql.catalyst.csv
 
-trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase
+object GpuCsvUtils {
+  def dateFormatInRead(options: CSVOptions): String = options.dateFormat
+  def timestampFormatInRead(options: CSVOptions): String = options.timestampFormat
+}

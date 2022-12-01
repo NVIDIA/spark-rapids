@@ -14,9 +14,19 @@
  * limitations under the License.
  */
 
-// spark-distros:311:312:313:314:320:321:321cdh:322:323:330:330cdh:331:332:
-package com.nvidia.spark.rapids.shims
+// spark-distros:311:312:312db:313:314:
 
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
+package com.nvidia.spark.rapids.shims;
 
-trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase
+import org.apache.spark.sql.connector.expressions.NamedReference;
+import org.apache.spark.sql.sources.Filter;
+
+/**
+ * Shim interface for Apache Spark's SupportsRuntimeFiltering interface
+ * which was added in Spark 3.2.0.
+ */
+public interface ShimSupportsRuntimeFiltering {
+  NamedReference[] filterAttributes();
+
+  void filter(Filter[] filters);
+}

@@ -14,9 +14,12 @@
  * limitations under the License.
  */
 
-// spark-distros:311:312:313:314:320:321:321cdh:322:323:330:330cdh:331:332:
+// spark-distros:311:312:312db:313:314:
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
-
-trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase
+object GpuParquetCrypto {
+  /**
+   * Columnar encryption was added in Spark 3.2.0
+   */
+  def isColumnarCryptoException(e: Throwable): Boolean = false
+}

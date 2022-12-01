@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,17 @@
  * limitations under the License.
  */
 
-// spark-distros:311:312:313:314:320:321:321cdh:322:323:330:330cdh:331:332:
-package com.nvidia.spark.rapids.shims
+// spark-distros:311:312:312db:313:314:
 
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
+// spark-releases:311:313:314:
+package org.apache.spark.sql.rapids.execution
 
-trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase
+import org.apache.spark.sql.types.{DataType, StructType}
+
+object ShimTrampolineUtil {
+
+  // unionLikeMerge was only added in Spark 3.2 so be bug compatible and call merge
+  // https://issues.apache.org/jira/browse/SPARK-36673
+  def unionLikeMerge(left: DataType, right: DataType): DataType =
+    StructType.merge(left, right)
+}

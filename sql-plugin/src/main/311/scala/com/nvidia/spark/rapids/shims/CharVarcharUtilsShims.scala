@@ -14,9 +14,16 @@
  * limitations under the License.
  */
 
-// spark-distros:311:312:313:314:320:321:321cdh:322:323:330:330cdh:331:332:
+// spark-distros:311:312:312db:313:314:320:321:321cdh:321db:322:323
+
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
+import org.apache.spark.sql.catalyst.util.CharVarcharUtils
+import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.types.StructType
 
-trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase
+object CharVarcharUtilsShims {
+  def getRawSchema(schema: StructType, conf: SQLConf): StructType = {
+    CharVarcharUtils.getRawSchema(schema)
+  }
+}

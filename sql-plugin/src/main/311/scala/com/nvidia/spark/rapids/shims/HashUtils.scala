@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,18 @@
  * limitations under the License.
  */
 
-// spark-distros:311:312:313:314:320:321:321cdh:322:323:330:330cdh:331:332:
+// spark-distros:311:312:312db:313:314:
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
+import ai.rapids.cudf
+import com.nvidia.spark.rapids.Arm
 
-trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase
+object HashUtils extends Arm {
+  /**
+   * In Spark 3.2.0+ -0.0 is normalized to 0.0, but for everyone else this is a noop
+   * @param in the input to normalize
+   * @return the result
+   */
+  def normalizeInput(in: cudf.ColumnVector): cudf.ColumnVector =
+    in.incRefCount()
+}

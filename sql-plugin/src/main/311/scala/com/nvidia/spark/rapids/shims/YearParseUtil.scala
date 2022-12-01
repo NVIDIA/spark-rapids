@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,13 @@
  * limitations under the License.
  */
 
-// spark-distros:311:312:313:314:320:321:321cdh:322:323:330:330cdh:331:332:
+// spark-distros:311:312:312db:313:314:
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
+import com.nvidia.spark.rapids.{RapidsConf, RapidsMeta}
 
-trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase
+object YearParseUtil {
+  def tagParseStringAsDate(conf: RapidsConf, meta: RapidsMeta[_, _, _]): Unit = {
+    // NOOP for anything prior to 3.2.0
+  }
+}

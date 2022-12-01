@@ -14,9 +14,19 @@
  * limitations under the License.
  */
 
-// spark-distros:311:312:313:314:320:321:321cdh:322:323:330:330cdh:331:332:
+// spark-distros:311:312:312db:313:314:
+
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
+import ai.rapids.cudf.{ColumnView, DType}
+import com.nvidia.spark.rapids.GpuOrcScan
 
-trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase
+
+object OrcCastingShims {
+
+  def castIntegerToTimestamp(col: ColumnView, colType: DType): ColumnView = {
+    // For 311 <= spark < 320 (including 311, 312, 313, 314), they consider the integer as
+    // milliseconds.
+    GpuOrcScan.castIntegersToTimestamp(col, colType, DType.TIMESTAMP_MILLISECONDS)
+  }
+}
