@@ -15,6 +15,9 @@ This document details the Apache Iceberg features that are supported.
 The RAPIDS Accelerator supports Apache Iceberg 0.13.x. Earlier versions of Apache Iceberg are
 not supported.
 
+> **Note!**
+> Apache Iceberg in Databricks is not supported by the RAPIDS Accelerator.
+
 ## Reading Tables
 
 ### Metadata Queries
