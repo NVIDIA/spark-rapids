@@ -88,17 +88,13 @@ native_coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.rea
 native_coalesce_parquet_file_reader_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE',
         'spark.rapids.sql.reader.chunked': True}
-noorder_multithreaded_parquet_file_reader_conf = pytest.param(
-        {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
+noorder_multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
         'spark.rapids.sql.format.parquet.multithreaded.combine.threshold': '0',
-        'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': 'false'},
-        marks=ignore_order(local=True))
+        'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': 'false'}
 # TODO - make sure combine mode actually exercised
-combining_multithreaded_parquet_file_reader_conf = pytest.param(
-        {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
+combining_multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
          'spark.rapids.sql.format.parquet.multithreaded.combine.threshold': '67108864',
-         'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': 'false'},
-        marks=ignore_order(local=True))
+         'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': 'false'}
 
 
 # For now the native configs are not compatible with spark.sql.parquet.writeLegacyFormat written files

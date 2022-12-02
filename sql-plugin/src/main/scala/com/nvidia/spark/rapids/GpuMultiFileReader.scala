@@ -364,7 +364,10 @@ case class PartitionedFileInfoOptAlluxio(toRead: PartitionedFile, original: Opti
  * @param combineThresholdSize       The size to combine to when combining small files
  * @param combineWaitTime            The amount of time to wait for other files to be ready to see if we
  *                                   can combine them before sending them to the GPU
- * @param queryUsesInputFile         Whether the query requires the input file name
+ * @param queryUsesInputFile         Whether the query requires the input file name, only applies when combine
+ *                                   is being used.
+ * @param keepReadsInOrder           Whether to require the files to be read in the same order as Spark. Defaults
+ *                                   to true for formats that don't explicitly handle this.
  */
 abstract class MultiFileCloudPartitionReaderBase(
     conf: Configuration,
@@ -379,7 +382,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     combineThresholdSize: Long = -1,
     combineWaitTime: Int = -1,
     queryUsesInputFile: Boolean = false,
-    keepReadsInOrder: Boolean = false)
+    keepReadsInOrder: Boolean = true)
   extends FilePartitionReaderBase(conf, execMetrics) {
 
   private var filesToRead = 0
@@ -424,6 +427,8 @@ abstract class MultiFileCloudPartitionReaderBase(
     val limit = math.min(maxNumFileProcessed, files.length)
     val tc = TaskContext.get
     if (!keepReadsInOrder) {
+      // TODO - change to debug
+      logWarning("Not keeping reads in order")
       synchronized {
         if (fcs == null) {
           val threadPool =
@@ -599,18 +604,20 @@ abstract class MultiFileCloudPartitionReaderBase(
               }
               if (hmbFuture == null) {
                 if (combineWaitTime > 0) {
-                  val startTime = System.currentTimeMillis()
-                  val waitFuture = if (keepReadsInOrder) {
-                    // TODO - need to handle wait here better
-                    Thread.sleep(combineWaitTime)
-                    tasks.poll()
+                  val hmbAndMeta = if (keepReadsInOrder) {
+                    tasks.poll().get(combineWaitTime, TimeUnit.MILLISECONDS)
                   } else {
-                    fcs.poll(combineWaitTime, TimeUnit.MILLISECONDS)
+                    val fut = fcs.poll(combineWaitTime, TimeUnit.MILLISECONDS)
+                    if (fut == null) {
+                      null
+                    } else {
+                      fut.get()
+                    }
                   }
                   // logWarning(s"Waited ${System.currentTimeMillis() - startTime}ms")
-                  if (waitFuture != null) {
-                    results.append(waitFuture.get())
-                    currSize += waitFuture.get().memBuffersAndSizes.map(_.bytes).sum
+                  if (hmbAndMeta != null) {
+                    results.append(hmbAndMeta)
+                    currSize += hmbAndMeta.memBuffersAndSizes.map(_.bytes).sum
                     /* if (currSize > combineThresholdSize) {
                        logWarning(s"current size is now $currSize for ${results.size} left " +
                          s"is $filesToRead task ${TaskContext.get().taskAttemptId()}")
@@ -638,20 +645,19 @@ abstract class MultiFileCloudPartitionReaderBase(
           }
 
           if (canUseCombine) {
-            logWarning("USING COMbine")
+            logWarning("USING COMBINE")
             var sizeRead = 0L
             readReadyFiles(0)
             if (results.isEmpty) {
               // none were ready yet so wait as long as need for first one
-              val hostBuffersWithMetaFut = if (keepReadsInOrder) {
-                tasks.poll()
+              val hostBuffersWithMeta = if (keepReadsInOrder) {
+                tasks.poll().get()
               } else {
                 val bufMetaFut = fcs.take()
                 tasks.remove(bufMetaFut)
-                bufMetaFut
+                bufMetaFut.get()
               }
               logWarning(s"tasks size is now ${tasks.size}")
-              val hostBuffersWithMeta = hostBuffersWithMetaFut.get()
               sizeRead += hostBuffersWithMeta.memBuffersAndSizes.map(_.bytes).sum
               filesToRead -= 1
               results.append(hostBuffersWithMeta)
@@ -659,15 +665,14 @@ abstract class MultiFileCloudPartitionReaderBase(
               readReadyFiles(sizeRead)
             }
           } else {
-            val hostBuffersWithMetaFut = if (keepReadsInOrder) {
-              tasks.poll()
+            val hostBuffersWithMeta = if (keepReadsInOrder) {
+              tasks.poll().get()
             } else {
               val bufMetaFut = fcs.take()
               tasks.remove(bufMetaFut)
-              bufMetaFut
+              bufMetaFut.get()
             }
             logWarning(s"tasks size is now ${tasks.size}")
-            val hostBuffersWithMeta = hostBuffersWithMetaFut.get()
             filesToRead -= 1
             results.append(hostBuffersWithMeta)
           }
@@ -782,23 +787,22 @@ abstract class MultiFileCloudPartitionReaderBase(
     batchIter = EmptyGpuColumnarBatchIterator
 
     // TODO clean up with completion service? - test this
-    /*
-    tasks.asScala.foreach { task =>
-      if (task.isDone()) {
-        task.get.memBuffersAndSizes.foreach { hmbInfo =>
-          if (hmbInfo.hmb != null) {
-            hmbInfo.hmb.close()
+    if (keepReadsInOrder) {
+      tasks.asScala.foreach { task =>
+        if (task.isDone()) {
+          task.get.memBuffersAndSizes.foreach { hmbInfo =>
+            if (hmbInfo.hmb != null) {
+              hmbInfo.hmb.close()
+            }
           }
+        } else {
+          // Note we are not interrupting thread here so it
+          // will finish reading and then just discard. If we
+          // interrupt HDFS logs warnings about being interrupted.
+          task.cancel(false)
         }
-      } else {
-        // Note we are not interrupting thread here so it
-        // will finish reading and then just discard. If we
-        // interrupt HDFS logs warnings about being interrupted.
-        task.cancel(false)
       }
     }
-
-     */
   }
 }
 

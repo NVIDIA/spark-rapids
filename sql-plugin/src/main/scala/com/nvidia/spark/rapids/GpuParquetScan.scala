@@ -105,7 +105,9 @@ case class GpuParquetScan(
     partitionFilters: Seq[Expression],
     dataFilters: Seq[Expression],
     rapidsConf: RapidsConf,
-    queryUsesInputFile: Boolean = false)
+    queryUsesInputFile: Boolean = false,
+    keepReadsInOrder: Boolean = false
+)
   extends ScanWithMetrics with FileScan with Logging {
 
   override def isSplitable(path: Path): Boolean = true
@@ -122,7 +124,7 @@ case class GpuParquetScan(
     } else {
       GpuParquetMultiFilePartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics,
-        queryUsesInputFile, None)
+        queryUsesInputFile, None, keepReadsInOrder)
     }
   }
 
@@ -130,7 +132,7 @@ case class GpuParquetScan(
     case p: GpuParquetScan =>
       super.equals(p) && dataSchema == p.dataSchema && options == p.options &&
           equivalentFilters(pushedFilters, p.pushedFilters) && rapidsConf == p.rapidsConf &&
-          queryUsesInputFile == p.queryUsesInputFile
+          queryUsesInputFile == p.queryUsesInputFile && keepReadsInOrder == p.keepReadsInOrder
     case _ => false
   }
 
@@ -937,7 +939,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     @transient rapidsConf: RapidsConf,
     metrics: Map[String, GpuMetric],
     queryUsesInputFile: Boolean,
-    alluxioPathReplacementMap: Option[Map[String, String]])
+    alluxioPathReplacementMap: Option[Map[String, String]],
+    keepReadsInOrder: Boolean)
   extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf,
     rapidsConf, alluxioPathReplacementMap) {
 
@@ -955,7 +958,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   private val numFilesFilterParallel = rapidsConf.numFilesFilterParallel
   private val combineThresholdSize = rapidsConf.getParquetMultithreadedCombineThreshold
   private val combineWaitTime = rapidsConf.getParquetMultithreadedCombineWaitTime
-  private val keepReadsInOrder = rapidsConf.getParquetMultithreadedReaderKeepOrder
+  private val keepReadsInOrderFromConf = rapidsConf.getParquetMultithreadedReaderKeepOrder
   logWarning(s"combine wait time is $combineWaitTime and threadhold size is $combineThresholdSize")
   private val alluxioReplacementTaskTime =
     AlluxioCfgUtils.enabledAlluxioReplacementAlgoTaskTime(rapidsConf)
@@ -989,7 +992,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       useChunkedReader, metrics, partitionSchema, numThreads, maxNumFileProcessed,
       ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId,
       alluxioPathReplacementMap.getOrElse(Map.empty), alluxioReplacementTaskTime,
-      combineThresholdSize, combineWaitTime, queryUsesInputFile, keepReadsInOrder)
+      combineThresholdSize, combineWaitTime, queryUsesInputFile,
+      keepReadsInOrder || keepReadsInOrderFromConf)
   }
 
   private def filterBlocksForCoalescingReader(

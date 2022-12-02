@@ -326,40 +326,66 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     plan.expressions.exists(disableScanUntilInput)
   }
 
+  private def containsShuffle(plan: SparkPlan): Boolean = {
+    plan match {
+      case _: GpuShuffleExchangeExecBase =>
+        logWarning(s"plan contains shuffle $plan")
+        true
+      case p =>
+        val childRes = p.children.map(c => containsShuffle(c)).exists(_ == true)
+        childRes || false
+    }
+  }
+
   // This walks from the output to the input to look for any uses of InputFileName,
   // InputFileBlockStart, or InputFileBlockLength when we use a Parquet read because
   // we can't support the coalesce file reader optimization when this is used.
-  private def updateScansForInput(plan: SparkPlan,
-      disableUntilInput: Boolean = false): SparkPlan = plan match {
-    case batchScan: GpuBatchScanExec =>
-      if ((batchScan.scan.isInstanceOf[GpuParquetScan] ||
-           batchScan.scan.isInstanceOf[GpuOrcScan] ||
-           ExternalSource.isSupportedScan(batchScan.scan)) &&
+  // This will also update the Parquet reads to make sure it keeps the same file
+  // order as Spark if we detect it's needed.
+  private def updateScansForInputAndOrder(plan: SparkPlan,
+      disableUntilInput: Boolean = false, keepReadsInOrder: Boolean): SparkPlan = {
+    plan match {
+      case batchScan: GpuBatchScanExec =>
+        if ((batchScan.scan.isInstanceOf[GpuParquetScan] ||
+          batchScan.scan.isInstanceOf[GpuOrcScan] ||
+          ExternalSource.isSupportedScan(batchScan.scan)) &&
           (disableUntilInput || disableScanUntilInput(batchScan))) {
-        val scanCopy = batchScan.scan match {
-          case parquetScan: GpuParquetScan =>
-            parquetScan.copy(queryUsesInputFile=true)
-          case orcScan: GpuOrcScan =>
-            orcScan.copy(queryUsesInputFile=true)
-          case eScan if ExternalSource.isSupportedScan(eScan) =>
-            ExternalSource.copyScanWithInputFileTrue(eScan)
-          case _ => throw new RuntimeException("Wrong format") // never reach here
+          val scanCopy = batchScan.scan match {
+            case parquetScan: GpuParquetScan =>
+              parquetScan.copy(queryUsesInputFile = true, keepReadsInOrder = keepReadsInOrder)
+            case orcScan: GpuOrcScan =>
+              orcScan.copy(queryUsesInputFile = true)
+            case eScan if ExternalSource.isSupportedScan(eScan) =>
+              ExternalSource.copyScanWithInputFileTrue(eScan)
+            case _ => throw new RuntimeException("Wrong format") // never reach here
+          }
+          batchScan.copy(scan = scanCopy)
+        } else if (batchScan.scan.isInstanceOf[GpuParquetScan] && keepReadsInOrder) {
+          batchScan.scan match {
+            case parquetScan: GpuParquetScan =>
+              val pCopy = parquetScan.copy(keepReadsInOrder = keepReadsInOrder)
+              batchScan.copy(scan = pCopy)
+            case _ => batchScan
+          }
+        } else {
+          batchScan
         }
-        batchScan.copy(scan=scanCopy)
-      } else {
-        batchScan
-      }
-    case fileSourceScan: GpuFileSourceScanExec =>
-      if ((disableUntilInput || disableScanUntilInput(fileSourceScan))) {
-        fileSourceScan.copy(queryUsesInputFile=true)(fileSourceScan.rapidsConf)
-      } else {
-        fileSourceScan
-      }
-    case p =>
-      val planDisableUntilInput = disableScanUntilInput(p) && hasDirectLineToInput(p)
-      p.withNewChildren(p.children.map(c => {
-        updateScansForInput(c, planDisableUntilInput || disableUntilInput)
-      }))
+      case fileSourceScan: GpuFileSourceScanExec =>
+        if ((disableUntilInput || disableScanUntilInput(fileSourceScan))) {
+          fileSourceScan.copy(queryUsesInputFile = true,
+            keepReadsInOrder = keepReadsInOrder)(fileSourceScan.rapidsConf)
+        } else if (keepReadsInOrder) {
+          fileSourceScan.copy(keepReadsInOrder = keepReadsInOrder)(fileSourceScan.rapidsConf)
+        } else {
+          fileSourceScan
+        }
+      case p =>
+        val planDisableUntilInput = disableScanUntilInput(p) && hasDirectLineToInput(p)
+        p.withNewChildren(p.children.map(c => {
+          updateScansForInputAndOrder(c, planDisableUntilInput || disableUntilInput,
+            keepReadsInOrder)
+        }))
+    }
   }
 
   // This walks from the output to the input so disableUntilInput can walk its way from when
@@ -385,6 +411,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         (disableCoalesceUntilInput(p) && hasDirectLineToInput(p))
       p.withNewChildren(p.children.map(c => insertCoalesce(c, shouldDisable)))
   }
+
 
   /**
    * Inserts a shuffle coalesce after every shuffle to coalesce the serialized tables
@@ -562,7 +589,12 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       GpuOverrides.logDuration(rapidsConf.shouldExplain,
         t => f"GPU plan transition optimization took $t%.2f ms") {
         var updatedPlan = insertHashOptimizeSorts(plan)
-        updatedPlan = updateScansForInput(updatedPlan)
+        // if the plan doesn't contain a shuffle make sure if we use the multithreaded reader
+        // we use the same order of files as Spark does so it would come out sorted if files
+        // stored sorted
+        val keepReadsInOrder = !containsShuffle(plan)
+        updatedPlan = updateScansForInputAndOrder(updatedPlan,
+          disableUntilInput=false, keepReadsInOrder)
         updatedPlan = insertColumnarFromGpu(updatedPlan)
         updatedPlan = insertCoalesce(updatedPlan)
         // only insert shuffle coalesces when using normal shuffle
