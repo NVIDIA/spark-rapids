@@ -39,7 +39,7 @@
 < // BaseAggregateExec class in Spark 2.x
 ---
 > object AggregateUtils {
-31,32c50,851
+31,32c50,830
 < class GpuHashAggregateMeta(
 <     val agg: HashAggregateExec,
 ---
@@ -278,17 +278,18 @@
 >   private def aggregateInputBatches(): Unit = {
 >     val aggHelper = new AggHelper(forceMerge = false, useTieredProject = useTieredProject)
 >     while (cbIter.hasNext) {
->       withResource(cbIter.next()) { childBatch =>
->         val isLastInputBatch = GpuColumnVector.isTaggedAsFinalBatch(childBatch)
->         withResource(computeAggregate(childBatch, aggHelper)) { aggBatch =>
->           val batch = LazySpillableColumnarBatch(aggBatch, metrics.spillCallback, "aggbatch")
->           // Avoid making batch spillable for the common case of the last and only batch
->           if (!(isLastInputBatch && aggregatedBatches.isEmpty)) {
->             batch.allowSpilling()
->           }
->           aggregatedBatches.add(batch)
+>       val childBatch = cbIter.next()
+>       val isLastInputBatch = GpuColumnVector.isTaggedAsFinalBatch(childBatch)
+> 
+>       val spillableBatch =
+>         withResource(computeAggregateAndClose(childBatch, aggHelper)) { aggBatch =>
+>           LazySpillableColumnarBatch(aggBatch, metrics.spillCallback, "aggbatch")
 >         }
+>       // Avoid making batch spillable for the common case of the last and only batch
+>       if (!(isLastInputBatch && aggregatedBatches.isEmpty)) {
+>         spillableBatch.allowSpilling()
 >       }
+>       aggregatedBatches.add(spillableBatch)
 >     }
 >   }
 > 
@@ -392,12 +393,11 @@
 >    */
 >   private def concatenateAndMerge(
 >       batches: mutable.ArrayBuffer[LazySpillableColumnarBatch]): LazySpillableColumnarBatch = {
->     withResource(batches) { _ =>
->       withResource(concatenateBatches(batches)) { concatBatch =>
->         withResource(computeAggregate(concatBatch, concatAndMergeHelper)) { mergedBatch =>
->           LazySpillableColumnarBatch(mergedBatch, metrics.spillCallback, "agg merged batch")
->         }
->       }
+>     val concatBatch = withResource(batches) { _ =>
+>       concatenateBatches(batches)
+>     }
+>     withResource(computeAggregateAndClose(concatBatch, concatAndMergeHelper)) { mergedBatch =>
+>       LazySpillableColumnarBatch(mergedBatch, metrics.spillCallback, "agg merged batch")
 >     }
 >   }
 > 
@@ -469,9 +469,7 @@
 > 
 >       override def next(): ColumnarBatch = {
 >         // batches coming out of the sort need to be merged
->         withResource(keyBatchingIter.next()) { batch =>
->           computeAggregate(batch, mergeSortedHelper)
->         }
+>         computeAggregateAndClose(keyBatchingIter.next(), mergeSortedHelper)
 >       }
 >     }
 >   }
@@ -508,40 +506,17 @@
 >     val opTime = metrics.opTime
 >     withResource(new NvtxWithMetrics("finalize agg", NvtxColor.DARK_GREEN, aggTime,
 >       opTime)) { _ =>
->       val finalBatch = if (boundExpressions.boundFinalProjections.isDefined) {
->         withResource(batch) { _ =>
->           val finalCvs = boundExpressions.boundFinalProjections.get.map { ref =>
->             // aggregatedCb is made up of ColumnVectors
->             // and the final projections from the aggregates won't change that,
->             // so we can assume they will be vectors after we eval
->             ref.columnarEval(batch).asInstanceOf[GpuColumnVector]
->           }
->           new ColumnarBatch(finalCvs.toArray, finalCvs.head.getRowCount.toInt)
->         }
->       } else {
->         batch
->       }
-> 
->       // If `resultCvs` empty, it means we don't have any `resultExpressions` for this
->       // aggregate. In these cases, the row count is the only important piece of information
->       // that this aggregate exec needs to report up, so it will return batches that have no columns
->       // but that do have a row count. If `resultCvs` is non-empty, the row counts match
->       // `finalBatch.numRows` since `columnarEvalToColumn` cannot change the number of rows.
->       val finalNumRows = finalBatch.numRows()
+>       val finalBatch = boundExpressions.boundFinalProjections.map { exprs =>
+>         GpuProjectExec.projectAndClose(batch, exprs, NoopMetric)
+>       }.getOrElse(batch)
 > 
 >       // Perform the last project to get the correct shape that Spark expects. Note this may
 >       // add things like literals that were not part of the aggregate into the batch.
->       val resultCvs = withResource(finalBatch) { _ =>
->         boundExpressions.boundResultReferences.safeMap { ref =>
->           // Result references can be virtually anything, we need to coerce
->           // them to be vectors since this is going into a ColumnarBatch
->           GpuExpressionsUtils.columnarEvalToColumn(ref, finalBatch)
->         }
->       }
->       closeOnExcept(resultCvs) { _ =>
->         metrics.numOutputRows += finalNumRows
+>       closeOnExcept(GpuProjectExec.projectAndClose(finalBatch,
+>         boundExpressions.boundResultReferences, NoopMetric)) { ret =>
+>         metrics.numOutputRows += ret.numRows()
 >         metrics.numOutputBatches += 1
->         new ColumnarBatch(resultCvs.toArray, finalNumRows)
+>         ret
 >       }
 >     }
 >   }
@@ -785,38 +760,42 @@
 >      */
 >     def postProcess(resultBatch: ColumnarBatch): ColumnarBatch = {
 >       withResource(new NvtxRange("post-process", NvtxColor.ORANGE)) { _ =>
->         withResource(resultBatch) { _ =>
->           GpuProjectExec.project(resultBatch, postStepBound)
->         }
+>         GpuProjectExec.project(resultBatch, postStepBound)
 >       }
 >     }
 >   }
 > 
 >   /**
->    * Compute the aggregations on the projected input columns.
+>    * Compute the aggregations on the projected input columns, and close input batch.
 >    * @param toAggregateBatch input batch to aggregate
->    * @param helper an internal object that carries state required to execute computeAggregate from
+>    * @param helper an internal object that carries state required to execute the aggregate from
 >    *               different parts of the codebase.
 >    * @return aggregated batch
 >    */
->   private def computeAggregate(
->       toAggregateBatch: ColumnarBatch, helper: AggHelper): ColumnarBatch  = {
+>   private def computeAggregateAndClose(
+>       toAggregateBatch: ColumnarBatch, helper: AggHelper): ColumnarBatch = {
 >     val computeAggTime = metrics.computeAggTime
 >     val opTime = metrics.opTime
 >     withResource(new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime,
 >       opTime)) { _ =>
 >       // a pre-processing step required before we go into the cuDF aggregate, in some cases
 >       // casting and in others creating a struct (MERGE_M2 for instance, requires a struct)
->       withResource(helper.preProcess(toAggregateBatch)) { preProcessed =>
->         val resultBatch = if (groupingExpressions.nonEmpty) {
+>       val preProcessed = withResource(toAggregateBatch) { _ =>
+>         helper.preProcess(toAggregateBatch)
+>       }
+> 
+>       val aggregated = withResource(preProcessed) { _ =>
+>         if (groupingExpressions.nonEmpty) {
 >           helper.performGroupByAggregation(preProcessed)
 >         } else {
 >           helper.performReduction(preProcessed)
 >         }
+>       }
 > 
->         // a post-processing step required in some scenarios, casting or picking
->         // apart a struct
->         helper.postProcess(resultBatch)
+>       // a post-processing step required in some scenarios, casting or picking
+>       // apart a struct
+>       withResource(aggregated) { _ =>
+>         helper.postProcess(aggregated)
 >       }
 >     }
 >   }
@@ -845,7 +824,7 @@
 > abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
 >     plan: INPUT,
 >     aggRequiredChildDistributionExpressions: Option[Seq[Expression]],
-34,36c853,856
+34,36c832,835
 <     parent: Option[RapidsMeta[_, _]],
 <     rule: DataFromReplacementRule)
 <   extends SparkPlanMeta[HashAggregateExec](agg, conf, parent, rule) {
@@ -854,7 +833,7 @@
 >     rule: DataFromReplacementRule) extends SparkPlanMeta[INPUT](plan, conf, parent, rule) {
 > 
 >   val agg: BaseAggregateExec
-60a881,893
+60a860,872
 > 
 >     if (agg.aggregateExpressions.exists(expr => expr.isDistinct)
 >         && agg.aggregateExpressions.exists(expr => expr.filter.isDefined)) {
@@ -868,7 +847,7 @@
 >     if (AggregationTagging.mustReplaceBoth) {
 >       tagForMixedReplacement()
 >     }
-124a958,997
+124a937,976
 > 
 >   /** Prevent mixing of CPU and GPU aggregations */
 >   private def tagForMixedReplacement(): Unit = {
@@ -909,7 +888,7 @@
 >       conf.gpuTargetBatchSizeBytes,
 >       conf.isTieredProjectEnabled)
 >   }
-127,128c1000,1006
+127,128c979,985
 < class GpuSortAggregateExecMeta(
 <     val agg: SortAggregateExec,
 ---
@@ -920,7 +899,7 @@
 > abstract class GpuTypedImperativeSupportedAggregateExecMeta[INPUT <: BaseAggregateExec](
 >     plan: INPUT,
 >     aggRequiredChildDistributionExpressions: Option[Seq[Expression]],
-130,132c1008,1016
+130,132c987,995
 <     parent: Option[RapidsMeta[_, _]],
 <     rule: DataFromReplacementRule)
 <   extends SparkPlanMeta[SortAggregateExec](agg, conf, parent, rule) {
@@ -934,7 +913,7 @@
 >       expr.aggregateFunction.isInstanceOf[TypedImperativeAggregate[_]] &&
 >           (expr.mode == Partial || expr.mode == PartialMerge)
 >     }
-134,141c1018,1019
+134,141c997,998
 <   val groupingExpressions: Seq[BaseExprMeta[_]] =
 <     agg.groupingExpressions.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
 <   val aggregateExpressions: Seq[BaseExprMeta[_]] =
@@ -946,7 +925,7 @@
 ---
 >   // overriding data types of Aggregation Buffers if necessary
 >   if (mayNeedAggBufferConversion) overrideAggBufTypes()
-143,144c1021,1032
+143,144c1000,1011
 <   override val childExprs: Seq[BaseExprMeta[_]] =
 <     groupingExpressions ++ aggregateExpressions ++ aggregateAttributes ++ resultExpressions
 ---
@@ -962,7 +941,7 @@
 >       case aggMeta: TypedImperativeAggExprMeta[_] => aggMeta.supportBufferConversion
 >       case _ => true
 >     }
-147,153c1035,1080
+147,153c1014,1059
 <     // We don't support Arrays and Maps as GroupBy keys yet, even they are nested in Structs. So,
 <     // we need to run recursive type check on the structs.
 <     val arrayOrMapGroupings = agg.groupingExpressions.exists(e =>
@@ -1017,9 +996,9 @@
 >         conf.isTieredProjectEnabled)
 >     } else {
 >       super.convertToGpu()
-154a1082
+154a1061
 >   }
-156c1084,1330
+156c1063,1309
 <     tagForReplaceMode()
 ---
 >   /**
@@ -1269,7 +1248,7 @@
 >       agg.requiredChildDistributionExpressions, conf, parent, rule) {
 >   override def tagPlanForGpu(): Unit = {
 >     super.tagPlanForGpu()
-194,256d1367
+194,256d1346
 < 
 <   /**
 <    * Tagging checks tied to configs that control the aggregation modes that are replaced.
@@ -1333,15 +1312,15 @@
 <           s"Set ${conf.partialMergeDistinctEnabled} to true if desired")
 <     }
 <   }
-259,261d1369
+259,261d1348
 < // SPARK 2.x we can't check for the TypedImperativeAggregate properly so don't say we do the
 < // ObjectHashAggregate
 < /*
-265c1373
+265c1352
 <     parent: Option[RapidsMeta[_, _]],
 ---
 >     parent: Option[RapidsMeta[_, _, _]],
-270c1378,1585
+270c1357,1564
 < */
 ---
 > /**

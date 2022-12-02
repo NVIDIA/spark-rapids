@@ -38,7 +38,7 @@
 #     the diff file in the spark2diffs directory.
 #
 
-set -e
+set -ex
 
 echo "Done running Diffs of spark2 files"
 
@@ -195,6 +195,12 @@ diff -c spark2diffs/DataTypeUtils.diff $tmp_dir/DataTypeUtils.newdiff
 
 diff  ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOverrides.scala  ../sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOverrides.scala > $tmp_dir/GpuOverrides.newdiff || true
 diff -c spark2diffs/GpuOverrides.diff $tmp_dir/GpuOverrides.newdiff
+
+diff ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/DecimalArithmeticOverrides.scala ../sql-plugin/src/main/311until340-all/scala/com/nvidia/spark/rapids/shims/DecimalArithmeticOverrides.scala > $tmp_dir/DecimalArithmeticOverrides.newdiff || true
+diff -c spark2diffs/DecimalArithmeticOverrides.diff $tmp_dir/DecimalArithmeticOverrides.newdiff
+
+diff ../spark2-sql-plugin/src/main/scala/com/nvidia/spark/rapids/shims/GetMapValueMeta.scala ../sql-plugin/src/main/311until340-all/scala/com/nvidia/spark/rapids/shims/GetMapValueMeta.scala > $tmp_dir/GetMapValueMeta.newdiff || true
+diff -c spark2diffs/GetMapValueMeta.diff $tmp_dir/GetMapValueMeta.newdiff
 
 sed -n  '/class InMemoryTableScanMeta/,/^}/{/^}/!p}' ../spark2-sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuInMemoryTableScanExec.scala > $tmp_dir/InMemoryTableScan_new.out
 sed -n  '/class InMemoryTableScanMeta/,/\/\*\*/{/\/\*\*/!p}'  ../sql-plugin/src/main/scala/org/apache/spark/sql/rapids/GpuInMemoryTableScanExec.scala > $tmp_dir/InMemoryTableScan_old.out

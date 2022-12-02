@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.DataWritingCommand
 
 /**
@@ -29,4 +30,9 @@ trait HiveProvider {
       DataWritingCommandRule[_ <: DataWritingCommand]]
 
   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
+
+  /**
+   * Getter for Execs that are specific to Hive.
+   */
+  def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]]
 }

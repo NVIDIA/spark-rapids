@@ -38,7 +38,7 @@ class GpuRLikeMeta(
         case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
           try {
             // verify that we support this regex and can transpile it to cuDF format
-            val (transpiledAST, _) = 
+            val (transpiledAST, _) =
                 new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(str.toString, None)
             GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
             pattern = Some(transpiledAST.toRegexString)
@@ -79,8 +79,8 @@ class GpuRegExpExtractMeta(
         try {
           val javaRegexpPattern = str.toString
           // verify that we support this regex and can transpile it to cuDF format
-          val (transpiledAST, _) = 
-            new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(javaRegexpPattern, None) 
+          val (transpiledAST, _) =
+            new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(javaRegexpPattern, None)
           GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
           pattern = Some(transpiledAST.toRegexString)
           numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
