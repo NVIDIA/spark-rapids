@@ -104,7 +104,7 @@ case class GpuMapConcat(children: Seq[Expression]) extends GpuComplexTypeMerging
 }
 
 object GpuElementAtMeta {
-  def elementAtRule(NullOnInvalidAccessToMap: Boolean): ExprRule[_ <: Expression] = {
+  def elementAtRule(nullOnInvalidAccessToMap: Boolean): ExprRule[_ <: Expression] = {
     GpuOverrides.expr[ElementAt](
       "Returns element of array at given(1-based) index in value if column is array. " +
         "Returns value for the given key in value if column is map.",
@@ -154,7 +154,7 @@ object GpuElementAtMeta {
           checks.tag(this)
         }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          val failOnError = if (NullOnInvalidAccessToMap) {
+          val failOnError = if (nullOnInvalidAccessToMap) {
             in.failOnError && lhs.dataType.isInstanceOf[ArrayType]
           } else {
             in.failOnError

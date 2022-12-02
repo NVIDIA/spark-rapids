@@ -431,7 +431,7 @@ def test_element_at_map_string_col_keys_ansi_fail(data_gen):
         error_message=message)
 
 @pytest.mark.skipif(is_before_spark_340(),
-                    reason="Only in Spark 3.4 + ANSI mode, map key returns null on no such element")
+                    reason="Only in Spark 3.4 + with ANSI mode, map key returns null on no such element")
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 def test_element_at_map_string_col_keys_ansi_null(data_gen):
     keys = StringGen(pattern='NOT_FOUND')
