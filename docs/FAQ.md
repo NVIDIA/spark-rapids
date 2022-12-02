@@ -262,10 +262,7 @@ efficient to stay on the CPU instead of going back and forth.
 
 ### Is Dynamic Partition Pruning (DPP) Supported?
 
-Yes, DPP still works.  It might not be as efficient as it could be, and we are working to improve it.
-
-DPP is not supported on Databricks with the plugin.
-Queries on Databricks will not fail but it can not benefit from DPP.
+Yes, DPP works.  
 
 ### Is Adaptive Query Execution (AQE) Supported?
 
