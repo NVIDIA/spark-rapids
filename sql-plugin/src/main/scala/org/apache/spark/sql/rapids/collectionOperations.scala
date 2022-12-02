@@ -161,7 +161,7 @@ object GpuElementAtMeta {
           }
           GpuElementAt(lhs, rhs, failOnError)
         }
-      }),
+      })
   }
 }
 

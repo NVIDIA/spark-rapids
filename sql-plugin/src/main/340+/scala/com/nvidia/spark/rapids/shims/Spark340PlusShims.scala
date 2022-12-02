@@ -78,7 +78,7 @@ trait Spark340PlusShims extends Spark331PlusShims {
           override def convertToGpu(child: Expression): GpuExpression = GpuEmpty2Null(child)
         }
       ),
-      GpuElementAtMeta.elementAtRule(true),
+      GpuElementAtMeta.elementAtRule(true)
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ shimExprs
   }
