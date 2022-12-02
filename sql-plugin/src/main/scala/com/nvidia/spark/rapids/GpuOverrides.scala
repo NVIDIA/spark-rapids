@@ -2073,11 +2073,13 @@ object GpuOverrides extends Logging {
     expr[SortOrder](
       "Sort order",
       ExprChecks.projectOnly(
-        (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested(),
+        (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested() +
+         TypeSig.ARRAY.nested(_gpuCommonTypes + TypeSig.DECIMAL_128),
         TypeSig.orderable,
         Seq(ParamCheck(
           "input",
-          (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested(),
+          (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested() +
+           TypeSig.ARRAY.nested(_gpuCommonTypes + TypeSig.DECIMAL_128),
           TypeSig.orderable))),
       (sortOrder, conf, p, r) => new BaseExprMeta[SortOrder](sortOrder, conf, p, r) {
         override def tagExprForGpu(): Unit = {
