@@ -1,17 +1,13 @@
 20c20
-< import com.nvidia.spark.rapids.{DataWritingCommandRule, ExprChecks, ExprMeta, ExprRule, GpuExpression, GpuOverrides, HiveProvider, OptimizedCreateHiveTableAsSelectCommandMeta, RapidsConf, RepeatingParamCheck, TypeSig}
+< import com.nvidia.spark.rapids.{DataWritingCommandRule, ExecChecks, ExecRule, ExprChecks, ExprMeta, ExprRule, GpuExec, GpuExpression, GpuOverrides, HiveProvider, OptimizedCreateHiveTableAsSelectCommandMeta, RapidsConf, RepeatingParamCheck, SparkPlanMeta, TypeSig}
 ---
-> import com.nvidia.spark.rapids.{DataWritingCommandRule, ExprChecks, ExprMeta, ExprRule, GpuOverrides, HiveProvider, OptimizedCreateHiveTableAsSelectCommandMeta, RapidsConf, RepeatingParamCheck, TypeSig}
-34c34
-<       DataWritingCommandRule[_ <: DataWritingCommand]] = Seq (
----
->     DataWritingCommandRule[_ <: DataWritingCommand]] = Seq (
-41c41,42
+> import com.nvidia.spark.rapids.{DataWritingCommandRule, ExecChecks, ExecRule, ExprChecks, ExprMeta, ExprRule, GpuOverrides, HiveProvider, OptimizedCreateHiveTableAsSelectCommandMeta, RapidsConf, RepeatingParamCheck, SparkPlanMeta, TypeSig}
+43c43,44
 <    * Builds the expression rules that are specific to spark-hive Catalyst nodes.
 ---
 >    * Builds the rules that are specific to spark-hive Catalyst nodes. This will return an empty
 >    * mapping if spark-hive is unavailable.
-65,84d65
+67,86d67
 < 
 <           override def convertToGpu(): GpuExpression = {
 <             opRapidsFunc.map { _ =>
@@ -32,9 +28,7 @@
 <                 childExprs.map(_.convertToGpu()))
 <             }
 <           }
-104,124d84
-<             }
-<           }
+108,128d88
 < 
 <           override def convertToGpu(): GpuExpression = {
 <             opRapidsFunc.map { _ =>
@@ -54,3 +48,24 @@
 <                 a.name,
 <                 a.funcWrapper,
 <                 childExprs.map(_.convertToGpu()))
+<             }
+<           }
+192,202c152,157
+<             if (tableRelation.isPartitioned) {
+<               tableRelation.prunedPartitions.getOrElse(Seq.empty)
+<                                             .map(_.storage)
+<                                             .foreach(flagIfUnsupportedStorageFormat)
+<             }
+<           }
+< 
+<           override def convertToGpu(): GpuExec = {
+<             GpuHiveTableScanExec(wrapped.requestedAttributes,
+<               wrapped.relation,
+<               wrapped.partitionPruningPred)
+---
+>             // no prunedPartitions in HiveTableRelation of spark 2.4
+>             // if (tableRelation.isPartitioned) {
+>               // tableRelation.prunedPartitions.getOrElse(Seq.empty)
+>               //                              .map(_.storage)
+>               //                              .foreach(flagIfUnsupportedStorageFormat)
+>             // }

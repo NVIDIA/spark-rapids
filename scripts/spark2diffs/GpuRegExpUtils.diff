@@ -4,23 +4,5 @@
 ---
 >    * \group_index and \$group_index
 >    * This method transforms above two patterns into cuDF pattern \${group_index}, except they are
-73c73
-<       case _ =>
----
->       case _ => 
-87,88c87,88
-<    * Recursively check if pattern contains only zero-match repetitions
-<    * ?, *, {0,}, or {0,n} or any combination of them.
----
->    * Recursively check if pattern contains only zero-match repetitions 
->    * ?, *, {0,}, or {0,n} or any combination of them. 
-100c100
-<           isASTEmptyRepetition(term)
----
->           isASTEmptyRepetition(term) 
-112c112
-<    * Returns the number of groups in regexp
----
->    * Returns the number of groups in regexp 
 123a124
 > 

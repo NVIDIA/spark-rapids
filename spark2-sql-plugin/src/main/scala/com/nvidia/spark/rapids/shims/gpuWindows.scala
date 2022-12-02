@@ -189,12 +189,12 @@ abstract class GpuSpecifiedWindowFrameMetaBase(
           return None
         }
 
-        val value: Long = bounds match {
+        val value: BigInt = bounds match {
           case Literal(value, ByteType) => value.asInstanceOf[Byte].toLong
           case Literal(value, ShortType) => value.asInstanceOf[Short].toLong
           case Literal(value, IntegerType) => value.asInstanceOf[Int].toLong
           case Literal(value, LongType) => value.asInstanceOf[Long]
-          case Literal(value: Decimal, DecimalType()) => value.toLong
+          case Literal(value: Decimal, DecimalType()) => value.toJavaBigDecimal.unscaledValue()
           case Literal(ci: CalendarInterval, CalendarIntervalType) =>
             if (ci.months != 0) {
               willNotWorkOnGpu("interval months isn't supported")
