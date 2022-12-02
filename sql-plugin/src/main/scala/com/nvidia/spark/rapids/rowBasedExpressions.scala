@@ -39,6 +39,13 @@ trait GpuWrappedRowBasedExpression[SparkExpr <: Expression]
 
   def rowExpression(children: Seq[Expression]): SparkExpr
 
+  lazy val rowExpression: SparkExpr = {
+    val newChildren = children.zipWithIndex.map { case (child, index) =>
+      BoundReference(index, child.dataType, child.nullable)
+    }
+    rowExpression(newChildren)
+  }
+
   def nullSafe: Boolean
 
   private def prepareEvaluation(expression: Expression): Expression = {
@@ -57,8 +64,8 @@ trait GpuWrappedRowBasedExpression[SparkExpr <: Expression]
     expression.eval(inputRow)
   }
 
-  private def evalRow(children: Seq[Expression], inputRow: InternalRow): Any = {
-    def expr = prepareEvaluation(rowExpression(children))
+  private def evalRow(inputRow: InternalRow): Any = {
+    def expr = prepareEvaluation(rowExpression)
     evaluateWithoutCodegen(expr, inputRow)
   }
 
@@ -66,7 +73,7 @@ trait GpuWrappedRowBasedExpression[SparkExpr <: Expression]
     val cpuExprStart = System.nanoTime
     val prepareArgsEnd = System.nanoTime
 
-    val childTypes = children.map(_.dataType)
+    // val childTypes = children.map(_.dataType)
     // These child columns will be closed by `ColumnarToRowIterator`.
     // 1 Evaluate all the children GpuExpressions to columns
     val argCols = children.safeMap(GpuExpressionsUtils.columnarEvalToColumn(_, batch))
@@ -75,6 +82,7 @@ trait GpuWrappedRowBasedExpression[SparkExpr <: Expression]
       val retConverter = GpuRowToColumnConverter.getConverterForType(dataType, nullable)
       val retType = GpuColumnVector.convertFrom(dataType, nullable)
       val retRow = new GenericInternalRow(size = 1)
+
       closeOnExcept(new HostColumnVector.ColumnBuilder(retType, batch.numRows)) { builder =>
         new ColumnarToRowIterator(
             Iterator.single(new ColumnarBatch(argCols.toArray, batch.numRows())),
@@ -86,10 +94,7 @@ trait GpuWrappedRowBasedExpression[SparkExpr <: Expression]
           // 3 Row by row, convert the argument row to literal expressions to pass to the 
           //   CPU Spark expression, then evaluate the CPU Spark expression and cache the 
           //   result row.
-          val newChildren = childTypes.zip(row.toSeq(childTypes)).map { case (dt, value) =>
-            Literal.create(value, dt)
-          }
-          retRow.update(0, evalRow(newChildren, row))
+          retRow.update(0, evalRow(row))
           retConverter.append(retRow, 0, builder)
         }
         // 4 Build a result column from the cache of result rows
