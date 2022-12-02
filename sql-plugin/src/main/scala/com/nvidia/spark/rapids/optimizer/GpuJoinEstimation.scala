@@ -21,7 +21,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeMap, AttributeReference, Expression}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeMap, AttributeReference, EqualTo, Expression}
 import org.apache.spark.sql.catalyst.planning.ExtractEquiJoinKeys
 import org.apache.spark.sql.catalyst.plans._
 import org.apache.spark.sql.catalyst.plans.logical.{ColumnStat, Filter, Histogram, Join, LogicalPlan, Project, Statistics}
@@ -415,4 +415,56 @@ case class GpuJoinEstimation(join: Join) extends Logging {
       None
     }
   }
+
+  /**
+   * Experimental / hacky POC code. Will re-implement if/when we prove this is a good approach.
+   *
+   * Try and estimate number of shuffles based on changes in partitioning (join keys) between joins
+   */
+  def countShuffles(plan: LogicalPlan): Int = {
+
+    def countShufflesInner(
+        indent: String,
+        plan: LogicalPlan,
+        joinKey: Option[(String, String)]): Int = {
+      plan match {
+        case j: Join if j.joinType == Inner || j.joinType == LeftSemi =>
+          val ret = j.condition match {
+            case Some(EqualTo(AttributeReference(l, _, _, _), AttributeReference(r, _, _, _))) =>
+              val numShuffle = joinKey match {
+                case Some((ll, rr)) =>
+                  var count = 2
+                  if ((l == ll) || (l == rr)) {
+                    count -= 1
+                  }
+                  if ((r == ll) || (r == rr)) {
+                    count -= 1
+                  }
+                  count
+                case _ =>
+                  0
+              }
+              numShuffle + plan.children
+                .map(child => countShufflesInner(indent + "  ", child, Some((l, r))))
+                .sum
+            case _ =>
+              // complex join expression that we do not support in this logic yet
+              // assume it is a shuffle
+              1 + plan.children.map(child => countShufflesInner(indent + "  ", child, joinKey)).sum
+          }
+          println(s"${indent}Join: ${j.left.simpleStringWithNodeId()} ${j.joinType} " +
+            s"${j.right.simpleStringWithNodeId()} ON ${j.condition} [$ret shuffles]")
+          ret
+        case _ =>
+          val ret = plan.children
+            .map(child => countShufflesInner(indent + "  ", child, joinKey))
+            .sum
+          println(s"${indent}${plan.getClass.getSimpleName} [$ret shuffles]")
+          ret
+      }
+    }
+
+    countShufflesInner("", plan, None)
+  }
+
 }
