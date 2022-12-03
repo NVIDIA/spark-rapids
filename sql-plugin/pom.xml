@@ -490,6 +490,7 @@
                                 <dirset dir="${project.basedir}/src/main">
                                     <patternset id="spark311+.pattern">
                                         <include name="311+/*"/>
+                                        <include name="311+-non330db/*"/>
                                         <include name="311+-nondb/*"/>
                                         <include name="311until320-all/*"/>
                                         <include name="311until320-noncdh/*"/>
@@ -661,6 +662,7 @@
                                     <patternset refid="spark330+.pattern"/>
                                     <include name="post340/*"/>
                                     <include name="330db/*"/>
+                                    <exclude name="*non330db*/*"/>
                                 </dirset>
                             </pathconvert>
                         </target>
