@@ -16,18 +16,17 @@
 
 package org.apache.spark.sql.hive.rapids
 
-import ai.rapids.cudf.{HostMemoryBuffer, Scalar, Schema, Table}
+import ai.rapids.cudf.{ColumnVector, DType, Scalar, Schema, Table}
 import com.nvidia.spark.RebaseHelper.withResource
-import com.nvidia.spark.rapids.{ColumnarPartitionReaderWithPartitionValues, CSVPartitionReader, GpuColumnVector, GpuExec, PartitionReaderIterator, PartitionReaderWithBytesRead, RapidsConf}
-import com.nvidia.spark.rapids.GpuMetric
+import com.nvidia.spark.rapids.{ColumnarPartitionReaderWithPartitionValues, CSVPartitionReaderBase, GpuColumnVector, GpuExec, GpuMetric, HostStringColBufferer, HostStringColBuffererFactory, PartitionReaderIterator, PartitionReaderWithBytesRead, RapidsConf}
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, DEBUG_LEVEL, DESCRIPTION_BUFFER_TIME, DESCRIPTION_FILTER_TIME, DESCRIPTION_GPU_DECODE_TIME, DESCRIPTION_PEAK_DEVICE_MEMORY, ESSENTIAL_LEVEL, FILTER_TIME, GPU_DECODE_TIME, MODERATE_LEVEL, NUM_OUTPUT_ROWS, PEAK_DEVICE_MEMORY}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.shims.{ShimFilePartitionReaderFactory, ShimSparkPlan, SparkShimImpl}
 import java.net.URI
 import java.util.concurrent.TimeUnit.NANOSECONDS
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.hadoop.hive.ql.metadata.{Partition => HivePartition}
-import org.apache.hadoop.hive.ql.plan.TableDesc
 import scala.collection.JavaConverters._
 import scala.collection.immutable.HashSet
 import scala.collection.mutable
@@ -100,10 +99,6 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
   }
 
   @transient private lazy val hiveQlTable = HiveClientImpl.toHiveTable(hiveTableRelation.tableMeta)
-  @transient private lazy val tableDesc = new TableDesc(
-    hiveQlTable.getInputFormatClass,
-    hiveQlTable.getOutputFormatClass,
-    hiveQlTable.getMetadata)
 
   private def castFromString(value: String, dataType: DataType) = {
     cast(Literal(value), dataType).eval(null)
@@ -489,22 +484,20 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
                                           maxRowsPerChunk: Integer,
                                           maxBytesPerChunk: Long,
                                           execMetrics: Map[String, GpuMetric]) extends
-  CSVPartitionReader(conf, partFile, inputFileSchema, requestedOutputDataSchema,
-                     csvOptions, maxRowsPerChunk, maxBytesPerChunk, execMetrics) {
+    CSVPartitionReaderBase[HostStringColBufferer, HostStringColBuffererFactory.type](conf, partFile,
+      inputFileSchema, requestedOutputDataSchema, csvOptions, maxRowsPerChunk,
+      maxBytesPerChunk, execMetrics, HostStringColBuffererFactory) {
 
-  override def buildCsvOptions(parsedOptions: CSVOptions,
-                               schema: StructType,
-                               hasHeader: Boolean): ai.rapids.cudf.CSVOptions.Builder = {
-    super.buildCsvOptions(parsedOptions, schema, hasHeader)
-      .withDelim('\u0001') // Record field delimiter '^A'.
-      .withNullValue("\\N")
-  }
-
-  override def readToTable(dataBuffer: HostMemoryBuffer,
-                           dataSize: Long,
+  override def readToTable(dataBufferer: HostStringColBufferer,
                            inputFileCudfSchema: Schema,
                            requestedOutputDataSchema: StructType,
                            isFirstChunk: Boolean): Table = {
+    // The delimiter is currently hard coded to ^A. This should be able to support any format
+    //  but we don't want to test that yet
+    val splitTable = withResource(dataBufferer.getColumnAndRelease) { cv =>
+      cv.stringSplit("\u0001", false)
+    }
+
     // inputFileCudfSchema       == Schema of the input file/buffer.
     //                              Presented in the order of input columns in the file.
     // requestedOutputDataSchema == Spark output schema. This is inexplicably sorted alphabetically
@@ -515,17 +508,31 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
     // Given that Table.readCsv presents the output columns in the order of the input file,
     // we need to reorder the table read from the input file in the order specified in
     // [[requestedOutputDataSchema]] (i.e. requiredAttributes).
-    val table = super.readToTable(dataBuffer, dataSize, inputFileCudfSchema,
-                                  requestedOutputDataSchema, isFirstChunk)
-    withResource(table) { table =>
-      val requiredColumnSequence = requestedOutputDataSchema.map(_.name).toList
-      val requiredColumnSet      = requiredColumnSequence.toSet
-      val outputColumnNames      = inputFileCudfSchema.getColumnNames
-                                                      .filter(c => requiredColumnSet.contains(c))
-      val reorderedColumns       = requiredColumnSequence.map(
-        colName => table.getColumn(outputColumnNames.indexOf(colName)))
 
-      new Table(reorderedColumns: _*)
+    withResource(splitTable) { _ =>
+      val nullFormat = conf.get("serialization.null.format", "\\N")
+      withResource(Scalar.fromString(nullFormat)) { nullTag =>
+        withResource(Scalar.fromNull(DType.STRING)) { nullVal =>
+          // This is a bit different because we are dropping columns/etc ourselves
+          val requiredColumnSequence = requestedOutputDataSchema.map(_.name).toList
+          val outputColumnNames = inputFileCudfSchema.getColumnNames
+          val reorderedColumns = requiredColumnSequence.safeMap { colName =>
+            val colIndex = outputColumnNames.indexOf(colName)
+            if (splitTable.getNumberOfColumns > colIndex) {
+              val col = splitTable.getColumn(colIndex)
+              withResource(col.equalTo(nullTag)) { shouldBeNull =>
+                shouldBeNull.ifElse(nullVal, col)
+              }
+            } else {
+              // the column didn't exist in the output, so we need to make an all null one
+              ColumnVector.fromScalar(nullVal, splitTable.getRowCount.toInt)
+            }
+          }
+          withResource(reorderedColumns) { _ =>
+            new Table(reorderedColumns: _*)
+          }
+        }
+      }
     }
   }
 }
