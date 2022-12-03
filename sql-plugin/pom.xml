@@ -578,6 +578,7 @@
                                         <include name="330+-nondb/*"/>
                                         <include name="330+-noncdh/*"/>
                                         <include name="330until340/*"/>
+                                        <include name="330until340-nondb/*"/>
                                     </patternset>
                                     <include name="330/*"/>
                                 </dirset>
