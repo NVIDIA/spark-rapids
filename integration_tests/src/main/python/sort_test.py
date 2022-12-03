@@ -55,6 +55,31 @@ def test_single_orderby(data_gen, order):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).orderBy(order))
 
+@allow_non_gpu('ShuffleExchangeExec')
+@pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('order', [
+    pytest.param(f.col('a').asc()),
+    pytest.param(f.col('a').asc_nulls_first()),
+    pytest.param(f.col('a').asc_nulls_last(),
+        marks=pytest.mark.xfail(reason='opposite null order not supported')),
+    pytest.param(f.col('a').desc()),
+    pytest.param(f.col('a').desc_nulls_first(),
+        marks=pytest.mark.xfail(reason='opposite null order not supported')),
+    pytest.param(f.col('a').desc_nulls_last()),
+], ids=idfn)
+def test_single_orderby_on_array(data_gen, order):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).orderBy(order))
+
+@allow_non_gpu('SortExec', 'ShuffleExchangeExec')
+@pytest.mark.parametrize('data_gen', [ArrayGen(sub_gen) for sub_gen in single_level_array_gens], ids=idfn)
+@pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_first(), f.col('a').asc_nulls_last(),
+                                   f.col('a').desc(), f.col('a').desc_nulls_first(), f.col('a').desc_nulls_last()], ids=idfn)
+def test_single_orderby_fallback_for_multilevel_array(data_gen, order):
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, data_gen).orderBy(order),
+            "SortExec")
+
 @pytest.mark.parametrize('shuffle_parts', [
     pytest.param(1),
     pytest.param(200)
@@ -64,8 +89,6 @@ def test_single_orderby(data_gen, order):
     pytest.param(all_basic_struct_gen),
     pytest.param(StructGen([['child0', decimal_gen_128bit]])),
     pytest.param(StructGen([['child0', all_basic_struct_gen]])),
-    pytest.param(ArrayGen(string_gen),
-        marks=pytest.mark.xfail(reason="arrays are not supported")),
     pytest.param(MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen),
         marks=pytest.mark.xfail(reason="maps are not supported")),
 ], ids=idfn)
@@ -175,6 +198,12 @@ orderable_gens_sort = [byte_gen, short_gen, int_gen, long_gen, float_gen, double
                        ] + orderable_decimal_gens
 @pytest.mark.parametrize('data_gen', orderable_gens_sort, ids=idfn)
 def test_multi_orderby(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : binary_op_df(spark, data_gen).orderBy(f.col('a'), f.col('b').desc()))
+
+@allow_non_gpu('ShuffleExchangeExec')
+@pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
+def test_multi_orderby_on_array(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).orderBy(f.col('a'), f.col('b').desc()))
 
