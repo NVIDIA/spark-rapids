@@ -50,3 +50,6 @@ object SparkShimImpl extends Spark320PlusShims
 trait ShimExtractValue extends ExtractValue {
   override def nodePatternsInternal(): Seq[TreePattern] = Seq.empty
 }
+
+// Fallback to the default definition of `deterministic`
+trait GpuDeterministicFirstLastCollectShim extends Expression
