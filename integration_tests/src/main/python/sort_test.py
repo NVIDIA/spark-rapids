@@ -59,13 +59,11 @@ def test_single_orderby(data_gen, order):
 @pytest.mark.parametrize('order', [
     pytest.param(f.col('a').asc()),
     pytest.param(f.col('a').asc_nulls_first()),
-    # pytest.param(f.col('a').asc_nulls_last(),
-    #     marks=pytest.mark.xfail(reason='opposite null order not supported')),
-    pytest.param(f.col('a').asc_nulls_last()),
+    pytest.param(f.col('a').asc_nulls_last(),
+        marks=pytest.mark.xfail(reason='opposite null order not supported')),
     pytest.param(f.col('a').desc()),
-    # pytest.param(f.col('a').desc_nulls_first(),
-    #     marks=pytest.mark.xfail(reason='opposite null order not supported')),
-    pytest.param(f.col('a').desc_nulls_first()),
+    pytest.param(f.col('a').desc_nulls_first(),
+        marks=pytest.mark.xfail(reason='opposite null order not supported')),
     pytest.param(f.col('a').desc_nulls_last()),
 ], ids=idfn)
 def test_single_orderby_on_array(data_gen, order):
