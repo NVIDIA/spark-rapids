@@ -600,7 +600,7 @@
                                         <!-- inherit from 331+ with exceptions -->
                                         <patternset refid="spark331+.pattern"/>
                                         <exclude name="*until340*/*"/>
-                                        <include name="330db340+/*"/>
+                                        <include name="post340/*"/>
                                         <!-- uniquely 340+ -->
                                         <include name="340+/*"/>
                                     </patternset>
@@ -657,12 +657,9 @@
                             </pathconvert>
                             <pathconvert property="spark330db.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
-                                    <include name="post320-treenode/*"/>
-                                    <include name="311+-db/*"/>
-                                    <include name="320+/*"/>
-                                    <include name="321+-db/*"/>
-                                    <include name="330+/*"/>
-                                    <include name="330db340+/*"/>
+                                    <patternset refid="spark321db+.pattern"/>
+                                    <patternset refid="spark330+.pattern"/>
+                                    <include name="post340/*"/>
                                     <include name="330db/*"/>
                                 </dirset>
                             </pathconvert>
