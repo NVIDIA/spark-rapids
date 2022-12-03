@@ -498,6 +498,7 @@
                                         <include name="311until330-all/*"/>
                                         <include name="311until330-nondb/*"/>
                                         <include name="311until340-all/*"/>
+                                        <include name="311until340-non330db/*"/>
                                         <include name="311until340-nondb/*"/>
                                         <include name="pre320-treenode/*"/>
                                     </patternset>
@@ -538,6 +539,7 @@
                                         <include name="320until330-noncdh/*"/>
                                         <include name="320until330-nondb/*"/>
                                         <include name="320until340-all/*"/>
+                                        <include name="320until340-non330db/*"/>
                                         <include name="post320-treenode/*"/>
                                     </patternset>
                                     <include name="320/*"/>
