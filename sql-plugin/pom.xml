@@ -28,7 +28,9 @@
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin</name>
     <description>The RAPIDS SQL plugin for Apache Spark</description>
     <version>23.02.0-SNAPSHOT</version>
-
+    <properties>
+        <spark.shim.dest>${project.basedir}/src/main/generated-${spark.version.classifier}</spark.shim.dest>
+    </properties>
     <dependencies>
         <dependency>
             <groupId>com.nvidia</groupId>
@@ -466,8 +468,10 @@
                     <goals><goal>run</goal></goals>
                     <configuration>
                         <target xmlns:ac="antlib:net.sf.antcontrib">
-                            <property name="spark.shim.dest" value="${project.basedir}/target/${spark.version.classifier}/src"/>
                             <mkdir dir="${spark.shim.dest}"/>
+                            <delete>
+                                <fileset dir="${spark.shim.dest}" includes="**/*"/>
+                            </delete>
                             <ac:for param="shimSourceAbsolutePath">
                                 <path>
                                     <fileset dir="${project.basedir}/src/main" id="shimFileSetId">
@@ -491,9 +495,19 @@
                                         regexp="(.*)/[^/]+"
                                         replace="\1"/>
                                     <mkdir dir="${spark.shim.dest}/${shimSourcePackageDir}"/>
-                                    <symlink resource="@{shimSourceAbsolutePath}"
-                                        link="${spark.shim.dest}/${shimSourcePackagePath}"
-                                        overwrite="true"/>
+                                    <ac:if>
+                                        <istrue value="${symlink.shim.files}"/>
+                                        <then>
+                                            <symlink resource="@{shimSourceAbsolutePath}"
+                                                link="${spark.shim.dest}/${shimSourcePackagePath}"
+                                                overwrite="true"/>
+                                        </then>
+                                        <else>
+                                            <copy file="@{shimSourceAbsolutePath}"
+                                            tofile="${spark.shim.dest}/${shimSourcePackagePath}"
+                                            overwrite="true"/>
+                                        </else>
+                                    </ac:if>
                                 </sequential>
                             </ac:for>
                         </target>
@@ -559,8 +573,8 @@
                         <goals><goal>add-source</goal></goals>
                         <configuration>
                             <sources>
-                                <source>${project.basedir}/target/${spark.version.classifier}/src/scala</source>
-                                <source>${project.basedir}/target/${spark.version.classifier}/src/java</source>
+                                <source>${spark.shim.dest}/scala</source>
+                                <source>${spark.shim.dest}/java</source>
                             </sources>
                         </configuration>
                     </execution>
