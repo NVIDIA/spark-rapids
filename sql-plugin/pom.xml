@@ -489,6 +489,7 @@
                             <pathconvert property="spark311.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
                                     <patternset id="spark311+.pattern">
+                                        <include name="311+/*"/>
                                         <include name="311+-nondb/*"/>
                                         <include name="311until320-all/*"/>
                                         <include name="311until320-noncdh/*"/>
