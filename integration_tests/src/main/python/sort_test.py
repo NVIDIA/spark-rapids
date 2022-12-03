@@ -55,17 +55,7 @@ def test_single_orderby(data_gen, order):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).orderBy(order))
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-# @allow_non_gpu('ShuffleExchangeExec')
->>>>>>> some testing work for range partitioning
-=======
->>>>>>> tentative work for logging upper bounds for range partitioning
-=======
 @allow_non_gpu('ShuffleExchangeExec')
->>>>>>> removed prints
 @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
 @pytest.mark.parametrize('order', [
     pytest.param(f.col('a').asc()),
@@ -89,32 +79,6 @@ def test_single_orderby_fallback_for_multilevel_array(data_gen, order):
     assert_gpu_fallback_collect(
             lambda spark : unary_op_df(spark, data_gen).orderBy(order),
             "SortExec")
-
-<<<<<<< HEAD
-# # only default null ordering for direction is supported for array types
-# @allow_non_gpu('SortExec', 'ShuffleExchangeExec')
-# @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
-# @pytest.mark.parametrize('order', [
-#     pytest.param(f.col('a').asc_nulls_last()),
-#     pytest.param(f.col('a').desc_nulls_first()),
-# ], ids=idfn)
-# def test_single_orderby_on_array_fallback_for_nullorder(data_gen, order):
-#     assert_gpu_fallback_collect(
-#             lambda spark : unary_op_df(spark, data_gen).orderBy(order),
-#             "SortExec")
-=======
-# only default null ordering for direction is supported for array types
-@allow_non_gpu('SortExec', 'ShuffleExchangeExec')
-@pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
-@pytest.mark.parametrize('order', [
-    pytest.param(f.col('a').asc_nulls_last()),
-    pytest.param(f.col('a').desc_nulls_first()),
-], ids=idfn)
-def test_single_orderby_on_array_fallback_for_nullorder(data_gen, order):
-    assert_gpu_fallback_collect(
-            lambda spark : unary_op_df(spark, data_gen).orderBy(order),
-            "SortExec")
->>>>>>> tentative work for logging upper bounds for range partitioning
 
 @pytest.mark.parametrize('shuffle_parts', [
     pytest.param(1),
@@ -242,14 +206,8 @@ def test_multi_orderby(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).orderBy(f.col('a'), f.col('b').desc()))
 
-# @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
-# @pytest.mark.parametrize('data_gen', [ArrayGen(IntegerGen(nullable=True), nullable=False)], ids=idfn) # can work
-@pytest.mark.parametrize('data_gen', [ArrayGen(ByteGen(nullable=True), nullable=True, max_length=1)], ids=idfn)
-<<<<<<< HEAD
 @allow_non_gpu('ShuffleExchangeExec')
 @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
-=======
->>>>>>> tentative work for logging upper bounds for range partitioning
 def test_multi_orderby_on_array(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).orderBy(f.col('a'), f.col('b').desc()))
