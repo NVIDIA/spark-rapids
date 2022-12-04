@@ -473,17 +473,22 @@
                             <delete>
                                 <fileset dir="${spark.shim.dest}" includes="**/*"/>
                             </delete>
+
+                            <patternset id="shimSourcePatternSet">
+                                <include name="**/*.java"/>
+                                <include name="**/*.scala"/>
+                                <!-- exclude unshimmed files -->
+                                <exclude name="scala/**"/>
+                                <exclude name="java/**"/>
+                            </patternset>
+                            <fileset dir="${project.basedir}/src/main" id="shimFileSetId">
+                                <patternset refid="shimSourcePatternSet"/>
+                                <containsregexp expression="// spark-distros.*:${spark.distro}:"/>
+                            </fileset>
+
+
                             <ac:for param="shimSourceAbsolutePath">
-                                <path>
-                                    <fileset dir="${project.basedir}/src/main" id="shimFileSetId">
-                                        <containsregexp expression="// spark-distros.*:${spark.distro}:"/>
-                                        <include name="**/*.java"/>
-                                        <include name="**/*.scala"/>
-                                        <!-- exclude unshimmed files -->
-                                        <exclude name="scala/**"/>
-                                        <exclude name="java/**"/>
-                                    </fileset>
-                                </path>
+                                <path><fileset refid="shimFileSetId"/></path>
                                 <sequential>
                                     <ac:propertyregex override="true"
                                         input="@{shimSourceAbsolutePath}"

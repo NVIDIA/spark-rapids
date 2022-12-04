@@ -99,7 +99,7 @@
             </activation>
             <properties>
                 <spark.version>${spark311.version}</spark.version>
-                <spark.disto>311</spark.disto>
+                <spark.distro>311</spark.distro>
                 <spark.test.version>${spark311.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark311.sources}</spark.shim.sources>
