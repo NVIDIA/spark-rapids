@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims.spark321;
+// spark-distros:321:
+package com.nvidia.spark.rapids.shims.spark321
 
 import com.nvidia.spark.rapids.{ShimLoader, SparkShimVersion, TypeSig}
 import com.nvidia.spark.rapids.shims.SparkShimImpl

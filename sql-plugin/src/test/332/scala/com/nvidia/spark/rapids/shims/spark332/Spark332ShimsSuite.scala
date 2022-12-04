@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-// spark-distros:322:
-package com.nvidia.spark.rapids.shims.spark322
+// spark-distros:332:
+package com.nvidia.spark.rapids.shims.spark332
 
 import com.nvidia.spark.rapids.{ShimLoader, SparkShimVersion, TypeSig}
 import com.nvidia.spark.rapids.shims.SparkShimImpl
@@ -23,17 +23,17 @@ import org.scalatest.FunSuite
 
 import org.apache.spark.sql.types.{DayTimeIntervalType, YearMonthIntervalType}
 
-class Spark322ShimsSuite extends FunSuite {
+class Spark332ShimsSuite extends FunSuite {
   test("spark shims version") {
-    assert(SparkShimImpl.getSparkShimVersion === SparkShimVersion(3, 2, 2))
+    assert(SparkShimImpl.getSparkShimVersion === SparkShimVersion(3, 3, 2))
   }
 
   test("shuffle manager class") {
     assert(ShimLoader.getRapidsShuffleManagerClass ===
-      classOf[com.nvidia.spark.rapids.spark322.RapidsShuffleManager].getCanonicalName)
+      classOf[com.nvidia.spark.rapids.spark332.RapidsShuffleManager].getCanonicalName)
   }
 
-  test("TypeSig322") {
+  test("TypeSig332") {
     val check = TypeSig.DAYTIME + TypeSig.YEARMONTH
     assert(check.isSupportedByPlugin(DayTimeIntervalType()) == true)
     assert(check.isSupportedByPlugin(YearMonthIntervalType()) == true)

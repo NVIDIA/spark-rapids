@@ -31,6 +31,7 @@
     <properties>
         <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/src/generated</spark.shim.dest>
         <spark.shim.test.sources>${project.basedir}/src/test/${spark.distro}</spark.shim.test.sources>
+        <symlink.shim.files>true</symlink.shim.files>
     </properties>
     <dependencies>
         <dependency>
@@ -478,10 +479,10 @@
                                 <include name="**/*.java"/>
                                 <include name="**/*.scala"/>
                                 <!-- exclude unshimmed files -->
-                                <exclude name="scala/**"/>
-                                <exclude name="java/**"/>
+                                <exclude name="*/scala/**"/>
+                                <exclude name="*/java/**"/>
                             </patternset>
-                            <fileset dir="${project.basedir}/src/main" id="shimFileSetId">
+                            <fileset dir="${project.basedir}/src" id="shimFileSetId">
                                 <patternset refid="shimSourcePatternSet"/>
                                 <containsregexp expression="// spark-distros.*:${spark.distro}:"/>
                             </fileset>
@@ -493,8 +494,8 @@
                                     <ac:propertyregex override="true"
                                         input="@{shimSourceAbsolutePath}"
                                         property="shimSourcePackagePath"
-                                        regexp="${project.basedir}/src/main/[^/]+/(.*)"
-                                        replace="\1"/>
+                                        regexp="${project.basedir}/src/(main|test)/[^/]+/(.*)"
+                                        replace="\1/\2"/>
                                     <ac:propertyregex override="true"
                                         input="${shimSourcePackagePath}"
                                         property="shimSourcePackageDir"
@@ -579,8 +580,8 @@
                         <goals><goal>add-source</goal></goals>
                         <configuration>
                             <sources>
-                                <source>${spark.shim.dest}/scala</source>
-                                <source>${spark.shim.dest}/java</source>
+                                <source>${spark.shim.dest}/main/scala</source>
+                                <source>${spark.shim.dest}/main/java</source>
                             </sources>
                         </configuration>
                     </execution>
@@ -590,8 +591,8 @@
                         <goals><goal>add-test-source</goal></goals>
                         <configuration>
                             <sources>
-                                <source>${spark.shim.test.sources}/scala</source>
-                                <source>${spark.shim.test.sources}/java</source>
+                                <source>${spark.shim.dest}/test/scala</source>
+                                <source>${spark.shim.dest}/test/java</source>
                             </sources>
                         </configuration>
                     </execution>

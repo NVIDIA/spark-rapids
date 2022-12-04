@@ -861,7 +861,7 @@
                             <phase>none</phase>
                         </execution>
                         <execution>
-                            <id>default-test-compile</id>
+                            <id>default-testCompile</id>
                             <phase>none</phase>
                         </execution>
                     </executions>
