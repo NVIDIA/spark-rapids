@@ -29,7 +29,8 @@
     <description>The RAPIDS SQL plugin for Apache Spark</description>
     <version>23.02.0-SNAPSHOT</version>
     <properties>
-        <spark.shim.dest>${project.basedir}/src/main/generated-${spark.version.classifier}</spark.shim.dest>
+        <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/src/generated</spark.shim.dest>
+        <spark.shim.test.sources>${project.basedir}/src/test/${spark.distro}</spark.shim.test.sources>
     </properties>
     <dependencies>
         <dependency>
@@ -394,7 +395,7 @@
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
-                    <groupId>org.apache.hive</groupId>
+                    <groupId>org.apachprocesse.hive</groupId>
                     <artifactId>hive-storage-api</artifactId>
                     <version>${spark.version}</version>
                     <scope>provided</scope>
@@ -475,7 +476,7 @@
                             <ac:for param="shimSourceAbsolutePath">
                                 <path>
                                     <fileset dir="${project.basedir}/src/main" id="shimFileSetId">
-                                        <containsregexp expression="// spark-distros.*:${buildver}:"/>
+                                        <containsregexp expression="// spark-distros.*:${spark.distro}:"/>
                                         <include name="**/*.java"/>
                                         <include name="**/*.scala"/>
                                         <!-- exclude unshimmed files -->
@@ -504,8 +505,8 @@
                                         </then>
                                         <else>
                                             <copy file="@{shimSourceAbsolutePath}"
-                                            tofile="${spark.shim.dest}/${shimSourcePackagePath}"
-                                            overwrite="true"/>
+                                                tofile="${spark.shim.dest}/${shimSourcePackagePath}"
+                                                overwrite="true"/>
                                         </else>
                                     </ac:if>
                                 </sequential>
@@ -584,7 +585,8 @@
                         <goals><goal>add-test-source</goal></goals>
                         <configuration>
                             <sources>
-                                <source>${spark.shim.test.sources}</source>
+                                <source>${spark.shim.test.sources}/scala</source>
+                                <source>${spark.shim.test.sources}/java</source>
                             </sources>
                         </configuration>
                     </execution>

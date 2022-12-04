@@ -99,10 +99,10 @@
             </activation>
             <properties>
                 <spark.version>${spark311.version}</spark.version>
+                <spark.disto>311</spark.disto>
                 <spark.test.version>${spark311.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark311.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -128,21 +128,19 @@
             <properties>
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
-                <shim.module.name>spark312db</shim.module.name>
-                <spark.version.classifier>spark312db</spark.version.classifier>
                 <!--
                      Note that we are using the Spark version for all of the Databricks dependencies as well.
                      The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
                      This is to make it easier and not have to change version numbers for each individual dependency
                      and deal with differences between Databricks versions
                 -->
+                <spark.distro>312db</spark.distro>
                 <spark.version>${spark312db.version}</spark.version>
                 <spark.test.version>${spark312db.version}</spark.test.version>
                 <hadoop.client.version>2.7.4</hadoop.client.version>
                 <rat.consoleOutput>true</rat.consoleOutput>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark312db.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
 
             <modules>
@@ -164,11 +162,11 @@
                 </property>
             </activation>
             <properties>
+                <spark.distro>312</spark.distro>
                 <spark.version>${spark312.version}</spark.version>
                 <spark.test.version>${spark312.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark312.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -191,11 +189,11 @@
                 </property>
             </activation>
             <properties>
+                <spark.distro>313</spark.distro>
                 <spark.version>${spark313.version}</spark.version>
                 <spark.test.version>${spark313.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark313.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -218,11 +216,11 @@
                 </property>
             </activation>
             <properties>
+                <spark.distro>314</spark.distro>
                 <spark.version>${spark314.version}</spark.version>
                 <spark.test.version>${spark314.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark314.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -245,11 +243,11 @@
                 </property>
             </activation>
             <properties>
+                <spark.distro>320</spark.distro>
                 <spark.version>${spark320.version}</spark.version>
                 <spark.test.version>${spark320.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark320.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -271,11 +269,11 @@
                 </property>
             </activation>
             <properties>
+                <spark.distro>321</spark.distro>
                 <spark.version>${spark321.version}</spark.version>
                 <spark.test.version>${spark321.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark321.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -297,11 +295,11 @@
                 </property>
             </activation>
             <properties>
+                <spark.distro>321cdh</spark.distro>
                 <spark.version>${spark321cdh.version}</spark.version>
                 <spark.test.version>${spark321cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark321cdh.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <repositories>
                 <repository>
@@ -329,11 +327,11 @@
                 </property>
             </activation>
             <properties>
+                <spark.distro>322</spark.distro>
                 <spark.version>${spark322.version}</spark.version>
                 <spark.test.version>${spark322.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark322.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -355,11 +353,11 @@
                 </property>
             </activation>
             <properties>
+                <spark.distro>323</spark.distro>
                 <spark.version>${spark323.version}</spark.version>
                 <spark.test.version>${spark323.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark323.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -384,21 +382,19 @@
             <properties>
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
-                <shim.module.name>spark321db</shim.module.name>
-                <spark.version.classifier>spark321db</spark.version.classifier>
                 <!--
                      Note that we are using the Spark version for all of the Databricks dependencies as well.
                      The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
                      This is to make it easier and not have to change version numbers for each individual dependency
                      and deal with differences between Databricks versions
                 -->
+                <spark.distro>321db</spark.distro>
                 <spark.version>${spark321db.version}</spark.version>
                 <spark.test.version>${spark321db.version}</spark.test.version>
                 <hadoop.client.version>3.3.1</hadoop.client.version>
                 <rat.consoleOutput>true</rat.consoleOutput>
                 <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
                 <spark.shim.sources>${spark321db.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -419,11 +415,11 @@
                 </property>
             </activation>
             <properties>
+                <spark.distro>330</spark.distro>
                 <spark.version>${spark330.version}</spark.version>
                 <spark.test.version>${spark330.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark330.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -445,11 +441,11 @@
                 </property>
             </activation>
             <properties>
+                <spark.distro>331</spark.distro>
                 <spark.version>${spark331.version}</spark.version>
                 <spark.test.version>${spark331.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark331.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -471,11 +467,11 @@
                 </property>
             </activation>
             <properties>
+                <spark.distro>332</spark.distro>
                 <spark.version>${spark332.version}</spark.version>
                 <spark.test.version>${spark332.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark332.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -497,11 +493,11 @@
                 </property>
             </activation>
             <properties>
+                <spark.distro>340</spark.distro>
                 <spark.version>${spark340.version}</spark.version>
                 <spark.test.version>${spark340.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
                 <spark.shim.sources>${spark340.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -523,11 +519,11 @@
                 </property>
             </activation>
             <properties>
+                <spark.distro>330cdh</spark.distro>
                 <spark.version>${spark330cdh.version}</spark.version>
                 <spark.test.version>${spark330cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.99.7.1.8.0-801</parquet.hadoop.version>
                 <spark.shim.sources>${spark330cdh.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <repositories>
                 <repository>
@@ -605,7 +601,7 @@
         <spark.version>${spark311.version}</spark.version>
         <spark.test.version>${spark.version}</spark.test.version>
         <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
-        <spark.version.classifier>spark${buildver}</spark.version.classifier>
+        <spark.version.classifier>spark${spark.distro}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
         <spark-rapids-jni.version>23.02.0-SNAPSHOT</spark-rapids-jni.version>
         <scala.binary.version>2.12</scala.binary.version>
@@ -655,7 +651,6 @@
         <scalatest-maven-plugin.version>2.0.2</scalatest-maven-plugin.version>
         <guava.cdh.version>30.0-jre</guava.cdh.version>
         <arrow.cdh.version>2.0.0</arrow.cdh.version>
-        <shim.module.name>${spark.version.classifier}</shim.module.name>
         <slf4j.version>1.7.30</slf4j.version>
         <flatbuffers.java.version>1.11.0</flatbuffers.java.version>
         <hadoop.client.version>3.3.1</hadoop.client.version>
