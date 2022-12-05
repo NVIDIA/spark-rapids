@@ -80,7 +80,7 @@ trait HostMemoryBuffersWithMetaDataBase {
 
   // The partition values which are needed if combining host memory buffers
   // after read by the multithreaded reader but before sending to GPU.
-  def allPartValues: Option[ArrayBuffer[(Long, InternalRow)]] = None
+  def allPartValues: Option[Array[(Long, InternalRow)]] = None
 
   // Called by parquet/orc/avro scanners to set the amount of time (in nanoseconds)
   // that filtering and buffering incurred in one of the scan runners.
@@ -436,7 +436,10 @@ abstract class MultiFileCloudPartitionReaderBase(
           fcs = new ExecutorCompletionService[HostMemoryBuffersWithMetaDataBase](threadPool)
         }
       }
+    } else {
+      logWarning("Keeping reads in same order")
     }
+
     // Currently just add the files in order, we may consider doing something with the size of
     // the files in the future. ie try to start some of the larger files but we may not want
     // them all to be large
@@ -462,8 +465,8 @@ abstract class MultiFileCloudPartitionReaderBase(
     filesToRead = files.length
   }
 
-  def combineHMBs(results: Array[HostMemoryBuffersWithMetaDataBase])
-  : HostMemoryBuffersWithMetaDataBase = {
+  def combineHMBs(results: Array[HostMemoryBuffersWithMetaDataBase],
+      keepReadsInOrder: Boolean): HostMemoryBuffersWithMetaDataBase = {
     if (results.size < 1) {
       throw new Exception("Expect at least one host memory buffer")
     }
@@ -536,14 +539,19 @@ abstract class MultiFileCloudPartitionReaderBase(
         // and couldn't be combined. Just try to combine what is left again.
 
         val results = leftOverFiles.get
-        // unset leftOverFiles because it will get reset in combineHMBs again if needed
+        // unset leftOverFiles because it will get reset in cokmbineHMBs again if needed
         leftOverFiles = None
+        logWarning(s"using left over files ${results.size}")
+
         val fileBufsAndMeta = if (results.size > 1) {
           logInfo(s"Using Combine mode and actually combining, num files ${results.size}")
+          logWarning(s"leftover Using Combine mode and actually combining, num files ${results.size} " +
+            s"files ${results.map(_.partitionedFile.filePath).mkString(",")}")
+
           val startCombineTime = System.currentTimeMillis()
           val combinedRes = withResource(new NvtxRange(getFileFormatShortName + " combineHmbs",
             NvtxColor.GREEN)) { _ =>
-            combineHMBs(results)
+            combineHMBs(results, keepReadsInOrder)
           }
           logWarning(s"took ${(System.currentTimeMillis() - startCombineTime)} " +
             s"ms to do combine of ${results.size} task ${TaskContext.get().taskAttemptId()}")
@@ -553,7 +561,6 @@ abstract class MultiFileCloudPartitionReaderBase(
           results.head
         }
 
-        logWarning("using left over files")
         TrampolineUtil.incBytesRead(inputMetrics, fileBufsAndMeta.bytesRead)
         // if we replaced the path with Alluxio, set it to the original filesystem file
         // since Alluxio replacement is supposed to be transparent to the user
@@ -645,7 +652,7 @@ abstract class MultiFileCloudPartitionReaderBase(
           }
 
           if (canUseCombine) {
-            logWarning("USING COMBINE")
+            logWarning(s"USING COMBINE")
             var sizeRead = 0L
             readReadyFiles(0)
             if (results.isEmpty) {
@@ -678,11 +685,12 @@ abstract class MultiFileCloudPartitionReaderBase(
           }
 
           val fileBufsAndMeta = if (results.size > 1) {
-            logInfo(s"Using Combine mode and actually combining, num files ${results.size}")
+            logInfo(s"Using Combine mode and actually combining, num files ${results.size} " +
+              s"files:  ${results.map(_.partitionedFile.filePath).mkString(",")}")
             val startCombineTime = System.currentTimeMillis()
             val combinedRes = withResource(new NvtxRange(getFileFormatShortName + " combineHmbs",
               NvtxColor.GREEN)) { _ =>
-              combineHMBs(results.toArray)
+              combineHMBs(results.toArray, keepReadsInOrder)
             }
             logWarning(s"took ${(System.currentTimeMillis() - startCombineTime)} " +
               s"ms to do combine of ${results.size} task ${TaskContext.get().taskAttemptId()}")

@@ -472,6 +472,16 @@ def test_parquet_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reade
     second_data_path = spark_tmp_path + '/PARQUET_DATA/key=1'
     with_cpu_session(
             lambda spark : gen_df(spark, second_gen_list, 1).write.parquet(second_data_path))
+    # third with same as first
+    third_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    third_data_path = spark_tmp_path + '/PARQUET_DATA/key=2'
+    with_cpu_session(
+            lambda spark : gen_df(spark, third_gen_list, 1).write.parquet(third_data_path))
+    # forth with same as second
+    fourth_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(second_parquet_gens)]
+    fourth_data_path = spark_tmp_path + '/PARQUET_DATA/key=3'
+    with_cpu_session(
+            lambda spark : gen_df(spark, fourth_gen_list, 1).write.parquet(fourth_data_path))
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = copy_and_update(reader_confs, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
