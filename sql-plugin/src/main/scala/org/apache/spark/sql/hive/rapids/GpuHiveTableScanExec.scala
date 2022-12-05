@@ -40,6 +40,7 @@ import org.apache.spark.sql.catalyst.catalog.HiveTableRelation
 import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.expressions.{And, Attribute, AttributeMap, AttributeReference, AttributeSeq, AttributeSet, BindReferences, Expression, Literal}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
+import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.{ExecSubqueryExpression, LeafExecNode, PartitionedFileUtil, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionDirectory, PartitionedFile}
@@ -550,6 +551,46 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
       withResource(input.asTimestamp(dt, cudfFormat)) { asDate =>
         withResource(Scalar.fromNull(dt)) { nullScalar =>
           isDate.ifElse(asDate, nullScalar)
+        }
+      }
+    }
+  }
+
+  // As per Hive's LazySimpleSerDe documentation, only the following timestamp pattern is supported:
+  //  "uuuu-MM-dd HH:mm:ss[.SSS...]"
+  //
+  // Note: No support for "uuuu-MM-dd'T'HH:mm:ss[.SSS...][Z]"
+  override def timestampFormat: String = s"${DateFormatter.defaultPattern} HH:mm:ss[.SSS][XXX]"
+
+  override def castStringToTimestamp(lhs: ColumnVector, sparkFormat: String, dType: DType)
+  : ColumnVector = {
+    // Input strings that do not match this format strictly must be replaced with nulls.
+    //                 yyyy-  MM -  dd    HH  :  mm  :  ss [SSS...     ]
+    val regex = raw"\A\d{4}-\d{2}-\d{2} \d{2}\:\d{2}\:\d{2}(?:\.\d{1,9})?\Z"
+    val regexFiltered = withResource(lhs.matchesRe(regex)) { matchesRegex =>
+      withResource(Scalar.fromNull(DType.STRING)) { nullString =>
+        matchesRegex.ifElse(lhs, nullString)
+      }
+    }
+
+    // For rows that pass the regex check, parse them as timestamp.
+    def asTimestamp(format: String) = {
+      withResource(regexFiltered.isTimestamp(format)) { isTimestamp =>
+        withResource(regexFiltered.asTimestamp(dType, format)) { timestamp =>
+          withResource(Scalar.fromNull(dType)) { nullTimestamp =>
+            isTimestamp.ifElse(timestamp, nullTimestamp)
+          }
+        }
+      }
+    }
+
+    // Attempt to parse at "sub-second" level first.
+    // Substitute rows that fail at "sub-second" with "second" level.
+    // Those that fail both should remain as nulls.
+    withResource(regexFiltered) { _ =>
+      withResource(asTimestamp(format = "%Y-%m-%d %H:%M:%S.%f")) { timestampsSubSecond =>
+        withResource(asTimestamp(format = "%Y-%m-%d %H:%M:%S")) { timestampsSecond =>
+          timestampsSubSecond.replaceNulls(timestampsSecond)
         }
       }
     }
