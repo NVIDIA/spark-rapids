@@ -35,18 +35,16 @@ class AlluxioFS extends Arm {
   private var s3AccessKey: Option[String] = None
   private var s3SecretKey: Option[String] = None
 
-  def setHostAndPort(masterHost: Option[String], masterPort: Option[Int]): AlluxioFS = {
+  def setHostAndPort(masterHost: Option[String], masterPort: Option[Int]): Unit = {
     this.masterHost = masterHost
     this.masterPort = masterPort
-    this
   }
 
   def setUserAndKeys(alluxioUser: String, s3AccessKey: Option[String],
-      s3SecretKey: Option[String]): AlluxioFS = {
+      s3SecretKey: Option[String]): Unit = {
     this.alluxioUser = alluxioUser
     this.s3AccessKey = s3AccessKey
     this.s3SecretKey = s3SecretKey
-    this
   }
 
   private def getS3ClientConf(): InstancedConfiguration = {

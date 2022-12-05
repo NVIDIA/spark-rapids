@@ -24,16 +24,18 @@ import scala.io.BufferedSource
  * Alluxio master address and port reader.
  * It reads from `/opt/alluxio-2.8.0/conf/alluxio-site.properties`
  */
-class AlluxioMasterAndPortReader {
+class AlluxioConfigReader {
 
   private val alluxioHome: String = "/opt/alluxio-2.8.0"
 
   def readAlluxioMasterAndPort(): (String, String) = {
-    readAlluxioMasterAndPort(alluxioHome)
+    readMasterAndPort(alluxioHome)
   }
 
-  // Default to read from /opt/alluxio-2.8.0 if not setting ALLUXIO_HOME
-  private[rapids] def readAlluxioMasterAndPort(defaultHomePath: String): (String, String) = {
+
+  // By default, read from /opt/alluxio-2.8.0 if not setting ALLUXIO_HOME to get master and port
+  // The default port is 19998
+  private[rapids] def readMasterAndPort(defaultHomePath: String): (String, String) = {
     val homePath = scala.util.Properties.envOrElse("ALLUXIO_HOME", defaultHomePath)
 
     var buffered_source: BufferedSource = null
@@ -51,7 +53,7 @@ class AlluxioMasterAndPortReader {
       (alluxio_master, alluxio_port)
     } catch {
       case _: FileNotFoundException =>
-        throw new RuntimeException(s"Not found Alluxio config in " +
+        throw new RuntimeException(s"Alluxio config file not found in " +
           s"$homePath/conf/alluxio-site.properties, " +
           "please check if ALLUXIO_HOME is set correctly")
     } finally {

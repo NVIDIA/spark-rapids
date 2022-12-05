@@ -28,7 +28,7 @@ import org.apache.spark.sql.execution.datasources.{PartitionDirectory, Partition
 import org.apache.spark.sql.internal.SQLConf
 
 class AlluxioMasterAndPortReaderMock(master: String, port: String)
-  extends AlluxioMasterAndPortReader {
+  extends AlluxioConfigReader {
   override def readAlluxioMasterAndPort(): (String, String) = (master, port)
 }
 
@@ -36,15 +36,13 @@ class AlluxioFSMock extends AlluxioFS {
   private val mountPoints = mutable.Map[String, String]()
 
   override def setHostAndPort(masterHost: Option[String],
-      masterPort: Option[Int]): AlluxioFSMock = {
+      masterPort: Option[Int]): Unit = {
     // do nothing
-    this
   }
 
   override def setUserAndKeys(alluxioUser: String, s3AccessKey: Option[String],
-      s3SecretKey: Option[String]): AlluxioFSMock = {
+      s3SecretKey: Option[String]): Unit = {
     // do nothing
-    this
   }
 
   /**

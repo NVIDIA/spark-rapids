@@ -21,7 +21,7 @@ import java.nio.file.Files
 
 import org.scalatest.FunSuite
 
-class AlluxioMasterAndPortReaderSuite extends FunSuite {
+class AlluxioConfigReaderSuite extends FunSuite {
 
   test("testReadAlluxioMasterAndPort") {
     val homeDir = Files.createTempDirectory("tmpAlluxioHomePrefix")
@@ -36,8 +36,8 @@ alluxio.master.hostname=host1.com
 alluxio.master.rpc.port=200
         """
       Files.write(f.toPath, content.getBytes(StandardCharsets.UTF_8))
-      val (host, port) = new AlluxioMasterAndPortReader()
-        .readAlluxioMasterAndPort(homeDir.toFile.getAbsolutePath)
+      val (host, port) = new AlluxioConfigReader()
+        .readMasterAndPort(homeDir.toFile.getAbsolutePath)
       assert(host.equals("host1.com"))
       assert(port == "200")
     } finally {
@@ -59,8 +59,8 @@ alluxio.master.rpc.port=200
 alluxio.master.hostname=host1.com
         """
       Files.write(f.toPath, content.getBytes(StandardCharsets.UTF_8))
-      val (host, port) = new AlluxioMasterAndPortReader()
-        .readAlluxioMasterAndPort(homeDir.toFile.getAbsolutePath)
+      val (host, port) = new AlluxioConfigReader()
+        .readMasterAndPort(homeDir.toFile.getAbsolutePath)
       assert(host.equals("host1.com"))
       assert(port == "19998")
     } finally {
@@ -83,8 +83,8 @@ xxx=yyy
         """
       Files.write(f.toPath, content.getBytes(StandardCharsets.UTF_8))
       try {
-        new AlluxioMasterAndPortReader()
-          .readAlluxioMasterAndPort(homeDir.toFile.getAbsolutePath)
+        new AlluxioConfigReader()
+          .readMasterAndPort(homeDir.toFile.getAbsolutePath)
         assert(false)
       } catch {
         case e: RuntimeException =>
@@ -104,12 +104,12 @@ xxx=yyy
 
     try {
       try {
-        new AlluxioMasterAndPortReader()
-          .readAlluxioMasterAndPort(homeDir.toFile.getAbsolutePath)
+        new AlluxioConfigReader()
+          .readMasterAndPort(homeDir.toFile.getAbsolutePath)
         assert(false)
       } catch {
         case e: RuntimeException =>
-          assert(e.getMessage.contains("Not found Alluxio config in"))
+          assert(e.getMessage.contains("Alluxio config file not found in"))
       }
     } finally {
       confDir.delete()

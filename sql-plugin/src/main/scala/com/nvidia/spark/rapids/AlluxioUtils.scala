@@ -75,15 +75,13 @@ object AlluxioUtils extends Logging with Arm {
   private val ALLUXIO_SCHEME = "alluxio://"
   private val mountedBuckets: scala.collection.mutable.Map[String, String] =
     scala.collection.mutable.Map()
-  private var alluxioMasterHost: Option[String] = None
-  private var alluxioMasterPort: Option[Int] = None
   private var alluxioMasterHostAndPort: Option[String] = None
   private var alluxioPathsToReplaceMap: Option[Map[String, String]] = None
   private var alluxioBucketRegex: Option[String] = None
   private var isInitReplaceMap: Boolean = false
   private var isInitMountPointsForAutoMount: Boolean = false
   private var alluxioFS: AlluxioFS = new AlluxioFS()
-  private var alluxioMasterAndPortReader = new AlluxioMasterAndPortReader()
+  private var alluxioMasterAndPortReader = new AlluxioConfigReader()
 
   private def checkAlluxioMounted(
       hadoopConfiguration: Configuration,
@@ -129,18 +127,15 @@ object AlluxioUtils extends Logging with Arm {
         // auto-mount is enabled
         if (!isInitMountPointsForAutoMount) {
           val (alluxioMasterHostStr, alluxioMasterPortStr) = readAlluxioMasterAndPort
-
-          alluxioMasterHost = Some(alluxioMasterHostStr)
-          alluxioMasterPort = Some(alluxioMasterPortStr.toInt)
           alluxioMasterHostAndPort = Some(alluxioMasterHostStr + ":" + alluxioMasterPortStr)
           alluxioBucketRegex = Some(conf.getAlluxioBucketRegex)
           // load mounted point by call Alluxio client.
           try {
             val (access_key, secret_key) = getKeyAndSecret(hadoopConf, runtimeConf)
             // get existing mount points
-            val mountPoints = alluxioFS.setHostAndPort(alluxioMasterHost, alluxioMasterPort)
-              .setUserAndKeys(conf.getAlluxioUser, access_key, secret_key)
-              .getExistingMountPoints()
+            alluxioFS.setHostAndPort(Some(alluxioMasterHostStr), Some(alluxioMasterPortStr.toInt))
+            alluxioFS.setUserAndKeys(conf.getAlluxioUser, access_key, secret_key)
+            val mountPoints = alluxioFS.getExistingMountPoints()
 
             mountPoints.foreach { case (alluxioPath, s3Path) =>
               // record map info from alluxio path to s3 path
@@ -186,9 +181,8 @@ object AlluxioUtils extends Logging with Arm {
           // we only support s3 or s3a bucket for now.
           // To support other cloud storage,
           // we need to support credential parameters for the others
-          alluxioFS.setHostAndPort(alluxioMasterHost, alluxioMasterPort)
-            .setUserAndKeys(alluxioUser, s3AccessKey, s3SecretKey)
-            .mount(local_bucket, remote_path)
+          alluxioFS.setUserAndKeys(alluxioUser, s3AccessKey, s3SecretKey)
+          alluxioFS.mount(local_bucket, remote_path)
           logInfo(s"Mounted bucket $remote_path to $local_bucket in Alluxio")
           mountedBuckets(local_bucket) = remote_path
         } catch {
@@ -657,7 +651,7 @@ object AlluxioUtils extends Logging with Arm {
    * For test purpose only
    */
   def setAlluxioMasterAndPortReader(
-      alluxioMasterAndPortReaderMock: AlluxioMasterAndPortReader): Unit = {
+      alluxioMasterAndPortReaderMock: AlluxioConfigReader): Unit = {
     alluxioMasterAndPortReader = alluxioMasterAndPortReaderMock
   }
 
@@ -670,8 +664,6 @@ object AlluxioUtils extends Logging with Arm {
     alluxioPathsToReplaceMap = None
     alluxioBucketRegex = None
     mountedBuckets.clear()
-    alluxioMasterHost = None
-    alluxioMasterPort = None
     alluxioMasterHostAndPort = None
   }
 }
