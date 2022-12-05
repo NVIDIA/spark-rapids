@@ -75,7 +75,6 @@ object AlluxioUtils extends Logging with Arm {
   private val ALLUXIO_SCHEME = "alluxio://"
   private val mountedBuckets: scala.collection.mutable.Map[String, String] =
     scala.collection.mutable.Map()
-  private var alluxioMasterHostAndPort: Option[String] = None
   private var alluxioPathsToReplaceMap: Option[Map[String, String]] = None
   private var alluxioBucketRegex: Option[String] = None
   private var isInitReplaceMap: Boolean = false
@@ -127,13 +126,12 @@ object AlluxioUtils extends Logging with Arm {
         // auto-mount is enabled
         if (!isInitMountPointsForAutoMount) {
           val (alluxioMasterHostStr, alluxioMasterPortStr) = readAlluxioMasterAndPort
-          alluxioMasterHostAndPort = Some(alluxioMasterHostStr + ":" + alluxioMasterPortStr)
           alluxioBucketRegex = Some(conf.getAlluxioBucketRegex)
           // load mounted point by call Alluxio client.
           try {
             val (access_key, secret_key) = getKeyAndSecret(hadoopConf, runtimeConf)
             // get existing mount points
-            alluxioFS.setHostAndPort(Some(alluxioMasterHostStr), Some(alluxioMasterPortStr.toInt))
+            alluxioFS.setHostAndPort(alluxioMasterHostStr, alluxioMasterPortStr.toInt)
             alluxioFS.setUserAndKeys(conf.getAlluxioUser, access_key, secret_key)
             val mountPoints = alluxioFS.getExistingMountPoints()
 
@@ -260,7 +258,7 @@ object AlluxioUtils extends Logging with Arm {
       alluxioUser: String,
       runtimeConf: RuntimeConfig,
       hadoopConf: Configuration): Option[Path => AlluxioPathReplaceConvertTime] = {
-    assert(alluxioMasterHostAndPort.isDefined)
+    assert(alluxioFS.getMasterHostAndPort().isDefined)
     assert(alluxioBucketRegex.isDefined)
 
     Some((f: Path) => {
@@ -270,7 +268,7 @@ object AlluxioUtils extends Logging with Arm {
         val (scheme, bucket) = getSchemeAndBucketFromPath(pathStr)
         autoMountBucket(alluxioUser, scheme, bucket, access_key, secret_key)
         AlluxioPathReplaceConvertTime(
-          new Path(replaceSchemeWithAlluxio(pathStr, scheme, alluxioMasterHostAndPort.get)),
+          new Path(replaceSchemeWithAlluxio(pathStr, scheme, alluxioFS.getMasterHostAndPort().get)),
           Some(scheme))
       } else {
         AlluxioPathReplaceConvertTime(f, None)
@@ -402,6 +400,7 @@ object AlluxioUtils extends Logging with Arm {
         }
       }
       if (replacedSchemes.nonEmpty) {
+        val alluxioMasterHostAndPort = alluxioFS.getMasterHostAndPort()
         Some(replacedSchemes.map(_ -> (ALLUXIO_SCHEME + alluxioMasterHostAndPort.get + "/")).toMap)
       } else {
         None
@@ -585,7 +584,7 @@ object AlluxioUtils extends Logging with Arm {
       // with the alluxio.pathsToReplace it already contains the exact paths
       if (conf.getAlluxioAutoMountEnabled) {
         Some(allReplacedPrefixes.map(
-          _ -> (ALLUXIO_SCHEME + alluxioMasterHostAndPort.get + "/")).toMap)
+          _ -> (ALLUXIO_SCHEME + alluxioFS.getMasterHostAndPort().get + "/")).toMap)
       } else {
         alluxioPathsToReplaceMap
       }
@@ -664,6 +663,5 @@ object AlluxioUtils extends Logging with Arm {
     alluxioPathsToReplaceMap = None
     alluxioBucketRegex = None
     mountedBuckets.clear()
-    alluxioMasterHostAndPort = None
   }
 }

@@ -29,15 +29,18 @@ import alluxio.grpc.MountPOptions
  *   mount
  */
 class AlluxioFS extends Arm {
-  private var masterHost: Option[String] = None
-  private var masterPort: Option[Int] = None
+  private var masterHost: String = _
+  private var masterPort: Int = _
+  private var masterHostAndPort: Option[String] = None
+
   private var alluxioUser: String = ""
   private var s3AccessKey: Option[String] = None
   private var s3SecretKey: Option[String] = None
 
-  def setHostAndPort(masterHost: Option[String], masterPort: Option[Int]): Unit = {
+  def setHostAndPort(masterHost: String, masterPort: Int): Unit = {
     this.masterHost = masterHost
     this.masterPort = masterPort
+    this.masterHostAndPort = Some(masterHost + ":" + masterPort)
   }
 
   def setUserAndKeys(alluxioUser: String, s3AccessKey: Option[String],
@@ -49,8 +52,8 @@ class AlluxioFS extends Arm {
 
   private def getS3ClientConf(): InstancedConfiguration = {
     val p = new AlluxioProperties()
-    masterHost.foreach(host => p.set(PropertyKey.MASTER_HOSTNAME, host))
-    masterPort.foreach(port => p.set(PropertyKey.MASTER_RPC_PORT, port))
+    p.set(PropertyKey.MASTER_HOSTNAME, masterHost)
+    p.set(PropertyKey.MASTER_RPC_PORT, masterPort)
     s3AccessKey.foreach(access => p.set(PropertyKey.S3A_ACCESS_KEY, access))
     s3SecretKey.foreach(secret => p.set(PropertyKey.S3A_SECRET_KEY, secret))
     p.set(PropertyKey.SECURITY_LOGIN_USERNAME, alluxioUser)
@@ -94,4 +97,6 @@ class AlluxioFS extends Arm {
         mountOptionsBuilder.build())
     }
   }
+
+  def getMasterHostAndPort(): Option[String] = masterHostAndPort
 }

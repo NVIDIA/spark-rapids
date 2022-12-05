@@ -35,8 +35,7 @@ class AlluxioMasterAndPortReaderMock(master: String, port: String)
 class AlluxioFSMock extends AlluxioFS {
   private val mountPoints = mutable.Map[String, String]()
 
-  override def setHostAndPort(masterHost: Option[String],
-      masterPort: Option[Int]): Unit = {
+  override def setHostAndPort(masterHost: String, masterPort: Int): Unit = {
     // do nothing
   }
 
