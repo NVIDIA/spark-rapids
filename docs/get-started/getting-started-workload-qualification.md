@@ -257,7 +257,7 @@ pretty accurate.
 ### Requirements
 
 - A Spark 3.x GPU cluster
-- The `rapids-4-spark` [jar](../download.md)
+- The `rapids-4-spark` [jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-sql-meta_2.11/22.10.0/rapids-4-spark-sql-meta_2.11-22.10.0.jar)
 
 ### How to use
 
