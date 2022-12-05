@@ -16,6 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
 from data_gen import *
+from marks import incompat
 from pyspark.sql.types import *
 from string_test import mk_str_gen
 import pyspark.sql.functions as f
@@ -128,6 +129,12 @@ def test_size_of_map(data_gen, size_of_null):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr('size(a)'),
             conf={'spark.sql.legacy.sizeOfNull': size_of_null})
+
+@incompat
+@pytest.mark.parametrize('data_gen', [string_gen], ids=idfn)
+def test_reverse_strings(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr('reverse(a)'))
 
 _sort_array_gens = non_nested_array_gens + [
         ArrayGen(all_basic_struct_gen, max_length=6),

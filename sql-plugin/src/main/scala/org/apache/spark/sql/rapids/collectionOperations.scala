@@ -309,6 +309,19 @@ case class GpuSize(child: Expression, legacySizeOfNull: Boolean)
   }
 }
 
+case class GpuReverse(child: Expression) extends GpuUnaryExpression {
+  require(child.dataType.isInstanceOf[StringType],
+    s"The size function doesn't support the operand type ${child.dataType}")
+
+  override def dataType: DataType = child.dataType
+  // override def nullable: Boolean = if (legacySizeOfNull) false else super.nullable
+
+  override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
+    input.getBase.reverseStringsOrLists()
+    // input.getBase
+  }
+}
+
 case class GpuMapKeys(child: Expression)
     extends GpuUnaryExpression with ExpectsInputTypes {
 
