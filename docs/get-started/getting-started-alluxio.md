@@ -16,7 +16,8 @@ reducing the network overhead. Compute applications talking to Alluxio can trans
 cache frequently accessed data from multiple sources, especially from remote locations.
 
 This guide will go through how to set up the RAPIDS Accelerator for Apache Spark with
-Alluxio in an on-premise cluster.
+Alluxio in an on-premise cluster. This guide sets up Alluxio to handle reads and
+by default does not handle file updates in the remote blob store.
 
 ## Prerequisites
 
@@ -427,3 +428,12 @@ See the master.log and worker.log in this path.
 ### Auto start Alluxio the master and workers
 After installing Alluxio master and workers, it's better to add a systemd service for each process of master and workers.
 Systemd service can automatically start process if process is terminated.
+
+## Alluxio limitations
+### Alluxio does not sync metadata from UFS(e.g. S3) by default
+Alluxio does not sync metadata from S3 by default, so it won't pick up any changed files.   
+For example:   
+If you update a file in the S3 from 1M size to 10M size and Alluxio already cached the 1M size file,    
+Alluxio cluster will always use the 1M file.   
+If you want to enable sync it has performance impact which will affect the read performance.   
+For details, please search `alluxio.user.file.metadata.sync.interval` in [Alluxio doc](https://docs.alluxio.io/ee/user/stable/en/reference/Properties-List.html).

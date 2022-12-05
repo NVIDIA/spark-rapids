@@ -17,17 +17,9 @@
 package com.nvidia.spark.rapids
 
 import java.io.FileNotFoundException
-import java.util.Properties
 
-import scala.collection.JavaConverters._
-import scala.collection.mutable
-import scala.io.BufferedSource
 import scala.util.control.NonFatal
 
-import alluxio.AlluxioURI
-import alluxio.conf.{AlluxioProperties, InstancedConfiguration, PropertyKey}
-import alluxio.grpc.MountPOptions
-import alluxio.wire.MountPointInfo
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -83,14 +75,12 @@ object AlluxioUtils extends Logging with Arm {
   private val ALLUXIO_SCHEME = "alluxio://"
   private val mountedBuckets: scala.collection.mutable.Map[String, String] =
     scala.collection.mutable.Map()
-  private var alluxioMasterHost: Option[String] = None
-  private var alluxioMasterPort: Option[Int] = None
-  private var alluxioMasterHostAndPort: Option[String] = None
   private var alluxioPathsToReplaceMap: Option[Map[String, String]] = None
-  private var alluxioHome: String = "/opt/alluxio-2.8.0"
   private var alluxioBucketRegex: Option[String] = None
   private var isInitReplaceMap: Boolean = false
   private var isInitMountPointsForAutoMount: Boolean = false
+  private var alluxioFS: AlluxioFS = new AlluxioFS()
+  private var alluxioMasterAndPortReader = new AlluxioConfigReader()
 
   private def checkAlluxioMounted(
       hadoopConfiguration: Configuration,
@@ -113,22 +103,7 @@ object AlluxioUtils extends Logging with Arm {
 
   // Default to read from /opt/alluxio-2.8.0 if not setting ALLUXIO_HOME
   private def readAlluxioMasterAndPort: (String, String) = {
-    var buffered_source: BufferedSource = null
-    try {
-      buffered_source = scala.io.Source.fromFile(alluxioHome + "/conf/alluxio-site.properties")
-      val prop : Properties = new Properties()
-      prop.load(buffered_source.bufferedReader())
-      val alluxio_master = prop.getProperty("alluxio.master.hostname")
-      val alluxio_port = prop.getProperty("alluxio.master.rpc.port", "19998")
-      (alluxio_master, alluxio_port)
-    } catch {
-      case _: FileNotFoundException =>
-        throw new RuntimeException(s"Not found Alluxio config in " +
-          s"$alluxioHome/conf/alluxio-site.properties, " +
-          "please check if ALLUXIO_HOME is set correctly")
-    } finally {
-      if (buffered_source != null) buffered_source.close
-    }
+    alluxioMasterAndPortReader.readAlluxioMasterAndPort()
   }
 
   // Read out alluxio.master.hostname, alluxio.master.rpc.port
@@ -139,7 +114,6 @@ object AlluxioUtils extends Logging with Arm {
       runtimeConf: RuntimeConfig): Unit = {
     this.synchronized {
       // left outside isInit to allow changing at runtime
-      alluxioHome = scala.util.Properties.envOrElse("ALLUXIO_HOME", "/opt/alluxio-2.8.0")
       AlluxioCfgUtils.checkAlluxioNotSupported(conf)
 
       if (AlluxioCfgUtils.isConfiguredReplacementMap(conf)) {
@@ -152,27 +126,19 @@ object AlluxioUtils extends Logging with Arm {
         // auto-mount is enabled
         if (!isInitMountPointsForAutoMount) {
           val (alluxioMasterHostStr, alluxioMasterPortStr) = readAlluxioMasterAndPort
-          if (alluxioMasterHostStr == null) {
-            throw new RuntimeException(
-              s"Can't find alluxio.master.hostname from $alluxioHome/conf/alluxio-site.properties.")
-          }
-          alluxioMasterHost = Some(alluxioMasterHostStr)
-          alluxioMasterPort = Some(alluxioMasterPortStr.toInt)
-          alluxioMasterHostAndPort = Some(alluxioMasterHostStr + ":" + alluxioMasterPortStr)
           alluxioBucketRegex = Some(conf.getAlluxioBucketRegex)
           // load mounted point by call Alluxio client.
           try {
             val (access_key, secret_key) = getKeyAndSecret(hadoopConf, runtimeConf)
-            val clientConf = getS3ClientConf(conf.getAlluxioUser, access_key, secret_key)
-            // get s3 mount points by alluxio client
-            withResource(alluxio.client.file.FileSystem.Factory.create(clientConf)) { fs =>
-              val mountPoints = getExistS3MountPoints(fs)
-              mountPoints.foreach { case (alluxioPath, mountPoint) =>
-                val s3Path = mountPoint.getUfsUri
-                // record map info from alluxio path to s3 path
-                mountedBuckets(alluxioPath) = s3Path
-                logInfo(s"Found mounted bucket $s3Path to $alluxioPath")
-              }
+            // get existing mount points
+            alluxioFS.setHostAndPort(alluxioMasterHostStr, alluxioMasterPortStr.toInt)
+            alluxioFS.setUserAndKeys(conf.getAlluxioUser, access_key, secret_key)
+            val mountPoints = alluxioFS.getExistingMountPoints()
+
+            mountPoints.foreach { case (alluxioPath, s3Path) =>
+              // record map info from alluxio path to s3 path
+              mountedBuckets(alluxioPath) = s3Path
+              logInfo(s"Found mounted bucket $s3Path to $alluxioPath")
             }
           } catch {
             case NonFatal(e) => logWarning(s"Failed to get alluxio mount table", e)
@@ -186,7 +152,7 @@ object AlluxioUtils extends Logging with Arm {
   }
 
   // The path should be like s3://bucket/... or s3a://bucket/...
-  private def getSchemeAndBucketFromPath(path: String) : (String, String) = {
+  private def getSchemeAndBucketFromPath(path: String): (String, String) = {
     val i = path.split("://")
     val scheme = i(0)
     if (i.length <= 1) {
@@ -196,36 +162,11 @@ object AlluxioUtils extends Logging with Arm {
     (scheme + "://", bucket)
   }
 
-  private def getS3ClientConf(
-      alluxioUser: String,
-      s3AccessKey: Option[String],
-      s3SecretKey: Option[String]): InstancedConfiguration = {
-    val p = new AlluxioProperties()
-    s3AccessKey.foreach(access => p.set(PropertyKey.S3A_ACCESS_KEY, access))
-    s3SecretKey.foreach(secret => p.set(PropertyKey.S3A_SECRET_KEY, secret))
-    alluxioMasterHost.foreach(host => p.set(PropertyKey.MASTER_HOSTNAME, host))
-    alluxioMasterPort.foreach(port => p.set(PropertyKey.MASTER_RPC_PORT, port))
-    p.set(PropertyKey.SECURITY_LOGIN_USERNAME, alluxioUser)
-    new InstancedConfiguration(p)
-  }
-
-  private def getExistS3MountPoints(
-      fs: alluxio.client.file.FileSystem): mutable.Map[String, MountPointInfo] = {
-    // get s3 mount points by alluxio client
-    val mountTable = fs.getMountTable
-    mountTable.asScala.filter { case (_, mountPoint) =>
-      // checked the alluxio code, the type should be s3
-      // anyway let's keep both of them
-      mountPoint.getUfsType == "s3" || mountPoint.getUfsType == "s3a"
-    }
-  }
-
   // path is like "s3://foo/test...", it mounts bucket "foo" by calling the alluxio CLI
   // And we'll append --option to set access_key and secret_key if existing.
   // Suppose the key doesn't exist when using like Databricks's instance profile
   private def autoMountBucket(alluxioUser: String, scheme: String, bucket: String,
       s3AccessKey: Option[String], s3SecretKey: Option[String]): Unit = {
-    val conf = getS3ClientConf(alluxioUser, s3AccessKey, s3SecretKey)
 
     // to match the output of alluxio fs mount, append / to remote_path
     // and add / before bucket name for absolute path in Alluxio
@@ -234,20 +175,14 @@ object AlluxioUtils extends Logging with Arm {
     this.synchronized {
       if (!mountedBuckets.contains(local_bucket)) {
         try {
-          withResource(alluxio.client.file.FileSystem.Factory.create(conf)) { fs =>
-            // not mount yet, call mount command
-            // we only support s3 or s3a bucket for now.
-            // To support other cloud storage,
-            // we need to support credential parameters for the others
-            val mountOptionsBuilder = MountPOptions.newBuilder().setReadOnly(true)
-            s3AccessKey.foreach(e => mountOptionsBuilder.putProperties("s3a.accessKeyId", e))
-            s3SecretKey.foreach(e => mountOptionsBuilder.putProperties("s3a.secretKey", e))
-            // mount new bucket
-            fs.mount(new AlluxioURI(local_bucket), new AlluxioURI(remote_path),
-              mountOptionsBuilder.build())
-            logInfo(s"Mounted bucket $remote_path to $local_bucket in Alluxio")
-            mountedBuckets(local_bucket) = remote_path
-          }
+          // not mount yet, call mount command
+          // we only support s3 or s3a bucket for now.
+          // To support other cloud storage,
+          // we need to support credential parameters for the others
+          alluxioFS.setUserAndKeys(alluxioUser, s3AccessKey, s3SecretKey)
+          alluxioFS.mount(local_bucket, remote_path)
+          logInfo(s"Mounted bucket $remote_path to $local_bucket in Alluxio")
+          mountedBuckets(local_bucket) = remote_path
         } catch {
           case NonFatal(e) =>
             throw new RuntimeException(s"Mount bucket $remote_path to $local_bucket failed", e)
@@ -265,7 +200,7 @@ object AlluxioUtils extends Logging with Arm {
   // second try to get from environment variables
   private def getKeyAndSecret(
       hadoopConfiguration: Configuration,
-      runtimeConf: RuntimeConfig) : (Option[String], Option[String]) = {
+      runtimeConf: RuntimeConfig): (Option[String], Option[String]) = {
     val hadoopAccessKey =
       hadoopConfiguration.get("fs.s3a.access.key")
     val hadoopSecretKey =
@@ -294,7 +229,7 @@ object AlluxioUtils extends Logging with Arm {
 
   private def genFuncForPathReplacement(
       replaceMapOption: Option[Map[String, String]])
-    : Option[Path => AlluxioPathReplaceConvertTime] = {
+  : Option[Path => AlluxioPathReplaceConvertTime] = {
     if (replaceMapOption.isDefined) {
       Some((f: Path) => {
         val pathStr = f.toString
@@ -323,7 +258,7 @@ object AlluxioUtils extends Logging with Arm {
       alluxioUser: String,
       runtimeConf: RuntimeConfig,
       hadoopConf: Configuration): Option[Path => AlluxioPathReplaceConvertTime] = {
-    assert(alluxioMasterHostAndPort.isDefined)
+    assert(alluxioFS.getMasterHostAndPort().isDefined)
     assert(alluxioBucketRegex.isDefined)
 
     Some((f: Path) => {
@@ -333,7 +268,7 @@ object AlluxioUtils extends Logging with Arm {
         val (scheme, bucket) = getSchemeAndBucketFromPath(pathStr)
         autoMountBucket(alluxioUser, scheme, bucket, access_key, secret_key)
         AlluxioPathReplaceConvertTime(
-          new Path(replaceSchemeWithAlluxio(pathStr, scheme, alluxioMasterHostAndPort.get)),
+          new Path(replaceSchemeWithAlluxio(pathStr, scheme, alluxioFS.getMasterHostAndPort().get)),
           Some(scheme))
       } else {
         AlluxioPathReplaceConvertTime(f, None)
@@ -345,7 +280,7 @@ object AlluxioUtils extends Logging with Arm {
 
   // Contains the file string to read and contains a boolean indicating if the
   // path was updated to an alluxio:// path.
-  case class AlluxioPathReplaceTaskTime(fileStr: String, wasReplaced: Boolean)
+  private case class AlluxioPathReplaceTaskTime(fileStr: String, wasReplaced: Boolean)
 
   // Contains the file Path to read and optionally contains the prefix of the original path.
   // The original path is needed when using the input_file_name option with the reader so
@@ -356,8 +291,8 @@ object AlluxioUtils extends Logging with Arm {
   // Returns a tuple with the file path and whether or not it replaced the
   // scheme with the Alluxio one.
   private def genFuncForTaskTimeReplacement(pathsToReplace: Map[String, String])
-    : Option[String => AlluxioPathReplaceTaskTime] = {
-    Some((pathStr: String) => {
+  : String => AlluxioPathReplaceTaskTime = {
+    (pathStr: String) => {
       // pathsToReplace contain strings of exact paths to replace
       val matchedSet = pathsToReplace.filter { case (pattern, _) => pathStr.startsWith(pattern) }
       if (matchedSet.size > 1) {
@@ -371,7 +306,7 @@ object AlluxioUtils extends Logging with Arm {
       } else {
         AlluxioPathReplaceTaskTime(pathStr, wasReplaced = false)
       }
-    })
+    }
   }
 
   private def getReplacementMapOption(conf: RapidsConf): Option[Map[String, String]] = {
@@ -414,38 +349,36 @@ object AlluxioUtils extends Logging with Arm {
   def updateFilesTaskTimeIfAlluxio(
       origFiles: Array[PartitionedFile],
       alluxioPathReplacementMap: Option[Map[String, String]])
-    : Array[PartitionedFileInfoOptAlluxio] = {
+  : Array[PartitionedFileInfoOptAlluxio] = {
     val res: Array[PartitionedFileInfoOptAlluxio] =
       alluxioPathReplacementMap.map { pathsToReplace =>
-      replacePathInPartitionFileTaskTimeIfNeeded(pathsToReplace, origFiles)
-    }.getOrElse(origFiles.map(PartitionedFileInfoOptAlluxio(_, None)))
+        replacePathInPartitionFileTaskTimeIfNeeded(pathsToReplace, origFiles)
+      }.getOrElse(origFiles.map(PartitionedFileInfoOptAlluxio(_, None)))
     logDebug(s"Updated files at TASK_TIME for Alluxio: ${res.mkString(",")}")
     res
   }
 
   // Replaces the path if needed and returns the replaced path and optionally the
   // original file if it replaced the scheme with an Alluxio scheme.
-  def replacePathInPartitionFileTaskTimeIfNeeded(
+  private def replacePathInPartitionFileTaskTimeIfNeeded(
       pathsToReplace: Map[String, String],
       files: Array[PartitionedFile]): Array[PartitionedFileInfoOptAlluxio] = {
     val replaceFunc = genFuncForTaskTimeReplacement(pathsToReplace)
-    if (replaceFunc.isDefined) {
-      files.map { file =>
-        val replacedFileInfo = replaceFunc.get(file.filePath)
-        if (replacedFileInfo.wasReplaced) {
-          logDebug(s"TASK_TIME replaced ${file.filePath} with ${replacedFileInfo.fileStr}")
-          PartitionedFileInfoOptAlluxio(PartitionedFile(file.partitionValues,
-            replacedFileInfo.fileStr, file.start, file.length),
-            Some(file))
-        } else {
-          PartitionedFileInfoOptAlluxio(file, None)
-        }
+
+    files.map { file =>
+      val replacedFileInfo = replaceFunc(file.filePath)
+      if (replacedFileInfo.wasReplaced) {
+        logDebug(s"TASK_TIME replaced ${file.filePath} with ${replacedFileInfo.fileStr}")
+        PartitionedFileInfoOptAlluxio(PartitionedFile(file.partitionValues,
+          replacedFileInfo.fileStr, file.start, file.length),
+          Some(file))
+      } else {
+        PartitionedFileInfoOptAlluxio(file, None)
       }
-    } else {
-      files.map(PartitionedFileInfoOptAlluxio(_, None))
     }
   }
 
+  // if auto-mount, use this to check if need replacements
   def autoMountIfNeeded(
       conf: RapidsConf,
       pds: Seq[PartitionDirectory],
@@ -467,6 +400,7 @@ object AlluxioUtils extends Logging with Arm {
         }
       }
       if (replacedSchemes.nonEmpty) {
+        val alluxioMasterHostAndPort = alluxioFS.getMasterHostAndPort()
         Some(replacedSchemes.map(_ -> (ALLUXIO_SCHEME + alluxioMasterHostAndPort.get + "/")).toMap)
       } else {
         None
@@ -476,6 +410,7 @@ object AlluxioUtils extends Logging with Arm {
     }
   }
 
+  // If specified replace map, use this to check if need replacements
   def checkIfNeedsReplaced(
       conf: RapidsConf,
       pds: Seq[PartitionDirectory],
@@ -507,7 +442,7 @@ object AlluxioUtils extends Logging with Arm {
   // reverse the replacePathIfNeeded, returns a tuple of the file passed in and then if it
   // was replaced the original file
   def getOrigPathFromReplaced(pfs: Array[PartitionedFile],
-      pathsToReplace: Map[String,String]): Array[PartitionedFileInfoOptAlluxio] = {
+      pathsToReplace: Map[String, String]): Array[PartitionedFileInfoOptAlluxio] = {
     pfs.map { pf =>
       val file = pf.filePath
       // pathsToReplace contain strings of exact paths to replace
@@ -537,7 +472,7 @@ object AlluxioUtils extends Logging with Arm {
       conf: RapidsConf,
       relation: HadoopFsRelation,
       partitionFilters: Seq[Expression],
-      dataFilters: Seq[Expression]): (FileIndex, Option[Map[String, String]])= {
+      dataFilters: Seq[Expression]): (FileIndex, Option[Map[String, String]]) = {
     val hadoopConf = relation.sparkSession.sparkContext.hadoopConfiguration
     val runtimeConf = relation.sparkSession.conf
     initAlluxioInfo(conf, hadoopConf, runtimeConf)
@@ -569,7 +504,7 @@ object AlluxioUtils extends Logging with Arm {
           relation.options,
           Option(relation.dataSchema),
           userSpecifiedPartitionSpec = Some(specAdjusted))
-          (fi, didReplaceAnyRoots ++ replacedPrefixes)
+        (fi, didReplaceAnyRoots ++ replacedPrefixes)
       }
 
       // Before this change https://github.com/NVIDIA/spark-rapids/pull/6806,
@@ -649,7 +584,7 @@ object AlluxioUtils extends Logging with Arm {
       // with the alluxio.pathsToReplace it already contains the exact paths
       if (conf.getAlluxioAutoMountEnabled) {
         Some(allReplacedPrefixes.map(
-          _ -> (ALLUXIO_SCHEME + alluxioMasterHostAndPort.get + "/")).toMap)
+          _ -> (ALLUXIO_SCHEME + alluxioFS.getMasterHostAndPort().get + "/")).toMap)
       } else {
         alluxioPathsToReplaceMap
       }
@@ -693,13 +628,40 @@ object AlluxioUtils extends Logging with Arm {
       if (avgSize > rapidsConf.getAlluxioLargeFileThreshold) {
         // if files are large
         logInfo(s"Reading directly from S3, " +
-          s"average file size $avgSize > threshold ${rapidsConf.getAlluxioLargeFileThreshold}")
+            s"average file size $avgSize > threshold ${rapidsConf.getAlluxioLargeFileThreshold}")
         true
       } else {
         logInfo(s"Skip reading directly from S3, " +
-          s"average file size $avgSize <= threshold ${rapidsConf.getAlluxioLargeFileThreshold}")
+            s"average file size $avgSize <= threshold ${rapidsConf.getAlluxioLargeFileThreshold}")
         false
       }
     }
+  }
+
+
+  /**
+   * For test purpose only
+   */
+  def setAlluxioFS(alluxioFSMock: AlluxioFS): Unit = {
+    alluxioFS = alluxioFSMock
+  }
+
+  /**
+   * For test purpose only
+   */
+  def setAlluxioMasterAndPortReader(
+      alluxioMasterAndPortReaderMock: AlluxioConfigReader): Unit = {
+    alluxioMasterAndPortReader = alluxioMasterAndPortReaderMock
+  }
+
+  /**
+   * For test purpose only
+   */
+  def resetInitInfo(): Unit = {
+    isInitReplaceMap = false
+    isInitMountPointsForAutoMount = false
+    alluxioPathsToReplaceMap = None
+    alluxioBucketRegex = None
+    mountedBuckets.clear()
   }
 }
