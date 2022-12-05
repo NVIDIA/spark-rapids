@@ -115,7 +115,7 @@ class AlluxioUtilsSuite extends FunSuite {
     val rapidsConf = new RapidsConf(sqlConf)
     val fs = new FileStatus(0, false, 1, 1024L, 0L,
       new Path("s3a://bucket_1/a.parquet"))
-    val pds = Seq(PartitionDirectory(null, Seq(fs)))
+    val pds = Seq(PartitionDirectory(null, Array(fs)))
     val configuration = new Configuration()
     val runtimeConfig = mock[RuntimeConfig]
     when(runtimeConfig.getOption("spark.hadoop.fs.s3a.access.key")).thenReturn(Some("access key"))
@@ -134,7 +134,7 @@ class AlluxioUtilsSuite extends FunSuite {
     val rapidsConf = new RapidsConf(sqlConf)
     val fs = new FileStatus(0, false, 1, 1024L, 0L,
       new Path("s3a://not_found/a.parquet"))
-    val pds = Seq(PartitionDirectory(null, Seq(fs)))
+    val pds = Seq(PartitionDirectory(null, Array(fs)))
     val configuration = new Configuration()
     val runtimeConfig = mock[RuntimeConfig]
     when(runtimeConfig.getOption("spark.hadoop.fs.s3a.access.key")).thenReturn(Some("access key"))
@@ -154,7 +154,7 @@ class AlluxioUtilsSuite extends FunSuite {
     val rapidsConf = new RapidsConf(sqlConf)
     val fs = new FileStatus(0, false, 1, 1024L, 0L,
       new Path("s3a://bucket_1/dir1/a.parquet")) // matches 2 rules
-    val pds = Seq(PartitionDirectory(null, Seq(fs)))
+    val pds = Seq(PartitionDirectory(null, Array(fs)))
     val configuration = new Configuration()
     val runtimeConfig = mock[RuntimeConfig]
     when(runtimeConfig.getOption("spark.hadoop.fs.s3a.access.key")).thenReturn(Some("access key"))
@@ -179,7 +179,7 @@ class AlluxioUtilsSuite extends FunSuite {
     val rapidsConf = new RapidsConf(sqlConf)
     val fs = new FileStatus(0, false, 1, 1024L, 0L,
       new Path("s3a://bucket_1/dir1/a.parquet")) // matches 2 rules
-    val pds = Seq(PartitionDirectory(null, Seq(fs)))
+    val pds = Seq(PartitionDirectory(null, Array(fs)))
     val configuration = new Configuration()
     val runtimeConfig = mock[RuntimeConfig]
     when(runtimeConfig.getOption("spark.hadoop.fs.s3a.access.key")).thenReturn(Some("access key"))
@@ -202,7 +202,7 @@ class AlluxioUtilsSuite extends FunSuite {
     val rapidsConf = new RapidsConf(sqlConf)
     val fs = new FileStatus(0, false, 1, 1024L, 0L,
       new Path("s3a://bucket_1/a.parquet"))
-    val pds = Seq(PartitionDirectory(null, Seq(fs)))
+    val pds = Seq(PartitionDirectory(null, Array(fs)))
     val configuration = new Configuration()
     val runtimeConfig = mock[RuntimeConfig]
     when(runtimeConfig.getOption("spark.hadoop.fs.s3a.access.key")).thenReturn(Some("access key"))
@@ -228,13 +228,13 @@ class AlluxioUtilsSuite extends FunSuite {
     assert(alluxioFSMock.getMountPoints().isEmpty)
     val fs = new FileStatus(0, false, 1, 1024L, 0L,
       new Path("s3a://bucket_1/a.parquet"))
-    val pds = Seq(PartitionDirectory(null, Seq(fs)))
+    val pds = Seq(PartitionDirectory(null, Array(fs)))
     assert(AlluxioUtils.autoMountIfNeeded(rapidsConf, pds, configuration, runtimeConfig).isDefined)
     assert(alluxioFSMock.getMountPoints().contains("/bucket_1"))
 
     val fs2 = new FileStatus(0, false, 1, 1024L, 0L,
       new Path("myScheme://bucket_2/a.parquet"))
-    val pds2 = Seq(PartitionDirectory(null, Seq(fs2)))
+    val pds2 = Seq(PartitionDirectory(null, Array(fs2)))
     assert(AlluxioUtils.autoMountIfNeeded(rapidsConf, pds2, configuration, runtimeConfig).isEmpty)
     assert(alluxioFSMock.getMountPoints().size == 1)
   }
