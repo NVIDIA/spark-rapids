@@ -453,7 +453,7 @@ When creating a Databricks cluster via the Docker container for Databricks,
 Set Environment variable ENABLE_ALLUXIO and PROMETHEUS_COPY_DATA_PATH, for example:   
 ```
 ENABLE_ALLUXIO=1
-PROMETHEUS_COPY_DATA_PATH=/dbfs/chongg/dblogs-prometheus
+PROMETHEUS_COPY_DATA_PATH=/dbfs/user1/dblogs-prometheus
 ``` 
 ![img](../img/Databricks/save-prometheus.png)   
 The cluster will install Prometheus, configure Prometheus to collect the metrics into its own storage,    
