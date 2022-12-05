@@ -28,11 +28,6 @@
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin</name>
     <description>The RAPIDS SQL plugin for Apache Spark</description>
     <version>23.02.0-SNAPSHOT</version>
-    <properties>
-        <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/src/generated</spark.shim.dest>
-        <spark.shim.test.sources>${project.basedir}/src/test/${spark.distro}</spark.shim.test.sources>
-        <symlink.shim.files>true</symlink.shim.files>
-    </properties>
     <dependencies>
         <dependency>
             <groupId>com.nvidia</groupId>
@@ -465,62 +460,6 @@
               <artifactId>maven-antrun-plugin</artifactId>
               <executions>
                 <execution>
-                    <id>create-shim-symlikns</id>
-                    <phase>generate-sources</phase>
-                    <goals><goal>run</goal></goals>
-                    <configuration>
-                        <target xmlns:ac="antlib:net.sf.antcontrib">
-                            <mkdir dir="${spark.shim.dest}"/>
-                            <delete>
-                                <fileset dir="${spark.shim.dest}" includes="**/*"/>
-                            </delete>
-
-                            <patternset id="shimSourcePatternSet">
-                                <include name="**/*.java"/>
-                                <include name="**/*.scala"/>
-                                <!-- exclude unshimmed files -->
-                                <exclude name="*/scala/**"/>
-                                <exclude name="*/java/**"/>
-                            </patternset>
-                            <fileset dir="${project.basedir}/src" id="shimFileSetId">
-                                <patternset refid="shimSourcePatternSet"/>
-                                <containsregexp expression="// spark-distros.*:${spark.distro}:"/>
-                            </fileset>
-
-
-                            <ac:for param="shimSourceAbsolutePath">
-                                <path><fileset refid="shimFileSetId"/></path>
-                                <sequential>
-                                    <ac:propertyregex override="true"
-                                        input="@{shimSourceAbsolutePath}"
-                                        property="shimSourcePackagePath"
-                                        regexp="${project.basedir}/src/(main|test)/[^/]+/(.*)"
-                                        replace="\1/\2"/>
-                                    <ac:propertyregex override="true"
-                                        input="${shimSourcePackagePath}"
-                                        property="shimSourcePackageDir"
-                                        regexp="(.*)/[^/]+"
-                                        replace="\1"/>
-                                    <mkdir dir="${spark.shim.dest}/${shimSourcePackageDir}"/>
-                                    <ac:if>
-                                        <istrue value="${symlink.shim.files}"/>
-                                        <then>
-                                            <symlink resource="@{shimSourceAbsolutePath}"
-                                                link="${spark.shim.dest}/${shimSourcePackagePath}"
-                                                overwrite="true"/>
-                                        </then>
-                                        <else>
-                                            <copy file="@{shimSourceAbsolutePath}"
-                                                tofile="${spark.shim.dest}/${shimSourcePackagePath}"
-                                                overwrite="true"/>
-                                        </else>
-                                    </ac:if>
-                                </sequential>
-                            </ac:for>
-                        </target>
-                    </configuration>
-                </execution>
-                <execution>
                   <id>copy-notice</id>
                   <goals>
                     <goal>run</goal>
@@ -573,30 +512,6 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>build-helper-maven-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>add-shim-sources</id>
-                        <phase>generate-sources</phase>
-                        <goals><goal>add-source</goal></goals>
-                        <configuration>
-                            <sources>
-                                <source>${spark.shim.dest}/main/scala</source>
-                                <source>${spark.shim.dest}/main/java</source>
-                            </sources>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>add-shim-test-sources</id>
-                        <phase>generate-test-sources</phase>
-                        <goals><goal>add-test-source</goal></goals>
-                        <configuration>
-                            <sources>
-                                <source>${spark.shim.dest}/test/scala</source>
-                                <source>${spark.shim.dest}/test/java</source>
-                            </sources>
-                        </configuration>
-                    </execution>
-                </executions>
             </plugin>
         </plugins>
     </build>
