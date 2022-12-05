@@ -135,10 +135,16 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
     # Floating Point.
     ('hive-delim-text/simple-float-values',   make_schema(FloatType()),          {}),
     ('hive-delim-text/simple-float-values',   make_schema(DoubleType()),         {}),
-    pytest.param('hive-delim-text/simple-float-values', make_schema(IntegerType()), {},
-                 marks=pytest.mark.xfail(reason="Strings with alphabets/decimal points are read as null, "
-                                                "when read as integral types."
-                                                "See https://github.com/NVIDIA/spark-rapids/issues/7085")),
+    ('hive-delim-text/simple-float-values',   make_schema(DecimalType(10, 3)),   {}),
+    ('hive-delim-text/simple-float-values',   make_schema(DecimalType(38, 10)),   {}),
+    ('hive-delim-text/simple-float-values',   make_schema(IntegerType()),         {}),
+    ('hive-delim-text/extended-float-values',   make_schema(IntegerType()),         {}),
+    ('hive-delim-text/extended-float-values',   make_schema(FloatType()),          {}),
+    ('hive-delim-text/extended-float-values',   make_schema(DoubleType()),         {}), 
+    pytest.param('hive-delim-text/extended-float-values',   make_schema(DecimalType(10, 3)),   {},
+        marks=pytest.mark.xfail(reason="GPU supports more valid values than CPU")),
+    pytest.param('hive-delim-text/extended-float-values',   make_schema(DecimalType(38, 10)),   {},
+        marks=pytest.mark.xfail(reason="GPU supports more valid values than CPU")),
 
     # Custom datasets
     ('hive-delim-text/Acquisition_2007Q3', acq_schema, {}),

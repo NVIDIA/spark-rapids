@@ -21,6 +21,7 @@ import com.nvidia.spark.RebaseHelper.withResource
 import com.nvidia.spark.rapids.{ColumnarPartitionReaderWithPartitionValues, CSVPartitionReaderBase, GpuColumnVector, GpuExec, GpuMetric, HostStringColBufferer, HostStringColBuffererFactory, PartitionReaderIterator, PartitionReaderWithBytesRead, RapidsConf}
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, DEBUG_LEVEL, DESCRIPTION_BUFFER_TIME, DESCRIPTION_FILTER_TIME, DESCRIPTION_GPU_DECODE_TIME, DESCRIPTION_PEAK_DEVICE_MEMORY, ESSENTIAL_LEVEL, FILTER_TIME, GPU_DECODE_TIME, MODERATE_LEVEL, NUM_OUTPUT_ROWS, PEAK_DEVICE_MEMORY}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
+import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.{ShimFilePartitionReaderFactory, ShimSparkPlan, SparkShimImpl}
 import java.net.URI
 import java.util.concurrent.TimeUnit.NANOSECONDS
@@ -46,7 +47,7 @@ import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionDirec
 import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.hive.client.HiveClientImpl
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{BooleanType, DataType, StructType}
+import org.apache.spark.sql.types.{BooleanType, DataType, DecimalType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -323,12 +324,12 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
 
   lazy val inputRDD: RDD[ColumnarBatch] = {
     // Assume Delimited text.
-    // Note: The populated `options` aren't strictly required for text, currently.
-    //       These are added in case they are required for table read in the future,
-    //       (like with Hive ORC tables).
     val options                   = hiveTableRelation.tableMeta.properties ++
                                     hiveTableRelation.tableMeta.storage.properties
-    val hadoopConf                = sparkSession.sessionState.newHadoopConfWithOptions(options)
+    val hadoopConf                = sparkSession.sessionState.newHadoopConf()
+    // In the CPU HiveTableScanExec the config will have a bunch of confs set for S3 keys
+    //  and predicate push down/etc. We don't need this because we are getting that information
+    //  directly.
     val broadcastHadoopConf       = sparkSession.sparkContext.broadcast(
                                       new SerializableConfiguration(hadoopConf))
     val sqlConf                   = sparkSession.sessionState.conf
@@ -443,7 +444,7 @@ case class GpuHiveTextPartitionReaderFactory(sqlConf: SQLConf,
                                              maxReaderBatchSizeRows: Integer,
                                              maxReaderBatchSizeBytes: Long,
                                              metrics: Map[String, GpuMetric],
-                                             @transient params: Map[String, String])
+                                             params: Map[String, String])
   extends ShimFilePartitionReaderFactory(params) {
 
   override def buildReader(partitionedFile: PartitionedFile): PartitionReader[InternalRow] = {
@@ -459,7 +460,7 @@ case class GpuHiveTextPartitionReaderFactory(sqlConf: SQLConf,
     val conf = broadcastConf.value.value
     val reader = new PartitionReaderWithBytesRead(
                    new GpuHiveDelimitedTextPartitionReader(
-                     conf, csvOptions, partFile, inputFileSchema,
+                     conf, csvOptions, params, partFile, inputFileSchema,
                      requestedOutputDataSchema, maxReaderBatchSizeRows,
                      maxReaderBatchSizeBytes, metrics))
 
@@ -478,6 +479,7 @@ case class GpuHiveTextPartitionReaderFactory(sqlConf: SQLConf,
 // Reader that converts from chunked data buffers into cudf.Table.
 class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
                                           csvOptions: CSVOptions,
+                                          params: Map[String, String],
                                           partFile: PartitionedFile,
                                           inputFileSchema: StructType,
                                           requestedOutputDataSchema: StructType,
@@ -510,7 +512,7 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
     // [[requestedOutputDataSchema]] (i.e. requiredAttributes).
 
     withResource(splitTable) { _ =>
-      val nullFormat = conf.get("serialization.null.format", "\\N")
+      val nullFormat = params.getOrElse("serialization.null.format", "\\N")
       withResource(Scalar.fromString(nullFormat)) { nullTag =>
         withResource(Scalar.fromNull(DType.STRING)) { nullVal =>
           // This is a bit different because we are dropping columns/etc ourselves
@@ -533,6 +535,46 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
           }
         }
       }
+    }
+  }
+
+  override def castStringToBool(input: ColumnVector): ColumnVector = {
+    // This is here to try and make it simple to support extends boolean support in the future.
+    val (trueVals, falseVals) = (Array("true"), Array("false"))
+
+    val (isTrue, isFalse) = withResource(input.lower()) { lowered =>
+      // True if it is a true value, false if it is not
+      val isTrue = withResource(ColumnVector.fromStrings(trueVals: _*)) { trueValsCol =>
+        lowered.contains(trueValsCol)
+      }
+      closeOnExcept(isTrue) { _ =>
+        val isFalse = withResource(ColumnVector.fromStrings(falseVals: _*)) { falseValsCol =>
+          lowered.contains(falseValsCol)
+        }
+        (isTrue, isFalse)
+      }
+    }
+    withResource(isTrue) { _ =>
+      val tOrF = withResource(isFalse) { _ =>
+        isTrue.or(isFalse)
+      }
+      withResource(tOrF) { _ =>
+        withResource(Scalar.fromNull(DType.BOOL8)) { ns =>
+          tOrF.ifElse(isTrue, ns)
+        }
+      }
+    }
+  }
+
+  override def castStringToInt(input: ColumnVector, intType: DType): ColumnVector =
+    CastStrings.toInteger(input, false, false, intType)
+
+  override def castStringToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector =
+    CastStrings.toDecimal(input, false, false, dt.precision, -dt.scale)
+
+  override def castStringToFloat(input: ColumnVector, dt: DType): ColumnVector = {
+    withResource(input.strip()) { stripped =>
+      super.castStringToFloat(stripped, dt)
     }
   }
 }
