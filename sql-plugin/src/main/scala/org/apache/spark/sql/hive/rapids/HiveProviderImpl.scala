@@ -180,11 +180,11 @@ class HiveProviderImpl extends HiveProvider {
 
           private def checkIfEnabled(): Unit = {
             if (!conf.isHiveDelimitedTextEnabled) {
-              willNotWorkOnGpu("hive text I/O has been disabled. To enable this, " +
+              willNotWorkOnGpu("Hive text I/O has been disabled. To enable this, " +
                                s"set ${RapidsConf.ENABLE_HIVE_TEXT} to true")
             }
             if (!conf.isHiveDelimitedTextReadEnabled) {
-              willNotWorkOnGpu("reading hive delimited text tables has been disabled, " +
+              willNotWorkOnGpu("reading Hive delimited text tables has been disabled, " +
                                s"to enable this, set ${RapidsConf.ENABLE_HIVE_TEXT_READ} to true")
             }
           }

@@ -169,6 +169,155 @@ class HostStringBufferer(size: Long, separator: Array[Byte]) extends LineBuffere
 }
 
 /**
+ * We read text files in one line at a time from Spark. This provides an abstraction in how those
+ * lines are buffered before being processed on the GPU.
+ */
+trait LineBufferer extends AutoCloseable {
+  /**
+   * Get the current size of the data that has been buffered.
+   */
+  def getLength: Long
+
+  /**
+   * Add a new line of bytes to the data to process.
+   */
+  def add(line: Array[Byte], offset: Int, len: Int): Unit
+}
+
+/**
+ * Factory to create a LineBufferer instance that can be used to buffer lines being read in.
+ */
+trait LineBuffererFactory[BUFF <: LineBufferer] {
+  def createBufferer(estimatedSize: Long, lineSeparatorInRead: Array[Byte]): BUFF
+}
+
+object HostLineBuffererFactory extends LineBuffererFactory[HostLineBufferer] {
+  override def createBufferer(estimatedSize: Long,
+      lineSeparatorInRead: Array[Byte]): HostLineBufferer =
+    new HostLineBufferer(estimatedSize, lineSeparatorInRead)
+}
+
+/**
+ * Buffer the lines in a single HostMemoryBuffer with the separator inserted inbetween each of
+ * the lines.
+ */
+class HostLineBufferer(size: Long, separator: Array[Byte]) extends LineBufferer with Arm {
+  private var buffer = HostMemoryBuffer.allocate(size)
+  private var location: Long = 0
+
+  def grow(needed: Long): Unit = {
+    val newSize = math.max(buffer.getLength * 2, needed)
+    closeOnExcept(HostMemoryBuffer.allocate(newSize)) { newBuff =>
+      newBuff.copyFromHostBuffer(0, buffer, 0, buffer.getLength)
+      buffer.close()
+      buffer = newBuff
+    }
+  }
+
+  override def getLength: Long = location
+
+  override def add(line: Array[Byte], lineOffset: Int, lineLen: Int): Unit = {
+    val newTotal = location + lineLen + separator.length
+    if (newTotal > buffer.getLength) {
+      grow(newTotal)
+    }
+
+    // Can have an empty line, do not write this to buffer but add the separator
+    // and totalRows
+    if (lineLen != 0) {
+      buffer.setBytes(location, line, lineOffset, lineLen)
+      location = location + lineLen
+    }
+    buffer.setBytes(location, separator, 0, separator.length)
+    location = location + separator.length
+  }
+
+  def getBufferAndRelease: HostMemoryBuffer = {
+    val ret = buffer
+    buffer = null
+    ret
+  }
+
+  override def close(): Unit = {
+    if (buffer != null) {
+      buffer.close()
+      buffer = null
+    }
+  }
+}
+
+object HostStringColBuffererFactory extends LineBuffererFactory[HostStringColBufferer] {
+  override def createBufferer(estimatedSize: Long,
+      lineSeparatorInRead: Array[Byte]): HostStringColBufferer =
+    new HostStringColBufferer(estimatedSize, lineSeparatorInRead)
+}
+
+/**
+ * Buffer the lines as a HostColumnVector of strings, one per line.
+ */
+class HostStringColBufferer(size: Long, separator: Array[Byte]) extends LineBufferer with Arm {
+  // We had to jump through some hoops so that we could grow the string columns dynamically
+  //  might be nice to have this in CUDF, but this works fine too.
+  private var dataBuffer = HostMemoryBuffer.allocate(size)
+  private var dataLocation: Long = 0
+  private var rowsAllocated: Int = Math.max((size / 200).toInt, 512)
+  private var offsetsBuffer = HostMemoryBuffer.allocate((rowsAllocated + 1) *
+      DType.INT32.getSizeInBytes)
+  private var numRows: Int = 0
+
+  override def getLength: Long = dataLocation
+
+  override def add(line: Array[Byte], lineOffset: Int, lineLen: Int): Unit = {
+    if (numRows + 1 > rowsAllocated) {
+      val newRowsAllocated = math.min(rowsAllocated * 2, Int.MaxValue - 1)
+      val tmpBuffer = HostMemoryBuffer.allocate((newRowsAllocated + 1) * DType.INT32.getSizeInBytes)
+      tmpBuffer.copyFromHostBuffer(0, offsetsBuffer, 0, offsetsBuffer.getLength)
+      offsetsBuffer.close()
+      offsetsBuffer = tmpBuffer
+      rowsAllocated = newRowsAllocated
+    }
+
+    if (dataLocation + lineLen > dataBuffer.getLength) {
+      val newSize = math.max(dataBuffer.getLength * 2, lineLen)
+      closeOnExcept(HostMemoryBuffer.allocate(newSize)) { newBuff =>
+        newBuff.copyFromHostBuffer(0, dataBuffer, 0, dataLocation)
+        dataBuffer.close()
+        dataBuffer = newBuff
+      }
+    }
+    if (lineLen != 0) {
+      dataBuffer.setBytes(dataLocation, line, lineOffset, lineLen)
+    }
+    offsetsBuffer.setInt(numRows * DType.INT32.getSizeInBytes, dataLocation.toInt)
+    dataLocation += lineLen
+    numRows += 1
+  }
+
+  def getColumnAndRelease: ColumnVector = {
+    // Set the last offset
+    offsetsBuffer.setInt(numRows * DType.INT32.getSizeInBytes, dataLocation.toInt)
+    withResource(new HostColumnVector(DType.STRING, numRows, Optional.of[java.lang.Long](0L),
+      dataBuffer, null, offsetsBuffer, new util.ArrayList[HostColumnVectorCore]())) { hostRet =>
+      dataBuffer = null
+      offsetsBuffer = null
+      hostRet.copyToDevice()
+    }
+  }
+
+  override def close(): Unit = {
+    if (dataBuffer != null) {
+      dataBuffer.close()
+      dataBuffer = null
+    }
+
+    if (offsetsBuffer != null) {
+      offsetsBuffer.close()
+      offsetsBuffer = null
+    }
+  }
+}
+
+/**
  * The text based PartitionReader
  * @param conf the Hadoop configuration
  * @param partFile file split to read

@@ -17,11 +17,11 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.Cast
+import org.apache.spark.sql.catalyst.expressions.{Cast, NullIntolerant, TimeZoneAwareExpression, UnaryExpression}
 import org.apache.spark.sql.types._
 
 /** Meta-data for cast and ansi_cast. */
-final class CastExprMeta[INPUT <: Cast](
+final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression with NullIntolerant](
     cast: INPUT,
     val ansiEnabled: Boolean,
     conf: RapidsConf,

@@ -143,9 +143,9 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
     # Custom datasets
     ('hive-delim-text/Acquisition_2007Q3', acq_schema, {}),
     ('hive-delim-text/Performance_2007Q3', perf_schema, {'serialization.null.format': ''}),
-    pytest.param('hive-delim-text/Performance_2007Q3', perf_schema, {}),
+    ('hive-delim-text/Performance_2007Q3', perf_schema, {}),
     ('hive-delim-text/trucks-1', trucks_schema, {}),
-    pytest.param('hive-delim-text/trucks-err', trucks_schema, {}),
+    ('hive-delim-text/trucks-err', trucks_schema, {}),
 
     # Date/Time
     ('hive-delim-text/timestamp', timestamp_schema, {}),

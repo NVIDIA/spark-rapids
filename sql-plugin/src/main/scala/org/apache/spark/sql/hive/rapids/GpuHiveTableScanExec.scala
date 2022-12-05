@@ -18,7 +18,7 @@ package org.apache.spark.sql.hive.rapids
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar, Schema, Table}
 import com.nvidia.spark.RebaseHelper.withResource
-import com.nvidia.spark.rapids.{ColumnarPartitionReaderWithPartitionValues, CSVPartitionReaderBase, DateUtils, GpuColumnVector, GpuExec, GpuMetric, HostStringBufferer, HostStringBuffererFactory, PartitionReaderIterator, PartitionReaderWithBytesRead, RapidsConf}
+import com.nvidia.spark.rapids.{ColumnarPartitionReaderWithPartitionValues, CSVPartitionReaderBase, DateUtils, GpuColumnVector, GpuExec, GpuMetric, HostStringColBufferer, HostStringColBuffererFactory, PartitionReaderIterator, PartitionReaderWithBytesRead, RapidsConf}
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, DEBUG_LEVEL, DESCRIPTION_BUFFER_TIME, DESCRIPTION_FILTER_TIME, DESCRIPTION_GPU_DECODE_TIME, DESCRIPTION_PEAK_DEVICE_MEMORY, ESSENTIAL_LEVEL, FILTER_TIME, GPU_DECODE_TIME, MODERATE_LEVEL, NUM_OUTPUT_ROWS, PEAK_DEVICE_MEMORY}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.shims.{ShimFilePartitionReaderFactory, ShimSparkPlan, SparkShimImpl}
@@ -484,15 +484,15 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
                                           maxRowsPerChunk: Integer,
                                           maxBytesPerChunk: Long,
                                           execMetrics: Map[String, GpuMetric]) extends
-    CSVPartitionReaderBase[HostStringBufferer, HostStringBuffererFactory.type](conf, partFile,
+    CSVPartitionReaderBase[HostStringColBufferer, HostStringColBuffererFactory.type](conf, partFile,
       inputFileSchema, requestedOutputDataSchema, csvOptions, maxRowsPerChunk,
-      maxBytesPerChunk, execMetrics, HostStringBuffererFactory) {
+      maxBytesPerChunk, execMetrics, HostStringColBuffererFactory) {
 
-  override def readToTable(dataBufferer: HostStringBufferer,
+  override def readToTable(dataBufferer: HostStringColBufferer,
                            inputFileCudfSchema: Schema,
                            requestedOutputDataSchema: StructType,
                            isFirstChunk: Boolean): Table = {
-    // The deliminator is currently hard coded to ^A. This should be able to support any format
+    // The delimiter is currently hard coded to ^A. This should be able to support any format
     //  but we don't want to test that yet
     val splitTable = withResource(dataBufferer.getColumnAndRelease) { cv =>
       cv.stringSplit("\u0001", false)
