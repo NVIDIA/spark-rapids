@@ -153,7 +153,7 @@ class BasicColumnarWriteTaskStatsTracker(
     }
   }
 
-  override def newBatch(batch: ColumnarBatch): Unit = {
+  override def newBatch(filePath: String, batch: ColumnarBatch): Unit = {
     numRows += batch.numRows
   }
 
