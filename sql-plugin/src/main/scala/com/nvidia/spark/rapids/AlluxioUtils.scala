@@ -143,6 +143,7 @@ object AlluxioUtils extends Logging with Arm {
               .getExistingMountPoints()
 
             mountPoints.foreach { case (alluxioPath, s3Path) =>
+              // record map info from alluxio path to s3 path
               mountedBuckets(alluxioPath) = s3Path
               logInfo(s"Found mounted bucket $s3Path to $alluxioPath")
             }
@@ -230,7 +231,7 @@ object AlluxioUtils extends Logging with Arm {
   private def replaceSchemeWithAlluxio(file: String, scheme: String, masterPort: String): String = {
     // replace s3://foo/.. to alluxio://alluxioMasterHostAndPort/foo/...
     val newFile = file.replaceFirst(scheme, ALLUXIO_SCHEME + masterPort + "/")
-    logDebug(s"Replace $file to ${newFile}")
+    logDebug(s"Replace $file to $newFile")
     newFile
   }
 
@@ -309,9 +310,9 @@ object AlluxioUtils extends Logging with Arm {
           s"for each file path")
       } else if (matchedSet.size == 1) {
         AlluxioPathReplaceTaskTime(
-          pathStr.replaceFirst(matchedSet.head._1, matchedSet.head._2), true)
+          pathStr.replaceFirst(matchedSet.head._1, matchedSet.head._2), wasReplaced = true)
       } else {
-        AlluxioPathReplaceTaskTime(pathStr, false)
+        AlluxioPathReplaceTaskTime(pathStr, wasReplaced = false)
       }
     }
   }
@@ -423,8 +424,8 @@ object AlluxioUtils extends Logging with Arm {
       hadoopConf: Configuration,
       runtimeConf: RuntimeConfig): Option[Map[String, String]] = {
     initAlluxioInfo(conf, hadoopConf, runtimeConf)
-    val anyToReplace = pds.map { pd =>
-      pd.files.map(_.getPath.toString).map { file =>
+    val anyToReplace = pds.exists { pd =>
+      pd.files.map(_.getPath.toString).exists { file =>
         val matchedSet = alluxioPathsToReplaceMap.get.filter(a => file.startsWith(a._1))
         if (matchedSet.size > 1) {
           // never reach here since replaceMap is a Map
@@ -436,8 +437,8 @@ object AlluxioUtils extends Logging with Arm {
         } else {
           false
         }
-      }.contains(true)
-    }.contains(true)
+      }
+    }
     if (anyToReplace) {
       alluxioPathsToReplaceMap
     } else {
@@ -452,8 +453,8 @@ object AlluxioUtils extends Logging with Arm {
     pfs.map { pf =>
       val file = pf.filePath
       // pathsToReplace contain strings of exact paths to replace
-      val matchedSet = pathsToReplace.filter { case (_, alluxPattern) =>
-        file.startsWith(alluxPattern)
+      val matchedSet = pathsToReplace.filter { case (_, alluxioPattern) =>
+        file.startsWith(alluxioPattern)
       }
       if (matchedSet.size > 1) {
         // never reach here since replaceMap is a Map
@@ -599,6 +600,51 @@ object AlluxioUtils extends Logging with Arm {
     }
     (location, mapIfReplacedPaths)
   }
+
+  // If reading large s3 files on a cluster with slower disks, skip using Alluxio.
+  def shouldReadDirectlyFromS3(rapidsConf: RapidsConf, pds: Seq[PartitionDirectory]): Boolean = {
+    if (!rapidsConf.enableAlluxioSlowDisk) {
+      logInfo(s"Skip reading directly from S3 because spark.rapids.alluxio.slow.disk is disabled")
+      false
+    } else {
+      val filesWithoutDir = pds.flatMap(pd => pd.files).filter { file =>
+        // skip directory
+        !file.isDirectory
+      }
+
+      val files = filesWithoutDir.filter { f =>
+        /**
+         * Determines whether a file should be calculated for the average file size.
+         * This is used to filter out some unrelated files,
+         * such as transaction log files in the Delta file type.
+         * However Delta files has other unrelated
+         * files such as old regular parquet files.
+         * Limitation: This is not OK for Delta file type, json file type, Avro file type......
+         * Currently only care about parquet and orc files.
+         * Note: It's hard to extract this into a method, because in Databricks 312 the files in
+         * `PartitionDirectory` are in type of
+         * `org.apache.spark.sql.execution.datasources.SerializableFileStatus`
+         * instead of `org.apache.hadoop.fs.FileStatus`
+         */
+        f.getPath.getName.endsWith(".parquet") || f.getPath.getName.endsWith(".orc")
+      }
+
+      val totalSize = files.map(_.getLen).sum
+
+      val avgSize = if (files.isEmpty) 0 else totalSize / files.length
+      if (avgSize > rapidsConf.getAlluxioLargeFileThreshold) {
+        // if files are large
+        logInfo(s"Reading directly from S3, " +
+            s"average file size $avgSize > threshold ${rapidsConf.getAlluxioLargeFileThreshold}")
+        true
+      } else {
+        logInfo(s"Skip reading directly from S3, " +
+            s"average file size $avgSize <= threshold ${rapidsConf.getAlluxioLargeFileThreshold}")
+        false
+      }
+    }
+  }
+
 
   /**
    * For test purpose only

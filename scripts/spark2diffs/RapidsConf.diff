@@ -5,23 +5,23 @@
 23a24,25
 > import ai.rapids.cudf.Cuda
 > 
-321c323
+333c335
 <     .createWithDefault(ByteUnit.GiB.toBytes(1).toLong)
 ---
 >     .createWithDefault(ByteUnit.GiB.toBytes(1))
-378c380
+408c410
 <       .createWithDefault(ByteUnit.MiB.toBytes(640).toLong)
 ---
 >       .createWithDefault(ByteUnit.MiB.toBytes(640))
-410c412
+444c446
 <     .createWithDefault(ByteUnit.MiB.toBytes(8).toLong)
 ---
 >     .createWithDefault(ByteUnit.MiB.toBytes(8))
-1636c1638
-<         |$SPARK_HOME/bin/spark-shell --jars rapids-4-spark_2.12-22.10.0-SNAPSHOT-cuda11.jar \
+1754c1756
+<         |$SPARK_HOME/bin/spark-shell --jars rapids-4-spark_2.12-22.12.0-SNAPSHOT-cuda11.jar \
 ---
->         |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-22.10.0-SNAPSHOT-cuda11.jar \
-1691,1695c1693,1696
+>         |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-22.12.0-SNAPSHOT-cuda11.jar \
+1811,1815c1813,1816
 <     // scans not supported in Spark 2.x
 <     // if (asTable) {
 <     //   printToggleHeader("Scans\n")
@@ -32,12 +32,12 @@
 >       printToggleHeader("Scans\n")
 >     }
 >     GpuOverrides.scans.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
-1703c1704
+1823c1824
 <     // com.nvidia.spark.rapids.python.PythonConfEntries.init()
 ---
 >     com.nvidia.spark.rapids.python.PythonConfEntries.init()
-1779,1780d1779
+1901,1902d1901
 <     // Spark 2.x doesn't have access to Cuda in CUDF so just allow
 <     /*
-1796d1794
+1918d1916
 <     */

@@ -86,6 +86,11 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
   }
 
   test("sorted partitioned write") {
+    assume(!isSpark340OrLater,
+      "Skipping on Spark 3.4+ because of " +
+      "https://issues.apache.org/jira/browse/SPARK-40588 and " +
+      "https://issues.apache.org/jira/browse/SPARK-40885")
+
     val conf = new SparkConf().set(RapidsConf.SQL_ENABLED.key, "true")
     val tempFile = File.createTempFile("partitioned", ".parquet")
     try {

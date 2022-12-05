@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.IOException
 import java.nio.charset.StandardCharsets
 
 import scala.collection.JavaConverters._
@@ -325,7 +326,12 @@ class CSVPartitionReader(
       isFirstChunk: Boolean): Table = {
     val hasHeader = isFirstChunk && parsedOptions.headerFlag
     val csvOpts = buildCsvOptions(parsedOptions, readDataSchema, hasHeader)
-    Table.readCSV(cudfSchema, csvOpts.build, dataBuffer, 0, dataSize)
+    try {
+      Table.readCSV(cudfSchema, csvOpts.build, dataBuffer, 0, dataSize)
+    } catch {
+      case e: Exception =>
+        throw new IOException(s"Error when processing file [$partFile]", e)
+    }
   }
 
   /**
