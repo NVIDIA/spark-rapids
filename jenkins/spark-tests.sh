@@ -112,7 +112,7 @@ tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
     rm -f $SPARK_HOME.tgz
 # copy python path libs to container /tmp instead of workspace to avoid ephemeral PVC issue
 TMP_PYTHON=/tmp/$(date +"%Y%m%d")
-rm -rf $TMP_PYTHON && cp -r $SPARK_HOME/python $TMP_PYTHON
+rm -rf $TMP_PYTHON && mkdir -p $TMP_PYTHON && cp -r $SPARK_HOME/python $TMP_PYTHON
 # Get the correct py4j file.
 PY4J_FILE=$(find $TMP_PYTHON/python/lib -type f -iname "py4j*.zip")
 export PYTHONPATH=$TMP_PYTHON/python:$TMP_PYTHON/python/pyspark/:$PY4J_FILE
