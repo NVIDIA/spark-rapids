@@ -35,15 +35,6 @@ class AlluxioMasterAndPortReaderMock(master: String, port: String)
 class AlluxioFSMock extends AlluxioFS {
   private val mountPoints = mutable.Map[String, String]()
 
-  override def setHostAndPort(masterHost: String, masterPort: Int): Unit = {
-    // do nothing
-  }
-
-  override def setUserAndKeys(alluxioUser: String, s3AccessKey: Option[String],
-      s3SecretKey: Option[String]): Unit = {
-    // do nothing
-  }
-
   /**
    * Get S3 mount points by Alluxio client
    *
