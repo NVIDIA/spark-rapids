@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+// spark-distros:320:321:322:323:330:331:332:340:
 package org.apache.spark.sql.rapids
 
 import java.io.{DataInputStream, File, FileInputStream, IOException, ObjectStreamException}
@@ -136,7 +137,7 @@ class RapidsShuffleThreadedWriterSuite extends FunSuite
     with BeforeAndAfterEach
     with BeforeAndAfterAll
     with MockitoSugar
-    with ShuffleChecksumTestHelper 
+    with ShuffleChecksumTestHelper
     with Logging {
   @Mock(answer = RETURNS_SMART_NULLS) private var blockManager: BlockManager = _
   @Mock(answer = RETURNS_SMART_NULLS) private var diskBlockManager: DiskBlockManager = _

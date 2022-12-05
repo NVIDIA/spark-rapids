@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+// spark-distros:330:330cdh:331:332:340:
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.ColumnVector

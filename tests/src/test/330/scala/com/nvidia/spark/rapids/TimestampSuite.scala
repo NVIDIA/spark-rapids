@@ -13,6 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+// spark-distros:330:330cdh:331:332:340:
 package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
