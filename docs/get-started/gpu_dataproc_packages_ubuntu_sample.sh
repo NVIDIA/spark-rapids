@@ -139,7 +139,7 @@ EOF
   systemctl start dataproc-cgroup-device-permissions
 }
 
-readonly DEFAULT_SPARK_RAPIDS_VERSION="22.10.0"
+readonly DEFAULT_SPARK_RAPIDS_VERSION="22.12.0"
 readonly DEFAULT_CUDA_VERSION="11.5"
 readonly DEFAULT_XGBOOST_VERSION="1.6.2"
 readonly SPARK_VERSION="3.0"
