@@ -10,14 +10,6 @@
       "pattern": "/docs/archives"
     }
   ],
-  "httpHeaders": [
-    {
-      "urls": ["https://docs.github.com/"],
-      "headers": {
-        "Accept-Encoding": "zstd, br, gzip, deflate"
-      }
-    }
-  ],
   "timeout": "15s",
   "retryOn429": true,
   "retryCount":30,
