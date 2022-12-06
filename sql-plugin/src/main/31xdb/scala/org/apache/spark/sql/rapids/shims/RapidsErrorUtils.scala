@@ -36,7 +36,7 @@ object RapidsErrorUtils {
     new NoSuchElementException(s"Key $key does not exist.")
   }
 
-  def sqlArrayIndexNotStartAtOneError(): ArrayIndexOutOfBoundsException = {
+  def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
     new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
   }
 

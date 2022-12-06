@@ -858,8 +858,9 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
         dt == DataTypes.BinaryType || canReadAsBinaryDecimal(pt, dt) =>
         return
 
-      case PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY if canReadAsIntDecimal(pt, dt) ||
-        canReadAsLongDecimal(pt, dt) || canReadAsBinaryDecimal(pt, dt) =>
+      case PrimitiveTypeName.BINARY | PrimitiveTypeName.FIXED_LEN_BYTE_ARRAY
+        if canReadAsIntDecimal(pt, dt) || canReadAsLongDecimal(pt, dt) ||
+            canReadAsBinaryDecimal(pt, dt) =>
         return
 
       case _ =>

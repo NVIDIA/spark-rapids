@@ -10,7 +10,7 @@ The following is the list of options that `rapids-plugin-4-spark` supports.
 On startup use: `--conf [conf key]=[conf value]`. For example:
 
 ```
-${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-22.12.0-SNAPSHOT-cuda11.jar \
+${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-23.02.0-SNAPSHOT-cuda11.jar \
 --conf spark.plugins=com.nvidia.spark.SQLPlugin \
 --conf spark.rapids.sql.concurrentGpuTasks=2
 ```
@@ -141,6 +141,7 @@ Name | Description | Default Value | Applicable at
 <a name="sql.python.gpu.enabled"></a>spark.rapids.sql.python.gpu.enabled|This is an experimental feature and is likely to change in the future. Enable (true) or disable (false) support for scheduling Python Pandas UDFs with GPU resources. When enabled, pandas UDFs are assumed to share the same GPU that the RAPIDs accelerator uses and will honor the python GPU configs|false|Runtime
 <a name="sql.reader.batchSizeBytes"></a>spark.rapids.sql.reader.batchSizeBytes|Soft limit on the maximum number of bytes the reader reads per batch. The readers will read chunks of data until this limit is met or exceeded. Note that the reader may estimate the number of bytes that will be used on the GPU in some cases based on the schema and number of rows in each batch.|2147483647|Runtime
 <a name="sql.reader.batchSizeRows"></a>spark.rapids.sql.reader.batchSizeRows|Soft limit on the maximum number of rows the reader will read per batch. The orc and parquet readers will read row groups until this limit is met or exceeded. The limit is respected by the csv reader.|2147483647|Runtime
+<a name="sql.reader.chunked"></a>spark.rapids.sql.reader.chunked|Enable a chunked reader where possible. A chunked reader allows reading highly compressed data that could not be read otherwise, but at the expense of more GPU memory, and in some cases more GPU computation.|true|Runtime
 <a name="sql.regexp.enabled"></a>spark.rapids.sql.regexp.enabled|Specifies whether supported regular expressions will be evaluated on the GPU. Unsupported expressions will fall back to CPU. However, there are some known edge cases that will still execute on GPU and produce incorrect results and these are documented in the compatibility guide. Setting this config to false will make all regular expressions run on the CPU instead.|true|Runtime
 <a name="sql.regexp.maxStateMemoryBytes"></a>spark.rapids.sql.regexp.maxStateMemoryBytes|Specifies the maximum memory on GPU to be used for regular expressions.The memory usage is an estimate based on an upper-bound approximation on the complexity of the regular expression. Note that the actual memory usage may still be higher than this estimate depending on the number of rows in the datacolumn and the input strings themselves. It is recommended to not set this to more than 3 times spark.rapids.sql.batchSizeBytes|2147483647|Runtime
 <a name="sql.replaceSortMergeJoin.enabled"></a>spark.rapids.sql.replaceSortMergeJoin.enabled|Allow replacing sortMergeJoin with HashJoin|true|Runtime

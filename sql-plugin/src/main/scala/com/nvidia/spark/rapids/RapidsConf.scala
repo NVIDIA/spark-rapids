@@ -494,13 +494,11 @@ object RapidsConf {
     .createWithDefault(Integer.MAX_VALUE)
 
   val CHUNKED_READER = conf("spark.rapids.sql.reader.chunked")
-      .doc("Should we use a chunked reader where possible. A chunked reader will " +
-          "take input data and potentially output multiple tables instead of a single table. " +
-          "This reduces the maximum memory usage and can work around issues when there is really " +
-          "high compression ratios in the data.")
-      .internal()
+      .doc("Enable a chunked reader where possible. A chunked reader allows " +
+          "reading highly compressed data that could not be read otherwise, but at the expense " +
+          "of more GPU memory, and in some cases more GPU computation.")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   val MAX_READER_BATCH_SIZE_BYTES = conf("spark.rapids.sql.reader.batchSizeBytes")
     .doc("Soft limit on the maximum number of bytes the reader reads per batch. " +
@@ -1775,7 +1773,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-22.12.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-23.02.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
