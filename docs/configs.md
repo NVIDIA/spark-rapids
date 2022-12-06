@@ -317,6 +317,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.RegExpReplace"></a>spark.rapids.sql.expression.RegExpReplace|`regexp_replace`|String replace using a regular expression pattern|true|None|
 <a name="sql.expression.Remainder"></a>spark.rapids.sql.expression.Remainder|`%`, `mod`|Remainder or modulo|true|None|
 <a name="sql.expression.ReplicateRows"></a>spark.rapids.sql.expression.ReplicateRows| |Given an input row replicates the row N times|true|None|
+<a name="sql.expression.Reverse"></a>spark.rapids.sql.expression.Reverse|`reverse`|Returns a reversed string or an array with reverse order of elements|true|This is not 100% compatible with the Spark version because currently do not support reverse on arrays|
 <a name="sql.expression.Rint"></a>spark.rapids.sql.expression.Rint|`rint`|Rounds up a double value to the nearest double equal to an integer|true|None|
 <a name="sql.expression.Round"></a>spark.rapids.sql.expression.Round|`round`|Round an expression to d decimal places using HALF_UP rounding mode|true|None|
 <a name="sql.expression.RowNumber"></a>spark.rapids.sql.expression.RowNumber|`row_number`|Window function that returns the index for the row within the aggregation window|true|None|
