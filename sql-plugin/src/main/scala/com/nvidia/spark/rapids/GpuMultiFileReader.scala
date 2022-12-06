@@ -224,7 +224,6 @@ object MultiFileReaderThreadPool extends Logging {
 
   /**
    * Get the existing thread pool or create one with the given thread count if it does not exist.
-   *
    * @note The thread number will be ignored if the thread pool is already created.
    */
   def getOrCreateThreadPool(numThreads: Int): ThreadPoolExecutor = {
@@ -434,8 +433,7 @@ case class PartitionedFileInfoOptAlluxio(toRead: PartitionedFile, original: Opti
  * @param combineThresholdSize The size to combine to when combining small files
  * @param combineWaitTime The amount of time to wait for other files to be ready to see if we
  *                        can combine them before sending them to the GPU
- * @param queryUsesInputFile Whether the query requires the input file name, only applies when combine
- *                           is being used.
+ * @param queryUsesInputFile Whether the query requires the input file name functionality
  * @param keepReadsInOrder Whether to require the files to be read in the same order as Spark. Defaults
  *                         to true for formats that don't explicitly handle this.
  */
@@ -520,7 +518,6 @@ abstract class MultiFileCloudPartitionReaderBase(
       logDebug(s"MultiFile reader using file ${file.toRead}, orig file is ${file.original}")
       if (!keepReadsInOrder) {
         val futureRunner = fcs.submit(getBatchRunner(tc, file.toRead, file.original, conf, filters))
-        logWarning(s"tasks adding fut 3, remaining ${tasks.size}")
         tasks.add(futureRunner)
       } else {
         // Add these in the order as we got them so that we can make sure
@@ -579,8 +576,7 @@ abstract class MultiFileCloudPartitionReaderBase(
    */
   def getFileFormatShortName: String
 
-  private def readBuffersToBatch(
-      currentFileHostBuffers: HostMemoryBuffersWithMetaDataBase,
+  private def readBuffersToBatch(currentFileHostBuffers: HostMemoryBuffersWithMetaDataBase,
       addTaskIfNeeded: Boolean): Unit = {
     if (getSizeOfHostBuffers(currentFileHostBuffers) == 0) {
       closeCurrentFileHostBuffers()
@@ -659,7 +655,6 @@ abstract class MultiFileCloudPartitionReaderBase(
         tasks.poll().get()
       } else {
         val bufMetaFut = fcs.take()
-        logWarning(s"tasks removing fut 1, remaining ${tasks.size}")
         tasks.remove(bufMetaFut)
         bufMetaFut.get()
       }
@@ -684,7 +679,6 @@ abstract class MultiFileCloudPartitionReaderBase(
       tasks.poll().get()
     } else {
       val bufMetaFut = fcs.take()
-      logWarning(s"tasks removing fut, remaining ${tasks.size}")
       tasks.remove(bufMetaFut)
       bufMetaFut.get()
     }
@@ -811,7 +805,6 @@ abstract class MultiFileCloudPartitionReaderBase(
       val runner = tasksToRun.dequeue()
       if (!keepReadsInOrder) {
         val futureRunner = fcs.submit(runner)
-        logWarning(s"tasks adding fut, remaining ${tasks.size}")
         tasks.add(futureRunner)
       } else {
         val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
@@ -858,10 +851,8 @@ abstract class MultiFileCloudPartitionReaderBase(
 trait DataBlockBase {
   // get the row number of this data block
   def getRowCount: Long
-
   // the data read size
   def getReadDataSize: Long
-
   // the block size to be used to slice the whole HostMemoryBuffer
   def getBlockSize: Long
 }
@@ -886,15 +877,10 @@ trait ExtraInfo
  */
 trait SingleDataBlockInfo {
   def filePath: Path // file path info
-
   def partitionValues: InternalRow // partition value
-
   def dataBlock: DataBlockBase // a single block info of a single file
-
   def schema: SchemaBase // schema information
-
   def readSchema: StructType // read schema information
-
   def extraInfo: ExtraInfo // extra information
 }
 
@@ -902,9 +888,8 @@ trait SingleDataBlockInfo {
  * A context lives during the whole process of reading partitioned files
  * to a batch buffer (aka HostMemoryBuffer) to build a memory file.
  * Children can extend this to add more necessary fields.
- *
  * @param origChunkedBlocks mapping of file path to data blocks
- * @param schema            schema info
+ * @param schema schema info
  */
 class BatchContext(
     val origChunkedBlocks: mutable.LinkedHashMap[Path, ArrayBuffer[DataBlockBase]],
@@ -924,12 +909,12 @@ class BatchContext(
  * The data driven:
  *
  * next() -> populateCurrentBlockChunk (try the best to coalesce ColumnarBatch)
- * -> allocate a bigger HostMemoryBuffer for HEADER + the populated block chunks + FOOTER
- * -> write header to HostMemoryBuffer
- * -> launch tasks to copy the blocks to the HostMemoryBuffer
- * -> wait all tasks finished
- * -> write footer to HostMemoryBuffer
- * -> decode the HostMemoryBuffer in the GPU
+ *        -> allocate a bigger HostMemoryBuffer for HEADER + the populated block chunks + FOOTER
+ *        -> write header to HostMemoryBuffer
+ *        -> launch tasks to copy the blocks to the HostMemoryBuffer
+ *        -> wait all tasks finished
+ *        -> write footer to HostMemoryBuffer
+ *        -> decode the HostMemoryBuffer in the GPU
  *
  * @param conf                  Configuration
  * @param clippedBlocks         the block metadata from the original file that has been
@@ -1008,12 +993,12 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * The sub-class must implement the real file reading logic in a Callable
    * which will be running in a thread pool
    *
-   * @param tc           task context to use
-   * @param file         file to be read
-   * @param outhmb       the sliced HostMemoryBuffer to hold the blocks, and the implementation
-   *                     is in charge of closing it in sub-class
-   * @param blocks       blocks meta info to specify which blocks to be read
-   * @param offset       used as the offset adjustment
+   * @param tc task context to use
+   * @param file file to be read
+   * @param outhmb the sliced HostMemoryBuffer to hold the blocks, and the implementation
+   *               is in charge of closing it in sub-class
+   * @param blocks blocks meta info to specify which blocks to be read
+   * @param offset used as the offset adjustment
    * @param batchContext the batch building context
    * @return Callable[(Seq[DataBlockBase], Long)], which will be submitted to a
    *         ThreadPoolExecutor, and the Callable will return a tuple result and
@@ -1039,11 +1024,11 @@ abstract class MultiFileCoalescingPartitionReaderBase(
   /**
    * Sent host memory to GPU to decode
    *
-   * @param dataBuffer    the data which can be decoded in GPU
-   * @param dataSize      data size
+   * @param dataBuffer the data which can be decoded in GPU
+   * @param dataSize data size
    * @param clippedSchema the clipped schema
-   * @param readSchema    the expected schema
-   * @param extraInfo     the extra information for specific file format
+   * @param readSchema the expected schema
+   * @param extraInfo the extra information for specific file format
    * @return Table
    */
   def readBufferToTablesAndClose(dataBuffer: HostMemoryBuffer,
@@ -1056,7 +1041,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * Write a header for a specific file format. If there is no header for the file format,
    * just ignore it and return 0
    *
-   * @param buffer       where the header will be written
+   * @param buffer where the header will be written
    * @param batchContext the batch building context
    * @return how many bytes written
    */
@@ -1070,11 +1055,11 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * estimated initialized buffer size may be a little smaller than the actual size. So in
    * this case, the hmb should be closed in the implementation.
    *
-   * @param buffer       The buffer holding (header + data blocks)
-   * @param bufferSize   The total buffer size which equals to size of (header + blocks + footer)
-   * @param footerOffset Where begin to write the footer
-   * @param blocks       The data block meta info
-   * @param batchContext The batch building context
+   * @param buffer         The buffer holding (header + data blocks)
+   * @param bufferSize     The total buffer size which equals to size of (header + blocks + footer)
+   * @param footerOffset   Where begin to write the footer
+   * @param blocks         The data block meta info
+   * @param batchContext   The batch building context
    * @return the buffer and the buffer size
    */
   def writeFileFooter(buffer: HostMemoryBuffer, bufferSize: Long, footerOffset: Long,
@@ -1088,9 +1073,8 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    *   - getBatchRunner
    *   - calculateFinalBlocksOutputSize
    *   - writeFileFooter
-   *     It is useful when something is needed by some or all of the above APIs.
-   *     Children can override this to return a customized batch context.
-   *
+   * It is useful when something is needed by some or all of the above APIs.
+   * Children can override this to return a customized batch context.
    * @param chunkedBlocks mapping of file path to data blocks
    * @param clippedSchema schema info
    */
@@ -1104,7 +1088,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * A callback to finalize the output batch. The batch returned will be the final
    * output batch of the reader's "get" method.
    *
-   * @param batch     the batch after decoding, adding partitioned columns.
+   * @param batch the batch after decoding, adding partitioned columns.
    * @param extraInfo the corresponding extra information of the input batch.
    * @return the finalized columnar batch.
    */
@@ -1192,8 +1176,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
 
   /**
    * Read all data blocks into HostMemoryBuffer
-   *
-   * @param blocks        a sequence of data blocks to be read
+   * @param blocks a sequence of data blocks to be read
    * @param clippedSchema the clipped schema is used to calculate the estimated output size
    * @return (HostMemoryBuffer, Long)
    *         the HostMemoryBuffer and its data size
@@ -1209,7 +1192,6 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       blocks.foreach { case (path, block) =>
         filesAndBlocks.getOrElseUpdate(path, new ArrayBuffer[DataBlockBase]) += block
       }
-
       val tasks = new java.util.ArrayList[Future[(Seq[DataBlockBase], Long)]]()
 
       val batchContext = createBatchContext(filesAndBlocks, clippedSchema)
@@ -1236,7 +1218,6 @@ abstract class MultiFileCoalescingPartitionReaderBase(
 
           for (future <- tasks.asScala) {
             val (blocks, bytesRead) = future.get()
-
             allOutputBlocks ++= blocks
             TrampolineUtil.incBytesRead(inputMetrics, bytesRead)
           }
@@ -1376,7 +1357,6 @@ abstract class MultiFileCoalescingPartitionReaderBase(
         }
       }
     }
-
     readNextBatch()
     rowsPerPartition += (numRows - lastPartRows)
     logDebug(s"Loaded $numRows rows from ${getFileFormatShortName}. " +
