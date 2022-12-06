@@ -100,6 +100,13 @@ pipeline {
         timeout(time: 12, unit: 'HOURS')
     }
 
+    parameters {
+        string(name: 'REF', defaultValue: '',
+            description: 'Merged commit of specific PR')
+        string(name: 'GITHUB_DATA', defaultValue: '',
+            description: 'Json-formatted github data from upstream blossom-ci')
+    }
+
     environment {
         JENKINS_ROOT = 'jenkins'
         PREMERGE_SCRIPT = '$JENKINS_ROOT/spark-premerge-build.sh'
@@ -128,7 +135,7 @@ pipeline {
         stage("Init githubHelper") {
             steps {
                 script {
-                    githubHelper = GithubHelper.getInstance("${GITHUB_TOKEN}", githubData)
+                    githubHelper = GithubHelper.getInstance("${GITHUB_TOKEN}", params.GITHUB_DATA)
                     // desc contains the PR ID and can be accessed from different builds
                     currentBuild.description = githubHelper.getBuildDescription()
                     try {
@@ -156,6 +163,7 @@ pipeline {
             }
         } // end of Init githubHelper
 
+        // TODO: deprecate this stage as dedicated jenkinsfile for each branch
         stage("Determine Project Version") {
             when {
                 expression {
@@ -165,22 +173,23 @@ pipeline {
 
             steps {
                 script {
-                    // Retrieve PROJECT_VER from version-def.sh, e.g, '<major>.<minor>.<patch>-SNAPSHOT'
-                    PROJECT_VER = sh(returnStdout: true, script: "bash $JENKINS_ROOT/version-def.sh | cut -d ',' -f 3 | cut -d ' ' -f 3")
-                    PROJECT_VER = PROJECT_VER.split('-')[0] // Remove trailing '-SNAPSHOT'
-                    echo PROJECT_VER
+                    container('cpu') {
+                        // Retrieve PROJECT_VER from version-def.sh, e.g, '<major>.<minor>.<patch>-SNAPSHOT'
+                        PROJECT_VER = sh(returnStdout: true,
+                                        script: '''#!/bin/bash
+                                                source jenkins/version-def.sh >& /dev/null
+                                                echo $PROJECT_VER
+                                                ''').trim()
+                        PROJECT_VER = PROJECT_VER.split('-')[0] // Remove trailing '-SNAPSHOT'
+                        echo PROJECT_VER
 
-                    def versions = PROJECT_VER.split('\\.')
-                    major_ver = versions[0].toInteger()
-                    minor_ver = versions[1].toInteger()
+                        def versions = PROJECT_VER.split('\\.')
+                        major_ver = versions[0].toInteger()
+                        minor_ver = versions[1].toInteger()
 
-                    if (major_ver >= 22) {
                         PREMERGE_CI_2_ARGUMENT = "ci_2"
-                    } else {
-                        error("Unsupported major version: $major_ver")
+                        echo PREMERGE_CI_2_ARGUMENT
                     }
-
-                    echo PREMERGE_CI_2_ARGUMENT
                 }
             }
         }

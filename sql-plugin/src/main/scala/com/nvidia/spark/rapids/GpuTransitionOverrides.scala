@@ -21,6 +21,7 @@ import scala.annotation.tailrec
 import com.nvidia.spark.rapids.shims.{GpuBatchScanExec, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
+import org.apache.spark.sql.catalyst.plans.physical.IdentityBroadcastMode
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
@@ -28,9 +29,9 @@ import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{DataWritingCommandExec, ExecutedCommandExec}
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2ScanExecBase, DropTableExec, ShowTablesExec}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec}
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashedRelationBroadcastMode}
 import org.apache.spark.sql.rapids.{ExternalSource, GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase, GpuBroadcastToRowExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
 
 /**
  * Rules that run after the row to columnar and columnar to row transitions have been inserted.
@@ -163,6 +164,22 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
 
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
       GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
+
+    case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
+      e.plan match {
+        case ReusedExchangeExec(output, b: GpuBroadcastExchangeExec) => 
+          // we can't directly re-use a GPU broadcast exchange to feed a CPU broadcast
+          // join but Spark will sometimes try and do this
+          val index = 0
+          val keys = output.map { a => a.asInstanceOf[Expression] }
+          val keyExprs = b.mode match {
+            case HashedRelationBroadcastMode(keys, _) => Some(keys)
+            case IdentityBroadcastMode => None
+            case m => throw new UnsupportedOperationException(s"Unknown broadcast mode $m")
+          }
+          GpuBroadcastToRowExec(index, keys, e)(keyExprs)
+        case _ => GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
+      }
 
     // inserts postColumnarToRowTransition into newly-created GpuColumnarToRowExec
     case p if p.getTagValue(GpuOverrides.postColToRowProjection).nonEmpty =>

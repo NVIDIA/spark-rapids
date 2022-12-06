@@ -2868,6 +2868,26 @@ object GpuOverrides extends Logging {
         "3.1.3 fixed issue SPARK-36741 where NaNs in these set like operators were " +
         "not treated as being equal. We have chosen to break with compatibility for " +
         "the older versions of Spark in this instance and handle NaNs the same as 3.1.3+"),
+    expr[ArrayRemove](
+      "Returns the array after removing all elements that equal to the input element (right) " +
+      "from the input array (left)",
+      ExprChecks.binaryProject(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+          TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        ("array",
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+          TypeSig.all),
+        ("element",
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+          TypeSig.all)),
+      (in, conf, p, r) => new BinaryExprMeta[ArrayRemove](in, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuArrayRemove(lhs, rhs)
+      }
+    ),
     expr[TransformKeys](
       "Transform keys in a map using a transform function",
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +

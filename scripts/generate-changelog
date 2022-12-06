@@ -39,25 +39,26 @@ e.g.
 Dependencies:
     - requests
 
-Github personal access token: https://github.com/settings/tokens, and make you have `repo` scope selected
+Github personal access token: https://github.com/settings/tokens, and make you have `repo` and `project` scope selected
 
 Usage:
     cd spark-rapids/
 
-    # generate changelog for releases 22.02 to 22.10
+    # generate changelog for releases 22.02 to 22.12
     scripts/generate-changelog --token=<GITHUB_PERSONAL_ACCESS_TOKEN> \
-    --releases=22.02,22.04,22.06,22.08,22.10
+    --releases=22.02,22.04,22.06,22.08,22.10,22.12
 
-    # generate changelog for releases 22.02 to 22.10 to /tmp/CHANGELOG.md
+    # generate changelog for releases 22.02 to 22.12 to /tmp/CHANGELOG.md
     GITHUB_TOKEN=<GITHUB_PERSONAL_ACCESS_TOKEN> scripts/generate-changelog \
-    --releases=22.02,22.04,22.06,22.08,22.10 \
+    --releases=22.02,22.04,22.06,22.08,22.10,22.12 \
     --path=/tmp/CHANGELOG.md
 """
 import os
 import sys
 from argparse import ArgumentParser
 from collections import OrderedDict
-from datetime import date
+from datetime import date, datetime
+from dateutil.relativedelta import relativedelta
 
 import requests
 
@@ -99,9 +100,15 @@ query ($baseRefName: String!, $after: String) {
             project {
               name
             }
-            column {
-              name
-            }
+          }
+        }
+        projectItems(first: 10) {
+          nodes {
+              roadmap: fieldValueByName(name: "Roadmap") {
+                ... on ProjectV2ItemFieldSingleSelectValue {
+                    name
+                }
+              }
           }
         }
         mergedAt
@@ -115,9 +122,9 @@ query ($baseRefName: String!, $after: String) {
 }
 """
 query_issue = """
-query ($after: String) {
+query ($after: String, $since: DateTime) {
   repository(name: "spark-rapids", owner: "NVIDIA") {
-    issues(states: [CLOSED], labels: ["SQL", "feature request", "performance", "bug", "shuffle"], first: 100, after: $after) {
+    issues(states: [CLOSED], labels: ["SQL", "feature request", "performance", "bug", "shuffle"], first: 100, after: $after, filterBy: {since: $since}) {
       totalCount
       nodes {
         number
@@ -134,8 +141,14 @@ query ($after: String) {
             project {
               name
             }
-            column {
-              name
+          }
+        }
+        projectItems(first: 10) {
+          nodes {
+            roadmap: fieldValueByName(name: "Roadmap") {
+              ... on ProjectV2ItemFieldSingleSelectValue {
+                name
+              }
             }
           }
         }
@@ -157,21 +170,26 @@ def process_changelog(resource_type: str, changelog: dict, releases: set, projec
         items = process_pr(releases=releases, token=token)
         time_field = 'mergedAt'
     elif resource_type == ISSUES:
-        items = process_issue(token=token)
+        items = process_issue(releases=releases, token=token)
         time_field = 'closedAt'
     else:
         print(f"[process_changelog] Invalid type: {resource_type}")
         sys.exit(1)
 
     for item in items:
-        if len(item['projectCards']['nodes']) == 0:
-            if resource_type == PULL_REQUESTS:
-                if '[bot]' in item['title']:  # skip auto-gen PR, created by our github actions workflows
-                    continue
-                no_project_prs.append(item)
-            continue
+        if len(item["projectItems"]["nodes"]) == 0 or not item["projectItems"]["nodes"][0]['roadmap']:
+            # compatibility support for project API V1
+            if len(item['projectCards']['nodes']) == 0:
+                if resource_type == PULL_REQUESTS:
+                    if '[bot]' in item['title']:
+                        continue  # skip auto-gen PR
+                    no_project_prs.append(item)
+                continue
+            project = item['projectCards']['nodes'][0]['project']['name']
+        else:
+            ver = item["projectItems"]["nodes"][0]['roadmap']['name']
+            project = f"{RELEASE} {ver}"
 
-        project = item['projectCards']['nodes'][0]['project']['name']
         if not release_project(project, projects):
             continue
 
@@ -190,7 +208,7 @@ def process_changelog(resource_type: str, changelog: dict, releases: set, projec
         if resource_type == ISSUES and category == INVALID:
             continue
         if resource_type == PULL_REQUESTS:
-            if '[bot]' in item['title']:  # skip auto-gen PR, created by our github actions workflows
+            if '[bot]' in item['title']:  # skip auto-gen PR
                 continue
             if '[databricks]' in item['title']: # strip ambiguous CI annotation
                 item['title'] = item['title'].replace('[databricks]', '').strip()
@@ -207,12 +225,14 @@ def process_changelog(resource_type: str, changelog: dict, releases: set, projec
 def process_pr(releases: set, token: str):
     pr = []
     for rel in releases:
-        pr.extend(fetch(resource_type=PULL_REQUESTS, token=token, variables={'baseRefName': f"branch-{rel}"}))
+        pr.extend(fetch(resource_type=PULL_REQUESTS, token=token,
+                        variables={'baseRefName': f"branch-{rel}"}))
     return pr
 
 
-def process_issue(token: str):
-    return fetch(resource_type=ISSUES, token=token)
+def process_issue(releases: set, token: str):
+    since = (datetime.utcnow() - relativedelta(months=3 * len(releases))).isoformat()
+    return fetch(resource_type=ISSUES, token=token, variables={'since': since})
 
 
 def fetch(resource_type: str, token: str, variables: dict = None):
@@ -221,7 +241,6 @@ def fetch(resource_type: str, token: str, variables: dict = None):
         q = query_pr
     elif resource_type == ISSUES:
         q = query_issue
-        variables = {}
     else:
         return items
 
@@ -292,7 +311,7 @@ def form_subsection(issues: dict, subtitle: str):
 
 def print_no_project_pr(no_project_prs: list):
     if len(no_project_prs) != 0:
-        print("Merged Pull Requests w/o Project:")
+        print("\nNOTE: Merged Pull Requests w/o Project:")
     for pr in no_project_prs:
         print(f"{pr['baseRefName']} #{pr['number']} {pr['title']} {pr['url']}")
 

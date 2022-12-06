@@ -16,7 +16,20 @@
 
 package com.nvidia.spark.rapids.shims
 
-object RegExpShim {
-  // Handle regexp_replace inconsistency from https://issues.apache.org/jira/browse/SPARK-39107
-  def reproduceEmptyStringBug(): Boolean = true
+import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, RapidsConf, RapidsMeta}
+
+import org.apache.spark.sql.catalyst.expressions.{Expression, GetMapValue}
+
+/**
+ * We define this type in the shim layer because `GetMapValue` doesn't
+ * have the field `failOnError` since Spark 3.4.0 and it always returns `null`
+ * on invalid access to map column in ANSI mode.
+ */
+abstract class GetMapValueMeta (
+    expr: GetMapValue,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _]],
+    rule: DataFromReplacementRule)
+  extends BinaryExprMeta[GetMapValue](expr, conf, parent, rule) {
+
 }
