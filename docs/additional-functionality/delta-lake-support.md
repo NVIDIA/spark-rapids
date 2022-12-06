@@ -27,8 +27,7 @@ be GPU accelerated. The CPU will continue to process metadata queries on Delta L
 ## Writing Delta Lake Tables
 
 Delta Lake write acceleration is currently experimental and disabled by default. To enable
-acceleration of Delta Lake writes, set
-[spark.rapids.sql.format.delta.write.enabled](configs.md#sql.format.delta.write.enabled)=true.
+acceleration of Delta Lake writes, set spark.rapids.sql.format.delta.write.enabled=true.
 
 ### Delta Lake Versions Supported For Write
 
