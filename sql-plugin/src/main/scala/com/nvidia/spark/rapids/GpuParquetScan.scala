@@ -960,7 +960,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   private val keepReadsInOrderFromConf = rapidsConf.getParquetMultithreadedReaderKeepOrder
   private val alluxioReplacementTaskTime =
     AlluxioCfgUtils.enabledAlluxioReplacementAlgoTaskTime(rapidsConf)
-  
+
   // We can't use the coalescing files reader when InputFileName, InputFileBlockStart,
   // or InputFileBlockLength because we are combining all the files into a single buffer
   // and we don't know which file is associated with each row. If this changes we need to

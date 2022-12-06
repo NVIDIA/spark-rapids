@@ -463,7 +463,9 @@ abstract class MultiFileCloudPartitionReaderBase(
   private val tasksToRun = new Queue[Callable[HostMemoryBuffersWithMetaDataBase]]()
   private[this] val inputMetrics = Option(TaskContext.get).map(_.taskMetrics().inputMetrics)
     .getOrElse(TrampolineUtil.newInputMetrics())
-  // this is used when the read order doesn't matter
+  // this is used when the read order doesn't matter and in that case, the tasks queue
+  // above is used to track any left being processed that need to be cleaned up if we exit early
+  // like in the case of a limit call and we don't read all files
   private var fcs: ExecutorCompletionService[HostMemoryBuffersWithMetaDataBase] = null
 
   private val files: Array[PartitionedFileInfoOptAlluxio] = {
@@ -835,8 +837,6 @@ abstract class MultiFileCloudPartitionReaderBase(
     isDone = true
     closeCurrentFileHostBuffers()
     batchIter = EmptyGpuColumnarBatchIterator
-
-    // TODO clean up with completion service? - test this
     tasks.asScala.foreach { task =>
       if (task.isDone()) {
         task.get.memBuffersAndSizes.foreach { hmbInfo =>
