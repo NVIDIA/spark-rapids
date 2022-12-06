@@ -98,6 +98,81 @@ trait HostMemoryBuffersWithMetaDataBase {
 // This is a common trait for all kind of file formats
 trait MultiFileReaderFunctions extends Arm {
 
+  /**
+   * Add all partition values found to the batch. There could be more then one partition
+   * value in the batch so we have to build up columns with the correct number of rows
+   * for each partition value.
+   *
+   * @param batch             - columnar batch to append partition values to
+   * @param inPartitionValues - array of partition values
+   * @param rowsPerPartition  - the number of rows that require each partition value
+   * @param partitionSchema   - schema of the partitions
+   * @return
+   */
+   def addAllPartitionValues(
+      batch: ColumnarBatch,
+      inPartitionValues: Array[InternalRow],
+      rowsPerPartition: Array[Long],
+      partitionSchema: StructType): ColumnarBatch = {
+    assert(rowsPerPartition.length == inPartitionValues.length)
+    if (partitionSchema.nonEmpty) {
+      val numPartitions = inPartitionValues.length
+      if (numPartitions > 1) {
+        concatAndAddPartitionColsToBatch(batch, rowsPerPartition, inPartitionValues,
+          partitionSchema)
+      } else {
+        // single partition, add like other readers
+        addPartitionValues(batch, inPartitionValues.head, partitionSchema)
+      }
+    } else {
+      batch
+    }
+  }
+
+  private def concatAndAddPartitionColsToBatch(
+      cb: ColumnarBatch,
+      rowsPerPartition: Array[Long],
+      inPartitionValues: Array[InternalRow],
+      partitionSchema: StructType): ColumnarBatch = {
+    withResource(cb) { _ =>
+      closeOnExcept(buildAndConcatPartitionColumns(rowsPerPartition, inPartitionValues,
+        partitionSchema)) {
+        allPartCols =>
+          ColumnarPartitionReaderWithPartitionValues.addGpuColumVectorsToBatch(cb, allPartCols)
+      }
+    }
+  }
+
+  private def buildAndConcatPartitionColumns(
+      rowsPerPartition: Array[Long],
+      inPartitionValues: Array[InternalRow],
+      partitionSchema: StructType): Array[GpuColumnVector] = {
+    val numCols = partitionSchema.fields.length
+    val allPartCols = new Array[GpuColumnVector](numCols)
+    // build the partitions vectors for all partitions within each column
+    // and concatenate those together then go to the next column
+    for ((field, colIndex) <- partitionSchema.fields.zipWithIndex) {
+      val dataType = field.dataType
+      withResource(new Array[GpuColumnVector](inPartitionValues.length)) {
+        partitionColumns =>
+          for ((rowsInPart, partIndex) <- rowsPerPartition.zipWithIndex) {
+            val partInternalRow = inPartitionValues(partIndex)
+            val partValueForCol = partInternalRow.get(colIndex, dataType)
+            val partitionScalar = GpuScalar.from(partValueForCol, dataType)
+            withResource(partitionScalar) { scalar =>
+              partitionColumns(partIndex) = GpuColumnVector.from(
+                ai.rapids.cudf.ColumnVector.fromScalar(scalar, rowsInPart.toInt),
+                dataType)
+            }
+          }
+          val baseOfCols = partitionColumns.map(_.getBase)
+          allPartCols(colIndex) = GpuColumnVector.from(
+            ColumnVector.concatenate(baseOfCols: _*), field.dataType)
+      }
+    }
+    allPartCols
+  }
+
   // Add partitioned columns into the batch
   protected def addPartitionValues(
       batch: ColumnarBatch,
@@ -545,8 +620,6 @@ abstract class MultiFileCloudPartitionReaderBase(
 
         val fileBufsAndMeta = if (results.size > 1) {
           logInfo(s"Using Combine mode and actually combining, num files ${results.size}")
-          logWarning(s"leftover Using Combine mode and actually combining, num files ${results.size} " +
-            s"files ${results.map(_.partitionedFile.filePath).mkString(",")}")
 
           val startCombineTime = System.currentTimeMillis()
           val combinedRes = withResource(new NvtxRange(getFileFormatShortName + " combineHmbs",
@@ -652,7 +725,7 @@ abstract class MultiFileCloudPartitionReaderBase(
           }
 
           if (canUseCombine) {
-            logWarning(s"USING COMBINE")
+            logWarning(s"USING COMBINE keep order: $keepReadsInOrder")
             var sizeRead = 0L
             readReadyFiles(0)
             if (results.isEmpty) {
@@ -672,6 +745,7 @@ abstract class MultiFileCloudPartitionReaderBase(
               readReadyFiles(sizeRead)
             }
           } else {
+            logWarning(s"NOT USING COMBINE keep order: $keepReadsInOrder")
             val hostBuffersWithMeta = if (keepReadsInOrder) {
               tasks.poll().get()
             } else {
@@ -1345,76 +1419,4 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     CurrentChunkMeta(currentClippedSchema, currentReadSchema, currentChunk,
       numRows, rowsPerPartition.toArray, allPartValues.toArray, extraInfo)
   }
-
-  /**
-   * Add all partition values found to the batch. There could be more then one partition
-   * value in the batch so we have to build up columns with the correct number of rows
-   * for each partition value.
-   *
-   * @param batch             - columnar batch to append partition values to
-   * @param inPartitionValues - array of partition values
-   * @param rowsPerPartition  - the number of rows that require each partition value
-   * @param partitionSchema   - schema of the partitions
-   * @return
-   */
-  private def addAllPartitionValues(
-      batch: ColumnarBatch,
-      inPartitionValues: Array[InternalRow],
-      rowsPerPartition: Array[Long],
-      partitionSchema: StructType): ColumnarBatch = {
-    assert(rowsPerPartition.length == inPartitionValues.length)
-    if (partitionSchema.nonEmpty) {
-      val numPartitions = inPartitionValues.length
-      if (numPartitions > 1) {
-        concatAndAddPartitionColsToBatch(batch, rowsPerPartition, inPartitionValues)
-      } else {
-        // single partition, add like other readers
-        addPartitionValues(batch, inPartitionValues.head, partitionSchema)
-      }
-    } else {
-      batch
-    }
-  }
-
-  private def concatAndAddPartitionColsToBatch(
-      cb: ColumnarBatch,
-      rowsPerPartition: Array[Long],
-      inPartitionValues: Array[InternalRow]): ColumnarBatch = {
-    withResource(cb) { _ =>
-      closeOnExcept(buildAndConcatPartitionColumns(rowsPerPartition, inPartitionValues)) {
-        allPartCols =>
-          ColumnarPartitionReaderWithPartitionValues.addGpuColumVectorsToBatch(cb, allPartCols)
-      }
-    }
-  }
-
-  private def buildAndConcatPartitionColumns(
-      rowsPerPartition: Array[Long],
-      inPartitionValues: Array[InternalRow]): Array[GpuColumnVector] = {
-    val numCols = partitionSchema.fields.length
-    val allPartCols = new Array[GpuColumnVector](numCols)
-    // build the partitions vectors for all partitions within each column
-    // and concatenate those together then go to the next column
-    for ((field, colIndex) <- partitionSchema.fields.zipWithIndex) {
-      val dataType = field.dataType
-      withResource(new Array[GpuColumnVector](inPartitionValues.length)) {
-        partitionColumns =>
-          for ((rowsInPart, partIndex) <- rowsPerPartition.zipWithIndex) {
-            val partInternalRow = inPartitionValues(partIndex)
-            val partValueForCol = partInternalRow.get(colIndex, dataType)
-            val partitionScalar = GpuScalar.from(partValueForCol, dataType)
-            withResource(partitionScalar) { scalar =>
-              partitionColumns(partIndex) = GpuColumnVector.from(
-                ai.rapids.cudf.ColumnVector.fromScalar(scalar, rowsInPart.toInt),
-                dataType)
-            }
-          }
-          val baseOfCols = partitionColumns.map(_.getBase)
-          allPartCols(colIndex) = GpuColumnVector.from(
-            ColumnVector.concatenate(baseOfCols: _*), field.dataType)
-      }
-    }
-    allPartCols
-  }
-
 }

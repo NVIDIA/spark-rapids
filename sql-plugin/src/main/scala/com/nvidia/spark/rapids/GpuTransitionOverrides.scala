@@ -329,7 +329,6 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   private def containsShuffle(plan: SparkPlan): Boolean = {
     plan match {
       case _: GpuShuffleExchangeExecBase =>
-        logWarning(s"plan contains shuffle $plan")
         true
       case p =>
         val childRes = p.children.map(c => containsShuffle(c)).exists(_ == true)

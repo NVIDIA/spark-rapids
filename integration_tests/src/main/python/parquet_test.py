@@ -88,10 +88,6 @@ native_coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.rea
 native_coalesce_parquet_file_reader_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE',
         'spark.rapids.sql.reader.chunked': True}
-noorder_multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
-        'spark.rapids.sql.format.parquet.multithreaded.combine.threshold': '0',
-        'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': 'false'}
-# TODO - make sure combine mode actually exercised
 combining_multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
          'spark.rapids.sql.format.parquet.multithreaded.combine.threshold': '67108864',
          'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': 'false'}
@@ -106,7 +102,7 @@ reader_opt_confs_native = [native_parquet_file_reader_conf, native_multithreaded
 
 reader_opt_confs_no_native = [original_parquet_file_reader_conf, multithreaded_parquet_file_reader_conf,
                     coalesce_parquet_file_reader_conf, coalesce_parquet_file_reader_multithread_filter_conf,
-                    noorder_multithreaded_parquet_file_reader_conf, combining_multithreaded_parquet_file_reader_conf]
+                    combining_multithreaded_parquet_file_reader_conf]
 
 reader_opt_confs = reader_opt_confs_native + reader_opt_confs_no_native
 
@@ -490,6 +486,51 @@ def test_parquet_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reade
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
+
+# Make sure to test mulithreaded combine mode with read order not required by introducing a shuffle.
+# When there is no shuffle the read order will fallback to keep order so isn't tested in the other
+# tests.
+@ignore_order(local=True)
+@pytest.mark.parametrize('reader_confs', [combining_multithreaded_parquet_file_reader_conf])
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_parquet_read_schema_missing_cols_with_shuffle(spark_tmp_path, v1_enabled_list, reader_confs):
+    # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
+    # we should go with a more standard set of generators
+    parquet_gens = [byte_gen, short_gen, int_gen, long_gen]
+    first_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
+    with_cpu_session(
+            lambda spark : gen_df(spark, first_gen_list, 10).write.parquet(first_data_path))
+    # generate with 1 column less
+    second_parquet_gens = [byte_gen, short_gen, int_gen]
+    second_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(second_parquet_gens)]
+    second_data_path = spark_tmp_path + '/PARQUET_DATA/key=1'
+    with_cpu_session(
+            lambda spark : gen_df(spark, second_gen_list, 10).write.parquet(second_data_path))
+    # third with same as first
+    third_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    third_data_path = spark_tmp_path + '/PARQUET_DATA/key=2'
+    with_cpu_session(
+            lambda spark : gen_df(spark, third_gen_list, 10).write.parquet(third_data_path))
+    # forth with same as second
+    fourth_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(second_parquet_gens)]
+    fourth_data_path = spark_tmp_path + '/PARQUET_DATA/key=3'
+    with_cpu_session(
+            lambda spark : gen_df(spark, fourth_gen_list, 10).write.parquet(fourth_data_path))
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    all_confs = copy_and_update(reader_confs, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.files.maxPartitionBytes': '1g',
+        'spark.sql.files.minPartitionNum': '1'})
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+            lambda spark : readAndJoin(spark, data_path),
+            exist_classes="GpuColumnarExchange",
+            conf=all_confs)
+
+def readAndJoin(spark, data_path):
+    df1 = spark.read.parquet(data_path)
+    df2 = spark.read.parquet(data_path)
+    return df1.repartition(7).join(df2, "_c0")
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
