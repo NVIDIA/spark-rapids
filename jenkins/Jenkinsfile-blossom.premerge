@@ -218,6 +218,8 @@ pipeline {
                             TEMP_IMAGE_BUILD = false
                         }
 
+                        sh "break it"
+
                         if (TEMP_IMAGE_BUILD) {
                             IMAGE_TAG = "dev-ubuntu18-${CUDA_NAME}"
                             PREMERGE_TAG = "${IMAGE_TAG}-${BUILD_TAG}"
