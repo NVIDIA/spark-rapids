@@ -52,6 +52,7 @@ New functionality and performance improvements for this release include:
 * Enable tiered projections for more expressions to optimize performance   
 * Qualification and Profiling tool:
   * Support cost estimations for Dataproc 1.5 and Dataproc2.x
+  * Added new Github [repo](https://github.com/NVIDIA/spark-rapids-tools/tree/dev/user_tools) for user tools functionality
 
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
