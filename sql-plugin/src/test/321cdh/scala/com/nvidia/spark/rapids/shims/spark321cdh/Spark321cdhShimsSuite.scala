@@ -20,6 +20,7 @@ package com.nvidia.spark.rapids.shims.spark321cdh
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.scalatest.FunSuite
+
 import org.apache.spark.sql.types.{DayTimeIntervalType, YearMonthIntervalType}
 
 class Spark321cdhShimsSuite extends FunSuite {
