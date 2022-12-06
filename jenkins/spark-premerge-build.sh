@@ -172,10 +172,11 @@ if [ -s "$M2_CACHE_TAR" ] ; then
 fi
 
 # Download a full version of spark
+. jenkins/hadoop-def.sh $SPARK_VER
 $MVN_GET_CMD \
-    -DgroupId=org.apache -DartifactId=spark -Dversion=$SPARK_VER -Dclassifier=bin-hadoop3.2 -Dpackaging=tgz
+    -DgroupId=org.apache -DartifactId=spark -Dversion=$SPARK_VER -Dclassifier=$BIN_HADOOP_VER -Dpackaging=tgz
 
-export SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-bin-hadoop3.2"
+export SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-$BIN_HADOOP_VER"
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
     rm -f $SPARK_HOME.tgz
