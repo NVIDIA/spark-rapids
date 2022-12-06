@@ -15,7 +15,6 @@
  */
 
 // spark-distros:311:312:312db:313:314:320:321:321cdh:321db:322:323:
-
 package org.apache.spark.sql.execution.datasources.parquet
 
 import java.io.IOException

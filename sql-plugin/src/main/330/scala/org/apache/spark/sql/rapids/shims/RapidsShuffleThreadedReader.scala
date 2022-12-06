@@ -15,7 +15,6 @@
  */
 
 // spark-distros:330:330cdh:331:332:340:
-
 package org.apache.spark.sql.rapids.shims
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}

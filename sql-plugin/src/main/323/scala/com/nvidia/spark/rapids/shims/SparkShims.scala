@@ -15,7 +15,6 @@
  */
 
 // spark-distros:323:
-
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._

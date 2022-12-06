@@ -15,7 +15,6 @@
  */
 
 // spark-distros:311:312:312db:313:314:320:321:321cdh:321db:322:323:330:330cdh:331:332:
-
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.catalyst.util.TypeUtils

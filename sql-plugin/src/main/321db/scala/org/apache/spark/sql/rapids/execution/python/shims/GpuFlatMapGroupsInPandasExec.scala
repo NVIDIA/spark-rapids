@@ -15,7 +15,6 @@
  */
 
 // spark-distros:321db:
-
 package org.apache.spark.sql.rapids.execution.python.shims
 
 import com.nvidia.spark.rapids._

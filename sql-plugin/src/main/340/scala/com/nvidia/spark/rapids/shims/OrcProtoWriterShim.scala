@@ -16,7 +16,6 @@
  */
 
 // spark-distros:340:
-
 package com.nvidia.spark.rapids.shims
 
 import org.apache.orc.impl.OutStream

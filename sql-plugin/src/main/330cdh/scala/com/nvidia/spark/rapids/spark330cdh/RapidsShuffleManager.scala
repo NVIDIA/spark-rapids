@@ -15,7 +15,6 @@
  */
 
 // spark-distros:330cdh:
-
 package com.nvidia.spark.rapids.spark330cdh
 
 import org.apache.spark.SparkConf

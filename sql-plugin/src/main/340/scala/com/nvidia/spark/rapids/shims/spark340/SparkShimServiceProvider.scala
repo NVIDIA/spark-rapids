@@ -15,7 +15,6 @@
  */
 
 // spark-distros:340:
-
 package com.nvidia.spark.rapids.shims.spark340
 
 import com.nvidia.spark.rapids.SparkShimVersion

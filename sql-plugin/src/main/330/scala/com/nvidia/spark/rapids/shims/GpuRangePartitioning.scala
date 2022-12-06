@@ -15,7 +15,6 @@
  */
 
 // spark-distros:330:330cdh:331:332:340:
-
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.{GpuExpression, GpuPartitioning}

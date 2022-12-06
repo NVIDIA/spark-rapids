@@ -15,7 +15,6 @@
  */
 
 // spark-distros:332:
-
 package org.apache.spark.sql.rapids.shims.spark332
 
 import org.apache.spark.SparkConf

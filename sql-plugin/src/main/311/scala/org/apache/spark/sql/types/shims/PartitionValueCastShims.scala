@@ -15,7 +15,6 @@
  */
 
 // spark-distros:311:312:312db:313:314:
-
 package org.apache.spark.sql.types.shims
 
 import java.time.ZoneId

@@ -15,7 +15,6 @@
  */
 
 // spark-distros:340:
-
 package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.SparkDateTimeException

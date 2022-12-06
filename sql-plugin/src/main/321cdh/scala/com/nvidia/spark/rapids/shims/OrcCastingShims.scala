@@ -15,7 +15,6 @@
  */
 
 // spark-distros:321cdh:
-
 package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.{ColumnView, DType}

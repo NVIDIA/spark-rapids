@@ -15,7 +15,6 @@
  */
 
 // spark-distros:320:321:321cdh:321db:322:323:330:330cdh:331:332:340:
-
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuCSVScan, RapidsConf, RapidsMeta, ScanMeta}

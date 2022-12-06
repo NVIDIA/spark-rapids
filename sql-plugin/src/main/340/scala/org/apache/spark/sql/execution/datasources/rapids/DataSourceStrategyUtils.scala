@@ -15,7 +15,6 @@
  */
 
 // spark-distros:340:
-
 package org.apache.spark.sql.execution.datasources.rapids
 
 import org.apache.spark.sql.catalyst.expressions.Expression

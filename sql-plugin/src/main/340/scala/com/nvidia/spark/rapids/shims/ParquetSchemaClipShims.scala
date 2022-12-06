@@ -15,7 +15,6 @@
  */
 
 // spark-distros:340:
-
 package com.nvidia.spark.rapids.shims
 
 import scala.collection.JavaConverters._

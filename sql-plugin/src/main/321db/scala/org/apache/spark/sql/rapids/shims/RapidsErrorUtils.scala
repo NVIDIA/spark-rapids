@@ -15,7 +15,6 @@
  */
 
 // spark-distros:321db:
-
 package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.sql.catalyst.TableIdentifier

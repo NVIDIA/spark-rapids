@@ -15,7 +15,6 @@
  */
 
 // spark-distros:321db:
-
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.execution.FileSourceScanExec

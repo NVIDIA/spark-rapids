@@ -15,7 +15,6 @@
  */
 
 // spark-distros:321db:
-
 package org.apache.spark.sql.catalyst.json
 
 import org.apache.spark.sql.catalyst.util.DateFormatter

@@ -15,7 +15,6 @@
  */
 
 // spark-distros:330cdh:
-
 package com.nvidia.spark.rapids.shims.spark330cdh
 
 import com.nvidia.spark.rapids.{ClouderaShimVersion, ShimVersion}

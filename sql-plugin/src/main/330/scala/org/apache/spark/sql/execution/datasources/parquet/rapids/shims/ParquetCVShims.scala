@@ -15,7 +15,6 @@
  */
 
 // spark-distros:330:330cdh:331:332:
-
 package org.apache.spark.sql.execution.datasources.parquet
 
 import org.apache.spark.memory.MemoryMode

@@ -15,7 +15,6 @@
  */
 
 // spark-distros:321:
-
 package com.nvidia.spark.rapids.spark321
 
 import org.apache.spark.SparkConf

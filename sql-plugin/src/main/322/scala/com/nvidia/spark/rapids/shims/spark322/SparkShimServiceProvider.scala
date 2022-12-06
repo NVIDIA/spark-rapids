@@ -15,7 +15,6 @@
  */
 
 // spark-distros:322:
-
 package com.nvidia.spark.rapids.shims.spark322
 
 import com.nvidia.spark.rapids.SparkShimVersion
