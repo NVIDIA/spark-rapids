@@ -960,7 +960,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   private val keepReadsInOrderFromConf = rapidsConf.getParquetMultithreadedReaderKeepOrder
   private val alluxioReplacementTaskTime =
     AlluxioCfgUtils.enabledAlluxioReplacementAlgoTaskTime(rapidsConf)
-
+  
   // We can't use the coalescing files reader when InputFileName, InputFileBlockStart,
   // or InputFileBlockLength because we are combining all the files into a single buffer
   // and we don't know which file is associated with each row. If this changes we need to
@@ -2206,7 +2206,6 @@ class MultiFileCloudParquetPartitionReader(
       val batch = if (meta.allPartValues.isDefined) {
         // we have to add partition values here for this batch, we already verified that
         // its not different for all the blocks in this batch
-        // TODO - handle chunked reads
         val rowsPerPartition = meta.allPartValues.get.map(_._1).toArray
         val allPartInternalRows = meta.allPartValues.get.map(_._2).toArray
         addAllPartitionValues(origBatch, allPartInternalRows, rowsPerPartition, partitionSchema)
@@ -2263,7 +2262,6 @@ class MultiFileCloudParquetPartitionReader(
       val colTypes = readDataSchema.fields.map(f => f.dataType)
       CachedGpuBatchIterator(tableReader, colTypes, spillCallback).map { batch =>
         // add all part values properly
-        // TODO - need to handle the chunked reader properly
         if (allPartValues.isDefined) {
           // we have to add partition values here for this batch, we already verified that
           // its not different for all the blocks in this batch

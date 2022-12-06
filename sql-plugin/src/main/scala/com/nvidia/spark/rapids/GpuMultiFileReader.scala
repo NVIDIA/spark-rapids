@@ -608,7 +608,11 @@ abstract class MultiFileCloudPartitionReaderBase(
       val hmbFuture = if (keepReadsInOrder) {
         tasks.poll()
       } else {
-        fcs.poll()
+        val fut = fcs.poll()
+        if (fut != null) {
+          tasks.remove(fut)
+        }
+        fut
       }
       if (hmbFuture == null) {
         if (combineWaitTime > 0) {
@@ -619,6 +623,7 @@ abstract class MultiFileCloudPartitionReaderBase(
             if (fut == null) {
               null
             } else {
+              tasks.remove(fut)
               fut.get()
             }
           }
@@ -805,7 +810,6 @@ abstract class MultiFileCloudPartitionReaderBase(
       if (!keepReadsInOrder) {
         val futureRunner = fcs.submit(runner)
         logWarning(s"tasks adding fut, remaining ${tasks.size}")
-
         tasks.add(futureRunner)
       } else {
         val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
@@ -833,24 +837,19 @@ abstract class MultiFileCloudPartitionReaderBase(
     batchIter = EmptyGpuColumnarBatchIterator
 
     // TODO clean up with completion service? - test this
-    if (keepReadsInOrder) {
-      tasks.asScala.foreach { task =>
-        if (task.isDone()) {
-          task.get.memBuffersAndSizes.foreach { hmbInfo =>
-            if (hmbInfo.hmb != null) {
-              hmbInfo.hmb.close()
-            }
+    tasks.asScala.foreach { task =>
+      if (task.isDone()) {
+        task.get.memBuffersAndSizes.foreach { hmbInfo =>
+          if (hmbInfo.hmb != null) {
+            hmbInfo.hmb.close()
           }
-        } else {
-          // Note we are not interrupting thread here so it
-          // will finish reading and then just discard. If we
-          // interrupt HDFS logs warnings about being interrupted.
-          task.cancel(false)
         }
+      } else {
+        // Note we are not interrupting thread here so it
+        // will finish reading and then just discard. If we
+        // interrupt HDFS logs warnings about being interrupted.
+        task.cancel(false)
       }
-    } else {
-      logWarning(s"tasks cleanup fut, remaining ${tasks.size}")
-
     }
   }
 }
