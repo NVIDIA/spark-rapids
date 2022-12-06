@@ -489,18 +489,18 @@
                                             <arg value="${project.basedir}/../docs/supported_ops.md"/>
                                         </java>
                                         <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
-                                            <arg value="${project.basedir}/../tools/src/main/resources/supportedDataSource.csv"/>
+                                            <arg value="${project.basedir}/../tools/generated_files/supportedDataSource.csv"/>
                                         </java>
                                         <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
-                                            <arg value="${project.basedir}/../tools/src/main/resources/operatorsScore.csv"/>
+                                            <arg value="${project.basedir}/../tools/generated_files/operatorsScore.csv"/>
                                             <arg value="operatorScore"/>
                                         </java>
                                         <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
-                                            <arg value="${project.basedir}/../tools/src/main/resources/supportedExecs.csv"/>
+                                            <arg value="${project.basedir}/../tools/generated_files/supportedExecs.csv"/>
                                             <arg value="execs"/>
                                         </java>
                                         <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
-                                            <arg value="${project.basedir}/../tools/src/main/resources/supportedExprs.csv"/>
+                                            <arg value="${project.basedir}/../tools/generated_files/supportedExprs.csv"/>
                                             <arg value="exprs"/>
                                         </java>
                                     </ac:then>
