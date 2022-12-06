@@ -11528,7 +11528,7 @@ are limited.
 <td rowSpan="2">Reverse</td>
 <td rowSpan="2">`reverse`</td>
 <td rowSpan="2">Returns a reversed string or an array with reverse order of elements</td>
-<td rowSpan="2">This is not 100% compatible with the Spark version because currently do not support reverse on arrays</td>
+<td rowSpan="2">None</td>
 <td rowSpan="2">project</td>
 <td>input</td>
 <td> </td>
@@ -11542,10 +11542,10 @@ are limited.
 <td> </td>
 <td>S</td>
 <td> </td>
-<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -11563,10 +11563,10 @@ are limited.
 <td> </td>
 <td>S</td>
 <td> </td>
-<td>S</td>
 <td> </td>
 <td> </td>
 <td> </td>
+<td><b>NS</b></td>
 <td> </td>
 <td> </td>
 <td> </td>
