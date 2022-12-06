@@ -854,26 +854,26 @@ object RapidsConf {
     .createWithDefault(RapidsReaderType.AUTO.toString)
 
   val PARQUET_MULTITHREADED_COMBINE_THRESHOLD =
-  conf ("spark.rapids.sql.format.parquet.multithreaded.combine.threshold")
-  .doc ("When using the multithreaded parquet reader, if other files are already ready, " +
-    "combine them together up to this threshold size before sending down to GPU. This can be " +
-    "disabled by setting it to 0.")
-  .bytesConf (ByteUnit.BYTE)
-  .createWithDefault (67108864L) // 64mb
+    conf("spark.rapids.sql.format.parquet.multithreaded.combine.threshold")
+      .doc("When using the multithreaded parquet reader, if other files are already ready, " +
+        "combine them together up to this threshold size before sending down to GPU. This can be " +
+        "disabled by setting it to 0.")
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(64 * 1024 * 1024) // 64M
 
   val PARQUET_MULTITHREADED_COMBINE_WAIT_TIME =
-  conf ("spark.rapids.sql.format.parquet.multithreaded.combine.waitTime")
-  .doc ("When using the multithreaded parquet reader with combine mode, how long " +
-    "to wait for more files to finish if haven't met size yet.")
-  .integerConf
-  .createWithDefault (20) // ms
+    conf("spark.rapids.sql.format.parquet.multithreaded.combine.waitTime")
+      .doc("When using the multithreaded parquet reader with combine mode, how long " +
+        "to wait, in milliseconds, for more files to finish if haven't met size yet.")
+      .integerConf
+      .createWithDefault(200) // ms
 
   val PARQUET_MULTITHREADED_READ_KEEP_ORDER =
     conf("spark.rapids.sql.format.parquet.multithreaded.read.keepOrder")
       .doc("When using the MULTITHREADED reader, if this is set to true we read " +
         "the files in the same order Spark does, otherwise the order may not be the same.")
       .booleanConf
-      .createWithDefault(false) // ms
+      .createWithDefault(false)
 
   /** List of schemes that are always considered cloud storage schemes */
   private lazy val DEFAULT_CLOUD_SCHEMES =

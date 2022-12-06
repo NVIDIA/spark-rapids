@@ -703,8 +703,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
         }
 
         val uncompressedSize = result match {
-          case (_, cb: ColumnarBatch) =>
-            SerializedTableColumn.getMemoryUsed(cb)
+          case (_, cb: ColumnarBatch) => SerializedTableColumn.getMemoryUsed(cb)
           case _ => 0 // TODO: do we need to handle other types here?
         }
 
@@ -794,8 +793,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
               val batchIter = deserStream.asKeyValueIterator.asInstanceOf[SerializedBatchIterator]
               val blockState = BlockState(blockId, batchIter)
               // get the next known batch size (there could be multiple batches)
-              val nextSize = blockState.getNextBatchSize
-              if (limiter.acquire(nextSize)) {
+              if (limiter.acquire(blockState.getNextBatchSize)) {
                 // we can fit at least the first batch in this block
                 // kick off a deserialization task
                 deserializeTask(blockState)

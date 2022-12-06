@@ -1298,14 +1298,15 @@ case class GpuRegExpExtract(
     // | NULL   | NULL  | NULL  |
     // | 'a1a'  | '1'   | '1'   |
     // | '1a1'  | ''    | NULL  |
+
     withResource(str.getBase.extractRe(extractPattern)) { extract =>
-      val outputNullAndInputNotNull =
-        withResource(extract.getColumn(groupIndex).isNull) { outputNull =>
-          withResource(str.getBase.isNotNull) { inputNotNull =>
-            outputNull.and(inputNotNull)
-          }
-        }
       withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
+        val outputNullAndInputNotNull =
+          withResource(extract.getColumn(groupIndex).isNull) { outputNull =>
+            withResource(str.getBase.isNotNull) { inputNotNull =>
+              outputNull.and(inputNotNull)
+            }
+          }
         withResource(outputNullAndInputNotNull) {
           _.ifElse(emptyString, extract.getColumn(groupIndex))
         }
