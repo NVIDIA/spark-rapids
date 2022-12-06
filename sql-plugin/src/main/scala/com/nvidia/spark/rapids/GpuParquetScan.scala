@@ -1392,9 +1392,7 @@ trait ParquetPartitionReaderBase extends Logging with Arm with ScanWithMetrics
     val copyRanges = new ArrayBuffer[CopyRange]
     val outputBlocks = computeBlockMetaData(blocks, realStartOffset, Some(copyRanges))
     val copyBuffer = new Array[Byte](copyBufferSize)
-    copyRanges.foreach { copyRange =>
-      copyDataRange(copyRange, in, out, copyBuffer)
-    }
+    copyRanges.foreach(copyRange => copyDataRange(copyRange, in, out, copyBuffer))
     outputBlocks
   }
 
@@ -1633,6 +1631,7 @@ class MultiFileParquetPartitionReader(
       blocks: ArrayBuffer[DataBlockBase],
       offset: Long)
     extends Callable[(Seq[DataBlockBase], Long)] {
+
     override def call(): (Seq[DataBlockBase], Long) = {
       TrampolineUtil.setTaskContext(taskContext)
       try {
