@@ -1,11 +1,13 @@
 # Change log
-Generated on 2022-12-01
+Generated on 2022-12-06
 
 ## Release 22.12
 
 ### Features
 |||
 |:---|:---|
+|[#4991](https://github.com/NVIDIA/spark-rapids/issues/4991)|[FEA] Refactor pre-merge to run using branch specific Jenkinsfile|
+|[#6785](https://github.com/NVIDIA/spark-rapids/issues/6785)|[FEA] Investigate how to handle memory explosion|
 |[#5225](https://github.com/NVIDIA/spark-rapids/issues/5225)|[FEA] Support array_remove|
 |[#6781](https://github.com/NVIDIA/spark-rapids/issues/6781)|[FEA] Create demo notebook on Databricks for qualification tool usage|
 |[#6782](https://github.com/NVIDIA/spark-rapids/issues/6782)|[FEA] Create demo notebook on Databricks for profiler tool usage|
@@ -36,6 +38,8 @@ Generated on 2022-12-01
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#6636](https://github.com/NVIDIA/spark-rapids/issues/6636)|[BUG] casting to string and list, and concat can cause overflow issues|
+|[#7234](https://github.com/NVIDIA/spark-rapids/issues/7234)|[BUG] Integration test script failed on: '/tmp/20221204/python/lib': No such file or directory|
 |[#7198](https://github.com/NVIDIA/spark-rapids/issues/7198)|[BUG] RapidsShuffleManager fails to unregister UCX-mode shuffle|
 |[#7168](https://github.com/NVIDIA/spark-rapids/issues/7168)|[BUG] mismatch cpu and gpu result in test_aqe_join_reused_exchange_inequality_condition failed|
 |[#7066](https://github.com/NVIDIA/spark-rapids/issues/7066)|[SPARK-39432][BUG] The test `test_array_element_at_zero_index_fail` fails on Spark 3.4|
@@ -90,6 +94,16 @@ Generated on 2022-12-01
 ### PRs
 |||
 |:---|:---|
+|[#7238](https://github.com/NVIDIA/spark-rapids/pull/7238)|Add branch-specific premerge jenkinsfile|
+|[#7243](https://github.com/NVIDIA/spark-rapids/pull/7243)|[Doc]fix broken links[skip ci]|
+|[#7155](https://github.com/NVIDIA/spark-rapids/pull/7155)|Add unit tests for alluxio utils|
+|[#7080](https://github.com/NVIDIA/spark-rapids/pull/7080)|[Doc] Document Alluxio does not sync metadata from S3 by default [skip ci]|
+|[#7235](https://github.com/NVIDIA/spark-rapids/pull/7235)|Create tmp path to make python path explicit [skip ci]|
+|[#7084](https://github.com/NVIDIA/spark-rapids/pull/7084)|[Doc]Update databricks doc for 22.12[skip ci]|
+|[#7166](https://github.com/NVIDIA/spark-rapids/pull/7166)|Sync up spark2 explain code|
+|[#6903](https://github.com/NVIDIA/spark-rapids/pull/6903)|Support projectV2 for changelog tooling [skip ci]|
+|[#7203](https://github.com/NVIDIA/spark-rapids/pull/7203)|[Doc]add a Contact Us page at the top-level menu[skip ci]|
+|[#7174](https://github.com/NVIDIA/spark-rapids/pull/7174)|Fix dependencies in jenkins-test script to support DB11.3|
 |[#7034](https://github.com/NVIDIA/spark-rapids/pull/7034)|Read directly from S3 instead of reading from Alluxio caches if files are large and disk is slow|
 |[#7199](https://github.com/NVIDIA/spark-rapids/pull/7199)|Fixes unregisterShuffle bugs in the driver and a missed match for the GpuResolver|
 |[#7156](https://github.com/NVIDIA/spark-rapids/pull/7156)|Add scripts to run integration test on Databricks by leveraging Jenkins parallelism [skip ci]|
