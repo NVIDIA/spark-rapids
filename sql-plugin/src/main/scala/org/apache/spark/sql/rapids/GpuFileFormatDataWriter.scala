@@ -168,7 +168,7 @@ class GpuSingleDirectoryDataWriter(
     val maxRecordsPerFile = description.maxRecordsPerFile
     if (!needSplitBatch(maxRecordsPerFile, recordsInFile, batch.numRows())) {
       closeOnExcept(batch) { _ =>
-        statsTrackers.foreach(_.newBatch(currentWriter.path, batch))
+        statsTrackers.foreach(_.newBatch(currentWriter.path(), batch))
         recordsInFile += batch.numRows()
       }
       currentWriter.writeAndClose(batch, statsTrackers)
@@ -195,7 +195,7 @@ class GpuSingleDirectoryDataWriter(
               withResource(b.getTable()) {tab =>
                 val bc = GpuColumnVector.from(tab, dataTypes)
                 closeOnExcept(bc) { _ =>
-                  statsTrackers.foreach(_.newBatch(currentWriter.path, bc))
+                  statsTrackers.foreach(_.newBatch(currentWriter.path(), bc))
                   recordsInFile += b.getRowCount()
                 }
                 currentWriter.writeAndClose(bc, statsTrackers)
@@ -536,7 +536,7 @@ class GpuDynamicPartitionDataSingleWriter(
           {
             val batch  = GpuColumnVector.from(concat, outDataTypes)
             closeOnExcept(batch) { _ =>
-              statsTrackers.foreach(_.newBatch(currentWriterStatus.outputWriter.path, batch))
+              statsTrackers.foreach(_.newBatch(currentWriterStatus.outputWriter.path(), batch))
               currentWriterStatus.recordsInFile += batch.numRows()
             }
             currentWriterStatus.outputWriter.writeAndClose(batch, statsTrackers)
@@ -551,7 +551,7 @@ class GpuDynamicPartitionDataSingleWriter(
           {
             val batch = GpuColumnVector.from(table, outDataTypes)
             closeOnExcept(batch) { _ =>
-              statsTrackers.foreach(_.newBatch(currentWriterStatus.outputWriter.path, batch))
+              statsTrackers.foreach(_.newBatch(currentWriterStatus.outputWriter.path(), batch))
               currentWriterStatus.recordsInFile += batch.numRows()
             }
             currentWriterStatus.outputWriter.writeAndClose(batch, statsTrackers)
@@ -627,7 +627,7 @@ class GpuDynamicPartitionDataSingleWriter(
         }
         val bc = GpuColumnVector.from(b.getTable(), outDataTypes)
         closeOnExcept(bc) { _ =>
-          statsTrackers.foreach(_.newBatch(currentWriterStatus.outputWriter.path, bc))
+          statsTrackers.foreach(_.newBatch(currentWriterStatus.outputWriter.path(), bc))
           currentWriterStatus.recordsInFile += b.getRowCount()
         }
         currentWriterStatus.outputWriter.writeAndClose(bc, statsTrackers)
