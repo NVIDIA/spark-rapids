@@ -328,8 +328,8 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
                                     hiveTableRelation.tableMeta.storage.properties
     val hadoopConf                = sparkSession.sessionState.newHadoopConf()
     // In the CPU HiveTableScanExec the config will have a bunch of confs set for S3 keys
-    //  and predicate push down/etc. We don't need this because we are getting that information
-    //  directly.
+    // and predicate push down/etc. We don't need this because we are getting that information
+    // directly.
     val broadcastHadoopConf       = sparkSession.sparkContext.broadcast(
                                       new SerializableConfiguration(hadoopConf))
     val sqlConf                   = sparkSession.sessionState.conf
