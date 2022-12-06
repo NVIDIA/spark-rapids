@@ -30,9 +30,11 @@
 <   def parseCompressionType(compressionType: String): Option[String] = {
 ---
 >   def parseCompressionType(compressionType: String): Option[CompressionType] = {
-105,106c106,107
+105,107c106,108
 <       case "NONE" | "UNCOMPRESSED" => Some("NONE")
 <       case "SNAPPY" => Some("SNAPPY")
+<       case "ZSTD" => Some("ZSTD")
 ---
 >       case "NONE" | "UNCOMPRESSED" => Some(CompressionType.NONE)
 >       case "SNAPPY" => Some(CompressionType.SNAPPY)
+>       case "ZSTD" => Some(CompressionType.ZSTD)

@@ -16,7 +16,8 @@ reducing the network overhead. Compute applications talking to Alluxio can trans
 cache frequently accessed data from multiple sources, especially from remote locations.
 
 This guide will go through how to set up the RAPIDS Accelerator for Apache Spark with
-Alluxio in an on-premise cluster.
+Alluxio in an on-premise cluster. This guide sets up Alluxio to handle reads and
+by default does not handle file updates in the remote blob store.
 
 ## Prerequisites
 
@@ -354,6 +355,13 @@ mostly the user with Alluxio permission. We run the command by user `ubuntu` as 
 If you have a different user and command path, you can redefine it.
 The default value is suitable for the case of running Alluxio with RAPIDS on Databricks.
 
+## Configure whether the disks used by Alluxio are fast
+The default value of config `spark.rapids.alluxio.slow.disk` is true, indicating the disks used by Alluxio are slow.   
+The true value enables an improvement which reads from S3 directly to get better performance when the files being read are large.   
+The config `spark.rapids.alluxio.large.file.threshold`, which defaults to 64MB, controls the file size threshold used to trigger this improvement.   
+If the disks are fast, this feature should be disabled by setting it to false as it will be faster to read from Alluxio.   
+Typically, if speed of the disks is bigger than 300M/second, set it as false.
+
 ## Alluxio Troubleshooting
 
 This section will give some links about how to configure, tune Alluxio and some troubleshooting.
@@ -421,14 +429,23 @@ See the master.log and worker.log in this path.
 After installing Alluxio master and workers, it's better to add a systemd service for each process of master and workers.
 Systemd service can automatically restart a process if that process is terminated.
 
+## Alluxio limitations
+### Alluxio does not sync metadata from UFS(e.g. S3) by default
+Alluxio does not sync metadata from S3 by default, so it won't pick up any changed files.   
+For example:   
+If you update a file in the S3 from 1M size to 10M size and Alluxio already cached the 1M size file,    
+Alluxio cluster will always use the 1M file.   
+If you want to enable sync it has performance impact which will affect the read performance.   
+For details, please search `alluxio.user.file.metadata.sync.interval` in [Alluxio doc](https://docs.alluxio.io/ee/user/stable/en/reference/Properties-List.html).
+
 ## Alluxio metrics
-The following sections describes 3 methods to view Alluxio metrics GUI:   
+The following sections describes 3 methods to view Alluxio metrics GUI:
 - Monitor Alluxio live metrics based on Alluxio Master Web:   
-  When the Alluxio cluster is running, users can monitor current metrics based on Alluxio Master Web.   
+  When the Alluxio cluster is running, users can monitor current metrics based on Alluxio Master Web.
 - Monitor Alluxio live metrics based on Grafana with Prometheus:   
-  When the Alluxio cluster is running, users can monitor current metrics based on Grafana with Prometheus.   
+  When the Alluxio cluster is running, users can monitor current metrics based on Grafana with Prometheus.
 - View Alluxio historic metrics based on Grafana with Prometheus:   
-  When the Alluxio cluster is shutdown, users can restore the saved historic metrics and view them locally.   
+  When the Alluxio cluster is shutdown, users can restore the saved historic metrics and view them locally.
 ### Monitor Alluxio live metrics based on Alluxio Master Web
 Users can view the Alluxio metrics in the Web interface of Alluxio leading master:       
 http://<leading_master_host>:19999/metrics   
@@ -438,19 +455,19 @@ the following provides a method to view the Web UI by SSH tunnel via jump server
 First forward the Alluxio port 19999 to a new port on a jump server,   
 then forward the new port on the jump server to a local port,   
 finally access the local port in the browser.   
-For example:   
+For example:
 - Forward the Alluxio server 19999 port to the port 29999 on jump server.    
   ssh user@jump-server   // login to jump server   
-  ssh -L 29999:localhost:19999 alluxio_master_user@alluxio_master_host -p 2200 -i <private_key_file_path>   
+  ssh -L 29999:localhost:19999 alluxio_master_user@alluxio_master_host -p 2200 -i <private_key_file_path>
 - Forward the port 29999 on jump server to local port 39999 on your own machine.    
-  ssh -L 39999:localhost:29999 user@jump-server   
-- Finally open http://localhost:39999/metrics on your own machine.   
+  ssh -L 39999:localhost:29999 user@jump-server
+- Finally open http://localhost:39999/metrics on your own machine.
 
 ### Monitor Alluxio live metrics based on Grafana with Prometheus
 
 #### Config Prometheus when creating Databricks cluster
 When creating a Databricks cluster via the Docker container for Databricks,   
-Set Environment variable ENABLE_ALLUXIO and PROMETHEUS_COPY_DATA_PATH, for example:   
+Set Environment variable ENABLE_ALLUXIO and PROMETHEUS_COPY_DATA_PATH, for example:
 ```
 ENABLE_ALLUXIO=1
 PROMETHEUS_COPY_DATA_PATH=/dbfs/user1/dblogs-prometheus
@@ -462,7 +479,7 @@ Note: If not set `ENABLE_ALLUXIO`, `PROMETHEUS_COPY_DATA_PATH` will not take eff
 For more details, refer to [spark-rapids-Databricks-container](https://github.com/NVIDIA/spark-rapids-container/tree/dev/Databricks)
 
 #### Install and start Grafana locally
-For example: local machine is Ubuntu.    
+For example: local machine is Ubuntu.
 ```bash
 sudo apt-get install -y adduser libfontconfig1   
 wget https://dl.grafana.com/enterprise/release/grafana-enterprise_9.2.6_amd64.deb   
@@ -474,32 +491,32 @@ For more details, refer to [doc](https://grafana.com/grafana/download)
 
 #### Forward the Prometheus port 9090 to local port
 In order to access Prometheus-typed metrics on Databricks cluster by local Grafana,   
-users may need to create an SSH tunnel to access the Databricks internal port.  
+users may need to create an SSH tunnel to access the Databricks internal port.
 - Forward the Alluxio server 9090 port to the port 29090 on jump server.   
   ssh user@jump-server   // login to jump server   
-  ssh -L 29090:localhost:9090 alluxio_master_user@alluxio_master_host -p 2200 -i <private_key_file_path>   
+  ssh -L 29090:localhost:9090 alluxio_master_user@alluxio_master_host -p 2200 -i <private_key_file_path>
 - Forward the port 29090 on jump server to local port 39090 on your own machine.    
-  ssh -L 39090:localhost:29090 user@jump-server   
+  ssh -L 39090:localhost:29090 user@jump-server
 
-It's similar to the tunnel method described in [the previous section](#Monitor Alluxio live metrics based on Alluxio Master Web).   
+It's similar to the tunnel method described in [the previous section](#Monitor Alluxio live metrics based on Alluxio Master Web).
 
 #### Config local Grafana to monitor the live metrics
-The main flows are:   
+The main flows are:
 1. Create a Prometheus datasource in Grafana,   
    the URL of Prometheus datasource is: http://localhost:39090, note: the SSH tunnel port.   
    Refer to the [tutorial](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/#add-a-data-source) for help on importing a dashboard.   
-   ![img](../img/Databricks/prometheus-datasource.png)   
-2. [Download](https://grafana.com/grafana/dashboards/13467) the Grafana template JSON file for Alluxio.   
-3. Import the template JSON file to create a dashboard. See this [example](https://grafana.com/docs/grafana/latest/dashboards/export-import/#importing-a-dashboard) for importing a dashboard.   
-4. Add the Prometheus data source to Grafana.   
-5. Modify the variables in the dashboard/settings with instructions here and save your dashboard.   
-- alluxio_datasource: Your prometheus datasource name used in step 1.   
-- masters: Alluxio master. It's the Master ‘job_name’ configured in prometheus.yml on Databricks cluster.   
-- workers: Currently, it's no use, the Databricks does not collect worker metrics.   
+   ![img](../img/Databricks/prometheus-datasource.png)
+2. [Download](https://grafana.com/grafana/dashboards/13467) the Grafana template JSON file for Alluxio.
+3. Import the template JSON file to create a dashboard. See this [example](https://grafana.com/docs/grafana/latest/dashboards/export-import/#importing-a-dashboard) for importing a dashboard.
+4. Add the Prometheus data source to Grafana.
+5. Modify the variables in the dashboard/settings with instructions here and save your dashboard.
+- alluxio_datasource: Your prometheus datasource name used in step 1.
+- masters: Alluxio master. It's the Master ‘job_name’ configured in prometheus.yml on Databricks cluster.
+- workers: Currently, it's no use, the Databricks does not collect worker metrics.
 - alluxio_user: ubuntu. The user used to start up Alluxio.   
   ![img](../img/Databricks/grafana.png)
 
-For more details, refer to section 3.2 of Alluxio doc: [Grafana Web UI with Prometheus](https://docs.alluxio.io/os/user/stable/en/operation/Metrics-System.html#default-http-json-sink)   
+For more details, refer to section 3.2 of Alluxio doc: [Grafana Web UI with Prometheus](https://docs.alluxio.io/os/user/stable/en/operation/Metrics-System.html#default-http-json-sink)
 
 #### View a specific live Alluxio metrics in Prometheus Web UI
 The graph in the previous may not show all the metrics users care about,   
@@ -516,28 +533,28 @@ Select a metric and then click Graph Tab, then a graph is shown:
 This section is similar to [the previous section](#Monitor Alluxio live metrics based on Grafana with Prometheus)   
 After the Databricks cluster is shutdown, the Web UI on Databricks can not be accessed again,    
 this section describes how to view historic metrics.   
-The differences are:   
-- View historic metrics when Databricks cluster is shutdown   
-- Install and start Prometheus locally   
-- Restore the Prometheus data into local Prometheus   
+The differences are:
+- View historic metrics when Databricks cluster is shutdown
+- Install and start Prometheus locally
+- Restore the Prometheus data into local Prometheus
 
-The steps are as following:   
+The steps are as following:
 
 #### [Save Alluxio historic Prometheus-format metrics](#Config Prometheus when creating Databricks cluster)
 
 #### [Install and start Grafana locally](#Install and start Grafana locally)
 
 #### Install and start Prometheus locally
-For example: local machine is Ubuntu.   
+For example: local machine is Ubuntu.
 ```bash
 wget https://github.com/prometheus/prometheus/releases/download/v2.37.3/prometheus-2.37.3.linux-amd64.tar.gz   
 tar xvfz prometheus-*.tar.gz   
 cd prometheus-*   
 ```
-For more details, refer to [doc](https://prometheus.io/docs/prometheus/latest/installation)   
+For more details, refer to [doc](https://prometheus.io/docs/prometheus/latest/installation)
 
 #### Restore historic metrics into Prometheus
-Copy the saved data in `PROMETHEUS_COPY_DATA_PATH` into Prometheus data path.   
+Copy the saved data in `PROMETHEUS_COPY_DATA_PATH` into Prometheus data path.
 ```
 cd <prometheus-root-dir>
 mkdir data   
@@ -549,12 +566,12 @@ cp -r $PROMETHEUS_COPY_DATA_PATH/some/sub/path/* /path/to/prometheus-root-dir/da
 
 #### Start Prometheus
 cd <prometheus-root-path>   
-./prometheus   
+./prometheus
 
 #### View Alluxio historic metrics based on Grafana
 Refer to [Config local Grafana to monitor the live metrics](#Config local Grafana to monitor the live metrics)   
 The difference is:   
-The prometheus datasource is local(http://localhost:9090) instead of the remote prometheus on Databricks cluster.   
+The prometheus datasource is local(http://localhost:9090) instead of the remote prometheus on Databricks cluster.
 
 ![img](../img/Databricks/grafana.png)
 

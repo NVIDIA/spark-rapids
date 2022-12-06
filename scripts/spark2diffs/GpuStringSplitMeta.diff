@@ -12,10 +12,6 @@
 <     checkRegExp(expr.pattern) match {
 ---
 >     checkRegExp(expr.regex) match {
-21c19
-< 
----
->     
 28,29d25
 <     // 2.x has no limit parameter
 <     /*
