@@ -428,7 +428,6 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       p.withNewChildren(p.children.map(c => insertCoalesce(c, shouldDisable)))
   }
 
-
   /**
    * Inserts a shuffle coalesce after every shuffle to coalesce the serialized tables
    * on the host before copying the data to the GPU.

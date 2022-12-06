@@ -32,7 +32,7 @@ class GpuMultiFileReaderSuite extends FunSuite with Arm {
   test("avoid infinite loop when host buffers empty") {
     val conf = new Configuration(false)
     val membuffers =
-      Array(HostMemoryBufferAndMeta(
+      Array(SingleHMBAndMeta(
         HostMemoryBuffer.allocate(0), 0L, 0, Seq.empty, null))
     val multiFileReader = new MultiFileCloudPartitionReaderBase(
       conf,
@@ -47,7 +47,7 @@ class GpuMultiFileReaderSuite extends FunSuite with Arm {
       currentFileHostBuffers = Some(new HostMemoryBuffersWithMetaDataBase {
         override def partitionedFile: PartitionedFile =
           PartitionedFile(InternalRow.empty, "", 0, 0)
-        override def memBuffersAndSizes: Array[HostMemoryBufferAndMeta] = membuffers
+        override def memBuffersAndSizes: Array[SingleHMBAndMeta] = membuffers
         override def bytesRead: Long = 0
       })
 

@@ -684,7 +684,7 @@ class GpuMultiFileCloudAvroPartitionReader(
   /** Two utils classes */
   private case class AvroHostBuffersWithMeta(
     override val partitionedFile: PartitionedFile,
-    override val memBuffersAndSizes: Array[HostMemoryBufferAndMeta],
+    override val memBuffersAndSizes: Array[SingleHMBAndMeta],
     override val bytesRead: Long) extends HostMemoryBuffersWithMetaDataBase
 
   private class ReadBatchRunner(
@@ -701,21 +701,21 @@ class GpuMultiFileCloudAvroPartitionReader(
         case e: FileNotFoundException if ignoreMissingFiles =>
           logWarning(s"Skipped missing file: ${partFile.filePath}", e)
           AvroHostBuffersWithMeta(partFile,
-            Array(HostMemoryBufferAndMeta(null, 0, 0, Seq.empty, null)), 0)
+            Array(SingleHMBAndMeta(null, 0, 0, Seq.empty, null)), 0)
         // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
         case e: FileNotFoundException if !ignoreMissingFiles => throw e
         case e @(_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
           logWarning(
             s"Skipped the rest of the content in the corrupted file: ${partFile.filePath}", e)
           AvroHostBuffersWithMeta(partFile,
-            Array(HostMemoryBufferAndMeta(null, 0, 0, Seq.empty,null)), 0)
+            Array(SingleHMBAndMeta(null, 0, 0, Seq.empty,null)), 0)
       } finally {
         TrampolineUtil.unsetTaskContext()
       }
     }
 
     private def createBufferAndMeta(
-        arrayBufSize: Array[HostMemoryBufferAndMeta],
+        arrayBufSize: Array[SingleHMBAndMeta],
         startingBytesRead: Long): HostMemoryBuffersWithMetaDataBase = {
       val bytesRead = fileSystemBytesRead() - startingBytesRead
       AvroHostBuffersWithMeta(partFile, arrayBufSize, bytesRead)
@@ -744,10 +744,10 @@ class GpuMultiFileCloudAvroPartitionReader(
           if (!reader.hasNextBlock || isDone) {
             // no data or got close before finishing, return null buffer and zero size
             createBufferAndMeta(
-              Array(HostMemoryBufferAndMeta(null, 0, 0, Seq.empty, null)),
+              Array(SingleHMBAndMeta(null, 0, 0, Seq.empty, null)),
               startingBytesRead)
           } else {
-            val hostBuffers = new ArrayBuffer[HostMemoryBufferAndMeta]
+            val hostBuffers = new ArrayBuffer[SingleHMBAndMeta]
             try {
               val headerSize = reader.headerSize
               var isBlockSizeEstimated = false
@@ -822,21 +822,21 @@ class GpuMultiFileCloudAvroPartitionReader(
 
                   // One batch is done
                   optOut.foreach(out => hostBuffers +=
-                    (HostMemoryBufferAndMeta(optHmb.get, out.getPos, 0, Seq.empty,
+                    (SingleHMBAndMeta(optHmb.get, out.getPos, 0, Seq.empty,
                       null)))
                   totalRowsNum += batchRowsNum
                   estBlocksSize -= batchSize
                 }
               } // end of while
 
-              val bufAndSize: Array[HostMemoryBufferAndMeta] = if (readDataSchema.isEmpty) {
+              val bufAndSize: Array[SingleHMBAndMeta] = if (readDataSchema.isEmpty) {
                 hostBuffers.foreach(_.hmb.safeClose(new Exception))
-                Array(HostMemoryBufferAndMeta(null, totalRowsNum, totalRowsNum, Seq.empty,
+                Array(SingleHMBAndMeta(null, totalRowsNum, totalRowsNum, Seq.empty,
                   null))
               } else if (isDone) {
                 // got close before finishing, return null buffer and zero size
                 hostBuffers.foreach(_.hmb.safeClose(new Exception))
-                Array(HostMemoryBufferAndMeta(null, 0, 0, Seq.empty, null))
+                Array(SingleHMBAndMeta(null, 0, 0, Seq.empty, null))
               } else {
                 hostBuffers.toArray
               }
