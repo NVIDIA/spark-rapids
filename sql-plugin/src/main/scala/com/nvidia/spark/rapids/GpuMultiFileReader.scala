@@ -594,10 +594,6 @@ abstract class MultiFileCloudPartitionReaderBase(
 
   // we have to check both the combine threshold and the batch size limits
   private def hasMetCombineThreshold(sizeInBytes: Long, numRows: Long): Boolean = {
-    if (sizeInBytes >= combineThresholdSize) logWarning("met combineThreshold")
-    if (sizeInBytes >= maxReadBatchSizeBytes) logWarning("met maxReadBatchSizeBytes")
-    if (numRows >= maxReadBatchSizeRows) logWarning("met maxReadBatchSizeRows")
-
     sizeInBytes >= combineThresholdSize || sizeInBytes >= maxReadBatchSizeBytes ||
       numRows >= maxReadBatchSizeRows
   }
