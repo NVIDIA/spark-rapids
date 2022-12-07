@@ -804,12 +804,13 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
  * the same type. This lets us calculate the correct result on a wider range of values without
  * the need for unbounded precision in the processing.
  */
-case class GpuDecimalDivide(
+abstract class GpuDecimalDivideParent(
     left: Expression,
     right: Expression,
     dataType: DecimalType,
-    failOnError: Boolean = SQLConf.get.ansiEnabled) extends
-    ShimExpression with GpuExpression {
+    integerDivide: Boolean,
+    failOnError: Boolean = SQLConf.get.ansiEnabled) extends CudfBinaryArithmetic
+    with GpuExpression with Serializable {
 
   // For all decimal128 output we will use the long division version.
   protected lazy val useLongDivision: Boolean = dataType.precision > Decimal.MAX_LONG_DIGITS
@@ -825,18 +826,18 @@ case class GpuDecimalDivide(
   // the intermediate rhs (to make CUDF happy doing the divide), but the scale will be shifted
   // enough so CUDF produces the desired output scale
   private[this] lazy val intermediateLhsType =
-    GpuDecimalDivide.intermediateLhsType(lhsType, rhsType, dataType)
+    DecimalDivideChecks.intermediateLhsType(lhsType, rhsType, dataType)
   // This is the type that the RHS will be cast to. The precision will match the precision of the
   // intermediate lhs (to make CUDF happy doing the divide), but the scale will be the same
   // as the input RHS scale.
   private[this] lazy val intermediateRhsType =
-    GpuDecimalDivide.intermediateRhsType(lhsType, rhsType, dataType)
+    DecimalDivideChecks.intermediateRhsType(lhsType, rhsType, dataType)
 
   // This is the data type that CUDF will return as the output of the divide. It should be
   // very close to outputType, but with the scale increased by 1 so that we can round the result
   // and produce the same answer as Spark.
   private[this] lazy val intermediateResultType =
-    GpuDecimalDivide.intermediateResultType(dataType)
+    DecimalDivideChecks.intermediateResultType(dataType)
 
   private[this] def divByZeroFixes(rhs: ColumnVector): ColumnVector = {
     if (failOnError) {
@@ -889,7 +890,11 @@ case class GpuDecimalDivide(
         }
       }
       withResource(castRhs) { castRhs =>
-        com.nvidia.spark.rapids.jni.DecimalUtils.divide128(castLhs, castRhs, -dataType.scale)
+          if (integerDivide) {
+            com.nvidia.spark.rapids.jni.DecimalUtils.integerDivide128(castLhs, castRhs)
+          } else {
+            com.nvidia.spark.rapids.jni.DecimalUtils.divide128(castLhs, castRhs, -dataType.scale)
+          }
       }
     }
     val retCol = withResource(retTab) { retTab =>
@@ -921,10 +926,9 @@ case class GpuDecimalDivide(
 
   override def nullable: Boolean = true
 
-  override def children: Seq[Expression] = Seq(left, right)
 }
 
-object GpuDecimalDivide {
+object DecimalDivideChecks {
   // This comes from DecimalType.MINIMUM_ADJUSTED_SCALE, but for some reason it is gone
   // in databricks so we have it here.
   private val MINIMUM_ADJUSTED_SCALE = 6
@@ -1052,6 +1056,20 @@ abstract class GpuIntegralDivideParent(
 
   override def sqlOperator: String = "div"
 
+}
+
+case class GpuDecimalDivide(
+    left: Expression,
+    right: Expression,
+    override val dataType: DecimalType,
+    failOnError: Boolean = SQLConf.get.ansiEnabled)
+    extends GpuDecimalDivideParent(left, right, dataType, failOnError) {
+  override def inputType: AbstractDataType = TypeCollection(DoubleType, DecimalType)
+
+  override def symbol: String = "/"
+
+  // We aren't using this
+  override def binaryOp: BinaryOp = BinaryOp.TRUE_DIV
 }
 
 abstract class GpuRemainderParent(left: Expression, right: Expression)

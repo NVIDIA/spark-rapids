@@ -20,9 +20,9 @@ import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.{BinaryAstExprMeta, BinaryExprMeta, DecimalUtil, ExprChecks, ExprRule, GpuExpression, TypeSig}
 import com.nvidia.spark.rapids.GpuOverrides.expr
 
-import org.apache.spark.sql.catalyst.expressions.{Divide, Expression, Multiply}
+import org.apache.spark.sql.catalyst.expressions.{Divide, Expression, IntegralDivide, Multiply}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{DecimalMultiplyChecks, GpuAnsi, GpuDecimalDivide, GpuDecimalMultiply, GpuDivide, GpuMultiply}
+import org.apache.spark.sql.rapids.{DecimalMultiplyChecks, GpuAnsi, GpuDecimalDivide, GpuDecimalMultiply, GpuDivide, GpuIntegralDecimalDivide, GpuIntegralDivide, GpuMultiply}
 import org.apache.spark.sql.types.DecimalType
 
 object DecimalArithmeticOverrides {
@@ -78,6 +78,20 @@ object DecimalArithmeticOverrides {
                 GpuDecimalDivide(lhs, rhs, d)
               case _ =>
                 GpuDivide(lhs, rhs)
+            }
+        }),
+      expr[IntegralDivide](
+        "Division with a integer result",
+        ExprChecks.binaryProject(
+          TypeSig.LONG, TypeSig.LONG,
+          ("lhs", TypeSig.LONG + TypeSig.DECIMAL_128, TypeSig.LONG + TypeSig.DECIMAL_128),
+          ("rhs", TypeSig.LONG + TypeSig.DECIMAL_128, TypeSig.LONG + TypeSig.DECIMAL_128)),
+        (a, conf, p, r) => new BinaryExprMeta[IntegralDivide](a, conf, p, r) {
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            if (lhs.dataType.isInstanceOf[DecimalType] && rhs.dataType.isInstanceOf[DecimalType]) {
+              GpuIntegralDecimalDivide(lhs, rhs, DecimalType(19, 0))
+            } else {
+              GpuIntegralDivide(lhs, rhs)
             }
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap

@@ -1605,7 +1605,7 @@ abstract class GpuDecimalAverage(child: Expression, sumDataType: DecimalType)
   // This is here to be bug for bug compatible with Spark. They round in the divide and then cast
   // the result to the final value. This loses some data in many cases and we need to be able to
   // match that. This bug appears to have been fixed in Spark 3.4.0.
-  lazy val intermediateSparkDivideType = GpuDecimalDivide.calcOrigSparkOutputType(sumDataType,
+  lazy val intermediateSparkDivideType = DecimalDivideChecks.calcOrigSparkOutputType(sumDataType,
     DecimalType.LongDecimal)
 
   // NOTE: this sets `failOnErrorOverride=false` in `GpuDivide` to force it not to throw

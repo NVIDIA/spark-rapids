@@ -20,8 +20,9 @@ import scala.math.{max, min}
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 
-import org.apache.spark.sql.catalyst.analysis.{DecimalPrecision, TypeCheckResult}
+import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Expression, NullIntolerant}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
@@ -171,78 +172,45 @@ case class GpuSubtract(
   }
 }
 
-trait GpuDivModLikeWithPromote extends GpuDivModLike with DecimalWithPromote
-
-trait DecimalWithPromote extends CudfBinaryOperator {
-  private def getCastedVectorIfNeeded(
-      vector: GpuColumnVector,
-      d: DecimalType, c: DType): GpuColumnVector = {
-    if (!vector.dataType.sameType(d)) {
-      GpuColumnVector.from(vector.getBase.castTo(c), d)
-    } else {
-      vector.incRefCount()
-    }
-  }
-
-  private def getCastedScalarIfNeeded(
-      scalar: GpuScalar,
-      d: DecimalType): GpuScalar = {
-    if (!scalar.dataType.sameType(d)) {
-      GpuScalar(GpuScalar.from(scalar.getValue, d), d)
-    } else {
-      scalar.incRefCount
-    }
-  }
-
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    (left.dataType, right.dataType) match {
-      case (ltype: DecimalType, rtype: DecimalType) =>
-        // should match precision
-        val widerDecimalType = DecimalPrecision.widerDecimalType(ltype, rtype)
-        val widerDType = DecimalUtil.createCudfDecimal(widerDecimalType)
-        withResource(getCastedVectorIfNeeded(lhs, widerDecimalType, widerDType)) { newLeft =>
-          withResource(getCastedVectorIfNeeded(rhs, widerDecimalType, widerDType)) { newRight =>
-            super.doColumnar(newLeft, newRight)
-          }
-        }
-      case _ => super.doColumnar(lhs, rhs)
-    }
-  }
-
-  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    (left.dataType, right.dataType) match {
-      case (ltype: DecimalType, rtype: DecimalType) =>
-        // should match precision
-        val widerDecimalType = DecimalPrecision.widerDecimalType(ltype, rtype)
-        val widerDType = DecimalUtil.createCudfDecimal(widerDecimalType)
-        withResource(getCastedScalarIfNeeded(lhs, widerDecimalType)) { newLhs =>
-          withResource(getCastedVectorIfNeeded(rhs, widerDecimalType, widerDType)) { newRhs =>
-            super.doColumnar(newLhs, newRhs)
-          }
-        }
-      case _ => super.doColumnar(lhs, rhs)
-    }
-  }
-
-  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    (left.dataType, right.dataType) match {
-      case (ltype: DecimalType, rtype: DecimalType) =>
-        // should match precision
-        val widerDecimalType = DecimalPrecision.widerDecimalType(ltype, rtype)
-        val widerDType = DecimalUtil.createCudfDecimal(widerDecimalType)
-        withResource(getCastedVectorIfNeeded(lhs, widerDecimalType, widerDType)) { newLeft =>
-          withResource(getCastedScalarIfNeeded(rhs, widerDecimalType)) { newRight =>
-            super.doColumnar(newLeft, newRight)
-          }
-        }
-      case _ => super.doColumnar(lhs, rhs)
-    }
-  }
-}
-
 case class GpuIntegralDivide(
     left: Expression,
-    right: Expression) extends GpuIntegralDivideParent(left, right) with DecimalWithPromote {
+    right: Expression) extends GpuIntegralDivideParent(left, right) {
+  assert(!left.dataType.isInstanceOf[DecimalType],
+    "DecimalType integral divides need to be handled by GpuIntegralDecimalDivide")
+}
+
+case class GpuIntegralDecimalDivide(
+    left: Expression,
+    right: Expression,
+    decimalType: DecimalType,
+    integerDivide: Boolean = true)
+    extends GpuDecimalDivideParent(left, right, decimalType, integerDivide) {
+  override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
+
+  lazy val failOnOverflow: Boolean =
+    SparkShimImpl.shouldFailDivOverflow
+
+  def checkDivideOverflow: Boolean = left.dataType match {
+    case LongType if failOnOverflow => true
+    case _ => false
+  }
+
+  override def dataType: DataType = LongType
+
+  override def symbol: String = "/"
+
+  override def binaryOp: BinaryOp = BinaryOp.DIV
+
+  override def sqlOperator: String = "div"
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    withResource(super.columnarEval(batch).asInstanceOf[GpuColumnVector]) { decimalOutput =>
+      GpuColumnVector.from(GpuCast.doCast(decimalOutput.getBase, decimalType, dataType,
+        SQLConf.get.ansiEnabled, legacyCastToString = false, stringToDateAnsiModeEnabled = false),
+        dataType)
+    }
+  }
+
   override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
     // This follows division rule
     val intDig = p1 - s1 + s2
