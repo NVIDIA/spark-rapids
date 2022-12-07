@@ -546,7 +546,7 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
    */
   override def castStringToDate(input: ColumnVector, dt: DType): ColumnVector = {
     // Filter out any dates that do not conform to the `yyyy-MM-dd` format.
-    val supportedDateRegex = raw"\A\d{4}-\d{2}-\d{2}\Z";
+    val supportedDateRegex = raw"\A\d{4}-\d{2}-\d{2}\Z"
     val regexFiltered = withResource(input.matchesRe(supportedDateRegex)) { matchesRegex =>
       withResource(Scalar.fromNull(DType.STRING)) { nullString =>
         matchesRegex.ifElse(input, nullString)
@@ -558,6 +558,45 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
       withResource(regexFiltered.asTimestamp(dt, cudfFormat)) { asDate =>
         withResource(Scalar.fromNull(dt)) { nullScalar =>
           isDate.ifElse(asDate, nullScalar)
+        }
+      }
+    }
+  }
+
+  override def castStringToTimestamp(lhs: ColumnVector, sparkFormat: String, dType: DType)
+  : ColumnVector = {
+    // Currently, only the following timestamp pattern is supported:
+    //  "uuuu-MM-dd HH:mm:ss[.SSS...]"
+    // Note: No support for "uuuu-MM-dd'T'HH:mm:ss[.SSS...][Z]", or any customization.
+    // See https://github.com/NVIDIA/spark-rapids/issues/7289.
+
+    // Input strings that do not match this format strictly must be replaced with nulls.
+    //                 yyyy-  MM -  dd    HH  :  mm  :  ss [SSS...     ]
+    val regex = raw"\A\d{4}-\d{2}-\d{2} \d{2}\:\d{2}\:\d{2}(?:\.\d{1,9})?\Z"
+    val regexFiltered = withResource(lhs.matchesRe(regex)) { matchesRegex =>
+      withResource(Scalar.fromNull(DType.STRING)) { nullString =>
+        matchesRegex.ifElse(lhs, nullString)
+      }
+    }
+
+    // For rows that pass the regex check, parse them as timestamp.
+    def asTimestamp(format: String) = {
+      withResource(regexFiltered.isTimestamp(format)) { isTimestamp =>
+        withResource(regexFiltered.asTimestamp(dType, format)) { timestamp =>
+          withResource(Scalar.fromNull(dType)) { nullTimestamp =>
+            isTimestamp.ifElse(timestamp, nullTimestamp)
+          }
+        }
+      }
+    }
+
+    // Attempt to parse at "sub-second" level first.
+    // Substitute rows that fail at "sub-second" with "second" level.
+    // Those that fail both should remain as nulls.
+    withResource(regexFiltered) { _ =>
+      withResource(asTimestamp(format = "%Y-%m-%d %H:%M:%S.%f")) { timestampsSubSecond =>
+        withResource(asTimestamp(format = "%Y-%m-%d %H:%M:%S")) { timestampsSecond =>
+          timestampsSubSecond.replaceNulls(timestampsSecond)
         }
       }
     }

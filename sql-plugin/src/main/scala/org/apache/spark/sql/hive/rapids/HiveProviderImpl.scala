@@ -176,6 +176,10 @@ class HiveProviderImpl extends HiveProvider {
             if (!storage.properties.getOrElse(escapeDelimiterKey, "").equals("")) {
               willNotWorkOnGpu("escapes are not currently supported")
             }
+
+            if (!storage.properties.getOrElse("timestamp.formats", "").equals("")) {
+              willNotWorkOnGpu("custom timestamp formats are not currently supported")
+            }
           }
 
           private def checkIfEnabled(): Unit = {
