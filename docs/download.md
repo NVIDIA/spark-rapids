@@ -43,13 +43,14 @@ for your hardware's minimum driver version.
 
 ### Release Notes
 New functionality and performance improvements for this release include:
-* Deliver z-ordering capability on Databricks
-* Enable DPP on Databricks 10.4
-* Improve robust for workloads which has high compression ratio input datasets
-* Support Delta Lake batch writes on Databricks
-* Partially support HiveTableScanExec on GPU
-* Support mapInArrow
-* Enable tiered projections for more expressions to optimize performance   
+* Zstandard compression for Parquet and ORC
+* Support for Hive text reading
+* Improved performance on `like` operations
+* Tiered projections for more expressions to optimize performance  
+* Support for mapInArrow, instr and array_remove operations
+* z-ordering capability on Databricks Delta Lake
+* Delta Lake batch writes on Databricks Delta Lake
+* Dynamic Partition Pruning (DPP) on Databricks 
 * Qualification and Profiling tool:
   * Support cost estimations for Dataproc 1.5 and Dataproc2.x
   * Added new Github [repo](https://github.com/NVIDIA/spark-rapids-tools/tree/dev/user_tools) for user tools functionality
