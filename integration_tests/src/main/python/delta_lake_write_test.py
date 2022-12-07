@@ -39,8 +39,7 @@ delta_meta_allow = [
     "SortExec"
 ]
 
-delta_writes_enabled_conf = {"spark.rapids.sql.format.delta.enabled": "true",
-                             "spark.rapids.sql.format.delta.write.enabled": "true"}
+delta_writes_enabled_conf = {"spark.rapids.sql.format.delta.write.enabled": "true"}
 
 def fixup_path(d):
     """Modify the 'path' value to remove random IDs in the pathname"""
@@ -101,8 +100,7 @@ def assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path):
 @delta_lake
 @ignore_order
 @pytest.mark.parametrize("disable_conf",
-                         [{"spark.rapids.sql.format.delta.enabled": "false"},
-                          {"spark.rapids.sql.format.delta.write.enabled": "false"},
+                         [{"spark.rapids.sql.format.delta.write.enabled": "false"},
                           {"spark.rapids.sql.format.parquet.enabled": "false"},
                           {"spark.rapids.sql.format.parquet.write.enabled": "false"},
                           {}  # verify disabled by default
