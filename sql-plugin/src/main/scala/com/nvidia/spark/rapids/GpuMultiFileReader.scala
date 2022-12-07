@@ -434,8 +434,8 @@ case class PartitionedFileInfoOptAlluxio(toRead: PartitionedFile, original: Opti
  * @param combineWaitTime The amount of time to wait for other files to be ready to see if we
  *                        can combine them before sending them to the GPU
  * @param queryUsesInputFile Whether the query requires the input file name functionality
- * @param keepReadsInOrder Whether to require the files to be read in the same order as Spark. Defaults
- *                         to true for formats that don't explicitly handle this.
+ * @param keepReadsInOrder Whether to require the files to be read in the same order as Spark.
+ *                         Defaults to true for formats that don't explicitly handle this.
  */
 abstract class MultiFileCloudPartitionReaderBase(
     conf: Configuration,
@@ -576,6 +576,10 @@ abstract class MultiFileCloudPartitionReaderBase(
    */
   def getFileFormatShortName: String
 
+  /**
+   * Given a set of host buffers actually read have the GPU read them and update the
+   * batchIter with the returned Columnar batches.
+   */
   private def readBuffersToBatch(currentFileHostBuffers: HostMemoryBuffersWithMetaDataBase,
       addTaskIfNeeded: Boolean): Unit = {
     if (getSizeOfHostBuffers(currentFileHostBuffers) == 0) {
@@ -596,8 +600,10 @@ abstract class MultiFileCloudPartitionReaderBase(
     }
   }
 
-  // while there are files done sitting there take up to threshold size append
-  // to the results ArrayBuffer
+  /**
+   * While there are files already read into host memory buffers, take up to
+   * threshold size append to the results ArrayBuffer.
+   */
   private def readReadyFiles(initSize: Long = 0,
       results: ArrayBuffer[HostMemoryBuffersWithMetaDataBase]) = {
     var takeMore = true

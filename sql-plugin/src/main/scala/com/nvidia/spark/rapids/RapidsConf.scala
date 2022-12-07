@@ -862,7 +862,9 @@ object RapidsConf {
   val PARQUET_MULTITHREADED_COMBINE_WAIT_TIME =
     conf("spark.rapids.sql.format.parquet.multithreaded.combine.waitTime")
       .doc("When using the multithreaded parquet reader with combine mode, how long " +
-        "to wait, in milliseconds, for more files to finish if haven't met size yet.")
+        "to wait, in milliseconds, for more files to finish if haven't met the size threshold. " +
+        "Note that this will wait this amount of time from when the last file was available, " +
+        "so total wait time could be larger then this.")
       .integerConf
       .createWithDefault(200) // ms
 
