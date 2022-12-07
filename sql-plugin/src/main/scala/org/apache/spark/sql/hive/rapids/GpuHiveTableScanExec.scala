@@ -546,7 +546,7 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
    */
   override def castStringToDate(input: ColumnVector, dt: DType): ColumnVector = {
     // Filter out any dates that do not conform to the `yyyy-MM-dd` format.
-    val supportedDateRegex = raw"\A\d{4}-\d{2}-\d{2}\Z";
+    val supportedDateRegex = raw"\A\d{4}-\d{2}-\d{2}\Z"
     val regexFiltered = withResource(input.matchesRe(supportedDateRegex)) { matchesRegex =>
       withResource(Scalar.fromNull(DType.STRING)) { nullString =>
         matchesRegex.ifElse(input, nullString)
