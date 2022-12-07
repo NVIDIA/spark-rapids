@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// spark-distros:312:
+// {"spark-distros":["312"]}
 package org.apache.spark.sql.rapids.shims.spark312
 
 import org.apache.spark.SparkConf

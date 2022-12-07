@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// spark-distros:312db:321db:
+// {"spark-distros":["312db","321db"]}
 package org.apache.spark.sql.rapids.shims
 
 import java.io.{FileNotFoundException, IOException}

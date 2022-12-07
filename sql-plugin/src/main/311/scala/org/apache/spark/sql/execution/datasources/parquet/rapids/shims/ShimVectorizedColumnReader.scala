@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// spark-distros:311:312:312db:313:314:
+// {"spark-distros":["311","312","312db","313","314"]}
 package org.apache.spark.sql.execution.datasources.parquet.rapids.shims
 
 import java.time.ZoneId

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// spark-distros:312db:
+// {"spark-distros":["312db"]}
 package org.apache.spark.sql.rapids.execution.shims
 
 import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuExec, RapidsConf, RapidsMeta, SparkPlanMeta}

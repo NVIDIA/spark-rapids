@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-// spark-distros:312db:
+// {"spark-distros":["312db"]}
 package org.apache.spark.sql.rapids.execution.shims
 
 import scala.collection.mutable

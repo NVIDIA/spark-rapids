@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// spark-distros:312db:
+// {"spark-distros":["312db"]}
 package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.sql.AnalysisException

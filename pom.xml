@@ -843,10 +843,44 @@
                                             <exclude name="*/scala/**"/>
                                             <exclude name="*/java/**"/>
                                         </patternset>
+                                        <fileset dir="${project.basedir}/src" id="missingShimHeaderFileSetId">
+                                            <patternset refid="shimSourcePatternSet"/>
+                                            <not>
+                                                <containsregexp expression='// \{\"spark-distros\":'/>
+                                            </not>
+                                        </fileset>
+
+                                        <pathconvert refid="missingShimHeaderFileSetId"
+                                            property="missingShimHeadersDetected" setonempty="false"/>
+
+                                        <pathconvert refid="missingShimHeaderFileSetId"
+                                            property="missingShimHeadersFilesStr" pathsep=" "/>
+
+                                        <!-- <fail if="missingShimHeadersDetected">Found shim files without a shim header
+                                             {"spark-distros":["buildver1",...]} ${missingShimHeadersFilesStr}</fail> -->
+
                                         <fileset dir="${project.basedir}/src" id="shimFileSetId">
                                             <patternset refid="shimSourcePatternSet"/>
-                                            <containsregexp expression="// spark-distros.*:${spark.distro}:"/>
+                                            <containsregexp expression='// \{\"spark-distros\":.*\"${spark.distro}\"'/>
                                         </fileset>
+
+                                        <script language="jython">
+import json
+
+shimFiles = project.getReference('shimFileSetId')
+for f in shimFiles:
+  with open(str(f), 'rt') as shimSourceFile:
+    for line in shimSourceFile:
+      if line.startswith('// {"spark-distros":'):
+        distroStr = line[len('// '):]
+        jsonObj = json.loads(distroStr)
+        distrosSorted = jsonObj['spark-distros'][:]
+        distrosSorted.sort()
+        if distrosSorted != jsonObj['spark-distros']:
+          raise Exception('Shims should be sorted lexicographically in ' + \
+            str(f) + ': ' + distroStr + '. Expected order is ' + \
+            json.dumps(distrosSorted))
+                                        </script>
 
                                         <mkdir dir="${spark.shim.dest}"/>
                                         <delete>
@@ -897,6 +931,11 @@
                         <groupId>ant-contrib</groupId>
                         <artifactId>ant-contrib</artifactId>
                         <version>1.0b3</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.python</groupId>
+                        <artifactId>jython-standalone</artifactId>
+                        <version>2.7.2</version>
                     </dependency>
                 </dependencies>
                 </plugin>

@@ -176,7 +176,7 @@ The following acronyms may appear in directory names:
 Shim source files have a top-level comment
 
 ```scala
-// spark-distros:311:312:313:
+//  {"spark-distros":["311","312","313"]}
 ```
 
 to indicate all Spark Distribution versions they apply to. A particular shim file

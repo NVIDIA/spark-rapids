@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// spark-distros:311:
+// {"spark-distros":["311"]}
 package org.apache.spark.sql.rapids.shims.spark311
 
 import org.apache.spark.SparkConf
