@@ -16,7 +16,6 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
 from data_gen import *
-from marks import incompat
 from pyspark.sql.types import *
 from string_test import mk_str_gen
 import pyspark.sql.functions as f
