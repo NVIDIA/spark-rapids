@@ -1777,10 +1777,12 @@ class MultiFileParquetPartitionReader(
  * @param useFieldId Whether to use field id for column matching
  * @param alluxioPathReplacementMap Map containing mapping of DFS scheme to Alluxio scheme
  * @param alluxioReplacementTaskTime Whether the Alluxio replacement algorithm is set to task time
- * @param combineThresholdSize
- * @param combineWaitTime
- * @param queryUsesInputFile
- * @param keepReadsInOrder
+ * @param combineThresholdSize The size to combine to when combining small files
+ * @param combineWaitTime The amount of time to wait for other files to be ready to see if we
+ *                        can combine them before sending them to the GPU
+ * @param queryUsesInputFile Whether the query requires the input file name functionality
+ * @param keepReadsInOrder Whether to require the files to be read in the same order as Spark.
+ *                         Defaults to true for formats that don't explicitly handle this.
  */
 class MultiFileCloudParquetPartitionReader(
     override val conf: Configuration,
@@ -2113,7 +2115,6 @@ class MultiFileCloudParquetPartitionReader(
       val hostBuffers = new ArrayBuffer[SingleHMBAndMeta]
       var filterTime = 0L
       var bufferStartTime = 0L
-      val tid = TaskContext.get().taskAttemptId()
       val result = try {
         val filterStartTime = System.nanoTime()
         val fileBlockMeta = filterFunc(file)
@@ -2138,9 +2139,7 @@ class MultiFileCloudParquetPartitionReader(
             if (fileBlockMeta.schema.getFieldCount == 0) {
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               val numRows = fileBlockMeta.blocks.map(_.getRowCount).sum.toInt
-              // overload size to be number of rows with null buffer - TODO - even though we
-              // added numRows here the bytes still overloaded and use somewhere else
-              HostMemoryEmptyMetaData(file, origPartitionedFile, numRows, bytesRead,
+              HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
                 fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
                 fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema,
                 numRows)
@@ -2219,7 +2218,8 @@ class MultiFileCloudParquetPartitionReader(
   Iterator[ColumnarBatch] = fileBufsAndMeta match {
     case meta: HostMemoryEmptyMetaData =>
       // Not reading any data, but add in partition data if needed
-      val rows = meta.bufferSize.toInt
+      val rows = meta.numRows.toInt
+
       val origBatch = if (rows == 0) {
         new ColumnarBatch(Array.empty, 0)
       } else {

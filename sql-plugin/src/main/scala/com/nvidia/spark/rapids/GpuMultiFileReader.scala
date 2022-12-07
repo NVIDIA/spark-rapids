@@ -571,7 +571,8 @@ abstract class MultiFileCloudPartitionReaderBase(
    */
   private def readBuffersToBatch(currentFileHostBuffers: HostMemoryBuffersWithMetaDataBase,
       addTaskIfNeeded: Boolean): Unit = {
-    if (getSizeOfHostBuffers(currentFileHostBuffers) == 0) {
+    if (getSizeOfHostBuffers(currentFileHostBuffers) == 0 &&
+        getNumofRowsInHostBuffers(currentFileHostBuffers) == 0) {
       closeCurrentFileHostBuffers()
       if (addTaskIfNeeded) addNextTaskIfNeeded()
       next()
@@ -789,6 +790,10 @@ abstract class MultiFileCloudPartitionReaderBase(
 
   private def getSizeOfHostBuffers(fileInfo: HostMemoryBuffersWithMetaDataBase): Long = {
     fileInfo.memBuffersAndSizes.map(_.bytes).sum
+  }
+
+  private def getNumofRowsInHostBuffers(fileInfo: HostMemoryBuffersWithMetaDataBase): Long = {
+    fileInfo.memBuffersAndSizes.map(_.numRows).sum
   }
 
   private def addNextTaskIfNeeded(): Unit = {
