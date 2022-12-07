@@ -18,7 +18,6 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 from marks import ignore_order, incompat, approximate_float, allow_non_gpu
-from pyspark.sql.functions import *
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 from spark_session import *
