@@ -24,6 +24,14 @@ import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.execution.LeafExecNode
 import org.apache.spark.sql.execution.command.{ExecutedCommandExec, RunnableCommand}
 
+/**
+ * GPU version of ExecutedCommandExec.
+ *
+ * This class is essentially identical to ExecutedCommandExec but marked with GpuExec so
+ * it's clear this is replacing a CPU operation with a GPU operation. The GPU operation
+ * is not performed directly here, rather it is the underlying command that will ultimately
+ * execute on the GPU.
+ */
 case class GpuExecutedCommandExec(cmd: RunnableCommand) extends LeafExecNode with GpuExec {
   override def supportsColumnar: Boolean = false
 

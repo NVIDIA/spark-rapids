@@ -633,4 +633,3 @@ def test_delta_write_auto_optimize_sql_conf_fallback(confkey, spark_tmp_path):
         data_path,
         "ExecutedCommandExec",
         conf=confs)
-    pass

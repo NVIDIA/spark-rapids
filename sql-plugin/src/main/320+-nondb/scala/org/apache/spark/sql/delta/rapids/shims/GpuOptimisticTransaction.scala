@@ -60,6 +60,7 @@ import org.apache.spark.util.{Clock, SerializableConfiguration}
  *
  * @param deltaLog The Delta Log for the table this transaction is modifying.
  * @param snapshot The snapshot that this transaction is reading at.
+ * @param rapidsConf RAPIDS Accelerator config settings.
  */
 class GpuOptimisticTransaction
     (deltaLog: DeltaLog, snapshot: Snapshot, rapidsConf: RapidsConf)
@@ -70,6 +71,7 @@ class GpuOptimisticTransaction
   /** Creates a new OptimisticTransaction.
    *
    * @param deltaLog The Delta Log for the table this transaction is modifying.
+   * @param rapidsConf RAPIDS Accelerator config settings
    */
   def this(deltaLog: DeltaLog, rapidsConf: RapidsConf)(implicit clock: Clock) {
     this(deltaLog, deltaLog.update(), rapidsConf)
