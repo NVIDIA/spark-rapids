@@ -1,13 +1,11 @@
 # Change log
-Generated on 2022-12-06
+Generated on 2022-12-07
 
 ## Release 22.12
 
 ### Features
 |||
 |:---|:---|
-|[#4991](https://github.com/NVIDIA/spark-rapids/issues/4991)|[FEA] Refactor pre-merge to run using branch specific Jenkinsfile|
-|[#6785](https://github.com/NVIDIA/spark-rapids/issues/6785)|[FEA] Investigate how to handle memory explosion|
 |[#5225](https://github.com/NVIDIA/spark-rapids/issues/5225)|[FEA] Support array_remove|
 |[#6781](https://github.com/NVIDIA/spark-rapids/issues/6781)|[FEA] Create demo notebook on Databricks for qualification tool usage|
 |[#6782](https://github.com/NVIDIA/spark-rapids/issues/6782)|[FEA] Create demo notebook on Databricks for profiler tool usage|
@@ -15,13 +13,12 @@ Generated on 2022-12-06
 |[#6887](https://github.com/NVIDIA/spark-rapids/issues/6887)|[FEA] support expressions parameter in substr function|
 |[#7078](https://github.com/NVIDIA/spark-rapids/issues/7078)|[FEA] Add shims for Spark 3.2.3|
 |[#3037](https://github.com/NVIDIA/spark-rapids/issues/3037)|[FEA] Support ZSTD compression with Parquet and Orc|
-|[#6916](https://github.com/NVIDIA/spark-rapids/issues/6916)|[FEA]Support Coalesce on map column(s)|
+|[#6916](https://github.com/NVIDIA/spark-rapids/issues/6916)|[FEA] Support Coalesce on map column(s)|
 |[#6902](https://github.com/NVIDIA/spark-rapids/issues/6902)|[FEA] Add shims for Spark 3.3.2|
 |[#6896](https://github.com/NVIDIA/spark-rapids/issues/6896)|[FEA] Support Apache Spark 3.3.1|
 |[#6884](https://github.com/NVIDIA/spark-rapids/issues/6884)|[FEA] Support instr|
 |[#6313](https://github.com/NVIDIA/spark-rapids/issues/6313)|[FEA] Support mapInArrow introduced by pyspark 3.3.0+ |
 |[#6064](https://github.com/NVIDIA/spark-rapids/issues/6064)|[FEA] Qualification tool support parsing expressions (part 2)|
-|[#6672](https://github.com/NVIDIA/spark-rapids/issues/6672)|[FEA] [Audit] - Handle byte, short, or float properly in  SparkSQL castPartValue|
 |[#6645](https://github.com/NVIDIA/spark-rapids/issues/6645)|[FEA] Qualification Tool: Print timestamp related functions. |
 
 ### Performance
@@ -38,6 +35,7 @@ Generated on 2022-12-06
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#7271](https://github.com/NVIDIA/spark-rapids/issues/7271)|[BUG] failed to build in Databricks runtime due to alluxio utils |
 |[#6636](https://github.com/NVIDIA/spark-rapids/issues/6636)|[BUG] casting to string and list, and concat can cause overflow issues|
 |[#7234](https://github.com/NVIDIA/spark-rapids/issues/7234)|[BUG] Integration test script failed on: '/tmp/20221204/python/lib': No such file or directory|
 |[#7198](https://github.com/NVIDIA/spark-rapids/issues/7198)|[BUG] RapidsShuffleManager fails to unregister UCX-mode shuffle|
@@ -94,6 +92,10 @@ Generated on 2022-12-06
 ### PRs
 |||
 |:---|:---|
+|[#7264](https://github.com/NVIDIA/spark-rapids/pull/7264)|Update columnar stats tracker API to pass file path for new batches|
+|[#7273](https://github.com/NVIDIA/spark-rapids/pull/7273)|Fix AlluxioUtilsSuite build on Databricks for 22.12|
+|[#7250](https://github.com/NVIDIA/spark-rapids/pull/7250)|Change tools hadoop version to 3.3.4|
+|[#7172](https://github.com/NVIDIA/spark-rapids/pull/7172)|Add a document for how to view Alluxio metrics on UI [skip ci]|
 |[#7238](https://github.com/NVIDIA/spark-rapids/pull/7238)|Add branch-specific premerge jenkinsfile|
 |[#7243](https://github.com/NVIDIA/spark-rapids/pull/7243)|[Doc]fix broken links[skip ci]|
 |[#7155](https://github.com/NVIDIA/spark-rapids/pull/7155)|Add unit tests for alluxio utils|
