@@ -18,7 +18,7 @@ package org.apache.spark.sql.hive.rapids
 
 import ai.rapids.cudf.{ColumnVector, DType, Scalar, Schema, Table}
 import com.nvidia.spark.RebaseHelper.withResource
-import com.nvidia.spark.rapids.{ColumnarPartitionReaderWithPartitionValues, CSVPartitionReaderBase, GpuColumnVector, GpuExec, GpuMetric, HostStringColBufferer, HostStringColBuffererFactory, PartitionReaderIterator, PartitionReaderWithBytesRead, RapidsConf}
+import com.nvidia.spark.rapids.{ColumnarPartitionReaderWithPartitionValues, CSVPartitionReaderBase, DateUtils, GpuColumnVector, GpuExec, GpuMetric, HostStringColBufferer, HostStringColBuffererFactory, PartitionReaderIterator, PartitionReaderWithBytesRead, RapidsConf}
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, DEBUG_LEVEL, DESCRIPTION_BUFFER_TIME, DESCRIPTION_FILTER_TIME, DESCRIPTION_GPU_DECODE_TIME, DESCRIPTION_PEAK_DEVICE_MEMORY, ESSENTIAL_LEVEL, FILTER_TIME, GPU_DECODE_TIME, MODERATE_LEVEL, NUM_OUTPUT_ROWS, PEAK_DEVICE_MEMORY}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.shims.{ShimFilePartitionReaderFactory, ShimSparkPlan, SparkShimImpl}
@@ -531,6 +531,33 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
           withResource(reorderedColumns) { _ =>
             new Table(reorderedColumns: _*)
           }
+        }
+      }
+    }
+  }
+
+  /**
+   * Override of [[com.nvidia.spark.rapids.GpuTextBasedPartitionReader.castStringToDate()]],
+   * to convert parsed string columns to Dates.
+   * Two key differences from the base implementation, to comply with Hive LazySimpleSerDe
+   * semantics:
+   *   1. The input strings are not trimmed of whitespace.
+   *   2. Invalid date strings do not cause exceptions.
+   */
+  override def castStringToDate(input: ColumnVector, dt: DType): ColumnVector = {
+    // Filter out any dates that do not conform to the `yyyy-MM-dd` format.
+    val supportedDateRegex = raw"\A\d{4}-\d{2}-\d{2}\Z";
+    val regexFiltered = withResource(input.matchesRe(supportedDateRegex)) { matchesRegex =>
+      withResource(Scalar.fromNull(DType.STRING)) { nullString =>
+        matchesRegex.ifElse(input, nullString)
+      }
+    }
+
+    val cudfFormat = DateUtils.toStrf("yyyy-MM-dd", parseString = true)
+    withResource(regexFiltered.isTimestamp(cudfFormat)) { isDate =>
+      withResource(regexFiltered.asTimestamp(dt, cudfFormat)) { asDate =>
+        withResource(Scalar.fromNull(dt)) { nullScalar =>
+          isDate.ifElse(asDate, nullScalar)
         }
       }
     }
