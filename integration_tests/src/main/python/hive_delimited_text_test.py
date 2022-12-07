@@ -161,10 +161,6 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
     pytest.param('hive-delim-text/timestamp-err', timestamp_schema, {},
                  marks=pytest.mark.xfail(reason="GPU timestamp reads are more permissive than CPU. "
                                                 "See https://github.com/NVIDIA/spark-rapids/issues/7086")),
-    pytest.param('hive-delim-text/date-err', date_schema, {},
-                 marks=pytest.mark.xfail(reason="GPU read trims date string whitespace, "
-                                                "and errors out on invalid dates."
-                                                "See https://github.com/NVIDIA/spark-rapids/issues/7089.")),
 
     # Test that lines beginning with comments ('#') aren't skipped.
     ('hive-delim-text/comments', StructType([StructField("str", StringType()),
