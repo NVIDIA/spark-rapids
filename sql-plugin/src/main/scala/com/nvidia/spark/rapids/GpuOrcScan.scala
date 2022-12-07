@@ -1591,7 +1591,8 @@ class MultiFileCloudOrcPartitionReader(
     ignoreMissingFiles: Boolean,
     ignoreCorruptFiles: Boolean)
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, filters,
-    execMetrics, ignoreCorruptFiles) with MultiFileReaderFunctions with OrcPartitionReaderBase {
+    execMetrics, maxReadBatchSizeRows, maxReadBatchSizeBytes,
+    ignoreCorruptFiles) with MultiFileReaderFunctions with OrcPartitionReaderBase {
 
   private case class HostMemoryEmptyMetaData(
     override val partitionedFile: PartitionedFile,

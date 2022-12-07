@@ -444,6 +444,8 @@ abstract class MultiFileCloudPartitionReaderBase(
     maxNumFileProcessed: Int,
     filters: Array[Filter],
     execMetrics: Map[String, GpuMetric],
+    maxReadBatchSizeRows: Int,
+    maxReadBatchSizeBytes: Long,
     ignoreCorruptFiles: Boolean = false,
     alluxioPathReplacementMap: Map[String, String] = Map.empty,
     alluxioReplacementTaskTime: Boolean = false,
@@ -590,15 +592,26 @@ abstract class MultiFileCloudPartitionReaderBase(
     }
   }
 
+  // we have to check both the combine threshold and the batch size limits
+  private def hasMetCombineThreshold(sizeInBytes: Long, numRows: Long): Boolean = {
+    if (sizeInBytes >= combineThresholdSize) logWarning("met combineThreshold")
+    if (sizeInBytes >= maxReadBatchSizeBytes) logWarning("met maxReadBatchSizeBytes")
+    if (numRows >= maxReadBatchSizeRows) logWarning("met maxReadBatchSizeRows")
+
+    sizeInBytes >= combineThresholdSize || sizeInBytes >= maxReadBatchSizeBytes ||
+      numRows >= maxReadBatchSizeRows
+  }
+
   /**
    * While there are files already read into host memory buffers, take up to
    * threshold size append to the results ArrayBuffer.
    */
-  private def readReadyFiles(initSize: Long = 0,
-      results: ArrayBuffer[HostMemoryBuffersWithMetaDataBase]) = {
+  private def readReadyFiles(initSize: Long = 0, initNumRows: Long = 0,
+      results: ArrayBuffer[HostMemoryBuffersWithMetaDataBase]): Unit = {
     var takeMore = true
     var currSize = initSize
-    while (takeMore && currSize < combineThresholdSize && filesToRead > 0) {
+    var currNumRows = initNumRows
+    while (takeMore && !hasMetCombineThreshold(currSize, currNumRows) && filesToRead > 0) {
       val hmbFuture = if (keepReadsInOrder) {
         tasks.poll()
       } else {
@@ -621,7 +634,6 @@ abstract class MultiFileCloudPartitionReaderBase(
               fut.get()
             }
           }
-          // logWarning(s"Waited ${System.currentTimeMillis() - startTime}ms")
           if (hmbAndMeta != null) {
             results.append(hmbAndMeta)
             currSize += hmbAndMeta.memBuffersAndSizes.map(_.bytes).sum
@@ -635,6 +647,7 @@ abstract class MultiFileCloudPartitionReaderBase(
       } else {
         results.append(hmbFuture.get())
         currSize += hmbFuture.get().memBuffersAndSizes.map(_.bytes).sum
+        currNumRows += hmbFuture.get().memBuffersAndSizes.map(_.numRows).sum
         filesToRead -= 1
       }
     }
@@ -642,8 +655,9 @@ abstract class MultiFileCloudPartitionReaderBase(
 
   private def getNextBuffersAndMetaAndCombine(): HostMemoryBuffersWithMetaDataBase = {
     var sizeRead = 0L
+    var numRowsRead = 0L
     val results = ArrayBuffer[HostMemoryBuffersWithMetaDataBase]()
-    readReadyFiles(0, results)
+    readReadyFiles(0, 0,results)
     if (results.isEmpty) {
       // none were ready yet so wait as long as need for first one
       val hostBuffersWithMeta = if (keepReadsInOrder) {
@@ -654,11 +668,13 @@ abstract class MultiFileCloudPartitionReaderBase(
         bufMetaFut.get()
       }
       sizeRead += hostBuffersWithMeta.memBuffersAndSizes.map(_.bytes).sum
+      numRowsRead += hostBuffersWithMeta.memBuffersAndSizes.map(_.numRows).sum
+
       filesToRead -= 1
       results.append(hostBuffersWithMeta)
       // since we had to wait for one to be ready,
       // check if more are ready as well
-      readReadyFiles(sizeRead, results)
+      readReadyFiles(sizeRead, numRowsRead, results)
     }
     if (results.size > 1) {
       combineHMBs(results.toArray)
@@ -698,7 +714,8 @@ abstract class MultiFileCloudPartitionReaderBase(
     combineLeftOverFiles = None
     val results = ArrayBuffer[HostMemoryBuffersWithMetaDataBase]()
     val curSize = leftOvers.map(_.memBuffersAndSizes.map(_.bytes).sum).sum
-    readReadyFiles(curSize, results)
+    val curNumRows = leftOvers.map(_.memBuffersAndSizes.map(_.numRows).sum).sum
+    readReadyFiles(curSize, curNumRows, results)
     val allReady = leftOvers ++ results
     val fileBufsAndMeta = if (allReady.size > 1) {
       combineHMBs(allReady)

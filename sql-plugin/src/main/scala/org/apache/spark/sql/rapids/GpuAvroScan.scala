@@ -629,7 +629,8 @@ class GpuMultiFileCloudAvroPartitionReader(
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long)
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, filters,
-    execMetrics, ignoreCorruptFiles) with MultiFileReaderFunctions with GpuAvroReaderBase {
+    execMetrics, maxReadBatchSizeRows, maxReadBatchSizeBytes,
+    ignoreCorruptFiles) with MultiFileReaderFunctions with GpuAvroReaderBase {
 
   override def readBatches(fileBufsAndMeta: HostMemoryBuffersWithMetaDataBase):
     Iterator[ColumnarBatch] = fileBufsAndMeta match {

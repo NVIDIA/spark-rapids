@@ -1808,8 +1808,9 @@ class MultiFileCloudParquetPartitionReader(
     queryUsesInputFile: Boolean,
     keepReadsInOrder: Boolean)
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, null,
-    execMetrics, ignoreCorruptFiles, alluxioPathReplacementMap, alluxioReplacementTaskTime,
-    combineThresholdSize, combineWaitTime, queryUsesInputFile, keepReadsInOrder)
+    execMetrics, maxReadBatchSizeRows, maxReadBatchSizeBytes, ignoreCorruptFiles,
+    alluxioPathReplacementMap, alluxioReplacementTaskTime, combineThresholdSize,
+    combineWaitTime, queryUsesInputFile, keepReadsInOrder)
     with ParquetPartitionReaderBase {
 
   def checkIfNeedToSplit(current: HostMemoryBuffersWithMetaData,
@@ -1851,9 +1852,8 @@ class MultiFileCloudParquetPartitionReader(
   private def doCombineHMBs(combinedMeta: CombinedMeta): HostMemoryBuffersWithMetaDataBase = {
     val toCombineHmbs = combinedMeta.toCombine
     val metaToUse = combinedMeta.firstNonEmpty
-    // TODO - remove or change to debug
-    logInfo(s"Using Combine mode and actually combining, num files ${toCombineHmbs.size} " +
-      s"files:  ${toCombineHmbs.map(_.partitionedFile.filePath).mkString(",")}")
+    logDebug(s"Using Combine mode and actually combining, num files ${toCombineHmbs.size} " +
+      s"files: ${toCombineHmbs.map(_.partitionedFile.filePath).mkString(",")}")
     val startCombineTime = System.currentTimeMillis()
     // this size includes the written header and footer on each buffer so remove
     // the size of those to get data size
