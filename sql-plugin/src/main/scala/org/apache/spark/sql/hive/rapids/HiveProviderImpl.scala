@@ -204,6 +204,10 @@ class HiveProviderImpl extends HiveProvider {
             if (!(charset.equals(Charsets.US_ASCII) || charset.equals(Charsets.UTF_8))) {
               willNotWorkOnGpu("only UTF-8 and ASCII are supported as the charset")
             }
+
+            if (!storage.properties.getOrElse("timestamp.formats", "").equals("")) {
+              willNotWorkOnGpu("custom timestamp formats are not currently supported")
+            }
           }
 
           private def checkIfEnabled(): Unit = {
