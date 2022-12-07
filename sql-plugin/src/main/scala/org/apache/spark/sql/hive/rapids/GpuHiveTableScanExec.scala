@@ -40,7 +40,6 @@ import org.apache.spark.sql.catalyst.catalog.HiveTableRelation
 import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.expressions.{And, Attribute, AttributeMap, AttributeReference, AttributeSeq, AttributeSet, BindReferences, Expression, Literal}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
-import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.{ExecSubqueryExpression, LeafExecNode, PartitionedFileUtil, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionDirectory, PartitionedFile}
@@ -564,14 +563,13 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
     }
   }
 
-  // As per Hive's LazySimpleSerDe documentation, only the following timestamp pattern is supported:
-  //  "uuuu-MM-dd HH:mm:ss[.SSS...]"
-  //
-  // Note: No support for "uuuu-MM-dd'T'HH:mm:ss[.SSS...][Z]"
-  override def timestampFormat: String = s"${DateFormatter.defaultPattern} HH:mm:ss[.SSS][XXX]"
-
   override def castStringToTimestamp(lhs: ColumnVector, sparkFormat: String, dType: DType)
   : ColumnVector = {
+    // Currently, only the following timestamp pattern is supported:
+    //  "uuuu-MM-dd HH:mm:ss[.SSS...]"
+    // Note: No support for "uuuu-MM-dd'T'HH:mm:ss[.SSS...][Z]", or any customization.
+    // See https://github.com/NVIDIA/spark-rapids/issues/7289.
+
     // Input strings that do not match this format strictly must be replaced with nulls.
     //                 yyyy-  MM -  dd    HH  :  mm  :  ss [SSS...     ]
     val regex = raw"\A\d{4}-\d{2}-\d{2} \d{2}\:\d{2}\:\d{2}(?:\.\d{1,9})?\Z"
