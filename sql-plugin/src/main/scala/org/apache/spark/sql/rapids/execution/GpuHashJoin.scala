@@ -159,40 +159,38 @@ object GpuHashJoin extends Arm {
    * Filter rows from the batch where any of the keys are null.
    */
   def filterNulls(cb: ColumnarBatch, boundKeys: Seq[Expression]): ColumnarBatch = {
-    var mask: ai.rapids.cudf.ColumnVector = null
+    import ai.rapids.cudf.ColumnVector
+    var mask: Option[ColumnVector] = None
     try {
       withResource(GpuProjectExec.project(cb, boundKeys)) { keys =>
         val keyColumns = GpuColumnVector.extractBases(keys)
-        keyColumns.foreach { column =>
-          if (column.hasNulls) {
-            withResource(column.isNotNull) { nn =>
-              if (mask == null) {
-                mask = nn.incRefCount()
-              } else {
-                mask = withResource(mask) { _ =>
-                  mask.and(nn)
-                }
-              }
+        mask = keyColumns
+          .filter(_.hasNulls())
+          .map(_.isNotNull())
+          .foldLeft(None: Option[ColumnVector])((acc, nn) => {
+            acc match {
+              case None => Some(nn)
+              case Some(mask) => withResource(Seq(mask, nn)) {case Seq(mask, nn) => {
+                Some(mask.and(nn))
+              }}
+            }
+          })
+      }
+
+      mask match {
+        // There was nothing to filter.
+        case None => GpuColumnVector.incRefCounts(cb)
+        case Some(mask) => {
+          val colTypes = GpuColumnVector.extractTypes(cb)
+          withResource(GpuColumnVector.from(cb)) { tbl =>
+            withResource(tbl.filter(mask)) { filtered =>
+              GpuColumnVector.from(filtered, colTypes)
             }
           }
         }
       }
-
-      if (mask == null) {
-        // There was nothing to filter.
-        GpuColumnVector.incRefCounts(cb)
-      } else {
-        val colTypes = GpuColumnVector.extractTypes(cb)
-        withResource(GpuColumnVector.from(cb)) { tbl =>
-          withResource(tbl.filter(mask)) { filtered =>
-            GpuColumnVector.from(filtered, colTypes)
-          }
-        }
-      }
     } finally {
-      if (mask != null) {
-        mask.close()
-      }
+      mask.map(_.close())
     }
   }
 
