@@ -98,6 +98,7 @@
                 </property>
             </activation>
             <properties>
+                <buildver>311</buildver>
                 <spark.version>${spark311.version}</spark.version>
                 <spark.test.version>${spark311.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
@@ -126,6 +127,7 @@
                 </property>
             </activation>
             <properties>
+                <buildver>312db</buildver>
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
                 <shim.module.name>spark312db</shim.module.name>
@@ -164,6 +166,7 @@
                 </property>
             </activation>
             <properties>
+                <buildver>312</buildver>
                 <spark.version>${spark312.version}</spark.version>
                 <spark.test.version>${spark312.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
@@ -191,6 +194,7 @@
                 </property>
             </activation>
             <properties>
+                <buildver>313</buildver>
                 <spark.version>${spark313.version}</spark.version>
                 <spark.test.version>${spark313.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
@@ -218,6 +222,7 @@
                 </property>
             </activation>
             <properties>
+                <buildver>314</buildver>
                 <spark.version>${spark314.version}</spark.version>
                 <spark.test.version>${spark314.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
@@ -245,6 +250,7 @@
                 </property>
             </activation>
             <properties>
+                <buildver>320</buildver>
                 <spark.version>${spark320.version}</spark.version>
                 <spark.test.version>${spark320.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.1</parquet.hadoop.version>
@@ -271,6 +277,7 @@
                 </property>
             </activation>
             <properties>
+                <buildver>321</buildver>
                 <spark.version>${spark321.version}</spark.version>
                 <spark.test.version>${spark321.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
@@ -297,6 +304,7 @@
                 </property>
             </activation>
             <properties>
+                <buildver>321cdh</buildver>
                 <spark.version>${spark321cdh.version}</spark.version>
                 <spark.test.version>${spark321cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
@@ -329,6 +337,7 @@
                 </property>
             </activation>
             <properties>
+                <buildver>322</buildver>
                 <spark.version>${spark322.version}</spark.version>
                 <spark.test.version>${spark322.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
@@ -355,6 +364,7 @@
                 </property>
             </activation>
             <properties>
+                <buildver>323</buildver>
                 <spark.version>${spark323.version}</spark.version>
                 <spark.test.version>${spark323.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
@@ -382,6 +392,7 @@
                 </property>
             </activation>
             <properties>
+                <buildver>321db</buildver>
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
                 <shim.module.name>spark321db</shim.module.name>
@@ -419,6 +430,7 @@
                 </property>
             </activation>
             <properties>
+                <buildver>330</buildver>
                 <spark.version>${spark330.version}</spark.version>
                 <spark.test.version>${spark330.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
@@ -445,6 +457,7 @@
                 </property>
             </activation>
             <properties>
+                <buildver>331</buildver>
                 <spark.version>${spark331.version}</spark.version>
                 <spark.test.version>${spark331.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
@@ -471,6 +484,7 @@
                 </property>
             </activation>
             <properties>
+                <buildver>332</buildver>
                 <spark.version>${spark332.version}</spark.version>
                 <spark.test.version>${spark332.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
@@ -497,6 +511,7 @@
                 </property>
             </activation>
             <properties>
+                <buildver>340</buildver>
                 <spark.version>${spark340.version}</spark.version>
                 <spark.test.version>${spark340.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
@@ -523,6 +538,7 @@
                 </property>
             </activation>
             <properties>
+                <buildver>330cdh</buildver>
                 <spark.version>${spark330cdh.version}</spark.version>
                 <spark.test.version>${spark330cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.99.7.1.8.0-801</parquet.hadoop.version>
@@ -866,7 +882,7 @@
                             <phase>none</phase>
                         </execution>
                         <execution>
-                            <id>default-test-compile</id>
+                            <id>default-testCompile</id>
                             <phase>none</phase>
                         </execution>
                     </executions>
