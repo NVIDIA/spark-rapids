@@ -31,7 +31,7 @@ import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
 import org.apache.spark.sql.hive.execution.{HiveTableScanExec, OptimizedCreateHiveTableAsSelectCommand}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.BooleanType
+import org.apache.spark.sql.types._
 
 class HiveProviderImpl extends HiveProvider {
 
@@ -245,6 +245,34 @@ class HiveProviderImpl extends HiveProvider {
               hadoopConf.getBoolean("hive.lazysimple.extended_boolean_literal", false)
             if (extendedBool && hasBooleans) {
               willNotWorkOnGpu("extended boolean parsing is not supported")
+            }
+
+            lazy val hasFloats = wrapped.output.exists { att =>
+              TrampolineUtil.dataTypeExistsRecursively(att.dataType, dt => dt == FloatType)
+            }
+
+            if (!conf.shouldHiveReadFloats && hasFloats) {
+              willNotWorkOnGpu("reading of floats has been disabled set " +
+                  s"${RapidsConf.ENABLE_READ_HIVE_FLOATS} to true to enable this.")
+            }
+
+            lazy val hasDoubles = wrapped.output.exists { att =>
+              TrampolineUtil.dataTypeExistsRecursively(att.dataType, dt => dt == DoubleType)
+            }
+
+            if (!conf.shouldHiveReadDoubles && hasDoubles) {
+              willNotWorkOnGpu("reading of doubles has been disabled set " +
+                  s"${RapidsConf.ENABLE_READ_HIVE_DOUBLES} to true to enable this.")
+            }
+
+            lazy val hasDecimals = wrapped.output.exists { att =>
+              TrampolineUtil.dataTypeExistsRecursively(att.dataType,
+                dt => dt.isInstanceOf[DecimalType])
+            }
+
+            if (!conf.shouldHiveReadDecimals && hasDecimals) {
+              willNotWorkOnGpu("reading of decimal typed values has been disabled set " +
+                  s"${RapidsConf.ENABLE_READ_HIVE_DECIMALS} to true to enable this.")
             }
           }
 

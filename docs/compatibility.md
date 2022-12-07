@@ -356,6 +356,27 @@ INTERVAL SECOND | INTERVAL '40.999999' SECOND               | 40.999999|
 
 Currently, the RAPIDS Accelerator only supports the ANSI style.
 
+## Hive Text File
+
+Hive text files are very similar to CSV, but not exactly the same.
+
+### Hive Text File Floating Point
+
+Parsing floating-point values has the same limitations as [casting from string to float](#String-to-Float).
+
+Also parsing of some values will not produce bit for bit identical results to what the CPU does.
+They are within round-off errors except when they are close enough to overflow to Inf or -Inf which
+then results in a number being returned when the CPU would have returned null.
+
+### Hive Text File Decimal
+
+Hive has some limitations in what decimal values it can parse. The GPU kernels that we use
+to parse decimal values do not have the same limitations. This means that there are times
+when the CPU version would return a null for an input value, but the GPu version will
+return a value. This typically happens for numbers with large negative exponents where
+the GPU will return `0` and Hive will return `null`. 
+See https://github.com/NVIDIA/spark-rapids/issues/7246
+
 ## ORC
 
 The ORC format has fairly complete support for both reads and writes. There are only a few known
