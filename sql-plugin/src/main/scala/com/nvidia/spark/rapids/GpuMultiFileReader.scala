@@ -480,19 +480,6 @@ abstract class MultiFileCloudPartitionReaderBase(
     }
   }
 
-  private val canUseCombine: Boolean = {
-    if (queryUsesInputFile) {
-      logDebug("Query uses input file name, can't use combine mode")
-      false
-    } else {
-      if (combineThresholdSize > 0) {
-        true
-      } else {
-        false
-      }
-    }
-  }
-
   private def initAndStartReaders(): Unit = {
     // limit the number we submit at once according to the config if set
     val limit = math.min(maxNumFileProcessed, files.length)
@@ -535,13 +522,15 @@ abstract class MultiFileCloudPartitionReaderBase(
     filesToRead = files.length
   }
 
-  def combineHMBs(results: Array[HostMemoryBuffersWithMetaDataBase],
-      keepReadsInOrder: Boolean): HostMemoryBuffersWithMetaDataBase = {
+  def combineHMBs(
+      results: Array[HostMemoryBuffersWithMetaDataBase]): HostMemoryBuffersWithMetaDataBase = {
     if (results.size < 1) {
       throw new Exception("Expect at least one host memory buffer")
     }
     results(0)
   }
+
+  def canUseCombine: Boolean = false
 
   /**
    * The sub-class must implement the real file reading logic in a Callable
@@ -651,7 +640,6 @@ abstract class MultiFileCloudPartitionReaderBase(
   }
 
   private def getNextBuffersAndMetaAndCombine(): HostMemoryBuffersWithMetaDataBase = {
-    logWarning(s"Can use combine, keep order: $keepReadsInOrder")
     var sizeRead = 0L
     val results = ArrayBuffer[HostMemoryBuffersWithMetaDataBase]()
     readReadyFiles(0, results)
@@ -672,7 +660,7 @@ abstract class MultiFileCloudPartitionReaderBase(
       readReadyFiles(sizeRead, results)
     }
     if (results.size > 1) {
-      combineHMBs(results.toArray, keepReadsInOrder)
+      combineHMBs(results.toArray)
     } else {
       require(results.size == 1)
       results.head
@@ -680,7 +668,6 @@ abstract class MultiFileCloudPartitionReaderBase(
   }
 
   private def getNextBuffersAndMetaSingleFile(): HostMemoryBuffersWithMetaDataBase = {
-    logWarning(s"Can not use combine mode, keep order: $keepReadsInOrder")
     val hmbAndMetaInfo = if (keepReadsInOrder) {
       tasks.poll().get()
     } else {
@@ -700,20 +687,20 @@ abstract class MultiFileCloudPartitionReaderBase(
     }
   }
 
+  /**
+   * If we were combining host memory buffers and ran into the case we had to split them,
+   * then we handle the left over ones first.
+   */
   private def handleLeftOverCombineFiles(): HostMemoryBuffersWithMetaDataBase = {
     val leftOvers = combineLeftOverFiles.get
     // unset leftOverFiles because it will get reset in combineHMBs again if needed
     combineLeftOverFiles = None
     val results = ArrayBuffer[HostMemoryBuffersWithMetaDataBase]()
-    // TODO - test this more
     val curSize = leftOvers.map(_.memBuffersAndSizes.map(_.bytes).sum).sum
     readReadyFiles(curSize, results)
-    logWarning(s"left overs current size is $curSize combine threshold" +
-      s" $combineThresholdSize  num more ready: ${results.size}")
-
     val allReady = leftOvers ++ results
     val fileBufsAndMeta = if (allReady.size > 1) {
-      combineHMBs(allReady, keepReadsInOrder)
+      combineHMBs(allReady)
     } else {
       require(allReady.size == 1)
       allReady.head
@@ -748,8 +735,7 @@ abstract class MultiFileCloudPartitionReaderBase(
         readBuffersToBatch(currentFileHostBuffers.get, false)
       } else if (combineLeftOverFiles.isDefined) {
         // this means we already grabbed some while combining but something between
-        // files was incompatible and couldn't be combined. Just try to combine what
-        // is left again.
+        // files was incompatible and couldn't be combined.
         val fileBufsAndMeta = handleLeftOverCombineFiles()
         readBuffersToBatch(fileBufsAndMeta, true)
       } else {
@@ -760,7 +746,6 @@ abstract class MultiFileCloudPartitionReaderBase(
           val startTime = System.nanoTime()
           val fileBufsAndMeta = getNextBuffersAndMeta()
           val blockedTime = System.nanoTime() - startTime
-          // logWarning(s"blocked time is $blockedTime task ${TaskContext.get().taskAttemptId()}")
           metrics.get(FILTER_TIME).foreach {
             _ += (blockedTime * fileBufsAndMeta.getFilterTimePct).toLong
           }

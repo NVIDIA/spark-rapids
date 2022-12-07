@@ -1824,12 +1824,32 @@ class MultiFileCloudParquetPartitionReader(
     )
   }
 
+  override def canUseCombine: Boolean = {
+    if (queryUsesInputFile) {
+      logDebug("Query uses input file name, can't use combine mode")
+      false
+    } else {
+      if (combineThresholdSize > 0) {
+        true
+      } else {
+        false
+      }
+    }
+  }
+
+  private case class CombinedEmptyMeta(emptyNumRows: Long, emptyBufferSize: Long,
+      emptyTotalBytesRead: Long, allEmpty: Boolean, metaForEmpty: HostMemoryEmptyMetaData)
+
+  private case class CombinedMeta(allPartValues: Array[(Long, InternalRow)],
+      toCombine: Array[HostMemoryBuffersWithMetaDataBase],
+      firstNonEmpty: HostMemoryBuffersWithMetaData)
+
   // assumes all these are ok to combine and have the same metadata for schema
   // and isCorrect* and timestamp type settings
-  private def internalCombineHMBS(
-      toCombineHmbs: Array[HostMemoryBuffersWithMetaDataBase],
-      metaToUse: HostMemoryBuffersWithMetaData,
-      allPartValues: Array[(Long, InternalRow)]): HostMemoryBuffersWithMetaDataBase = {
+  private def doCombineHMBs(combinedMeta: CombinedMeta): HostMemoryBuffersWithMetaDataBase = {
+    val toCombineHmbs = combinedMeta.toCombine
+    val metaToUse = combinedMeta.firstNonEmpty
+    // TODO - remove or change to debug
     logInfo(s"Using Combine mode and actually combining, num files ${toCombineHmbs.size} " +
       s"files:  ${toCombineHmbs.map(_.partitionedFile.filePath).mkString(",")}")
     val startCombineTime = System.currentTimeMillis()
@@ -1901,9 +1921,6 @@ class MultiFileCloudParquetPartitionReader(
         initTotalSize
       }
 
-      logWarning(s"size combine buffer $initTotalSize actual used needed " +
-        s"${offset + actualFooterSize} extras was $extraMemory")
-
       withResource(buf.slice(offset, (totalBufferSize - offset))) { footerHmbSlice =>
         withResource(new HostMemoryOutputStream(footerHmbSlice)) { footerOut =>
           writeFooter(footerOut, allOutputBlocks, schemaToUse)
@@ -1912,8 +1929,8 @@ class MultiFileCloudParquetPartitionReader(
           offset += footerOut.getPos
         }
       }
-      val newHmbBufferInfo = SingleHMBAndMeta(buf, offset, allPartValues.map(_._1).sum,
-        Seq.empty, schemaToUse)
+      val newHmbBufferInfo = SingleHMBAndMeta(buf, offset,
+        combinedMeta.allPartValues.map(_._1).sum, Seq.empty, schemaToUse)
       HostMemoryBuffersWithMetaData(
         metaToUse.partitionedFile,
         metaToUse.origPartitionedFile, // this doesn't matter since already read
@@ -1924,21 +1941,22 @@ class MultiFileCloudParquetPartitionReader(
         metaToUse.hasInt96Timestamps,
         metaToUse.clippedSchema,
         metaToUse.readSchema,
-        Some(allPartValues))
+        Some(combinedMeta.allPartValues))
     }
-    logWarning(s"took ${(System.currentTimeMillis() - startCombineTime)} " +
-      s"ms to do combine of ${toCombineHmbs.size} task ${TaskContext.get().taskAttemptId()}")
+    logDebug(s"Took ${(System.currentTimeMillis() - startCombineTime)} " +
+      s"ms to do combine of ${toCombineHmbs.size}  files, " +
+      s"task id: ${TaskContext.get().taskAttemptId()}")
     combined
   }
 
-  override def combineHMBs(resultsInput: Array[HostMemoryBuffersWithMetaDataBase],
-      keepReadsInOrder: Boolean): HostMemoryBuffersWithMetaDataBase = {
+  private def computeCombineHMBMeta(
+      input: Array[HostMemoryBuffersWithMetaDataBase]): (CombinedMeta, CombinedEmptyMeta) = {
     val allPartValues = new ArrayBuffer[(Long, InternalRow)]()
     var allEmpty = true
     var metaForEmpty: HostMemoryEmptyMetaData = null
     var emptyNumRows = 0L
     var emptyBufferSize = 0L
-    var totalBytesRead = 0L
+    var emptyTotalBytesRead = 0L
     val toCombine = ArrayBuffer[HostMemoryBuffersWithMetaDataBase]()
     // this is only used when keepReadsInOrder is false
     val leftOversWhenNotKeepReadsInOrder = ArrayBuffer[HostMemoryBuffersWithMetaDataBase]()
@@ -1946,8 +1964,10 @@ class MultiFileCloudParquetPartitionReader(
     var numCombined: Int = 0
     var needsSplit = false
     var iterLoc = 0
-    while (!needsSplit && iterLoc < resultsInput.size) {
-      val result = resultsInput(iterLoc)
+    // iterating through this to handle the case we want to keep the files
+    // in the same order as Spark
+    while (!needsSplit && iterLoc < input.size) {
+      val result = input(iterLoc)
       result match {
         case emptyHMData: HostMemoryEmptyMetaData =>
           if (metaForEmpty == null) {
@@ -1958,7 +1978,7 @@ class MultiFileCloudParquetPartitionReader(
           allPartValues.append((totalNumRows, partValues))
           emptyBufferSize += emptyHMData.bufferSize
           emptyNumRows += emptyHMData.numRows
-          totalBytesRead += emptyHMData.bytesRead
+          emptyTotalBytesRead += emptyHMData.bytesRead
           toCombine += emptyHMData
           numCombined += 1
         case hmWithData: HostMemoryBuffersWithMetaData =>
@@ -1968,7 +1988,7 @@ class MultiFileCloudParquetPartitionReader(
             // leftOverFiles, but if we don't then continue so we combine as much as possible
             if (keepReadsInOrder) {
               needsSplit = true
-              combineLeftOverFiles = Some(resultsInput.drop(numCombined))
+              combineLeftOverFiles = Some(input.drop(numCombined))
               logWarning(s"we have read in order leftovers that something didn't " +
                 s"match on, num: ${combineLeftOverFiles.size} combined $numCombined")
             } else {
@@ -1984,33 +2004,39 @@ class MultiFileCloudParquetPartitionReader(
             val totalNumRows = hmWithData.memBuffersAndSizes.map(_.numRows).sum
             allPartValues.append((totalNumRows, partValues))
           }
-
         case _ => throw new RuntimeException("Unknown HostMemoryBuffersWithMetaDataBase")
       }
       iterLoc += 1
     }
-
     if (!keepReadsInOrder && leftOversWhenNotKeepReadsInOrder.nonEmpty) {
       combineLeftOverFiles = Some(leftOversWhenNotKeepReadsInOrder.toArray)
     }
+    val combinedMeta = CombinedMeta(allPartValues.toArray, toCombine.toArray, firstNonEmpty)
+    val combinedEmptyMeta = CombinedEmptyMeta(emptyNumRows, emptyBufferSize, emptyTotalBytesRead,
+      allEmpty, metaForEmpty)
+    (combinedMeta, combinedEmptyMeta)
+  }
 
-    if (allEmpty) {
-      val meta = resultsInput.head
-      HostMemoryEmptyMetaData(meta.partitionedFile, // just pick one since not used
+  override def combineHMBs(
+      input: Array[HostMemoryBuffersWithMetaDataBase]): HostMemoryBuffersWithMetaDataBase = {
+    val (combinedMeta, combinedEmptyMeta) = computeCombineHMBMeta(input)
+
+    if (combinedEmptyMeta.allEmpty) {
+      val metaForEmpty = combinedEmptyMeta.metaForEmpty
+      HostMemoryEmptyMetaData(metaForEmpty.partitionedFile, // just pick one since not used
         metaForEmpty.origPartitionedFile,
-        emptyBufferSize,
-        totalBytesRead,
+        combinedEmptyMeta.emptyBufferSize,
+        combinedEmptyMeta.emptyTotalBytesRead,
         metaForEmpty.isCorrectRebaseMode, // these shouldn't matter since data is empty
         metaForEmpty.isCorrectInt96RebaseMode, // these shouldn't matter since data is empty
         metaForEmpty.hasInt96Timestamps, // these shouldn't matter since data is empty
         metaForEmpty.clippedSchema,
         metaForEmpty.readSchema,
-        emptyNumRows,
-        Some(allPartValues.toArray)
+        combinedEmptyMeta.emptyNumRows,
+        Some(combinedMeta.allPartValues)
       )
     } else {
-      // combine all the ones that we can
-      internalCombineHMBS(toCombine.toArray, firstNonEmpty, allPartValues.toArray)
+      doCombineHMBs(combinedMeta)
     }
   }
 
