@@ -15,3 +15,11 @@ no
 0
 t
 f
+ true
+true 
+ false
+false 
+ 1
+1 
+ 0
+0 
