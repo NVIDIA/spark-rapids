@@ -136,6 +136,7 @@ ICEBERG_CONFS="--packages org.apache.iceberg:iceberg-spark-runtime-${sw_versions
  --conf spark.sql.catalog.spark_catalog.type=hadoop \
  --conf spark.sql.catalog.spark_catalog.warehouse=/tmp/spark-warehouse-$$"
 
+# Increase driver memory as Delta Lake tests can slowdown with default 1G (possibly due to caching?)
 DELTA_LAKE_CONFS="--driver-memory 2g"
 
 # Enable event log for qualification & profiling tools testing

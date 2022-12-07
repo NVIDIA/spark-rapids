@@ -4425,7 +4425,6 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         }
         foundExprs.nonEmpty
       case mp: MapPartitionsExec if mp.func.toString.contains(".tahoe.Snapshot") =>
-        logDebug(s"Found snapshot mapping: $mp")
         true
       case _ =>
         false

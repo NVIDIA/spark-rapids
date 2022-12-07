@@ -265,7 +265,6 @@ object GpuStatisticsCollection {
 
   private def writeValueToRow(value: Any, dt: DataType, row: InternalRow, slot: Int): Unit = {
     val valueType = if (value == null) NullType else dt
-    // TODO: Worth caching writers across batches?
     val writer = InternalRow.getWriter(slot, valueType)
     writer(row, value)
   }

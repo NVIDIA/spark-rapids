@@ -81,7 +81,6 @@ object GpuDeltaIdentityColumnStatsTracker extends Arm {
           cview.min()
         }
         withResource(gpuScalar) { _ =>
-          // TODO: Worth caching writers across batches?
           val scalar = GpuScalar.extract(gpuScalar)
           val valueType = if (scalar == null) NullType else dataCols(i).dataType
           val writer = InternalRow.getWriter(i, valueType)

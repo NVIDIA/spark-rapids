@@ -128,6 +128,7 @@
                 </property>
             </activation>
             <properties>
+                <!-- Use Spark version, as Delta Lake provided by the Databricks environment -->
                 <delta.version>${spark.version}</delta.version>
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
@@ -402,6 +403,7 @@
                 </property>
             </activation>
             <properties>
+                <!-- Use Spark version, as Delta Lake provided by the Databricks environment -->
                 <delta.version>${spark.version}</delta.version>
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
