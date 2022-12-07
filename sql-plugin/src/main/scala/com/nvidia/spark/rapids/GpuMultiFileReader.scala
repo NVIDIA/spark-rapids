@@ -906,8 +906,8 @@ trait SingleDataBlockInfo {
  * @param schema schema info
  */
 class BatchContext(
-    val origChunkedBlocks: mutable.LinkedHashMap[Path, ArrayBuffer[DataBlockBase]],
-    val schema: SchemaBase) {}
+  val origChunkedBlocks: mutable.LinkedHashMap[Path, ArrayBuffer[DataBlockBase]],
+  val schema: SchemaBase) {}
 
 /**
  * The abstracted multi-file coalescing reading class, which tries to coalesce small
@@ -947,20 +947,20 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     maxReadBatchSizeBytes: Long,
     numThreads: Int,
     execMetrics: Map[String, GpuMetric]) extends FilePartitionReaderBase(conf, execMetrics)
-  with MultiFileReaderFunctions {
+    with MultiFileReaderFunctions {
 
   private val blockIterator: BufferedIterator[SingleDataBlockInfo] =
     clippedBlocks.iterator.buffered
   private[this] val inputMetrics = TaskContext.get.taskMetrics().inputMetrics
 
   private case class CurrentChunkMeta(
-      clippedSchema: SchemaBase,
-      readSchema: StructType,
-      currentChunk: Seq[(Path, DataBlockBase)],
-      numTotalRows: Long,
-      rowsPerPartition: Array[Long],
-      allPartValues: Array[InternalRow],
-      extraInfo: ExtraInfo)
+    clippedSchema: SchemaBase,
+    readSchema: StructType,
+    currentChunk: Seq[(Path, DataBlockBase)],
+    numTotalRows: Long,
+    rowsPerPartition: Array[Long],
+    allPartValues: Array[InternalRow],
+    extraInfo: ExtraInfo)
 
   /**
    * To check if the next block will be split into another ColumnarBatch

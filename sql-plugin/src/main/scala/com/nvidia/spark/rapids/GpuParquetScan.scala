@@ -1863,18 +1863,19 @@ class MultiFileCloudParquetPartitionReader(
     val startCombineTime = System.currentTimeMillis()
     // this size includes the written header and footer on each buffer so remove
     // the size of those to get data size
-    val tmpTotalSize = toCombineHmbs.map { hbWithMeta =>
+    val existingSizeUsed = toCombineHmbs.map { hbWithMeta =>
       hbWithMeta.memBuffersAndSizes.map(_.bytes).sum - PARQUET_META_SIZE
     }.sum
 
     // since we know not all of them are empty and we know all these have the same schema since
     // we already separated, just use the clippedSchema from metadata
     val schemaToUse = metaToUse.clippedSchema
-    val allBlocks = toCombineHmbs.flatMap(_.memBuffersAndSizes.flatMap(_.blockMeta))
-    val footerSize = calculateParquetFooterSize(allBlocks, schemaToUse)
-    val numCols = allBlocks.head.getColumns().size()
-    val extraMemory = calculateExtraMemoryForParquetFooter(numCols, allBlocks.size)
-    val initTotalSize = tmpTotalSize + footerSize + extraMemory
+    val blocksAlreadyRead = toCombineHmbs.flatMap(_.memBuffersAndSizes.flatMap(_.blockMeta))
+    val footerSize = calculateParquetFooterSize(blocksAlreadyRead, schemaToUse)
+    // all will have same schema so same number of columns
+    val numCols = blocksAlreadyRead.head.getColumns().size()
+    val extraMemory = calculateExtraMemoryForParquetFooter(numCols, blocksAlreadyRead.size)
+    val initTotalSize = existingSizeUsed + footerSize + extraMemory
     val combined = closeOnExcept(HostMemoryBuffer.allocate(initTotalSize)) { combinedHmb =>
       var offset = withResource(new HostMemoryOutputStream(combinedHmb)) { out =>
         out.write(ParquetPartitionReader.PARQUET_MAGIC)
@@ -1904,7 +1905,7 @@ class MultiFileCloudParquetPartitionReader(
             }
         }
       }
-      // using all of the actual output blocks meta calculate what the footer size
+      // using all of the actual combined output blocks meta calculate what the footer size
       // will really be
       val actualFooterSize = calculateParquetFooterSize(allOutputBlocks, schemaToUse)
       var buf: HostMemoryBuffer = combinedHmb
@@ -1952,7 +1953,7 @@ class MultiFileCloudParquetPartitionReader(
         Some(combinedMeta.allPartValues))
     }
     logDebug(s"Took ${(System.currentTimeMillis() - startCombineTime)} " +
-      s"ms to do combine of ${toCombineHmbs.size}  files, " +
+      s"ms to do combine of ${toCombineHmbs.size} files, " +
       s"task id: ${TaskContext.get().taskAttemptId()}")
     combined
   }
@@ -1997,8 +1998,6 @@ class MultiFileCloudParquetPartitionReader(
             if (keepReadsInOrder) {
               needsSplit = true
               combineLeftOverFiles = Some(input.drop(numCombined))
-              logWarning(s"we have read in order leftovers that something didn't " +
-                s"match on, num: ${combineLeftOverFiles.size} combined $numCombined")
             } else {
               leftOversWhenNotKeepReadsInOrder += hmWithData
             }
@@ -2225,7 +2224,6 @@ class MultiFileCloudParquetPartitionReader(
     case meta: HostMemoryEmptyMetaData =>
       // Not reading any data, but add in partition data if needed
       val rows = meta.numRows.toInt
-
       val origBatch = if (rows == 0) {
         new ColumnarBatch(Array.empty, 0)
       } else {
@@ -2235,6 +2233,7 @@ class MultiFileCloudParquetPartitionReader(
           GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
         new ColumnarBatch(nullColumns, rows)
       }
+
       val batch = if (meta.allPartValues.isDefined) {
         // we have to add partition values here for this batch, we already verified that
         // its not different for all the blocks in this batch
