@@ -20,7 +20,6 @@ from marks import *
 from pyspark.sql.types import *
 from pyspark.sql.types import NumericType
 from pyspark.sql.window import Window
-import pyspark.sql.functions as f
 from spark_session import is_before_spark_320
 
 _grpkey_longs_with_no_nulls = [
@@ -344,42 +343,41 @@ def test_window_aggs_for_range_numeric_date(data_gen, batch_size):
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
 @pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
-@pytest.mark.parametrize('data_gen', [
-    # _grpkey_longs_with_no_nulls,
-    #                                   _grpkey_longs_with_nulls,
-    #                                   _grpkey_longs_with_dates,
-    #                                   _grpkey_longs_with_nullable_dates,
-    #                                   _grpkey_longs_with_decimals,
-    #                                   _grpkey_longs_with_nullable_decimals,
+@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_no_nulls,
+                                      _grpkey_longs_with_nulls,
+                                      _grpkey_longs_with_dates,
+                                      _grpkey_longs_with_nullable_dates,
+                                      _grpkey_longs_with_decimals,
+                                      _grpkey_longs_with_nullable_decimals,
                                       _grpkey_longs_with_nullable_larger_decimals,
-                                      ], ids=idfn)
+                                      _grpkey_decimals_with_nulls], ids=idfn)
 def test_window_aggs_for_rows(data_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark : gen_df(spark, data_gen, length=1048),
+        lambda spark : gen_df(spark, data_gen, length=2048),
         "window_agg_table",
         'select '
-        # ' sum(c) over '
-        # '   (partition by a order by b,c asc rows between 1 preceding and 1 following) as sum_c_asc, '
-        # ' max(c) over '
-        # '   (partition by a order by b desc, c desc rows between 2 preceding and 1 following) as max_c_desc, '
-        # ' min(c) over '
-        # '   (partition by a order by b,c rows between 2 preceding and current row) as min_c_asc, '
-        # ' count(1) over '
-        # '   (partition by a order by b,c rows between UNBOUNDED preceding and UNBOUNDED following) as count_1, '
-        # ' count(c) over '
-        # '   (partition by a order by b,c rows between UNBOUNDED preceding and UNBOUNDED following) as count_c, '
+        ' sum(c) over '
+        '   (partition by a order by b,c asc rows between 1 preceding and 1 following) as sum_c_asc, '
+        ' max(c) over '
+        '   (partition by a order by b desc, c desc rows between 2 preceding and 1 following) as max_c_desc, '
+        ' min(c) over '
+        '   (partition by a order by b,c rows between 2 preceding and current row) as min_c_asc, '
+        ' count(1) over '
+        '   (partition by a order by b,c rows between UNBOUNDED preceding and UNBOUNDED following) as count_1, '
+        ' count(c) over '
+        '   (partition by a order by b,c rows between UNBOUNDED preceding and UNBOUNDED following) as count_c, '
         ' avg(c) over '
-        '   (partition by a order by b,c rows between UNBOUNDED preceding and UNBOUNDED following) as avg_c '
-        # ' rank() over '
-        # '   (partition by a order by b,c rows between UNBOUNDED preceding and CURRENT ROW) as rank_val, '
-        # ' dense_rank() over '
-        # '   (partition by a order by b,c rows between UNBOUNDED preceding and CURRENT ROW) as dense_rank_val, '
-        # ' percent_rank() over '
-        # '   (partition by a order by b,c rows between UNBOUNDED preceding and CURRENT ROW) as percent_rank_val, '
-        # ' row_number() over '
-        # '   (partition by a order by b,c rows between UNBOUNDED preceding and CURRENT ROW) as row_num '
+        '   (partition by a order by b,c rows between UNBOUNDED preceding and UNBOUNDED following) as avg_c, '
+        ' rank() over '
+        '   (partition by a order by b,c rows between UNBOUNDED preceding and CURRENT ROW) as rank_val, '
+        ' dense_rank() over '
+        '   (partition by a order by b,c rows between UNBOUNDED preceding and CURRENT ROW) as dense_rank_val, '
+        ' percent_rank() over '
+        '   (partition by a order by b,c rows between UNBOUNDED preceding and CURRENT ROW) as percent_rank_val, '
+        ' row_number() over '
+        '   (partition by a order by b,c rows between UNBOUNDED preceding and CURRENT ROW) as row_num '
         'from window_agg_table ',
         conf = conf)
 
