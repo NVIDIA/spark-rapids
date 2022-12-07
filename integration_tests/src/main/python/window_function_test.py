@@ -20,6 +20,7 @@ from marks import *
 from pyspark.sql.types import *
 from pyspark.sql.types import NumericType
 from pyspark.sql.window import Window
+import pyspark.sql.functions as f
 from spark_session import is_before_spark_320
 
 _grpkey_longs_with_no_nulls = [
