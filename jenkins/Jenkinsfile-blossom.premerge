@@ -37,10 +37,6 @@ def IMAGE_DB = pod.getCPUYAML("${common.ARTIFACTORY_NAME}/sw-spark-docker/spark:
 def PREMERGE_TAG
 def skipped = false
 def db_build = false
-def PROJECT_VER // project version retrieved from 'version-def.sh' to determine compatible stages
-def major_ver // major version extracted from project version
-def minor_ver // minor version extracted from project version
-def PREMERGE_CI_2_ARGUMENT // argument for 'spark-premerge-build.sh' running from stage of Premerge CI 2
 def sourcePattern = 'shuffle-plugin/src/main/scala/,udf-compiler/src/main/scala/,' +
     'sql-plugin/src/main/java/,sql-plugin/src/main/scala/'
 
@@ -100,6 +96,13 @@ pipeline {
         timeout(time: 12, unit: 'HOURS')
     }
 
+    parameters {
+        string(name: 'REF', defaultValue: '',
+            description: 'Merged commit of specific PR')
+        string(name: 'GITHUB_DATA', defaultValue: '',
+            description: 'Json-formatted github data from upstream blossom-ci')
+    }
+
     environment {
         JENKINS_ROOT = 'jenkins'
         PREMERGE_SCRIPT = '$JENKINS_ROOT/spark-premerge-build.sh'
@@ -128,7 +131,7 @@ pipeline {
         stage("Init githubHelper") {
             steps {
                 script {
-                    githubHelper = GithubHelper.getInstance("${GITHUB_TOKEN}", githubData)
+                    githubHelper = GithubHelper.getInstance("${GITHUB_TOKEN}", params.GITHUB_DATA)
                     // desc contains the PR ID and can be accessed from different builds
                     currentBuild.description = githubHelper.getBuildDescription()
                     try {
@@ -155,36 +158,6 @@ pipeline {
                 }
             }
         } // end of Init githubHelper
-
-        stage("Determine Project Version") {
-            when {
-                expression {
-                    !skipped
-                }
-            }
-
-            steps {
-                script {
-                    container('cpu') {
-                        // Retrieve PROJECT_VER from version-def.sh, e.g, '<major>.<minor>.<patch>-SNAPSHOT'
-                        PROJECT_VER = sh(returnStdout: true,
-                                        script: '''#!/bin/bash
-                                                source jenkins/version-def.sh >& /dev/null
-                                                echo $PROJECT_VER
-                                                ''').trim()
-                        PROJECT_VER = PROJECT_VER.split('-')[0] // Remove trailing '-SNAPSHOT'
-                        echo PROJECT_VER
-
-                        def versions = PROJECT_VER.split('\\.')
-                        major_ver = versions[0].toInteger()
-                        minor_ver = versions[1].toInteger()
-
-                        PREMERGE_CI_2_ARGUMENT = "ci_2"
-                        echo PREMERGE_CI_2_ARGUMENT
-                    }
-                }
-            }
-        }
 
         stage('Build docker image') {
             when {
@@ -313,14 +286,6 @@ pipeline {
                 } // end of mvn verify stage
 
                 stage('Premerge CI 2') {
-                    when {
-                        beforeAgent true
-                        beforeOptions true
-                        anyOf {
-                            expression { major_ver >= 22 }
-                        }
-                    }
-
                     options {
                         lock(label: "${params.GPU_POOL}", quantity: 1, variable: 'GPU_RESOURCE')
                     }
@@ -340,7 +305,7 @@ pipeline {
                             container('gpu') {
                                 timeout(time: 4, unit: 'HOURS') {
                                     try {
-                                        sh "$PREMERGE_SCRIPT $PREMERGE_CI_2_ARGUMENT"
+                                        sh "$PREMERGE_SCRIPT ci_2"
                                     } finally {
                                         common.publishPytestResult(this, "${STAGE_NAME}")
                                     }
@@ -354,7 +319,7 @@ pipeline {
                     when {
                         beforeAgent true
                         anyOf {
-                            expression { db_build && major_ver >= 22 }
+                            expression { db_build }
                         }
                     }
 
@@ -387,8 +352,7 @@ pipeline {
                     when {
                         beforeAgent true
                         anyOf {
-                            expression { db_build && major_ver == 22 && minor_ver >= 4 }
-                            expression { db_build && major_ver >= 23 }
+                            expression { db_build }
                         }
                     }
 
