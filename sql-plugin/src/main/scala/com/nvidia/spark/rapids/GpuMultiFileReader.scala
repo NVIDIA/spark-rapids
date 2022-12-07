@@ -600,9 +600,11 @@ abstract class MultiFileCloudPartitionReaderBase(
 
   /**
    * While there are files already read into host memory buffers, take up to
-   * threshold size append to the results ArrayBuffer.
+   * threshold size and append to the results ArrayBuffer.
    */
-  private def readReadyFiles(initSize: Long = 0, initNumRows: Long = 0,
+  private def readReadyFiles(
+      initSize: Long = 0,
+      initNumRows: Long = 0,
       results: ArrayBuffer[HostMemoryBuffersWithMetaDataBase]): Unit = {
     var takeMore = true
     var currSize = initSize
@@ -619,6 +621,7 @@ abstract class MultiFileCloudPartitionReaderBase(
       }
       if (hmbFuture == null) {
         if (combineWaitTime > 0) {
+          // no more are ready, wait to see if any finish within wait time
           val hmbAndMeta = if (keepReadsInOrder) {
             tasks.poll().get(combineWaitTime, TimeUnit.MILLISECONDS)
           } else {
@@ -635,9 +638,11 @@ abstract class MultiFileCloudPartitionReaderBase(
             currSize += hmbAndMeta.memBuffersAndSizes.map(_.bytes).sum
             filesToRead -= 1
           } else {
+            // no more ready after waiting
             takeMore = false
           }
         } else {
+          // wait time is <= 0
           takeMore = false
         }
       } else {

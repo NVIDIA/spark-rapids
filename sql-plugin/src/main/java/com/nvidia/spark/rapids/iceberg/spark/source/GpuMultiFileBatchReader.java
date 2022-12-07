@@ -340,7 +340,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
           -1, // combineThresholdsize
           -1, // combineWaitTime
           queryUsesInputFile,
-          true
+          true // keepReadsInOrder
       );
     }
 
