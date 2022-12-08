@@ -277,17 +277,24 @@ object GpuParquetScan {
   def footerReaderHeuristic(
       inputValue: ParquetFooterReaderType.Value,
       data: StructType,
-      read: StructType): ParquetFooterReaderType.Value = {
-    inputValue match {
-      case ParquetFooterReaderType.AUTO =>
-        val dnc = numNodesEstimate(data)
-        val rnc = numNodesEstimate(read)
-        if (rnc.toDouble/dnc <= 0.5 && dnc - rnc > 10) {
-          ParquetFooterReaderType.NATIVE
-        } else {
-          ParquetFooterReaderType.JAVA
-        }
-      case other => other
+      read: StructType,
+      useFieldId: Boolean): ParquetFooterReaderType.Value = {
+    val canUseNative = !(useFieldId && ParquetSchemaClipShims.hasFieldIds(read))
+    if (!canUseNative) {
+      // Native does not support field IDs yet
+      ParquetFooterReaderType.JAVA
+    } else {
+      inputValue match {
+        case ParquetFooterReaderType.AUTO =>
+          val dnc = numNodesEstimate(data)
+          val rnc = numNodesEstimate(read)
+          if (rnc.toDouble / dnc <= 0.5 && dnc - rnc > 10) {
+            ParquetFooterReaderType.NATIVE
+          } else {
+            ParquetFooterReaderType.JAVA
+          }
+        case other => other
+      }
     }
   }
 
@@ -945,12 +952,12 @@ case class GpuParquetMultiFilePartitionReaderFactory(
   private val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
   private val numThreads = rapidsConf.multiThreadReadNumThreads
   private val maxNumFileProcessed = rapidsConf.maxNumParquetFilesParallel
-  private val footerReadType = GpuParquetScan.footerReaderHeuristic(
-    rapidsConf.parquetReaderFooterType, dataSchema, readDataSchema)
   private val ignoreMissingFiles = sqlConf.ignoreMissingFiles
   private val ignoreCorruptFiles = sqlConf.ignoreCorruptFiles
   private val filterHandler = GpuParquetFileFilterHandler(sqlConf)
   private val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
+  private val footerReadType = GpuParquetScan.footerReaderHeuristic(
+    rapidsConf.parquetReaderFooterType, dataSchema, readDataSchema, readUseFieldId)
   private val numFilesFilterParallel = rapidsConf.numFilesFilterParallel
   private val alluxioReplacementTaskTime =
     AlluxioCfgUtils.enabledAlluxioReplacementAlgoTaskTime(rapidsConf)
@@ -1124,11 +1131,10 @@ case class GpuParquetPartitionReaderFactory(
   private val maxReadBatchSizeBytes = rapidsConf.maxReadBatchSizeBytes
   private val targetSizeBytes = rapidsConf.gpuTargetBatchSizeBytes
   private val useChunkedReader = rapidsConf.chunkedReaderEnabled
-  private val footerReadType = GpuParquetScan.footerReaderHeuristic(
-    rapidsConf.parquetReaderFooterType, dataSchema, readDataSchema)
-
   private val filterHandler = GpuParquetFileFilterHandler(sqlConf)
   private val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
+  private val footerReadType = GpuParquetScan.footerReaderHeuristic(
+    rapidsConf.parquetReaderFooterType, dataSchema, readDataSchema, readUseFieldId)
 
   override def supportColumnarReads(partition: InputPartition): Boolean = true
 
