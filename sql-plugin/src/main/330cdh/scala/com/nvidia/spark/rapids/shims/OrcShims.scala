@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// spark-distros:330cdh:
+// {"spark-distros":["330cdh"]}
 package com.nvidia.spark.rapids.shims
 
 import scala.collection.mutable.ArrayBuffer

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// spark-distros:331:
+// {"spark-distros":["331"]}
 package com.nvidia.spark.rapids.spark331
 
 import org.apache.spark.SparkConf
