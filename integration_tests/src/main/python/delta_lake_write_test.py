@@ -147,6 +147,23 @@ def test_delta_part_write_round_trip_unmanaged(spark_tmp_path, gens):
         conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.parametrize("gens", parquet_part_write_gens, ids=idfn)
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+def test_delta_multi_part_write_round_trip_unmanaged(spark_tmp_path, gens):
+    gen_list = [("a", RepeatSeqGen(gens, 10)), ("b", gens), ("c", SetValuesGen(StringType(), ["x", "y", "z"]))]
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.format("delta")
+        .partitionBy("a", "c")
+        .save(path),
+        lambda spark, path: spark.read.format("delta").load(path).filter("c='x'"),
+        data_path,
+        conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
+    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+
 def do_update_round_trip_managed(spark_tmp_path, mode):
     gen_list = [("x", int_gen), ("y", binary_gen), ("z", string_gen)]
     data_path = spark_tmp_path + "/DELTA_DATA"
