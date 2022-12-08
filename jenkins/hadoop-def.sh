@@ -28,7 +28,7 @@ IFS="-" read -r -a spark_version <<< "$1"
 IFS=$PRE_IFS
 if [[ ${#spark_version[@]} > 1 ]]; then # version with suffix
     BIN_HADOOP_VER="bin-hadoop3.2"
-elif [[ -n "$2" ]] && [[ "$2" != "https://repo.maven.apache.org/maven2" ]]; then # without suffix, provided custom-url and url != default url
+elif [[ -n "$2" ]]; then # without suffix, provided custom-url
     BIN_HADOOP_VER="bin-hadoop3.2"
 elif [[ `echo -e "${spark_version[0]}\n3.3.0" | sort -V | head -n 1` == "3.3.0" ]]; then # no custom url and spark version >= 3.3.0
     BIN_HADOOP_VER="bin-hadoop3"
