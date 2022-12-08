@@ -52,5 +52,9 @@ fi
 
 TEST_TYPE=${TEST_TYPE:-"nightly"}
 
+if [[ -n "$LOCAL_JAR_PATH" ]]; then
+    export LOCAL_JAR_PATH=$LOCAL_JAR_PATH
+fi
+
 # Run integration testing
-LOCAL_JAR_PATH=`pwd` ./integration_tests/run_pyspark_from_build.sh --runtime_env='databricks' --test_type=$TEST_TYPE
+./integration_tests/run_pyspark_from_build.sh --runtime_env='databricks' --test_type=$TEST_TYPE
