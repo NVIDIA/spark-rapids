@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// spark-distros:320:321:321cdh:321db:322:323:
+{"spark-distros":["320","321","321cdh","321db","322","323"]}
 package org.apache.spark.sql.types.shims
 
 import java.time.ZoneId
