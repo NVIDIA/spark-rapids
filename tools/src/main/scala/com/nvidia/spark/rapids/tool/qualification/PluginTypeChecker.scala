@@ -242,6 +242,18 @@ class PluginTypeChecker extends Logging {
     score
   }
 
+  def getWriteFormatString(node: String): String = {
+    // String for Write data format will be in below format and we need to parse the string to
+    // fetch Parquet(which is the write format in below example).
+    // Execute InsertIntoHadoopFsRelationCommand
+    // file:/home/ubuntu/spark-3.1.1-eventlogs/complex_nested_decimal,
+    // false, Parquet, Map(path -> complex_nested_decimal)
+    // Note that there could be optional parameters passed which could show up in the string
+    // before write format. So the way we parse the string is to split based on "Map(" and get
+    // the last element from the first array.
+    node.split("Map\\(")(0).trim.split(",").last.trim
+  }
+
   def isWriteFormatsupported(writeFormat: String): Boolean = {
     val format = writeFormat.toLowerCase.trim
     writeFormats.map(x => x.trim).contains(format)
