@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// spark-distros:321db:
+// {"spark-distros":["321db"]}:
 package com.nvidia.spark.rapids.shims.spark321db
 
 import com.nvidia.spark.rapids.{DatabricksShimVersion, ShimVersion}

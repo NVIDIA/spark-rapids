@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// spark-distros:320:
+// {"spark-distros":["320"]}
 package com.nvidia.spark.rapids.spark320
 
 import org.apache.spark.SparkConf

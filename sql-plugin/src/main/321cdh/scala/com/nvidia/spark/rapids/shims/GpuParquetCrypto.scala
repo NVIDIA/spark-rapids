@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// spark-distros:321cdh:
+// {"spark-distros":["321cdh"]}
 package com.nvidia.spark.rapids.shims
 
 object GpuParquetCrypto {

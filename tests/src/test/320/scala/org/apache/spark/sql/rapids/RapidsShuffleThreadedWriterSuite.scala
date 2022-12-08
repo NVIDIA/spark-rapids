@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// spark-distros:320:321:322:323:330:331:332:340:
+// {"spark-distros":["320","321","322","323","330","331","332","340"]}
 package org.apache.spark.sql.rapids
 
 import java.io.{DataInputStream, File, FileInputStream, IOException, ObjectStreamException}

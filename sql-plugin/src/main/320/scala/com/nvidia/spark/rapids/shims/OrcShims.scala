@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// spark-distros:320:321:321db:322:323:
+// {"spark-distros":["320","321","321db","322","323"]}
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.execution.datasources.orc.OrcUtils

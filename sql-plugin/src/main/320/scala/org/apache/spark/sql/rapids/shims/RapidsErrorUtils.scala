@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// spark-distros:320:321:321cdh:322:323:
+// {"spark-distros":["320","321","321cdh","322","323"]}
 package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.sql.catalyst.TableIdentifier
