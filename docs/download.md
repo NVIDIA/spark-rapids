@@ -43,7 +43,7 @@ for your hardware's minimum driver version.
 
 ### Download v22.12.0
 * Download the [RAPIDS
-  Accelerator for Apache Spark 22.12.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/22.10.0/rapids-4-spark_2.12-22.10.0.jar)
+  Accelerator for Apache Spark 22.12.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/22.12.0/rapids-4-spark_2.12-22.12.0.jar)
 
 This package is built against CUDA 11.5 and all CUDA 11.x versions are supported through [CUDA forward
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html). It is tested
