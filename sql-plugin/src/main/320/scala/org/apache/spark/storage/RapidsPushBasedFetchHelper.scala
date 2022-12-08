@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// spark-distros:320:321:321cdh:321db:322:323:330:330cdh:331:332:340:
+// {"spark-distros":["320","321","321cdh","321db","322","323","330","330cdh","331","332","340"]}
 package org.apache.spark.storage
 
 import java.util.concurrent.TimeUnit

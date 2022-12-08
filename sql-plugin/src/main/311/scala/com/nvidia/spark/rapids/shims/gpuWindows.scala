@@ -39,8 +39,7 @@ class GpuWindowExpressionMeta(
 object GpuWindowUtil {
 
   /**
-   * Check if the type of RangeFrame is valid in GpuWindowSpecDefinition
-   * @param orderSpecType the first order by data type
+   * Check if the type of RangeFrame is valid in GpuWiGpuWindowUtilpe
    * @param ft the first frame boundary data type
    * @return true to valid, false to invalid
    */

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// spark-distros:331:332:340:
+// {"spark-distros":["331","332","340"]}
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.{ExprChecks, ExprRule, GpuCast, GpuExpression, GpuOverrides, TypeSig, UnaryExprMeta}
