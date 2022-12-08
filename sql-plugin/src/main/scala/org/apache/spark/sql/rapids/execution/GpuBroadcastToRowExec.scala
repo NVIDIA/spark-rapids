@@ -32,15 +32,18 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{BoundReference, Expression, UnsafeProjection}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
+import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.util.ThreadUtils
+import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
 
 // a version of GpuSubqueryBroadcastExec that implements doExecuteBroadcast
 // and uses the same algorithm to pull columns from the GPU to rows on the CPU.
 case class GpuBroadcastToRowExec(
   index: Int,
   buildKeys: Seq[Expression],
+  broadcastMode: BroadcastMode,
   child: SparkPlan)(modeKeys: Option[Seq[Expression]])
   extends ShimBroadcastExchangeLike with ShimUnaryExecNode with GpuExec {
 
@@ -62,7 +65,7 @@ case class GpuBroadcastToRowExec(
       session, GpuBroadcastToRowExec.executionContext) {
       val broadcastBatch = child.executeBroadcast[Any]()
       val result: Any = broadcastBatch.value match {
-        case b: SerializeConcatHostBuffersDeserializeBatch => projectSerializedBatchToRows(b)
+        case b: SerializeConcatHostBuffersDeserializeBatch => projectSerializedBatch(b)
         case b if SparkShimImpl.isEmptyRelation(b) => Array.empty
         case b => throw new IllegalStateException(s"Unexpected broadcast type: ${b.getClass}")
       }
@@ -75,11 +78,12 @@ case class GpuBroadcastToRowExec(
 
   override def doCanonicalize(): SparkPlan = {
     val keys = buildKeys.map(k => QueryPlan.normalizeExpressions(k, child.output))
-    GpuBroadcastToRowExec(index, keys, child.canonicalized)(modeKeys)
+    GpuBroadcastToRowExec(index, keys, broadcastMode, child.canonicalized)(modeKeys)
   }
 
-  private def projectSerializedBatchToRows(
-      serBatch: SerializeConcatHostBuffersDeserializeBatch): Array[InternalRow] = {
+
+  private def projectSerializedBatch(
+      serBatch: SerializeConcatHostBuffersDeserializeBatch): Any = {
     val beforeCollect = System.nanoTime()
 
     // Creates projection to extract target field from Row, as what Spark does.
@@ -111,7 +115,12 @@ case class GpuBroadcastToRowExec(
     gpuLongMetric("dataSize") += serBatch.dataSize
     gpuLongMetric(COLLECT_TIME) += System.nanoTime() - beforeCollect
 
-    result
+    broadcastMode match {
+      case map @ HashedRelationBroadcastMode(_, _) =>
+        map.transform(result)
+      case _ =>
+        result
+    }
   }
 
   protected[sql] override def doExecute(): RDD[InternalRow] = {

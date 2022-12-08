@@ -177,7 +177,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             case IdentityBroadcastMode => None
             case m => throw new UnsupportedOperationException(s"Unknown broadcast mode $m")
           }
-          GpuBroadcastToRowExec(index, keys, e)(keyExprs)
+          GpuBroadcastToRowExec(index, keys, b.mode, e)(keyExprs)
         case _ => GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
       }
 

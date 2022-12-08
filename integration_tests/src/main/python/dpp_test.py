@@ -174,6 +174,30 @@ def test_dpp_reuse_broadcast_exchange(spark_tmp_table_factory, store_format, s_i
         exist_classes='DynamicPruningExpression,GpuSubqueryBroadcastExec,ReusedExchangeExec',
         conf=dict(_exchange_reuse_conf + [('spark.sql.adaptive.enabled', aqe_enabled)]))
 
+@ignore_order
+@pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
+@pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
+@pytest.mark.parametrize('aqe_enabled', [
+    'false',
+    pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
+                                                  reason='Only in Spark 3.2.0+ AQE and DPP can be both enabled'))
+], ids=idfn)
+def test_dpp_cpu_subquery_reuse_broadcast_exchange(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
+    fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
+    create_fact_table(fact_table, store_format, length=10000)
+    filter_val = create_dim_table(dim_table, store_format, length=2000)
+    statement = _statements[s_index].format(fact_table, dim_table, filter_val)
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.sql(statement),
+        # The existence of GpuSubqueryBroadcastExec indicates the reuse works on the GPU
+        exist_classes='DynamicPruningExpression,SubqueryBroadcastExec,ReusedExchangeExec',
+        conf=dict(_exchange_reuse_conf +
+            [('spark.sql.adaptive.enabled', aqe_enabled),
+             ('spark.rapids.sql.debug.logTransformations', 'true'),
+             ('spark.rapids.sql.exec.SubqueryBroadcastExec', 'false')]))
+
+
 
 # The SubqueryBroadcast can work on GPU even if the scan who holds it fallbacks into CPU.
 @ignore_order
