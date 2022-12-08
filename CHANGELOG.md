@@ -1,5 +1,5 @@
 # Change log
-Generated on 2022-12-01
+Generated on 2022-12-07
 
 ## Release 22.12
 
@@ -13,13 +13,12 @@ Generated on 2022-12-01
 |[#6887](https://github.com/NVIDIA/spark-rapids/issues/6887)|[FEA] support expressions parameter in substr function|
 |[#7078](https://github.com/NVIDIA/spark-rapids/issues/7078)|[FEA] Add shims for Spark 3.2.3|
 |[#3037](https://github.com/NVIDIA/spark-rapids/issues/3037)|[FEA] Support ZSTD compression with Parquet and Orc|
-|[#6916](https://github.com/NVIDIA/spark-rapids/issues/6916)|[FEA]Support Coalesce on map column(s)|
+|[#6916](https://github.com/NVIDIA/spark-rapids/issues/6916)|[FEA] Support Coalesce on map column(s)|
 |[#6902](https://github.com/NVIDIA/spark-rapids/issues/6902)|[FEA] Add shims for Spark 3.3.2|
 |[#6896](https://github.com/NVIDIA/spark-rapids/issues/6896)|[FEA] Support Apache Spark 3.3.1|
 |[#6884](https://github.com/NVIDIA/spark-rapids/issues/6884)|[FEA] Support instr|
 |[#6313](https://github.com/NVIDIA/spark-rapids/issues/6313)|[FEA] Support mapInArrow introduced by pyspark 3.3.0+ |
 |[#6064](https://github.com/NVIDIA/spark-rapids/issues/6064)|[FEA] Qualification tool support parsing expressions (part 2)|
-|[#6672](https://github.com/NVIDIA/spark-rapids/issues/6672)|[FEA] [Audit] - Handle byte, short, or float properly in  SparkSQL castPartValue|
 |[#6645](https://github.com/NVIDIA/spark-rapids/issues/6645)|[FEA] Qualification Tool: Print timestamp related functions. |
 
 ### Performance
@@ -36,6 +35,9 @@ Generated on 2022-12-01
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#7271](https://github.com/NVIDIA/spark-rapids/issues/7271)|[BUG] failed to build in Databricks runtime due to alluxio utils |
+|[#6636](https://github.com/NVIDIA/spark-rapids/issues/6636)|[BUG] casting to string and list, and concat can cause overflow issues|
+|[#7234](https://github.com/NVIDIA/spark-rapids/issues/7234)|[BUG] Integration test script failed on: '/tmp/20221204/python/lib': No such file or directory|
 |[#7198](https://github.com/NVIDIA/spark-rapids/issues/7198)|[BUG] RapidsShuffleManager fails to unregister UCX-mode shuffle|
 |[#7168](https://github.com/NVIDIA/spark-rapids/issues/7168)|[BUG] mismatch cpu and gpu result in test_aqe_join_reused_exchange_inequality_condition failed|
 |[#7066](https://github.com/NVIDIA/spark-rapids/issues/7066)|[SPARK-39432][BUG] The test `test_array_element_at_zero_index_fail` fails on Spark 3.4|
@@ -90,6 +92,20 @@ Generated on 2022-12-01
 ### PRs
 |||
 |:---|:---|
+|[#7264](https://github.com/NVIDIA/spark-rapids/pull/7264)|Update columnar stats tracker API to pass file path for new batches|
+|[#7273](https://github.com/NVIDIA/spark-rapids/pull/7273)|Fix AlluxioUtilsSuite build on Databricks for 22.12|
+|[#7250](https://github.com/NVIDIA/spark-rapids/pull/7250)|Change tools hadoop version to 3.3.4|
+|[#7172](https://github.com/NVIDIA/spark-rapids/pull/7172)|Add a document for how to view Alluxio metrics on UI [skip ci]|
+|[#7238](https://github.com/NVIDIA/spark-rapids/pull/7238)|Add branch-specific premerge jenkinsfile|
+|[#7243](https://github.com/NVIDIA/spark-rapids/pull/7243)|[Doc]fix broken links[skip ci]|
+|[#7155](https://github.com/NVIDIA/spark-rapids/pull/7155)|Add unit tests for alluxio utils|
+|[#7080](https://github.com/NVIDIA/spark-rapids/pull/7080)|[Doc] Document Alluxio does not sync metadata from S3 by default [skip ci]|
+|[#7235](https://github.com/NVIDIA/spark-rapids/pull/7235)|Create tmp path to make python path explicit [skip ci]|
+|[#7084](https://github.com/NVIDIA/spark-rapids/pull/7084)|[Doc]Update databricks doc for 22.12[skip ci]|
+|[#7166](https://github.com/NVIDIA/spark-rapids/pull/7166)|Sync up spark2 explain code|
+|[#6903](https://github.com/NVIDIA/spark-rapids/pull/6903)|Support projectV2 for changelog tooling [skip ci]|
+|[#7203](https://github.com/NVIDIA/spark-rapids/pull/7203)|[Doc]add a Contact Us page at the top-level menu[skip ci]|
+|[#7174](https://github.com/NVIDIA/spark-rapids/pull/7174)|Fix dependencies in jenkins-test script to support DB11.3|
 |[#7034](https://github.com/NVIDIA/spark-rapids/pull/7034)|Read directly from S3 instead of reading from Alluxio caches if files are large and disk is slow|
 |[#7199](https://github.com/NVIDIA/spark-rapids/pull/7199)|Fixes unregisterShuffle bugs in the driver and a missed match for the GpuResolver|
 |[#7156](https://github.com/NVIDIA/spark-rapids/pull/7156)|Add scripts to run integration test on Databricks by leveraging Jenkins parallelism [skip ci]|

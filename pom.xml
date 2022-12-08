@@ -98,8 +98,8 @@
                 </property>
             </activation>
             <properties>
+                <buildver>311</buildver>
                 <spark.version>${spark311.version}</spark.version>
-                <spark.distro>311</spark.distro>
                 <spark.test.version>${spark311.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark311.sources}</spark.shim.sources>
@@ -126,6 +126,7 @@
                 </property>
             </activation>
             <properties>
+                <buildver>312db</buildver>
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
                 <!--
@@ -134,7 +135,6 @@
                      This is to make it easier and not have to change version numbers for each individual dependency
                      and deal with differences between Databricks versions
                 -->
-                <spark.distro>312db</spark.distro>
                 <spark.version>${spark312db.version}</spark.version>
                 <spark.test.version>${spark312db.version}</spark.test.version>
                 <hadoop.client.version>2.7.4</hadoop.client.version>
@@ -162,7 +162,7 @@
                 </property>
             </activation>
             <properties>
-                <spark.distro>312</spark.distro>
+                <buildver>312</buildver>
                 <spark.version>${spark312.version}</spark.version>
                 <spark.test.version>${spark312.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
@@ -189,7 +189,7 @@
                 </property>
             </activation>
             <properties>
-                <spark.distro>313</spark.distro>
+                <buildver>313</buildver>
                 <spark.version>${spark313.version}</spark.version>
                 <spark.test.version>${spark313.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
@@ -216,7 +216,7 @@
                 </property>
             </activation>
             <properties>
-                <spark.distro>314</spark.distro>
+                <buildver>314</buildver>
                 <spark.version>${spark314.version}</spark.version>
                 <spark.test.version>${spark314.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
@@ -243,7 +243,7 @@
                 </property>
             </activation>
             <properties>
-                <spark.distro>320</spark.distro>
+                <buildver>320</buildver>
                 <spark.version>${spark320.version}</spark.version>
                 <spark.test.version>${spark320.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.1</parquet.hadoop.version>
@@ -269,7 +269,7 @@
                 </property>
             </activation>
             <properties>
-                <spark.distro>321</spark.distro>
+                <buildver>321</buildver>
                 <spark.version>${spark321.version}</spark.version>
                 <spark.test.version>${spark321.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
@@ -295,7 +295,7 @@
                 </property>
             </activation>
             <properties>
-                <spark.distro>321cdh</spark.distro>
+                <buildver>321cdh</buildver>
                 <spark.version>${spark321cdh.version}</spark.version>
                 <spark.test.version>${spark321cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
@@ -327,7 +327,7 @@
                 </property>
             </activation>
             <properties>
-                <spark.distro>322</spark.distro>
+                <buildver>322</buildver>
                 <spark.version>${spark322.version}</spark.version>
                 <spark.test.version>${spark322.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
@@ -353,7 +353,7 @@
                 </property>
             </activation>
             <properties>
-                <spark.distro>323</spark.distro>
+                <buildver>323</buildver>
                 <spark.version>${spark323.version}</spark.version>
                 <spark.test.version>${spark323.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
@@ -380,6 +380,7 @@
                 </property>
             </activation>
             <properties>
+                <buildver>321db</buildver>
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
                 <!--
@@ -388,7 +389,6 @@
                      This is to make it easier and not have to change version numbers for each individual dependency
                      and deal with differences between Databricks versions
                 -->
-                <spark.distro>321db</spark.distro>
                 <spark.version>${spark321db.version}</spark.version>
                 <spark.test.version>${spark321db.version}</spark.test.version>
                 <hadoop.client.version>3.3.1</hadoop.client.version>
@@ -415,7 +415,7 @@
                 </property>
             </activation>
             <properties>
-                <spark.distro>330</spark.distro>
+                <buildver>330</buildver>
                 <spark.version>${spark330.version}</spark.version>
                 <spark.test.version>${spark330.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
@@ -441,7 +441,7 @@
                 </property>
             </activation>
             <properties>
-                <spark.distro>331</spark.distro>
+                <buildver>331</buildver>
                 <spark.version>${spark331.version}</spark.version>
                 <spark.test.version>${spark331.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
@@ -467,7 +467,7 @@
                 </property>
             </activation>
             <properties>
-                <spark.distro>332</spark.distro>
+                <buildver>332</buildver>
                 <spark.version>${spark332.version}</spark.version>
                 <spark.test.version>${spark332.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
@@ -493,7 +493,7 @@
                 </property>
             </activation>
             <properties>
-                <spark.distro>340</spark.distro>
+                <buildver>340</buildver>
                 <spark.version>${spark340.version}</spark.version>
                 <spark.test.version>${spark340.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
@@ -519,7 +519,7 @@
                 </property>
             </activation>
             <properties>
-                <spark.distro>330cdh</spark.distro>
+                <buildver>330cdh</buildver>
                 <spark.version>${spark330cdh.version}</spark.version>
                 <spark.test.version>${spark330cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.99.7.1.8.0-801</parquet.hadoop.version>
@@ -601,7 +601,7 @@
         <spark.version>${spark311.version}</spark.version>
         <spark.test.version>${spark.version}</spark.test.version>
         <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
-        <spark.version.classifier>spark${spark.distro}</spark.version.classifier>
+        <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
         <spark-rapids-jni.version>23.02.0-SNAPSHOT</spark-rapids-jni.version>
         <scala.binary.version>2.12</scala.binary.version>
@@ -671,7 +671,7 @@
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
 
         <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/src/generated</spark.shim.dest>
-        <spark.shim.test.sources>${project.basedir}/src/test/${spark.distro}</spark.shim.test.sources>
+        <spark.shim.test.sources>${project.basedir}/src/test/${buildver}</spark.shim.test.sources>
         <symlink.shim.files>true</symlink.shim.files>
     </properties>
 
@@ -861,7 +861,7 @@
 
                                         <fileset dir="${project.basedir}/src" id="shimFileSetId">
                                             <patternset refid="shimSourcePatternSet"/>
-                                            <containsregexp expression='// \{\"spark-distros\":.*\"${spark.distro}\"'/>
+                                            <containsregexp expression='// \{\"spark-distros\":.*\"${buildver}\"'/>
                                         </fileset>
 
                                         <!-- TOOD consider consolitdating this task in jython -->
