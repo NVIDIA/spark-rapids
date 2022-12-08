@@ -117,7 +117,7 @@ case class GpuBroadcastToRowExec(
 
     broadcastMode match {
       case map @ HashedRelationBroadcastMode(_, _) =>
-        map.transform(result)
+        SparkShimImpl.broadcastModeTransform(map, result)
       case _ =>
         result
     }

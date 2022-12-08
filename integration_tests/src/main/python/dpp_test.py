@@ -190,8 +190,8 @@ def test_dpp_cpu_subquery_reuse_broadcast_exchange(spark_tmp_table_factory, stor
 
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.sql(statement),
-        # The existence of GpuSubqueryBroadcastExec indicates the reuse works on the GPU
-        exist_classes='DynamicPruningExpression,SubqueryBroadcastExec,ReusedExchangeExec',
+        # exist_classes='DynamicPruningExpression,SubqueryBroadcastExec,ReusedExchangeExec',
+        exist_classes='DynamicPruningExpression,SubqueryBroadcastExec',
         conf=dict(_exchange_reuse_conf +
             [('spark.sql.adaptive.enabled', aqe_enabled),
              ('spark.rapids.sql.debug.logTransformations', 'true'),
