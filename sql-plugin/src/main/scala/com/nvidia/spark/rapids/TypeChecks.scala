@@ -2232,6 +2232,9 @@ object SupportedOpsForTools {
         val formatLowerCase = format.toString.toLowerCase
         val formatEnabled = formatLowerCase match {
           case "csv" => conf.isCsvEnabled && conf.isCsvReadEnabled
+          case "delta" =>
+            // Delta Lake reads of data files appear as a normal Parquet read
+            conf.isParquetEnabled && conf.isParquetReadEnabled
           case "parquet" => conf.isParquetEnabled && conf.isParquetReadEnabled
           case "orc" => conf.isOrcEnabled && conf.isOrcReadEnabled
           case "json" => conf.isJsonEnabled && conf.isJsonReadEnabled

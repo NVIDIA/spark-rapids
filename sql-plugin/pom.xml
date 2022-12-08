@@ -57,6 +57,10 @@
             <artifactId>flatbuffers-java</artifactId>
         </dependency>
         <dependency>
+            <groupId>io.delta</groupId>
+            <artifactId>delta-core_2.12</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.apache.iceberg</groupId>
             <artifactId>iceberg-api</artifactId>
         </dependency>
@@ -313,7 +317,13 @@
                 </dependency>
                 <dependency>
                     <groupId>org.json4s</groupId>
-                    <artifactId>JsonAST</artifactId>
+                    <artifactId>json4s-ast_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.json4s</groupId>
+                    <artifactId>json4s-core_${scala.binary.version}</artifactId>
                     <version>${spark.version}</version>
                     <scope>provided</scope>
                 </dependency>
@@ -546,6 +556,7 @@
                                         <include name="320until330-noncdh/*"/>
                                         <include name="320until330-nondb/*"/>
                                         <include name="320until340-all/*"/>
+                                        <include name="delta-lake-common/*"/>
                                         <include name="post320-treenode/*"/>
                                     </patternset>
                                     <include name="320/*"/>

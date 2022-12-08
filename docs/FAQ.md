@@ -355,9 +355,9 @@ for the RAPIDS plugin.
 
 ### Are table layout formats supported?
 
-Yes, there is GPU support for Delta Lake read 
-and [Apache Iceberg 0.13 read](./additional-functionality/iceberg-support.md).  
-Write operations will fall back to the CPU.
+Yes, there is GPU support for [Delta Lake](./additional-functionality/delta-lake-support.md) and
+[Apache Iceberg](./additional-functionality/iceberg-support.md). See the additional support
+documentation for specifics on the operations supported for these formats.
 
 ### How many tasks can I run per executor? How many should I run per executor?
 
