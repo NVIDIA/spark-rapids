@@ -856,14 +856,15 @@
                                         <pathconvert refid="missingShimHeaderFileSetId"
                                             property="missingShimHeadersFilesStr" pathsep=" "/>
 
-                                        <!-- <fail if="missingShimHeadersDetected">Found shim files without a shim header
-                                             {"spark-distros":["buildver1",...]} ${missingShimHeadersFilesStr}</fail> -->
+                                        <fail if="missingShimHeadersDetected">Found shim files without a shim header
+                                             {"spark-distros":["buildver1",...]} ${missingShimHeadersFilesStr}</fail>
 
                                         <fileset dir="${project.basedir}/src" id="shimFileSetId">
                                             <patternset refid="shimSourcePatternSet"/>
                                             <containsregexp expression='// \{\"spark-distros\":.*\"${spark.distro}\"'/>
                                         </fileset>
 
+                                        <!-- TOOD consider consolitdating this task in jython -->
                                         <script language="jython" src="${spark.rapids.source.basedir}/build/validate-shim-comments.py"/>
 
                                         <mkdir dir="${spark.shim.dest}"/>
