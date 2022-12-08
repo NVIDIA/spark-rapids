@@ -15,7 +15,7 @@
  */
 
 // scalastyle:off
-// {"spark-distros":[330]}
+// {"spark-distros":["330"]}
 // scalastyle:on
 package com.nvidia.spark.rapids.shims
 

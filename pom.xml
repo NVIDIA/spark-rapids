@@ -848,7 +848,6 @@
                                         </fileset>
                                         <!-- TOOD consider consolitdating this task in jython -->
                                         <script language="jython" src="${spark.rapids.source.basedir}/build/validate-shim-comments.py"/>
-
                                         <fileset dir="${project.basedir}/src" id="shimFileSetId">
                                             <patternset refid="shimSourcePatternSet"/>
                                             <containsregexp expression='// \{\"spark-distros\":.*\"${buildver}\"'/>
