@@ -144,6 +144,7 @@ object GpuParquetFileFormat {
     compressionType match {
       case "NONE" | "UNCOMPRESSED" => Some(CompressionType.NONE)
       case "SNAPPY" => Some(CompressionType.SNAPPY)
+      case "ZSTD" => Some(CompressionType.ZSTD)
       case _ => None
     }
   }
@@ -321,29 +322,28 @@ class GpuParquetWriter(
             cv.castTo(DType.TIMESTAMP_MILLISECONDS)
 
           case `typeInt96` =>
-            withResource(Scalar.fromLong(Long.MaxValue / 1000)) { upper =>
+            val inRange = withResource(Scalar.fromLong(Long.MaxValue / 1000)) { upper =>
               withResource(Scalar.fromLong(Long.MinValue / 1000)) { lower =>
                 withResource(cv.bitCastTo(DType.INT64)) { int64 =>
                   withResource(int64.greaterOrEqualTo(upper)) { a =>
                     withResource(int64.lessOrEqualTo(lower)) { b =>
-                      withResource(a.or(b)) { aOrB =>
-                        withResource(aOrB.any()) { any =>
-                          if (any.isValid && any.getBoolean) {
-                            // Its the writer's responsibility to close the input batch when this
-                            // exception is thrown.
-                            throw new IllegalArgumentException("INT96 column contains one " +
-                              "or more values that can overflow and will result in data " +
-                              "corruption. Please set " +
-                              "`spark.rapids.sql.format.parquet.writer.int96.enabled` to false" +
-                              " so we can fallback on CPU for writing parquet but still take " +
-                              "advantage of parquet read on the GPU.")
-                          }
-                        }
-                      }
+                      a.or(b)
                     }
                   }
                 }
               }
+            }
+            val anyInRange = withResource(inRange)(_.any())
+            withResource(anyInRange) { _ =>
+              require(!(anyInRange.isValid && anyInRange.getBoolean),
+                // Its the writer's responsibility to close the input batch when this
+                // exception is thrown.
+                "INT96 column contains one " +
+                "or more values that can overflow and will result in data " +
+                "corruption. Please set " +
+                "`spark.rapids.sql.format.parquet.writer.int96.enabled` to false " +
+                "so we can fallback on CPU for writing parquet but still take " +
+                "advantage of parquet read on the GPU.")
             }
             cv.copyToColumnVector() /* the input is unchanged */
 
@@ -374,8 +374,8 @@ class GpuParquetWriter(
    * partitioned tables, dynamic partition columns are not included in columns to be written.
    * NOTE: It is the writer's responsibility to close the batch.
    */
-  override def write(batch: ColumnarBatch,
-                     statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
+  override def writeAndClose(batch: ColumnarBatch,
+                             statsTrackers: Seq[ColumnarWriteTaskStatsTracker]): Unit = {
     val newBatch = withResource(batch) { batch =>
       val transformedCols = GpuColumnVector.extractColumns(batch).safeMap { cv =>
         new GpuColumnVector(cv.dataType, deepTransformColumn(cv.getBase, cv.dataType))
@@ -383,7 +383,7 @@ class GpuParquetWriter(
       }
       new ColumnarBatch(transformedCols)
     }
-    super.write(newBatch, statsTrackers)
+    super.writeAndClose(newBatch, statsTrackers)
   }
 
   override val tableWriter: TableWriter = {

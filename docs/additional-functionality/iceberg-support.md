@@ -15,6 +15,9 @@ This document details the Apache Iceberg features that are supported.
 The RAPIDS Accelerator supports Apache Iceberg 0.13.x. Earlier versions of Apache Iceberg are
 not supported.
 
+> **Note!**
+> Apache Iceberg in Databricks is not supported by the RAPIDS Accelerator.
+
 ## Reading Tables
 
 ### Metadata Queries
@@ -60,7 +63,7 @@ The RAPIDS Accelerator does not support Apache Iceberg tables using the Avro dat
 ### Reader Split Size
 
 The maximum number of bytes to pack into a single partition when reading files on Spark is normally
-controlled by the config `spark.files.maxPartitionBytes`. But on Iceberg that doesn't apply.
+controlled by the config `spark.sql.files.maxPartitionBytes`. But on Iceberg that doesn't apply.
 Iceberg has its own configs to control the split size. See the read options in the
  [Iceberg Runtime Configuration](https://iceberg.apache.org/docs/latest/spark-configuration/#runtime-configuration)
 documentation for details. One example is to use the `split-size` reader option like:

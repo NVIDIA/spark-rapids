@@ -16,15 +16,22 @@
 
 package com.nvidia.spark.rapids.tool.planparser
 
+import java.io.{File, PrintWriter}
+
+import scala.collection.mutable
+import scala.io.Source
+import scala.util.control.NonFatal
+
 import com.nvidia.spark.rapids.tool.{EventLogPathProcessor, ToolTestUtils}
 import com.nvidia.spark.rapids.tool.qualification._
 import org.apache.hadoop.conf.Configuration
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
+import org.scalatest.exceptions.TestFailedException
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SparkSession, TrampolineUtil}
 import org.apache.spark.sql.expressions.Window
-import org.apache.spark.sql.functions.{broadcast, ceil, col, collect_list, count, explode, hex, round, row_number, sum}
+import org.apache.spark.sql.functions.{ceil, col, collect_list, count, explode, floor, hex, json_tuple, round, row_number, sum}
 import org.apache.spark.sql.rapids.tool.ToolUtils
 import org.apache.spark.sql.rapids.tool.qualification.QualificationAppInfo
 import org.apache.spark.sql.types.StringType
@@ -91,6 +98,61 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     val topExecInfo = plans.flatMap(_.execInfo)
     topExecInfo.flatMap { e =>
       e.children.getOrElse(Seq.empty) :+ e
+    }
+  }
+
+  test("Error parser does not cause entire app to fail") {
+    // The purpose of this test is to make sure that the SQLParser won't trigger an exception that
+    // causes the entire app analysis to fail.
+    // In order to simulate unexpected scenarios, the test modifies the eventlog on the fly by
+    // injecting faulty expressions.
+    //
+    // For example:
+    //    Filter (((value#8 <> 100) AND (value#8 > 50)) OR (value#8 = 0))
+    //    One of the predicates is converted from "<" to "<>".
+    //    The latter is an invalid predicate causing the parser to throw a scala-match error.
+    TrampolineUtil.withTempDir { eventLogDir =>
+      // generate the original eventlog
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
+        "WholeStageFilterProject") { spark =>
+        import spark.implicits._
+        val df = spark.sparkContext.makeRDD(1 to 100, 3).toDF
+        val df2 = spark.sparkContext.makeRDD(1 to 100, 3).toDF
+        df.select($"value" as "a")
+          .join(df2.select($"value" as "b"), $"a" === $"b")
+          .filter("(((b < 100) AND (a > 50)) OR (a = 0))")
+          .sort($"b")
+      }
+      // create a temporary file to write the modified events
+      val faultyEventlog = new File(s"$eventLogDir/faulty_eventlog")
+      val pWriter = new PrintWriter(faultyEventlog)
+      val bufferedSource = Source.fromFile(eventLog)
+      try {
+        bufferedSource.getLines.map( l =>
+          if (l.contains("SparkListenerSQLExecutionStart")) {
+            l.replaceAll("value#2 <", "value#2 <>")
+          } else {
+            l
+          }
+        ).foreach(modifiedLine => pWriter.println(modifiedLine))
+      } finally {
+        bufferedSource.close()
+        pWriter.close()
+      }
+      // start processing the faulty eventlog.
+      val pluginTypeChecker = new PluginTypeChecker()
+      val app = createAppFromEventlog(faultyEventlog.getAbsolutePath)
+      assert(app.sqlPlans.size == 1)
+      try {
+        app.sqlPlans.foreach { case (sqlID, plan) =>
+          SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, "",
+            pluginTypeChecker, app)
+        }
+      } catch {
+        case NonFatal(e) =>
+          throw new TestFailedException(
+            s"The SQLParser crashed while processing incorrect expression", e, 0)
+      }
     }
   }
 
@@ -343,10 +405,11 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
         val df1 = spark.sparkContext.makeRDD(1 to 1000, 6).toDF
         df1.coalesce(1).collect // Coalesce
         spark.range(10).where(col("id") === 2).collect // Range
-        df1.orderBy("value").limit(10).collect // TakeOrderedAndProject
+        // TakeOrderedAndProject
+        df1.orderBy($"value", ceil($"value"), round($"value")).limit(10).collect
         df1.limit(10).collect // CollectLimit
         df1.union(df1).collect // Union
-        df1.rollup(col("value")).agg(col("value")).collect // Expand
+        df1.rollup(ceil(col("value"))).agg(ceil(col("value"))).collect // Expand
         df1.sample(0.1) // Sample
       }
       val pluginTypeChecker = new PluginTypeChecker()
@@ -395,28 +458,31 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
-  test("Parse Execs - BroadcastHashJoin, BroadcastNestedLoopJoin and ShuffledHashJoin") {
+  test("Parse Execs and supported exprs - BroadcastHashJoin, " +
+    "BroadcastNestedLoopJoin and ShuffledHashJoin") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
         import spark.implicits._
-        val df1 = spark.sparkContext.parallelize(List(1, 2, 3, 4)).toDF
-        val df2 = spark.sparkContext.parallelize(List(4, 5, 6, 2)).toDF
+        val df1 = Seq((1, "ABC", 1.2), (2, "DEF", 2.3), (3, "GHI", 1.4)).toDF(
+          "emp_id", "name", "dept")
+        val df2 = Seq(("Fin", 1.2, "ABC"), ("IT", 2.3, "DEF")).toDF(
+          "dept_name", "dept_id", "name")
         // BroadcastHashJoin
-        df1.join(broadcast(df2), "value").collect
+        df1.join(df2, df1("name") === df2("name") &&
+          ceil(df1("dept")) === ceil(df2("dept_id")), "left_outer").collect
         // ShuffledHashJoin
         df1.createOrReplaceTempView("t1")
         df2.createOrReplaceTempView("t2")
-        spark.sql("SELECT /*+ SHUFFLE_HASH(t1) */ * FROM t1 INNER JOIN t2 ON " +
-            "t1.value = t2.value").collect
+        spark.sql("select /*+ SHUFFLE_HASH(t1) */ * from t1 " +
+          "INNER JOIN t2 ON t1.name = t2.name AND CEIL(t1.DEPT) = CEIL(t2.DEPT_ID)").collect
         // BroadcastNestedLoopJoin
-        val nums = spark.range(2)
-        val letters = ('a' to 'c').map(_.toString).toDF("letter")
-        nums.crossJoin(letters)
+        df1.join(df2, ceil(df1("dept")) <= ceil(df2("dept_id"))
+          && floor(df1("dept")) <= floor(df2("dept_id")), "inner")
       }
+
       val pluginTypeChecker = new PluginTypeChecker()
       val app = createAppFromEventlog(eventLog)
       assert(app.sqlPlans.size == 5)
-      val supportedExecs = Array("BroadcastHashJoin", "BroadcastNestedLoopJoin", "ShuffledHashJoin")
       val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
         SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, "", pluginTypeChecker, app)
       }
@@ -427,6 +493,70 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       assertSizeAndSupported(1, broadcastNestedJoin)
       val shj = allExecInfo.filter(_.exec == "ShuffledHashJoin")
       assertSizeAndSupported(1, shj)
+    }
+  }
+
+  test("Expressions not supported in  BroadcastHashJoin, BroadcastNestedLoopJoin " +
+    "and ShuffledHashJoin") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
+        import spark.implicits._
+        val df1 = Seq((1, "ABC", 1.2), (2, "DEF", 2.3), (3, "GHI", 1.4)).toDF(
+          "emp_id", "name", "dept")
+        val df2 = Seq(("Fin", 1.2, "ABC"), ("IT", 2.3, "DEF")).toDF(
+          "dept_name", "dept_id", "name")
+        // BroadcastHashJoin
+        // hex is not supported in GPU yet.
+        df1.join(df2, df1("name") === df2("name") &&
+          hex(df1("dept")) === hex(df2("dept_id")), "left_outer").collect
+        // ShuffledHashJoin
+        df1.createOrReplaceTempView("t1")
+        df2.createOrReplaceTempView("t2")
+        spark.sql("select /*+ SHUFFLE_HASH(t1) */ * from t1 " +
+          "INNER JOIN t2 ON t1.name = t2.name AND HEX(t1.DEPT) = HEX(t2.DEPT_ID)").collect
+        // BroadcastNestedLoopJoin
+        df1.join(df2, ceil(df1("dept")) <= ceil(df2("dept_id"))
+          && hex(df1("dept")) <= hex(df2("dept_id")), "inner")
+      }
+
+      val pluginTypeChecker = new PluginTypeChecker()
+      val app = createAppFromEventlog(eventLog)
+      assert(app.sqlPlans.size == 5)
+      val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+        SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, "", pluginTypeChecker, app)
+      }
+      val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
+      val bhj = allExecInfo.filter(_.exec == "BroadcastHashJoin")
+      assertSizeAndNotSupported(1, bhj)
+      val broadcastNestedJoin = allExecInfo.filter(_.exec == "BroadcastNestedLoopJoin")
+      assertSizeAndNotSupported(1, broadcastNestedJoin)
+      val shj = allExecInfo.filter(_.exec == "ShuffledHashJoin")
+       assertSizeAndNotSupported(1, shj)
+    }
+  }
+
+  test("Expressions not supported in SortMergeJoin") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
+        import spark.implicits._
+        spark.conf.set("spark.sql.autoBroadcastJoinThreshold", "-1") // force SortMergeJoin
+        val df1 = Seq((1, "ABC", 1.2), (2, "DEF", 2.3), (3, "GHI", 1.4)).toDF(
+          "emp_id", "name", "dept")
+        val df2 = Seq(("Fin", 1.2, "ABC"), ("IT", 2.3, "DEF")).toDF(
+          "dept_name", "dept_id", "name")
+        // hex is not supported in GPU yet.
+        df1.join(df2, df1("name") === df2("name") &&
+          hex(df1("dept")) === hex(df2("dept_id")), "left_outer")
+      }
+      val pluginTypeChecker = new PluginTypeChecker()
+      val app = createAppFromEventlog(eventLog)
+      assert(app.sqlPlans.size == 1)
+      val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+        SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, "", pluginTypeChecker, app)
+      }
+      val allExecInfo = getAllExecsFromPlan(parsedPlans.toSeq)
+      val smj = allExecInfo.filter(_.exec == "SortMergeJoin")
+      assertSizeAndNotSupported(1, smj)
     }
   }
 
@@ -562,6 +692,76 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
     }
   }
 
+  test("Expression not supported in Expand") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
+        "Expressions in ExpandExec") { spark =>
+        import spark.implicits._
+        val df = Seq(("foo", 1L, 1.2), ("foo", 2L, 2.2), ("bar", 2L, 3.2),
+          ("bar", 2L, 4.2)).toDF("x", "y", "z")
+        df.cube($"x", ceil($"y"), hex($"z")).count // hex is not supported in GPU yet.
+      }
+      val pluginTypeChecker = new PluginTypeChecker()
+      val app = createAppFromEventlog(eventLog)
+      assert(app.sqlPlans.size == 1)
+      app.sqlPlans.foreach { case (sqlID, plan) =>
+        val planInfo = SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, "",
+          pluginTypeChecker, app)
+        val wholeStages = planInfo.execInfo.filter(_.exec.contains("WholeStageCodegen"))
+        assert(wholeStages.size == 2)
+        val allChildren = wholeStages.flatMap(_.children).flatten
+        val filters = allChildren.filter(_.exec == "Expand")
+        assertSizeAndNotSupported(1, filters)
+      }
+    }
+  }
+
+  test("Expression not supported in TakeOrderedAndProject") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
+        "Expressions in TakeOrderedAndProject") { spark =>
+        import spark.implicits._
+        val df = Seq(("foo", 1L, 1.2), ("foo", 2L, 2.2), ("bar", 2L, 3.2),
+          ("bar", 2L, 4.2)).toDF("x", "y", "z")
+        df.orderBy(hex($"y"), $"z").limit(2) // hex is not supported in GPU yet.
+      }
+      val pluginTypeChecker = new PluginTypeChecker()
+      val app = createAppFromEventlog(eventLog)
+      assert(app.sqlPlans.size == 1)
+      val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+        SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, "", pluginTypeChecker, app)
+      }
+      val execInfo = getAllExecsFromPlan(parsedPlans.toSeq)
+      val takeOrderedAndProject = execInfo.filter(_.exec == "TakeOrderedAndProject")
+      assertSizeAndNotSupported(1, takeOrderedAndProject)
+    }
+  }
+
+  test("Expression not supported in Generate") {
+    TrampolineUtil.withTempDir { eventLogDir =>
+      val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir,
+        "Expressions in Generate") { spark =>
+        import spark.implicits._
+        val jsonString =
+          """{"Zipcode":123,"ZipCodeType":"STANDARD",
+            |"City":"ABCDE","State":"YZ"}""".stripMargin
+        val data = Seq((1, jsonString))
+        val df = data.toDF("id", "jsonValues")
+        //json_tuple which is called from GenerateExec is not supported in GPU yet.
+        df.select(col("id"), json_tuple(col("jsonValues"), "Zipcode", "ZipCodeType", "City"))
+      }
+      val pluginTypeChecker = new PluginTypeChecker()
+      val app = createAppFromEventlog(eventLog)
+      assert(app.sqlPlans.size == 1)
+      val parsedPlans = app.sqlPlans.map { case (sqlID, plan) =>
+        SQLPlanParser.parseSQLPlan(app.appId, plan, sqlID, "", pluginTypeChecker, app)
+      }
+      val execInfo = getAllExecsFromPlan(parsedPlans.toSeq)
+      val generateExprs = execInfo.filter(_.exec == "Generate")
+      assertSizeAndNotSupported(1, generateExprs)
+    }
+  }
+
   test("Expressions supported in SortAggregateExec") {
     TrampolineUtil.withTempDir { eventLogDir =>
       val (eventLog, _) = ToolTestUtils.generateEventLog(eventLogDir, "sqlmetric") { spark =>
@@ -690,6 +890,48 @@ class SQLPlanParserSuite extends FunSuite with BeforeAndAfterEach with Logging {
       val execInfo = getAllExecsFromPlan(parsedPlans.toSeq)
       val hashAggregate = execInfo.filter(_.exec == "HashAggregate")
       assertSizeAndSupported(2, hashAggregate, 4.5)
+    }
+  }
+
+  test("Parsing Conditional Expressions") {
+    // scalastyle:off line.size.limit
+    val expressionsMap: mutable.HashMap[String, Array[String]] = mutable.HashMap(
+      "(((lower(partition_act#90) = moduleview) && (isnotnull(productarr#22) && NOT (productarr#22=[]))) || (lower(moduletype#13) = saveforlater))" ->
+        Array("lower", "isnotnull", "EqualTo", "And",  "Not", "Or"),
+      "(IsNotNull(c_customer_id))" ->
+        Array("IsNotNull"),
+      "(isnotnull(names#15) AND StartsWith(names#15, OR))" ->
+        Array("isnotnull", "And", "StartsWith"),
+      "((isnotnull(s_state#68) AND (s_state#68 = TN)) OR (hex(cast(value#0 as bigint)) = B))" ->
+        Array("isnotnull", "And", "Or", "hex", "EqualTo"),
+      // Test that AND followed by '(' without space can be parsed
+      "((isnotnull(s_state#68) AND(s_state#68 = TN)) OR (hex(cast(value#0 as bigint)) = B))" ->
+        Array("isnotnull", "And", "Or", "hex", "EqualTo"),
+      "(((isnotnull(d_year#498) AND isnotnull(d_moy#500)) AND (d_year#498 = 1998)) AND (d_moy#500 = 12))" ->
+        Array("isnotnull", "And", "EqualTo"),
+      "IsNotNull(d_year) AND IsNotNull(d_moy) AND EqualTo(d_year,1998) AND EqualTo(d_moy,12)" ->
+        Array("IsNotNull", "And", "EqualTo"),
+      // check that a predicate with a single variable name is fine
+      "flagVariable" ->
+        Array(),
+      // check that a predicate with a single function call
+      "isnotnull(c_customer_sk#412)" ->
+        Array("isnotnull"),
+      "((substr(ca_zip#457, 1, 5) IN (85669,86197,88274,83405,86475,85392,85460,80348,81792) OR ca_state#456 IN (CA,WA,GA)) OR (cs_sales_price#20 > 500.00))" ->
+        Array("substr", "In", "Or", "GreaterThan"),
+      // test the operator is at the beginning of expression and not followed by space
+      "NOT(isnotnull(d_moy))" ->
+        Array("Not", "isnotnull")
+    )
+    // scalastyle:on line.size.limit
+    for ((condExpr, expectedExpression) <- expressionsMap) {
+      val parsedExpressionsMine = SQLPlanParser.parseConditionalExpressions(condExpr)
+      val currOutput = parsedExpressionsMine.sorted
+      val expectedOutput = expectedExpression.sorted
+      assert(currOutput sameElements expectedOutput,
+        s"The parsed expressions are not as expected. Expression: ${condExpr}, " +
+          s"Expected: ${expectedOutput.mkString}, " +
+          s"Output: ${currOutput.mkString}")
     }
   }
 }

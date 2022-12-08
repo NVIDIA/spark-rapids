@@ -25,7 +25,7 @@ import scala.collection.mutable
 import com.nvidia.spark.rapids.{GpuAlias, GpuCaseWhen, GpuCoalesce, GpuExpression, GpuIf, GpuLeafExpression, GpuUnevaluable}
 
 import org.apache.spark.TaskContext
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, CaseWhen, Coalesce, Expression, If, LeafExpression, PlanExpression}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, AttributeSet, CaseWhen, Coalesce, Expression, If, LeafExpression, PlanExpression}
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
 import org.apache.spark.sql.catalyst.expressions.objects.LambdaVariable
 
@@ -300,7 +300,7 @@ object GpuEquivalentExpressions {
   private def recurseUpdateTiers(exprTiers: Seq[Seq[Expression]],
       updatedTiers: Seq[Seq[Expression]],
       substitutionMap: mutable.HashMap[Expression, Expression],
-      startIndex: Int):Seq[Seq[Expression]] = {
+      startIndex: Int): Seq[Seq[Expression]] = {
     exprTiers match {
       case Nil => updatedTiers
       case tier :: tail => {
@@ -330,7 +330,7 @@ object GpuEquivalentExpressions {
     }
   }
 
-  def getExprTiers(expressions : Seq[Expression]): Seq[Seq[Expression]] = {
+  def getExprTiers(expressions: Seq[Expression]): Seq[Seq[Expression]] = {
     // Get tiers of common expressions
     val expressionTiers = recurseCommonExpressions(expressions, Seq(expressions))
     val substitutionMap = mutable.HashMap.empty[Expression, Expression]
@@ -338,26 +338,34 @@ object GpuEquivalentExpressions {
     recurseUpdateTiers(expressionTiers, Seq.empty, substitutionMap, 0)
   }
 
+  // Determine which of the inputAttrs are needed for remaining tiers
+  // Filter the inputAttrs using this set to determine which ones
+  // we need for the next tier, and to maintain the ordering.
+  // Exposed for testing.
+  private[sql] def getAttrsForNextTier(inputAttrs: Seq[Attribute],
+      exprTiers: Seq[Seq[Expression]]): Seq[Attribute] = {
+    val needAttrs = exprTiers.tail match {
+      case Nil => AttributeSet.empty
+      case _ => AttributeSet(exprTiers.tail.flatten)
+    }
+    val curAttrs = exprTiers.head.filter(e => e.isInstanceOf[GpuAlias]).
+        map(_.asInstanceOf[GpuAlias].toAttribute)
+    (inputAttrs ++ curAttrs).filter(a => needAttrs.contains(a))
+  }
+
   // Given expression tiers as created by getExprTiers and a set of input attributes,
   // return the tiers of input attributes that correspond with the expression tiers.
   def getInputTiers(exprTiers: Seq[Seq[Expression]], inputAttrs: AttributeSeq):
   Seq[AttributeSeq] = {
-    def recurse(et: Seq[Seq[Expression]], inputs: AttributeSeq): Seq[AttributeSeq] = {
-      et match {
-        case Nil => Nil
-        case s :: tail => {
-          val newInputs = if (tail.isEmpty) {
-            Nil
-          } else {
-            s.filter(e => e.isInstanceOf[GpuAlias]).map(_.asInstanceOf[GpuAlias].toAttribute)
-          }
-          val attrSeq = AttributeSeq(inputs.attrs ++ newInputs)
-          val recursionResult = recurse(tail, attrSeq)
-          Seq(inputs) ++ recursionResult
-        }
-      }
+    @tailrec
+    def recurse(exprs: Seq[Seq[Expression]], inputs: AttributeSeq,
+        attrTiers: Seq[AttributeSeq]): Seq[AttributeSeq] = exprs match {
+      case Nil => attrTiers
+      case _ :: tail =>
+        val nextAttrs = getAttrsForNextTier(inputs.attrs, exprs)
+        recurse(tail, AttributeSeq(nextAttrs), attrTiers ++ Seq(inputs))
     }
-    recurse(exprTiers, inputAttrs)
+    recurse(exprTiers, inputAttrs, Seq.empty)
   }
 }
 

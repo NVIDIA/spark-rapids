@@ -257,7 +257,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       }
       return new HostColumnVector.StructType(nullable, children);
     } else if (spark instanceof BinaryType) {
-      return new HostColumnVector.ListType(nullable, convertFrom(DataTypes.ByteType, false));
+      return new HostColumnVector.ListType(
+          nullable, new HostColumnVector.BasicType(false, DType.UINT8));
     } else {
       // Only works for basic types
       return new HostColumnVector.BasicType(nullable, getNonNestedRapidsType(spark));
@@ -268,7 +269,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     protected StructField[] fields;
 
     public abstract void close();
-    public abstract void copyColumnar(ColumnVector cv, int colNum, boolean nullable, int rows);
+
+    public abstract void copyColumnar(ColumnVector cv, int colNum, int rows);
 
     protected abstract ColumnVector buildAndPutOnDevice(int builderIndex);
     protected abstract int buildersLength();
@@ -326,10 +328,12 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       }
     }
 
+    @Override
     protected int buildersLength() {
       return builders.length;
     }
 
+    @Override
     protected ColumnVector buildAndPutOnDevice(int builderIndex) {
       ai.rapids.cudf.ColumnVector cv = builders[builderIndex].buildAndPutOnDevice();
       GpuColumnVector gcv = new GpuColumnVector(fields[builderIndex].dataType(), cv);
@@ -338,7 +342,8 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return gcv;
     }
 
-    public void copyColumnar(ColumnVector cv, int colNum, boolean ignored, int rows) {
+    @Override
+    public void copyColumnar(ColumnVector cv, int colNum, int rows) {
       referenceHolders[colNum].addReferences(
         HostColumnarToGpu.arrowColumnarCopy(cv, builder(colNum), rows)
       );
@@ -391,18 +396,21 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       }
     }
 
-    public void copyColumnar(ColumnVector cv, int colNum, boolean nullable, int rows) {
-      HostColumnarToGpu.columnarCopy(cv, builder(colNum), rows);
+    @Override
+    public void copyColumnar(ColumnVector cv, int colNum, int rows) {
+      HostColumnarToGpu.columnarCopy(cv, builder(colNum), fields[colNum].dataType(), rows);
     }
 
     public ai.rapids.cudf.HostColumnVector.ColumnBuilder builder(int i) {
       return builders[i];
     }
 
+    @Override
     protected int buildersLength() {
       return builders.length;
     }
 
+    @Override
     protected ColumnVector buildAndPutOnDevice(int builderIndex) {
       ai.rapids.cudf.ColumnVector cv = builders[builderIndex].buildAndPutOnDevice();
       GpuColumnVector gcv = new GpuColumnVector(fields[builderIndex].dataType(), cv);
@@ -489,6 +497,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     } else if (type instanceof StringType) {
       return DType.STRING;
     } else if (type instanceof BinaryType) {
+      // FIXME: this should not be here, we should be able remove or throw
       return DType.LIST;
     } else if (type instanceof NullType) {
       // INT8 is used for both in this case
@@ -718,7 +727,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       }
       try (ColumnView tmp = cv.getChildColumnView(0)) {
         DType tmpType = tmp.getType();
-        return tmpType.equals(DType.INT8) || tmpType.equals(DType.UINT8);
+        return tmpType.equals(DType.UINT8);
       }
     } else {
       // Unexpected type
@@ -994,6 +1003,29 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       }
     }
     ColumnarBatch ret = new ColumnarBatch(columns.toArray(new ColumnVector[columns.size()]), numRows);
+    return incRefCounts(ret);
+  }
+
+  /**
+   * Remove columns from the batch.  The order of the remaining columns is preserved.
+   * dropList[] has an entry for each column in the batch which indicates whether the column should
+   * be skipped.  The reference counts are incremented for the retained columns.
+   * <br/>
+   * For example if we had <pre>dropColumns({A, B, C, D}, {true, false, true, false})</pre>
+   * The result would be a batch with <pre>{B, D}</pre>
+   */
+  public static ColumnarBatch dropColumns(ColumnarBatch cb, boolean[] dropList) {
+    int numRows = cb.numRows();
+    int numColumns = cb.numCols();
+    assert numColumns == dropList.length;
+    ArrayList<ColumnVector> columns = new ArrayList<>();
+    for (int i = 0; i < numColumns; i++) {
+      if (dropList[i] == false) {
+        columns.add(cb.column(i));
+      }
+    }
+    ColumnarBatch ret =
+        new ColumnarBatch(columns.toArray(new ColumnVector[columns.size()]),numRows);
     return incRefCounts(ret);
   }
 

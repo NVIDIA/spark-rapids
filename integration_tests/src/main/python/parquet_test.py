@@ -70,19 +70,29 @@ parquet_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_
 original_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'PERFILE'}
 multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED'}
 coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING'}
+coalesce_parquet_file_reader_multithread_filter_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
+        'spark.rapids.sql.coalescing.reader.numFilterParallel': '2',
+        'spark.rapids.sql.reader.chunked': True}
 coalesce_parquet_file_reader_multithread_filter_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
-        'spark.rapids.sql.coalescing.reader.numFilterParallel': '2'}
+        'spark.rapids.sql.coalescing.reader.numFilterParallel': '2',
+        'spark.rapids.sql.reader.chunked': False}
 native_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'PERFILE',
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
 native_multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
 native_coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
+native_coalesce_parquet_file_reader_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
+        'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE',
+        'spark.rapids.sql.reader.chunked': True}
+
 
 # For now the native configs are not compatible with spark.sql.parquet.writeLegacyFormat written files
 # for nested types
 reader_opt_confs_native = [native_parquet_file_reader_conf, native_multithreaded_parquet_file_reader_conf,
-                    native_coalesce_parquet_file_reader_conf]
+                    native_coalesce_parquet_file_reader_conf,
+                    coalesce_parquet_file_reader_multithread_filter_chunked_conf,
+                    native_coalesce_parquet_file_reader_chunked_conf]
 
 reader_opt_confs_no_native = [original_parquet_file_reader_conf, multithreaded_parquet_file_reader_conf,
                     coalesce_parquet_file_reader_conf, coalesce_parquet_file_reader_multithread_filter_conf]
@@ -92,7 +102,8 @@ reader_opt_confs = reader_opt_confs_native + reader_opt_confs_no_native
 
 @pytest.mark.parametrize('parquet_gens', [[byte_gen, short_gen, int_gen, long_gen]], ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df])
-@pytest.mark.parametrize('reader_confs', [coalesce_parquet_file_reader_multithread_filter_conf])
+@pytest.mark.parametrize('reader_confs', [coalesce_parquet_file_reader_multithread_filter_conf,
+    coalesce_parquet_file_reader_multithread_filter_chunked_conf])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_read_coalescing_multiple_files(spark_tmp_path, parquet_gens, read_func, reader_confs, v1_enabled_list):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
@@ -111,6 +122,25 @@ def test_parquet_read_coalescing_multiple_files(spark_tmp_path, parquet_gens, re
     assert_gpu_and_cpu_are_equal_collect(read_func(data_path),
             conf=all_confs)
 
+
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_parquet_read_avoid_coalesce_incompatible_files(spark_tmp_path, v1_enabled_list):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    def setup_table(spark):
+        df1 = spark.createDataFrame([(("a", "b"),)], "x: struct<y: string, z: string>")
+        df1.write.parquet(data_path + "/data1")
+        df2 = spark.createDataFrame([(("a",),)], "x: struct<z: string>")
+        df2.write.parquet(data_path + "/data2")
+    with_cpu_session(setup_table, conf=rebase_write_corrected_conf)
+    # Configure confs to read as a single task
+    all_confs = copy_and_update(coalesce_parquet_file_reader_multithread_filter_conf, {
+        "spark.sql.sources.useV1SourceList": v1_enabled_list,
+        "spark.sql.files.minPartitionNum": "1"})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read\
+            .schema("x STRUCT<y: string, z: string>")\
+            .option("recursiveFileLookup", "true").parquet(data_path),
+        conf=all_confs)
 
 @pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])

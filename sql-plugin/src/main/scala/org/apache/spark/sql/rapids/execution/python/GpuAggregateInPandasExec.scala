@@ -251,8 +251,8 @@ case class GpuAggregateInPandasExec(
           // The whole group data should be written in a single call, so here is unlimited
           Int.MaxValue,
           spillCallback.semaphoreWaitTime,
-          () => queue.finish(),
-          StructType.fromAttributes(pyOutAttributes))
+          StructType.fromAttributes(pyOutAttributes),
+          () => queue.finish())
 
         val pyOutputIterator = pyRunner.compute(pyInputIter, context.partitionId(), context)
 

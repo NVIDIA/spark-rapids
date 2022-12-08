@@ -178,8 +178,12 @@ class SerializeConcatHostBuffersDeserializeBatch(
 
   private def writeObject(out: ObjectOutputStream): Unit = {
     Option(batchInternal).map { spillable =>
-      val table = withResource(spillable.getColumnarBatch())(GpuColumnVector.from)
-      JCudfSerialization.writeToStream(table, out, 0, table.getRowCount)
+      val table = withResource(spillable.getColumnarBatch()) { cb =>
+        GpuColumnVector.from(cb)
+      }
+      withResource(table) { _ =>
+        JCudfSerialization.writeToStream(table, out, 0, table.getRowCount)
+      }
       out.writeObject(dataTypes)
     }.getOrElse {
       if (headers.length == 0) {

@@ -184,6 +184,10 @@ def test_all_null_int96(spark_tmp_path):
         conf=confs)
 
 parquet_write_compress_options = ['none', 'uncompressed', 'snappy']
+# zstd is available in spark 3.2.0 and later.
+if not is_before_spark_320():
+    parquet_write_compress_options.append('zstd')
+
 @pytest.mark.parametrize('compress', parquet_write_compress_options)
 def test_compress_write_round_trip(spark_tmp_path, compress):
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -523,7 +527,9 @@ def test_concurrent_writer(spark_tmp_path):
 
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="is only supported in Spark 320+")
-def test_fallback_to_single_writer_from_concurrent_writer(spark_tmp_path):
+@allow_non_gpu(any=True)
+@pytest.mark.parametrize('aqe_enabled', [True, False])
+def test_fallback_to_single_writer_from_concurrent_writer(spark_tmp_path, aqe_enabled):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: get_25_partitions_df(spark)  # df has 25 partitions for (c1, c2)
@@ -534,7 +540,8 @@ def test_fallback_to_single_writer_from_concurrent_writer(spark_tmp_path):
         copy_and_update(
             # 10 < 25, will fall back to single writer
             {"spark.sql.maxConcurrentOutputFileWriters": 10},
-            {"spark.rapids.sql.concurrentWriterPartitionFlushSize": 64 * 1024 * 1024}
+            {"spark.rapids.sql.concurrentWriterPartitionFlushSize": 64 * 1024 * 1024},
+            {"spark.sql.adaptive.enabled": aqe_enabled},
         ))
 
 

@@ -205,7 +205,8 @@ class ApplicationInfo(
 
   var appInfo: ApplicationCase = null
   var appId: String = ""
-
+  val eventLogPath: String = eLogInfo.eventLog.toString
+  
   // physicalPlanDescription stores HashMap (sqlID <-> physicalPlanDescription)
   var physicalPlanDescription: mutable.HashMap[Long, String] = mutable.HashMap.empty[Long, String]
 

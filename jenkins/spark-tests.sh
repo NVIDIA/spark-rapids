@@ -112,8 +112,10 @@ tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
     rm -f $SPARK_HOME.tgz
 # copy python path libs to container /tmp instead of workspace to avoid ephemeral PVC issue
 TMP_PYTHON=/tmp/$(date +"%Y%m%d")
-rm -rf $TMP_PYTHON && cp -r $SPARK_HOME/python $TMP_PYTHON
-export PYTHONPATH=$TMP_PYTHON/python:$TMP_PYTHON/python/pyspark/:$TMP_PYTHON/python/lib/py4j-0.10.9-src.zip
+rm -rf $TMP_PYTHON && mkdir -p $TMP_PYTHON && cp -r $SPARK_HOME/python $TMP_PYTHON
+# Get the correct py4j file.
+PY4J_FILE=$(find $TMP_PYTHON/python/lib -type f -iname "py4j*.zip")
+export PYTHONPATH=$TMP_PYTHON/python:$TMP_PYTHON/python/pyspark/:$PY4J_FILE
 
 # Extract 'value' from conda config string 'key: value'
 CONDA_ROOT=`conda config --show root_prefix | cut -d ' ' -f2`
@@ -182,16 +184,26 @@ mkdir -p $TARGET_DIR
 
 run_delta_lake_tests() {
   echo "run_delta_lake_tests SPARK_VER = $SPARK_VER"
-  SPARK_321_PATTERN="(3\.2\.[1-9])"
-  DELTA_LAKE_VER="1.2.1"
+  SPARK_32X_PATTERN="(3\.2\.[0-9])"
+  SPARK_33X_PATTERN="(3\.3\.[0-9])"
 
-  if [[ $SPARK_VER =~ $SPARK_321_PATTERN ]]; then
-    PYSP_TEST_spark_jars_packages="io.delta:delta-core_2.12:$DELTA_LAKE_VER" \
+  if [[ $SPARK_VER =~ $SPARK_32X_PATTERN ]]; then
+    # There are multiple versions of deltalake that support SPARK 3.2.X
+    # but for zorder tests to work we need 2.0.0+
+    DELTA_LAKE_VER="2.0.0"
+  fi
+
+  if [[ $SPARK_VER =~ $SPARK_33X_PATTERN ]]; then
+    DELTA_LAKE_VER="2.1.0"
+  fi
+
+  if [ -z "$DELTA_LAKE_VER" ]; then
+    echo "Skipping Delta Lake tests. $SPARK_VER"
+  else
+    PYSP_TEST_spark_jars_packages="io.delta:delta-core_${SCALA_BINARY_VER}:$DELTA_LAKE_VER" \
       PYSP_TEST_spark_sql_extensions="io.delta.sql.DeltaSparkSessionExtension" \
       PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.spark.sql.delta.catalog.DeltaCatalog" \
       ./run_pyspark_from_build.sh -m delta_lake --delta_lake
-  else
-    echo "Skipping Delta Lake tests. Delta Lake does not support Spark version $SPARK_VER"
   fi
 }
 
@@ -199,17 +211,19 @@ run_iceberg_tests() {
   ICEBERG_VERSION=${ICEBERG_VERSION:-0.13.2}
   # get the major/minor version of Spark
   ICEBERG_SPARK_VER=$(echo $SPARK_VER | cut -d. -f1,2)
+  IS_SPARK_33_OR_LATER=0
+  [[ "$(printf '%s\n' "3.3" "$ICEBERG_SPARK_VER" | sort -V | head -n1)" = "3.3" ]] && IS_SPARK_33_OR_LATER=1
 
-  # Iceberg does not support Spark 3.3+ yet
-  if [[ "$ICEBERG_SPARK_VER" < "3.3" ]]; then
-    PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_2.12:${ICEBERG_VERSION} \
+  # RAPIDS-iceberg does not support Spark 3.3+ yet
+  if [[ "$IS_SPARK_33_OR_LATER" = "1" ]]; then
+    echo "!!!! Skipping Iceberg tests. GPU acceleration of Iceberg is not supported on $ICEBERG_SPARK_VER"
+  else
+    PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
       PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
       PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
       PYSP_TEST_spark_sql_catalog_spark__catalog_type="hadoop" \
       PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="/tmp/spark-warehouse-$RANDOM" \
       ./run_pyspark_from_build.sh -m iceberg --iceberg
-  else
-    echo "Skipping Iceberg tests. Iceberg does not support Spark $ICEBERG_SPARK_VER"
   fi
 }
 
@@ -220,7 +234,7 @@ run_avro_tests() {
   # version of Apache Spark which requires accessing the snapshot repository to
   # fetch the spark-avro jar.
   rm -vf $LOCAL_JAR_PATH/spark-avro*.jar
-  PYSP_TEST_spark_jars_packages="org.apache.spark:spark-avro_2.12:${SPARK_VER}" \
+  PYSP_TEST_spark_jars_packages="org.apache.spark:spark-avro_${SCALA_BINARY_VER}:${SPARK_VER}" \
     PYSP_TEST_spark_jars_repositories="https://repository.apache.org/snapshots" \
     ./run_pyspark_from_build.sh -k avro
 }

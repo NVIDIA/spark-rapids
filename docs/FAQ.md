@@ -262,10 +262,7 @@ efficient to stay on the CPU instead of going back and forth.
 
 ### Is Dynamic Partition Pruning (DPP) Supported?
 
-Yes, DPP still works.  It might not be as efficient as it could be, and we are working to improve it.
-
-DPP is not supported on Databricks with the plugin.
-Queries on Databricks will not fail but it can not benefit from DPP.
+Yes, DPP works.  
 
 ### Is Adaptive Query Execution (AQE) Supported?
 
@@ -410,7 +407,7 @@ There are multiple reasons why this a problematic configuration:
 
 Yes, but it requires support from the underlying cluster manager to isolate the MIG GPU instance
 for each executor (e.g.: by setting `CUDA_VISIBLE_DEVICES`,
-[YARN with docker isolation](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.10/examples/MIG-Support)
+[YARN with docker isolation](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.12/examples/MIG-Support)
 or other means).
 
 Note that MIG is not recommended for use with the RAPIDS Accelerator since it significantly
