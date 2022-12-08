@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.shims
 
+import com.databricks.sql.execution.window.RunningWindowFunctionExec
+import com.databricks.sql.optimizer.PlanDynamicPruningFilters
 import com.nvidia.spark.rapids._
 import org.apache.hadoop.fs.FileStatus
 
@@ -30,30 +32,20 @@ import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive._
 import org.apache.spark.sql.execution.datasources._
+import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.exchange._
 import org.apache.spark.sql.execution.python._
+import org.apache.spark.sql.execution.window._
+import org.apache.spark.sql.rapids.GpuFileSourceScanExec
+import org.apache.spark.sql.rapids.execution._
+import org.apache.spark.sql.rapids.execution.shims.{GpuSubqueryBroadcastMeta,ReuseGpuBroadcastExchangeAndSubquery}
 import org.apache.spark.sql.rapids.shims._
 import org.apache.spark.sql.types._
 
 
-trait Spark321PlusDBShims extends SparkShims {
-  override def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any = {
-    // In some cases we can be asked to transform when there's no task context, which appears to
-    // be new behavior since Databricks 10.4. A task memory manager must be passed, so if one is
-    // not available we construct one from the main memory manager using a task attempt ID of 0.
-    val memoryManager = Option(TaskContext.get).map(_.taskMemoryManager()).getOrElse {
-      new TaskMemoryManager(SparkEnv.get.memoryManager, 0)
-    }
-    mode.transform(rows, memoryManager)
-  }
-
-  def getWindowExpressions(winPy: WindowInPandasExec): Seq[NamedExpression] = {
-    winPy.projectList
-  }
-
-  override def filesFromFileIndex(fileCatalog: PartitioningAwareFileIndex): Seq[FileStatus] = {
-    fileCatalog.allFiles().map(_.toFileStatus)
-  }
+trait Spark321PlusDBShims extends SparkShims
+  with Spark321PlusShims {
+  override def isCastingStringToNegDecimalScaleSupported: Boolean = true
 
   override def getFileScanRDD(
       sparkSession: SparkSession,
@@ -64,16 +56,236 @@ trait Spark321PlusDBShims extends SparkShims {
     new GpuFileScanRDD(sparkSession, readFunction, filePartitions)
   }
 
-  override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = null
+  override def broadcastModeTransform(mode: BroadcastMode, rows: Array[InternalRow]): Any = {
+    // In some cases we can be asked to transform when there's no task context, which appears to
+    // be new behavior since Databricks 10.4. A task memory manager must be passed, so if one is
+    // not available we construct one from the main memory manager using a task attempt ID of 0.
+    val memoryManager = Option(TaskContext.get).map(_.taskMemoryManager()).getOrElse {
+      new TaskMemoryManager(SparkEnv.get.memoryManager, 0)
+    }
+    mode.transform(rows, memoryManager)
+  }
 
   override def newBroadcastQueryStageExec(
       old: BroadcastQueryStageExec,
-      newPlan: SparkPlan): BroadcastQueryStageExec = {
+      newPlan: SparkPlan): BroadcastQueryStageExec =
     BroadcastQueryStageExec(old.id, newPlan, old.originalPlan, old.isSparkExchange)
+
+  override def filesFromFileIndex(fileCatalog: PartitioningAwareFileIndex): Seq[FileStatus] = {
+    fileCatalog.allFiles().map(_.toFileStatus)
   }
 
+  override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = null
+
+  override def getWindowExpressions(winPy: WindowInPandasExec): Seq[NamedExpression] =
+    winPy.projectList
+
+  override def isWindowFunctionExec(plan: SparkPlan): Boolean =
+    plan.isInstanceOf[WindowExecBase] || plan.isInstanceOf[RunningWindowFunctionExec]
+
+  override def applyShimPlanRules(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
+    if (plan.conf.adaptiveExecutionEnabled) {
+      plan // AQE+DPP cooperation ensures the optimization runs early
+    } else {
+      val sparkSession = plan.session
+      val rules = Seq(
+        PlanDynamicPruningFilters(sparkSession)
+      )
+      rules.foldLeft(plan) { case (sp, rule) =>
+        rule.apply(sp)
+      }
+    }
+  }
+
+  override def applyPostShimPlanRules(plan: SparkPlan): SparkPlan = {
+    val rules = Seq(
+      ReuseGpuBroadcastExchangeAndSubquery
+    )
+    rules.foldLeft(plan) { case (sp, rule) =>
+      rule.apply(sp)
+    }
+  }
+
+  private val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
+    Seq(
+      GpuOverrides.exec[SubqueryBroadcastExec](
+        "Plan to collect and transform the broadcast key values",
+        ExecChecks(TypeSig.all, TypeSig.all),
+        (s, conf, p, r) => new GpuSubqueryBroadcastMeta(s, conf, p, r)),
+      GpuOverrides.exec[FileSourceScanExec](
+        "Reading data from files, often from Hive tables",
+        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
+            TypeSig.ARRAY + TypeSig.BINARY + TypeSig.DECIMAL_128).nested(), TypeSig.all),
+        (fsse, conf, p, r) => new SparkPlanMeta[FileSourceScanExec](fsse, conf, p, r) {
+
+          // Replaces SubqueryBroadcastExec inside dynamic pruning filters with GPU counterpart
+          // if possible. Instead regarding filters as childExprs of current Meta, we create
+          // a new meta for SubqueryBroadcastExec. The reason is that the GPU replacement of
+          // FileSourceScan is independent from the replacement of the partitionFilters. It is
+          // possible that the FileSourceScan is on the CPU, while the dynamic partitionFilters
+          // are on the GPU. And vice versa.
+          private lazy val partitionFilters = {
+            val convertBroadcast = (bc: SubqueryBroadcastExec) => {
+              val meta = GpuOverrides.wrapAndTagPlan(bc, conf)
+              meta.tagForExplain()
+              val converted = meta.convertIfNeeded()
+              // Because the PlanSubqueries rule is not called (and does not work as expected),
+              // we might actually have to fully convert the subquery plan as the plugin would
+              // intend (in this case calling GpuTransitionOverrides to insert GpuCoalesceBatches,
+              // etc.) to match the other side of the join to reuse the BroadcastExchange.
+              // This happens when SubqueryBroadcast has the original (Gpu)BroadcastExchangeExec
+              converted match {
+                case e: GpuSubqueryBroadcastExec => e.child match {
+                  // If the GpuBroadcastExchange is here, then we will need to run the transition
+                  // overrides here
+                  case _: GpuBroadcastExchangeExec =>
+                    var updated = ApplyColumnarRulesAndInsertTransitions(Seq(), true)
+                        .apply(converted)
+                    updated = (new GpuTransitionOverrides()).apply(updated)
+                    updated match {
+                      case h: GpuBringBackToHost =>
+                        h.child.asInstanceOf[BaseSubqueryExec]
+                      case c2r: GpuColumnarToRowExec =>
+                        c2r.child.asInstanceOf[BaseSubqueryExec]
+                      case _: GpuSubqueryBroadcastExec =>
+                        updated.asInstanceOf[BaseSubqueryExec]
+                    }
+                  // Otherwise, if this SubqueryBroadcast is using a ReusedExchange, then we don't
+                  // do anything further
+                  case _: ReusedExchangeExec =>
+                    converted.asInstanceOf[BaseSubqueryExec]
+                }
+                case _ =>
+                  converted.asInstanceOf[BaseSubqueryExec]
+              }
+            }
+
+            wrapped.partitionFilters.map { filter =>
+              filter.transformDown {
+                case dpe @ DynamicPruningExpression(inSub: InSubqueryExec) =>
+                  inSub.plan match {
+                    case bc: SubqueryBroadcastExec =>
+                      dpe.copy(inSub.copy(plan = convertBroadcast(bc)))
+                    case reuse @ ReusedSubqueryExec(bc: SubqueryBroadcastExec) =>
+                      dpe.copy(inSub.copy(plan = reuse.copy(convertBroadcast(bc))))
+                    case _ =>
+                      dpe
+                  }
+              }
+            }
+          }
+
+          // partition filters and data filters are not run on the GPU
+          override val childExprs: Seq[ExprMeta[_]] = Seq.empty
+
+          override def tagPlanForGpu(): Unit = {
+            // this is very specific check to have any of the Delta log metadata queries
+            // fallback and run on the CPU since there is some incompatibilities in
+            // Databricks Spark and Apache Spark.
+            if (wrapped.relation.fileFormat.isInstanceOf[JsonFileFormat] &&
+                wrapped.relation.location.getClass.getCanonicalName() ==
+                    "com.databricks.sql.transaction.tahoe.DeltaLogFileIndex") {
+              this.entirePlanWillNotWork("Plans that read Delta Index JSON files can not run " +
+                  "any part of the plan on the GPU!")
+            }
+            GpuFileSourceScanExec.tagSupport(this)
+          }
+
+          override def convertToCpu(): SparkPlan = {
+            wrapped.copy(partitionFilters = partitionFilters)
+          }
+
+          override def convertToGpu(): GpuExec = {
+            val sparkSession = wrapped.relation.sparkSession
+            val options = wrapped.relation.options
+            val (location, alluxioPathsToReplaceMap) =
+              if (AlluxioCfgUtils.enabledAlluxioReplacementAlgoConvertTime(conf)) {
+                val shouldReadFromS3 = wrapped.relation.location match {
+                  // Only handle InMemoryFileIndex
+                  //
+                  // skip handle `MetadataLogFileIndex`, from the description of this class:
+                  // it's about the files generated by the `FileStreamSink`.
+                  // The streaming data source is not in our scope.
+                  //
+                  // For CatalogFileIndex and FileIndex of `delta` data source,
+                  // need more investigation.
+                  case inMemory: InMemoryFileIndex =>
+                    // List all the partitions to reduce overhead, pass in 2 empty filters.
+                    // Subsequent process will do the right partition pruning.
+                    // This operation is fast, because it lists files from the caches and the caches
+                    // already exist in the `InMemoryFileIndex`.
+                    val pds = inMemory.listFiles(Seq.empty, Seq.empty)
+                    AlluxioUtils.shouldReadDirectlyFromS3(conf, pds)
+                  case _ =>
+                    false
+                }
+
+                if (!shouldReadFromS3) {
+                  // it's convert time algorithm and some paths are not large tables
+                  AlluxioUtils.replacePathIfNeeded(
+                    conf,
+                    wrapped.relation,
+                    partitionFilters,
+                    wrapped.dataFilters)
+                } else {
+                  // convert time algorithm and read large files
+                  (wrapped.relation.location, None)
+                }
+              } else {
+                // it's not convert time algorithm or read large files, do not replace
+                (wrapped.relation.location, None)
+              }
+
+            val newRelation = HadoopFsRelation(
+              location,
+              wrapped.relation.partitionSchema,
+              wrapped.relation.dataSchema,
+              wrapped.relation.bucketSpec,
+              GpuFileSourceScanExec.convertFileFormat(wrapped.relation.fileFormat),
+              options)(sparkSession)
+
+            GpuFileSourceScanExec(
+              newRelation,
+              wrapped.output,
+              wrapped.requiredSchema,
+              partitionFilters,
+              wrapped.optionalBucketSet,
+              // TODO: Does Databricks have coalesced bucketing implemented?
+              None,
+              wrapped.dataFilters,
+              wrapped.tableIdentifier,
+              wrapped.disableBucketedScan,
+              queryUsesInputFile = false,
+              alluxioPathsToReplaceMap)(conf)
+          }
+        }),
+      GpuOverrides.exec[RunningWindowFunctionExec](
+        "Databricks-specific window function exec, for \"running\" windows, " +
+            "i.e. (UNBOUNDED PRECEDING TO CURRENT ROW)",
+        ExecChecks(
+          (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
+              TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+          TypeSig.all,
+          Map("partitionSpec" ->
+              InputCheck(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128,
+                TypeSig.all))),
+        (runningWindowFunctionExec, conf, p, r) =>
+          new GpuRunningWindowExecMeta(runningWindowFunctionExec, conf, p, r)
+      )
+    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+  }
+
+  override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
+    super.getExecs ++ shimExecs
+
+  /**
+   * Case class ShuffleQueryStageExec holds an additional field shuffleOrigin
+   * affecting the unapply method signature
+   */
   override def reusedExchangeExecPfn: PartialFunction[SparkPlan, ReusedExchangeExec] = {
     case ShuffleQueryStageExec(_, e: ReusedExchangeExec, _, _) => e
     case BroadcastQueryStageExec(_, e: ReusedExchangeExec, _, _) => e
   }
+
+  override def reproduceEmptyStringBug: Boolean = true
 }
