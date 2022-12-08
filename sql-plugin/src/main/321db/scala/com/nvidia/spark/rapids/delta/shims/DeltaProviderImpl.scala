@@ -94,10 +94,6 @@ class DeltaCreatableRelationProviderMeta(
   }
 
   override def tagSelfForGpu(): Unit = {
-    if (!conf.isDeltaEnabled) {
-      willNotWorkOnGpu("Delta Lake acceleration has been disabled. To enable set " +
-          s"${RapidsConf.ENABLE_DELTA} to true")
-    }
     if (!conf.isDeltaWriteEnabled) {
       willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
           s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
