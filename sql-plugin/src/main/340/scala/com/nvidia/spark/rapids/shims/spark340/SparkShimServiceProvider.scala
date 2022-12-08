@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// spark-distros:340:
+// {"spark-distros":["340"]}
 package com.nvidia.spark.rapids.shims.spark340
 
 import com.nvidia.spark.rapids.SparkShimVersion

@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-// spark-distros:340:
+// {"spark-distros":["340"]}
 package com.nvidia.spark.rapids.shims
 
 import org.apache.orc.impl.OutStream

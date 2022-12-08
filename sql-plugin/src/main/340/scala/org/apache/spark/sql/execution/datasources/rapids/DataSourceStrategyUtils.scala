@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// spark-distros:340:
+// {"spark-distros":["340"]}
 package org.apache.spark.sql.execution.datasources.rapids
 
 import org.apache.spark.sql.catalyst.expressions.Expression
