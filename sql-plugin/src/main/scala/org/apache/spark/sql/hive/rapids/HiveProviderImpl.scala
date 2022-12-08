@@ -221,13 +221,18 @@ class HiveProviderImpl extends HiveProvider {
             // Check Storage format settings.
             flagIfUnsupportedStorageFormat(tableRelation.tableMeta.storage)
 
+            lazy val hasTimestamps = wrapped.output.exists { att =>
+              TrampolineUtil.dataTypeExistsRecursively(att.dataType,
+                dt => dt.isInstanceOf[TimestampType])
+            }
+
             // Check TBLPROPERTIES as well.
             // `timestamp.formats` might be set in TBLPROPERTIES or SERDEPROPERTIES,
             // or both. (If both, TBLPROPERTIES is honoured.)
-            if (!tableRelation.tableMeta.properties.getOrElse("timestamp.formats", "")
+            if ((!tableRelation.tableMeta.properties.getOrElse("timestamp.formats", "")
                   .equals("")
                 || !tableRelation.tableMeta.storage.properties.getOrElse("timestamp.formats", "")
-                  .equals("")) {
+                  .equals("")) && hasTimestamps) {
               willNotWorkOnGpu("custom timestamp formats are not currently supported")
             }
           }

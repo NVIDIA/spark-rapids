@@ -289,20 +289,17 @@ def test_hive_text_fallback_for_unsupported_types(spark_tmp_path, data_gen, spar
             conf=hive_text_enabled_conf)
 
 
-@allow_non_gpu("org.apache.spark.sql.hive.execution.HiveTableScanExec")
 @pytest.mark.parametrize('data_gen', [StringGen()], ids=idfn)
-def test_hive_text_default_disabled(spark_tmp_path, data_gen, spark_tmp_table_factory):
+def test_hive_text_default_enabled(spark_tmp_path, data_gen, spark_tmp_table_factory):
     gen = StructGen([('my_field', data_gen)], nullable=False)
     data_path = spark_tmp_path + '/hive_text_table'
     table_name = spark_tmp_table_factory.get()
 
     with_cpu_session(lambda spark: create_hive_text_table(spark, gen, table_name, data_path))
 
-    assert_gpu_fallback_collect(
+    assert_gpu_and_cpu_are_equal_collect(
         lambda spark: read_hive_text_table(spark, table_name),
-        cpu_fallback_class_name=get_non_gpu_allowed()[0],
         conf={})
-
 
 @allow_non_gpu("org.apache.spark.sql.hive.execution.HiveTableScanExec")
 @pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
