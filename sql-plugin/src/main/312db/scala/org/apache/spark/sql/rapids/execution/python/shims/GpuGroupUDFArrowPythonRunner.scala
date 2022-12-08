@@ -17,8 +17,12 @@
  * limitations under the License.
  */
 
+// scalastyle:off
 // {"spark-distros":["312db"]}
+// scalastyle:on
+// scalastyle:off
 // {"spark-distros":["312db","321db"]}
+// scalastyle:on
 package org.apache.spark.sql.rapids.execution.python.shims
 
 import java.io.DataOutputStream

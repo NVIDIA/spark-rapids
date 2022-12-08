@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
+// scalastyle:off
 // {"spark-distros":["320"]}
+// scalastyle:on
 package com.nvidia.spark.rapids.spark320
 
 import org.apache.spark.SparkConf

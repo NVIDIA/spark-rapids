@@ -14,7 +14,7 @@
 
 import json
 
-shimFiles = project.getReference('shimFileSetId')
+shimFiles = project.getReference('allShimFilesID')
 for f in shimFiles:
   shimLineFound = False
   with open(str(f), 'rt') as shimSourceFile:
@@ -27,11 +27,13 @@ for f in shimFiles:
           jsonObj = json.loads(distroStr)
         except Exception as e:
           raise Exception('Failed to decode ' + distroStr + ' from ' + str(f))
-
-        distrosSorted = jsonObj['spark-distros'][:]
+        distros = jsonObj['spark-distros']
+        assert len(distros) > 0, "At least one shim expected in {}:{}".format(str(f), distroStr)
+        distrosSorted = distros[:]
         distrosSorted.sort()
         if distrosSorted != jsonObj['spark-distros']:
           raise Exception('Shims should be sorted lexicographically in ' + \
             str(f) + ': ' + distroStr + '. Expected order is ' + \
             json.dumps(distrosSorted))
         break
+    assert shimLineFound, "no shim comment spark-distros found in {}".format(str(f))

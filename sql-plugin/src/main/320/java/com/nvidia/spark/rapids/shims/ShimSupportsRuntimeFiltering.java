@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
+// scalastyle:off
 // {"spark-distros":["320","321","321cdh","321db","322","323","330","330cdh","331","332","340"]}
+// scalastyle:on
 package com.nvidia.spark.rapids.shims;
 
 import org.apache.spark.sql.connector.read.SupportsRuntimeFiltering;

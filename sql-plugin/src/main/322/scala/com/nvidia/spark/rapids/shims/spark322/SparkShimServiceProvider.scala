@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
-// {"spark-distros":["322"]}:
+// scalastyle:off
+// {"spark-distros":["322"]}
+// scalastyle:on
 package com.nvidia.spark.rapids.shims.spark322
 
 import com.nvidia.spark.rapids.SparkShimVersion

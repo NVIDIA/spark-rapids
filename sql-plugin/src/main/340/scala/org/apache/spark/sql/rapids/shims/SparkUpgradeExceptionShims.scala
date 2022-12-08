@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
+// scalastyle:off
 // {"spark-distros":["340"]}
+// scalastyle:on
 package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.SparkUpgradeException

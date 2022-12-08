@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
+// scalastyle:off
 // {"spark-distros":["331","332","340"]}
+// scalastyle:on
 package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.rapids.{GpuCast, GpuExpression}

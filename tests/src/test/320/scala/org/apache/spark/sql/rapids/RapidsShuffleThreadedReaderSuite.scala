@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
+// scalastyle:off
 // {"spark-distros":["320","321","322","323","330","331","332","340"]}
+// scalastyle:on
 package org.apache.spark.sql.rapids
 
 import java.io.{ByteArrayOutputStream, InputStream}

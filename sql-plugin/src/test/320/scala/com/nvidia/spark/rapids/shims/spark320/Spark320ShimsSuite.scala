@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
+// scalastyle:off
 // {"spark-distros":["320"]}
+// scalastyle:on
 package com.nvidia.spark.rapids.shims.spark320
 
 import com.nvidia.spark.rapids.{ShimLoader, SparkShimVersion, TypeSig}

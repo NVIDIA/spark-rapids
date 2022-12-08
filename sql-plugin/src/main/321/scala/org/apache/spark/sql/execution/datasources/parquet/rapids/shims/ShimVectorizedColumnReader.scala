@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
+// scalastyle:off
 // {"spark-distros":["321","321cdh","321db","322","323"]}
+// scalastyle:on
 package org.apache.spark.sql.execution.datasources.parquet.rapids.shims
 
 import java.time.ZoneId

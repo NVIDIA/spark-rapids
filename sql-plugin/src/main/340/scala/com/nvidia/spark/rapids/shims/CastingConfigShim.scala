@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
+// scalastyle:off
 // {"spark-distros":["340"]}
+// scalastyle:on
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.catalyst.expressions.{Cast, Expression}

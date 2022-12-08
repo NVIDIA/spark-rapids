@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
+// scalastyle:off
 // {"spark-distros":["330","331","332","340"]}
+// scalastyle:on
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.execution.datasources.orc.OrcUtils

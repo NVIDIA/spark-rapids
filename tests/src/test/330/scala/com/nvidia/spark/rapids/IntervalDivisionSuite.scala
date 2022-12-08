@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
+// scalastyle:off
 // {"spark-distros":["330","330cdh","331","332","340"]}
+// scalastyle:on
 package com.nvidia.spark.rapids
 
 import java.time.Period

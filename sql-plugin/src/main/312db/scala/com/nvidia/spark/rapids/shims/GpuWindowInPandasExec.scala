@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
+// scalastyle:off
 // {"spark-distros":["312db","321db"]}
+// scalastyle:on
 package com.nvidia.spark.rapids.shims
 
 import scala.collection.mutable.ArrayBuffer

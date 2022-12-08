@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
+// scalastyle:off
 // {"spark-distros":["340"]}
+// scalastyle:on
 package org.apache.spark.sql.execution.datasources.parquet
 
 import org.apache.spark.memory.MemoryMode

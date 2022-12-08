@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
-// {"spark-distros":["321db"]}:
+// scalastyle:off
+// {"spark-distros":["321db"]}
+// scalastyle:on
 package org.apache.spark.sql.rapids.shims.spark321db
 
 import org.apache.spark.SparkConf

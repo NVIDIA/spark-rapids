@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
+// scalastyle:off
 // {"spark-distros":["313"]}
+// scalastyle:on
 package org.apache.spark.sql.rapids.shims.spark313
 
 import org.apache.spark.SparkConf

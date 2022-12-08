@@ -843,30 +843,16 @@
                                             <exclude name="*/scala/**"/>
                                             <exclude name="*/java/**"/>
                                         </patternset>
-                                        <fileset dir="${project.basedir}/src" id="missingShimHeaderFileSetId">
+                                        <fileset dir="${project.basedir}/src" id="allShimFilesID">
                                             <patternset refid="shimSourcePatternSet"/>
-                                            <not>
-                                                <containsregexp expression='// \{\"spark-distros\":'/>
-                                            </not>
                                         </fileset>
-
-                                        <pathconvert refid="missingShimHeaderFileSetId"
-                                            property="missingShimHeadersDetected" setonempty="false"/>
-
-                                        <pathconvert refid="missingShimHeaderFileSetId"
-                                            property="missingShimHeadersFilesStr" pathsep=" "/>
-
-                                        <fail if="missingShimHeadersDetected">Found shim files without a shim header
-                                             {"spark-distros":["buildver1",...]} ${missingShimHeadersFilesStr}</fail>
+                                        <!-- TOOD consider consolitdating this task in jython -->
+                                        <script language="jython" src="${spark.rapids.source.basedir}/build/validate-shim-comments.py"/>
 
                                         <fileset dir="${project.basedir}/src" id="shimFileSetId">
                                             <patternset refid="shimSourcePatternSet"/>
                                             <containsregexp expression='// \{\"spark-distros\":.*\"${buildver}\"'/>
                                         </fileset>
-
-                                        <!-- TOOD consider consolitdating this task in jython -->
-                                        <script language="jython" src="${spark.rapids.source.basedir}/build/validate-shim-comments.py"/>
-
                                         <mkdir dir="${spark.shim.dest}"/>
                                         <delete>
                                             <fileset dir="${spark.shim.dest}" includes="**/*"/>

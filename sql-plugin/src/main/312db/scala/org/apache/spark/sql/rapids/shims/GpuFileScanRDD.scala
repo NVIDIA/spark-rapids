@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
+// scalastyle:off
 // {"spark-distros":["312db","321db"]}
+// scalastyle:on
 package org.apache.spark.sql.rapids.shims
 
 import java.io.{FileNotFoundException, IOException}

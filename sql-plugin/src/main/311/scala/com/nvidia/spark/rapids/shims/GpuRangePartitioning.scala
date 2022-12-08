@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
+// scalastyle:off
 // {"spark-distros":["311","312","313","314","320","321","321cdh","322","323"]}
+// scalastyle:on
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.{GpuExpression, GpuPartitioning}
