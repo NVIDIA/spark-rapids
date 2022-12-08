@@ -15,7 +15,7 @@
  */
 package org.apache.spark.sql.rapids.execution
 
-import ai.rapids.cudf.{DType, GatherMap, GroupByAggregation, NullEquality, NullPolicy, NvtxColor, ReductionAggregation, Table}
+import ai.rapids.cudf.{ColumnVector, DType, GatherMap, GroupByAggregation, NullEquality, NullPolicy, NvtxColor, ReductionAggregation, Table}
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
 
@@ -159,20 +159,20 @@ object GpuHashJoin extends Arm {
    * Filter rows from the batch where any of the keys are null.
    */
   def filterNulls(cb: ColumnarBatch, boundKeys: Seq[Expression]): ColumnarBatch = {
-    import ai.rapids.cudf.ColumnVector
     var mask: Option[ColumnVector] = None
     try {
       withResource(GpuProjectExec.project(cb, boundKeys)) { keys =>
         val keyColumns = GpuColumnVector.extractBases(keys)
         mask = keyColumns
+          .iterator
           .filter(_.hasNulls())
           .map(_.isNotNull())
           .foldLeft(None: Option[ColumnVector])((acc, nn) => {
             acc match {
               case None => Some(nn)
-              case Some(mask) => withResource(Seq(mask, nn)) {case Seq(mask, nn) => {
+              case Some(mask) => withResource(Seq(mask, nn)) { _ =>
                 Some(mask.and(nn))
-              }}
+              }
             }
           })
       }
