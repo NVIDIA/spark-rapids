@@ -135,10 +135,18 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
     # Floating Point.
     ('hive-delim-text/simple-float-values',   make_schema(FloatType()),          {}),
     ('hive-delim-text/simple-float-values',   make_schema(DoubleType()),         {}),
-    pytest.param('hive-delim-text/simple-float-values', make_schema(IntegerType()), {},
-                 marks=pytest.mark.xfail(reason="Strings with alphabets/decimal points are read as null, "
-                                                "when read as integral types."
-                                                "See https://github.com/NVIDIA/spark-rapids/issues/7085")),
+    ('hive-delim-text/simple-float-values',   make_schema(DecimalType(10, 3)),   {}),
+    ('hive-delim-text/simple-float-values',   make_schema(DecimalType(38, 10)),   {}),
+    ('hive-delim-text/simple-float-values',   make_schema(IntegerType()),         {}),
+    ('hive-delim-text/extended-float-values',   make_schema(IntegerType()),         {}),
+    ('hive-delim-text/extended-float-values',   make_schema(FloatType()),          {}),
+    ('hive-delim-text/extended-float-values',   make_schema(DoubleType()),         {}), 
+    pytest.param('hive-delim-text/extended-float-values',   make_schema(DecimalType(10, 3)),   {},
+        marks=pytest.mark.xfail(reason="GPU supports more valid values than CPU. "
+            "https://github.com/NVIDIA/spark-rapids/issues/7246")),
+    pytest.param('hive-delim-text/extended-float-values',   make_schema(DecimalType(38, 10)),   {},
+        marks=pytest.mark.xfail(reason="GPU supports more valid values than CPU. "
+            "https://github.com/NVIDIA/spark-rapids/issues/7246")),
 
     # Custom datasets
     ('hive-delim-text/Acquisition_2007Q3', acq_schema, {}),
@@ -150,13 +158,6 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
     # Date/Time
     ('hive-delim-text/timestamp', timestamp_schema, {}),
     ('hive-delim-text/date', date_schema, {}),
-    pytest.param('hive-delim-text/timestamp-err', timestamp_schema, {},
-                 marks=pytest.mark.xfail(reason="GPU timestamp reads are more permissive than CPU. "
-                                                "See https://github.com/NVIDIA/spark-rapids/issues/7086")),
-    pytest.param('hive-delim-text/date-err', date_schema, {},
-                 marks=pytest.mark.xfail(reason="GPU read trims date string whitespace, "
-                                                "and errors out on invalid dates."
-                                                "See https://github.com/NVIDIA/spark-rapids/issues/7089.")),
 
     # Test that lines beginning with comments ('#') aren't skipped.
     ('hive-delim-text/comments', StructType([StructField("str", StringType()),
@@ -165,7 +166,7 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
 
     # Test that carriage returns ('\r'/'^M') are treated similarly to newlines ('\n')
     ('hive-delim-text/carriage-return', StructType([StructField("str", StringType())]), {}),
-    pytest.param('hive-delim-text/carriage-return-err', StructType([StructField("str", StringType())]), {}),
+    ('hive-delim-text/carriage-return-err', StructType([StructField("str", StringType())]), {}),
 ], ids=idfn)
 def test_basic_hive_text_read(std_input_path, name, schema, spark_tmp_table_factory, options):
     assert_gpu_and_cpu_are_equal_collect(read_hive_text_sql(std_input_path + '/' + name,
@@ -296,6 +297,30 @@ def test_hive_text_default_disabled(spark_tmp_path, data_gen, spark_tmp_table_fa
     table_name = spark_tmp_table_factory.get()
 
     with_cpu_session(lambda spark: create_hive_text_table(spark, gen, table_name, data_path))
+
+    assert_gpu_fallback_collect(
+        lambda spark: read_hive_text_table(spark, table_name),
+        cpu_fallback_class_name=get_non_gpu_allowed()[0],
+        conf={})
+
+
+@allow_non_gpu("org.apache.spark.sql.hive.execution.HiveTableScanExec")
+@pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
+def test_custom_timestamp_formats_disabled(spark_tmp_path, data_gen, spark_tmp_table_factory):
+    gen = StructGen([('my_field', data_gen)], nullable=False)
+    data_path = spark_tmp_path + '/hive_text_table'
+    table_name = spark_tmp_table_factory.get()
+
+    def create_hive_table_with_custom_timestamp_format(spark):
+        gen_df(spark, gen).repartition(1).createOrReplaceTempView("input_view")
+        spark.sql("DROP TABLE IF EXISTS " + table_name)
+        spark.sql("CREATE TABLE " + table_name + " (my_field TIMESTAMP) "
+                  "STORED AS TEXTFILE " +
+                  "LOCATION '" + data_path + "' " +
+                  "TBLPROPERTIES('timestamp.formats'='yyyy-MM-dd HH:mm:ss.SSS')")
+        spark.sql("INSERT INTO TABLE " + table_name + " SELECT * FROM input_view")
+
+    with_cpu_session(lambda spark: create_hive_table_with_custom_timestamp_format(spark))
 
     assert_gpu_fallback_collect(
         lambda spark: read_hive_text_table(spark, table_name),
