@@ -29,6 +29,9 @@ for f in shimFiles:
           raise Exception('Failed to decode ' + distroStr + ' from ' + str(f))
         distros = jsonObj['spark-distros']
         assert len(distros) > 0, "At least one shim expected in {}:{}".format(str(f), distroStr)
+        # ensure that that "312" is used rather than int literals 312
+        assert all(type(d) == unicode for d in distros),\
+          "spark-distros must be a list of strings in {}:{}".format(str(f), str(distros))
         distrosSorted = distros[:]
         distrosSorted.sort()
         if distrosSorted != jsonObj['spark-distros']:
