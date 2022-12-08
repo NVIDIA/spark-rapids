@@ -89,7 +89,7 @@ object DecimalArithmeticOverrides {
         (a, conf, p, r) => new BinaryExprMeta[IntegralDivide](a, conf, p, r) {
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
             if (lhs.dataType.isInstanceOf[DecimalType] && rhs.dataType.isInstanceOf[DecimalType]) {
-              GpuIntegralDecimalDivide(lhs, rhs, DecimalType(19, 0))
+              GpuIntegralDecimalDivide(lhs, rhs)
             } else {
               GpuIntegralDivide(lhs, rhs)
             }

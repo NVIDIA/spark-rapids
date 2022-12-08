@@ -897,6 +897,7 @@ abstract class GpuDecimalDivideParent(
           }
       }
     }
+    val outputType = if (integerDivide) LongType else dataType
     val retCol = withResource(retTab) { retTab =>
       val overflowed = retTab.getColumn(0)
       val quotient = retTab.getColumn(1)
@@ -908,12 +909,12 @@ abstract class GpuDecimalDivideParent(
         }
         quotient.incRefCount()
       } else {
-        withResource(GpuScalar.from(null, dataType)) { nullVal =>
+        withResource(GpuScalar.from(null, outputType)) { nullVal =>
           overflowed.ifElse(nullVal, quotient)
         }
       }
     }
-    GpuColumnVector.from(retCol, dataType)
+    GpuColumnVector.from(retCol, outputType)
   }
 
   override def columnarEval(batch: ColumnarBatch): Any = {

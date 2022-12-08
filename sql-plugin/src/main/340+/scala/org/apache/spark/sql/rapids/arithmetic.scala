@@ -20,7 +20,6 @@ import scala.math.{max, min}
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Expression, NullIntolerant}
@@ -182,18 +181,9 @@ case class GpuIntegralDivide(
 case class GpuIntegralDecimalDivide(
     left: Expression,
     right: Expression,
-    decimalType: DecimalType,
     integerDivide: Boolean = true)
-    extends GpuDecimalDivideParent(left, right, decimalType, integerDivide) {
+    extends GpuDecimalDivideParent(left, right, DecimalType(19, 0), integerDivide) {
   override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
-
-  lazy val failOnOverflow: Boolean =
-    SparkShimImpl.shouldFailDivOverflow
-
-  def checkDivideOverflow: Boolean = left.dataType match {
-    case LongType if failOnOverflow => true
-    case _ => false
-  }
 
   override def dataType: DataType = LongType
 
@@ -204,11 +194,7 @@ case class GpuIntegralDecimalDivide(
   override def sqlOperator: String = "div"
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    withResource(super.columnarEval(batch).asInstanceOf[GpuColumnVector]) { decimalOutput =>
-      GpuColumnVector.from(GpuCast.doCast(decimalOutput.getBase, decimalType, dataType,
-        SQLConf.get.ansiEnabled, legacyCastToString = false, stringToDateAnsiModeEnabled = false),
-        dataType)
-    }
+    super.columnarEval(batch).asInstanceOf[GpuColumnVector]
   }
 
   override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
