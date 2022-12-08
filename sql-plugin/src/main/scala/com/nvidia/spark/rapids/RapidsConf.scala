@@ -1053,7 +1053,6 @@ object RapidsConf {
       "the number of threads and amount of memory used. " +
       "By default this is set to AUTO so we select the reader we think is best. This will " +
       "either be the COALESCING or the MULTITHREADED based on whether we think the file is " +
-      "either be the COALESCING or the MULTITHREADED based on whether we think the file is " +
       "in the cloud. See spark.rapids.cloudSchemes.")
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))
