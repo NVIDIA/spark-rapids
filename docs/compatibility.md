@@ -58,7 +58,7 @@ Spark getting a value of `1.03` but under the RAPIDS accelerator it produces `1.
 Python will produce `1.02`, Java does not have the ability to do a round like this built in, but if
 you do the simple operation of `Math.round(1.025 * 100.0)/100.0` you also get `1.02`.
 
-For the `degrees` functions, Spark's implementation relies on Java JDK's built-in functions `Math.toDegrees`. It is `angrad * 180.0 / PI` in Java 8 while `angrad * (180d / PI)` in Java 9+. So their results will differ depending on the JDK runtime versions when considering overflow. The RAPIDS Accelerator follows the bahavior of Java 9+. Therefore, with JDK 8 or below, the `degrees` on GPU will not overflow on some very large numbers while the CPU version does.
+For the `degrees` functions, Spark's implementation relies on Java JDK's built-in functions `Math.toDegrees`. It is `angrad * 180.0 / PI` in Java 8 while `angrad * (180d / PI)` in Java 9+. So their results will differ depending on the JDK runtime versions when considering overflow. The RAPIDS Accelerator follows the behavior of Java 9+. Therefore, with JDK 8 or below, the `degrees` on GPU will not overflow on some very large numbers while the CPU version does.
 
 For aggregations the underlying implementation is doing the aggregations in parallel and due to race
 conditions within the computation itself the result may not be the same each time the query is
@@ -99,7 +99,7 @@ There are also discrepancies/issues with specific types that are detailed below.
 
 ### CSV Strings
 Writing strings to a CSV file in general for Spark can be problematic unless you can ensure that
-your data does not have any line deliminators in it. The GPU accelerated CSV parser handles quoted
+your data does not have any line deliminator in it. The GPU accelerated CSV parser handles quoted
 line deliminators similar to `multiLine` mode.  But there are still a number of issues surrounding
 it and they should be avoided.
 
@@ -199,7 +199,7 @@ then results in a number being returned when the CPU would have returned null.
 
 Hive has some limitations in what decimal values it can parse. The GPU kernels that we use
 to parse decimal values do not have the same limitations. This means that there are times
-when the CPU version would return a null for an input value, but the GPu version will
+when the CPU version would return a null for an input value, but the GPU version will
 return a value. This typically happens for numbers with large negative exponents where
 the GPU will return `0` and Hive will return `null`. 
 See https://github.com/NVIDIA/spark-rapids/issues/7246
