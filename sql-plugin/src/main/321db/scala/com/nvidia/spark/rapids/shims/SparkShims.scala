@@ -16,34 +16,9 @@
 
 package com.nvidia.spark.rapids.shims
 
-import com.databricks.sql.execution.window.RunningWindowFunctionExec
-import com.databricks.sql.optimizer.PlanDynamicPruningFilters
-import com.nvidia.spark.rapids._
-import org.apache.hadoop.fs.FileStatus
+import org.apache.spark.sql.catalyst.expressions.Expression
 
-import org.apache.spark.{SparkEnv, TaskContext}
-import org.apache.spark.memory.TaskMemoryManager
-import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
-import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
-import org.apache.spark.sql.execution.datasources._
-import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
-import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
-import org.apache.spark.sql.execution.python.WindowInPandasExec
-import org.apache.spark.sql.execution.window.WindowExecBase
-import org.apache.spark.sql.rapids.GpuFileSourceScanExec
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuSubqueryBroadcastExec}
-import org.apache.spark.sql.rapids.execution.shims.{GpuSubqueryBroadcastMeta, ReuseGpuBroadcastExchangeAndSubquery}
-import org.apache.spark.sql.rapids.shims.GpuFileScanRDD
-import org.apache.spark.sql.types._
-
-object SparkShimImpl extends Spark321PlusDBShims with Spark320until340Shims {
-
-}
+object SparkShimImpl extends Spark321PlusDBShims with Spark320until340Shims
 
 // Fallback to the default definition of `deterministic`
 trait GpuDeterministicFirstLastCollectShim extends Expression
