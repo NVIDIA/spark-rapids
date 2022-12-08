@@ -171,7 +171,7 @@ if [ -d "$LOCAL_JAR_PATH" ]; then
 else
     if [[ $TEST_MODE == "DEFAULT" ]]; then
         ## Run tests with jars building from the spark-rapids source code
-        bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE
+        bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE -k agg_nested
 
         ## Run cache tests
         if [[ "$IS_SPARK_311_OR_LATER" -eq "1" ]]; then
