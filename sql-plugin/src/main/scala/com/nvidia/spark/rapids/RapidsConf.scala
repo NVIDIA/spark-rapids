@@ -1053,7 +1053,6 @@ object RapidsConf {
       "the number of threads and amount of memory used. " +
       "By default this is set to AUTO so we select the reader we think is best. This will " +
       "either be the COALESCING or the MULTITHREADED based on whether we think the file is " +
-      "either be the COALESCING or the MULTITHREADED based on whether we think the file is " +
       "in the cloud. See spark.rapids.cloudSchemes.")
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))
@@ -1079,6 +1078,12 @@ object RapidsConf {
       .integerConf
       .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
       .createWithDefault(Integer.MAX_VALUE)
+
+  val ENABLE_DELTA_WRITE = conf("spark.rapids.sql.format.delta.write.enabled")
+      .doc("When set to false disables Delta Lake output acceleration." +
+        " Delta Lake writes are currently experimental, so this is disabled by default.")
+      .booleanConf
+      .createWithDefault(false)
 
   val ENABLE_ICEBERG = conf("spark.rapids.sql.format.iceberg.enabled")
     .doc("When set to false disables all Iceberg acceleration")
@@ -2132,6 +2137,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     RapidsReaderType.withName(get(AVRO_READER_TYPE)) == RapidsReaderType.MULTITHREADED
 
   lazy val maxNumAvroFilesParallel: Int = get(AVRO_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
+
+  lazy val isDeltaWriteEnabled: Boolean = get(ENABLE_DELTA_WRITE)
 
   lazy val isIcebergEnabled: Boolean = get(ENABLE_ICEBERG)
 
