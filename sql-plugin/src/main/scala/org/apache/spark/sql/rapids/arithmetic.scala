@@ -1022,7 +1022,7 @@ case class GpuDivide(left: Expression, right: Expression,
 
   override lazy val failOnError: Boolean = failOnErrorOverride
 
-  override def inputType: AbstractDataType = TypeCollection(DoubleType, DecimalType)
+  override def inputType: AbstractDataType = DoubleType
 
   override def symbol: String = "/"
 
@@ -1065,7 +1065,7 @@ case class GpuDecimalDivide(
     override val dataType: DecimalType,
     failOnError: Boolean = SQLConf.get.ansiEnabled)
     extends GpuDecimalDivideParent(left, right, dataType, failOnError) {
-  override def inputType: AbstractDataType = TypeCollection(DoubleType, DecimalType)
+  override def inputType: AbstractDataType = DecimalType
 
   override def symbol: String = "/"
 

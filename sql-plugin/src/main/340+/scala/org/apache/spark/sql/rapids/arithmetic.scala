@@ -182,7 +182,7 @@ case class GpuIntegralDecimalDivide(
     left: Expression,
     right: Expression,
     integerDivide: Boolean = true)
-    extends GpuDecimalDivideParent(left, right, DecimalType(19, 0), integerDivide) {
+    extends GpuDecimalDivideParent(left, right, DecimalType.LongDecimal, integerDivide) {
   override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
 
   override def dataType: DataType = LongType
