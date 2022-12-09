@@ -32,7 +32,7 @@
     <packaging>jar</packaging>
 
     <properties>
-        <hadoop.version>3.3.3</hadoop.version>
+        <hadoop.version>3.3.4</hadoop.version>
         <spark.version>${spark311.version}</spark.version>
         <spark.test.version>${spark311.version}</spark.test.version>
         <spark.version.classifier>spark311</spark.version.classifier>
@@ -119,7 +119,6 @@
                             <artifactSet>
                                 <includes>
                                     <include>org.rogach:scallop_${scala.binary.version}</include>
-                                    <include>com.nvidia:rapids-4-spark-common_${scala.binary.version}</include>
                                 </includes>
                             </artifactSet>
                             <filters>

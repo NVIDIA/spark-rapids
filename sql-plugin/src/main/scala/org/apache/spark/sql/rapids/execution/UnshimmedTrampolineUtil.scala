@@ -17,7 +17,10 @@
 package org.apache.spark.sql.rapids.execution
 
 object UnshimmedTrampolineUtil {
-    def sparkClassLoader: ClassLoader = {
-        org.apache.spark.util.Utils.getContextOrSparkClassLoader
-    }
+  def sparkClassLoader: ClassLoader = {
+    org.apache.spark.util.Utils.getContextOrSparkClassLoader
+  }
+
+  def classIsLoadable(className: String): Boolean =
+    org.apache.spark.util.Utils.classIsLoadable(className)
 }

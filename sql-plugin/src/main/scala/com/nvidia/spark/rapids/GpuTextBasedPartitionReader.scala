@@ -17,14 +17,16 @@
 package com.nvidia.spark.rapids
 
 import java.time.DateTimeException
+import java.util.Optional
 
 import scala.collection.mutable.ListBuffer
 import scala.math.max
 
-import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, NvtxColor, NvtxRange, Scalar, Schema, Table}
+import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector, HostColumnVectorCore, HostMemoryBuffer, NvtxColor, NvtxRange, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.DateUtils.{toStrf, TimestampFormatConversionException}
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.GpuTypeShims
+import java.util
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.CompressionCodecFactory
@@ -39,6 +41,155 @@ import org.apache.spark.sql.types.{DataTypes, DecimalType, StructField, StructTy
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
+ * We read text files in one line at a time from Spark. This provides an abstraction in how those
+ * lines are buffered before being processed on the GPU.
+ */
+trait LineBufferer extends AutoCloseable {
+  /**
+   * Get the current size of the data that has been buffered.
+   */
+  def getLength: Long
+
+  /**
+   * Add a new line of bytes to the data to process.
+   */
+  def add(line: Array[Byte], offset: Int, len: Int): Unit
+}
+
+/**
+ * Factory to create a LineBufferer instance that can be used to buffer lines being read in.
+ */
+trait LineBuffererFactory[BUFF <: LineBufferer] {
+  def createBufferer(estimatedSize: Long, lineSeparatorInRead: Array[Byte]): BUFF
+}
+
+object HostLineBuffererFactory extends LineBuffererFactory[HostLineBufferer] {
+  override def createBufferer(estimatedSize: Long,
+      lineSeparatorInRead: Array[Byte]): HostLineBufferer =
+    new HostLineBufferer(estimatedSize, lineSeparatorInRead)
+}
+
+/**
+ * Buffer the lines in a single HostMemoryBuffer with the separator inserted inbetween each of
+ * the lines.
+ */
+class HostLineBufferer(size: Long, separator: Array[Byte]) extends LineBufferer with Arm {
+  private var buffer = HostMemoryBuffer.allocate(size)
+  private var location: Long = 0
+
+  def grow(needed: Long): Unit = {
+    val newSize = math.max(buffer.getLength * 2, needed)
+    closeOnExcept(HostMemoryBuffer.allocate(newSize)) { newBuff =>
+      newBuff.copyFromHostBuffer(0, buffer, 0, buffer.getLength)
+      buffer.close()
+      buffer = newBuff
+    }
+  }
+
+  override def getLength: Long = location
+
+  override def add(line: Array[Byte], lineOffset: Int, lineLen: Int): Unit = {
+    val newTotal = location + lineLen + separator.length
+    if (newTotal > buffer.getLength) {
+      grow(newTotal)
+    }
+
+    // Can have an empty line, do not write this to buffer but add the separator
+    // and totalRows
+    if (lineLen != 0) {
+      buffer.setBytes(location, line, lineOffset, lineLen)
+      location = location + lineLen
+    }
+    buffer.setBytes(location, separator, 0, separator.length)
+    location = location + separator.length
+  }
+
+  def getBufferAndRelease: HostMemoryBuffer = {
+    val ret = buffer
+    buffer = null
+    ret
+  }
+
+  override def close(): Unit = {
+    if (buffer != null) {
+      buffer.close()
+      buffer = null
+    }
+  }
+}
+
+object HostStringColBuffererFactory extends LineBuffererFactory[HostStringColBufferer] {
+  override def createBufferer(estimatedSize: Long,
+      lineSeparatorInRead: Array[Byte]): HostStringColBufferer =
+    new HostStringColBufferer(estimatedSize, lineSeparatorInRead)
+}
+
+/**
+ * Buffer the lines as a HostColumnVector of strings, one per line.
+ */
+class HostStringColBufferer(size: Long, separator: Array[Byte]) extends LineBufferer with Arm {
+  // We had to jump through some hoops so that we could grow the string columns dynamically
+  //  might be nice to have this in CUDF, but this works fine too.
+  private var dataBuffer = HostMemoryBuffer.allocate(size)
+  private var dataLocation: Long = 0
+  private var rowsAllocated: Int = Math.max((size / 200).toInt, 512)
+  private var offsetsBuffer = HostMemoryBuffer.allocate((rowsAllocated + 1) *
+      DType.INT32.getSizeInBytes)
+  private var numRows: Int = 0
+
+  override def getLength: Long = dataLocation
+
+  override def add(line: Array[Byte], lineOffset: Int, lineLen: Int): Unit = {
+    if (numRows + 1 > rowsAllocated) {
+      val newRowsAllocated = math.min(rowsAllocated * 2, Int.MaxValue - 1)
+      val tmpBuffer = HostMemoryBuffer.allocate((newRowsAllocated + 1) * DType.INT32.getSizeInBytes)
+      tmpBuffer.copyFromHostBuffer(0, offsetsBuffer, 0, offsetsBuffer.getLength)
+      offsetsBuffer.close()
+      offsetsBuffer = tmpBuffer
+      rowsAllocated = newRowsAllocated
+    }
+
+    if (dataLocation + lineLen > dataBuffer.getLength) {
+      val newSize = math.max(dataBuffer.getLength * 2, lineLen)
+      closeOnExcept(HostMemoryBuffer.allocate(newSize)) { newBuff =>
+        newBuff.copyFromHostBuffer(0, dataBuffer, 0, dataLocation)
+        dataBuffer.close()
+        dataBuffer = newBuff
+      }
+    }
+    if (lineLen != 0) {
+      dataBuffer.setBytes(dataLocation, line, lineOffset, lineLen)
+    }
+    offsetsBuffer.setInt(numRows * DType.INT32.getSizeInBytes, dataLocation.toInt)
+    dataLocation += lineLen
+    numRows += 1
+  }
+
+  def getColumnAndRelease: ColumnVector = {
+    // Set the last offset
+    offsetsBuffer.setInt(numRows * DType.INT32.getSizeInBytes, dataLocation.toInt)
+    withResource(new HostColumnVector(DType.STRING, numRows, Optional.of[java.lang.Long](0L),
+      dataBuffer, null, offsetsBuffer, new util.ArrayList[HostColumnVectorCore]())) { hostRet =>
+      dataBuffer = null
+      offsetsBuffer = null
+      hostRet.copyToDevice()
+    }
+  }
+
+  override def close(): Unit = {
+    if (dataBuffer != null) {
+      dataBuffer.close()
+      dataBuffer = null
+    }
+
+    if (offsetsBuffer != null) {
+      offsetsBuffer.close()
+      offsetsBuffer = null
+    }
+  }
+}
+
+/**
  * The text based PartitionReader
  * @param conf the Hadoop configuration
  * @param partFile file split to read
@@ -49,7 +200,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * @param maxBytesPerChunk maximum number of bytes to read in a batch
  * @param execMetrics metrics to update during read
  */
-abstract class GpuTextBasedPartitionReader(
+abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuffererFactory[BUFF]](
     conf: Configuration,
     partFile: PartitionedFile,
     dataSchema: StructType,
@@ -57,7 +208,8 @@ abstract class GpuTextBasedPartitionReader(
     lineSeparatorInRead: Option[Array[Byte]],
     maxRowsPerChunk: Integer,
     maxBytesPerChunk: Long,
-    execMetrics: Map[String, GpuMetric])
+    execMetrics: Map[String, GpuMetric],
+    bufferFactory: FACT)
   extends PartitionReader[ColumnarBatch] with ScanWithMetrics with Arm {
   import GpuMetric._
 
@@ -88,46 +240,22 @@ abstract class GpuTextBasedPartitionReader(
     }
   }
 
-  /**
-   * Grows a host buffer, returning a new buffer and closing the original
-   * after copying the data into the new buffer.
-   * @param original the original host memory buffer
-   */
-  private def growHostBuffer(original: HostMemoryBuffer, needed: Long): HostMemoryBuffer = {
-    val newSize = Math.max(original.getLength * 2, needed)
-    closeOnExcept(HostMemoryBuffer.allocate(newSize)) { result =>
-      result.copyFromHostBuffer(0, original, 0, original.getLength)
-      original.close()
-      result
-    }
-  }
-
-  private def readPartFile(): (HostMemoryBuffer, Long) = {
+  private def readPartFile(): (BUFF, Long) = {
     withResource(new NvtxRange("Buffer file split", NvtxColor.YELLOW)) { _ =>
       isFirstChunkForIterator = false
       val separator = lineSeparatorInRead.getOrElse(Array('\n'.toByte))
       var succeeded = false
       var totalSize: Long = 0L
       var totalRows: Integer = 0
-      var hmb = HostMemoryBuffer.allocate(estimatedHostBufferSize)
+      val hmb = bufferFactory.createBufferer(estimatedHostBufferSize, separator)
       try {
         while (lineReader.hasNext
           && totalRows != maxRowsPerChunk
           && totalSize <= maxBytesPerChunk /* soft limit and returns at least one row */) {
           val line = lineReader.next()
-          val lineSize = line.getLength
-          val newTotal = totalSize + lineSize + separator.length
-          if (newTotal > hmb.getLength) {
-            hmb = growHostBuffer(hmb, newTotal)
-          }
-          // Can have an empty line, do not write this to buffer but add the separator
-          // and totalRows
-          if (lineSize != 0) {
-            hmb.setBytes(totalSize, line.getBytes, 0, lineSize)
-          }
-          hmb.setBytes(totalSize + lineSize, separator, 0, separator.length)
+          hmb.add(line.getBytes, 0, line.getLength)
           totalRows += 1
-          totalSize = newTotal
+          totalSize = hmb.getLength
         }
         //Indicate this is the last chunk
         isExhausted = !lineReader.hasNext
@@ -197,7 +325,7 @@ abstract class GpuTextBasedPartitionReader(
         // The buffer that is sent down
         val table = withResource(new NvtxWithMetrics(getFileFormatShortName + " decode",
           NvtxColor.DARK_GREEN, metrics(GPU_DECODE_TIME))) { _ =>
-          readToTable(dataBuffer, dataSize, cudfSchema, newReadDataSchema, isFirstChunk)
+          readToTable(dataBuffer, cudfSchema, newReadDataSchema, isFirstChunk)
         }
         maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
 
@@ -226,7 +354,7 @@ abstract class GpuTextBasedPartitionReader(
                 case dt: DecimalType =>
                   castStringToDecimal(table.getColumn(i), dt)
                 case DataTypes.DateType =>
-                  castStringToDate(table.getColumn(i), DType.TIMESTAMP_DAYS, failOnInvalid = true)
+                  castStringToDate(table.getColumn(i), DType.TIMESTAMP_DAYS)
                 case DataTypes.TimestampType =>
                   castStringToTimestamp(table.getColumn(i), timestampFormat,
                     DType.TIMESTAMP_MICROSECONDS)
@@ -250,6 +378,10 @@ abstract class GpuTextBasedPartitionReader(
 
   def dateFormat: String
   def timestampFormat: String
+
+  def castStringToDate(input: ColumnVector, dt: DType): ColumnVector = {
+    castStringToDate(input, dt, failOnInvalid = true)
+  }
 
   def castStringToDate(input: ColumnVector, dt: DType, failOnInvalid: Boolean): ColumnVector = {
     val cudfFormat = DateUtils.toStrf(dateFormat, parseString = true)
@@ -409,16 +541,14 @@ abstract class GpuTextBasedPartitionReader(
 
   /**
    * Read the host buffer to GPU table
-   * @param dataBuffer host buffer to be read
-   * @param dataSize the size of host buffer
+   * @param dataBuffer where the data is buffered
    * @param cudfSchema the cudf schema of the data
    * @param readDataSchema the Spark schema describing what will be read
    * @param isFirstChunk if it is the first chunk
    * @return table
    */
   def readToTable(
-    dataBuffer: HostMemoryBuffer,
-    dataSize: Long,
+    dataBuffer: BUFF,
     cudfSchema: Schema,
     readDataSchema: StructType,
     isFirstChunk: Boolean): Table

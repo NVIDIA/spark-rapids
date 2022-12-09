@@ -262,10 +262,7 @@ efficient to stay on the CPU instead of going back and forth.
 
 ### Is Dynamic Partition Pruning (DPP) Supported?
 
-Yes, DPP still works.  It might not be as efficient as it could be, and we are working to improve it.
-
-DPP is not supported on Databricks with the plugin.
-Queries on Databricks will not fail but it can not benefit from DPP.
+Yes, DPP works.  
 
 ### Is Adaptive Query Execution (AQE) Supported?
 
@@ -358,9 +355,9 @@ for the RAPIDS plugin.
 
 ### Are table layout formats supported?
 
-Yes, there is GPU support for Delta Lake read 
-and [Apache Iceberg 0.13 read](./additional-functionality/iceberg-support.md).  
-Write operations will fall back to the CPU.
+Yes, there is GPU support for [Delta Lake](./additional-functionality/delta-lake-support.md) and
+[Apache Iceberg](./additional-functionality/iceberg-support.md). See the additional support
+documentation for specifics on the operations supported for these formats.
 
 ### How many tasks can I run per executor? How many should I run per executor?
 
