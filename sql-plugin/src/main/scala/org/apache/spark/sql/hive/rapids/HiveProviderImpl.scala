@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.{DataWritingCommandRule, ExecChecks, ExecRule, Ex
 import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
-import org.apache.spark.sql.catalyst.catalog.CatalogStorageFormat
+import org.apache.spark.sql.catalyst.catalog.{CatalogStorageFormat, HiveTableRelation}
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.DataWritingCommand
@@ -204,10 +204,6 @@ class HiveProviderImpl extends HiveProvider {
             if (!(charset.equals(Charsets.US_ASCII) || charset.equals(Charsets.UTF_8))) {
               willNotWorkOnGpu("only UTF-8 and ASCII are supported as the charset")
             }
-
-            if (!storage.properties.getOrElse("timestamp.formats", "").equals("")) {
-              willNotWorkOnGpu("custom timestamp formats are not currently supported")
-            }
           }
 
           private def checkIfEnabled(): Unit = {
@@ -221,12 +217,28 @@ class HiveProviderImpl extends HiveProvider {
             }
           }
 
+          private def flagIfUnsupported(tableRelation: HiveTableRelation): Unit = {
+            // Check Storage format settings.
+            flagIfUnsupportedStorageFormat(tableRelation.tableMeta.storage)
+
+            // Check TBLPROPERTIES as well.
+            // `timestamp.formats` might be set in TBLPROPERTIES or SERDEPROPERTIES,
+            // or both. (If both, TBLPROPERTIES is honoured.)
+            if (!tableRelation.tableMeta.properties.getOrElse("timestamp.formats", "")
+                  .equals("")
+                || !tableRelation.tableMeta.storage.properties.getOrElse("timestamp.formats", "")
+                  .equals("")) {
+              willNotWorkOnGpu("custom timestamp formats are not currently supported")
+            }
+          }
+
           override def tagPlanForGpu(): Unit = {
             checkIfEnabled()
             val tableRelation = wrapped.relation
             // Check that the table and all participating partitions
             // are '^A' separated.
-            flagIfUnsupportedStorageFormat(tableRelation.tableMeta.storage)
+            flagIfUnsupported(tableRelation)
+
             if (tableRelation.isPartitioned) {
               val parts = tableRelation.prunedPartitions.getOrElse(Seq.empty)
               parts.map(_.storage).foreach(flagIfUnsupportedStorageFormat)
