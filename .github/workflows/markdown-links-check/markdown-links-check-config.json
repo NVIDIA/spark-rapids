@@ -8,6 +8,9 @@
     },
     {
       "pattern": "/docs/archives"
+    },
+    {
+      "pattern": "http://localhost*"
     }
   ],
   "timeout": "15s",

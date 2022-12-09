@@ -495,6 +495,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   }
 
   def assertIsOnTheGpu(plan: SparkPlan, conf: RapidsConf): Unit = {
+    def isTestExempted(plan: SparkPlan): Boolean = {
+      conf.testingAllowedNonGpu.exists(PlanUtils.sameClass(plan, _))
+    }
     val isAdaptiveEnabled = plan.conf.adaptiveExecutionEnabled
     plan match {
       case _: BroadcastExchangeLike if isAdaptiveEnabled =>
@@ -515,12 +518,17 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           throw new IllegalArgumentException("It looks like some operations were " +
             s"pushed down to InMemoryTableScanExec ${imts.expressions.mkString(",")}")
         }
-        // some metadata operations, may add more when needed
+      // some metadata operations, may add more when needed
       case _: ShowTablesExec =>
       case _: DropTableExec =>
-      case _: ExecutedCommandExec => () // Ignored
       case _: RDDScanExec => () // Ignored
       case p if SparkShimImpl.skipAssertIsOnTheGpu(p) => () // Ignored
+      case p: ExecutedCommandExec if !isTestExempted(p) =>
+        val meta = GpuOverrides.wrapPlan(p, conf, None)
+        if (!meta.suppressWillWorkOnGpuInfo) {
+          throw new IllegalArgumentException("Part of the plan is not columnar " +
+              s"${p.getClass}\n$p")
+        }
       case _ =>
         if (!plan.supportsColumnar &&
             // There are some python execs that are not columnar because of a little
@@ -528,8 +536,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             // the columnar to row transitions to not cause test issues because they too
             // are not columnar (they output rows) but are instances of GpuExec.
             !plan.isInstanceOf[GpuExec] &&
-            !conf.testingAllowedNonGpu.exists(nonGpuClass =>
-                PlanUtils.sameClass(plan, nonGpuClass))) {
+            !isTestExempted(plan)) {
           throw new IllegalArgumentException(s"Part of the plan is not columnar " +
             s"${plan.getClass}\n$plan")
         }
