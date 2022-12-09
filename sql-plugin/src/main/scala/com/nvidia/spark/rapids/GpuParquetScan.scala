@@ -106,7 +106,7 @@ case class GpuParquetScan(
     dataFilters: Seq[Expression],
     rapidsConf: RapidsConf,
     queryUsesInputFile: Boolean = false,
-    keepReadsInOrder: Boolean = false
+    keepReadsInOrder: Boolean = true
 )
   extends ScanWithMetrics with FileScan with Logging {
 
@@ -2239,12 +2239,14 @@ class MultiFileCloudParquetPartitionReader(
         // its not different for all the blocks in this batch
         val rowsPerPartition = meta.allPartValues.get.map(_._1).toArray
         val allPartInternalRows = meta.allPartValues.get.map(_._2).toArray
-        addAllPartitionValues(origBatch, allPartInternalRows, rowsPerPartition, partitionSchema)
+        MultiFileReaderUtils.addMultiplePartitionValuesAndClose(origBatch, allPartInternalRows,
+          rowsPerPartition, partitionSchema)
       } else {
         // we have to add partition values here for this batch, we already verified that
         // its not different for all the blocks in this batch
         addPartitionValues(origBatch, meta.partitionedFile.partitionValues, partitionSchema)
       }
+
       new SingleGpuColumnarBatchIterator(batch)
     case buffer: HostMemoryBuffersWithMetaData =>
       val memBuffersAndSize = buffer.memBuffersAndSizes
@@ -2291,15 +2293,16 @@ class MultiFileCloudParquetPartitionReader(
 
     closeOnExcept(tableReader) { _ =>
       val colTypes = readDataSchema.fields.map(f => f.dataType)
-      CachedGpuBatchIterator(tableReader, colTypes, spillCallback).map { batch =>
-        // add all part values properly
-        if (allPartValues.isDefined) {
-          // we have to add partition values here for this batch, we already verified that
-          // its not different for all the blocks in this batch
-          val rowsPerPartition = allPartValues.get.map(_._1).toArray
-          val allPartInternalRows = allPartValues.get.map(_._2).toArray
-          addAllPartitionValues(batch, allPartInternalRows, rowsPerPartition, partitionSchema)
-        } else {
+      if (allPartValues.isDefined) {
+        val batchIter = CachedGpuBatchIterator(tableReader, colTypes, spillCallback)
+        val allPartInternalRows = allPartValues.get.map(_._2)
+        val rowsPerPartition = allPartValues.get.map(_._1)
+        new GpuColumnarBatchWithPartitionValuesIterator(batchIter, allPartInternalRows,
+          rowsPerPartition, partitionSchema)
+      } else {
+        // this is a bit weird, we don't have number of rows when allPartValues isn't
+        // filled in so can't use GpuColumnarBatchWithPartitionValuesIterator
+        CachedGpuBatchIterator(tableReader, colTypes, spillCallback).map { batch =>
           // we have to add partition values here for this batch, we already verified that
           // its not different for all the blocks in this batch
           addPartitionValues(batch, partedFile.partitionValues, partitionSchema)

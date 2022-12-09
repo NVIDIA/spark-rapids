@@ -289,40 +289,60 @@ def test_hive_text_fallback_for_unsupported_types(spark_tmp_path, data_gen, spar
             conf=hive_text_enabled_conf)
 
 
-@allow_non_gpu("org.apache.spark.sql.hive.execution.HiveTableScanExec")
 @pytest.mark.parametrize('data_gen', [StringGen()], ids=idfn)
-def test_hive_text_default_disabled(spark_tmp_path, data_gen, spark_tmp_table_factory):
+def test_hive_text_default_enabled(spark_tmp_path, data_gen, spark_tmp_table_factory):
     gen = StructGen([('my_field', data_gen)], nullable=False)
     data_path = spark_tmp_path + '/hive_text_table'
     table_name = spark_tmp_table_factory.get()
 
     with_cpu_session(lambda spark: create_hive_text_table(spark, gen, table_name, data_path))
 
-    assert_gpu_fallback_collect(
+    assert_gpu_and_cpu_are_equal_collect(
         lambda spark: read_hive_text_table(spark, table_name),
-        cpu_fallback_class_name=get_non_gpu_allowed()[0],
         conf={})
-
 
 @allow_non_gpu("org.apache.spark.sql.hive.execution.HiveTableScanExec")
 @pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
 def test_custom_timestamp_formats_disabled(spark_tmp_path, data_gen, spark_tmp_table_factory):
+    """
+    This is to test that the plugin falls back to CPU execution, in case a Hive delimited
+    text table is set up with a custom timestamp format, via the "timestamp.formats"
+    property.
+    Note that this property could be specified in either table properties,
+    or SerDe properties.
+    """
     gen = StructGen([('my_field', data_gen)], nullable=False)
     data_path = spark_tmp_path + '/hive_text_table'
     table_name = spark_tmp_table_factory.get()
 
-    def create_hive_table_with_custom_timestamp_format(spark):
+    from enum import Enum
+
+    class PropertyLocation(Enum):
+        TBLPROPERTIES = 1,
+        SERDEPROPERTIES = 2
+
+    def create_hive_table_with_custom_timestamp_format(spark, property_location):
         gen_df(spark, gen).repartition(1).createOrReplaceTempView("input_view")
         spark.sql("DROP TABLE IF EXISTS " + table_name)
         spark.sql("CREATE TABLE " + table_name + " (my_field TIMESTAMP) "
                   "STORED AS TEXTFILE " +
-                  "LOCATION '" + data_path + "' " +
-                  "TBLPROPERTIES('timestamp.formats'='yyyy-MM-dd HH:mm:ss.SSS')")
+                  "LOCATION '" + data_path + "' ")
+        spark.sql("ALTER TABLE " + table_name + " SET " +
+                  ("TBLPROPERTIES" if property_location == PropertyLocation.TBLPROPERTIES else "SERDEPROPERTIES") +
+                  "('timestamp.formats'='yyyy-MM-dd HH:mm:ss.SSS')")
         spark.sql("INSERT INTO TABLE " + table_name + " SELECT * FROM input_view")
 
-    with_cpu_session(lambda spark: create_hive_table_with_custom_timestamp_format(spark))
-
+    with_cpu_session(lambda spark:
+                     create_hive_table_with_custom_timestamp_format(spark, PropertyLocation.TBLPROPERTIES))
     assert_gpu_fallback_collect(
         lambda spark: read_hive_text_table(spark, table_name),
         cpu_fallback_class_name=get_non_gpu_allowed()[0],
-        conf={})
+        conf=hive_text_enabled_conf)
+
+    with_cpu_session(lambda spark:
+                     create_hive_table_with_custom_timestamp_format(spark, PropertyLocation.SERDEPROPERTIES))
+    assert_gpu_fallback_collect(
+        lambda spark: read_hive_text_table(spark, table_name),
+        cpu_fallback_class_name=get_non_gpu_allowed()[0],
+        conf=hive_text_enabled_conf)
+

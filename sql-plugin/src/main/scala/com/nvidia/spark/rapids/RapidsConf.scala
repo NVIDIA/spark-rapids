@@ -878,7 +878,7 @@ object RapidsConf {
       .doc("When using the MULTITHREADED reader, if this is set to true we read " +
         "the files in the same order Spark does, otherwise the order may not be the same.")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   /** List of schemes that are always considered cloud storage schemes */
   private lazy val DEFAULT_CLOUD_SCHEMES =
@@ -1082,6 +1082,7 @@ object RapidsConf {
       "the number of threads and amount of memory used. " +
       "By default this is set to AUTO so we select the reader we think is best. This will " +
       "either be the COALESCING or the MULTITHREADED based on whether we think the file is " +
+      "either be the COALESCING or the MULTITHREADED based on whether we think the file is " +
       "in the cloud. See spark.rapids.cloudSchemes.")
     .stringConf
     .transform(_.toUpperCase(java.util.Locale.ROOT))
@@ -1108,6 +1109,12 @@ object RapidsConf {
       .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
       .createWithDefault(Integer.MAX_VALUE)
 
+  val ENABLE_DELTA_WRITE = conf("spark.rapids.sql.format.delta.write.enabled")
+      .doc("When set to false disables Delta Lake output acceleration." +
+        " Delta Lake writes are currently experimental, so this is disabled by default.")
+      .booleanConf
+      .createWithDefault(false)
+
   val ENABLE_ICEBERG = conf("spark.rapids.sql.format.iceberg.enabled")
     .doc("When set to false disables all Iceberg acceleration")
     .booleanConf
@@ -1122,13 +1129,30 @@ object RapidsConf {
     conf("spark.rapids.sql.format.hive.text.enabled")
       .doc("When set to false disables Hive text table acceleration")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   val ENABLE_HIVE_TEXT_READ: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.format.hive.text.read.enabled")
       .doc("When set to false disables Hive text table read acceleration")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
+
+  val ENABLE_READ_HIVE_FLOATS = conf("spark.rapids.sql.format.hive.text.read.float.enabled")
+      .doc("Hive text file reading is not 100% compatible when reading floats.")
+      .booleanConf
+      .createWithDefault(true)
+
+  val ENABLE_READ_HIVE_DOUBLES = conf("spark.rapids.sql.format.hive.text.read.double.enabled")
+      .doc("Hive text file reading is not 100% compatible when reading doubles.")
+      .booleanConf
+      .createWithDefault(true)
+
+  val ENABLE_READ_HIVE_DECIMALS = conf("spark.rapids.sql.format.hive.text.read.decimal.enabled")
+      .doc("Hive text file reading is not 100% compatible when reading decimals. Hive has " +
+          "more limitations on what is valid compared to the GPU implementation in some corner " +
+          "cases. See https://github.com/NVIDIA/spark-rapids/issues/7246")
+      .booleanConf
+      .createWithDefault(true)
 
   val ENABLE_RANGE_WINDOW_BYTES = conf("spark.rapids.sql.window.range.byte.enabled")
     .doc("When the order-by column of a range based window is byte type and " +
@@ -2153,6 +2177,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val maxNumAvroFilesParallel: Int = get(AVRO_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
 
+  lazy val isDeltaWriteEnabled: Boolean = get(ENABLE_DELTA_WRITE)
+
   lazy val isIcebergEnabled: Boolean = get(ENABLE_ICEBERG)
 
   lazy val isIcebergReadEnabled: Boolean = get(ENABLE_ICEBERG_READ)
@@ -2160,6 +2186,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isHiveDelimitedTextEnabled: Boolean = get(ENABLE_HIVE_TEXT)
 
   lazy val isHiveDelimitedTextReadEnabled: Boolean = get(ENABLE_HIVE_TEXT_READ)
+
+  lazy val shouldHiveReadFloats: Boolean = get(ENABLE_READ_HIVE_FLOATS)
+
+  lazy val shouldHiveReadDoubles: Boolean = get(ENABLE_READ_HIVE_DOUBLES)
+
+  lazy val shouldHiveReadDecimals: Boolean = get(ENABLE_READ_HIVE_DECIMALS)
 
   lazy val shuffleManagerEnabled: Boolean = get(SHUFFLE_MANAGER_ENABLED)
 
