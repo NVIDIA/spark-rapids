@@ -31,8 +31,8 @@ in our plugin:
 
 ## Multi-Threaded Mode
 
-This mode is similar to the built-in Spark shuffle, but it attempts to use more CPU threads
-for compute-intensive tasks, such as compression and decompression. 
+Mult-threaded mode (default) is similar to the built-in Spark shuffle, but it attempts to use
+more CPU threads for compute-intensive tasks, such as compression and decompression. 
 
 Minimum configuration:
 
@@ -49,7 +49,7 @@ pools is the number of cores in the system divided by the number of executors pe
 
 ## UCX Mode
 
-UCX mode has two components: a spillable cache, and a transport that can utilize 
+UCX mode (`spark.rapids.shuffle.mode=UCX`) has two components: a spillable cache, and a transport that can utilize 
 Remote Direct Memory Access (RDMA) and high-bandwidth transfers 
 within a node that has multiple GPUs. This is possible because this mode 
 utilizes [Unified Communication X (UCX)](https://www.openucx.org/) as its transport.
@@ -327,6 +327,7 @@ In this section, we are using a docker container built using the sample dockerfi
     ```shell
     ...
     --conf spark.shuffle.manager=com.nvidia.spark.rapids.[shim package].RapidsShuffleManager \
+    --conf spark.rapids.shuffle.mode=UCX \
     --conf spark.shuffle.service.enabled=false \
     --conf spark.dynamicAllocation.enabled=false \
     --conf spark.executor.extraClassPath=${SPARK_RAPIDS_PLUGIN_JAR} \
@@ -339,6 +340,7 @@ In this section, we are using a docker container built using the sample dockerfi
     ```shell
     ...
     --conf spark.shuffle.manager=com.nvidia.spark.rapids.[shim package].RapidsShuffleManager \
+    --conf spark.rapids.shuffle.mode=UCX \
     --conf spark.shuffle.service.enabled=false \
     --conf spark.dynamicAllocation.enabled=false \
     --conf spark.executor.extraClassPath=${SPARK_RAPIDS_PLUGIN_JAR} \
@@ -383,10 +385,11 @@ Save the script in DBFS and add it to the "Init Scripts" list:
 Databricks 9.1:
 
 ```
+spark.shuffle.manager com.nvidia.spark.rapids.spark312db.RapidsShuffleManager
+spark.rapids.shuffle.mode UCX
 spark.shuffle.service.enabled false
 spark.executorEnv.UCX_MEMTYPE_CACHE n
 spark.executorEnv.UCX_ERROR_SIGNALS ""
-spark.shuffle.manager com.nvidia.spark.rapids.spark312db.RapidsShuffleManager
 ```
 
 Example of configuration panel with the new settings:
