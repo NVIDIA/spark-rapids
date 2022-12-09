@@ -55,7 +55,7 @@ def test_single_orderby(data_gen, order):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).orderBy(order))
 
-@allow_non_gpu('ShuffleExchangeExec')
+# @allow_non_gpu('ShuffleExchangeExec')
 @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
 @pytest.mark.parametrize('order', [
     pytest.param(f.col('a').asc()),
@@ -163,7 +163,9 @@ def test_single_nested_orderby_with_limit_fallback(data_gen, order):
             'spark.rapids.allowCpuRangePartitioning': False
         })
 
-@pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen, ids=idfn)
+# @pytest.mark.parametrize('data_gen', orderable_gens + orderable_not_null_gen, ids=idfn)
+# @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', [ArrayGen(IntegerGen(nullable=True), nullable=True)], ids=idfn)
 @pytest.mark.parametrize('order', [f.col('a').asc(), f.col('a').asc_nulls_last(), f.col('a').desc(), f.col('a').desc_nulls_first()], ids=idfn)
 def test_single_sort_in_part(data_gen, order):
     # We set `num_slices` to handle https://github.com/NVIDIA/spark-rapids/issues/2477
@@ -201,8 +203,9 @@ def test_multi_orderby(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).orderBy(f.col('a'), f.col('b').desc()))
 
-@allow_non_gpu('ShuffleExchangeExec')
-@pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
+# @allow_non_gpu('ShuffleExchangeExec')
+# @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', [ArrayGen(IntegerGen(nullable=True), nullable=False)], ids=idfn)
 def test_multi_orderby_on_array(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen).orderBy(f.col('a'), f.col('b').desc()))

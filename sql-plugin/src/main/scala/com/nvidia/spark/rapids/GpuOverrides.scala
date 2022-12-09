@@ -3626,7 +3626,8 @@ object GpuOverrides extends Logging {
     part[RangePartitioning](
       "Range partitioning",
       PartChecks(RepeatingParamCheck("order_key",
-        (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested(),
+        (pluginSupportedOrderableSig + TypeSig.DECIMAL_128 + TypeSig.STRUCT).nested() +
+         TypeSig.ARRAY.nested(_gpuCommonTypes + TypeSig.DECIMAL_128),
         TypeSig.orderable)),
       (rp, conf, p, r) => new PartMeta[RangePartitioning](rp, conf, p, r) {
         override val childExprs: Seq[BaseExprMeta[_]] =
