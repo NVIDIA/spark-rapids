@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.net.URL
 
 import com.nvidia.spark.GpuCachedBatchSerializer
+import com.nvidia.spark.rapids.delta.DeltaProvider
 import com.nvidia.spark.rapids.iceberg.IcebergProvider
 import org.apache.commons.lang3.reflect.MethodUtils
 import scala.annotation.tailrec
@@ -406,6 +407,9 @@ object ShimLoader extends Logging {
 
   def newAvroProvider(): AvroProvider = ShimLoader.newInstanceOf[AvroProvider](
     "org.apache.spark.sql.rapids.AvroProviderImpl")
+
+  def newDeltaProvider(): DeltaProvider = ShimLoader.newInstanceOf[DeltaProvider](
+    "com.nvidia.spark.rapids.delta.shims.DeltaProviderImpl")
 
   def newIcebergProvider(): IcebergProvider = ShimLoader.newInstanceOf[IcebergProvider](
     "com.nvidia.spark.rapids.iceberg.IcebergProviderImpl")

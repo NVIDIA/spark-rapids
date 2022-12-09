@@ -399,7 +399,8 @@ def test_parquet_read_round_trip_legacy(spark_tmp_path, parquet_gens, v1_enabled
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_parquet_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
+@pytest.mark.parametrize('batch_size', [100, INT_MAX])
+def test_parquet_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs, batch_size):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -419,7 +420,9 @@ def test_parquet_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader
             lambda spark : gen_df(spark, gen_list).write.parquet(third_data_path),
             conf=rebase_write_corrected_conf)
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = copy_and_update(reader_confs,
+            {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+             'spark.rapids.sql.batchSizeBytes': batch_size})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
