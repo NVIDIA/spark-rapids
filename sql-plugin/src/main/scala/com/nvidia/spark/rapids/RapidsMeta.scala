@@ -29,7 +29,7 @@ import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.aggregate.BaseAggregateExec
-import org.apache.spark.sql.execution.command.DataWritingCommand
+import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 import org.apache.spark.sql.rapids.{CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter}
 import org.apache.spark.sql.types.DataType
@@ -104,6 +104,9 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    */
   val childDataWriteCmds: Seq[DataWritingCommandMeta[_]]
 
+  /** The wrapped runnable commands that should be examined. */
+  val childRunnableCmds: Seq[RunnableCommandMeta[_]] = Seq.empty
+
   /**
    * Convert what this wraps to a GPU enabled version.
    */
@@ -135,6 +138,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     if (canThisBeReplaced && !mustThisBeReplaced) {
       costPreventsRunningOnGpu()
       childDataWriteCmds.foreach(_.recursiveCostPreventsRunningOnGpu())
+      childRunnableCmds.foreach(_.recursiveCostPreventsRunningOnGpu())
     }
   }
 
@@ -152,6 +156,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     childParts.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
     childScans.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
     childDataWriteCmds.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
+    childRunnableCmds.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
   }
 
   final def recursiveSparkPlanRemoved(): Unit = {
@@ -160,6 +165,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     childParts.foreach(_.recursiveSparkPlanRemoved())
     childScans.foreach(_.recursiveSparkPlanRemoved())
     childDataWriteCmds.foreach(_.recursiveSparkPlanRemoved())
+    childRunnableCmds.foreach(_.recursiveSparkPlanRemoved())
   }
 
   final def inputFilePreventsRunningOnGpu(): Unit = {
@@ -282,6 +288,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     childParts.foreach(_.tagForGpu())
     childExprs.foreach(_.tagForGpu())
     childDataWriteCmds.foreach(_.tagForGpu())
+    childRunnableCmds.foreach(_.tagForGpu())
     childPlans.foreach(_.tagForGpu())
 
     initReasons()
@@ -390,7 +397,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    * @param depth how far down the tree this is.
    * @param all should all the data be printed or just what does not work on the GPU?
    */
-  protected def print(strBuilder: StringBuilder, depth: Int, all: Boolean): Unit = {
+  def print(strBuilder: StringBuilder, depth: Int, all: Boolean): Unit = {
     if ((all || !canThisBeReplaced || cannotRunOnGpuBecauseOfSparkPlan) &&
         !suppressWillWorkOnGpuInfo) {
       indent(strBuilder, depth)
@@ -424,6 +431,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
     childParts.foreach(_.print(append, depth + 1, all))
     childExprs.foreach(_.print(append, depth + 1, all))
     childDataWriteCmds.foreach(_.print(append, depth + 1, all))
+    childRunnableCmds.foreach(_.print(append, depth + 1, all))
     childPlans.foreach(_.print(append, depth + 1, all))
   }
 
@@ -569,12 +577,14 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
       childParts.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
       childScans.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
       childDataWriteCmds.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
+      childRunnableCmds.foreach(_.recursiveSparkPlanPreventsRunningOnGpu())
     }
     if (shouldThisBeRemoved) {
       childExprs.foreach(_.recursiveSparkPlanRemoved())
       childParts.foreach(_.recursiveSparkPlanRemoved())
       childScans.foreach(_.recursiveSparkPlanRemoved())
       childDataWriteCmds.foreach(_.recursiveSparkPlanRemoved())
+      childRunnableCmds.foreach(_.recursiveSparkPlanRemoved())
     }
     childPlans.foreach(_.tagForExplain())
   }
@@ -692,6 +702,10 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
 
     if (!canDataWriteCmdsBeReplaced) {
       willNotWorkOnGpu("not all data writing commands can be replaced")
+    }
+
+    if (!childRunnableCmds.forall(_.canThisBeReplaced)) {
+      willNotWorkOnGpu("not all commands can be replaced")
     }
 
     checkExistingTags()
@@ -1337,5 +1351,34 @@ final class RuleNotFoundExprMeta[INPUT <: Expression](
     willNotWorkOnGpu(s"GPU does not currently support the operator ${expr.getClass}")
 
   override def convertToGpu(): GpuExpression =
+    throw new IllegalStateException("Cannot be converted to GPU")
+}
+
+/** Base class for metadata around `RunnableCommand`. */
+abstract class RunnableCommandMeta[INPUT <: RunnableCommand](
+    cmd: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+    extends RapidsMeta[INPUT, RunnableCommand, RunnableCommand](cmd, conf, parent, rule)
+{
+  override val childPlans: Seq[SparkPlanMeta[_]] = Seq.empty
+  override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
+  override val childScans: Seq[ScanMeta[_]] = Seq.empty
+  override val childParts: Seq[PartMeta[_]] = Seq.empty
+  override val childDataWriteCmds: Seq[DataWritingCommandMeta[_]] = Seq.empty
+}
+
+/** Metadata for `RunnableCommand` with no rule found */
+final class RuleNotFoundRunnableCommandMeta[INPUT <: RunnableCommand](
+    cmd: INPUT,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]])
+    extends RunnableCommandMeta[INPUT](cmd, conf, parent, new NoRuleDataFromReplacementRule) {
+
+  override def tagSelfForGpu(): Unit =
+    willNotWorkOnGpu(s"GPU does not currently support the command ${cmd.getClass}")
+
+  override def convertToGpu(): RunnableCommand =
     throw new IllegalStateException("Cannot be converted to GPU")
 }

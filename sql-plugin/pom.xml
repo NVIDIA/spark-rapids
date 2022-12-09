@@ -28,6 +28,7 @@
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin</name>
     <description>The RAPIDS SQL plugin for Apache Spark</description>
     <version>23.02.0-SNAPSHOT</version>
+
     <dependencies>
         <dependency>
             <groupId>com.nvidia</groupId>
@@ -49,6 +50,10 @@
         <dependency>
             <groupId>com.google.flatbuffers</groupId>
             <artifactId>flatbuffers-java</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.delta</groupId>
+            <artifactId>delta-core_2.12</artifactId>
         </dependency>
         <dependency>
             <groupId>org.apache.iceberg</groupId>
@@ -307,7 +312,13 @@
                 </dependency>
                 <dependency>
                     <groupId>org.json4s</groupId>
-                    <artifactId>JsonAST</artifactId>
+                    <artifactId>json4s-ast_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.json4s</groupId>
+                    <artifactId>json4s-core_${scala.binary.version}</artifactId>
                     <version>${spark.version}</version>
                     <scope>provided</scope>
                 </dependency>
@@ -396,7 +407,7 @@
                     <scope>provided</scope>
                 </dependency>
                 <dependency>
-                    <groupId>org.apachprocesse.hive</groupId>
+                    <groupId>org.apache.hive</groupId>
                     <artifactId>hive-storage-api</artifactId>
                     <version>${spark.version}</version>
                     <scope>provided</scope>
