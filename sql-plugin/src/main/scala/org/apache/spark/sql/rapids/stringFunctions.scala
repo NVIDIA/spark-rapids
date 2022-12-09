@@ -1299,17 +1299,16 @@ case class GpuRegExpExtract(
     // | 'a1a'  | '1'   | '1'   |
     // | '1a1'  | ''    | NULL  |
 
-    withResource(
-      Seq[String]("", null).safeMap(GpuScalar.from(_, DataTypes.StringType))
-    ) { case Seq(emptyString, nullString) =>
-      val groupCol = withResource(str.getBase.extractRe(extractPattern)) { extract =>
-        withResource(str.getBase.containsRe(cudfRegexPattern)) {
-          _.ifElse(extract.getColumn(groupIndex), emptyString)
-        }
-      }
-      withResource(groupCol) { _ =>
-        withResource(str.getBase.isNull) {
-          _.ifElse(nullString, groupCol)
+    withResource(str.getBase.extractRe(extractPattern)) { extract =>
+      withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
+        val outputNullAndInputNotNull =
+          withResource(extract.getColumn(groupIndex).isNull) { outputNull =>
+            withResource(str.getBase.isNotNull) { inputNotNull =>
+              outputNull.and(inputNotNull)
+            }
+          }
+        withResource(outputNullAndInputNotNull) {
+          _.ifElse(emptyString, extract.getColumn(groupIndex))
         }
       }
     }

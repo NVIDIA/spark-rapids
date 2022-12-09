@@ -138,7 +138,7 @@ To this end in a pre-production build you can set the Boolean property
 
 The time saved is more significant if you are merely changing
 the `aggregator` module, or the `dist` module, or just incorporating changes from
-[spark-rapids-jni](https://github.com/NVIDIA/spark-rapids-jni/blob/branch-22.12/CONTRIBUTING.md#local-testing-of-cross-repo-contributions-cudf-spark-rapids-jni-and-spark-rapids)
+[spark-rapids-jni](https://github.com/NVIDIA/spark-rapids-jni/blob/branch-23.02/CONTRIBUTING.md#local-testing-of-cross-repo-contributions-cudf-spark-rapids-jni-and-spark-rapids)
 
 For example, to quickly repackage `rapids-4-spark` after the
 initial `./build/buildall` you can iterate by invoking
@@ -200,7 +200,7 @@ This may require some modifications to IDEs' standard Maven import functionality
 
 #### IntelliJ IDEA
 
-_Last tested with 2021.2.1 Community Edition_
+Last tested with IntelliJ IDEA 2022.1.3 (Community Edition)
 
 To start working with the project in IDEA is as easy as
 [opening](https://blog.jetbrains.com/idea/2008/03/opening-maven-projects-is-easy-as-pie/) the top level (parent)
@@ -211,16 +211,33 @@ In order to make sure that IDEA handles profile-specific source code roots withi
 
 If you develop a feature that has to interact with the Shim layer or simply need to test the Plugin with a different
 Spark version, open [Maven tool window](https://www.jetbrains.com/help/idea/2021.2/maven-projects-tool-window.html) and
-select one of the `release3xx` profiles (e.g, `release320`) for Apache Spark 3.2.0, and click "Reload"
-if not triggered automatically.
+select one of the `release3xx` profiles (e.g, `release320`) for Apache Spark 3.2.0.
 
-There is a known issue where, even after selecting a different Maven profile in the Maven submenu, the source folders from
-a previously selected profile may remain active. To get around this you have to manually reload the Maven project from
-the Maven side menu.
+Go to `File | Settings | Build, Execution, Deployment | Build Tools | Maven | Importing` and make sure
+that `Generated sources folders` is set to `Detect automatically` and `Phase to be used for folders update`
+is changed to `process-test-resources`. In the Maven tool window hit `Reload all projects` and
+`Generate Sources and Update Folders For all Projects`.
+
+Known Issues:
+
+* There is a known issue that the test sources added via the `build-helper-maven-plugin` are not handled
+[properly](https://youtrack.jetbrains.com/issue/IDEA-100532). The workaround is to `mark` the affected folders
+such as `tests/src/test/320+-noncdh-nondb` manually as `Test Sources Root`
+
+* There is a known issue where, even after selecting a different Maven profile in the Maven submenu,
+the source folders from a previously selected profile may remain active. As a workaround,
+when switching to a different profile, go to
+`File | Project Structure ... | Modules`, select the `rapids-4-spark-sql_2.12` module,
+click `Sources`, and delete all the shim source roots from the `Source Folders` list. Make sure
+the right test source folders are in `rapids-4-spark-sql_2.12` and `rapids-4-spark-tests_2.12`.
+Re-execute the steps above: reload, and `Generate Sources ...`.
 
 If you see Scala symbols unresolved (highlighted red) in IDEA please try the following steps to resolve it:
-- Make sure there are no relevant poms in "File->Settings->Build Tools->Maven->Ignored Files"
-- Restart IDEA and click "Reload All Maven Projects" again
+
+* Make sure there are no relevant poms in
+`File | Settings | Build, Execution, Deployment | Build Tools | Maven | Ignored Files`
+
+* Restart IDEA and click `Reload All Maven Projects` again
 
 #### Bloop Build Server
 

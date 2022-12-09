@@ -3230,6 +3230,14 @@ object GpuOverrides extends Logging {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuSize(child, a.legacySizeOfNull)
       }),
+    expr[Reverse](
+      "Returns a reversed string or an array with reverse order of elements",
+      ExprChecks.unaryProject(TypeSig.STRING, TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all),
+        TypeSig.STRING, TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all)),
+      (a, conf, p, r) => new UnaryExprMeta[Reverse](a, conf, p, r) {
+        override def convertToGpu(input: Expression): GpuExpression =
+          GpuReverse(input)
+      }),
     expr[UnscaledValue](
       "Convert a Decimal to an unscaled long value for some aggregation optimizations",
       ExprChecks.unaryProject(TypeSig.LONG, TypeSig.LONG,

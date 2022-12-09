@@ -399,7 +399,8 @@ def test_parquet_read_round_trip_legacy(spark_tmp_path, parquet_gens, v1_enabled
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_parquet_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
+@pytest.mark.parametrize('batch_size', [100, INT_MAX])
+def test_parquet_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs, batch_size):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -419,7 +420,9 @@ def test_parquet_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader
             lambda spark : gen_df(spark, gen_list).write.parquet(third_data_path),
             conf=rebase_write_corrected_conf)
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = copy_and_update(reader_confs,
+            {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+             'spark.rapids.sql.batchSizeBytes': batch_size})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
@@ -930,7 +933,8 @@ def with_id(i):
 # Field ID test cases were re-written from:
 # https://github.com/apache/spark/blob/v3.3.0-rc3/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetFieldIdIOSuite.scala
 @pytest.mark.skipif(is_before_spark_330(), reason='Field ID is not supported before Spark 330')
-def test_parquet_read_field_id_using_correctly(spark_tmp_path):
+@pytest.mark.parametrize('footer_read', ["JAVA", "NATIVE", "AUTO"], ids=idfn)
+def test_parquet_read_field_id_using_correctly(spark_tmp_path, footer_read):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     write_schema = StructType([StructField("random", IntegerType(), metadata=with_id(1)),
                                StructField("name", StringType(), metadata=with_id(0))])
@@ -946,15 +950,18 @@ def test_parquet_read_field_id_using_correctly(spark_tmp_path):
         StructField("a", StringType(), True, metadata=with_id(0)),
         StructField("b", IntegerType(), True, metadata=with_id(1)),
     ])
+    conf = copy_and_update(enable_parquet_field_id_read,
+                           {"spark.rapids.sql.format.parquet.reader.footer.type": footer_read})
+
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema).parquet(data_path),
-        conf=enable_parquet_field_id_read)
+        conf=conf)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema).parquet(data_path).where("b < 50"),
-        conf=enable_parquet_field_id_read)
+        conf=conf)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema).parquet(data_path).where("a >= 'oh'"),
-        conf=enable_parquet_field_id_read)
+        conf=conf)
 
     read_schema_mixed = StructType([
         StructField("name", StringType(), True),
@@ -962,7 +969,7 @@ def test_parquet_read_field_id_using_correctly(spark_tmp_path):
     ])
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema_mixed).parquet(data_path),
-        conf=enable_parquet_field_id_read)
+        conf=conf)
 
     read_schema_mixed_half_matched = StructType([
         StructField("unmatched", StringType(), True),
@@ -970,15 +977,16 @@ def test_parquet_read_field_id_using_correctly(spark_tmp_path):
     ])
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema_mixed_half_matched).parquet(data_path),
-        conf=enable_parquet_field_id_read)
+        conf=conf)
 
     # not specify schema
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path).where("name >= 'oh'"),
-        conf=enable_parquet_field_id_read)
+        conf=conf)
 
 @pytest.mark.skipif(is_before_spark_330(), reason='Field ID is not supported before Spark 330')
-def test_parquet_read_field_id_absence(spark_tmp_path):
+@pytest.mark.parametrize('footer_read', ["JAVA", "NATIVE", "AUTO"], ids=idfn)
+def test_parquet_read_field_id_absence(spark_tmp_path, footer_read):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     write_schema = StructType([StructField("a", IntegerType(), metadata=with_id(3)),
                                StructField("randomName", StringType())])
@@ -987,6 +995,9 @@ def test_parquet_read_field_id_absence(spark_tmp_path):
     with_cpu_session(lambda spark: spark.createDataFrame(write_data, write_schema).repartition(1)
                      .write.mode("overwrite").parquet(data_path),
                      conf=enable_parquet_field_id_write)
+
+    conf = copy_and_update(enable_parquet_field_id_read,
+                           {"spark.rapids.sql.format.parquet.reader.footer.type": footer_read})
 
     # 3 different cases for the 3 columns to read:
     #   - a: ID 1 is not found, but there is column with name `a`, still return null
@@ -999,10 +1010,11 @@ def test_parquet_read_field_id_absence(spark_tmp_path):
     ])
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema).parquet(data_path),
-        conf=enable_parquet_field_id_read)
+        conf=conf)
 
 @pytest.mark.skipif(is_before_spark_330(), reason='Field ID is not supported before Spark 330')
-def test_parquet_read_multiple_field_id_matches(spark_tmp_path):
+@pytest.mark.parametrize('footer_read', ["JAVA", "NATIVE", "AUTO"], ids=idfn)
+def test_parquet_read_multiple_field_id_matches(spark_tmp_path, footer_read):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     write_schema = StructType([
         StructField("a", IntegerType(), True, metadata=with_id(1)),  # duplicated field ID
@@ -1015,15 +1027,19 @@ def test_parquet_read_multiple_field_id_matches(spark_tmp_path):
                      .write.mode("overwrite").parquet(data_path),
                      conf=enable_parquet_field_id_write)
 
+    conf = copy_and_update(enable_parquet_field_id_read,
+                           {"spark.rapids.sql.format.parquet.reader.footer.type": footer_read})
+
     read_schema = StructType([StructField("a", IntegerType(), True, metadata=with_id(1))])
     # Both CPU and GPU invokes `ParquetReadSupport.clipParquetSchema` which throws an exception
     assert_gpu_and_cpu_error(
         lambda spark: spark.read.schema(read_schema).parquet(data_path).collect(),
-        conf=enable_parquet_field_id_read,
+        conf=conf,
         error_message="Found duplicate field(s)")
 
 @pytest.mark.skipif(is_before_spark_330(), reason='Field ID is not supported before Spark 330')
-def test_parquet_read_without_field_id(spark_tmp_path):
+@pytest.mark.parametrize('footer_read', ["JAVA", "NATIVE", "AUTO"], ids=idfn)
+def test_parquet_read_without_field_id(spark_tmp_path, footer_read):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     # Parquet without field ID
     write_schema = StructType([
@@ -1036,13 +1052,17 @@ def test_parquet_read_without_field_id(spark_tmp_path):
     with_cpu_session(lambda spark: spark.createDataFrame(write_data, write_schema).repartition(1)
                      .write.mode("overwrite").parquet(data_path),
                      conf=enable_parquet_field_id_write)
+
+    conf = copy_and_update(enable_parquet_field_id_read,
+                           {"spark.rapids.sql.format.parquet.reader.footer.type": footer_read})
+
     read_schema = StructType([StructField("a", IntegerType(), True, metadata=with_id(1))])
 
     # Spark read schema expects field Ids, but Parquet file schema doesn't contain any field Ids.
     # If `spark.sql.parquet.fieldId.read.ignoreMissing` is false(default value), throws exception
     assert_gpu_and_cpu_error(
         lambda spark: spark.read.schema(read_schema).parquet(data_path).collect(),
-        conf=enable_parquet_field_id_read,
+        conf=conf,
         error_message="Parquet file schema doesn't contain any field Ids")
 
     # Spark read schema expects field Ids, but Parquet file schema doesn't contain any field Ids.
@@ -1050,13 +1070,14 @@ def test_parquet_read_without_field_id(spark_tmp_path):
     # return a column with all values are null for the unmatched field IDs
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema).parquet(data_path),
-        conf=copy_and_update(enable_parquet_field_id_read,
+        conf=copy_and_update(conf,
                              {"spark.sql.parquet.fieldId.read.ignoreMissing": "true"}))
 
 #  test global config: field_id_write_enable=false, field_id_read_enable=true
 #  test global config: field_id_write_enable=true,  field_id_read_enable=true
 @pytest.mark.skipif(is_before_spark_330(), reason='Field ID is not supported before Spark 330')
-def test_parquet_read_field_id_global_flags(spark_tmp_path):
+@pytest.mark.parametrize('footer_read', ["JAVA", "NATIVE", "AUTO"], ids=idfn)
+def test_parquet_read_field_id_global_flags(spark_tmp_path, footer_read):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     write_schema = StructType([
         StructField("a", IntegerType(), True, metadata=with_id(1)),
@@ -1075,9 +1096,13 @@ def test_parquet_read_field_id_global_flags(spark_tmp_path):
     with_cpu_session(lambda spark: spark.createDataFrame(write_data, write_schema).repartition(1)
                      .write.mode("overwrite").parquet(data_path),
                      conf=disable_parquet_field_id_write)
+
+    conf = copy_and_update(enable_parquet_field_id_read,
+                           {"spark.rapids.sql.format.parquet.reader.footer.type": footer_read})
+
     assert_gpu_and_cpu_error(
         lambda spark: spark.read.schema(read_schema).parquet(data_path).collect(),
-        conf=enable_parquet_field_id_read,
+        conf=conf,
         error_message="Parquet file schema doesn't contain any field Ids")
 
     # write field IDs into Parquet
@@ -1087,7 +1112,7 @@ def test_parquet_read_field_id_global_flags(spark_tmp_path):
                      conf=enable_parquet_field_id_write)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema).parquet(data_path),
-        conf=enable_parquet_field_id_read)
+        conf=conf)
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 def test_parquet_read_daytime_interval_cpu_file(spark_tmp_path):

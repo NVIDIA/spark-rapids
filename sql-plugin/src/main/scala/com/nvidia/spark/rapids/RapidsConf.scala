@@ -494,13 +494,11 @@ object RapidsConf {
     .createWithDefault(Integer.MAX_VALUE)
 
   val CHUNKED_READER = conf("spark.rapids.sql.reader.chunked")
-      .doc("Should we use a chunked reader where possible. A chunked reader will " +
-          "take input data and potentially output multiple tables instead of a single table. " +
-          "This reduces the maximum memory usage and can work around issues when there is really " +
-          "high compression ratios in the data.")
-      .internal()
+      .doc("Enable a chunked reader where possible. A chunked reader allows " +
+          "reading highly compressed data that could not be read otherwise, but at the expense " +
+          "of more GPU memory, and in some cases more GPU computation.")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   val MAX_READER_BATCH_SIZE_BYTES = conf("spark.rapids.sql.reader.batchSizeBytes")
     .doc("Soft limit on the maximum number of bytes the reader reads per batch. " +
@@ -1101,13 +1099,30 @@ object RapidsConf {
     conf("spark.rapids.sql.format.hive.text.enabled")
       .doc("When set to false disables Hive text table acceleration")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   val ENABLE_HIVE_TEXT_READ: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.format.hive.text.read.enabled")
       .doc("When set to false disables Hive text table read acceleration")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
+
+  val ENABLE_READ_HIVE_FLOATS = conf("spark.rapids.sql.format.hive.text.read.float.enabled")
+      .doc("Hive text file reading is not 100% compatible when reading floats.")
+      .booleanConf
+      .createWithDefault(true)
+
+  val ENABLE_READ_HIVE_DOUBLES = conf("spark.rapids.sql.format.hive.text.read.double.enabled")
+      .doc("Hive text file reading is not 100% compatible when reading doubles.")
+      .booleanConf
+      .createWithDefault(true)
+
+  val ENABLE_READ_HIVE_DECIMALS = conf("spark.rapids.sql.format.hive.text.read.decimal.enabled")
+      .doc("Hive text file reading is not 100% compatible when reading decimals. Hive has " +
+          "more limitations on what is valid compared to the GPU implementation in some corner " +
+          "cases. See https://github.com/NVIDIA/spark-rapids/issues/7246")
+      .booleanConf
+      .createWithDefault(true)
 
   val ENABLE_RANGE_WINDOW_BYTES = conf("spark.rapids.sql.window.range.byte.enabled")
     .doc("When the order-by column of a range based window is byte type and " +
@@ -1759,7 +1774,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-22.12.0-SNAPSHOT-cuda11.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-23.02.0-SNAPSHOT-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2132,6 +2147,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isHiveDelimitedTextEnabled: Boolean = get(ENABLE_HIVE_TEXT)
 
   lazy val isHiveDelimitedTextReadEnabled: Boolean = get(ENABLE_HIVE_TEXT_READ)
+
+  lazy val shouldHiveReadFloats: Boolean = get(ENABLE_READ_HIVE_FLOATS)
+
+  lazy val shouldHiveReadDoubles: Boolean = get(ENABLE_READ_HIVE_DOUBLES)
+
+  lazy val shouldHiveReadDecimals: Boolean = get(ENABLE_READ_HIVE_DECIMALS)
 
   lazy val shuffleManagerEnabled: Boolean = get(SHUFFLE_MANAGER_ENABLED)
 

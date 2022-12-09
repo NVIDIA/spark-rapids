@@ -153,7 +153,7 @@ for more details.
 
 ## Import the GPU Mortgage Example Notebook
 Import the example [notebook](../demo/Databricks/Mortgage-ETL-db.ipynb) from the repo into your
-workspace, then open the notebook. Please find this [instruction](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-22.10/docs/get-started/xgboost-examples/dataset/mortgage.md)
+workspace, then open the notebook. Please find this [instruction](https://github.com/NVIDIA/spark-rapids-examples/blob/main/docs/get-started/xgboost-examples/dataset/mortgage.md)
 to download the dataset.
 
 ```bash

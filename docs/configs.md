@@ -10,7 +10,7 @@ The following is the list of options that `rapids-plugin-4-spark` supports.
 On startup use: `--conf [conf key]=[conf value]`. For example:
 
 ```
-${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-22.12.0-SNAPSHOT-cuda11.jar \
+${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-23.02.0-SNAPSHOT-cuda11.jar \
 --conf spark.plugins=com.nvidia.spark.SQLPlugin \
 --conf spark.rapids.sql.concurrentGpuTasks=2
 ```
@@ -98,8 +98,11 @@ Name | Description | Default Value | Applicable at
 <a name="sql.format.csv.enabled"></a>spark.rapids.sql.format.csv.enabled|When set to false disables all csv input and output acceleration. (only input is currently supported anyways)|true|Runtime
 <a name="sql.format.csv.read.enabled"></a>spark.rapids.sql.format.csv.read.enabled|When set to false disables csv input acceleration|true|Runtime
 <a name="sql.format.delta.write.enabled"></a>spark.rapids.sql.format.delta.write.enabled|When set to false disables Delta Lake output acceleration. Delta Lake writes are currently experimental, so this is disabled by default.|false|Runtime
-<a name="sql.format.hive.text.enabled"></a>spark.rapids.sql.format.hive.text.enabled|When set to false disables Hive text table acceleration|false|Runtime
-<a name="sql.format.hive.text.read.enabled"></a>spark.rapids.sql.format.hive.text.read.enabled|When set to false disables Hive text table read acceleration|false|Runtime
+<a name="sql.format.hive.text.enabled"></a>spark.rapids.sql.format.hive.text.enabled|When set to false disables Hive text table acceleration|true|Runtime
+<a name="sql.format.hive.text.read.decimal.enabled"></a>spark.rapids.sql.format.hive.text.read.decimal.enabled|Hive text file reading is not 100% compatible when reading decimals. Hive has more limitations on what is valid compared to the GPU implementation in some corner cases. See https://github.com/NVIDIA/spark-rapids/issues/7246|true|Runtime
+<a name="sql.format.hive.text.read.double.enabled"></a>spark.rapids.sql.format.hive.text.read.double.enabled|Hive text file reading is not 100% compatible when reading doubles.|true|Runtime
+<a name="sql.format.hive.text.read.enabled"></a>spark.rapids.sql.format.hive.text.read.enabled|When set to false disables Hive text table read acceleration|true|Runtime
+<a name="sql.format.hive.text.read.float.enabled"></a>spark.rapids.sql.format.hive.text.read.float.enabled|Hive text file reading is not 100% compatible when reading floats.|true|Runtime
 <a name="sql.format.iceberg.enabled"></a>spark.rapids.sql.format.iceberg.enabled|When set to false disables all Iceberg acceleration|true|Runtime
 <a name="sql.format.iceberg.read.enabled"></a>spark.rapids.sql.format.iceberg.read.enabled|When set to false disables Iceberg input acceleration|true|Runtime
 <a name="sql.format.json.enabled"></a>spark.rapids.sql.format.json.enabled|When set to true enables all json input and output acceleration. (only input is currently supported anyways)|false|Runtime
@@ -142,6 +145,7 @@ Name | Description | Default Value | Applicable at
 <a name="sql.python.gpu.enabled"></a>spark.rapids.sql.python.gpu.enabled|This is an experimental feature and is likely to change in the future. Enable (true) or disable (false) support for scheduling Python Pandas UDFs with GPU resources. When enabled, pandas UDFs are assumed to share the same GPU that the RAPIDs accelerator uses and will honor the python GPU configs|false|Runtime
 <a name="sql.reader.batchSizeBytes"></a>spark.rapids.sql.reader.batchSizeBytes|Soft limit on the maximum number of bytes the reader reads per batch. The readers will read chunks of data until this limit is met or exceeded. Note that the reader may estimate the number of bytes that will be used on the GPU in some cases based on the schema and number of rows in each batch.|2147483647|Runtime
 <a name="sql.reader.batchSizeRows"></a>spark.rapids.sql.reader.batchSizeRows|Soft limit on the maximum number of rows the reader will read per batch. The orc and parquet readers will read row groups until this limit is met or exceeded. The limit is respected by the csv reader.|2147483647|Runtime
+<a name="sql.reader.chunked"></a>spark.rapids.sql.reader.chunked|Enable a chunked reader where possible. A chunked reader allows reading highly compressed data that could not be read otherwise, but at the expense of more GPU memory, and in some cases more GPU computation.|true|Runtime
 <a name="sql.regexp.enabled"></a>spark.rapids.sql.regexp.enabled|Specifies whether supported regular expressions will be evaluated on the GPU. Unsupported expressions will fall back to CPU. However, there are some known edge cases that will still execute on GPU and produce incorrect results and these are documented in the compatibility guide. Setting this config to false will make all regular expressions run on the CPU instead.|true|Runtime
 <a name="sql.regexp.maxStateMemoryBytes"></a>spark.rapids.sql.regexp.maxStateMemoryBytes|Specifies the maximum memory on GPU to be used for regular expressions.The memory usage is an estimate based on an upper-bound approximation on the complexity of the regular expression. Note that the actual memory usage may still be higher than this estimate depending on the number of rows in the datacolumn and the input strings themselves. It is recommended to not set this to more than 3 times spark.rapids.sql.batchSizeBytes|2147483647|Runtime
 <a name="sql.replaceSortMergeJoin.enabled"></a>spark.rapids.sql.replaceSortMergeJoin.enabled|Allow replacing sortMergeJoin with HashJoin|true|Runtime
@@ -317,6 +321,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.RegExpReplace"></a>spark.rapids.sql.expression.RegExpReplace|`regexp_replace`|String replace using a regular expression pattern|true|None|
 <a name="sql.expression.Remainder"></a>spark.rapids.sql.expression.Remainder|`%`, `mod`|Remainder or modulo|true|None|
 <a name="sql.expression.ReplicateRows"></a>spark.rapids.sql.expression.ReplicateRows| |Given an input row replicates the row N times|true|None|
+<a name="sql.expression.Reverse"></a>spark.rapids.sql.expression.Reverse|`reverse`|Returns a reversed string or an array with reverse order of elements|true|None|
 <a name="sql.expression.Rint"></a>spark.rapids.sql.expression.Rint|`rint`|Rounds up a double value to the nearest double equal to an integer|true|None|
 <a name="sql.expression.Round"></a>spark.rapids.sql.expression.Round|`round`|Round an expression to d decimal places using HALF_UP rounding mode|true|None|
 <a name="sql.expression.RowNumber"></a>spark.rapids.sql.expression.RowNumber|`row_number`|Window function that returns the index for the row within the aggregation window|true|None|
