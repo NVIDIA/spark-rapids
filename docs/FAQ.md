@@ -357,7 +357,8 @@ for the RAPIDS plugin.
 
 Yes, there is GPU support for Delta Lake read 
 and [Apache Iceberg 0.13 read](./additional-functionality/iceberg-support.md).  
-Write operations will fall back to the CPU.
+Write operations for Delta Lake is supported, but for [Apache Iceberg 0.13 write](./additional-functionality/iceberg-support.md)
+will fall back to the CPU.
 
 ### How many tasks can I run per executor? How many should I run per executor?
 
