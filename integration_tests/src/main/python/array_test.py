@@ -17,10 +17,11 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
 from marks import incompat
-from spark_session import is_before_spark_313, is_before_spark_330, is_spark_330_or_later, is_databricks104_or_later, is_spark_340_or_later, is_spark_330
+from spark_session import is_before_spark_313, is_before_spark_330, is_spark_330_or_later, is_databricks104_or_later, is_spark_340_or_later
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 from pyspark.sql.functions import array_contains, col, element_at, lit
+from spark_init_internal import spark_version
 
 # max_val is a little larger than the default max size(20) of ArrayGen
 # so we can get the out-of-bound indices.
@@ -445,7 +446,7 @@ def test_array_max_q1():
 
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
-@pytest.mark.skipif(is_before_spark_313() or is_spark_330(), reason="NaN equality is only handled in Spark 3.1.3+")
+@pytest.mark.skipif(is_before_spark_313() or spark_version() == '3.3.0', reason="NaN equality is only handled in Spark 3.1.3+")
 def test_array_intersect(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -465,7 +466,7 @@ def test_array_intersect(data_gen):
 
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens_no_nulls + decimal_gens_no_nulls, ids=idfn)
-@pytest.mark.skipif(not is_spark_330(), reason="SPARK-39976 issue with null and ArrayIntersect")
+@pytest.mark.skipif(spark_version() != '3.3.0', reason="SPARK-39976 issue with null and ArrayIntersect")
 def test_array_intersect_spark330(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
