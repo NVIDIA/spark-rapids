@@ -480,7 +480,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     val limit = math.min(maxNumFileProcessed, files.length)
     val tc = TaskContext.get
     if (!keepReadsInOrder) {
-      logDebug("Not keeping reads in order")
+      logWarning("Not keeping reads in order")
       synchronized {
         if (fcs == null) {
           val threadPool =
@@ -489,7 +489,7 @@ abstract class MultiFileCloudPartitionReaderBase(
         }
       }
     } else {
-      logDebug("Keeping reads in same order")
+      logWarning("Keeping reads in same order")
     }
 
     // Currently just add the files in order, we may consider doing something with the size of

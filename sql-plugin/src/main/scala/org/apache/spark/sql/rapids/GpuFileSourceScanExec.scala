@@ -62,7 +62,6 @@ import org.apache.spark.util.collection.BitSet
  *                               InputFileBlockStart, or InputFileBlockLength are used
  * @param disableBucketedScan Disable bucketed scan based on physical query plan.
  * @param alluxioPathsMap Map containing mapping of DFS scheme to Alluxio scheme
- * @param keepReadsInOrder Whether to read the files in the same order as Spark.
  */
 case class GpuFileSourceScanExec(
     @transient relation: HadoopFsRelation,
@@ -75,8 +74,7 @@ case class GpuFileSourceScanExec(
     tableIdentifier: Option[TableIdentifier],
     disableBucketedScan: Boolean = false,
     queryUsesInputFile: Boolean = false,
-    alluxioPathsMap: Option[Map[String, String]],
-    keepReadsInOrder: Boolean = false)(@transient val rapidsConf: RapidsConf)
+    alluxioPathsMap: Option[Map[String, String]])(@transient val rapidsConf: RapidsConf)
     extends GpuDataSourceScanExec with GpuExec {
   import GpuMetric._
 
@@ -609,8 +607,7 @@ case class GpuFileSourceScanExec(
           rapidsConf,
           allMetrics,
           queryUsesInputFile,
-          alluxioPathReplacementMap,
-          keepReadsInOrder)
+          alluxioPathReplacementMap)
       case _: OrcFileFormat =>
         GpuOrcMultiFilePartitionReaderFactory(
           sqlConf,
@@ -652,8 +649,7 @@ case class GpuFileSourceScanExec(
       QueryPlan.normalizePredicates(dataFilters, output),
       None,
       queryUsesInputFile,
-      alluxioPathsMap = alluxioPathsMap,
-      keepReadsInOrder = keepReadsInOrder)(rapidsConf)
+      alluxioPathsMap = alluxioPathsMap)(rapidsConf)
   }
 
 }

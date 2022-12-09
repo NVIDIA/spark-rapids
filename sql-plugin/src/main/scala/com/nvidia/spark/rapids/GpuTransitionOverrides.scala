@@ -343,23 +343,11 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     plan.expressions.exists(disableScanUntilInput)
   }
 
-  private def containsShuffle(plan: SparkPlan): Boolean = {
-    plan match {
-      case _: GpuShuffleExchangeExecBase =>
-        true
-      case p =>
-        val childRes = p.children.map(c => containsShuffle(c)).exists(_ == true)
-        childRes || false
-    }
-  }
-
   // This walks from the output to the input to look for any uses of InputFileName,
   // InputFileBlockStart, or InputFileBlockLength when we use a Parquet read because
   // we can't support the coalesce file reader optimization when this is used.
-  // This will also update the Parquet reads to make sure it keeps the same file
-  // order as Spark if we detect it's needed.
   private def updateScansForInputAndOrder(plan: SparkPlan,
-      disableUntilInput: Boolean = false, keepReadsInOrder: Boolean): SparkPlan = {
+      disableUntilInput: Boolean = false): SparkPlan = {
     plan match {
       case batchScan: GpuBatchScanExec =>
         if ((batchScan.scan.isInstanceOf[GpuParquetScan] ||
@@ -368,7 +356,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           (disableUntilInput || disableScanUntilInput(batchScan))) {
           val scanCopy = batchScan.scan match {
             case parquetScan: GpuParquetScan =>
-              parquetScan.copy(queryUsesInputFile = true, keepReadsInOrder = keepReadsInOrder)
+              parquetScan.copy(queryUsesInputFile = true)
             case orcScan: GpuOrcScan =>
               orcScan.copy(queryUsesInputFile = true)
             case eScan if ExternalSource.isSupportedScan(eScan) =>
@@ -376,30 +364,19 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             case _ => throw new RuntimeException("Wrong format") // never reach here
           }
           batchScan.copy(scan = scanCopy)
-        } else if (batchScan.scan.isInstanceOf[GpuParquetScan] && keepReadsInOrder) {
-          batchScan.scan match {
-            case parquetScan: GpuParquetScan =>
-              val pCopy = parquetScan.copy(keepReadsInOrder = keepReadsInOrder)
-              batchScan.copy(scan = pCopy)
-            case _ => batchScan
-          }
         } else {
           batchScan
         }
       case fileSourceScan: GpuFileSourceScanExec =>
         if ((disableUntilInput || disableScanUntilInput(fileSourceScan))) {
-          fileSourceScan.copy(queryUsesInputFile = true,
-            keepReadsInOrder = keepReadsInOrder)(fileSourceScan.rapidsConf)
-        } else if (keepReadsInOrder) {
-          fileSourceScan.copy(keepReadsInOrder = keepReadsInOrder)(fileSourceScan.rapidsConf)
+          fileSourceScan.copy(queryUsesInputFile = true)(fileSourceScan.rapidsConf)
         } else {
           fileSourceScan
         }
       case p =>
         val planDisableUntilInput = disableScanUntilInput(p) && hasDirectLineToInput(p)
         p.withNewChildren(p.children.map(c => {
-          updateScansForInputAndOrder(c, planDisableUntilInput || disableUntilInput,
-            keepReadsInOrder)
+          updateScansForInputAndOrder(c, planDisableUntilInput || disableUntilInput)
         }))
     }
   }
@@ -611,12 +588,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       GpuOverrides.logDuration(rapidsConf.shouldExplain,
         t => f"GPU plan transition optimization took $t%.2f ms") {
         var updatedPlan = insertHashOptimizeSorts(plan)
-        // if the plan doesn't contain a shuffle make sure if we use the multithreaded reader
-        // we use the same order of files as Spark does so it would come out sorted if files
-        // stored sorted
-        val keepReadsInOrder = !containsShuffle(plan)
-        updatedPlan = updateScansForInputAndOrder(updatedPlan,
-          disableUntilInput=false, keepReadsInOrder)
+        updatedPlan = updateScansForInputAndOrder(updatedPlan)
         updatedPlan = insertColumnarFromGpu(updatedPlan)
         updatedPlan = insertCoalesce(updatedPlan)
         // only insert shuffle coalesces when using normal shuffle

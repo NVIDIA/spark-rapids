@@ -105,9 +105,7 @@ case class GpuParquetScan(
     partitionFilters: Seq[Expression],
     dataFilters: Seq[Expression],
     rapidsConf: RapidsConf,
-    queryUsesInputFile: Boolean = false,
-    keepReadsInOrder: Boolean = true
-)
+    queryUsesInputFile: Boolean = false)
   extends ScanWithMetrics with FileScan with Logging {
 
   override def isSplitable(path: Path): Boolean = true
@@ -124,7 +122,7 @@ case class GpuParquetScan(
     } else {
       GpuParquetMultiFilePartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
         dataSchema, readDataSchema, readPartitionSchema, pushedFilters, rapidsConf, metrics,
-        queryUsesInputFile, None, keepReadsInOrder)
+        queryUsesInputFile, None)
     }
   }
 
@@ -132,7 +130,7 @@ case class GpuParquetScan(
     case p: GpuParquetScan =>
       super.equals(p) && dataSchema == p.dataSchema && options == p.options &&
           equivalentFilters(pushedFilters, p.pushedFilters) && rapidsConf == p.rapidsConf &&
-          queryUsesInputFile == p.queryUsesInputFile && keepReadsInOrder == p.keepReadsInOrder
+          queryUsesInputFile == p.queryUsesInputFile
     case _ => false
   }
 
@@ -946,8 +944,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     @transient rapidsConf: RapidsConf,
     metrics: Map[String, GpuMetric],
     queryUsesInputFile: Boolean,
-    alluxioPathReplacementMap: Option[Map[String, String]],
-    keepReadsInOrder: Boolean)
+    alluxioPathReplacementMap: Option[Map[String, String]])
   extends MultiFilePartitionReaderFactoryBase(sqlConf, broadcastedConf,
     rapidsConf, alluxioPathReplacementMap) {
 
@@ -999,7 +996,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       ignoreMissingFiles, ignoreCorruptFiles, readUseFieldId,
       alluxioPathReplacementMap.getOrElse(Map.empty), alluxioReplacementTaskTime,
       combineThresholdSize, combineWaitTime, queryUsesInputFile,
-      keepReadsInOrder || keepReadsInOrderFromConf)
+      keepReadsInOrderFromConf)
   }
 
   private def filterBlocksForCoalescingReader(
