@@ -1137,10 +1137,12 @@ def _get_overflow_df_2cols(spark, data_types, values, expr):
     (IntegerType(), [timedelta(microseconds=LONG_MIN), -1])
 ], ids=idfn)
 def test_day_time_interval_division_overflow(data_type, value_pair):
+    exception_message = "SparkArithmeticException: Overflow in integral divide." if is_before_spark_340() else \
+        "SparkArithmeticException: [ARITHMETIC_OVERFLOW] Overflow in integral divide."
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: _get_overflow_df_2cols(spark, [DayTimeIntervalType(), data_type], value_pair, 'a / b').collect(),
         conf={},
-        error_message='SparkArithmeticException: Overflow in integral divide.')
+        error_message=exception_message)
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @pytest.mark.parametrize('data_type,value_pair', [
@@ -1169,18 +1171,22 @@ def test_day_time_interval_division_round_overflow(data_type, value_pair):
     (DoubleType(), [timedelta(seconds=0), 0.0]),  # 0 / 0 = NaN
 ], ids=idfn)
 def test_day_time_interval_divided_by_zero(data_type, value_pair):
+    exception_message = "SparkArithmeticException: Division by zero." if is_before_spark_340() else \
+        "SparkArithmeticException: [INTERVAL_DIVIDED_BY_ZERO] Division by zero"
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: _get_overflow_df_2cols(spark, [DayTimeIntervalType(), data_type], value_pair, 'a / b').collect(),
         conf={},
-        error_message='SparkArithmeticException: Division by zero.')
+        error_message=exception_message)
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @pytest.mark.parametrize('zero_literal', ['0', '0.0f', '-0.0f'], ids=idfn)
 def test_day_time_interval_divided_by_zero_scalar(zero_literal):
+    exception_message = "SparkArithmeticException: Division by zero." if is_before_spark_340() else \
+        "SparkArithmeticException: [INTERVAL_DIVIDED_BY_ZERO] Division by zero."
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: _get_overflow_df_1col(spark, DayTimeIntervalType(), [timedelta(seconds=1)], 'a / ' + zero_literal).collect(),
         conf={},
-        error_message='SparkArithmeticException: Division by zero.')
+        error_message=exception_message)
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @pytest.mark.parametrize('data_type,value', [
@@ -1194,10 +1200,12 @@ def test_day_time_interval_divided_by_zero_scalar(zero_literal):
     (DoubleType(), -0.0),
 ], ids=idfn)
 def test_day_time_interval_scalar_divided_by_zero(data_type, value):
+    exception_message = "SparkArithmeticException: Division by zero." if is_before_spark_340() else \
+        "SparkArithmeticException: [INTERVAL_DIVIDED_BY_ZERO] Division by zero."
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: _get_overflow_df_1col(spark, data_type, [value], 'INTERVAL 1 SECOND / a').collect(),
         conf={},
-        error_message='SparkArithmeticException: Division by zero.')
+        error_message=exception_message)
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @pytest.mark.parametrize('data_type,value_pair', [
