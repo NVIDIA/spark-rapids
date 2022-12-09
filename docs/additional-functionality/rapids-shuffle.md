@@ -10,7 +10,7 @@ The RAPIDS Shuffle Manager is an implementation of the `ShuffleManager` interfac
 that allows custom mechanisms to exchange shuffle data. We currently expose two modes of operation:
 Multi Threaded and UCX.
 
-## Multi Threaded Mode (experimental)
+## Multi Threaded Mode
 
 This mode is similar to the built-in Spark shuffle, but it attempts to use more CPU threads
 for compute-intensive tasks, such as compression and decompression. 
