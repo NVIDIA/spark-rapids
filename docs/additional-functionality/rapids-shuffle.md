@@ -39,8 +39,7 @@ Minimum configuration:
 ```shell
 --conf spark.shuffle.manager=com.nvidia.spark.rapids.[shim package].RapidsShuffleManager \
 --conf spark.driver.extraClassPath=${SPARK_RAPIDS_PLUGIN_JAR} \
---conf spark.executor.extraClassPath=${SPARK_RAPIDS_PLUGIN_JAR} \
---conf spark.rapids.shuffle.mode=MULTITHREADED
+--conf spark.executor.extraClassPath=${SPARK_RAPIDS_PLUGIN_JAR}
 ```
 
 By default, a thread pool of 20 threads is used for shuffle writes and reads. This
@@ -50,7 +49,8 @@ pools is the number of cores in the system divided by the number of executors pe
 
 ## UCX Mode
 
-UCX mode has two components: a spillable cache, and a transport that can utilize Remote Direct Memory Access (RDMA) and high-bandwidth transfers 
+UCX mode has two components: a spillable cache, and a transport that can utilize 
+Remote Direct Memory Access (RDMA) and high-bandwidth transfers 
 within a node that has multiple GPUs. This is possible because this mode 
 utilizes [Unified Communication X (UCX)](https://www.openucx.org/) as its transport.
 
