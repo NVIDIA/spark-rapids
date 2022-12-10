@@ -16,22 +16,23 @@
 package com.nvidia.spark.rapids.delta.shims
 
 import com.databricks.sql.transaction.tahoe.DeltaUDF
-import com.databricks.sql.transaction.tahoe.constraints.Constraint
+import com.databricks.sql.transaction.tahoe.constraints.Constraints._
 import com.databricks.sql.transaction.tahoe.schema.InvariantViolationException
 
 import org.apache.spark.sql.expressions.UserDefinedFunction
 
 object InvariantViolationExceptionShim {
-  def apply[T <: Constraint](c: T, m: Map[String, Any]): InvariantViolationException = {
-    InvariantViolationException(c.toString + m.mkString)
+  def apply(c: Check, m: Map[String, Any]): InvariantViolationException = {
+    InvariantViolationException(c, m)
   }
+
   def apply(c: NotNull): InvariantViolationException = {
-    InvariantViolationException(c.toString)
+    InvariantViolationException(c)
   }
 }
 
 object ShimDeltaUDF {
-  def stringStringUdf(f: String => String): UserDefinedFunction ={
-    DeltaUDF.stringFromString(f)
+  def stringStringUdf(f: String => String): UserDefinedFunction = {
+     DeltaUDF.stringStringUdf(f)
   }
 }
