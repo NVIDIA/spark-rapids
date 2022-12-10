@@ -243,13 +243,11 @@ number of GPU based on your needs.
 
 The script below will initialize with the following:
 
-* [GPU Driver](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/gpu) and
-  [RAPIDS Acclerator for Apache
-  Spark](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/rapids) through
+* [GPU Driver and RAPIDS Acclerator for Apache Spark](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/spark-rapids) through
   initialization actions (please note it takes up to 1 week for the latest init script to be merged
   into the GCP Dataproc public GCS bucket)
 
-  To make changes to example configuration, make a copy of `rapids.sh` and add the RAPIDS
+  To make changes to example configuration, make a copy of `spark-rapids.sh` and add the RAPIDS
   Accelerator related parameters according to [tuning guide](../tuning-guide.md) and modify the
   `--initialization-actions` parameter to point to the updated version.
 * Configuration for [GPU scheduling and isolation](yarn-gpu.md)
@@ -276,7 +274,7 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --worker-accelerator=type=nvidia-tesla-t4,count=$NUM_GPUS \
     --worker-machine-type=n1-highmem-32\
     --num-worker-local-ssds=4 \
-    --initialization-actions=gs://goog-dataproc-initialization-actions-${REGION}/gpu/install_gpu_driver.sh,gs://goog-dataproc-initialization-actions-${REGION}/rapids/rapids.sh \
+    --initialization-actions=gs://goog-dataproc-initialization-actions-${REGION}/spark-rapids/spark-rapids.sh \
     --optional-components=JUPYTER,ZEPPELIN \
     --metadata=rapids-runtime=SPARK \
     --bucket=$GCS_BUCKET \
@@ -318,7 +316,7 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --worker-accelerator=type=nvidia-tesla-a100,count=$NUM_GPUS \
     --worker-machine-type=a2-highgpu-1g \
     --num-worker-local-ssds=4 \
-    --initialization-actions=gs://goog-dataproc-initialization-actions-${REGION}/gpu/install_gpu_driver.sh,gs://goog-dataproc-initialization-actions-${REGION}/rapids/rapids.sh \
+    --initialization-actions=gs://goog-dataproc-initialization-actions-${REGION}/spark-rapids/spark-rapids.sh \
     --metadata=startup-script-url=gs://goog-dataproc-initialization-actions-${REGION}/gpu/mig.sh \
     --optional-components=JUPYTER,ZEPPELIN \
     --metadata=rapids-runtime=SPARK \
@@ -379,14 +377,10 @@ Once the data is prepared, we use the [Mortgage XGBoost4j Scala
 Notebook](../demo/GCP/mortgage-xgboost4j-gpu-scala.ipynb) in Dataproc's jupyter notebook to execute
 the training job on GPUs. Scala based XGBoost examples use [DLMC
 XGBoost](https://github.com/dmlc/xgboost). For a PySpark based XGBoost example, please refer to
-[Spark-RAPIDS-examples](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.12) that use
-[NVIDIA’s Spark XGBoost](https://repo1.maven.org/maven2/com/nvidia/xgboost4j-spark_3.0/1.4.2-0.3.0/).
-Precompiled [XGBoost4j](https://repo1.maven.org/maven2/ml/dmlc/xgboost4j-gpu_2.12/) and [XGBoost4j
-Spark](https://repo1.maven.org/maven2/ml/dmlc/xgboost4j-gpu_2.12/) libraries are available on
-maven.  They are pre-downloaded by the GCP [RAPIDS init
-script](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/rapids).
+[Spark-RAPIDS-examples](https://github.com/NVIDIA/spark-rapids-examples/blob/main/docs/get-started/xgboost-examples/on-prem-cluster/yarn-python.md) that 
+make sure the required libraries are installed.
 
-The training time should be around 480 seconds (1/10 of CPU execution time with same config). This
+The training time should be around 680 seconds (1/7 of CPU execution time with same config). This
 is shown under cell:
 
 ```scala
@@ -454,15 +448,8 @@ that already has NVIDIA drivers and CUDA toolkit installed, with RAPIDS deployed
 could also be used in an air gap environment. In this section, we will be using [these instructions
 from GCP](https://cloud.google.com/dataproc/docs/guides/dataproc-images) to create a custom image.
 
-Currently, the [GPU
-Driver](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/gpu)
-initialization actions:
-1. Configure YARN, the YARN node manager, GPU isolation and GPU exclusive mode.
-2. Install GPU drivers.
-
-Let's write a script to move as many of those to custom image.
-[gpu_dataproc_packages_ubuntu_sample.sh](gpu_dataproc_packages_ubuntu_sample.sh) in this directory
-will be used to create the Dataproc image:
+Currently, we can directly download the [spark-rapids.sh](https://github.com/GoogleCloudDataproc/initialization-actions/tree/master/spark-rapids)
+script to create the Dataproc image:
 
 Google provides a `generate_custom_image.py` script that:
 - Launches a temporary Compute Engine VM instance with the specified Dataproc base image.
@@ -473,14 +460,14 @@ update configurations.
 - The temporary VM is deleted after the custom image is created.
 - The custom image is saved and can be used to create Dataproc clusters.
 
-Download `gpu_dataproc_packages_ubuntu_sample.sh` in this repo.  The script uses
+Download `spark-rapids.sh` in this repo.  The script uses
 Google's `generate_custom_image.py` script.  This step may take 20-25 minutes to complete.
 
 ```bash
 git clone https://github.com/GoogleCloudDataproc/custom-images
 cd custom-images
 
-export CUSTOMIZATION_SCRIPT=/path/to/gpu_dataproc_packages_ubuntu_sample.sh
+export CUSTOMIZATION_SCRIPT=/path/to/spark-rapids.sh
 export ZONE=[Your Preferred GCP Zone]
 export GCS_BUCKET=[Your GCS Bucket]
 export IMAGE_NAME=sample-20-ubuntu18-gpu-t4
