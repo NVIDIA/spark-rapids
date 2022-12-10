@@ -53,7 +53,7 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
     val ratio = conf.joinReorderingRatio
     val maxFact = conf.joinReorderingMaxFact
     val t0 = System.nanoTime()
-    val reorderedJoin = plan.transformUp {
+    val reorderedJoin = plan.transformDown {
       case j@Join(_, _, Inner, Some(_), JoinHint.NONE) if isSupportedJoin(j) =>
         reorder(j, j.output, ratio, maxFact)
       //TODO add projection case back in here?
@@ -156,7 +156,10 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
 
     // copy the join conditions into a HashSet
     val conds = new mutable.HashSet[Expression]()
-    joinConditions.foreach(e => conds += e)
+    joinConditions.foreach(e => {
+      println(s"JOIN condition: $e")
+      conds += e
+    })
 
     val dimLogicalPlans = dimsBySize.map(_.plan)
 
@@ -211,15 +214,20 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
     for (dim <- dims) {
       val joinConds = new ListBuffer[Expression]()
       for (cond <- conds) {
-        val b = cond.asInstanceOf[BinaryExpression]
-        val l = b.left.asInstanceOf[AttributeReference]
-        val r = b.right.asInstanceOf[AttributeReference]
-        if (fact.output.exists(_.name == l.name) &&
-          dim.output.exists(_.name == r.name)) {
-          joinConds += cond
-        } else if (fact.output.exists(_.name == r.name) &&
-          dim.output.exists(_.name == l.name)) {
-          joinConds += cond
+        cond match {
+          case b: BinaryExpression =>
+            val l = b.left.asInstanceOf[AttributeReference]
+            val r = b.right.asInstanceOf[AttributeReference]
+            if (fact.output.exists(_.exprId == l.exprId) &&
+              dim.output.exists(_.exprId == r.exprId)) {
+              joinConds += cond
+            } else if (fact.output.exists(_.exprId == r.exprId) &&
+              dim.output.exists(_.exprId == l.exprId)) {
+              joinConds += cond
+            }
+          case _ =>
+            //TODO ignore? error?
+          println(s"FactDimensionJoinReorder: ignoring join cond: $cond")
         }
       }
       if (joinConds.nonEmpty) {
