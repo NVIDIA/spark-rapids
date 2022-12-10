@@ -24,7 +24,7 @@ import scala.collection.mutable.ListBuffer
 import com.nvidia.spark.rapids.RapidsConf
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.{And, Attribute, AttributeReference, BinaryExpression, Expression, ExpressionSet, PredicateHelper}
+import org.apache.spark.sql.catalyst.expressions.{And, Attribute, AttributeReference, BinaryExpression, Expression, ExpressionSet, IsNotNull, PredicateHelper}
 import org.apache.spark.sql.catalyst.plans.Inner
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -173,19 +173,14 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
       buildJoinTree(factDimJoins.head, factDimJoins.drop(1), conds)
     }
 
-    val finalPlan = if (conds.isEmpty) {
-      newPlan
-    } else {
-      // if there are any conditions left over, add them as a filter
-      // TODO maybe this should be an error instead?
-      val predicate = conds.reduce(And)
-      println(s"FactDimensionJoinReorder: Adding filter: $predicate")
-      Filter(predicate, newPlan)
+    if (conds.nonEmpty) {
+      println(s"FactDimensionJoinReorder: could not apply all join conditions")
+      return plan
     }
 
-    println(s"FactDimensionJoinReorder: NEW PLAN\n$finalPlan")
+    println(s"FactDimensionJoinReorder: NEW PLAN\n$newPlan")
 
-    finalPlan
+    newPlan
   }
 
   private def buildJoinTree(
@@ -207,9 +202,13 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
               dim.output.exists(_.exprId == l.exprId)) {
               joinConds += cond
             }
+
+          case IsNotNull(_) =>
+            // during optimization after we rewrite joins, more IsNotNull
+            // conditions get added, and we can safely ignore these
+
           case _ =>
-            //TODO figure out why we get IsNotNull join conditions here
-          println(s"FactDimensionJoinReorder: ignoring join cond: $cond")
+            throw new IllegalStateException("unexpected join condition")
         }
       }
       if (joinConds.nonEmpty) {

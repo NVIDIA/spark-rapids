@@ -1586,7 +1586,7 @@ object RapidsConf {
 
   val JOIN_REORDERING_MAX_FACT = conf("spark.rapids.sql.cbo.maxFactTables")
     .internal()
-    .doc("Maximum number of fact tables allowed in a reorderd join")
+    .doc("Maximum number of fact tables allowed in a reordered join")
     .integerConf
     .createWithDefault(2)
 
