@@ -192,7 +192,7 @@ abstract class GpuOptimisticTransactionBase
     hasWritten = true
 
     val spark = inputData.sparkSession
-    val (data, partitionSchema) = performCDCPartition(inputData)
+    val (data, partitionSchema) = performCDCPartitionInternal(inputData)
     val outputPath = deltaLog.dataPath
 
     val (queryExecution, output, generatedColumnConstraints, dataHighWaterMarks) =
