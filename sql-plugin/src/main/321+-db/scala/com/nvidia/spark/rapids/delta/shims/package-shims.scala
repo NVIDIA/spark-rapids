@@ -17,20 +17,15 @@
 package com.nvidia.spark.rapids.delta.shims
 
 import com.databricks.sql.expressions.JoinedProjection
-import com.databricks.sql.transaction.tahoe.{DeltaColumnMapping, DeltaUDF}
+import com.databricks.sql.transaction.tahoe.{DeltaColumnMapping}
 import com.databricks.sql.transaction.tahoe.stats.UsesMetadataFields
 import com.databricks.sql.transaction.tahoe.util.JsonUtils
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.types.StructField
 
 object ShimDeltaColumnMapping {
   def getPhysicalName(field: StructField): String = DeltaColumnMapping.getPhysicalName(field)
-}
-
-object ShimDeltaUDF {
-  def stringStringUdf(f: String => String): UserDefinedFunction = DeltaUDF.stringFromString(f)
 }
 
 object ShimJoinedProjection {

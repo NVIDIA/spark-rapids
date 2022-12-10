@@ -24,8 +24,8 @@ package com.databricks.sql.transaction.tahoe.rapids.shims
 import ai.rapids.cudf.{ColumnVector, Scalar}
 import com.databricks.sql.transaction.tahoe.constraints.{CheckDeltaInvariant, Constraint}
 import com.databricks.sql.transaction.tahoe.constraints.Constraints.{Check, NotNull}
-import com.databricks.sql.transaction.tahoe.schema.InvariantViolationException
 import com.nvidia.spark.rapids.{DataFromReplacementRule, ExprChecks, GpuBindReferences, GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuOverrides, RapidsConf, RapidsMeta, TypeSig, UnaryExprMeta}
+import com.nvidia.spark.rapids.delta.shims.InvariantViolationExceptionShim
 import com.nvidia.spark.rapids.shims.ShimUnaryExpression
 
 import org.apache.spark.internal.Logging
@@ -66,7 +66,7 @@ case class GpuCheckDeltaInvariant(
       constraint match {
         case n: NotNull =>
           if (col.getBase.hasNulls) {
-            throw InvariantViolationException(n.toString)
+            throw InvariantViolationExceptionShim(constraint)
           }
         case c: Check =>
           if (col.getBase.hasNulls || hasFalse(col.getBase)) {
@@ -118,7 +118,7 @@ case class GpuCheckDeltaInvariant(
       val hostBatch = new ColumnarBatch(filteredHostCols.toArray,
         filteredHostCols(0).getBase.getRowCount.toInt)
       val row = hostBatch.getRow(0)
-      throw InvariantViolationException(check, columnExtractors.mapValues(_.eval(row)).toMap)
+      throw InvariantViolationExceptionShim(check, columnExtractors.mapValues(_.eval(row)).toMap)
     }
   }
 }
