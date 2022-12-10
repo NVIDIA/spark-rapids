@@ -1571,6 +1571,19 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
+  val JOIN_REORDERING = conf("spark.rapids.sql.cbo.joinReordering")
+    .internal()
+    .doc("Enable join reordering of fact-dimension joins based on the estimated " +
+      "size of underlying tables")
+    .booleanConf
+    .createWithDefault(false)
+
+  val JOIN_REORDERING_RATIO = conf("spark.rapids.sql.cbo.factDimRatio")
+    .internal()
+    .doc("Ratio to use to determine fact versus dimension tables")
+    .doubleConf
+    .createWithDefault(0.3)
+
   val OPTIMIZER_ENABLED = conf("spark.rapids.sql.optimizer.enabled")
       .internal()
       .doc("Enable cost-based optimizer that will attempt to avoid " +
@@ -2205,6 +2218,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     DEFAULT_CLOUD_SCHEMES ++ get(CLOUD_SCHEMES).getOrElse(Seq.empty)
 
   lazy val optimizerEnabled: Boolean = get(OPTIMIZER_ENABLED)
+
+  lazy val joinReordering: Boolean = get(JOIN_REORDERING)
+
+  lazy val joinReorderingRatio: Double = get(JOIN_REORDERING_RATIO)
 
   lazy val optimizerExplain: String = get(OPTIMIZER_EXPLAIN)
 
