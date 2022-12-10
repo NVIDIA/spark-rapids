@@ -28,7 +28,6 @@ import org.apache.spark.sql.catalyst.expressions.{And, Attribute, AttributeRefer
 import org.apache.spark.sql.catalyst.plans.Inner
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.rules.Rule
-import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.datasources.LogicalRelation
 import org.apache.spark.sql.types.{DataTypes, StructType}
 
@@ -41,10 +40,6 @@ import org.apache.spark.sql.types.{DataTypes, StructType}
  */
 object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
 
-  private val alreadyOptimized = new TreeNodeTag[Boolean]("rapids.join.reordering")
-
-  private var totalTimeMillis = 0L
-
   def apply(plan: LogicalPlan): LogicalPlan = {
     val conf = new RapidsConf(plan.conf)
     if (!conf.joinReorderingEnabled) {
@@ -53,7 +48,7 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
     val ratio = conf.joinReorderingRatio
     val maxFact = conf.joinReorderingMaxFact
     val t0 = System.nanoTime()
-    val reorderedJoin = plan.transformDown {
+    val reorderedJoin = plan.transformUp {
       case j@Join(_, _, Inner, Some(_), JoinHint.NONE) if isSupportedJoin(j) =>
         reorder(j, j.output, ratio, maxFact)
       //TODO add projection case back in here?
@@ -69,8 +64,7 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
     }
     val t1 = System.nanoTime()
     val elapsedTimeMillis = TimeUnit.MILLISECONDS.convert(t1 - t0, TimeUnit.NANOSECONDS)
-    totalTimeMillis += elapsedTimeMillis
-    println(s"FactDimensionJoinReorder took $elapsedTimeMillis millis ($totalTimeMillis total)")
+    println(s"FactDimensionJoinReorder took $elapsedTimeMillis millis")
     newPlan
   }
 
@@ -106,10 +100,6 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
       output: Seq[Attribute],
       ratio: Double,
       maxFact: Int): LogicalPlan = {
-    if (plan.getTagValue(alreadyOptimized).isDefined) {
-      return plan
-    }
-
     println(s"FactDimensionJoinReorder: Attempt to reorder join:\n$plan")
 
     // unnest the join into a list of input relations and list of join conditions
@@ -193,14 +183,6 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
       Filter(predicate, newPlan)
     }
 
-    // if we successfully reordered the join then tag the child plans so
-    // that we don't attempt any more optimizations as we continue to transformDown
-//    finalFinalPlan.transformDown {
-//      case p =>
-//        p.setTagValue(alreadyOptimized, true)
-//        p
-//    }
-
     println(s"FactDimensionJoinReorder: NEW PLAN\n$finalPlan")
 
     finalPlan
@@ -226,7 +208,7 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
               joinConds += cond
             }
           case _ =>
-            //TODO ignore? error?
+            //TODO figure out why we get IsNotNull join conditions here
           println(s"FactDimensionJoinReorder: ignoring join cond: $cond")
         }
       }
