@@ -1584,6 +1584,12 @@ object RapidsConf {
     .doubleConf
     .createWithDefault(0.3)
 
+  val JOIN_REORDERING_MAX_FACT = conf("spark.rapids.sql.cbo.maxFactTables")
+    .internal()
+    .doc("Maximum number of fact tables allowed in a reorderd join")
+    .integerConf
+    .createWithDefault(2)
+
   val OPTIMIZER_ENABLED = conf("spark.rapids.sql.optimizer.enabled")
       .internal()
       .doc("Enable cost-based optimizer that will attempt to avoid " +
@@ -2219,9 +2225,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val optimizerEnabled: Boolean = get(OPTIMIZER_ENABLED)
 
-  lazy val joinReordering: Boolean = get(JOIN_REORDERING)
-
+  lazy val joinReorderingEnabled: Boolean = get(JOIN_REORDERING)
   lazy val joinReorderingRatio: Double = get(JOIN_REORDERING_RATIO)
+  lazy val joinReorderingMaxFact: Int = get(JOIN_REORDERING_MAX_FACT)
 
   lazy val optimizerExplain: String = get(OPTIMIZER_EXPLAIN)
 
