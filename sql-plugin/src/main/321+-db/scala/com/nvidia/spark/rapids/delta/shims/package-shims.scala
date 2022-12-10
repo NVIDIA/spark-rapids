@@ -30,7 +30,7 @@ object ShimDeltaColumnMapping {
 }
 
 object ShimDeltaUDF {
-  def stringStringUdf(f: String => String): UserDefinedFunction = DeltaUDF.stringStringUdf(f)
+  def stringStringUdf(f: String => String): UserDefinedFunction = DeltaUDF.stringFromString(f)
 }
 
 object ShimJoinedProjection {
