@@ -66,7 +66,7 @@ case class GpuCheckDeltaInvariant(
       constraint match {
         case n: NotNull =>
           if (col.getBase.hasNulls) {
-            throw InvariantViolationException(n)
+            throw InvariantViolationException(n.toString)
           }
         case c: Check =>
           if (col.getBase.hasNulls || hasFalse(col.getBase)) {
