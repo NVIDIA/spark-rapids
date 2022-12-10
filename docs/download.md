@@ -70,7 +70,6 @@ New functionality and performance improvements for this release include:
 * Tiered projections for more expressions to optimize performance  
 * Support for mapInArrow, instr and array_remove operations
 * z-ordering capability on Databricks Delta Lake
-* Delta Lake batch writes on Databricks Delta Lake
 * Dynamic Partition Pruning (DPP) on Databricks 
 * Qualification and Profiling tool:
   * Support cost estimations for Dataproc 1.5 and Dataproc2.x
