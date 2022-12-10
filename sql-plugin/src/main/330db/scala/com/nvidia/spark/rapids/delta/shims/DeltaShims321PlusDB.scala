@@ -17,9 +17,8 @@ package com.nvidia.spark.rapids.delta.shims
 
 import com.databricks.sql.transaction.tahoe.DeltaUDF
 import com.databricks.sql.transaction.tahoe.constraints.Constraints._
-import com.databricks.sql.transaction.tahoe.schema.InvariantViolationException
 import com.databricks.sql.transaction.tahoe.schema.DeltaInvariantViolationException
-
+import com.databricks.sql.transaction.tahoe.schema.InvariantViolationException
 
 import org.apache.spark.sql.expressions.UserDefinedFunction
 
