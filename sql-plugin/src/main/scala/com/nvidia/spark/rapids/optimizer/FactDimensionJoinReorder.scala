@@ -24,7 +24,7 @@ import scala.collection.mutable.ListBuffer
 import com.nvidia.spark.rapids.RapidsConf
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.{And, Attribute, AttributeReference, BinaryExpression, Expression, ExpressionSet, IsNotNull, PredicateHelper}
+import org.apache.spark.sql.catalyst.expressions.{And, Attribute, AttributeReference, BinaryExpression, Expression, ExpressionSet, PredicateHelper}
 import org.apache.spark.sql.catalyst.plans.Inner
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -51,7 +51,9 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
     val reorderedJoin = plan.transformUp {
       case j@Join(_, _, Inner, Some(_), JoinHint.NONE) if isSupportedJoin(j) =>
         reorder(j, j.output, ratio, maxFact)
-      //TODO add projection case back in here?
+      case p @ Project(projectList, Join(_, _, Inner, Some(_), JoinHint.NONE))
+        if projectList.forall(_.isInstanceOf[Attribute]) =>
+        reorder(p, p.output, ratio, maxFact)
     }
     val originalShuffleCount = countShuffles(plan)
     val newShuffleCount = countShuffles(reorderedJoin)
@@ -174,7 +176,15 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
     }
 
     if (conds.nonEmpty) {
-      println(s"FactDimensionJoinReorder: could not apply all join conditions")
+      println(s"FactDimensionJoinReorder: could not apply all join conditions: $conds")
+      return plan
+    }
+
+    // verify output is correct
+    if (!plan.output.forall(attr => newPlan.output.contains(attr))) {
+      println(s"FactDimensionJoinReorder: new plan is missing some expected output attributes:" +
+        s"\nexpected: ${plan.output}" +
+        s"\nactual: ${newPlan.output}")
       return plan
     }
 
@@ -192,23 +202,18 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
       val joinConds = new ListBuffer[Expression]()
       for (cond <- conds) {
         cond match {
-          case b: BinaryExpression =>
-            val l = b.left.asInstanceOf[AttributeReference]
-            val r = b.right.asInstanceOf[AttributeReference]
-            if (fact.output.exists(_.exprId == l.exprId) &&
-              dim.output.exists(_.exprId == r.exprId)) {
-              joinConds += cond
-            } else if (fact.output.exists(_.exprId == r.exprId) &&
-              dim.output.exists(_.exprId == l.exprId)) {
-              joinConds += cond
-            }
-
-          case IsNotNull(_) =>
-            // during optimization after we rewrite joins, more IsNotNull
-            // conditions get added, and we can safely ignore these
-
+          case b: BinaryExpression => (b.left, b.right) match {
+            case (l: AttributeReference, r: AttributeReference) =>
+              if (fact.output.exists(_.exprId == l.exprId) &&
+                dim.output.exists(_.exprId == r.exprId)) {
+                joinConds += cond
+              } else if (fact.output.exists(_.exprId == r.exprId) &&
+                dim.output.exists(_.exprId == l.exprId)) {
+                joinConds += cond
+              }
+            case _ =>
+          }
           case _ =>
-            throw new IllegalStateException("unexpected join condition")
         }
       }
       if (joinConds.nonEmpty) {
