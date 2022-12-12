@@ -42,18 +42,16 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
 
   def apply(plan: LogicalPlan): LogicalPlan = {
     val conf = new RapidsConf(plan.conf)
-    if (!conf.joinReorderingEnabled) {
+    if (!(conf.isSqlEnabled && conf.joinReorderingEnabled)) {
       return plan
     }
-    val ratio = conf.joinReorderingRatio
-    val maxFact = conf.joinReorderingMaxFact
     val t0 = System.nanoTime()
     val reorderedJoin = plan.transformUp {
       case j@Join(_, _, Inner, Some(_), JoinHint.NONE) if isSupportedJoin(j) =>
-        reorder(j, j.output, ratio, maxFact)
+        reorder(j, j.output, conf)
       case p @ Project(projectList, Join(_, _, Inner, Some(_), JoinHint.NONE))
         if projectList.forall(_.isInstanceOf[Attribute]) =>
-        reorder(p, p.output, ratio, maxFact)
+        reorder(p, p.output, conf)
     }
     val originalShuffleCount = countShuffles(plan)
     val newShuffleCount = countShuffles(reorderedJoin)
@@ -100,8 +98,7 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
   private def reorder(
       plan: LogicalPlan,
       output: Seq[Attribute],
-      ratio: Double,
-      maxFact: Int): LogicalPlan = {
+      conf: RapidsConf): LogicalPlan = {
     println(s"FactDimensionJoinReorder: Attempt to reorder join:\n$plan")
 
     // unnest the join into a list of input relations and list of join conditions
@@ -127,7 +124,7 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
     val facts = new ListBuffer[Relation]()
     val dims = new ListBuffer[Relation]()
     for (rel <- relations) {
-      if (rel.size.toDouble/largest <= ratio) {
+      if (rel.size.toDouble/largest <= conf.joinReorderingRatio) {
         dims += rel
       } else {
         facts += rel
@@ -135,13 +132,13 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
     }
 
     println(s"FactDimensionJoinReorder: Found ${facts.length} facts and ${dims.length} dims")
-    if (facts.length > maxFact) {
+    if (facts.length > conf.joinReorderingMaxFact) {
       println("FactDimensionJoinReorder: Too many fact tables")
       return plan
     }
 
     // order the dimensions by size
-    val dimsBySize = relationsOrdered(dims)
+    val dimsBySize = relationsOrdered(dims, conf)
     dimsBySize.foreach(dim => println(s"[DIM] [SIZE=${dim.size}]:\n$dim"))
 
     // copy the join conditions into a HashSet
@@ -244,12 +241,22 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
    * by repeatedly inspecting the first relation from each list and picking
    * the smallest one.
    */
-  def relationsOrdered(rels: Seq[Relation]): Seq[Relation]  = {
-    // leave unfiltered dimensions in the user-specified order
-    val unfiltered = rels.filterNot(_.hasFilter)
+  def relationsOrdered(
+      rels: Seq[Relation],
+      conf: RapidsConf): Seq[Relation]  = {
+    val unfiltered = if (conf.joinReorderingPreserveOrder) {
+      // leave unfiltered dimensions in the user-specified order
+      rels.filterNot(_.hasFilter)
+    } else {
+      // order by size (smallest first)
+      rels.filterNot(_.hasFilter).sortBy(_.size)
+    }
     unfiltered.foreach(rel => println(s"[UNFILTERED] $rel"))
+
     // order filtered dimensions by size (smallest first)
-    val filtered = rels.filter(_.hasFilter).sortBy(_.size)
+    val filtered = rels.filter(_.hasFilter)
+      .map(f => f.copy(size = (f.size * conf.joinReorderingFilterSelectivity).toLong))
+      .sortBy(_.size)
     filtered.foreach(rel => println(s"[FILTERED] $rel"))
 
     // combine the two lists
