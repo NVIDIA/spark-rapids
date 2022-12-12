@@ -25,6 +25,4 @@ object ParquetTimestampNTZShims {
     // This timestamp_NTZ flag is introduced in Spark 3.4.0.
     // do nothing
   }
-
-  def getParquetTimestampNTZEnabled: Boolean = false
 }

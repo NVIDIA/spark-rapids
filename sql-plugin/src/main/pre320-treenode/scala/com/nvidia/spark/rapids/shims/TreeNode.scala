@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, TernaryExpression, UnaryExpression}
 import org.apache.spark.sql.catalyst.plans.logical.Command
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan, UnaryExecNode}
 
