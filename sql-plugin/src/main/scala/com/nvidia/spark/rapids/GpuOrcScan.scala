@@ -1602,8 +1602,7 @@ class MultiFileCloudOrcPartitionReader(
     readSchema: StructType) extends HostMemoryBuffersWithMetaDataBase {
 
     override def memBuffersAndSizes: Array[SingleHMBAndMeta] =
-      Array(SingleHMBAndMeta(null.asInstanceOf[HostMemoryBuffer], bufferSize,
-        0, Seq.empty, null))
+      Array(SingleHMBAndMeta.empty(bufferSize))
   }
 
   private case class HostMemoryBuffersWithMetaData(

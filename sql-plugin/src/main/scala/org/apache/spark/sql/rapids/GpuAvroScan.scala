@@ -701,15 +701,13 @@ class GpuMultiFileCloudAvroPartitionReader(
       } catch {
         case e: FileNotFoundException if ignoreMissingFiles =>
           logWarning(s"Skipped missing file: ${partFile.filePath}", e)
-          AvroHostBuffersWithMeta(partFile,
-            Array(SingleHMBAndMeta(null, 0, 0, Seq.empty, null)), 0)
+          AvroHostBuffersWithMeta(partFile, Array(SingleHMBAndMeta.empty()), 0)
         // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
         case e: FileNotFoundException if !ignoreMissingFiles => throw e
         case e @(_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
           logWarning(
             s"Skipped the rest of the content in the corrupted file: ${partFile.filePath}", e)
-          AvroHostBuffersWithMeta(partFile,
-            Array(SingleHMBAndMeta(null, 0, 0, Seq.empty,null)), 0)
+          AvroHostBuffersWithMeta(partFile, Array(SingleHMBAndMeta.empty()), 0)
       } finally {
         TrampolineUtil.unsetTaskContext()
       }
@@ -745,7 +743,7 @@ class GpuMultiFileCloudAvroPartitionReader(
           if (!reader.hasNextBlock || isDone) {
             // no data or got close before finishing, return null buffer and zero size
             createBufferAndMeta(
-              Array(SingleHMBAndMeta(null, 0, 0, Seq.empty, null)),
+              Array(SingleHMBAndMeta.empty()),
               startingBytesRead)
           } else {
             val hostBuffers = new ArrayBuffer[SingleHMBAndMeta]
@@ -823,8 +821,7 @@ class GpuMultiFileCloudAvroPartitionReader(
 
                   // One batch is done
                   optOut.foreach(out => hostBuffers +=
-                    (SingleHMBAndMeta(optHmb.get, out.getPos, 0, Seq.empty,
-                      null)))
+                    (SingleHMBAndMeta(optHmb.get, out.getPos, 0, Seq.empty, null)))
                   totalRowsNum += batchRowsNum
                   estBlocksSize -= batchSize
                 }
@@ -832,12 +829,11 @@ class GpuMultiFileCloudAvroPartitionReader(
 
               val bufAndSize: Array[SingleHMBAndMeta] = if (readDataSchema.isEmpty) {
                 hostBuffers.foreach(_.hmb.safeClose(new Exception))
-                Array(SingleHMBAndMeta(null, totalRowsNum, totalRowsNum, Seq.empty,
-                  null))
+                Array(SingleHMBAndMeta.empty(totalRowsNum, totalRowsNum))
               } else if (isDone) {
                 // got close before finishing, return null buffer and zero size
                 hostBuffers.foreach(_.hmb.safeClose(new Exception))
-                Array(SingleHMBAndMeta(null, 0, 0, Seq.empty, null))
+                Array(SingleHMBAndMeta.empty())
               } else {
                 hostBuffers.toArray
               }

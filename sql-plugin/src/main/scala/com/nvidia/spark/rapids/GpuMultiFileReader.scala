@@ -57,6 +57,16 @@ import org.apache.spark.util.SerializableConfiguration
 case class SingleHMBAndMeta(hmb: HostMemoryBuffer, bytes: Long, numRows: Long,
     blockMeta: Seq[BlockMetaData], schema: MessageType)
 
+object SingleHMBAndMeta {
+  // Contains no data but could have number of rows for things like count().
+  // Note that some formats overload bufferSize to be number of rows since
+  // number of rows was more recently added.
+  def empty(bufferSize: Long = 0, numRows: Long = 0): SingleHMBAndMeta = {
+    SingleHMBAndMeta(null.asInstanceOf[HostMemoryBuffer], bufferSize, numRows,
+      Seq.empty, null)
+  }
+}
+
 /**
  * The base HostMemoryBuffer information read from a single file.
  */
@@ -517,12 +527,14 @@ abstract class MultiFileCloudPartitionReaderBase(
     filesToRead = files.length
   }
 
+  // Each format should implement combineHMBs and canUseCombine if they support combining
   def combineHMBs(
       results: Array[HostMemoryBuffersWithMetaDataBase]): HostMemoryBuffersWithMetaDataBase = {
-    if (results.size < 1) {
-      throw new Exception("Expect at least one host memory buffer")
+    if (results.size != 1) {
+      throw new Exception("Expected results to only have 1 element, this format doesn't" +
+        " support combining!")
     }
-    results(0)
+    results.head
   }
 
   def canUseCombine: Boolean = false
@@ -566,8 +578,7 @@ abstract class MultiFileCloudPartitionReaderBase(
    */
   private def readBuffersToBatch(currentFileHostBuffers: HostMemoryBuffersWithMetaDataBase,
       addTaskIfNeeded: Boolean): Unit = {
-    if (getSizeOfHostBuffers(currentFileHostBuffers) == 0 &&
-        getNumofRowsInHostBuffers(currentFileHostBuffers) == 0) {
+    if (getNumRowsInHostBuffers(currentFileHostBuffers) == 0) {
       closeCurrentFileHostBuffers()
       if (addTaskIfNeeded) addNextTaskIfNeeded()
       next()
@@ -670,12 +681,7 @@ abstract class MultiFileCloudPartitionReaderBase(
       // check if more are ready as well
       readReadyFiles(sizeRead, numRowsRead, results)
     }
-    if (results.size > 1) {
-      combineHMBs(results.toArray)
-    } else {
-      require(results.size == 1)
-      results.head
-    }
+    combineHMBs(results.toArray)
   }
 
   private def getNextBuffersAndMetaSingleFile(): HostMemoryBuffersWithMetaDataBase = {
@@ -711,12 +717,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     val curNumRows = leftOvers.map(_.memBuffersAndSizes.map(_.numRows).sum).sum
     readReadyFiles(curSize, curNumRows, results)
     val allReady = leftOvers ++ results
-    val fileBufsAndMeta = if (allReady.size > 1) {
-      combineHMBs(allReady)
-    } else {
-      require(allReady.size == 1)
-      allReady.head
-    }
+    val fileBufsAndMeta = combineHMBs(allReady)
 
     TrampolineUtil.incBytesRead(inputMetrics, fileBufsAndMeta.bytesRead)
     // this is combine mode so input file shouldn't be used at all but update to
@@ -799,11 +800,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     batchIter.hasNext
   }
 
-  private def getSizeOfHostBuffers(fileInfo: HostMemoryBuffersWithMetaDataBase): Long = {
-    fileInfo.memBuffersAndSizes.map(_.bytes).sum
-  }
-
-  private def getNumofRowsInHostBuffers(fileInfo: HostMemoryBuffersWithMetaDataBase): Long = {
+  private def getNumRowsInHostBuffers(fileInfo: HostMemoryBuffersWithMetaDataBase): Long = {
     fileInfo.memBuffersAndSizes.map(_.numRows).sum
   }
 

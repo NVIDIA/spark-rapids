@@ -2023,24 +2023,28 @@ class MultiFileCloudParquetPartitionReader(
 
   override def combineHMBs(
       input: Array[HostMemoryBuffersWithMetaDataBase]): HostMemoryBuffersWithMetaDataBase = {
-    val (combinedMeta, combinedEmptyMeta) = computeCombineHMBMeta(input)
-
-    if (combinedEmptyMeta.allEmpty) {
-      val metaForEmpty = combinedEmptyMeta.metaForEmpty
-      HostMemoryEmptyMetaData(metaForEmpty.partitionedFile, // just pick one since not used
-        metaForEmpty.origPartitionedFile,
-        combinedEmptyMeta.emptyBufferSize,
-        combinedEmptyMeta.emptyTotalBytesRead,
-        metaForEmpty.isCorrectRebaseMode, // these shouldn't matter since data is empty
-        metaForEmpty.isCorrectInt96RebaseMode, // these shouldn't matter since data is empty
-        metaForEmpty.hasInt96Timestamps, // these shouldn't matter since data is empty
-        metaForEmpty.clippedSchema,
-        metaForEmpty.readSchema,
-        combinedEmptyMeta.emptyNumRows,
-        Some(combinedMeta.allPartValues)
-      )
+    if (input.size == 1) {
+      input.head
     } else {
-      doCombineHMBs(combinedMeta)
+      val (combinedMeta, combinedEmptyMeta) = computeCombineHMBMeta(input)
+
+      if (combinedEmptyMeta.allEmpty) {
+        val metaForEmpty = combinedEmptyMeta.metaForEmpty
+        HostMemoryEmptyMetaData(metaForEmpty.partitionedFile, // just pick one since not used
+          metaForEmpty.origPartitionedFile,
+          combinedEmptyMeta.emptyBufferSize,
+          combinedEmptyMeta.emptyTotalBytesRead,
+          metaForEmpty.isCorrectRebaseMode, // these shouldn't matter since data is empty
+          metaForEmpty.isCorrectInt96RebaseMode, // these shouldn't matter since data is empty
+          metaForEmpty.hasInt96Timestamps, // these shouldn't matter since data is empty
+          metaForEmpty.clippedSchema,
+          metaForEmpty.readSchema,
+          combinedEmptyMeta.emptyNumRows,
+          Some(combinedMeta.allPartValues)
+        )
+      } else {
+        doCombineHMBs(combinedMeta)
+      }
     }
   }
 
@@ -2058,8 +2062,7 @@ class MultiFileCloudParquetPartitionReader(
       override val allPartValues: Option[Array[(Long, InternalRow)]] = None)
     extends HostMemoryBuffersWithMetaDataBase {
     override def memBuffersAndSizes: Array[SingleHMBAndMeta] =
-      Array(SingleHMBAndMeta(null.asInstanceOf[HostMemoryBuffer], bufferSize,
-        numRows, Seq.empty, null))
+      Array(SingleHMBAndMeta.empty(bufferSize, numRows))
   }
 
   case class HostMemoryBuffersWithMetaData(
