@@ -20,6 +20,7 @@ ObjectHashAggregateExec,3.0
 SortAggregateExec,3.0
 InMemoryTableScanExec,3.0
 DataWritingCommandExec,3.0
+ExecutedCommandExec,3.0
 BatchScanExec,3.0
 BroadcastExchangeExec,3.0
 ShuffleExchangeExec,4.2
