@@ -38,4 +38,12 @@ class GpuOptimisticTransaction(
   def this(deltaLog: DeltaLog, rapidsConf: RapidsConf)(implicit clock: Clock) {
     this(deltaLog, deltaLog.update(), rapidsConf)
   }
+
+  /**
+   * Returns a tuple of (data, partition schema). For CDC writes, a `__is_cdc` column is added to
+   * the data and `__is_cdc=true/false` is added to the front of the partition schema.
+   */
+  override def shimPerformCDCPartition(inputData: Dataset[_]): (DataFrame, StructType) = {
+    performCDCPartition(inputData: Dataset[_])
+  }
 }
