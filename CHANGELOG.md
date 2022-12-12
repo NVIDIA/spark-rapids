@@ -1,11 +1,12 @@
 # Change log
-Generated on 2022-12-07
+Generated on 2022-12-12
 
 ## Release 22.12
 
 ### Features
 |||
 |:---|:---|
+|[#7275](https://github.com/NVIDIA/spark-rapids/issues/7275)|[FEA] Support SaveIntoDataSourceCommand for Delta Lake|
 |[#5225](https://github.com/NVIDIA/spark-rapids/issues/5225)|[FEA] Support array_remove|
 |[#6781](https://github.com/NVIDIA/spark-rapids/issues/6781)|[FEA] Create demo notebook on Databricks for qualification tool usage|
 |[#6782](https://github.com/NVIDIA/spark-rapids/issues/6782)|[FEA] Create demo notebook on Databricks for profiler tool usage|
@@ -35,6 +36,9 @@ Generated on 2022-12-07
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#6455](https://github.com/NVIDIA/spark-rapids/issues/6455)|[BUG] Rapids tools test on Databricks fail|
+|[#6890](https://github.com/NVIDIA/spark-rapids/issues/6890)|[BUG] RUN_DIR change fail some CI pipelines|
+|[#7085](https://github.com/NVIDIA/spark-rapids/issues/7085)|[BUG] GPU Hive Text reader fails to read floating point input as integral types|
 |[#7271](https://github.com/NVIDIA/spark-rapids/issues/7271)|[BUG] failed to build in Databricks runtime due to alluxio utils |
 |[#6636](https://github.com/NVIDIA/spark-rapids/issues/6636)|[BUG] casting to string and list, and concat can cause overflow issues|
 |[#7234](https://github.com/NVIDIA/spark-rapids/issues/7234)|[BUG] Integration test script failed on: '/tmp/20221204/python/lib': No such file or directory|
@@ -92,6 +96,12 @@ Generated on 2022-12-07
 ### PRs
 |||
 |:---|:---|
+|[#7316](https://github.com/NVIDIA/spark-rapids/pull/7316)|Update jni version 22.12.0|
+|[#7237](https://github.com/NVIDIA/spark-rapids/pull/7237)|[Doc]update download docs for v22.12 release[skip ci]|
+|[#7330](https://github.com/NVIDIA/spark-rapids/pull/7330)|xfail all delta-write fallback cases [skip ci]|
+|[#7288](https://github.com/NVIDIA/spark-rapids/pull/7288)|Add support for SaveIntoDataSource for Delta Lake 2.x|
+|[#7306](https://github.com/NVIDIA/spark-rapids/pull/7306)|Cherry pick #7293 to 22.12 [skip ci]|
+|[#7270](https://github.com/NVIDIA/spark-rapids/pull/7270)|Update 22.12 changelog to latest [skip ci]|
 |[#7264](https://github.com/NVIDIA/spark-rapids/pull/7264)|Update columnar stats tracker API to pass file path for new batches|
 |[#7273](https://github.com/NVIDIA/spark-rapids/pull/7273)|Fix AlluxioUtilsSuite build on Databricks for 22.12|
 |[#7250](https://github.com/NVIDIA/spark-rapids/pull/7250)|Change tools hadoop version to 3.3.4|
