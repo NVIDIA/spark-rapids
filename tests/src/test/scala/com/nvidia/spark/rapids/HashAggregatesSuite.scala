@@ -133,12 +133,12 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       df.collect()
 
       gpuPlan match {
-        case WholeStageCodegenExec(GpuColumnarToRowExec(plan, _, _)) =>
+        case WholeStageCodegenExec(GpuColumnarToRowExec(plan, _)) =>
           assert(plan.children.head.isInstanceOf[GpuHashAggregateExec])
           assert(gpuPlan.find(_.isInstanceOf[SortAggregateExec]).isEmpty)
           assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
 
-        case GpuColumnarToRowExec(plan, _, _) => // Codegen disabled
+        case GpuColumnarToRowExec(plan, _) => // Codegen disabled
           assert(plan.children.head.isInstanceOf[GpuHashAggregateExec])
           assert(gpuPlan.find(_.isInstanceOf[SortAggregateExec]).isEmpty)
           assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
@@ -174,13 +174,13 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       df.collect()
 
       gpuPlan match {
-        case WholeStageCodegenExec(GpuColumnarToRowExec(plan, _, _)) =>
+        case WholeStageCodegenExec(GpuColumnarToRowExec(plan, _)) =>
           assert(plan.children.head.isInstanceOf[GpuSortExec])
           assert(gpuPlan.find(_.isInstanceOf[SortAggregateExec]).isEmpty)
           assert(gpuPlan.find(_.isInstanceOf[GpuHashAggregateExec]).isDefined)
           assert(gpuPlan.children.forall(exec => exec.isInstanceOf[GpuExec]))
 
-        case GpuColumnarToRowExec(plan, _, _) => // codegen disabled
+        case GpuColumnarToRowExec(plan, _) => // codegen disabled
           assert(plan.isInstanceOf[GpuHashAggregateExec])
           assert(gpuPlan.find(_.isInstanceOf[SortAggregateExec]).isEmpty)
           assert(gpuPlan.find(_.isInstanceOf[GpuHashAggregateExec]).isDefined)
@@ -290,7 +290,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
   testExpectedException[AnalysisException](
       "avg literals bools fail",
-      _.getMessage.startsWith("cannot resolve"),
+      _.getMessage.toLowerCase.contains("cannot resolve"),
       longsFromCSVDf,
       conf = floatAggConf) {
     frame => frame.agg(avg(lit(true)).alias("t"), avg(lit(false)).alias("f"))

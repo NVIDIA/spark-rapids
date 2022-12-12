@@ -20,6 +20,7 @@ ObjectHashAggregateExec,3.0
 SortAggregateExec,3.0
 InMemoryTableScanExec,3.0
 DataWritingCommandExec,3.0
+ExecutedCommandExec,3.0
 BatchScanExec,3.0
 BroadcastExchangeExec,3.0
 ShuffleExchangeExec,4.2
@@ -30,10 +31,12 @@ ShuffledHashJoinExec,3.0
 SortMergeJoinExec,22.7
 AggregateInPandasExec,1.2
 ArrowEvalPythonExec,1.2
+FlatMapCoGroupsInPandasExec,3.0
 FlatMapGroupsInPandasExec,1.2
 MapInPandasExec,1.2
 WindowInPandasExec,1.2
 WindowExec,3.0
+HiveTableScanExec,3.0
 Abs,4
 Acos,4
 Acosh,4
@@ -48,6 +51,7 @@ ArrayExists,4
 ArrayIntersect,4
 ArrayMax,4
 ArrayMin,4
+ArrayRemove,4
 ArrayRepeat,4
 ArrayTransform,4
 ArrayUnion,4
@@ -209,6 +213,7 @@ Sqrt,4
 StartsWith,4
 StddevPop,4
 StddevSamp,4
+StringInstr,4
 StringLPad,4
 StringLocate,4
 StringRPad,4

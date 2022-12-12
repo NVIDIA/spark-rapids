@@ -286,6 +286,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
 
     val collect = new CollectInformation(apps)
     val appInfo = collect.getAppInfo
+    val appLogPath = collect.getAppLogPath
     val dsInfo = collect.getDataSourceInfo
     val execInfo = collect.getExecutorInfo
     val jobInfo = collect.getJobInfo
@@ -353,10 +354,10 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
           s"to $outputDir in $duration second(s)\n")
       }
     }
-    (ApplicationSummaryInfo(appInfo, dsInfo, execInfo, jobInfo, rapidsProps, rapidsJar,
-      sqlMetrics, jsMetAgg, sqlTaskAggMetrics, durAndCpuMet, skewInfo, failedTasks, failedStages,
-      failedJobs, removedBMs, removedExecutors, unsupportedOps, sparkProps, sqlStageInfo,
-      wholeStage, maxTaskInputInfo), compareRes)
+    (ApplicationSummaryInfo(appInfo, dsInfo, execInfo, jobInfo, rapidsProps, 
+      rapidsJar, sqlMetrics, jsMetAgg, sqlTaskAggMetrics, durAndCpuMet, skewInfo, failedTasks, 
+      failedStages, failedJobs, removedBMs, removedExecutors, unsupportedOps, sparkProps, 
+      sqlStageInfo, wholeStage, maxTaskInputInfo, appLogPath), compareRes)
   }
 
   def writeOutput(profileOutputWriter: ProfileOutputWriter,
@@ -412,7 +413,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
         combineProps(rapidsOnly=false, appsSum).sortBy(_.key),
         appsSum.flatMap(_.sqlStageInfo).sortBy(_.duration)(Ordering[Option[Long]].reverse),
         appsSum.flatMap(_.wholeStage).sortBy(_.appIndex),
-        appsSum.flatMap(_.maxTaskInputBytesRead).sortBy(_.appIndex)
+        appsSum.flatMap(_.maxTaskInputBytesRead).sortBy(_.appIndex),
+        appsSum.flatMap(_.appLogPath).sortBy(_.appIndex)
       )
       Seq(reduced)
     } else {
@@ -421,6 +423,7 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
     sums.foreach { app =>
       profileOutputWriter.writeText("### A. Information Collected ###")
       profileOutputWriter.write("Application Information", app.appInfo)
+      profileOutputWriter.write("Application Log Path Mapping", app.appLogPath)
       profileOutputWriter.write("Data Source Information", app.dsInfo)
       profileOutputWriter.write("Executor Information", app.execInfo)
       profileOutputWriter.write("Job Information", app.jobInfo)
@@ -463,7 +466,8 @@ class Profiler(hadoopConf: Configuration, appArgs: ProfileArgs) extends Logging 
 
       if (useAutoTuner) {
         val workerInfoPath = appArgs.workerInfo.getOrElse(AutoTuner.DEFAULT_WORKER_INFO_PATH)
-        val autoTuner: AutoTuner = AutoTuner.buildAutoTuner(workerInfoPath, Some(app))
+        val autoTuner: AutoTuner = AutoTuner.buildAutoTuner(workerInfoPath,
+          new SingleAppSummaryInfoProvider(app))
         // the autotuner allows skipping some properties
         // e.g. getRecommendedProperties(Some(Seq("spark.executor.instances"))) skips the
         // recommendation related to executor instances.

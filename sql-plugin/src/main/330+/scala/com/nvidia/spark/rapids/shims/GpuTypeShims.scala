@@ -113,9 +113,16 @@ object GpuTypeShims {
   /**
    * Copy a column for computing on GPU.
    * Better to check if the type is supported first by calling 'isColumnarCopySupportedForType'
+   *
+   * Data type is passed explicitly to allow overriding the reported type from the column vector.
+   * There are cases where the type reported by the column vector does not match the data.
+   * See https://github.com/apache/iceberg/issues/6116.
    */
-  def columnarCopy(cv: ColumnVector,
-      b: ai.rapids.cudf.HostColumnVector.ColumnBuilder, rows: Int): Unit = cv.dataType() match {
+  def columnarCopy(
+      cv: ColumnVector,
+      b: ai.rapids.cudf.HostColumnVector.ColumnBuilder,
+      dataType: DataType,
+      rows: Int): Unit = dataType match {
     case DayTimeIntervalType(_, _) =>
       ColumnarCopyHelper.longCopy(cv, b, rows)
     case YearMonthIntervalType(_, _) =>

@@ -407,25 +407,7 @@ case class GpuSortArray(base: Expression, ascendingOrder: Expression)
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): cudf.ColumnVector = {
     val isDescending = isDescendingOrder(rhs)
-    val base = lhs.getBase()
-    withResource(base.getChildColumnView(0)) {child =>
-      withResource(child.copyToColumnVector()) {child =>
-        // When the average length of array is > 100
-        // and there are `-Nan`s in the data, the sort ordering
-        // of `Nan`s is inconsistent. So we need to normalize the data
-        // before sorting. This workaround can be removed after
-        // solving https://github.com/rapidsai/cudf/issues/11630
-        val normalizedChild = ColumnCastUtil.deepTransform(child) {
-          case (cv, _) if cv.getType == cudf.DType.FLOAT32 || cv.getType == cudf.DType.FLOAT64 =>
-              cv.normalizeNANsAndZeros()
-        }
-        withResource(normalizedChild) {normalizedChild =>
-          withResource(base.replaceListChild(normalizedChild)) {normalizedList =>
-            normalizedList.listSortRows(isDescending, true)
-          }
-        }
-      }
-    }
+    lhs.getBase.listSortRows(isDescending, true)
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): cudf.ColumnVector = {
@@ -627,10 +609,9 @@ case class GpuArrayRepeat(left: Expression, right: Expression) extends GpuBinary
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     // The primary issue of array_repeat is to workaround the null and negative count.
-    // Spark returns a null (list) when encountering a null count, while cudf::repeat simply
-    // throws an exception.
-    // Spark returns a empty list when encountering a negative count, while cudf::repeat simply
-    // throws an exception.
+    // Spark returns a null (list) when encountering a null count, and an
+    // empty list when encountering a negative count.
+    // cudf does not handle these cases properly.
 
     // Step 1. replace invalid counts
     //  null -> 0
@@ -645,7 +626,7 @@ case class GpuArrayRepeat(left: Expression, right: Expression) extends GpuBinary
     // Step 2. perform cuDF repeat
     val repeated = closeOnExcept(refinedCount) { cnt =>
       withResource(new Table(lhs.getBase)) { table =>
-        table.repeat(cnt, true).getColumn(0)
+        table.repeat(cnt).getColumn(0)
       }
     }
     // Step 3. generate list offsets from refined counts
@@ -1046,6 +1027,119 @@ case class GpuArraysOverlap(left: Expression, right: Expression)
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, rhs.dataType)) { right =>
       doColumnar(lhs, right)
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
+      withResource(GpuColumnVector.from(rhs, numRows, rhs.dataType)) { right =>
+        doColumnar(left, right)
+      }
+    }
+  }
+}
+
+case class GpuArrayRemove(left: Expression, right: Expression) extends GpuBinaryExpression {
+
+  override def dataType: DataType = left.dataType
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    // Handle special case for null entries in rhs, replace corresponding rows in lhs with null
+    //
+    // lhs: [[1, 2, null], [1, 2, 2], [2, 3]]
+    // rhs: [1, null, 2]
+    // lhsWithNull: [[1, 2, null], null, [2, 3]]
+    val lhsWithNull = withResource(rhs.getBase.isNull) { rhsIsNull =>
+      withResource(GpuScalar.from(null, dataType)) { nullList =>
+        rhsIsNull.ifElse(nullList, lhs.getBase)
+      }
+    }
+    // Repeat entries in rhs N times as N is number of elements in corresponding row in lhsWithNull
+    //
+    // lhsWithNull: [[1, 2, null], null, [2, 3]]
+    // rhs: [1, null, 2]
+    // repeatedRhs: [1, 1, 1, 2, 2]
+    val repeatedRhs = explodeRhs(rhs.getBase, lhsWithNull.countElements)
+    withResource(lhsWithNull) { lhsWithNull =>
+      // Construct boolean mask where true values correspond to entries to keep
+      //
+      // lhsWithNull: [[1, 2, null], null, [2, 3]]
+      // repeatedRhs: [1, 1, 1, 2, 2]
+      // boolMask: [[F, T, T], null, [F, T]]
+      val boolMask = constructBooleanMask(lhsWithNull.getChildColumnView(0), repeatedRhs,
+                                          lhsWithNull.getListOffsetsView, lhs.getRowCount)
+      withResource(boolMask) { boolMask =>
+        lhsWithNull.applyBooleanMask(boolMask)
+      }
+    }
+  }
+
+  private def explodeRhs(rhs: ColumnVector, counts: ColumnVector): ColumnVector = {
+    withResource(counts) { counts =>
+      withResource(GpuScalar.from(0, DataTypes.IntegerType)) { zero =>
+        withResource(counts.replaceNulls(zero)) { noNullCounts =>
+          withResource(new Table(rhs)) { table =>
+            table.repeat(noNullCounts).getColumn(0)
+          }
+        }
+      }
+    }
+  }
+
+  private def constructBooleanMask(lhs: ColumnView, rhs: ColumnView, 
+                                   offSets: ColumnView, rowCount: Long): ColumnVector = {
+    withResource(lhs) { lhs =>
+      withResource(rhs) { rhs =>
+        val boolMaskNoNans = lhs.equalToNullAware(rhs)
+        val boolMaskWithNans = if (lhs.getType == DType.FLOAT32 || lhs.getType == DType.FLOAT64) {
+            // Compare NaN values for arrays with float or double type
+            withResource(booleanMaskNansOnly(lhs, rhs)) { boolMaskNansOnly =>
+              withResource(boolMaskNoNans) { boolMaskNoNans =>
+                boolMaskNoNans.or(boolMaskNansOnly)
+              }
+            }
+          } else {
+            boolMaskNoNans
+          }
+        withResource(boolMaskWithNans) { boolMaskWithNans =>
+          withResource(boolMaskWithNans.not) { boolMaskToKeep =>
+            withResource(offSets) { offSets =>
+              boolMaskToKeep.makeListFromOffsets(rowCount, offSets)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private def booleanMaskNansOnly(lhs: ColumnView, rhs: ColumnView): ColumnVector = {
+    withResource(lhs.isNan) { lhsIsNan =>
+      withResource(rhs.isNan) { rhsIsNan =>
+        lhsIsNan.and(rhsIsNan)
+      }
+    }
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+      doColumnar(left, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    val lhsBase = lhs.getBase
+    // Construct boolean mask where true values correspond to elements to keep
+    val boolMask = withResource(lhsBase.getListOffsetsView) { offSets =>
+      withResource(lhsBase.getChildColumnView(0)){ lhsFlatten =>
+        withResource(lhsFlatten.equalToNullAware(rhs.getBase)) { boolMaskToRemove =>
+          withResource(boolMaskToRemove.not) { boolMaskToKeep =>
+            boolMaskToKeep.makeListFromOffsets(lhs.getRowCount, offSets)
+          }
+        }
+      }
+    }
+    withResource(boolMask) { boolMask =>
+      lhsBase.applyBooleanMask(boolMask)
     }
   }
 

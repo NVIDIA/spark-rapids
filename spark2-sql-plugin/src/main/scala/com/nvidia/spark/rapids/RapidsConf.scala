@@ -115,7 +115,7 @@ object ConfHelper {
 }
 
 abstract class ConfEntry[T](val key: String, val converter: String => T,
-    val doc: String, val isInternal: Boolean) {
+    val doc: String, val isInternal: Boolean, val isStartUpOnly: Boolean) {
 
   def get(conf: Map[String, String]): T
   def get(conf: SQLConf): T
@@ -125,8 +125,8 @@ abstract class ConfEntry[T](val key: String, val converter: String => T,
 }
 
 class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
-    isInternal: Boolean, val defaultValue: T)
-  extends ConfEntry[T](key, converter, doc, isInternal) {
+    isInternal: Boolean, isStartupOnly: Boolean, val defaultValue: T)
+  extends ConfEntry[T](key, converter, doc, isInternal, isStartupOnly) {
 
   override def get(conf: Map[String, String]): T = {
     conf.get(key).map(converter).getOrElse(defaultValue)
@@ -143,13 +143,15 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
 
   override def help(asTable: Boolean = false): Unit = {
     if (!isInternal) {
+      val startupOnlyStr = if (isStartupOnly) "Startup" else "Runtime"
       if (asTable) {
         import ConfHelper.makeConfAnchor
-        println(s"${makeConfAnchor(key)}|$doc|$defaultValue")
+        println(s"${makeConfAnchor(key)}|$doc|$defaultValue|$startupOnlyStr")
       } else {
         println(s"$key:")
         println(s"\t$doc")
         println(s"\tdefault $defaultValue")
+        println(s"\ttype $startupOnlyStr")
         println()
       }
     }
@@ -157,8 +159,8 @@ class ConfEntryWithDefault[T](key: String, converter: String => T, doc: String,
 }
 
 class OptionalConfEntry[T](key: String, val rawConverter: String => T, doc: String,
-    isInternal: Boolean)
-  extends ConfEntry[Option[T]](key, s => Some(rawConverter(s)), doc, isInternal) {
+    isInternal: Boolean, isStartupOnly: Boolean)
+  extends ConfEntry[Option[T]](key, s => Some(rawConverter(s)), doc, isInternal, isStartupOnly) {
 
   override def get(conf: Map[String, String]): Option[T] = {
     conf.get(key).map(rawConverter)
@@ -175,13 +177,15 @@ class OptionalConfEntry[T](key: String, val rawConverter: String => T, doc: Stri
 
   override def help(asTable: Boolean = false): Unit = {
     if (!isInternal) {
+      val startupOnlyStr = if (isStartupOnly) "Startup" else "Runtime"
       if (asTable) {
         import ConfHelper.makeConfAnchor
-        println(s"${makeConfAnchor(key)}|$doc|None")
+        println(s"${makeConfAnchor(key)}|$doc|None|$startupOnlyStr")
       } else {
         println(s"$key:")
         println(s"\t$doc")
         println("\tNone")
+        println(s"\ttype $startupOnlyStr")
         println()
       }
     }
@@ -228,7 +232,7 @@ class TypedConfBuilder[T](
     // then 'converter' will throw an exception
     val transformedValue = converter(stringConverter(value))
     val ret = new ConfEntryWithDefault[T](parent.key, converter,
-      parent.doc, parent.isInternal, transformedValue)
+      parent.doc, parent.isInternal, parent.isStartupOnly, transformedValue)
     parent.register(ret)
     ret
   }
@@ -241,7 +245,7 @@ class TypedConfBuilder[T](
 
   def createOptional: OptionalConfEntry[T] = {
     val ret = new OptionalConfEntry[T](parent.key, converter,
-      parent.doc, parent.isInternal)
+      parent.doc, parent.isInternal, parent.isStartupOnly)
     parent.register(ret)
     ret
   }
@@ -253,6 +257,7 @@ class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
 
   var doc: String = null
   var isInternal: Boolean = false
+  var isStartupOnly: Boolean = false
 
   def doc(data: String): ConfBuilder = {
     this.doc = data
@@ -261,6 +266,11 @@ class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
 
   def internal(): ConfBuilder = {
     this.isInternal = true
+    this
+  }
+
+  def startupOnly(): ConfBuilder = {
+    this.isStartupOnly = true
     this
   }
 
@@ -311,12 +321,14 @@ object RapidsConf {
   val PINNED_POOL_SIZE = conf("spark.rapids.memory.pinnedPool.size")
     .doc("The size of the pinned memory pool in bytes unless otherwise specified. " +
       "Use 0 to disable the pool.")
+    .startupOnly()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(0)
 
   val PAGEABLE_POOL_SIZE = conf("spark.rapids.memory.host.pageablePool.size")
     .doc("The size of the pageable memory pool in bytes unless otherwise specified. " +
       "Use 0 to disable the pool.")
+    .startupOnly()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(ByteUnit.GiB.toBytes(1).toLong)
 
@@ -325,15 +337,29 @@ object RapidsConf {
       "STDOUT or STDERR the logging will go there. Setting it to NONE disables logging. " +
       "All other values are reserved for possible future expansion and in the mean time will " +
       "disable logging.")
+    .startupOnly()
     .stringConf
     .createWithDefault("NONE")
 
   val GPU_OOM_DUMP_DIR = conf("spark.rapids.memory.gpu.oomDumpDir")
     .doc("The path to a local directory where a heap dump will be created if the GPU " +
       "encounters an unrecoverable out-of-memory (OOM) error. The filename will be of the " +
-      "form: \"gpu-oom-<pid>.hprof\" where <pid> is the process ID.")
+      "form: \"gpu-oom-<pid>-<dumpId>.hprof\" where <pid> is the process ID, and " +
+      "the dumpId is a sequence number to disambiguate multiple heap dumps " +
+      "per process lifecycle")
+    .startupOnly()
     .stringConf
     .createOptional
+
+  val GPU_OOM_MAX_RETRIES =
+    conf("spark.rapids.memory.gpu.oomMaxRetries")
+      .doc("The number of times that an OOM will be re-attempted after the device store " +
+        "can't spill anymore. In practice, we can use Cuda.deviceSynchronize to allow temporary " +
+        "state in the allocator and in the various streams to catch up, in hopes we can satisfy " +
+        "an allocation which was failing due to the interim state of memory.")
+      .internal()
+      .integerConf
+      .createWithDefault(2)
 
   private val RMM_ALLOC_MAX_FRACTION_KEY = "spark.rapids.memory.gpu.maxAllocFraction"
   private val RMM_ALLOC_MIN_FRACTION_KEY = "spark.rapids.memory.gpu.minAllocFraction"
@@ -344,6 +370,7 @@ object RapidsConf {
       "memory. This must be less than or equal to the maximum limit configured via " +
       s"$RMM_ALLOC_MAX_FRACTION_KEY, and greater than or equal to the minimum limit configured " +
       s"via $RMM_ALLOC_MIN_FRACTION_KEY.")
+    .startupOnly()
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(1)
@@ -360,6 +387,7 @@ object RapidsConf {
         s"The value must be greater than or equal to the setting for $RMM_ALLOC_FRACTION. " +
         "Note that this limit will be reduced by the reserve memory configured in " +
         s"$RMM_ALLOC_RESERVE_KEY.")
+    .startupOnly()
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(1)
@@ -367,6 +395,7 @@ object RapidsConf {
   val RMM_ALLOC_MIN_FRACTION = conf(RMM_ALLOC_MIN_FRACTION_KEY)
     .doc("The fraction of total GPU memory that limits the minimum size of the RMM pool. " +
       s"The value must be less than or equal to the setting for $RMM_ALLOC_FRACTION.")
+    .startupOnly()
     .doubleConf
     .checkValue(v => v >= 0 && v <= 1, "The fraction value must be in [0, 1].")
     .createWithDefault(0.25)
@@ -374,6 +403,7 @@ object RapidsConf {
   val RMM_ALLOC_RESERVE = conf(RMM_ALLOC_RESERVE_KEY)
       .doc("The amount of GPU memory that should remain unallocated by RMM and left for " +
           "system use such as memory needed for kernels and kernel launches.")
+      .startupOnly()
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(ByteUnit.MiB.toBytes(640).toLong)
 
@@ -381,6 +411,7 @@ object RapidsConf {
     .doc("Amount of off-heap host memory to use for buffering spilled GPU data before spilling " +
         "to local disk. Use -1 to set the amount to the combined size of pinned and pageable " +
         "memory pools.")
+    .startupOnly()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(-1)
 
@@ -389,14 +420,16 @@ object RapidsConf {
         "back into GPU memory temporarily. Unspilling may be useful for GPU buffers that are " +
         "needed frequently, for example, broadcast variables; however, it may also increase GPU " +
         "memory usage")
-      .booleanConf
-      .createWithDefault(false)
+    .startupOnly()
+    .booleanConf
+    .createWithDefault(false)
 
   val GDS_SPILL = conf("spark.rapids.memory.gpu.direct.storage.spill.enabled")
     .doc("Should GPUDirect Storage (GDS) be used to spill GPU memory buffers directly to disk. " +
       "GDS must be enabled and the directory `spark.local.dir` must support GDS. This is an " +
       "experimental feature. For more information on GDS, see " +
       "https://docs.nvidia.com/gpudirect-storage/.")
+    .startupOnly()
     .booleanConf
     .createWithDefault(false)
 
@@ -406,6 +439,7 @@ object RapidsConf {
         "Note that this buffer is mapped to the PCI Base Address Register (BAR) space, which may " +
         "be very limited on some GPUs (e.g. the NVIDIA T4 only has 256 MiB), and it is also used " +
         "by UCX bounce buffers.")
+    .startupOnly()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(ByteUnit.MiB.toBytes(8).toLong)
 
@@ -413,6 +447,7 @@ object RapidsConf {
     .doc("Should RMM act as a pooling allocator for GPU memory, or should it just pass " +
       "through to CUDA memory allocation directly. DEPRECATED: please use " +
       "spark.rapids.memory.gpu.pool instead.")
+    .startupOnly()
     .booleanConf
     .createWithDefault(true)
 
@@ -422,6 +457,7 @@ object RapidsConf {
       "\"ARENA\", the RMM arena allocator is used; with \"ASYNC\", the new CUDA stream-ordered " +
       "memory allocator in CUDA 11.2+ is used. If set to \"NONE\", pooling is disabled and RMM " +
       "just passes through to CUDA memory allocation directly.")
+    .startupOnly()
     .stringConf
     .createWithDefault("ASYNC")
 
@@ -430,6 +466,7 @@ object RapidsConf {
           "Tasks may temporarily block when the number of concurrent tasks in the executor " +
           "exceeds this amount. Allowing too many concurrent tasks on the same GPU may lead to " +
           "GPU out of memory errors.")
+      .startupOnly()
       .integerConf
       .createWithDefault(1)
 
@@ -454,6 +491,15 @@ object RapidsConf {
     .integerConf
     .createWithDefault(Integer.MAX_VALUE)
 
+  val CHUNKED_READER = conf("spark.rapids.sql.reader.chunked")
+      .doc("Should we use a chunked reader where possible. A chunked reader will " +
+          "take input data and potentially output multiple tables instead of a single table. " +
+          "This reduces the maximum memory usage and can work around issues when there is really " +
+          "high compression ratios in the data.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
   val MAX_READER_BATCH_SIZE_BYTES = conf("spark.rapids.sql.reader.batchSizeBytes")
     .doc("Soft limit on the maximum number of bytes the reader reads per batch. " +
       "The readers will read chunks of data until this limit is met or exceeded. " +
@@ -476,6 +522,7 @@ object RapidsConf {
       "for device(GPU) memory. This allows the GPU to process more data than fits in memory, but " +
       "can result in slower processing. This is an experimental feature.")
     .internal()
+    .startupOnly()
     .booleanConf
     .createWithDefault(false)
 
@@ -548,6 +595,7 @@ object RapidsConf {
          "The explanations of what would have run on the GPU and why are output in log " +
          "messages. When using explainOnly mode, the default explain output is ALL, this can " +
          "be changed by setting spark.rapids.sql.explain. See that config for more details.")
+    .startupOnly()
     .stringConf
     .transform(_.toLowerCase(java.util.Locale.ROOT))
     .checkValues(Set("explainonly", "executeongpu"))
@@ -716,7 +764,7 @@ object RapidsConf {
       .createWithDefault(false)
 
   val ENABLE_TIERED_PROJECT = conf("spark.rapids.sql.tiered.project.enabled")
-      .doc("Enable tiered project for aggregations.")
+      .doc("Enable tiered projections.")
       .internal()
       .booleanConf
       .createWithDefault(true)
@@ -733,6 +781,7 @@ object RapidsConf {
         "assign value of `max(MULTITHREAD_READ_NUM_THREADS_DEFAULT, spark.executor.cores)`, " +
         s"where MULTITHREAD_READ_NUM_THREADS_DEFAULT = $MULTITHREAD_READ_NUM_THREADS_DEFAULT" +
         ".")
+      .startupOnly()
       .integerConf
       .checkValue(v => v > 0, "The thread count must be greater than zero.")
       .createWithDefault(MULTITHREAD_READ_NUM_THREADS_DEFAULT)
@@ -823,6 +872,7 @@ object RapidsConf {
         "Parquet files in parallel. This can not be changed at runtime after the executor has " +
         "started. Used with COALESCING and MULTITHREADED reader, see " +
         s"$PARQUET_READER_TYPE. DEPRECATED: use $MULTITHREAD_READ_NUM_THREADS")
+      .startupOnly()
       .integerConf
       .createOptional
 
@@ -906,6 +956,7 @@ object RapidsConf {
         "ORC files in parallel. This can not be changed at runtime after the executor has " +
         "started. Used with MULTITHREADED reader, see " +
         s"$ORC_READER_TYPE. DEPRECATED: use $MULTITHREAD_READ_NUM_THREADS")
+      .startupOnly()
       .integerConf
       .createOptional
 
@@ -1014,6 +1065,7 @@ object RapidsConf {
         "Avro files in parallel. This can not be changed at runtime after the executor has " +
         "started. Used with MULTITHREADED reader, see " +
         s"$AVRO_READER_TYPE. DEPRECATED: use $MULTITHREAD_READ_NUM_THREADS")
+      .startupOnly()
       .integerConf
       .createOptional
 
@@ -1036,6 +1088,18 @@ object RapidsConf {
     .doc("When set to false disables Iceberg input acceleration")
     .booleanConf
     .createWithDefault(true)
+
+  val ENABLE_HIVE_TEXT: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.format.hive.text.enabled")
+      .doc("When set to false disables Hive text table acceleration")
+      .booleanConf
+      .createWithDefault(false)
+
+  val ENABLE_HIVE_TEXT_READ: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.format.hive.text.read.enabled")
+      .doc("When set to false disables Hive text table read acceleration")
+      .booleanConf
+      .createWithDefault(false)
 
   val ENABLE_RANGE_WINDOW_BYTES = conf("spark.rapids.sql.window.range.byte.enabled")
     .doc("When the order-by column of a range based window is byte type and " +
@@ -1179,12 +1243,14 @@ object RapidsConf {
         "shuffle (for testing purposes). Set to \"MULTITHREADED\" for an experimental mode that " +
         "uses a thread pool to speed up shuffle writes without needing UCX. Note: Changing this " +
         "mode dynamically is not supported.")
+    .startupOnly()
     .stringConf
     .checkValues(RapidsShuffleManagerMode.values.map(_.toString))
     .createWithDefault(RapidsShuffleManagerMode.UCX.toString)
 
   val SHUFFLE_TRANSPORT_EARLY_START = conf("spark.rapids.shuffle.transport.earlyStart")
     .doc("Enable early connection establishment for RAPIDS Shuffle")
+    .startupOnly()
     .booleanConf
     .createWithDefault(true)
 
@@ -1192,6 +1258,7 @@ object RapidsConf {
     conf("spark.rapids.shuffle.transport.earlyStart.heartbeatInterval")
       .doc("Shuffle early start heartbeat interval (milliseconds). " +
         "Executors will send a heartbeat RPC message to the driver at this interval")
+      .startupOnly()
       .integerConf
       .createWithDefault(5000)
 
@@ -1201,12 +1268,14 @@ object RapidsConf {
         s"Executors that don't heartbeat within this timeout will be considered stale. " +
         s"This timeout must be higher than the value for " +
         s"${SHUFFLE_TRANSPORT_EARLY_START_HEARTBEAT_INTERVAL.key}")
+      .startupOnly()
       .integerConf
       .createWithDefault(10000)
 
   val SHUFFLE_TRANSPORT_CLASS_NAME = conf("spark.rapids.shuffle.transport.class")
     .doc("The class of the specific RapidsShuffleTransport to use during the shuffle.")
     .internal()
+    .startupOnly()
     .stringConf
     .createWithDefault("com.nvidia.spark.rapids.shuffle.ucx.UCXShuffleTransport")
 
@@ -1214,6 +1283,7 @@ object RapidsConf {
     conf("spark.rapids.shuffle.transport.maxReceiveInflightBytes")
       .doc("Maximum aggregate amount of bytes that be fetched at any given time from peers " +
         "during shuffle")
+      .startupOnly()
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(1024 * 1024 * 1024)
 
@@ -1222,23 +1292,27 @@ object RapidsConf {
       .doc("Set to true to force 'rndv' mode for all UCX Active Messages. " +
         "This should only be required with UCX 1.10.x. UCX 1.11.x deployments should " +
         "set to false.")
+      .startupOnly()
       .booleanConf
       .createWithDefault(false)
 
   val SHUFFLE_UCX_USE_WAKEUP = conf("spark.rapids.shuffle.ucx.useWakeup")
     .doc("When set to true, use UCX's event-based progress (epoll) in order to wake up " +
       "the progress thread when needed, instead of a hot loop.")
+    .startupOnly()
     .booleanConf
     .createWithDefault(true)
 
   val SHUFFLE_UCX_LISTENER_START_PORT = conf("spark.rapids.shuffle.ucx.listenerStartPort")
     .doc("Starting port to try to bind the UCX listener.")
     .internal()
+    .startupOnly()
     .integerConf
     .createWithDefault(0)
 
   val SHUFFLE_UCX_MGMT_SERVER_HOST = conf("spark.rapids.shuffle.ucx.managementServerHost")
     .doc("The host to be used to start the management server")
+    .startupOnly()
     .stringConf
     .createWithDefault(null)
 
@@ -1246,6 +1320,7 @@ object RapidsConf {
     conf("spark.rapids.shuffle.ucx.managementConnectionTimeout")
     .doc("The timeout for client connections to a remote peer")
     .internal()
+    .startupOnly()
     .integerConf
     .createWithDefault(0)
 
@@ -1253,6 +1328,7 @@ object RapidsConf {
     .doc("The size of bounce buffer to use in bytes. Note that this size will be the same " +
       "for device and host memory")
     .internal()
+    .startupOnly()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(4 * 1024  * 1024)
 
@@ -1260,6 +1336,7 @@ object RapidsConf {
     conf("spark.rapids.shuffle.ucx.bounceBuffers.device.count")
     .doc("The number of bounce buffers to pre-allocate from device memory")
     .internal()
+    .startupOnly()
     .integerConf
     .createWithDefault(32)
 
@@ -1267,12 +1344,14 @@ object RapidsConf {
     conf("spark.rapids.shuffle.ucx.bounceBuffers.host.count")
     .doc("The number of bounce buffers to pre-allocate from host memory")
     .internal()
+    .startupOnly()
     .integerConf
     .createWithDefault(32)
 
   val SHUFFLE_MAX_CLIENT_THREADS = conf("spark.rapids.shuffle.maxClientThreads")
     .doc("The maximum number of threads that the shuffle client should be allowed to start")
     .internal()
+    .startupOnly()
     .integerConf
     .createWithDefault(50)
 
@@ -1280,6 +1359,7 @@ object RapidsConf {
     .doc("The maximum number of tasks shuffle clients will queue before adding threads " +
       s"(up to spark.rapids.shuffle.maxClientThreads), or slowing down the transport")
     .internal()
+    .startupOnly()
     .integerConf
     .createWithDefault(100)
 
@@ -1287,12 +1367,14 @@ object RapidsConf {
     .doc("The number of seconds that the ThreadPoolExecutor will allow an idle client " +
       "shuffle thread to stay alive, before reclaiming.")
     .internal()
+    .startupOnly()
     .integerConf
     .createWithDefault(30)
 
   val SHUFFLE_MAX_SERVER_TASKS = conf("spark.rapids.shuffle.maxServerTasks")
     .doc("The maximum number of tasks the shuffle server will queue up for its thread")
     .internal()
+    .startupOnly()
     .integerConf
     .createWithDefault(1000)
 
@@ -1300,6 +1382,7 @@ object RapidsConf {
     .doc("The maximum size of a metadata message that the shuffle plugin will keep in its " +
       "direct message pool. ")
     .internal()
+    .startupOnly()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(500 * 1024)
 
@@ -1307,19 +1390,25 @@ object RapidsConf {
       .doc("The GPU codec used to compress shuffle data when using RAPIDS shuffle. " +
           "Supported codecs: lz4, copy, none")
       .internal()
+      .startupOnly()
       .stringConf
       .createWithDefault("none")
 
   val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.lz4.chunkSize")
     .doc("A configurable chunk size to use when compressing with LZ4.")
     .internal()
+    .startupOnly()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(64 * 1024)
 
   val SHUFFLE_MULTITHREADED_MAX_BYTES_IN_FLIGHT =
     conf("spark.rapids.shuffle.multiThreaded.maxBytesInFlight")
       .doc("The size limit, in bytes, that the RAPIDS shuffle manager configured in " +
-          "\"MULTITHREADED\" mode will allow to be deserialized concurrently.")
+          "\"MULTITHREADED\" mode will allow to be deserialized concurrently per task. This is " +
+        "also the maximum amount of memory that will be used per task. This should ideally be " +
+        "at least the same size as the batch size so we don't have to wait to process a " +
+        "single batch.")
+      .startupOnly()
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(Integer.MAX_VALUE)
 
@@ -1330,6 +1419,7 @@ object RapidsConf {
           "There are two special values: " +
           "0 = feature is disabled, falls back to Spark built-in shuffle writer; " +
           "1 = our implementation of Spark's built-in shuffle writer with extra metrics.")
+      .startupOnly()
       .integerConf
       .createWithDefault(20)
 
@@ -1340,6 +1430,7 @@ object RapidsConf {
             "There are two special values: " +
             "0 = feature is disabled, falls back to Spark built-in shuffle reader; " +
             "1 = our implementation of Spark's built-in shuffle reader with extra metrics.")
+        .startupOnly()
         .integerConf
         .createWithDefault(20)
 
@@ -1354,6 +1445,7 @@ object RapidsConf {
       "\"gs://bar/b.csv\" will be replaced to \"alluxio://0.1.2.3:19998/bar/b.csv\". " +
       "To use this config, you have to mount the buckets to Alluxio by yourself. " +
       "If you set this config, spark.rapids.alluxio.automount.enabled won't be valid.")
+    .startupOnly()
     .stringConf
     .toSequence
     .createOptional
@@ -1369,9 +1461,7 @@ object RapidsConf {
       "alluxio.master.rpc.port(default: 19998) from ALLUXIO_HOME/conf/alluxio-site.properties, " +
       "then replace a cloud path which matches spark.rapids.alluxio.bucket.regex like " +
       "\"s3://bar/b.csv\" to \"alluxio://0.1.2.3:19998/bar/b.csv\", " +
-      "and the bucket \"s3://bar\" will be mounted to \"/bar\" in Alluxio automatically." +
-      "This config should be enabled when initially starting the application but it " +
-      "can be turned off and one programmatically after that.")
+      "and the bucket \"s3://bar\" will be mounted to \"/bar\" in Alluxio automatically.")
     .booleanConf
     .createWithDefault(false)
 
@@ -1386,17 +1476,13 @@ object RapidsConf {
     .stringConf
     .createWithDefault("^s3a{0,1}://.*")
 
-  val ALLUXIO_CMD = conf("spark.rapids.alluxio.cmd")
-    .doc("Provide the Alluxio command, which is used to mount or get information. " +
-      "The default value is \"su,ubuntu,-c,/opt/alluxio-2.8.0/bin/alluxio\", it means: " +
-      "run Process(Seq(\"su\", \"ubuntu\", \"-c\", " +
-      "\"/opt/alluxio-2.8.0/bin/alluxio fs mount --readonly /bucket-foo s3://bucket-foo\")), " +
-      "to mount s3://bucket-foo to /bucket-foo. " +
-      "the delimiter \",\" is used to convert to Seq[String] " +
-      "when you need to use a special user to run the mount command.")
-    .stringConf
-    .toSequence
-    .createWithDefault(Seq("su", "ubuntu", "-c", "/opt/alluxio-2.8.0/bin/alluxio"))
+  val ALLUXIO_USER = conf("spark.rapids.alluxio.user")
+      .doc("Alluxio user is set on the Alluxio client, " +
+          "which is used to mount or get information. " +
+          "By default it should be the user that running the Alluxio processes. " +
+          "The default value is ubuntu.")
+      .stringConf
+      .createWithDefault("ubuntu")
 
   val ALLUXIO_REPLACEMENT_ALGO = conf("spark.rapids.alluxio.replacement.algo")
     .doc("The algorithm used when replacing the UFS path with the Alluxio path. CONVERT_TIME " +
@@ -1410,6 +1496,28 @@ object RapidsConf {
     .stringConf
     .checkValues(Set("CONVERT_TIME", "TASK_TIME"))
     .createWithDefault("TASK_TIME")
+
+  val ALLUXIO_LARGE_FILE_THRESHOLD = conf("spark.rapids.alluxio.large.file.threshold")
+    .doc("The threshold is used to identify whether average size of files is large " +
+      "when reading from S3. If reading large files from S3 and " +
+      "the disks used by Alluxio are slow, " +
+      "directly reading from S3 is better than reading caches from Alluxio, " +
+      "because S3 network bandwidth is faster than local disk. " +
+      "This improvement takes effect when spark.rapids.alluxio.slow.disk is enabled.")
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(64 * 1024 * 1024) // 64M
+
+  val ALLUXIO_SLOW_DISK = conf("spark.rapids.alluxio.slow.disk")
+    .doc("Indicates whether the disks used by Alluxio are slow. " +
+      "If it's true and reading S3 large files, " +
+      "Rapids Accelerator reads from S3 directly instead of reading from Alluxio caches. " +
+      "Refer to spark.rapids.alluxio.large.file.threshold which defines a threshold that " +
+      "identifying whether files are large. " +
+      "Typically, it's slow disks if speed is less than 300M/second. " +
+      "If using convert time spark.rapids.alluxio.replacement.algo, " +
+      "this may not apply to all file types like Delta files")
+    .booleanConf
+    .createWithDefault(true)
 
   // USER FACING DEBUG CONFIGS
 
@@ -1428,6 +1536,7 @@ object RapidsConf {
 
   val SHIMS_PROVIDER_OVERRIDE = conf("spark.rapids.shims-provider-override")
     .internal()
+    .startupOnly()
     .doc("Overrides the automatic Spark shim detection logic and forces a specific shims " +
       "provider class to be used. Set to the fully qualified shims provider class to use. " +
       "If you are using a custom Spark version such as Spark 3.1.1.0 then this can be used to " +
@@ -1446,6 +1555,7 @@ object RapidsConf {
 
   val CUDF_VERSION_OVERRIDE = conf("spark.rapids.cudfVersionOverride")
     .internal()
+    .startupOnly()
     .doc("Overrides the cudf version compatibility check between cudf jar and RAPIDS Accelerator " +
       "jar. If you are sure that the cudf jar which is mentioned in the classpath is compatible " +
       "with the RAPIDS Accelerator version, then set this to true.")
@@ -1553,6 +1663,7 @@ object RapidsConf {
   val SPARK_GPU_RESOURCE_NAME = conf("spark.rapids.gpu.resourceName")
     .doc("The name of the Spark resource that represents a GPU that you want the plugin to use " +
       "if using custom resources with Spark.")
+    .startupOnly()
     .stringConf
     .createWithDefault("gpu")
 
@@ -1574,6 +1685,13 @@ object RapidsConf {
     .doc("Queries against Delta Lake _delta_log JSON files are not efficient on the GPU. When " +
       "this option is enabled, the plugin will attempt to detect these queries and fall back " +
       "to the CPU.")
+    .booleanConf
+    .createWithDefault(value = true)
+
+  val DETECT_DELTA_CHECKPOINT_QUERIES = conf("spark.rapids.sql.detectDeltaCheckpointQueries")
+    .doc("Queries against Delta Lake _delta_log checkpoint Parquet files are not efficient on " +
+      "the GPU. When this option is enabled, the plugin will attempt to detect these queries " +
+      "and fall back to the CPU.")
     .booleanConf
     .createWithDefault(value = true)
 
@@ -1633,7 +1751,7 @@ object RapidsConf {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |$SPARK_HOME/bin/spark-shell --jars rapids-4-spark_2.12-22.10.0-cuda11.jar \
+        |$SPARK_HOME/bin/spark-shell --jars rapids-4-spark_2.12-22.12.0-cuda11.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -1645,13 +1763,15 @@ object RapidsConf {
         |```
         |
         | All configs can be set on startup, but some configs, especially for shuffle, will not
-        | work if they are set at runtime.
+        | work if they are set at runtime. Please check the column of "Applicable at" to see
+        | when the config can be set. "Startup" means only valid on startup, "Runtime" means
+        | valid on both startup and runtime.
         |""".stripMargin)
       // scalastyle:on line.size.limit
 
       println("\n## General Configuration\n")
-      println("Name | Description | Default Value")
-      println("-----|-------------|--------------")
+      println("Name | Description | Default Value | Applicable at")
+      println("-----|-------------|--------------|--------------")
     } else {
       println("Rapids Configs:")
     }
@@ -1770,6 +1890,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val gpuOomDumpDir: Option[String] = get(GPU_OOM_DUMP_DIR)
 
+  lazy val gpuOomMaxRetries: Int = get(GPU_OOM_MAX_RETRIES)
+
   lazy val isUvmEnabled: Boolean = get(UVM_ENABLED)
 
   lazy val isPooledMemEnabled: Boolean = get(POOLED_MEM)
@@ -1828,6 +1950,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shouldExplainAll: Boolean = explain.equalsIgnoreCase("ALL")
 
   lazy val isImprovedTimestampOpsEnabled: Boolean = get(IMPROVED_TIMESTAMP_OPS)
+
+  lazy val chunkedReaderEnabled: Boolean = get(CHUNKED_READER)
 
   lazy val maxReadBatchSizeRows: Int = get(MAX_READER_BATCH_SIZE_ROWS)
 
@@ -1999,6 +2123,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isIcebergReadEnabled: Boolean = get(ENABLE_ICEBERG_READ)
 
+  lazy val isHiveDelimitedTextEnabled: Boolean = get(ENABLE_HIVE_TEXT)
+
+  lazy val isHiveDelimitedTextReadEnabled: Boolean = get(ENABLE_HIVE_TEXT_READ)
+
   lazy val shuffleManagerEnabled: Boolean = get(SHUFFLE_MANAGER_ENABLED)
 
   lazy val shuffleManagerMode: String = get(SHUFFLE_MANAGER_MODE)
@@ -2112,7 +2240,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val getAlluxioBucketRegex: String = get(ALLUXIO_BUCKET_REGEX)
 
-  lazy val getAlluxioCmd: Seq[String] = get(ALLUXIO_CMD)
+  lazy val getAlluxioUser: String = get(ALLUXIO_USER)
 
   lazy val getAlluxioReplacementAlgo: String = get(ALLUXIO_REPLACEMENT_ALGO)
 
@@ -2121,6 +2249,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isAlluxioReplacementAlgoTaskTime: Boolean =
     get(ALLUXIO_REPLACEMENT_ALGO) == "TASK_TIME"
+
+  lazy val getAlluxioLargeFileThreshold: Long = get(ALLUXIO_LARGE_FILE_THRESHOLD)
+
+  lazy val enableAlluxioSlowDisk: Boolean = get(ALLUXIO_SLOW_DISK)
 
   lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
 
@@ -2153,6 +2285,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isFastSampleEnabled: Boolean = get(ENABLE_FAST_SAMPLE)
 
   lazy val isDetectDeltaLogQueries: Boolean = get(DETECT_DELTA_LOG_QUERIES)
+
+  lazy val isDetectDeltaCheckpointQueries: Boolean = get(DETECT_DELTA_CHECKPOINT_QUERIES)
 
   lazy val concurrentWriterPartitionFlushSize:Long = get(CONCURRENT_WRITER_PARTITION_FLUSH_SIZE)
 

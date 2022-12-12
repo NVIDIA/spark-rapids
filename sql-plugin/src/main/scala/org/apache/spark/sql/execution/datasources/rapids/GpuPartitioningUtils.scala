@@ -26,6 +26,7 @@ import scala.util.Try
 import scala.util.control.NonFatal
 
 import com.nvidia.spark.rapids.AlluxioUtils.AlluxioPathReplaceConvertTime
+import com.nvidia.spark.rapids.shims.FileIndexOptionsShims.BASE_PATH_PARAM
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -37,7 +38,6 @@ import org.apache.spark.sql.catalyst.expressions.{Cast, Literal}
 import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, DateTimeUtils, TimestampFormatter}
 import org.apache.spark.sql.catalyst.util.rapids.DateFormatter
 import org.apache.spark.sql.execution.datasources.{PartitionPath, PartitionSpec}
-import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex.BASE_PATH_PARAM
 import org.apache.spark.sql.execution.datasources.PartitioningUtils.timestampPartitionPattern
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.types.shims.PartitionValueCastShims
@@ -109,8 +109,11 @@ object GpuPartitioningUtils extends SQLConfHelper {
   // SPARK-15895: Metadata files (e.g. Parquet summary files) and temporary files should not be
   // counted as data files, so that they shouldn't participate partition discovery.
   // Copied from PartitioningAwareFileIndex.isDataPath
-  private def isDataPath(path: Path): Boolean = {
-    val name = path.getName
+  def isDataPath(path: Path): Boolean = {
+    isDataPath(path.getName)
+  }
+
+  def isDataPath(name: String): Boolean = {
     !((name.startsWith("_") && !name.contains("=")) || name.startsWith("."))
   }
 
@@ -175,9 +178,12 @@ object GpuPartitioningUtils extends SQLConfHelper {
     case _ if value == DEFAULT_PARTITION_NAME => null
     case NullType => null
     case StringType => UTF8String.fromString(unescapePathName(value))
-    case ByteType | ShortType | IntegerType => Integer.parseInt(value)
+    case ByteType => Integer.parseInt(value).toByte
+    case ShortType => Integer.parseInt(value).toShort
+    case IntegerType => Integer.parseInt(value)
     case LongType => JLong.parseLong(value)
-    case FloatType | DoubleType => JDouble.parseDouble(value)
+    case FloatType => JDouble.parseDouble(value).toFloat
+    case DoubleType => JDouble.parseDouble(value)
     case _: DecimalType => Literal(new JBigDecimal(value)).value
     case DateType =>
       Cast(Literal(value), DateType, Some(zoneId.getId)).eval()

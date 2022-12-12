@@ -26,10 +26,10 @@ for VAR in $OVERWRITE_PARAMS; do
 done
 IFS=$PRE_IFS
 
-CUDF_VER=${CUDF_VER:-"22.10.0-SNAPSHOT"}
+CUDF_VER=${CUDF_VER:-"22.12.0"}
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-"cuda11"}
-PROJECT_VER=${PROJECT_VER:-"22.10.0"}
-PROJECT_TEST_VER=${PROJECT_TEST_VER:-"22.10.0"}
+PROJECT_VER=${PROJECT_VER:-"22.12.0"}
+PROJECT_TEST_VER=${PROJECT_TEST_VER:-"22.12.0"}
 SPARK_VER=${SPARK_VER:-"3.1.1"}
 # Make a best attempt to set the default value for the shuffle shim.
 # Note that SPARK_VER for non-Apache Spark flavors (i.e. databricks,
@@ -62,19 +62,27 @@ SPARK_SHIM_VERSIONS_SNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 # PnoSnapshots: noSnapshots only
 set_env_var_SPARK_SHIM_VERSIONS_ARR -PnoSnapshots
 SPARK_SHIM_VERSIONS_NOSNAPSHOTS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+# PsnapshotOnly : snapshots only
+set_env_var_SPARK_SHIM_VERSIONS_ARR -PsnapshotOnly
+SPARK_SHIM_VERSIONS_SNAPSHOTS_ONLY=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 
 # PHASE_TYPE: CICD phase at which the script is called, to specify Spark shim versions.
 # regular: noSnapshots + snapshots
 # pre-release: noSnapshots only
-PHASE_TYPE=${PHASE_TYPE:-"pre-release"} # TODO: update it to regular in branch-22.12 when CI is available
+# *: shim versions to build, e.g., PHASE_TYPE="311 321"
+PHASE_TYPE=${PHASE_TYPE:-"regular"}
 case $PHASE_TYPE in
     # SPARK_SHIM_VERSIONS will be used for nightly artifact build
     pre-release)
         SPARK_SHIM_VERSIONS=("${SPARK_SHIM_VERSIONS_NOSNAPSHOTS[@]}")
         ;;
 
-    *)
+    regular)
         SPARK_SHIM_VERSIONS=("${SPARK_SHIM_VERSIONS_SNAPSHOTS[@]}")
+        ;;
+
+    *)
+        SPARK_SHIM_VERSIONS=(`echo "$PHASE_TYPE"`)
         ;;
 esac
 # base version
@@ -92,5 +100,8 @@ SPARK_SHIM_VERSIONS_PREMERGE_UT_2=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 # utf-8 cases
 set_env_var_SPARK_SHIM_VERSIONS_ARR -PpremergeUTF8
 SPARK_SHIM_VERSIONS_PREMERGE_UTF8=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+# jdk11 cases
+set_env_var_SPARK_SHIM_VERSIONS_ARR -Pjdk11
+SPARK_SHIM_VERSIONS_JDK11=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 
 echo "SPARK_BASE_SHIM_VERSION: $SPARK_BASE_SHIM_VERSION"

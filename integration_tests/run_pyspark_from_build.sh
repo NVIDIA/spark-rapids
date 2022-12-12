@@ -174,7 +174,11 @@ else
     else
         TEST_PARALLEL_OPTS=("-n" "$TEST_PARALLEL")
     fi
-    RUN_DIR=${RUN_DIR-"$SCRIPTPATH"/target/run_dir}
+
+    TARGET_DIR="$SCRIPTPATH"/target
+    mkdir -p "$TARGET_DIR"
+
+    RUN_DIR=${RUN_DIR-$(mktemp -p "$TARGET_DIR" -d run_dir-$(date +%Y%m%d%H%M%S)-XXXX)}
     mkdir -p "$RUN_DIR"
     cd "$RUN_DIR"
 
@@ -228,6 +232,8 @@ else
     # 200 MiB being allocated by a single test at most, and we typically have 4 tasks.
     export PYSP_TEST_spark_rapids_sql_batchSizeBytes='100m'
     export PYSP_TEST_spark_rapids_sql_regexp_maxStateMemoryBytes='300m'
+
+    export PYSP_TEST_spark_hadoop_hive_exec_scratchdir="$RUN_DIR/hive"
 
     # Extract Databricks version from deployed configs. This is set automatically on Databricks
     # notebooks but not when running Spark manually.

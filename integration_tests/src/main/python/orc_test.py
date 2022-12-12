@@ -19,7 +19,7 @@ from asserts import assert_cpu_and_gpu_are_equal_sql_with_capture, assert_gpu_an
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, is_before_spark_320, is_before_spark_330, is_spark_321cdh
+from spark_session import with_cpu_session, is_before_spark_320, is_before_spark_330, is_spark_cdh
 from parquet_test import _nested_pruning_schemas
 from conftest import is_databricks_runtime
 
@@ -183,7 +183,7 @@ def test_pred_push_round_trip(spark_tmp_path, orc_gen, read_func, v1_enabled_lis
 
 orc_compress_options = ['none', 'uncompressed', 'snappy', 'zlib']
 # zstd is available in spark 3.2.0 and later.
-if not is_before_spark_320() and not is_spark_321cdh():
+if not is_before_spark_320() and not is_spark_cdh():
     orc_compress_options.append('zstd')
 
 # The following need extra jars 'lzo'
@@ -337,6 +337,25 @@ def test_orc_read_multiple_schema(spark_tmp_path, v1_enabled_list, reader_confs)
     all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema).orc(data_path),
+        conf=all_confs)
+
+@pytest.mark.parametrize('v1_enabled_list', ["", "orc"])
+def test_orc_read_avoid_coalesce_incompatible_files(spark_tmp_path, v1_enabled_list):
+    data_path = spark_tmp_path + '/ORC_DATA'
+    def setup_table(spark):
+        df1 = spark.createDataFrame([(("a", "b"),)], "x: struct<y: string, z: string>")
+        df1.write.orc(data_path + "/data1")
+        df2 = spark.createDataFrame([(("a",),)], "x: struct<z: string>")
+        df2.write.orc(data_path + "/data2")
+    with_cpu_session(setup_table)
+    # Configure confs to read as a single task
+    all_confs = copy_and_update(coalescing_orc_file_reader_conf, {
+        "spark.sql.sources.useV1SourceList": v1_enabled_list,
+        "spark.sql.files.minPartitionNum": "1"})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read \
+            .schema("x STRUCT<y: string, z: string>") \
+            .option("recursiveFileLookup", "true").orc(data_path),
         conf=all_confs)
 
 @pytest.mark.parametrize('v1_enabled_list', ["", "orc"])

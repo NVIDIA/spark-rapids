@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.net.URL
 
 import com.nvidia.spark.GpuCachedBatchSerializer
+import com.nvidia.spark.rapids.delta.DeltaProvider
 import com.nvidia.spark.rapids.iceberg.IcebergProvider
 import org.apache.commons.lang3.reflect.MethodUtils
 import scala.annotation.tailrec
@@ -56,13 +57,13 @@ import org.apache.spark.util.MutableURLClassLoader
 
     E.g., Spark 3.2.0 Shim will use
 
-    jar:file:/home/spark/rapids-4-spark_2.12-22.10.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-22.10.0.jar!/spark320/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.12.0.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.12.0.jar!/spark320/
 
     Spark 3.1.1 will use
 
-    jar:file:/home/spark/rapids-4-spark_2.12-22.10.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-22.10.0.jar!/spark311/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.12.0.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-22.12.0.jar!/spark311/
 
     Using these Jar URL's allows referencing different bytecode produced from identical sources
     by incompatible Scala / Spark dependencies.
@@ -406,6 +407,9 @@ object ShimLoader extends Logging {
 
   def newAvroProvider(): AvroProvider = ShimLoader.newInstanceOf[AvroProvider](
     "org.apache.spark.sql.rapids.AvroProviderImpl")
+
+  def newDeltaProvider(): DeltaProvider = ShimLoader.newInstanceOf[DeltaProvider](
+    "com.nvidia.spark.rapids.delta.shims.DeltaProviderImpl")
 
   def newIcebergProvider(): IcebergProvider = ShimLoader.newInstanceOf[IcebergProvider](
     "com.nvidia.spark.rapids.iceberg.IcebergProviderImpl")

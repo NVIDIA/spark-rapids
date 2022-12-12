@@ -156,8 +156,17 @@ def is_before_spark_340():
 def is_spark_330_or_later():
     return spark_version() >= "3.3.0"
 
+def is_spark_340_or_later():
+    return spark_version() >= "3.4.0"
+
 def is_spark_321cdh():
     return "3.2.1.3.2.717" in spark_version()
+
+def is_spark_330cdh():
+    return "3.3.0.3.3.718" in spark_version()
+
+def is_spark_cdh():
+    return is_spark_321cdh() or is_spark_330cdh()
 
 def is_databricks_version_or_later(major, minor):
     spark = get_spark_i_know_what_i_am_doing()

@@ -23,13 +23,12 @@ import com.nvidia.spark.rapids.shims.ShimBinaryExecNode
 import org.apache.spark.TaskContext
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
-import org.apache.spark.sql.execution.{CoGroupedIterator, SparkPlan}
-import org.apache.spark.sql.execution.python.{CoGroupedArrowPythonRunner, FlatMapCoGroupsInPandasExec}
-import org.apache.spark.sql.execution.python.rapids.GpuPandasUtils._
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.python.FlatMapCoGroupsInPandasExec
+import org.apache.spark.sql.rapids.execution.python.BatchGroupUtils._
+import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -45,47 +44,69 @@ class GpuFlatMapCoGroupsInPandasExecMeta(
   override def noReplacementPossibleMessage(reasons: String): String =
     s"cannot run even partially on the GPU because $reasons"
 
-  // Ignore the expressions since columnar way is not supported yet
-  override val childExprs: Seq[BaseExprMeta[_]] = Seq.empty
+  override def tagPlanForGpu(): Unit = {
+    // Fall back to CPU when the two grouping columns in a pair have different types.
+    // e.g.
+    //   Left grouping column is (a: Int),
+    //   Right grouping columns are (a: String, b: Int)
+    // The first pair <a: Int, a:String> has different types. This is a meaningless case,
+    // but Spark can run unexpectedly due to no type check in the UnsafeRow, while GPU
+    // will throw an exception if Java Assertion is enabled.
+    if (flatPandas.leftGroup.zipWithIndex.exists { case (leftGpAttr, at) =>
+      flatPandas.rightGroup.lift(at).exists { rightGpAttr =>
+        !leftGpAttr.dataType.sameType(rightGpAttr.dataType)
+      }
+    }) {
+      willNotWorkOnGpu("grouping columns from two DataFrames have different types.")
+    }
+  }
+
+  private val leftGroupingAttrs: Seq[BaseExprMeta[Attribute]] =
+    flatPandas.leftGroup.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+  private val rightGroupingAttrs: Seq[BaseExprMeta[Attribute]] =
+    flatPandas.rightGroup.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+  private val udf: BaseExprMeta[PythonUDF] = GpuOverrides.wrapExpr(
+    flatPandas.func.asInstanceOf[PythonUDF], conf, Some(this))
+
+  private val resultAttrs: Seq[BaseExprMeta[Attribute]] =
+    flatPandas.output.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+
+  override val childExprs: Seq[BaseExprMeta[_]] =
+    leftGroupingAttrs ++ rightGroupingAttrs ++ resultAttrs :+ udf
 
   override def convertToGpu(): GpuExec = {
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
     GpuFlatMapCoGroupsInPandasExec(
-      flatPandas.leftGroup, flatPandas.rightGroup,
-      flatPandas.func,
-      flatPandas.output,
+      leftGroupingAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
+      rightGroupingAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
+      udf.convertToGpu(),
+      resultAttrs.map(_.convertToGpu()).asInstanceOf[Seq[Attribute]],
       left,
       right
     )
   }
 }
 
-/*
+/**
+ * GPU version of Spark's `FlatMapCoGroupsInPandasExec`
  *
- * This GpuFlatMapCoGroupsInPandasExec aims at supporting running Pandas functional code
- * on GPU at Python side.
- *
- * (Currently it will not run on GPU itself, since the columnar way is not implemented yet.)
- *
+ * This node aims at accelerating the data transfer between JVM and Python for GPU pipeline, and
+ * scheduling GPU resources for its Python processes.
  */
 case class GpuFlatMapCoGroupsInPandasExec(
     leftGroup: Seq[Attribute],
     rightGroup: Seq[Attribute],
-    func: Expression,
+    udf: Expression,
     output: Seq[Attribute],
     left: SparkPlan,
     right: SparkPlan)
-  extends SparkPlan with ShimBinaryExecNode with GpuExec {
+  extends SparkPlan with ShimBinaryExecNode with GpuPythonExecBase {
 
-  override def supportsColumnar = false
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    throw new IllegalStateException(s"Columnar execution is not supported by $this yet")
-  }
-
-  // Most code is copied from FlatMapCoGroupsInPandasExec, except two GPU related calls
   private val sessionLocalTimeZone = conf.sessionLocalTimeZone
   private val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
-  private val pandasFunction = func.asInstanceOf[PythonUDF].func
+  private val pandasFunction = udf.asInstanceOf[GpuPythonUDF].func
   private val chainedFunc = Seq(ChainedPythonFunctions(Seq(pandasFunction)))
 
   override def producedAttributes: AttributeSet = AttributeSet(output)
@@ -103,39 +124,57 @@ case class GpuFlatMapCoGroupsInPandasExec(
       rightGroup.map(SortOrder(_, Ascending)) :: Nil
   }
 
-  override protected def doExecute(): RDD[InternalRow] = {
+  /* Rapids things start */
+  // One batch as input to keep the integrity for each group
+  override def childrenCoalesceGoal: Seq[CoalesceGoal] =
+    Seq(RequireSingleBatch, RequireSingleBatch)
+
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val (numInputRows, numInputBatches, numOutputRows, numOutputBatches,
+         spillCallback) = commonGpuMetrics()
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
+    // Python wraps the resulting columns in a single struct column.
+    val pythonOutputSchema = StructType(
+      StructField("out_struct", StructType.fromAttributes(output)) :: Nil)
 
-    val (leftDedup, leftArgOffsets) = resolveArgOffsets(left, leftGroup)
-    val (rightDedup, rightArgOffsets) = resolveArgOffsets(right, rightGroup)
+    // Resolve the argument offsets and related attributes.
+    val GroupArgs(leftDedupAttrs, leftArgOffsets, leftGroupingOffsets) =
+      resolveArgOffsets(left, leftGroup)
+    val GroupArgs(rightDedupAttrs, rightArgOffsets, rightGroupingOffsets) =
+      resolveArgOffsets(right, rightGroup)
 
-    // Map cogrouped rows to ArrowPythonRunner results, Only execute if partition is not empty
-    left.execute().zipPartitions(right.execute())  { (leftData, rightData) =>
-      if (leftData.isEmpty && rightData.isEmpty) Iterator.empty else {
+    left.executeColumnar().zipPartitions(right.executeColumnar())  { (leftIter, rightIter) =>
+      if (isPythonOnGpuEnabled) {
+        GpuPythonHelper.injectGpuInfo(chainedFunc, isPythonOnGpuEnabled)
+        PythonWorkerSemaphore.acquireIfNecessary(TaskContext.get())
+      }
 
-        val leftGrouped = groupAndProject(leftData, leftGroup, left.output, leftDedup)
-        val rightGrouped = groupAndProject(rightData, rightGroup, right.output, rightDedup)
-        val data = new CoGroupedIterator(leftGrouped, rightGrouped, leftGroup)
-          .map { case (_, l, r) => (l, r) }
+      // Only execute if partition is not empty
+      if (leftIter.isEmpty && rightIter.isEmpty) Iterator.empty else {
+        // project and group for left and right
+        val leftGroupedIter = projectAndGroup(leftIter, left.output, leftDedupAttrs,
+          leftGroupingOffsets, numInputRows, numInputBatches, spillCallback)
+        val rightGroupedIter = projectAndGroup(rightIter, right.output, rightDedupAttrs,
+          rightGroupingOffsets, numInputRows, numInputBatches, spillCallback)
+        // Cogroup the data
+        val pyInputIter = new CoGroupedIterator(leftGroupedIter, leftDedupAttrs,
+          leftGroupingOffsets, rightGroupedIter, rightDedupAttrs,  rightGroupingOffsets)
 
-        // Start of GPU things
-        if (isPythonOnGpuEnabled) {
-          GpuPythonHelper.injectGpuInfo(chainedFunc, isPythonOnGpuEnabled)
-          PythonWorkerSemaphore.acquireIfNecessary(TaskContext.get())
-        }
-        // End of GPU things
-
-        val runner = new CoGroupedArrowPythonRunner(
+        val pyRunner = new GpuCoGroupedArrowPythonRunner(
           chainedFunc,
           PythonEvalType.SQL_COGROUPED_MAP_PANDAS_UDF,
           Array(leftArgOffsets ++ rightArgOffsets),
-          StructType.fromAttributes(leftDedup),
-          StructType.fromAttributes(rightDedup),
+          StructType.fromAttributes(leftDedupAttrs),
+          StructType.fromAttributes(rightDedupAttrs),
           sessionLocalTimeZone,
-          pythonRunnerConf)
+          pythonRunnerConf,
+          // The whole group data should be written in a single call, so here is unlimited
+          Int.MaxValue,
+          spillCallback.semaphoreWaitTime,
+          pythonOutputSchema)
 
-        executePython(data, output, runner)
+        executePython(pyInputIter, output, pyRunner, numOutputRows, numOutputBatches)
       }
     }
-  }
+  } // end of doExecuteColumnar
 }

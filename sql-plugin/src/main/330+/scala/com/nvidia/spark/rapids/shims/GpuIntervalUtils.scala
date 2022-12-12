@@ -22,6 +22,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.{Arm, BoolUtils, CloseableHolder}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.catalyst.util.DateTimeConstants.{MICROS_PER_DAY, MICROS_PER_HOUR, MICROS_PER_MINUTE, MICROS_PER_SECOND, MONTHS_PER_YEAR}
 import org.apache.spark.sql.rapids.shims.IntervalUtils
@@ -292,17 +293,15 @@ object GpuIntervalUtils extends Arm {
   // not close firstSignInTable and secondSignInTable here, outer table.close will close them
   private def finalSign(
       firstSignInTable: ColumnVector, secondSignInTable: ColumnVector): ColumnVector = {
-    withResource(Scalar.fromString("-")) { negScalar =>
-      withResource(negScalar.equalTo(firstSignInTable)) { neg1 =>
-        withResource(negScalar.equalTo(secondSignInTable)) { neg2 =>
-          withResource(neg1.bitXor(neg2)) { s =>
-            withResource(Scalar.fromLong(1L)) { one =>
-              withResource(Scalar.fromLong(-1L)) { negOne =>
-                s.ifElse(negOne, one)
-              }
-            }
-          }
-        }
+    val negatives = withResource(Scalar.fromString("-")) { negScalar =>
+      withResource(Seq(firstSignInTable, secondSignInTable).safeMap(negScalar.equalTo)) {
+        case Seq(neg1, neg2) => neg1.bitXor(neg2)
+      }
+    }
+
+    withResource(negatives) { _ =>
+      withResource(Seq(1L, -1L).safeMap(Scalar.fromLong)) { case Seq(posOne, negOne) =>
+        negatives.ifElse(negOne, posOne)
       }
     }
   }
@@ -315,14 +314,17 @@ object GpuIntervalUtils extends Arm {
    * @return micros column
    */
   private def getMicrosFromDecimal(sign: ColumnVector, decimal: ColumnVector): ColumnVector = {
-    withResource(decimal.castTo(DType.create(DType.DTypeEnum.DECIMAL64, -6))) { decimal =>
-      withResource(Scalar.fromLong(1000000L)) { million =>
-        withResource(decimal.mul(million)) { r =>
-          withResource(r.asLongs()) { l =>
-            l.mul(sign)
-          }
-        }
+    val decimalType64_6 = DType.create(DType.DTypeEnum.DECIMAL64, -6)
+    val timesMillion = withResource(Scalar.fromLong(1000000L)) { million =>
+      withResource(decimal.castTo(decimalType64_6)) {
+        _.mul(million)
       }
+    }
+    val timesMillionLongs = withResource(timesMillion) {
+      _.asLongs()
+    }
+    withResource(timesMillionLongs) {
+      _.mul(sign)
     }
   }
 
