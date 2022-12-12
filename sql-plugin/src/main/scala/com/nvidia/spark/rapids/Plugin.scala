@@ -267,6 +267,12 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         }
       }
 
+      val reservedShuffleMemory = if (conf.isGPUShuffle) {
+        conf.shuffleTransportMaxReceiveInflightBytes
+      } else {
+        0
+      }
+      GpuMemoryLeaseManager.initialize(reservedShuffleMemory)
       val concurrentGpuTasks = conf.concurrentGpuTasks
       logInfo(s"The number of concurrent GPU tasks allowed is $concurrentGpuTasks")
       GpuSemaphore.initialize(concurrentGpuTasks)
@@ -368,6 +374,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
 
   override def shutdown(): Unit = {
     GpuSemaphore.shutdown()
+    GpuMemoryLeaseManager.shutdown()
     PythonWorkerSemaphore.shutdown()
     GpuDeviceManager.shutdown()
     Option(rapidsShuffleHeartbeatEndpoint).foreach(_.close())

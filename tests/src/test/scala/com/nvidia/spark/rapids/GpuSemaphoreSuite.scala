@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020,2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ import org.apache.spark.TaskContext
 
 class GpuSemaphoreSuite extends FunSuite
     with BeforeAndAfterEach with MockitoSugar with TimeLimits  with TimeLimitedTests {
-  val timeLimit = Span(10, Seconds)
+  override def timeLimit = Span(10, Seconds)
 
   override def beforeEach(): Unit = GpuSemaphore.shutdown()
   override def afterEach(): Unit = GpuSemaphore.shutdown()

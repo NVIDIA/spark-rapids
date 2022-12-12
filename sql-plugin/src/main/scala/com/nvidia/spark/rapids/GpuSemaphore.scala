@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2020, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2020,2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import org.apache.commons.lang3.mutable.MutableInt
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.internal.SQLConf
 
 object GpuSemaphore {
 
@@ -76,7 +77,10 @@ object GpuSemaphore {
    */
   def acquireIfNecessary(context: TaskContext, waitMetric: GpuMetric): Unit = {
     if (enabled && context != null) {
-      getInstance.acquireIfNecessary(context, waitMetric)
+      // TODO in the future this heuristic should probably change...
+      val conf = SQLConf.get
+      val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+      getInstance.acquireIfNecessary(context, waitMetric, targetSize * 4)
     }
   }
 
@@ -116,23 +120,24 @@ private final class GpuSemaphore(tasksPerGpu: Int) extends Logging with Arm {
   private val semaphore = new Semaphore(tasksPerGpu)
 
   // Map to track which tasks have acquired the semaphore.
-  case class TaskInfo(count: MutableInt, thread: Thread)
+  case class TaskInfo(count: MutableInt, thread: Thread, initialRequest: Long)
   private val activeTasks = new ConcurrentHashMap[Long, TaskInfo]
 
-  def acquireIfNecessary(context: TaskContext, waitMetric: GpuMetric): Unit = {
+  def acquireIfNecessary(context: TaskContext, waitMetric: GpuMetric, initialLease: Long): Unit = {
     withResource(new NvtxWithMetrics("Acquire GPU", NvtxColor.RED, waitMetric)) { _ =>
       val taskAttemptId = context.taskAttemptId()
       val refs = activeTasks.get(taskAttemptId)
       if (refs == null || refs.count.getValue == 0) {
         logDebug(s"Task $taskAttemptId acquiring GPU")
         semaphore.acquire()
+        GpuMemoryLeaseManager.requestLease(context, initialLease)
         if (refs != null) {
           refs.count.increment()
         } else {
           // first time this task has been seen
           activeTasks.put(
             taskAttemptId,
-            TaskInfo(new MutableInt(1), Thread.currentThread()))
+            TaskInfo(new MutableInt(1), Thread.currentThread(), initialLease))
           context.addTaskCompletionListener[Unit](completeTask)
         }
         GpuDeviceManager.initializeFromTask()
@@ -147,7 +152,7 @@ private final class GpuSemaphore(tasksPerGpu: Int) extends Logging with Arm {
       val refs = activeTasks.get(taskAttemptId)
       if (refs != null && refs.count.getValue > 0) {
         if (refs.count.decrementAndGet() == 0) {
-          logDebug(s"Task $taskAttemptId releasing GPU")
+          GpuMemoryLeaseManager.releaseAllForTask(context)
           semaphore.release()
         }
       }
@@ -163,7 +168,7 @@ private final class GpuSemaphore(tasksPerGpu: Int) extends Logging with Arm {
       throw new IllegalStateException(s"Completion of unknown task $taskAttemptId")
     }
     if (refs.count.getValue > 0) {
-      logDebug(s"Task $taskAttemptId releasing GPU")
+      GpuMemoryLeaseManager.releaseAllForTask(context)
       semaphore.release()
     }
   }
