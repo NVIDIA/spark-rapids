@@ -651,7 +651,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     var sizeRead = 0L
     var numRowsRead = 0L
     val results = ArrayBuffer[HostMemoryBuffersWithMetaDataBase]()
-    readReadyFiles(0, 0,results)
+    readReadyFiles(0, 0, results)
     if (results.isEmpty) {
       // none were ready yet so wait as long as need for first one
       val hostBuffersWithMeta = if (keepReadsInOrder) {
