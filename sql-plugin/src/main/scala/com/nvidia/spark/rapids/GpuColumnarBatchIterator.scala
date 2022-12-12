@@ -106,12 +106,17 @@ class GpuColumnarBatchWithPartitionValuesIterator(
 
   override def next(): ColumnarBatch = {
     if (!hasNext) throw new NoSuchElementException()
+    val isToAddPartitionCols = partSchema.nonEmpty
     val batch = inputIter.next()
-    val (readPartValues, readPartRows) = closeOnExcept(batch) { _ =>
-      computeValuesAndRowNumsForBatch(batch.numRows())
+    if (isToAddPartitionCols) {
+      val (readPartValues, readPartRows) = closeOnExcept(batch) { _ =>
+        computeValuesAndRowNumsForBatch(batch.numRows())
+      }
+      MultiFileReaderUtils.addMultiplePartitionValuesAndClose(batch, readPartValues,
+        readPartRows, partSchema)
+    } else {
+      batch
     }
-    MultiFileReaderUtils.addMultiplePartitionValuesAndClose(batch, readPartValues,
-      readPartRows, partSchema)
   }
 
   private[this] def computeValuesAndRowNumsForBatch(batchRowNum: Int):
@@ -127,7 +132,7 @@ class GpuColumnarBatchWithPartitionValuesIterator(
       // 1: Locate the position for the current read
       while (consumedRowNum < batchRowNum) {
         // Not test "pos < leftRowNums.length" here because this is ensured
-        // by "leftRowNum > readNum"
+        // by "leftTotalRowNum > batchRowNum"
         consumedRowNum += leftRowNums(pos)
         pos += 1
       }
@@ -138,11 +143,11 @@ class GpuColumnarBatchWithPartitionValuesIterator(
         // Good luck! Just at the edge of a partition
         leftValues = remainValues
         leftRowNums = remainRowNums
-      } else { // consumedRowNum > readNum, and pos > 0
+      } else { // consumedRowNum > batchRowNum, and pos > 0
         // A worse case, inside a partition, need to correct the splits.
         // e.g.
         //    Row numbers: [2, 3, 2]
-        //    Read row number: 4,
+        //    Batch row number: 4,
         // The original split result is:  [2, 3] and [2]
         // And the corrected output is: [2, 2] and [1, 2]
         val remainRowNumForSplitPart = consumedRowNum - batchRowNum
@@ -151,7 +156,7 @@ class GpuColumnarBatchWithPartitionValuesIterator(
         leftValues = readValues(pos - 1) +: remainValues
       }
       (readValues, readRowNums)
-    } else { // leftTotalRowNum < readNum
+    } else { // leftTotalRowNum < batchRowNum
       // This should not happen, so throw an exception
       throw new IllegalStateException(s"Partition row number <$leftTotalRowNum> " +
         s"does not match that of the read batch <$batchRowNum>.")
