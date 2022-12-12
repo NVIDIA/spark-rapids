@@ -24,7 +24,7 @@ import scala.collection.mutable.ListBuffer
 import com.nvidia.spark.rapids.RapidsConf
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.{And, Attribute, AttributeReference, BinaryExpression, Expression, ExpressionSet, PredicateHelper}
+import org.apache.spark.sql.catalyst.expressions.{And, Attribute, AttributeReference, BinaryExpression, Expression, ExpressionSet, IsNotNull, PredicateHelper}
 import org.apache.spark.sql.catalyst.plans.Inner
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -140,8 +140,6 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
       return plan
     }
 
-    // TODO add dominant fact table check
-
     // order the dimensions by size
     val dimsBySize = relationsOrdered(dims)
     dimsBySize.foreach(dim => println(s"[DIM] [SIZE=${dim.size}]:\n$dim"))
@@ -157,22 +155,33 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
 
     val newPlan = if (facts.length == 1) {
       // this is the use case described in the paper
-      buildJoinTree(facts.head.plan, dimLogicalPlans, conds)
+      val (numJoins, join) = buildJoinTree(facts.head.plan, dimLogicalPlans, conds)
+
+      // check for dominant fact table (at least half of joins must be against fact table)
+      if (numJoins < (relations.length-1)/2) {
+        println("Failed dominant fact table check")
+        return plan
+      }
+
+      join
+
     } else {
       // this code is an experimental extension to the paper where we
       // attempt to rewrite joins involving multiple fact tables
 
       // first we build one join tree for each fact table
-      val factDimJoins = new ListBuffer[LogicalPlan]()
+      val factDimJoins = new ListBuffer[(Int, LogicalPlan)]()
       for (fact <- facts) {
-        val plan = buildJoinTree(fact.plan, dimLogicalPlans, conds)
-        println(s"[FACT-DIM JOIN] $plan")
-        factDimJoins += plan
+        val x = buildJoinTree(fact.plan, dimLogicalPlans, conds)
+        println(s"[FACT-DIM JOIN] ${x._2}")
+        factDimJoins += x
       }
 
+      // sort so that fact tables with more joins appear earlier
+      val sortedFactDimJoins = factDimJoins.sortBy(-_._1).map(_._2)
+
       // now we join the fact-dim join trees together
-      // TODO sort with most dominant facts first
-      buildJoinTree(factDimJoins.head, factDimJoins.drop(1), conds)
+      buildJoinTree(sortedFactDimJoins.head, sortedFactDimJoins.drop(1), conds)._2
     }
 
     if (conds.nonEmpty) {
@@ -196,8 +205,9 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
   private def buildJoinTree(
       fact: LogicalPlan,
       dims: Seq[LogicalPlan],
-      conds: mutable.HashSet[Expression]): LogicalPlan = {
+      conds: mutable.HashSet[Expression]): (Int, LogicalPlan) = {
     var plan = fact
+    var numJoins = 0
     for (dim <- dims) {
       val joinConds = new ListBuffer[Expression]()
       for (cond <- conds) {
@@ -221,9 +231,10 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
         val factDimJoinCond = joinConds.reduce(And)
         println(s"FactDimensionJoinReorder: join fact to dim on $factDimJoinCond")
         plan = Join(plan, dim, Inner, Some(factDimJoinCond), JoinHint.NONE)
+        numJoins += 1
       }
     }
-    plan
+    (numJoins, plan)
   }
 
   /**
@@ -236,8 +247,11 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
   def relationsOrdered(rels: Seq[Relation]): Seq[Relation]  = {
     // leave unfiltered dimensions in the user-specified order
     val unfiltered = rels.filterNot(_.hasFilter)
+    unfiltered.foreach(rel => println(s"[UNFILTERED] $rel"))
     // order filtered dimensions by size (smallest first)
     val filtered = rels.filter(_.hasFilter).sortBy(_.size)
+    filtered.foreach(rel => println(s"[FILTERED] $rel"))
+
     // combine the two lists
     val dims = new ListBuffer[Relation]()
     var i = 0
@@ -259,6 +273,7 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
         j += 1
       }
     }
+    dims.foreach(rel => println(s"[ORDERED DIM] $rel"))
     dims
   }
 
@@ -302,11 +317,13 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
 /**
  * Wrapper for logical plan with size.
  */
-case class Relation(plan: LogicalPlan, size: Long) {
+case class Relation(plan: LogicalPlan, size: Long) extends PredicateHelper {
   def hasFilter: Boolean = {
     def hasFilter(plan: LogicalPlan): Boolean = {
       plan match {
-        case _: Filter => true
+        case Filter(cond, _) =>
+          // we ignore IsNotNull filters since they exist for all join keys in all relations
+          !splitConjunctivePredicates(cond).forall(_.isInstanceOf[IsNotNull])
         case _ => plan.children.exists(hasFilter)
       }
     }
