@@ -856,9 +856,9 @@ object RapidsConf {
       .doc("The target size in bytes to combine multiple small files together when using the " +
         "MULTITHREADED parquet reader. With combine disabled, the MULTITHREADED reader reads the " +
         "files in parallel and sends individual files down to the GPU, but that can be " +
-        "inefficient for small files, so with this it combines files that are ready within " +
+        "inefficient for small files. When combine is enabled, files that are ready within " +
         "spark.rapids.sql.format.parquet.multithreaded.combine.waitTime together, up to this " +
-        "threshold size, before sending down to GPU. This can be disabled by setting it to 0. " +
+        "threshold size, are combined before sending down to GPU. This can be disabled by setting it to 0. " +
         "Note that combine also will not go over the spark.rapids.sql.reader.batchSizeRows or " +
         "spark.rapids.sql.reader.batchSizeBytes limits.")
       .bytesConf(ByteUnit.BYTE)
