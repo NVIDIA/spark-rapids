@@ -30,7 +30,7 @@ import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange,
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.functions.{col, when}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.GpuFileSourceScanExec
+import org.apache.spark.sql.rapids.{ExecutionPlanCaptureCallback, GpuFileSourceScanExec}
 import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
 import org.apache.spark.sql.types.{ArrayType, DataTypes, DecimalType, IntegerType, StringType, StructField, StructType}
 
@@ -345,8 +345,10 @@ class AdaptiveQueryExecSuite
       val outputPath = new File(TEST_FILES_ROOT, "AvoidTransitionOutput.parquet").getAbsolutePath
       df.write.mode(SaveMode.Overwrite).parquet(outputPath)
 
-      val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(
-        ExecutionPlanCaptureCallback.getResultWithTimeout())
+      val capturedPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()
+      assert(capturedPlans.length == 1,
+        s"Expected to capture exactly one plan: ${capturedPlans.mkString("\n")}")
+      val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(capturedPlans.head)
 
       // write should be on GPU
       val writeCommand = TestUtils.findOperator(executedPlan,
@@ -408,8 +410,10 @@ class AdaptiveQueryExecSuite
 
       df.collect()
 
-      val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(
-        ExecutionPlanCaptureCallback.getResultWithTimeout())
+      val capturedPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()
+      assert(capturedPlans.length == 1,
+        s"Expected to capture exactly one plan: ${capturedPlans.mkString("\n")}")
+      val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(capturedPlans.head)
 
       val transition = executedPlan
           .asInstanceOf[GpuColumnarToRowExec]
