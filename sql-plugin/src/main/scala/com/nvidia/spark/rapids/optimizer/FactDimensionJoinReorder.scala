@@ -48,10 +48,10 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
     val t0 = System.nanoTime()
     val reorderedJoin = plan.transformUp {
       case j@Join(_, _, Inner, Some(_), JoinHint.NONE) if isSupportedJoin(j) =>
-        reorder(j, j.output, conf)
+        reorder(j, conf)
       case p @ Project(projectList, Join(_, _, Inner, Some(_), JoinHint.NONE))
         if projectList.forall(_.isInstanceOf[Attribute]) =>
-        reorder(p, p.output, conf)
+        reorder(p, conf)
     }
     val originalShuffleCount = countShuffles(plan)
     val newShuffleCount = countShuffles(reorderedJoin)
@@ -97,7 +97,6 @@ object FactDimensionJoinReorder extends Rule[LogicalPlan] with PredicateHelper {
 
   private def reorder(
       plan: LogicalPlan,
-      output: Seq[Attribute],
       conf: RapidsConf): LogicalPlan = {
     println(s"FactDimensionJoinReorder: Attempt to reorder join:\n$plan")
 
