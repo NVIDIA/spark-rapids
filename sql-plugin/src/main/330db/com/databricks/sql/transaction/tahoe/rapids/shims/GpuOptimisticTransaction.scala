@@ -38,8 +38,4 @@ class GpuOptimisticTransaction(
   def this(deltaLog: DeltaLog, rapidsConf: RapidsConf)(implicit clock: Clock) {
     this(deltaLog, deltaLog.update(), rapidsConf)
   }
-
-  override protected def performCDCPartition(inputData: Dataset[_]): (DataFrame, StructType) = {
-    performCDCPartitionInternal(inputData)
-  }
 }

@@ -28,7 +28,6 @@ import scala.collection.mutable.ListBuffer
 import ai.rapids.cudf.ColumnView
 import com.databricks.sql.transaction.tahoe._
 import com.databricks.sql.transaction.tahoe.actions.FileAction
-import com.databricks.sql.transaction.tahoe.commands.cdc.CDCReader
 import com.databricks.sql.transaction.tahoe.constraints.{Constraint, Constraints, DeltaInvariantCheckerExec}
 import com.databricks.sql.transaction.tahoe.metering.DeltaLogging
 import com.databricks.sql.transaction.tahoe.schema.InvariantViolationException
@@ -45,11 +44,11 @@ import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeSet
 import org.apache.spark.sql.catalyst.plans.logical.LocalRelation
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{BasicWriteJobStatsTracker, FileFormatWriter}
-import org.apache.spark.sql.functions.{col, to_json}
+import org.apache.spark.sql.functions.to_json
 import org.apache.spark.sql.rapids.{BasicColumnarWriteJobStatsTracker, ColumnarWriteJobStatsTracker, GpuFileFormatWriter}
 import org.apache.spark.sql.rapids.GpuV1WriteUtils.GpuEmpty2Null
 import org.apache.spark.sql.rapids.delta.GpuIdentityColumn
-import org.apache.spark.sql.types.{StringType, StructField, StructType}
+import org.apache.spark.sql.types.{StringType, StructType}
 import org.apache.spark.util.{Clock, SerializableConfiguration}
 
 /**
@@ -78,28 +77,6 @@ abstract class GpuOptimisticTransactionBase
    */
   def this(deltaLog: DeltaLog, rapidsConf: RapidsConf)(implicit clock: Clock) {
     this(deltaLog, deltaLog.update(), rapidsConf)
-  }
-
-  /**
-   * Returns a tuple of (data, partition schema). For CDC writes, a `__is_cdc` column is added to
-   * the data and `__is_cdc=true/false` is added to the front of the partition schema.
-   */
-  private[shims] def performCDCPartitionInternal(inputData: Dataset[_]): (DataFrame, StructType) = {
-    // If this is a CDC write, we need to generate the CDC_PARTITION_COL in order to properly
-    // dispatch rows between the main table and CDC event records. This is a virtual partition
-    // and will be stripped out later in [[DelayedCommitProtocolEdge]].
-    // Note that the ordering of the partition schema is relevant - CDC_PARTITION_COL must
-    // come first in order to ensure CDC data lands in the right place.
-    if (CDCReader.isCDCEnabledOnTable(metadata) &&
-        inputData.schema.fieldNames.contains(CDCReader.CDC_TYPE_COLUMN_NAME)) {
-      val augmentedData = inputData.withColumn(
-        CDCReader.CDC_PARTITION_COL, col(CDCReader.CDC_TYPE_COLUMN_NAME).isNotNull)
-      val partitionSchema = StructType(
-        StructField(CDCReader.CDC_PARTITION_COL, StringType) +: metadata.physicalPartitionSchema)
-      (augmentedData, partitionSchema)
-    } else {
-      (inputData.toDF(), metadata.physicalPartitionSchema)
-    }
   }
 
   /**
@@ -185,6 +162,8 @@ abstract class GpuOptimisticTransactionBase
     writeFiles(inputData, None, additionalConstraints)
   }
 
+  private[shims] def shimPerformCDCPartition(inputData: Dataset[_]): (DataFrame, StructType)
+
   override def writeFiles(
       inputData: Dataset[_],
       writeOptions: Option[DeltaOptions],
@@ -192,7 +171,7 @@ abstract class GpuOptimisticTransactionBase
     hasWritten = true
 
     val spark = inputData.sparkSession
-    val (data, partitionSchema) = performCDCPartitionInternal(inputData)
+    val (data, partitionSchema) = shimPerformCDCPartition(inputData)
     val outputPath = deltaLog.dataPath
 
     val (queryExecution, output, generatedColumnConstraints, dataHighWaterMarks) =

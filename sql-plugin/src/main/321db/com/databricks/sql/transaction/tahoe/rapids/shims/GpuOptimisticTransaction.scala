@@ -22,9 +22,11 @@
 package com.databricks.sql.transaction.tahoe.rapids.shims
 
 import com.databricks.sql.transaction.tahoe._
+import com.databricks.sql.transaction.tahoe.commands.cdc.CDCReader
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.{DataFrame, Dataset}
+import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types._
 import org.apache.spark.util.Clock
 
@@ -39,8 +41,25 @@ class GpuOptimisticTransaction(
     this(deltaLog, deltaLog.update(), rapidsConf)
   }
 
-  // db10.4 overrides nothing
-  protected def performCDCPartition(inputData: Dataset[_]): (DataFrame, StructType) = {
-    performCDCPartitionInternal(inputData)
+  /**
+   * Returns a tuple of (data, partition schema). For CDC writes, a `__is_cdc` column is added to
+   * the data and `__is_cdc=true/false` is added to the front of the partition schema.
+   */
+  override def shimPerformCDCPartition(inputData: Dataset[_]): (DataFrame, StructType) = {
+    // If this is a CDC write, we need to generate the CDC_PARTITION_COL in order to properly
+    // dispatch rows between the main table and CDC event records. This is a virtual partition
+    // and will be stripped out later in [[DelayedCommitProtocolEdge]].
+    // Note that the ordering of the partition schema is relevant - CDC_PARTITION_COL must
+    // come first in order to ensure CDC data lands in the right place.
+    if (CDCReader.isCDCEnabledOnTable(metadata) &&
+        inputData.schema.fieldNames.contains(CDCReader.CDC_TYPE_COLUMN_NAME)) {
+      val augmentedData = inputData.withColumn(
+        CDCReader.CDC_PARTITION_COL, col(CDCReader.CDC_TYPE_COLUMN_NAME).isNotNull)
+      val partitionSchema = StructType(
+        StructField(CDCReader.CDC_PARTITION_COL, StringType) +: metadata.physicalPartitionSchema)
+      (augmentedData, partitionSchema)
+    } else {
+      (inputData.toDF(), metadata.physicalPartitionSchema)
+    }
   }
 }
