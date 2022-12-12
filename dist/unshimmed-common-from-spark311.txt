@@ -11,7 +11,6 @@ com/nvidia/spark/rapids/ColumnarRdd*
 com/nvidia/spark/rapids/GpuColumnVectorUtils*
 com/nvidia/spark/rapids/ClouderaShimVersion*
 com/nvidia/spark/rapids/DatabricksShimVersion*
-com/nvidia/spark/rapids/ExecutionPlanCaptureCallback*
 com/nvidia/spark/rapids/ExplainPlan.class
 com/nvidia/spark/rapids/ExplainPlan$.class
 com/nvidia/spark/rapids/ExplainPlanBase.class
@@ -28,6 +27,7 @@ com/nvidia/spark/rapids/SparkShimServiceProvider*
 com/nvidia/spark/rapids/SparkShimVersion*
 com/nvidia/spark/rapids/SparkShims*
 com/nvidia/spark/udf/Plugin*
+org/apache/spark/sql/rapids/ExecutionPlanCaptureCallback*
 org/apache/spark/sql/rapids/ProxyRapidsShuffleInternalManagerBase*
 org/apache/spark/sql/rapids/execution/Unshimmed*
 org/apache/spark/sql/rapids/RapidsShuffleManagerLike*

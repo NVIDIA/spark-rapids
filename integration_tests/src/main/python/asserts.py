@@ -330,12 +330,12 @@ def assert_gpu_fallback_write(write_func,
     cpu_end = time.time()
     print('### GPU RUN ###')
     jvm = spark_jvm()
-    jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.startCapture()
+    jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.startCapture()
     gpu_start = time.time()
     gpu_path = base_path + '/GPU'
     with_gpu_session(lambda spark : write_func(spark, gpu_path), conf=conf)
     gpu_end = time.time()
-    jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.assertCapturedAndGpuFellBack(cpu_fallback_class_name, 2000)
+    jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertCapturedAndGpuFellBack(cpu_fallback_class_name, 10000)
     print('### WRITE: GPU TOOK {} CPU TOOK {} ###'.format(
         gpu_end - gpu_start, cpu_end - cpu_start))
 
@@ -371,10 +371,10 @@ def assert_cpu_and_gpu_are_equal_collect_with_capture(func,
     jvm = spark_jvm()
     if exist_classes:
         for clz in exist_classes.split(','):
-            jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.assertContains(gpu_df._jdf, clz)
+            jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertContains(gpu_df._jdf, clz)
     if non_exist_classes:
         for clz in non_exist_classes.split(','):
-            jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.assertNotContain(gpu_df._jdf, clz)
+            jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertNotContain(gpu_df._jdf, clz)
     print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type,
         gpu_end - gpu_start, cpu_end - cpu_start))
     if should_sort_locally():
@@ -417,7 +417,7 @@ def assert_gpu_fallback_collect(func,
     from_gpu, gpu_df = with_gpu_session(bring_back, conf=conf)
     gpu_end = time.time()
     jvm = spark_jvm()
-    jvm.com.nvidia.spark.rapids.ExecutionPlanCaptureCallback.assertDidFallBack(gpu_df._jdf, cpu_fallback_class_name)
+    jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertDidFallBack(gpu_df._jdf, cpu_fallback_class_name)
     print('### {}: GPU TOOK {} CPU TOOK {} ###'.format(collect_type,
         gpu_end - gpu_start, cpu_end - cpu_start))
     if should_sort_locally():
