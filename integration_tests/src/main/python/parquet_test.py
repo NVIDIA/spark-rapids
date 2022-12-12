@@ -481,7 +481,7 @@ def test_parquet_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reade
     third_data_path = spark_tmp_path + '/PARQUET_DATA/key=2'
     with_cpu_session(
             lambda spark : gen_df(spark, third_gen_list, 10).write.parquet(third_data_path))
-    # forth with same as second
+    # fourth with same as second
     fourth_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(second_parquet_gens)]
     fourth_data_path = spark_tmp_path + '/PARQUET_DATA/key=3'
     with_cpu_session(
