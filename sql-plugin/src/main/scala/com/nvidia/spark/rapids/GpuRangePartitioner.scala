@@ -24,6 +24,7 @@ import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.ShimExpression
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.{PartitionPruningRDD, RDD}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
@@ -32,7 +33,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-object GpuRangePartitioner {
+object GpuRangePartitioner extends Logging {
   /**
    * Sketches the input RDD via reservoir sampling on each partition.
    *
@@ -99,6 +100,9 @@ object GpuRangePartitioner {
       if (cumWeight >= target) {
         // Skip duplicate values.
         if (previousBound.isEmpty || ordering.gt(key, previousBound.get)) {
+          for (i <- 0 until key.numFields) {
+            logWarning(s"${key.getByte(i)}")
+          }
           bounds += key
           target += step
           j += 1
@@ -149,6 +153,7 @@ object GpuRangePartitioner {
               // The weight is 1 over the sampling probability.
               val weight = (n.toDouble / sample.length).toFloat
               for (key <- sample) {
+                // logWarning(key)
                 candidates += ((key, weight))
               }
             }
@@ -165,6 +170,10 @@ object GpuRangePartitioner {
         }
       }
     }
+    // logDebug("rangeBounds.asInstanceOf[Array[InternalRow]]")
+    val result = rangeBounds.asInstanceOf[Array[InternalRow]]
+    logWarning(s"range partitioning bounds")
+    // for (e <- result) {logWarning(e.mkString(" "))}
     rangeBounds.asInstanceOf[Array[InternalRow]]
   }
 }

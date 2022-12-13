@@ -468,6 +468,11 @@ object GpuOverrides extends Logging {
     case _ => false
   }
 
+  private[this] def isArrayType(dataType: DataType) = dataType match {
+    case ArrayType(_, _) => true
+    case _ => false
+  }
+
   // this listener mechanism is global and is intended for use by unit tests only
   private lazy val listeners: ListBuffer[GpuOverridesListener] =
     new ListBuffer[GpuOverridesListener]()
@@ -2047,7 +2052,7 @@ object GpuOverrides extends Logging {
           TypeSig.orderable))),
       (sortOrder, conf, p, r) => new BaseExprMeta[SortOrder](sortOrder, conf, p, r) {
         override def tagExprForGpu(): Unit = {
-          if (isStructType(sortOrder.dataType)) {
+          if (isStructType(sortOrder.dataType) || isArrayType(sortOrder.dataType)) {
             val nullOrdering = sortOrder.nullOrdering
             val directionDefaultNullOrdering = sortOrder.direction.defaultNullOrdering
             val direction = sortOrder.direction.sql
