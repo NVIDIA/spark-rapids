@@ -3485,6 +3485,19 @@ object GpuOverrides extends Logging {
           GpuGetJsonObject(lhs, rhs)
       }
     ),
+    expr[JsonTuple](
+      "Returns a tuple like the function get_json_object, but it takes multiple names. " + 
+        "All the input parameters and output column types are string.",
+      ExprChecks.projectOnly(
+        TypeSig.STRING, //outputCheck
+        TypeSig.STRING, //sparkOutputSig
+        Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING)),
+        Some(RepeatingParamCheck("path", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+      (a, conf, p, r) => new ExprMeta[JsonTuple](a, conf, p, r) {
+        override def convertToGpu(json: Expression, paths: Seq[Expression]): GpuExpression =
+          GpuJsonTuple(json, paths)
+      }
+    ),
     expr[org.apache.spark.sql.execution.ScalarSubquery](
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(
