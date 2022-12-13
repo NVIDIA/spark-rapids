@@ -24,7 +24,7 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 object SparkShimImpl extends Spark320PlusShims
     with Spark320PlusNonDBShims
     with Spark31Xuntil33XShims
-    with Spark320until340Shims {
+    with AnsiCastRuleShims {
 
   override def getParquetFilters(
       schema: MessageType,

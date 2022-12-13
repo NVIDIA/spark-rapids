@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 
-object SparkShimImpl extends Spark321PlusDBShims with Spark320until340Shims
+object SparkShimImpl extends Spark321PlusDBShims with AnsiCastRuleShims
 
 // Fallback to the default definition of `deterministic`
 trait GpuDeterministicFirstLastCollectShim extends Expression

@@ -619,7 +619,7 @@
                                         <!-- inherit from 331+ with exceptions -->
                                         <patternset refid="spark331+.pattern"/>
                                         <exclude name="*until340*/*"/>
-                                        <include name="post340/*"/>
+                                        <include name="340+-and-330db/*"/>
                                         <!-- uniquely 340+ -->
                                         <include name="340+/*"/>
                                     </patternset>
@@ -678,7 +678,7 @@
                                 <dirset dir="${project.basedir}/src/main">
                                     <patternset refid="spark321db+.pattern"/>
                                     <patternset refid="spark330+.pattern"/>
-                                    <include name="post340/*"/>
+                                    <include name="340+-and-330db/*"/>
                                     <include name="330db/*"/>
                                     <exclude name="*non330db*/*"/>
                                 </dirset>

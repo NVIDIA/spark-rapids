@@ -16,4 +16,4 @@
 
 package com.nvidia.spark.rapids.shims
 
-object SparkShimImpl extends Spark331PlusShims with Spark320until340Shims
+object SparkShimImpl extends Spark331PlusShims with AnsiCastRuleShims
