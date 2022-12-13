@@ -126,6 +126,9 @@ object GpuRangePartitioner extends Logging {
 
     implicit val ordering: LazilyGeneratedOrdering = new LazilyGeneratedOrdering(sorter.cpuOrdering)
 
+    // logWarning(s"Number of partitions = $partitions")
+    // rdd.foreach(x => GpuColumnVector.debug("\ncreateRangeBounds ColumnarBatch:", x))
+
     // An array of upper bounds for the first (partitions - 1) partitions
     val rangeBounds : Array[InternalRow] = {
       if (partitions < 1) {
@@ -161,6 +164,7 @@ object GpuRangePartitioner extends Logging {
           if (imbalancedPartitions.nonEmpty) {
             // Re-sample imbalanced partitions with the desired sampling probability.
             val imbalanced = new PartitionPruningRDD(rdd, imbalancedPartitions.contains)
+            imbalanced.foreach(x => GpuColumnVector.debug("\nColumnarBatch:", x))
             val seed = byteswap32(-rdd.id - 1)
             val reSampled = randomResample(imbalanced, fraction, seed, sorter)
             val weight = (1.0 / fraction).toFloat
@@ -171,7 +175,7 @@ object GpuRangePartitioner extends Logging {
       }
     }
     // logDebug("rangeBounds.asInstanceOf[Array[InternalRow]]")
-    val result = rangeBounds.asInstanceOf[Array[InternalRow]]
+    // val result = rangeBounds.asInstanceOf[Array[InternalRow]]
     logWarning(s"range partitioning bounds")
     // for (e <- result) {logWarning(e.mkString(" "))}
     rangeBounds.asInstanceOf[Array[InternalRow]]
