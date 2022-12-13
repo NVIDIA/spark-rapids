@@ -22,8 +22,10 @@ import com.nvidia.spark.rapids.{FunSuiteWithTempDir, RapidsConf, SparkQueryCompa
 import com.nvidia.spark.rapids.FuzzerUtils.{createSchema, generateDataFrame}
 
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
-import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.catalyst.plans.logical.{Filter, Join, LogicalPlan, Project}
+import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, LogicalRelation}
 import org.apache.spark.sql.types.DataTypes
 
 class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir {
@@ -49,14 +51,14 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
       val df = execute(sql, defaultConf)
       val plan = df.queryExecution.optimizedPlan
       val expected =
-        """'Join Inner, (none#0 = none#4)
-          |  'Join Inner, (none#0 = none#2)
-          |    Filter isnotnull(none#0)
-          |      Relation[none#0,none#1] parquet
-          |    Filter isnotnull(none#0)
-          |      Relation[none#0,none#1] parquet
-          |  Filter ((isnotnull(none#0) AND isnotnull(none#1)) AND StartsWith(none#1, test))
-          |    Relation[none#0,none#1] parquet""".stripMargin
+        """Join: (fact.c0 = dim2.c0)
+          |  Join: (fact.c0 = dim1.c0)
+          |    Filter: (fact.c0 IS NOT NULL)
+          |      LogicalRelation: fact.parquet
+          |    Filter: (dim1.c0 IS NOT NULL)
+          |      LogicalRelation: dim1.parquet
+          |  Filter: (((dim2.c1 IS NOT NULL) AND startswith(dim2.c1, 'test')) AND (dim2.c0 IS NOT NULL))
+          |    LogicalRelation: dim2.parquet""".stripMargin
       val actual = buildPlanString(plan)
       println(actual)
       assert(expected === actual)
@@ -66,14 +68,14 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
     val df = execute(sql, confJoinOrderingEnabled)
     val plan = df.queryExecution.optimizedPlan
     val expected =
-      """'Join Inner, (none#0 = none#4)
-        |  'Join Inner, (none#0 = none#2)
-        |    Filter isnotnull(none#0)
-        |      Relation[none#0,none#1] parquet
-        |    Filter ((isnotnull(none#0) AND isnotnull(none#1)) AND StartsWith(none#1, test))
-        |      Relation[none#0,none#1] parquet
-        |  Filter isnotnull(none#0)
-        |    Relation[none#0,none#1] parquet""".stripMargin
+      """Join: (fact.c0 = dim1.c0)
+        |  Join: (fact.c0 = dim2.c0)
+        |    Filter: (fact.c0 IS NOT NULL)
+        |      LogicalRelation: fact.parquet
+        |    Filter: (((dim2.c1 IS NOT NULL) AND startswith(dim2.c1, 'test')) AND (dim2.c0 IS NOT NULL))
+        |      LogicalRelation: dim2.parquet
+        |  Filter: (dim1.c0 IS NOT NULL)
+        |    LogicalRelation: dim1.parquet""".stripMargin
     val actual = buildPlanString(plan)
     println(actual)
     assert(expected === actual)
@@ -98,20 +100,32 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
     spark.read.parquet(path).createOrReplaceTempView(name)
   }
 
+  /** Format the plan consistently, regardless of Spark version */
   private def buildPlanString(plan: LogicalPlan): String = {
+    def exprToString(expr: Expression): String = {
+      expr.sql
+    }
     def buildPlanString(indent: String, plan: LogicalPlan): String = {
-      var str = indent
-      plan match {
+      val nodeString: String = plan match {
+        case Filter(cond, _) =>
+          s"Filter: ${exprToString(cond)}"
+        case l: LogicalRelation =>
+          val relation = l.relation.asInstanceOf[HadoopFsRelation]
+          "LogicalRelation: " + relation.location.rootPaths.head.getName
+        case j: Join =>
+          s"Join: ${exprToString(j.condition.get)}"
+        case p: Project =>
+          s"Project: ${p.projectList.map(_.name).mkString(", ")}"
         case _ =>
-          str += plan.simpleString(5)
+          plan.simpleString(5)
       }
-      str += "\n"
+      var str = indent + nodeString + "\n"
       for (child <- plan.children) {
         str += buildPlanString(indent + "  ", child)
       }
       str
     }
-    buildPlanString("", plan.canonicalized).trim
+    buildPlanString("", plan).trim
   }
 
 }
