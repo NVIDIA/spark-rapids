@@ -22,8 +22,8 @@ import com.nvidia.spark.rapids.{FunSuiteWithTempDir, RapidsConf, SparkQueryCompa
 import com.nvidia.spark.rapids.FuzzerUtils.{createSchema, generateDataFrame}
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Join, LogicalPlan, Project}
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, LogicalRelation}
 import org.apache.spark.sql.types.DataTypes
@@ -103,7 +103,7 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
   /** Format the plan consistently, regardless of Spark version */
   private def buildPlanString(plan: LogicalPlan): String = {
     def exprToString(expr: Expression): String = {
-      expr.sql
+      expr.sql.replaceAll("`", "")
     }
     def buildPlanString(indent: String, plan: LogicalPlan): String = {
       val nodeString: String = plan match {
