@@ -2230,16 +2230,14 @@ class MultiFileCloudParquetPartitionReader(
         new ColumnarBatch(nullColumns, rows)
       }
 
+      // we have to add partition values here for this batch, we already verified that
+      // its not different for all the blocks in this batch
       val batch = if (meta.allPartValues.isDefined) {
-        // we have to add partition values here for this batch, we already verified that
-        // its not different for all the blocks in this batch
         val rowsPerPartition = meta.allPartValues.get.map(_._1).toArray
         val allPartInternalRows = meta.allPartValues.get.map(_._2).toArray
         MultiFileReaderUtils.addMultiplePartitionValuesAndClose(origBatch, allPartInternalRows,
           rowsPerPartition, partitionSchema)
       } else {
-        // we have to add partition values here for this batch, we already verified that
-        // its not different for all the blocks in this batch
         addPartitionValues(origBatch, meta.partitionedFile.partitionValues, partitionSchema)
       }
 
