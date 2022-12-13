@@ -858,9 +858,9 @@ object RapidsConf {
         "files in parallel and sends individual files down to the GPU, but that can be " +
         "inefficient for small files. When combine is enabled, files that are ready within " +
         "spark.rapids.sql.format.parquet.multithreaded.combine.waitTime together, up to this " +
-        "threshold size, are combined before sending down to GPU. This can be disabled by setting it to 0. " +
-        "Note that combine also will not go over the spark.rapids.sql.reader.batchSizeRows or " +
-        "spark.rapids.sql.reader.batchSizeBytes limits.")
+        "threshold size, are combined before sending down to GPU. This can be disabled by " +
+        "setting it to 0. Note that combine also will not go over the " +
+        "spark.rapids.sql.reader.batchSizeRows or spark.rapids.sql.reader.batchSizeBytes limits.")
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(64 * 1024 * 1024) // 64M
 
