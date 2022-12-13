@@ -106,9 +106,9 @@ class GpuColumnarBatchWithPartitionValuesIterator(
 
   override def next(): ColumnarBatch = {
     if (!hasNext) throw new NoSuchElementException()
-    val needPartitionCols = partSchema.nonEmpty
+    val hasPartitionCols = partSchema.nonEmpty
     val batch = inputIter.next()
-    if (needPartitionCols) {
+    if (hasPartitionCols) {
       val (readPartValues, readPartRows) = closeOnExcept(batch) { _ =>
         computeValuesAndRowNumsForBatch(batch.numRows())
       }
