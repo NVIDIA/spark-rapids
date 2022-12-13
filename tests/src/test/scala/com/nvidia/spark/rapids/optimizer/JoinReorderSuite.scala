@@ -39,6 +39,7 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
     .set(RapidsConf.JOIN_REORDERING_PRESERVE_ORDER.key, "true")
 
   test("join filtered dimension earlier") {
+    val tables = Map("fact" -> 1000, "dim1" -> 100, "dim2" -> 200)
     val sql =
       """SELECT * FROM fact
         |JOIN dim1 ON fact.c0 = dim1.c0
@@ -48,7 +49,7 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
 
     // run with join reordering disabled
     {
-      val df = execute(sql, defaultConf)
+      val df = execute(sql, defaultConf, tables)
       val plan = df.queryExecution.optimizedPlan
       val expected =
         """Join: (fact.c0 = dim2.c0)
@@ -60,12 +61,11 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
           |  Filter: (((dim2.c1 IS NOT NULL) AND startswith(dim2.c1, 'test')) AND (dim2.c0 IS NOT NULL))
           |    LogicalRelation: dim2.parquet""".stripMargin
       val actual = buildPlanString(plan)
-      println(actual)
       assert(expected === actual)
     }
 
     // run with join reordering enabled
-    val df = execute(sql, confJoinOrderingEnabled)
+    val df = execute(sql, confJoinOrderingEnabled, tables)
     val plan = df.queryExecution.optimizedPlan
     val expected =
       """Join: (fact.c0 = dim1.c0)
@@ -77,15 +77,74 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
         |  Filter: (dim1.c0 IS NOT NULL)
         |    LogicalRelation: dim1.parquet""".stripMargin
     val actual = buildPlanString(plan)
-    println(actual)
     assert(expected === actual)
   }
 
-  private def execute(sql: String, conf: SparkConf): DataFrame = {
+  test("multiple fact tables") {
+    val tables = Map(
+      "fact1" -> 1000,
+      "fact2" -> 2000,
+      "dim1" -> 100,
+      "dim2" -> 200,
+      "dim3" -> 300)
+    val sql =
+      """SELECT * FROM fact1
+        |JOIN fact2 ON fact1.c0 = fact2.c0
+        |JOIN dim1 ON fact2.c0 = dim1.c0
+        |JOIN dim2 ON fact2.c0 = dim2.c0
+        |JOIN dim3 ON fact1.c0 = dim3.c0
+        |WHERE dim2.c1 LIKE 'test%'
+        |""".stripMargin
+
+    // run with join reordering disabled
+    {
+      val df = execute(sql, defaultConf, tables)
+      val plan = df.queryExecution.optimizedPlan
+      val expected =
+        """Join: (fact1.c0 = dim3.c0)
+          |  Join: (fact2.c0 = dim2.c0)
+          |    Join: (fact2.c0 = dim1.c0)
+          |      Join: (fact1.c0 = fact2.c0)
+          |        Filter: (fact1.c0 IS NOT NULL)
+          |          LogicalRelation: fact1.parquet
+          |        Filter: (fact2.c0 IS NOT NULL)
+          |          LogicalRelation: fact2.parquet
+          |      Filter: (dim1.c0 IS NOT NULL)
+          |        LogicalRelation: dim1.parquet
+          |    Filter: (((dim2.c1 IS NOT NULL) AND startswith(dim2.c1, 'test')) AND (dim2.c0 IS NOT NULL))
+          |      LogicalRelation: dim2.parquet
+          |  Filter: (dim3.c0 IS NOT NULL)
+          |    LogicalRelation: dim3.parquet""".stripMargin
+      val actual = buildPlanString(plan)
+      println(actual)
+      assert(expected === actual)
+    }
+
+    // run with join reordering enabled
+    val df = execute(sql, confJoinOrderingEnabled, tables)
+    val plan = df.queryExecution.optimizedPlan
+    val expected =
+      """Join: (fact1.c0 = fact2.c0)
+        |  Join: (fact2.c0 = dim1.c0)
+        |    Join: (fact2.c0 = dim2.c0)
+        |      Filter: (fact2.c0 IS NOT NULL)
+        |        LogicalRelation: fact2.parquet
+        |      Filter: (((dim2.c1 IS NOT NULL) AND startswith(dim2.c1, 'test')) AND (dim2.c0 IS NOT NULL))
+        |        LogicalRelation: dim2.parquet
+        |    Filter: (dim1.c0 IS NOT NULL)
+        |      LogicalRelation: dim1.parquet
+        |  Join: (fact1.c0 = dim3.c0)
+        |    Filter: (fact1.c0 IS NOT NULL)
+        |      LogicalRelation: fact1.parquet
+        |    Filter: (dim3.c0 IS NOT NULL)
+        |      LogicalRelation: dim3.parquet""".stripMargin
+    val actual = buildPlanString(plan)
+    println(actual)
+    assert(expected === actual)
+  }
+  private def execute(sql: String, conf: SparkConf, tables: Map[String,Int]): DataFrame = {
     withGpuSparkSession(spark => {
-      createTestRelation(spark, "fact", 1000)
-      createTestRelation(spark, "dim1", 100)
-      createTestRelation(spark, "dim2", 200)
+      tables.foreach(spec => createTestRelation(spark, spec._1, spec._2))
       val df = spark.sql(sql)
       df.collect()
       df
