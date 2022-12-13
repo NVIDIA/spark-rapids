@@ -446,7 +446,7 @@ def test_array_max_q1():
 
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
-@pytest.mark.skipif(is_before_spark_313() or spark_version() == '3.3.0', reason="NaN equality is only handled in Spark 3.1.3+")
+@pytest.mark.skipif(is_before_spark_313() or is_spark_330(), reason="NaN equality is only handled in Spark 3.1.3+")
 def test_array_intersect(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -466,7 +466,7 @@ def test_array_intersect(data_gen):
 
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens_no_nulls + decimal_gens_no_nulls, ids=idfn)
-@pytest.mark.skipif(spark_version() != '3.3.0', reason="SPARK-39976 issue with null and ArrayIntersect")
+@pytest.mark.skipif(not is_spark_330(), reason="SPARK-39976 issue with null and ArrayIntersect")
 def test_array_intersect_spark330(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
