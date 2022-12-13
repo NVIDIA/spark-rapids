@@ -528,10 +528,8 @@ abstract class MultiFileCloudPartitionReaderBase(
   // Each format should implement combineHMBs and canUseCombine if they support combining
   def combineHMBs(
       results: Array[HostMemoryBuffersWithMetaDataBase]): HostMemoryBuffersWithMetaDataBase = {
-    if (results.size != 1) {
-      throw new Exception("Expected results to only have 1 element, this format doesn't" +
-        " support combining!")
-    }
+    require(results.size == 1,
+        "Expected results to only have 1 element, this format doesn't support combining!")
     results.head
   }
 
