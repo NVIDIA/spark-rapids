@@ -891,7 +891,7 @@ def two_col_df(spark, a_gen, b_gen, length=2048, seed=0, num_slices=None):
     gen = StructGen([('a', a_gen),('b', b_gen)], nullable=False)
     return gen_df(spark, gen, length=length, seed=seed, num_slices=num_slices)
 
-def binary_op_df(spark, gen, length=2048, seed=0, num_slices=None):
+def binary_op_df(spark, gen, length=6, seed=0, num_slices=None):
     return two_col_df(spark, gen, gen, length=length, seed=seed, num_slices=num_slices)
 
 def unary_op_df(spark, gen, length=500, seed=0, num_slices=None):
