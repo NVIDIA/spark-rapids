@@ -59,10 +59,8 @@ case class SingleHMBAndMeta(hmb: HostMemoryBuffer, bytes: Long, numRows: Long,
 
 object SingleHMBAndMeta {
   // Contains no data but could have number of rows for things like count().
-  // Note that some formats overload bufferSize to be number of rows since
-  // number of rows was more recently added.
-  def empty(bufferSize: Long = 0, numRows: Long = 0): SingleHMBAndMeta = {
-    SingleHMBAndMeta(null.asInstanceOf[HostMemoryBuffer], bufferSize, numRows,
+  def empty(numRows: Long = 0): SingleHMBAndMeta = {
+    SingleHMBAndMeta(null.asInstanceOf[HostMemoryBuffer], 0, numRows,
       Seq.empty, null)
   }
 }

@@ -1674,7 +1674,8 @@ class MultiFileCloudOrcPartitionReader(
                 val blocksToRead = populateCurrentBlockChunk(blockChunkIter, maxReadBatchSizeRows,
                   maxReadBatchSizeBytes)
                 val info = readPartFile(ctx, blocksToRead)
-                hostBuffers += SingleHMBAndMeta(info._1, info._2, 0, Seq.empty, null)
+                val numRows = blocksToRead.map(_.infoBuilder.getNumberOfRows).sum.toInt
+                hostBuffers += SingleHMBAndMeta(info._1, info._2, numRows, Seq.empty, null)
               }
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               if (isDone) {

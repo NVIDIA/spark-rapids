@@ -829,7 +829,7 @@ class GpuMultiFileCloudAvroPartitionReader(
 
               val bufAndSize: Array[SingleHMBAndMeta] = if (readDataSchema.isEmpty) {
                 hostBuffers.foreach(_.hmb.safeClose(new Exception))
-                Array(SingleHMBAndMeta.empty(totalRowsNum, totalRowsNum))
+                Array(SingleHMBAndMeta.empty(totalRowsNum))
               } else if (isDone) {
                 // got close before finishing, return null buffer and zero size
                 hostBuffers.foreach(_.hmb.safeClose(new Exception))

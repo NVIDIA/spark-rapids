@@ -2062,7 +2062,7 @@ class MultiFileCloudParquetPartitionReader(
       override val allPartValues: Option[Array[(Long, InternalRow)]] = None)
     extends HostMemoryBuffersWithMetaDataBase {
     override def memBuffersAndSizes: Array[SingleHMBAndMeta] =
-      Array(SingleHMBAndMeta.empty(bufferSize, numRows))
+      Array(SingleHMBAndMeta.empty(numRows))
   }
 
   case class HostMemoryBuffersWithMetaData(
