@@ -323,9 +323,9 @@ install_dependencies()
 initialize
 if [[ $SKIP_DEP_INSTALL == "1" ]]
 then
-    echo "SKIP_DEP_INSTALL is set to $SKIP_DEP_INSTALL. Skipping dependencies."
+    echo "!!!! SKIP_DEP_INSTALL is set to $SKIP_DEP_INSTALL. Skipping install-file for dependencies."
 else
-    # Install required dependencies.
+    echo "!!!! Installing dependendecies. Set SKIP_DEP_INSTALL=1 to speed up reruns of build.sh"# Install required dependencies.
     install_dependencies
 fi
 # Build the RAPIDS plugin by running package command for databricks
