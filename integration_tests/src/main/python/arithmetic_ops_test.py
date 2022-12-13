@@ -322,11 +322,11 @@ def test_mod_pmod_by_zero(data_gen, overflow_exp):
         exception_str = 'java.lang.ArithmeticException: divide by zero'
     elif is_before_spark_330():
         exception_str = 'SparkArithmeticException: divide by zero'
-    elif is_before_spark_340():
-        exception_str = 'SparkArithmeticException: Division by zero'
-    else:
+    if is_databricks113_or_later() or not is_before_spark_340():
         exception_str = 'SparkArithmeticException: [DIVIDE_BY_ZERO] Division by zero'
-        
+    else: # is_before_spark_340
+        exception_str = 'SparkArithmeticException: Division by zero'
+
     assert_gpu_and_cpu_error(
         lambda spark : unary_op_df(spark, data_gen).selectExpr(
             overflow_exp.format(string_type, string_type)).collect(),
@@ -870,10 +870,10 @@ def _test_div_by_zero(ansi_mode, expr):
         err_message = 'java.lang.ArithmeticException: divide by zero'
     elif is_before_spark_330():
         err_message = 'SparkArithmeticException: divide by zero'
-    elif is_before_spark_340():
-        err_message = 'SparkArithmeticException: Division by zero'
-    else:
+    if is_databricks113_or_later() or not is_before_spark_340():
         err_message = 'SparkArithmeticException: [DIVIDE_BY_ZERO] Division by zero'
+    else: # is_before_spark_340
+        err_message = 'SparkArithmeticException: Division by zero'
 
     if ansi_mode == 'ansi':
         assert_gpu_and_cpu_error(df_fun=lambda spark: div_by_zero_func(spark).collect(),
