@@ -504,6 +504,7 @@
                             <pathconvert property="spark311.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
                                     <patternset id="spark311+.pattern">
+                                        <include name="311+-non330db/*"/>
                                         <include name="311+-nondb/*"/>
                                         <include name="311until320-all/*"/>
                                         <include name="311until320-noncdh/*"/>
@@ -511,6 +512,7 @@
                                         <include name="311until330-all/*"/>
                                         <include name="311until330-nondb/*"/>
                                         <include name="311until340-all/*"/>
+                                        <include name="311until340-non330db/*"/>
                                         <include name="311until340-nondb/*"/>
                                         <include name="pre320-treenode/*"/>
                                     </patternset>
@@ -551,6 +553,7 @@
                                         <include name="320until330-noncdh/*"/>
                                         <include name="320until330-nondb/*"/>
                                         <include name="320until340-all/*"/>
+                                        <include name="320until340-non330db/*"/>
                                         <include name="delta-lake-common/*"/>
                                         <include name="post320-treenode/*"/>
                                     </patternset>
@@ -582,14 +585,15 @@
                             <pathconvert property="spark330.sources" pathsep=",">
                                 <dirset dir="${project.basedir}/src/main">
                                     <patternset id="spark330+.pattern">
-                                        <!-- inherit from 321+ with exceptions -->
                                         <patternset refid="spark321+.pattern"/>
                                         <exclude name="*until330*/*"/>
 
                                         <!-- uniquely 330+ -->
                                         <include name="330+/*"/>
+                                        <include name="330+-nondb/*"/>
                                         <include name="330+-noncdh/*"/>
                                         <include name="330until340/*"/>
+                                        <include name="330until340-nondb/*"/>
                                     </patternset>
                                     <include name="330/*"/>
                                 </dirset>
@@ -615,7 +619,7 @@
                                         <!-- inherit from 331+ with exceptions -->
                                         <patternset refid="spark331+.pattern"/>
                                         <exclude name="*until340*/*"/>
-
+                                        <include name="340+-and-330db/*"/>
                                         <!-- uniquely 340+ -->
                                         <include name="340+/*"/>
                                     </patternset>
@@ -665,8 +669,18 @@
                                         <exclude name="*nondb*/*"/>
 
                                         <include name="311+-db/*"/>
+                                        <include name="321+-db/*"/>
                                     </patternset>
                                     <include name="321db/*"/>
+                                </dirset>
+                            </pathconvert>
+                            <pathconvert property="spark330db.sources" pathsep=",">
+                                <dirset dir="${project.basedir}/src/main">
+                                    <patternset refid="spark321db+.pattern"/>
+                                    <patternset refid="spark330+.pattern"/>
+                                    <include name="340+-and-330db/*"/>
+                                    <include name="330db/*"/>
+                                    <exclude name="*non330db*/*"/>
                                 </dirset>
                             </pathconvert>
                         </target>

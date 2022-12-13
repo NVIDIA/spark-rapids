@@ -1260,16 +1260,16 @@ object RapidsConf {
   }
 
   val SHUFFLE_MANAGER_MODE = conf("spark.rapids.shuffle.mode")
-    .doc("RAPIDS Shuffle Manager mode. The default mode is " +
-        "\"UCX\", which has to be installed in the system. Consider setting to \"CACHE_ONLY\" if " +
-        "running with a single executor and UCX is not installed, for short-circuit cached " +
-        "shuffle (for testing purposes). Set to \"MULTITHREADED\" for an experimental mode that " +
-        "uses a thread pool to speed up shuffle writes without needing UCX. Note: Changing this " +
-        "mode dynamically is not supported.")
+    .doc("RAPIDS Shuffle Manager mode. " +
+      "\"MULTITHREADED\": shuffle file writes and reads are parallelized using a thread pool. " +
+      "\"UCX\": (requires UCX installation) uses accelerated transports for " +
+      "transferring shuffle blocks. " +
+      "\"CACHE_ONLY\": use when running a single executor, for short-circuit cached " +
+      "shuffle (for testing purposes).")
     .startupOnly()
     .stringConf
     .checkValues(RapidsShuffleManagerMode.values.map(_.toString))
-    .createWithDefault(RapidsShuffleManagerMode.UCX.toString)
+    .createWithDefault(RapidsShuffleManagerMode.MULTITHREADED.toString)
 
   val SHUFFLE_TRANSPORT_EARLY_START = conf("spark.rapids.shuffle.transport.earlyStart")
     .doc("Enable early connection establishment for RAPIDS Shuffle")
