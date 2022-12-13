@@ -133,6 +133,10 @@ object FactDimensionJoinReorder
     }
 
     logDebug(s"FactDimensionJoinReorder: Found ${facts.length} facts and ${dims.length} dims")
+    if (dims.length < 2) {
+      logDebug("FactDimensionJoinReorder: Too few dim tables")
+      return plan
+    }
     if (facts.length > conf.joinReorderingMaxFact) {
       logDebug("FactDimensionJoinReorder: Too many fact tables")
       return plan
@@ -161,16 +165,8 @@ object FactDimensionJoinReorder
       join
 
     } else {
-      // this code is an experimental extension to the paper where we
-      // attempt to rewrite joins involving multiple fact tables
-
       // first we build one join tree for each fact table
-      val factDimJoins = new ListBuffer[(Int, LogicalPlan)]()
-      for (fact <- facts) {
-        val x = buildJoinTree(fact.plan, dimLogicalPlans, conds)
-        logDebug(s"[FACT-DIM JOIN] ${x._2}")
-        factDimJoins += x
-      }
+      val factDimJoins = facts.map(f => buildJoinTree(f.plan, dimLogicalPlans, conds))
 
       // sort so that fact tables with more joins appear earlier
       val sortedFactDimJoins = factDimJoins.sortBy(-_._1).map(_._2)
