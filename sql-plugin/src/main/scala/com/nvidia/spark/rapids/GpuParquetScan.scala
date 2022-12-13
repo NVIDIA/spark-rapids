@@ -1835,11 +1835,7 @@ class MultiFileCloudParquetPartitionReader(
       logDebug("Query uses input file name, can't use combine mode")
       false
     } else {
-      if (combineThresholdSize > 0) {
-        true
-      } else {
-        false
-      }
+      combineThresholdSize > 0
     }
   }
 
