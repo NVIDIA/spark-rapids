@@ -16,6 +16,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
+from conftest import is_databricks_runtime
 from marks import incompat
 from spark_session import is_before_spark_313, is_before_spark_330, is_databricks113_or_later, is_spark_330_or_later, is_databricks104_or_later, is_spark_33X, is_spark_340_or_later, is_spark_330
 from pyspark.sql.types import *
@@ -103,7 +104,7 @@ def test_array_item(data_gen):
 
 
 # No need to test this for multiple data types for array. Only one is enough
-@pytest.mark.skipif(not is_spark_33X(), reason="'strictIndexOperator' is introduced from Spark 3.3.0 and removed in Spark 3.4.0")
+@pytest.mark.skipif(not is_spark_33X() or is_databricks_runtime(), reason="'strictIndexOperator' is introduced from Spark 3.3.0 and removed in Spark 3.4.0 and DB11.3")
 @pytest.mark.parametrize('strict_index_enabled', [True, False])
 @pytest.mark.parametrize('index', [-2, 100, array_neg_index_gen, array_out_index_gen], ids=idfn)
 def test_array_item_with_strict_index(strict_index_enabled, index):
