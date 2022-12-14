@@ -36,7 +36,9 @@ import org.apache.spark.sql.rapids.shims.{GpuDivideDTInterval, GpuDivideYMInterv
 import org.apache.spark.sql.types.{CalendarIntervalType, DayTimeIntervalType, DecimalType, StructType}
 import org.apache.spark.unsafe.types.CalendarInterval
 
-trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
+trait Spark330PlusShims extends Spark321PlusShims
+    with Spark320PlusNonDBShims
+    with RoundingShims {
 
   override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = null
 
@@ -78,72 +80,6 @@ trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
   // GPU support ANSI interval types from 330
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     val map: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
-      GpuOverrides.expr[RoundCeil](
-        "Computes the ceiling of the given expression to d decimal places",
-        ExprChecks.binaryProject(
-          TypeSig.gpuNumeric, TypeSig.cpuNumeric,
-          ("value", TypeSig.gpuNumeric +
-              TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
-              TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
-              TypeSig.cpuNumeric),
-          ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
-        (ceil, conf, p, r) => new BinaryExprMeta[RoundCeil](ceil, conf, p, r) {
-          override def tagExprForGpu(): Unit = {
-            ceil.child.dataType match {
-              case dt: DecimalType =>
-                val precision = GpuFloorCeil.unboundedOutputPrecision(dt)
-                if (precision > DType.DECIMAL128_MAX_PRECISION) {
-                  willNotWorkOnGpu(s"output precision $precision would require overflow " +
-                      s"checks, which are not supported yet")
-                }
-              case _ => // NOOP
-            }
-            GpuOverrides.extractLit(ceil.scale).foreach { scale =>
-              if (scale.value != null &&
-                  scale.value.asInstanceOf[Integer] != 0) {
-                willNotWorkOnGpu("Scale other than 0 is not supported")
-              }
-            }
-          }
-
-          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-            // use Spark `RoundCeil.dataType` to keep consistent between Spark versions.
-            GpuCeil(lhs, ceil.dataType)
-          }
-        }),
-      GpuOverrides.expr[RoundFloor](
-        "Computes the floor of the given expression to d decimal places",
-        ExprChecks.binaryProject(
-          TypeSig.gpuNumeric, TypeSig.cpuNumeric,
-          ("value", TypeSig.gpuNumeric +
-              TypeSig.psNote(TypeEnum.FLOAT, "result may round slightly differently") +
-              TypeSig.psNote(TypeEnum.DOUBLE, "result may round slightly differently"),
-              TypeSig.cpuNumeric),
-          ("scale", TypeSig.lit(TypeEnum.INT), TypeSig.lit(TypeEnum.INT))),
-        (floor, conf, p, r) => new BinaryExprMeta[RoundFloor](floor, conf, p, r) {
-          override def tagExprForGpu(): Unit = {
-            floor.child.dataType match {
-              case dt: DecimalType =>
-                val precision = GpuFloorCeil.unboundedOutputPrecision(dt)
-                if (precision > DType.DECIMAL128_MAX_PRECISION) {
-                  willNotWorkOnGpu(s"output precision $precision would require overflow " +
-                      s"checks, which are not supported yet")
-                }
-              case _ => // NOOP
-            }
-            GpuOverrides.extractLit(floor.scale).foreach { scale =>
-              if (scale.value != null &&
-                  scale.value.asInstanceOf[Integer] != 0) {
-                willNotWorkOnGpu("Scale other than 0 is not supported")
-              }
-            }
-          }
-
-          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-            // use Spark `RoundFloor.dataType` to keep consistent between Spark versions.
-            GpuFloor(lhs, floor.dataType)
-          }
-        }),
       GpuOverrides.expr[TimeAdd](
         "Adds interval to timestamp",
         ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
@@ -232,7 +168,7 @@ trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
             GpuDivideDTInterval(lhs, rhs)
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
-    super.getExprs ++ map
+    super.getExprs ++ map ++ roundingExprs
   }
 
   // GPU support ANSI interval types from 330
