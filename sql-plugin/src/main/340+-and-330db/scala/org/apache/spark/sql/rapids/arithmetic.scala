@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import scala.math.max
+import scala.math.{max, min}
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._

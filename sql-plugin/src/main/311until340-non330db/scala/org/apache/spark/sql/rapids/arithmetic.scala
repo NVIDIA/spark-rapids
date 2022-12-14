@@ -16,7 +16,6 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.BinaryOp
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, NullIntolerant}
