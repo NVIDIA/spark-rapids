@@ -57,7 +57,7 @@ case class GpuDecimalMultiply(
     override val dataType: DecimalType,
     useLongMultiply: Boolean = false,
     failOnError: Boolean = SQLConf.get.ansiEnabled)
-    extends GpuDecimalMultiplyParent(left, right, dataType) {
+    extends GpuDecimalMultiplyParent(left, right, dataType, useLongMultiply) {
   override def inputType: AbstractDataType = DecimalType
 
   override def symbol: String = "*"
