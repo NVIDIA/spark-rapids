@@ -18,13 +18,10 @@ package com.nvidia.spark.rapids
 
 import java.time.ZoneId
 import java.util.Properties
-import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import scala.collection.JavaConverters._
-import scala.collection.mutable.{Map => MutableMap}
 import scala.sys.process._
 import scala.util.Try
-import scala.util.matching.Regex
 
 import ai.rapids.cudf.{CudaException, CudaFatalException, CudfException, MemoryCleaner}
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
@@ -34,16 +31,11 @@ import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskFailedRe
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
-import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
-import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.internal.StaticSQLConf
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.util.QueryExecutionListener
 
 class PluginException(msg: String) extends RuntimeException(msg)
 
@@ -429,138 +421,6 @@ object RapidsExecutorPlugin {
   }
 }
 
-object ExecutionPlanCaptureCallback {
-  private[this] val shouldCapture: AtomicBoolean = new AtomicBoolean(false)
-  private[this] val execPlan: AtomicReference[SparkPlan] = new AtomicReference[SparkPlan]()
 
-  private def captureIfNeeded(qe: QueryExecution): Unit = {
-    if (shouldCapture.get()) {
-      execPlan.set(qe.executedPlan)
-    }
-  }
 
-  def startCapture(): Unit = {
-    execPlan.set(null)
-    shouldCapture.set(true)
-  }
 
-  def getResultWithTimeout(timeoutMs: Long = 2000): Option[SparkPlan] = {
-    try {
-      val endTime = System.currentTimeMillis() + timeoutMs
-      var plan = execPlan.getAndSet(null)
-      while (plan == null) {
-        if (System.currentTimeMillis() > endTime) {
-          return None
-        }
-        Thread.sleep(10)
-        plan = execPlan.getAndSet(null)
-      }
-      Some(plan)
-    } finally {
-      shouldCapture.set(false)
-      execPlan.set(null)
-    }
-  }
-
-  def extractExecutedPlan(plan: Option[SparkPlan]): SparkPlan = {
-    plan match {
-      case Some(p: AdaptiveSparkPlanExec) => p.executedPlan
-      case Some(p) => PlanShims.extractExecutedPlan(p)
-      case _ => throw new IllegalStateException("No execution plan available")
-    }
-  }
-
-  def assertCapturedAndGpuFellBack(fallbackCpuClass: String, timeoutMs: Long = 2000): Unit = {
-
-    val gpuPlan = getResultWithTimeout(timeoutMs=timeoutMs)
-    assert(gpuPlan.isDefined, "Did not capture a GPU plan")
-    assertDidFallBack(gpuPlan.get, fallbackCpuClass)
-  }
-
-  def assertDidFallBack(gpuPlan: SparkPlan, fallbackCpuClass: String): Unit = {
-    val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(gpuPlan))
-    assert(executedPlan.find(didFallBack(_, fallbackCpuClass)).isDefined,
-        s"Could not find $fallbackCpuClass in the GPU plan\n$executedPlan")
-  }
-
-  def assertDidFallBack(df: DataFrame, fallbackCpuClass: String): Unit = {
-    val executedPlan = df.queryExecution.executedPlan
-    assertDidFallBack(executedPlan, fallbackCpuClass)
-  }
-
-  def assertContains(gpuPlan: SparkPlan, className: String): Unit = {
-    assert(containsPlan(gpuPlan, className),
-      s"Could not find $className in the Spark plan\n$gpuPlan")
-  }
-
-  def assertContains(df: DataFrame, gpuClass: String): Unit = {
-    val executedPlan = df.queryExecution.executedPlan
-    assertContains(executedPlan, gpuClass)
-  }
-
-  def assertNotContain(gpuPlan: SparkPlan, className: String): Unit = {
-    assert(!containsPlan(gpuPlan, className),
-      s"We found $className in the Spark plan\n$gpuPlan")
-  }
-
-  def assertNotContain(df: DataFrame, gpuClass: String): Unit = {
-    val executedPlan = df.queryExecution.executedPlan
-    assertNotContain(executedPlan, gpuClass)
-  }
-
-  private def didFallBack(exp: Expression, fallbackCpuClass: String): Boolean = {
-    !exp.getClass.getCanonicalName.equals("com.nvidia.spark.rapids.GpuExpression") &&
-      PlanUtils.getBaseNameFromClass(exp.getClass.getName) == fallbackCpuClass ||
-      exp.children.exists(didFallBack(_, fallbackCpuClass))
-  }
-
-  private def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean = {
-    val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(plan))
-    !executedPlan.getClass.getCanonicalName.equals("com.nvidia.spark.rapids.GpuExec") &&
-    PlanUtils.sameClass(executedPlan, fallbackCpuClass) ||
-    executedPlan.expressions.exists(didFallBack(_, fallbackCpuClass))
-  }
-
-  private def containsExpression(exp: Expression, className: String,
-    regexMap: MutableMap[String, Regex] // regex memoization
-  ): Boolean = exp.find {
-    case e if PlanUtils.getBaseNameFromClass(e.getClass.getName) == className => true
-    case e: ExecSubqueryExpression => containsPlan(e.plan, className, regexMap)
-    case _ => false
-  }.nonEmpty
-
-  private def containsPlan(plan: SparkPlan, className: String,
-    regexMap: MutableMap[String, Regex] = MutableMap.empty // regex memoization
-  ): Boolean = plan.find {
-    case p if PlanUtils.sameClass(p, className) =>
-      true
-    case p: AdaptiveSparkPlanExec =>
-      containsPlan(p.executedPlan, className, regexMap)
-    case p: QueryStageExec =>
-      containsPlan(p.plan, className, regexMap)
-    case p: ReusedSubqueryExec =>
-      containsPlan(p.child, className, regexMap)
-    case p: ReusedExchangeExec =>
-      containsPlan(p.child, className, regexMap)
-    case p if p.expressions.exists(containsExpression(_, className, regexMap)) =>
-      true
-    case p: SparkPlan =>
-      val sparkPlanStringForRegex = p.verboseStringWithSuffix(1000)
-      regexMap.getOrElseUpdate(className, className.r)
-        .findFirstIn(sparkPlanStringForRegex)
-        .nonEmpty
-  }.nonEmpty
-}
-
-/**
- * Used as a part of testing to capture the executed query plan.
- */
-class ExecutionPlanCaptureCallback extends QueryExecutionListener {
-  import ExecutionPlanCaptureCallback._
-
-  override def onSuccess(funcName: String, qe: QueryExecution, durationNs: Long): Unit =
-    captureIfNeeded(qe)
-
-  override def onFailure(funcName: String, qe: QueryExecution, exception: Exception): Unit =
-    captureIfNeeded(qe)
-}

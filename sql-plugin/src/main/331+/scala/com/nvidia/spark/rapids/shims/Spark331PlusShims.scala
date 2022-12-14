@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.{ExprChecks, ExprRule, GpuCast, GpuExpression, Gp
 import org.apache.spark.sql.catalyst.expressions.{CheckOverflowInTableInsert, Expression}
 import org.apache.spark.sql.rapids.GpuCheckOverflowInTableInsert
 
-trait Spark331PlusShims extends Spark330PlusShims {
+trait Spark331PlusShims extends Spark330PlusNonDBShims {
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     val map: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
       // Add expression CheckOverflowInTableInsert starting Spark-3.3.1+

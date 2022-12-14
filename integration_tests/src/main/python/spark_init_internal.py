@@ -121,7 +121,7 @@ def pytest_sessionstart(session):
     _sb = pyspark.sql.SparkSession.builder
     _sb.config('spark.plugins', 'com.nvidia.spark.SQLPlugin') \
             .config("spark.sql.adaptive.enabled", "false") \
-            .config('spark.sql.queryExecutionListeners', 'com.nvidia.spark.rapids.ExecutionPlanCaptureCallback')
+            .config('spark.sql.queryExecutionListeners', 'org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback')
 
     for key, value in os.environ.items():
         if key.startswith(_CONF_ENV_PREFIX) and key != _DRIVER_ENV and key not in spark_jars_env:

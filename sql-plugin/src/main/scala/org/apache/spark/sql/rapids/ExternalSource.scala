@@ -16,9 +16,11 @@
 
 package org.apache.spark.sql.rapids
 
+import scala.reflect.ClassTag
 import scala.util.Try
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.delta.DeltaProvider
 import com.nvidia.spark.rapids.iceberg.IcebergProvider
 
 import org.apache.spark.broadcast.Broadcast
@@ -26,7 +28,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.connector.read.{PartitionReaderFactory, Scan}
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.FileFormat
-import org.apache.spark.sql.sources.Filter
+import org.apache.spark.sql.sources.{CreatableRelationProvider, Filter}
 import org.apache.spark.util.{SerializableConfiguration, Utils}
 
 /**
@@ -58,6 +60,10 @@ object ExternalSource extends Logging {
   }
 
   private lazy val icebergProvider = IcebergProvider()
+
+  private lazy val deltaProvider = DeltaProvider()
+
+  private lazy val creatableRelations = deltaProvider.getCreatableRelationRules
 
   /** If the file format is supported as an external source */
   def isSupportedFormat(format: FileFormat): Boolean = {
@@ -141,5 +147,24 @@ object ExternalSource extends Logging {
     } else {
       throw new RuntimeException(s"Unsupported scan type: ${scan.getClass.getSimpleName}")
     }
+  }
+
+  def wrapCreatableRelationProvider[INPUT <: CreatableRelationProvider](
+      provider: INPUT,
+      conf: RapidsConf,
+      parent: Option[RapidsMeta[_, _, _]]): CreatableRelationProviderMeta[INPUT] = {
+    creatableRelations.get(provider.getClass).map { r =>
+      r.wrap(provider, conf, parent, r).asInstanceOf[CreatableRelationProviderMeta[INPUT]]
+    }.getOrElse(new RuleNotFoundCreatableRelationProviderMeta(provider, conf, parent))
+  }
+
+  def toCreatableRelationProviderRule[INPUT <: CreatableRelationProvider](
+      desc: String,
+      doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], DataFromReplacementRule)
+          => CreatableRelationProviderMeta[INPUT])
+      (implicit tag: ClassTag[INPUT]): CreatableRelationProviderRule[INPUT] = {
+    require(desc != null)
+    require(doWrap != null)
+    new CreatableRelationProviderRule[INPUT](doWrap, desc, tag)
   }
 }
