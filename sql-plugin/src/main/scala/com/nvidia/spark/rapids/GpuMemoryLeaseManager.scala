@@ -60,12 +60,10 @@ object GpuMemoryLeaseManager extends Logging {
     if (instance != null) {
       throw new IllegalStateException("already initialized")
     }
-    val pool = if (Rmm.isInitialized) {
+    val pool = if (Rmm.isPoolingEnabled) {
       Rmm.getPoolSize
     } else {
-      // This should not really ever happen
-      val mem = Cuda.memGetInfo()
-      mem.free
+      Cuda.memGetInfo().free
     }
     instance = new GpuMemoryLeaseManager(pool - savedForShuffle)
   }
