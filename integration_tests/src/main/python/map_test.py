@@ -17,6 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, \
     assert_gpu_fallback_collect
 from data_gen import *
+from conftest import is_databricks_runtime
 from marks import incompat, allow_non_gpu
 from spark_session import is_before_spark_330, is_databricks104_or_later, is_databricks113_or_later, is_spark_33X, is_spark_340_or_later
 from pyspark.sql.types import *
@@ -323,7 +324,7 @@ def test_simple_get_map_value_ansi_fail(data_gen):
             error_message=message)
 
 
-@pytest.mark.skipif(not is_spark_33X() or is_databricks113_or_later(),
+@pytest.mark.skipif(not is_spark_33X() or is_databricks_runtime(),
                     reason="Only in Spark 3.3.X + ANSI mode + Strict Index, map key throws on no such element")
 @pytest.mark.parametrize('strict_index', ['true', 'false'])
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
