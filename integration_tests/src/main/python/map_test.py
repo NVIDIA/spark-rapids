@@ -323,7 +323,7 @@ def test_simple_get_map_value_ansi_fail(data_gen):
             error_message=message)
 
 
-@pytest.mark.skipif(not is_spark_33X(),
+@pytest.mark.skipif(not is_spark_33X() or is_databricks113_or_later(),
                     reason="Only in Spark 3.3.X + ANSI mode + Strict Index, map key throws on no such element")
 @pytest.mark.parametrize('strict_index', ['true', 'false'])
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
