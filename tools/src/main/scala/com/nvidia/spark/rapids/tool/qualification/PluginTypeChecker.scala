@@ -243,15 +243,20 @@ class PluginTypeChecker extends Logging {
   }
 
   def getWriteFormatString(node: String): String = {
-    // String for Write data format will be in below format and we need to parse the string to
-    // fetch Parquet(which is the write format in below example).
+    // We need to parse the input string to get the write format. Write format is either third
+    // or fourth parameter in the input string. If the partition columns is provided, then the
+    // write format will be the fourth parameter.
+    // Example string in the eventlog:
     // Execute InsertIntoHadoopFsRelationCommand
-    // file:/home/ubuntu/spark-3.1.1-eventlogs/complex_nested_decimal,
-    // false, Parquet, Map(path -> complex_nested_decimal)
-    // Note that there could be optional parameters passed which could show up in the string
-    // before write format. So the way we parse the string is to split based on "Map(" and get
-    // the last element from the first array.
-    node.split("Map\\(")(0).trim.split(",").last.trim
+    // gs://08f3844/, false, [op_cmpny_cd#25, clnt_rq_sent_dt#26], ORC, Map(path -> gs://08f3844)
+    val parsedString = node.split(",", 3).last.trim // remove first 2 parameters from the string
+    if (parsedString.startsWith("[")) {
+      // Optional parameter is present in the eventlog. Get the fourth parameter by skipping the
+      // optional parameter string.
+      parsedString.split("(?<=],)").map(_.trim).slice(1, 2)(0).split(",")(0)
+    } else {
+      parsedString.split(",")(0) // return third parameter from the input string
+    }
   }
 
   def isWriteFormatsupported(writeFormat: String): Boolean = {

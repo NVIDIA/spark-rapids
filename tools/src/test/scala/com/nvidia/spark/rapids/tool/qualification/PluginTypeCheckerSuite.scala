@@ -141,10 +141,14 @@ class PluginTypeCheckerSuite extends FunSuite with Logging {
       " Parquet, Map(path -> complex_nested_decimal), Append, [name, subject]",
       "Execute InsertIntoHadoopFsRelationCommand gs://08f3844/, " +
       "false, [col1#25, col2#26], ORC, Map(path -> gs://08f3844/), " +
-      "Overwrite, [col12, col13, col14,")
+      "Overwrite, [col12, col13, col14]",
+      "Execute InsertIntoHadoopFsRelationCommand file:/home/ubuntu/eventlogs/orc-writer-7," +
+      "false, [a#7, b#8], ORC, [__partition_columns=[\"a\"], " +
+      "path=/home/ubuntu/eventlogs/orc-writer-7], Overwrite, [a, b]")
 
     val result = inputString.map(checker.getWriteFormatString(_))
     assert(result(0) == "Parquet")
     assert(result(1) == "ORC")
+    assert(result(2) == "ORC")
   }
 }
