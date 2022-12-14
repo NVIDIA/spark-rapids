@@ -1747,24 +1747,6 @@ object GpuOverrides extends Logging {
           TypeSig.lit(TypeEnum.STRING))),
       (a, conf, p, r) => new FromUTCTimestampExprMeta(a, conf, p, r)
     ),
-    expr[Pmod](
-      "Pmod",
-      ExprChecks.binaryProject(TypeSig.gpuNumeric, TypeSig.cpuNumeric,
-        ("lhs", TypeSig.gpuNumeric.withPsNote(TypeEnum.DECIMAL,
-          s"decimals with precision ${DecimalType.MAX_PRECISION} are not supported"),
-            TypeSig.cpuNumeric),
-        ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
-      (a, conf, p, r) => new BinaryExprMeta[Pmod](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          a.dataType match {
-            case dt: DecimalType if dt.precision == DecimalType.MAX_PRECISION =>
-              willNotWorkOnGpu("pmod at maximum decimal precision is not supported")
-            case _ =>
-          }
-        }
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuPmod(lhs, rhs)
-      }),
     expr[Add](
       "Addition",
       ExprChecks.binaryProjectAndAst(
@@ -1808,32 +1790,6 @@ object GpuOverrides extends Logging {
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuSubtract(lhs, rhs, ansiEnabled)
-      }),
-    expr[Multiply](
-      "Multiplication",
-      ExprChecks.binaryProjectAndAst(
-        TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric + TypeSig.psNote(TypeEnum.DECIMAL,
-          "Because of Spark's inner workings the full range of decimal precision " +
-              "(even for 128-bit values) is not supported."),
-        TypeSig.cpuNumeric,
-        ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
-        ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
-      (a, conf, p, r) => new BinaryAstExprMeta[Multiply](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (SQLConf.get.ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
-            willNotWorkOnGpu("GPU Multiplication does not support ANSI mode")
-          }
-        }
-
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          a.dataType match {
-            case _: DecimalType => throw new IllegalStateException(
-              "Decimal Multiply should be converted in CheckOverflow")
-            case _ =>
-              GpuMultiply(lhs, rhs)
-          }
-        }
       }),
     expr[And](
       "Logical AND",
@@ -2024,47 +1980,6 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new BinaryAstExprMeta[Pow](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuPow(lhs, rhs)
-      }),
-    expr[Divide](
-      "Division",
-      ExprChecks.binaryProject(
-        TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-        TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-        ("lhs", TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-            TypeSig.DOUBLE + TypeSig.DECIMAL_128),
-        ("rhs", TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-            TypeSig.DOUBLE + TypeSig.DECIMAL_128)),
-      (a, conf, p, r) => new BinaryExprMeta[Divide](a, conf, p, r) {
-        // Division of Decimal types is a little odd. To work around some issues with
-        // what Spark does the tagging/checks are in CheckOverflow instead of here.
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          a.dataType match {
-            case _: DecimalType =>
-              throw new IllegalStateException("Internal Error: Decimal Divide operations " +
-                  "should be converted to the GPU in the CheckOverflow rule")
-            case _ =>
-              GpuDivide(lhs, rhs)
-          }
-      }),
-    expr[IntegralDivide](
-      "Division with a integer result",
-      ExprChecks.binaryProject(
-        TypeSig.LONG, TypeSig.LONG,
-        ("lhs", TypeSig.LONG + TypeSig.DECIMAL_128, TypeSig.LONG + TypeSig.DECIMAL_128),
-        ("rhs", TypeSig.LONG + TypeSig.DECIMAL_128, TypeSig.LONG + TypeSig.DECIMAL_128)),
-      (a, conf, p, r) => new BinaryExprMeta[IntegralDivide](a, conf, p, r) {
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuIntegralDivide(lhs, rhs)
-      }),
-    expr[Remainder](
-      "Remainder or modulo",
-      ExprChecks.binaryProject(
-        TypeSig.gpuNumeric, TypeSig.cpuNumeric,
-        ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
-        ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
-      (a, conf, p, r) => new BinaryExprMeta[Remainder](a, conf, p, r) {
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuRemainder(lhs, rhs)
       }),
     expr[AggregateExpression](
       "Aggregate expression",
