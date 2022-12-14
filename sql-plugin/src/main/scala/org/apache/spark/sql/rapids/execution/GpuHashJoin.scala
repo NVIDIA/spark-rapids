@@ -15,7 +15,7 @@
  */
 package org.apache.spark.sql.rapids.execution
 
-import ai.rapids.cudf.{DType, GatherMap, GroupByAggregation, NullEquality, NullPolicy, NvtxColor, ReductionAggregation, Table}
+import ai.rapids.cudf.{ColumnView, DType, GatherMap, GroupByAggregation, NullEquality, NullPolicy, NvtxColor, OutOfBoundsPolicy, ReductionAggregation, Scalar, Table}
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
 
@@ -136,13 +136,13 @@ object GpuHashJoin extends Arm {
 
   /** Determine if this type of join supports using the right side of the join as the build side. */
   def canBuildRight(joinType: JoinType): Boolean = joinType match {
-    case _: InnerLike | LeftOuter | LeftSemi | LeftAnti | _: ExistenceJoin => true
+    case _: InnerLike | LeftOuter | LeftSemi | LeftAnti | FullOuter | _: ExistenceJoin => true
     case _ => false
   }
 
   /** Determine if this type of join supports using the left side of the join as the build side. */
   def canBuildLeft(joinType: JoinType): Boolean = joinType match {
-    case _: InnerLike | RightOuter | FullOuter => true
+    case _: InnerLike | RightOuter => true
     case _ => false
   }
 
@@ -423,7 +423,6 @@ class HashJoinIterator(
         case _: InnerLike => leftKeys.innerJoinGatherMaps(rightKeys, compareNullsEqual)
         case LeftSemi => Array(leftKeys.leftSemiJoinGatherMap(rightKeys, compareNullsEqual))
         case LeftAnti => Array(leftKeys.leftAntiJoinGatherMap(rightKeys, compareNullsEqual))
-        case FullOuter => leftKeys.fullJoinGatherMaps(rightKeys, compareNullsEqual)
         case _ =>
           throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
               s" supported")
@@ -484,9 +483,6 @@ class ConditionalHashJoinIterator(
               // always be on the right
               Table.mixedLeftJoinGatherMaps(rightKeys, leftKeys, rightTable, leftTable,
                 compiledCondition, nullEquality).reverse
-            case FullOuter =>
-              Table.mixedFullJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
-                compiledCondition, nullEquality)
             case LeftSemi =>
               Array(Table.mixedLeftSemiJoinGatherMap(leftKeys, rightKeys, leftTable, rightTable,
                 compiledCondition, nullEquality))
@@ -507,6 +503,208 @@ class ConditionalHashJoinIterator(
     if (!closed) {
       super.close()
       compiledCondition.close()
+    }
+  }
+}
+
+/**
+ * An iterator that does a hash full join against a stream of batches.  It does this by
+ * doing a left outer join and keeping track of the hits on the right side.  It then
+ * produces a final batch of all the right side rows that were not already included.
+ */
+class HashFullJoinIterator(
+    built: LazySpillableColumnarBatch,
+    boundBuiltKeys: Seq[Expression],
+    stream: Iterator[LazySpillableColumnarBatch],
+    boundStreamKeys: Seq[Expression],
+    streamAttributes: Seq[Attribute],
+    boundCondition: Option[GpuExpression],
+    numFirstConditionTableColumns: Int,
+    targetSize: Long,
+    buildSide: GpuBuildSide,
+    compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
+    spillCallback: SpillCallback,
+    opTime: GpuMetric,
+    joinTime: GpuMetric)
+    extends BaseHashJoinIterator(
+      built,
+      boundBuiltKeys,
+      stream,
+      boundStreamKeys,
+      streamAttributes,
+      targetSize,
+      LeftOuter,
+      buildSide,
+      spillCallback,
+      opTime = opTime,
+      joinTime = joinTime) {
+  private val numRightRows = built.numRows
+
+  private[this] var rightTracker : Option[LazySpillableColumnarBatch] = None
+
+  private val nullEquality = if (compareNullsEqual) NullEquality.EQUAL else NullEquality.UNEQUAL
+
+  private val compiledConditionRes: Option[CompiledExpression] = boundCondition.map { gpuExpr =>
+    use(opTime.ns(gpuExpr.convertToAst(numFirstConditionTableColumns).compile()))
+  }
+
+  private def unconditionalLeftJoinGatherMaps(
+      leftKeys: Table, rightKeys: Table) : Array[GatherMap] = {
+    leftKeys.leftJoinGatherMaps(rightKeys, compareNullsEqual)
+  }
+
+  private def conditionalLeftJoinGatherMaps(
+      leftKeys: Table,
+      leftData: LazySpillableColumnarBatch,
+      rightKeys: Table,
+      rightData: LazySpillableColumnarBatch,
+      compiledCondition: CompiledExpression) : Array[GatherMap] = {
+    withResource(GpuColumnVector.from(leftData.getBatch)) { leftTable =>
+      withResource(GpuColumnVector.from(rightData.getBatch)) { rightTable =>
+        Table.mixedLeftJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
+          compiledCondition, nullEquality)
+      }
+    }
+  }
+
+  override protected def joinGathererLeftRight(
+      leftKeys: Table,
+      leftData: LazySpillableColumnarBatch,
+      rightKeys: Table,
+      rightData: LazySpillableColumnarBatch): Option[JoinGatherer] = {
+    withResource(new NvtxWithMetrics("full hash join gather map",
+      NvtxColor.ORANGE, joinTime)) { _ =>
+      val maps = compiledConditionRes.map { compiledCondition =>
+        conditionalLeftJoinGatherMaps(leftKeys, leftData, rightKeys, rightData, compiledCondition)
+      }.getOrElse {
+        unconditionalLeftJoinGatherMaps(leftKeys, rightKeys)
+      }
+      assert(maps.length == 2)
+      try {
+        val lazyLeftMap = LazySpillableGatherMap(maps(0), spillCallback, "left_map")
+        val lazyRightMap = LazySpillableGatherMap(maps(1), spillCallback, "right_map")
+        val gatherer = JoinGatherer(lazyLeftMap, leftData, lazyRightMap, rightData,
+          OutOfBoundsPolicy.DONT_CHECK, OutOfBoundsPolicy.NULLIFY)
+        if (gatherer.isDone) {
+          // Nothing matched...
+          gatherer.close()
+          None
+        } else {
+          updateTrackingMask(lazyRightMap)
+          Some(gatherer)
+        }
+      } finally {
+        maps.foreach(_.close())
+      }
+    }
+  }
+
+  override def close(): Unit = {
+    if (!closed) {
+      super.close()
+      compiledConditionRes.foreach(_.close())
+      rightTracker.foreach(_.close())
+    }
+  }
+
+  override def hasFinalBatch(): Option[ColumnarBatch] = {
+    rightTracker match {
+      case None => None
+      case Some(tracker) => {
+        val filteredBatch = withResource(tracker.releaseBatch()) { trackerBatch =>
+          withResource(GpuColumnVector.from(trackerBatch)) { trackerTab =>
+            val batch = built.getBatch
+            withResource(GpuColumnVector.from(batch)) { builtTable =>
+              withResource(builtTable.filter(trackerTab.getColumn(0))) { filterTab =>
+                GpuColumnVector.from(filterTab, GpuColumnVector.extractTypes(batch))
+              }
+            }
+          }
+        }
+        // Combine right columns with null columns for left side
+        val ret = withResource(filteredBatch) { rightBatch =>
+          val numFilterRows = rightBatch.numRows()
+          if (numFilterRows > 0) {
+            val leftColumns = streamAttributes.map { attr =>
+              GpuColumnVector.fromNull(numFilterRows, attr.dataType)
+            }
+            withResource(new ColumnarBatch(leftColumns.toArray, numFilterRows)) { leftBatch =>
+              Some(GpuColumnVector.combineColumns(leftBatch, rightBatch))
+            }
+          } else {
+            None
+          }
+        }
+        rightTracker = None
+        ret
+      }
+    }
+  }
+
+  private def trueColumnTable(numRows: Int): Table = {
+    withResource(Scalar.fromBool(true)) { trueScalar =>
+      withResource(ai.rapids.cudf.ColumnVector.fromScalar(trueScalar, numRows)) {
+        new Table(_)
+      }
+    }
+  }
+
+  // Create a boolean column to indicate which gather map rows are valid.
+  private def validIndexMask(gatherView: ColumnView): ColumnView = {
+    withResource(Scalar.fromInt(-numRightRows)) { minValue =>
+      withResource(Scalar.fromInt(numRightRows)) { maxValue =>
+        withResource(gatherView.greaterOrEqualTo(minValue)) { greaterEqualMin =>
+          withResource(gatherView.lessThan(maxValue)) { lessMax =>
+            lessMax.and(greaterEqualMin)
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Update the tracking mask.
+   */
+  private def updateTrackingMask(rightGatherMap: LazySpillableGatherMap): Unit = {
+    // Get the current tracking table, or all true table to start with
+    val rightTrackingTable = rightTracker.map { spillableBatch =>
+      withResource(spillableBatch.releaseBatch()) { trackingBatch =>
+        GpuColumnVector.from(trackingBatch)
+      }
+    }.getOrElse {
+      trueColumnTable(numRightRows)
+    }
+    // Filter the right gather map to remove invalid indices
+    val numGatherMapRows = rightGatherMap.getRowCount.toInt
+    val filteredGatherMap = {
+      withResource(rightGatherMap.toColumnView(0, numGatherMapRows)) { gatherView =>
+        withResource(gatherView.copyToColumnVector()) { gatherVec =>
+          withResource(new Table(gatherVec)) { gatherTab =>
+            withResource(validIndexMask(gatherView)) { mask =>
+              gatherTab.filter(mask)
+            }
+          }
+        }
+      }
+    }
+    // Update all hits in the gather map with false (no longer needed) in the tracking table
+    val updatedTrackingTable = {
+      withResource(rightTrackingTable) { trackingTable =>
+        withResource(Scalar.fromBool(false)) { falseScalar =>
+          withResource(filteredGatherMap) { filteredMap =>
+            Table.scatter(Array(falseScalar), filteredMap.getColumn(0), trackingTable)
+          }
+        }
+      }
+    }
+    rightTracker = {
+      withResource(updatedTrackingTable) { newTab =>
+        withResource(GpuColumnVector.from(newTab, Array[DataType](DataTypes.BooleanType))) { cb =>
+          val lazyBatch = LazySpillableColumnarBatch(cb, spillCallback, "tracking_batch")
+          lazyBatch.allowSpilling()
+          Some(lazyBatch)
+        }
+      }
     }
   }
 }
@@ -744,6 +942,10 @@ trait GpuHashJoin extends GpuExec {
           compareNullsEqual,
           opTime,
           joinTime)
+      case FullOuter =>
+        new HashFullJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream,
+          boundStreamKeys, streamedPlan.output, boundCondition, numFirstConditionTableColumns,
+          realTarget, buildSide, compareNullsEqual, spillCallback, opTime, joinTime)
       case _ =>
         if (boundCondition.isDefined) {
           // ConditionalHashJoinIterator will close the compiled condition

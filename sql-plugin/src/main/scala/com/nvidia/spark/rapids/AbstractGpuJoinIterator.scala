@@ -73,6 +73,8 @@ abstract class AbstractGpuJoinIterator(
    */
   protected def setupNextGatherer(): Option[JoinGatherer]
 
+  protected def hasFinalBatch(): Option[ColumnarBatch] = None
+
   override def hasNext: Boolean = {
     if (closed) {
       return false
@@ -100,8 +102,11 @@ abstract class AbstractGpuJoinIterator(
       }
     }
     if (nextCb.isEmpty) {
-      // Nothing is left to return so close ASAP.
-      opTime.ns(close())
+      nextCb = hasFinalBatch()
+      if (nextCb.isEmpty) {
+        // Nothing is left to return so close ASAP.
+        opTime.ns(close())
+      }
     }
     nextCb.isDefined
   }
