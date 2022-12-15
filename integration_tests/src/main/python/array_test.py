@@ -114,9 +114,7 @@ def test_array_item_with_strict_index(strict_index_enabled, index):
     else:
         test_df = lambda spark: two_col_df(spark, ArrayGen(int_gen), index).selectExpr('a[b]')
 
-    # `strictIndexOperator` has been removed in Spark3.4+ and Databricks11.3+
-    test_conf = ansi_enabled_conf if (is_spark_340_or_later() or is_databricks113_or_later()) else \
-        copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': strict_index_enabled})
+    test_conf = copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': strict_index_enabled})
 
     if strict_index_enabled:
         assert_gpu_and_cpu_error(
