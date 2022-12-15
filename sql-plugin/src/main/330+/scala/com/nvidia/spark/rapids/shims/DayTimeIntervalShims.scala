@@ -26,7 +26,7 @@ import org.apache.spark.sql.types.{CalendarIntervalType, DayTimeIntervalType}
 import org.apache.spark.unsafe.types.CalendarInterval
 
 object DayTimeIntervalShims {
-  def dayTimeIntervalExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+  def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[TimeAdd](
       "Adds interval to timestamp",
       ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
