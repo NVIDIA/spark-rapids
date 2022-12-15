@@ -1574,13 +1574,14 @@ object RapidsConf {
   val JOIN_REORDERING = conf("spark.rapids.sql.cbo.joinReordering")
     .internal()
     .doc("Enable join reordering of fact-dimension joins based on the estimated " +
-      "size of underlying tables")
+      "size of underlying tables and the presence of filters on dimension tables")
     .booleanConf
     .createWithDefault(false)
 
   val JOIN_REORDERING_RATIO = conf("spark.rapids.sql.cbo.joinReordering.factDimRatio")
     .internal()
-    .doc("Ratio to use to determine fact versus dimension tables")
+    .doc("Ratio to use to determine fact versus dimension tables. A value of 0.3 would mean " +
+      "that dimension tables can be up to 30% of the size of fact tables")
     .doubleConf
     .createWithDefault(0.3)
 
@@ -1593,9 +1594,12 @@ object RapidsConf {
   val JOIN_REORDERING_FILTER_SELECTIVITY =
       conf("spark.rapids.sql.cbo.joinReordering.filterSelectivity")
     .internal()
-    .doc("Default filter selectivity")
+    .doc("Default filter selectivity to use when estimating the size of " +
+      "filtered dimension tables. Value should be greater than zero and less than or " +
+      "equal to 1.0, with 1.0 meaning that all rows would be selected (no rows would be " +
+      "filtered out)")
     .doubleConf
-    .createWithDefault(0.2)
+    .createWithDefault(1.0)
 
   val JOIN_REORDERING_PRESERVE_ORDER =
     conf("spark.rapids.sql.cbo.joinReordering.preserveOrder")

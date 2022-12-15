@@ -56,19 +56,10 @@ object FactDimensionJoinReorder
         if projectList.forall(_.isInstanceOf[Attribute]) =>
         reorder(p, conf)
     }
-    val originalShuffleCount = countShuffles(plan)
-    val newShuffleCount = countShuffles(reorderedJoin)
-    val newPlan = if (originalShuffleCount < newShuffleCount) {
-      logDebug("FactDimensionJoinReorder join reordering introduced " +
-        "extra shuffles, so reverting to original plan")
-      plan
-    } else {
-      reorderedJoin
-    }
     val t1 = System.nanoTime()
     val elapsedTimeMillis = TimeUnit.MILLISECONDS.convert(t1 - t0, TimeUnit.NANOSECONDS)
     logDebug(s"FactDimensionJoinReorder took $elapsedTimeMillis millis")
-    newPlan
+    reorderedJoin
   }
 
   private def isSupportedJoin(plan: LogicalPlan): Boolean = plan match {
@@ -306,13 +297,6 @@ object FactDimensionJoinReorder
     }
   }
 
-  /**
-   * Estimate the number of shuffles for a given logical plan based on changes in join keys.
-   */
-  def countShuffles(plan: LogicalPlan): Int = {
-    //TODO implement
-    0
-  }
 }
 
 /**
