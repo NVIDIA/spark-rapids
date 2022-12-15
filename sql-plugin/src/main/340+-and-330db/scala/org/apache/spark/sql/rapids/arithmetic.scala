@@ -59,7 +59,7 @@ case class GpuDecimalDivide(
     right: Expression,
     override val dataType: DecimalType,
     failOnError: Boolean = SQLConf.get.ansiEnabled)
-    extends GpuDecimalDivideParent(left, right, dataType, false, failOnError) {
+    extends GpuDecimalDivideParent(left, right, dataType, failOnError) {
   override def inputType: AbstractDataType = DecimalType
 
   override def symbol: String = "/"
