@@ -45,7 +45,7 @@ object SparkShimImpl extends Spark321PlusDBShims with RoundingShims {
   }
 
     override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
-      super.getExprs ++ roundingExprs
+      super.getExprs ++ RoundingShims.roundingExprs
 }
 
 trait ShimExtractValue extends ExtractValue {

@@ -167,7 +167,7 @@ trait Spark330PlusShims extends Spark321PlusShims
             GpuDivideDTInterval(lhs, rhs)
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
-    super.getExprs ++ map ++ roundingExprs
+    super.getExprs ++ map ++ RoundingShims.roundingExprs
   }
 
   // GPU support ANSI interval types from 330
