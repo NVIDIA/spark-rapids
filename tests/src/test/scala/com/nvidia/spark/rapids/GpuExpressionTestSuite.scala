@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -194,15 +194,5 @@ abstract class GpuExpressionTestSuite extends SparkQueryCompareTestSuite {
       })
     }
 
-  }
-
-  def exceptionContains(e: Throwable, message: String): Boolean = {
-    if (e.getMessage.contains(message)) {
-      true
-    } else if (e.getCause != null) {
-      exceptionContains(e.getCause, message)
-    } else {
-      false
-    }
   }
 }

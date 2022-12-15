@@ -2058,4 +2058,14 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     val sparkFullVersion = ((sparkMajor.toLong * 1000) + sparkMinor) * 1000 + sparkBugfix
     sparkFullVersion.compareTo(fullVersion)
   }
+
+  def exceptionContains(e: Throwable, message: String): Boolean = {
+    if (e.getMessage.contains(message)) {
+      true
+    } else if (e.getCause != null) {
+      exceptionContains(e.getCause, message)
+    } else {
+      false
+    }
+  }
 }
