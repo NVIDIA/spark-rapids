@@ -35,9 +35,7 @@ import org.apache.spark.sql.rapids.shims.{GpuDivideDTInterval, GpuDivideYMInterv
 import org.apache.spark.sql.types.{CalendarIntervalType, DayTimeIntervalType, StructType}
 import org.apache.spark.unsafe.types.CalendarInterval
 
-trait Spark330PlusShims extends Spark321PlusShims
-    with Spark320PlusNonDBShims
-    with RoundingShims {
+trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
 
   override def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan] = null
 
