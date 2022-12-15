@@ -112,7 +112,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     df => df.withColumn("c1", to_date(col("c0"), "yyyy-MM-dd"))
   }
 
-
   testSparkResultsAreEqual("to_timestamp yyyy-MM-dd",
       timestampsAsStrings,
       conf = CORRECTED_TIME_PARSER_POLICY) {
@@ -135,7 +134,7 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
 
   testSparkResultsAreEqual("unix_timestamp parse date",
       timestampsAsStrings,
-    conf = CORRECTED_TIME_PARSER_POLICY) {
+      CORRECTED_TIME_PARSER_POLICY) {
     df => df.withColumn("c1", unix_timestamp(col("c0"), "yyyy-MM-dd"))
   }
 
