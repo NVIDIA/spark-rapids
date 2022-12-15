@@ -24,7 +24,7 @@ import org.apache.spark.sql.catalyst.trees.TreePattern._
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 
-object SparkShimImpl extends Spark321PlusDBShims with RoundingShims {
+object SparkShimImpl extends Spark321PlusDBShims {
   // AnsiCast is removed from Spark3.4.0
   override def ansiCastRule: ExprRule[_ <: Expression] = null
 
