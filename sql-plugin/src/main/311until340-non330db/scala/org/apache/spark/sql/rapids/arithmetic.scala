@@ -31,13 +31,13 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
 case class GpuAdd(
     left: Expression,
     right: Expression,
-    failOnError: Boolean) extends GpuAddParent(left, right, failOnError)
+    failOnError: Boolean) extends GpuAddBase(left, right, failOnError)
 
 case class GpuSubtract(
     left: Expression,
     right: Expression,
-    failOnError: Boolean) extends GpuSubtractParent(left, right, failOnError)
+    failOnError: Boolean) extends GpuSubtractBase(left, right, failOnError)
 
-case class GpuRemainder(left: Expression, right: Expression) extends GpuRemainderParent(left, right)
+case class GpuRemainder(left: Expression, right: Expression) extends GpuRemainderBase(left, right)
 
-case class GpuPmod(left: Expression, right: Expression) extends GpuPmodParent(left, right)
+case class GpuPmod(left: Expression, right: Expression) extends GpuPmodBase(left, right)

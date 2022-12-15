@@ -251,7 +251,7 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
   }
 }
 
-abstract class GpuAddParent(
+abstract class GpuAddBase(
     left: Expression,
     right: Expression,
     failOnError: Boolean) extends CudfBinaryArithmetic with Serializable {
@@ -283,7 +283,7 @@ abstract class GpuAddParent(
   }
 }
 
-abstract class GpuSubtractParent(
+abstract class GpuSubtractBase(
     left: Expression,
     right: Expression,
     failOnError: Boolean) extends CudfBinaryArithmetic with Serializable {
@@ -1049,7 +1049,7 @@ case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDiv
   override def sqlOperator: String = "div"
 }
 
-abstract class GpuRemainderParent(left: Expression, right: Expression)
+abstract class GpuRemainderBase(left: Expression, right: Expression)
     extends GpuDivModLike with Serializable {
   override def inputType: AbstractDataType = NumericType
 
@@ -1058,7 +1058,7 @@ abstract class GpuRemainderParent(left: Expression, right: Expression)
   override def binaryOp: BinaryOp = BinaryOp.MOD
 }
 
-abstract class GpuPmodParent(left: Expression, right: Expression)
+abstract class GpuPmodBase(left: Expression, right: Expression)
     extends GpuDivModLike with Serializable {
   override def inputType: AbstractDataType = NumericType
 

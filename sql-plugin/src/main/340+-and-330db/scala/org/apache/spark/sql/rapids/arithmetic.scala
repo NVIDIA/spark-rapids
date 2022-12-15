@@ -120,7 +120,7 @@ case class GpuAdd(
     left: Expression,
     right: Expression,
     override val failOnError: Boolean)
-    extends GpuAddParent(left, right, failOnError) with GpuAddSub {
+    extends GpuAddBase(left, right, failOnError) with GpuAddSub {
 
   def do128BitOperation(
       castLhs: ColumnView,
@@ -151,7 +151,7 @@ case class GpuSubtract(
     left: Expression,
     right: Expression,
     override val failOnError: Boolean)
-    extends GpuSubtractParent(left, right, failOnError) with GpuAddSub {
+    extends GpuSubtractBase(left, right, failOnError) with GpuAddSub {
 
   def do128BitOperation(
       castLhs: ColumnView,
@@ -172,7 +172,7 @@ case class GpuSubtract(
 }
 
 case class GpuRemainder(left: Expression, right: Expression)
-    extends GpuRemainderParent(left, right) {
+    extends GpuRemainderBase(left, right) {
   // scalastyle:off
   // The formula follows Hive which is based on the SQL standard and MS SQL:
   // https://cwiki.apache.org/confluence/download/attachments/27362075/Hive_Decimal_Precision_Scale_Support.pdf
@@ -193,7 +193,7 @@ case class GpuRemainder(left: Expression, right: Expression)
 
 case class GpuPmod(
     left: Expression,
-    right: Expression) extends GpuPmodParent(left, right) {
+    right: Expression) extends GpuPmodBase(left, right) {
   // This follows Remainder rule
   override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
     val resultScale = max(s1, s2)
