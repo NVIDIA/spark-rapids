@@ -23,6 +23,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.trees.TreePattern._
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
+import org.apache.spark.sql.execution.SparkPlan
 
 object SparkShimImpl extends Spark321PlusDBShims {
   // AnsiCast is removed from Spark3.4.0
@@ -43,6 +44,9 @@ object SparkShimImpl extends Spark321PlusDBShims {
     new ParquetFilters(schema, pushDownDate, pushDownTimestamp, pushDownDecimal, pushDownStartWith,
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
   }
+
+  override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
+    super.getExecs ++ PythonMapInArrowExecShims.execs
 }
 
 trait ShimExtractValue extends ExtractValue {

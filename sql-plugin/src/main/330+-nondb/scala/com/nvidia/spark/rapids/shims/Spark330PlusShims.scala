@@ -252,16 +252,9 @@ trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
             TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.BINARY +
             GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
           TypeSig.all),
-        (fsse, conf, p, r) => new FileSourceScanExecMeta(fsse, conf, p, r)),
-      GpuOverrides.exec[PythonMapInArrowExec](
-        "The backend for Map Arrow Iterator UDF. Accelerates the data transfer between the" +
-          " Java process and the Python process. It also supports scheduling GPU resources" +
-          " for the Python process when enabled.",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
-          TypeSig.all),
-        (mapPy, conf, p, r) => new GpuPythonMapInArrowExecMeta(mapPy, conf, p, r))
+        (fsse, conf, p, r) => new FileSourceScanExecMeta(fsse, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
-    super.getExecs ++ map
+    super.getExecs ++ map ++ PythonMapInArrowExecShims.execs
   }
 
 }
