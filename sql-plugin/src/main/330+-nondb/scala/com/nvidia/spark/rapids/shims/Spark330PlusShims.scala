@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids.shims
 
-import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids._
 import org.apache.parquet.schema.MessageType
 
@@ -33,7 +32,7 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.python.GpuPythonMapInArrowExecMeta
 import org.apache.spark.sql.rapids.shims.{GpuDivideDTInterval, GpuDivideYMInterval, GpuMultiplyDTInterval, GpuMultiplyYMInterval, GpuTimeAdd}
-import org.apache.spark.sql.types.{CalendarIntervalType, DayTimeIntervalType, DecimalType, StructType}
+import org.apache.spark.sql.types.{CalendarIntervalType, DayTimeIntervalType, StructType}
 import org.apache.spark.unsafe.types.CalendarInterval
 
 trait Spark330PlusShims extends Spark321PlusShims
