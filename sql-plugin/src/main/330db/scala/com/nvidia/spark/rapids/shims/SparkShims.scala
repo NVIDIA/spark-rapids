@@ -45,8 +45,16 @@ object SparkShimImpl extends Spark321PlusDBShims {
   }
 }
 
-trait ShimExtractValue extends ExtractValue {
-  override def nodePatternsInternal(): Seq[TreePattern] = Seq.empty
+trait ShimGetArrayStructFields extends ExtractValue {
+  override def nodePatternsInternal(): Seq[TreePattern] = Seq(EXTRACT_ARRAY_SUBFIELDS)
+}
+
+trait ShimGetArrayItem extends ExtractValue {
+  override def nodePatternsInternal(): Seq[TreePattern] = Seq(GET_ARRAY_ITEM)
+}
+
+trait ShimGetStructField extends ExtractValue {
+  override def nodePatternsInternal(): Seq[TreePattern] = Seq(GET_STRUCT_FIELD)
 }
 
 // Fallback to the default definition of `deterministic`
