@@ -34,6 +34,7 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
 
   private val confJoinOrderingEnabled = new SparkConf()
     .set(RapidsConf.JOIN_REORDERING.key, "true")
+    .set(RapidsConf.JOIN_REORDERING_FILTER_SELECTIVITY.key, "0.2")
     .set(RapidsConf.JOIN_REORDERING_RATIO.key, "0.3")
     .set(RapidsConf.JOIN_REORDERING_MAX_FACT.key, "2")
     .set(RapidsConf.JOIN_REORDERING_PRESERVE_ORDER.key, "true")
