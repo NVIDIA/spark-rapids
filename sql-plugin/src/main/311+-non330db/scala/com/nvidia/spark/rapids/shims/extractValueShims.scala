@@ -18,4 +18,8 @@ package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.catalyst.expressions._
 
-trait ShimExtractValue extends ExtractValue
+trait ShimGetArrayStructFields extends ExtractValue
+
+trait ShimGetArrayItem extends ExtractValue
+
+trait ShimGetStructField extends ExtractValue
