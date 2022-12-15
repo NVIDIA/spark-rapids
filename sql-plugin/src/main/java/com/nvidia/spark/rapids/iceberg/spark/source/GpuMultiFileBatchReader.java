@@ -72,6 +72,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
   private final FileFormat fileFormat;
   private final int numThreads;
   private final int maxNumFileProcessed;
+  private final boolean queryUsesInputFile;
 
   private NameMapping nameMapping = null;
   private boolean needNext = true;
@@ -85,7 +86,8 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
       boolean useChunkedReader,
       String parquetDebugDumpPrefix, int numThreads, int maxNumFileProcessed,
       boolean useMultiThread, FileFormat fileFormat,
-      scala.collection.immutable.Map<String, GpuMetric> metrics) {
+      scala.collection.immutable.Map<String, GpuMetric> metrics,
+      boolean queryUsesInputFile) {
     super(table, task);
     this.expectedSchema = expectedSchema;
     this.caseSensitive = caseSensitive;
@@ -100,6 +102,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
     this.metrics = metrics;
     this.numThreads = numThreads;
     this.maxNumFileProcessed = maxNumFileProcessed;
+    this.queryUsesInputFile = queryUsesInputFile;
     String nameMapping = table.properties().get(TableProperties.DEFAULT_NAME_MAPPING);
     if (nameMapping != null) {
       this.nameMapping = NameMappingParser.fromJson(nameMapping);
@@ -333,7 +336,11 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
           false, // ignoreCorruptFiles
           false, // useFieldId
           scala.collection.immutable.Map$.MODULE$.empty(), // alluxioPathReplacementMap
-          false // alluxioReplacementTaskTime
+          false, // alluxioReplacementTaskTime
+          -1, // combineThresholdsize
+          -1, // combineWaitTime
+          queryUsesInputFile,
+          true // keepReadsInOrder
       );
     }
 

@@ -68,7 +68,9 @@ parquet_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_
 # test with original parquet file reader, the multi-file parallel reader for cloud, and coalesce file reader for
 # non-cloud
 original_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'PERFILE'}
-multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED'}
+multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
+        'spark.rapids.sql.format.parquet.multithreaded.combine.sizeBytes': '0',
+        'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': True}
 coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING'}
 coalesce_parquet_file_reader_multithread_filter_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.coalescing.reader.numFilterParallel': '2',
@@ -79,12 +81,20 @@ coalesce_parquet_file_reader_multithread_filter_conf = {'spark.rapids.sql.format
 native_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'PERFILE',
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
 native_multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
-        'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
+        'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE',
+        'spark.rapids.sql.format.parquet.multithreaded.combine.sizeBytes': '0',
+        'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': True}
 native_coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
 native_coalesce_parquet_file_reader_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE',
         'spark.rapids.sql.reader.chunked': True}
+combining_multithreaded_parquet_file_reader_conf_ordered = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
+         'spark.rapids.sql.format.parquet.multithreaded.combine.sizeBytes': '64m',
+         'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': True}
+combining_multithreaded_parquet_file_reader_conf_unordered = pytest.param({'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
+         'spark.rapids.sql.format.parquet.multithreaded.combine.sizeBytes': '64m',
+         'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': False}, marks=pytest.mark.ignore_order(local=True))
 
 
 # For now the native configs are not compatible with spark.sql.parquet.writeLegacyFormat written files
@@ -95,7 +105,8 @@ reader_opt_confs_native = [native_parquet_file_reader_conf, native_multithreaded
                     native_coalesce_parquet_file_reader_chunked_conf]
 
 reader_opt_confs_no_native = [original_parquet_file_reader_conf, multithreaded_parquet_file_reader_conf,
-                    coalesce_parquet_file_reader_conf, coalesce_parquet_file_reader_multithread_filter_conf]
+                    coalesce_parquet_file_reader_conf, coalesce_parquet_file_reader_multithread_filter_conf,
+                    combining_multithreaded_parquet_file_reader_conf_ordered]
 
 reader_opt_confs = reader_opt_confs_native + reader_opt_confs_no_native
 
@@ -448,7 +459,8 @@ def test_parquet_partitioned_read_just_partitions(spark_tmp_path, v1_enabled_lis
             lambda spark : spark.read.parquet(data_path).select("key"),
             conf=all_confs)
 
-@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+reader_opt_confs_with_unordered = reader_opt_confs + [combining_multithreaded_parquet_file_reader_conf_unordered]
+@pytest.mark.parametrize('reader_confs', reader_opt_confs_with_unordered)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
@@ -457,13 +469,23 @@ def test_parquet_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reade
     first_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
     with_cpu_session(
-            lambda spark : gen_df(spark, first_gen_list, 1).write.parquet(first_data_path))
+            lambda spark : gen_df(spark, first_gen_list, 10).write.parquet(first_data_path))
     # generate with 1 column less
     second_parquet_gens = [byte_gen, short_gen, int_gen]
     second_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(second_parquet_gens)]
     second_data_path = spark_tmp_path + '/PARQUET_DATA/key=1'
     with_cpu_session(
-            lambda spark : gen_df(spark, second_gen_list, 1).write.parquet(second_data_path))
+            lambda spark : gen_df(spark, second_gen_list, 10).write.parquet(second_data_path))
+    # third with same as first
+    third_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    third_data_path = spark_tmp_path + '/PARQUET_DATA/key=2'
+    with_cpu_session(
+            lambda spark : gen_df(spark, third_gen_list, 10).write.parquet(third_data_path))
+    # fourth with same as second
+    fourth_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(second_parquet_gens)]
+    fourth_data_path = spark_tmp_path + '/PARQUET_DATA/key=3'
+    with_cpu_session(
+            lambda spark : gen_df(spark, fourth_gen_list, 10).write.parquet(fourth_data_path))
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = copy_and_update(reader_confs, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
@@ -544,7 +566,8 @@ def test_parquet_input_meta(spark_tmp_path, v1_enabled_list, reader_confs):
     with_cpu_session(
             lambda spark : unary_op_df(spark, long_gen).write.parquet(second_data_path))
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path)\
                     .filter(f.col('a') > 0)\
@@ -559,7 +582,7 @@ def test_parquet_input_meta(spark_tmp_path, v1_enabled_list, reader_confs):
                'FileSourceScanExec', 'ColumnarToRowExec',
                'BatchScanExec', 'ParquetScan')
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
-@pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.parquet.enabled', 'spark.rapids.sql.format.orc.parquet.enabled'])
+@pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.parquet.enabled', 'spark.rapids.sql.format.parquet.read.enabled'])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_input_meta_fallback(spark_tmp_path, v1_enabled_list, reader_confs, disable_conf):
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
