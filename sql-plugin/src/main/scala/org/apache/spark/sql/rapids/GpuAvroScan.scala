@@ -642,7 +642,7 @@ class GpuMultiFileCloudAvroPartitionReader(
         // Not reading any data, but add in partition data if needed
         // Someone is going to process this data, even if it is just a row count
         GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
-        val emptyBatch = new ColumnarBatch(Array.empty, bufAndSizeInfo.bytes.toInt)
+        val emptyBatch = new ColumnarBatch(Array.empty, bufAndSizeInfo.numRows.toInt)
         Some(addPartitionValues(emptyBatch, partitionValues, partitionSchema))
       } else {
         val maybeBatch = sendToGpu(bufAndSizeInfo.hmb, bufAndSizeInfo.bytes, files)
@@ -821,7 +821,7 @@ class GpuMultiFileCloudAvroPartitionReader(
 
                   // One batch is done
                   optOut.foreach(out => hostBuffers +=
-                    (SingleHMBAndMeta(optHmb.get, out.getPos, 0, Seq.empty, null)))
+                    (SingleHMBAndMeta(optHmb.get, out.getPos, batchRowsNum, Seq.empty, null)))
                   totalRowsNum += batchRowsNum
                   estBlocksSize -= batchSize
                 }
