@@ -25,14 +25,16 @@ import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
 import org.apache.spark.sql.types.{DataType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-case class GpuJsonTuple(json: Expression, paths: Seq[Expression]) extends GpuExpression 
+case class GpuJsonTuple(children: Seq[Expression]) extends GpuExpression 
   with ShimExpression with ExpectsInputTypes {
   override def dataType: DataType = StringType
-  override def inputTypes: Seq[DataType] = Seq.fill(paths.length + 1)(StringType)
+  override def inputTypes: Seq[DataType] = Seq.fill(children.length)(StringType)
   override def nullable: Boolean = true
   override def prettyName: String = "json_tuple"
 
   override def columnarEval(batch: ColumnarBatch): Any = {
+    val json = children.head
+    val paths = children.tail
     def resolveScalar(any: Any): GpuScalar = {
       withResourceIfAllowed(any) {
         case s: GpuScalar => s
