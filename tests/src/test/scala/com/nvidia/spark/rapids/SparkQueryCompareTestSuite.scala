@@ -29,6 +29,7 @@ import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
@@ -80,7 +81,7 @@ object SparkSessionHolder extends Logging {
         .config("spark.rapids.sql.test.enabled", "false")
         .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
         .config("spark.sql.queryExecutionListeners",
-          "com.nvidia.spark.rapids.ExecutionPlanCaptureCallback")
+          "org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback")
         .config("spark.sql.warehouse.dir", sparkWarehouseDir.getAbsolutePath)
         .appName("rapids spark plugin integration tests (scala)")
 
@@ -261,7 +262,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     // force a new session to avoid accidentally capturing a late callback from a previous query
     TrampolineUtil.cleanupAnyExistingSession()
     ExecutionPlanCaptureCallback.startCapture()
-    var cpuPlan: Option[SparkPlan] = null
+    var cpuPlans: Array[SparkPlan] = Array.empty
       try {
         withCpuSparkSession(session => {
           var data = df(session)
@@ -273,14 +274,13 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
           fun(data)
         }, conf)
       } finally {
-        cpuPlan = ExecutionPlanCaptureCallback.getResultWithTimeout()
+        cpuPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()
       }
-    if (cpuPlan.isEmpty) {
-      throw new RuntimeException("Did not capture CPU plan")
-    }
+    assert(cpuPlans.nonEmpty, "Did not capture CPU plan")
+    assert(cpuPlans.length == 1, s"Captured more than one CPU plan: ${cpuPlans.mkString("\n")}")
 
     ExecutionPlanCaptureCallback.startCapture()
-    var gpuPlan: Option[SparkPlan] = null
+    var gpuPlans: Array[SparkPlan] = Array.empty
       try {
         withGpuSparkSession(session => {
           var data = df(session)
@@ -292,14 +292,12 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
           fun(data)
         }, conf)
       } finally {
-        gpuPlan = ExecutionPlanCaptureCallback.getResultWithTimeout()
+        gpuPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()
       }
+    assert(gpuPlans.nonEmpty, "Did not capture GPU plan")
+    assert(gpuPlans.length == 1, s"Captured more than one GPU plan: ${gpuPlans.mkString("\n")}")
 
-    if (gpuPlan.isEmpty) {
-      throw new RuntimeException("Did not capture GPU plan")
-    }
-
-    (cpuPlan.get, gpuPlan.get)
+    (cpuPlans.head, gpuPlans.head)
   }
 
   def runOnCpuAndGpuWithCapture(df: SparkSession => DataFrame,
@@ -312,7 +310,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     // force a new session to avoid accidentally capturing a late callback from a previous query
     TrampolineUtil.cleanupAnyExistingSession()
     ExecutionPlanCaptureCallback.startCapture()
-    var cpuPlan: Option[SparkPlan] = null
+    var cpuPlans: Array[SparkPlan] = Array.empty
     val fromCpu =
       try {
         withCpuSparkSession(session => {
@@ -325,14 +323,13 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
           fun(data).collect()
         }, conf)
       } finally {
-        cpuPlan = ExecutionPlanCaptureCallback.getResultWithTimeout()
+        cpuPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()
       }
-    if (cpuPlan.isEmpty) {
-      throw new RuntimeException("Did not capture CPU plan")
-    }
+    assert(cpuPlans.nonEmpty, "Did not capture CPU plan")
+    assert(cpuPlans.length == 1, s"Captured more than one CPU plan: ${cpuPlans.mkString("\n")}")
 
     ExecutionPlanCaptureCallback.startCapture()
-    var gpuPlan: Option[SparkPlan] = null
+    var gpuPlans: Array[SparkPlan] = Array.empty
     val fromGpu =
       try {
         withGpuSparkSession(session => {
@@ -345,14 +342,12 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
           fun(data).collect()
         }, conf)
       } finally {
-        gpuPlan = ExecutionPlanCaptureCallback.getResultWithTimeout()
+        gpuPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()
       }
+    assert(gpuPlans.nonEmpty, "Did not capture GPU plan")
+    assert(gpuPlans.length == 1, s"Captured more than one GPU plan: ${gpuPlans.mkString("\n")}")
 
-    if (gpuPlan.isEmpty) {
-      throw new RuntimeException("Did not capture GPU plan")
-    }
-
-    (fromCpu, cpuPlan.get, fromGpu, gpuPlan.get)
+    (fromCpu, cpuPlans.head, fromGpu, gpuPlans.head)
   }
 
   def testGpuWriteFallback(testName: String,
@@ -2062,5 +2057,15 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     val fullVersion = ((major.toLong * 1000) + minor) * 1000 + bugfix
     val sparkFullVersion = ((sparkMajor.toLong * 1000) + sparkMinor) * 1000 + sparkBugfix
     sparkFullVersion.compareTo(fullVersion)
+  }
+
+  def exceptionContains(e: Throwable, message: String): Boolean = {
+    if (e.getMessage.contains(message)) {
+      true
+    } else if (e.getCause != null) {
+      exceptionContains(e.getCause, message)
+    } else {
+      false
+    }
   }
 }

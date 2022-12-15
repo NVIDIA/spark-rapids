@@ -175,7 +175,7 @@ object GpuRegExpUtils {
           case QuantifierVariableLength(0, _) => true
           case _ => false
         }
-        case RegexGroup(_, term) =>
+        case RegexGroup(_, term, _) =>
           isASTEmptyRepetition(term)
         case RegexSequence(parts) =>
           parts.forall(isASTEmptyRepetition)
@@ -194,7 +194,7 @@ object GpuRegExpUtils {
   def countGroups(pattern: String): Int = {
     def countGroups(regexp: RegexAST): Int = {
       regexp match {
-        case RegexGroup(_, term) => 1 + countGroups(term)
+        case RegexGroup(_, term, _) => 1 + countGroups(term)
         case other => other.children().map(countGroups).sum
       }
    }

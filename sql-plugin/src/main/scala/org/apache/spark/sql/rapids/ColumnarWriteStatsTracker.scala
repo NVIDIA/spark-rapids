@@ -52,9 +52,10 @@ trait ColumnarWriteTaskStatsTracker {
   /**
    * Process a new column batch to update the tracked statistics accordingly.
    * The batch will be written to the most recently witnessed file (via `newFile`).
+   * @param filePath Path of the file which the batch is written to.
    * @param batch Current data batch to be processed.
    */
-  def newBatch(batch: ColumnarBatch): Unit
+  def newBatch(filePath: String, batch: ColumnarBatch): Unit
 
   /**
    * Returns the final statistics computed so far.

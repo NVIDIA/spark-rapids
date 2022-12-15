@@ -439,7 +439,7 @@ class RegexParser(pattern: String) {
             // escape character \e
             consumeExpected(ch)
             RegexChar('\u001b')
-          case _ if regexPunct.contains(ch) => 
+          case _ if regexPunct.contains(ch) =>
             // other punctuation
             // note that this may include metacharacters from earlier, this is just to
             // handle characters not covered by the previous cases earlier
@@ -691,7 +691,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
   private def countCaptureGroups(regex: RegexAST): Int = {
     regex match {
       case RegexSequence(parts) => parts.foldLeft(0)((c, re) => c + countCaptureGroups(re))
-      case RegexGroup(capture, base, _) => 
+      case RegexGroup(capture, base, _) =>
         if (capture) {
           1 + countCaptureGroups(base)
         } else {
@@ -874,7 +874,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           case r @ RegexOctalChar(_) => r.codePoint.toChar
           case r @ RegexHexDigit(_) => r.codePoint.toChar
           case other => throw new RegexUnsupportedException(
-            s"Unexpected expression at start of character range: ${other.toRegexString}", 
+            s"Unexpected expression at start of character range: ${other.toRegexString}",
             other.position)
         }
         start <= '\r' && end >= '\r'
@@ -972,7 +972,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           // ignore
       }
     }
-    
+
     def isEmptyRepetition(regex: RegexAST): Boolean = {
       regex match {
         case RegexRepetition(_, term) => term match {
