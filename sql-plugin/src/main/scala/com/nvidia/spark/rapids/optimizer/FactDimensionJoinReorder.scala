@@ -330,6 +330,8 @@ case class Relation(plan: LogicalPlan, size: Long) extends PredicateHelper {
     }
     hasFilter(plan)
   }
+
+  override def toString: String = s"Relation [size=$size]:\n$plan"
 }
 
 object Relation extends Logging {
