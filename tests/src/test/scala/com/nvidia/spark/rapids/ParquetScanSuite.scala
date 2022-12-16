@@ -177,7 +177,7 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
       fail("Did not receive an expected exception from cudf")
     } catch {
       case e: Exception =>
-        if(!exceptionContains(e, "Encountered malformed")){
+        if (!exceptionContains(e, "Encountered malformed")) {
           throw e
         }
     }
