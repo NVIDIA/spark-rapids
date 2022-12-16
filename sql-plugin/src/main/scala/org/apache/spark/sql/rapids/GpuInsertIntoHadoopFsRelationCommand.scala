@@ -81,6 +81,8 @@ case class GpuInsertIntoHadoopFsRelationCommand(
 
     val jobId = java.util.UUID.randomUUID().toString
 
+    // For dynamic partition overwrite, FileOutputCommitter's output path is staging path, files
+    // will be renamed from staging path to final output path during commit job
     val committerOutputPath = if (dynamicPartitionOverwrite) {
       FileCommitProtocol.getStagingDir(outputPath.toString, jobId)
         .makeQualified(fs.getUri, fs.getWorkingDirectory)
