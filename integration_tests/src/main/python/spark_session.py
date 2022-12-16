@@ -188,6 +188,9 @@ def is_databricks91_or_later():
 def is_databricks104_or_later():
     return is_databricks_version_or_later(10, 4)
 
+def is_databricks113_or_later():
+    return is_databricks_version_or_later(11, 3)
+
 def get_java_major_version():
     ver = _spark.sparkContext._jvm.System.getProperty("java.version")
     # Allow these formats:
