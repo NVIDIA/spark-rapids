@@ -44,8 +44,8 @@ object SparkShimImpl extends Spark321PlusDBShims {
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
   }
 
-    override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
-      super.getExprs ++ RoundingShims.roundingExprs
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
+    super.getExprs ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs
 }
 
 trait ShimGetArrayStructFields extends ExtractValue {

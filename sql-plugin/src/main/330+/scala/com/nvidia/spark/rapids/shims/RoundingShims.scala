@@ -24,7 +24,7 @@ import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.types.DecimalType
 
 object RoundingShims {
-  def roundingExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+  def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
     GpuOverrides.expr[RoundCeil](
       "Computes the ceiling of the given expression to d decimal places",
       ExprChecks.binaryProject(
