@@ -3488,7 +3488,9 @@ object GpuOverrides extends Logging {
     expr[JsonTuple](
       "Returns a tuple like the function get_json_object, but it takes multiple names. " + 
         "All the input parameters and output column types are string.",
-      ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
+      ExprChecks.projectOnly(
+        // TypeSig.STRING, TypeSig.STRING,
+        TypeSig.ARRAY.nested(TypeSig.STRING), TypeSig.ARRAY.nested(TypeSig.STRING),
         Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING)),
         Some(RepeatingParamCheck("path", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
       (a, conf, p, r) => new ExprMeta[JsonTuple](a, conf, p, r) {

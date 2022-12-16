@@ -16,25 +16,37 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector, ColumnView}
+import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimExpression
 
-import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
+import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.types.{DataType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuJsonTuple(children: Seq[Expression]) extends GpuExpression 
-  with ShimExpression with ExpectsInputTypes {
+  with ShimExpression {
   override def dataType: DataType = StringType
-  override def inputTypes: Seq[DataType] = Seq.fill(children.length)(StringType)
-  override def nullable: Boolean = true
+  override def nullable: Boolean = false
   override def prettyName: String = "json_tuple"
+  @transient private lazy val json: Expression = children.head
+  @transient private lazy val fields: Seq[Expression] = children.tail
+
+  override def checkInputDataTypes(): TypeCheckResult = {
+    if (children.length < 2) {
+      TypeCheckResult.TypeCheckFailure(
+        s"$prettyName has wrong number of auguments: requires > 1, but found ${children.length}"
+      )
+    } else if (children.forall(child => child.dataType == StringType)) {
+      TypeCheckResult.TypeCheckSuccess
+    } else {
+      TypeCheckResult.TypeCheckFailure(s"$prettyName only supports string type input")
+    }
+  }
 
   override def columnarEval(batch: ColumnarBatch): Any = {
-    val json = children.head
-    val paths = children.tail
     def resolveScalar(any: Any): GpuScalar = {
       withResourceIfAllowed(any) {
         case s: GpuScalar => s
@@ -42,9 +54,9 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuExpression
       }
     }
     withResource(columnarEvalToColumn(json, batch).getBase) { json =>
-      withResource(paths.safeMap(p => resolveScalar(p.columnarEval(batch)).getBase)) { scalars =>
+      withResource(fields.safeMap(p => resolveScalar(p.columnarEval(batch)).getBase)) { scalars =>
         withResource(scalars.safeMap(json.getJSONObject(_))) { cols =>
-          ColumnVector.stringConcatenate(cols.toArray[ColumnView])
+          ColumnVector.makeList(cols: _*)
         }
       }
     }
