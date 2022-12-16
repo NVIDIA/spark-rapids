@@ -217,13 +217,6 @@ class HiveProviderImpl extends HiveProvider {
             }
           }
 
-          private def flagUnsupportedType(tableRelation: HiveTableRelation,
-                                          column: AttributeReference): Unit = {
-            willNotWorkOnGpu(s"column ${column.name} of table " +
-              s"${tableRelation.tableMeta.qualifiedName} has type ${column.dataType}, " +
-              s"unsupported for Hive text tables. ")
-          }
-
           private def hasUnsupportedType(column: AttributeReference): Boolean = {
             column.dataType match {
               case ArrayType(_,_) => true
@@ -231,6 +224,15 @@ class HiveProviderImpl extends HiveProvider {
               case MapType(_,_,_) => true
               case BinaryType     => true
               case _              => false
+            }
+          }
+
+          private def flagIfUnsupportedType(tableRelation: HiveTableRelation,
+                                            column: AttributeReference): Unit = {
+            if (hasUnsupportedType(column)) {
+              willNotWorkOnGpu(s"column ${column.name} of table " +
+                s"${tableRelation.tableMeta.qualifiedName} has type ${column.dataType}, " +
+                s"unsupported for Hive text tables. ")
             }
           }
 
@@ -244,8 +246,7 @@ class HiveProviderImpl extends HiveProvider {
             }
 
             // Check if datatypes are all supported.
-            tableRelation.dataCols.filter(hasUnsupportedType)
-                                  .foreach(flagUnsupportedType(tableRelation, _))
+            tableRelation.dataCols.foreach(flagIfUnsupportedType(tableRelation, _))
 
             // Check TBLPROPERTIES as well.
             // `timestamp.formats` might be set in TBLPROPERTIES or SERDEPROPERTIES,

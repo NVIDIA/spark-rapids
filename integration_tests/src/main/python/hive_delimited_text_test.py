@@ -279,10 +279,11 @@ hive_text_unsupported_gens = [
 
 
 @allow_non_gpu("org.apache.spark.sql.hive.execution.HiveTableScanExec")
-@pytest.mark.parametrize('data_gen', hive_text_unsupported_gens, ids=idfn)
-def test_hive_text_fallback_for_unsupported_types(spark_tmp_path, data_gen, spark_tmp_table_factory):
-    gen = StructGen([('my_supported_int_field', int_gen),
-                     ('my_unsupported_field', data_gen), ], nullable=False)
+@pytest.mark.parametrize('unsupported_gen', hive_text_unsupported_gens, ids=idfn)
+def test_hive_text_fallback_for_unsupported_types(spark_tmp_path, unsupported_gen, spark_tmp_table_factory):
+    supported_gen = int_gen  # Generator for 1 supported data type. (IntegerGen chosen arbitrarily.)
+    gen = StructGen([('my_supported_int_field', supported_gen),
+                     ('my_unsupported_field', unsupported_gen), ], nullable=False)
     data_path = spark_tmp_path + '/hive_text_table'
     table_name = spark_tmp_table_factory.get()
 
@@ -297,8 +298,9 @@ def test_hive_text_fallback_for_unsupported_types(spark_tmp_path, data_gen, spar
             cpu_fallback_class_name=get_non_gpu_allowed()[0],
             conf=hive_text_enabled_conf)
 
-    # Even if the output-projection uses only supported types,
-    # the read should fall back to CPU if the table has unsupported types.
+    # GpuHiveTableScanExec cannot partially read only those columns that are of supported types.
+    # Even if the output-projection uses only supported types, the read should fall back to CPU
+    # if the table has even one column of an unsupported type.
     assert_gpu_fallback_collect(
         lambda spark: read_hive_text_table(spark, table_name, "my_supported_int_field"),
         cpu_fallback_class_name=get_non_gpu_allowed()[0],
