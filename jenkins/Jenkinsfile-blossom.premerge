@@ -511,7 +511,7 @@ void databricksBuild() {
 
         stage("Test agaist $SPARK_MAJOR DB") {
             script {
-                // TODO re-enable DB11.3 after https://github.com/NVIDIA/spark-rapids/issues/7352 is resolved
+                // TODO re-enable DB11.3 after all failed tests get fixed
                 if (env.DB_RUNTIME != '11.3' ) {
                     container('cpu') {
                         try {
