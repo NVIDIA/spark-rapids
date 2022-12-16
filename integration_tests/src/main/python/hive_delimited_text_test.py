@@ -305,29 +305,6 @@ def test_hive_text_fallback_for_unsupported_types(spark_tmp_path, data_gen, spar
         conf=hive_text_enabled_conf)
 
 
-"""
-@allow_non_gpu("org.apache.spark.sql.hive.execution.HiveTableScanExec")
-@pytest.mark.parametrize('data_gen', hive_text_unsupported_gens, ids=idfn)
-def test_hive_text_partitioned_fallback_for_unsupported_types(spark_tmp_path, data_gen, spark_tmp_table_factory):
-
-    def create_partitioned_table(spark, gen, table_name, data_path):
-        gen_df(spark, gen).repartition(1).createOrReplaceTempView("input_view")
-        spark.sql("DROP TABLE IF EXISTS " + table_name)
-        column_type_0 = gen.children[0][1].data_type.simpleString()  # Because StructGen([('supported_field', gen)]).
-        column_type_1 = gen.children[0][1].data_type.simpleString()  # Because StructGen([('unsupported_field', gen)]).
-        spark.sql("CREATE TABLE " + table_name +
-                  "( supported_field   " + column_type_0 +
-                  "  unsupported field " + column_type_1 + ") " +
-                  "PARTITIONED BY (dt STRING) "
-                  "STORED AS TEXTFILE "
-                  "LOCATION '" + data_path + "' ")
-        spark.sql("INSERT OVERWRITE " + table_name + " PARTITION( dt='1' ) "
-                  "SELECT my_field FROM input_view")
-        spark.sql("INSERT OVERWRITE " + table_name + " PARTITION( dt='2' ) "
-                  "SELECT my_field FROM input_view")
-"""
-
-
 @pytest.mark.parametrize('data_gen', [StringGen()], ids=idfn)
 def test_hive_text_default_enabled(spark_tmp_path, data_gen, spark_tmp_table_factory):
     gen = StructGen([('my_field', data_gen)], nullable=False)
@@ -339,6 +316,7 @@ def test_hive_text_default_enabled(spark_tmp_path, data_gen, spark_tmp_table_fac
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: read_hive_text_table(spark, table_name),
         conf={})
+
 
 @allow_non_gpu("org.apache.spark.sql.hive.execution.HiveTableScanExec")
 @pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
