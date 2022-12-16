@@ -144,6 +144,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
+  test("cuDF does not support \\z") {
+      assertUnsupported("foo\\z", RegexFindMode,
+        "\\z is not supported on GPU")
+  }
+
   test("cuDF does not support positive or negative lookahead") {
     val negPatterns = Seq("a(!b)", "a(!b)c?")
     negPatterns.foreach(pattern =>
