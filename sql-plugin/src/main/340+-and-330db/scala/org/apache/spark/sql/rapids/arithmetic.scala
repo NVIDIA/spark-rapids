@@ -54,6 +54,158 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
   }
 }
 
+trait GpuAddSub extends CudfBinaryArithmetic {
+
+  override def outputTypeOverride: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
+  val failOnError: Boolean
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    if (dataType.isInstanceOf[DecimalType]) {
+      (left.dataType, right.dataType) match {
+        case (DecimalType.Fixed(p1, s1), DecimalType.Fixed(p2, s2)) =>
+          val resultType = resultDecimalType(p1, s1, p2, s2)
+          if (resultType.precision < 38) {
+            super.columnarEval(batch)
+          } else {
+            // call the kernel to add 128-bit numbers
+            prepareInputAndExecute(batch, resultType)
+          }
+        case _ => throw new IllegalStateException("Both operands should be Decimal")
+      }
+    } else {
+      super.columnarEval(batch)
+    }
+  }
+
+  protected def prepareInputAndExecute(
+      batch: ColumnarBatch,
+      resultType: DecimalType): Any = {
+    val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
+      lhs.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL128, lhs.getBase.getType.getScale))
+    }
+    val retTab = withResource(castLhs) { castLhs =>
+      val castRhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(right, batch)) { rhs =>
+        rhs.getBase.castTo(DType.create(DType.DTypeEnum.DECIMAL128, rhs.getBase.getType.getScale))
+      }
+      withResource(castRhs) { castRhs =>
+        do128BitOperation(castLhs, castRhs, -resultType.scale)
+      }
+    }
+    val retCol = withResource(retTab) { retTab =>
+      val overflowed = retTab.getColumn(0)
+      val sum = retTab.getColumn(1)
+      if (failOnError) {
+        withResource(overflowed.any()) { anyOverflow =>
+          if (anyOverflow.isValid && anyOverflow.getBoolean) {
+            throw new ArithmeticException(GpuCast.INVALID_INPUT_MESSAGE)
+          }
+        }
+        sum.incRefCount()
+      } else {
+        withResource(GpuScalar.from(null, dataType)) { nullVal =>
+          overflowed.ifElse(nullVal, sum)
+        }
+      }
+    }
+    GpuColumnVector.from(retCol, dataType)
+  }
+
+  protected def do128BitOperation(
+      castLhs: ColumnView,
+      castRhs: ColumnView,
+      outputScale: Int): Table
+}
+
+case class GpuAdd(
+    left: Expression,
+    right: Expression,
+    override val failOnError: Boolean)
+    extends GpuAddBase(left, right, failOnError) with GpuAddSub {
+
+  def do128BitOperation(
+      castLhs: ColumnView,
+      castRhs: ColumnView,
+      outputScale: Int): Table = {
+    com.nvidia.spark.rapids.jni.DecimalUtils.add128(castLhs, castRhs, outputScale)
+  }
+
+  // scalastyle:off
+  // The formula follows Hive which is based on the SQL standard and MS SQL:
+  // https://cwiki.apache.org/confluence/download/attachments/27362075/Hive_Decimal_Precision_Scale_Support.pdf
+  // https://msdn.microsoft.com/en-us/library/ms190476.aspx
+  // Result Precision: max(s1, s2) + max(p1-s1, p2-s2) + 1
+  // Result Scale:     max(s1, s2)
+  // scalastyle:on
+  override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
+    val resultScale = max(s1, s2)
+    val resultPrecision = max(p1 - s1, p2 - s2) + resultScale + 1
+    if (allowPrecisionLoss) {
+      DecimalType.adjustPrecisionScale(resultPrecision, resultScale)
+    } else {
+      DecimalType.bounded(resultPrecision, resultScale)
+    }
+  }
+}
+
+case class GpuSubtract(
+    left: Expression,
+    right: Expression,
+    override val failOnError: Boolean)
+    extends GpuSubtractBase(left, right, failOnError) with GpuAddSub {
+
+  def do128BitOperation(
+      castLhs: ColumnView,
+      castRhs: ColumnView,
+      outputScale: Int): Table = {
+    com.nvidia.spark.rapids.jni.DecimalUtils.subtract128(castLhs, castRhs, outputScale)
+  }
+
+  override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
+    val resultScale = max(s1, s2)
+    val resultPrecision = max(p1 - s1, p2 - s2) + resultScale + 1
+    if (allowPrecisionLoss) {
+      DecimalType.adjustPrecisionScale(resultPrecision, resultScale)
+    } else {
+      DecimalType.bounded(resultPrecision, resultScale)
+    }
+  }
+}
+
+case class GpuRemainder(left: Expression, right: Expression)
+    extends GpuRemainderBase(left, right) {
+  // scalastyle:off
+  // The formula follows Hive which is based on the SQL standard and MS SQL:
+  // https://cwiki.apache.org/confluence/download/attachments/27362075/Hive_Decimal_Precision_Scale_Support.pdf
+  // https://msdn.microsoft.com/en-us/library/ms190476.aspx
+  // Result Precision: min(p1-s1, p2-s2) + max(s1, s2)
+  // Result Scale:     max(s1, s2)
+  // scalastyle:on
+  override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
+    val resultScale = max(s1, s2)
+    val resultPrecision = min(p1 - s1, p2 - s2) + resultScale
+    if (allowPrecisionLoss) {
+      DecimalType.adjustPrecisionScale(resultPrecision, resultScale)
+    } else {
+      DecimalType.bounded(resultPrecision, resultScale)
+    }
+  }
+}
+
+case class GpuPmod(
+    left: Expression,
+    right: Expression) extends GpuPmodBase(left, right) {
+  // This follows Remainder rule
+  override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
+    val resultScale = max(s1, s2)
+    val resultPrecision = min(p1 - s1, p2 - s2) + resultScale
+    if (allowPrecisionLoss) {
+      DecimalType.adjustPrecisionScale(resultPrecision, resultScale)
+    } else {
+      DecimalType.bounded(resultPrecision, resultScale)
+    }
+  }
+}
+
 case class GpuDecimalDivide(
     left: Expression,
     right: Expression,
@@ -159,42 +311,6 @@ case class GpuIntegralDecimalDivide(
   }
 }
 
-case class GpuRemainder(
-    left: Expression,
-    right: Expression)
-    extends GpuRemainderParent(left, right) {
 
-  // scalastyle:off
-  // The formula follows Hive which is based on the SQL standard and MS SQL:
-  // https://cwiki.apache.org/confluence/download/attachments/27362075/Hive_Decimal_Precision_Scale_Support.pdf
-  // https://msdn.microsoft.com/en-us/library/ms190476.aspx
-  // Result Precision: min(p1-s1, p2-s2) + max(s1, s2)
-  // Result Scale:     max(s1, s2)
-  // scalastyle:on
-  override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
-    val resultScale = max(s1, s2)
-    val resultPrecision = min(p1 - s1, p2 - s2) + resultScale
-    if (allowPrecisionLoss) {
-      DecimalType.adjustPrecisionScale(resultPrecision, resultScale)
-    } else {
-      DecimalType.bounded(resultPrecision, resultScale)
-    }
-  }
-}
-
-case class GpuPmod(
-    left: Expression,
-    right: Expression) extends GpuPmodParent(left, right) {
-  // This follows Remainder rule
-  override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
-    val resultScale = max(s1, s2)
-    val resultPrecision = min(p1 - s1, p2 - s2) + resultScale
-    if (allowPrecisionLoss) {
-      DecimalType.adjustPrecisionScale(resultPrecision, resultScale)
-    } else {
-      DecimalType.bounded(resultPrecision, resultScale)
-    }
-  }
-}
 
 

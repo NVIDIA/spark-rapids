@@ -159,6 +159,9 @@ def is_spark_330_or_later():
 def is_spark_340_or_later():
     return spark_version() >= "3.4.0"
 
+def is_spark_330():
+    return spark_version() == "3.3.0"
+
 def is_spark_33X():
     return "3.3.0" <= spark_version() < "3.4.0"
 
@@ -184,6 +187,9 @@ def is_databricks91_or_later():
 
 def is_databricks104_or_later():
     return is_databricks_version_or_later(10, 4)
+
+def is_databricks113_or_later():
+    return is_databricks_version_or_later(11, 3)
 
 def get_java_major_version():
     ver = _spark.sparkContext._jvm.System.getProperty("java.version")

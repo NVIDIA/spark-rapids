@@ -34,7 +34,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[String] = None)
     extends ShimUnaryExpression
     with GpuExpression
-    with ShimExtractValue
+    with ShimGetStructField
     with NullIntolerant {
 
   lazy val childSchema: StructType = child.dataType.asInstanceOf[StructType]
@@ -84,7 +84,7 @@ case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[Strin
 case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: Boolean)
     extends GpuBinaryExpression
     with ExpectsInputTypes
-    with ShimExtractValue {
+    with ShimGetArrayItem {
 
   // We have done type checking for child in `ExtractValue`, so only need to check the `ordinal`.
   override def inputTypes: Seq[AbstractDataType] = Seq(AnyDataType, IntegralType)
@@ -333,7 +333,7 @@ case class GpuGetArrayStructFields(
     ordinal: Int,
     numFields: Int,
     containsNull: Boolean) extends GpuUnaryExpression
-    with ShimExtractValue
+    with ShimGetArrayStructFields
     with NullIntolerant {
 
   override def dataType: DataType = ArrayType(field.dataType, containsNull)

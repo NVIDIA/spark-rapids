@@ -199,6 +199,7 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
     private final boolean canUseParquetMultiThread;
     private final boolean canUseParquetCoalescing;
     private final boolean isParquetPerFileReadEnabled;
+    private final boolean queryUsesInputFile;
 
     public ReaderFactory(scala.collection.immutable.Map<String, GpuMetric> metrics,
                          RapidsConf rapidsConf, boolean queryUsesInputFile) {
@@ -211,6 +212,7 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
       // not honored by Iceberg.
       this.canUseParquetCoalescing = rapidsConf.isParquetCoalesceFileReadEnabled() &&
           !queryUsesInputFile;
+      this.queryUsesInputFile = queryUsesInputFile;
     }
 
     @Override
@@ -227,7 +229,7 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
         if (canAccelerateRead) {
           boolean isMultiThread = ret._2();
           FileFormat ff = ret._3();
-          return new MultiFileBatchReader(rTask, isMultiThread, ff, metrics);
+          return new MultiFileBatchReader(rTask, isMultiThread, ff, metrics, queryUsesInputFile);
         } else {
           return new BatchReader(rTask, metrics);
         }
@@ -276,12 +278,13 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
   private static class MultiFileBatchReader
       extends GpuMultiFileBatchReader implements PartitionReader<ColumnarBatch> {
     MultiFileBatchReader(ReadTask task, boolean useMultiThread, FileFormat ff,
-                         scala.collection.immutable.Map<String, GpuMetric> metrics) {
+                         scala.collection.immutable.Map<String, GpuMetric> metrics,
+                         boolean queryUsesInputFile) {
       super(task.task, task.table(), task.expectedSchema(), task.isCaseSensitive(),
           task.getConfiguration(), task.getMaxBatchSizeRows(), task.getMaxBatchSizeBytes(),
           task.getTargetBatchSizeBytes(), task.useChunkedReader(),
           task.getParquetDebugDumpPrefix(), task.getNumThreads(), task.getMaxNumFileProcessed(),
-          useMultiThread, ff, metrics);
+          useMultiThread, ff, metrics, queryUsesInputFile);
     }
   }
 

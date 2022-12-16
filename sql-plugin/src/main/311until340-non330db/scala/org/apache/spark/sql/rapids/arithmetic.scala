@@ -17,6 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.BinaryOp
+
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, NullIntolerant}
@@ -32,10 +33,6 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
 case class GpuIntegralDivide(
     left: Expression,
     right: Expression) extends GpuIntegralDivideParent(left, right)
-
-case class GpuRemainder(left: Expression, right: Expression) extends GpuRemainderParent(left, right)
-
-case class GpuPmod(left: Expression, right: Expression) extends GpuPmodParent(left, right)
 
 case class GpuDecimalDivide(
     left: Expression,
@@ -65,3 +62,17 @@ case class GpuDecimalMultiply(
   // We aren't using this
   override def binaryOp: BinaryOp = BinaryOp.MUL
 }
+
+case class GpuAdd(
+    left: Expression,
+    right: Expression,
+    failOnError: Boolean) extends GpuAddBase(left, right, failOnError)
+
+case class GpuSubtract(
+    left: Expression,
+    right: Expression,
+    failOnError: Boolean) extends GpuSubtractBase(left, right, failOnError)
+
+case class GpuRemainder(left: Expression, right: Expression) extends GpuRemainderBase(left, right)
+
+case class GpuPmod(left: Expression, right: Expression) extends GpuPmodBase(left, right)
