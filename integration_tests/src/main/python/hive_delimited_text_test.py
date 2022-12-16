@@ -188,7 +188,7 @@ hive_text_supported_gens = [
 ]
 
 
-def create_hive_text_table(spark, column_gen, text_table_name, data_path):
+def create_hive_text_table(spark, column_gen, text_table_name, data_path, fields="my_field"):
     """
     Helper method to create a Hive Text table with contents from the specified
     column generator.
@@ -196,21 +196,23 @@ def create_hive_text_table(spark, column_gen, text_table_name, data_path):
     :param column_gen: Data generator for the table's column
     :param text_table_name: (Temp) Name of the created Hive Text table
     :param data_path: Data location for the created Hive Text table
+    :param fields: The fields composing the table to be created
     """
     gen_df(spark, column_gen).repartition(1).createOrReplaceTempView("input_view")
     spark.sql("DROP TABLE IF EXISTS " + text_table_name)
     spark.sql("CREATE TABLE " + text_table_name + " STORED AS TEXTFILE " +
               "LOCATION '" + data_path + "' " +
-              "AS SELECT my_field FROM input_view")
+              "AS SELECT " + fields + " FROM input_view")
 
 
-def read_hive_text_table(spark, text_table_name):
+def read_hive_text_table(spark, text_table_name, fields="my_field"):
     """
     Helper method to read the contents of a Hive (Text) table.
     :param spark: Spark context for the test
     :param text_table_name: Name of the Hive (Text) table to be read
+    :param fields: The fields to be read from the specified table
     """
-    return spark.sql("SELECT my_field FROM " + text_table_name)
+    return spark.sql("SELECT " + fields + " FROM " + text_table_name)
 
 
 @approximate_float
@@ -270,23 +272,60 @@ hive_text_unsupported_gens = [
     ArrayGen(string_gen),
     StructGen([('int_field', int_gen), ('string_field', string_gen)]),
     MapGen(StringGen(nullable=False), string_gen),
-    binary_gen
+    binary_gen,
+    StructGen([('b', byte_gen), ('i', int_gen), ('arr_of_i', ArrayGen(int_gen))]),
+    ArrayGen(StructGen([('b', byte_gen), ('i', int_gen), ('arr_of_i', ArrayGen(int_gen))]))
 ]
 
 
 @allow_non_gpu("org.apache.spark.sql.hive.execution.HiveTableScanExec")
 @pytest.mark.parametrize('data_gen', hive_text_unsupported_gens, ids=idfn)
 def test_hive_text_fallback_for_unsupported_types(spark_tmp_path, data_gen, spark_tmp_table_factory):
-    gen = StructGen([('my_field', data_gen)], nullable=False)
+    gen = StructGen([('my_supported_int_field', int_gen),
+                     ('my_unsupported_field', data_gen), ], nullable=False)
     data_path = spark_tmp_path + '/hive_text_table'
     table_name = spark_tmp_table_factory.get()
 
-    with_cpu_session(lambda spark: create_hive_text_table(spark, gen, table_name, data_path))
+    with_cpu_session(lambda spark: create_hive_text_table(spark,
+                                                          gen,
+                                                          table_name,
+                                                          data_path,
+                                                          "my_supported_int_field, my_unsupported_field"))
 
     assert_gpu_fallback_collect(
-            lambda spark: read_hive_text_table(spark, table_name),
+            lambda spark: read_hive_text_table(spark, table_name, "my_unsupported_field"),
             cpu_fallback_class_name=get_non_gpu_allowed()[0],
             conf=hive_text_enabled_conf)
+
+    # Even if the output-projection uses only supported types,
+    # the read should fall back to CPU if the table has unsupported types.
+    assert_gpu_fallback_collect(
+        lambda spark: read_hive_text_table(spark, table_name, "my_supported_int_field"),
+        cpu_fallback_class_name=get_non_gpu_allowed()[0],
+        conf=hive_text_enabled_conf)
+
+
+"""
+@allow_non_gpu("org.apache.spark.sql.hive.execution.HiveTableScanExec")
+@pytest.mark.parametrize('data_gen', hive_text_unsupported_gens, ids=idfn)
+def test_hive_text_partitioned_fallback_for_unsupported_types(spark_tmp_path, data_gen, spark_tmp_table_factory):
+
+    def create_partitioned_table(spark, gen, table_name, data_path):
+        gen_df(spark, gen).repartition(1).createOrReplaceTempView("input_view")
+        spark.sql("DROP TABLE IF EXISTS " + table_name)
+        column_type_0 = gen.children[0][1].data_type.simpleString()  # Because StructGen([('supported_field', gen)]).
+        column_type_1 = gen.children[0][1].data_type.simpleString()  # Because StructGen([('unsupported_field', gen)]).
+        spark.sql("CREATE TABLE " + table_name +
+                  "( supported_field   " + column_type_0 +
+                  "  unsupported field " + column_type_1 + ") " +
+                  "PARTITIONED BY (dt STRING) "
+                  "STORED AS TEXTFILE "
+                  "LOCATION '" + data_path + "' ")
+        spark.sql("INSERT OVERWRITE " + table_name + " PARTITION( dt='1' ) "
+                  "SELECT my_field FROM input_view")
+        spark.sql("INSERT OVERWRITE " + table_name + " PARTITION( dt='2' ) "
+                  "SELECT my_field FROM input_view")
+"""
 
 
 @pytest.mark.parametrize('data_gen', [StringGen()], ids=idfn)
