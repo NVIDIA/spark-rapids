@@ -99,7 +99,7 @@
             </activation>
             <properties>
                 <buildver>311</buildver>
-                <delta.version>1.0.1</delta.version>
+                <delta.version>1.1.0</delta.version>
                 <spark.version>${spark311.version}</spark.version>
                 <spark.test.version>${spark311.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
