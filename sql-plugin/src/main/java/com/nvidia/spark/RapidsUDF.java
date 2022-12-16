@@ -53,7 +53,7 @@ public interface RapidsUDF {
    * STRING for String, etc) or a runtime exception will occur when the
    * results are marshalled into the expected Spark result type for the UDF.
    * The number of rows of output must match the number of rows specified,
-   * and all input columns will have that same number of rows.
+   * and all input columns must have that same number of rows.
    * <p/>
    * Note that the inputs should NOT be closed by this method, as they will
    * be closed by the caller. This method must close any intermediate cuDF
