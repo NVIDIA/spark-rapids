@@ -572,10 +572,6 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
   override def castStringToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector =
     CastStrings.toDecimal(input, false, false, dt.precision, -dt.scale)
 
-  override def castStringToFloat(input: ColumnVector, dt: DType): ColumnVector = {
-    super.castStringToFloat(input, dt)
-  }
-
   /**
    * Override of [[com.nvidia.spark.rapids.GpuTextBasedPartitionReader.castStringToDate()]],
    * to convert parsed string columns to Dates.
