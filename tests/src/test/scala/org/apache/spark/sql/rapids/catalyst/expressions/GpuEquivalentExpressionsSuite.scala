@@ -540,7 +540,7 @@ class GpuEquivalentExpressionsSuite extends FunSuite with Logging {
     val inputAttrs = AttributeSeq(Seq(customer, quantity, price))
 
     val product = GpuDecimalMultiply(
-      GpuCast(quantity, DecimalType(10, 0)), price, DecimalType(18,2))
+      GpuCast(quantity, DecimalType(12, 2)), GpuCast(price, DecimalType(12, 2)), DecimalType(18,2))
     val nullCheck = GpuIsNull(product)
     val castProduct = GpuCast(product, DecimalType(28,2))
     val extract0 = GpuExtractChunk32(castProduct, 0, true)

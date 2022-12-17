@@ -17,7 +17,6 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.BinaryOp
-
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, NullIntolerant}
@@ -39,7 +38,7 @@ case class GpuDecimalDivide(
     right: Expression,
     override val dataType: DecimalType,
     failOnError: Boolean = SQLConf.get.ansiEnabled)
-    extends GpuDecimalDivideParent(left, right, dataType, false, failOnError) {
+    extends GpuDecimalDivideBase(left, right, dataType, false, failOnError) {
   override def inputType: AbstractDataType = DecimalType
 
   override def symbol: String = "/"
@@ -54,7 +53,7 @@ case class GpuDecimalMultiply(
     override val dataType: DecimalType,
     useLongMultiply: Boolean = false,
     failOnError: Boolean = SQLConf.get.ansiEnabled)
-    extends GpuDecimalMultiplyParent(left, right, dataType, useLongMultiply) {
+    extends GpuDecimalMultiplyBase(left, right, dataType, useLongMultiply, failOnError) {
   override def inputType: AbstractDataType = DecimalType
 
   override def symbol: String = "*"

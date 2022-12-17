@@ -251,82 +251,6 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
   }
 }
 
-object GpuAdd extends Arm {
-  def basicOpOverflowCheck(
-      lhs: BinaryOperable,
-      rhs: BinaryOperable,
-      ret: ColumnVector): Unit = {
-    // Check overflow. It is true when both arguments have the opposite sign of the result.
-    // Which is equal to "((x ^ r) & (y ^ r)) < 0" in the form of arithmetic.
-    val signCV = withResource(ret.bitXor(lhs)) { lXor =>
-      withResource(ret.bitXor(rhs)) { rXor =>
-        lXor.bitAnd(rXor)
-      }
-    }
-    val signDiffCV = withResource(signCV) { sign =>
-      withResource(Scalar.fromInt(0)) { zero =>
-        sign.lessThan(zero)
-      }
-    }
-    withResource(signDiffCV) { signDiff =>
-      withResource(signDiff.any()) { any =>
-        if (any.isValid && any.getBoolean) {
-          throw RapidsErrorUtils.arithmeticOverflowError(
-            "One or more rows overflow for Add operation."
-          )
-        }
-      }
-    }
-  }
-
-  def didDecimalOverflow(
-      lhs: BinaryOperable,
-      rhs: BinaryOperable,
-      ret: ColumnVector): ColumnVector = {
-    // We need a special overflow check for decimal because CUDF does not support INT128 so we
-    // cannot reuse the same code for the other types.
-    // Overflow happens if the arguments have the same signs and it is different from the sign of
-    // the result
-    val numRows = ret.getRowCount.toInt
-    val zero = BigDecimal(0).bigDecimal
-    withResource(DecimalUtils.lessThan(rhs, zero, numRows)) { rhsLz =>
-      val argsSignSame = withResource(DecimalUtils.lessThan(lhs, zero, numRows)) { lhsLz =>
-        lhsLz.equalTo(rhsLz)
-      }
-      withResource(argsSignSame) { argsSignSame =>
-        val resultAndRhsDifferentSign =
-          withResource(DecimalUtils.lessThan(ret, zero)) { resultLz =>
-            rhsLz.notEqualTo(resultLz)
-          }
-        withResource(resultAndRhsDifferentSign) { resultAndRhsDifferentSign =>
-          resultAndRhsDifferentSign.and(argsSignSame)
-        }
-      }
-    }
-  }
-
-  def decimalOpOverflowCheck(
-      lhs: BinaryOperable,
-      rhs: BinaryOperable,
-      ret: ColumnVector,
-      failOnError: Boolean): ColumnVector = {
-    withResource(didDecimalOverflow(lhs, rhs, ret)) { overflow =>
-      if (failOnError) {
-        withResource(overflow.any()) { any =>
-          if (any.isValid && any.getBoolean) {
-            throw new ArithmeticException("One or more rows overflow for Add operation.")
-          }
-        }
-        ret.incRefCount()
-      } else {
-        withResource(Scalar.fromNull(ret.getType)) { nullVal =>
-          overflow.ifElse(nullVal, ret)
-        }
-      }
-    }
-  }
-}
-
 abstract class GpuAddBase(
     left: Expression,
     right: Expression,
@@ -460,7 +384,7 @@ abstract class GpuSubtractBase(
   }
 }
 
-abstract class GpuDecimalMultiplyParent(
+abstract class GpuDecimalMultiplyBase(
     left: Expression,
     right: Expression,
     dataType: DecimalType,
@@ -878,7 +802,7 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
  * the same type. This lets us calculate the correct result on a wider range of values without
  * the need for unbounded precision in the processing.
  */
-abstract class GpuDecimalDivideParent(
+abstract class GpuDecimalDivideBase(
     left: Expression,
     right: Expression,
     dataType: DecimalType,

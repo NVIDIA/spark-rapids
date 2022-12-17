@@ -211,7 +211,7 @@ case class GpuDecimalDivide(
     right: Expression,
     override val dataType: DecimalType,
     failOnError: Boolean = SQLConf.get.ansiEnabled)
-    extends GpuDecimalDivideParent(left, right, dataType, false, failOnError) {
+    extends GpuDecimalDivideBase(left, right, dataType, false, failOnError) {
   override def inputType: AbstractDataType = DecimalType
 
   override def symbol: String = "/"
@@ -251,7 +251,7 @@ case class GpuDecimalMultiply(
     override val dataType: DecimalType,
     useLongMultiply: Boolean = false,
     failOnError: Boolean = SQLConf.get.ansiEnabled)
-    extends GpuDecimalMultiplyParent(left, right, dataType, useLongMultiply) {
+    extends GpuDecimalMultiplyBase(left, right, dataType, useLongMultiply, failOnError) {
   override def inputType: AbstractDataType = DecimalType
 
   override def symbol: String = "*"
@@ -288,7 +288,7 @@ case class GpuIntegralDecimalDivide(
     left: Expression,
     right: Expression,
     integerDivide: Boolean = true)
-    extends GpuDecimalDivideParent(left, right, DecimalType.LongDecimal, integerDivide) {
+    extends GpuDecimalDivideBase(left, right, DecimalType.LongDecimal, integerDivide) {
   override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
 
   override def dataType: DataType = LongType
