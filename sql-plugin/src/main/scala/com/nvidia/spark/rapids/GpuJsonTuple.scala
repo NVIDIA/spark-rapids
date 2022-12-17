@@ -26,13 +26,20 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.types.{DataType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-case class GpuJsonTuple(children: Seq[Expression]) extends GpuExpression 
-  with ShimExpression {
-  override def dataType: DataType = StringType
-  override def nullable: Boolean = false
+case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator {
+  // override def dataType: DataType = StringType
+  // override def nullable: Boolean = false
+  
+  // @transient private lazy val json: Expression = children.head
+  // @transient private lazy val fields: Seq[Expression] = children.tail
+
+  @transient private lazy val jsonExpr: Expression = children.head
+  @transient private lazy val fieldExpressions: Seq[Expression] = children.tail
   override def prettyName: String = "json_tuple"
-  @transient private lazy val json: Expression = children.head
-  @transient private lazy val fields: Seq[Expression] = children.tail
+
+  override def elementSchema: StructType = StructType(fieldExpressions.zipWithIndex.map {
+    case (_, idx) => StructField(s"c$idx", StringType, nullable = true)
+  })
 
   override def checkInputDataTypes(): TypeCheckResult = {
     if (children.length < 2) {
@@ -56,7 +63,10 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuExpression
     withResource(columnarEvalToColumn(json, batch).getBase) { json =>
       withResource(fields.safeMap(p => resolveScalar(p.columnarEval(batch)).getBase)) { scalars =>
         withResource(scalars.safeMap(json.getJSONObject(_))) { cols =>
+          cols.foreach(GpuColumnVector.debug("Get JSON res:", _))
           ColumnVector.makeList(cols: _*)
+          // ColumnVector.concatenate(cols: _*)
+          // cols
         }
       }
     }

@@ -3490,13 +3490,21 @@ object GpuOverrides extends Logging {
         "All the input parameters and output column types are string.",
       ExprChecks.projectOnly(
         // TypeSig.STRING, TypeSig.STRING,
-        TypeSig.ARRAY.nested(TypeSig.STRING), TypeSig.ARRAY.nested(TypeSig.STRING),
+        // TypeSig.ARRAY.nested(TypeSig.STRING), TypeSig.ARRAY.nested(TypeSig.STRING),
+        // TypeSig.ARRAY.nested(TypeSig.all), TypeSig.ARRAY.nested(TypeSig.all),
+        // TypeSig.STRUCT.nested(TypeSig.STRING), TypeSig.STRUCT.nested(TypeSig.STRING),
+        TypeSig.ARRAY.nested(TypeSig.STRUCT.nested(TypeSig.STRING)), 
+        TypeSig.ARRAY.nested(TypeSig.STRUCT.nested(TypeSig.STRING)),
         Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING)),
         Some(RepeatingParamCheck("path", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
-      (a, conf, p, r) => new ExprMeta[JsonTuple](a, conf, p, r) {
-        override def convertToGpu(): GpuExpression = {
-          GpuJsonTuple(childExprs.map(_.convertToGpu()))
-        }
+      // (a, conf, p, r) => new ExprMeta[JsonTuple](a, conf, p, r) {
+      //   override def convertToGpu(): GpuExpression = {
+      //     GpuJsonTuple(childExprs.map(_.convertToGpu()))
+      //   }
+      // }
+      (a, conf, p, r) => new GeneratorExprMeta[JsonTuple](a, conf, p, r) {
+        // override val supportOuter: Boolean = true
+        override def convertToGpu(): GpuExpression = GpuJsonTuple(childExprs.map(_.convertToGpu()))
       }
     ),
     expr[org.apache.spark.sql.execution.ScalarSubquery](
@@ -4339,31 +4347,38 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   override def apply(sparkPlan: SparkPlan): SparkPlan = applyWithContext(sparkPlan, None)
 
   def applyWithContext(sparkPlan: SparkPlan, context: Option[String]): SparkPlan =
-      GpuOverrideUtil.tryOverride { plan =>
-    val conf = new RapidsConf(plan.conf)
-    if (conf.isSqlEnabled && conf.isSqlExecuteOnGPU) {
-      GpuOverrides.logDuration(conf.shouldExplain,
-        t => f"Plan conversion to the GPU took $t%.2f ms") {
+    {
+      val str = context match {
+        case Some(s) => s 
+        case _ => ""
+      }
+      logWarning(str)
+        GpuOverrideUtil.tryOverride { plan =>
+      val conf = new RapidsConf(plan.conf)
+      if (conf.isSqlEnabled && conf.isSqlExecuteOnGPU) {
+        GpuOverrides.logDuration(conf.shouldExplain,
+          t => f"Plan conversion to the GPU took $t%.2f ms") {
+          var updatedPlan = updateForAdaptivePlan(plan, conf)
+          updatedPlan = SparkShimImpl.applyShimPlanRules(updatedPlan, conf)
+          updatedPlan = applyOverrides(updatedPlan, conf)
+          if (conf.logQueryTransformations) {
+            val logPrefix = context.map(str => s"[$str]").getOrElse("")
+            logWarning(s"${logPrefix}Transformed query:" +
+              s"\nOriginal Plan:\n$plan\nTransformed Plan:\n$updatedPlan")
+          }
+          updatedPlan
+        }
+      } else if (conf.isSqlEnabled && conf.isSqlExplainOnlyEnabled) {
+        // this mode logs the explain output and returns the original CPU plan
         var updatedPlan = updateForAdaptivePlan(plan, conf)
         updatedPlan = SparkShimImpl.applyShimPlanRules(updatedPlan, conf)
-        updatedPlan = applyOverrides(updatedPlan, conf)
-        if (conf.logQueryTransformations) {
-          val logPrefix = context.map(str => s"[$str]").getOrElse("")
-          logWarning(s"${logPrefix}Transformed query:" +
-            s"\nOriginal Plan:\n$plan\nTransformed Plan:\n$updatedPlan")
-        }
-        updatedPlan
+        GpuOverrides.explainCatalystSQLPlan(updatedPlan, conf)
+        plan
+      } else {
+        plan
       }
-    } else if (conf.isSqlEnabled && conf.isSqlExplainOnlyEnabled) {
-      // this mode logs the explain output and returns the original CPU plan
-      var updatedPlan = updateForAdaptivePlan(plan, conf)
-      updatedPlan = SparkShimImpl.applyShimPlanRules(updatedPlan, conf)
-      GpuOverrides.explainCatalystSQLPlan(updatedPlan, conf)
-      plan
-    } else {
-      plan
-    }
-  }(sparkPlan)
+    }(sparkPlan)
+  }
 
   private def updateForAdaptivePlan(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
     if (plan.conf.adaptiveExecutionEnabled) {
