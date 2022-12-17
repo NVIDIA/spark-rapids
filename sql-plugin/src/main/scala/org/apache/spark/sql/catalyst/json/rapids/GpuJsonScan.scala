@@ -386,12 +386,6 @@ class JsonPartitionReader(
     }
   }
 
-  override def castStringToFloat(input: ColumnVector, dt: DType): ColumnVector = {
-    withResource(sanitizeNumbers(input)) { sanitizedInput =>
-      super.castStringToFloat(sanitizedInput, dt)
-    }
-  }
-
   override def castStringToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
     withResource(sanitizeNumbers(input)) { sanitizedInput =>
       super.castStringToDecimal(sanitizedInput, dt)
