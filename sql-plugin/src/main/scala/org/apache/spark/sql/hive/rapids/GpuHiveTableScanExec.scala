@@ -573,9 +573,7 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
     CastStrings.toDecimal(input, false, false, dt.precision, -dt.scale)
 
   override def castStringToFloat(input: ColumnVector, dt: DType): ColumnVector = {
-    withResource(input.strip()) { stripped =>
-      super.castStringToFloat(stripped, dt)
-    }
+    super.castStringToFloat(input, dt)
   }
 
   /**
