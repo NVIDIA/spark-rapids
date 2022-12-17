@@ -144,7 +144,7 @@ export PYSP_TEST_spark_eventLog_enabled=true
 mkdir -p /tmp/spark-events
 
 ## limit parallelism to avoid OOM kill
-export TEST_PARALLEL=4
+export TEST_PARALLEL=${TEST_PARALLEL:-4}
 if [ -d "$LOCAL_JAR_PATH" ]; then
     if [[ $TEST_MODE == "DEFAULT" ]]; then
         ## Run tests with jars in the LOCAL_JAR_PATH dir downloading from the dependency repo

@@ -32,6 +32,82 @@ import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+object AddOverflowChecks extends Arm {
+  def basicOpOverflowCheck(
+      lhs: BinaryOperable,
+      rhs: BinaryOperable,
+      ret: ColumnVector): Unit = {
+    // Check overflow. It is true when both arguments have the opposite sign of the result.
+    // Which is equal to "((x ^ r) & (y ^ r)) < 0" in the form of arithmetic.
+    val signCV = withResource(ret.bitXor(lhs)) { lXor =>
+      withResource(ret.bitXor(rhs)) { rXor =>
+        lXor.bitAnd(rXor)
+      }
+    }
+    val signDiffCV = withResource(signCV) { sign =>
+      withResource(Scalar.fromInt(0)) { zero =>
+        sign.lessThan(zero)
+      }
+    }
+    withResource(signDiffCV) { signDiff =>
+      withResource(signDiff.any()) { any =>
+        if (any.isValid && any.getBoolean) {
+          throw RapidsErrorUtils.arithmeticOverflowError(
+            "One or more rows overflow for Add operation."
+          )
+        }
+      }
+    }
+  }
+
+  def didDecimalOverflow(
+      lhs: BinaryOperable,
+      rhs: BinaryOperable,
+      ret: ColumnVector): ColumnVector = {
+    // We need a special overflow check for decimal because CUDF does not support INT128 so we
+    // cannot reuse the same code for the other types.
+    // Overflow happens if the arguments have the same signs and it is different from the sign of
+    // the result
+    val numRows = ret.getRowCount.toInt
+    val zero = BigDecimal(0).bigDecimal
+    withResource(DecimalUtils.lessThan(rhs, zero, numRows)) { rhsLz =>
+      val argsSignSame = withResource(DecimalUtils.lessThan(lhs, zero, numRows)) { lhsLz =>
+        lhsLz.equalTo(rhsLz)
+      }
+      withResource(argsSignSame) { argsSignSame =>
+        val resultAndRhsDifferentSign =
+          withResource(DecimalUtils.lessThan(ret, zero)) { resultLz =>
+            rhsLz.notEqualTo(resultLz)
+          }
+        withResource(resultAndRhsDifferentSign) { resultAndRhsDifferentSign =>
+          resultAndRhsDifferentSign.and(argsSignSame)
+        }
+      }
+    }
+  }
+
+  def decimalOpOverflowCheck(
+      lhs: BinaryOperable,
+      rhs: BinaryOperable,
+      ret: ColumnVector,
+      failOnError: Boolean): ColumnVector = {
+    withResource(didDecimalOverflow(lhs, rhs, ret)) { overflow =>
+      if (failOnError) {
+        withResource(overflow.any()) { any =>
+          if (any.isValid && any.getBoolean) {
+            throw new ArithmeticException("One or more rows overflow for Add operation.")
+          }
+        }
+        ret.incRefCount()
+      } else {
+        withResource(Scalar.fromNull(ret.getType)) { nullVal =>
+          overflow.ifElse(nullVal, ret)
+        }
+      }
+    }
+  }
+}
+
 object GpuAnsi extends Arm {
   def needBasicOpOverflowCheck(dt: DataType): Boolean =
     dt.isInstanceOf[IntegralType]
@@ -175,92 +251,10 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
   }
 }
 
-abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolerant {
-  override def dataType: DataType = left.dataType
-  // arithmetic operations can overflow and throw exceptions in ANSI mode
-  override def hasSideEffects: Boolean = super.hasSideEffects || SQLConf.get.ansiEnabled
-}
-
-object GpuAdd extends Arm {
-  def basicOpOverflowCheck(
-      lhs: BinaryOperable,
-      rhs: BinaryOperable,
-      ret: ColumnVector): Unit = {
-    // Check overflow. It is true when both arguments have the opposite sign of the result.
-    // Which is equal to "((x ^ r) & (y ^ r)) < 0" in the form of arithmetic.
-    val signCV = withResource(ret.bitXor(lhs)) { lXor =>
-      withResource(ret.bitXor(rhs)) { rXor =>
-        lXor.bitAnd(rXor)
-      }
-    }
-    val signDiffCV = withResource(signCV) { sign =>
-      withResource(Scalar.fromInt(0)) { zero =>
-        sign.lessThan(zero)
-      }
-    }
-    withResource(signDiffCV) { signDiff =>
-      withResource(signDiff.any()) { any =>
-        if (any.isValid && any.getBoolean) {
-          throw RapidsErrorUtils.arithmeticOverflowError(
-            "One or more rows overflow for Add operation."
-          )
-        }
-      }
-    }
-  }
-
-  def didDecimalOverflow(
-      lhs: BinaryOperable,
-      rhs: BinaryOperable,
-      ret: ColumnVector): ColumnVector = {
-    // We need a special overflow check for decimal because CUDF does not support INT128 so we
-    // cannot reuse the same code for the other types.
-    // Overflow happens if the arguments have the same signs and it is different from the sign of
-    // the result
-    val numRows = ret.getRowCount.toInt
-    val zero = BigDecimal(0).bigDecimal
-    withResource(DecimalUtils.lessThan(rhs, zero, numRows)) { rhsLz =>
-      val argsSignSame = withResource(DecimalUtils.lessThan(lhs, zero, numRows)) { lhsLz =>
-        lhsLz.equalTo(rhsLz)
-      }
-      withResource(argsSignSame) { argsSignSame =>
-        val resultAndRhsDifferentSign =
-          withResource(DecimalUtils.lessThan(ret, zero)) { resultLz =>
-            rhsLz.notEqualTo(resultLz)
-          }
-        withResource(resultAndRhsDifferentSign) { resultAndRhsDifferentSign =>
-          resultAndRhsDifferentSign.and(argsSignSame)
-        }
-      }
-    }
-  }
-
-  def decimalOpOverflowCheck(
-      lhs: BinaryOperable,
-      rhs: BinaryOperable,
-      ret: ColumnVector,
-      failOnError: Boolean): ColumnVector = {
-    withResource(didDecimalOverflow(lhs, rhs, ret)) { overflow =>
-      if (failOnError) {
-        withResource(overflow.any()) { any =>
-          if (any.isValid && any.getBoolean) {
-            throw new ArithmeticException("One or more rows overflow for Add operation.")
-          }
-        }
-        ret.incRefCount()
-      } else {
-        withResource(Scalar.fromNull(ret.getType)) { nullVal =>
-          overflow.ifElse(nullVal, ret)
-        }
-      }
-    }
-  }
-}
-
-case class GpuAdd(
+abstract class GpuAddBase(
     left: Expression,
     right: Expression,
-    failOnError: Boolean) extends CudfBinaryArithmetic {
+    failOnError: Boolean) extends CudfBinaryArithmetic with Serializable {
   override def inputType: AbstractDataType = TypeCollection.NumericAndInterval
 
   override def symbol: String = "+"
@@ -277,11 +271,11 @@ case class GpuAdd(
           GpuTypeShims.isSupportedYearMonthType(dataType)) {
         // For day time interval, Spark throws an exception when overflow,
         // regardless of whether `SQLConf.get.ansiEnabled` is true or false
-        GpuAdd.basicOpOverflowCheck(lhs, rhs, ret)
+        AddOverflowChecks.basicOpOverflowCheck(lhs, rhs, ret)
       }
 
       if (dataType.isInstanceOf[DecimalType]) {
-        GpuAdd.decimalOpOverflowCheck(lhs, rhs, ret, failOnError)
+        AddOverflowChecks.decimalOpOverflowCheck(lhs, rhs, ret, failOnError)
       } else {
         ret.incRefCount()
       }
@@ -289,10 +283,10 @@ case class GpuAdd(
   }
 }
 
-case class GpuSubtract(
+abstract class GpuSubtractBase(
     left: Expression,
     right: Expression,
-    failOnError: Boolean) extends CudfBinaryArithmetic {
+    failOnError: Boolean) extends CudfBinaryArithmetic with Serializable {
   override def inputType: AbstractDataType = TypeCollection.NumericAndInterval
 
   override def symbol: String = "-"
@@ -1055,7 +1049,8 @@ case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDiv
   override def sqlOperator: String = "div"
 }
 
-case class GpuRemainder(left: Expression, right: Expression) extends GpuDivModLike {
+abstract class GpuRemainderBase(left: Expression, right: Expression)
+    extends GpuDivModLike with Serializable {
   override def inputType: AbstractDataType = NumericType
 
   override def symbol: String = "%"
@@ -1063,8 +1058,8 @@ case class GpuRemainder(left: Expression, right: Expression) extends GpuDivModLi
   override def binaryOp: BinaryOp = BinaryOp.MOD
 }
 
-
-case class GpuPmod(left: Expression, right: Expression) extends GpuDivModLike {
+abstract class GpuPmodBase(left: Expression, right: Expression)
+    extends GpuDivModLike with Serializable {
   override def inputType: AbstractDataType = NumericType
 
   override def binaryOp: BinaryOp = BinaryOp.PMOD

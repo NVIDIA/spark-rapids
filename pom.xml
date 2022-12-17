@@ -99,7 +99,7 @@
             </activation>
             <properties>
                 <buildver>311</buildver>
-                <delta.version>1.0.1</delta.version>
+                <delta.version>1.1.0</delta.version>
                 <spark.version>${spark311.version}</spark.version>
                 <spark.test.version>${spark311.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
@@ -449,6 +449,7 @@
                 <spark.test.version>${spark330.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark330.sources}</spark.shim.sources>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
@@ -477,6 +478,7 @@
                 <spark.test.version>${spark331.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark331.sources}</spark.shim.sources>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
@@ -505,6 +507,7 @@
                 <spark.test.version>${spark332.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark332.sources}</spark.shim.sources>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
@@ -533,6 +536,7 @@
                 <spark.test.version>${spark340.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
                 <spark.shim.sources>${spark340.sources}</spark.shim.sources>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
@@ -561,6 +565,7 @@
                 <spark.test.version>${spark330cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.99.7.1.8.0-801</parquet.hadoop.version>
                 <spark.shim.sources>${spark330cdh.sources}</spark.shim.sources>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <repositories>
@@ -583,6 +588,48 @@
                 <module>tests</module>
                 <module>udf-compiler</module>
                 <module>tools</module>
+                <module>aggregator</module>
+            </modules>
+        </profile>
+        <profile>
+            <!-- Note Databricks requires 2 properties -Ddatabricks and -Dbuildver=330db -->
+            <!-- Note that 330db backports many features from Spark3.4.0 -->
+            <id>release330db</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>330db</value>
+                </property>
+            </activation>
+            <properties>
+                <!-- Use Spark version, as Delta Lake provided by the Databricks environment -->
+                <delta.version>${spark.version}</delta.version>
+                <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
+                <scala.plugin.version>3.4.4</scala.plugin.version>
+                <shim.module.name>spark330db</shim.module.name>
+                <spark.version.classifier>spark330db</spark.version.classifier>
+                <!--
+                     Note that we are using the Spark version for all of the Databricks dependencies as well.
+                     The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
+                     This is to make it easier and not have to change version numbers for each individual dependency
+                     and deal with differences between Databricks versions
+                -->
+                <spark.version>${spark330db.version}</spark.version>
+                <spark.test.version>${spark330db.version}</spark.test.version>
+                <hadoop.client.version>3.3.1</hadoop.client.version>
+                <rat.consoleOutput>true</rat.consoleOutput>
+                <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
+                <spark.shim.sources>${spark330db.sources}</spark.shim.sources>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
+            </properties>
+            <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -683,6 +730,7 @@
         <spark332.version>3.3.2-SNAPSHOT</spark332.version>
         <spark340.version>3.4.0-SNAPSHOT</spark340.version>
         <spark330cdh.version>3.3.0.3.3.7180.0-274</spark330cdh.version>
+        <spark330db.version>3.3.0-databricks</spark330db.version>
         <mockito.version>3.6.0</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
         <maven.jar.plugin.version>3.2.0</maven.jar.plugin.version>
@@ -700,7 +748,7 @@
         <maven.clean.plugin.version>3.1.0</maven.clean.plugin.version>
         <maven.scalastyle.skip>false</maven.scalastyle.skip>
         <dist.jar.compress>true</dist.jar.compress>
-
+        <spark330.iceberg.version>0.14.1</spark330.iceberg.version>
         <!--
             If true, disables verification that all Shims be built as of one and the same git
             commit hash. Do not use for CI!

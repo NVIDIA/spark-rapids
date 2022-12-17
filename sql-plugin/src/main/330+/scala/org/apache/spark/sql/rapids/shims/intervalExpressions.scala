@@ -525,7 +525,7 @@ case class GpuDivideDTInterval(
   override def doColumnar(interval: GpuColumnVector, numScalar: GpuScalar): ColumnVector = {
     withResource(makeZeroScalar(numScalar.getBase.getType)) { zeroScalar =>
       if (numScalar.getBase.equals(zeroScalar)) {
-        throw RapidsErrorUtils.divByZeroError(origin)
+        throw RapidsErrorUtils.intervalDivByZeroError(origin)
       }
     }
     doColumnar(interval.getBase, numScalar.getBase, num.dataType)
@@ -534,7 +534,7 @@ case class GpuDivideDTInterval(
   override def doColumnar(interval: GpuColumnVector, num: GpuColumnVector): ColumnVector = {
     withResource(makeZeroScalar(num.getBase.getType)) { zeroScalar =>
       if (num.getBase.contains(zeroScalar)) {
-        throw RapidsErrorUtils.divByZeroError(origin)
+        throw RapidsErrorUtils.intervalDivByZeroError(origin)
       }
     }
     doColumnar(interval.getBase, num.getBase, num.dataType)
@@ -543,7 +543,7 @@ case class GpuDivideDTInterval(
   override def doColumnar(intervalScalar: GpuScalar, num: GpuColumnVector): ColumnVector = {
     withResource(makeZeroScalar(num.getBase.getType)) { zeroScalar =>
       if (num.getBase.contains(zeroScalar)) {
-        throw RapidsErrorUtils.divByZeroError(origin)
+        throw RapidsErrorUtils.intervalDivByZeroError(origin)
       }
     }
     doColumnar(intervalScalar.getBase, num.getBase, num.dataType)
