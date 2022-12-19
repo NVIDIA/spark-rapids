@@ -384,17 +384,15 @@ abstract class GpuSubtractBase(
   }
 }
 
-abstract class GpuDecimalMultiplyBase(
-    left: Expression,
-    right: Expression,
-    dataType: DecimalType,
-    useLongMultiply: Boolean = false,
-    failOnError: Boolean = SQLConf.get.ansiEnabled) extends CudfBinaryArithmetic
-    with GpuExpression with Serializable {
+trait GpuDecimalMultiplyBase extends Arm {
+
+  def dataType: DecimalType
+  def failOnError: Boolean
+  def left: Expression
+  def right: Expression
+  def useLongMultiply: Boolean
 
   override def toString: String = s"($left * $right)"
-
-  override def sql: String = s"(${left.sql} * ${right.sql})"
 
   private[this] lazy val lhsType: DecimalType = DecimalUtil.asDecimalType(left.dataType)
   private[this] lazy val rhsType: DecimalType = DecimalUtil.asDecimalType(right.dataType)
@@ -473,16 +471,6 @@ abstract class GpuDecimalMultiplyBase(
     }
     GpuColumnVector.from(retCol, dataType)
   }
-
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    if (useLongMultiply) {
-      longMultiply(batch)
-    } else {
-      regularMultiply(batch)
-    }
-  }
-
-  override def nullable: Boolean = left.nullable || right.nullable
 }
 
 object DecimalMultiplyChecks extends Arm {

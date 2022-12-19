@@ -250,14 +250,26 @@ case class GpuDecimalMultiply(
     right: Expression,
     override val dataType: DecimalType,
     useLongMultiply: Boolean = false,
-    failOnError: Boolean = SQLConf.get.ansiEnabled)
-    extends GpuDecimalMultiplyBase(left, right, dataType, useLongMultiply, failOnError) {
+    failOnError: Boolean = SQLConf.get.ansiEnabled) extends CudfBinaryArithmetic with GpuExpression
+    with GpuDecimalMultiplyBase {
   override def inputType: AbstractDataType = DecimalType
 
   override def symbol: String = "*"
 
   // We aren't using this
   override def binaryOp: BinaryOp = BinaryOp.MUL
+
+  override def sql: String = s"(${left.sql} * ${right.sql})"
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    if (useLongMultiply) {
+      longMultiply(batch)
+    } else {
+      regularMultiply(batch)
+    }
+  }
+
+  override def nullable: Boolean = left.nullable || right.nullable
 
   // scalastyle:off
   // The formula follows Hive which is based on the SQL standard and MS SQL:
