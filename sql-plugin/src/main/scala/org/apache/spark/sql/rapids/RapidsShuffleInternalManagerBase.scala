@@ -1060,7 +1060,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
       } else {
         val numWriteThreads = rapidsConf.shuffleMultiThreadedWriterThreads
         val numReadThreads = rapidsConf.shuffleMultiThreadedReaderThreads
-        s"Experimental threaded shuffle mode " +
+        s"Multi-threaded shuffle mode " +
           s"(write threads=$numWriteThreads, read threads=$numReadThreads)"
       }
     } else {

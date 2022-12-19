@@ -16,16 +16,22 @@
 
 package org.apache.spark.sql.hive.rapids
 
+import java.nio.charset.Charset
+
+import com.google.common.base.Charsets
 import com.nvidia.spark.RapidsUDF
 import com.nvidia.spark.rapids.{DataWritingCommandRule, ExecChecks, ExecRule, ExprChecks, ExprMeta, ExprRule, GpuExec, GpuExpression, GpuOverrides, HiveProvider, OptimizedCreateHiveTableAsSelectCommandMeta, RapidsConf, RepeatingParamCheck, SparkPlanMeta, TypeSig}
 import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 
-import org.apache.spark.sql.catalyst.catalog.CatalogStorageFormat
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.catalog.{CatalogStorageFormat, HiveTableRelation}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
 import org.apache.spark.sql.hive.execution.{HiveTableScanExec, OptimizedCreateHiveTableAsSelectCommand}
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.types._
 
 class HiveProviderImpl extends HiveProvider {
 
@@ -145,41 +151,111 @@ class HiveProviderImpl extends HiveProvider {
             val serializationKey     = "serialization.format"
             val ctrlASeparatedFormat = "1" // Implying '^A' field delimiter.
             val lineDelimiterKey     = "line.delim"
+            val escapeDelimiterKey   = "escape.delim"
             val newLine              = "\n"
 
             if (storage.inputFormat.getOrElse("") != textInputFormat) {
-              willNotWorkOnGpu(s"Unsupported input-format found: ${storage.inputFormat}. " +
-                s"Only $textInputFormat is currently supported.")
+              willNotWorkOnGpu(s"unsupported input-format found: ${storage.inputFormat}, " +
+                s"only $textInputFormat is currently supported")
             }
 
-            if(storage.serde.getOrElse("") != lazySimpleSerDe) {
-              willNotWorkOnGpu(s"Unsupported serde found: ${storage.serde}. " +
-                s"Only $lazySimpleSerDe is currently supported.")
+            if (storage.serde.getOrElse("") != lazySimpleSerDe) {
+              willNotWorkOnGpu(s"unsupported serde found: ${storage.serde}, " +
+                s"only $lazySimpleSerDe is currently supported")
             }
 
-            if(storage.properties.getOrElse(serializationKey, "") != ctrlASeparatedFormat) {
-              willNotWorkOnGpu(s"Unsupported serialization format found: " +
-                s"${storage.properties.getOrElse(serializationKey, "")}. " +
-                s"Only \'^A\' separated text input (i.e. serialization.format=1) " +
-                s"is currently supported.")
+            val serializationFormat = storage.properties.getOrElse(serializationKey, "")
+            if (serializationFormat != ctrlASeparatedFormat) {
+              willNotWorkOnGpu(s"unsupported serialization format found: " +
+                s"$serializationFormat, " +
+                s"only \'^A\' separated text input (i.e. serialization.format=1) " +
+                s"is currently supported")
             }
 
             val lineTerminator = storage.properties.getOrElse(lineDelimiterKey, newLine)
-            if(lineTerminator != newLine) {
-              willNotWorkOnGpu(s"Unsupported line terminator found: " +
-                s"$lineTerminator. " +
-                s"Only newline (\\n) separated text input  is currently supported.")
+            if (lineTerminator != newLine) {
+              willNotWorkOnGpu(s"unsupported line terminator found: " +
+                s"$lineTerminator, " +
+                s"only newline (\\n) separated text input  is currently supported")
+            }
+
+            if (!storage.properties.getOrElse(escapeDelimiterKey, "").equals("")) {
+              willNotWorkOnGpu("escapes are not currently supported")
+              // "serialization.escape.crlf" matters only if escapeDelimiterKey is set
+            }
+
+            if (!storage.properties.getOrElse("skip.header.line.count", "0").equals("0")) {
+              willNotWorkOnGpu("header line skipping is not supported")
+            }
+
+            if (!storage.properties.getOrElse("skip.footer.line.count", "0").equals("0")) {
+              willNotWorkOnGpu("footer line skipping is not supported")
+            }
+
+            if (storage.properties.getOrElse("serialization.last.column.takes.rest", "")
+                .equalsIgnoreCase("true")) {
+              // We could probably support this if we used a limit on the split, but why bother
+              // until a customer wants it.
+              willNotWorkOnGpu("\"serialization.last.column.takes.rest\" is not supported")
+            }
+
+            val charset = Charset.forName(
+              storage.properties.getOrElse("serialization.encoding", "UTF-8"))
+            if (!(charset.equals(Charsets.US_ASCII) || charset.equals(Charsets.UTF_8))) {
+              willNotWorkOnGpu("only UTF-8 and ASCII are supported as the charset")
             }
           }
 
           private def checkIfEnabled(): Unit = {
             if (!conf.isHiveDelimitedTextEnabled) {
-              willNotWorkOnGpu("Hive Text I/O has been disabled. To enable this, " +
+              willNotWorkOnGpu("Hive text I/O has been disabled. To enable this, " +
                                s"set ${RapidsConf.ENABLE_HIVE_TEXT} to true")
             }
             if (!conf.isHiveDelimitedTextReadEnabled) {
-              willNotWorkOnGpu("Reading Hive delimited text tables has been disabled. " +
-                               s"To enable this, set ${RapidsConf.ENABLE_HIVE_TEXT_READ} to true")
+              willNotWorkOnGpu("reading Hive delimited text tables has been disabled, " +
+                               s"to enable this, set ${RapidsConf.ENABLE_HIVE_TEXT_READ} to true")
+            }
+          }
+
+          private def hasUnsupportedType(column: AttributeReference): Boolean = {
+            column.dataType match {
+              case ArrayType(_,_) => true
+              case StructType(_)  => true
+              case MapType(_,_,_) => true
+              case BinaryType     => true
+              case _              => false
+            }
+          }
+
+          private def flagIfUnsupportedType(tableRelation: HiveTableRelation,
+                                            column: AttributeReference): Unit = {
+            if (hasUnsupportedType(column)) {
+              willNotWorkOnGpu(s"column ${column.name} of table " +
+                s"${tableRelation.tableMeta.qualifiedName} has type ${column.dataType}, " +
+                s"unsupported for Hive text tables. ")
+            }
+          }
+
+          private def flagIfUnsupported(tableRelation: HiveTableRelation): Unit = {
+            // Check Storage format settings.
+            flagIfUnsupportedStorageFormat(tableRelation.tableMeta.storage)
+
+            lazy val hasTimestamps = wrapped.output.exists { att =>
+              TrampolineUtil.dataTypeExistsRecursively(att.dataType,
+                dt => dt.isInstanceOf[TimestampType])
+            }
+
+            // Check if datatypes are all supported.
+            tableRelation.dataCols.foreach(flagIfUnsupportedType(tableRelation, _))
+
+            // Check TBLPROPERTIES as well.
+            // `timestamp.formats` might be set in TBLPROPERTIES or SERDEPROPERTIES,
+            // or both. (If both, TBLPROPERTIES is honoured.)
+            if ((!tableRelation.tableMeta.properties.getOrElse("timestamp.formats", "")
+                  .equals("")
+                || !tableRelation.tableMeta.storage.properties.getOrElse("timestamp.formats", "")
+                  .equals("")) && hasTimestamps) {
+              willNotWorkOnGpu("custom timestamp formats are not currently supported")
             }
           }
 
@@ -188,11 +264,54 @@ class HiveProviderImpl extends HiveProvider {
             val tableRelation = wrapped.relation
             // Check that the table and all participating partitions
             // are '^A' separated.
-            flagIfUnsupportedStorageFormat(tableRelation.tableMeta.storage)
+            flagIfUnsupported(tableRelation)
+
             if (tableRelation.isPartitioned) {
-              tableRelation.prunedPartitions.getOrElse(Seq.empty)
-                                            .map(_.storage)
-                                            .foreach(flagIfUnsupportedStorageFormat)
+              val parts = tableRelation.prunedPartitions.getOrElse(Seq.empty)
+              parts.map(_.storage).foreach(flagIfUnsupportedStorageFormat)
+              val origProps = tableRelation.tableMeta.storage.properties
+              if (!parts.map(_.storage.properties).forall(_ == origProps)) {
+                willNotWorkOnGpu("individual partitions have different properties")
+              }
+            }
+
+            val sparkSession = SparkShimImpl.sessionFromPlan(wrapped)
+            val hadoopConf = sparkSession.sessionState.newHadoopConf()
+            lazy val hasBooleans = wrapped.output.exists { att =>
+              TrampolineUtil.dataTypeExistsRecursively(att.dataType, dt => dt == BooleanType)
+            }
+            val extendedBool =
+              hadoopConf.getBoolean("hive.lazysimple.extended_boolean_literal", false)
+            if (extendedBool && hasBooleans) {
+              willNotWorkOnGpu("extended boolean parsing is not supported")
+            }
+
+            lazy val hasFloats = wrapped.output.exists { att =>
+              TrampolineUtil.dataTypeExistsRecursively(att.dataType, dt => dt == FloatType)
+            }
+
+            if (!conf.shouldHiveReadFloats && hasFloats) {
+              willNotWorkOnGpu("reading of floats has been disabled set " +
+                  s"${RapidsConf.ENABLE_READ_HIVE_FLOATS} to true to enable this.")
+            }
+
+            lazy val hasDoubles = wrapped.output.exists { att =>
+              TrampolineUtil.dataTypeExistsRecursively(att.dataType, dt => dt == DoubleType)
+            }
+
+            if (!conf.shouldHiveReadDoubles && hasDoubles) {
+              willNotWorkOnGpu("reading of doubles has been disabled set " +
+                  s"${RapidsConf.ENABLE_READ_HIVE_DOUBLES} to true to enable this.")
+            }
+
+            lazy val hasDecimals = wrapped.output.exists { att =>
+              TrampolineUtil.dataTypeExistsRecursively(att.dataType,
+                dt => dt.isInstanceOf[DecimalType])
+            }
+
+            if (!conf.shouldHiveReadDecimals && hasDecimals) {
+              willNotWorkOnGpu("reading of decimal typed values has been disabled set " +
+                  s"${RapidsConf.ENABLE_READ_HIVE_DECIMALS} to true to enable this.")
             }
           }
 

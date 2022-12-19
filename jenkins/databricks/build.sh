@@ -160,7 +160,8 @@ set_sw_versions()
             sw_versions[HIVE_FULL]="2.3.9"
             sw_versions[HIVESTORAGE_API]="2.7.2"
             sw_versions[JAVAASSIST]="3.25.0-GA"
-            sw_versions[JSON4S]="3.7.0-M11"
+            sw_versions[JSON4S_AST]="3.7.0-M11"
+            sw_versions[JSON4S_CORE]="3.7.0-M11"
             sw_versions[KRYO]="4.0.2"
             sw_versions[ORC]="1.7.6"
             sw_versions[PARQUET]="1.12.0"
@@ -177,7 +178,8 @@ set_sw_versions()
             sw_versions[HIVE_FULL]="2.3.9"
             sw_versions[HIVESTORAGE_API]="2.7.2"
             sw_versions[JAVAASSIST]="3.25.0-GA"
-            sw_versions[JSON4S]="3.7.0-M11"
+            sw_versions[JSON4S_AST]="3.7.0-M11"
+            sw_versions[JSON4S_CORE]="3.7.0-M11"
             sw_versions[KRYO]="4.0.2"
             sw_versions[ORC]="1.6.13"
             sw_versions[PARQUET]="1.12.0"
@@ -190,7 +192,8 @@ set_sw_versions()
             sw_versions[FASTERXML_JACKSON]="2.10.0"
             sw_versions[HADOOP]="2.7"
             sw_versions[HIVE_FULL]="2.3.7"
-            sw_versions[JSON4S]="3.7.0-M5"
+            sw_versions[JSON4S_AST]="3.7.0-M5"
+            sw_versions[JSON4S_CORE]="3.7.0-M5"
             sw_versions[ORC]="1.5.12"
             sw_versions[PARQUET]="1.10.1"
             sw_versions[HIVESTORAGE_API]="2.7.2"
@@ -262,8 +265,10 @@ set_dep_jars()
     dep_jars[ARROWMEMORY]=${PREFIX_WS_SP_MVN_HADOOP}--org.apache.arrow--arrow-memory-core--org.apache.arrow__arrow-memory-core__${sw_versions[ARROW]}.jar
     artifacts[ARROWVECTOR]="-DgroupId=org.apache.arrow -DartifactId=arrow-vector"
     dep_jars[ARROWVECTOR]=${PREFIX_WS_SP_MVN_HADOOP}--org.apache.arrow--arrow-vector--org.apache.arrow__arrow-vector__${sw_versions[ARROW]}.jar
-    artifacts[JSON4S]="-DgroupId=org.json4s -DartifactId=JsonAST"
-    dep_jars[JSON4S]=${PREFIX_WS_SP_MVN_HADOOP}--org.json4s--json4s-ast_${SCALA_VERSION}--org.json4s__json4s-ast_${SCALA_VERSION}__${sw_versions[JSON4S]}.jar
+    artifacts[JSON4S_AST]="-DgroupId=org.json4s -DartifactId=json4s-ast_${SCALA_VERSION}"
+    dep_jars[JSON4S_AST]=${PREFIX_WS_SP_MVN_HADOOP}--org.json4s--json4s-ast_${SCALA_VERSION}--org.json4s__json4s-ast_${SCALA_VERSION}__${sw_versions[JSON4S_AST]}.jar
+    artifacts[JSON4S_CORE]="-DgroupId=org.json4s -DartifactId=json4s-core_${SCALA_VERSION}"
+    dep_jars[JSON4S_CORE]=${PREFIX_WS_SP_MVN_HADOOP}--org.json4s--json4s-core_${SCALA_VERSION}--org.json4s__json4s-core_${SCALA_VERSION}__${sw_versions[JSON4S_CORE]}.jar
     artifacts[JAVAASSIST]="-DgroupId=org.javaassist -DartifactId=javaassist"
     dep_jars[JAVAASSIST]=${PREFIX_WS_SP_MVN_HADOOP}--org.javassist--javassist--org.javassist__javassist__${sw_versions[JAVAASSIST]}.jar
     artifacts[JACKSONCORE]="-DgroupId=com.fasterxml.jackson.core -DartifactId=jackson-core"
@@ -276,6 +281,9 @@ set_dep_jars()
     dep_jars[AVROMAPRED]=${PREFIX_WS_SP_MVN_HADOOP}--org.apache.avro--avro-mapred--org.apache.avro__avro-mapred__${sw_versions[AVRO]}.jar
     artifacts[AVRO]="-DgroupId=org.apache.avro -DartifactId=avro"
     dep_jars[AVRO]=${PREFIX_WS_SP_MVN_HADOOP}--org.apache.avro--avro--org.apache.avro__avro__${sw_versions[AVRO]}.jar
+    # Delta Lake support is included in SQL jar
+    artifacts[DELTA]="-DgroupId=io.delta -DartifactId=delta-core_${SCALA_VERSION}"
+    dep_jars[DELTA]=${dep_jars[SQL]}
 
     # spark-3.1.2 overrides some jar naming conventions
     if [[ $BASE_SPARK_VERSION == "3.1.2" ]]
@@ -315,9 +323,9 @@ install_dependencies()
 initialize
 if [[ $SKIP_DEP_INSTALL == "1" ]]
 then
-    echo "SKIP_DEP_INSTALL is set to $SKIP_DEP_INSTALL. Skipping dependencies."
+    echo "!!!! SKIP_DEP_INSTALL is set to $SKIP_DEP_INSTALL. Skipping install-file for dependencies."
 else
-    # Install required dependencies.
+    echo "!!!! Installing dependendecies. Set SKIP_DEP_INSTALL=1 to speed up reruns of build.sh"# Install required dependencies.
     install_dependencies
 fi
 # Build the RAPIDS plugin by running package command for databricks

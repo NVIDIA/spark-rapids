@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.io.{File, IOException}
 import java.net.{URI, URISyntaxException}
-import java.util.concurrent.{Callable, ConcurrentLinkedQueue, Future, LinkedBlockingQueue, ThreadPoolExecutor, TimeUnit}
+import java.util.concurrent.{Callable, ConcurrentLinkedQueue, ExecutorCompletionService, Future, LinkedBlockingQueue, ThreadPoolExecutor, TimeUnit}
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -32,6 +32,8 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.parquet.hadoop.metadata.BlockMetaData
+import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
@@ -49,6 +51,21 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector => SparkVect
 import org.apache.spark.util.SerializableConfiguration
 
 /**
+ * This contains a single HostMemoryBuffer along with other metadata needed
+ * for combining the buffers before sending to GPU.
+ */
+case class SingleHMBAndMeta(hmb: HostMemoryBuffer, bytes: Long, numRows: Long,
+    blockMeta: Seq[BlockMetaData], schema: MessageType)
+
+object SingleHMBAndMeta {
+  // Contains no data but could have number of rows for things like count().
+  def empty(numRows: Long = 0): SingleHMBAndMeta = {
+    SingleHMBAndMeta(null.asInstanceOf[HostMemoryBuffer], 0, numRows,
+      Seq.empty, null)
+  }
+}
+
+/**
  * The base HostMemoryBuffer information read from a single file.
  */
 trait HostMemoryBuffersWithMetaDataBase {
@@ -57,13 +74,17 @@ trait HostMemoryBuffersWithMetaDataBase {
   // Original PartitionedFile if path was replaced with Alluxio
   def origPartitionedFile: Option[PartitionedFile] = None
   // An array of BlockChunk(HostMemoryBuffer and its data size) read from PartitionedFile
-  def memBuffersAndSizes: Array[(HostMemoryBuffer, Long)]
+  def memBuffersAndSizes: Array[SingleHMBAndMeta]
   // Total bytes read
   def bytesRead: Long
   // Percentage of time spent on filtering
   private var _filterTimePct: Double = 0L
   // Percentage of time spent on buffering
   private var _bufferTimePct: Double = 0L
+
+  // The partition values which are needed if combining host memory buffers
+  // after read by the multithreaded reader but before sending to GPU.
+  def allPartValues: Option[Array[(Long, InternalRow)]] = None
 
   // Called by parquet/orc/avro scanners to set the amount of time (in nanoseconds)
   // that filtering and buffering incurred in one of the scan runners.
@@ -85,17 +106,8 @@ trait MultiFileReaderFunctions extends Arm {
       batch: ColumnarBatch,
       inPartitionValues: InternalRow,
       partitionSchema: StructType): ColumnarBatch = {
-    if (partitionSchema.nonEmpty) {
-      val partitionValues = inPartitionValues.toSeq(partitionSchema)
-      val partitionScalars = ColumnarPartitionReaderWithPartitionValues
-          .createPartitionValues(partitionValues, partitionSchema)
-      withResource(partitionScalars) { scalars =>
-        ColumnarPartitionReaderWithPartitionValues.addPartitionValues(batch, scalars,
-          GpuColumnVector.extractTypes(partitionSchema))
-      }
-    } else {
-      batch
-    }
+    MultiFileReaderUtils.addSinglePartitionValuesAndClose(batch, inPartitionValues,
+      partitionSchema)
   }
 
   @scala.annotation.nowarn(
@@ -116,9 +128,9 @@ object MultiFileReaderThreadPool extends Logging {
       keepAliveSeconds: Long = 60): ThreadPoolExecutor = synchronized {
     if (threadPool.isEmpty) {
       val threadFactory = new ThreadFactoryBuilder()
-          .setNameFormat("multithreaded file reader worker-%d")
-          .setDaemon(true)
-          .build()
+        .setNameFormat(s"multithreaded file reader worker-%d")
+        .setDaemon(true)
+        .build()
 
       val threadPoolExecutor = new ThreadPoolExecutor(
         maxThreads, // corePoolSize: max number of threads to create before queuing the tasks
@@ -131,7 +143,6 @@ object MultiFileReaderThreadPool extends Logging {
       logDebug(s"Using $maxThreads for the multithreaded reader thread pool")
       threadPool = Some(threadPoolExecutor)
     }
-
     threadPool.get
   }
 
@@ -144,7 +155,7 @@ object MultiFileReaderThreadPool extends Logging {
   }
 }
 
-object MultiFileReaderUtils {
+object MultiFileReaderUtils extends Arm {
 
   private implicit def toURI(path: String): URI = {
     try {
@@ -172,8 +183,85 @@ object MultiFileReaderUtils {
       files: Array[String],
       cloudSchemes: Set[String],
       anyAlluxioPathsReplaced: Boolean = false): Boolean =
-  !coalescingEnabled || (multiThreadEnabled &&
-    (!anyAlluxioPathsReplaced && hasPathInCloud(files, cloudSchemes)))
+    !coalescingEnabled || (multiThreadEnabled &&
+      (!anyAlluxioPathsReplaced && hasPathInCloud(files, cloudSchemes)))
+
+  /**
+   * Add all partition values found to the batch. There could be more then one partition
+   * value in the batch so we have to build up columns with the correct number of rows
+   * for each partition value.
+   *
+   * @param batch             - input batch, will be closed after the call returns
+   * @param partitionValues   - partition values collected from the batch
+   * @param partitionRows     - row numbers collected from the batch, and it should have
+   *                            the same size with "partitionValues"
+   * @param partitionSchema   - the partition schema
+   * @return a new columnar batch with partition values
+   */
+  def addMultiplePartitionValuesAndClose(batch: ColumnarBatch,
+      partitionValues: Array[InternalRow],
+      partitionRows: Array[Long],
+      partitionSchema: StructType): ColumnarBatch = {
+    if (partitionSchema.nonEmpty) {
+      if (partitionValues.length > 1) {
+        concatAndAddPartitionColsToBatchAndClose(batch, partitionRows, partitionValues,
+          partitionSchema)
+      } else {
+        // single partition, add like other readers
+        addSinglePartitionValuesAndClose(batch, partitionValues.head, partitionSchema)
+      }
+    } else {
+      batch
+    }
+  }
+
+  def addSinglePartitionValuesAndClose(batch: ColumnarBatch, partitionValues: InternalRow,
+      partitionSchema: StructType): ColumnarBatch = {
+    if (partitionSchema.nonEmpty) {
+      val partitionScalars = closeOnExcept(batch) { _ =>
+        ColumnarPartitionReaderWithPartitionValues.createPartitionValues(
+          partitionValues.toSeq(partitionSchema), partitionSchema)
+      }
+      withResource(partitionScalars) { _ =>
+        ColumnarPartitionReaderWithPartitionValues.addPartitionValues(batch, partitionScalars,
+          GpuColumnVector.extractTypes(partitionSchema))
+      }
+    } else {
+      batch
+    }
+  }
+
+  private def concatAndAddPartitionColsToBatchAndClose(cb: ColumnarBatch, partRows: Array[Long],
+      partValues: Array[InternalRow], partSchema: StructType): ColumnarBatch = {
+    withResource(cb) { _ =>
+      closeOnExcept(buildPartitionsColumns(partRows, partValues, partSchema)) { partsCols =>
+        ColumnarPartitionReaderWithPartitionValues.addGpuColumVectorsToBatch(cb, partsCols)
+      }
+    }
+  }
+
+  private def buildPartitionsColumns(partRows: Array[Long], partValues: Array[InternalRow],
+      partSchema: StructType): Array[GpuColumnVector] = {
+    // build the partitions vectors for all partitions within each column
+    // and concatenate those together then go to the next column
+    val rowNumsAndValues = partRows.zip(partValues)
+    closeOnExcept(new Array[GpuColumnVector](partSchema.length)) { partsCols =>
+      for ((field, colIndex) <- partSchema.zipWithIndex) {
+        val dataType = field.dataType
+        withResource(new Array[ColumnVector](partValues.length)) { onePartCols =>
+          rowNumsAndValues.zipWithIndex.foreach { case ((rowNum, valueRow), partId) =>
+            val singleValue = valueRow.get(colIndex, dataType)
+            withResource(GpuScalar.from(singleValue, dataType)) { oneScalar =>
+              onePartCols(partId) = ColumnVector.fromScalar(oneScalar, rowNum.toInt)
+            }
+          }
+          partsCols(colIndex) = GpuColumnVector.from(
+            ColumnVector.concatenate(onePartCols: _*), field.dataType)
+        }
+      }
+      partsCols
+    }
+  }
 }
 
 /**
@@ -184,7 +272,7 @@ object MultiFileReaderUtils {
  * @param broadcastedConf the Hadoop configuration
  * @param rapidsConf      the Rapids configuration
  * @param alluxioPathReplacementMap Optional map containing mapping of DFS
- *                                   scheme to Alluxio scheme
+ *                                  scheme to Alluxio scheme
  */
 abstract class MultiFilePartitionReaderFactoryBase(
     @transient sqlConf: SQLConf,
@@ -343,6 +431,12 @@ case class PartitionedFileInfoOptAlluxio(toRead: PartitionedFile, original: Opti
  * @param ignoreCorruptFiles Whether to ignore corrupt files when GPU failed to decode the files
  * @param alluxioPathReplacementMap Map containing mapping of DFS scheme to Alluxio scheme
  * @param alluxioReplacementTaskTime Whether the Alluxio replacement algorithm is set to task time
+ * @param combineThresholdSize The size to combine to when combining small files
+ * @param combineWaitTime The amount of time to wait for other files to be ready to see if we
+ *                        can combine them before sending them to the GPU
+ * @param queryUsesInputFile Whether the query requires the input file name functionality
+ * @param keepReadsInOrder Whether to require the files to be read in the same order as Spark.
+ *                         Defaults to true for formats that don't explicitly handle this.
  */
 abstract class MultiFileCloudPartitionReaderBase(
     conf: Configuration,
@@ -351,18 +445,29 @@ abstract class MultiFileCloudPartitionReaderBase(
     maxNumFileProcessed: Int,
     filters: Array[Filter],
     execMetrics: Map[String, GpuMetric],
+    maxReadBatchSizeRows: Int,
+    maxReadBatchSizeBytes: Long,
     ignoreCorruptFiles: Boolean = false,
     alluxioPathReplacementMap: Map[String, String] = Map.empty,
-    alluxioReplacementTaskTime: Boolean = false)
+    alluxioReplacementTaskTime: Boolean = false,
+    combineThresholdSize: Long = -1,
+    combineWaitTime: Int = -1,
+    queryUsesInputFile: Boolean = false,
+    keepReadsInOrder: Boolean = true)
   extends FilePartitionReaderBase(conf, execMetrics) {
 
   private var filesToRead = 0
   protected var currentFileHostBuffers: Option[HostMemoryBuffersWithMetaDataBase] = None
+  protected var combineLeftOverFiles: Option[Array[HostMemoryBuffersWithMetaDataBase]] = None
   private var isInitted = false
   private val tasks = new ConcurrentLinkedQueue[Future[HostMemoryBuffersWithMetaDataBase]]()
   private val tasksToRun = new Queue[Callable[HostMemoryBuffersWithMetaDataBase]]()
   private[this] val inputMetrics = Option(TaskContext.get).map(_.taskMetrics().inputMetrics)
-      .getOrElse(TrampolineUtil.newInputMetrics())
+    .getOrElse(TrampolineUtil.newInputMetrics())
+  // this is used when the read order doesn't matter and in that case, the tasks queue
+  // above is used to track any left being processed that need to be cleaned up if we exit early
+  // like in the case of a limit call and we don't read all files
+  private var fcs: ExecutorCompletionService[HostMemoryBuffersWithMetaDataBase] = null
 
   private val files: Array[PartitionedFileInfoOptAlluxio] = {
     if (alluxioPathReplacementMap.nonEmpty) {
@@ -382,13 +487,34 @@ abstract class MultiFileCloudPartitionReaderBase(
     // limit the number we submit at once according to the config if set
     val limit = math.min(maxNumFileProcessed, files.length)
     val tc = TaskContext.get
+    if (!keepReadsInOrder) {
+      logDebug("Not keeping reads in order")
+      synchronized {
+        if (fcs == null) {
+          val threadPool =
+            MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
+          fcs = new ExecutorCompletionService[HostMemoryBuffersWithMetaDataBase](threadPool)
+        }
+      }
+    } else {
+      logDebug("Keeping reads in same order")
+    }
+
+    // Currently just add the files in order, we may consider doing something with the size of
+    // the files in the future. ie try to start some of the larger files but we may not want
+    // them all to be large
     for (i <- 0 until limit) {
       val file = files(i)
       logDebug(s"MultiFile reader using file ${file.toRead}, orig file is ${file.original}")
-      // Add these in the order as we got them so that we can make sure
-      // we process them in the same order as CPU would.
-      val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
-      tasks.add(threadPool.submit(getBatchRunner(tc, file.toRead, file.original, conf, filters)))
+      if (!keepReadsInOrder) {
+        val futureRunner = fcs.submit(getBatchRunner(tc, file.toRead, file.original, conf, filters))
+        tasks.add(futureRunner)
+      } else {
+        // Add these in the order as we got them so that we can make sure
+        // we process them in the same order as CPU would.
+        val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
+        tasks.add(threadPool.submit(getBatchRunner(tc, file.toRead, file.original, conf, filters)))
+      }
     }
     // queue up any left to add once others finish
     for (i <- limit until files.length) {
@@ -399,11 +525,21 @@ abstract class MultiFileCloudPartitionReaderBase(
     filesToRead = files.length
   }
 
+  // Each format should implement combineHMBs and canUseCombine if they support combining
+  def combineHMBs(
+      results: Array[HostMemoryBuffersWithMetaDataBase]): HostMemoryBuffersWithMetaDataBase = {
+    require(results.size == 1,
+        "Expected results to only have 1 element, this format doesn't support combining!")
+    results.head
+  }
+
+  def canUseCombine: Boolean = false
+
   /**
    * The sub-class must implement the real file reading logic in a Callable
    * which will be running in a thread pool
    *
-   * @param tc   task context to use
+   * @param tc task context to use
    * @param file file to be read
    * @param origFile optional original unmodified file if replaced with Alluxio
    * @param conf the Configuration parameters
@@ -432,6 +568,165 @@ abstract class MultiFileCloudPartitionReaderBase(
    */
   def getFileFormatShortName: String
 
+  /**
+   * Given a set of host buffers actually read have the GPU read them and update the
+   * batchIter with the returned Columnar batches.
+   */
+  private def readBuffersToBatch(currentFileHostBuffers: HostMemoryBuffersWithMetaDataBase,
+      addTaskIfNeeded: Boolean): Unit = {
+    if (getNumRowsInHostBuffers(currentFileHostBuffers) == 0) {
+      closeCurrentFileHostBuffers()
+      if (addTaskIfNeeded) addNextTaskIfNeeded()
+      next()
+    } else {
+      val file = currentFileHostBuffers.partitionedFile.filePath
+      batchIter = try {
+        readBatches(currentFileHostBuffers)
+      } catch {
+        case e@(_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
+          logWarning(s"Skipped the corrupted file: $file", e)
+          EmptyGpuColumnarBatchIterator
+      }
+      // the data is copied to GPU so submit another task if we were limited
+      if (addTaskIfNeeded) addNextTaskIfNeeded()
+    }
+  }
+
+  // we have to check both the combine threshold and the batch size limits
+  private def hasMetCombineThreshold(sizeInBytes: Long, numRows: Long): Boolean = {
+    sizeInBytes >= combineThresholdSize || sizeInBytes >= maxReadBatchSizeBytes ||
+      numRows >= maxReadBatchSizeRows
+  }
+
+  /**
+   * While there are files already read into host memory buffers, take up to
+   * threshold size and append to the results ArrayBuffer.
+   */
+  private def readReadyFiles(
+      initSize: Long = 0,
+      initNumRows: Long = 0,
+      results: ArrayBuffer[HostMemoryBuffersWithMetaDataBase]): Unit = {
+    var takeMore = true
+    var currSize = initSize
+    var currNumRows = initNumRows
+    while (takeMore && !hasMetCombineThreshold(currSize, currNumRows) && filesToRead > 0) {
+      val hmbFuture = if (keepReadsInOrder) {
+        tasks.poll()
+      } else {
+        val fut = fcs.poll()
+        if (fut != null) {
+          tasks.remove(fut)
+        }
+        fut
+      }
+      if (hmbFuture == null) {
+        if (combineWaitTime > 0) {
+          // no more are ready, wait to see if any finish within wait time
+          val hmbAndMeta = if (keepReadsInOrder) {
+            tasks.poll().get(combineWaitTime, TimeUnit.MILLISECONDS)
+          } else {
+            val fut = fcs.poll(combineWaitTime, TimeUnit.MILLISECONDS)
+            if (fut == null) {
+              null
+            } else {
+              tasks.remove(fut)
+              fut.get()
+            }
+          }
+          if (hmbAndMeta != null) {
+            results.append(hmbAndMeta)
+            currSize += hmbAndMeta.memBuffersAndSizes.map(_.bytes).sum
+            filesToRead -= 1
+          } else {
+            // no more ready after waiting
+            takeMore = false
+          }
+        } else {
+          // wait time is <= 0
+          takeMore = false
+        }
+      } else {
+        results.append(hmbFuture.get())
+        currSize += hmbFuture.get().memBuffersAndSizes.map(_.bytes).sum
+        currNumRows += hmbFuture.get().memBuffersAndSizes.map(_.numRows).sum
+        filesToRead -= 1
+      }
+    }
+  }
+
+  private def getNextBuffersAndMetaAndCombine(): HostMemoryBuffersWithMetaDataBase = {
+    var sizeRead = 0L
+    var numRowsRead = 0L
+    val results = ArrayBuffer[HostMemoryBuffersWithMetaDataBase]()
+    readReadyFiles(0, 0, results)
+    if (results.isEmpty) {
+      // none were ready yet so wait as long as need for first one
+      val hostBuffersWithMeta = if (keepReadsInOrder) {
+        tasks.poll().get()
+      } else {
+        val bufMetaFut = fcs.take()
+        tasks.remove(bufMetaFut)
+        bufMetaFut.get()
+      }
+      sizeRead += hostBuffersWithMeta.memBuffersAndSizes.map(_.bytes).sum
+      numRowsRead += hostBuffersWithMeta.memBuffersAndSizes.map(_.numRows).sum
+
+      filesToRead -= 1
+      results.append(hostBuffersWithMeta)
+      // since we had to wait for one to be ready,
+      // check if more are ready as well
+      readReadyFiles(sizeRead, numRowsRead, results)
+    }
+    combineHMBs(results.toArray)
+  }
+
+  private def getNextBuffersAndMetaSingleFile(): HostMemoryBuffersWithMetaDataBase = {
+    val hmbAndMetaInfo = if (keepReadsInOrder) {
+      tasks.poll().get()
+    } else {
+      val bufMetaFut = fcs.take()
+      tasks.remove(bufMetaFut)
+      bufMetaFut.get()
+    }
+    filesToRead -= 1
+    hmbAndMetaInfo
+  }
+
+  private def getNextBuffersAndMeta(): HostMemoryBuffersWithMetaDataBase = {
+    if (canUseCombine) {
+      getNextBuffersAndMetaAndCombine()
+    } else {
+      getNextBuffersAndMetaSingleFile()
+    }
+  }
+
+  /**
+   * If we were combining host memory buffers and ran into the case we had to split them,
+   * then we handle the left over ones first.
+   */
+  private def handleLeftOverCombineFiles(): HostMemoryBuffersWithMetaDataBase = {
+    val leftOvers = combineLeftOverFiles.get
+    // unset leftOverFiles because it will get reset in combineHMBs again if needed
+    combineLeftOverFiles = None
+    val results = ArrayBuffer[HostMemoryBuffersWithMetaDataBase]()
+    val curSize = leftOvers.map(_.memBuffersAndSizes.map(_.bytes).sum).sum
+    val curNumRows = leftOvers.map(_.memBuffersAndSizes.map(_.numRows).sum).sum
+    readReadyFiles(curSize, curNumRows, results)
+    val allReady = leftOvers ++ results
+    val fileBufsAndMeta = combineHMBs(allReady)
+
+    TrampolineUtil.incBytesRead(inputMetrics, fileBufsAndMeta.bytesRead)
+    // this is combine mode so input file shouldn't be used at all but update to
+    // what would be closest so we at least don't have same file as last batch
+    val inputFileToSet =
+    fileBufsAndMeta.origPartitionedFile.getOrElse(fileBufsAndMeta.partitionedFile)
+    InputFileUtils.setInputFileBlock(
+      inputFileToSet.filePath,
+      inputFileToSet.start,
+      inputFileToSet.length)
+    fileBufsAndMeta
+  }
+
   override def next(): Boolean = {
     withResource(new NvtxRange(getFileFormatShortName + " readBatch", NvtxColor.GREEN)) { _ =>
       if (!isInitted) {
@@ -446,26 +741,19 @@ abstract class MultiFileCloudPartitionReaderBase(
       batchIter = EmptyGpuColumnarBatchIterator
       // if we have batch left from the last file read return it
       if (currentFileHostBuffers.isDefined) {
-        if (getSizeOfHostBuffers(currentFileHostBuffers.get) == 0) {
-          closeCurrentFileHostBuffers()
-          next()
-        } else {
-          val file = currentFileHostBuffers.get.partitionedFile.filePath
-          batchIter = try {
-            readBatches(currentFileHostBuffers.get)
-          } catch {
-            case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
-              logWarning(s"Skipped the corrupted file: $file", e)
-              EmptyGpuColumnarBatchIterator
-          }
-        }
+        readBuffersToBatch(currentFileHostBuffers.get, false)
+      } else if (combineLeftOverFiles.isDefined) {
+        // this means we already grabbed some while combining but something between
+        // files was incompatible and couldn't be combined.
+        val fileBufsAndMeta = handleLeftOverCombineFiles()
+        readBuffersToBatch(fileBufsAndMeta, true)
       } else {
         if (filesToRead > 0 && !isDone) {
           // Filter time here includes the buffer time as well since those
           // happen in the same background threads. This is as close to wall
           // clock as we can get right now without further work.
           val startTime = System.nanoTime()
-          val fileBufsAndMeta = tasks.poll.get()
+          val fileBufsAndMeta = getNextBuffersAndMeta()
           val blockedTime = System.nanoTime() - startTime
           metrics.get(FILTER_TIME).foreach {
             _ += (blockedTime * fileBufsAndMeta.getFilterTimePct).toLong
@@ -474,36 +762,18 @@ abstract class MultiFileCloudPartitionReaderBase(
             _ += (blockedTime * fileBufsAndMeta.getBufferTimePct).toLong
           }
 
-          filesToRead -= 1
           TrampolineUtil.incBytesRead(inputMetrics, fileBufsAndMeta.bytesRead)
           // if we replaced the path with Alluxio, set it to the original filesystem file
           // since Alluxio replacement is supposed to be transparent to the user
+          // Note that combine mode would have fallen back to not use combine mode if
+          // the inputFile was required.
           val inputFileToSet =
-            fileBufsAndMeta.origPartitionedFile.getOrElse(fileBufsAndMeta.partitionedFile)
+          fileBufsAndMeta.origPartitionedFile.getOrElse(fileBufsAndMeta.partitionedFile)
           InputFileUtils.setInputFileBlock(
             inputFileToSet.filePath,
             inputFileToSet.start,
             inputFileToSet.length)
-
-          if (getSizeOfHostBuffers(fileBufsAndMeta) == 0) {
-            // if sizes are 0 means no rows and no data so skip to next file
-            // file data was empty so submit another task if any were waiting
-            closeCurrentFileHostBuffers()
-            addNextTaskIfNeeded()
-            next()
-          } else {
-            val file = fileBufsAndMeta.partitionedFile.filePath
-            batchIter = try {
-              readBatches(fileBufsAndMeta)
-            } catch {
-              case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
-                logWarning(s"Skipped the corrupted file: $file", e)
-                EmptyGpuColumnarBatchIterator
-            }
-
-            // the data is copied to GPU so submit another task if we were limited
-            addNextTaskIfNeeded()
-          }
+          readBuffersToBatch(fileBufsAndMeta, true)
         } else {
           isDone = true
           metrics(PEAK_DEVICE_MEMORY) += maxDeviceMemory
@@ -526,23 +796,28 @@ abstract class MultiFileCloudPartitionReaderBase(
     batchIter.hasNext
   }
 
-  private def getSizeOfHostBuffers(fileInfo: HostMemoryBuffersWithMetaDataBase): Long = {
-    fileInfo.memBuffersAndSizes.map(_._2).sum
+  private def getNumRowsInHostBuffers(fileInfo: HostMemoryBuffersWithMetaDataBase): Long = {
+    fileInfo.memBuffersAndSizes.map(_.numRows).sum
   }
 
   private def addNextTaskIfNeeded(): Unit = {
     if (tasksToRun.nonEmpty && !isDone) {
       val runner = tasksToRun.dequeue()
-      val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
-      tasks.add(threadPool.submit(runner))
+      if (!keepReadsInOrder) {
+        val futureRunner = fcs.submit(runner)
+        tasks.add(futureRunner)
+      } else {
+        val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(numThreads)
+        tasks.add(threadPool.submit(runner))
+      }
     }
   }
 
   private def closeCurrentFileHostBuffers(): Unit = {
     currentFileHostBuffers.foreach { current =>
-      current.memBuffersAndSizes.foreach { case (buf, _) =>
-        if (buf != null) {
-          buf.close()
+      current.memBuffersAndSizes.foreach { hbInfo =>
+        if (hbInfo.hmb != null) {
+          hbInfo.hmb.close()
         }
       }
     }
@@ -557,9 +832,9 @@ abstract class MultiFileCloudPartitionReaderBase(
     batchIter = EmptyGpuColumnarBatchIterator
     tasks.asScala.foreach { task =>
       if (task.isDone()) {
-        task.get.memBuffersAndSizes.foreach { case (buf, _) =>
-          if (buf != null) {
-            buf.close()
+        task.get.memBuffersAndSizes.foreach { hmbInfo =>
+          if (hmbInfo.hmb != null) {
+            hmbInfo.hmb.close()
           }
         }
       } else {
@@ -570,7 +845,6 @@ abstract class MultiFileCloudPartitionReaderBase(
       }
     }
   }
-
 }
 
 // A trait to describe a data block info
@@ -682,8 +956,8 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * @return true: split the next block into another ColumnarBatch and vice versa
    */
   def checkIfNeedToSplitDataBlock(
-    currentBlockInfo: SingleDataBlockInfo,
-    nextBlockInfo: SingleDataBlockInfo): Boolean
+      currentBlockInfo: SingleDataBlockInfo,
+      nextBlockInfo: SingleDataBlockInfo): Boolean
 
   /**
    * Calculate the output size according to the block chunks and the schema, and the
@@ -707,20 +981,20 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * by calculateEstimatedBlocksOutputSize, then it will cause HostMemoryBuffer re-allocating, and
    * cause the performance issue.
    *
-   * @param footerOffset  footer offset
-   * @param blocks        blocks to be evaluated
-   * @param batchContext  the batch building context
+   * @param footerOffset footer offset
+   * @param blocks       blocks to be evaluated
+   * @param batchContext the batch building context
    * @return the output size
    */
   def calculateFinalBlocksOutputSize(footerOffset: Long, blocks: Seq[DataBlockBase],
-    batchContext: BatchContext): Long
+      batchContext: BatchContext): Long
 
   /**
    * The sub-class must implement the real file reading logic in a Callable
    * which will be running in a thread pool
    *
-   * @param tc     task context to use
-   * @param file   file to be read
+   * @param tc task context to use
+   * @param file file to be read
    * @param outhmb the sliced HostMemoryBuffer to hold the blocks, and the implementation
    *               is in charge of closing it in sub-class
    * @param blocks blocks meta info to specify which blocks to be read
@@ -750,8 +1024,8 @@ abstract class MultiFileCoalescingPartitionReaderBase(
   /**
    * Sent host memory to GPU to decode
    *
-   * @param dataBuffer  the data which can be decoded in GPU
-   * @param dataSize    data size
+   * @param dataBuffer the data which can be decoded in GPU
+   * @param dataSize data size
    * @param clippedSchema the clipped schema
    * @param readSchema the expected schema
    * @param extraInfo the extra information for specific file format
@@ -789,7 +1063,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * @return the buffer and the buffer size
    */
   def writeFileFooter(buffer: HostMemoryBuffer, bufferSize: Long, footerOffset: Long,
-    blocks: Seq[DataBlockBase], batchContext: BatchContext): (HostMemoryBuffer, Long)
+      blocks: Seq[DataBlockBase], batchContext: BatchContext): (HostMemoryBuffer, Long)
 
   /**
    * Return a batch context which will be shared during the process of building a memory file,
@@ -871,11 +1145,9 @@ abstract class MultiFileCoalescingPartitionReaderBase(
           currentChunkMeta.readSchema, currentChunkMeta.extraInfo)
         CachedGpuBatchIterator(tableReader, colTypes, spillCallback)
       }
-      batchIter.map { cb =>
-        // we have to add partition values here for this batch, we already verified that
-        // its not different for all the blocks in this batch
-        withResource(addAllPartitionValues(cb, currentChunkMeta.allPartValues,
-          currentChunkMeta.rowsPerPartition, partitionSchema)) { withParts =>
+      new GpuColumnarBatchWithPartitionValuesIterator(batchIter, currentChunkMeta.allPartValues,
+          currentChunkMeta.rowsPerPartition, partitionSchema).map { withParts =>
+        withResource(withParts) { _ =>
           finalizeOutputBatch(withParts, currentChunkMeta.extraInfo)
         }
       }
@@ -912,7 +1184,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       clippedSchema: SchemaBase): (HostMemoryBuffer, Long) = {
 
     withResource(new NvtxWithMetrics("Buffer file split", NvtxColor.YELLOW,
-        metrics("bufferTime"))) { _ =>
+      metrics("bufferTime"))) { _ =>
       // ugly but we want to keep the order
       val filesAndBlocks = LinkedHashMap[Path, ArrayBuffer[DataBlockBase]]()
       blocks.foreach { case (path, block) =>
@@ -924,7 +1196,6 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       // First, estimate the output file size for the initial allocating.
       //   the estimated size should be >= size of HEAD + Blocks + FOOTER
       val initTotalSize = calculateEstimatedBlocksOutputSize(batchContext)
-
       val (buffer, bufferSize, footerOffset, outBlocks) =
         closeOnExcept(HostMemoryBuffer.allocate(initTotalSize)) { hmb =>
           // Second, write header
@@ -954,7 +1225,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
             batchContext)
 
           (hmb, finalBufferSize, offset, allOutputBlocks)
-      }
+        }
 
       // The footer size can change vs the initial estimated because we are combining more
       // blocks and offsets are larger, check to make sure we allocated enough memory before
@@ -1092,76 +1363,4 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     CurrentChunkMeta(currentClippedSchema, currentReadSchema, currentChunk,
       numRows, rowsPerPartition.toArray, allPartValues.toArray, extraInfo)
   }
-
-  /**
-   * Add all partition values found to the batch. There could be more then one partition
-   * value in the batch so we have to build up columns with the correct number of rows
-   * for each partition value.
-   *
-   * @param batch - columnar batch to append partition values to
-   * @param inPartitionValues - array of partition values
-   * @param rowsPerPartition - the number of rows that require each partition value
-   * @param partitionSchema - schema of the partitions
-   * @return
-   */
-  private def addAllPartitionValues(
-      batch: ColumnarBatch,
-      inPartitionValues: Array[InternalRow],
-      rowsPerPartition: Array[Long],
-      partitionSchema: StructType): ColumnarBatch = {
-    assert(rowsPerPartition.length == inPartitionValues.length)
-    if (partitionSchema.nonEmpty) {
-      val numPartitions = inPartitionValues.length
-      if (numPartitions > 1) {
-        concatAndAddPartitionColsToBatch(batch, rowsPerPartition, inPartitionValues)
-      } else {
-        // single partition, add like other readers
-        addPartitionValues(batch, inPartitionValues.head, partitionSchema)
-      }
-    } else {
-      batch
-    }
-  }
-
-  private def concatAndAddPartitionColsToBatch(
-      cb: ColumnarBatch,
-      rowsPerPartition: Array[Long],
-      inPartitionValues: Array[InternalRow]): ColumnarBatch = {
-    withResource(cb) { _ =>
-      closeOnExcept(buildAndConcatPartitionColumns(rowsPerPartition, inPartitionValues)) {
-        allPartCols =>
-          ColumnarPartitionReaderWithPartitionValues.addGpuColumVectorsToBatch(cb, allPartCols)
-      }
-    }
-  }
-
-  private def buildAndConcatPartitionColumns(
-      rowsPerPartition: Array[Long],
-      inPartitionValues: Array[InternalRow]): Array[GpuColumnVector] = {
-    val numCols = partitionSchema.fields.length
-    val allPartCols = new Array[GpuColumnVector](numCols)
-    // build the partitions vectors for all partitions within each column
-    // and concatenate those together then go to the next column
-    for ((field, colIndex) <- partitionSchema.fields.zipWithIndex) {
-      val dataType = field.dataType
-      withResource(new Array[GpuColumnVector](inPartitionValues.length)) {
-        partitionColumns =>
-          for ((rowsInPart, partIndex) <- rowsPerPartition.zipWithIndex) {
-            val partInternalRow = inPartitionValues(partIndex)
-            val partValueForCol = partInternalRow.get(colIndex, dataType)
-            val partitionScalar = GpuScalar.from(partValueForCol, dataType)
-            withResource(partitionScalar) { scalar =>
-              partitionColumns(partIndex) = GpuColumnVector.from(
-                ai.rapids.cudf.ColumnVector.fromScalar(scalar, rowsInPart.toInt),
-                dataType)
-            }
-          }
-          val baseOfCols = partitionColumns.map(_.getBase)
-          allPartCols(colIndex) = GpuColumnVector.from(
-            ColumnVector.concatenate(baseOfCols: _*), field.dataType)
-      }
-    }
-    allPartCols
-  }
-
 }

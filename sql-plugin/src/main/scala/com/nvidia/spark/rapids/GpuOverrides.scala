@@ -44,8 +44,8 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
-import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec}
-import org.apache.spark.sql.execution.datasources.{FileFormat, InsertIntoHadoopFsRelationCommand}
+import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec, RunnableCommand}
+import org.apache.spark.sql.execution.datasources.{FileFormat, InsertIntoHadoopFsRelationCommand, SaveIntoDataSourceCommand}
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
@@ -419,6 +419,25 @@ final class CreateDataSourceTableAsSelectCommandMeta(
 }
 
 /**
+ * Holds everything that is needed to replace a `RunnableCommand` with a
+ * GPU enabled version.
+ */
+class RunnableCommandRule[INPUT <: RunnableCommand](
+    doWrap: (
+        INPUT,
+            RapidsConf,
+            Option[RapidsMeta[_, _, _]],
+            DataFromReplacementRule) => RunnableCommandMeta[INPUT],
+    desc: String,
+    tag: ClassTag[INPUT])
+    extends ReplacementRule[INPUT, RunnableCommand, RunnableCommandMeta[INPUT]](
+      doWrap, desc, None, tag) {
+
+  override val confKeyPart: String = "command"
+  override val operationName: String = "Command"
+}
+
+/**
  * Listener trait so that tests can confirm that the expected optimizations are being applied
  */
 trait GpuOverridesListener {
@@ -446,6 +465,9 @@ object AvroFormatType extends FileFormatType {
 }
 object IcebergFormatType extends FileFormatType {
   override def toString = "Iceberg"
+}
+object DeltaFormatType extends FileFormatType {
+  override def toString = "Delta"
 }
 
 sealed trait FileFormatOp
@@ -813,6 +835,15 @@ object GpuOverrides extends Logging {
           GpuTypeShims.additionalCsvSupportedTypes,
       cudfWrite = TypeSig.none,
       sparkSig = TypeSig.cpuAtomics)),
+    (DeltaFormatType, FileFormatChecks(
+      cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
+          TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +
+          GpuTypeShims.additionalParquetSupportedTypes).nested(),
+      cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
+          TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +
+          GpuTypeShims.additionalParquetSupportedTypes).nested(),
+      sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
+          TypeSig.UDT + GpuTypeShims.additionalParquetSupportedTypes).nested())),
     (ParquetFormatType, FileFormatChecks(
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
           TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +
@@ -3199,6 +3230,16 @@ object GpuOverrides extends Logging {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuSize(child, a.legacySizeOfNull)
       }),
+    expr[Reverse](
+      "Returns a reversed string or an array with reverse order of elements",
+      ExprChecks.unaryProject(TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all), 
+        TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all),
+        TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all),
+        TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all)),
+      (a, conf, p, r) => new UnaryExprMeta[Reverse](a, conf, p, r) {
+        override def convertToGpu(input: Expression): GpuExpression =
+          GpuReverse(input)
+      }),
     expr[UnscaledValue](
       "Convert a Decimal to an unscaled long value for some aggregation optimizations",
       ExprChecks.unaryProject(TypeSig.LONG, TypeSig.LONG,
@@ -3647,6 +3688,31 @@ object GpuOverrides extends Logging {
       DataWritingCommandRule[_ <: DataWritingCommand]] =
     commonDataWriteCmds ++ GpuHiveOverrides.dataWriteCmds
 
+  def runnableCmd[INPUT <: RunnableCommand](
+      desc: String,
+      doWrap: (INPUT, RapidsConf, Option[RapidsMeta[_, _, _]], DataFromReplacementRule)
+          => RunnableCommandMeta[INPUT])
+      (implicit tag: ClassTag[INPUT]): RunnableCommandRule[INPUT] = {
+    require(desc != null)
+    require(doWrap != null)
+    new RunnableCommandRule[INPUT](doWrap, desc, tag)
+  }
+
+  def wrapRunnableCmd[INPUT <: RunnableCommand](
+      cmd: INPUT,
+      conf: RapidsConf,
+      parent: Option[RapidsMeta[_, _, _]]): RunnableCommandMeta[INPUT] =
+    runnableCmds.get(cmd.getClass)
+        .map(r => r.wrap(cmd, conf, parent, r).asInstanceOf[RunnableCommandMeta[INPUT]])
+        .getOrElse(new RuleNotFoundRunnableCommandMeta(cmd, conf, parent))
+
+  val runnableCmds: Map[Class[_ <: RunnableCommand], RunnableCommandRule[_ <: RunnableCommand]] =
+    Seq(
+      runnableCmd[SaveIntoDataSourceCommand](
+        "Write to a data source",
+        (a, conf, p, r) => new SaveIntoDataSourceCommandMeta(a, conf, p, r))
+    ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
+
   def wrapPlan[INPUT <: SparkPlan](
       plan: INPUT,
       conf: RapidsConf,
@@ -3721,6 +3787,10 @@ object GpuOverrides extends Logging {
           GpuDataWritingCommandExec(childDataWriteCmds.head.convertToGpu(),
             childPlans.head.convertIfNeeded())
       }),
+    exec[ExecutedCommandExec](
+      "Eagerly executed commands",
+      ExecChecks(TypeSig.all, TypeSig.all),
+      (p, conf, parent, r) => new ExecutedCommandExecMeta(p, conf, parent, r)),
     exec[TakeOrderedAndProjectExec](
       "Take the first limit elements as defined by the sortOrder, and do projection if needed",
       // The SortOrder TypeSig will govern what types can actually be used as sorting key data type.
@@ -4018,7 +4088,6 @@ object GpuOverrides extends Logging {
     neverReplaceExec[SetCatalogAndNamespaceExec]("Namespace metadata operation"),
     SparkShimImpl.neverReplaceShowCurrentNamespaceCommand,
     neverReplaceExec[ShowNamespacesExec]("Namespace metadata operation"),
-    neverReplaceExec[ExecutedCommandExec]("Table metadata operation"),
     neverReplaceExec[AlterTableExec]("Table metadata operation"),
     neverReplaceExec[CreateTableExec]("Table metadata operation"),
     neverReplaceExec[DeleteFromTableExec]("Table metadata operation"),
@@ -4365,6 +4434,8 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
           logDebug(s"Project with Snapshot ScalaUDF: $project")
         }
         foundExprs.nonEmpty
+      case mp: MapPartitionsExec if mp.func.toString.contains(".tahoe.Snapshot") =>
+        true
       case _ =>
         false
     })
