@@ -242,13 +242,14 @@ def create_hive_text_table_partitioned(spark, column_gen, text_table_name, data_
               "SELECT my_field FROM input_view")
 
 
-def read_hive_text_table_partitions(spark, text_table_name):
+def read_hive_text_table_partitions(spark, text_table_name, partition):
     """
     Helper method to read the contents of a Hive (Text) table.
     :param spark: Spark context for the test
     :param text_table_name: Name of the Hive (Text) table to be read
+    :param partition: Partition selection string (e.g. "dt=1")
     """
-    return spark.sql("SELECT my_field FROM " + text_table_name + " WHERE dt='1' ")
+    return spark.sql("SELECT my_field FROM %s WHERE %s" % (text_table_name, partition))
 
 
 @approximate_float
@@ -262,7 +263,25 @@ def test_hive_text_round_trip_partitioned(spark_tmp_path, data_gen, spark_tmp_ta
     with_cpu_session(lambda spark: create_hive_text_table_partitioned(spark, gen, table_name, data_path))
 
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: read_hive_text_table_partitions(spark, table_name),
+        lambda spark: read_hive_text_table_partitions(spark, table_name, "dt='1'"),
+        conf=hive_text_enabled_conf)
+
+
+@approximate_float
+@allow_non_gpu("EqualTo,IsNotNull,Literal,Or")  # Accounts for partition predicate
+@pytest.mark.parametrize('data_gen', hive_text_supported_gens, ids=idfn)
+def test_hive_text_round_trip_two_partitions(spark_tmp_path, data_gen, spark_tmp_table_factory):
+    """
+    Added to reproduce: https://github.com/NVIDIA/spark-rapids/issues/7383
+    """
+    gen = StructGen([('my_field', data_gen)], nullable=False)
+    data_path = spark_tmp_path + '/hive_text_table'
+    table_name = spark_tmp_table_factory.get()
+
+    with_cpu_session(lambda spark: create_hive_text_table_partitioned(spark, gen, table_name, data_path))
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: read_hive_text_table_partitions(spark, table_name, "dt='1' or dt='2'"),
         conf=hive_text_enabled_conf)
 
 
