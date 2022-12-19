@@ -145,7 +145,12 @@ object GpuDeviceManager extends Logging {
     GpuShuffleEnv.shutdown()
     // try to avoid segfault on RMM shutdown
     val timeout = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
-    while(Rmm.getTotalBytesAllocated > 0 && System.nanoTime() < timeout) {
+    var isFirstTime = true
+    while (Rmm.getTotalBytesAllocated > 0 && System.nanoTime() < timeout) {
+      if (isFirstTime) {
+        logWarning("Waiting for outstanding RMM allocations to be released...")
+        isFirstTime = false
+      }
       Thread.sleep(10)
     }
     if (System.nanoTime() >= timeout) {
