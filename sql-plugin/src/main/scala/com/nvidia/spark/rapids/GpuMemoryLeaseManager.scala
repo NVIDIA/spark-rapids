@@ -23,6 +23,10 @@ import java.util.concurrent.ConcurrentHashMap
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 
+/**
+ * The result of requesting a lease for more memory. Closing this will return the lease so
+ * other tasks can also use it.
+ */
 trait MemoryLease extends AutoCloseable {
   /**
    * Get the amount of memory assigned to this lease
@@ -31,8 +35,63 @@ trait MemoryLease extends AutoCloseable {
 }
 
 /**
- * Allows tasks to coordinate between each other to avoid
- * oversubscribing GPU memory.
+ * Allows tasks to coordinate between each other to avoid oversubscribing GPU memory. This class
+ * provides a set of APIs that allow SparkPlan nodes that use GPU memory to request more memory
+ * if they think they will need it. By default each task at startup will be given a base amount
+ * of memory to use. This base amount is typically based on a multiple of the target batch size.
+ * Each node in the plan should look at the input batch(s) that they get and the current lease
+ * that is assigned to that task to decide if it needs more memory to complete the processing.
+ * If the node decides that it needs more memory to complete an operation it can ask the
+ * GpuMemoryLeaseManager for a lease. There are several different ways to request this lease
+ * depending on the situation, so lets use the an ORC write as an example on what to do.
+ * Be aware that the numbers here are just made up, so only take this as an example of what
+ * could be done, and not exactly what will be done.
+ * <br/>
+ * An ORC write can take a number of different forms. We are doing to start with the simplest
+ * one where we take a batch as input and write it out to a file. In this situation we can
+ * look at the input batch size, along with the types of the columns and the compression algorithm
+ * being used and guess, using a heuristic, that this 1 GiB input batch is going to require an
+ * additional 8 GiB of GPU memory to do all of the compression needed. We can call into
+ * `getTotalLease(taskContext)` to know how much memory our task has already been allocated.
+ * In this case we are going to say 4 GiB. 1 GiB already used + 8 GiB more needed to complete
+ * the operation - 4 GiB available to use = 5 GiB more needed to complete the operation.
+ * Because we need more memory to finish the task we can make the input batch is spillable
+ * and call `requestLease(taskContext, 0, moreNeeded)` where the `moreNeeded` holds 5 GiB, the
+ * result of the math, and is the `requiredAmount` parameter to `requestLEase`. The method may
+ * block until it can get access to the full 9 GiB of memory for this task are available to it.
+ * Because it may block we have to make the input batch spillable. This is so other tasks can use
+ * that memory if needed. This is to avoid deadlocks. Once the method returns we know that we have
+ * everything needed to use those 9 GiB of memory. We can then write out the result and be done.
+ * <br/>
+ * But this has a number of problems with it that need to be addressed. First off, what happens
+ * if the GPU does not have 9 GiB of physical memory available in the RMM memory pool? What if we
+ * are running on say an old 8 GiB GPU? If we say that the amount needed is the `requiredAmount`
+ * then the task will fail without even trying. This is not ideal, especially because the 8 GiB
+ * was just an estimate. We might be wrong. If we switch the call to
+ * `requestLease(taskContext, moreNeeded)`, now the amount requested is the `optionalAmount`
+ * parameter. Now if the GPU does not have enough memory it will make all of that memory available
+ * to the task and we can hope that it is enough, but at least it gives us a chance to see.
+ * Generally `requiredAmount` should only be used if the estimate is very accurate, like a concat
+ * operation.
+ * <br/>
+ * The next problem is blocking and spilling. Making the input batch spillable is not ideal.
+ * It is not that expensive, but it is not free. And if we are on a large 80 GiB GPU there is
+ * a real possibility that we would never need to block. But if the task does block it is
+ * probable that the input batch will spill to host memory or even disk, which will need
+ * to be read back into GPU memory before we can finish doing the write. We can instead see how
+ * much of the memory we can get access to without blocking, and then decide what to do next. We
+ * can do this by calling `requestNonBlockingLease(taskContext, moreNeeded)`. This API is
+ * guaranteed to not block and as such the caller does not need to make sure all of the current
+ * working memory is spillable. The downside is that the `MemoryLease` that is returned might
+ * have anywhere between 0 bytes and the full amount requested. Because of this we are going to
+ * have to dynamically adjust based on what happens. If the amount of memory returned is the full
+ * amount, then we saved making the input spillable and can just do the processing as usual. If
+ * the amount returned is not quite enough to do the entire batch, but it looks like we could split
+ * the batch into 2 sub-batches, then depending on benchmarking, it might be worth splitting the
+ * input batch into two. Making half of it spillable, and out processing the other half of the data.
+ * If there isn't enough memory to even do that, then we can fall back to making that entire input
+ * batch spillable and calling the blocking API to get everything that we think we need to complete
+ * the operation.
  */
 object GpuMemoryLeaseManager extends Logging {
   // DO NOT ACCESS DIRECTLY!  Use `getInstance` instead.
@@ -45,6 +104,7 @@ object GpuMemoryLeaseManager extends Logging {
         // Since we don't have access to a configuration object here,
         // default to only one task per GPU behavior.
         if (instance == null) {
+          logWarning("GpuMemoryLeaseManager was not properly initialized before use")
           initialize(0)
         }
       }
@@ -54,9 +114,10 @@ object GpuMemoryLeaseManager extends Logging {
 
   /**
    * Initializes the GPU memory lease manager
-   * @param savedForShuffle the amount of memory that is saved for suffle
+   * @param reservedMemory the amount of memory that is saved for other operations, right now
+   *                       this really is just for shuffle, but could expand to more in the future.
    */
-  def initialize(savedForShuffle: Long): Unit = synchronized {
+  def initialize(reservedMemory: Long): Unit = synchronized {
     if (instance != null) {
       throw new IllegalStateException("already initialized")
     }
@@ -65,7 +126,7 @@ object GpuMemoryLeaseManager extends Logging {
     } else {
       Cuda.memGetInfo().free
     }
-    instance = new GpuMemoryLeaseManager(pool - savedForShuffle)
+    instance = new GpuMemoryLeaseManager(pool - reservedMemory)
   }
 
   /**
@@ -152,14 +213,14 @@ private final class GpuMemoryLeaseManager(memoryForLease: Long) extends Logging 
   // We are trying to keep the synchronization in this class simple. This is because
   // we don't expect to have a large number of threads active on the GPU at any
   // point in time, so we don't need to try and optimize it too much. All state can only
-  // be manipulated while holding the GpuMemoryLeaseManager lock. (so essentially just always
+  // be manipulated while holding the GpuMemoryLeaseManager lock, so essentially just always
   // grab the lock before doing anything. This includes state in TrackingForTask. To keep
   // things simple all threads that are waiting for more memory will be notified when enough
   // memory is available to handle the next thread, but only the threads associated with that
   // task will stay awake and continue processing. All of the others will wait/block again.
   class TrackingForTask {
     var totalUsed: Long = 0
-    var waitingThreadCount: Long = 0
+    var isThreadWaiting: Boolean = false
     var canWakeUp: Boolean = false
   }
 
@@ -218,16 +279,14 @@ private final class GpuMemoryLeaseManager(memoryForLease: Long) extends Logging 
       requiredAmount: Long,
       nonBlocking: Boolean): MemoryLease = synchronized {
     val taskAttemptId = tc.taskAttemptId()
-    if (nonBlocking && requiredAmount > 0) {
-      throw new IllegalArgumentException("Non-blocking requests with a required minimum amount " +
-          "of memory are not supported, because they are too likely to fail randomly")
-    }
+    require(!nonBlocking || requiredAmount <= 0,
+      "Non-blocking requests with a required minimum amount of memory are not supported, because " +
+          "they are too likely to fail randomly")
     val alreadyRequested = getTotalLease(tc)
-    if (requiredAmount + alreadyRequested > memoryForLease) {
-      throw new IllegalArgumentException(s"Task: $taskAttemptId requested at least " +
-          s"$requiredAmount more bytes, but already has leased $alreadyRequested bytes which " +
-          s"would got over the total for the worker of $memoryForLease bytes.")
-    }
+    require(requiredAmount + alreadyRequested <= memoryForLease,
+      s"Task: $taskAttemptId requested at least $requiredAmount more bytes, but already has " +
+          s"leased $alreadyRequested bytes which would got over the total for the worker " +
+          s"of $memoryForLease bytes.")
 
     if (nonBlocking && (!taskPriorityQueue.isEmpty || memoryAvailable <= 0)) {
       // This would block so just indicate it right now.
@@ -258,7 +317,7 @@ private final class GpuMemoryLeaseManager(memoryForLease: Long) extends Logging 
 
     if (!taskPriorityQueue.isEmpty || memoryAvailable < amountToRequest) {
       // Need to block until there is memory available
-      if (task.waitingThreadCount > 0 || task.canWakeUp) {
+      if (task.isThreadWaiting || task.canWakeUp) {
         throw new IllegalStateException("MULTIPLE THREADS TRYING TO REQUEST RESOURCES FOR " +
             "A SINGLE TASK")
       }
@@ -271,7 +330,7 @@ private final class GpuMemoryLeaseManager(memoryForLease: Long) extends Logging 
       wakeTasksThatCanRun()
 
       // Update the task request state for what is now needed
-      task.waitingThreadCount = 1
+      task.isThreadWaiting = true
       task.totalUsed += amountToRequest
       taskPriorityQueue.offer(task)
       withResource(new NvtxRange("Acquire GPU Memory", NvtxColor.YELLOW)) { _ =>
@@ -289,7 +348,7 @@ private final class GpuMemoryLeaseManager(memoryForLease: Long) extends Logging 
 
       // Memory available was already updated when the task was marked for wakeup.
       task.canWakeUp = false
-      task.waitingThreadCount -= 1
+      task.isThreadWaiting = false
     } else {
       // No need to block we can just do this...
       memoryAvailable -= amountToRequest

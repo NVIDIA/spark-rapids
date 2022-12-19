@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import java.util.concurrent.TimeUnit
+
 import org.mockito.Mockito._
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import org.scalatest.concurrent.{TimeLimitedTests, TimeLimits}
@@ -26,7 +28,7 @@ import org.apache.spark.TaskContext
 
 class GpuMemoryLeaseManagerSuite extends FunSuite
     with BeforeAndAfterEach with MockitoSugar with TimeLimits  with TimeLimitedTests with Arm {
-  override def timeLimit = Span(10, Seconds)
+  override def timeLimit: Span = Span(30, Seconds)
 
   override def beforeEach(): Unit = GpuMemoryLeaseManager.shutdown()
   override def afterEach(): Unit = GpuMemoryLeaseManager.shutdown()
@@ -93,8 +95,10 @@ class GpuMemoryLeaseManagerSuite extends FunSuite
     assert(GpuMemoryLeaseManager.getTotalLease(firstContext) == 0)
     assert(GpuMemoryLeaseManager.getTotalLease(secondContext) == 0)
     var childLease: MemoryLease = null
+    var childHasStarted: Boolean = false
     val child = new Thread() {
       override def run(): Unit = {
+        childHasStarted = true
         childLease = GpuMemoryLeaseManager.requestLease(secondContext, 900)
       }
     }
@@ -102,11 +106,23 @@ class GpuMemoryLeaseManagerSuite extends FunSuite
       assert(lease.leaseAmount == 900)
       child.start()
       // The child should block so give it some time to come up...
-      Thread.sleep(100)
+      val timeoutTime = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+      while (!childHasStarted) {
+        if (System.nanoTime() > timeoutTime) {
+          assert(false, "test timed out waiting for thread to start")
+        }
+        Thread.sleep(100)
+      }
       assert(childLease == null)
     }
     // The blocking lease should be done now and the other thread wakes up
-    Thread.sleep(100)
+    val timeoutTime = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+    while (child.isAlive) {
+      if (System.nanoTime() > timeoutTime) {
+        assert(false, "test timed out waiting for thread to end")
+      }
+      Thread.sleep(100)
+    }
     assert(childLease != null)
     assert(childLease.leaseAmount == 900)
     childLease.close()
