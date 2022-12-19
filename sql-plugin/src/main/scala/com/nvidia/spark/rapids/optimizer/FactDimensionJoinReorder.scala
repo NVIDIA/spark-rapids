@@ -163,7 +163,14 @@ object FactDimensionJoinReorder
       val sortedFactDimJoins = factDimJoins.sortBy(-_._1).map(_._2)
 
       // now we join the fact-dim join trees together
-      buildJoinTree(sortedFactDimJoins.head, sortedFactDimJoins.drop(1), conds)._2
+      val (numJoins, newPlan) = buildJoinTree(sortedFactDimJoins.head, sortedFactDimJoins.drop(1), conds)
+
+      if (numJoins == factDimJoins.length-1) {
+        newPlan
+      } else {
+        println("Could not join all fact-dim joins")
+        plan
+      }
     }
 
     if (conds.nonEmpty) {
@@ -196,10 +203,10 @@ object FactDimensionJoinReorder
         cond match {
           case b: BinaryExpression => (b.left, b.right) match {
             case (l: AttributeReference, r: AttributeReference) =>
-              if (fact.output.exists(_.exprId == l.exprId) &&
+              if (plan.output.exists(_.exprId == l.exprId) &&
                 dim.output.exists(_.exprId == r.exprId)) {
                 joinConds += cond
-              } else if (fact.output.exists(_.exprId == r.exprId) &&
+              } else if (plan.output.exists(_.exprId == r.exprId) &&
                 dim.output.exists(_.exprId == l.exprId)) {
                 joinConds += cond
               }
