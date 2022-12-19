@@ -3232,8 +3232,10 @@ object GpuOverrides extends Logging {
       }),
     expr[Reverse](
       "Returns a reversed string or an array with reverse order of elements",
-      ExprChecks.unaryProject(TypeSig.STRING, TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all),
-        TypeSig.STRING, TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all)),
+      ExprChecks.unaryProject(TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all), 
+        TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all),
+        TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all),
+        TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all)),
       (a, conf, p, r) => new UnaryExprMeta[Reverse](a, conf, p, r) {
         override def convertToGpu(input: Expression): GpuExpression =
           GpuReverse(input)
