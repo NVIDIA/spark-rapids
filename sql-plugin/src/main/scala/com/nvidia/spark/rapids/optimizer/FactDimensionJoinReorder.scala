@@ -156,21 +156,20 @@ object FactDimensionJoinReorder
       join
 
     } else {
-      // first we build one join tree for each fact table
-      val factDimJoins = facts.map(f => buildJoinTree(f.plan, dimLogicalPlans, conds))
 
-      // sort so that fact tables with more joins appear earlier
-      val sortedFactDimJoins = factDimJoins.sortBy(-_._1).map(_._2)
-
-      // now we join the fact-dim join trees together
-      val (numJoins, newPlan) = buildJoinTree(sortedFactDimJoins.head, sortedFactDimJoins.drop(1), conds)
-
-      if (numJoins == factDimJoins.length-1) {
-        newPlan
-      } else {
-        println("Could not join all fact-dim joins")
-        plan
+      // attempt to build a left-deep tree
+      val factsBySize = facts.sortBy(_.size)
+      var join = buildJoinTree(factsBySize.head.plan, dimLogicalPlans, conds)._2
+      for (fact <- factsBySize.drop(1)) {
+        val (numJoins, newJoin) = buildJoinTree(join, Seq(fact.plan) ++ dimLogicalPlans, conds)
+        if (numJoins == 0) {
+          logDebug(s"FactDimensionJoinReorder: failed to join multiple fact tables")
+          return plan
+        }
+        join = newJoin
       }
+      join
+
     }
 
     if (conds.nonEmpty) {
