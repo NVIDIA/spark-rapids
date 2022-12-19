@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.sql.catalyst.catalog.{CatalogStorageFormat, HiveTableRelation}
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
@@ -217,6 +217,25 @@ class HiveProviderImpl extends HiveProvider {
             }
           }
 
+          private def hasUnsupportedType(column: AttributeReference): Boolean = {
+            column.dataType match {
+              case ArrayType(_,_) => true
+              case StructType(_)  => true
+              case MapType(_,_,_) => true
+              case BinaryType     => true
+              case _              => false
+            }
+          }
+
+          private def flagIfUnsupportedType(tableRelation: HiveTableRelation,
+                                            column: AttributeReference): Unit = {
+            if (hasUnsupportedType(column)) {
+              willNotWorkOnGpu(s"column ${column.name} of table " +
+                s"${tableRelation.tableMeta.qualifiedName} has type ${column.dataType}, " +
+                s"unsupported for Hive text tables. ")
+            }
+          }
+
           private def flagIfUnsupported(tableRelation: HiveTableRelation): Unit = {
             // Check Storage format settings.
             flagIfUnsupportedStorageFormat(tableRelation.tableMeta.storage)
@@ -225,6 +244,9 @@ class HiveProviderImpl extends HiveProvider {
               TrampolineUtil.dataTypeExistsRecursively(att.dataType,
                 dt => dt.isInstanceOf[TimestampType])
             }
+
+            // Check if datatypes are all supported.
+            tableRelation.dataCols.foreach(flagIfUnsupportedType(tableRelation, _))
 
             // Check TBLPROPERTIES as well.
             // `timestamp.formats` might be set in TBLPROPERTIES or SERDEPROPERTIES,

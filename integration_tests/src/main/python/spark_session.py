@@ -180,13 +180,18 @@ def is_databricks_version_or_later(major, minor):
     parts = version.split(".")
     if (len(parts) < 2):
         raise RuntimeError("Unable to determine Databricks version from version string: " + version)
-    return int(parts[0]) >= major and int(parts[1]) >= minor
+    db_major = int(parts[0])
+    db_minor = int(parts[1])
+    return db_minor >= minor if (db_major == major) else db_major >= major
 
 def is_databricks91_or_later():
     return is_databricks_version_or_later(9, 1)
 
 def is_databricks104_or_later():
     return is_databricks_version_or_later(10, 4)
+
+def is_databricks113_or_later():
+    return is_databricks_version_or_later(11, 3)
 
 def get_java_major_version():
     ver = _spark.sparkContext._jvm.System.getProperty("java.version")

@@ -19,6 +19,7 @@ from spark_session import is_before_spark_320, is_spark_cdh
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
+from pyspark.sql.functions import lit
 from pyspark.sql.types import *
 
 pytestmark = pytest.mark.nightly_resource_consuming_test
@@ -89,6 +90,31 @@ def test_part_write_round_trip(spark_tmp_path, orc_gen):
             lambda spark, path: spark.read.orc(path),
             data_path,
             conf = {'spark.rapids.sql.format.orc.write.enabled': True})
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('orc_gen', [int_gen], ids=idfn)
+@pytest.mark.parametrize('orc_impl', ["native", "hive"])
+def test_dynamic_partition_write_round_trip(spark_tmp_path, orc_gen, orc_impl):
+    gen_list = [('_c0', orc_gen)]
+    data_path = spark_tmp_path + '/ORC_DATA'
+    def do_writes(spark, path):
+        df = gen_df(spark, gen_list).withColumn("my_partition", lit("PART"))
+        # first write finds no partitions, it skips the dynamic partition
+        # overwrite code
+        df.write.mode("overwrite").partitionBy("my_partition").orc(path)
+        # second write actually triggers dynamic partition overwrite
+        df.write.mode("overwrite").partitionBy("my_partition").orc(path)
+    assert_gpu_and_cpu_writes_are_equal_collect(
+            lambda spark, path: do_writes(spark, path),
+            lambda spark, path: spark.read.orc(path),
+            data_path,
+            conf={
+                'spark.sql.orc.impl': orc_impl,
+                'spark.rapids.sql.format.orc.write.enabled': True,
+                'spark.sql.sources.partitionOverwriteMode': 'DYNAMIC'
+            })
+
 
 orc_write_compress_options = ['none', 'uncompressed', 'snappy']
 # zstd is available in spark 3.2.0 and later.

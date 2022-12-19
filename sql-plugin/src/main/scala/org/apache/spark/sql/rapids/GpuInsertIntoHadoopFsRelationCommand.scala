@@ -64,6 +64,32 @@ case class GpuInsertIntoHadoopFsRelationCommand(
     val fs = outputPath.getFileSystem(hadoopConf)
     val qualifiedOutputPath = outputPath.makeQualified(fs.getUri, fs.getWorkingDirectory)
 
+    val parameters = CaseInsensitiveMap(options)
+
+    val partitionOverwriteMode = parameters.get("partitionOverwriteMode")
+      // scalastyle:off caselocale
+      .map(mode => PartitionOverwriteMode.withName(mode.toUpperCase))
+      // scalastyle:on caselocale
+      .getOrElse(sparkSession.sessionState.conf.partitionOverwriteMode)
+
+
+    val enableDynamicOverwrite = partitionOverwriteMode == PartitionOverwriteMode.DYNAMIC
+    // This config only makes sense when we are overwriting a partitioned dataset with dynamic
+    // partition columns.
+    val dynamicPartitionOverwrite = enableDynamicOverwrite && mode == SaveMode.Overwrite &&
+      staticPartitions.size < partitionColumns.length
+
+    val jobId = java.util.UUID.randomUUID().toString
+
+    // For dynamic partition overwrite, FileOutputCommitter's output path is staging path, files
+    // will be renamed from staging path to final output path during commit job
+    val committerOutputPath = if (dynamicPartitionOverwrite) {
+      FileCommitProtocol.getStagingDir(outputPath.toString, jobId)
+        .makeQualified(fs.getUri, fs.getWorkingDirectory)
+    } else {
+      qualifiedOutputPath
+    }
+
     val partitionsTrackedByCatalog = sparkSession.sessionState.conf.manageFilesourcePartitions &&
       catalogTable.isDefined &&
       catalogTable.get.partitionColumnNames.nonEmpty &&
@@ -83,22 +109,9 @@ case class GpuInsertIntoHadoopFsRelationCommand(
         fs, catalogTable.get, qualifiedOutputPath, matchingPartitions)
     }
 
-    val parameters = CaseInsensitiveMap(options)
-
-    val partitionOverwriteMode = parameters.get("partitionOverwriteMode")
-      // scalastyle:off caselocale
-      .map(mode => PartitionOverwriteMode.withName(mode.toUpperCase))
-      // scalastyle:on caselocale
-      .getOrElse(sparkSession.sessionState.conf.partitionOverwriteMode)
-    val enableDynamicOverwrite = partitionOverwriteMode == PartitionOverwriteMode.DYNAMIC
-    // This config only makes sense when we are overwriting a partitioned dataset with dynamic
-    // partition columns.
-    val dynamicPartitionOverwrite = enableDynamicOverwrite && mode == SaveMode.Overwrite &&
-      staticPartitions.size < partitionColumns.length
-
     val committer = FileCommitProtocol.instantiate(
       sparkSession.sessionState.conf.fileCommitProtocolClass,
-      jobId = java.util.UUID.randomUUID().toString,
+      jobId = jobId,
       outputPath = outputPath.toString,
       dynamicPartitionOverwrite = dynamicPartitionOverwrite)
 
@@ -160,7 +173,7 @@ case class GpuInsertIntoHadoopFsRelationCommand(
           fileFormat = fileFormat,
           committer = committer,
           outputSpec = FileFormatWriter.OutputSpec(
-            qualifiedOutputPath.toString, customPartitionLocations, outputColumns),
+            committerOutputPath.toString, customPartitionLocations, outputColumns),
           hadoopConf = hadoopConf,
           partitionColumns = partitionColumns,
           bucketSpec = bucketSpec,
