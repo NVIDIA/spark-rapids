@@ -45,6 +45,16 @@ object SparkShimImpl extends Spark321PlusDBShims {
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
   }
 
+  override def tagFileSourceScanExec(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
+    if (meta.wrapped.expressions.exists {
+      case FileSourceMetadataAttribute(_) => true
+      case _ => false
+    }) {
+      meta.willNotWorkOnGpu("hidden metadata columns are not supported on GPU")
+    }
+    super.tagFileSourceScanExec(meta)
+  }
+
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
     super.getExprs ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs
 
