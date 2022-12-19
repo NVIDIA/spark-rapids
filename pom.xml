@@ -700,7 +700,12 @@
              so code coverage does not include the shaded classes.
         -->
         <rapids.shade.package>${spark.version.classifier}.com.nvidia.shaded.spark</rapids.shade.package>
-        <test.exclude.tags/>
+        <!--
+            cuda-toolkit 11.5+ will install nvidia GDS package by default
+            if no compatible GDS device on test machine, the scala test would fail
+            so we exclude GdsTest tag as default
+        -->
+        <test.exclude.tags>GdsTest</test.exclude.tags>
         <test.include.tags/>
         <rapids.shuffle.manager.override>true</rapids.shuffle.manager.override>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
