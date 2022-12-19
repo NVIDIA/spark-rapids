@@ -135,6 +135,14 @@
             </properties>
         </profile>
         <profile>
+            <id>databricks</id>
+            <properties>
+                <included_buildvers>
+                    ${databricks.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
             <!--
             https://spark.apache.org/versioning-policy.html
             Spark's semantic versioning [MAJOR].[FEATURE].[MAINTENANCE]
