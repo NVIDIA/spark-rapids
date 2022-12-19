@@ -346,37 +346,39 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   // This walks from the output to the input to look for any uses of InputFileName,
   // InputFileBlockStart, or InputFileBlockLength when we use a Parquet read because
   // we can't support the coalesce file reader optimization when this is used.
-  private def updateScansForInput(plan: SparkPlan,
-      disableUntilInput: Boolean = false): SparkPlan = plan match {
-    case batchScan: GpuBatchScanExec =>
-      if ((batchScan.scan.isInstanceOf[GpuParquetScan] ||
-           batchScan.scan.isInstanceOf[GpuOrcScan] ||
-           ExternalSource.isSupportedScan(batchScan.scan)) &&
+  private def updateScansForInputAndOrder(plan: SparkPlan,
+      disableUntilInput: Boolean = false): SparkPlan = {
+    plan match {
+      case batchScan: GpuBatchScanExec =>
+        if ((batchScan.scan.isInstanceOf[GpuParquetScan] ||
+          batchScan.scan.isInstanceOf[GpuOrcScan] ||
+          ExternalSource.isSupportedScan(batchScan.scan)) &&
           (disableUntilInput || disableScanUntilInput(batchScan))) {
-        val scanCopy = batchScan.scan match {
-          case parquetScan: GpuParquetScan =>
-            parquetScan.copy(queryUsesInputFile=true)
-          case orcScan: GpuOrcScan =>
-            orcScan.copy(queryUsesInputFile=true)
-          case eScan if ExternalSource.isSupportedScan(eScan) =>
-            ExternalSource.copyScanWithInputFileTrue(eScan)
-          case _ => throw new RuntimeException("Wrong format") // never reach here
+          val scanCopy = batchScan.scan match {
+            case parquetScan: GpuParquetScan =>
+              parquetScan.copy(queryUsesInputFile = true)
+            case orcScan: GpuOrcScan =>
+              orcScan.copy(queryUsesInputFile = true)
+            case eScan if ExternalSource.isSupportedScan(eScan) =>
+              ExternalSource.copyScanWithInputFileTrue(eScan)
+            case _ => throw new RuntimeException("Wrong format") // never reach here
+          }
+          batchScan.copy(scan = scanCopy)
+        } else {
+          batchScan
         }
-        batchScan.copy(scan=scanCopy)
-      } else {
-        batchScan
-      }
-    case fileSourceScan: GpuFileSourceScanExec =>
-      if ((disableUntilInput || disableScanUntilInput(fileSourceScan))) {
-        fileSourceScan.copy(queryUsesInputFile=true)(fileSourceScan.rapidsConf)
-      } else {
-        fileSourceScan
-      }
-    case p =>
-      val planDisableUntilInput = disableScanUntilInput(p) && hasDirectLineToInput(p)
-      p.withNewChildren(p.children.map(c => {
-        updateScansForInput(c, planDisableUntilInput || disableUntilInput)
-      }))
+      case fileSourceScan: GpuFileSourceScanExec =>
+        if ((disableUntilInput || disableScanUntilInput(fileSourceScan))) {
+          fileSourceScan.copy(queryUsesInputFile = true)(fileSourceScan.rapidsConf)
+        } else {
+          fileSourceScan
+        }
+      case p =>
+        val planDisableUntilInput = disableScanUntilInput(p) && hasDirectLineToInput(p)
+        p.withNewChildren(p.children.map(c => {
+          updateScansForInputAndOrder(c, planDisableUntilInput || disableUntilInput)
+        }))
+    }
   }
 
   // This walks from the output to the input so disableUntilInput can walk its way from when
@@ -495,6 +497,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   }
 
   def assertIsOnTheGpu(plan: SparkPlan, conf: RapidsConf): Unit = {
+    def isTestExempted(plan: SparkPlan): Boolean = {
+      conf.testingAllowedNonGpu.exists(PlanUtils.sameClass(plan, _))
+    }
     val isAdaptiveEnabled = plan.conf.adaptiveExecutionEnabled
     plan match {
       case _: BroadcastExchangeLike if isAdaptiveEnabled =>
@@ -515,12 +520,17 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           throw new IllegalArgumentException("It looks like some operations were " +
             s"pushed down to InMemoryTableScanExec ${imts.expressions.mkString(",")}")
         }
-        // some metadata operations, may add more when needed
+      // some metadata operations, may add more when needed
       case _: ShowTablesExec =>
       case _: DropTableExec =>
-      case _: ExecutedCommandExec => () // Ignored
       case _: RDDScanExec => () // Ignored
       case p if SparkShimImpl.skipAssertIsOnTheGpu(p) => () // Ignored
+      case p: ExecutedCommandExec if !isTestExempted(p) =>
+        val meta = GpuOverrides.wrapPlan(p, conf, None)
+        if (!meta.suppressWillWorkOnGpuInfo) {
+          throw new IllegalArgumentException("Part of the plan is not columnar " +
+              s"${p.getClass}\n$p")
+        }
       case _ =>
         if (!plan.supportsColumnar &&
             // There are some python execs that are not columnar because of a little
@@ -528,8 +538,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             // the columnar to row transitions to not cause test issues because they too
             // are not columnar (they output rows) but are instances of GpuExec.
             !plan.isInstanceOf[GpuExec] &&
-            !conf.testingAllowedNonGpu.exists(nonGpuClass =>
-                PlanUtils.sameClass(plan, nonGpuClass))) {
+            !isTestExempted(plan)) {
           throw new IllegalArgumentException(s"Part of the plan is not columnar " +
             s"${plan.getClass}\n$plan")
         }
@@ -579,7 +588,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       GpuOverrides.logDuration(rapidsConf.shouldExplain,
         t => f"GPU plan transition optimization took $t%.2f ms") {
         var updatedPlan = insertHashOptimizeSorts(plan)
-        updatedPlan = updateScansForInput(updatedPlan)
+        updatedPlan = updateScansForInputAndOrder(updatedPlan)
         updatedPlan = insertColumnarFromGpu(updatedPlan)
         updatedPlan = insertCoalesce(updatedPlan)
         // only insert shuffle coalesces when using normal shuffle

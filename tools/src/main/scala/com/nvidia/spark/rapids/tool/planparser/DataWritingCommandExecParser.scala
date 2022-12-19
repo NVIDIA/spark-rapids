@@ -31,7 +31,7 @@ case class DataWritingCommandExecParser(
   val fullExecName = "DataWritingCommandExec"
 
   override def parse: ExecInfo = {
-    val writeFormat = node.desc.split(",")(2)
+    val writeFormat = checker.getWriteFormatString(node.desc)
     val writeSupported = checker.isWriteFormatsupported(writeFormat)
     val duration = None
     val speedupFactor = checker.getSpeedupFactor(fullExecName)
