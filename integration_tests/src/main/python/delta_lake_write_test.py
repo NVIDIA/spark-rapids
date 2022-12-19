@@ -102,9 +102,7 @@ def assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path):
 @pytest.mark.parametrize("disable_conf",
                          [{"spark.rapids.sql.format.delta.write.enabled": "false"},
                           {"spark.rapids.sql.format.parquet.enabled": "false"},
-                          {"spark.rapids.sql.format.parquet.write.enabled": "false"},
-                          {}  # verify disabled by default
-                          ], ids=idfn)
+                          {"spark.rapids.sql.format.parquet.write.enabled": "false"}], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_disabled_fallback(spark_tmp_path, disable_conf):
     data_path = spark_tmp_path + "/DELTA_DATA"
