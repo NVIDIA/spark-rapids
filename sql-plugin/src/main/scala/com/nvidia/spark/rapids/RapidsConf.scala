@@ -1109,10 +1109,9 @@ object RapidsConf {
       .createWithDefault(Integer.MAX_VALUE)
 
   val ENABLE_DELTA_WRITE = conf("spark.rapids.sql.format.delta.write.enabled")
-      .doc("When set to false disables Delta Lake output acceleration." +
-        " Delta Lake writes are currently experimental, so this is disabled by default.")
+      .doc("When set to false disables Delta Lake output acceleration.")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   val ENABLE_ICEBERG = conf("spark.rapids.sql.format.iceberg.enabled")
     .doc("When set to false disables all Iceberg acceleration")
