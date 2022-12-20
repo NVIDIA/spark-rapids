@@ -30,6 +30,11 @@ import org.apache.spark.sql.types.{DataTypes, StructType}
 
 class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir {
 
+  // TODO write tests for the following
+  // - build left-deep, right-deep, and bushy trees from fact and dim relations
+  // - write tests for each config option to prove that they are used
+  // - test for all conditions in the code where we fall back to the original plan
+
   private val defaultConf = new SparkConf()
 
   private val confJoinOrderingEnabled = new SparkConf()

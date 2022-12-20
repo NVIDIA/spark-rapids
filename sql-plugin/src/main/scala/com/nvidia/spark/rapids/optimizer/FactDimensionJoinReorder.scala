@@ -144,8 +144,13 @@ object FactDimensionJoinReorder
     val dimLogicalPlans = dimsBySize.map(_.plan)
 
     val newPlan = if (facts.length == 1) {
-      // this is the use case described in the paper
-      val (numJoins, join) = buildJoinTree(facts.head.plan, dimLogicalPlans, conds, true)
+      // the single fact table case closely follows the design in the paper
+
+      // when we have a single table, we build a left-deep tree for now, but the paper talked
+      // about detecting and preserving the shape of the original tree, and limiting support to
+      // left-deep and right-deep, which is a restriction that we do not currently have in this
+      // implementation and we may want to experiment more with this.
+      val (numJoins, join) = buildJoinTree(facts.head.plan, dimLogicalPlans, conds, LeftDeep)
 
       // check for dominant fact table (at least half of joins must be against fact table)
       if (numJoins < (relations.length-1)/2) {
@@ -157,6 +162,12 @@ object FactDimensionJoinReorder
 
     } else {
 
+      // the multiple fact table case is not covered by the design in the paper, so this is
+      // an extension to that design
+
+      // for now, we build the final tree as a bushy tree when we have multiple fact tables
+      // but we may want to experiment more with this in a future version of the rule
+
       // TODO still experimenting with these approaches
 
       val leftDeepTree = false
@@ -166,10 +177,10 @@ object FactDimensionJoinReorder
         // attempt to build a left-deep tree
         val factsBySize = facts.sortBy(_.size)
         var join = buildJoinTree(factsBySize.head.plan, dimLogicalPlans,
-          conds, joinToFactTableOnly = false)._2
+          conds, LeftDeep)._2
         for (fact <- factsBySize.drop(1)) {
           val (numJoins, newJoin) = buildJoinTree(join, Seq(fact.plan) ++ dimLogicalPlans,
-            conds, joinToFactTableOnly = false)
+            conds, LeftDeep)
           if (numJoins == 0) {
             logDebug(s"FactDimensionJoinReorder: failed to join multiple fact tables")
             return plan
@@ -184,14 +195,14 @@ object FactDimensionJoinReorder
 
         // first we build one join tree for each fact table
         val factDimJoins = facts.map(f => buildJoinTree(f.plan,
-          dimLogicalPlans, conds, joinToFactTableOnly = true))
+          dimLogicalPlans, conds, LeftDeep))
 
         // sort so that fact tables with more joins appear earlier
         val sortedFactDimJoins = factDimJoins.sortBy(-_._1).map(_._2)
 
         // now we join the fact-dim join trees together
         val (numJoins, newPlan) = buildJoinTree(sortedFactDimJoins.head,
-          sortedFactDimJoins.drop(1), conds, joinToFactTableOnly = true)
+          sortedFactDimJoins.drop(1), conds, Bushy)
 
         if (numJoins == factDimJoins.length - 1) {
           newPlan
@@ -225,11 +236,11 @@ object FactDimensionJoinReorder
       fact: LogicalPlan,
       dims: Seq[LogicalPlan],
       conds: mutable.HashSet[Expression],
-      joinToFactTableOnly: Boolean): (Int, LogicalPlan) = {
+      shape: TreeShape): (Int, LogicalPlan) = {
     var plan = fact
     var numJoins = 0
     for (dim <- dims) {
-      val left = if (joinToFactTableOnly) { fact } else { plan }
+      val left = if (shape == Bushy) { plan } else { fact }
       val joinConds = new ListBuffer[Expression]()
       for (cond <- conds) {
         cond match {
@@ -251,7 +262,12 @@ object FactDimensionJoinReorder
         joinConds.foreach(conds.remove)
         val factDimJoinCond = joinConds.reduce(And)
         logDebug(s"FactDimensionJoinReorder: join fact to dim on $factDimJoinCond")
-        plan = Join(plan, dim, Inner, Some(factDimJoinCond), JoinHint.NONE)
+        shape match {
+          case LeftDeep | Bushy =>
+            plan = Join(plan, dim, Inner, Some(factDimJoinCond), JoinHint.NONE)
+          case RightDeep =>
+            plan = Join(dim, plan, Inner, Some(factDimJoinCond), JoinHint.NONE)
+        }
         numJoins += 1
       }
     }
@@ -337,6 +353,11 @@ object FactDimensionJoinReorder
   }
 
 }
+
+sealed trait TreeShape
+object LeftDeep extends TreeShape
+object RightDeep extends TreeShape
+object Bushy extends TreeShape
 
 /**
  * Wrapper for logical plan with size.
