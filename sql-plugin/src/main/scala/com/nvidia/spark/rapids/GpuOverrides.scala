@@ -4317,6 +4317,7 @@ object GpuOverrideUtil extends Logging {
     val planOriginal = plan.clone()
     val failOnError = TEST_CONF.get(plan.conf) || !SUPPRESS_PLANNING_FAILURE.get(plan.conf)
     try {
+      logWarning(s"tryOverride with plan: $plan")
       fn(plan)
     } catch {
       case NonFatal(t) if !failOnError =>

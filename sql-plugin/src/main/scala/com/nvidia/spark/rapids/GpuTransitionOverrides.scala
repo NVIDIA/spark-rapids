@@ -539,9 +539,14 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             // are not columnar (they output rows) but are instances of GpuExec.
             !plan.isInstanceOf[GpuExec] &&
             !isTestExempted(plan)) {
+          logWarning(s"assertIsOnTheGpu with plan $plan")
+          logWarning(s"${!plan.supportsColumnar}")
+          logWarning(s"${!plan.isInstanceOf[GpuExec]}")
+          logWarning(s"${!isTestExempted(plan)}")
           throw new IllegalArgumentException(s"Part of the plan is not columnar " +
             s"${plan.getClass}\n$plan")
         }
+        logWarning(s"assertIsOnTheGpu with plan $plan")
         // Check child expressions if this is a GPU node
         plan match {
           case gpuExec: GpuExec =>

@@ -895,6 +895,7 @@ case class ContextChecks(
     val expr = meta.wrapped.asInstanceOf[Expression]
     meta.typeMeta.dataType match {
       case Some(dt: DataType) =>
+        logWarning(s"ContextChecks expr = ${expr}")
         if (!outputCheck.isSupportedByPlugin(dt)) {
           willNotWork(s"expression ${expr.getClass.getSimpleName} $expr " +
               s"produces an unsupported type $dt")

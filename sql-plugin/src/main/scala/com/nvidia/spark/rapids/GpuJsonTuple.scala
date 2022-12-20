@@ -16,19 +16,21 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.ColumnVector
+// import ai.rapids.cudf.{ColumnVector, Table}
+import ai.rapids.cudf.{Table}
 import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.types.{DataType, StringType}
+import org.apache.spark.sql.types.{DataType, StringType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator {
+case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator 
+  with ShimExpression {
   // override def dataType: DataType = StringType
-  // override def nullable: Boolean = false
+  override def nullable: Boolean = false
   
   // @transient private lazy val json: Expression = children.head
   // @transient private lazy val fields: Seq[Expression] = children.tail
@@ -53,22 +55,88 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator {
     }
   }
 
-  override def columnarEval(batch: ColumnarBatch): Any = {
+  // override def columnarEval(batch: ColumnarBatch): Any = {
+  //   def resolveScalar(any: Any): GpuScalar = {
+  //     withResourceIfAllowed(any) {
+  //       case s: GpuScalar => s
+  //       case _ => throw new UnsupportedOperationException("JSON path must be a scalar value")
+  //     }
+  //   }
+  //   withResource(columnarEvalToColumn(json, batch).getBase) { json =>
+  //     withResource(fields.safeMap(p => resolveScalar(p.columnarEval(batch)).getBase)) 
+  //     { scalars =>
+  //       withResource(scalars.safeMap(json.getJSONObject(_))) { cols =>
+  //         cols.foreach(GpuColumnVector.debug("Get JSON res:", _))
+  //         ColumnVector.makeList(cols: _*)
+  //         // ColumnVector.concatenate(cols: _*)
+  //         // cols
+  //       }
+  //     }
+  //   }
+  // }
+
+  def generate(inputBatch: ColumnarBatch,
+      generatorOffset: Int,
+      outer: Boolean): ColumnarBatch = {
+
     def resolveScalar(any: Any): GpuScalar = {
       withResourceIfAllowed(any) {
         case s: GpuScalar => s
         case _ => throw new UnsupportedOperationException("JSON path must be a scalar value")
       }
     }
-    withResource(columnarEvalToColumn(json, batch).getBase) { json =>
-      withResource(fields.safeMap(p => resolveScalar(p.columnarEval(batch)).getBase)) { scalars =>
+
+    val schema = Array.fill[DataType](fieldExpressions.length)(StringType)
+    withResource(columnarEvalToColumn(jsonExpr, inputBatch).getBase) { json =>
+      withResource(fieldExpressions.safeMap
+        (path => resolveScalar(path.columnarEval(inputBatch)).getBase)) { scalars => 
         withResource(scalars.safeMap(json.getJSONObject(_))) { cols =>
           cols.foreach(GpuColumnVector.debug("Get JSON res:", _))
-          ColumnVector.makeList(cols: _*)
+          // ColumnVector.makeList(cols: _*)
           // ColumnVector.concatenate(cols: _*)
           // cols
+          // val res = new ColumnarBatch((cols.toArray[ColumnVector]), (int)inputBatch.numRows)
+          // res
+          // (new ColumnarBatch(cols.toArray, (int)inputBatch.numRows))
+          GpuColumnVector.from(new Table(cols: _*), schema)
         }
       }
+    }
+    // inputBatch
+  }
+
+  def inputSplitIndices(inputBatch: ColumnarBatch,
+      generatorOffset: Int,
+      outer: Boolean,
+      targetSizeBytes: Long,
+      maxRows: Int = Int.MaxValue): Array[Int] = {
+    val inputRows = inputBatch.numRows
+    // if the number of input rows is 1 or less, cannot split
+    if (inputRows <= 1) return Array()
+    val outputRows = inputRows
+    // we know we are going to output at most this much
+    val estimateOutputSize = 
+      withResource(columnarEvalToColumn(jsonExpr, inputBatch).getBase) { json =>
+        (json.getDeviceMemorySize * fieldExpressions.length).toDouble
+      }
+    
+    val numSplitsForTargetSize = math.min(inputRows,
+      math.ceil(estimateOutputSize / targetSizeBytes).toInt)
+    val splitIndices = 
+      GpuBatchUtils.generateSplitIndices(inputRows, numSplitsForTargetSize).distinct
+
+    // how may splits will we need to keep the output rows under max value
+    val numSplitsForTargetRow = math.ceil(outputRows / maxRows).toInt
+
+    // If the number of splits needed to keep the row limits for cuDF is higher than
+    // the splits we found by size, we need to use the row-based splits.
+    // Note, given skewed input, we could be left with batches split at bad places,
+    // e.g. all of the non nulls are in a single split. So we may need to re-split
+    // that row-based slice using the size approach.
+    if (numSplitsForTargetRow > splitIndices.length) {
+      GpuBatchUtils.generateSplitIndices(inputRows, numSplitsForTargetRow)
+    } else {
+      splitIndices
     }
   }
 }
