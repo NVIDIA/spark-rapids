@@ -62,6 +62,9 @@ object FactDimensionJoinReorder
     reorderedJoin
   }
 
+  /**
+   * Determine if the join is eligible for join reordering.
+   */
   private def isSupportedJoin(plan: LogicalPlan): Boolean = plan match {
     case Join(l, r, Inner, Some(cond), JoinHint.NONE) =>
       splitConjunctivePredicates(cond).forall(isSupportedJoinCond) &&
@@ -79,10 +82,12 @@ object FactDimensionJoinReorder
   }
 
   private def isSupportedJoinCond(cond: Expression): Boolean = {
-    // we may want to make this more restrictive in the future but mainly we are looking to
-    // support comparisons between columns, such as '=', '<', and similar
+    if (!cond.deterministic) {
+      return false
+    }
     cond match {
       case b: BinaryExpression =>
+        // comparison between two columns e.g. `l == r` or `l < r`
         b.left.isInstanceOf[AttributeReference] && b.right.isInstanceOf[AttributeReference]
       case _ => false
     }
@@ -94,7 +99,7 @@ object FactDimensionJoinReorder
     logDebug(s"Attempt to reorder join:\n$plan")
 
     // unnest the join into a list of input relations and list of join conditions
-    val (joinInputs, joinConditions) = extractInnerJoins(plan)
+    val (treeShape, joinInputs, joinConditions) = extractInnerJoins(plan)
 
     // this check is redundant since we would fail to extract statistics in the next step
     // if the relation contains joins, but this makes the check more explicit
@@ -136,12 +141,7 @@ object FactDimensionJoinReorder
 
     val newPlan = if (facts.length == 1) {
       // the single fact table case closely follows the design in the paper
-
-      // when we have a single table, we build a left-deep tree for now, but the paper talked
-      // about detecting and preserving the shape of the original tree, and limiting support to
-      // left-deep and right-deep, which is a restriction that we do not currently have in this
-      // implementation and we may want to experiment more with this.
-      val (numJoins, join) = buildJoinTree(facts.head.plan, dimLogicalPlans, conds, LeftDeep)
+      val (numJoins, join) = buildJoinTree(facts.head.plan, dimLogicalPlans, conds, treeShape)
 
       // check for dominant fact table (at least half of joins must be against fact table)
       if (numJoins < (relations.length-1)/2) {
@@ -157,7 +157,8 @@ object FactDimensionJoinReorder
       // an extension to that design
 
       // for now, we build the final tree as a bushy tree when we have multiple fact tables
-      // but we may want to experiment more with this in a future version of the rule
+      // but we may want to experiment more with this in a future version of the rule.
+      // tracking issue: https://github.com/NVIDIA/spark-rapids/issues/7399
       val treeShape: TreeShape = Bushy
 
       treeShape match {
@@ -330,20 +331,46 @@ object FactDimensionJoinReorder
    * Extracts items of consecutive inner joins and join conditions.
    * This method works for bushy trees and left/right deep trees.
    */
-  private def extractInnerJoins(plan: LogicalPlan): (Seq[LogicalPlan], ExpressionSet) = {
-    //TODO add restriction that we only do this for left/right deep trees?
-    plan match {
-      case Join(left, right, Inner, Some(cond), JoinHint.NONE) =>
-        val (leftPlans, leftConditions) = extractInnerJoins(left)
-        val (rightPlans, rightConditions) = extractInnerJoins(right)
-        (leftPlans ++ rightPlans, leftConditions ++ rightConditions ++
-          splitConjunctivePredicates(cond))
-      case Project(projectList, j@Join(_, _, Inner, Some(_), JoinHint.NONE))
-        if projectList.forall(_.isInstanceOf[Attribute]) =>
-        extractInnerJoins(j)
-      case _ =>
-        (Seq(plan), ExpressionSet())
+  def extractInnerJoins(plan: LogicalPlan): (TreeShape, Seq[LogicalPlan], ExpressionSet) = {
+
+    var containsLeftJoin = false
+    var containsRightJoin = false
+
+    def _extractInnerJoins(plan: LogicalPlan): (Seq[LogicalPlan], ExpressionSet) = {
+      plan match {
+        case Join(left, right, Inner, Some(cond), JoinHint.NONE) =>
+          if (containsJoin(left)) {
+            containsLeftJoin = true
+          }
+          if (containsJoin(right)) {
+            containsRightJoin = true
+          }
+          val (leftPlans, leftConditions) = _extractInnerJoins(left)
+          val (rightPlans, rightConditions) = _extractInnerJoins(right)
+          (leftPlans ++ rightPlans, leftConditions ++ rightConditions ++
+            splitConjunctivePredicates(cond))
+        case Project(projectList, j@Join(_, _, Inner, Some(_), JoinHint.NONE))
+          if projectList.forall(_.isInstanceOf[Attribute]) =>
+          _extractInnerJoins(j)
+        case _ =>
+          (Seq(plan), ExpressionSet())
+      }
     }
+
+    val (plans, conds) = _extractInnerJoins(plan)
+
+    val treeShape = if (containsLeftJoin && containsRightJoin) {
+      Bushy
+    } else if (containsLeftJoin) {
+      LeftDeep
+    } else if (containsRightJoin) {
+      RightDeep
+    } else {
+      // did not find any nested joins
+      LeftDeep
+    }
+
+    (treeShape, plans, conds)
   }
 
   /** Determine if a plan contains a join operator */
