@@ -91,7 +91,7 @@ object FactDimensionJoinReorder
   private def reorder(
       plan: LogicalPlan,
       conf: RapidsConf): LogicalPlan = {
-    logDebug(s"FactDimensionJoinReorder: Attempt to reorder join:\n$plan")
+    logDebug(s"Attempt to reorder join:\n$plan")
 
     // unnest the join into a list of input relations and list of join conditions
     val (joinInputs, joinConditions) = extractInnerJoins(plan)
@@ -99,14 +99,14 @@ object FactDimensionJoinReorder
     // this check is redundant since we would fail to extract statistics in the next step
     // if the relation contains joins, but this makes the check more explicit
     if (joinInputs.exists(containsJoin)) {
-      logDebug("FactDimensionJoinReorder: Failed to extract inner joins")
+      logDebug("Failed to extract inner joins")
       return plan
     }
 
     // convert plans into relations with statistics
     val maybeRelations = joinInputs.map(Relation.apply)
     if (maybeRelations.exists(_.isEmpty)) {
-      logDebug("FactDimensionJoinReorder: Failed to extract statistics for all relations")
+      logDebug("Failed to extract statistics for all relations")
       return plan
     }
     val relations = maybeRelations.flatten
@@ -123,13 +123,13 @@ object FactDimensionJoinReorder
       }
     }
 
-    logDebug(s"FactDimensionJoinReorder: Found ${facts.length} facts and ${dims.length} dims")
+    logDebug(s"Found ${facts.length} facts and ${dims.length} dims")
     if (dims.length < 2) {
-      logDebug("FactDimensionJoinReorder: Too few dim tables")
+      logDebug("Too few dim tables")
       return plan
     }
     if (facts.length > conf.joinReorderingMaxFact) {
-      logDebug("FactDimensionJoinReorder: Too many fact tables")
+      logDebug("Too many fact tables")
       return plan
     }
 
@@ -178,7 +178,7 @@ object FactDimensionJoinReorder
             val (numJoins, newJoin) = buildJoinTree(join, Seq(fact.plan) ++ dimLogicalPlans,
               conds, treeShape)
             if (numJoins == 0) {
-              logDebug(s"FactDimensionJoinReorder: failed to join multiple fact tables")
+              logDebug(s"failed to join multiple fact tables")
               return plan
             }
             join = newJoin
@@ -200,26 +200,26 @@ object FactDimensionJoinReorder
         if (numJoins == factDimJoins.length - 1) {
           newPlan
         } else {
-          println("Could not join all fact-dim joins")
+          logDebug("Could not join all fact-dim joins")
           plan
         }
       }
     }
 
     if (conds.nonEmpty) {
-      logDebug(s"FactDimensionJoinReorder: could not apply all join conditions: $conds")
+      logDebug(s"could not apply all join conditions: $conds")
       return plan
     }
 
     // verify output is correct
     if (!plan.output.forall(attr => newPlan.output.contains(attr))) {
-      logDebug(s"FactDimensionJoinReorder: new plan is missing some expected output attributes:" +
+      logDebug(s"new plan is missing some expected output attributes:" +
         s"\nexpected: ${plan.output}" +
         s"\nactual: ${newPlan.output}")
       return plan
     }
 
-    logDebug(s"FactDimensionJoinReorder: NEW PLAN\n$newPlan")
+    logDebug(s"NEW PLAN\n$newPlan")
 
     newPlan
   }
@@ -253,7 +253,7 @@ object FactDimensionJoinReorder
       if (joinConds.nonEmpty) {
         joinConds.foreach(conds.remove)
         val factDimJoinCond = joinConds.reduce(And)
-        logDebug(s"FactDimensionJoinReorder: join fact to dim on $factDimJoinCond")
+        logDebug(s"join fact to dim on $factDimJoinCond")
         shape match {
           case LeftDeep | Bushy =>
             plan = Join(plan, dim, Inner, Some(factDimJoinCond), JoinHint.NONE)
