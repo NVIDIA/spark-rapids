@@ -60,6 +60,10 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
       val (facts, dims) = FactDimensionJoinReorder.findFactDimRels(Seq(fact, dim1, dim2), 0.3)
       assert(Seq(fact) === facts)
       assert(Seq(dim1, dim2) === dims)
+      // test with a different ratio
+      val (facts2, dims2) = FactDimensionJoinReorder.findFactDimRels(Seq(fact, dim1, dim2), 0.22)
+      assert(Seq(fact, dim2) === facts2)
+      assert(Seq(dim1) === dims2)
     })
   }
 
