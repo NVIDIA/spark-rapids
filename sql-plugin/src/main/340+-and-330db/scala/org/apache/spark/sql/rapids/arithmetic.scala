@@ -211,13 +211,15 @@ case class GpuDecimalDivide(
     right: Expression,
     override val dataType: DecimalType,
     failOnError: Boolean = SQLConf.get.ansiEnabled)
-    extends GpuDecimalDivideBase(left, right, dataType, false, failOnError) {
+    extends CudfBinaryArithmetic with GpuDecimalDivideBase {
   override def inputType: AbstractDataType = DecimalType
 
   override def symbol: String = "/"
 
   // We aren't using this
   override def binaryOp: BinaryOp = BinaryOp.TRUE_DIV
+
+  override def integerDivide = false
 
   // scalastyle:off
   // The formula follows Hive which is based on the SQL standard and MS SQL:
@@ -250,7 +252,7 @@ case class GpuDecimalMultiply(
     right: Expression,
     override val dataType: DecimalType,
     useLongMultiply: Boolean = false,
-    failOnError: Boolean = SQLConf.get.ansiEnabled) extends CudfBinaryArithmetic with GpuExpression
+    failOnError: Boolean = SQLConf.get.ansiEnabled) extends CudfBinaryArithmetic
     with GpuDecimalMultiplyBase {
   override def inputType: AbstractDataType = DecimalType
 
@@ -260,16 +262,6 @@ case class GpuDecimalMultiply(
   override def binaryOp: BinaryOp = BinaryOp.MUL
 
   override def sql: String = s"(${left.sql} * ${right.sql})"
-
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    if (useLongMultiply) {
-      longMultiply(batch)
-    } else {
-      regularMultiply(batch)
-    }
-  }
-
-  override def nullable: Boolean = left.nullable || right.nullable
 
   // scalastyle:off
   // The formula follows Hive which is based on the SQL standard and MS SQL:
@@ -298,10 +290,11 @@ case class GpuIntegralDivide(
 
 case class GpuIntegralDecimalDivide(
     left: Expression,
-    right: Expression,
-    integerDivide: Boolean = true)
-    extends GpuDecimalDivideBase(left, right, DecimalType.LongDecimal, integerDivide) {
+    right: Expression)
+    extends CudfBinaryArithmetic with GpuDecimalDivideBase {
   override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
+
+  def integerDivide: Boolean = true
 
   override def dataType: DataType = LongType
 
@@ -310,6 +303,8 @@ case class GpuIntegralDecimalDivide(
   override def binaryOp: BinaryOp = BinaryOp.DIV
 
   override def sqlOperator: String = "div"
+
+  override def failOnError: Boolean = SQLConf.get.ansiEnabled
 
   override def columnarEval(batch: ColumnarBatch): Any = {
     super.columnarEval(batch).asInstanceOf[GpuColumnVector]

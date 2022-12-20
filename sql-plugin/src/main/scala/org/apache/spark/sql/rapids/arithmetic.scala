@@ -384,7 +384,7 @@ abstract class GpuSubtractBase(
   }
 }
 
-trait GpuDecimalMultiplyBase extends Arm {
+trait GpuDecimalMultiplyBase extends GpuExpression with Arm {
 
   def dataType: DecimalType
   def failOnError: Boolean
@@ -393,6 +393,8 @@ trait GpuDecimalMultiplyBase extends Arm {
   def useLongMultiply: Boolean
 
   override def toString: String = s"($left * $right)"
+
+  override def sql: String = s"(${left.sql} * ${right.sql})"
 
   private[this] lazy val lhsType: DecimalType = DecimalUtil.asDecimalType(left.dataType)
   private[this] lazy val rhsType: DecimalType = DecimalUtil.asDecimalType(right.dataType)
@@ -471,6 +473,16 @@ trait GpuDecimalMultiplyBase extends Arm {
     }
     GpuColumnVector.from(retCol, dataType)
   }
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    if (useLongMultiply) {
+      longMultiply(batch)
+    } else {
+      regularMultiply(batch)
+    }
+  }
+
+  override def nullable: Boolean = left.nullable || right.nullable
 }
 
 object DecimalMultiplyChecks extends Arm {
@@ -790,21 +802,24 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
  * the same type. This lets us calculate the correct result on a wider range of values without
  * the need for unbounded precision in the processing.
  */
-abstract class GpuDecimalDivideBase(
-    left: Expression,
-    right: Expression,
-    dataType: DecimalType,
-    integerDivide: Boolean,
-    failOnError: Boolean = SQLConf.get.ansiEnabled) extends CudfBinaryArithmetic
-    with GpuExpression with Serializable {
+trait GpuDecimalDivideBase extends GpuExpression {
+  def dataType: DataType
+  def left: Expression
+  def right: Expression
+  def failOnError: Boolean
+  def integerDivide: Boolean
 
   // For all decimal128 output we will use the long division version.
-  protected lazy val useLongDivision: Boolean = dataType.precision > Decimal.MAX_LONG_DIGITS
+  protected lazy val useLongDivision: Boolean = decimalType.precision > Decimal.MAX_LONG_DIGITS
 
   override def toString: String = s"($left / $right)"
 
   override def sql: String = s"(${left.sql} / ${right.sql})"
 
+  def decimalType: DecimalType = dataType match {
+    case DecimalType.Fixed(_, _) => dataType.asInstanceOf[DecimalType]
+    case LongType => DecimalType.LongDecimal
+  }
 
   private[this] lazy val lhsType: DecimalType = DecimalUtil.asDecimalType(left.dataType)
   private[this] lazy val rhsType: DecimalType = DecimalUtil.asDecimalType(right.dataType)
@@ -812,18 +827,18 @@ abstract class GpuDecimalDivideBase(
   // the intermediate rhs (to make CUDF happy doing the divide), but the scale will be shifted
   // enough so CUDF produces the desired output scale
   private[this] lazy val intermediateLhsType =
-    DecimalDivideChecks.intermediateLhsType(lhsType, rhsType, dataType)
+    DecimalDivideChecks.intermediateLhsType(lhsType, rhsType, decimalType)
   // This is the type that the RHS will be cast to. The precision will match the precision of the
   // intermediate lhs (to make CUDF happy doing the divide), but the scale will be the same
   // as the input RHS scale.
   private[this] lazy val intermediateRhsType =
-    DecimalDivideChecks.intermediateRhsType(lhsType, rhsType, dataType)
+    DecimalDivideChecks.intermediateRhsType(lhsType, rhsType, decimalType)
 
   // This is the data type that CUDF will return as the output of the divide. It should be
   // very close to outputType, but with the scale increased by 1 so that we can round the result
   // and produce the same answer as Spark.
   private[this] lazy val intermediateResultType =
-    DecimalDivideChecks.intermediateResultType(dataType)
+    DecimalDivideChecks.intermediateResultType(decimalType)
 
   private[this] def divByZeroFixes(rhs: ColumnVector): ColumnVector = {
     if (failOnError) {
@@ -879,7 +894,7 @@ abstract class GpuDecimalDivideBase(
           if (integerDivide) {
             com.nvidia.spark.rapids.jni.DecimalUtils.integerDivide128(castLhs, castRhs)
           } else {
-            com.nvidia.spark.rapids.jni.DecimalUtils.divide128(castLhs, castRhs, -dataType.scale)
+            com.nvidia.spark.rapids.jni.DecimalUtils.divide128(castLhs, castRhs, -decimalType.scale)
           }
       }
     }

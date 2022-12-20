@@ -16,14 +16,12 @@
 
 package org.apache.spark.sql.rapids
 
-import ai.rapids.cudf.BinaryOp
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, NullIntolerant}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.vectorized.ColumnarBatch
 
 abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolerant {
   override def dataType: DataType = left.dataType
@@ -39,14 +37,11 @@ case class GpuDecimalDivide(
     left: Expression,
     right: Expression,
     override val dataType: DecimalType,
-    failOnError: Boolean = SQLConf.get.ansiEnabled)
-    extends GpuDecimalDivideBase(left, right, dataType, false, failOnError) {
-  override def inputType: AbstractDataType = DecimalType
+    failOnError: Boolean = SQLConf.get.ansiEnabled) extends ShimExpression
+    with GpuDecimalDivideBase {
+  override def integerDivide = false
 
-  override def symbol: String = "/"
-
-  // We aren't using this
-  override def binaryOp: BinaryOp = BinaryOp.TRUE_DIV
+  override def children: Seq[Expression] = Seq(left, right)
 }
 
 case class GpuDecimalMultiply(
@@ -54,20 +49,8 @@ case class GpuDecimalMultiply(
     right: Expression,
     dataType: DecimalType,
     useLongMultiply: Boolean = false,
-    failOnError: Boolean = SQLConf.get.ansiEnabled) extends ShimExpression with GpuExpression
+    failOnError: Boolean = SQLConf.get.ansiEnabled) extends ShimExpression
     with GpuDecimalMultiplyBase {
-
-  override def sql: String = s"(${left.sql} * ${right.sql})"
-
-  override def columnarEval(batch: ColumnarBatch): Any = {
-    if (useLongMultiply) {
-      longMultiply(batch)
-    } else {
-      regularMultiply(batch)
-    }
-  }
-
-  override def nullable: Boolean = left.nullable || right.nullable
 
   override def children: Seq[Expression] = Seq(left, right)
 }
