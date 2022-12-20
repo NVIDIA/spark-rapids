@@ -125,8 +125,8 @@ object FactDimensionJoinReorder
     }
 
     // order the dimensions by size
-    val dimsBySize = relationsOrdered(dims, conf)
-    dimsBySize.foreach(dim => logDebug(s"[DIM] [SIZE=${dim.size}]:\n$dim"))
+    val dimsBySize = relationsOrdered(dims, conf.joinReorderingPreserveOrder,
+      conf.joinReorderingFilterSelectivity)
 
     // copy the join conditions into a HashSet
     val conds = new mutable.HashSet[Expression]()
@@ -287,21 +287,20 @@ object FactDimensionJoinReorder
    */
   def relationsOrdered(
       rels: Seq[Relation],
-      conf: RapidsConf): Seq[Relation]  = {
-    val unfiltered = if (conf.joinReorderingPreserveOrder) {
+      joinReorderingPreserveOrder: Boolean,
+      joinReorderingFilterSelectivity: Double): Seq[Relation]  = {
+    val unfiltered = if (joinReorderingPreserveOrder) {
       // leave unfiltered dimensions in the user-specified order
       rels.filterNot(_.hasFilter)
     } else {
       // order by size (smallest first)
       rels.filterNot(_.hasFilter).sortBy(_.size)
     }
-    unfiltered.foreach(rel => logDebug(s"[UNFILTERED] $rel"))
 
     // order filtered dimensions by size (smallest first)
     val filtered = rels.filter(_.hasFilter)
-      .map(f => f.copy(size = (f.size * conf.joinReorderingFilterSelectivity).toLong))
+      .map(f => f.copy(size = (f.size * joinReorderingFilterSelectivity).toLong))
       .sortBy(_.size)
-    filtered.foreach(rel => logDebug(s"[FILTERED] $rel"))
 
     // combine the two lists
     val dims = new ListBuffer[Relation]()
@@ -324,7 +323,6 @@ object FactDimensionJoinReorder
         j += 1
       }
     }
-    dims.foreach(rel => logDebug(s"[ORDERED DIM] $rel"))
     dims
   }
 

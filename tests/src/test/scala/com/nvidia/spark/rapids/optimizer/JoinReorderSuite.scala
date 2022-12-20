@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.FuzzerUtils.{createSchema, generateDataFrame}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
-import org.apache.spark.sql.catalyst.expressions.{EqualTo, Expression}
+import org.apache.spark.sql.catalyst.expressions.{EqualTo, Expression, Literal}
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Join, LogicalPlan, Project}
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, LogicalRelation}
 import org.apache.spark.sql.types.{DataTypes, StructType}
@@ -39,7 +39,6 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
   // - test these methods in FactDimensionJoinReorder:
   //   - isSupportedJoin
   //   - reorder
-  //   - relationsOrdered
   //   - extractInnerJoins
   //   - containsJoin
 
@@ -64,6 +63,43 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
       val (facts2, dims2) = FactDimensionJoinReorder.findFactDimRels(Seq(fact, dim1, dim2), 0.22)
       assert(Seq(fact, dim2) === facts2)
       assert(Seq(dim1) === dims2)
+    })
+  }
+
+  test("relationsOrdered: default behavior") {
+    withGpuSparkSession(spark => {
+      val dim1 = createTestRelation(spark, "dim1", 250)
+      val dim2 = createTestRelation(spark, "dim2", 200)
+      val _dim3 = createLogicalPlan(spark, "dim3", 1000)
+      val dim3 = Relation.apply(Filter(EqualTo(_dim3.output.head, Literal(123)), _dim3)).get
+      val rels = FactDimensionJoinReorder.relationsOrdered(Seq(dim1, dim2, dim3),
+        joinReorderingPreserveOrder = true, joinReorderingFilterSelectivity = 0.1)
+      val actual: Seq[String] = rels.map(x => buildPlanString(x.plan))
+      val expected: Seq[String] = Seq(
+        """Filter: (dim3_c0 = 123)
+          |    LogicalRelation: dim3.parquet""".stripMargin,
+        "LogicalRelation: dim1.parquet",
+        "LogicalRelation: dim2.parquet")
+      assert(expected === actual)
+    })
+  }
+
+  test("relationsOrdered: non-default behavior") {
+    withGpuSparkSession(spark => {
+      val dim1 = createTestRelation(spark, "dim1", 250)
+      val dim2 = createTestRelation(spark, "dim2", 210)
+      val _dim3 = createLogicalPlan(spark, "dim3", 1000)
+      val dim3 = Relation.apply(Filter(EqualTo(_dim3.output.head, Literal(123)), _dim3)).get
+      val rels = FactDimensionJoinReorder.relationsOrdered(Seq(dim1, dim2, dim3),
+        joinReorderingPreserveOrder = false, joinReorderingFilterSelectivity = 0.24)
+      val actual: Seq[String] = rels.map(x => buildPlanString(x.plan))
+      val expected: Seq[String] = Seq(
+        "LogicalRelation: dim2.parquet",
+        """Filter: (dim3_c0 = 123)
+          |    LogicalRelation: dim3.parquet""".stripMargin,
+        "LogicalRelation: dim1.parquet",
+        )
+      assert(expected === actual)
     })
   }
 
@@ -299,7 +335,7 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
   }
 
   /** Format a plan consistently regardless of Spark version */
-  def buildPlanString(plan: LogicalPlan): String = {
+  private def buildPlanString(plan: LogicalPlan): String = {
     def exprToString(expr: Expression): String = {
       expr.sql.replaceAll("`", "")
     }
