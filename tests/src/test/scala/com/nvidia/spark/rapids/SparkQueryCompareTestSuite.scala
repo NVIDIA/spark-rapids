@@ -97,7 +97,7 @@ object SparkSessionHolder extends Logging {
     builder.getOrCreate()
   }
 
-  private def reinitSession(): Unit = {
+  def reinitSession(): Unit = {
     spark = createSparkSession()
     origConf = spark.conf.getAll
     origConfKeys = origConf.keys.toSet

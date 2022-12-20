@@ -1166,7 +1166,8 @@ case class GpuParquetPartitionReaderFactory(
     }
     new ParquetPartitionReader(conf, file, singleFileInfo.filePath, singleFileInfo.blocks,
       singleFileInfo.schema, isCaseSensitive, readDataSchema,
-      debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes, targetSizeBytes,
+      debugDumpPrefix, maxReadBatchSizeRows, maxReadBatchSizeBytes,
+      GpuMemoryLeaseManager.getAdjustedTargetBatchSize(targetSizeBytes),
       useChunkedReader, metrics, singleFileInfo.isCorrectedInt96RebaseMode,
       singleFileInfo.isCorrectedRebaseMode, singleFileInfo.hasInt96Timestamps, readUseFieldId)
   }

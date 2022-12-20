@@ -1376,7 +1376,7 @@ case class GpuHashAggregateExec(
     aggregateAttributes: Seq[Attribute],
     resultExpressions: Seq[NamedExpression],
     child: SparkPlan,
-    configuredTargetBatchSize: Long,
+    configuredTargetBatchSize: Option[Long],
     configuredTieredProjectEnabled: Boolean) extends ShimUnaryExecNode with GpuExec with Arm {
 
   // lifted directly from `BaseAggregateExec.inputAttributes`, edited comment.
@@ -1469,7 +1469,7 @@ case class GpuHashAggregateExec(
         resultExprs,
         modeInfo,
         aggMetrics,
-        targetBatchSize,
+        GpuMemoryLeaseManager.getAdjustedTargetBatchSize(targetBatchSize),
         useTieredProject)
     }
   }

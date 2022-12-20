@@ -116,7 +116,9 @@ object CoalesceGoal {
         // Nothing is the same so there is no guarantee
         BatchedByKey(Seq.empty)(Seq.empty)
       }
-    case (TargetSize(aSize), TargetSize(bSize)) if aSize > bSize => a
+    case (TargetSize(Some(aSize)), TargetSize(Some(bSize))) if aSize > bSize => a
+    case (TargetSize(Some(_)), TargetSize(None)) => a
+    case (TargetSize(None), TargetSize(Some(_))) => b
     case _ => b
   }
 
@@ -131,7 +133,9 @@ object CoalesceGoal {
       } else {
         null
       }
-    case (TargetSize(aSize), TargetSize(bSize)) if aSize < bSize => a
+    case (TargetSize(Some(aSize)), TargetSize(Some(bSize))) if aSize < bSize => a
+    case (TargetSize(Some(_)), TargetSize(None)) => a
+    case (TargetSize(None), TargetSize(Some(_))) => b
     case _ => b
   }
 
@@ -145,7 +149,8 @@ object CoalesceGoal {
           aOrder.zip(bOrder).forall {
             case (a, b) => a.satisfies(b)
           }
-    case (TargetSize(foundSize), TargetSize(requiredSize)) => foundSize >= requiredSize
+    case (TargetSize(Some(foundSize)), TargetSize(Some(requiredSize))) => foundSize >= requiredSize
+    case (TargetSize(None), TargetSize(None)) => true
     case _ => false // found is null so it is not satisfied
   }
 }
@@ -163,7 +168,11 @@ sealed abstract class CoalesceGoal extends GpuUnevaluable with ShimExpression {
 
 sealed abstract class CoalesceSizeGoal extends CoalesceGoal {
 
-  val targetSizeBytes: Long = Integer.MAX_VALUE
+  /**
+   * The size in bytes, but if it is not set, then the target size is determined
+   * at runtime by the GpuMemoryLeaseManager.
+   */
+  val targetSizeBytes: Option[Long] = Some(Integer.MAX_VALUE)
 }
 
 /**
@@ -179,7 +188,7 @@ trait RequireSingleBatchLike
  */
 case object RequireSingleBatch extends CoalesceSizeGoal with RequireSingleBatchLike {
 
-  override val targetSizeBytes: Long = Long.MaxValue
+  override val targetSizeBytes: Option[Long] = Some(Long.MaxValue)
 
   /** Override toString to improve readability of Spark explain output */
   override def toString: String = "RequireSingleBatch"
@@ -197,7 +206,7 @@ case object RequireSingleBatch extends CoalesceSizeGoal with RequireSingleBatchL
 case class RequireSingleBatchWithFilter(filterExpression: GpuExpression)
     extends CoalesceSizeGoal with RequireSingleBatchLike {
 
-  override val targetSizeBytes: Long = Long.MaxValue
+  override val targetSizeBytes: Option[Long] = Some(Long.MaxValue)
 
   /** Override toString to improve readability of Spark explain output */
   override def toString: String = "RequireSingleBatchWithFilter"
@@ -207,10 +216,10 @@ case class RequireSingleBatchWithFilter(filterExpression: GpuExpression)
  * is estimated in some cases so it may go over a little, but it should generally be
  * very close to the target size. Generally you should not go over 2 GiB to avoid
  * limitations in cudf for nested type columns.
- * @param targetSizeBytes the size of each batch in bytes.
+ * @param targetSizeBytes the size of each batch in bytes, if it is set.
  */
-case class TargetSize(override val targetSizeBytes: Long) extends CoalesceSizeGoal {
-  require(targetSizeBytes <= Integer.MAX_VALUE,
+case class TargetSize(override val targetSizeBytes: Option[Long]) extends CoalesceSizeGoal {
+  require(targetSizeBytes.getOrElse(Int.MaxValue.toLong) <= Int.MaxValue,
     "Target cannot exceed 2GB without checks for cudf row count limit")
 }
 
@@ -246,6 +255,8 @@ abstract class AbstractGpuCoalesceIterator(
     opTime: GpuMetric,
     opName: String) extends Iterator[ColumnarBatch] with Arm with Logging {
 
+  private val targetSize =
+    GpuMemoryLeaseManager.getAdjustedTargetBatchSize(goal.targetSizeBytes)
   private val iter = new CollectTimeIterator(s"$opName: collect", batches, streamTime)
 
   private var batchInitialized: Boolean = false
@@ -448,7 +459,7 @@ abstract class AbstractGpuCoalesceIterator(
               }
             } else if (batchRowLimit > 0 && wouldBeRows > batchRowLimit) {
               saveOnDeck(cb)
-            } else if (wouldBeBytes > goal.targetSizeBytes && numBytes > 0) {
+            } else if (wouldBeBytes > targetSize && numBytes > 0) {
               // There are no explicit checks for the concatenate result exceeding the cudf 2^31
               // row count limit for any column. We are relying on cudf's concatenate to throw
               // an exception if this occurs and limiting performance-oriented goals to under

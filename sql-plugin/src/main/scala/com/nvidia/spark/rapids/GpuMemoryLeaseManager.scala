@@ -101,6 +101,8 @@ object GpuMemoryLeaseManager extends Logging {
 
   // DO NOT ACCESS DIRECTLY!  Use `getInstance` instead.
   @volatile private var instance: GpuMemoryLeaseManager = _
+  @volatile private var concurrentGpuTasks = -1
+  @volatile private var hasWarnedAboutTargetSize = false
 
   private def getInstance: GpuMemoryLeaseManager = {
     if (instance == null) {
@@ -116,17 +118,52 @@ object GpuMemoryLeaseManager extends Logging {
     instance
   }
 
+  def getAdjustedTargetBatchSize(targetSize: Option[Long]): Long = {
+    if (!enabled) {
+      // The default for what we did originally
+      targetSize.getOrElse(Int.MaxValue.toLong)
+    } else {
+      val poolSize = getInstance.memoryForLease
+      val setTargetBatchSize = targetSize.getOrElse(Int.MaxValue.toLong)
+      val isBatchSizeSet = targetSize.isDefined
+      val idealMinBatchSize = 1024L * 1024 * 1024 // 1 GiB
+      val perTaskMultFactor = 4L
+
+      if (isBatchSizeSet) {
+        // We cannot warn if the target size is too large, because this might be set
+        // by something that is not the RapidsConf, such as for a RequireSingleBatch for a
+        // coalesce batch...
+        setTargetBatchSize
+      } else {
+        // We should pick a batch size that is reasonable, and warn if we cannot pick a good one
+        val batchSize = Math.min(poolSize / perTaskMultFactor / concurrentGpuTasks,
+          Int.MaxValue)
+        if (!hasWarnedAboutTargetSize && batchSize < idealMinBatchSize) {
+          logWarning(s"By setting ${RapidsConf.CONCURRENT_GPU_TASKS} to " +
+              s"$concurrentGpuTasks on a GPU with only $poolSize bytes available " +
+              s"the target batch size was adjusted to $batchSize to avoid running out of " +
+              s"memory. This is small enough it might cause performance issues.")
+          hasWarnedAboutTargetSize = true
+        }
+        batchSize
+      }
+    }
+  }
+
   /**
    * Initializes the GPU memory lease manager
    *
    * @param poolSize the size of the pool to hand out leases from.
+   * @param concurrentGpuTasks the number of concurrent GPU tasks, to help dynamically adjust
+   *                           the target batch size, if needed.
    */
-  def initialize(poolSize: Long): Unit = synchronized {
+  def initialize(poolSize: Long, concurrentGpuTasks: Int): Unit = synchronized {
     if (enabled) {
       if (instance != null) {
         throw new IllegalStateException("already initialized")
       }
       instance = new GpuMemoryLeaseManager(poolSize)
+      GpuMemoryLeaseManager.concurrentGpuTasks = concurrentGpuTasks
     }
   }
 
@@ -225,7 +262,7 @@ object GpuMemoryLeaseManager extends Logging {
 }
 
 
-private final class GpuMemoryLeaseManager(memoryForLease: Long) extends Logging with Arm {
+private final class GpuMemoryLeaseManager(val memoryForLease: Long) extends Logging with Arm {
   // We are trying to keep the synchronization in this class simple. This is because
   // we don't expect to have a large number of threads active on the GPU at any
   // point in time, so we don't need to try and optimize it too much. All state can only

@@ -580,6 +580,7 @@ private class ExternalRowToColumnarIterator(
 
   private def buildBatch(): ColumnarBatch = {
 
+    val adjustedSize = GpuMemoryLeaseManager.getAdjustedTargetBatchSize(targetSizeBytes)
     // estimate the size of the first batch based on the schema
     if (targetRows == 0) {
       if (localSchema.fields.isEmpty) {
@@ -587,7 +588,7 @@ private class ExternalRowToColumnarIterator(
       } else {
         val sampleRows = GpuBatchUtils.VALIDITY_BUFFER_BOUNDARY_ROWS
         val sampleBytes = GpuBatchUtils.estimateGpuMemory(localSchema, sampleRows)
-        targetRows = GpuBatchUtils.estimateRowCount(targetSizeBytes, sampleBytes, sampleRows)
+        targetRows = GpuBatchUtils.estimateRowCount(adjustedSize, sampleBytes, sampleRows)
       }
     }
 
@@ -596,7 +597,7 @@ private class ExternalRowToColumnarIterator(
       var rowCount = 0
       // Double because validity can be < 1 byte, and this is just an estimate anyways
       var byteCount: Double = 0
-      while (rowCount < targetRows && byteCount < targetSizeBytes  && rowIter.hasNext) {
+      while (rowCount < targetRows && byteCount < adjustedSize  && rowIter.hasNext) {
         val row = rowIter.next()
         byteCount += converters.convert(row, builders)
         rowCount += 1
@@ -618,7 +619,7 @@ private class ExternalRowToColumnarIterator(
       totalOutputRows += rowCount
       if (totalOutputRows > 0 && totalOutputBytes > 0) {
         targetRows =
-          GpuBatchUtils.estimateRowCount(targetSizeBytes, totalOutputBytes, totalOutputRows)
+          GpuBatchUtils.estimateRowCount(adjustedSize, totalOutputBytes, totalOutputRows)
       }
 
       // The returned batch will be closed by the consumer of it

@@ -271,8 +271,8 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         Cuda.memGetInfo().free
       }
 
-      GpuMemoryLeaseManager.initialize(pool - reservedShuffleMemory)
       val concurrentGpuTasks = conf.concurrentGpuTasks
+      GpuMemoryLeaseManager.initialize(pool - reservedShuffleMemory, concurrentGpuTasks)
       logInfo(s"The number of concurrent GPU tasks allowed is $concurrentGpuTasks")
       GpuSemaphore.initialize(concurrentGpuTasks)
     } catch {

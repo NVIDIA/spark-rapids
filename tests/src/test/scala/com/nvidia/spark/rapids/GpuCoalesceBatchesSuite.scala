@@ -52,8 +52,8 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     withGpuSparkSession(spark => {
       val testData = mixedDf(spark, numSlices = 1)
       val gpuRowToColumnarExec = GpuRowToColumnarExec(testData.queryExecution.sparkPlan,
-        TargetSize(1))
-      val gpuCoalesceBatches = GpuCoalesceBatches(gpuRowToColumnarExec, TargetSize(100000))
+        TargetSize(Some(1)))
+      val gpuCoalesceBatches = GpuCoalesceBatches(gpuRowToColumnarExec, TargetSize(Some(100000)))
       val rdd = gpuCoalesceBatches.doExecuteColumnar()
       val part = rdd.partitions.head
       val context = new MockTaskContext(taskAttemptId = 1, partitionId = 0)
@@ -78,8 +78,8 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     withGpuSparkSession(spark => {
       val testData = mixedDf(spark, numSlices = 1)
       val gpuRowToColumnarExec = GpuRowToColumnarExec(testData.queryExecution.sparkPlan,
-        TargetSize(1))
-      val gpuCoalesceBatches = GpuCoalesceBatches(gpuRowToColumnarExec, TargetSize(50))
+        TargetSize(Some(1)))
+      val gpuCoalesceBatches = GpuCoalesceBatches(gpuRowToColumnarExec, TargetSize(Some(50)))
       val rdd = gpuCoalesceBatches.doExecuteColumnar()
       val part = rdd.partitions.head
       val context = new MockTaskContext(taskAttemptId = 1, partitionId = 0)
@@ -131,7 +131,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
         .asInstanceOf[GpuCoalesceBatches]
 
       assert(coalesce.goal == RequireSingleBatch)
-      assert(coalesce.goal.asInstanceOf[CoalesceSizeGoal].targetSizeBytes == Long.MaxValue)
+      assert(coalesce.goal.asInstanceOf[CoalesceSizeGoal].targetSizeBytes.get == Long.MaxValue)
 
       assert(coalesce.longMetric(GpuMetric.NUM_OUTPUT_BATCHES).value == 1)
 
@@ -252,7 +252,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     val coalesceIter =
       new HostToGpuCoalesceIterator(
         hostBatchIter,
-        TargetSize(1000),
+        TargetSize(Some(1000)),
         new StructType().add("ints", IntegerType),
         numInputRows = NoopMetric,
         numInputBatches = NoopMetric,
@@ -280,7 +280,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     val iter = Iterator.single(batch)
 
     val hostToGpuCoalesceIterator = new HostToGpuCoalesceIterator(iter,
-      TargetSize(1024),
+      TargetSize(Some(1024)),
       schema: StructType,
       WrappedGpuMetric(new SQLMetric("t1", 0)),
       WrappedGpuMetric(new SQLMetric("t2", 0)),
@@ -305,7 +305,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     val iter = Iterator.single(batch)
 
     val hostToGpuCoalesceIterator = new HostToGpuCoalesceIterator(iter,
-      TargetSize(1024),
+      TargetSize(Some(1024)),
       schema: StructType,
       WrappedGpuMetric(new SQLMetric("t1", 0)),
       WrappedGpuMetric(new SQLMetric("t2", 0)),
@@ -345,7 +345,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       new ColumnarBatch(Array(new ArrowColumnVector(vector2)), vector1.getValueCount)
     )
     val hostToGpuCoalesceIterator = new HostToGpuCoalesceIterator(batches.iterator,
-      TargetSize(1024),
+      TargetSize(Some(1024)),
       schema: StructType,
       WrappedGpuMetric(new SQLMetric("t1", 0)),
       WrappedGpuMetric(new SQLMetric("t2", 0)),
@@ -381,7 +381,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     val iter = Iterator.single(batch)
 
     val hostToGpuCoalesceIterator = new HostToGpuCoalesceIterator(iter,
-      TargetSize(1024),
+      TargetSize(Some(1024)),
       schema: StructType,
       WrappedGpuMetric(new SQLMetric("t1", 0)),
       WrappedGpuMetric(new SQLMetric("t2", 0)),
@@ -442,14 +442,14 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
           .find(_.isInstanceOf[HostColumnarToGpu]).get
           .asInstanceOf[HostColumnarToGpu]
 
-        assert(hostColumnarToGpu.goal == TargetSize(50000))
+        assert(hostColumnarToGpu.goal == TargetSize(Some(50000)))
 
         val gpuCoalesceBatches = executedPlan
           .find(_.isInstanceOf[GpuCoalesceBatches]).get
           .asInstanceOf[GpuCoalesceBatches]
 
         assert(gpuCoalesceBatches.goal == RequireSingleBatch)
-        assert(gpuCoalesceBatches.goal.asInstanceOf[CoalesceSizeGoal].targetSizeBytes
+        assert(gpuCoalesceBatches.goal.asInstanceOf[CoalesceSizeGoal].targetSizeBytes.get
             == Long.MaxValue)
 
       }, conf)
@@ -480,7 +480,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
         .asInstanceOf[GpuCoalesceBatches]
 
       assert(coalesce.goal != RequireSingleBatch)
-      assert(coalesce.goal.asInstanceOf[CoalesceSizeGoal].targetSizeBytes == 1)
+      assert(coalesce.goal.asInstanceOf[CoalesceSizeGoal].targetSizeBytes.get == 1)
 
       // assert the metrics start out at zero
       assert(coalesce.additionalMetrics("numInputBatches").value == 0)
@@ -522,7 +522,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     val coalesceIter = new GpuCompressionAwareCoalesceIterator(
       batchIter,
       GpuColumnVector.extractTypes(schema),
-      TargetSize(coalesceTargetBytes),
+      TargetSize(Some(coalesceTargetBytes)),
       maxCompressedBatchMemoryLimit,
       dummyMetric,
       dummyMetric,
@@ -606,7 +606,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     val coalesceIter = new GpuCompressionAwareCoalesceIterator(
       batchIter,
       GpuColumnVector.extractTypes(schema),
-      TargetSize(coalesceTargetBytes),
+      TargetSize(Some(coalesceTargetBytes)),
       maxCompressedBatchMemoryLimit,
       dummyMetric,
       dummyMetric,

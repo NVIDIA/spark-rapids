@@ -22,6 +22,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import com.nvidia.spark.rapids.GpuMemoryLeaseManager;
 import com.nvidia.spark.rapids.GpuMetric;
 import com.nvidia.spark.rapids.MultiFileReaderUtils;
 import com.nvidia.spark.rapids.RapidsConf;
@@ -307,7 +308,7 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
     private final int maxBatchSizeRows;
     private final long maxBatchSizeBytes;
 
-    private final long targetBatchSizeBytes;
+    private final scala.Option<Object> targetBatchSizeBytes;
     private final String parquetDebugDumpPrefix;
     private final int numThreads;
     private final int maxNumFileProcessed;
@@ -368,7 +369,7 @@ abstract class GpuSparkScan extends ScanWithMetricsWrapper
     }
 
     public long getTargetBatchSizeBytes() {
-      return targetBatchSizeBytes;
+      return GpuMemoryLeaseManager.getAdjustedTargetBatchSize(targetBatchSizeBytes);
     }
 
     public String getParquetDebugDumpPrefix() {

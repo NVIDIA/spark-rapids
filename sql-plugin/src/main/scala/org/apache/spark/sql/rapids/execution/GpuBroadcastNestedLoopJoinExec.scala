@@ -383,7 +383,7 @@ case class GpuBroadcastNestedLoopJoinExec(
     joinType: JoinType,
     gpuBuildSide: GpuBuildSide,
     condition: Option[Expression],
-    targetSizeBytes: Long) extends ShimBinaryExecNode with GpuExec {
+    targetSizeBytes: Option[Long]) extends ShimBinaryExecNode with GpuExec {
 
   import GpuMetric._
 
@@ -557,7 +557,7 @@ case class GpuBroadcastNestedLoopJoinExec(
             new CrossJoinIterator(
               spillableBuiltBatch,
               lazyStream,
-              targetSizeBytes,
+              GpuMemoryLeaseManager.getAdjustedTargetBatchSize(targetSizeBytes),
               buildSide,
               opTime = opTime,
               joinTime = joinTime)
@@ -602,7 +602,7 @@ case class GpuBroadcastNestedLoopJoinExec(
       val counts = streamed.executeColumnar().map(getRowCountAndClose)
       GpuBroadcastNestedLoopJoinExec.divideIntoBatches(
         counts.map(s => s * buildCount),
-        targetSizeBytes,
+        GpuMemoryLeaseManager.getAdjustedTargetBatchSize(targetSizeBytes),
         numOutputRows,
         numOutputBatches,
         semWait)
@@ -638,7 +638,9 @@ case class GpuBroadcastNestedLoopJoinExec(
       GpuBroadcastNestedLoopJoinExec.nestedLoopJoin(
         nestedLoopJoinType, buildSide, numFirstTableColumns,
         spillableBuiltBatch,
-        lazyStream, streamAttributes, targetSizeBytes, boundCondition, spillCallback,
+        lazyStream, streamAttributes,
+        GpuMemoryLeaseManager.getAdjustedTargetBatchSize(targetSizeBytes),
+        boundCondition, spillCallback,
         numOutputRows = numOutputRows,
         joinOutputRows = joinOutputRows,
         numOutputBatches = numOutputBatches,

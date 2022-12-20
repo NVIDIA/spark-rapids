@@ -221,7 +221,8 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     // builder and we need to determine how many rows to allocate in the builder based on the
     // schema and desired batch size
     batchRowLimit = if (batch.numCols() > 0) {
-       GpuBatchUtils.estimateRowCount(goal.targetSizeBytes,
+       GpuBatchUtils.estimateRowCount(
+         GpuMemoryLeaseManager.getAdjustedTargetBatchSize(goal.targetSizeBytes),
          GpuBatchUtils.estimateGpuMemory(schema, 512), 512)
     } else {
       // when there aren't any columns, it generally means user is doing a count() and we don't
@@ -267,7 +268,8 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(ret)
 
     // refine the estimate for number of rows based on this batch
-    batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes, maxDeviceMemory,
+    batchRowLimit = GpuBatchUtils.estimateRowCount(
+      GpuMemoryLeaseManager.getAdjustedTargetBatchSize(goal.targetSizeBytes), maxDeviceMemory,
       ret.numRows())
 
     ret

@@ -121,6 +121,13 @@ abstract class ConfEntry[T](val key: String, val converter: String => T,
 
   def get(conf: Map[String, String]): T
   def get(conf: SQLConf): T
+  def isSet(conf: Map[String, String]): Boolean = {
+    conf.contains(key)
+  }
+  def isSet(conf: SQLConf): Boolean = {
+    conf.contains(key)
+  }
+
   def help(asTable: Boolean = false): Unit
 
   override def toString: String = key
@@ -1897,6 +1904,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     entry.get(conf)
   }
 
+  def isSet[T](entry: ConfEntry[T]): Boolean = {
+    entry.isSet(conf)
+  }
+
   lazy val rapidsConfMap: util.Map[String, String] = conf.filterKeys(
     _.startsWith("spark.rapids.")).asJava
 
@@ -1986,7 +1997,13 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val needDecimalGuarantees: Boolean = get(NEED_DECIMAL_OVERFLOW_GUARANTEES)
 
-  lazy val gpuTargetBatchSizeBytes: Long = get(GPU_BATCH_SIZE_BYTES)
+  lazy val gpuTargetBatchSizeBytes: Option[Long] = {
+    if (isSet(GPU_BATCH_SIZE_BYTES)) {
+      Some(get(GPU_BATCH_SIZE_BYTES))
+    } else {
+      None
+    }
+  }
 
   lazy val isFloatAggEnabled: Boolean = get(ENABLE_FLOAT_AGG)
 
@@ -2334,7 +2351,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val maxRegExpStateMemory: Long =  {
     val size = get(REGEXP_MAX_STATE_MEMORY_BYTES)
-    if (size > 3 * gpuTargetBatchSizeBytes) {
+    if (size > 3 * get(GPU_BATCH_SIZE_BYTES)) {
       logWarning(s"${REGEXP_MAX_STATE_MEMORY_BYTES.key} is more than 3 times " +
         s"${GPU_BATCH_SIZE_BYTES.key}. This may cause regular expression operations to " +
         s"encounter GPU out of memory errors.")

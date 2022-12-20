@@ -21,7 +21,7 @@ import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
 import scala.collection.mutable
 
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel, NoopMetric, SpillCallback}
+import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMemoryLeaseManager, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel, NoopMetric, SpillCallback}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimBinaryExecNode
 
@@ -118,7 +118,7 @@ class GpuCartesianRDD(
     numFirstTableColumns: Int,
     streamAttributes: Seq[Attribute],
     spillCallback: SpillCallback,
-    targetSize: Long,
+    targetSize: Option[Long],
     opTime: GpuMetric,
     joinTime: GpuMetric,
     joinOutputRows: GpuMetric,
@@ -189,7 +189,7 @@ class GpuCartesianRDD(
 
       GpuBroadcastNestedLoopJoinExec.nestedLoopJoin(
         Cross, GpuBuildLeft, numFirstTableColumns, batch, streamIterator, streamAttributes,
-        targetSize, boundCondition, spillCallback,
+        GpuMemoryLeaseManager.getAdjustedTargetBatchSize(targetSize), boundCondition, spillCallback,
         numOutputRows = numOutputRows,
         joinOutputRows = joinOutputRows,
         numOutputBatches = numOutputBatches,
@@ -218,7 +218,7 @@ case class GpuCartesianProductExec(
     left: SparkPlan,
     right: SparkPlan,
     condition: Option[Expression],
-    targetSizeBytes: Long) extends ShimBinaryExecNode with GpuExec {
+    targetSizeBytes: Option[Long]) extends ShimBinaryExecNode with GpuExec {
 
   import GpuMetric._
 
@@ -270,7 +270,7 @@ case class GpuCartesianProductExec(
       //  just for this use case is not worth it without an explicit use case.
       GpuBroadcastNestedLoopJoinExec.divideIntoBatches(
         l.cartesian(r).map(p => p._1 * p._2),
-        targetSizeBytes,
+        GpuMemoryLeaseManager.getAdjustedTargetBatchSize(targetSizeBytes),
         numOutputRows,
         numOutputBatches,
         semWait)

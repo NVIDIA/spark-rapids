@@ -72,7 +72,9 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
     this.input = input;
     int sizePerRowEstimate = CudfUnsafeRow.getRowSizeEstimate(schema);
     numRowsEstimate = (int)Math.max(1,
-        Math.min(Integer.MAX_VALUE - 1, goal.targetSizeBytes() / sizePerRowEstimate));
+        Math.min(Integer.MAX_VALUE - 1,
+            GpuMemoryLeaseManager.getAdjustedTargetBatchSize(goal.targetSizeBytes()) /
+                sizePerRowEstimate));
     dataLength = ((long) sizePerRowEstimate) * numRowsEstimate;
     rapidsTypes = new DType[schema.length];
     outputTypes = new DataType[schema.length];

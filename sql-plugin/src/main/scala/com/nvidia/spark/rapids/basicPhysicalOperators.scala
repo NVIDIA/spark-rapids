@@ -647,7 +647,7 @@ case class GpuRangeExec(
     step: Long,
     numSlices: Int,
     output: Seq[Attribute],
-    targetSizeBytes: Long)
+    targetSizeBytes: Option[Long])
     extends ShimLeafExecNode with GpuExec {
 
   val numElements: BigInt = {
@@ -698,7 +698,8 @@ case class GpuRangeExec(
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val semTime = gpuLongMetric(SEMAPHORE_WAIT_TIME)
     val opTime = gpuLongMetric(OP_TIME)
-    val maxRowCountPerBatch = Math.min(targetSizeBytes/8, Int.MaxValue)
+    val maxRowCountPerBatch = Math.min(
+      GpuMemoryLeaseManager.getAdjustedTargetBatchSize(targetSizeBytes)/8, Int.MaxValue)
 
     if (isEmptyRange) {
       sparkContext.emptyRDD[ColumnarBatch]

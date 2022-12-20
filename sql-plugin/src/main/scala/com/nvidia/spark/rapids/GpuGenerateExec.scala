@@ -739,7 +739,8 @@ case class GpuGenerateExec(
           projIn,
           othersProjectList.length,
           outer,
-          new RapidsConf(conf).gpuTargetBatchSizeBytes)
+          GpuMemoryLeaseManager.getAdjustedTargetBatchSize(
+            new RapidsConf(conf).gpuTargetBatchSizeBytes))
         // 2. split up input batch with indices
         makeSplitIterator(projIn, splitIndices).map { splitIn =>
           withResource(splitIn) { splitIn =>

@@ -66,6 +66,7 @@ object RegexComplexityEstimator {
 
   def isValid(conf: RapidsConf, regex: RegexAST): Boolean = {
     val numStates = countStates(regex) 
-    estimateGpuMemory(numStates, conf.gpuTargetBatchSizeBytes) <= conf.maxRegExpStateMemory
+    estimateGpuMemory(numStates, conf.get(RapidsConf.GPU_BATCH_SIZE_BYTES)) <=
+        conf.maxRegExpStateMemory
   }
 }

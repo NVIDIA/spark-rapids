@@ -31,7 +31,11 @@ class GpuMemoryLeaseManagerSuite extends FunSuite
   override def timeLimit: Span = Span(30, Seconds)
 
   override def beforeEach(): Unit = GpuMemoryLeaseManager.shutdown()
-  override def afterEach(): Unit = GpuMemoryLeaseManager.shutdown()
+  override def afterEach(): Unit = {
+    GpuMemoryLeaseManager.shutdown()
+    // Reset the session or else we can cause tests after it to fail
+    SparkSessionHolder.reinitSession()
+  }
 
   def mockContext(taskAttemptId: Long): TaskContext = {
     val context = mock[TaskContext]
@@ -40,7 +44,7 @@ class GpuMemoryLeaseManagerSuite extends FunSuite
   }
 
   test("test basic non-blocking requests") {
-    GpuMemoryLeaseManager.initialize(1024)
+    GpuMemoryLeaseManager.initialize(1024, -1)
     val context = mockContext(1)
     assert(GpuMemoryLeaseManager.getTotalLease(context) == 0)
     withResource(GpuMemoryLeaseManager.requestNonBlockingLease(context, 100)) { lease =>
@@ -53,7 +57,7 @@ class GpuMemoryLeaseManagerSuite extends FunSuite
   }
 
   test("test shrinking non-blocking request") {
-    GpuMemoryLeaseManager.initialize(1024)
+    GpuMemoryLeaseManager.initialize(1024, -1)
     val context = mockContext(1)
     assert(GpuMemoryLeaseManager.getTotalLease(context) == 0)
     withResource(GpuMemoryLeaseManager.requestNonBlockingLease(context, 2048)) { lease =>
@@ -65,7 +69,7 @@ class GpuMemoryLeaseManagerSuite extends FunSuite
   }
 
   test("test blocking call that does not block") {
-    GpuMemoryLeaseManager.initialize(1024)
+    GpuMemoryLeaseManager.initialize(1024, -1)
     val context = mockContext(1)
     assert(GpuMemoryLeaseManager.getTotalLease(context) == 0)
     withResource(GpuMemoryLeaseManager.requestLease(context, 100)) { lease =>
@@ -77,7 +81,7 @@ class GpuMemoryLeaseManagerSuite extends FunSuite
   }
 
   test("test blocking too large required throws") {
-    GpuMemoryLeaseManager.initialize(1024)
+    GpuMemoryLeaseManager.initialize(1024, -1)
     val context = mockContext(1)
     assert(GpuMemoryLeaseManager.getTotalLease(context) == 0)
     assertThrows[IllegalArgumentException] {
@@ -89,7 +93,7 @@ class GpuMemoryLeaseManagerSuite extends FunSuite
   }
 
   test("test basic blocking behavior") {
-    GpuMemoryLeaseManager.initialize(1024)
+    GpuMemoryLeaseManager.initialize(1024, -1)
     val firstContext = mockContext(1)
     val secondContext = mockContext(2)
     assert(GpuMemoryLeaseManager.getTotalLease(firstContext) == 0)

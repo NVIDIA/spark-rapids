@@ -26,7 +26,7 @@ class GpuBringBackToHostSuite extends SparkQueryCompareTestSuite {
       val plan = GpuBringBackToHost(
         GpuRangeExec(start=0, end=numRows, step=1, numSlices=1,
           output=Seq(AttributeReference("id", LongType)()),
-          targetSizeBytes=Math.max(numRows / 10, 1)))
+          targetSizeBytes=Some(Math.max(numRows / 10, 1))))
       plan.executeCollect()
     }
 

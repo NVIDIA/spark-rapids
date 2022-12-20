@@ -283,7 +283,8 @@ abstract class MultiFilePartitionReaderFactoryBase(
 
   protected val maxReadBatchSizeRows: Int = rapidsConf.maxReadBatchSizeRows
   protected val maxReadBatchSizeBytes: Long = rapidsConf.maxReadBatchSizeBytes
-  protected val targetBatchSizeBytes: Long = rapidsConf.gpuTargetBatchSizeBytes
+  protected val targetBatchSizeBytes: Long =
+    GpuMemoryLeaseManager.getAdjustedTargetBatchSize(rapidsConf.gpuTargetBatchSizeBytes)
   private val allCloudSchemes = rapidsConf.getCloudSchemes.toSet
 
   override def createReader(partition: InputPartition): PartitionReader[InternalRow] = {
