@@ -145,7 +145,7 @@ object FactDimensionJoinReorder
 
     val newPlan = if (facts.length == 1) {
       // this is the use case described in the paper
-      val (numJoins, join) = buildJoinTree(facts.head.plan, dimLogicalPlans, conds)
+      val (numJoins, join) = buildJoinTree(facts.head.plan, dimLogicalPlans, conds, true)
 
       // check for dominant fact table (at least half of joins must be against fact table)
       if (numJoins < (relations.length-1)/2) {
@@ -157,18 +157,46 @@ object FactDimensionJoinReorder
 
     } else {
 
-      // attempt to build a left-deep tree
-      val factsBySize = facts.sortBy(_.size)
-      var join = buildJoinTree(factsBySize.head.plan, dimLogicalPlans, conds)._2
-      for (fact <- factsBySize.drop(1)) {
-        val (numJoins, newJoin) = buildJoinTree(join, Seq(fact.plan) ++ dimLogicalPlans, conds)
-        if (numJoins == 0) {
-          logDebug(s"FactDimensionJoinReorder: failed to join multiple fact tables")
-          return plan
+      // TODO still experimenting with these approaches
+
+      val leftDeepTree = false
+
+      if (leftDeepTree) {
+
+        // attempt to build a left-deep tree
+        val factsBySize = facts.sortBy(_.size)
+        var join = buildJoinTree(factsBySize.head.plan, dimLogicalPlans, conds, false)._2
+        for (fact <- factsBySize.drop(1)) {
+          val (numJoins, newJoin) = buildJoinTree(join, Seq(fact.plan) ++ dimLogicalPlans,
+            conds, false)
+          if (numJoins == 0) {
+            logDebug(s"FactDimensionJoinReorder: failed to join multiple fact tables")
+            return plan
+          }
+          join = newJoin
         }
-        join = newJoin
+        join
+
+      } else {
+
+        // bushy tree
+
+        // first we build one join tree for each fact table
+        val factDimJoins = facts.map(f => buildJoinTree(f.plan, dimLogicalPlans, conds, true))
+
+        // sort so that fact tables with more joins appear earlier
+        val sortedFactDimJoins = factDimJoins.sortBy(-_._1).map(_._2)
+
+        // now we join the fact-dim join trees together
+        val (numJoins, newPlan) = buildJoinTree(sortedFactDimJoins.head, sortedFactDimJoins.drop(1), conds, true)
+
+        if (numJoins == factDimJoins.length - 1) {
+          newPlan
+        } else {
+          println("Could not join all fact-dim joins")
+          plan
+        }
       }
-      join
 
     }
 
@@ -193,19 +221,21 @@ object FactDimensionJoinReorder
   private def buildJoinTree(
       fact: LogicalPlan,
       dims: Seq[LogicalPlan],
-      conds: mutable.HashSet[Expression]): (Int, LogicalPlan) = {
+      conds: mutable.HashSet[Expression],
+      flag: Boolean): (Int, LogicalPlan) = {
     var plan = fact
     var numJoins = 0
     for (dim <- dims) {
+      val left = if (flag) { fact } else { plan }
       val joinConds = new ListBuffer[Expression]()
       for (cond <- conds) {
         cond match {
           case b: BinaryExpression => (b.left, b.right) match {
             case (l: AttributeReference, r: AttributeReference) =>
-              if (plan.output.exists(_.exprId == l.exprId) &&
+              if (left.output.exists(_.exprId == l.exprId) &&
                 dim.output.exists(_.exprId == r.exprId)) {
                 joinConds += cond
-              } else if (plan.output.exists(_.exprId == r.exprId) &&
+              } else if (left.output.exists(_.exprId == r.exprId) &&
                 dim.output.exists(_.exprId == l.exprId)) {
                 joinConds += cond
               }
