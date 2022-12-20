@@ -165,10 +165,11 @@ object FactDimensionJoinReorder
 
         // attempt to build a left-deep tree
         val factsBySize = facts.sortBy(_.size)
-        var join = buildJoinTree(factsBySize.head.plan, dimLogicalPlans, conds, false)._2
+        var join = buildJoinTree(factsBySize.head.plan, dimLogicalPlans,
+          conds, joinToFactTableOnly = false)._2
         for (fact <- factsBySize.drop(1)) {
           val (numJoins, newJoin) = buildJoinTree(join, Seq(fact.plan) ++ dimLogicalPlans,
-            conds, false)
+            conds, joinToFactTableOnly = false)
           if (numJoins == 0) {
             logDebug(s"FactDimensionJoinReorder: failed to join multiple fact tables")
             return plan
@@ -182,13 +183,15 @@ object FactDimensionJoinReorder
         // bushy tree
 
         // first we build one join tree for each fact table
-        val factDimJoins = facts.map(f => buildJoinTree(f.plan, dimLogicalPlans, conds, true))
+        val factDimJoins = facts.map(f => buildJoinTree(f.plan,
+          dimLogicalPlans, conds, joinToFactTableOnly = true))
 
         // sort so that fact tables with more joins appear earlier
         val sortedFactDimJoins = factDimJoins.sortBy(-_._1).map(_._2)
 
         // now we join the fact-dim join trees together
-        val (numJoins, newPlan) = buildJoinTree(sortedFactDimJoins.head, sortedFactDimJoins.drop(1), conds, true)
+        val (numJoins, newPlan) = buildJoinTree(sortedFactDimJoins.head,
+          sortedFactDimJoins.drop(1), conds, joinToFactTableOnly = true)
 
         if (numJoins == factDimJoins.length - 1) {
           newPlan
@@ -222,11 +225,11 @@ object FactDimensionJoinReorder
       fact: LogicalPlan,
       dims: Seq[LogicalPlan],
       conds: mutable.HashSet[Expression],
-      flag: Boolean): (Int, LogicalPlan) = {
+      joinToFactTableOnly: Boolean): (Int, LogicalPlan) = {
     var plan = fact
     var numJoins = 0
     for (dim <- dims) {
-      val left = if (flag) { fact } else { plan }
+      val left = if (joinToFactTableOnly) { fact } else { plan }
       val joinConds = new ListBuffer[Expression]()
       for (cond <- conds) {
         cond match {
