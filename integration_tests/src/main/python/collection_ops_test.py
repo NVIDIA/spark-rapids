@@ -129,8 +129,8 @@ def test_size_of_map(data_gen, size_of_null):
             lambda spark: unary_op_df(spark, data_gen).selectExpr('size(a)'),
             conf={'spark.sql.legacy.sizeOfNull': size_of_null})
 
-@pytest.mark.parametrize('data_gen', [string_gen], ids=idfn)
-def test_reverse_strings(data_gen):
+@pytest.mark.parametrize('data_gen', array_gens_sample + [string_gen], ids=idfn)
+def test_reverse(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, data_gen).selectExpr('reverse(a)'))
 

@@ -910,10 +910,11 @@ div_overflow_exprs = [
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
 def test_div_overflow_exception_when_ansi(expr, ansi_enabled):
     ansi_conf = {'spark.sql.ansi.enabled': ansi_enabled}
-    err_exp = 'java.lang.ArithmeticException' if is_before_spark_330() \
-        else 'org.apache.spark.SparkArithmeticException'
-    err_mess = ': Overflow in integral divide' if is_before_spark_340() \
-        else ': [ARITHMETIC_OVERFLOW] Overflow in integral divide'
+    err_exp = 'java.lang.ArithmeticException' if is_before_spark_330() else \
+        'org.apache.spark.SparkArithmeticException'
+    err_mess = ': Overflow in integral divide' \
+        if is_before_spark_340() and not is_databricks113_or_later() else \
+        ': [ARITHMETIC_OVERFLOW] Overflow in integral divide'
     if ansi_enabled == 'true':
         assert_gpu_and_cpu_error(
             df_fun=lambda spark: _get_div_overflow_df(spark, expr).collect(),

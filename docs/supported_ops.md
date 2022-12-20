@@ -11569,7 +11569,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
@@ -11590,7 +11590,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><b>NS</b></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP</em></td>
 <td> </td>
 <td> </td>
 <td> </td>
