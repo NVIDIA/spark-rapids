@@ -74,13 +74,13 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
       val dim3 = Relation.apply(Filter(EqualTo(_dim3.output.head, Literal(123)), _dim3)).get
       val rels = FactDimensionJoinReorder.relationsOrdered(Seq(dim1, dim2, dim3),
         joinReorderingPreserveOrder = true, joinReorderingFilterSelectivity = 0.1)
-      val actual: Seq[String] = rels.map(x => buildPlanString(x.plan))
-      val expected: Seq[String] = Seq(
-        """Filter: (dim3_c0 = 123)
-          |    LogicalRelation: dim3.parquet""".stripMargin,
+      val actual = rels.map(x => buildPlanString(x.plan))
+      println(actual)
+      val expected = Seq(
+        "Filter: (dim3_c0 = 123)\n  LogicalRelation: dim3.parquet",
         "LogicalRelation: dim1.parquet",
         "LogicalRelation: dim2.parquet")
-      assert(expected === actual)
+      assert(expected == actual)
     })
   }
 
@@ -92,14 +92,13 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
       val dim3 = Relation.apply(Filter(EqualTo(_dim3.output.head, Literal(123)), _dim3)).get
       val rels = FactDimensionJoinReorder.relationsOrdered(Seq(dim1, dim2, dim3),
         joinReorderingPreserveOrder = false, joinReorderingFilterSelectivity = 0.24)
-      val actual: Seq[String] = rels.map(x => buildPlanString(x.plan))
-      val expected: Seq[String] = Seq(
+      val actual = rels.map(x => buildPlanString(x.plan))
+      println(actual)
+      val expected = Seq(
         "LogicalRelation: dim2.parquet",
-        """Filter: (dim3_c0 = 123)
-          |    LogicalRelation: dim3.parquet""".stripMargin,
-        "LogicalRelation: dim1.parquet",
-        )
-      assert(expected === actual)
+        "Filter: (dim3_c0 = 123)\n  LogicalRelation: dim3.parquet",
+        "LogicalRelation: dim1.parquet")
+      assert(expected == actual)
     })
   }
 
