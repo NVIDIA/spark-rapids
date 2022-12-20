@@ -167,40 +167,33 @@ object FactDimensionJoinReorder
 
       // for now, we build the final tree as a bushy tree when we have multiple fact tables
       // but we may want to experiment more with this in a future version of the rule
+      val treeShape: TreeShape = Bushy
 
-      // TODO still experimenting with these approaches
-
-      val leftDeepTree = false
-
-      if (leftDeepTree) {
-
-        // attempt to build a left-deep tree
-        val factsBySize = facts.sortBy(_.size)
-        var join = buildJoinTree(factsBySize.head.plan, dimLogicalPlans,
-          conds, LeftDeep)._2
-        for (fact <- factsBySize.drop(1)) {
-          val (numJoins, newJoin) = buildJoinTree(join, Seq(fact.plan) ++ dimLogicalPlans,
-            conds, LeftDeep)
-          if (numJoins == 0) {
-            logDebug(s"FactDimensionJoinReorder: failed to join multiple fact tables")
-            return plan
+      treeShape match {
+        case LeftDeep | RightDeep =>
+          val factsBySize = facts.sortBy(_.size)
+          var join = buildJoinTree(factsBySize.head.plan, dimLogicalPlans,
+            conds, treeShape)._2
+          for (fact <- factsBySize.drop(1)) {
+            val (numJoins, newJoin) = buildJoinTree(join, Seq(fact.plan) ++ dimLogicalPlans,
+              conds, treeShape)
+            if (numJoins == 0) {
+              logDebug(s"FactDimensionJoinReorder: failed to join multiple fact tables")
+              return plan
+            }
+            join = newJoin
           }
-          join = newJoin
-        }
-        join
+          join
 
-      } else {
-
-        // bushy tree
-
-        // first we build one join tree for each fact table
+      case Bushy =>
+        // first we build one left-deep join tree for each fact table
         val factDimJoins = facts.map(f => buildJoinTree(f.plan,
           dimLogicalPlans, conds, LeftDeep))
 
         // sort so that fact tables with more joins appear earlier
         val sortedFactDimJoins = factDimJoins.sortBy(-_._1).map(_._2)
 
-        // now we join the fact-dim join trees together
+        // now we join the fact-dim join trees together as a bushy tree
         val (numJoins, newPlan) = buildJoinTree(sortedFactDimJoins.head,
           sortedFactDimJoins.drop(1), conds, Bushy)
 
@@ -211,7 +204,6 @@ object FactDimensionJoinReorder
           plan
         }
       }
-
     }
 
     if (conds.nonEmpty) {
