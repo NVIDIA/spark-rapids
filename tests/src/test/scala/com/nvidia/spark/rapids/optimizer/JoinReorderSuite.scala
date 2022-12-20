@@ -36,7 +36,12 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
   // - build left-deep, right-deep, and bushy trees from fact and dim relations
   // - write tests for each config option to prove that they are used
   // - test for all conditions in the code where we fall back to the original plan
-  // - test each method in FactDimensionJoinReorder
+  // - test these methods in FactDimensionJoinReorder:
+  //   - isSupportedJoin
+  //   - reorder
+  //   - relationsOrdered
+  //   - extractInnerJoins
+  //   - containsJoin
 
   private val defaultConf = new SparkConf()
 
@@ -46,6 +51,17 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
     .set(RapidsConf.JOIN_REORDERING_RATIO.key, "0.3")
     .set(RapidsConf.JOIN_REORDERING_MAX_FACT.key, "2")
     .set(RapidsConf.JOIN_REORDERING_PRESERVE_ORDER.key, "true")
+
+  test("findFactDimRels") {
+    withGpuSparkSession(spark => {
+      val fact = createTestRelation(spark, "fact", 1000)
+      val dim1 = createTestRelation(spark, "dim1", 200)
+      val dim2 = createTestRelation(spark, "dim2", 250)
+      val (facts, dims) = FactDimensionJoinReorder.findFactDimRels(Seq(fact, dim1, dim2), 0.3)
+      assert(Seq(fact) === facts)
+      assert(Seq(dim1, dim2) === dims)
+    })
+  }
 
   test("buildJoinTree: left-deep") {
     withGpuSparkSession(spark => {
@@ -64,7 +80,6 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
                        |    LogicalRelation: dim1.parquet
                        |  LogicalRelation: dim2.parquet""".stripMargin
       val actual = buildPlanString(join)
-      println(actual)
       assert(expected === actual)
     })
   }
@@ -88,7 +103,6 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
           |    LogicalRelation: dim1.parquet
           |    LogicalRelation: fact.parquet""".stripMargin
       val actual = buildPlanString(join)
-      println(actual)
       assert(expected === actual)
     })
   }
@@ -265,7 +279,7 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
     }, conf)
   }
 
-  private def createTestRelation(spark: SparkSession, relName: String, rowCount: Int): DataFrame = {
+  private def createTestRelation(spark: SparkSession, relName: String, rowCount: Int): Relation = {
     val schema = createSchema(Seq(DataTypes.IntegerType, DataTypes.StringType))
     val schema2 = StructType(schema.fields.map(f => f.copy(name = s"${relName}_${f.name}")))
     val df = generateDataFrame(spark, schema2, rowCount)
@@ -273,11 +287,11 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
     df.write.mode(SaveMode.Overwrite).parquet(path)
     val rel = spark.read.parquet(path)
     rel.createOrReplaceTempView(relName)
-    rel
+    Relation.apply(rel.queryExecution.logical).get
   }
 
   private def createLogicalPlan(spark: SparkSession, name: String, size: Int): LogicalPlan = {
-    createTestRelation(spark, name, size).queryExecution.logical
+    createTestRelation(spark, name, size).plan
   }
 
   /** Format a plan consistently regardless of Spark version */

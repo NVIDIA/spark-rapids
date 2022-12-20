@@ -112,16 +112,7 @@ object FactDimensionJoinReorder
     val relations = maybeRelations.flatten
 
     // split into facts and dimensions
-    val largest = relations.map(_.size).max.toDouble
-    val facts = new ListBuffer[Relation]()
-    val dims = new ListBuffer[Relation]()
-    for (rel <- relations) {
-      if (rel.size.toDouble/largest <= conf.joinReorderingRatio) {
-        dims += rel
-      } else {
-        facts += rel
-      }
-    }
+    val (facts, dims) = findFactDimRels(relations, conf.joinReorderingRatio)
 
     logDebug(s"Found ${facts.length} facts and ${dims.length} dims")
     if (dims.length < 2) {
@@ -224,7 +215,24 @@ object FactDimensionJoinReorder
     newPlan
   }
 
-  private def buildJoinTree(
+  /** Categorize relations as fact or dimension relations base on size */
+  def findFactDimRels(relations: Seq[Relation], joinReorderingRatio: Double)
+      : (Seq[Relation], Seq[Relation]) = {
+    val largest = relations.map(_.size).max.toDouble
+    val facts = new ListBuffer[Relation]()
+    val dims = new ListBuffer[Relation]()
+    for (rel <- relations) {
+      if (rel.size.toDouble / largest <= joinReorderingRatio) {
+        dims += rel
+      } else {
+        facts += rel
+      }
+    }
+    (facts, dims)
+  }
+
+  /** Build a query that joins the fact table to the dimension tables */
+  def buildJoinTree(
       fact: LogicalPlan,
       dims: Seq[LogicalPlan],
       conds: mutable.HashSet[Expression],
@@ -267,11 +275,15 @@ object FactDimensionJoinReorder
   }
 
   /**
-   * Order a set of dimension relations such that filtered relations are
+   * Order a set of relations such that filtered relations are
    * ordered by size (smallest first) and unfiltered relations are kept
-   * in the original user-defined order. The two lists are then combined
-   * by repeatedly inspecting the first relation from each list and picking
-   * the smallest one.
+   * in the original user-defined order.
+   *
+   * If `joinReorderingPreserveOrder` is disabled then the unfiltered
+   * relations are also sorted by size.
+   *
+   * The two lists are then combined by repeatedly inspecting the first relation
+   * from each list and picking the smallest one.
    */
   def relationsOrdered(
       rels: Seq[Relation],
