@@ -18,12 +18,14 @@ package com.nvidia.spark.rapids.optimizer
 
 import java.io.File
 
+import scala.collection.mutable
+
 import com.nvidia.spark.rapids.{FunSuiteWithTempDir, RapidsConf, SparkQueryCompareTestSuite}
 import com.nvidia.spark.rapids.FuzzerUtils.{createSchema, generateDataFrame}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{EqualTo, Expression}
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Join, LogicalPlan, Project}
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, LogicalRelation}
 import org.apache.spark.sql.types.{DataTypes, StructType}
@@ -34,6 +36,7 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
   // - build left-deep, right-deep, and bushy trees from fact and dim relations
   // - write tests for each config option to prove that they are used
   // - test for all conditions in the code where we fall back to the original plan
+  // - test each method in FactDimensionJoinReorder
 
   private val defaultConf = new SparkConf()
 
@@ -43,6 +46,52 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
     .set(RapidsConf.JOIN_REORDERING_RATIO.key, "0.3")
     .set(RapidsConf.JOIN_REORDERING_MAX_FACT.key, "2")
     .set(RapidsConf.JOIN_REORDERING_PRESERVE_ORDER.key, "true")
+
+  test("buildJoinTree: left-deep") {
+    withGpuSparkSession(spark => {
+      val fact = createLogicalPlan(spark, "fact", 1000)
+      val dim1 = createLogicalPlan(spark, "dim1", 200)
+      val dim2 = createLogicalPlan(spark, "dim2", 250)
+      val conds = new mutable.HashSet[Expression]()
+      conds += EqualTo(fact.output.head, dim1.output.head)
+      conds += EqualTo(fact.output.head, dim2.output.head)
+      val (n, join) = FactDimensionJoinReorder.buildJoinTree(fact, Seq(dim1, dim2), conds, LeftDeep)
+      assert(n == 2)
+      assert(conds.isEmpty)
+      val expected = """Join: (fact_c0 = dim2_c0)
+                       |  Join: (fact_c0 = dim1_c0)
+                       |    LogicalRelation: fact.parquet
+                       |    LogicalRelation: dim1.parquet
+                       |  LogicalRelation: dim2.parquet""".stripMargin
+      val actual = buildPlanString(join)
+      println(actual)
+      assert(expected === actual)
+    })
+  }
+
+  test("buildJoinTree: right-deep") {
+    withGpuSparkSession(spark => {
+      val fact = createLogicalPlan(spark, "fact", 1000)
+      val dim1 = createLogicalPlan(spark, "dim1", 200)
+      val dim2 = createLogicalPlan(spark, "dim2", 250)
+      val conds = new mutable.HashSet[Expression]()
+      conds += EqualTo(fact.output.head, dim1.output.head)
+      conds += EqualTo(fact.output.head, dim2.output.head)
+      val (n, join) = FactDimensionJoinReorder.buildJoinTree(fact, Seq(dim1, dim2), conds,
+        RightDeep)
+      assert(n == 2)
+      assert(conds.isEmpty)
+      val expected =
+        """Join: (fact_c0 = dim2_c0)
+          |  LogicalRelation: dim2.parquet
+          |  Join: (fact_c0 = dim1_c0)
+          |    LogicalRelation: dim1.parquet
+          |    LogicalRelation: fact.parquet""".stripMargin
+      val actual = buildPlanString(join)
+      println(actual)
+      assert(expected === actual)
+    })
+  }
 
   test("join filtered dimension earlier") {
     val tables = Map("fact" -> 1000, "dim1" -> 100, "dim2" -> 200)
@@ -216,13 +265,19 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
     }, conf)
   }
 
-  private def createTestRelation(spark: SparkSession, relName: String, rowCount: Int): Unit = {
+  private def createTestRelation(spark: SparkSession, relName: String, rowCount: Int): DataFrame = {
     val schema = createSchema(Seq(DataTypes.IntegerType, DataTypes.StringType))
     val schema2 = StructType(schema.fields.map(f => f.copy(name = s"${relName}_${f.name}")))
     val df = generateDataFrame(spark, schema2, rowCount)
     val path = new File(TEST_FILES_ROOT, s"$relName.parquet").getAbsolutePath
     df.write.mode(SaveMode.Overwrite).parquet(path)
-    spark.read.parquet(path).createOrReplaceTempView(relName)
+    val rel = spark.read.parquet(path)
+    rel.createOrReplaceTempView(relName)
+    rel
+  }
+
+  private def createLogicalPlan(spark: SparkSession, name: String, size: Int): LogicalPlan = {
+    createTestRelation(spark, name, size).queryExecution.logical
   }
 
   /** Format a plan consistently regardless of Spark version */
