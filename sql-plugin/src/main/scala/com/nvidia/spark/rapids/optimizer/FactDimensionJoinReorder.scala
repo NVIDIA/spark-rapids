@@ -191,7 +191,7 @@ object FactDimensionJoinReorder
           dimLogicalPlans, conds, LeftDeep))
 
         // sort so that fact tables with more joins appear earlier
-        val sortedFactDimJoins = factDimJoins.sortBy(-_._1).map(_._2)
+        val sortedFactDimJoins = factDimJoins.sortBy(_._1).reverse.map(_._2)
 
         // now we join the fact-dim join trees together as a bushy tree
         val (numJoins, newPlan) = buildJoinTree(sortedFactDimJoins.head,
