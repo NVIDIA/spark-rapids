@@ -23,7 +23,7 @@ import scala.collection.JavaConverters._
 import scala.sys.process._
 import scala.util.Try
 
-import ai.rapids.cudf.{CudaException, CudaFatalException, CudfException, MemoryCleaner}
+import ai.rapids.cudf.{Cuda, CudaException, CudaFatalException, CudfException, MemoryCleaner, Rmm}
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import org.apache.commons.lang3.exception.ExceptionUtils
 
@@ -264,7 +264,14 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       } else {
         0
       }
-      GpuMemoryLeaseManager.initialize(reservedShuffleMemory)
+
+      val pool = if (Rmm.isPoolingEnabled) {
+        Rmm.getPoolSize
+      } else {
+        Cuda.memGetInfo().free
+      }
+
+      GpuMemoryLeaseManager.initialize(pool - reservedShuffleMemory)
       val concurrentGpuTasks = conf.concurrentGpuTasks
       logInfo(s"The number of concurrent GPU tasks allowed is $concurrentGpuTasks")
       GpuSemaphore.initialize(concurrentGpuTasks)

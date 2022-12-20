@@ -29,15 +29,6 @@ import org.apache.spark.sql.internal.SQLConf
 
 object GpuSemaphore {
 
-  private val enabled = {
-    val propstr = System.getProperty("com.nvidia.spark.rapids.semaphore.enabled")
-    if (propstr != null) {
-      java.lang.Boolean.parseBoolean(propstr)
-    } else {
-      true
-    }
-  }
-
   // DO NOT ACCESS DIRECTLY!  Use `getInstance` instead.
   @volatile private var instance: GpuSemaphore = _
 
@@ -60,12 +51,10 @@ object GpuSemaphore {
    * @param tasksPerGpu number of tasks that will be allowed to use the GPU concurrently.
    */
   def initialize(tasksPerGpu: Int): Unit = synchronized {
-    if (enabled) {
-      if (instance != null) {
-        throw new IllegalStateException("already initialized")
-      }
-      instance = new GpuSemaphore(tasksPerGpu)
+    if (instance != null) {
+      throw new IllegalStateException("already initialized")
     }
+    instance = new GpuSemaphore(tasksPerGpu)
   }
 
   /**
@@ -76,7 +65,7 @@ object GpuSemaphore {
    *       the semaphore is always released by the time the task completes.
    */
   def acquireIfNecessary(context: TaskContext, waitMetric: GpuMetric): Unit = {
-    if (enabled && context != null) {
+    if (context != null) {
       // TODO in the future this heuristic should probably change...
       val conf = SQLConf.get
       val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
@@ -88,7 +77,7 @@ object GpuSemaphore {
    * Tasks must call this when they are finished using the GPU.
    */
   def releaseIfNecessary(context: TaskContext): Unit = {
-    if (enabled && context != null) {
+    if (context != null) {
       getInstance.releaseIfNecessary(context)
     }
   }
@@ -99,9 +88,7 @@ object GpuSemaphore {
    * held at the time of the stack trace.
    */
   def dumpActiveStackTracesToLog(): Unit = {
-    if (enabled) {
-      getInstance.dumpActiveStackTracesToLog()
-    }
+    getInstance.dumpActiveStackTracesToLog()
   }
 
   /**

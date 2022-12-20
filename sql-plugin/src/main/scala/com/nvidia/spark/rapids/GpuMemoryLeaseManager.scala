@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{Cuda, NvtxColor, NvtxRange, Rmm}
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import java.util
 import java.util.concurrent.ConcurrentHashMap
 
@@ -47,7 +47,7 @@ trait MemoryLease extends AutoCloseable {
  * Be aware that the numbers here are just made up, so only take this as an example of what
  * could be done, and not exactly what will be done.
  * <br/>
- * An ORC write can take a number of different forms. We are doing to start with the simplest
+ * An ORC write can take a number of different forms. We are going to start with the simplest
  * one where we take a batch as input and write it out to a file. In this situation we can
  * look at the input batch size, along with the types of the columns and the compression algorithm
  * being used and guess, using a heuristic, that this 1 GiB input batch is going to require an
@@ -57,7 +57,7 @@ trait MemoryLease extends AutoCloseable {
  * the operation - 4 GiB available to use = 5 GiB more needed to complete the operation.
  * Because we need more memory to finish the task we can make the input batch is spillable
  * and call `requestLease(taskContext, 0, moreNeeded)` where the `moreNeeded` holds 5 GiB, the
- * result of the math, and is the `requiredAmount` parameter to `requestLEase`. The method may
+ * result of the math, and is the `requiredAmount` parameter to `requestLease`. The method may
  * block until it can get access to the full 9 GiB of memory for this task are available to it.
  * Because it may block we have to make the input batch spillable. This is so other tasks can use
  * that memory if needed. This is to avoid deadlocks. Once the method returns we know that we have
@@ -94,6 +94,11 @@ trait MemoryLease extends AutoCloseable {
  * the operation.
  */
 object GpuMemoryLeaseManager extends Logging {
+  private val enabled = {
+    val propstr = System.getProperty("com.nvidia.spark.rapids.gmlm.enabled", "true")
+    java.lang.Boolean.parseBoolean(propstr)
+  }
+
   // DO NOT ACCESS DIRECTLY!  Use `getInstance` instead.
   @volatile private var instance: GpuMemoryLeaseManager = _
 
@@ -104,8 +109,7 @@ object GpuMemoryLeaseManager extends Logging {
         // Since we don't have access to a configuration object here,
         // default to only one task per GPU behavior.
         if (instance == null) {
-          logWarning("GpuMemoryLeaseManager was not properly initialized before use")
-          initialize(0)
+          throw new IllegalStateException("GpuMemoryLeaseManager was never initialized")
         }
       }
     }
@@ -114,30 +118,16 @@ object GpuMemoryLeaseManager extends Logging {
 
   /**
    * Initializes the GPU memory lease manager
-   * @param reservedMemory the amount of memory that is saved for other operations, right now
-   *                       this really is just for shuffle, but could expand to more in the future.
+   *
+   * @param poolSize the size of the pool to hand out leases from.
    */
-  def initialize(reservedMemory: Long): Unit = synchronized {
-    if (instance != null) {
-      throw new IllegalStateException("already initialized")
+  def initialize(poolSize: Long): Unit = synchronized {
+    if (enabled) {
+      if (instance != null) {
+        throw new IllegalStateException("already initialized")
+      }
+      instance = new GpuMemoryLeaseManager(poolSize)
     }
-    val pool = if (Rmm.isPoolingEnabled) {
-      Rmm.getPoolSize
-    } else {
-      Cuda.memGetInfo().free
-    }
-    instance = new GpuMemoryLeaseManager(pool - reservedMemory)
-  }
-
-  /**
-   * Initialization intended to only be used for testing
-   * @param poolSize the size of the pool
-   */
-  def initializeForTest(poolSize: Long): Unit = synchronized {
-    if (instance != null) {
-      shutdown()
-    }
-    instance = new GpuMemoryLeaseManager(poolSize)
   }
 
   /**
@@ -154,8 +144,17 @@ object GpuMemoryLeaseManager extends Logging {
    *                       memory to fulfill this request an exception will be thrown.
    * @return a MemoryLease that allows the task to allocate more memory.
    */
-  def requestLease(tc: TaskContext, optionalAmount: Long, requiredAmount: Long = 0): MemoryLease =
-    getInstance.requestLease(tc, optionalAmount, requiredAmount, nonBlocking = false)
+  def requestLease(tc: TaskContext, optionalAmount: Long, requiredAmount: Long = 0): MemoryLease = {
+    if (enabled) {
+      getInstance.requestLease(tc, optionalAmount, requiredAmount, nonBlocking = false)
+    } else {
+      new MemoryLease {
+        override def leaseAmount: Long = optionalAmount + requiredAmount
+
+        override def close(): Unit = ()
+      }
+    }
+  }
 
   /**
    * Request a least to access more GPU memory, but don't block to get more memory. Because this is
@@ -167,21 +166,38 @@ object GpuMemoryLeaseManager extends Logging {
    *                       is available.
    * @return a MemoryLease that allows the task to allocate more memory.
    */
-  def requestNonBlockingLease(tc: TaskContext, optionalAmount: Long): MemoryLease =
-    getInstance.requestLease(tc, optionalAmount, requiredAmount = 0, nonBlocking = true)
+  def requestNonBlockingLease(tc: TaskContext, optionalAmount: Long): MemoryLease = {
+    if (enabled) {
+      getInstance.requestLease(tc, optionalAmount, requiredAmount = 0, nonBlocking = true)
+    } else {
+      new MemoryLease {
+        override def leaseAmount: Long = optionalAmount
+
+        override def close(): Unit = ()
+      }
+    }
+  }
 
   /**
-   * Get the total amount of memory currently leased to this task
+   * Get the total amount of memory currently leased to this task, or -1 if the lease manager
+   * is disabled.
    */
-  def getTotalLease(tc: TaskContext): Long =
-    getInstance.getTotalLease(tc)
+  def getTotalLease(tc: TaskContext): Long = {
+    if (enabled) {
+      getInstance.getTotalLease(tc)
+    } else {
+      -1L
+    }
+  }
 
   /**
    * When a task has finished running this should be called by the GpuSemaphore to clean
    * up any state associated with the task. No one else should call this outside of tests.
    */
   def releaseAllForTask(tc: TaskContext): Unit =
-    getInstance.releaseAllForTask(tc)
+    if (enabled) {
+      getInstance.releaseAllForTask(tc)
+    }
 
 
   /**
