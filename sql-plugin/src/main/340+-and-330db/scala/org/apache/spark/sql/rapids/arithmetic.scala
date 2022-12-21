@@ -205,3 +205,119 @@ case class GpuPmod(
     }
   }
 }
+
+case class GpuDecimalDivide(
+    left: Expression,
+    right: Expression,
+    override val dataType: DecimalType,
+    failOnError: Boolean = SQLConf.get.ansiEnabled)
+    extends CudfBinaryArithmetic with GpuDecimalDivideBase {
+  override def inputType: AbstractDataType = DecimalType
+
+  override def symbol: String = "/"
+
+  // We aren't using this
+  override def binaryOp: BinaryOp = BinaryOp.TRUE_DIV
+
+  override def integerDivide = false
+
+  // scalastyle:off
+  // The formula follows Hive which is based on the SQL standard and MS SQL:
+  // https://cwiki.apache.org/confluence/download/attachments/27362075/Hive_Decimal_Precision_Scale_Support.pdf
+  // https://msdn.microsoft.com/en-us/library/ms190476.aspx
+  // Result Precision: p1 - s1 + s2 + max(6, s1 + p2 + 1)
+  // Result Scale:     max(6, s1 + p2 + 1)
+  // scalastyle:on
+  override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
+    if (allowPrecisionLoss) {
+      val intDig = p1 - s1 + s2
+      val scale = max(DecimalType.MINIMUM_ADJUSTED_SCALE, s1 + p2 + 1)
+      val prec = intDig + scale
+      DecimalType.adjustPrecisionScale(prec, scale)
+    } else {
+      var intDig = min(DecimalType.MAX_SCALE, p1 - s1 + s2)
+      var decDig = min(DecimalType.MAX_SCALE, max(6, s1 + p2 + 1))
+      val diff = (intDig + decDig) - DecimalType.MAX_SCALE
+      if (diff > 0) {
+        decDig -= diff / 2 + 1
+        intDig = DecimalType.MAX_SCALE - decDig
+      }
+      DecimalType.bounded(intDig + decDig, decDig)
+    }
+  }
+}
+
+case class GpuDecimalMultiply(
+    left: Expression,
+    right: Expression,
+    override val dataType: DecimalType,
+    useLongMultiply: Boolean = false,
+    failOnError: Boolean = SQLConf.get.ansiEnabled) extends CudfBinaryArithmetic
+    with GpuDecimalMultiplyBase {
+  override def inputType: AbstractDataType = DecimalType
+
+  override def symbol: String = "*"
+
+  // We aren't using this
+  override def binaryOp: BinaryOp = BinaryOp.MUL
+
+  override def sql: String = s"(${left.sql} * ${right.sql})"
+
+  // scalastyle:off
+  // The formula follows Hive which is based on the SQL standard and MS SQL:
+  // https://cwiki.apache.org/confluence/download/attachments/27362075/Hive_Decimal_Precision_Scale_Support.pdf
+  // https://msdn.microsoft.com/en-us/library/ms190476.aspx
+  // Result Precision: p1 + p2 + 1
+  // Result Scale:     s1 + s2
+  // scalastyle:on
+  override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
+    val resultScale = s1 + s2
+    val resultPrecision = p1 + p2 + 1
+    if (allowPrecisionLoss) {
+      DecimalType.adjustPrecisionScale(resultPrecision, resultScale)
+    } else {
+      DecimalType.bounded(resultPrecision, resultScale)
+    }
+  }
+}
+
+case class GpuIntegralDivide(
+    left: Expression,
+    right: Expression) extends GpuIntegralDivideParent(left, right) {
+  assert(!left.dataType.isInstanceOf[DecimalType],
+    "DecimalType integral divides need to be handled by GpuIntegralDecimalDivide")
+}
+
+case class GpuIntegralDecimalDivide(
+    left: Expression,
+    right: Expression)
+    extends CudfBinaryArithmetic with GpuDecimalDivideBase {
+  override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
+
+  def integerDivide: Boolean = true
+
+  override def dataType: DataType = LongType
+
+  override def symbol: String = "/"
+
+  override def binaryOp: BinaryOp = BinaryOp.DIV
+
+  override def sqlOperator: String = "div"
+
+  override def failOnError: Boolean = SQLConf.get.ansiEnabled
+
+  override def columnarEval(batch: ColumnarBatch): Any = {
+    super.columnarEval(batch).asInstanceOf[GpuColumnVector]
+  }
+
+  override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
+    // This follows division rule
+    val intDig = p1 - s1 + s2
+    // No precision loss can happen as the result scale is 0.
+    DecimalType.bounded(intDig, 0)
+  }
+}
+
+
+
+

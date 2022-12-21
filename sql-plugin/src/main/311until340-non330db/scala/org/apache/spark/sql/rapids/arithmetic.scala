@@ -17,6 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, NullIntolerant}
 import org.apache.spark.sql.internal.SQLConf
@@ -26,6 +27,32 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
   override def dataType: DataType = left.dataType
   // arithmetic operations can overflow and throw exceptions in ANSI mode
   override def hasSideEffects: Boolean = super.hasSideEffects || SQLConf.get.ansiEnabled
+}
+
+case class GpuIntegralDivide(
+    left: Expression,
+    right: Expression) extends GpuIntegralDivideParent(left, right)
+
+case class GpuDecimalDivide(
+    left: Expression,
+    right: Expression,
+    override val dataType: DecimalType,
+    failOnError: Boolean = SQLConf.get.ansiEnabled) extends ShimExpression
+    with GpuDecimalDivideBase {
+  override def integerDivide = false
+
+  override def children: Seq[Expression] = Seq(left, right)
+}
+
+case class GpuDecimalMultiply(
+    left: Expression,
+    right: Expression,
+    dataType: DecimalType,
+    useLongMultiply: Boolean = false,
+    failOnError: Boolean = SQLConf.get.ansiEnabled) extends ShimExpression
+    with GpuDecimalMultiplyBase {
+
+  override def children: Seq[Expression] = Seq(left, right)
 }
 
 case class GpuAdd(
