@@ -26,6 +26,9 @@ pytestmark = [pytest.mark.nightly_resource_consuming_test]
 
 all_join_types = ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti', 'Cross', 'FullOuter']
 
+db_113_cpu_bhj_join_allow=["BroadcastHashJoinExec", "ShuffleExchangeExec"] if is_databricks113_or_later() else []
+db_113_cpu_shuffle_allow=["ShuffleExchangeExec"] if is_databricks113_or_later() else []
+
 all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
            BooleanGen(), DateGen(), TimestampGen(), null_gen,
            pytest.param(FloatGen(), marks=[incompat]),
@@ -144,7 +147,7 @@ def test_broadcast_nested_loop_join_without_condition_empty(join_type):
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
 @ignore_order(local=True)
-@allow_non_gpu('BroadcastHashJoinExec', 'ShuffleExchangeExec')
+@allow_non_gpu(*db_113_cpu_bhj_join_allow)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_right_broadcast_nested_loop_join_without_condition_empty_small_batch(join_type):
     def do_join(spark):
@@ -154,7 +157,7 @@ def test_right_broadcast_nested_loop_join_without_condition_empty_small_batch(jo
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
-@allow_non_gpu('BroadcastHashJoinExec', 'ShuffleExchangeExec')
+@allow_non_gpu(*db_113_cpu_bhj_join_allow)
 def test_empty_broadcast_hash_join(join_type):
     def do_join(spark):
         left, right = create_df(spark, long_gen, 50, 0)
@@ -839,7 +842,7 @@ def test_existence_join(numComplementsToExists, aqeEnabled, conditionalJoin, for
 
 @ignore_order
 @pytest.mark.parametrize('aqeEnabled', [True, False], ids=['aqe:on', 'aqe:off'])
-@allow_non_gpu('ShuffleExchangeExec')
+@allow_non_gpu(*db_113_cpu_shuffle_allow)
 def test_existence_join_in_broadcast_nested_loop_join(spark_tmp_table_factory, aqeEnabled):
     left_table_name = spark_tmp_table_factory.get()
     right_table_name = spark_tmp_table_factory.get()

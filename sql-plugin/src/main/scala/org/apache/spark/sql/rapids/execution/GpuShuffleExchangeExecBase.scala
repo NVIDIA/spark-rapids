@@ -17,11 +17,12 @@
 package org.apache.spark.sql.rapids.execution
 
 import scala.collection.AbstractIterator
+import scala.collection.immutable.HashSet
 import scala.concurrent.Future
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, GpuRangePartitioning, ShimUnaryExecNode, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, GpuRangePartitioning, ShimUnaryExecNode, ShuffleOriginUtil, SparkShimImpl}
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
@@ -32,7 +33,7 @@ import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, SortOrde
 import org.apache.spark.sql.catalyst.plans.physical.RoundRobinPartitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, Exchange, REBALANCE_PARTITIONS_BY_COL, REBALANCE_PARTITIONS_BY_NONE, REPARTITION_BY_COL, REPARTITION_BY_NUM, ShuffleExchangeExec, ShuffleOrigin}
+import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec, ShuffleOrigin}
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuShuffleDependency
@@ -81,10 +82,7 @@ class GpuShuffleMeta(
 
   override def tagPlanForGpu(): Unit = {
 
-    val supportedShuffleOrigins: Seq[ShuffleOrigin] = Seq(ENSURE_REQUIREMENTS, REPARTITION_BY_COL,
-      REPARTITION_BY_NUM, REBALANCE_PARTITIONS_BY_NONE, REBALANCE_PARTITIONS_BY_COL)
-
-    if (!supportedShuffleOrigins.contains(shuffle.shuffleOrigin)) {
+    if (!GpuShuffleMeta.supportedShuffleOrigins.contains(shuffle.shuffleOrigin)) {
       willNotWorkOnGpu(s"${shuffle.shuffleOrigin} not supported on GPU")
     }
 
@@ -129,6 +127,8 @@ object GpuShuffleMeta {
 
   val availableRuntimeDataTransition = TreeNodeTag[Boolean](
     "rapids.gpu.availableRuntimeDataTransition")
+
+  val supportedShuffleOrigins: HashSet[ShuffleOrigin] = ShuffleOriginUtil.getSupportedShuffleOrigins
 }
 
 /**

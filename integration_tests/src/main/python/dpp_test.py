@@ -152,11 +152,12 @@ _statements = [
     '''
 ]
 
+db_113_cpu_bhj_join_allow=["BroadcastHashJoinExec", "ShuffleExchangeExec"] if is_databricks113_or_later() else []
 
 # When BroadcastExchangeExec is available on filtering side, and it can be reused:
 # DynamicPruningExpression(InSubqueryExec(value, GpuSubqueryBroadcastExec)))
 @ignore_order
-@allow_non_gpu('BroadcastHashJoinExec', 'ShuffleExchangeExec')
+@allow_non_gpu(*db_113_cpu_bhj_join_allow)
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', [
@@ -182,7 +183,7 @@ def test_dpp_reuse_broadcast_exchange(spark_tmp_table_factory, store_format, s_i
 
 # The SubqueryBroadcast can work on GPU even if the scan who holds it fallbacks into CPU.
 @ignore_order
-@pytest.mark.allow_non_gpu('BroadcastHashJoinExec', 'FileSourceScanExec', 'ShuffleExchangeExec')
+@pytest.mark.allow_non_gpu('FileSourceScanExec', *db_113_cpu_bhj_join_allow)
 def test_dpp_reuse_broadcast_exchange_cpu_scan(spark_tmp_table_factory):
     fact_table, dim_table = spark_tmp_table_factory.get(), spark_tmp_table_factory.get()
     create_fact_table(fact_table, 'parquet', length=10000)
@@ -200,7 +201,7 @@ def test_dpp_reuse_broadcast_exchange_cpu_scan(spark_tmp_table_factory):
 # When BroadcastExchange is not available and non-broadcast DPPs are forbidden, Spark will bypass it:
 # DynamicPruningExpression(Literal.TrueLiteral)
 @ignore_order
-@allow_non_gpu('BroadcastHashJoinExec', 'ShuffleExchangeExec')
+@allow_non_gpu(*db_113_cpu_bhj_join_allow)
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', [
@@ -225,7 +226,7 @@ def test_dpp_bypass(spark_tmp_table_factory, store_format, s_index, aqe_enabled)
 # then Spark will plan an extra Aggregate to collect filtering values:
 # DynamicPruningExpression(InSubqueryExec(value, SubqueryExec(Aggregate(...))))
 @ignore_order
-@allow_non_gpu('BroadcastHashJoinExec', 'ShuffleExchangeExec')
+@allow_non_gpu(*db_113_cpu_bhj_join_allow)
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', [
@@ -247,7 +248,7 @@ def test_dpp_via_aggregate_subquery(spark_tmp_table_factory, store_format, s_ind
 
 # When BroadcastExchange is not available, Spark will skip DPP if there is no potential benefit
 @ignore_order
-@allow_non_gpu('BroadcastHashJoinExec', 'ShuffleExchangeExec')
+@allow_non_gpu(*db_113_cpu_bhj_join_allow)
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', [
@@ -269,7 +270,7 @@ def test_dpp_skip(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
 
 # GPU verification on https://issues.apache.org/jira/browse/SPARK-34436
 @ignore_order
-@allow_non_gpu('BroadcastHashJoinExec', 'FilterExec', 'ShuffleExchangeExec')
+@allow_non_gpu('FilterExec', *db_113_cpu_bhj_join_allow)
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', [
     'false',
@@ -307,7 +308,7 @@ def test_dpp_like_any(spark_tmp_table_factory, store_format, aqe_enabled):
         conf=dict(_exchange_reuse_conf + [('spark.sql.adaptive.enabled', aqe_enabled)]))
 
 # Test handling DPP expressions from a HashedRelation that rearranges columns
-@allow_non_gpu('BroadcastHashJoinExec', 'ShuffleExchangeExec')
+@allow_non_gpu(*db_113_cpu_bhj_join_allow)
 @pytest.mark.parametrize('aqe_enabled', [
     'false',
     pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
@@ -338,7 +339,7 @@ def test_dpp_from_swizzled_hash_keys(spark_tmp_table_factory, aqe_enabled):
                                ("spark.rapids.sql.hasExtendedYearValues", "false")]))
 
 # Test handling DPP subquery that could broadcast EmptyRelation rather than a GPU serialized batch
-@allow_non_gpu('BroadcastHashJoinExec', 'ShuffleExchangeExec')
+@allow_non_gpu(*db_113_cpu_bhj_join_allow)
 @pytest.mark.parametrize('aqe_enabled', [
     'false',
     pytest.param('true', marks=pytest.mark.skipif(is_before_spark_320() and not is_databricks_runtime(),
