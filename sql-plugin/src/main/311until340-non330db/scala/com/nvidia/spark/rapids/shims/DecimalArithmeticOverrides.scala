@@ -17,17 +17,17 @@
 package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.{BaseExprMeta, CastExprMeta, DecimalUtil, ExprChecks, ExprMeta, ExprRule, GpuCheckOverflow, GpuExpression, GpuOverrides, GpuPromotePrecision, LiteralExprMeta, TypeSig, UnaryExprMeta}
+import com.nvidia.spark.rapids.{BaseExprMeta, BinaryAstExprMeta, BinaryExprMeta, CastExprMeta, DecimalUtil, ExprChecks, ExprMeta, ExprRule, GpuCheckOverflow, GpuExpression, GpuPromotePrecision, LiteralExprMeta, TypeSig, UnaryExprMeta}
 import com.nvidia.spark.rapids.GpuOverrides.expr
 
-import org.apache.spark.sql.catalyst.expressions.{CastBase, CheckOverflow, Divide, Expression, Literal, Multiply, PromotePrecision}
+import org.apache.spark.sql.catalyst.expressions.{CastBase, CheckOverflow, Divide, Expression, IntegralDivide, Literal, Multiply, PromotePrecision}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{GpuDecimalDivide, GpuDecimalMultiply}
+import org.apache.spark.sql.rapids.{DecimalMultiplyChecks, GpuAnsi, GpuDecimalDivide, GpuDecimalMultiply, GpuDivide, GpuIntegralDivide, GpuMultiply}
 import org.apache.spark.sql.types.{Decimal, DecimalType}
 
 object DecimalArithmeticOverrides {
   def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
-    GpuOverrides.expr[PromotePrecision](
+    expr[PromotePrecision](
       "PromotePrecision before arithmetic operations between DecimalType data",
       ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_128,
         TypeSig.DECIMAL_128),
@@ -124,7 +124,7 @@ object DecimalArithmeticOverrides {
             case _: Multiply =>
               // GpuDecimal*Multiply includes the overflow check in it
               val intermediatePrecision =
-                GpuDecimalMultiply.nonRoundedIntermediatePrecision(lhsDecimalType,
+                DecimalMultiplyChecks.nonRoundedIntermediatePrecision(lhsDecimalType,
                   rhsDecimalType, a.dataType)
               GpuDecimalMultiply(lhs.convertToGpu(), rhs.convertToGpu(), wrapped.dataType,
                 useLongMultiply = intermediatePrecision > DType.DECIMAL128_MAX_PRECISION)
@@ -133,6 +133,61 @@ object DecimalArithmeticOverrides {
                 wrapped.dataType, wrapped.nullOnOverflow)
           }
         }
+      }),
+    expr[Multiply](
+      "Multiplication",
+      ExprChecks.binaryProjectAndAst(
+        TypeSig.implicitCastsAstTypes,
+        TypeSig.gpuNumeric,
+        TypeSig.cpuNumeric,
+        ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
+        ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
+      (a, conf, p, r) => new BinaryAstExprMeta[Multiply](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (SQLConf.get.ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+            willNotWorkOnGpu("GPU Multiplication does not support ANSI mode")
+          }
+        }
+
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+          a.dataType match {
+            case _: DecimalType => throw new IllegalStateException(
+              "Decimal Multiply should be converted in CheckOverflow")
+            case _ =>
+              GpuMultiply(lhs, rhs)
+          }
+        }
+      }),
+    expr[Divide](
+      "Division",
+      ExprChecks.binaryProject(
+        TypeSig.DOUBLE + TypeSig.DECIMAL_128,
+        TypeSig.DOUBLE + TypeSig.DECIMAL_128,
+        ("lhs", TypeSig.DOUBLE + TypeSig.DECIMAL_128,
+            TypeSig.DOUBLE + TypeSig.DECIMAL_128),
+        ("rhs", TypeSig.DOUBLE + TypeSig.DECIMAL_128,
+            TypeSig.DOUBLE + TypeSig.DECIMAL_128)),
+      (a, conf, p, r) => new BinaryExprMeta[Divide](a, conf, p, r) {
+        // Division of Decimal types is a little odd. To work around some issues with
+        // what Spark does the tagging/checks are in CheckOverflow instead of here.
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          a.dataType match {
+            case _: DecimalType =>
+              throw new IllegalStateException("Internal Error: Decimal Divide operations " +
+                  "should be converted to the GPU in the CheckOverflow rule")
+            case _ =>
+              GpuDivide(lhs, rhs)
+          }
+      }),
+    expr[IntegralDivide](
+      "Division with a integer result",
+      ExprChecks.binaryProject(
+        TypeSig.LONG, TypeSig.LONG,
+        ("lhs", TypeSig.LONG + TypeSig.DECIMAL_128, TypeSig.LONG + TypeSig.DECIMAL_128),
+        ("rhs", TypeSig.LONG + TypeSig.DECIMAL_128, TypeSig.LONG + TypeSig.DECIMAL_128)),
+      (a, conf, p, r) => new BinaryExprMeta[IntegralDivide](a, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuIntegralDivide(lhs, rhs)
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 }
