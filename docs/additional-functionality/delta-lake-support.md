@@ -26,8 +26,8 @@ be GPU accelerated. The CPU will continue to process metadata queries on Delta L
 
 ## Writing Delta Lake Tables
 
-Delta Lake write acceleration is currently experimental and disabled by default. To enable
-acceleration of Delta Lake writes, set spark.rapids.sql.format.delta.write.enabled=true.
+Delta Lake write acceleration is enabled by default. To disable acceleration of Delta Lake
+writes, set spark.rapids.sql.format.delta.write.enabled=false.
 
 ### Delta Lake Versions Supported For Write
 
@@ -36,6 +36,7 @@ Delta Lake writes:
 - Delta Lake version 2.0.x on Apache Spark 3.2.x
 - Delta Lake version 2.1.x on Apache Spark 3.3.x
 - Delta Lake on Databricks 10.4 LTS
+- Delta Lake on Databricks 11.3 LTS
 
 Delta Lake writes will not be accelerated on Spark 3.1.x or earlier.
 
