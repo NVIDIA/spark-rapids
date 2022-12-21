@@ -45,7 +45,7 @@ object SparkShimImpl extends Spark321PlusDBShims {
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
   }
 
-  def tagFileSourceScanExec(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
+  override def tagFileSourceScanExec(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     if (meta.wrapped.expressions.exists {
       case FileSourceMetadataAttribute(_) => true
       case _ => false
