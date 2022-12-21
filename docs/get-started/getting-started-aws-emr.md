@@ -82,7 +82,7 @@ detailed cluster configuration page.
 #### Step 1:  Software Configuration and Steps
 
 Select **emr-6.9.0** for the release, uncheck all the software options, and then check **Hadoop
-3.2.1**, **Spark 3.3.0**, **Livy 0.7.1** and **JupyterEnterpriseGateway 2.6.0**.
+3.3.3**, **Spark 3.3.0**, **Livy 0.7.1** and **JupyterEnterpriseGateway 2.6.0**.
 
 In the "Edit software settings" field, copy and paste the configuration from the [EMR
 document](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-rapids.html). You can also
