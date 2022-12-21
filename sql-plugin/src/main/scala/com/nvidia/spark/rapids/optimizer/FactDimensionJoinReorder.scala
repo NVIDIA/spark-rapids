@@ -83,6 +83,7 @@ object FactDimensionJoinReorder
 
   private def isSupportedJoinCond(cond: Expression): Boolean = {
     if (!cond.deterministic) {
+      println(s"isSupportedJoinCond non-deterministic: $cond")
       return false
     }
     cond match {
@@ -140,8 +141,15 @@ object FactDimensionJoinReorder
     val dimLogicalPlans = dimsBySize.map(_.plan)
 
     val newPlan = if (facts.length == 1) {
+
+      val shape = if (conf.joinReorderingPreserveShape) {
+        treeShape
+      } else {
+        LeftDeep
+      }
+
       // the single fact table case closely follows the design in the paper
-      val (numJoins, join) = buildJoinTree(facts.head.plan, dimLogicalPlans, conds, treeShape)
+      val (numJoins, join) = buildJoinTree(facts.head.plan, dimLogicalPlans, conds, shape)
 
       // check for dominant fact table (at least half of joins must be against fact table)
       if (numJoins < (relations.length-1)/2) {
@@ -159,42 +167,24 @@ object FactDimensionJoinReorder
       // for now, we build the final tree as a bushy tree when we have multiple fact tables
       // but we may want to experiment more with this in a future version of the rule.
       // tracking issue: https://github.com/NVIDIA/spark-rapids/issues/7399
-      val treeShape: TreeShape = Bushy
 
-      treeShape match {
-        case LeftDeep | RightDeep =>
-          val factsBySize = facts.sortBy(_.size)
-          var join = buildJoinTree(factsBySize.head.plan, dimLogicalPlans,
-            conds, treeShape)._2
-          for (fact <- factsBySize.drop(1)) {
-            val (numJoins, newJoin) = buildJoinTree(join, Seq(fact.plan) ++ dimLogicalPlans,
-              conds, treeShape)
-            if (numJoins == 0) {
-              logDebug(s"failed to join multiple fact tables")
-              return plan
-            }
-            join = newJoin
-          }
-          join
+      // first we build one left-deep join tree for each fact table
+      val factDimJoins = facts.map(f => buildJoinTree(f.plan,
+        dimLogicalPlans, conds, LeftDeep))
 
-      case Bushy =>
-        // first we build one left-deep join tree for each fact table
-        val factDimJoins = facts.map(f => buildJoinTree(f.plan,
-          dimLogicalPlans, conds, LeftDeep))
+      // sort so that fact tables with more joins appear earlier
+      val sortedFactDimJoins = factDimJoins.sortBy(_._1).reverse.map(_._2)
 
-        // sort so that fact tables with more joins appear earlier
-        val sortedFactDimJoins = factDimJoins.sortBy(_._1).reverse.map(_._2)
+      // now we join the fact-dim join trees together as a left-deep tree, but
+      // this can result in the final plan being a bushy tree
+      val (numJoins, newPlan) = buildJoinTree(sortedFactDimJoins.head,
+        sortedFactDimJoins.drop(1), conds, LeftDeep)
 
-        // now we join the fact-dim join trees together as a bushy tree
-        val (numJoins, newPlan) = buildJoinTree(sortedFactDimJoins.head,
-          sortedFactDimJoins.drop(1), conds, Bushy)
-
-        if (numJoins == factDimJoins.length - 1) {
-          newPlan
-        } else {
-          logDebug("Could not join all fact-dim joins")
-          plan
-        }
+      if (numJoins == factDimJoins.length - 1) {
+        newPlan
+      } else {
+        logDebug("Could not join all fact-dim joins")
+        plan
       }
     }
 

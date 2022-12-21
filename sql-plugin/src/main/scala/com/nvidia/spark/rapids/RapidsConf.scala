@@ -1608,6 +1608,13 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(true)
 
+  val JOIN_REORDERING_PRESERVE_SHAPE =
+    conf("spark.rapids.sql.cbo.joinReordering.preserveShape")
+      .internal()
+      .doc("Preserve shape (left-deep, right-deep) when rebuilding joins")
+      .booleanConf
+      .createWithDefault(false)
+
   val OPTIMIZER_ENABLED = conf("spark.rapids.sql.optimizer.enabled")
       .internal()
       .doc("Enable cost-based optimizer that will attempt to avoid " +
@@ -2248,6 +2255,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val joinReorderingMaxFact: Int = get(JOIN_REORDERING_MAX_FACT)
   lazy val joinReorderingFilterSelectivity: Double = get(JOIN_REORDERING_FILTER_SELECTIVITY)
   lazy val joinReorderingPreserveOrder: Boolean = get(JOIN_REORDERING_PRESERVE_ORDER)
+  lazy val joinReorderingPreserveShape: Boolean = get(JOIN_REORDERING_PRESERVE_SHAPE)
 
   lazy val optimizerExplain: String = get(OPTIMIZER_EXPLAIN)
 
