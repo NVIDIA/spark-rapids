@@ -1849,7 +1849,7 @@ class MultiFileCloudParquetPartitionReader(
   // assumes all these are ok to combine and have the same metadata for schema
   // and isCorrect* and timestamp type settings
   private def doCombineHMBs(combinedMeta: CombinedMeta): HostMemoryBuffersWithMetaDataBase = {
-    val toCombineHmbs = combinedMeta.toCombine
+    val toCombineHmbs = combinedMeta.toCombine.filterNot(_.isInstanceOf[HostMemoryEmptyMetaData])
     val metaToUse = combinedMeta.firstNonEmpty
     logDebug(s"Using Combine mode and actually combining, num files ${toCombineHmbs.size} " +
       s"files: ${toCombineHmbs.map(_.partitionedFile.filePath).mkString(",")}")
@@ -1857,7 +1857,7 @@ class MultiFileCloudParquetPartitionReader(
     // this size includes the written header and footer on each buffer so remove
     // the size of those to get data size
     val existingSizeUsed = toCombineHmbs.map { hbWithMeta =>
-      hbWithMeta.memBuffersAndSizes.map(_.bytes).sum - PARQUET_META_SIZE
+      hbWithMeta.memBuffersAndSizes.map(smb => Math.max(smb.bytes - PARQUET_META_SIZE, 0)).sum
     }.sum
 
     // since we know not all of them are empty and we know all these have the same schema since
@@ -1878,24 +1878,20 @@ class MultiFileCloudParquetPartitionReader(
 
       // copy the actual data
       toCombineHmbs.map { hbWithMeta =>
-        hbWithMeta match {
-          case _: HostMemoryEmptyMetaData =>
-          case _ =>
-            hbWithMeta.memBuffersAndSizes.map { hmbInfo =>
-              val copyAmount = hmbInfo.blockMeta.map { meta =>
-                meta.getColumns.asScala.map(_.getTotalSize).sum
-              }.sum
-              if (copyAmount > 0 && hmbInfo.hmb != null) {
-                combinedHmb.copyFromHostBuffer(offset, hmbInfo.hmb,
-                  ParquetPartitionReader.PARQUET_MAGIC.size, copyAmount)
-              }
-              val outputBlocks = computeBlockMetaData(hmbInfo.blockMeta, offset, None)
-              allOutputBlocks ++= outputBlocks
-              offset += copyAmount
-              if (hmbInfo.hmb != null) {
-                hmbInfo.hmb.close()
-              }
-            }
+        hbWithMeta.memBuffersAndSizes.map { hmbInfo =>
+          val copyAmount = hmbInfo.blockMeta.map { meta =>
+            meta.getColumns.asScala.map(_.getTotalSize).sum
+          }.sum
+          if (copyAmount > 0 && hmbInfo.hmb != null) {
+            combinedHmb.copyFromHostBuffer(offset, hmbInfo.hmb,
+              ParquetPartitionReader.PARQUET_MAGIC.size, copyAmount)
+          }
+          val outputBlocks = computeBlockMetaData(hmbInfo.blockMeta, offset, None)
+          allOutputBlocks ++= outputBlocks
+          offset += copyAmount
+          if (hmbInfo.hmb != null) {
+            hmbInfo.hmb.close()
+          }
         }
       }
       // using all of the actual combined output blocks meta calculate what the footer size
