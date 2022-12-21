@@ -46,7 +46,7 @@ object SparkShimImpl extends Spark321PlusDBShims {
   }
 
   override def tagFileSourceScanExec(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
-    println("hit the shim");
+    throw new ArithmeticException("HIT THE SHIM OF DB113 !!!!!")
     if (meta.wrapped.expressions.exists {
       case FileSourceMetadataAttribute(_) => true
       case _ => false
