@@ -106,10 +106,6 @@ trait Spark321PlusDBShims extends SparkShims
     }
   }
 
-  def tagFileSourceScanExec(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
-    GpuFileSourceScanExec.tagSupport(meta)
-  }
-
   private val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(
       GpuOverrides.exec[SubqueryBroadcastExec](
