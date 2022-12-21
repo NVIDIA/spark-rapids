@@ -297,9 +297,13 @@ def test_dpp_like_any(spark_tmp_table_factory, store_format, aqe_enabled):
     WHERE s.filter LIKE ANY ('%00%', '%01%', '%10%', '%11%')
     """.format(fact_table, dim_table)
 
+    if is_databricks113_or_later() and aqe_enabled == 'true':
+        exist_classes='DynamicPruningExpression,SubqueryBroadcastExec,ReusedExchangeExec'
+    else:
+        exist_classes='DynamicPruningExpression,GpuSubqueryBroadcastExec,ReusedExchangeExec'
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.sql(statement),
-        exist_classes='DynamicPruningExpression,GpuSubqueryBroadcastExec,ReusedExchangeExec',
+        exist_classes,
         conf=dict(_exchange_reuse_conf + [('spark.sql.adaptive.enabled', aqe_enabled)]))
 
 # Test handling DPP expressions from a HashedRelation that rearranges columns
