@@ -41,6 +41,7 @@ def create_skew_df(spark, length):
 # This replicates the skew join test from scala tests, and is here to test
 # the computeStats(...) implementation in GpuRangeExec
 @ignore_order(local=True)
+@allow_non_gpu('BroadcastHashJoinExec', 'ShuffleExchangeExec')
 def test_aqe_skew_join():
     def do_join(spark):
         left, right = create_skew_df(spark, 500)
@@ -52,6 +53,7 @@ def test_aqe_skew_join():
 
 # Test the computeStats(...) implementation in GpuDataSourceScanExec
 @ignore_order(local=True)
+@allow_non_gpu('BroadcastHashJoinExec', 'ShuffleExchangeExec')
 @pytest.mark.parametrize("data_gen", integral_gens, ids=idfn)
 def test_aqe_join_parquet(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -69,6 +71,7 @@ def test_aqe_join_parquet(spark_tmp_path, data_gen):
 
 # Test the computeStats(...) implementation in GpuBatchScanExec
 @ignore_order(local=True)
+@allow_non_gpu('BroadcastHashJoinExec', 'ShuffleExchangeExec')
 @pytest.mark.parametrize("data_gen", integral_gens, ids=idfn)
 def test_aqe_join_parquet_batch(spark_tmp_path, data_gen):
     # force v2 source for parquet to use BatchScanExec
@@ -93,6 +96,7 @@ def test_aqe_join_parquet_batch(spark_tmp_path, data_gen):
 
 # Test the map stage submission handling for GpuShuffleExchangeExec
 @ignore_order(local=True)
+@allow_non_gpu('BroadcastHashJoinExec', 'ShuffleExchangeExec')
 def test_aqe_struct_self_join(spark_tmp_table_factory):
     def do_join(spark):
         data = [
@@ -137,7 +141,7 @@ joins = [
 # broadcast join. The bug currently manifests in Databricks, but could
 # theoretically show up in other Spark distributions
 @ignore_order(local=True)
-@allow_non_gpu('BroadcastNestedLoopJoinExec', 'BroadcastExchangeExec', 'Cast', 'DateSub')
+@allow_non_gpu('BroadcastNestedLoopJoinExec', 'BroadcastExchangeExec','BroadcastHashJoinExec', 'Cast', 'DateSub', 'ShuffleExchangeExec')
 @pytest.mark.parametrize('join', joins, ids=idfn)
 def test_aqe_join_reused_exchange_inequality_condition(spark_tmp_path, join):
     data_path = spark_tmp_path + '/PARQUET_DATA'

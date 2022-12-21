@@ -32,7 +32,7 @@ import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, SortOrde
 import org.apache.spark.sql.catalyst.plans.physical.RoundRobinPartitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
+import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, Exchange, REBALANCE_PARTITIONS_BY_COL, REBALANCE_PARTITIONS_BY_NONE, REPARTITION_BY_COL, REPARTITION_BY_NUM, ShuffleExchangeExec, ShuffleOrigin}
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuShuffleDependency
@@ -80,6 +80,13 @@ class GpuShuffleMeta(
     childPlans.head.availableRuntimeDataTransition
 
   override def tagPlanForGpu(): Unit = {
+
+    val supportedShuffleOrigins: Seq[ShuffleOrigin] = Seq(ENSURE_REQUIREMENTS, REPARTITION_BY_COL,
+      REPARTITION_BY_NUM, REBALANCE_PARTITIONS_BY_NONE, REBALANCE_PARTITIONS_BY_COL)
+
+    if (!supportedShuffleOrigins.contains(shuffle.shuffleOrigin)) {
+      willNotWorkOnGpu(s"${shuffle.shuffleOrigin} not supported on GPU")
+    }
 
     shuffle.outputPartitioning match {
       case _: RoundRobinPartitioning

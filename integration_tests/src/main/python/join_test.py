@@ -20,7 +20,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_co
 from conftest import is_databricks_runtime, is_emr_runtime
 from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan
-from spark_session import with_cpu_session, with_spark_session
+from spark_session import with_cpu_session, with_spark_session, is_databricks113_or_later
 
 pytestmark = [pytest.mark.nightly_resource_consuming_test]
 
@@ -144,6 +144,7 @@ def test_broadcast_nested_loop_join_without_condition_empty(join_type):
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
 @ignore_order(local=True)
+@allow_non_gpu('BroadcastHashJoinExec', 'ShuffleExchangeExec')
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_right_broadcast_nested_loop_join_without_condition_empty_small_batch(join_type):
     def do_join(spark):
@@ -153,6 +154,7 @@ def test_right_broadcast_nested_loop_join_without_condition_empty_small_batch(jo
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
+@allow_non_gpu('BroadcastHashJoinExec', 'ShuffleExchangeExec')
 def test_empty_broadcast_hash_join(join_type):
     def do_join(spark):
         left, right = create_df(spark, long_gen, 50, 0)
@@ -837,6 +839,7 @@ def test_existence_join(numComplementsToExists, aqeEnabled, conditionalJoin, for
 
 @ignore_order
 @pytest.mark.parametrize('aqeEnabled', [True, False], ids=['aqe:on', 'aqe:off'])
+@allow_non_gpu('ShuffleExchangeExec')
 def test_existence_join_in_broadcast_nested_loop_join(spark_tmp_table_factory, aqeEnabled):
     left_table_name = spark_tmp_table_factory.get()
     right_table_name = spark_tmp_table_factory.get()
@@ -855,6 +858,9 @@ def test_existence_join_in_broadcast_nested_loop_join(spark_tmp_table_factory, a
                           "   or exists (select * from {} as r where l.b < r.b)"
                           ).format(left_table_name, right_table_name))
 
-    capture_regexp = r"GpuBroadcastNestedLoopJoin ExistenceJoin\(exists#[0-9]+\),"
+    if is_databricks113_or_later() and aqeEnabled == True:
+        capture_regexp = r"BroadcastNestedLoopJoin BuildRight, ExistenceJoin\(exists#[0-9]+\),"
+    else:
+        capture_regexp = r"GpuBroadcastNestedLoopJoin ExistenceJoin\(exists#[0-9]+\),"
     assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, capture_regexp,
                                                       conf={"spark.sql.adaptive.enabled": aqeEnabled})
