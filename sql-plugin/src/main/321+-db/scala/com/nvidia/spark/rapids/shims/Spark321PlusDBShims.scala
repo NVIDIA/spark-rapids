@@ -106,6 +106,10 @@ trait Spark321PlusDBShims extends SparkShims
     }
   }
 
+  def tagFileSourceScanExec(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
+    GpuFileSourceScanExec.tagSupport(meta)
+  }
+
   private val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(
       GpuOverrides.exec[SubqueryBroadcastExec](
@@ -194,6 +198,8 @@ trait Spark321PlusDBShims extends SparkShims
           override def convertToCpu(): SparkPlan = {
             wrapped.copy(partitionFilters = partitionFilters)
           }
+
+          override def tagPlanForGpu(): Unit = tagFileSourceScanExec(this)
 
           override def convertToGpu(): GpuExec = {
             val sparkSession = wrapped.relation.sparkSession

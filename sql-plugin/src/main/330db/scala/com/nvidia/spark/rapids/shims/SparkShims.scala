@@ -45,8 +45,7 @@ object SparkShimImpl extends Spark321PlusDBShims {
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
   }
 
-  override def tagFileSourceScanExec(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
-    throw new ArithmeticException("HIT THE SHIM OF DB113 !!!!!")
+  def tagFileSourceScanExec(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     if (meta.wrapped.expressions.exists {
       case FileSourceMetadataAttribute(_) => true
       case _ => false
