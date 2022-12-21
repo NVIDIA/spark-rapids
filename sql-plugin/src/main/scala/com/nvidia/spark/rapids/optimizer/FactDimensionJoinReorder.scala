@@ -83,7 +83,6 @@ object FactDimensionJoinReorder
 
   private def isSupportedJoinCond(cond: Expression): Boolean = {
     if (!cond.deterministic) {
-      println(s"isSupportedJoinCond non-deterministic: $cond")
       return false
     }
     cond match {
