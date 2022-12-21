@@ -3493,8 +3493,10 @@ object GpuOverrides extends Logging {
         // TypeSig.ARRAY.nested(TypeSig.STRING), TypeSig.ARRAY.nested(TypeSig.STRING),
         // TypeSig.ARRAY.nested(TypeSig.all), TypeSig.ARRAY.nested(TypeSig.all),
         // TypeSig.STRUCT.nested(TypeSig.STRING), TypeSig.STRUCT.nested(TypeSig.STRING),
-        TypeSig.ARRAY.nested(TypeSig.STRUCT.nested(TypeSig.STRING)), 
-        TypeSig.ARRAY.nested(TypeSig.STRUCT.nested(TypeSig.STRING)),
+        // TypeSig.ARRAY.nested(TypeSig.STRUCT.nested(TypeSig.STRING)), 
+        // TypeSig.ARRAY.nested(TypeSig.STRUCT.nested(TypeSig.STRING)),
+        TypeSig.all,
+        TypeSig.all,
         Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING)),
         Some(RepeatingParamCheck("path", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
       // (a, conf, p, r) => new ExprMeta[JsonTuple](a, conf, p, r) {

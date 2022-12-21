@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{Expression, NamedExpression}
 import org.apache.spark.sql.types.{DataType, StringType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -114,9 +114,12 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
     // if the number of input rows is 1 or less, cannot split
     if (inputRows <= 1) return Array()
     val outputRows = inputRows
+
+    val jsonGpuExpr = GpuBindReferences.bindReference(jsonExpr, 
+      Seq(jsonExpr.asInstanceOf[NamedExpression].toAttribute))
     // we know we are going to output at most this much
     val estimateOutputSize = 
-      withResource(columnarEvalToColumn(jsonExpr, inputBatch).getBase) { json =>
+      withResource(columnarEvalToColumn(jsonGpuExpr, inputBatch).getBase) { json =>
         (json.getDeviceMemorySize * fieldExpressions.length).toDouble
       }
     
