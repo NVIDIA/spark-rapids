@@ -188,7 +188,7 @@ trait Spark321PlusDBShims extends SparkShims
               this.entirePlanWillNotWork("Plans that read Delta Index JSON files can not run " +
                   "any part of the plan on the GPU!")
             }
-            GpuFileSourceScanExec.tagSupport(this)
+            tagFileSourceScanExec(this)
           }
 
           override def convertToCpu(): SparkPlan = {

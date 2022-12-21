@@ -165,7 +165,7 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
     frame => frame.select(col("*"))
   }
   
-   /**
+  /**
    * A malformed version of nested-unsigned.parquet is, which should throw.
    */
   test("Test Parquet nested unsigned int malformed: uint8, uint16, uint32"){
@@ -173,10 +173,13 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
     try {
       withGpuSparkSession(spark => {
         frameFromParquet("nested-unsigned-malformed.parquet")(spark).collect
-      })      
+      })
+      fail("Did not receive an expected exception from cudf")
     } catch {
       case e: Exception =>
-        assert(exceptionContains(e, "Encountered malformed"))
+        if (!exceptionContains(e, "Encountered malformed")) {
+          throw e
+        }
     }
   }
 
