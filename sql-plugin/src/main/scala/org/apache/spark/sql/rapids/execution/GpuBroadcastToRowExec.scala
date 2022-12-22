@@ -27,6 +27,7 @@ import com.nvidia.spark.rapids.shims.{ShimBroadcastExchangeLike, ShimUnaryExecNo
 
 import org.apache.spark.SparkException
 import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Expression, UnsafeProjection}
@@ -44,7 +45,9 @@ case class GpuBroadcastToRowExec(
   buildKeys: Seq[Expression],
   broadcastMode: BroadcastMode,
   child: SparkPlan)(modeKeys: Option[Seq[Expression]])
-  extends ShimBroadcastExchangeLike with ShimUnaryExecNode with GpuExec {
+  extends ShimBroadcastExchangeLike with ShimUnaryExecNode with GpuExec with Logging {
+
+  override def otherCopyArgs: Seq[AnyRef] = modeKeys :: Nil
 
   @transient
   private val timeout: Long = conf.broadcastTimeout
