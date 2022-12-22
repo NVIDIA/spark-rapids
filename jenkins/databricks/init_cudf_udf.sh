@@ -50,4 +50,4 @@ ${base}/envs/cudf-udf/bin/mamba install -y \
   -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults \
   "${REQUIRED_PACKAGES[@]}"
 
-conda deactivate
+source deactivate && conda deactivate
