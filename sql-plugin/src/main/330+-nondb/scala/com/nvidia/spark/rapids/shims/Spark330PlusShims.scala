@@ -89,7 +89,7 @@ trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
 
   // GPU support ANSI interval types from 330
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
-    super.getExecs ++ ScanExecShims.execs ++ PythonMapInArrowExecShims.execs
+    super.getExecs ++ PythonMapInArrowExecShims.execs
 
 }
 
