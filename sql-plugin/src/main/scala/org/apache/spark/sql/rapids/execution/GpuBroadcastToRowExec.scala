@@ -35,9 +35,9 @@ import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
+import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.util.ThreadUtils
-import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
 
 // a version of GpuSubqueryBroadcastExec that implements doExecuteBroadcast
 // and uses the same algorithm to pull columns from the GPU to rows on the CPU.
