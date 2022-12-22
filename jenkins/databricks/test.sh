@@ -72,6 +72,7 @@ if [ -d "${CONDA_HOME}/envs/cudf-udf" ]; then
         google
         llvmlite
         numba
+        numpy
         pyarrow
     )
 
