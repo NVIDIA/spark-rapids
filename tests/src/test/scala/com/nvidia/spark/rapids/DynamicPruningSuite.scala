@@ -59,7 +59,6 @@ class DynamicPruningSuite
                 val newChild = child match {
                   case a @ AdaptiveSparkPlanExec(_, context, _, subquery, columnar) =>
                     (new GpuTransitionOverrides()).apply(ColumnarToRowExec(a.executedPlan))
-                    newPlan
                   case _ =>
                     (new GpuTransitionOverrides()).apply(ColumnarToRowExec(child))
                 }
