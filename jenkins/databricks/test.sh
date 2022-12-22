@@ -63,28 +63,20 @@ fi
 # Get Python version (major.minor). i.e., python3.8 for DB10.4 and python3.9 for DB11.3
 sw_versions[PYTHON]=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
 
-PATCH_PACKAGES_PATH="$PWD/local-pip-repo/${sw_versions[PYTHON]}"
+# override incompatible versions between databricks and cudf
+if [ -d "${CONDA_HOME}/envs/cudf-udf" ]; then
+    CONDA_SITE_PATH="${CONDA_HOME}/envs/cudf-udf/lib/${sw_versions[PYTHON]}/site-packages"
+    PATCH_PACKAGES_PATH="$PWD/local-pip-repo/${sw_versions[PYTHON]}"
+    TO_PATCH=(
+        google
+        llvmlite
+        numba
+    )
 
-CUDF_DATABRICKS_INCOMPATIBLE=(
-    # findspark
-    # numba
-    # pandas
-    # protobuf
-    # pyarrow
-    # pytest
-    # pytest-order
-    # pytest-xdist
-    # requests
-    # sre_yield
-)
-
-# Try to use the pip from the conda environment if it is available
-"$(which pip)" install --target ${PATCH_PACKAGES_PATH} "${CUDF_DATABRICKS_INCOMPATIBLE[@]}" || true
-
-# TODO consider a symlink alternative
-# lrwxrwxrwx 1 ubuntu ubuntu 72 Dec 22 00:43 local-pip-repo/python3.9/google -> /home/ubuntu/miniconda3/envs/cudf-udf/lib/python3.9/site-packages/google
-# lrwxrwxrwx 1 ubuntu ubuntu 74 Dec 22 00:46 local-pip-repo/python3.9/llvmlite -> /home/ubuntu/miniconda3/envs/cudf-udf/lib/python3.9/site-packages/llvmlite
-# lrwxrwxrwx 1 ubuntu ubuntu 71 Dec 22 00:45 local-pip-repo/python3.9/numba -> /home/ubuntu/miniconda3/envs/cudf-udf/lib/python3.9/site-packages/numba
+    for p in "${TO_PATCH[@]}"; do
+        ln -s ${CONDA_SITE_PATH}/${p} ${PATCH_PACKAGES_PATH}
+    done
+fi
 
 export SPARK_HOME=/databricks/spark
 # change to not point at databricks confs so we don't conflict with their settings
@@ -123,7 +115,7 @@ CUDF_UDF_TEST_ARGS="--conf spark.python.daemon.module=rapids.daemon_databricks \
     --conf spark.rapids.memory.gpu.minAllocFraction=0 \
     --conf spark.rapids.memory.gpu.allocFraction=0.1 \
     --conf spark.rapids.python.memory.gpu.allocFraction=0.1 \
-    --conf spark.rapids.python.concurrentPythonWorkers=1"
+    --conf spark.rapids.python.concurrentPythonWorkers=2"
 
 ## 'spark.foo=1,spark.bar=2,...' to 'export PYSP_TEST_spark_foo=1 export PYSP_TEST_spark_bar=2'
 if [ -n "$SPARK_CONF" ]; then
@@ -210,7 +202,7 @@ else
         ## Run cudf-udf tests
         CUDF_UDF_TEST_ARGS="$CUDF_UDF_TEST_ARGS --conf spark.executorEnv.PYTHONPATH=`ls /home/ubuntu/spark-rapids/dist/target/rapids-4-spark_*.jar | grep -v 'tests.jar'`"
         SPARK_SUBMIT_FLAGS="$SPARK_CONF $CUDF_UDF_TEST_ARGS" TEST_PARALLEL=0 \
-            bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m "cudf_udf" --cudf_udf --test_type=$TEST_TYPE -s
+            bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m "cudf_udf" --cudf_udf --test_type=$TEST_TYPE
     fi
 
     if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then

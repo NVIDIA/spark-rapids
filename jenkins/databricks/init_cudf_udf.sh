@@ -19,6 +19,7 @@
 # Will be automatically pushed into the dbfs:/databricks/init_scripts once it is updated.
 
 CUDF_VER=${CUDF_VER:-23.02}
+CUDA_VER=${CUDA_VER:-11.0}
 
 # Need to explicitly add conda into PATH environment, to activate conda environment.
 export PATH=/databricks/conda/bin:$PATH
@@ -31,5 +32,22 @@ conda create -y -n cudf-udf python=$PYTHON_VERSION && source activate && conda a
 # Use mamba to install cudf-udf packages to speed up conda resolve time
 conda install -y -c conda-forge mamba python=$PYTHON_VERSION
 ${base}/envs/cudf-udf/bin/mamba remove -y c-ares zstd libprotobuf pandas
-${base}/envs/cudf-udf/bin/mamba install -y -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults cudf=$CUDF_VER cudatoolkit=11.0
+
+REQUIRED_PACKAGES=(
+  cudatoolkit=$CUDA_VER
+  cudf=$CUDF_VER
+  findspark
+  pandas
+  pyarrow
+  pytest
+  pytest-order
+  pytest-xdist
+  requests
+  sre_yield
+)
+
+${base}/envs/cudf-udf/bin/mamba install -y \
+  -c rapidsai -c rapidsai-nightly -c nvidia -c conda-forge -c defaults \
+  "${REQUIRED_PACKAGES[@]}"
+
 conda deactivate
