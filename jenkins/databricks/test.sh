@@ -66,11 +66,13 @@ sw_versions[PYTHON]=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".form
 # override incompatible versions between databricks and cudf
 if [ -d "${CONDA_HOME}/envs/cudf-udf" ]; then
     CONDA_SITE_PATH="${CONDA_HOME}/envs/cudf-udf/lib/${sw_versions[PYTHON]}/site-packages"
-    PATCH_PACKAGES_PATH="$PWD/local-pip-repo/${sw_versions[PYTHON]}"
+    PATCH_PACKAGES_PATH="$PWD/package-overrides/${sw_versions[PYTHON]}"
+    mkdir -p ${PATCH_PACKAGES_PATH}
     TO_PATCH=(
         google
         llvmlite
         numba
+        pyarrow
     )
 
     echo creating symlinks to override conflicting packages
