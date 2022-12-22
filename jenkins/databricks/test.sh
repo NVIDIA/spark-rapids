@@ -73,8 +73,9 @@ if [ -d "${CONDA_HOME}/envs/cudf-udf" ]; then
         numba
     )
 
+    echo creating symlinks to override conflicting packages
     for p in "${TO_PATCH[@]}"; do
-        ln -s ${CONDA_SITE_PATH}/${p} ${PATCH_PACKAGES_PATH}
+        ln -f -s ${CONDA_SITE_PATH}/${p} ${PATCH_PACKAGES_PATH}
     done
 fi
 
