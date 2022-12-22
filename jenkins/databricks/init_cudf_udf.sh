@@ -18,6 +18,8 @@
 # The initscript to set up environment for the cudf_udf tests on Databricks
 # Will be automatically pushed into the dbfs:/databricks/init_scripts once it is updated.
 
+set -x
+
 CUDF_VER=${CUDF_VER:-23.02}
 CUDA_VER=${CUDA_VER:-11.0}
 
@@ -28,7 +30,10 @@ PYTHON_VERSION=$(${PYSPARK_PYTHON} -c 'import sys; print("{}.{}".format(sys.vers
 
 base=$(conda info --base)
 # Create and activate 'cudf-udf' conda env for cudf-udf tests
-conda create -y -n cudf-udf python=$PYTHON_VERSION && source activate && conda activate cudf-udf
+conda create -y -n cudf-udf -c conda-forge python=$PYTHON_VERSION mamba && \
+  source activate && \
+  conda activate cudf-udf
+
 # Use mamba to install cudf-udf packages to speed up conda resolve time
 conda install -y -c conda-forge mamba python=$PYTHON_VERSION
 ${base}/envs/cudf-udf/bin/mamba remove -y c-ares zstd libprotobuf pandas
