@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-// scalastyle:off
-// {"spark-distros":["330cdh"]}
-// scalastyle:on
 package org.apache.spark.sql.rapids.shims.spark330cdh
 
 import org.apache.spark.SparkConf

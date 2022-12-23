@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-// scalastyle:off line.size.limit
-// {"spark-distros":["321db"]}
-// scalastyle:on line.size.limit
 package com.databricks.sql.transaction.tahoe.rapids.shims
 
 import com.nvidia.spark.rapids.GpuExec

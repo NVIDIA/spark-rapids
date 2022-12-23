@@ -19,9 +19,6 @@
  * limitations under the License.
  */
 
-// scalastyle:off line.size.limit
-// {"spark-distros":["320"]}
-// scalastyle:on line.size.limit
 package com.nvidia.spark.rapids.delta
 
 import scala.collection.mutable.ArrayBuffer

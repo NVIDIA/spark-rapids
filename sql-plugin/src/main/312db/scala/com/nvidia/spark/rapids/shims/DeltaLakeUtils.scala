@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-// scalastyle:off
-// {"spark-distros":["312db"]}
-// scalastyle:on
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.execution.FileSourceScanExec

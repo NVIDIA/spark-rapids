@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-// scalastyle:off
-// {"spark-distros":["312db"]}
-// scalastyle:on
 package com.nvidia.spark.rapids.shims.spark312db
 
 import com.nvidia.spark.rapids.{DatabricksShimVersion, ShimVersion}

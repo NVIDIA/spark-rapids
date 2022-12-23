@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-// scalastyle:off
-// {"spark-distros":["330cdh"]}
-// scalastyle:on
 package com.nvidia.spark.rapids.shims.spark330cdh
 
 import com.nvidia.spark.rapids.{ClouderaShimVersion, ShimVersion}

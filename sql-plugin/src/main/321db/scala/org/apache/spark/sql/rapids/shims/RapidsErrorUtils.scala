@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-// scalastyle:off
-// {"spark-distros":["321db"]}
-// scalastyle:on
 package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.sql.catalyst.TableIdentifier
@@ -61,7 +58,7 @@ object RapidsErrorUtils {
     new ArithmeticException(message)
   }
 
-  def cannotChangeDecimalPrecisionError(
+  def cannotChangeDecimalPrecisionError(      
       value: Decimal,
       toType: DecimalType,
       context: String = ""): ArithmeticException = {

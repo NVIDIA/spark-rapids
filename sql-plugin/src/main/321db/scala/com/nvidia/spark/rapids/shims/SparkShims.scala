@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-// scalastyle:off
-// {"spark-distros":["321db"]}
-// scalastyle:on
 package com.nvidia.spark.rapids.shims
 
 import com.databricks.sql.execution.window.RunningWindowFunctionExec
@@ -131,15 +128,15 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
             val convertBroadcast = (bc: SubqueryBroadcastExec) => {
               val meta = GpuOverrides.wrapAndTagPlan(bc, conf)
               meta.tagForExplain()
-              val converted = meta.convertIfNeeded()
+              val converted = meta.convertIfNeeded() 
               // Because the PlanSubqueries rule is not called (and does not work as expected),
-              // we might actually have to fully convert the subquery plan as the plugin would
-              // intend (in this case calling GpuTransitionOverrides to insert GpuCoalesceBatches,
+              // we might actually have to fully convert the subquery plan as the plugin would 
+              // intend (in this case calling GpuTransitionOverrides to insert GpuCoalesceBatches, 
               // etc.) to match the other side of the join to reuse the BroadcastExchange.
               // This happens when SubqueryBroadcast has the original (Gpu)BroadcastExchangeExec
               converted match {
                 case e: GpuSubqueryBroadcastExec => e.child match {
-                  // If the GpuBroadcastExchange is here, then we will need to run the transition
+                  // If the GpuBroadcastExchange is here, then we will need to run the transition 
                   // overrides here
                   case _: GpuBroadcastExchangeExec =>
                     var updated = ApplyColumnarRulesAndInsertTransitions(Seq(), true)
@@ -155,7 +152,7 @@ object SparkShimImpl extends Spark321PlusShims with Spark320until340Shims {
                     }
                   // Otherwise, if this SubqueryBroadcast is using a ReusedExchange, then we don't
                   // do anything further
-                  case _: ReusedExchangeExec =>
+                  case _: ReusedExchangeExec => 
                     converted.asInstanceOf[BaseSubqueryExec]
                 }
                 case _ =>

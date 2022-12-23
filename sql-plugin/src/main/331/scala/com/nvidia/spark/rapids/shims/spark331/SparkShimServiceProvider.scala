@@ -12,11 +12,8 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
-*/
+ */
 
-// scalastyle:off
-// {"spark-distros":["331"]}
-// scalastyle:on
 package com.nvidia.spark.rapids.shims.spark331
 
 import com.nvidia.spark.rapids.SparkShimVersion

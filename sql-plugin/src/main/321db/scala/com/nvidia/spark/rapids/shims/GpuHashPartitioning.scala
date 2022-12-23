@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-// scalastyle:off
-// {"spark-distros":["321db"]}
-// scalastyle:on
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.GpuHashPartitioningBase
@@ -39,7 +36,7 @@ case class GpuHashPartitioning(expressions: Seq[Expression], numPartitions: Int)
             c.areAllClusterKeysMatched(expressions)
           } else {
             expressions.forall(x => requiredClustering.exists(_.semanticEquals(x)))
-          }
+          }          
         case _ => false
       }
     }

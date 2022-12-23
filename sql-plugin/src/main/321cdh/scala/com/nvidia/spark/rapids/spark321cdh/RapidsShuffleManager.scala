@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-// scalastyle:off
-// {"spark-distros":["321cdh"]}
-// scalastyle:on
 package com.nvidia.spark.rapids.spark321cdh
 
 import org.apache.spark.SparkConf

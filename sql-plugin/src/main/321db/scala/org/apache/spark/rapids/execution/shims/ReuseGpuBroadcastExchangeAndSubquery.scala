@@ -17,9 +17,6 @@
  * limitations under the License.
  */
 
-// scalastyle:off
-// {"spark-distros":["321db"]}
-// scalastyle:on
 package org.apache.spark.sql.rapids.execution.shims
 
 import scala.collection.mutable
@@ -32,11 +29,11 @@ import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExec
 
 /**
  * GPU version of the ReuseExchangeAndSubquery rule from Apache Spark 3.2.x. This only works with
- * GpuBroadcastExchangeExec in the reuse context, since we need to skip ahead of Databricks'
+ * GpuBroadcastExchangeExec in the reuse context, since we need to skip ahead of Databricks' 
  * version of the rule which accomodates for the codegenStageId in non-GPU nodes in the Spark plan
  * for DPP. We also don't want to reuse too much, in certain circumstances if we used the Databricks
  * rule as-is, we would try to reuse non-reusable nodes in other cases that are not DPP.
- *
+ * 
  * Find out duplicated exchanges and subqueries in the whole spark plan including subqueries, then
  * use the same exchange or subquery for all the references.
  *

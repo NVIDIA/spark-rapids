@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-// scalastyle:off line.size.limit
-// {"spark-distros":["320"]}
-// scalastyle:on line.size.limit
 package org.apache.spark.sql.rapids.delta
 
 import com.nvidia.spark.rapids.delta.GpuDeltaIdentityColumnStatsTracker
