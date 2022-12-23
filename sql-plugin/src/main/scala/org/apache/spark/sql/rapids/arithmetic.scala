@@ -32,6 +32,82 @@ import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+object AddOverflowChecks extends Arm {
+  def basicOpOverflowCheck(
+      lhs: BinaryOperable,
+      rhs: BinaryOperable,
+      ret: ColumnVector): Unit = {
+    // Check overflow. It is true when both arguments have the opposite sign of the result.
+    // Which is equal to "((x ^ r) & (y ^ r)) < 0" in the form of arithmetic.
+    val signCV = withResource(ret.bitXor(lhs)) { lXor =>
+      withResource(ret.bitXor(rhs)) { rXor =>
+        lXor.bitAnd(rXor)
+      }
+    }
+    val signDiffCV = withResource(signCV) { sign =>
+      withResource(Scalar.fromInt(0)) { zero =>
+        sign.lessThan(zero)
+      }
+    }
+    withResource(signDiffCV) { signDiff =>
+      withResource(signDiff.any()) { any =>
+        if (any.isValid && any.getBoolean) {
+          throw RapidsErrorUtils.arithmeticOverflowError(
+            "One or more rows overflow for Add operation."
+          )
+        }
+      }
+    }
+  }
+
+  def didDecimalOverflow(
+      lhs: BinaryOperable,
+      rhs: BinaryOperable,
+      ret: ColumnVector): ColumnVector = {
+    // We need a special overflow check for decimal because CUDF does not support INT128 so we
+    // cannot reuse the same code for the other types.
+    // Overflow happens if the arguments have the same signs and it is different from the sign of
+    // the result
+    val numRows = ret.getRowCount.toInt
+    val zero = BigDecimal(0).bigDecimal
+    withResource(DecimalUtils.lessThan(rhs, zero, numRows)) { rhsLz =>
+      val argsSignSame = withResource(DecimalUtils.lessThan(lhs, zero, numRows)) { lhsLz =>
+        lhsLz.equalTo(rhsLz)
+      }
+      withResource(argsSignSame) { argsSignSame =>
+        val resultAndRhsDifferentSign =
+          withResource(DecimalUtils.lessThan(ret, zero)) { resultLz =>
+            rhsLz.notEqualTo(resultLz)
+          }
+        withResource(resultAndRhsDifferentSign) { resultAndRhsDifferentSign =>
+          resultAndRhsDifferentSign.and(argsSignSame)
+        }
+      }
+    }
+  }
+
+  def decimalOpOverflowCheck(
+      lhs: BinaryOperable,
+      rhs: BinaryOperable,
+      ret: ColumnVector,
+      failOnError: Boolean): ColumnVector = {
+    withResource(didDecimalOverflow(lhs, rhs, ret)) { overflow =>
+      if (failOnError) {
+        withResource(overflow.any()) { any =>
+          if (any.isValid && any.getBoolean) {
+            throw new ArithmeticException("One or more rows overflow for Add operation.")
+          }
+        }
+        ret.incRefCount()
+      } else {
+        withResource(Scalar.fromNull(ret.getType)) { nullVal =>
+          overflow.ifElse(nullVal, ret)
+        }
+      }
+    }
+  }
+}
+
 object GpuAnsi extends Arm {
   def needBasicOpOverflowCheck(dt: DataType): Boolean =
     dt.isInstanceOf[IntegralType]
@@ -175,92 +251,10 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
   }
 }
 
-abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolerant {
-  override def dataType: DataType = left.dataType
-  // arithmetic operations can overflow and throw exceptions in ANSI mode
-  override def hasSideEffects: Boolean = super.hasSideEffects || SQLConf.get.ansiEnabled
-}
-
-object GpuAdd extends Arm {
-  def basicOpOverflowCheck(
-      lhs: BinaryOperable,
-      rhs: BinaryOperable,
-      ret: ColumnVector): Unit = {
-    // Check overflow. It is true when both arguments have the opposite sign of the result.
-    // Which is equal to "((x ^ r) & (y ^ r)) < 0" in the form of arithmetic.
-    val signCV = withResource(ret.bitXor(lhs)) { lXor =>
-      withResource(ret.bitXor(rhs)) { rXor =>
-        lXor.bitAnd(rXor)
-      }
-    }
-    val signDiffCV = withResource(signCV) { sign =>
-      withResource(Scalar.fromInt(0)) { zero =>
-        sign.lessThan(zero)
-      }
-    }
-    withResource(signDiffCV) { signDiff =>
-      withResource(signDiff.any()) { any =>
-        if (any.isValid && any.getBoolean) {
-          throw RapidsErrorUtils.arithmeticOverflowError(
-            "One or more rows overflow for Add operation."
-          )
-        }
-      }
-    }
-  }
-
-  def didDecimalOverflow(
-      lhs: BinaryOperable,
-      rhs: BinaryOperable,
-      ret: ColumnVector): ColumnVector = {
-    // We need a special overflow check for decimal because CUDF does not support INT128 so we
-    // cannot reuse the same code for the other types.
-    // Overflow happens if the arguments have the same signs and it is different from the sign of
-    // the result
-    val numRows = ret.getRowCount.toInt
-    val zero = BigDecimal(0).bigDecimal
-    withResource(DecimalUtils.lessThan(rhs, zero, numRows)) { rhsLz =>
-      val argsSignSame = withResource(DecimalUtils.lessThan(lhs, zero, numRows)) { lhsLz =>
-        lhsLz.equalTo(rhsLz)
-      }
-      withResource(argsSignSame) { argsSignSame =>
-        val resultAndRhsDifferentSign =
-          withResource(DecimalUtils.lessThan(ret, zero)) { resultLz =>
-            rhsLz.notEqualTo(resultLz)
-          }
-        withResource(resultAndRhsDifferentSign) { resultAndRhsDifferentSign =>
-          resultAndRhsDifferentSign.and(argsSignSame)
-        }
-      }
-    }
-  }
-
-  def decimalOpOverflowCheck(
-      lhs: BinaryOperable,
-      rhs: BinaryOperable,
-      ret: ColumnVector,
-      failOnError: Boolean): ColumnVector = {
-    withResource(didDecimalOverflow(lhs, rhs, ret)) { overflow =>
-      if (failOnError) {
-        withResource(overflow.any()) { any =>
-          if (any.isValid && any.getBoolean) {
-            throw new ArithmeticException("One or more rows overflow for Add operation.")
-          }
-        }
-        ret.incRefCount()
-      } else {
-        withResource(Scalar.fromNull(ret.getType)) { nullVal =>
-          overflow.ifElse(nullVal, ret)
-        }
-      }
-    }
-  }
-}
-
-case class GpuAdd(
+abstract class GpuAddBase(
     left: Expression,
     right: Expression,
-    failOnError: Boolean) extends CudfBinaryArithmetic {
+    failOnError: Boolean) extends CudfBinaryArithmetic with Serializable {
   override def inputType: AbstractDataType = TypeCollection.NumericAndInterval
 
   override def symbol: String = "+"
@@ -277,11 +271,11 @@ case class GpuAdd(
           GpuTypeShims.isSupportedYearMonthType(dataType)) {
         // For day time interval, Spark throws an exception when overflow,
         // regardless of whether `SQLConf.get.ansiEnabled` is true or false
-        GpuAdd.basicOpOverflowCheck(lhs, rhs, ret)
+        AddOverflowChecks.basicOpOverflowCheck(lhs, rhs, ret)
       }
 
       if (dataType.isInstanceOf[DecimalType]) {
-        GpuAdd.decimalOpOverflowCheck(lhs, rhs, ret, failOnError)
+        AddOverflowChecks.decimalOpOverflowCheck(lhs, rhs, ret, failOnError)
       } else {
         ret.incRefCount()
       }
@@ -289,10 +283,10 @@ case class GpuAdd(
   }
 }
 
-case class GpuSubtract(
+abstract class GpuSubtractBase(
     left: Expression,
     right: Expression,
-    failOnError: Boolean) extends CudfBinaryArithmetic {
+    failOnError: Boolean) extends CudfBinaryArithmetic with Serializable {
   override def inputType: AbstractDataType = TypeCollection.NumericAndInterval
 
   override def symbol: String = "-"
@@ -390,13 +384,13 @@ case class GpuSubtract(
   }
 }
 
-case class GpuDecimalMultiply(
-    left: Expression,
-    right: Expression,
-    dataType: DecimalType,
-    useLongMultiply: Boolean = false,
-    failOnError: Boolean = SQLConf.get.ansiEnabled) extends
-    ShimExpression with GpuExpression {
+trait GpuDecimalMultiplyBase extends GpuExpression with Arm {
+
+  def dataType: DecimalType
+  def failOnError: Boolean
+  def left: Expression
+  def right: Expression
+  def useLongMultiply: Boolean
 
   override def toString: String = s"($left * $right)"
 
@@ -405,9 +399,9 @@ case class GpuDecimalMultiply(
   private[this] lazy val lhsType: DecimalType = DecimalUtil.asDecimalType(left.dataType)
   private[this] lazy val rhsType: DecimalType = DecimalUtil.asDecimalType(right.dataType)
   private[this] lazy val (intermediateLhsType, intermediateRhsType) =
-    GpuDecimalMultiply.intermediateLhsRhsTypes(lhsType, rhsType, dataType)
+    DecimalMultiplyChecks.intermediateLhsRhsTypes(lhsType, rhsType, dataType)
   private[this] lazy val intermediateResultType =
-    GpuDecimalMultiply.intermediateResultType(lhsType, rhsType, dataType)
+    DecimalMultiplyChecks.intermediateResultType(lhsType, rhsType, dataType)
 
   def regularMultiply(batch: ColumnarBatch): Any = {
     val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
@@ -423,7 +417,8 @@ case class GpuDecimalMultiply(
         withResource(castLhs.mul(castRhs,
           GpuColumnVector.getNonNestedRapidsType(intermediateResultType))) { mult =>
           if (useLongMultiply) {
-            withResource(GpuDecimalMultiply.checkForOverflow(castLhs, castRhs)) { wouldOverflow =>
+            withResource(DecimalMultiplyChecks
+                .checkForOverflow(castLhs, castRhs)) { wouldOverflow =>
               if (failOnError) {
                 withResource(wouldOverflow.any()) { anyOverflow =>
                   if (anyOverflow.isValid && anyOverflow.getBoolean) {
@@ -488,11 +483,9 @@ case class GpuDecimalMultiply(
   }
 
   override def nullable: Boolean = left.nullable || right.nullable
-
-  override def children: Seq[Expression] = Seq(left, right)
 }
 
-object GpuDecimalMultiply extends Arm {
+object DecimalMultiplyChecks extends Arm {
   // For Spark the final desired output is
   // new_scale = lhs.scale + rhs.scale
   // new_precision = lhs.precision + rhs.precision + 1
@@ -619,20 +612,6 @@ object GpuDecimalMultiply extends Arm {
   }
 }
 
-case class GpuMultiply(
-    left: Expression,
-    right: Expression) extends CudfBinaryArithmetic {
-  assert(!left.dataType.isInstanceOf[DecimalType],
-    "DecimalType multiplies need to be handled by GpuDecimalMultiply")
-
-  override def inputType: AbstractDataType = NumericType
-
-  override def symbol: String = "*"
-
-  override def binaryOp: BinaryOp = BinaryOp.MUL
-  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.MUL)
-}
-
 object GpuDivModLike extends Arm {
   def replaceZeroWithNull(v: ColumnVector): ColumnVector = {
     var zeroScalar: Scalar = null
@@ -746,6 +725,20 @@ object GpuDivModLike extends Arm {
   }
 }
 
+case class GpuMultiply(
+    left: Expression,
+    right: Expression) extends CudfBinaryArithmetic {
+  assert(!left.dataType.isInstanceOf[DecimalType],
+    "DecimalType multiplies need to be handled by GpuDecimalMultiply")
+
+  override def inputType: AbstractDataType = NumericType
+
+  override def symbol: String = "*"
+
+  override def binaryOp: BinaryOp = BinaryOp.MUL
+  override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.MUL)
+}
+
 trait GpuDivModLike extends CudfBinaryArithmetic {
   lazy val failOnError: Boolean = SQLConf.get.ansiEnabled
 
@@ -809,20 +802,24 @@ trait GpuDivModLike extends CudfBinaryArithmetic {
  * the same type. This lets us calculate the correct result on a wider range of values without
  * the need for unbounded precision in the processing.
  */
-case class GpuDecimalDivide(
-    left: Expression,
-    right: Expression,
-    dataType: DecimalType,
-    failOnError: Boolean = SQLConf.get.ansiEnabled) extends
-    ShimExpression with GpuExpression {
+trait GpuDecimalDivideBase extends GpuExpression {
+  def dataType: DataType
+  def left: Expression
+  def right: Expression
+  def failOnError: Boolean
+  def integerDivide: Boolean
 
   // For all decimal128 output we will use the long division version.
-  protected lazy val useLongDivision: Boolean = dataType.precision > Decimal.MAX_LONG_DIGITS
+  protected lazy val useLongDivision: Boolean = decimalType.precision > Decimal.MAX_LONG_DIGITS
 
   override def toString: String = s"($left / $right)"
 
   override def sql: String = s"(${left.sql} / ${right.sql})"
 
+  def decimalType: DecimalType = dataType match {
+    case DecimalType.Fixed(_, _) => dataType.asInstanceOf[DecimalType]
+    case LongType => DecimalType.LongDecimal
+  }
 
   private[this] lazy val lhsType: DecimalType = DecimalUtil.asDecimalType(left.dataType)
   private[this] lazy val rhsType: DecimalType = DecimalUtil.asDecimalType(right.dataType)
@@ -830,18 +827,18 @@ case class GpuDecimalDivide(
   // the intermediate rhs (to make CUDF happy doing the divide), but the scale will be shifted
   // enough so CUDF produces the desired output scale
   private[this] lazy val intermediateLhsType =
-    GpuDecimalDivide.intermediateLhsType(lhsType, rhsType, dataType)
+    DecimalDivideChecks.intermediateLhsType(lhsType, rhsType, decimalType)
   // This is the type that the RHS will be cast to. The precision will match the precision of the
   // intermediate lhs (to make CUDF happy doing the divide), but the scale will be the same
   // as the input RHS scale.
   private[this] lazy val intermediateRhsType =
-    GpuDecimalDivide.intermediateRhsType(lhsType, rhsType, dataType)
+    DecimalDivideChecks.intermediateRhsType(lhsType, rhsType, decimalType)
 
   // This is the data type that CUDF will return as the output of the divide. It should be
   // very close to outputType, but with the scale increased by 1 so that we can round the result
   // and produce the same answer as Spark.
   private[this] lazy val intermediateResultType =
-    GpuDecimalDivide.intermediateResultType(dataType)
+    DecimalDivideChecks.intermediateResultType(decimalType)
 
   private[this] def divByZeroFixes(rhs: ColumnVector): ColumnVector = {
     if (failOnError) {
@@ -894,9 +891,14 @@ case class GpuDecimalDivide(
         }
       }
       withResource(castRhs) { castRhs =>
-        com.nvidia.spark.rapids.jni.DecimalUtils.divide128(castLhs, castRhs, -dataType.scale)
+          if (integerDivide) {
+            com.nvidia.spark.rapids.jni.DecimalUtils.integerDivide128(castLhs, castRhs)
+          } else {
+            com.nvidia.spark.rapids.jni.DecimalUtils.divide128(castLhs, castRhs, -decimalType.scale)
+          }
       }
     }
+    val outputType = if (integerDivide) LongType else dataType
     val retCol = withResource(retTab) { retTab =>
       val overflowed = retTab.getColumn(0)
       val quotient = retTab.getColumn(1)
@@ -908,12 +910,12 @@ case class GpuDecimalDivide(
         }
         quotient.incRefCount()
       } else {
-        withResource(GpuScalar.from(null, dataType)) { nullVal =>
+        withResource(GpuScalar.from(null, outputType)) { nullVal =>
           overflowed.ifElse(nullVal, quotient)
         }
       }
     }
-    GpuColumnVector.from(retCol, dataType)
+    GpuColumnVector.from(retCol, outputType)
   }
 
   override def columnarEval(batch: ColumnarBatch): Any = {
@@ -926,10 +928,9 @@ case class GpuDecimalDivide(
 
   override def nullable: Boolean = true
 
-  override def children: Seq[Expression] = Seq(left, right)
 }
 
-object GpuDecimalDivide {
+object DecimalDivideChecks {
   // This comes from DecimalType.MINIMUM_ADJUSTED_SCALE, but for some reason it is gone
   // in databricks so we have it here.
   private val MINIMUM_ADJUSTED_SCALE = 6
@@ -1016,13 +1017,13 @@ object GpuDecimalDivide {
 
 case class GpuDivide(left: Expression, right: Expression,
     failOnErrorOverride: Boolean = SQLConf.get.ansiEnabled)
-      extends GpuDivModLike {
+    extends GpuDivModLike {
   assert(!left.dataType.isInstanceOf[DecimalType],
     "DecimalType divides need to be handled by GpuDecimalDivide")
 
   override lazy val failOnError: Boolean = failOnErrorOverride
 
-  override def inputType: AbstractDataType = TypeCollection(DoubleType, DecimalType)
+  override def inputType: AbstractDataType = DoubleType
 
   override def symbol: String = "/"
 
@@ -1031,7 +1032,10 @@ case class GpuDivide(left: Expression, right: Expression,
   override def outputTypeOverride: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
 }
 
-case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDivModLike {
+abstract class GpuIntegralDivideParent(
+    left: Expression,
+    right: Expression)
+    extends GpuDivModLike with Serializable {
   override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
 
   lazy val failOnOverflow: Boolean =
@@ -1055,7 +1059,8 @@ case class GpuIntegralDivide(left: Expression, right: Expression) extends GpuDiv
   override def sqlOperator: String = "div"
 }
 
-case class GpuRemainder(left: Expression, right: Expression) extends GpuDivModLike {
+abstract class GpuRemainderBase(left: Expression, right: Expression)
+    extends GpuDivModLike with Serializable {
   override def inputType: AbstractDataType = NumericType
 
   override def symbol: String = "%"
@@ -1063,8 +1068,8 @@ case class GpuRemainder(left: Expression, right: Expression) extends GpuDivModLi
   override def binaryOp: BinaryOp = BinaryOp.MOD
 }
 
-
-case class GpuPmod(left: Expression, right: Expression) extends GpuDivModLike {
+abstract class GpuPmodBase(left: Expression, right: Expression)
+    extends GpuDivModLike with Serializable {
   override def inputType: AbstractDataType = NumericType
 
   override def binaryOp: BinaryOp = BinaryOp.PMOD

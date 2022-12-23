@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -56,9 +56,11 @@ class KnownNotNullSuite extends SparkQueryCompareTestSuite {
  */
 trait PlusOne extends RapidsUDF with Serializable with Arm {
 
-  override def evaluateColumnar(args: ColumnVector*): ColumnVector = {
+  override def evaluateColumnar(numRows: Int, args: ColumnVector*): ColumnVector = {
     require(args.length == 1,
       s"Unexpected argument count: ${args.length}")
+    require(numRows == args.head.getRowCount,
+      s"Expected $numRows rows, received ${args.head.getRowCount}")
 
     withResource(Scalar.fromInt(1)) { sOne =>
       args.head.add(sOne, args.head.getType)

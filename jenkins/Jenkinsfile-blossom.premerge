@@ -77,6 +77,12 @@ RUNTIME_MAP = [
                 '3.2.1',
                 'init_cudf_udf.sh',
                 '3.2.1'
+        ],
+        '11.3': [
+                '11.3.x-gpu-ml-scala2.12',
+                '3.3.0',
+                'init_cudf_udf.sh',
+                '3.3.0'
         ]
 ]
 
@@ -381,6 +387,39 @@ pipeline {
                     }
                 } // end of DB runtime 10.4
 
+                stage('DB runtime 11.3') {
+                    when {
+                        beforeAgent true
+                        anyOf {
+                            expression { db_build }
+                        }
+                    }
+
+                    agent {
+                        kubernetes {
+                            label "premerge-ci-db-11.3-${BUILD_NUMBER}"
+                            cloud 'sc-ipp-blossom-prod'
+                            yaml "${IMAGE_DB}"
+                        }
+                    }
+                    environment {
+                        DB_RUNTIME = '11.3'
+                        DATABRICKS_RUNTIME = "${RUNTIME_MAP["$DB_RUNTIME"][ID_RUNTIME]}"
+                        BASE_SPARK_VERSION = "${RUNTIME_MAP["$DB_RUNTIME"][ID_SPARK]}"
+                        BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS = "${RUNTIME_MAP["$DB_RUNTIME"][ID_INSTALL]}"
+                        INIT_SCRIPTS = getInitScripts("$INIT_SCRIPTS_DIR",
+                                "${RUNTIME_MAP["$DB_RUNTIME"][ID_INITSCRIPTS]}")
+                    }
+                    steps {
+                        script {
+                            timeout(time: 5, unit: 'HOURS') {
+                                unstash "source_tree"
+                                databricksBuild()
+                            }
+                        }
+                    }
+                } // end of DB runtime 11.3
+
                 stage('Dummy stage: blue ocean log view') {
                     steps {
                         echo "workaround for blue ocean bug https://issues.jenkins.io/browse/JENKINS-48879"
@@ -472,18 +511,21 @@ void databricksBuild() {
 
         stage("Test agaist $SPARK_MAJOR DB") {
             script {
-                container('cpu') {
-                    try {
-                        withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
-                            def TEST_PARAMS = " -w $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID" +
-                                " -p $DATABRICKS_PRIVKEY -l ./jenkins/databricks/test.sh -v $BASE_SPARK_VERSION -d /home/ubuntu/test.sh"
-                            if (params.SPARK_CONF) {
-                                TEST_PARAMS += " -f ${params.SPARK_CONF}"
+                // TODO re-enable DB11.3 after all failed tests get fixed
+                if (env.DB_RUNTIME != '11.3' ) {
+                    container('cpu') {
+                        try {
+                            withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
+                                def TEST_PARAMS = " -w $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID" +
+                                    " -p $DATABRICKS_PRIVKEY -l ./jenkins/databricks/test.sh -v $BASE_SPARK_VERSION -d /home/ubuntu/test.sh"
+                                if (params.SPARK_CONF) {
+                                    TEST_PARAMS += " -f ${params.SPARK_CONF}"
+                                }
+                                sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS"
                             }
-                            sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS"
+                        } finally {
+                            common.publishPytestResult(this, "${STAGE_NAME}")
                         }
-                    } finally {
-                        common.publishPytestResult(this, "${STAGE_NAME}")
                     }
                 }
             }

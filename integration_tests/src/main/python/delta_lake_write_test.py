@@ -58,7 +58,7 @@ def assert_delta_log_json_equivalent(filename, c_json, g_json):
         # Strip out the values that are expected to be different
         c_tags = c_val.get("tags", {})
         g_tags = g_val.get("tags", {})
-        del_keys(["INSERTION_TIME"], c_tags, g_tags)
+        del_keys(["INSERTION_TIME", "MAX_INSERTION_TIME", "MIN_INSERTION_TIME"], c_tags, g_tags)
         if key == "metaData":
             assert c_val.keys() == g_val.keys(), "Delta log {} 'metaData' keys mismatch:\nCPU: {}\nGPU: {}".format(filename, c_val, g_val)
             del_keys(("createdTime", "id"), c_val, g_val)
@@ -102,9 +102,7 @@ def assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path):
 @pytest.mark.parametrize("disable_conf",
                          [{"spark.rapids.sql.format.delta.write.enabled": "false"},
                           {"spark.rapids.sql.format.parquet.enabled": "false"},
-                          {"spark.rapids.sql.format.parquet.write.enabled": "false"},
-                          {}  # verify disabled by default
-                          ], ids=idfn)
+                          {"spark.rapids.sql.format.parquet.write.enabled": "false"}], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_disabled_fallback(spark_tmp_path, disable_conf):
     data_path = spark_tmp_path + "/DELTA_DATA"

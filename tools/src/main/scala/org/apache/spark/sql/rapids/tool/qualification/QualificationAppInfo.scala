@@ -481,8 +481,7 @@ class QualificationAppInfo(
       }
       // Get the write data format
       if (!perSqlOnly && node.name.contains("InsertIntoHadoopFsRelationCommand")) {
-        val writeFormat = node.desc.split(",")(2)
-        writeDataFormat += writeFormat
+        writeDataFormat += pluginTypeChecker.getWriteFormatString(node.desc)
       }
     }
   }
