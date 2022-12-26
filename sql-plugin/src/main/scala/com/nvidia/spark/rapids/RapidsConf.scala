@@ -554,6 +554,16 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
+  val FILE_SCAN_PRUNE_PARTITION_ENABLED = conf("spark.rapids.sql.fileScanPrunePartition.enabled")
+    .doc("Enable or disable the partition column pruning for v1 file scan. Spark always asks " +
+        "for all the partition columns even a query doesn't need them at last. And the " +
+        "partition column generation is relatively expensive for GPU. Enabling this allows " +
+        "GPU to try to generate the only required partition columns to save the time and GPU " +
+        "memory.")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
   // METRICS
 
   val METRICS_LEVEL = conf("spark.rapids.sql.metrics.level")
@@ -1915,6 +1925,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffledHashJoinOptimizeShuffle: Boolean = get(SHUFFLED_HASH_JOIN_OPTIMIZE_SHUFFLE)
 
   lazy val stableSort: Boolean = get(STABLE_SORT)
+
+  lazy val isFileScanPrunePartitionEnabled: Boolean = get(FILE_SCAN_PRUNE_PARTITION_ENABLED)
 
   lazy val isIncompatEnabled: Boolean = get(INCOMPATIBLE_OPS)
 

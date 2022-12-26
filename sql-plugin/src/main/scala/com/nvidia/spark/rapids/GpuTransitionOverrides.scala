@@ -32,6 +32,7 @@ import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange,
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashedRelationBroadcastMode}
 import org.apache.spark.sql.rapids.{ExternalSource, GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase, GpuBroadcastToRowExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.types.StructType
 
 /**
  * Rules that run after the row to columnar and columnar to row transitions have been inserted.
@@ -381,6 +382,64 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     }
   }
 
+  private def prunePartitionSchema(partSchema: StructType, projectList: Seq[Expression],
+      filterCondition: Option[Expression] = None): StructType = {
+    // Luckily partition columns do not support nested types. So only need to prune the
+    // top level columns.
+    StructType(partSchema.filter(f =>
+      // The partition column used either in the projectList or the filterCondition will
+      // be kept.
+      (projectList ++ filterCondition).exists { expr =>
+        expr.find {
+          // It is safe to use the column name for comparison for the two cases listed in
+          // `prunePartitionForFileSourceScan`
+          case attr: AttributeReference => attr.name == f.name
+          case _ => false
+        }.isDefined
+      }))
+  }
+
+  // This tries to prune the partition schema for GpuFileSourceScanExec by leveraging
+  // the project list of the first GpuProjectExec after a GpuFileSourceScanExec.
+  private def prunePartitionForFileSourceScan(plan: SparkPlan): SparkPlan = plan match {
+    case p @ GpuProjectExec(projectList, fss: GpuFileSourceScanExec, _) =>
+      // A ProjectExec next to FileSourceScanExec, for cases like
+      //   df.groupBy("b").agg(max($"a")), or
+      //   df.select("b")
+      val prunedPartSchema = prunePartitionSchema(fss.relation.partitionSchema, projectList)
+      p.withNewChildren(Seq(
+        fss.copy(requiredPartitionSchema = Some(prunedPartSchema))(fss.rapidsConf)))
+
+    case p @ GpuProjectExec(
+        projectList,
+        f @ GpuFilterExec(condition, fss: GpuFileSourceScanExec, _),
+        _) =>
+      // A FilterExec is between the ProjectExec and FileSourceScanExec, for cases like
+      //   df.select("a").filter("a != 1")
+      val prunedPartSchema = prunePartitionSchema(fss.relation.partitionSchema,
+        projectList, Some(condition))
+      p.withNewChildren(Seq(
+        f.withNewChildren(Seq(
+          fss.copy(requiredPartitionSchema = Some(prunedPartSchema))(fss.rapidsConf)))))
+
+    case p @ GpuProjectAstExec(projectList, fss: GpuFileSourceScanExec) =>
+      val prunedPartSchema = prunePartitionSchema(fss.relation.partitionSchema, projectList)
+      p.withNewChildren(Seq(
+        fss.copy(requiredPartitionSchema = Some(prunedPartSchema))(fss.rapidsConf)))
+
+    case p @ GpuProjectAstExec(
+        projectList,
+        f @ GpuFilterExec(condition, fss: GpuFileSourceScanExec, _)) =>
+      val prunedPartSchema = prunePartitionSchema(fss.relation.partitionSchema,
+        projectList, Some(condition))
+      p.withNewChildren(Seq(
+        f.withNewChildren(Seq(
+          fss.copy(requiredPartitionSchema = Some(prunedPartSchema))(fss.rapidsConf)))))
+
+    case _ =>
+      plan.withNewChildren(plan.children.map(prunePartitionForFileSourceScan))
+  }
+
   // This walks from the output to the input so disableUntilInput can walk its way from when
   // we hit something that cannot allow for coalesce up until the input
   private def insertCoalesce(plan: SparkPlan,
@@ -589,6 +648,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         t => f"GPU plan transition optimization took $t%.2f ms") {
         var updatedPlan = insertHashOptimizeSorts(plan)
         updatedPlan = updateScansForInputAndOrder(updatedPlan)
+        if (rapidsConf.isFileScanPrunePartitionEnabled) {
+          updatedPlan = prunePartitionForFileSourceScan(updatedPlan)
+        }
         updatedPlan = insertColumnarFromGpu(updatedPlan)
         updatedPlan = insertCoalesce(updatedPlan)
         // only insert shuffle coalesces when using normal shuffle
