@@ -17,7 +17,6 @@
 package org.apache.spark.sql.rapids.execution
 
 import scala.collection.AbstractIterator
-import scala.collection.immutable.HashSet
 import scala.concurrent.Future
 
 import com.nvidia.spark.rapids._
@@ -33,7 +32,7 @@ import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, SortOrde
 import org.apache.spark.sql.catalyst.plans.physical.RoundRobinPartitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec, ShuffleOrigin}
+import org.apache.spark.sql.execution.exchange.{Exchange, ShuffleExchangeExec}
 import org.apache.spark.sql.execution.metric._
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuShuffleDependency
@@ -82,7 +81,7 @@ class GpuShuffleMeta(
 
   override def tagPlanForGpu(): Unit = {
 
-    if (!GpuShuffleMeta.supportedShuffleOrigins.contains(shuffle.shuffleOrigin)) {
+    if (!ShuffleOriginUtil.isSupported(shuffle.shuffleOrigin)) {
       willNotWorkOnGpu(s"${shuffle.shuffleOrigin} not supported on GPU")
     }
 
@@ -128,7 +127,6 @@ object GpuShuffleMeta {
   val availableRuntimeDataTransition = TreeNodeTag[Boolean](
     "rapids.gpu.availableRuntimeDataTransition")
 
-  val supportedShuffleOrigins: HashSet[ShuffleOrigin] = ShuffleOriginUtil.getSupportedShuffleOrigins
 }
 
 /**

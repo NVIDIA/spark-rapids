@@ -21,7 +21,8 @@ import scala.collection.immutable.HashSet
 import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, REPARTITION, REPARTITION_WITH_NUM, ShuffleOrigin}
 
 object ShuffleOriginUtil {
-  def getSupportedShuffleOrigins: HashSet[ShuffleOrigin] = { 
-    HashSet(ENSURE_REQUIREMENTS, REPARTITION, REPARTITION_WITH_NUM)
-  }
+  private val knownOrigins: HashSet[ShuffleOrigin] = HashSet(ENSURE_REQUIREMENTS,
+    REPARTITION, REPARTITION_WITH_NUM)
+
+  def isSupported(origin: ShuffleOrigin): Boolean = knownOrigins.contains(origin)
 }
