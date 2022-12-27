@@ -17,7 +17,7 @@ from conftest import get_non_gpu_allowed
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session
+from spark_session import with_cpu_session, is_spark_cdh
 
 hive_text_enabled_conf = {"spark.rapids.sql.format.hive.text.enabled": True,
                           "spark.rapids.sql.format.hive.text.read.enabled": True}
@@ -128,19 +128,27 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
     ('hive-delim-text/simple-int-values',     make_schema(LongType()),           {}),
     ('hive-delim-text/simple-int-values',     make_schema(FloatType()),          {}),
     ('hive-delim-text/simple-int-values',     make_schema(DoubleType()),         {}),
-    ('hive-delim-text/simple-int-values',     make_schema(DecimalType(10, 2)),   {}),
-    ('hive-delim-text/simple-int-values',     make_schema(DecimalType(10, 3)),   {}),
     ('hive-delim-text/simple-int-values',     make_schema(StringType()),         {}),
+    pytest.param('hive-delim-text/simple-int-values', make_schema(DecimalType(10, 2)), {},
+                 marks=pytest.mark.xfail(condition=is_spark_cdh(),
+                                         reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
+    pytest.param('hive-delim-text/simple-int-values', make_schema(DecimalType(10, 3)),   {},
+                 marks=pytest.mark.xfail(condition=is_spark_cdh(),
+                                         reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
 
     # Floating Point.
     ('hive-delim-text/simple-float-values',   make_schema(FloatType()),          {}),
     ('hive-delim-text/simple-float-values',   make_schema(DoubleType()),         {}),
-    ('hive-delim-text/simple-float-values',   make_schema(DecimalType(10, 3)),   {}),
-    ('hive-delim-text/simple-float-values',   make_schema(DecimalType(38, 10)),   {}),
-    ('hive-delim-text/simple-float-values',   make_schema(IntegerType()),         {}),
-    ('hive-delim-text/extended-float-values',   make_schema(IntegerType()),         {}),
-    ('hive-delim-text/extended-float-values',   make_schema(FloatType()),          {}),
-    ('hive-delim-text/extended-float-values',   make_schema(DoubleType()),         {}), 
+    pytest.param('hive-delim-text/simple-float-values', make_schema(DecimalType(10, 3)), {},
+                 marks=pytest.mark.xfail(condition=is_spark_cdh(),
+                                         reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
+    pytest.param('hive-delim-text/simple-float-values', make_schema(DecimalType(38, 10)), {},
+                 marks=pytest.mark.xfail(condition=is_spark_cdh(),
+                                         reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
+    ('hive-delim-text/simple-float-values',   make_schema(IntegerType()),        {}),
+    ('hive-delim-text/extended-float-values', make_schema(IntegerType()),        {}),
+    ('hive-delim-text/extended-float-values', make_schema(FloatType()),          {}),
+    ('hive-delim-text/extended-float-values', make_schema(DoubleType()),         {}),
     pytest.param('hive-delim-text/extended-float-values',   make_schema(DecimalType(10, 3)),   {},
         marks=pytest.mark.xfail(reason="GPU supports more valid values than CPU. "
             "https://github.com/NVIDIA/spark-rapids/issues/7246")),
@@ -156,8 +164,12 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
     ('hive-delim-text/trucks-err', trucks_schema, {}),
 
     # Date/Time
-    ('hive-delim-text/timestamp', timestamp_schema, {}),
-    ('hive-delim-text/date', date_schema, {}),
+    pytest.param('hive-delim-text/timestamp', timestamp_schema, {},
+                 marks=pytest.mark.xfail(condition=is_spark_cdh(),
+                                         reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
+    pytest.param('hive-delim-text/date', date_schema, {},
+                 marks=pytest.mark.xfail(condition=is_spark_cdh(),
+                                         reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
 
     # Test that lines beginning with comments ('#') aren't skipped.
     ('hive-delim-text/comments', StructType([StructField("str", StringType()),
