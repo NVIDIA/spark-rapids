@@ -30,7 +30,7 @@ import ipp.blossom.*
 
 def githubHelper // blossom github helper
 def TEMP_IMAGE_BUILD = true
-def CUDA_NAME = 'cuda11.0' // hardcode cuda version for docker build part
+def CUDA_NAME = 'cuda11.0.3' // hardcode cuda version for docker build part
 def PREMERGE_DOCKERFILE = 'jenkins/Dockerfile-blossom.ubuntu'
 def IMAGE_PREMERGE // temp image for premerge test
 def IMAGE_DB = pod.getCPUYAML("${common.ARTIFACTORY_NAME}/sw-spark-docker/spark:rapids-databricks")
@@ -198,7 +198,7 @@ pipeline {
                         }
 
                         if (TEMP_IMAGE_BUILD) {
-                            IMAGE_TAG = "dev-ubuntu18-${CUDA_NAME}"
+                            IMAGE_TAG = "dev-ubuntu20-${CUDA_NAME}"
                             PREMERGE_TAG = "${IMAGE_TAG}-${BUILD_TAG}"
                             IMAGE_PREMERGE = "${ARTIFACTORY_NAME}/sw-spark-docker-local/plugin:${PREMERGE_TAG}"
                             def CUDA_VER = "$CUDA_NAME" - "cuda"
@@ -206,7 +206,7 @@ pipeline {
                             uploadDocker(IMAGE_PREMERGE)
                         } else {
                             // if no pre-merge dockerfile change, use nightly image
-                            IMAGE_PREMERGE = "$ARTIFACTORY_NAME/sw-spark-docker-local/plugin:dev-ubuntu18-$CUDA_NAME-blossom-dev"
+                            IMAGE_PREMERGE = "$ARTIFACTORY_NAME/sw-spark-docker-local/plugin:dev-ubuntu20-$CUDA_NAME-blossom-dev"
                         }
                     }
                 }

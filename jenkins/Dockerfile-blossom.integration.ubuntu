@@ -19,13 +19,13 @@
 # Build the image for rapids-plugin development environment
 #
 # Arguments:
-#    CUDA_VER=11.0+
-#    UBUNTU_VER=18.04 or 20.04
+#    CUDA_VER=11.X.Y
+#    UBUNTU_VER=20.04 or 22.04
 #    CUDF_VER=<cudf-py version>
 ###
 
-ARG CUDA_VER=11.0
-ARG UBUNTU_VER=18.04
+ARG CUDA_VER=11.8.0
+ARG UBUNTU_VER=20.04
 FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu${UBUNTU_VER}
 ARG CUDA_VER
 ARG CUDF_VER
