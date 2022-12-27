@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write
-from spark_session import is_before_spark_320, is_spark_cdh
+from spark_session import is_before_spark_320, is_spark_cdh, is_spark_321cdh
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
@@ -95,6 +95,7 @@ def test_part_write_round_trip(spark_tmp_path, orc_gen):
 @ignore_order(local=True)
 @pytest.mark.parametrize('orc_gen', [int_gen], ids=idfn)
 @pytest.mark.parametrize('orc_impl', ["native", "hive"])
+@pytest.mark.skipif(is_spark_321cdh(), reason="https://github.com/NVIDIA/spark-rapids/issues/7403")
 def test_dynamic_partition_write_round_trip(spark_tmp_path, orc_gen, orc_impl):
     gen_list = [('_c0', orc_gen)]
     data_path = spark_tmp_path + '/ORC_DATA'
