@@ -95,7 +95,7 @@ def test_part_write_round_trip(spark_tmp_path, orc_gen):
 @ignore_order(local=True)
 @pytest.mark.parametrize('orc_gen', [int_gen], ids=idfn)
 @pytest.mark.parametrize('orc_impl', ["native", "hive"])
-@pytest.mark.skipif(is_spark_321cdh(), reason="https://github.com/NVIDIA/spark-rapids/issues/7403")
+@pytest.mark.skipif(is_spark_321cdh(), reason="3.2.1 CDH not support partitionOverwriteMode=DYNAMIC")
 def test_dynamic_partition_write_round_trip(spark_tmp_path, orc_gen, orc_impl):
     gen_list = [('_c0', orc_gen)]
     data_path = spark_tmp_path + '/ORC_DATA'
