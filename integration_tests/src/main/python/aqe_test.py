@@ -18,9 +18,14 @@ from pyspark.sql.types import *
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from marks import ignore_order, allow_non_gpu
-from spark_session import with_cpu_session
+from spark_session import with_cpu_session, is_databricks113_or_later
 
 _adaptive_conf = { "spark.sql.adaptive.enabled": "true" }
+# Databricks-11.3 added new operator EXECUTOR_BROADCAST which does executor side broadcast.
+# SparkPlan is different as there is no BroadcastExchange which is replaced by Exchange.
+# Below config is to fall back BroadcastHashJoinExec and ShuffleExchangeExec to CPU for only Databricks-11.3
+# Follow on issue to support/investigate EXECUTOR_BROADCAST - https://github.com/NVIDIA/spark-rapids/issues/7425
+db_113_cpu_bhj_join_allow=["BroadcastHashJoinExec", "ShuffleExchangeExec"] if is_databricks113_or_later() else []
 
 def create_skew_df(spark, length):
     root = spark.range(0, length)
@@ -41,6 +46,7 @@ def create_skew_df(spark, length):
 # This replicates the skew join test from scala tests, and is here to test
 # the computeStats(...) implementation in GpuRangeExec
 @ignore_order(local=True)
+@allow_non_gpu(*db_113_cpu_bhj_join_allow)
 def test_aqe_skew_join():
     def do_join(spark):
         left, right = create_skew_df(spark, 500)
@@ -52,6 +58,7 @@ def test_aqe_skew_join():
 
 # Test the computeStats(...) implementation in GpuDataSourceScanExec
 @ignore_order(local=True)
+@allow_non_gpu(*db_113_cpu_bhj_join_allow)
 @pytest.mark.parametrize("data_gen", integral_gens, ids=idfn)
 def test_aqe_join_parquet(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
@@ -69,6 +76,7 @@ def test_aqe_join_parquet(spark_tmp_path, data_gen):
 
 # Test the computeStats(...) implementation in GpuBatchScanExec
 @ignore_order(local=True)
+@allow_non_gpu(*db_113_cpu_bhj_join_allow)
 @pytest.mark.parametrize("data_gen", integral_gens, ids=idfn)
 def test_aqe_join_parquet_batch(spark_tmp_path, data_gen):
     # force v2 source for parquet to use BatchScanExec
@@ -93,6 +101,7 @@ def test_aqe_join_parquet_batch(spark_tmp_path, data_gen):
 
 # Test the map stage submission handling for GpuShuffleExchangeExec
 @ignore_order(local=True)
+@allow_non_gpu(*db_113_cpu_bhj_join_allow)
 def test_aqe_struct_self_join(spark_tmp_table_factory):
     def do_join(spark):
         data = [
@@ -137,7 +146,7 @@ joins = [
 # broadcast join. The bug currently manifests in Databricks, but could
 # theoretically show up in other Spark distributions
 @ignore_order(local=True)
-@allow_non_gpu('BroadcastNestedLoopJoinExec', 'BroadcastExchangeExec', 'Cast', 'DateSub')
+@allow_non_gpu('BroadcastNestedLoopJoinExec','BroadcastHashJoinExec', 'Cast', 'DateSub', *db_113_cpu_bhj_join_allow)
 @pytest.mark.parametrize('join', joins, ids=idfn)
 def test_aqe_join_reused_exchange_inequality_condition(spark_tmp_path, join):
     data_path = spark_tmp_path + '/PARQUET_DATA'

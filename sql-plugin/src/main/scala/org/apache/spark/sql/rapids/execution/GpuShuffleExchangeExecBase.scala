@@ -21,7 +21,7 @@ import scala.concurrent.Future
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, GpuRangePartitioning, ShimUnaryExecNode, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, GpuRangePartitioning, ShimUnaryExecNode, ShuffleOriginUtil, SparkShimImpl}
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
@@ -81,6 +81,10 @@ class GpuShuffleMeta(
 
   override def tagPlanForGpu(): Unit = {
 
+    if (!ShuffleOriginUtil.isSupported(shuffle.shuffleOrigin)) {
+      willNotWorkOnGpu(s"${shuffle.shuffleOrigin} not supported on GPU")
+    }
+
     shuffle.outputPartitioning match {
       case _: RoundRobinPartitioning
         if SparkShimImpl.sessionFromPlan(shuffle).sessionState.conf
@@ -122,6 +126,7 @@ object GpuShuffleMeta {
 
   val availableRuntimeDataTransition = TreeNodeTag[Boolean](
     "rapids.gpu.availableRuntimeDataTransition")
+
 }
 
 /**
