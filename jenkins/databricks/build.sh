@@ -285,9 +285,12 @@ set_dep_jars()
     # Delta Lake support is included in SQL jar
     artifacts[DELTA]="-DgroupId=io.delta -DartifactId=delta-core_${SCALA_VERSION}"
     dep_jars[DELTA]=${dep_jars[SQL]}
+
     # log4j-core
-    artifacts[LOG4JCORE]="-DgroupId=org.apache.logging.log4j -DartifactId=log4j-core"
-    dep_jars[LOG4JCORE]=${PREFIX_WS_SP_MVN_HADOOP}--org.apache.logging.log4j--log4j-core--org.apache.logging.log4j__log4j-core__${sw_versions[LOG4JCORE]}.jar
+    if [[ "$BASE_SPARK_VERSION" == "3.3.0" ]]; then
+        artifacts[LOG4JCORE]="-DgroupId=org.apache.logging.log4j -DartifactId=log4j-core"
+        dep_jars[LOG4JCORE]=${PREFIX_WS_SP_MVN_HADOOP}--org.apache.logging.log4j--log4j-core--org.apache.logging.log4j__log4j-core__${sw_versions[LOG4JCORE]}.jar
+    fi
 
     # spark-3.1.2 overrides some jar naming conventions
     if [[ $BASE_SPARK_VERSION == "3.1.2" ]]
