@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 // import ai.rapids.cudf.{ColumnVector, Table}
-import ai.rapids.cudf.{Table}
+import ai.rapids.cudf.{Scalar, Table}
 import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimExpression
@@ -29,24 +29,21 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator 
   with ShimExpression {
-  // override def dataType: DataType = StringType
-  override def nullable: Boolean = false
-  
-  // @transient private lazy val json: Expression = children.head
-  // @transient private lazy val fields: Seq[Expression] = children.tail
-
+  override def nullable: Boolean = false // a row is always returned
+  // the json body is the first child and the fields to query are the remaining children
   @transient private lazy val jsonExpr: Expression = children.head
   @transient private lazy val fieldExpressions: Seq[Expression] = children.tail
-  override def prettyName: String = "json_tuple"
 
   override def elementSchema: StructType = StructType(fieldExpressions.zipWithIndex.map {
     case (_, idx) => StructField(s"c$idx", StringType, nullable = true)
   })
 
+  override def prettyName: String = "json_tuple"
+
   override def checkInputDataTypes(): TypeCheckResult = {
     if (children.length < 2) {
       TypeCheckResult.TypeCheckFailure(
-        s"$prettyName has wrong number of auguments: requires > 1, but found ${children.length}"
+        s"$prettyName has wrong number of auguments: expected > 1, but found ${children.length}"
       )
     } else if (children.forall(child => child.dataType == StringType)) {
       TypeCheckResult.TypeCheckSuccess
@@ -55,54 +52,33 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
     }
   }
 
-  // override def columnarEval(batch: ColumnarBatch): Any = {
-  //   def resolveScalar(any: Any): GpuScalar = {
-  //     withResourceIfAllowed(any) {
-  //       case s: GpuScalar => s
-  //       case _ => throw new UnsupportedOperationException("JSON path must be a scalar value")
-  //     }
-  //   }
-  //   withResource(columnarEvalToColumn(json, batch).getBase) { json =>
-  //     withResource(fields.safeMap(p => resolveScalar(p.columnarEval(batch)).getBase)) 
-  //     { scalars =>
-  //       withResource(scalars.safeMap(json.getJSONObject(_))) { cols =>
-  //         cols.foreach(GpuColumnVector.debug("Get JSON res:", _))
-  //         ColumnVector.makeList(cols: _*)
-  //         // ColumnVector.concatenate(cols: _*)
-  //         // cols
-  //       }
-  //     }
-  //   }
-  // }
-
   def generate(inputBatch: ColumnarBatch,
       generatorOffset: Int,
       outer: Boolean): ColumnarBatch = {
+    GpuColumnVector.debug("generate inputBatch = \n", inputBatch)
 
-    def resolveScalar(any: Any): GpuScalar = {
-      withResourceIfAllowed(any) {
-        case s: GpuScalar => s
-        case _ => throw new UnsupportedOperationException("JSON path must be a scalar value")
-      }
-    }
+    val jsonGpuExpr = GpuBindReferences.bindReference(jsonExpr, 
+      Seq(jsonExpr.asInstanceOf[NamedExpression].toAttribute))
 
     val schema = Array.fill[DataType](fieldExpressions.length)(StringType)
-    withResource(columnarEvalToColumn(jsonExpr, inputBatch).getBase) { json =>
+    withResource(columnarEvalToColumn(jsonGpuExpr, inputBatch).getBase) { json =>
+      GpuColumnVector.debug("json column = \n", json)
       withResource(fieldExpressions.safeMap
-        (path => resolveScalar(path.columnarEval(inputBatch)).getBase)) { scalars => 
-        withResource(scalars.safeMap(json.getJSONObject(_))) { cols =>
-          cols.foreach(GpuColumnVector.debug("Get JSON res:", _))
-          // ColumnVector.makeList(cols: _*)
-          // ColumnVector.concatenate(cols: _*)
-          // cols
-          // val res = new ColumnarBatch((cols.toArray[ColumnVector]), (int)inputBatch.numRows)
-          // res
-          // (new ColumnarBatch(cols.toArray, (int)inputBatch.numRows))
-          GpuColumnVector.from(new Table(cols: _*), schema)
+        (path => columnarEvalToColumn(path, inputBatch))) { pathCols =>
+        withResource(pathCols.safeMap(x => x.getBase.getScalarElement(0))) { pathScalars =>
+          withResource(pathScalars.safeMap(x => Scalar.fromString("$." + x.getJavaString))) 
+          { pathScalars =>
+            withResource(pathScalars.safeMap(json.getJSONObject(_))) { cols =>
+              cols.foreach(GpuColumnVector.debug("Get JSON res:", _))
+              // GpuColumnVector.from(new Table(cols: _*), schema)
+              withResource(new Table(cols: _*)) { tbl =>
+                GpuColumnVector.from(tbl, schema)
+              }
+            }
+          }
         }
       }
     }
-    // inputBatch
   }
 
   def inputSplitIndices(inputBatch: ColumnarBatch,
@@ -110,6 +86,8 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
       outer: Boolean,
       targetSizeBytes: Long,
       maxRows: Int = Int.MaxValue): Array[Int] = {
+    
+    // GpuColumnVector.debug("inputSplitIndices inputBatch = \n", inputBatch)
     val inputRows = inputBatch.numRows
     // if the number of input rows is 1 or less, cannot split
     if (inputRows <= 1) return Array()
@@ -117,9 +95,11 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
 
     val jsonGpuExpr = GpuBindReferences.bindReference(jsonExpr, 
       Seq(jsonExpr.asInstanceOf[NamedExpression].toAttribute))
+
     // we know we are going to output at most this much
     val estimateOutputSize = 
       withResource(columnarEvalToColumn(jsonGpuExpr, inputBatch).getBase) { json =>
+        // GpuColumnVector.debug("json column = \n", json)
         (json.getDeviceMemorySize * fieldExpressions.length).toDouble
       }
     

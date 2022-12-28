@@ -3498,7 +3498,8 @@ object GpuOverrides extends Logging {
         TypeSig.all,
         TypeSig.all,
         Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING)),
-        Some(RepeatingParamCheck("path", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+        // Some(RepeatingParamCheck("path", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+        Some(RepeatingParamCheck("path", TypeSig.STRING, TypeSig.STRING))),
       // (a, conf, p, r) => new ExprMeta[JsonTuple](a, conf, p, r) {
       //   override def convertToGpu(): GpuExpression = {
       //     GpuJsonTuple(childExprs.map(_.convertToGpu()))
