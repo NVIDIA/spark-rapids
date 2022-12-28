@@ -166,6 +166,7 @@ set_sw_versions()
             sw_versions[ORC]="1.7.6"
             sw_versions[PARQUET]="1.12.0"
             sw_versions[PROTOBUF]="2.6.1"
+            sw_versions[LOG4JCORE]="2.18.0"
             ;;
         "3.2.1")
             sw_versions[ARROW]="2.0.0"
@@ -284,6 +285,9 @@ set_dep_jars()
     # Delta Lake support is included in SQL jar
     artifacts[DELTA]="-DgroupId=io.delta -DartifactId=delta-core_${SCALA_VERSION}"
     dep_jars[DELTA]=${dep_jars[SQL]}
+    # log4j-core
+    artifacts[LOG4JCORE]="-DgroupId=org.apache.logging.log4j -DartifactId=log4j-core"
+    dep_jars[LOG4JCORE]=${PREFIX_WS_SP_MVN_HADOOP}--org.apache.logging.log4j--log4j-core--org.apache.logging.log4j__log4j-core__${sw_versions[LOG4JCORE]}.jar
 
     # spark-3.1.2 overrides some jar naming conventions
     if [[ $BASE_SPARK_VERSION == "3.1.2" ]]
@@ -328,6 +332,11 @@ else
     echo "!!!! Installing dependendecies. Set SKIP_DEP_INSTALL=1 to speed up reruns of build.sh"# Install required dependencies.
     install_dependencies
 fi
+
+if [[ "$WITH_BLOOP" == "1" ]]; then
+    MVN_OPT="ch.epfl.scala:maven-bloop_2.13:bloopInstall $MVN_OPT"
+fi
+
 # Build the RAPIDS plugin by running package command for databricks
 mvn -B -Ddatabricks -Dbuildver=$BUILDVER clean package -DskipTests $MVN_OPT
 
