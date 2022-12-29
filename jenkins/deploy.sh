@@ -91,16 +91,6 @@ $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
             -Dfiles=$FPATH.jar -Dtypes=jar -Dclassifiers=$CUDA_CLASSIFIER \
             -DpomFile="$POM_FPATH"
 
-###### Deploy profiling tool jar(s) ######
-TOOL_PL=${TOOL_PL:-"tools"}
-TOOL_ART_ID=`mvn help:evaluate -q -pl $TOOL_PL -Dexpression=project.artifactId -DforceStdout -Prelease311`
-TOOL_ART_VER=`mvn help:evaluate -q -pl $TOOL_PL -Dexpression=project.version -DforceStdout -Prelease311`
-TOOL_FPATH="deployjars/$TOOL_ART_ID-$TOOL_ART_VER"
-TOOL_DOC_JARS="-Dsources=${TOOL_FPATH}-sources.jar -Djavadoc=${TOOL_FPATH}-javadoc.jar"
-$DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
-            $TOOL_DOC_JARS \
-            -Dfile=$TOOL_FPATH.jar -DpomFile=${TOOL_PL}/dependency-reduced-pom.xml
-
 ###### Deploy Spark 2.x explain meta jar ######
 SPARK2_PL=${SPARK2_PL:-"spark2-sql-plugin"}
 SPARK2_ART_ID=`mvn help:evaluate -q -pl $SPARK2_PL -Dexpression=project.artifactId -DforceStdout -Dbuildver=24X`
