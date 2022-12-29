@@ -15,6 +15,7 @@
 import os
 import pytest
 import random
+import warnings
 
 # TODO redo _spark stuff using fixtures
 #
@@ -151,7 +152,7 @@ def pytest_runtest_setup(item):
             elif non_gpu_databricks.args:
                 _non_gpu_allowed_databricks = non_gpu_databricks.args
             else:
-                pytest.warn('allow_non_gpu_databricks marker without anything allowed')
+                warnings.warn('allow_non_gpu_databricks marker without anything allowed')
     if non_gpu:
         if non_gpu.kwargs and non_gpu.kwargs['any']:
             _allow_any_non_gpu = True
@@ -160,7 +161,7 @@ def pytest_runtest_setup(item):
             _allow_any_non_gpu = False
             _non_gpu_allowed = non_gpu.args
         else:
-            pytest.warn('allow_non_gpu marker without anything allowed')
+            warnings.warn('allow_non_gpu marker without anything allowed')
             _allow_any_non_gpu = False
             _non_gpu_allowed = []
     else:

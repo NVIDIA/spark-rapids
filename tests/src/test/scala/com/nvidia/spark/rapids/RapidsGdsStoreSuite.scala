@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,25 +22,28 @@ import ai.rapids.cudf.{ContiguousTable, CuFile, Table}
 import org.mockito.ArgumentMatchers
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{spy, times, verify, when}
+import org.scalatest.Tag
 import org.scalatest.compatible.Assertion
 import org.scalatest.mockito.MockitoSugar
 
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 import org.apache.spark.storage.BlockId
 
+object GdsTest extends Tag("GdsTest")
+
 class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar {
 
-  test("single shot spill with shared path") {
+  test("single shot spill with shared path", GdsTest) {
     assume(CuFile.libraryLoaded())
     verifySingleShotSpill(canShareDiskPaths = true)
   }
 
-  test("single shot spill with exclusive path") {
+  test("single shot spill with exclusive path", GdsTest) {
     assume(CuFile.libraryLoaded())
     verifySingleShotSpill(canShareDiskPaths = false)
   }
 
-  test("batch spill") {
+  test("batch spill", GdsTest) {
     assume(CuFile.libraryLoaded())
 
     val bufferIds = Array(MockRapidsBufferId(7), MockRapidsBufferId(8), MockRapidsBufferId(9))

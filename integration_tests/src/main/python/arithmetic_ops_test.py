@@ -251,7 +251,8 @@ def test_int_division(data_gen):
                 'a DIV b'))
 
 @pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(5, 4), DecimalGen(3, -2), _decimal_gen_30_2], ids=idfn)
-@pytest.mark.parametrize('rhs', [DecimalGen(13, 2), DecimalGen(6, 3), _decimal_gen_38_0, _decimal_gen_36_neg5], ids=idfn)
+@pytest.mark.parametrize('rhs', [DecimalGen(13, 2), DecimalGen(6, 3), _decimal_gen_38_0,
+                                 pytest.param(_decimal_gen_36_neg5, marks=pytest.mark.skipif(not is_before_spark_340() or is_databricks113_or_later(), reason='SPARK-41207'))], ids=idfn)
 def test_int_division_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, lhs, rhs).selectExpr(
@@ -910,10 +911,11 @@ div_overflow_exprs = [
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
 def test_div_overflow_exception_when_ansi(expr, ansi_enabled):
     ansi_conf = {'spark.sql.ansi.enabled': ansi_enabled}
-    err_exp = 'java.lang.ArithmeticException' if is_before_spark_330() \
-        else 'org.apache.spark.SparkArithmeticException'
-    err_mess = ': Overflow in integral divide' if is_before_spark_340() \
-        else ': [ARITHMETIC_OVERFLOW] Overflow in integral divide'
+    err_exp = 'java.lang.ArithmeticException' if is_before_spark_330() else \
+        'org.apache.spark.SparkArithmeticException'
+    err_mess = ': Overflow in integral divide' \
+        if is_before_spark_340() and not is_databricks113_or_later() else \
+        ': [ARITHMETIC_OVERFLOW] Overflow in integral divide'
     if ansi_enabled == 'true':
         assert_gpu_and_cpu_error(
             df_fun=lambda spark: _get_div_overflow_df(spark, expr).collect(),
@@ -1033,14 +1035,14 @@ def test_abs_ansi_no_overflow_day_time_interval(ansi_enabled):
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
 def test_abs_ansi_overflow_day_time_interval(ansi_enabled):
     """
-    We don't check the error messages because they are different on CPU and GPU.
+    Check the error message only when ANSI mode is false because they are different on CPU and GPU.
     CPU: long overflow.
     GPU: One or more rows overflow for abs operation.
     """
     assert_gpu_and_cpu_error(
         df_fun=lambda spark: _get_overflow_df(spark, [timedelta(microseconds=LONG_MIN)], DayTimeIntervalType(), 'abs(a)').collect(),
         conf={'spark.sql.ansi.enabled': ansi_enabled},
-        error_message='SparkArithmeticException')
+        error_message='' if ansi_enabled else 'SparkArithmeticException')
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])

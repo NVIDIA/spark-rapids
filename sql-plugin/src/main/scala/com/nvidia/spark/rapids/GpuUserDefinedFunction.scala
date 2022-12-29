@@ -56,7 +56,8 @@ trait GpuUserDefinedFunction extends GpuExpression
       val funcInputs = exprResults.map(_.getBase()).toArray
       withResource(new NvtxRange(nvtxRangeName, NvtxColor.PURPLE)) { _ =>
         try {
-          closeOnExcept(function.evaluateColumnar(funcInputs: _*)) { resultColumn =>
+          val resultColumn = function.evaluateColumnar(batch.numRows(), funcInputs: _*)
+          closeOnExcept(resultColumn) { _ =>
             if (batch.numRows() != resultColumn.getRowCount) {
               throw new IllegalStateException("UDF returned a different row count than the " +
                   s"input, expected ${batch.numRows} found ${resultColumn.getRowCount}")

@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.concurrent.ThreadFactory
+import java.util.concurrent.{ThreadFactory, TimeUnit}
 
 import scala.collection.mutable.ArrayBuffer
 import scala.util.control.NonFatal
@@ -143,6 +143,22 @@ object GpuDeviceManager extends Logging {
     singletonMemoryInitialized = Errored
     RapidsBufferCatalog.close()
     GpuShuffleEnv.shutdown()
+    // try to avoid segfault on RMM shutdown
+    val timeout = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+    var isFirstTime = true
+    while (Rmm.getTotalBytesAllocated > 0 && System.nanoTime() < timeout) {
+      if (isFirstTime) {
+        logWarning("Waiting for outstanding RMM allocations to be released...")
+        isFirstTime = false
+      }
+      Thread.sleep(10)
+    }
+    if (System.nanoTime() >= timeout) {
+      val remaining = Rmm.getTotalBytesAllocated
+      if (remaining > 0) {
+        logWarning(s"Shutting down RMM even though there are outstanding allocations $remaining")
+      }
+    }
     Rmm.shutdown()
     singletonMemoryInitialized = Uninitialized
   }
