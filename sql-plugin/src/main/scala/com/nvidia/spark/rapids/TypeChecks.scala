@@ -22,7 +22,6 @@ import java.time.ZoneId
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.shims.{GpuTypeShims, TypeSigUtil}
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.internal.SQLConf
@@ -869,7 +868,7 @@ case class ContextChecks(
     sparkOutputSig: TypeSig,
     paramCheck: Seq[ParamCheck] = Seq.empty,
     repeatingParamCheck: Option[RepeatingParamCheck] = None)
-    extends TypeChecks[Map[String, SupportLevel]] with Logging {
+    extends TypeChecks[Map[String, SupportLevel]] {
 
   def tagAst(exprMeta: BaseExprMeta[_]): Unit = {
     tagBase(exprMeta, exprMeta.willNotWorkInAst)
@@ -882,7 +881,6 @@ case class ContextChecks(
   private[this] def tagBase(rapidsMeta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
     val meta = rapidsMeta.asInstanceOf[BaseExprMeta[_]]
     val expr = meta.wrapped.asInstanceOf[Expression]
-    logWarning(s"ContextChecks expr = ${expr}")
     meta.typeMeta.dataType match {
       case Some(dt: DataType) =>
         if (!outputCheck.isSupportedByPlugin(dt)) {

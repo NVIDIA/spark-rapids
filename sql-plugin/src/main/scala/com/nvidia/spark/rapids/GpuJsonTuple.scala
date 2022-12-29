@@ -30,7 +30,6 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator 
   with ShimExpression {
   override def nullable: Boolean = false // a row is always returned
-  // the json body is the first child and the fields to query are the remaining children
   @transient private lazy val jsonExpr: Expression = children.head
   @transient private lazy val fieldExpressions: Seq[Expression] = children.tail
 
@@ -55,22 +54,21 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
   def generate(inputBatch: ColumnarBatch,
       generatorOffset: Int,
       outer: Boolean): ColumnarBatch = {
-    GpuColumnVector.debug("generate inputBatch = \n", inputBatch)
+    // GpuColumnVector.debug("generate inputBatch = \n", inputBatch)
 
     val jsonGpuExpr = GpuBindReferences.bindReference(jsonExpr, 
       Seq(jsonExpr.asInstanceOf[NamedExpression].toAttribute))
 
     val schema = Array.fill[DataType](fieldExpressions.length)(StringType)
     withResource(columnarEvalToColumn(jsonGpuExpr, inputBatch).getBase) { json =>
-      GpuColumnVector.debug("json column = \n", json)
+      // GpuColumnVector.debug("json column = \n", json)
       withResource(fieldExpressions.safeMap
         (path => columnarEvalToColumn(path, inputBatch))) { pathCols =>
         withResource(pathCols.safeMap(x => x.getBase.getScalarElement(0))) { pathScalars =>
           withResource(pathScalars.safeMap(x => Scalar.fromString("$." + x.getJavaString))) 
           { pathScalars =>
             withResource(pathScalars.safeMap(json.getJSONObject(_))) { cols =>
-              cols.foreach(GpuColumnVector.debug("Get JSON res:", _))
-              // GpuColumnVector.from(new Table(cols: _*), schema)
+              // cols.foreach(GpuColumnVector.debug("Get JSON res:", _))
               withResource(new Table(cols: _*)) { tbl =>
                 GpuColumnVector.from(tbl, schema)
               }

@@ -3489,24 +3489,11 @@ object GpuOverrides extends Logging {
       "Returns a tuple like the function get_json_object, but it takes multiple names. " + 
         "All the input parameters and output column types are string.",
       ExprChecks.projectOnly(
-        // TypeSig.STRING, TypeSig.STRING,
-        // TypeSig.ARRAY.nested(TypeSig.STRING), TypeSig.ARRAY.nested(TypeSig.STRING),
-        // TypeSig.ARRAY.nested(TypeSig.all), TypeSig.ARRAY.nested(TypeSig.all),
-        // TypeSig.STRUCT.nested(TypeSig.STRING), TypeSig.STRUCT.nested(TypeSig.STRING),
-        // TypeSig.ARRAY.nested(TypeSig.STRUCT.nested(TypeSig.STRING)), 
-        // TypeSig.ARRAY.nested(TypeSig.STRUCT.nested(TypeSig.STRING)),
-        TypeSig.all,
-        TypeSig.all,
+        TypeSig.ARRAY.nested(TypeSig.STRUCT + TypeSig.STRING),
+        TypeSig.ARRAY.nested(TypeSig.STRUCT + TypeSig.STRING),
         Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING)),
-        // Some(RepeatingParamCheck("path", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
-        Some(RepeatingParamCheck("path", TypeSig.STRING, TypeSig.STRING))),
-      // (a, conf, p, r) => new ExprMeta[JsonTuple](a, conf, p, r) {
-      //   override def convertToGpu(): GpuExpression = {
-      //     GpuJsonTuple(childExprs.map(_.convertToGpu()))
-      //   }
-      // }
+        Some(RepeatingParamCheck("field", TypeSig.STRING, TypeSig.STRING))),
       (a, conf, p, r) => new GeneratorExprMeta[JsonTuple](a, conf, p, r) {
-        // override val supportOuter: Boolean = true
         override def convertToGpu(): GpuExpression = GpuJsonTuple(childExprs.map(_.convertToGpu()))
       }
     ),
@@ -4320,7 +4307,6 @@ object GpuOverrideUtil extends Logging {
     val planOriginal = plan.clone()
     val failOnError = TEST_CONF.get(plan.conf) || !SUPPRESS_PLANNING_FAILURE.get(plan.conf)
     try {
-      logWarning(s"tryOverride with plan: $plan")
       fn(plan)
     } catch {
       case NonFatal(t) if !failOnError =>

@@ -22,7 +22,6 @@ import ai.rapids.cudf.{ColumnVector, ContiguousTable, DType, NvtxColor, NvtxRang
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, Generator, ReplicateRows}
@@ -36,7 +35,7 @@ class GpuGenerateExecSparkPlanMeta(
     gen: GenerateExec,
     conf: RapidsConf,
     p: Option[RapidsMeta[_, _, _]],
-    r: DataFromReplacementRule) extends SparkPlanMeta[GenerateExec](gen, conf, p, r) with Logging {
+    r: DataFromReplacementRule) extends SparkPlanMeta[GenerateExec](gen, conf, p, r) {
 
   override val childExprs: Seq[BaseExprMeta[_]] = {
     (Seq(gen.generator) ++ gen.requiredChildOutput).map(
@@ -51,7 +50,6 @@ class GpuGenerateExecSparkPlanMeta(
   }
 
   override def convertToGpu(): GpuExec = {
-    logWarning(s"convertToGpu in GpuGenerateExecSparkPlanMeta")
     GpuGenerateExec(
       childExprs.head.convertToGpu().asInstanceOf[GpuGenerator],
       gen.requiredChildOutput,
