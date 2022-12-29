@@ -23,10 +23,9 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources.{DataSourceUtils, FilePartition, FileScanRDD, PartitionedFile}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
-import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 import org.apache.spark.sql.rapids.shims.{GpuDivideYMInterval, GpuMultiplyYMInterval}
 import org.apache.spark.sql.types.StructType
 
@@ -59,16 +58,6 @@ trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
   }
 
-  override def tagFileSourceScanExec(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
-    if (meta.wrapped.expressions.exists {
-      case FileSourceMetadataAttribute(_) => true
-      case _ => false
-    }) {
-      meta.willNotWorkOnGpu("hidden metadata columns are not supported on GPU")
-    }
-    super.tagFileSourceScanExec(meta)
-  }
-
   // GPU support ANSI interval types from 330
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     val map: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
@@ -99,26 +88,8 @@ trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
   }
 
   // GPU support ANSI interval types from 330
-  override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
-    val map: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
-      GpuOverrides.exec[BatchScanExec](
-        "The backend for most file input",
-        ExecChecks(
-          (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
-              TypeSig.DECIMAL_128 + TypeSig.BINARY +
-              GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
-          TypeSig.all),
-        (p, conf, parent, r) => new BatchScanExecMeta(p, conf, parent, r)),
-      GpuOverrides.exec[FileSourceScanExec](
-        "Reading data from files, often from Hive tables",
-        ExecChecks((TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.STRUCT + TypeSig.MAP +
-            TypeSig.ARRAY + TypeSig.DECIMAL_128 + TypeSig.BINARY +
-            GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
-          TypeSig.all),
-        (fsse, conf, p, r) => new FileSourceScanExecMeta(fsse, conf, p, r))
-    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
-    super.getExecs ++ map ++ PythonMapInArrowExecShims.execs
-  }
+  override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
+    super.getExecs ++ PythonMapInArrowExecShims.execs
 
 }
 
