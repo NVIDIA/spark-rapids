@@ -4282,38 +4282,31 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
   override def apply(sparkPlan: SparkPlan): SparkPlan = applyWithContext(sparkPlan, None)
 
   def applyWithContext(sparkPlan: SparkPlan, context: Option[String]): SparkPlan =
-    {
-      val str = context match {
-        case Some(s) => s 
-        case _ => ""
-      }
-      logWarning(str)
-        GpuOverrideUtil.tryOverride { plan =>
-      val conf = new RapidsConf(plan.conf)
-      if (conf.isSqlEnabled && conf.isSqlExecuteOnGPU) {
-        GpuOverrides.logDuration(conf.shouldExplain,
-          t => f"Plan conversion to the GPU took $t%.2f ms") {
-          var updatedPlan = updateForAdaptivePlan(plan, conf)
-          updatedPlan = SparkShimImpl.applyShimPlanRules(updatedPlan, conf)
-          updatedPlan = applyOverrides(updatedPlan, conf)
-          if (conf.logQueryTransformations) {
-            val logPrefix = context.map(str => s"[$str]").getOrElse("")
-            logWarning(s"${logPrefix}Transformed query:" +
-              s"\nOriginal Plan:\n$plan\nTransformed Plan:\n$updatedPlan")
-          }
-          updatedPlan
-        }
-      } else if (conf.isSqlEnabled && conf.isSqlExplainOnlyEnabled) {
-        // this mode logs the explain output and returns the original CPU plan
+      GpuOverrideUtil.tryOverride { plan =>
+    val conf = new RapidsConf(plan.conf)
+    if (conf.isSqlEnabled && conf.isSqlExecuteOnGPU) {
+      GpuOverrides.logDuration(conf.shouldExplain,
+        t => f"Plan conversion to the GPU took $t%.2f ms") {
         var updatedPlan = updateForAdaptivePlan(plan, conf)
         updatedPlan = SparkShimImpl.applyShimPlanRules(updatedPlan, conf)
-        GpuOverrides.explainCatalystSQLPlan(updatedPlan, conf)
-        plan
-      } else {
-        plan
+        updatedPlan = applyOverrides(updatedPlan, conf)
+        if (conf.logQueryTransformations) {
+          val logPrefix = context.map(str => s"[$str]").getOrElse("")
+          logWarning(s"${logPrefix}Transformed query:" +
+            s"\nOriginal Plan:\n$plan\nTransformed Plan:\n$updatedPlan")
+        }
+        updatedPlan
       }
-    }(sparkPlan)
-  }
+    } else if (conf.isSqlEnabled && conf.isSqlExplainOnlyEnabled) {
+      // this mode logs the explain output and returns the original CPU plan
+      var updatedPlan = updateForAdaptivePlan(plan, conf)
+      updatedPlan = SparkShimImpl.applyShimPlanRules(updatedPlan, conf)
+      GpuOverrides.explainCatalystSQLPlan(updatedPlan, conf)
+      plan
+    } else {
+      plan
+    }
+  }(sparkPlan)
 
   private def updateForAdaptivePlan(plan: SparkPlan, conf: RapidsConf): SparkPlan = {
     if (plan.conf.adaptiveExecutionEnabled) {
