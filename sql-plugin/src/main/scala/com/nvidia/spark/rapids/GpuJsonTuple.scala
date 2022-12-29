@@ -54,22 +54,19 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
   def generate(inputBatch: ColumnarBatch,
       generatorOffset: Int,
       outer: Boolean): ColumnarBatch = {
-    // GpuColumnVector.debug("generate inputBatch = \n", inputBatch)
 
     val jsonGpuExpr = GpuBindReferences.bindReference(jsonExpr, 
       Seq(jsonExpr.asInstanceOf[NamedExpression].toAttribute))
-
     val schema = Array.fill[DataType](fieldExpressions.length)(StringType)
+
     withResource(columnarEvalToColumn(jsonGpuExpr, inputBatch).getBase) { json =>
-      // GpuColumnVector.debug("json column = \n", json)
-      withResource(fieldExpressions.safeMap
-        (path => columnarEvalToColumn(path, inputBatch))) { pathCols =>
-        withResource(pathCols.safeMap(x => x.getBase.getScalarElement(0))) { pathScalars =>
-          withResource(pathScalars.safeMap(x => Scalar.fromString("$." + x.getJavaString))) 
-          { pathScalars =>
-            withResource(pathScalars.safeMap(json.getJSONObject(_))) { cols =>
-              // cols.foreach(GpuColumnVector.debug("Get JSON res:", _))
-              withResource(new Table(cols: _*)) { tbl =>
+      val fieldCols = fieldExpressions.safeMap(field => columnarEvalToColumn(field, inputBatch))
+      withResource(fieldCols) { fieldCols =>
+        withResource(fieldCols.safeMap(x => x.getBase.getScalarElement(0))) { fieldScalars =>
+          val pathScalars = fieldScalars.safeMap(x => Scalar.fromString("$." + x.getJavaString))
+          withResource(pathScalars) { pathScalars =>
+            withResource(pathScalars.safeMap(json.getJSONObject(_))) { resCols =>
+              withResource(new Table(resCols: _*)) { tbl =>
                 GpuColumnVector.from(tbl, schema)
               }
             }
