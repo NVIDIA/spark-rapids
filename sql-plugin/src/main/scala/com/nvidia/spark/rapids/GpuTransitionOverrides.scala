@@ -382,21 +382,22 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     }
   }
 
-  private def prunePartitionSchema(partSchema: StructType, projectList: Seq[Expression],
-      filterCondition: Option[Expression] = None): StructType = {
+  private def withPrunedPartSchema(
+      fss: GpuFileSourceScanExec,
+      referenceList: Seq[Expression]): GpuFileSourceScanExec = {
     // Luckily partition columns do not support nested types. So only need to prune the
     // top level columns.
-    StructType(partSchema.filter(f =>
-      // The partition column used either in the projectList or the filterCondition will
-      // be kept.
-      (projectList ++ filterCondition).exists { expr =>
+    val prunedPartSchema = StructType(fss.relation.partitionSchema.filter { f =>
+      // The partition columns used in the referenceList will be kept.
+      referenceList.exists { expr =>
         expr.find {
           // It is safe to use the column name for comparison for the two cases listed in
           // `prunePartitionForFileSourceScan`
           case attr: AttributeReference => attr.name == f.name
           case _ => false
         }.isDefined
-      }))
+      }})
+    fss.copy(requiredPartitionSchema = Some(prunedPartSchema))(fss.rapidsConf)
   }
 
   // This tries to prune the partition schema for GpuFileSourceScanExec by leveraging
@@ -406,9 +407,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       // A ProjectExec next to FileSourceScanExec, for cases like
       //   df.groupBy("b").agg(max($"a")), or
       //   df.select("b")
-      val prunedPartSchema = prunePartitionSchema(fss.relation.partitionSchema, projectList)
-      p.withNewChildren(Seq(
-        fss.copy(requiredPartitionSchema = Some(prunedPartSchema))(fss.rapidsConf)))
+      p.withNewChildren(Seq(withPrunedPartSchema(fss, projectList)))
 
     case p @ GpuProjectExec(
         projectList,
@@ -416,25 +415,17 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         _) =>
       // A FilterExec is between the ProjectExec and FileSourceScanExec, for cases like
       //   df.select("a").filter("a != 1")
-      val prunedPartSchema = prunePartitionSchema(fss.relation.partitionSchema,
-        projectList, Some(condition))
       p.withNewChildren(Seq(
-        f.withNewChildren(Seq(
-          fss.copy(requiredPartitionSchema = Some(prunedPartSchema))(fss.rapidsConf)))))
+        f.withNewChildren(Seq(withPrunedPartSchema(fss, projectList :+ condition)))))
 
     case p @ GpuProjectAstExec(projectList, fss: GpuFileSourceScanExec) =>
-      val prunedPartSchema = prunePartitionSchema(fss.relation.partitionSchema, projectList)
-      p.withNewChildren(Seq(
-        fss.copy(requiredPartitionSchema = Some(prunedPartSchema))(fss.rapidsConf)))
+      p.withNewChildren(Seq(withPrunedPartSchema(fss, projectList)))
 
     case p @ GpuProjectAstExec(
         projectList,
         f @ GpuFilterExec(condition, fss: GpuFileSourceScanExec, _)) =>
-      val prunedPartSchema = prunePartitionSchema(fss.relation.partitionSchema,
-        projectList, Some(condition))
       p.withNewChildren(Seq(
-        f.withNewChildren(Seq(
-          fss.copy(requiredPartitionSchema = Some(prunedPartSchema))(fss.rapidsConf)))))
+        f.withNewChildren(Seq(withPrunedPartSchema(fss, projectList :+ condition)))))
 
     case _ =>
       plan.withNewChildren(plan.children.map(prunePartitionForFileSourceScan))
