@@ -556,9 +556,9 @@ object RapidsConf {
 
   val FILE_SCAN_PRUNE_PARTITION_ENABLED = conf("spark.rapids.sql.fileScanPrunePartition.enabled")
     .doc("Enable or disable the partition column pruning for v1 file scan. Spark always asks " +
-        "for all the partition columns even a query doesn't need them at last. And the " +
-        "partition column generation is relatively expensive for GPU. Enabling this allows " +
-        "GPU to try to generate the only required partition columns to save the time and GPU " +
+        "for all the partition columns even a query doesn't need them. Generation of " +
+        "partition columns is relatively expensive for the GPU. Enabling this allows the " +
+        "GPU to generate only required partition columns to save time and GPU " +
         "memory.")
     .internal()
     .booleanConf
