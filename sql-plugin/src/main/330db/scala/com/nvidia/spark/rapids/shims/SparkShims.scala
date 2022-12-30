@@ -60,6 +60,8 @@ object SparkShimImpl extends Spark321PlusDBShims {
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     super.getExecs ++ PythonMapInArrowExecShims.execs
+
+  override def reproduceEmptyStringBug: Boolean = false
 }
 
 trait ShimGetArrayStructFields extends ExtractValue {
