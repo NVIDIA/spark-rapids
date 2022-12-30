@@ -386,7 +386,7 @@ def test_window_aggs_for_rows(data_gen, batch_size):
 # This is for aggregations that work with a running window optimization. They don't need to be batched
 # specially, but it only works if all of the aggregations can support this.
 # the order returned should be consistent because the data ends up in a single task (no partitioning)
-@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches 
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 @pytest.mark.parametrize('b_gen', all_basic_gens + [decimal_gen_32bit, decimal_gen_128bit], ids=meta_idfn('data:'))
 def test_window_running_no_part(b_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
@@ -415,7 +415,7 @@ def test_window_running_no_part(b_gen, batch_size):
 # positive and negative values that interfere with each other.
 # the order returned should be consistent because the data ends up in a single task (no partitioning)
 @approximate_float
-@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches 
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
 def test_running_float_sum_no_part(batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.variableFloatAgg.enabled': True,
@@ -534,7 +534,7 @@ def test_window_running_float_decimal_sum(batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.variableFloatAgg.enabled': True,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
-    query_parts = ['b', 'a', 
+    query_parts = ['b', 'a',
             'sum(cast(c as double)) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as dbl_sum',
             'sum(abs(dbl)) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as dbl_sum',
             'sum(cast(c as float)) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as flt_sum',
@@ -825,10 +825,14 @@ def test_window_aggs_for_ranges_timestamps(data_gen):
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_nullable_decimals,
-                                      _grpkey_longs_with_nullable_larger_decimals,
-                                      _grpkey_longs_with_nullable_largest_decimals],
-                         ids=idfn)
+@pytest.mark.parametrize('data_gen', [
+  _grpkey_longs_with_nullable_decimals,
+  _grpkey_longs_with_nullable_larger_decimals,
+  pytest.param(_grpkey_longs_with_nullable_largest_decimals,
+    marks=pytest.mark.xfail(
+      condition=((not is_before_spark_340()) or is_databricks113_or_later()),
+      reason='https://github.com/NVIDIA/spark-rapids/issues/7429'))
+], ids=idfn)
 def test_window_aggregations_for_decimal_ranges(data_gen):
     """
     Tests for range window aggregations, with DECIMAL order by columns.
@@ -865,8 +869,12 @@ def test_window_aggregations_for_decimal_ranges(data_gen):
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_nullable_largest_decimals],
-                         ids=idfn)
+@pytest.mark.parametrize('data_gen', [
+  pytest.param(_grpkey_longs_with_nullable_largest_decimals,
+    marks=pytest.mark.xfail(
+      condition=((not is_before_spark_340()) or is_databricks113_or_later()),
+      reason='https://github.com/NVIDIA/spark-rapids/issues/7429'))
+], ids=idfn)
 def test_window_aggregations_for_big_decimal_ranges(data_gen):
     """
     Tests for range window aggregations, with DECIMAL order by columns.
@@ -1147,7 +1155,7 @@ def test_window_aggs_for_rows_collect_set_nested_array():
         df = spark.sql(
             """select a, b,
               collect_set(c_struct_array_1) over
-                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_struct_array_1, 
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_struct_array_1,
               collect_set(c_struct_array_2) over
                 (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_struct_array_2,
               collect_set(c_array_struct) over
