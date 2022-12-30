@@ -386,7 +386,7 @@ def test_window_aggs_for_rows(data_gen, batch_size):
 # This is for aggregations that work with a running window optimization. They don't need to be batched
 # specially, but it only works if all of the aggregations can support this.
 # the order returned should be consistent because the data ends up in a single task (no partitioning)
-@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches 
 @pytest.mark.parametrize('b_gen', all_basic_gens + [decimal_gen_32bit, decimal_gen_128bit], ids=meta_idfn('data:'))
 def test_window_running_no_part(b_gen, batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
@@ -415,7 +415,7 @@ def test_window_running_no_part(b_gen, batch_size):
 # positive and negative values that interfere with each other.
 # the order returned should be consistent because the data ends up in a single task (no partitioning)
 @approximate_float
-@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches
+@pytest.mark.parametrize('batch_size', ['1000', '1g'], ids=idfn) # set the batch size so we can test multiple stream batches 
 def test_running_float_sum_no_part(batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.variableFloatAgg.enabled': True,
@@ -534,7 +534,7 @@ def test_window_running_float_decimal_sum(batch_size):
     conf = {'spark.rapids.sql.batchSizeBytes': batch_size,
             'spark.rapids.sql.variableFloatAgg.enabled': True,
             'spark.rapids.sql.castFloatToDecimal.enabled': True}
-    query_parts = ['b', 'a',
+    query_parts = ['b', 'a', 
             'sum(cast(c as double)) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as dbl_sum',
             'sum(abs(dbl)) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as dbl_sum',
             'sum(cast(c as float)) over (partition by b order by a rows between UNBOUNDED PRECEDING AND CURRENT ROW) as flt_sum',
@@ -846,11 +846,22 @@ def test_window_aggregations_for_decimal_ranges(data_gen):
     Some other aggregation functions are thrown in for variety.
     """
     assert_gpu_and_cpu_are_equal_sql(
-        lambda spark: gen_df(spark, data_gen, length=10),
+        lambda spark: gen_df(spark, data_gen, length=2048),
         "window_agg_table",
         'SELECT '
-        ' COUNT(1) OVER (PARTITION BY a ORDER BY b ASC RANGE BETWEEN 10.2345 PRECEDING AND 6.7890 FOLLOWING) AS C01, '
-        ' COLLECT_LIST(a) OVER (PARTITION BY a ORDER BY b ASC RANGE BETWEEN 10.2345 PRECEDING AND 6.7890 FOLLOWING) AS C02 '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b ASC RANGE BETWEEN 10.2345 PRECEDING AND 6.7890 FOLLOWING), '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b ASC), '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b ASC RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b ASC RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING), '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b DESC RANGE BETWEEN 10.2345 PRECEDING AND 6.7890 FOLLOWING), '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b DESC), '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b DESC RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+        ' COUNT(1) OVER (PARTITION BY a ORDER BY b DESC RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING),'
+        ' COUNT(c) OVER (PARTITION BY a ORDER BY b RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+        ' SUM(c)   OVER (PARTITION BY a ORDER BY b RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+        ' MIN(c)   OVER (PARTITION BY a ORDER BY b RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+        ' MAX(c)   OVER (PARTITION BY a ORDER BY b RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW), '
+        ' RANK()   OVER (PARTITION BY a ORDER BY b) '
         'FROM window_agg_table',
         conf={})
 
@@ -1144,7 +1155,7 @@ def test_window_aggs_for_rows_collect_set_nested_array():
         df = spark.sql(
             """select a, b,
               collect_set(c_struct_array_1) over
-                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_struct_array_1,
+                (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_struct_array_1, 
               collect_set(c_struct_array_2) over
                 (partition by a order by b,c_int rows between CURRENT ROW and UNBOUNDED FOLLOWING) as cc_struct_array_2,
               collect_set(c_array_struct) over
