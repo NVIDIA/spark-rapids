@@ -191,8 +191,6 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
 
   override def init(
     sc: SparkContext, pluginContext: PluginContext): java.util.Map[String, String] = {
-    val computeCapability = Cuda.getComputeCapabilityMajor
-    logWarning(s"RapidsDriverPlugin: computeCapability = $computeCapability")
     val sparkConf = pluginContext.conf
     RapidsPluginUtils.fixupConfigs(sparkConf)
     val conf = new RapidsConf(sparkConf)
@@ -222,7 +220,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       extraConf: java.util.Map[String, String]): Unit = {
     try {
       if (Cuda.getComputeCapabilityMajor < 6) {
-        throw new RuntimeException(s"GPU compute capability $computeCapability" + 
+        throw new RuntimeException(s"GPU compute capability ${Cuda.getComputeCapabilityMajor}" + 
           " is unsupproted, requires 6.0+")
       }
       // if configured, re-register checking leaks hook.
