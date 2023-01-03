@@ -221,7 +221,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     try {
       if (Cuda.getComputeCapabilityMajor < 6) {
         throw new RuntimeException(s"GPU compute capability ${Cuda.getComputeCapabilityMajor}" + 
-          " is unsupproted, requires 6.0+")
+          " is unsupported, requires 6.0+")
       }
       // if configured, re-register checking leaks hook.
       reRegisterCheckLeakHook()
