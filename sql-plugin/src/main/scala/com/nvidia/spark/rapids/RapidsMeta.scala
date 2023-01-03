@@ -1376,6 +1376,9 @@ final class RuleNotFoundRunnableCommandMeta[INPUT <: RunnableCommand](
     parent: Option[RapidsMeta[_, _, _]])
     extends RunnableCommandMeta[INPUT](cmd, conf, parent, new NoRuleDataFromReplacementRule) {
 
+  // Do not complain by default, as many commands are metadata-only.
+  override def suppressWillWorkOnGpuInfo: Boolean = true
+
   override def tagSelfForGpu(): Unit =
     willNotWorkOnGpu(s"GPU does not currently support the command ${cmd.getClass}")
 

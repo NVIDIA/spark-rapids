@@ -441,6 +441,12 @@ Name | Description | Default Value | Notes
 <a name="sql.exec.WindowExec"></a>spark.rapids.sql.exec.WindowExec|Window-operator backend|true|None|
 <a name="sql.exec.HiveTableScanExec"></a>spark.rapids.sql.exec.HiveTableScanExec|Scan Exec to read Hive delimited text tables|true|None|
 
+### Commands
+
+Name | Description | Default Value | Notes
+-----|-------------|---------------|------------------
+<a name="sql.command.SaveIntoDataSourceCommand"></a>spark.rapids.sql.command.SaveIntoDataSourceCommand|Write to a data source|true|None|
+
 ### Scans
 
 Name | Description | Default Value | Notes
