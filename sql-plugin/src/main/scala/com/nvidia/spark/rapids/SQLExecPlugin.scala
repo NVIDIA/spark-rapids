@@ -16,10 +16,9 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.optimizer.FactDimensionJoinReorder
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.{ColumnarRule, SparkPlan}
 
@@ -30,7 +29,7 @@ class SQLExecPlugin extends (SparkSessionExtensions => Unit) with Logging {
   override def apply(extensions: SparkSessionExtensions): Unit = {
     extensions.injectColumnar(columnarOverrides)
     extensions.injectQueryStagePrepRule(queryStagePrepOverrides)
-    extensions.injectOptimizerRule(_ => FactDimensionJoinReorder)
+    extensions.injectOptimizerRule(joinReorderRule)
   }
 
   private def columnarOverrides(sparkSession: SparkSession): ColumnarRule = {
@@ -39,5 +38,9 @@ class SQLExecPlugin extends (SparkSessionExtensions => Unit) with Logging {
 
   private def queryStagePrepOverrides(sparkSession: SparkSession): Rule[SparkPlan] = {
     ShimLoader.newGpuQueryStagePrepOverrides()
+  }
+
+  private def joinReorderRule(sparkSession: SparkSession): Rule[LogicalPlan] = {
+    ShimLoader.newJoinReorderRule()
   }
 }

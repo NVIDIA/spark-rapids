@@ -381,6 +381,10 @@ object ShimLoader extends Logging {
     newInstanceOf("com.nvidia.spark.rapids.GpuQueryStagePrepOverrides")
   }
 
+  def newJoinReorderRule(): Rule[LogicalPlan] = {
+    newInstanceOf("com.nvidia.spark.rapids.optimizer.FactDimensionJoinReorder")
+  }
+
   def newUdfLogicalPlanRules(): Rule[LogicalPlan] = {
     newInstanceOf("com.nvidia.spark.udf.LogicalPlanRules")
   }
