@@ -18,9 +18,6 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
-// import com.nvidia.spark.rapids.shims.SparkShimImpl
-// import RapidsMeta.gpuSupportedTag
-
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession}
