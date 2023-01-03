@@ -42,6 +42,8 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
     .set(RapidsConf.JOIN_REORDERING_MAX_FACT.key, "2")
     .set(RapidsConf.JOIN_REORDERING_PRESERVE_ORDER.key, "true")
 
+  private val rule = new FactDimensionJoinReorder
+
   test("extractInnerJoin: LeftDeep") {
     val tables = Map("fact" -> 1000, "dim1" -> 100, "dim2" -> 200)
     val sql =
@@ -52,7 +54,7 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
         |""".stripMargin
     val df = execute(sql, confJoinReorderingDisabled, tables)
     val plan = df.queryExecution.optimizedPlan
-    val (shape, plans, conds) = FactDimensionJoinReorder.extractInnerJoins(plan)
+    val (shape, plans, conds) = rule.extractInnerJoins(plan)
     assert(shape == LeftDeep)
     assert(plans.length == 3)
     assert(conds.size == 2)
@@ -63,11 +65,11 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
       val fact = createTestRelation(spark, "fact", 1000)
       val dim1 = createTestRelation(spark, "dim1", 200)
       val dim2 = createTestRelation(spark, "dim2", 250)
-      val (facts, dims) = FactDimensionJoinReorder.findFactDimRels(Seq(fact, dim1, dim2), 0.3)
+      val (facts, dims) = rule.findFactDimRels(Seq(fact, dim1, dim2), 0.3)
       assert(Seq(fact) === facts)
       assert(Seq(dim1, dim2) === dims)
       // test with a different ratio
-      val (facts2, dims2) = FactDimensionJoinReorder.findFactDimRels(Seq(fact, dim1, dim2), 0.22)
+      val (facts2, dims2) = rule.findFactDimRels(Seq(fact, dim1, dim2), 0.22)
       assert(Seq(fact, dim2) === facts2)
       assert(Seq(dim1) === dims2)
     })
@@ -79,7 +81,7 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
       val dim2 = createTestRelation(spark, "dim2", 200)
       val _dim3 = createLogicalPlan(spark, "dim3", 1000)
       val dim3 = Relation.apply(Filter(EqualTo(_dim3.output.head, Literal(123)), _dim3)).get
-      val rels = FactDimensionJoinReorder.relationsOrdered(Seq(dim1, dim2, dim3),
+      val rels = rule.relationsOrdered(Seq(dim1, dim2, dim3),
         joinReorderingPreserveOrder = true, joinReorderingFilterSelectivity = 0.1)
       val actual = rels.map(x => buildPlanString(x.plan))
       val expected = Seq(
@@ -96,7 +98,7 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
       val dim2 = createTestRelation(spark, "dim2", 210)
       val _dim3 = createLogicalPlan(spark, "dim3", 1000)
       val dim3 = Relation.apply(Filter(EqualTo(_dim3.output.head, Literal(123)), _dim3)).get
-      val rels = FactDimensionJoinReorder.relationsOrdered(Seq(dim1, dim2, dim3),
+      val rels = rule.relationsOrdered(Seq(dim1, dim2, dim3),
         joinReorderingPreserveOrder = false, joinReorderingFilterSelectivity = 0.24)
       val actual = rels.map(x => buildPlanString(x.plan))
       val expected = Seq(
@@ -115,7 +117,7 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
       val conds = new mutable.HashSet[Expression]()
       conds += EqualTo(fact.output.head, dim1.output.head)
       conds += EqualTo(fact.output.head, dim2.output.head)
-      val (n, join) = FactDimensionJoinReorder.buildJoinTree(fact, Seq(dim1, dim2), conds, LeftDeep)
+      val (n, join) = rule.buildJoinTree(fact, Seq(dim1, dim2), conds, LeftDeep)
       assert(n == 2)
       assert(conds.isEmpty)
       val expected = """Join: (fact_c0 = dim2_c0)
@@ -136,7 +138,7 @@ class JoinReorderSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempD
       val conds = new mutable.HashSet[Expression]()
       conds += EqualTo(fact.output.head, dim1.output.head)
       conds += EqualTo(fact.output.head, dim2.output.head)
-      val (n, join) = FactDimensionJoinReorder.buildJoinTree(fact, Seq(dim1, dim2), conds,
+      val (n, join) = rule.buildJoinTree(fact, Seq(dim1, dim2), conds,
         RightDeep)
       assert(n == 2)
       assert(conds.isEmpty)

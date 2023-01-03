@@ -38,7 +38,7 @@ import org.apache.spark.sql.types.{DataTypes, StructType}
  * This optimizer rule is not specific to GPU and could potentially be contributed back to Apache
  * Spark.
  */
-object FactDimensionJoinReorder 
+class FactDimensionJoinReorder
     extends Rule[LogicalPlan] 
     with PredicateHelper 
     with Logging {
