@@ -81,7 +81,7 @@ class AvroProviderImpl extends AvroProvider {
           broadcastedConf,
           fileScan.relation.dataSchema,
           fileScan.requiredSchema,
-          fileScan.relation.partitionSchema,
+          fileScan.readPartitionSchema,
           new AvroOptions(fileScan.relation.options, broadcastedConf.value.value),
           fileScan.allMetrics,
           pushedFilters,
