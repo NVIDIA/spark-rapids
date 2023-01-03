@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.
+# Copyright (c) 2022-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,7 +24,8 @@ from spark_session import with_cpu_session
 part1_gen = SetValuesGen(IntegerType(), [-10, -1, 0, 1, 10])
 part2_gen = SetValuesGen(LongType(), [-100, 0, 100])
 
-file_formats = ['parquet', 'orc', 'csv', 'json']
+file_formats = ['parquet', 'orc', 'csv',
+    pytest.param('json', marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/7446'))]
 if os.environ.get('INCLUDE_SPARK_AVRO_JAR', 'false') == 'true':
     file_formats = file_formats + ['avro']
 
