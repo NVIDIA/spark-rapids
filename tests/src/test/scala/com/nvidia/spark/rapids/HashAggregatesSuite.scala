@@ -26,6 +26,7 @@ import org.apache.spark.sql.execution.{SparkPlan, WholeStageCodegenExec}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.SortAggregateExec
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
 import org.apache.spark.sql.types.{DataType, DataTypes}
 
 class HashAggregatesSuite extends SparkQueryCompareTestSuite {
@@ -38,7 +39,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   }
 
   private def checkExecPlan(plan: SparkPlan): Unit = {
-    val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(plan))
+    val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(plan)
     if (executedPlan.conf.getAllConfs(RapidsConf.SQL_ENABLED.key).toBoolean) {
       val gpuAgg = executedPlan.find(_.isInstanceOf[GpuHashAggregateExec]) match {
         case Some(agg) => Some(agg)

@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.tests.udf.scala.{URLDecode, URLEncode}
+import com.nvidia.spark.rapids.tests.udf.scala.{AlwaysTrueUDF, URLDecode, URLEncode}
 
 import org.apache.spark.sql.functions.col
 
@@ -33,5 +33,12 @@ class ScalaUDFSuite extends SparkQueryCompareTestSuite {
     // exhaustive test of the specific UDF implementation itself.
     val urlencode = frame.sparkSession.udf.register("urlencode", new URLEncode())
     frame.select(urlencode(col("strings")))
+  }
+
+  testSparkResultsAreEqual("Scala always true", nullableStringsFromCsv) { frame =>
+    // This is a basic smoke-test of the Scala UDF framework, not an
+    // exhaustive test of the specific UDF implementation itself.
+    val udf = frame.sparkSession.udf.register("alwaystrue", new AlwaysTrueUDF())
+    frame.withColumn("alwaystrue", udf())
   }
 }

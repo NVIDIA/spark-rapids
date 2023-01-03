@@ -16,8 +16,9 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, assert_gpu_and_cpu_error, assert_gpu_fallback_collect
 from data_gen import *
+from conftest import is_databricks_runtime
 from marks import incompat
-from spark_session import is_before_spark_313, is_before_spark_330, is_spark_330_or_later, is_databricks104_or_later, is_spark_340_or_later
+from spark_session import is_before_spark_313, is_before_spark_330, is_databricks113_or_later, is_spark_330_or_later, is_databricks104_or_later, is_spark_33X, is_spark_340_or_later, is_spark_330, is_spark_330cdh
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 from pyspark.sql.functions import array_contains, col, element_at, lit
@@ -103,7 +104,7 @@ def test_array_item(data_gen):
 
 
 # No need to test this for multiple data types for array. Only one is enough
-@pytest.mark.skipif(is_before_spark_330() or is_spark_340_or_later(), reason="'strictIndexOperator' is introduced from Spark 3.3.0 and removed in Spark 3.4.0")
+@pytest.mark.skipif(not is_spark_33X() or is_databricks_runtime(), reason="'strictIndexOperator' is introduced from Spark 3.3.0 and removed in Spark 3.4.0 and DB11.3")
 @pytest.mark.parametrize('strict_index_enabled', [True, False])
 @pytest.mark.parametrize('index', [-2, 100, array_neg_index_gen, array_out_index_gen], ids=idfn)
 def test_array_item_with_strict_index(strict_index_enabled, index):
@@ -113,8 +114,7 @@ def test_array_item_with_strict_index(strict_index_enabled, index):
     else:
         test_df = lambda spark: two_col_df(spark, ArrayGen(int_gen), index).selectExpr('a[b]')
 
-    test_conf=copy_and_update(
-        ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': strict_index_enabled})
+    test_conf = copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': strict_index_enabled})
 
     if strict_index_enabled:
         assert_gpu_and_cpu_error(
@@ -240,8 +240,9 @@ def test_array_element_at_ansi_fail_invalid_index(index):
         test_func = lambda spark: two_col_df(spark, ArrayGen(int_gen), index).selectExpr(
             'element_at(a, b)').collect()
     # For 3.3.0+ strictIndexOperator should not affect element_at
-    # Since 3.4.0, strictIndexOperator has been removed.
-    test_conf=copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': 'false'}) if is_before_spark_340() else ansi_enabled_conf
+    # `strictIndexOperator` has been removed in Spark3.4+ and Databricks11.3+
+    test_conf = ansi_enabled_conf if (is_spark_340_or_later() or is_databricks113_or_later()) else \
+        copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': 'false'})
     assert_gpu_and_cpu_error(
         test_func,
         conf=test_conf,
@@ -261,7 +262,10 @@ def test_array_element_at_ansi_not_fail_all_null_data():
 @pytest.mark.parametrize('index', [0, array_zero_index_gen], ids=idfn)
 @pytest.mark.parametrize('ansi_enabled', [False, True], ids=idfn)
 def test_array_element_at_zero_index_fail(index, ansi_enabled):
-    message = "SQL array indices start at 1" if is_before_spark_340() else "[ELEMENT_AT_BY_INDEX_ZERO]"
+    message = "SQL array indices start at 1" \
+        if is_before_spark_340() and not is_databricks113_or_later() else \
+        "org.apache.spark.SparkRuntimeException: [ELEMENT_AT_BY_INDEX_ZERO] The index 0 is invalid"
+
     if isinstance(index, int):
         test_func = lambda spark: unary_op_df(spark, ArrayGen(int_gen)).select(
             element_at(col('a'), index)).collect()
@@ -445,7 +449,7 @@ def test_array_max_q1():
 
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
-@pytest.mark.skipif(is_before_spark_313() or is_spark_330_or_later() or is_databricks104_or_later(), reason="NaN equality is only handled in Spark 3.1.3+")
+@pytest.mark.skipif(is_before_spark_313() or is_spark_330() or is_spark_330cdh(), reason="NaN equality is only handled in Spark 3.1.3+ and SPARK-39976 issue with null and ArrayIntersect in Spark 3.3.0")
 def test_array_intersect(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -465,7 +469,7 @@ def test_array_intersect(data_gen):
 
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens_no_nulls + decimal_gens_no_nulls, ids=idfn)
-@pytest.mark.skipif(is_before_spark_330() and not is_databricks104_or_later(), reason="SPARK-39976 issue with null and ArrayIntersect")
+@pytest.mark.skipif(not is_spark_330() and not is_spark_330cdh(), reason="SPARK-39976 issue with null and ArrayIntersect in Spark 3.3.0")
 def test_array_intersect_spark330(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -482,7 +486,6 @@ def test_array_intersect_spark330(data_gen):
             'sort_array(array_intersect(array(1), array(1, 2, 3)))',
             'sort_array(array_intersect(array(), array(1, 2, 3)))')
     )
-
 
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens_no_nans + decimal_gens, ids=idfn)

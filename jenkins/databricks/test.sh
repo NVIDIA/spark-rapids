@@ -136,14 +136,15 @@ ICEBERG_CONFS="--packages org.apache.iceberg:iceberg-spark-runtime-${sw_versions
  --conf spark.sql.catalog.spark_catalog.type=hadoop \
  --conf spark.sql.catalog.spark_catalog.warehouse=/tmp/spark-warehouse-$$"
 
-DELTA_LAKE_CONFS=""
+# Increase driver memory as Delta Lake tests can slowdown with default 1G (possibly due to caching?)
+DELTA_LAKE_CONFS="--driver-memory 2g"
 
 # Enable event log for qualification & profiling tools testing
 export PYSP_TEST_spark_eventLog_enabled=true
 mkdir -p /tmp/spark-events
 
 ## limit parallelism to avoid OOM kill
-export TEST_PARALLEL=4
+export TEST_PARALLEL=${TEST_PARALLEL:-4}
 if [ -d "$LOCAL_JAR_PATH" ]; then
     if [[ $TEST_MODE == "DEFAULT" ]]; then
         ## Run tests with jars in the LOCAL_JAR_PATH dir downloading from the dependency repo

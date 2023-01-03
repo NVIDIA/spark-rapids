@@ -164,6 +164,24 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
     assumeCondition = (_ => (VersionUtils.isSpark320OrLater, "Spark version not 3.2.0+"))) {
     frame => frame.select(col("*"))
   }
+  
+  /**
+   * A malformed version of nested-unsigned.parquet is, which should throw.
+   */
+  test("Test Parquet nested unsigned int malformed: uint8, uint16, uint32"){
+    assumeSpark320orLater
+    try {
+      withGpuSparkSession(spark => {
+        frameFromParquet("nested-unsigned-malformed.parquet")(spark).collect
+      })
+      fail("Did not receive an expected exception from cudf")
+    } catch {
+      case e: Exception =>
+        if (!exceptionContains(e, "Encountered malformed")) {
+          throw e
+        }
+    }
+  }
 
   /**
    * Parquet file with 2 columns

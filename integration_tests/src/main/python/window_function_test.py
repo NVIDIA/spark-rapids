@@ -21,7 +21,7 @@ from pyspark.sql.types import *
 from pyspark.sql.types import NumericType
 from pyspark.sql.window import Window
 import pyspark.sql.functions as f
-from spark_session import is_before_spark_320
+from spark_session import is_before_spark_320, is_before_spark_340, is_databricks113_or_later
 
 _grpkey_longs_with_no_nulls = [
     ('a', RepeatSeqGen(LongGen(nullable=False), length=20)),
@@ -825,10 +825,14 @@ def test_window_aggs_for_ranges_timestamps(data_gen):
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_nullable_decimals,
-                                      _grpkey_longs_with_nullable_larger_decimals,
-                                      _grpkey_longs_with_nullable_largest_decimals],
-                         ids=idfn)
+@pytest.mark.parametrize('data_gen', [
+  _grpkey_longs_with_nullable_decimals,
+  _grpkey_longs_with_nullable_larger_decimals,
+  pytest.param(_grpkey_longs_with_nullable_largest_decimals,
+    marks=pytest.mark.xfail(
+      condition=((not is_before_spark_340()) or is_databricks113_or_later()),
+      reason='https://github.com/NVIDIA/spark-rapids/issues/7429'))
+], ids=idfn)
 def test_window_aggregations_for_decimal_ranges(data_gen):
     """
     Tests for range window aggregations, with DECIMAL order by columns.
@@ -865,8 +869,12 @@ def test_window_aggregations_for_decimal_ranges(data_gen):
 # In a distributed setup the order of the partitions returned might be different, so we must ignore the order
 # but small batch sizes can make sort very slow, so do the final order by locally
 @ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', [_grpkey_longs_with_nullable_largest_decimals],
-                         ids=idfn)
+@pytest.mark.parametrize('data_gen', [
+  pytest.param(_grpkey_longs_with_nullable_largest_decimals,
+    marks=pytest.mark.xfail(
+      condition=((not is_before_spark_340()) or is_databricks113_or_later()),
+      reason='https://github.com/NVIDIA/spark-rapids/issues/7429'))
+], ids=idfn)
 def test_window_aggregations_for_big_decimal_ranges(data_gen):
     """
     Tests for range window aggregations, with DECIMAL order by columns.
