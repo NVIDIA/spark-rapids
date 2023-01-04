@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Expression, UnsafeProjection}
+import org.apache.spark.sql.catalyst.expressions.{BoundReference, Expression, UnsafeProjection}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
@@ -44,7 +44,7 @@ import org.apache.spark.util.ThreadUtils
 case class GpuBroadcastToRowExec(
   buildKeys: Seq[Expression],
   broadcastMode: BroadcastMode,
-  child: SparkPlan)(modeKeys: Option[Seq[Expression]])
+  child: SparkPlan)(index: Option[Int], modeKeys: Option[Seq[Expression]])
   extends ShimBroadcastExchangeLike with ShimUnaryExecNode with GpuExec with Logging {
 
   override def otherCopyArgs: Seq[AnyRef] = modeKeys :: Nil
@@ -80,7 +80,7 @@ case class GpuBroadcastToRowExec(
 
   override def doCanonicalize(): SparkPlan = {
     val keys = buildKeys.map(k => QueryPlan.normalizeExpressions(k, child.output))
-    GpuBroadcastToRowExec(keys, broadcastMode, child.canonicalized)(modeKeys)
+    GpuBroadcastToRowExec(keys, broadcastMode, child.canonicalized)(index, modeKeys)
   }
 
 
@@ -103,7 +103,15 @@ case class GpuBroadcastToRowExec(
       hostBatches.flatMap { cb =>
         cb.rowIterator().asScala.map { row =>
           val broadcastRow = broadcastModeProject.map(_(row)).getOrElse(row)
-          broadcastRow.copy().asInstanceOf[InternalRow]
+          broadcastMode match {
+            case map @ HashedRelationBroadcastMode(_, _) =>
+              broadcastRow.copy().asInstanceOf[InternalRow]
+            case _ =>
+              val idx = index.get
+              val rowProject = UnsafeProjection.create(
+                BoundReference(idx, buildKeys(idx).dataType, buildKeys(idx).nullable))
+              rowProject(broadcastRow).copy().asInstanceOf[InternalRow]
+          }
         }
       }
     }
