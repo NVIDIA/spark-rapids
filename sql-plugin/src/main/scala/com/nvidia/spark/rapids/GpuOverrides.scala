@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -3437,7 +3437,7 @@ object GpuOverrides extends Logging {
         TypeSig.ARRAY.nested(TypeSig.STRUCT + TypeSig.STRING),
         TypeSig.ARRAY.nested(TypeSig.STRUCT + TypeSig.STRING),
         Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING)),
-        Some(RepeatingParamCheck("field", TypeSig.STRING, TypeSig.STRING))),
+        Some(RepeatingParamCheck("field", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
       (a, conf, p, r) => new GeneratorExprMeta[JsonTuple](a, conf, p, r) {
         override def convertToGpu(): GpuExpression = GpuJsonTuple(childExprs.map(_.convertToGpu()))
       }
