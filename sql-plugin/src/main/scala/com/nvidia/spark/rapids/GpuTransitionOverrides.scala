@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -171,14 +171,13 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         case ReusedExchangeExec(output, b: GpuBroadcastExchangeExec) => 
           // we can't directly re-use a GPU broadcast exchange to feed a CPU broadcast
           // join but Spark will sometimes try and do this
-          val index = 0
           val keys = output.map { a => a.asInstanceOf[Expression] }
-          val keyExprs = b.mode match {
-            case HashedRelationBroadcastMode(keys, _) => Some(keys)
-            case IdentityBroadcastMode => None
+          val (index, keyExprs) = b.mode match {
+            case HashedRelationBroadcastMode(keys, _) => (None, Some(keys))
+            case IdentityBroadcastMode => (Some(0), None)
             case m => throw new UnsupportedOperationException(s"Unknown broadcast mode $m")
           }
-          GpuBroadcastToRowExec(index, keys, e)(keyExprs)
+          GpuBroadcastToRowExec(keys, b.mode, e)(index, keyExprs)
         case _ => GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
       }
 
