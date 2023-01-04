@@ -47,7 +47,7 @@ case class GpuBroadcastToRowExec(
   child: SparkPlan)(index: Option[Int], modeKeys: Option[Seq[Expression]])
   extends ShimBroadcastExchangeLike with ShimUnaryExecNode with GpuExec with Logging {
 
-  override def otherCopyArgs: Seq[AnyRef] = modeKeys :: Nil
+  override def otherCopyArgs: Seq[AnyRef] = index :: modeKeys :: Nil
 
   @transient
   private val timeout: Long = conf.broadcastTimeout
@@ -119,12 +119,7 @@ case class GpuBroadcastToRowExec(
     gpuLongMetric("dataSize") += serBatch.dataSize
     gpuLongMetric(COLLECT_TIME) += System.nanoTime() - beforeCollect
 
-    broadcastMode match {
-      case map @ HashedRelationBroadcastMode(_, _) =>
-        SparkShimImpl.broadcastModeTransform(map, result)
-      case _ =>
-        result
-    }
+    SparkShimImpl.broadcastModeTransform(broadcastMode, result)
   }
 
   protected[sql] override def doExecute(): RDD[InternalRow] = {
