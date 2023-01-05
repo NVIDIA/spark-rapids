@@ -697,7 +697,6 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
               popFetchedIfAvailable()
             case _ => 0 // TODO: do we need to handle other types here?
           }
-
           waitTime += System.nanoTime() - waitTimeStart
           res
         }
@@ -720,6 +719,11 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
         deserializationTimeNs.foreach(_ += deserTime)
         shuffleReadTimeNs.foreach(_ += shuffleReadTime)
         dataReadSize.foreach(_ += uncompressedSize)
+
+        // Reset fetch, readBlocked, and wait times to prevent extraneous accruals
+        waitTime = 0L
+        fetchTime = 0L
+        readBlockedTime = 0L
 
         // if this is the last call, close our range
         if (!hasNext) {
