@@ -49,7 +49,7 @@ mvn_verify() {
         # separate the versions to two ci stages (mvn_verify, ci_2) for balancing the duration
         if [[ "${SPARK_SHIM_VERSIONS_PREMERGE_UT_1[@]}" =~ "$version" ]]; then
             env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS \
-              -Dpytest.TEST_TAGS='' -pl '!tools'
+              -Dpytest.TEST_TAGS=''
         # build only for other versions
         elif [[ "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}" =~ "$version" ]]; then
             $MVN_INSTALL_CMD -DskipTests -Dbuildver=$version
@@ -60,7 +60,7 @@ mvn_verify() {
     for version in "${SPARK_SHIM_VERSIONS_PREMERGE_UTF8[@]}"
     do
         env -u SPARK_HOME LC_ALL="en_US.UTF-8" $MVN_CMD $MVN_URM_MIRROR -Dbuildver=$version test $MVN_BUILD_ARGS \
-          -Dpytest.TEST_TAGS='' -pl '!tools' \
+          -Dpytest.TEST_TAGS='' \
           -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
     done
     
@@ -147,7 +147,7 @@ ci_2() {
     for version in "${SPARK_SHIM_VERSIONS_PREMERGE_UT_2[@]}"
     do
         env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean package $MVN_BUILD_ARGS \
-          -Dpytest.TEST_TAGS='' -pl '!tools'
+          -Dpytest.TEST_TAGS=''
     done
 }
 
