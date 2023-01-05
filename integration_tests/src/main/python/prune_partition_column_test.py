@@ -71,3 +71,46 @@ def test_prune_partition_column_when_project_filter(spark_tmp_path, prune_part_e
             .filter('{} > 0'.format(filter_col)) \
             .select('a', 'c'),
         conf=all_confs)
+
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('prune_part_enabled', [False, True])
+@pytest.mark.parametrize('file_format', file_formats)
+def test_prune_partition_column_when_cpu_project(spark_tmp_path, prune_part_enabled, file_format):
+    data_path = spark_tmp_path + '/PARTED_DATA/'
+    with_cpu_session(
+        lambda spark: three_col_df(spark, int_gen, part1_gen, part2_gen).write \
+            .partitionBy('b', 'c').format(file_format).save(data_path))
+
+    all_confs = copy_and_update(_enable_read_confs, {
+        'spark.rapids.sql.exec.ProjectExec': False,
+        'spark.sql.sources.useV1SourceList': file_format,
+        'spark.rapids.sql.fileScanPrunePartition.enabled': prune_part_enabled})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.format(file_format).schema('a int, b int, c long') \
+            .load(data_path).select('a', 'c'),
+        conf=all_confs)
+
+
+@allow_non_gpu('ProjectExec', 'FilterExec')
+@pytest.mark.parametrize('prune_part_enabled', [False, True])
+@pytest.mark.parametrize('file_format', file_formats)
+@pytest.mark.parametrize('filter_col', ['a', 'b', 'c'])
+@pytest.mark.parametrize('is_gpu_project,is_gpu_filter', [(True, False), (False, True), (False, False)])
+def test_prune_partition_column_when_cpu_project_filter(spark_tmp_path, prune_part_enabled, filter_col,
+                                                        file_format, is_gpu_project, is_gpu_filter):
+    data_path = spark_tmp_path + '/PARTED_DATA/'
+    with_cpu_session(
+        lambda spark: three_col_df(spark, int_gen, part1_gen, part2_gen).write \
+            .partitionBy('b', 'c').format(file_format).save(data_path))
+
+    all_confs = copy_and_update(_enable_read_confs, {
+        'spark.rapids.sql.exec.ProjectExec': is_gpu_project,
+        'spark.rapids.sql.exec.FilterExec': is_gpu_filter,
+        'spark.sql.sources.useV1SourceList': file_format,
+        'spark.rapids.sql.fileScanPrunePartition.enabled': prune_part_enabled})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.format(file_format).schema('a int, b int, c long').load(data_path) \
+            .filter('{} > 0'.format(filter_col)) \
+            .select('a', 'c'),
+        conf=all_confs)

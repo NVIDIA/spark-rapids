@@ -426,6 +426,50 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       p.withNewChildren(Seq(
         f.withNewChildren(Seq(withPrunedPartSchema(fss, projectList :+ condition)))))
 
+    // Partial GPU plan cases.
+    // This rule executes before rules override the ColumnarToRowExec, so the exec is the
+    // CPU version here.
+    case p @ ProjectExec(projectList, cr @ ColumnarToRowExec(fss: GpuFileSourceScanExec)) =>
+      // cpu project + gpu file scan
+      p.withNewChildren(Seq(
+        cr.withNewChildren(Seq(withPrunedPartSchema(fss, projectList)))))
+
+    case p @ ProjectExec(
+        projectList,
+        cr @ ColumnarToRowExec(f @ GpuFilterExec(condition, fss: GpuFileSourceScanExec, _))) =>
+      // cpu project + gpu filter + gpu file scan
+      p.withNewChildren(Seq(
+        cr.withNewChildren(Seq(
+          f.withNewChildren(Seq(withPrunedPartSchema(fss, projectList :+ condition)))))))
+
+    case p @ ProjectExec(
+        projectList,
+        f @ FilterExec(condition, cr @ ColumnarToRowExec(fss: GpuFileSourceScanExec))) =>
+      // cpu project + cpu filter + gpu file scan
+      p.withNewChildren(Seq(
+        f.withNewChildren(Seq(
+          cr.withNewChildren(Seq(withPrunedPartSchema(fss, projectList :+ condition)))))))
+
+    case p @ GpuProjectExec(
+        projectList,
+        rc @ RowToColumnarExec(
+            f @ FilterExec(condition, cr @ ColumnarToRowExec(fss: GpuFileSourceScanExec))), _) =>
+      // gpu project + cpu filter + gpu file scan
+      p.withNewChildren(Seq(
+        rc.withNewChildren(Seq(
+          f.withNewChildren(Seq(
+            cr.withNewChildren(Seq(withPrunedPartSchema(fss, projectList :+ condition)))))))))
+
+    case p @ GpuProjectAstExec(
+        projectList,
+        rc @ RowToColumnarExec(
+            f @ FilterExec(condition, cr @ ColumnarToRowExec(fss: GpuFileSourceScanExec)))) =>
+      // gpu ast project + cpu filter + gpu file scan
+      p.withNewChildren(Seq(
+        rc.withNewChildren(Seq(
+          f.withNewChildren(Seq(
+            cr.withNewChildren(Seq(withPrunedPartSchema(fss, projectList :+ condition)))))))))
+
     case _ =>
       plan.withNewChildren(plan.children.map(prunePartitionForFileSourceScan))
   }
