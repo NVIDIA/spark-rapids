@@ -136,8 +136,8 @@ class GpuSingleDirectoryDataWriter(
     taskAttemptContext: TaskAttemptContext,
     committer: FileCommitProtocol)
   extends GpuFileFormatDataWriter(description, taskAttemptContext, committer) 
-  with Arm 
-  with WriterUtil {
+  with Arm {
+  import WriterUtil._
   private var fileCounter: Int = _
   private var recordsInFile: Long = _
   // Initialize currentWriter and statsTrackers
@@ -173,23 +173,26 @@ class GpuSingleDirectoryDataWriter(
       }
       currentWriter.writeAndClose(batch, statsTrackers)
     } else {
-      withResource(batch) { batch =>
+      withResource(batch) { _ =>
         withResource(GpuColumnVector.from(batch)) {table => 
           val splitIndexes = getSplitIndexes(
             maxRecordsPerFile,
             recordsInFile,
             table.getRowCount()
           )
-  
           val dataTypes = GpuColumnVector.extractTypes(batch)
-  
           var needNewWriter = recordsInFile >= maxRecordsPerFile
+          assertNotExceedMaxFileCounter(
+            fileCounter,
+            splitIndexes.length + 1,
+            !needNewWriter,
+            MAX_FILE_COUNTER
+          )
+
           withResource(table.contiguousSplit(splitIndexes: _*)) {tabs =>
             tabs.foreach(b => {
               if (needNewWriter) {
                 fileCounter += 1
-                assert(fileCounter <= MAX_FILE_COUNTER,
-                  s"File counter $fileCounter is beyond max value $MAX_FILE_COUNTER")
                 newOutputWriter()
               }
               withResource(b.getTable()) {tab =>
@@ -220,8 +223,8 @@ class GpuDynamicPartitionDataSingleWriter(
     taskAttemptContext: TaskAttemptContext,
     committer: FileCommitProtocol)
   extends GpuFileFormatDataWriter(description, taskAttemptContext, committer) 
-  with Arm 
-  with WriterUtil{
+  with Arm {
+  import WriterUtil._
 
   /** Wrapper class for status of a unique single output writer. */
   protected class WriterStatus(
@@ -603,6 +606,12 @@ class GpuDynamicPartitionDataSingleWriter(
       table.getRowCount()
     )
     var needNewWriter = currentWriterStatus.recordsInFile >= maxRecordsPerFile
+    assertNotExceedMaxFileCounter(
+      currentWriterStatus.fileCounter,
+      splitIndexes.length + 1,
+      !needNewWriter,
+      MAX_FILE_COUNTER
+    )
 
     val tabs = withResource(table) { _ =>
       table.contiguousSplit(splitIndexes: _*)
@@ -611,14 +620,9 @@ class GpuDynamicPartitionDataSingleWriter(
       tabs.foreach(b => {
         if (needNewWriter) {
           currentWriterStatus.fileCounter += 1
-          assert(currentWriterStatus.fileCounter <= MAX_FILE_COUNTER,
-            s"File counter ${currentWriterStatus.fileCounter} " +
-              s"is beyond max value $MAX_FILE_COUNTER")
 
           // will create a new file, close the old writer
-          if (currentWriterStatus != null) {
-            releaseWriter(currentWriterStatus.outputWriter)
-          }
+          releaseWriter(currentWriterStatus.outputWriter)
 
           // create a new writer and update the writer in the status
           currentWriterStatus.outputWriter =
@@ -694,6 +698,7 @@ class GpuDynamicPartitionDataConcurrentWriter(
     spec: GpuConcurrentOutputWriterSpec)
     extends GpuDynamicPartitionDataSingleWriter(description, taskAttemptContext, committer)
         with Arm with Logging {
+  import WriterUtil._
 
   // Keep all the unclosed writers, key is partition directory string.
   // Note: if fall back to sort-based mode, also use the opened writers in the map.
@@ -979,16 +984,19 @@ class GpuDynamicPartitionDataConcurrentWriter(
               table.getRowCount()
             )
 
-            val dataTypes = GpuColumnVector.extractTypes(batch)
-
             var needNewWriter = status.writerStatus.recordsInFile >= maxRecordsPerFile
+            assertNotExceedMaxFileCounter(
+              status.writerStatus.fileCounter,
+              splitIndexes.length + 1,
+              !needNewWriter,
+              MAX_FILE_COUNTER
+            )
+
+            val dataTypes = GpuColumnVector.extractTypes(batch)
             withResource(table.contiguousSplit(splitIndexes: _*)) {tabs =>
               tabs.foreach(b => {
                 if (needNewWriter) {
                   status.writerStatus.fileCounter += 1
-                  assert(status.writerStatus.fileCounter <= MAX_FILE_COUNTER,
-                    s"File counter ${status.writerStatus.fileCounter} " +
-                      s"is beyond max value $MAX_FILE_COUNTER")
                   status.writerStatus.outputWriter.close()
 
                   // start a new writer
@@ -1096,7 +1104,7 @@ class GpuWriteJobDescription(
        """.stripMargin)
 }
 
-trait WriterUtil {
+private object WriterUtil {
   def ceilingDiv(num: Long, divisor: Long) = {
     ((num + divisor - 1) / divisor).toInt
   }
@@ -1118,5 +1126,14 @@ trait WriterUtil {
           .map(i => (filledUp + i * maxRecordsPerFile).toInt)
       }
     }
+  }
+
+  def assertNotExceedMaxFileCounter(
+    fileCounter: Int, numOfSplits: Int, reuseOldWriter: Boolean, MAX_FILE_COUNTER: Int) = {
+    val numOfFilesNeeded = fileCounter + numOfSplits + (if (reuseOldWriter) -1 else 0)
+    assert(
+      numOfFilesNeeded <= MAX_FILE_COUNTER,
+      s"File counter $numOfFilesNeeded is beyond the max value $MAX_FILE_COUNTER"
+    )
   }
 }
