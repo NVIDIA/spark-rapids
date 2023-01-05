@@ -59,6 +59,10 @@ access to any of the memory that RMM is holding.
 The Qualification and Profiling tools have been moved to
 [nvidia/spark-rapids-tools](https://github.com/NVIDIA/spark-rapids-tools) repo.
 
+Please refer to [Qualification tool documentation](docs/spark-qualification-tool.md)
+and [Profiling tool documentation](docs/spark-profiling-tool.md)
+for more details on how to use the tools.
+
 ## Dependency for External Projects
 
 If you need to develop some functionality on top of RAPIDS Accelerator For Apache Spark (we currently
