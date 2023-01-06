@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-// import ai.rapids.cudf.{ColumnVector, Table}
 import ai.rapids.cudf.{Scalar, Table}
 import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -61,17 +60,12 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
     val schema = Array.fill[DataType](fieldExpressions.length)(StringType)
 
     withResource(columnarEvalToColumn(jsonGpuExpr, inputBatch).getBase) { json =>
-      GpuColumnVector.debug("json = ", json)
       val fieldScalars = fieldExpressions.safeMap { field =>
         withResourceIfAllowed(field.columnarEval(inputBatch)) { fieldVal =>
           fieldVal match {
             case fieldScalar: GpuScalar =>
-              // escape special characters in json field
-              // TODO: 1. escape '[' or ']', 2. not sure if below is the right way for "." or "$"
-              val escapedField = fieldScalar.getBase.getJavaString.
-                replaceAll("""\$""", """\\\$""").replaceAll("""\.""", """\\\.""")
-              logWarning("$." + escapedField)
-              Scalar.fromString("$." + escapedField)
+              // Specials characters like '.', '[', ']' are not supported in field names
+              Scalar.fromString("$." + fieldScalar.getBase.getJavaString)
             case _ => throw new UnsupportedOperationException(s"JSON field must be a scalar value")
           }
         }
@@ -79,7 +73,6 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
       withResource(fieldScalars) { fieldScalars =>
         withResource(fieldScalars.safeMap(field => json.getJSONObject(field))) { resColumns =>
           withResource(new Table(resColumns: _*)) { tbl =>
-            GpuColumnVector.debug("Result = ", tbl)
             GpuColumnVector.from(tbl, schema)
           }
         }
@@ -92,7 +85,6 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
       outer: Boolean,
       targetSizeBytes: Long,
       maxRows: Int = Int.MaxValue): Array[Int] = {
-    
     val inputRows = inputBatch.numRows
     // if the number of input rows is 1 or less, cannot split
     if (inputRows <= 1) return Array()
@@ -102,13 +94,13 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
       Seq(jsonExpr.asInstanceOf[NamedExpression].toAttribute))
 
     // we know we are going to output at most this much
-    val estimateOutputSize = 
+    val estimatedOutputSizeBytes = 
       withResource(columnarEvalToColumn(jsonGpuExpr, inputBatch).getBase) { json =>
         (json.getDeviceMemorySize * fieldExpressions.length).toDouble
       }
     
-    val numSplitsForTargetSize = math.min(inputRows,
-      math.ceil(estimateOutputSize / targetSizeBytes).toInt)
+    val numSplitsForTargetSize = 
+      math.min(inputRows, math.ceil(estimatedOutputSizeBytes / targetSizeBytes).toInt)
     val splitIndices = 
       GpuBatchUtils.generateSplitIndices(inputRows, numSplitsForTargetSize).distinct
 
