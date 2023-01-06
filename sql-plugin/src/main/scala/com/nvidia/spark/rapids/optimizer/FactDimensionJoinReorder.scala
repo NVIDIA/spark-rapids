@@ -50,14 +50,14 @@ class FactDimensionJoinReorder
     }
     val t0 = System.nanoTime()
     val reorderedJoin = plan.transformUp {
-      case j@Join(_, _, Inner, Some(_), JoinHint.NONE) if isSupportedJoin(j) =>
+      case j @ Join(_, _, Inner, Some(_), JoinHint.NONE) if isSupportedJoin(j) =>
         reorder(j, conf)
       case p @ Project(projectList, Join(_, _, Inner, Some(_), JoinHint.NONE))
         if projectList.forall(_.isInstanceOf[Attribute]) =>
         reorder(p, conf)
     }
     val t1 = System.nanoTime()
-    val elapsedTimeMillis = TimeUnit.MILLISECONDS.convert(t1 - t0, TimeUnit.NANOSECONDS)
+    val elapsedTimeMillis = TimeUnit.NANOSECONDS.toMillis(t1 - t0)
     logDebug(s"FactDimensionJoinReorder took $elapsedTimeMillis millis")
     reorderedJoin
   }
