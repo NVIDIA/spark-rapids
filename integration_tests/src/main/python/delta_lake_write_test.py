@@ -90,6 +90,12 @@ def decode_jsons(json_data):
         # Skip whitespace between records
         while idx < len(json_data) and json_data[idx].isspace():
             idx += 1
+    # reorder to produce a consistent output for comparison
+    def json_to_sort_key(j):
+        keys = sorted(j.keys())
+        paths = sorted([ v.get("path", "") for v in j.values() ])
+        return ','.join(keys + paths)
+    jsons.sort(key=json_to_sort_key)
     return jsons
 
 def assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path):
