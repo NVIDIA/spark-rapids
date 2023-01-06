@@ -1632,47 +1632,48 @@ object RapidsConf {
     .booleanConf
     .createWithDefault(true)
 
-  val JOIN_REORDERING = conf("spark.rapids.sql.cbo.joinReordering")
-    .internal()
+  val JOIN_REORDERING = conf("spark.rapids.sql.joinReordering")
     .doc("Enable join reordering of fact-dimension joins based on the estimated " +
-      "size of underlying tables and the presence of filters on dimension tables")
+      "size of underlying tables and the presence of filters on dimension tables. Refer to the" +
+      "tuning guide for more information.")
     .booleanConf
     .createWithDefault(false)
 
-  val JOIN_REORDERING_RATIO = conf("spark.rapids.sql.cbo.joinReordering.factDimRatio")
-    .internal()
-    .doc("Ratio to use to determine fact versus dimension tables. A value of 0.3 would mean " +
-      "that dimension tables can be up to 30% of the size of fact tables")
+  val JOIN_REORDERING_RATIO = conf("spark.rapids.sql.joinReordering.factDimRatio")
+    .doc("Ratio to determine fact versus dimension tables. A value of 0.3 would mean " +
+      "that dimension tables can be up to 30% of the size of fact tables. Refer to the tuning " +
+      "guide for more information.")
     .doubleConf
     .createWithDefault(0.3)
 
-  val JOIN_REORDERING_MAX_FACT = conf("spark.rapids.sql.cbo.joinReordering.maxFactTables")
-    .internal()
-    .doc("Maximum number of fact tables allowed in a reordered join")
+  val JOIN_REORDERING_MAX_FACT = conf("spark.rapids.sql.joinReordering.maxFactTables")
+    .doc("Maximum number of fact tables allowed in a reordered join. Refer to the tuning guide " +
+      "for more information")
     .integerConf
     .createWithDefault(2)
 
   val JOIN_REORDERING_FILTER_SELECTIVITY =
-      conf("spark.rapids.sql.cbo.joinReordering.filterSelectivity")
-    .internal()
+      conf("spark.rapids.sql.joinReordering.filterSelectivity")
     .doc("Default filter selectivity to use when estimating the size of " +
       "filtered dimension tables. Value should be greater than zero and less than or " +
       "equal to 1.0, with 1.0 meaning that all rows would be selected (no rows would be " +
-      "filtered out)")
+      "filtered out). Refer to the tuning guide for more information.")
     .doubleConf
     .createWithDefault(1.0)
 
   val JOIN_REORDERING_PRESERVE_ORDER =
-    conf("spark.rapids.sql.cbo.joinReordering.preserveOrder")
+    conf("spark.rapids.sql.joinReordering.preserveOrder")
       .internal()
-      .doc("Preserve user-order of unfiltered dimension tables")
+      .doc("Preserve user-order of unfiltered dimension tables. Refer to the tuning guide for " +
+        "more information.")
       .booleanConf
       .createWithDefault(true)
 
   val JOIN_REORDERING_PRESERVE_SHAPE =
-    conf("spark.rapids.sql.cbo.joinReordering.preserveShape")
+    conf("spark.rapids.sql.joinReordering.preserveShape")
       .internal()
-      .doc("Preserve shape (left-deep, right-deep) when rebuilding joins")
+      .doc("Preserve shape (left-deep, right-deep) when rebuilding joins. Refer to the tuning " +
+        "guide for more information")
       .booleanConf
       .createWithDefault(false)
 
