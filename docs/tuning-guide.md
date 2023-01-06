@@ -454,7 +454,6 @@ result in slow performance. If you do run into one of these situations please fi
 [issue](https://github.com/NVIDIA/spark-rapids/issues/new/choose) so we can properly prioritize
 our work to support more optimizations.
 
-
 ## Optimizer Rules
 
 ### Join Reordering
