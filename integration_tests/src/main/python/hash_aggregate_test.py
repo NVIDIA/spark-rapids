@@ -1722,7 +1722,7 @@ def test_no_fallback_when_ansi_enabled(data_gen):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', [ArrayGen(sub_gen, nullable=False) for sub_gen in all_basic_gens + decimal_gens])
-def test_first_array(data_gen):
+def test_hash_aggregate_grpby_array_agg_on_first(data_gen):
     gen = RepeatSeqGen(data_gen, length=10)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: two_col_df(spark, gen, IntegerGen())
