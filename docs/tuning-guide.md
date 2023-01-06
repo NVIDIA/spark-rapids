@@ -453,3 +453,37 @@ For all other cases large windows, including skewed values in partition by and o
 result in slow performance. If you do run into one of these situations please file an
 [issue](https://github.com/NVIDIA/spark-rapids/issues/new/choose) so we can properly prioritize
 our work to support more optimizations.
+
+
+## Optimizer Rules
+
+### Join Reordering
+
+Spark RAPIDS provides a logical plan optimizer rule that can rewrite joins between fact and dimension tables such
+that filtered dimension tables are joined to earlier. This rule is disabled by default and can be enabled by setting
+`spark.rapids.sql.joinReordering=true`.
+
+The rule is only applied to inner joins between tables. The rule is not applied to joins
+between any other type of operator, such as aggregates.
+
+The rule uses some simple heuristics to determine join order, based on the sizes of the underlying tables (as reported
+by `LogicalRelation.computeStats`), and a configurable filter-selectivity estimate.
+
+The rule determines which tables in the join are fact tables and which are dimension tables by calculating the ratio
+of the size of the table to the size of the largest table. If the ratio is lower than the value configured in
+`spark.rapids.sql.joinReordering.factDimRatio` then the table is categorized as a dimension table, otherwise it is 
+categorized as a fact table. The default ratio is 0.3 meaning that dimension tables can be up to 30% of the size of 
+fact tables.
+
+Once the tables have been categorized as fact and dimension tables, the optimizer will analyze the dimension tables
+joined to each fact table and re-order them based on the following logic:
+
+- Tables with filters are sorted by size, taking filter selectivity into account, specified by
+  `spark.rapids.sql.cbo.joinReordering.filterSelectivity`. The default value is 1.0, meaning that the filtered size
+  is the same as the underlying table size, but this can be set to a lower value.
+- Tables without filters are kept in the order specified in the SQL.
+- These two lists are combined into a single list by repeatedly taking the smaller of the head of the two lists.
+
+Finally, the joins is rebuilt. One join is created for each fact table and then those joins are joined together. If
+the resulting join is invalid (not all join keys could be applied) then the optimizer rule will revert back to the
+original join.
