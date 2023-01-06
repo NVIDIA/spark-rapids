@@ -479,7 +479,7 @@ Once the tables have been categorized as fact and dimension tables, the optimize
 joined to each fact table and re-order them based on the following logic:
 
 - Tables with filters are sorted by size, taking filter selectivity into account, specified by
-  `spark.rapids.sql.cbo.joinReordering.filterSelectivity`. The default value is 1.0, meaning that the filtered size
+  `spark.rapids.sql.joinReordering.filterSelectivity`. The default value is 1.0, meaning that the filtered size
   is the same as the underlying table size, but this can be set to a lower value.
 - Tables without filters are kept in the order specified in the SQL.
 - These two lists are combined into a single list by repeatedly taking the smaller of the head of the two lists.
