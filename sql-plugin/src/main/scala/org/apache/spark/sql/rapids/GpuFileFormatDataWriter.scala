@@ -1157,10 +1157,9 @@ private object WriterUtil {
           },
           maxRecordsPerFile
         )
-      assert(
-        numOfFilesNeeded <= MAX_FILE_COUNTER,
-        s"The number of output files $numOfFilesNeeded is beyond the max value $MAX_FILE_COUNTER"
-      )
+      if (numOfFilesNeeded > MAX_FILE_COUNTER) {
+        throw new RuntimeException(s"The number of output files $numOfFilesNeeded is beyond the max value $MAX_FILE_COUNTER")
+      }
     }
   }
 }

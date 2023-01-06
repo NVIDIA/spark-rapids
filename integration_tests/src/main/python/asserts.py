@@ -600,6 +600,16 @@ def assert_py4j_exception(func, error_message):
         func()
     assert error_message in str(py4jError.value.java_exception)
 
+def assert_gpu_error(df_fun, conf, error_message):
+    """
+    Assert GPU execution results in a specific Java exception thrown
+    :param df_fun: a function to be verified
+    :param conf: Spark config
+    :param error_message: a string such as the one produce by java.lang.Exception.toString
+    :return: Assertion failure if GPU has not generated error messages expected
+    """
+    assert_py4j_exception(lambda: with_gpu_session(df_fun, conf), error_message)
+
 def assert_gpu_and_cpu_error(df_fun, conf, error_message):
     """
     Assert that GPU and CPU execution results in a specific Java exception thrown
@@ -610,7 +620,7 @@ def assert_gpu_and_cpu_error(df_fun, conf, error_message):
              expected
     """
     assert_py4j_exception(lambda: with_cpu_session(df_fun, conf), error_message)
-    assert_py4j_exception(lambda: with_gpu_session(df_fun, conf), error_message)
+    assert_gpu_error(df_fun, conf, error_message)
 
 def with_cpu_sql(df_fun, table_name, sql, conf=None, debug=False):
     if conf is None:

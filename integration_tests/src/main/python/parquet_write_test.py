@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write, assert_py4j_exception
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_error, assert_gpu_fallback_write, assert_py4j_exception
 from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
@@ -544,6 +544,19 @@ def test_fallback_to_single_writer_from_concurrent_writer(spark_tmp_path, aqe_en
             {"spark.sql.adaptive.enabled": aqe_enabled},
         ))
 
+def test_write_exceed_max_file_counter_error(spark_tmp_path):
+    gen_list = [("c1", BooleanGen())]
+    data_path = spark_tmp_path + 'PARQUET_DATA'
+    assert_gpu_error(
+        # The MAX_FILE_COUNTER is set to 1000_000 in spark-rapids.
+        lambda spark: gen_df(spark, gen_list, length=1000_001)
+            .repartition(1)
+            .write
+            .option("maxRecordsPerFile", 1)
+            .parquet(data_path),
+        writer_confs,
+        ""
+    )
 
 @pytest.mark.skipif(True, reason="currently not support write emtpy data: https://github.com/NVIDIA/spark-rapids/issues/6453")
 def test_write_empty_data_concurrent_writer(spark_tmp_path):
