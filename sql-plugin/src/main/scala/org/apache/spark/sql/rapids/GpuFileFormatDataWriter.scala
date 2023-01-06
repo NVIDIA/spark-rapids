@@ -1158,7 +1158,8 @@ private object WriterUtil {
           maxRecordsPerFile
         )
       if (numOfFilesNeeded > MAX_FILE_COUNTER) {
-        throw new RuntimeException(s"The number of output files $numOfFilesNeeded is beyond the max value $MAX_FILE_COUNTER")
+        throw new RuntimeException( s"The number of output files $numOfFilesNeeded " +
+            s"is beyond the max value $MAX_FILE_COUNTER")
       }
     }
   }
