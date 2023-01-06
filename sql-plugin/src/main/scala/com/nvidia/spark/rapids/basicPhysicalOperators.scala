@@ -118,6 +118,14 @@ object GpuProjectExec extends Arm {
   }
 }
 
+object GpuProjectExecLike {
+  def unapply(plan: SparkPlan): Option[(Seq[Expression], SparkPlan)] = plan match {
+    case gpuProjectLike: GpuProjectExecLike =>
+      Some((gpuProjectLike.projectList, gpuProjectLike.child))
+    case _ => None
+  }
+}
+
 trait GpuProjectExecLike extends ShimUnaryExecNode with GpuExec {
 
   def projectList: Seq[Expression]

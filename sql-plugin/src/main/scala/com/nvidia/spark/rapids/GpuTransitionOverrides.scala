@@ -399,55 +399,22 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     fss.copy(requiredPartitionSchema = Some(prunedPartSchema))(fss.rapidsConf)
   }
 
-  private object GpuProjectWithFileScan {
-    def unapply(plan: SparkPlan): Option[(Seq[Expression], GpuFileSourceScanExec)] = plan match {
-      case p: GpuProjectExecLike if p.child.isInstanceOf[GpuFileSourceScanExec] =>
-        Some((p.projectList, p.child.asInstanceOf[GpuFileSourceScanExec]))
-      case _ => None
-    }
-  }
-
-  private object GpuProjectAndFilterWithFileScan {
-    def unapply(plan: SparkPlan):
-        Option[(Seq[Expression], GpuFilterExec, GpuFileSourceScanExec)] = plan match {
-      case p: GpuProjectExecLike =>
-        p.child match {
-          case f @ GpuFilterExec(condition, fss: GpuFileSourceScanExec, _) =>
-            Some((p.projectList :+ condition, f, fss))
-          case _ => None
-        }
-      case _ => None
-    }
-  }
-
-  private object GpuProjectAndCpuFilterWithFileScan {
-    def unapply(plan: SparkPlan): Option[(Seq[Expression], RowToColumnarExec, FilterExec,
-          ColumnarToRowExec, GpuFileSourceScanExec)] = plan match {
-      case p: GpuProjectExecLike =>
-        p.child match {
-          case rc @ RowToColumnarExec(
-              f @ FilterExec(condition, cr @ ColumnarToRowExec(fss: GpuFileSourceScanExec))) =>
-            Some((p.projectList :+ condition, rc, f, cr, fss))
-          case _ => None
-        }
-      case _ => None
-    }
-  }
-
   // This tries to prune the partition schema for GpuFileSourceScanExec by leveraging
   // the project list of the first GpuProjectExec after a GpuFileSourceScanExec.
   private def prunePartitionForFileSourceScan(plan: SparkPlan): SparkPlan = plan match {
-    case p @ GpuProjectWithFileScan(projectList, fss) =>
+    case p @ GpuProjectExecLike(projectList, fss: GpuFileSourceScanExec) =>
       // A ProjectExec next to FileSourceScanExec, for cases like
       //   df.groupBy("b").agg(max($"a")), or
       //   df.select("b")
       p.withNewChildren(Seq(withPrunedPartSchema(fss, projectList)))
 
-    case p @ GpuProjectAndFilterWithFileScan(refList, f, fss) =>
+    case p @ GpuProjectExecLike(
+        projectList,
+        f @ GpuFilterExec(condition, fss: GpuFileSourceScanExec, _)) =>
       // A FilterExec is between the ProjectExec and FileSourceScanExec, for cases like
       //   df.select("a").filter("a != 1")
       p.withNewChildren(Seq(
-        f.withNewChildren(Seq(withPrunedPartSchema(fss, refList)))))
+        f.withNewChildren(Seq(withPrunedPartSchema(fss, projectList :+ condition)))))
 
     // Partial GPU plan cases.
     // This rule executes before rules override the ColumnarToRowExec, so the exec is the
@@ -473,12 +440,15 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         f.withNewChildren(Seq(
           cr.withNewChildren(Seq(withPrunedPartSchema(fss, projectList :+ condition)))))))
 
-    case p @ GpuProjectAndCpuFilterWithFileScan(refList, rc, f, cr, fss) =>
+    case p @ GpuProjectExecLike(
+        projectList,
+        rc @ RowToColumnarExec(
+            f @ FilterExec(condition, cr @ ColumnarToRowExec(fss: GpuFileSourceScanExec)))) =>
       // gpu project + cpu filter + gpu file scan
       p.withNewChildren(Seq(
         rc.withNewChildren(Seq(
           f.withNewChildren(Seq(
-            cr.withNewChildren(Seq(withPrunedPartSchema(fss, refList)))))))))
+            cr.withNewChildren(Seq(withPrunedPartSchema(fss, projectList :+ condition)))))))))
 
     case _ =>
       plan.withNewChildren(plan.children.map(prunePartitionForFileSourceScan))
