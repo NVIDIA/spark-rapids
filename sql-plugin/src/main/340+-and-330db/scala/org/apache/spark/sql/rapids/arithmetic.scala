@@ -58,9 +58,19 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
 trait GpuAddSub extends CudfBinaryArithmetic {
   def origLeft: Expression
   def origRight: Expression
-  override def left: Expression = mayUpcastDecimal(origLeft)
-  override def right: Expression = mayUpcastDecimal(origRight)
+  override def left: Expression = Option(castLeftMemoized).getOrElse {
+    mayUpcastDecimal(isLeft = true)
+  }
+
+  override def right: Expression = Option(castRightMemoized).getOrElse {
+    mayUpcastDecimal(isLeft = false)
+  }
+
   override def dataType: DataType = dataTypeInternal(origLeft, origRight)
+
+  private var castLeftMemoized: Expression = _
+  private var castRightMemoized: Expression = _
+
   override def outputTypeOverride: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
   val failOnError: Boolean
   override def columnarEval(batch: ColumnarBatch): Any = {
@@ -85,11 +95,22 @@ trait GpuAddSub extends CudfBinaryArithmetic {
     }
   }
 
-  def mayUpcastDecimal(input: Expression): Expression = {
-    if (dataType.isInstanceOf[DecimalType] && origLeft.dataType != origRight.dataType) {
-      GpuCast(input, dataType = dataType)
-    } else {
-      input
+  def mayUpcastDecimal(isLeft: Boolean): Expression = {
+    val input = if (isLeft) origLeft  else origRight
+    input match {
+      case gpuExp: GpuExpression =>
+        if (dataType.isInstanceOf[DecimalType] && origLeft.dataType != origRight.dataType) {
+          val res = GpuCast(gpuExp, dataType = dataType)
+          if (isLeft) {
+            castLeftMemoized = res
+          } else {
+            castRightMemoized = res
+          }
+          res
+        } else {
+          input
+        }
+      case _ => input
     }
   }
 
