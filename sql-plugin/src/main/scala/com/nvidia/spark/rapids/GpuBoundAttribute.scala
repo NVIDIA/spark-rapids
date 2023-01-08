@@ -146,7 +146,7 @@ object GpuBindReferences extends Logging {
   }
 }
 
-case class  GpuBoundReference(ordinal: Int, dataType: DataType, nullable: Boolean)
+case class GpuBoundReference(ordinal: Int, dataType: DataType, nullable: Boolean)
     (val exprId: ExprId, val name: String)
   extends GpuLeafExpression with ShimExpression {
 
