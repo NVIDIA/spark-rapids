@@ -79,7 +79,7 @@ trait GpuAddSub extends CudfBinaryArithmetic {
 
               withResource(Seq(castLhs, castRhs)) { _ =>
                 GpuColumnVector.from(super.doColumnar(castLhs, castRhs), resultType)
-              }               
+              }
             }
           } else {
             // call the kernel to add 128-bit numbers
