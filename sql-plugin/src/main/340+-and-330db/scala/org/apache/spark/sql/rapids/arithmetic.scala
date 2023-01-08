@@ -56,21 +56,6 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
 }
 
 trait GpuAddSub extends CudfBinaryArithmetic {
-  def origLeft: Expression
-  def origRight: Expression
-  override def left: Expression = Option(castLeftMemoized).getOrElse {
-    mayUpcastDecimal(isLeft = true)
-  }
-
-  override def right: Expression = Option(castRightMemoized).getOrElse {
-    mayUpcastDecimal(isLeft = false)
-  }
-
-  override def dataType: DataType = dataTypeInternal(origLeft, origRight)
-
-  private var castLeftMemoized: Expression = _
-  private var castRightMemoized: Expression = _
-
   override def outputTypeOverride: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
   val failOnError: Boolean
   override def columnarEval(batch: ColumnarBatch): Any = {
@@ -79,10 +64,22 @@ trait GpuAddSub extends CudfBinaryArithmetic {
         case (DecimalType.Fixed(p1, s1), DecimalType.Fixed(p2, s2)) =>
           val resultType = resultDecimalType(p1, s1, p2, s2)
           if (resultType.precision < 38) {
-            if (origLeft.dataType == origRight.dataType) {
+            if (left.dataType == right.dataType) {
               super.columnarEval(batch)
             } else {
-              super.columnarEval(batch)
+              // eval operands using the output precision
+              val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
+                GpuCast.doCast(lhs.getBase(), left.dataType, dataType, false, false, false)
+              }
+              val castRhs = closeOnExcept(castLhs){ _ =>
+                withResource(GpuExpressionsUtils.columnarEvalToColumn(right, batch)) { rhs =>
+                  GpuCast.doCast(rhs.getBase(), right.dataType, dataType, false, false, false)
+                }
+              }
+
+              withResource(Seq(castLhs, castRhs)) { _ =>
+                GpuColumnVector.from(super.doColumnar(castLhs, castRhs), dataType)
+              }               
             }
           } else {
             // call the kernel to add 128-bit numbers
@@ -92,25 +89,6 @@ trait GpuAddSub extends CudfBinaryArithmetic {
       }
     } else {
       super.columnarEval(batch)
-    }
-  }
-
-  def mayUpcastDecimal(isLeft: Boolean): Expression = {
-    val input = if (isLeft) origLeft  else origRight
-    input match {
-      case gpuExp: GpuExpression =>
-        if (dataType.isInstanceOf[DecimalType] && origLeft.dataType != origRight.dataType) {
-          val res = GpuCast(gpuExp, dataType = dataType)
-          if (isLeft) {
-            castLeftMemoized = res
-          } else {
-            castRightMemoized = res
-          }
-          res
-        } else {
-          input
-        }
-      case _ => input
     }
   }
 
@@ -171,8 +149,8 @@ trait GpuAddSub extends CudfBinaryArithmetic {
 }
 
 case class GpuAdd(
-    origLeft: Expression,
-    origRight: Expression,
+    left: Expression,
+    right: Expression,
     override val failOnError: Boolean)
     extends GpuAddBase(failOnError) with GpuAddSub {
 
@@ -185,8 +163,8 @@ case class GpuAdd(
 }
 
 case class GpuSubtract(
-    origLeft: Expression,
-    origRight: Expression,
+    left: Expression,
+    right: Expression,
     override val failOnError: Boolean)
     extends GpuSubtractBase(failOnError) with GpuAddSub {
   def do128BitOperation(
