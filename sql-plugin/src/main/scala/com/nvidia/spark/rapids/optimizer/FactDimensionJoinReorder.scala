@@ -29,7 +29,7 @@ import org.apache.spark.sql.catalyst.plans.Inner
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.datasources.LogicalRelation
-import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, MapType, StructField, StructType}
+import org.apache.spark.sql.types.{DataType, StructType}
 
 /**
  * Join reordering rule based on the paper "Improving Join Reordering for Large Scale Distributed
@@ -430,10 +430,15 @@ object Relation extends Logging {
     plan match {
       case p: LogicalRelation =>
         Some(inferRowCount(p.schema, p.computeStats()))
-      case other if other.children.length == 1 =>
-        getStats(other.children.head)
       case _ =>
-        None
+        if (plan.children.length == 1) {
+          // recurse down until we find the LogicalRelation
+          getStats(plan.children.head)
+        } else {
+          // we do not attempt to estimate stats for operators with more
+          // than one child (such as join or union)
+          None
+        }
     }
   }
 
