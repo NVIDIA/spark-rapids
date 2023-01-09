@@ -59,26 +59,30 @@ trait GpuAddSub extends CudfBinaryArithmetic {
   override def outputTypeOverride: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
   val failOnError: Boolean
   override def columnarEval(batch: ColumnarBatch): Any = {
-    if (dataType.isInstanceOf[DecimalType]) {
-      (left.dataType, right.dataType) match {
+    val outputType = dataType
+    val leftInputType = left.dataType
+    val rightInputType = right.dataType
+    
+    if (outputType.isInstanceOf[DecimalType]) {
+      (leftInputType, rightInputType) match {
         case (DecimalType.Fixed(p1, s1), DecimalType.Fixed(p2, s2)) =>
           val resultType = dataType.asInstanceOf[DecimalType]
           if (resultType.precision < 38) {
-            if (left.dataType == right.dataType) {
+            if (leftInputType == rightInputType) {
               super.columnarEval(batch)
             } else {
               // eval operands using the output precision
               val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
-                GpuCast.doCast(lhs.getBase(), left.dataType, dataType, false, false, false)
+                GpuCast.doCast(lhs.getBase(), leftInputType, resultType, false, false, false)
               }
               val castRhs = closeOnExcept(castLhs){ _ =>
                 withResource(GpuExpressionsUtils.columnarEvalToColumn(right, batch)) { rhs =>
-                  GpuCast.doCast(rhs.getBase(), right.dataType, dataType, false, false, false)
+                  GpuCast.doCast(rhs.getBase(), rightInputType, resultType, false, false, false)
                 }
               }
 
               withResource(Seq(castLhs, castRhs)) { _ =>
-                GpuColumnVector.from(super.doColumnar(castLhs, castRhs), dataType)
+                GpuColumnVector.from(super.doColumnar(castLhs, castRhs), resultType)
               }
             }
           } else {
