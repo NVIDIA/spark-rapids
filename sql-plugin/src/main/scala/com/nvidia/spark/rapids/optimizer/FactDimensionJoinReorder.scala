@@ -45,6 +45,9 @@ class FactDimensionJoinReorder
 
   def apply(plan: LogicalPlan): LogicalPlan = {
     val conf = new RapidsConf(plan.conf)
+    // note that this optimization is currently only enabled when the plugin is also enabled
+    // but we could choose to make this optimization available when running on CPU by removing
+    // the `conf.isSqlEnabled` check here
     if (!(conf.isSqlEnabled && conf.joinReorderingEnabled)) {
       return plan
     }
@@ -115,6 +118,10 @@ class FactDimensionJoinReorder
       return plan
     }
     val relations = maybeRelations.flatten
+    if (relations.isEmpty) {
+      logDebug("No qualifying relations found")
+      return plan
+    }
 
     // split into facts and dimensions
     val (facts, dims) = findFactDimRels(relations, conf.joinReorderingRatio)
@@ -347,6 +354,9 @@ class FactDimensionJoinReorder
     }
 
     val (plans, conds) = _extractInnerJoins(plan)
+    if (!plans.forall(isQualifyingPlan)) {
+      return (LeftDeep, Seq.empty, ExpressionSet())
+    }
 
     val treeShape = if (containsLeftJoin && containsRightJoin) {
       Bushy
@@ -360,6 +370,19 @@ class FactDimensionJoinReorder
     }
 
     (treeShape, plans, conds)
+  }
+
+  /**
+   * Determine if plan is supported. We currently only reorder joins with inputs consisting of
+   * tables, filters, and projections but we could experiment in the future with allowing
+   * other operators here such as aggregates.
+   */
+  private def isQualifyingPlan(plan: LogicalPlan): Boolean = {
+    val isQualifiying = plan match {
+      case _: LogicalRelation | _: Filter | _: Project => true
+      case _ => false
+    }
+    isQualifiying && plan.children.forall(isQualifyingPlan)
   }
 
   /** Determine if a plan contains a join operator */
