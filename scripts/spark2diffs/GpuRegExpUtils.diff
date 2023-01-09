@@ -1,8 +1,0 @@
-9,10c9,10
-<    * \group_index and $group_index
-<    * This method transforms above two patterns into cuDF pattern ${group_index}, except they are
----
->    * \group_index and \$group_index
->    * This method transforms above two patterns into cuDF pattern \${group_index}, except they are
-123a124
-> 
