@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2020-2022, NVIDIA CORPORATION.
+  Copyright (c) 2020-2023, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -71,24 +71,6 @@
     </developers>
     <profiles>
         <profile>
-            <id>release24X</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>24X</value>
-                </property>
-            </activation>
-            <properties>
-                <scala.binary.version>2.11</scala.binary.version>
-                <scala.version>2.11.12</scala.version>
-                <spark.version>${spark248.version}</spark.version>
-                <spark.test.version>${spark248.version}</spark.test.version>
-            </properties>
-            <modules>
-                <module>spark2-sql-plugin</module>
-            </modules>
-        </profile>
-        <profile>
             <id>release311</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
@@ -114,7 +96,6 @@
                 <module>tests</module>
                 <module>udf-compiler</module>
                 <module>api_validation</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -184,7 +165,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
             </modules>
@@ -213,7 +193,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
             </modules>
@@ -242,7 +221,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
             </modules>
@@ -271,7 +249,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -299,7 +276,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -333,7 +309,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -361,7 +336,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -389,7 +363,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -459,7 +432,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -488,7 +460,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -517,7 +488,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -546,7 +516,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -587,7 +556,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -718,7 +686,6 @@
         <!--
          If you update a dependency version so it is no longer a SNAPSHOT
          please update the snapshot-shims profile as well so it is accurate -->
-        <spark248.version>2.4.8</spark248.version>
         <spark311.version>3.1.1</spark311.version>
         <spark312.version>3.1.2</spark312.version>
         <spark312db.version>3.1.2-databricks</spark312db.version>
@@ -1132,7 +1099,6 @@
                         default, but there are some projects that are conditionally included.  -->
                         <exclude>**/target/**/*</exclude>
                         <exclude>**/cufile.log</exclude>
-                        <exclude>scripts/spark2diffs/*.diff</exclude>
                     </excludes>
                 </configuration>
             </plugin>

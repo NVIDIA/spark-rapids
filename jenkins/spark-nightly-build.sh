@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,7 +25,6 @@ export M2DIR=${M2DIR:-"$WORKSPACE/.m2"}
 ## MVN_OPT : maven options environment, e.g. MVN_OPT='-Dspark-rapids-jni.version=xxx' to specify spark-rapids-jni dependency's version.
 MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3 ${MVN_OPT}"
 
-TOOL_PL=${TOOL_PL:-"tools"}
 DIST_PL="dist"
 function mvnEval {
     $MVN help:evaluate -q -pl $DIST_PL $MVN_URM_MIRROR -Prelease311 -Dmaven.repo.local=$M2DIR -Dcuda.version=$CUDA_CLASSIFIER -DforceStdout -Dexpression=$1
@@ -78,14 +77,6 @@ function distWithReducedPom {
         $mvnExtaFlags
 }
 
-# build the Spark 2.x explain jar
-$MVN -B $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dbuildver=24X clean install -DskipTests
-[[ $SKIP_DEPLOY != 'true' ]] && \
-    $MVN -B deploy $MVN_URM_MIRROR \
-        -Dmaven.repo.local=$M2DIR \
-        -DskipTests \
-        -Dbuildver=24X
-
 # build, install, and deploy all the versions we support, but skip deploy of individual dist module since we
 # only want the combined jar to be pushed.
 # Note this does not run any integration tests
@@ -94,20 +85,20 @@ $MVN -B $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dbuildver=24X clean install -
 # option to skip unit tests. Used in our CI to separate test runs in parallel stages
 SKIP_TESTS=${SKIP_TESTS:-"false"}
 for buildver in "${SPARK_SHIM_VERSIONS[@]:1}"; do
-    $MVN -U -B clean install -pl '!tools' $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
+    $MVN -U -B clean install $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
         -Dcuda.version=$CUDA_CLASSIFIER \
         -DskipTests=$SKIP_TESTS \
         -Dbuildver="${buildver}"
     distWithReducedPom "install"
     [[ $SKIP_DEPLOY != 'true' ]] && \
-        $MVN -B deploy -pl '!tools,!dist' $MVN_URM_MIRROR \
+        $MVN -B deploy -pl '!dist' $MVN_URM_MIRROR \
             -Dmaven.repo.local=$M2DIR \
             -Dcuda.version=$CUDA_CLASSIFIER \
             -DskipTests \
             -Dbuildver="${buildver}"
 done
 
-$MVN -B clean install -pl '!tools' \
+$MVN -B clean install \
     $DIST_PROFILE_OPT \
     -Dbuildver=$SPARK_BASE_SHIM_VERSION \
     $MVN_URM_MIRROR \
@@ -120,13 +111,12 @@ distWithReducedPom "install"
 if [[ $SKIP_DEPLOY != 'true' ]]; then
     distWithReducedPom "deploy"
 
-    # this deploy includes 'tools' that is unconditionally built with Spark 3.1.1
+    # this deploys submodules except dist that is unconditionally built with Spark 3.1.1
     $MVN -B deploy -pl '!dist' \
         -Dbuildver=$SPARK_BASE_SHIM_VERSION \
         -DskipTests=$SKIP_TESTS \
         $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR \
-        -Dcuda.version=$CUDA_CLASSIFIER \
-        -DpomFile=${TOOL_PL}/dependency-reduced-pom.xml
+        -Dcuda.version=$CUDA_CLASSIFIER
 fi
 
 # Parse Spark files from local mvn repo
