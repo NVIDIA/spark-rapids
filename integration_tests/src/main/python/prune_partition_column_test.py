@@ -37,12 +37,8 @@ _enable_read_confs = {
 }
 
 
-@allow_non_gpu('ProjectExec')
-@pytest.mark.parametrize('prune_part_enabled', [False, True])
-@pytest.mark.parametrize('file_format', file_formats)
-@pytest.mark.parametrize('gpu_project_enabled', [True, False])
-def test_prune_partition_column_when_project(spark_tmp_path, prune_part_enabled,
-                                             file_format, gpu_project_enabled):
+def do_prune_partition_column_when_project(spark_tmp_path, prune_part_enabled, file_format,
+                                           gpu_project_enabled=True):
     data_path = spark_tmp_path + '/PARTED_DATA/'
     with_cpu_session(
         lambda spark: three_col_df(spark, int_gen, part1_gen, part2_gen).write \
@@ -58,14 +54,24 @@ def test_prune_partition_column_when_project(spark_tmp_path, prune_part_enabled,
         conf=all_confs)
 
 
-@allow_non_gpu('ProjectExec', 'FilterExec')
 @pytest.mark.parametrize('prune_part_enabled', [False, True])
 @pytest.mark.parametrize('file_format', file_formats)
-@pytest.mark.parametrize('filter_col', ['a', 'b', 'c'])
-@pytest.mark.parametrize('gpu_project_enabled', [True, False])
-@pytest.mark.parametrize('gpu_filter_enabled', [True, False])
-def test_prune_partition_column_when_project_filter(spark_tmp_path, prune_part_enabled, filter_col,
-                                                    file_format, gpu_project_enabled, gpu_filter_enabled):
+def test_prune_partition_column_when_project(spark_tmp_path, prune_part_enabled, file_format):
+    do_prune_partition_column_when_project(spark_tmp_path, prune_part_enabled, file_format)
+
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('prune_part_enabled', [False, True])
+@pytest.mark.parametrize('file_format', file_formats)
+def test_prune_partition_column_when_fallback_project(spark_tmp_path, prune_part_enabled,
+                                                      file_format):
+    do_prune_partition_column_when_project(spark_tmp_path, prune_part_enabled, file_format,
+                                           gpu_project_enabled=False)
+
+
+def do_prune_partition_column_when_filter_project(spark_tmp_path, prune_part_enabled, file_format,
+                                                  filter_col, gpu_project_enabled=True,
+                                                  gpu_filter_enabled=True):
     data_path = spark_tmp_path + '/PARTED_DATA/'
     with_cpu_session(
         lambda spark: three_col_df(spark, int_gen, part1_gen, part2_gen).write \
@@ -81,3 +87,43 @@ def test_prune_partition_column_when_project_filter(spark_tmp_path, prune_part_e
             .filter('{} > 0'.format(filter_col)) \
             .select('a', 'c'),
         conf=all_confs)
+
+
+@pytest.mark.parametrize('prune_part_enabled', [False, True])
+@pytest.mark.parametrize('file_format', file_formats)
+@pytest.mark.parametrize('filter_col', ['a', 'b', 'c'])
+def test_prune_partition_column_when_filter_project(spark_tmp_path, prune_part_enabled, filter_col,
+                                                    file_format):
+    do_prune_partition_column_when_filter_project(spark_tmp_path, prune_part_enabled, file_format,
+                                                  filter_col)
+
+
+@allow_non_gpu('ProjectExec', 'FilterExec')
+@pytest.mark.parametrize('prune_part_enabled', [False, True])
+@pytest.mark.parametrize('file_format', file_formats)
+@pytest.mark.parametrize('filter_col', ['a', 'b', 'c'])
+def test_prune_partition_column_when_fallback_filter_and_project(spark_tmp_path, prune_part_enabled,
+                                                                 filter_col, file_format):
+    do_prune_partition_column_when_filter_project(spark_tmp_path, prune_part_enabled, file_format,
+                                                  filter_col, gpu_project_enabled=False,
+                                                  gpu_filter_enabled=False)
+
+
+@allow_non_gpu('FilterExec')
+@pytest.mark.parametrize('prune_part_enabled', [False, True])
+@pytest.mark.parametrize('file_format', file_formats)
+@pytest.mark.parametrize('filter_col', ['a', 'b', 'c'])
+def test_prune_partition_column_when_fallback_filter_project(spark_tmp_path, prune_part_enabled,
+                                                             filter_col, file_format):
+    do_prune_partition_column_when_filter_project(spark_tmp_path, prune_part_enabled, file_format,
+                                                  filter_col, gpu_filter_enabled=False)
+
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('prune_part_enabled', [False, True])
+@pytest.mark.parametrize('file_format', file_formats)
+@pytest.mark.parametrize('filter_col', ['a', 'b', 'c'])
+def test_prune_partition_column_when_filter_fallback_project(spark_tmp_path, prune_part_enabled,
+                                                             filter_col, file_format):
+    do_prune_partition_column_when_filter_project(spark_tmp_path, prune_part_enabled, file_format,
+                                                  filter_col, gpu_project_enabled=False)
