@@ -62,11 +62,11 @@ trait GpuAddSub extends CudfBinaryArithmetic {
     val outputType = dataType
     val leftInputType = left.dataType
     val rightInputType = right.dataType
-    
+
     if (outputType.isInstanceOf[DecimalType]) {
       (leftInputType, rightInputType) match {
         case (DecimalType.Fixed(p1, s1), DecimalType.Fixed(p2, s2)) =>
-          val resultType = dataType.asInstanceOf[DecimalType]
+          val resultType = outputType.asInstanceOf[DecimalType]
           if (resultType.precision < 38) {
             if (leftInputType == rightInputType) {
               super.columnarEval(batch)
