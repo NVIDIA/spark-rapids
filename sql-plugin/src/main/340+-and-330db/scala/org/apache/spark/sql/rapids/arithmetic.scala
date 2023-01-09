@@ -62,23 +62,23 @@ trait GpuAddSub extends CudfBinaryArithmetic {
     if (dataType.isInstanceOf[DecimalType]) {
       (left.dataType, right.dataType) match {
         case (DecimalType.Fixed(p1, s1), DecimalType.Fixed(p2, s2)) =>
-          val resultType = resultDecimalType(p1, s1, p2, s2)
+          val resultType = dataType.asInstanceOf[DecimalType]
           if (resultType.precision < 38) {
             if (left.dataType == right.dataType) {
               super.columnarEval(batch)
             } else {
               // eval operands using the output precision
               val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
-                GpuCast.doCast(lhs.getBase(), left.dataType, resultType, false, false, false)
+                GpuCast.doCast(lhs.getBase(), left.dataType, dataType, false, false, false)
               }
               val castRhs = closeOnExcept(castLhs){ _ =>
                 withResource(GpuExpressionsUtils.columnarEvalToColumn(right, batch)) { rhs =>
-                  GpuCast.doCast(rhs.getBase(), right.dataType, resultType, false, false, false)
+                  GpuCast.doCast(rhs.getBase(), right.dataType, dataType, false, false, false)
                 }
               }
 
               withResource(Seq(castLhs, castRhs)) { _ =>
-                GpuColumnVector.from(super.doColumnar(castLhs, castRhs), resultType)
+                GpuColumnVector.from(super.doColumnar(castLhs, castRhs), dataType)
               }
             }
           } else {
