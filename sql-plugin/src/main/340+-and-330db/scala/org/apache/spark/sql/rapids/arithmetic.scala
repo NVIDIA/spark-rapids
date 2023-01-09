@@ -72,7 +72,9 @@ trait GpuAddSub extends CudfBinaryArithmetic {
               super.columnarEval(batch)
             } else {
               // eval operands using the output precision
-              val castLhs = withResource(GpuExpressionsUtils.columnarEvalToColumn(left, batch)) { lhs =>
+              val castLhs = withResource(
+                GpuExpressionsUtils.columnarEvalToColumn(left, batch)
+              ) { lhs =>
                 GpuCast.doCast(lhs.getBase(), leftInputType, resultType, false, false, false)
               }
               val castRhs = closeOnExcept(castLhs){ _ =>
