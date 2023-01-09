@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -151,6 +151,7 @@ class FactDimensionJoinReorder
       val shape = if (conf.joinReorderingPreserveShape) {
         treeShape
       } else {
+        // we default to LeftDeep because that is the natural order in Spark SQL
         LeftDeep
       }
 
