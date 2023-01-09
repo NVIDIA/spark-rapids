@@ -29,7 +29,7 @@ import org.apache.spark.sql.catalyst.plans.Inner
 import org.apache.spark.sql.catalyst.plans.logical._
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.datasources.LogicalRelation
-import org.apache.spark.sql.types.{DataTypes, StructType}
+import org.apache.spark.sql.types.{ArrayType, DataType, DataTypes, MapType, StructField, StructType}
 
 /**
  * Join reordering rule based on the paper "Improving Join Reordering for Large Scale Distributed
@@ -438,23 +438,12 @@ object Relation extends Logging {
   }
 
   private def inferRowCount(schema: StructType, stats: Statistics): Statistics = {
+    def estimateFieldSize(dataType: DataType): Int = dataType.defaultSize
+
     if (stats.rowCount.isDefined) {
       stats
     } else {
-      var size = 0
-      for (field <- schema.fields) {
-        // estimate the size of one row based on schema
-        val fieldSize = field.dataType match {
-          case DataTypes.ByteType | DataTypes.BooleanType => 1
-          case DataTypes.ShortType => 2
-          case DataTypes.IntegerType | DataTypes.FloatType => 4
-          case DataTypes.LongType | DataTypes.DoubleType => 8
-          case DataTypes.StringType => 50
-          case DataTypes.DateType | DataTypes.TimestampType => 8
-          case _ => 20
-        }
-        size += fieldSize
-      }
+      val size = schema.fields.map(_.dataType.defaultSize).sum
       val estimatedRowCount = Some(stats.sizeInBytes / size)
       new Statistics(stats.sizeInBytes, estimatedRowCount)
     }
