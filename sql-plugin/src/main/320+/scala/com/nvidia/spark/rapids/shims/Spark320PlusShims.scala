@@ -40,6 +40,7 @@ import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
+import org.apache.spark.sql.hive.rapids.GpuHiveOverrides
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution._
@@ -270,6 +271,8 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
       "CSV parsing",
       (a, conf, p, r) => new RapidsCsvScanMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[Scan]), r)).toMap
+
+  override def getHiveProvider: HiveProvider = GpuHiveOverrides.hiveProvider
 
   /** dropped by SPARK-34234 */
   override def attachTreeIfSupported[TreeType <: TreeNode[_], A](
