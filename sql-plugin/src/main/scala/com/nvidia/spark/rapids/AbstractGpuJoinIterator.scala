@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -73,7 +73,7 @@ abstract class AbstractGpuJoinIterator(
    */
   protected def setupNextGatherer(): Option[JoinGatherer]
 
-  protected def hasFinalBatch(): Option[ColumnarBatch] = None
+  protected def getFinalBatch(): Option[ColumnarBatch] = None
 
   override def hasNext: Boolean = {
     if (closed) {
@@ -102,7 +102,7 @@ abstract class AbstractGpuJoinIterator(
       }
     }
     if (nextCb.isEmpty) {
-      nextCb = hasFinalBatch()
+      nextCb = getFinalBatch()
       if (nextCb.isEmpty) {
         // Nothing is left to return so close ASAP.
         opTime.ns(close())

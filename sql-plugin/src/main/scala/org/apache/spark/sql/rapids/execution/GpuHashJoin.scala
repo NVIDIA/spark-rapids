@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids.execution
 import ai.rapids.cudf.{ColumnView, DType, GatherMap, GroupByAggregation, NullEquality, NullPolicy, NvtxColor, OutOfBoundsPolicy, ReductionAggregation, Scalar, Table}
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.{Cross, ExistenceJoin, FullOuter, Inner, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
@@ -607,7 +608,7 @@ class HashFullJoinIterator(
     }
   }
 
-  override def hasFinalBatch(): Option[ColumnarBatch] = {
+  override def getFinalBatch(): Option[ColumnarBatch] = {
     rightTracker match {
       case None => None
       case Some(tracker) => {
@@ -625,7 +626,7 @@ class HashFullJoinIterator(
         val ret = withResource(filteredBatch) { rightBatch =>
           val numFilterRows = rightBatch.numRows()
           if (numFilterRows > 0) {
-            val leftColumns = streamAttributes.map { attr =>
+            val leftColumns = streamAttributes.safeMap { attr =>
               GpuColumnVector.fromNull(numFilterRows, attr.dataType)
             }
             withResource(new ColumnarBatch(leftColumns.toArray, numFilterRows)) { leftBatch =>
@@ -651,14 +652,8 @@ class HashFullJoinIterator(
 
   // Create a boolean column to indicate which gather map rows are valid.
   private def validIndexMask(gatherView: ColumnView): ColumnView = {
-    withResource(Scalar.fromInt(-numRightRows)) { minValue =>
-      withResource(Scalar.fromInt(numRightRows)) { maxValue =>
-        withResource(gatherView.greaterOrEqualTo(minValue)) { greaterEqualMin =>
-          withResource(gatherView.lessThan(maxValue)) { lessMax =>
-            lessMax.and(greaterEqualMin)
-          }
-        }
-      }
+    withResource(Scalar.fromInt(Int.MinValue)) { invalidIndex =>
+      gatherView.notEqualTo(invalidIndex)
     }
   }
 
@@ -666,14 +661,6 @@ class HashFullJoinIterator(
    * Update the tracking mask.
    */
   private def updateTrackingMask(rightGatherMap: LazySpillableGatherMap): Unit = {
-    // Get the current tracking table, or all true table to start with
-    val rightTrackingTable = rightTracker.map { spillableBatch =>
-      withResource(spillableBatch.releaseBatch()) { trackingBatch =>
-        GpuColumnVector.from(trackingBatch)
-      }
-    }.getOrElse {
-      trueColumnTable(numRightRows)
-    }
     // Filter the right gather map to remove invalid indices
     val numGatherMapRows = rightGatherMap.getRowCount.toInt
     val filteredGatherMap = {
@@ -687,11 +674,19 @@ class HashFullJoinIterator(
         }
       }
     }
+    // Get the current tracking table, or all true table to start with
+    val rightTrackingTable = rightTracker.map { spillableBatch =>
+      withResource(spillableBatch.releaseBatch()) { trackingBatch =>
+        GpuColumnVector.from(trackingBatch)
+      }
+    }.getOrElse {
+      trueColumnTable(numRightRows)
+    }
     // Update all hits in the gather map with false (no longer needed) in the tracking table
     val updatedTrackingTable = {
-      withResource(rightTrackingTable) { trackingTable =>
-        withResource(Scalar.fromBool(false)) { falseScalar =>
-          withResource(filteredGatherMap) { filteredMap =>
+      withResource(filteredGatherMap) { filteredMap =>
+        withResource(rightTrackingTable) { trackingTable =>
+          withResource(Scalar.fromBool(false)) { falseScalar =>
             Table.scatter(Array(falseScalar), filteredMap.getColumn(0), trackingTable)
           }
         }
