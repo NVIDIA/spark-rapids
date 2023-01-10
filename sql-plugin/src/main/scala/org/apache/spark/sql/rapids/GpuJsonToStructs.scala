@@ -19,6 +19,7 @@ package org.apache.spark.sql.rapids
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
+import com.nvidia.spark.rapids.jni.MapUtils
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant, TimeZoneAwareExpression}
 import org.apache.spark.sql.types.{AbstractDataType, DataType, StringType}
@@ -94,7 +95,8 @@ case class GpuJsonToStructs(
     }
   }
 
-  override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
+//  override protected def
+  def doColumnarBakup(input: GpuColumnVector): cudf.ColumnVector = {
     // We cannot handle all corner cases with this right now. The parser just isn't
     // good enough, but we will try to handle a few common ones.
     val numRows = input.getRowCount.toInt
@@ -148,6 +150,10 @@ case class GpuJsonToStructs(
         }
       }
     }
+  }
+
+  override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
+    MapUtils.extractRawMapFromJsonString(input.getBase)
   }
 
   override def withTimeZone(timeZoneId: String): TimeZoneAwareExpression =
