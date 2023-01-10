@@ -68,6 +68,17 @@ trait GpuAddSub extends CudfBinaryArithmetic {
         case (DecimalType.Fixed(p1, s1), DecimalType.Fixed(p2, s2)) =>
           val resultType = outputType.asInstanceOf[DecimalType]
           if (resultType.precision < 38) {
+            // SPARK-39316 https://github.com/apache/spark/commit/301a139638
+            // moves the Cast of the operands to the result type
+            // from the arithmetic expression plan to the datatype-specific operation
+            // implementation. libcudf requires identical DType for both operands.
+            // We ensure this in the Plugin by handling these cases:
+            // - if both Spark input types are identical, no casting is necessary,
+            //   since they ultimately map to the same DType
+            // - if precision >= 38 we execute a DECIMAL128 binop casting both operands
+            //   to DECIMAL128
+            // - if precision < 38 cast both operands to the Spark output type
+            //
             if (leftInputType == rightInputType) {
               super.columnarEval(batch)
             } else {
