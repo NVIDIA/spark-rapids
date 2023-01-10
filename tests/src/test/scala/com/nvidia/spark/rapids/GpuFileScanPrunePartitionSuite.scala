@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ class GpuFileScanPrunePartitionSuite extends SparkQueryCompareTestSuite with Arm
 
   private def testGpuFileScanOutput(
       func: DataFrame => DataFrame,
+      conf: SparkConf,
       exPartitionCols: String*): Unit = {
     withTempPath { file =>
       // Generate partitioned files.
@@ -34,10 +35,9 @@ class GpuFileScanPrunePartitionSuite extends SparkQueryCompareTestSuite with Arm
           .toDF("a", "b", "c").write.partitionBy("b", "c").parquet(file.getCanonicalPath)
       })
 
-      val confs = new SparkConf()
-        .set("spark.sql.sources.useV1SourceList", "parquet")
+      val allConf = conf.clone().set("spark.sql.sources.useV1SourceList", "parquet")
       // Run the input function
-      val df = withGpuSparkSession(spark => func(spark.read.parquet(file.toString)), confs)
+      val df = withGpuSparkSession(spark => func(spark.read.parquet(file.toString)), allConf)
 
       // check the output of GpuFileSourceScan
       val plans = df.queryExecution.executedPlan.collect {
@@ -54,13 +54,36 @@ class GpuFileScanPrunePartitionSuite extends SparkQueryCompareTestSuite with Arm
   }
 
   test("Prune Partition Columns when GpuProject(GpuFileSourceScan)") {
-    testGpuFileScanOutput(_.groupBy("b").max("a"), "c")
-    testGpuFileScanOutput(_.select("a"), "b", "c")
-    testGpuFileScanOutput(_.select("a", "c"), "b")
+    Seq(true, false).foreach { enabled =>
+      val conf = new SparkConf()
+        .set("spark.rapids.sql.exec.ProjectExec", enabled.toString)
+      if (!enabled) {
+        conf.set(RapidsConf.TEST_ALLOWED_NONGPU.key, "ProjectExec")
+      }
+      testGpuFileScanOutput(_.groupBy("b").max("a"), conf,"c")
+      testGpuFileScanOutput(_.select("a"), conf, "b", "c")
+      testGpuFileScanOutput(_.select("a", "c"), conf, "b")
+    }
   }
 
   test("Prune Partition Columns when GpuProject(GpuFilter(GpuFileSourceScan))") {
-    testGpuFileScanOutput(_.select("a", "c").filter("a != 1"), "b")
-    testGpuFileScanOutput(_.select("a").filter("a != 1"), "b", "c")
+    Seq((true, true), (true, false), (false, true), (false, false))
+      .foreach { case (gpuProjectEnabled, gpuFilterEnabled) =>
+        val conf = new SparkConf()
+          .set("spark.rapids.sql.exec.ProjectExec", gpuProjectEnabled.toString)
+          .set("spark.rapids.sql.exec.FilterExec", gpuFilterEnabled.toString)
+        if (!gpuProjectEnabled || !gpuFilterEnabled) {
+          val nonGpuExecStr = if (!gpuProjectEnabled && gpuFilterEnabled) {
+            "ProjectExec"
+          } else if (gpuProjectEnabled && !gpuFilterEnabled) {
+            "FilterExec"
+          } else {
+            "ProjectExec,FilterExec"
+          }
+          conf.set(RapidsConf.TEST_ALLOWED_NONGPU.key, nonGpuExecStr)
+        }
+        testGpuFileScanOutput(_.select("a", "c").filter("a != 1"), conf, "b")
+        testGpuFileScanOutput(_.select("a").filter("a != 1"), conf, "b", "c")
+    }
   }
 }
