@@ -22,6 +22,7 @@ from pyspark.sql.types import *
 def mk_json_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
 
+@allow_non_gpu('GenerateExec', 'JsonTuple')
 @pytest.mark.parametrize('json_str_pattern', [r'\{"store": \{"fruit": \[\{"weight":\d,"type":"[a-z]{1,9}"\}\], ' \
                    r'"bicycle":\{"price":\d\d\.\d\d,"color":"[a-z]{0,4}"\}\},' \
                    r'"email":"[a-z]{1,5}\@[a-z]{3,10}\.com","owner":"[a-z]{3,8}"\}',
@@ -30,9 +31,13 @@ def test_json_tuple(json_str_pattern):
     gen = mk_json_str_gen(json_str_pattern)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen, length=10).selectExpr(
-            'json_tuple(a, "a" "email", "owner")'),
+            'json_tuple(a, "a", "email", "owner", "b", "b$", "b$$")'),
         conf={'spark.sql.parser.escapedStringLiterals': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen, length=10).selectExpr(
-            'json_tuple(a, "b" "b$", "b$$")'),
+            'json_tuple(a, "a", "email", "owner", "bicycle", "b", "aa", "ab", "type", "color", "name", \
+                           "weight", "x", "y", "z", "category", "address", "phone", "mobile", "aaa", "c", \
+                           "date", "time", "second", "d", "abc", "e", "hour", "minute", "when", "what", \
+                           "location", "city", "country", "zip", "code", "region", "state", "street", "block", "loc", \
+                           "height", "h", "author", "title", "price", "isbn", "book", "rating", "score", "popular")'),
         conf={'spark.sql.parser.escapedStringLiterals': 'true'})

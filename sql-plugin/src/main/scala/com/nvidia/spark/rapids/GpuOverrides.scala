@@ -3441,9 +3441,9 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new GeneratorExprMeta[JsonTuple](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           if (childExprs.length >= 50) {
-            // If the number of field arguments is too large, fall back to CPU to avoid 
+            // If the number of field parameters is too large, fall back to CPU to avoid 
             // potential performance problems.
-            willNotWorkOnGpu("Number of fields is too large which is not supported on GPU")
+            willNotWorkOnGpu("JsonTuple with large number of fields is not supported on GPU")
           }
         }
         override def convertToGpu(): GpuExpression = GpuJsonTuple(childExprs.map(_.convertToGpu()))
