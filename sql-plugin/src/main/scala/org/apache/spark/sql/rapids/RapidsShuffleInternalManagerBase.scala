@@ -601,9 +601,6 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
     private val queued = new LinkedBlockingQueue[(Any, Any)]
     private val futures = new mutable.Queue[Future[Option[BlockState]]]()
     private val serializerInstance = serializer.newInstance()
-    private var readBlockedTime: Long = 0L
-    private var fetchTime: Long = 0L
-    private var waitTime: Long = 0L
     private val limiter = new BytesInFlightLimiter(maxBytesInFlight)
     private val fallbackIter: Iterator[(Any, Any)] = if (numReaderThreads == 1) {
       // this is the non-optimized case, where we add metrics to capture the blocked
@@ -615,7 +612,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
 
         override def next(): (Any, Any) = {
           val fetchTimeStart = System.nanoTime()
-          readBlockedTime = 0
+          var readBlockedTime = 0L
           if (currentIter == null || !currentIter.hasNext) {
             val readBlockedStart = System.nanoTime()
             val (_, stream) = fetcherIterator.next()
@@ -623,7 +620,9 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
             currentIter = serializerInstance.deserializeStream(stream).asKeyValueIterator
           }
           val res = currentIter.next()
-          fetchTime = System.nanoTime() - fetchTimeStart
+          val fetchTime = System.nanoTime() - fetchTimeStart
+          deserializationTimeNs.foreach(_ += (fetchTime - readBlockedTime))
+          shuffleReadTimeNs.foreach(_ += fetchTime)
           res
         }
       }
@@ -663,6 +662,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
         val result = if (fallbackIter != null) {
           fallbackIter.next()
         } else {
+          var waitTime: Long = 0L
           var waitTimeStart: Long = 0L
           popFetchedIfAvailable()
           waitTime = 0L
@@ -697,8 +697,9 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
               popFetchedIfAvailable()
             case _ => 0 // TODO: do we need to handle other types here?
           }
-
           waitTime += System.nanoTime() - waitTimeStart
+          deserializationTimeNs.foreach(_ += waitTime)
+          shuffleReadTimeNs.foreach(_ += waitTime)
           res
         }
 
@@ -707,18 +708,6 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
           case _ => 0 // TODO: do we need to handle other types here?
         }
 
-        // the deserialization time is approximated by subtracting
-        // time waiting for the fetch (`readBlockedTime`) from `fetchTime`
-        // and adding any time that was waited on while deserialization
-        // tasks finished.
-        val deserTime = (fetchTime - readBlockedTime) + waitTime
-
-        // the amount of time blocked on shuffle reads is the fetch time
-        // + any time spent waiting for deserialization tasks
-        val shuffleReadTime = fetchTime + waitTime
-
-        deserializationTimeNs.foreach(_ += deserTime)
-        shuffleReadTimeNs.foreach(_ += shuffleReadTime)
         dataReadSize.foreach(_ += uncompressedSize)
 
         // if this is the last call, close our range
@@ -780,7 +769,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
             // We drain fetched results. That is, we push decode tasks
             // onto our queue until the results in the fetcher iterator
             // are all dequeued (the ones that were completed up until now).
-            readBlockedTime = 0
+            var readBlockedTime = 0L
             var didFit = true
             while (amountToDrain > 0 && fetcherIterator.hasNext && didFit) {
               amountToDrain -= 1
@@ -805,7 +794,9 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
               }
             }
             // keep track of the overall metric which includes blocked time
-            fetchTime = System.nanoTime() - fetchTimeStart
+            val fetchTime = System.nanoTime() - fetchTimeStart
+            deserializationTimeNs.foreach(_ += (fetchTime - readBlockedTime))
+            shuffleReadTimeNs.foreach(_ += fetchTime)
           }
         }
       }

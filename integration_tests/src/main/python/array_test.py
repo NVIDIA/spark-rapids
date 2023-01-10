@@ -417,7 +417,6 @@ array_zips_gen = array_gens_sample + [ArrayGen(map_string_string_gen[0], max_len
 
 
 @pytest.mark.parametrize('data_gen', array_zips_gen, ids=idfn)
-@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/7469")
 def test_arrays_zip(data_gen):
     gen = StructGen(
         [('a', data_gen), ('b', data_gen), ('c', data_gen), ('d', data_gen)], nullable=False)
@@ -430,7 +429,6 @@ def test_arrays_zip(data_gen):
     )
 
 
-@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/7469")
 def test_arrays_zip_corner_cases():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, ArrayGen(int_gen), length=100).selectExpr(
