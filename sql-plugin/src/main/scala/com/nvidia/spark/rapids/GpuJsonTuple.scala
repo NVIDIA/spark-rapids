@@ -21,14 +21,13 @@ import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimExpression
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.{Expression, NamedExpression}
 import org.apache.spark.sql.types.{DataType, StringType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator 
-  with ShimExpression with Logging {
+  with ShimExpression {
   override def nullable: Boolean = false // a row is always returned
   @transient private lazy val jsonExpr: Expression = children.head
   @transient private lazy val fieldExpressions: Seq[Expression] = children.tail

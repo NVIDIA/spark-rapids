@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import *
 from marks import allow_non_gpu
 from pyspark.sql.types import *
@@ -22,22 +22,41 @@ from pyspark.sql.types import *
 def mk_json_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
 
-@allow_non_gpu('GenerateExec', 'JsonTuple')
-@pytest.mark.parametrize('json_str_pattern', [r'\{"store": \{"fruit": \[\{"weight":\d,"type":"[a-z]{1,9}"\}\], ' \
-                   r'"bicycle":\{"price":\d\d\.\d\d,"color":"[a-z]{0,4}"\}\},' \
-                   r'"email":"[a-z]{1,5}\@[a-z]{3,10}\.com","owner":"[a-z]{3,8}"\}',
-                   r'\{"a": "[a-z]{1,3}", "b\$":"[b-z]{1,3}"\}'], ids=idfn)
+json_str_patterns = [r'\{"store": \{"fruit": \[\{"weight":\d,"type":"[a-z]{1,9}"\}\], ' \
+                     r'"bicycle":\{"price":\d\d\.\d\d,"color":"[a-z]{0,4}"\}\},' \
+                     r'"email":"[a-z]{1,5}\@[a-z]{3,10}\.com","owner":"[a-z]{3,8}"\}',
+                     r'\{"a": "[a-z]{1,3}", "b\$":"[b-z]{1,3}"\}']
+
+@pytest.mark.parametrize('json_str_pattern', json_str_patterns, ids=idfn)
 def test_json_tuple(json_str_pattern):
     gen = mk_json_str_gen(json_str_pattern)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen, length=10).selectExpr(
             'json_tuple(a, "a", "email", "owner", "b", "b$", "b$$")'),
         conf={'spark.sql.parser.escapedStringLiterals': 'true'})
-    assert_gpu_and_cpu_are_equal_collect(
+
+@allow_non_gpu('GenerateExec', 'JsonTuple')
+@pytest.mark.parametrize('json_str_pattern', json_str_patterns, ids=idfn)
+def test_json_tuple_with_large_number_of_fields_fallback(json_str_pattern):
+    gen = mk_json_str_gen(json_str_pattern)
+    assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, gen, length=10).selectExpr(
             'json_tuple(a, "a", "email", "owner", "bicycle", "b", "aa", "ab", "type", "color", "name", \
                            "weight", "x", "y", "z", "category", "address", "phone", "mobile", "aaa", "c", \
                            "date", "time", "second", "d", "abc", "e", "hour", "minute", "when", "what", \
                            "location", "city", "country", "zip", "code", "region", "state", "street", "block", "loc", \
                            "height", "h", "author", "title", "price", "isbn", "book", "rating", "score", "popular")'),
+        "JsonTuple",
         conf={'spark.sql.parser.escapedStringLiterals': 'true'})
+    
+@allow_non_gpu('GenerateExec', 'JsonTuple')
+@pytest.mark.parametrize('json_str_pattern', json_str_patterns, ids=idfn)
+def test_json_tuple_with_special_characters_fallback(json_str_pattern):
+    gen = mk_json_str_gen(json_str_pattern)
+    special_characters = ['.', '[', ']', '{', '}', '\\\\', '\'', '\\\"']
+    for special_character in special_characters:
+        assert_gpu_fallback_collect(
+            lambda spark: unary_op_df(spark, gen, length=10).selectExpr(
+                'json_tuple(a, "a", "a' + special_character + '")'),
+            "JsonTuple",
+            conf={'spark.sql.parser.escapedStringLiterals': 'true'})

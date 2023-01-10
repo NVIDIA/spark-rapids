@@ -3445,6 +3445,19 @@ object GpuOverrides extends Logging {
             // potential performance problems.
             willNotWorkOnGpu("JsonTuple with large number of fields is not supported on GPU")
           }
+          // If any field argument contains special characters as follows, fall back to CPU.
+          (a.children.tail).map { fieldExpr =>
+            extractLit(fieldExpr).foreach { field => 
+              if (field.value != null) {
+                val fieldStr = field.value.asInstanceOf[UTF8String].toString
+                val specialCharacters = List(".", "[", "]", "{", "}", "\\", "\'", "\"")
+                if (specialCharacters.exists(fieldStr.contains(_))) {
+                  willNotWorkOnGpu(s"""JsonTuple with special character in field \"$fieldStr\" """
+                     + "is not supported on GPU")
+                }
+              }
+            }
+          }
         }
         override def convertToGpu(): GpuExpression = GpuJsonTuple(childExprs.map(_.convertToGpu()))
       }
