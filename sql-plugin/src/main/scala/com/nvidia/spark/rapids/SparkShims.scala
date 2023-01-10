@@ -86,8 +86,6 @@ trait SparkShims {
   def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]]
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
 
-  def getHiveProvider: HiveProvider
-
   def newBroadcastQueryStageExec(
       old: BroadcastQueryStageExec,
       newPlan: SparkPlan): BroadcastQueryStageExec
