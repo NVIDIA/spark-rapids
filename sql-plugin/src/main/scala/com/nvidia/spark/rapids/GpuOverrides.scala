@@ -4048,7 +4048,7 @@ object GpuOverrides extends Logging {
   ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[SparkPlan]), r) }.toMap
 
   lazy val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
-    commonExecs ++ SparkShimImpl.getExecs ++ GpuHiveOverrides.execs
+    commonExecs ++ SparkShimImpl.getExecs ++ SparkShimImpl.getHiveProvider.getExecs
 
   def getTimeParserPolicy: TimeParserPolicy = {
     val policy = SQLConf.get.getConfString(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "EXCEPTION")

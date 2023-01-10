@@ -41,6 +41,7 @@ import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExc
 import org.apache.spark.sql.execution.joins._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
+import org.apache.spark.sql.hive.rapids.GpuHiveOverrides
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.execution.GpuCustomShuffleReaderExec
@@ -430,4 +431,6 @@ abstract class Spark31XShims extends Spark31Xuntil33XShims with Logging {
   }
 
   override def reproduceEmptyStringBug: Boolean = false
+
+  override def getHiveProvider: HiveProvider = GpuHiveOverrides.hiveProvider
 }

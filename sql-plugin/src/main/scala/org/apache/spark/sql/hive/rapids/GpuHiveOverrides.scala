@@ -33,7 +33,7 @@ object GpuHiveOverrides {
     }
   }
 
-  private lazy val hiveProvider: HiveProvider = {
+  lazy val hiveProvider: HiveProvider = {
     if (isSparkHiveAvailable) {
       ShimLoader.newHiveProvider()
     } else {
@@ -59,5 +59,4 @@ object GpuHiveOverrides {
    * This will return an empty mapping if spark-hive is unavailable.
    */
   def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = hiveProvider.getExprs
-  def execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = hiveProvider.getExecs
 }
