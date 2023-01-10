@@ -252,7 +252,7 @@ def test_int_division(data_gen):
 
 @pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(5, 4), DecimalGen(3, -2), _decimal_gen_30_2], ids=idfn)
 @pytest.mark.parametrize('rhs', [DecimalGen(13, 2), DecimalGen(6, 3), _decimal_gen_38_0,
-                                 pytest.param(_decimal_gen_36_neg5, marks=pytest.mark.skipif(not is_before_spark_340(), reason='SPARK-41207'))], ids=idfn)
+                                 pytest.param(_decimal_gen_36_neg5, marks=pytest.mark.skipif(not is_before_spark_340() or is_databricks113_or_later(), reason='SPARK-41207'))], ids=idfn)
 def test_int_division_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : two_col_df(spark, lhs, rhs).selectExpr(

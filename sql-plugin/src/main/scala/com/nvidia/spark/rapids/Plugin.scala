@@ -23,7 +23,7 @@ import scala.collection.JavaConverters._
 import scala.sys.process._
 import scala.util.Try
 
-import ai.rapids.cudf.{CudaException, CudaFatalException, CudfException, MemoryCleaner}
+import ai.rapids.cudf.{Cuda, CudaException, CudaFatalException, CudfException, MemoryCleaner}
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import org.apache.commons.lang3.exception.ExceptionUtils
 
@@ -219,6 +219,10 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       pluginContext: PluginContext,
       extraConf: java.util.Map[String, String]): Unit = {
     try {
+      if (Cuda.getComputeCapabilityMajor < 6) {
+        throw new RuntimeException(s"GPU compute capability ${Cuda.getComputeCapabilityMajor}" + 
+          " is unsupported, requires 6.0+")
+      }
       // if configured, re-register checking leaks hook.
       reRegisterCheckLeakHook()
 

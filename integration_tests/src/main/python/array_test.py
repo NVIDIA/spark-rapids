@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are
 from data_gen import *
 from conftest import is_databricks_runtime
 from marks import incompat
-from spark_session import is_before_spark_313, is_before_spark_330, is_databricks113_or_later, is_spark_330_or_later, is_databricks104_or_later, is_spark_33X, is_spark_340_or_later, is_spark_330
+from spark_session import is_before_spark_313, is_before_spark_330, is_databricks113_or_later, is_spark_330_or_later, is_databricks104_or_later, is_spark_33X, is_spark_340_or_later, is_spark_330, is_spark_330cdh
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 from pyspark.sql.functions import array_contains, col, element_at, lit
@@ -417,6 +417,7 @@ array_zips_gen = array_gens_sample + [ArrayGen(map_string_string_gen[0], max_len
 
 
 @pytest.mark.parametrize('data_gen', array_zips_gen, ids=idfn)
+@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/7469")
 def test_arrays_zip(data_gen):
     gen = StructGen(
         [('a', data_gen), ('b', data_gen), ('c', data_gen), ('d', data_gen)], nullable=False)
@@ -429,6 +430,7 @@ def test_arrays_zip(data_gen):
     )
 
 
+@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/7469")
 def test_arrays_zip_corner_cases():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, ArrayGen(int_gen), length=100).selectExpr(
@@ -449,7 +451,7 @@ def test_array_max_q1():
 
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens + decimal_gens, ids=idfn)
-@pytest.mark.skipif(is_before_spark_313() or is_spark_330(), reason="NaN equality is only handled in Spark 3.1.3+")
+@pytest.mark.skipif(is_before_spark_313() or is_spark_330() or is_spark_330cdh(), reason="NaN equality is only handled in Spark 3.1.3+ and SPARK-39976 issue with null and ArrayIntersect in Spark 3.3.0")
 def test_array_intersect(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -469,7 +471,7 @@ def test_array_intersect(data_gen):
 
 @incompat
 @pytest.mark.parametrize('data_gen', no_neg_zero_all_basic_gens_no_nulls + decimal_gens_no_nulls, ids=idfn)
-@pytest.mark.skipif(not is_spark_330(), reason="SPARK-39976 issue with null and ArrayIntersect")
+@pytest.mark.skipif(not is_spark_330() and not is_spark_330cdh(), reason="SPARK-39976 issue with null and ArrayIntersect in Spark 3.3.0")
 def test_array_intersect_spark330(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
