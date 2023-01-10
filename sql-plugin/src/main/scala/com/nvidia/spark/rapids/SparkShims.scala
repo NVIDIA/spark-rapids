@@ -86,6 +86,14 @@ trait SparkShims {
   def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]]
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
 
+  /**
+   * Method to fetch shim-specific HiveProvider implementation
+   *
+   * The HiveProvider specifies replacement rules for Hive-specific
+   * expressions and execs.
+   *
+   * @return Shim-specific HiveProvider
+   */
   def getHiveProvider: HiveProvider
 
   def newBroadcastQueryStageExec(
