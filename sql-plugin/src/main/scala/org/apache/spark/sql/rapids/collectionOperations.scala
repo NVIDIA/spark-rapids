@@ -753,12 +753,12 @@ case class GpuArraysZip(children: Seq[Expression]) extends GpuExpression with Sh
    * validity for all top level columns, but possibly different offsets.
    */
   private def normalizeNulls(inputs: Seq[cudf.ColumnVector]): Seq[ColumnVector] = {
-    // First lest figure out if there are any nulls at all, because if there are not we don't
+    // First let's figure out if there are any nulls at all, because if there are not we don't
     // need to do anything.
     if (inputs.exists(_.hasNulls)) {
       var nullOutput = inputs.head.isNull
       try {
-        inputs.slice(1, inputs.length).foreach { cv =>
+        inputs.drop(1).foreach { cv =>
           val combinedIsNull = withResource(cv.isNull) { tmpIsNull =>
             tmpIsNull.or(nullOutput)
           }
@@ -813,7 +813,7 @@ case class GpuArraysZip(children: Seq[Expression]) extends GpuExpression with Sh
 
   private def generateSeqIndices(maxArraySize: ColumnVector): ColumnVector = {
     withResource(GpuScalar.from(0, IntegerType)) { s =>
-      withResource(cudf.ColumnVector.fromScalar(s, maxArraySize.getRowCount.toInt)) { zero =>
+      withResource(ColumnVector.fromScalar(s, maxArraySize.getRowCount.toInt)) { zero =>
         ColumnVector.sequence(zero, maxArraySize)
       }
     }
@@ -852,23 +852,25 @@ case class GpuArraysZip(children: Seq[Expression]) extends GpuExpression with Sh
   }
 
   /**
-   * This turns LIST[X], LIST[Y], ... into a LIST[STRUCT[X, Y, ...]] but requires that
+   * This turns LIST[X], LIST[Y], ... into a LIST[ STRUCT[X, Y, ...] ] but requires that
    * the input LIST columns all have the same validity and offsets.
    */
-  private def zipArrays(padded: Seq[ColumnVector]) : ColumnVector = {
+  private def zipArrays(padded: Seq[ColumnVector]): ColumnVector = {
     // Get the data column from the children, without any offsets
-    val children = padded.safeMap(_.getChildColumnView(0))
-    // Put them into a struct column view
-    withResource(ColumnView.makeStructView(children: _*)) { structView =>
-      // Then make the struct a list using the input's offsets and validity
-      // in the cheapest way possible.
-      val proto = padded.head
-      withResource(proto.getValid) { valid =>
-        withResource(proto.getOffsets) { offsets =>
-          withResource(new ColumnView(DType.LIST, proto.getRowCount,
-            java.util.Optional.of[java.lang.Long](proto.getNullCount),
-            valid, offsets, Array(structView))) { retView =>
-            retView.copyToColumnVector()
+    withResource(padded.safeMap(_.getChildColumnView(0))) { children =>
+      // Put them into a struct column view
+      withResource(ColumnView.makeStructView(children: _*)) { structView =>
+        // Make the struct a list using the input's offsets and validity
+        // in the cheapest way possible.
+        val proto = padded.head
+        withResource(proto.getValid) { valid =>
+          withResource(proto.getOffsets) { offsets =>
+            withResource(new ColumnView(DType.LIST, proto.getRowCount,
+              java.util.Optional.of[java.lang.Long](proto.getNullCount),
+              valid, offsets, Array(structView))) { retView =>
+              // Finally copy the result out to a ColumnVector so we can return it
+              retView.copyToColumnVector()
+            }
           }
         }
       }
