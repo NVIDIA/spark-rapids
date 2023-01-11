@@ -332,7 +332,24 @@ val df = spark.read.schema(schema).json("people.json")
 
 ### JSON supporting types
 
-The nested types(array, map and struct) are not supported yet in current version.
+In the current version, array and struct type are not yet supported.
+
+Map type is supported in `from_json` SQL function with limited functionalities. In particular, there is no validation, no error tolerance, no data conversion as well as string formatting is performed. The output map will just contain plain text of key-value pairs extracted directly from the input string. Examples of such limitations include:
+ * Floating point numbers in the input json string such as `1.2000` will not be reformatted to `1.2`. Instead, the output will be the same as the input.
+ * If the input json is given as multiple rows, any row containing invalid json format will lead to an application crash. On the other hand, Spark CPU version just produces nulls for the invalid rows, as shown below:
+ ```
+scala> val df = Seq("{}", "BAD", "{\"A\": 100}").toDF
+df: org.apache.spark.sql.DataFrame = [value: string]
+
+scala> df.selectExpr("from_json(value, 'MAP<STRING,STRING>')").show()
++----------+
+|   entries|
++----------+
+|        {}|
+|      null|
+|{A -> 100}|
++----------+
+```
 
 ### JSON Floating Point
 
@@ -808,4 +825,3 @@ Seq(0L, Long.MaxValue).toDF("val")
 
 But this is not something that can be done generically and requires inner knowledge about
 what can trigger a side effect.
-
