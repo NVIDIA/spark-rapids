@@ -254,7 +254,8 @@ abstract class RapidsBufferStore(
         } else {
           logDebug(s"Spilling $buffer ${buffer.id} to ${spillStore.name} " +
               s"total mem=${buffers.getTotalBytes}")
-          buffer.spillCallback(buffer.storageTier, spillStore.tier, buffer.size)
+          val spillCallback = buffer.getSpillCallback
+          spillCallback(buffer.storageTier, spillStore.tier, buffer.size)
           spillStore.copyBuffer(buffer, buffer.getMemoryBuffer, stream)
         }
       } finally {
@@ -271,14 +272,16 @@ abstract class RapidsBufferStore(
       override val size: Long,
       override val meta: TableMeta,
       initialSpillPriority: Long,
-      override val spillCallback: SpillCallback,
+      initialSpillCallback: SpillCallback,
       catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton,
       deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage)
       extends RapidsBuffer with Arm {
     private val MAX_UNSPILL_ATTEMPTS = 100
     private[this] var isValid = true
     protected[this] var refcount = 0
+
     private[this] var spillPriority: Long = initialSpillPriority
+    private[this] var spillCallback: SpillCallback = initialSpillCallback
 
     /** Release the underlying resources for this buffer. */
     protected def releaseResources(): Unit
@@ -429,6 +432,12 @@ abstract class RapidsBufferStore(
 
     private[RapidsBufferStore] def updateSpillPriorityValue(priority: Long): Unit = {
       spillPriority = priority
+    }
+
+    override def getSpillCallback: SpillCallback = spillCallback
+
+    override def setSpillCallback(callback: SpillCallback): Unit = {
+      spillCallback = callback
     }
 
     /** Must be called with a lock on the buffer */

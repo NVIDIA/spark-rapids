@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,69 +33,77 @@ object GdsTest extends Tag("GdsTest")
 
 class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar {
 
-  test("single shot spill with shared path", GdsTest) {
-    assume(CuFile.libraryLoaded())
-    verifySingleShotSpill(canShareDiskPaths = true)
-  }
+ test("single shot spill with shared path", GdsTest) {
+   println("Trying to load CuFile")
+   assume(CuFile.libraryLoaded())
+   println("DID LOAD")
+   verifySingleShotSpill(canShareDiskPaths = true)
+ }
 
-  test("single shot spill with exclusive path", GdsTest) {
-    assume(CuFile.libraryLoaded())
-    verifySingleShotSpill(canShareDiskPaths = false)
-  }
+ test("single shot spill with exclusive path", GdsTest) {
+   assume(CuFile.libraryLoaded())
+   verifySingleShotSpill(canShareDiskPaths = false)
+ }
 
-  test("batch spill", GdsTest) {
-    assume(CuFile.libraryLoaded())
+ test("batch spill", GdsTest) {
+   assume(CuFile.libraryLoaded())
 
-    val bufferIds = Array(MockRapidsBufferId(7), MockRapidsBufferId(8), MockRapidsBufferId(9))
-    val diskBlockManager = mock[RapidsDiskBlockManager]
-    val paths = Array(
-      new File(TEST_FILES_ROOT, s"gdsbuffer-0"), new File(TEST_FILES_ROOT, s"gdsbuffer-1"))
-    when(diskBlockManager.getFile(any[BlockId]()))
-        .thenReturn(paths(0))
-        .thenReturn(paths(1))
-    paths.foreach(f => assert(!f.exists))
-    val spillPriority = -7
-    val catalog = spy(new RapidsBufferCatalog)
-    val batchWriteBufferSize = 16384 // Holds 2 buffers.
-    withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
-      withResource(new RapidsGdsStore(
-        diskBlockManager, batchWriteBufferSize, catalog)) { gdsStore =>
+   val bufferIds = Array(MockRapidsBufferId(7), MockRapidsBufferId(8), MockRapidsBufferId(9))
+   val diskBlockManager = mock[RapidsDiskBlockManager]
+   val paths = Array(
+     new File(TEST_FILES_ROOT, s"gdsbuffer-0"), new File(TEST_FILES_ROOT, s"gdsbuffer-1"))
+   when(diskBlockManager.getFile(any[BlockId]()))
+       .thenReturn(paths(0))
+       .thenReturn(paths(1))
+   paths.foreach(f => assert(!f.exists))
+   val spillPriority = -7
+   val catalog = spy(new RapidsBufferCatalog)
+   val batchWriteBufferSize = 16384 // Holds 2 buffers.
+   withResource(new RapidsDeviceMemoryStore(catalog)) { devStore =>
+     withResource(new RapidsGdsStore(
+       diskBlockManager, batchWriteBufferSize, catalog)) { gdsStore =>
 
-        devStore.setSpillStore(gdsStore)
-        assertResult(0)(gdsStore.currentSize)
+       devStore.setSpillStore(gdsStore)
+       assertResult(0)(gdsStore.currentSize)
 
-        val bufferSizes = bufferIds.map(id => {
-          val size = addTableToStore(devStore, id, spillPriority)
-          devStore.synchronousSpill(0)
-          size
-        })
-        val totalSize = bufferSizes.sum
-        assertResult(totalSize)(gdsStore.currentSize)
+       val bufferSizes = new Array[Long](bufferIds.length)
+       val bufferHandles = new Array[RapidsBufferHandle](bufferIds.length)
 
-        assert(paths(0).exists)
-        assert(!paths(1).exists)
-        val alignedSize = Math.ceil((bufferSizes(0) + bufferSizes(1)) / 4096d).toLong * 4096
-        assertResult(alignedSize)(paths(0).length)
+       bufferIds.zipWithIndex.foreach { case(id, ix) =>
+         val size = addTableToStore(devStore, id, spillPriority)
+         devStore.synchronousSpill(0)
+         bufferSizes(ix) = size
+         bufferHandles(ix) =
+           catalog.makeNewHandle(id, spillPriority, RapidsBuffer.defaultSpillCallback)
+       }
 
-        verify(catalog, times(6)).registerNewBuffer(ArgumentMatchers.any[RapidsBuffer])
-        (bufferIds, bufferSizes).zipped.foreach { (id, size) =>
-          verify(catalog).removeBufferTier(
-            ArgumentMatchers.eq(id), ArgumentMatchers.eq(StorageTier.DEVICE))
-          withResource(catalog.acquireBuffer(id)) { buffer =>
-            assertResult(StorageTier.GDS)(buffer.storageTier)
-            assertResult(id)(buffer.id)
-            assertResult(size)(buffer.size)
-            assertResult(spillPriority)(buffer.getSpillPriority)
-          }
-        }
+       val totalSize = bufferSizes.sum
+       assertResult(totalSize)(gdsStore.currentSize)
 
-        catalog.removeBuffer(bufferIds(0))
-        assert(paths(0).exists)
-        catalog.removeBuffer(bufferIds(1))
-        assert(!paths(0).exists)
-      }
-    }
-  }
+       assert(paths(0).exists)
+       assert(!paths(1).exists)
+       val alignedSize = Math.ceil((bufferSizes(0) + bufferSizes(1)) / 4096d).toLong * 4096
+       assertResult(alignedSize)(paths(0).length)
+
+       verify(catalog, times(6)).registerNewBuffer(ArgumentMatchers.any[RapidsBuffer])
+       (bufferIds, bufferSizes, bufferHandles).zipped.foreach { (id, size, handle) =>
+         verify(catalog).removeBufferTier(
+           ArgumentMatchers.eq(id), ArgumentMatchers.eq(StorageTier.DEVICE))
+         withResource(catalog.acquireBuffer(handle)) { buffer =>
+           assertResult(StorageTier.GDS)(buffer.storageTier)
+           assertResult(id)(buffer.id)
+           assertResult(size)(buffer.size)
+           assertResult(spillPriority)(buffer.getSpillPriority)
+         }
+       }
+
+       catalog.removeBuffer(bufferHandles(0))
+       assert(paths(0).exists)
+       catalog.removeBuffer(bufferHandles(1))
+       assert(!paths(0).exists)
+     }
+   }
+ }
 
   private def verifySingleShotSpill(canShareDiskPaths: Boolean): Assertion = {
     val bufferId = MockRapidsBufferId(7, canShareDiskPaths)
@@ -109,6 +117,8 @@ class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar
         devStore.setSpillStore(gdsStore)
         assertResult(0)(gdsStore.currentSize)
         val bufferSize = addTableToStore(devStore, bufferId, spillPriority)
+        val handle =
+          catalog.makeNewHandle(bufferId, spillPriority, RapidsBuffer.defaultSpillCallback)
         devStore.synchronousSpill(0)
         assertResult(bufferSize)(gdsStore.currentSize)
         assert(path.exists)
@@ -116,14 +126,14 @@ class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar
         verify(catalog, times(2)).registerNewBuffer(ArgumentMatchers.any[RapidsBuffer])
         verify(catalog).removeBufferTier(
           ArgumentMatchers.eq(bufferId), ArgumentMatchers.eq(StorageTier.DEVICE))
-        withResource(catalog.acquireBuffer(bufferId)) { buffer =>
+        withResource(catalog.acquireBuffer(handle)) { buffer =>
           assertResult(StorageTier.GDS)(buffer.storageTier)
           assertResult(bufferSize)(buffer.size)
           assertResult(bufferId)(buffer.id)
           assertResult(spillPriority)(buffer.getSpillPriority)
         }
 
-        catalog.removeBuffer(bufferId)
+        catalog.removeBuffer(handle)
         if (canShareDiskPaths) {
           assert(path.exists())
         } else {
@@ -140,7 +150,8 @@ class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar
     withResource(buildContiguousTable()) { ct =>
       val bufferSize = ct.getBuffer.getLength
       // store takes ownership of the table
-      devStore.addContiguousTable(bufferId, ct, spillPriority)
+      devStore.addContiguousTable(bufferId, ct, spillPriority,
+        RapidsBuffer.defaultSpillCallback, false)
       bufferSize
     }
   }

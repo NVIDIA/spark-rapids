@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,7 +46,7 @@ trait RapidsShuffleFetchHandler {
    * @return a boolean that lets the caller know the batch was accepted (true), or
    *         rejected (false), in which case the caller should dispose of the batch.
    */
-  def batchReceived(bufferId: ShuffleReceivedBufferId): Boolean
+  def batchReceived(handle: RapidsBufferHandle): Boolean
 
   /**
    * Called when the transport layer is not able to handle a fetch error for metadata
@@ -336,7 +336,7 @@ class RapidsShuffleClient(
       } else {
         // Degenerate buffer (no device data) so no more data to request.
         // We need to trigger call in iterator, otherwise this batch is never handled.
-        handler.batchReceived(track(null, tableMeta).asInstanceOf[ShuffleReceivedBufferId])
+        handler.batchReceived(track(null, tableMeta))
       }
     }
 
@@ -379,9 +379,9 @@ class RapidsShuffleClient(
 
               // hand buffer off to the catalog
               buffMetas.foreach { consumed: ConsumedBatchFromBounceBuffer =>
-                val bId = track(consumed.contigBuffer, consumed.meta)
-                if (!consumed.handler.batchReceived(bId)) {
-                  catalog.removeBuffer(bId)
+                val handle = track(consumed.contigBuffer, consumed.meta)
+                if (!consumed.handler.batchReceived(handle)) {
+                  catalog.removeBuffer(handle)
                   numBatchesRejected += 1
                 }
                 transport.doneBytesInFlight(consumed.contigBuffer.getLength)
@@ -425,22 +425,26 @@ class RapidsShuffleClient(
    * @return the [[RapidsBufferId]] to be used to look up the buffer from catalog
    */
   private[shuffle] def track(
-      buffer: DeviceMemoryBuffer, meta: TableMeta): ShuffleReceivedBufferId = {
-    val id: ShuffleReceivedBufferId = catalog.nextShuffleReceivedBufferId()
-    logDebug(s"Adding buffer id ${id} to catalog")
+      buffer: DeviceMemoryBuffer, meta: TableMeta): RapidsBufferHandle = {
     if (buffer != null) {
       // add the buffer to the catalog so it is available for spill
-      devStorage.addBuffer(id, buffer, meta,
-        SpillPriorities.INPUT_FROM_SHUFFLE_PRIORITY,
-        // set needsSync to false because we already have stream synchronized after
-        // consuming the bounce buffer, so we know these buffers are synchronized
-        // w.r.t. the CPU
-        needsSync = false)
+      withResource(buffer) { _ =>
+        catalog.addBuffer(
+          buffer,
+          meta,
+          SpillPriorities.INPUT_FROM_SHUFFLE_PRIORITY,
+          // set needsSync to false because we already have stream synchronized after
+          // consuming the bounce buffer, so we know these buffers are synchronized
+          // w.r.t. the CPU
+          needsSync = false)
+      }
     } else {
       // no device data, just tracking metadata
-      catalog.registerNewBuffer(new DegenerateRapidsBuffer(id, meta))
+      catalog.addDegenerateRapidsBuffer(
+        meta,
+        RapidsBuffer.defaultSpillCallback)
+
     }
-    id
   }
 
   override def close(): Unit = {
