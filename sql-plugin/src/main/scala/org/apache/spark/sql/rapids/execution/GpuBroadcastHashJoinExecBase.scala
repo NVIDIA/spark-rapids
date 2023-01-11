@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package org.apache.spark.sql.rapids.execution
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.{GpuBroadcastJoinMeta, ShimBinaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -30,11 +31,10 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, HashedRelationBroadcastMode}
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuBroadcastHelper, GpuHashJoin, JoinTypeChecks}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-class GpuBroadcastHashJoinMeta(
+abstract class GpuBroadcastHashJoinMetaBase(
     join: BroadcastHashJoinExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
@@ -77,34 +77,10 @@ class GpuBroadcastHashJoinMeta(
     }
   }
 
-  override def convertToGpu(): GpuExec = {
-    val condition = conditionMeta.map(_.convertToGpu())
-    val (joinCondition, filterCondition) = if (conditionMeta.forall(_.canThisBeAst)) {
-      (condition, None)
-    } else {
-      (None, condition)
-    }
-    val Seq(left, right) = childPlans.map(_.convertIfNeeded())
-    // The broadcast part of this must be a BroadcastExchangeExec
-    val buildSideMeta = buildSide match {
-      case GpuBuildLeft => left
-      case GpuBuildRight => right
-    }
-    verifyBuildSideWasReplaced(buildSideMeta)
-    val joinExec = GpuBroadcastHashJoinExec(
-      leftKeys.map(_.convertToGpu()),
-      rightKeys.map(_.convertToGpu()),
-      join.joinType,
-      buildSide,
-      joinCondition,
-      left, right)
-    // For inner joins we can apply a post-join condition for any conditions that cannot be
-    // evaluated directly in a mixed join that leverages a cudf AST expression
-    filterCondition.map(c => GpuFilterExec(c, joinExec)).getOrElse(joinExec)
-  }
+  def convertToGpu():GpuExec
 }
 
-case class GpuBroadcastHashJoinExec(
+abstract class GpuBroadcastHashJoinExecBase(
     leftKeys: Seq[Expression],
     rightKeys: Seq[Expression],
     joinType: JoinType,

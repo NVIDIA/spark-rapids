@@ -40,7 +40,7 @@ import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
 
-class GpuShuffleMetaBase(
+abstract class GpuShuffleMetaBase(
     shuffle: ShuffleExchangeExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
