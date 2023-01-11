@@ -844,7 +844,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         None
       )
     } else {
-      RegexGroup(capture = capture, RegexParser.parse("\r|\u2028|\u2029|\r\n"), None)
+      RegexGroup(capture = capture, RegexParser.parse("\r|\u0085|\u2028|\u2029|\r\n"), None)
     }
   }
 
