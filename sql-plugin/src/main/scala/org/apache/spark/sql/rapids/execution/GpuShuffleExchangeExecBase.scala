@@ -40,7 +40,7 @@ import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
 
-class GpuShuffleMeta(
+class GpuShuffleMetaBase(
     shuffle: ShuffleExchangeExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
@@ -102,11 +102,11 @@ class GpuShuffleMeta(
     // When AQE is enabled, we need to preserve meta data as outputAttributes and
     // availableRuntimeDataTransition to the spark plan for the subsequent query stages.
     // These meta data will be fetched in the SparkPlanMeta of CustomShuffleReaderExec.
-    if (wrapped.getTagValue(GpuShuffleMeta.shuffleExOutputAttributes).isEmpty) {
-      wrapped.setTagValue(GpuShuffleMeta.shuffleExOutputAttributes, outputAttributes)
+    if (wrapped.getTagValue(GpuShuffleMetaBase.shuffleExOutputAttributes).isEmpty) {
+      wrapped.setTagValue(GpuShuffleMetaBase.shuffleExOutputAttributes, outputAttributes)
     }
-    if (wrapped.getTagValue(GpuShuffleMeta.availableRuntimeDataTransition).isEmpty) {
-      wrapped.setTagValue(GpuShuffleMeta.availableRuntimeDataTransition,
+    if (wrapped.getTagValue(GpuShuffleMetaBase.availableRuntimeDataTransition).isEmpty) {
+      wrapped.setTagValue(GpuShuffleMetaBase.availableRuntimeDataTransition,
         availableRuntimeDataTransition)
     }
   }
@@ -119,7 +119,7 @@ class GpuShuffleMeta(
     )(shuffle.outputPartitioning)
 }
 
-object GpuShuffleMeta {
+object GpuShuffleMetaBase {
 
   val shuffleExOutputAttributes = TreeNodeTag[Seq[Attribute]](
     "rapids.gpu.shuffleExOutputAttributes")

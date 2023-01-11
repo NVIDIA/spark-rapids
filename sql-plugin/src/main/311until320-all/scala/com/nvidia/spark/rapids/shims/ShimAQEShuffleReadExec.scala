@@ -58,14 +58,14 @@ class GpuCustomShuffleReaderMeta(reader: CustomShuffleReaderExec,
   // extract output attributes of the underlying ShuffleExchange
   override def outputAttributes: Seq[Attribute] = {
     val shuffleEx = reader.child.asInstanceOf[ShuffleQueryStageExec].plan
-    shuffleEx.getTagValue(GpuShuffleMeta.shuffleExOutputAttributes)
+    shuffleEx.getTagValue(GpuShuffleMetaBase.shuffleExOutputAttributes)
         .getOrElse(shuffleEx.output)
   }
 
   // fetch availableRuntimeDataTransition of the underlying ShuffleExchange
   override val availableRuntimeDataTransition: Boolean = {
     val shuffleEx = reader.child.asInstanceOf[ShuffleQueryStageExec].plan
-    shuffleEx.getTagValue(GpuShuffleMeta.availableRuntimeDataTransition)
+    shuffleEx.getTagValue(GpuShuffleMetaBase.availableRuntimeDataTransition)
         .getOrElse(false)
   }
 }

@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.shims.ShimBinaryExecNode
+import com.nvidia.spark.rapids.shims.{GpuBroadcastJoinMeta, ShimBinaryExecNode}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
