@@ -139,6 +139,10 @@ Name | Description | Default Value | Applicable at
 <a name="sql.join.leftOuter.enabled"></a>spark.rapids.sql.join.leftOuter.enabled|When set to true left outer joins are enabled on the GPU|true|Runtime
 <a name="sql.join.leftSemi.enabled"></a>spark.rapids.sql.join.leftSemi.enabled|When set to true left semi joins are enabled on the GPU|true|Runtime
 <a name="sql.join.rightOuter.enabled"></a>spark.rapids.sql.join.rightOuter.enabled|When set to true right outer joins are enabled on the GPU|true|Runtime
+<a name="sql.joinReordering"></a>spark.rapids.sql.joinReordering|Enable join reordering of fact-dimension joins based on the estimated size of underlying tables and the presence of filters on dimension tables. Refer to thetuning guide for more information.|false|Runtime
+<a name="sql.joinReordering.factDimRatio"></a>spark.rapids.sql.joinReordering.factDimRatio|Ratio to determine fact versus dimension tables. A value of 0.3 would mean that dimension tables can be up to 30% of the size of fact tables. Refer to the tuning guide for more information.|0.3|Runtime
+<a name="sql.joinReordering.filterSelectivity"></a>spark.rapids.sql.joinReordering.filterSelectivity|Default filter selectivity to use when estimating the size of filtered dimension tables. Value should be greater than zero and less than or equal to 1.0, with 1.0 meaning that all rows would be selected (no rows would be filtered out). Refer to the tuning guide for more information.|1.0|Runtime
+<a name="sql.joinReordering.maxFactTables"></a>spark.rapids.sql.joinReordering.maxFactTables|Maximum number of fact tables allowed in a reordered join. Refer to the tuning guide for more information|2|Runtime
 <a name="sql.json.read.decimal.enabled"></a>spark.rapids.sql.json.read.decimal.enabled|JSON reading is not 100% compatible when reading decimals.|false|Runtime
 <a name="sql.json.read.double.enabled"></a>spark.rapids.sql.json.read.double.enabled|JSON reading is not 100% compatible when reading doubles.|true|Runtime
 <a name="sql.json.read.float.enabled"></a>spark.rapids.sql.json.read.float.enabled|JSON reading is not 100% compatible when reading floats.|true|Runtime
