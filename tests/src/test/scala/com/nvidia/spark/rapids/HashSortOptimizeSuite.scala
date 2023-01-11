@@ -22,6 +22,7 @@ import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.execution.{SortExec, SparkPlan}
 import org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
+import org.apache.spark.sql.rapids.execution.GpuBroadcastHashJoinExec
 
 /** Test plan modifications to add optimizing sorts after hash joins in the plan */
 class HashSortOptimizeSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir {
