@@ -17,8 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuScalar, GpuUnaryExpression}
-import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuUnaryExpression}
 import com.nvidia.spark.rapids.jni.MapUtils
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression, NullIntolerant, TimeZoneAwareExpression}
