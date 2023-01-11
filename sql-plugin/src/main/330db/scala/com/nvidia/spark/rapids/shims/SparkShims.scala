@@ -21,6 +21,7 @@ import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.trees.TreePattern._
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 
@@ -44,8 +45,13 @@ object SparkShimImpl extends Spark321PlusDBShims {
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
   }
 
-    override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
-      super.getExprs ++ RoundingShims.roundingExprs
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
+    super.getExprs ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs
+
+  override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
+    super.getExecs ++ PythonMapInArrowExecShims.execs
+
+  override def reproduceEmptyStringBug: Boolean = false
 }
 
 trait ShimGetArrayStructFields extends ExtractValue {

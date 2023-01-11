@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1809,32 +1809,6 @@ object GpuOverrides extends Logging {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuSubtract(lhs, rhs, ansiEnabled)
       }),
-    expr[Multiply](
-      "Multiplication",
-      ExprChecks.binaryProjectAndAst(
-        TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric + TypeSig.psNote(TypeEnum.DECIMAL,
-          "Because of Spark's inner workings the full range of decimal precision " +
-              "(even for 128-bit values) is not supported."),
-        TypeSig.cpuNumeric,
-        ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
-        ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
-      (a, conf, p, r) => new BinaryAstExprMeta[Multiply](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (SQLConf.get.ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
-            willNotWorkOnGpu("GPU Multiplication does not support ANSI mode")
-          }
-        }
-
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          a.dataType match {
-            case _: DecimalType => throw new IllegalStateException(
-              "Decimal Multiply should be converted in CheckOverflow")
-            case _ =>
-              GpuMultiply(lhs, rhs)
-          }
-        }
-      }),
     expr[And](
       "Logical AND",
       ExprChecks.binaryProjectAndAst(TypeSig.BOOLEAN, TypeSig.BOOLEAN, TypeSig.BOOLEAN,
@@ -2024,37 +1998,6 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new BinaryAstExprMeta[Pow](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuPow(lhs, rhs)
-      }),
-    expr[Divide](
-      "Division",
-      ExprChecks.binaryProject(
-        TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-        TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-        ("lhs", TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-            TypeSig.DOUBLE + TypeSig.DECIMAL_128),
-        ("rhs", TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-            TypeSig.DOUBLE + TypeSig.DECIMAL_128)),
-      (a, conf, p, r) => new BinaryExprMeta[Divide](a, conf, p, r) {
-        // Division of Decimal types is a little odd. To work around some issues with
-        // what Spark does the tagging/checks are in CheckOverflow instead of here.
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          a.dataType match {
-            case _: DecimalType =>
-              throw new IllegalStateException("Internal Error: Decimal Divide operations " +
-                  "should be converted to the GPU in the CheckOverflow rule")
-            case _ =>
-              GpuDivide(lhs, rhs)
-          }
-      }),
-    expr[IntegralDivide](
-      "Division with a integer result",
-      ExprChecks.binaryProject(
-        TypeSig.LONG, TypeSig.LONG,
-        ("lhs", TypeSig.LONG + TypeSig.DECIMAL_128, TypeSig.LONG + TypeSig.DECIMAL_128),
-        ("rhs", TypeSig.LONG + TypeSig.DECIMAL_128, TypeSig.LONG + TypeSig.DECIMAL_128)),
-      (a, conf, p, r) => new BinaryExprMeta[IntegralDivide](a, conf, p, r) {
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuIntegralDivide(lhs, rhs)
       }),
     expr[Remainder](
       "Remainder or modulo",
@@ -3232,8 +3175,10 @@ object GpuOverrides extends Logging {
       }),
     expr[Reverse](
       "Returns a reversed string or an array with reverse order of elements",
-      ExprChecks.unaryProject(TypeSig.STRING, TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all),
-        TypeSig.STRING, TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all)),
+      ExprChecks.unaryProject(TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all), 
+        TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all),
+        TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all),
+        TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all)),
       (a, conf, p, r) => new UnaryExprMeta[Reverse](a, conf, p, r) {
         override def convertToGpu(input: Expression): GpuExpression =
           GpuReverse(input)
@@ -4103,7 +4048,8 @@ object GpuOverrides extends Logging {
   ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[SparkPlan]), r) }.toMap
 
   lazy val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
-    commonExecs ++ SparkShimImpl.getExecs ++ GpuHiveOverrides.execs
+    commonExecs ++ GpuHiveOverrides.execs ++
+      SparkShimImpl.getExecs // Shim execs at the end; shims get the last word in substitutions.
 
   def getTimeParserPolicy: TimeParserPolicy = {
     val policy = SQLConf.get.getConfString(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "EXCEPTION")

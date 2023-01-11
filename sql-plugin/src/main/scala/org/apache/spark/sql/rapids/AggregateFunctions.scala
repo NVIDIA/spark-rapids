@@ -1581,7 +1581,7 @@ abstract class GpuAverage(child: Expression, sumDataType: DataType) extends GpuA
 
 case class GpuBasicAverage(child: Expression, dt: DataType) extends GpuAverage(child, dt)
 
-abstract class GpuDecimalAverage(child: Expression, sumDataType: DecimalType)
+abstract class GpuDecimalAverageBase(child: Expression, sumDataType: DecimalType)
     extends GpuAverage(child, sumDataType) {
   override lazy val postUpdate: Seq[Expression] =
       Seq(GpuCheckOverflow(updateSum.attr, sumDataType, nullOnOverflow = true), updateCount.attr)
@@ -1605,28 +1605,8 @@ abstract class GpuDecimalAverage(child: Expression, sumDataType: DecimalType)
   // This is here to be bug for bug compatible with Spark. They round in the divide and then cast
   // the result to the final value. This loses some data in many cases and we need to be able to
   // match that. This bug appears to have been fixed in Spark 3.4.0.
-  lazy val intermediateSparkDivideType = GpuDecimalDivide.calcOrigSparkOutputType(sumDataType,
+  lazy val intermediateSparkDivideType = DecimalDivideChecks.calcOrigSparkOutputType(sumDataType,
     DecimalType.LongDecimal)
-
-  // NOTE: this sets `failOnErrorOverride=false` in `GpuDivide` to force it not to throw
-  // divide-by-zero exceptions, even when ansi mode is enabled in Spark.
-  // This is to conform with Spark's behavior in the Average aggregate function.
-  override lazy val evaluateExpression: Expression = {
-    GpuCast(
-      GpuDecimalDivide(sum, count, intermediateSparkDivideType, failOnError = false),
-      dataType)
-  }
-
-  // Window
-  // Replace average with SUM/COUNT. This lets us run average in running window mode without
-  // recreating everything that would have to go into doing the SUM and the COUNT here.
-  override def windowReplacement(spec: GpuWindowSpecDefinition): Expression = {
-    val count = GpuWindowExpression(GpuCount(Seq(child)), spec)
-    val sum = GpuWindowExpression(GpuSum(child, sumDataType, failOnErrorOverride = false), spec)
-    GpuCast(
-      GpuDecimalDivide(sum, count, intermediateSparkDivideType, failOnError = false),
-      dataType)
-  }
 
   override val dataType: DecimalType = child.dataType match {
     case DecimalType.Fixed(p, s) => DecimalType.bounded(p + 4, s + 4)

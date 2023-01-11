@@ -58,7 +58,7 @@ def assert_delta_log_json_equivalent(filename, c_json, g_json):
         # Strip out the values that are expected to be different
         c_tags = c_val.get("tags", {})
         g_tags = g_val.get("tags", {})
-        del_keys(["INSERTION_TIME"], c_tags, g_tags)
+        del_keys(["INSERTION_TIME", "MAX_INSERTION_TIME", "MIN_INSERTION_TIME"], c_tags, g_tags)
         if key == "metaData":
             assert c_val.keys() == g_val.keys(), "Delta log {} 'metaData' keys mismatch:\nCPU: {}\nGPU: {}".format(filename, c_val, g_val)
             del_keys(("createdTime", "id"), c_val, g_val)
@@ -79,6 +79,25 @@ def assert_delta_log_json_equivalent(filename, c_json, g_json):
             fixup_path(g_val)
         assert c_val == g_val, "Delta log {} is different at key '{}':\nCPU: {}\nGPU: {}".format(filename, key, c_val, g_val)
 
+def decode_jsons(json_data):
+    """Decode the JSON records in a string"""
+    jsons = []
+    idx = 0
+    decoder = json.JSONDecoder()
+    while idx < len(json_data):
+        js, idx = decoder.raw_decode(json_data, idx=idx)
+        jsons.append(js)
+        # Skip whitespace between records
+        while idx < len(json_data) and json_data[idx].isspace():
+            idx += 1
+    # reorder to produce a consistent output for comparison
+    def json_to_sort_key(j):
+        keys = sorted(j.keys())
+        paths = sorted([ v.get("path", "") for v in j.values() ])
+        return ','.join(keys + paths)
+    jsons.sort(key=json_to_sort_key)
+    return jsons
+
 def assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path):
     cpu_log_data = spark.sparkContext.wholeTextFiles(data_path + "/CPU/_delta_log/*").collect()
     gpu_log_data = spark.sparkContext.wholeTextFiles(data_path + "/GPU/_delta_log/*").collect()
@@ -88,12 +107,10 @@ def assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path):
     for file, cpu_json_data in cpu_logs_data:
         gpu_json_data = gpu_logs_dict.get(file)
         assert gpu_json_data, "CPU Delta log file {} is missing from GPU Delta logs".format(file)
-        cpu_json_lines = cpu_json_data.splitlines()
-        gpu_json_lines = gpu_json_data.splitlines()
-        assert len(cpu_json_lines) == len(gpu_json_lines), "Different line counts in {}:\nCPU: {}\nGPU: {}".format(file, cpu_json_data, gpu_json_data)
-        for c_line, g_line in zip(cpu_json_lines, gpu_json_lines):
-            cpu_json = json.loads(c_line)
-            gpu_json = json.loads(g_line)
+        cpu_jsons = decode_jsons(cpu_json_data)
+        gpu_jsons = decode_jsons(gpu_json_data)
+        assert len(cpu_jsons) == len(gpu_jsons), "Different line counts in {}:\nCPU: {}\nGPU: {}".format(file, cpu_json_data, gpu_json_data)
+        for cpu_json, gpu_json in zip(cpu_jsons, gpu_jsons):
             assert_delta_log_json_equivalent(file, cpu_json, gpu_json)
 
 @allow_non_gpu("ExecutedCommandExec", *delta_meta_allow)
@@ -102,9 +119,7 @@ def assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path):
 @pytest.mark.parametrize("disable_conf",
                          [{"spark.rapids.sql.format.delta.write.enabled": "false"},
                           {"spark.rapids.sql.format.parquet.enabled": "false"},
-                          {"spark.rapids.sql.format.parquet.write.enabled": "false"},
-                          {}  # verify disabled by default
-                          ], ids=idfn)
+                          {"spark.rapids.sql.format.parquet.write.enabled": "false"}], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_disabled_fallback(spark_tmp_path, disable_conf):
     data_path = spark_tmp_path + "/DELTA_DATA"

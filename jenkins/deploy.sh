@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -90,31 +90,3 @@ $DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
             -Dfile=$FPATH.jar -DgroupId=com.nvidia -DartifactId=$ART_ID -Dversion=$ART_VER \
             -Dfiles=$FPATH.jar -Dtypes=jar -Dclassifiers=$CUDA_CLASSIFIER \
             -DpomFile="$POM_FPATH"
-
-###### Deploy profiling tool jar(s) ######
-TOOL_PL=${TOOL_PL:-"tools"}
-TOOL_ART_ID=`mvn help:evaluate -q -pl $TOOL_PL -Dexpression=project.artifactId -DforceStdout -Prelease311`
-TOOL_ART_VER=`mvn help:evaluate -q -pl $TOOL_PL -Dexpression=project.version -DforceStdout -Prelease311`
-TOOL_FPATH="deployjars/$TOOL_ART_ID-$TOOL_ART_VER"
-TOOL_DOC_JARS="-Dsources=${TOOL_FPATH}-sources.jar -Djavadoc=${TOOL_FPATH}-javadoc.jar"
-$DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
-            $TOOL_DOC_JARS \
-            -Dfile=$TOOL_FPATH.jar -DpomFile=${TOOL_PL}/dependency-reduced-pom.xml
-
-###### Deploy Spark 2.x explain meta jar ######
-SPARK2_PL=${SPARK2_PL:-"spark2-sql-plugin"}
-SPARK2_ART_ID=`mvn help:evaluate -q -pl $SPARK2_PL -Dexpression=project.artifactId -DforceStdout -Dbuildver=24X`
-SPARK2_ART_VER=`mvn help:evaluate -q -pl $SPARK2_PL -Dexpression=project.version -DforceStdout -Dbuildver=24X`
-SPARK2_FPATH="$M2DIR/com/nvidia/$SPARK2_ART_ID/$SPARK2_ART_VER/$SPARK2_ART_ID-$SPARK2_ART_VER"
-SPARK2_DOC_JARS="-Dsources=${SPARK2_FPATH}-sources.jar -Djavadoc=${SPARK2_FPATH}-javadoc.jar"
-# a bit ugly but just hardcode to spark24 for now since only version supported
-SPARK2_CLASSIFIER='spark24'
-SPARK2_CLASSIFIER_JAR="${SPARK2_FPATH}-${SPARK2_CLASSIFIER}.jar"
-# Oss requires a main jar file along with classifier jars
-cp ${SPARK2_FPATH}-${SPARK2_CLASSIFIER}.jar ${SPARK2_FPATH}.jar
-$DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
-            $SPARK2_DOC_JARS \
-            -Dfile=${SPARK2_FPATH}.jar -DpomFile=${SPARK2_PL}/pom.xml \
-            -Dfiles=$SPARK2_CLASSIFIER_JAR \
-            -Dtypes=jar \
-            -Dclassifiers=$SPARK2_CLASSIFIER

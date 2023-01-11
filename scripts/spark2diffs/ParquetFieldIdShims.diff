@@ -1,7 +1,0 @@
-7,9c7,8
-<   def tagGpuSupportReadForFieldId(meta: RapidsMeta[_, _], conf: SQLConf): Unit = {
-<     // Parquet field ID support configs are not supported until Spark 3.3
-<   }
----
->   /** Parquet field ID support configs are not supported until Spark 3.3 */
->   def getParquetIdWriteEnabled(sqlConf: SQLConf): Boolean = false

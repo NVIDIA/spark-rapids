@@ -27,7 +27,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.rapids.{GpuAdd, GpuAggregateExpression, GpuCount, GpuCreateNamedStruct, GpuDivide, GpuSubtract}
+import org.apache.spark.sql.rapids.{AddOverflowChecks, GpuAggregateExpression, GpuCount, GpuCreateNamedStruct, GpuDivide, GpuSubtract}
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.CalendarInterval
@@ -1144,7 +1144,7 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
             }
             withResource(nullsReplaced) { nullsReplaced =>
               closeOnExcept(nullsReplaced.binaryOp(BinaryOp.ADD, prev, prev.getType)) { added =>
-                (added, GpuAdd.didDecimalOverflow(nullsReplaced, prev, added))
+                (added, AddOverflowChecks.didDecimalOverflow(nullsReplaced, prev, added))
               }
             }
           }
@@ -1171,7 +1171,8 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
             withResource(nullsReplaced.binaryOp(BinaryOp.ADD, prev, prev.getType)) { added =>
               closeOnExcept(mask.ifElse(added, windowedColumnOutput)) { updated =>
                 withResource(Scalar.fromBool(false)) { falseVal =>
-                  withResource(GpuAdd.didDecimalOverflow(nullsReplaced, prev, added)) { over =>
+                  withResource(AddOverflowChecks
+                      .didDecimalOverflow(nullsReplaced, prev, added)) { over =>
                     (updated, mask.ifElse(over, falseVal))
                   }
                 }

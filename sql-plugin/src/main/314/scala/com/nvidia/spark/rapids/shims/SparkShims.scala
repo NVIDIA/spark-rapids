@@ -42,5 +42,5 @@ object SparkShimImpl extends Spark31XShims {
 
   override def isCastingStringToNegDecimalScaleSupported: Boolean = true
 
-  override def reproduceEmptyStringBug: Boolean = true
+  override def reproduceEmptyStringBug: Boolean = false
 }

@@ -248,25 +248,30 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
       }
     }
 
-    val filePartitions: Seq[FilePartition] = directories.flatMap { case (directory, partValues) =>
-      val path               = new Path(directory)
-      val fs                 = path.getFileSystem(hadoopConf)
-      val dirContents        = fs.listStatus(path).filter(isNonEmptyDataFile)
-      val partitionDirectory = PartitionDirectory(partValues, dirContents)
-      val maxSplitBytes      = FilePartition.maxSplitBytes(sparkSession, Array(partitionDirectory))
+    val selectedPartitions: Array[PartitionDirectory] = directories.map {
+      case (directory, partValues) =>
+        val path               = new Path(directory)
+        val fs                 = path.getFileSystem(hadoopConf)
+        val dirContents        = fs.listStatus(path).filter(isNonEmptyDataFile)
+        PartitionDirectory(partValues, dirContents)
+    }.toArray
 
-      val splitFiles: Seq[PartitionedFile] = partitionDirectory.files.flatMap { f =>
+    val maxSplitBytes      = FilePartition.maxSplitBytes(sparkSession, selectedPartitions)
+
+    val splitFiles = selectedPartitions.flatMap { partition =>
+      partition.files.flatMap { f =>
         PartitionedFileUtil.splitFiles(
           sparkSession,
           f,
           f.getPath,
           isSplitable = true,
           maxSplitBytes,
-          partitionDirectory.values
+          partition.values
         )
       }.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
-      FilePartition.getFilePartitions(sparkSession, splitFiles, maxSplitBytes)
     }
+
+    val filePartitions = FilePartition.getFilePartitions(sparkSession, splitFiles, maxSplitBytes)
 
     // TODO [future]: Handle small-file optimization.
     //                (https://github.com/NVIDIA/spark-rapids/issues/7017)
@@ -571,12 +576,6 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
 
   override def castStringToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector =
     CastStrings.toDecimal(input, false, false, dt.precision, -dt.scale)
-
-  override def castStringToFloat(input: ColumnVector, dt: DType): ColumnVector = {
-    withResource(input.strip()) { stripped =>
-      super.castStringToFloat(stripped, dt)
-    }
-  }
 
   /**
    * Override of [[com.nvidia.spark.rapids.GpuTextBasedPartitionReader.castStringToDate()]],
