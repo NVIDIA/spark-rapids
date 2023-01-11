@@ -79,16 +79,14 @@ public final class HashedPriorityQueue<T> extends AbstractQueue<T> {
   public boolean offer(T obj) {
     ensureCapacityToInsert();
     MutableInt location = new MutableInt(size);
-    val old = locationMap.putIfAbsent(obj, location);
-    if (old == null) {
+    MutableInt oldLocation = locationMap.putIfAbsent(obj, location);
+    if (oldLocation == null) {
+      // Inserted a new object since we didn't have a prior location.
       // Start with the new object at the bottom of the heap and sift it up
       // until heap properties are restored.
       size += 1;
       siftUp(obj, location);
       return true;
-    } else {
-      return false;
-    }
     } else {
       // we return false in the case where the object is already
       // in the locationMap
