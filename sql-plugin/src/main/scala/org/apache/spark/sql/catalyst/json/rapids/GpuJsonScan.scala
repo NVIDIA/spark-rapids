@@ -59,7 +59,6 @@ object GpuJsonScan {
 
   def tagSupportOptions(options: JSONOptionsInRead,
                         meta: RapidsMeta[_, _, _]): Unit = {
-
     if (options.multiLine) {
       meta.willNotWorkOnGpu("GpuJsonScan does not support multiLine")
     }
@@ -113,13 +112,11 @@ object GpuJsonScan {
     tagSupportOptions(parsedOptions, meta)
   }
 
-  def tagSupport(
-                  sparkSession: SparkSession,
-                  dataSchema: StructType,
-                  readSchema: StructType,
-                  options: Map[String, String],
-                  meta: RapidsMeta[_, _, _]): Unit = {
-
+  def tagSupport(sparkSession: SparkSession,
+                 dataSchema: StructType,
+                 readSchema: StructType,
+                 options: Map[String, String],
+                 meta: RapidsMeta[_, _, _]): Unit = {
     val parsedOptions = new JSONOptionsInRead(
       options,
       sparkSession.sessionState.conf.sessionLocalTimeZone,
