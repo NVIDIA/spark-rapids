@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -113,6 +113,17 @@ def test_subtraction(data_gen):
                 f.col('b') - f.lit(None).cast(data_type),
                 f.col('a') - f.col('b')))
 
+@pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3),
+    DecimalGen(4, 2), DecimalGen(3, -2), DecimalGen(16, 7), DecimalGen(19, 0),
+    DecimalGen(30, 10)], ids=idfn)
+@pytest.mark.parametrize('rhs', [DecimalGen(6, 3), DecimalGen(10, -2), DecimalGen(15, 3),
+    DecimalGen(30, 12), DecimalGen(3, -3), DecimalGen(27, 7), DecimalGen(20, -3)], ids=idfn)
+@pytest.mark.parametrize('addOrSub', ['+', '-'])
+def test_addition_subtraction_mixed_decimal(lhs, rhs, addOrSub):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"a {addOrSub} b")
+    )
+
 # If it will not overflow for multiply it is good for subtract too
 @pytest.mark.parametrize('data_gen', _no_overflow_multiply_gens, ids=idfn)
 def test_subtraction_ansi_no_overflow(data_gen):
@@ -189,7 +200,7 @@ def test_float_multiplication_mixed(lhs, rhs):
             conf={'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
 
 @pytest.mark.parametrize('data_gen', [double_gen, decimal_gen_32bit_neg_scale, DecimalGen(6, 3),
- DecimalGen(5, 5), DecimalGen(6, 0), DecimalGen(7, 4), DecimalGen(15, 0), DecimalGen(18, 0), 
+ DecimalGen(5, 5), DecimalGen(6, 0), DecimalGen(7, 4), DecimalGen(15, 0), DecimalGen(18, 0),
  DecimalGen(17, 2), DecimalGen(16, 4), DecimalGen(38, 21), DecimalGen(21, 17), DecimalGen(3, -2)], ids=idfn)
 def test_division(data_gen):
     data_type = data_gen.data_type

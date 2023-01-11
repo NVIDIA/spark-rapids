@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,11 +34,12 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
   // arithmetic operations can overflow and throw exceptions in ANSI mode
   override def hasSideEffects: Boolean = super.hasSideEffects || SQLConf.get.ansiEnabled
 
-  override def dataType: DataType = (left.dataType, right.dataType) match {
+  def dataTypeInternal(lhs: Expression, rhs: Expression) = (lhs.dataType, rhs.dataType) match {
     case (DecimalType.Fixed(p1, s1), DecimalType.Fixed(p2, s2)) =>
       resultDecimalType(p1, s1, p2, s2)
-    case _ => left.dataType
+    case _ => lhs.dataType
   }
+  override def dataType: DataType = dataTypeInternal(left, right)
 
   protected def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
     throw new IllegalStateException(
@@ -55,17 +56,48 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
 }
 
 trait GpuAddSub extends CudfBinaryArithmetic {
-
   override def outputTypeOverride: DType = GpuColumnVector.getNonNestedRapidsType(dataType)
   val failOnError: Boolean
-
   override def columnarEval(batch: ColumnarBatch): Any = {
-    if (dataType.isInstanceOf[DecimalType]) {
-      (left.dataType, right.dataType) match {
+    val outputType = dataType
+    val leftInputType = left.dataType
+    val rightInputType = right.dataType
+
+    if (outputType.isInstanceOf[DecimalType]) {
+      (leftInputType, rightInputType) match {
         case (DecimalType.Fixed(p1, s1), DecimalType.Fixed(p2, s2)) =>
-          val resultType = resultDecimalType(p1, s1, p2, s2)
+          val resultType = outputType.asInstanceOf[DecimalType]
           if (resultType.precision < 38) {
-            super.columnarEval(batch)
+            // SPARK-39316 https://github.com/apache/spark/commit/301a139638
+            // moves the Cast of the operands to the result type
+            // from the arithmetic expression plan to the datatype-specific operation
+            // implementation. libcudf requires identical DType for both operands.
+            // We ensure this in the Plugin by handling these cases:
+            // - if both Spark input types are identical, no casting is necessary,
+            //   since they ultimately map to the same DType
+            // - if precision >= 38 we execute a DECIMAL128 binop casting both operands
+            //   to DECIMAL128
+            // - if precision < 38 cast both operands to the Spark output type
+            //
+            if (leftInputType == rightInputType) {
+              super.columnarEval(batch)
+            } else {
+              // eval operands using the output precision
+              val castLhs = withResource(
+                GpuExpressionsUtils.columnarEvalToColumn(left, batch)
+              ) { lhs =>
+                GpuCast.doCast(lhs.getBase(), leftInputType, resultType, false, false, false)
+              }
+              val castRhs = closeOnExcept(castLhs){ _ =>
+                withResource(GpuExpressionsUtils.columnarEvalToColumn(right, batch)) { rhs =>
+                  GpuCast.doCast(rhs.getBase(), rightInputType, resultType, false, false, false)
+                }
+              }
+
+              withResource(Seq(castLhs, castRhs)) { _ =>
+                GpuColumnVector.from(super.doColumnar(castLhs, castRhs), resultType)
+              }
+            }
           } else {
             // call the kernel to add 128-bit numbers
             prepareInputAndExecute(batch, resultType)
@@ -74,6 +106,23 @@ trait GpuAddSub extends CudfBinaryArithmetic {
       }
     } else {
       super.columnarEval(batch)
+    }
+  }
+
+  // scalastyle:off
+  // The formula follows Hive which is based on the SQL standard and MS SQL:
+  // https://cwiki.apache.org/confluence/download/attachments/27362075/Hive_Decimal_Precision_Scale_Support.pdf
+  // https://msdn.microsoft.com/en-us/library/ms190476.aspx
+  // Result Precision: max(s1, s2) + max(p1-s1, p2-s2) + 1
+  // Result Scale:     max(s1, s2)
+  // scalastyle:on
+  override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
+    val resultScale = max(s1, s2)
+    val resultPrecision = max(p1 - s1, p2 - s2) + resultScale + 1
+    if (allowPrecisionLoss) {
+      DecimalType.adjustPrecisionScale(resultPrecision, resultScale)
+    } else {
+      DecimalType.bounded(resultPrecision, resultScale)
     }
   }
 
@@ -102,12 +151,12 @@ trait GpuAddSub extends CudfBinaryArithmetic {
         }
         sum.incRefCount()
       } else {
-        withResource(GpuScalar.from(null, dataType)) { nullVal =>
+        withResource(GpuScalar.from(null, resultType)) { nullVal =>
           overflowed.ifElse(nullVal, sum)
         }
       }
     }
-    GpuColumnVector.from(retCol, dataType)
+    GpuColumnVector.from(retCol, resultType)
   }
 
   protected def do128BitOperation(
@@ -120,7 +169,7 @@ case class GpuAdd(
     left: Expression,
     right: Expression,
     override val failOnError: Boolean)
-    extends GpuAddBase(left, right, failOnError) with GpuAddSub {
+    extends GpuAddBase(failOnError) with GpuAddSub {
 
   def do128BitOperation(
       castLhs: ColumnView,
@@ -128,46 +177,18 @@ case class GpuAdd(
       outputScale: Int): Table = {
     com.nvidia.spark.rapids.jni.DecimalUtils.add128(castLhs, castRhs, outputScale)
   }
-
-  // scalastyle:off
-  // The formula follows Hive which is based on the SQL standard and MS SQL:
-  // https://cwiki.apache.org/confluence/download/attachments/27362075/Hive_Decimal_Precision_Scale_Support.pdf
-  // https://msdn.microsoft.com/en-us/library/ms190476.aspx
-  // Result Precision: max(s1, s2) + max(p1-s1, p2-s2) + 1
-  // Result Scale:     max(s1, s2)
-  // scalastyle:on
-  override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
-    val resultScale = max(s1, s2)
-    val resultPrecision = max(p1 - s1, p2 - s2) + resultScale + 1
-    if (allowPrecisionLoss) {
-      DecimalType.adjustPrecisionScale(resultPrecision, resultScale)
-    } else {
-      DecimalType.bounded(resultPrecision, resultScale)
-    }
-  }
 }
 
 case class GpuSubtract(
     left: Expression,
     right: Expression,
     override val failOnError: Boolean)
-    extends GpuSubtractBase(left, right, failOnError) with GpuAddSub {
-
+    extends GpuSubtractBase(failOnError) with GpuAddSub {
   def do128BitOperation(
       castLhs: ColumnView,
       castRhs: ColumnView,
       outputScale: Int): Table = {
     com.nvidia.spark.rapids.jni.DecimalUtils.subtract128(castLhs, castRhs, outputScale)
-  }
-
-  override def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
-    val resultScale = max(s1, s2)
-    val resultPrecision = max(p1 - s1, p2 - s2) + resultScale + 1
-    if (allowPrecisionLoss) {
-      DecimalType.adjustPrecisionScale(resultPrecision, resultScale)
-    } else {
-      DecimalType.bounded(resultPrecision, resultScale)
-    }
   }
 }
 
