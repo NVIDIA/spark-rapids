@@ -628,6 +628,8 @@ class RegexParser(pattern: String) {
 object RegexParser {
   private val regexpChars = Set('\u0000', '\\', '.', '^', '$', '\u0007', '\u001b', '\f')
 
+  def parse(pattern: String): RegexAST = new RegexParser(pattern).parse
+
   def isRegExpString(s: String): Boolean = {
 
     def isRegExpString(ast: RegexAST): Boolean = ast match {
@@ -842,10 +844,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         None
       )
     } else {
-      RegexGroup(capture = capture,
-        RegexChoice(
-          RegexChar('\r'),
-          RegexSequence(ListBuffer(RegexChar('\r'), RegexChar('\n')))), None)
+      RegexGroup(capture = capture, RegexParser.parse("\r|\u2028|\u2029|\r\n"), None)
     }
   }
 

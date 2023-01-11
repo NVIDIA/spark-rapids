@@ -423,7 +423,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     doTranspileTest(TIMESTAMP_TRUNCATE_REGEX,
       TIMESTAMP_TRUNCATE_REGEX
         .replaceAll("\\.", "[^\n\r\u0085\u2028\u2029]")
-        .replaceAll("\\\\Z", "(?:\r|\r\n)?\\$"))
+        .replaceAll("\\\\Z", "(?:\r|\u2028|\u2029|\r\n)?\\$"))
   }
 
   test("transpile \\A repetitions") {
@@ -438,14 +438,15 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("transpile $") {
-    doTranspileTest("a$", "a(?:\r|\r\n)?$")
+    doTranspileTest("a$", "a(?:\r|\u2028|\u2029|\r\n)?$")
   }
 
   test("transpile \\Z") {
-    doTranspileTest("a\\Z", "a(?:\r|\r\n)?$")
-    doTranspileTest("a\\Z+", "a(?:\r|\r\n)?$")
-    doTranspileTest("a\\Z{1}", "a(?:\r|\r\n)?$")
-    doTranspileTest("a\\Z{1,}", "a(?:\r|\r\n)?$")
+    val expected = "a(?:\r|\u2028|\u2029|\r\n)?$"
+    doTranspileTest("a\\Z", expected)
+    doTranspileTest("a\\Z+", expected)
+    doTranspileTest("a\\Z{1}", expected)
+    doTranspileTest("a\\Z{1,}", expected)
   }
 
   test("transpile predefined character classes") {
@@ -512,6 +513,10 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val inputs = Seq("a", "b", "c", "cat", "", "^", "$", "^a", "t$")
     val patterns = Seq("^a", "^a", "(^a|^t)", "^[ac]", "^^^a", "[\\^^]", "a$", "a$$", "\\$$")
     assertCpuGpuMatchesRegexpReplace(patterns, inputs)
+  }
+
+  test("line anchor replace u2028") {
+    assertCpuGpuMatchesRegexpReplace(Seq("TEST$"), Seq("aTEST\u2028"))
   }
 
   test("cuDF does not support some uses of line anchors in regexp_replace") {
