@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -32,7 +33,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * is left unchanged after validations.
  */
 case class GpuDeltaInvariantCheckerExec(
-    child: GpuExec,
+    child: SparkPlan,
     checks: Seq[GpuCheckDeltaInvariant]) extends ShimUnaryExecNode with GpuExec {
 
   override def output: Seq[Attribute] = child.output
