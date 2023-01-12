@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import java.time.ZoneId
 
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.shims.SparkShimImpl
+import com.nvidia.spark.rapids.shims.{DistributionUtil, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
@@ -729,7 +729,13 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
    * one of its children please take special care to update the comment inside
    * `tagSelfForGpu` so we don't end up with something that could be cyclical.
    */
-  def tagPlanForGpu(): Unit = {}
+  def tagPlanForGpu(): Unit = {
+    // All ExecMeta extend SparkMeta. We need to check if the requiredChildDistribution
+    // is recognized or not. If it's unrecognized Distribution then we fall back to CPU.
+    if (!DistributionUtil.isSupported(plan.requiredChildDistribution)) {
+      willNotWorkOnGpu("Unrecognized Distribution found in SparkPlan not supported by GPU")
+    }
+  }
 
   /**
    * If this is enabled to be converted to a GPU version convert it and return the result, else

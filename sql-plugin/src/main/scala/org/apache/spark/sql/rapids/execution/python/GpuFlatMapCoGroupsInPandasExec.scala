@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,6 +45,7 @@ class GpuFlatMapCoGroupsInPandasExecMeta(
     s"cannot run even partially on the GPU because $reasons"
 
   override def tagPlanForGpu(): Unit = {
+    super.tagPlanForGpu()
     // Fall back to CPU when the two grouping columns in a pair have different types.
     // e.g.
     //   Left grouping column is (a: Int),

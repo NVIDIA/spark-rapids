@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,6 +58,7 @@ abstract class GpuWindowInPandasExecMetaBase(
 
   // Same check with that in GpuWindowExecMeta
   override def tagPlanForGpu(): Unit = {
+    super.tagPlanForGpu()
     // Implementation depends on receiving a `NamedExpression` wrapped WindowExpression.
     windowExpressions.map(meta => meta.wrapped)
       .filter(expr => !expr.isInstanceOf[NamedExpression])
