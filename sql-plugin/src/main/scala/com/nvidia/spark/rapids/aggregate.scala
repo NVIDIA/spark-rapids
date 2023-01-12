@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -847,7 +847,6 @@ abstract class GpuBaseAggregateMeta[INPUT <: SparkPlan](
     groupingExpressions ++ aggregateExpressions ++ aggregateAttributes ++ resultExpressions
 
   override def tagPlanForGpu(): Unit = {
-    super.tagPlanForGpu()
     // We don't support Arrays and Maps as GroupBy keys yet, even they are nested in Structs. So,
     // we need to run recursive type check on the structs.
     val arrayOrMapGroupings = agg.groupingExpressions.exists(e =>

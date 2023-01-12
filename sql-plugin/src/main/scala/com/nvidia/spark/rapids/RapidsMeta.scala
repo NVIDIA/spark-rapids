@@ -707,6 +707,11 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     if (!childRunnableCmds.forall(_.canThisBeReplaced)) {
       willNotWorkOnGpu("not all commands can be replaced")
     }
+    // All ExecMeta extend SparkMeta. We need to check if the requiredChildDistribution
+    // is recognized or not. If it's unrecognized Distribution then we fall back to CPU.
+    if (!DistributionUtil.isSupported(plan.requiredChildDistribution)) {
+      willNotWorkOnGpu("Unrecognized Distribution found in SparkPlan not supported by GPU")
+    }
 
     checkExistingTags()
 
@@ -729,13 +734,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
    * one of its children please take special care to update the comment inside
    * `tagSelfForGpu` so we don't end up with something that could be cyclical.
    */
-  def tagPlanForGpu(): Unit = {
-    // All ExecMeta extend SparkMeta. We need to check if the requiredChildDistribution
-    // is recognized or not. If it's unrecognized Distribution then we fall back to CPU.
-    if (!DistributionUtil.isSupported(plan.requiredChildDistribution)) {
-      willNotWorkOnGpu("Unrecognized Distribution found in SparkPlan not supported by GPU")
-    }
-  }
+  def tagPlanForGpu(): Unit = {}
 
   /**
    * If this is enabled to be converted to a GPU version convert it and return the result, else

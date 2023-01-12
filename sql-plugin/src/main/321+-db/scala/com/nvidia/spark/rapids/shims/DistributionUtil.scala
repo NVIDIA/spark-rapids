@@ -17,21 +17,21 @@
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, BroadcastDistribution, ClusteredDistribution, Distribution, OrderedDistribution, StatefulOpClusteredDistribution, UnspecifiedDistribution}
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 object DistributionUtil {
 
   def isSupported(distributions: Seq[Distribution]): Boolean = {
-    val finalRes = distributions.map { dist =>
+    distributions.forall { dist =>
       dist match {
-        case _: UnspecifiedDistribution.type => true // UnspecifiedDistribution is case object
-        case _: AllTuples.type => true // AllTuples is case object
-        case _: BroadcastDistribution => true
+        case _: UnspecifiedDistribution.type => true
+        case _: AllTuples.type => true
+        case b: BroadcastDistribution => TrampolineUtil.isSupportedRelation(b.mode)
         case _: ClusteredDistribution => true
         case _: OrderedDistribution => true
         case _: StatefulOpClusteredDistribution => true
         case _ => false
       }
     }
-    finalRes.forall(_ == true)
   }
 }
