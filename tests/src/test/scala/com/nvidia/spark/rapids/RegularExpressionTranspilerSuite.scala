@@ -515,8 +515,18 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assertCpuGpuMatchesRegexpReplace(patterns, inputs)
   }
 
-  test("line anchor replace - unicode line separators") {
-    val inputs = Seq("aTEST\u2028", "aTEST\u2028\n", "aTEST\u0085", "aTEST\u0085\n")
+  test("line anchor replace - unicode line separators 0085") {
+    val inputs = Seq("aTEST\u0085", "aTEST\u0085\n", "aTEST\n\u0085")
+    assertCpuGpuMatchesRegexpReplace(Seq("TEST$"), inputs)
+  }
+
+  test("line anchor replace - unicode line separators 2028") {
+    val inputs = Seq("aTEST\u2028", "aTEST\u2028\n", "aTEST\n\u2028")
+    assertCpuGpuMatchesRegexpReplace(Seq("TEST$"), inputs)
+  }
+
+  test("line anchor replace - unicode line separators 2029") {
+    val inputs = Seq("aTEST\u2029", "aTEST\u2029\n", "aTEST\n\u2029")
     assertCpuGpuMatchesRegexpReplace(Seq("TEST$"), inputs)
   }
 
