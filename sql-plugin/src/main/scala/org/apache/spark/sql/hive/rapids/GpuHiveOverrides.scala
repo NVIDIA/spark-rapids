@@ -16,11 +16,11 @@
 
 package org.apache.spark.sql.hive.rapids
 
-import com.nvidia.spark.rapids.{DataWritingCommandRule, ExecRule, ExprRule, HiveProvider, ShimLoader}
+import com.nvidia.spark.rapids.{DataWritingCommandRule, ExecRule, ExprRule, HiveProvider, RunnableCommandRule, ShimLoader}
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.command.DataWritingCommand
+import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 
 object GpuHiveOverrides {
   val isSparkHiveAvailable: Boolean = {
@@ -40,6 +40,9 @@ object GpuHiveOverrides {
       new HiveProvider() {
         override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
             DataWritingCommandRule[_ <: DataWritingCommand]] = Map.empty
+
+        override def getRunnableCmds: Map[Class[_ <: RunnableCommand],
+            RunnableCommandRule[_ <: RunnableCommand]] = Map.empty
         override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map.empty
         override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Map.empty
       }
@@ -53,6 +56,8 @@ object GpuHiveOverrides {
    */
   def dataWriteCmds: Map[Class[_ <: DataWritingCommand],
       DataWritingCommandRule[_ <: DataWritingCommand]] = hiveProvider.getDataWriteCmds
+
+  def runnableCmds = hiveProvider.getRunnableCmds
 
   /**
    * Builds the expression rules that are specific to spark-hive Catalyst nodes

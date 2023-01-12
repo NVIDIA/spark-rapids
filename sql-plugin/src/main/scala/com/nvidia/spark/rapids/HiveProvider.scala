@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.command.DataWritingCommand
+import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 
 /**
  * The subclass of HiveProvider imports spark-hive classes. This file should not imports
@@ -28,6 +28,9 @@ import org.apache.spark.sql.execution.command.DataWritingCommand
 trait HiveProvider {
   def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
       DataWritingCommandRule[_ <: DataWritingCommand]]
+
+  def getRunnableCmds: Map[Class[_ <: RunnableCommand],
+      RunnableCommandRule[_ <: RunnableCommand]]
 
   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
 
