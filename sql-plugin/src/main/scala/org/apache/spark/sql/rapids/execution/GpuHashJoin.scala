@@ -709,31 +709,27 @@ class HashFullJoinIterator(
         }
       }
     }
-    // Get the current tracking table, or all true table to start with
-    val builtTrackingTable = builtSideTracker.map { spillableBatch =>
-      withResource(spillableBatch.releaseBatch()) { trackingBatch =>
-        GpuColumnVector.from(trackingBatch)
-      }
-    }.getOrElse {
-      trueColumnTable(numBuiltRows)
-    }
     // Update all hits in the gather map with false (no longer needed) in the tracking table
-    val updatedTrackingTable = {
-      withResource(filteredGatherMap) { filteredMap =>
-        withResource(builtTrackingTable) { trackingTable =>
-          withResource(Scalar.fromBool(false)) { falseScalar =>
-            Table.scatter(Array(falseScalar), filteredMap.getColumn(0), trackingTable)
-          }
+    val updatedTrackingTable = withResource(filteredGatherMap) { filteredMap =>
+      // Get the current tracking table, or all true table to start with
+      val builtTrackingTable = builtSideTracker.map { spillableBatch =>
+        withResource(spillableBatch.releaseBatch()) { trackingBatch =>
+          GpuColumnVector.from(trackingBatch)
+        }
+      }.getOrElse {
+        trueColumnTable(numBuiltRows)
+      }
+      withResource(builtTrackingTable) { trackingTable =>
+        withResource(Scalar.fromBool(false)) { falseScalar =>
+          Table.scatter(Array(falseScalar), filteredMap.getColumn(0), trackingTable)
         }
       }
     }
-    builtSideTracker = {
-      withResource(updatedTrackingTable) { newTab =>
-        withResource(GpuColumnVector.from(newTab, Array[DataType](DataTypes.BooleanType))) { cb =>
-          val lazyBatch = LazySpillableColumnarBatch(cb, spillCallback, "tracking_batch")
-          lazyBatch.allowSpilling()
-          Some(lazyBatch)
-        }
+    builtSideTracker = withResource(updatedTrackingTable) { newTab =>
+      withResource(GpuColumnVector.from(newTab, Array[DataType](DataTypes.BooleanType))) { cb =>
+        val lazyBatch = LazySpillableColumnarBatch(cb, spillCallback, "tracking_batch")
+        lazyBatch.allowSpilling()
+        Some(lazyBatch)
       }
     }
   }

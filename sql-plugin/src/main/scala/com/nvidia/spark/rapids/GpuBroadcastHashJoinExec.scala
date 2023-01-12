@@ -132,8 +132,6 @@ case class GpuBroadcastHashJoinExec(
     }
   }
 
-  override def childrenCoalesceGoal: Seq[CoalesceGoal] = Seq(null, null)
-
   def broadcastExchange: GpuBroadcastExchangeExec = buildPlan match {
     case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[GpuBroadcastExchangeExec] =>
       bqse.plan.asInstanceOf[GpuBroadcastExchangeExec]
