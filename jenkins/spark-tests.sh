@@ -97,8 +97,7 @@ fi
 tar xzf "$RAPIDS_INT_TESTS_TGZ" -C $ARTF_ROOT && rm -f "$RAPIDS_INT_TESTS_TGZ"
 
 . jenkins/hadoop-def.sh $SPARK_VER
-$MVN_GET_CMD -DremoteRepositories=$SPARK_REPO \
-    -DgroupId=org.apache -DartifactId=spark -Dversion=$SPARK_VER -Dclassifier=$BIN_HADOOP_VER -Dpackaging=tgz
+wget -P $ARTF_ROOT https://archive.apache.org/dist/spark/spark-$SPARK_VER/spark-$SPARK_VER-$BIN_HADOOP_VER.tgz
 
 # Download parquet-hadoop jar for parquet-read encryption tests
 PARQUET_HADOOP_VER=`mvn help:evaluate -q -N -Dexpression=parquet.hadoop.version -DforceStdout -Dbuildver=${SHUFFLE_SPARK_SHIM/spark/}`

@@ -16,7 +16,6 @@
 #
 # Argument(s):
 #   1 SPARK_VER: spark version. e.g. 3.3.0
-#   2 CUSTOM_URL: custom download url
 #
 
 set -e
@@ -26,11 +25,7 @@ spark_version=${1:-"3.1.1"}
 PRE_IFS=$IFS
 IFS="-" read -r -a spark_version <<< "$1"
 IFS=$PRE_IFS
-if [[ ${#spark_version[@]} > 1 ]]; then # version with suffix
-    BIN_HADOOP_VER="bin-hadoop3.2"
-elif [[ -n "$2" ]]; then # without suffix, provided custom-url
-    BIN_HADOOP_VER="bin-hadoop3.2"
-elif [[ `echo -e "${spark_version[0]}\n3.3.0" | sort -V | head -n 1` == "3.3.0" ]]; then # no custom url and spark version >= 3.3.0
+if [[ ${#spark_version[@]} == 1 ]] && [[ `echo -e "${spark_version[0]}\n3.3.0" | sort -V | head -n 1` == "3.3.0" ]]; then # without suffix and spark version >= 3.3.0
     BIN_HADOOP_VER="bin-hadoop3"
 else
     BIN_HADOOP_VER="bin-hadoop3.2"
