@@ -24,7 +24,7 @@ object DistributionUtil {
     val finalRes = distributions.map { dist =>
       dist match {
         case _: UnspecifiedDistribution.type => true // UnspecifiedDistribution is case object
-        case _: AllTuples.type => true // AllTuples is case object
+        case AllTuples.type => true
         case b: BroadcastDistribution => TrampolineUtil.isSupportedRelation(b.mode)
         case _: ClusteredDistribution => true
         case _: OrderedDistribution => true
