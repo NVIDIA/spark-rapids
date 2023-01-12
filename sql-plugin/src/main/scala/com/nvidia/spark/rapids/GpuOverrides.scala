@@ -3430,6 +3430,38 @@ object GpuOverrides extends Logging {
           GpuGetJsonObject(lhs, rhs)
       }
     ),
+    expr[JsonTuple](
+      "Returns a tuple like the function get_json_object, but it takes multiple names. " + 
+        "All the input parameters and output column types are string.",
+      ExprChecks.projectOnly(
+        TypeSig.ARRAY.nested(TypeSig.STRUCT + TypeSig.STRING),
+        TypeSig.ARRAY.nested(TypeSig.STRUCT + TypeSig.STRING),
+        Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING)),
+        Some(RepeatingParamCheck("field", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+      (a, conf, p, r) => new GeneratorExprMeta[JsonTuple](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (childExprs.length >= 50) {
+            // If the number of field parameters is too large, fall back to CPU to avoid 
+            // potential performance problems.
+            willNotWorkOnGpu("JsonTuple with large number of fields is not supported on GPU")
+          }
+          // If any field argument contains special characters as follows, fall back to CPU.
+          (a.children.tail).map { fieldExpr =>
+            extractLit(fieldExpr).foreach { field => 
+              if (field.value != null) {
+                val fieldStr = field.value.asInstanceOf[UTF8String].toString
+                val specialCharacters = List(".", "[", "]", "{", "}", "\\", "\'", "\"")
+                if (specialCharacters.exists(fieldStr.contains(_))) {
+                  willNotWorkOnGpu(s"""JsonTuple with special character in field \"$fieldStr\" """
+                     + "is not supported on GPU")
+                }
+              }
+            }
+          }
+        }
+        override def convertToGpu(): GpuExpression = GpuJsonTuple(childExprs.map(_.convertToGpu()))
+      }
+    ),
     expr[org.apache.spark.sql.execution.ScalarSubquery](
       "Subquery that will return only one row and one column",
       ExprChecks.projectOnly(
