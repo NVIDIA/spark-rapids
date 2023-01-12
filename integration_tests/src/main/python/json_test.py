@@ -363,7 +363,7 @@ def test_json_read_count(spark_tmp_path, v1_enabled_list):
 def test_from_json_map():
     # The test here is working around some inconsistencies in how the keys are parsed for maps
     # on the GPU the keys are dense, but on the CPU they are sparse
-    json_string_gen = StringGen("{\"a\": \"[0-9]{0,5}\"(, \"b\": \"[A-Z]{0,5}\")?}")
+    json_string_gen = StringGen(r'{"a": "[0-9]{0,5}"(, "b": "[A-Z]{0,5}")?}')
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
             .selectExpr("from_json(a, \"MAP<STRING,STRING>\") as parsed") \
