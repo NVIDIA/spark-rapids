@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -36,8 +36,6 @@ mvn_verify() {
     BASE_REF=$(git --no-pager log --oneline -1 | awk '{ print $NF }')
     # file size check for pull request. The size of a committed file should be less than 1.5MiB
     pre-commit run check-added-large-files --from-ref $BASE_REF --to-ref HEAD
-    # build the Spark 2.x explain jar
-    env -u SPARK_HOME $MVN_CMD -B $MVN_URM_MIRROR -Dbuildver=24X clean install -DskipTests
 
     MVN_INSTALL_CMD="env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR clean install $MVN_BUILD_ARGS -DskipTests -pl aggregator -am"
 
@@ -49,7 +47,7 @@ mvn_verify() {
         # separate the versions to two ci stages (mvn_verify, ci_2) for balancing the duration
         if [[ "${SPARK_SHIM_VERSIONS_PREMERGE_UT_1[@]}" =~ "$version" ]]; then
             env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS \
-              -Dpytest.TEST_TAGS='' -pl '!tools'
+              -Dpytest.TEST_TAGS=''
         # build only for other versions
         elif [[ "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}" =~ "$version" ]]; then
             $MVN_INSTALL_CMD -DskipTests -Dbuildver=$version
@@ -60,7 +58,7 @@ mvn_verify() {
     for version in "${SPARK_SHIM_VERSIONS_PREMERGE_UTF8[@]}"
     do
         env -u SPARK_HOME LC_ALL="en_US.UTF-8" $MVN_CMD $MVN_URM_MIRROR -Dbuildver=$version test $MVN_BUILD_ARGS \
-          -Dpytest.TEST_TAGS='' -pl '!tools' \
+          -Dpytest.TEST_TAGS='' \
           -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
     done
     
@@ -115,6 +113,7 @@ rapids_shuffle_smoke_test() {
     # The UCX_TLS=^posix config is removing posix from the list of memory transports
     # so that IPC regions are obtained using SysV API instead. This was done because of
     # itermittent test failures. See: https://github.com/NVIDIA/spark-rapids/issues/6572
+    PYSP_TEST_spark_rapids_shuffle_mode=UCX \
     PYSP_TEST_spark_executorEnv_UCX_ERROR_SIGNALS="" \
     PYSP_TEST_spark_executorEnv_UCX_TLS="^posix" \
         invoke_shuffle_integration_test
@@ -146,7 +145,7 @@ ci_2() {
     for version in "${SPARK_SHIM_VERSIONS_PREMERGE_UT_2[@]}"
     do
         env -u SPARK_HOME $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean package $MVN_BUILD_ARGS \
-          -Dpytest.TEST_TAGS='' -pl '!tools'
+          -Dpytest.TEST_TAGS=''
     done
 }
 

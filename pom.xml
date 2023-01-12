@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2020-2022, NVIDIA CORPORATION.
+  Copyright (c) 2020-2023, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -71,24 +71,6 @@
     </developers>
     <profiles>
         <profile>
-            <id>release24X</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>24X</value>
-                </property>
-            </activation>
-            <properties>
-                <scala.binary.version>2.11</scala.binary.version>
-                <scala.version>2.11.12</scala.version>
-                <spark.version>${spark248.version}</spark.version>
-                <spark.test.version>${spark248.version}</spark.test.version>
-            </properties>
-            <modules>
-                <module>spark2-sql-plugin</module>
-            </modules>
-        </profile>
-        <profile>
             <id>release311</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
@@ -98,6 +80,8 @@
                 </property>
             </activation>
             <properties>
+                <buildver>311</buildver>
+                <delta.version>1.1.0</delta.version>
                 <spark.version>${spark311.version}</spark.version>
                 <spark.test.version>${spark311.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
@@ -112,7 +96,6 @@
                 <module>tests</module>
                 <module>udf-compiler</module>
                 <module>api_validation</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -126,6 +109,9 @@
                 </property>
             </activation>
             <properties>
+                <buildver>312db</buildver>
+                <!-- Use Spark version, as Delta Lake provided by the Databricks environment -->
+                <delta.version>${spark.version}</delta.version>
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
                 <shim.module.name>spark312db</shim.module.name>
@@ -164,6 +150,8 @@
                 </property>
             </activation>
             <properties>
+                <buildver>312</buildver>
+                <delta.version>1.0.1</delta.version>
                 <spark.version>${spark312.version}</spark.version>
                 <spark.test.version>${spark312.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
@@ -177,7 +165,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
             </modules>
@@ -191,6 +178,8 @@
                 </property>
             </activation>
             <properties>
+                <buildver>313</buildver>
+                <delta.version>1.0.1</delta.version>
                 <spark.version>${spark313.version}</spark.version>
                 <spark.test.version>${spark313.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
@@ -204,7 +193,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
             </modules>
@@ -218,6 +206,8 @@
                 </property>
             </activation>
             <properties>
+                <buildver>314</buildver>
+                <delta.version>1.0.1</delta.version>
                 <spark.version>${spark314.version}</spark.version>
                 <spark.test.version>${spark314.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
@@ -231,7 +221,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
             </modules>
@@ -245,6 +234,8 @@
                 </property>
             </activation>
             <properties>
+                <buildver>320</buildver>
+                <delta.version>2.0.1</delta.version>
                 <spark.version>${spark320.version}</spark.version>
                 <spark.test.version>${spark320.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.1</parquet.hadoop.version>
@@ -258,7 +249,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -271,6 +261,8 @@
                 </property>
             </activation>
             <properties>
+                <buildver>321</buildver>
+                <delta.version>2.0.1</delta.version>
                 <spark.version>${spark321.version}</spark.version>
                 <spark.test.version>${spark321.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
@@ -284,7 +276,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -297,6 +288,8 @@
                 </property>
             </activation>
             <properties>
+                <buildver>321cdh</buildver>
+                <delta.version>2.0.1</delta.version>
                 <spark.version>${spark321cdh.version}</spark.version>
                 <spark.test.version>${spark321cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
@@ -316,7 +309,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -329,6 +321,8 @@
                 </property>
             </activation>
             <properties>
+                <buildver>322</buildver>
+                <delta.version>2.0.1</delta.version>
                 <spark.version>${spark322.version}</spark.version>
                 <spark.test.version>${spark322.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
@@ -342,7 +336,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -355,6 +348,8 @@
                 </property>
             </activation>
             <properties>
+                <buildver>323</buildver>
+                <delta.version>2.0.1</delta.version>
                 <spark.version>${spark323.version}</spark.version>
                 <spark.test.version>${spark323.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
@@ -368,7 +363,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -382,6 +376,9 @@
                 </property>
             </activation>
             <properties>
+                <buildver>321db</buildver>
+                <!-- Use Spark version, as Delta Lake provided by the Databricks environment -->
+                <delta.version>${spark.version}</delta.version>
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
                 <shim.module.name>spark321db</shim.module.name>
@@ -419,10 +416,13 @@
                 </property>
             </activation>
             <properties>
+                <buildver>330</buildver>
+                <delta.version>2.1.1</delta.version>
                 <spark.version>${spark330.version}</spark.version>
                 <spark.test.version>${spark330.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark330.sources}</spark.shim.sources>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
@@ -432,7 +432,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -445,10 +444,13 @@
                 </property>
             </activation>
             <properties>
+                <buildver>331</buildver>
+                <delta.version>2.1.1</delta.version>
                 <spark.version>${spark331.version}</spark.version>
                 <spark.test.version>${spark331.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark331.sources}</spark.shim.sources>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
@@ -458,7 +460,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -471,10 +472,13 @@
                 </property>
             </activation>
             <properties>
+                <buildver>332</buildver>
+                <delta.version>2.1.1</delta.version>
                 <spark.version>${spark332.version}</spark.version>
                 <spark.test.version>${spark332.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark332.sources}</spark.shim.sources>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
@@ -484,7 +488,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -497,10 +500,13 @@
                 </property>
             </activation>
             <properties>
+                <buildver>340</buildver>
+                <delta.version>2.1.1</delta.version>
                 <spark.version>${spark340.version}</spark.version>
                 <spark.test.version>${spark340.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
                 <spark.shim.sources>${spark340.sources}</spark.shim.sources>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
@@ -510,7 +516,6 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -523,10 +528,13 @@
                 </property>
             </activation>
             <properties>
+                <buildver>330cdh</buildver>
+                <delta.version>2.1.1</delta.version>
                 <spark.version>${spark330cdh.version}</spark.version>
                 <spark.test.version>${spark330cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.99.7.1.8.0-801</parquet.hadoop.version>
                 <spark.shim.sources>${spark330cdh.sources}</spark.shim.sources>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
                 <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <repositories>
@@ -548,7 +556,48 @@
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
+                <module>aggregator</module>
+            </modules>
+        </profile>
+        <profile>
+            <!-- Note Databricks requires 2 properties -Ddatabricks and -Dbuildver=330db -->
+            <!-- Note that 330db backports many features from Spark3.4.0 -->
+            <id>release330db</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>330db</value>
+                </property>
+            </activation>
+            <properties>
+                <!-- Use Spark version, as Delta Lake provided by the Databricks environment -->
+                <delta.version>${spark.version}</delta.version>
+                <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
+                <scala.plugin.version>3.4.4</scala.plugin.version>
+                <shim.module.name>spark330db</shim.module.name>
+                <spark.version.classifier>spark330db</spark.version.classifier>
+                <!--
+                     Note that we are using the Spark version for all of the Databricks dependencies as well.
+                     The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
+                     This is to make it easier and not have to change version numbers for each individual dependency
+                     and deal with differences between Databricks versions
+                -->
+                <spark.version>${spark330db.version}</spark.version>
+                <spark.test.version>${spark330db.version}</spark.test.version>
+                <hadoop.client.version>3.3.1</hadoop.client.version>
+                <rat.consoleOutput>true</rat.consoleOutput>
+                <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
+                <spark.shim.sources>${spark330db.sources}</spark.shim.sources>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
+            </properties>
+            <modules>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -619,7 +668,12 @@
              so code coverage does not include the shaded classes.
         -->
         <rapids.shade.package>${spark.version.classifier}.com.nvidia.shaded.spark</rapids.shade.package>
-        <test.exclude.tags/>
+        <!--
+            cuda-toolkit 11.5+ will install nvidia GDS package by default
+            if no compatible GDS device on test machine, the scala test would fail
+            so we exclude GdsTest tag as default
+        -->
+        <test.exclude.tags>GdsTest</test.exclude.tags>
         <test.include.tags/>
         <rapids.shuffle.manager.override>true</rapids.shuffle.manager.override>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -632,7 +686,6 @@
         <!--
          If you update a dependency version so it is no longer a SNAPSHOT
          please update the snapshot-shims profile as well so it is accurate -->
-        <spark248.version>2.4.8</spark248.version>
         <spark311.version>3.1.1</spark311.version>
         <spark312.version>3.1.2</spark312.version>
         <spark312db.version>3.1.2-databricks</spark312db.version>
@@ -649,6 +702,7 @@
         <spark332.version>3.3.2-SNAPSHOT</spark332.version>
         <spark340.version>3.4.0-SNAPSHOT</spark340.version>
         <spark330cdh.version>3.3.0.3.3.7180.0-274</spark330cdh.version>
+        <spark330db.version>3.3.0-databricks</spark330db.version>
         <mockito.version>3.6.0</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
         <maven.jar.plugin.version>3.2.0</maven.jar.plugin.version>
@@ -659,13 +713,14 @@
         <slf4j.version>1.7.30</slf4j.version>
         <flatbuffers.java.version>1.11.0</flatbuffers.java.version>
         <hadoop.client.version>3.3.1</hadoop.client.version>
+        <delta.version>2.1.0</delta.version>
         <iceberg.version>0.13.2</iceberg.version>
         <scala.local-lib.path>org/scala-lang/scala-library/${scala.version}/scala-library-${scala.version}.jar</scala.local-lib.path>
         <target.classifier>${spark.version.classifier}</target.classifier>
         <maven.clean.plugin.version>3.1.0</maven.clean.plugin.version>
         <maven.scalastyle.skip>false</maven.scalastyle.skip>
         <dist.jar.compress>true</dist.jar.compress>
-
+        <spark330.iceberg.version>0.14.1</spark330.iceberg.version>
         <!--
             If true, disables verification that all Shims be built as of one and the same git
             commit hash. Do not use for CI!
@@ -706,6 +761,12 @@
               <artifactId>scala-library</artifactId>
               <version>${scala.version}</version>
               <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.delta</groupId>
+                <artifactId>delta-core_2.12</artifactId>
+                <version>${delta.version}</version>
+                <scope>provided</scope>
             </dependency>
             <dependency>
                 <groupId>org.apache.iceberg</groupId>
@@ -866,7 +927,7 @@
                             <phase>none</phase>
                         </execution>
                         <execution>
-                            <id>default-test-compile</id>
+                            <id>default-testCompile</id>
                             <phase>none</phase>
                         </execution>
                     </executions>
@@ -1038,7 +1099,6 @@
                         default, but there are some projects that are conditionally included.  -->
                         <exclude>**/target/**/*</exclude>
                         <exclude>**/cufile.log</exclude>
-                        <exclude>scripts/spark2diffs/*.diff</exclude>
                     </excludes>
                 </configuration>
             </plugin>

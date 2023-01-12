@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,16 +23,16 @@ import ai.rapids.cudf
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{ShimLeafExecNode, ShimSparkPlan, ShimUnaryExecNode}
+import com.nvidia.spark.rapids.shims._
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, AttributeSeq, Descending, Expression, NamedExpression, NullIntolerant, SortOrder}
+import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning, SinglePartition, UnknownPartitioning}
 import org.apache.spark.sql.execution.{ProjectExec, SampleExec, SparkPlan}
-import org.apache.spark.sql.rapids.{GpuPartitionwiseSampledRDD, GpuPoissonSampler, GpuPredicateHelper}
+import org.apache.spark.sql.rapids.{GpuPartitionwiseSampledRDD, GpuPoissonSampler}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DataType, LongType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
@@ -118,6 +118,32 @@ object GpuProjectExec extends Arm {
   }
 }
 
+object GpuProjectExecLike {
+  def unapply(plan: SparkPlan): Option[(Seq[Expression], SparkPlan)] = plan match {
+    case gpuProjectLike: GpuProjectExecLike =>
+      Some((gpuProjectLike.projectList, gpuProjectLike.child))
+    case _ => None
+  }
+}
+
+trait GpuProjectExecLike extends ShimUnaryExecNode with GpuExec {
+
+  def projectList: Seq[Expression]
+
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
+
+  override def outputOrdering: Seq[SortOrder] = child.outputOrdering
+
+  override def outputPartitioning: Partitioning = child.outputPartitioning
+
+  override def doExecute(): RDD[InternalRow] =
+    throw new IllegalStateException(s"Row-based execution should not occur for $this")
+
+  // The same as what feeds us
+  override def outputBatching: CoalesceGoal = GpuExec.outputBatching(child)
+}
+
 case class GpuProjectExec(
    // NOTE for Scala 2.12.x and below we enforce usage of (eager) List to prevent running
    // into a deep recursion during serde of lazy lists. See
@@ -130,19 +156,9 @@ case class GpuProjectExec(
    projectList: List[NamedExpression],
    child: SparkPlan,
    useTieredProject : Boolean = false
- ) extends ShimUnaryExecNode with GpuExec {
-
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
+ ) extends GpuProjectExecLike {
 
   override def output: Seq[Attribute] = projectList.map(_.toAttribute)
-
-  override def outputOrdering: Seq[SortOrder] = child.outputOrdering
-
-  override def outputPartitioning: Partitioning = child.outputPartitioning
-
-  override def doExecute(): RDD[InternalRow] =
-    throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
@@ -164,9 +180,6 @@ case class GpuProjectExec(
       }
     }
   }
-
-  // The same as what feeds us
-  override def outputBatching: CoalesceGoal = GpuExec.outputBatching(child)
 }
 
 /** Use cudf AST expressions to project columnar batches */
@@ -181,21 +194,11 @@ case class GpuProjectAstExec(
     //   immutable/List.scala#L516
     projectList: List[Expression],
     child: SparkPlan
-) extends ShimUnaryExecNode with GpuExec {
-
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
+) extends GpuProjectExecLike {
 
   override def output: Seq[Attribute] = {
     projectList.collect { case ne: NamedExpression => ne.toAttribute }
   }
-
-  override def outputOrdering: Seq[SortOrder] = child.outputOrdering
-
-  override def outputPartitioning: Partitioning = child.outputPartitioning
-
-  override def doExecute(): RDD[InternalRow] =
-    throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
@@ -263,9 +266,6 @@ case class GpuProjectAstExec(
       }
     }
   }
-
-  // The same as what feeds us
-  override def outputBatching: CoalesceGoal = GpuExec.outputBatching(child)
 }
 
 /**
@@ -424,7 +424,7 @@ case class GpuFilterExec(
     condition: Expression,
     child: SparkPlan,
     override val coalesceAfter: Boolean = true)
-    extends ShimUnaryExecNode with GpuPredicateHelper with GpuExec {
+    extends ShimUnaryExecNode with ShimPredicateHelper with GpuExec {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
@@ -432,12 +432,6 @@ case class GpuFilterExec(
   // Split out all the IsNotNulls from condition.
   private val (notNullPreds, _) = splitConjunctivePredicates(condition).partition {
     case GpuIsNotNull(a) => isNullIntolerant(a) && a.references.subsetOf(child.outputSet)
-    case _ => false
-  }
-
-  // If one expression and its children are null intolerant, it is null intolerant.
-  private def isNullIntolerant(expr: Expression): Boolean = expr match {
-    case e: NullIntolerant => e.children.forall(isNullIntolerant)
     case _ => false
   }
 

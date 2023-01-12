@@ -554,6 +554,16 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(false)
 
+  val FILE_SCAN_PRUNE_PARTITION_ENABLED = conf("spark.rapids.sql.fileScanPrunePartition.enabled")
+    .doc("Enable or disable the partition column pruning for v1 file scan. Spark always asks " +
+        "for all the partition columns even a query doesn't need them. Generation of " +
+        "partition columns is relatively expensive for the GPU. Enabling this allows the " +
+        "GPU to generate only required partition columns to save time and GPU " +
+        "memory.")
+    .internal()
+    .booleanConf
+    .createWithDefault(true)
+
   // METRICS
 
   val METRICS_LEVEL = conf("spark.rapids.sql.metrics.level")
@@ -851,6 +861,35 @@ object RapidsConf {
     .checkValues(RapidsReaderType.values.map(_.toString))
     .createWithDefault(RapidsReaderType.AUTO.toString)
 
+  val PARQUET_MULTITHREADED_COMBINE_THRESHOLD =
+    conf("spark.rapids.sql.format.parquet.multithreaded.combine.sizeBytes")
+      .doc("The target size in bytes to combine multiple small files together when using the " +
+        "MULTITHREADED parquet reader. With combine disabled, the MULTITHREADED reader reads the " +
+        "files in parallel and sends individual files down to the GPU, but that can be " +
+        "inefficient for small files. When combine is enabled, files that are ready within " +
+        "spark.rapids.sql.format.parquet.multithreaded.combine.waitTime together, up to this " +
+        "threshold size, are combined before sending down to GPU. This can be disabled by " +
+        "setting it to 0. Note that combine also will not go over the " +
+        "spark.rapids.sql.reader.batchSizeRows or spark.rapids.sql.reader.batchSizeBytes limits.")
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefault(64 * 1024 * 1024) // 64M
+
+  val PARQUET_MULTITHREADED_COMBINE_WAIT_TIME =
+    conf("spark.rapids.sql.format.parquet.multithreaded.combine.waitTime")
+      .doc("When using the multithreaded parquet reader with combine mode, how long " +
+        "to wait, in milliseconds, for more files to finish if haven't met the size threshold. " +
+        "Note that this will wait this amount of time from when the last file was available, " +
+        "so total wait time could be larger then this.")
+      .integerConf
+      .createWithDefault(200) // ms
+
+  val PARQUET_MULTITHREADED_READ_KEEP_ORDER =
+    conf("spark.rapids.sql.format.parquet.multithreaded.read.keepOrder")
+      .doc("When using the MULTITHREADED reader, if this is set to true we read " +
+        "the files in the same order Spark does, otherwise the order may not be the same.")
+      .booleanConf
+      .createWithDefault(true)
+
   /** List of schemes that are always considered cloud storage schemes */
   private lazy val DEFAULT_CLOUD_SCHEMES =
     Seq("abfs", "abfss", "dbfs", "gs", "s3", "s3a", "s3n", "wasbs")
@@ -1079,6 +1118,11 @@ object RapidsConf {
       .checkValue(v => v > 0, "The maximum number of files must be greater than 0.")
       .createWithDefault(Integer.MAX_VALUE)
 
+  val ENABLE_DELTA_WRITE = conf("spark.rapids.sql.format.delta.write.enabled")
+      .doc("When set to false disables Delta Lake output acceleration.")
+      .booleanConf
+      .createWithDefault(true)
+
   val ENABLE_ICEBERG = conf("spark.rapids.sql.format.iceberg.enabled")
     .doc("When set to false disables all Iceberg acceleration")
     .booleanConf
@@ -1093,13 +1137,30 @@ object RapidsConf {
     conf("spark.rapids.sql.format.hive.text.enabled")
       .doc("When set to false disables Hive text table acceleration")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   val ENABLE_HIVE_TEXT_READ: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.format.hive.text.read.enabled")
       .doc("When set to false disables Hive text table read acceleration")
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
+
+  val ENABLE_READ_HIVE_FLOATS = conf("spark.rapids.sql.format.hive.text.read.float.enabled")
+      .doc("Hive text file reading is not 100% compatible when reading floats.")
+      .booleanConf
+      .createWithDefault(true)
+
+  val ENABLE_READ_HIVE_DOUBLES = conf("spark.rapids.sql.format.hive.text.read.double.enabled")
+      .doc("Hive text file reading is not 100% compatible when reading doubles.")
+      .booleanConf
+      .createWithDefault(true)
+
+  val ENABLE_READ_HIVE_DECIMALS = conf("spark.rapids.sql.format.hive.text.read.decimal.enabled")
+      .doc("Hive text file reading is not 100% compatible when reading decimals. Hive has " +
+          "more limitations on what is valid compared to the GPU implementation in some corner " +
+          "cases. See https://github.com/NVIDIA/spark-rapids/issues/7246")
+      .booleanConf
+      .createWithDefault(true)
 
   val ENABLE_RANGE_WINDOW_BYTES = conf("spark.rapids.sql.window.range.byte.enabled")
     .doc("When the order-by column of a range based window is byte type and " +
@@ -1237,16 +1298,16 @@ object RapidsConf {
   }
 
   val SHUFFLE_MANAGER_MODE = conf("spark.rapids.shuffle.mode")
-    .doc("RAPIDS Shuffle Manager mode. The default mode is " +
-        "\"UCX\", which has to be installed in the system. Consider setting to \"CACHE_ONLY\" if " +
-        "running with a single executor and UCX is not installed, for short-circuit cached " +
-        "shuffle (for testing purposes). Set to \"MULTITHREADED\" for an experimental mode that " +
-        "uses a thread pool to speed up shuffle writes without needing UCX. Note: Changing this " +
-        "mode dynamically is not supported.")
+    .doc("RAPIDS Shuffle Manager mode. " +
+      "\"MULTITHREADED\": shuffle file writes and reads are parallelized using a thread pool. " +
+      "\"UCX\": (requires UCX installation) uses accelerated transports for " +
+      "transferring shuffle blocks. " +
+      "\"CACHE_ONLY\": use when running a single executor, for short-circuit cached " +
+      "shuffle (for testing purposes).")
     .startupOnly()
     .stringConf
     .checkValues(RapidsShuffleManagerMode.values.map(_.toString))
-    .createWithDefault(RapidsShuffleManagerMode.UCX.toString)
+    .createWithDefault(RapidsShuffleManagerMode.MULTITHREADED.toString)
 
   val SHUFFLE_TRANSPORT_EARLY_START = conf("spark.rapids.shuffle.transport.earlyStart")
     .doc("Enable early connection establishment for RAPIDS Shuffle")
@@ -1809,6 +1870,10 @@ object RapidsConf {
     }
     GpuOverrides.execs.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
     if (asTable) {
+      printToggleHeader("Commands\n")
+    }
+    GpuOverrides.runnableCmds.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
+    if (asTable) {
       printToggleHeader("Scans\n")
     }
     GpuOverrides.scans.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
@@ -1864,6 +1929,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffledHashJoinOptimizeShuffle: Boolean = get(SHUFFLED_HASH_JOIN_OPTIMIZE_SHUFFLE)
 
   lazy val stableSort: Boolean = get(STABLE_SORT)
+
+  lazy val isFileScanPrunePartitionEnabled: Boolean = get(FILE_SCAN_PRUNE_PARTITION_ENABLED)
 
   lazy val isIncompatEnabled: Boolean = get(INCOMPATIBLE_OPS)
 
@@ -2053,6 +2120,15 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isParquetReadEnabled: Boolean = get(ENABLE_PARQUET_READ)
 
+  lazy val getParquetMultithreadedCombineThreshold: Long =
+    get(PARQUET_MULTITHREADED_COMBINE_THRESHOLD)
+
+  lazy val getParquetMultithreadedCombineWaitTime: Int =
+    get(PARQUET_MULTITHREADED_COMBINE_WAIT_TIME)
+
+  lazy val getParquetMultithreadedReaderKeepOrder: Boolean =
+    get(PARQUET_MULTITHREADED_READ_KEEP_ORDER)
+
   lazy val isParquetWriteEnabled: Boolean = get(ENABLE_PARQUET_WRITE)
 
   lazy val isOrcEnabled: Boolean = get(ENABLE_ORC)
@@ -2115,6 +2191,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val maxNumAvroFilesParallel: Int = get(AVRO_MULTITHREAD_READ_MAX_NUM_FILES_PARALLEL)
 
+  lazy val isDeltaWriteEnabled: Boolean = get(ENABLE_DELTA_WRITE)
+
   lazy val isIcebergEnabled: Boolean = get(ENABLE_ICEBERG)
 
   lazy val isIcebergReadEnabled: Boolean = get(ENABLE_ICEBERG_READ)
@@ -2122,6 +2200,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isHiveDelimitedTextEnabled: Boolean = get(ENABLE_HIVE_TEXT)
 
   lazy val isHiveDelimitedTextReadEnabled: Boolean = get(ENABLE_HIVE_TEXT_READ)
+
+  lazy val shouldHiveReadFloats: Boolean = get(ENABLE_READ_HIVE_FLOATS)
+
+  lazy val shouldHiveReadDoubles: Boolean = get(ENABLE_READ_HIVE_DOUBLES)
+
+  lazy val shouldHiveReadDecimals: Boolean = get(ENABLE_READ_HIVE_DECIMALS)
 
   lazy val shuffleManagerEnabled: Boolean = get(SHUFFLE_MANAGER_ENABLED)
 

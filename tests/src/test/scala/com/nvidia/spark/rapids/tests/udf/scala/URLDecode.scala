@@ -40,11 +40,12 @@ class URLDecode extends Function[String, String] with RapidsUDF with Serializabl
   }
 
   /** Columnar implementation that runs on the GPU */
-  override def evaluateColumnar(args: ColumnVector*): ColumnVector = {
+  override def evaluateColumnar(numRows: Int, args: ColumnVector*): ColumnVector = {
     // The CPU implementation takes a single string argument, so similarly
     // there should only be one column argument of type STRING.
     require(args.length == 1, s"Unexpected argument count: ${args.length}")
     val input = args.head
+    require(numRows == input.getRowCount, s"Expected $numRows rows, received ${input.getRowCount}")
     require(input.getType == DType.STRING, s"Argument type is not a string: ${input.getType}")
 
     // The cudf urlDecode does not convert '+' to a space, so do that as a pre-pass first.

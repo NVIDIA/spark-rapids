@@ -31,13 +31,22 @@ import org.apache.arrow.vector.types.{DateUnit, FloatingPointPrecision, TimeUnit
 import org.apache.arrow.vector.types.pojo.{ArrowType, Field, FieldType}
 
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.metric.SQLMetric
+import org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
 import org.apache.spark.sql.rapids.metrics.source.MockTaskContext
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ArrowColumnVector, ColumnarBatch}
 
 class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
   val rapidsConf = new RapidsConf(Map.empty[String, String])
+
+  def getCapturedPlan(): SparkPlan = {
+    val capturedPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()
+    assert(capturedPlans.length == 1,
+      s"Expected to capture exactly one plan: ${capturedPlans.mkString("\n")}")
+    ExecutionPlanCaptureCallback.extractExecutedPlan(capturedPlans.head)
+  }
 
   test("test with small input batches") {
     withGpuSparkSession(spark => {
@@ -115,8 +124,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       // execute the plan
       ExecutionPlanCaptureCallback.startCapture()
       df2.collect()
-      val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(
-        ExecutionPlanCaptureCallback.getResultWithTimeout())
+      val executedPlan = getCapturedPlan()
 
       val coalesce = executedPlan
         .find(_.isInstanceOf[GpuCoalesceBatches]).get
@@ -427,9 +435,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
         // execute the plan
         ExecutionPlanCaptureCallback.startCapture()
         df2.collect()
-
-        val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(
-          ExecutionPlanCaptureCallback.getResultWithTimeout())
+        val executedPlan = getCapturedPlan()
 
         // ensure that the plan does include the HostColumnarToGpu step
         val hostColumnarToGpu = executedPlan

@@ -1,8 +1,0 @@
-4c4
-<     override val parent: Option[RapidsMeta[_, _]],
----
->     override val parent: Option[RapidsMeta[_, _, _]],
-25c25
-< }
----
-> 

@@ -354,7 +354,7 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
                 case dt: DecimalType =>
                   castStringToDecimal(table.getColumn(i), dt)
                 case DataTypes.DateType =>
-                  castStringToDate(table.getColumn(i), DType.TIMESTAMP_DAYS, failOnInvalid = true)
+                  castStringToDate(table.getColumn(i), DType.TIMESTAMP_DAYS)
                 case DataTypes.TimestampType =>
                   castStringToTimestamp(table.getColumn(i), timestampFormat,
                     DType.TIMESTAMP_MICROSECONDS)
@@ -378,6 +378,10 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
 
   def dateFormat: String
   def timestampFormat: String
+
+  def castStringToDate(input: ColumnVector, dt: DType): ColumnVector = {
+    castStringToDate(input, dt, failOnInvalid = true)
+  }
 
   def castStringToDate(input: ColumnVector, dt: DType, failOnInvalid: Boolean): ColumnVector = {
     val cudfFormat = DateUtils.toStrf(dateFormat, parseString = true)
@@ -518,7 +522,7 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
   def castStringToBool(input: ColumnVector): ColumnVector
 
   def castStringToFloat(input: ColumnVector, dt: DType): ColumnVector = {
-    GpuCast.castStringToFloats(input, ansiEnabled = false, dt)
+    CastStrings.toFloat(input, false, dt)
   }
 
   def castStringToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
