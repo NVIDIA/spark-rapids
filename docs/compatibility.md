@@ -332,13 +332,13 @@ val df = spark.read.schema(schema).json("people.json")
 
 ### JSON supporting types
 
-In the current version, array and struct type are not yet supported.
-
-Map type is supported in `from_json` SQL function with limited functionalities.
+In the current version, nested types (array, struct, and map types) are not yet supported in regular JSON parsing.
 
 ### `from_json` function
 
-For this particular function, the input json schema must be `Map<String,String>` and nothing else. In addition, there is no validation, no error tolerance, no data conversion as well as string formatting is performed. The output map will just contain plain text of key-value pairs extracted directly from the input string. Examples of such limitations include:
+This particular function supports to output a map type with limited functionalities. In particular, the output map is not resulted from a regular JSON parsing but instead it will just contain plain text of key-value pairs extracted directly from the input json string.
+
+Due to such limitations, the input json schema must be `Map<String,String>` and nothing else. Furthermore, there is no validation, no error tolerance, no data conversion as well as string formatting is performed. This may lead to some minor differences in the output if compared to the result of Spark CPU's `from_json`, such as:
  * Floating point numbers in the input json string such as `1.2000` will not be reformatted to `1.2`. Instead, the output will be the same as the input.
  * If the input json is given as multiple rows, any row containing invalid json format will lead to an application crash. On the other hand, Spark CPU version just produces nulls for the invalid rows, as shown below:
  ```
