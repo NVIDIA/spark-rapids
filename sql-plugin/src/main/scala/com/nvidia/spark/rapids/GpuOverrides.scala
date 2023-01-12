@@ -44,8 +44,8 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
-import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec, RunnableCommand}
-import org.apache.spark.sql.execution.datasources.{FileFormat, InsertIntoHadoopFsRelationCommand, SaveIntoDataSourceCommand}
+import org.apache.spark.sql.execution.command.{DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec, RunnableCommand}
+import org.apache.spark.sql.execution.datasources.{InsertIntoHadoopFsRelationCommand, SaveIntoDataSourceCommand}
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
@@ -362,57 +362,6 @@ final class InsertIntoHadoopFsRelationCommandMeta(
       cmd.catalogTable,
       cmd.fileIndex,
       cmd.outputColumnNames,
-      conf.stableSort,
-      conf.concurrentWriterPartitionFlushSize)
-  }
-}
-
-final class CreateDataSourceTableAsSelectCommandMeta(
-    cmd: CreateDataSourceTableAsSelectCommand,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-  extends DataWritingCommandMeta[CreateDataSourceTableAsSelectCommand](cmd, conf, parent, rule) {
-
-  private var origProvider: Class[_] = _
-  private var gpuProvider: Option[ColumnarFileFormat] = None
-
-  override def tagSelfForGpu(): Unit = {
-    if (cmd.table.bucketSpec.isDefined) {
-      willNotWorkOnGpu("bucketing is not supported")
-    }
-    if (cmd.table.provider.isEmpty) {
-      willNotWorkOnGpu("provider must be defined")
-    }
-
-    val spark = SparkSession.active
-    origProvider =
-      GpuDataSource.lookupDataSourceWithFallback(cmd.table.provider.get, spark.sessionState.conf)
-    // Note that the data source V2 always fallsback to the V1 currently.
-    // If that changes then this will start failing because we don't have a mapping.
-    gpuProvider = origProvider.getConstructor().newInstance() match {
-      case f: FileFormat if GpuOrcFileFormat.isSparkOrcFormat(f) =>
-        GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.table.storage.properties, cmd.query.schema)
-      case _: ParquetFileFormat =>
-        GpuParquetFileFormat.tagGpuSupport(this, spark,
-          cmd.table.storage.properties, cmd.query.schema)
-      case ds =>
-        willNotWorkOnGpu(s"Data source class not supported: ${ds}")
-        None
-    }
-  }
-
-  override def convertToGpu(): GpuDataWritingCommand = {
-    val newProvider = gpuProvider.getOrElse(
-      throw new IllegalStateException("fileFormat unexpected, tagSelfForGpu not called?"))
-
-    GpuCreateDataSourceTableAsSelectCommand(
-      cmd.table,
-      cmd.mode,
-      cmd.query,
-      cmd.outputColumnNames,
-      origProvider,
-      newProvider,
       conf.stableSort,
       conf.concurrentWriterPartitionFlushSize)
   }
@@ -3621,15 +3570,12 @@ object GpuOverrides extends Logging {
       DataWritingCommandRule[_ <: DataWritingCommand]] = Seq(
     dataWriteCmd[InsertIntoHadoopFsRelationCommand](
       "Write to Hadoop filesystem",
-      (a, conf, p, r) => new InsertIntoHadoopFsRelationCommandMeta(a, conf, p, r)),
-    dataWriteCmd[CreateDataSourceTableAsSelectCommand](
-      "Create table with select command",
-      (a, conf, p, r) => new CreateDataSourceTableAsSelectCommandMeta(a, conf, p, r))
+      (a, conf, p, r) => new InsertIntoHadoopFsRelationCommandMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
 
   val dataWriteCmds: Map[Class[_ <: DataWritingCommand],
       DataWritingCommandRule[_ <: DataWritingCommand]] =
-    commonDataWriteCmds ++ GpuHiveOverrides.dataWriteCmds
+    commonDataWriteCmds ++ GpuHiveOverrides.dataWriteCmds ++ SparkShimImpl.getDataWriteCmds
 
   def runnableCmd[INPUT <: RunnableCommand](
       desc: String,
@@ -3649,12 +3595,14 @@ object GpuOverrides extends Logging {
         .map(r => r.wrap(cmd, conf, parent, r).asInstanceOf[RunnableCommandMeta[INPUT]])
         .getOrElse(new RuleNotFoundRunnableCommandMeta(cmd, conf, parent))
 
-  val runnableCmds: Map[Class[_ <: RunnableCommand], RunnableCommandRule[_ <: RunnableCommand]] =
+  val commonRunnableCmds: Map[Class[_ <: RunnableCommand], RunnableCommandRule[_ <: RunnableCommand]] =
     Seq(
       runnableCmd[SaveIntoDataSourceCommand](
         "Write to a data source",
         (a, conf, p, r) => new SaveIntoDataSourceCommandMeta(a, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
+
+  val runnableCmds = commonRunnableCmds ++ SparkShimImpl.getRunnableCmds
 
   def wrapPlan[INPUT <: SparkPlan](
       plan: INPUT,

@@ -1872,7 +1872,7 @@ object RapidsConf {
     if (asTable) {
       printToggleHeader("Commands\n")
     }
-    GpuOverrides.runnableCmds.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
+    GpuOverrides.commonRunnableCmds.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
     if (asTable) {
       printToggleHeader("Scans\n")
     }

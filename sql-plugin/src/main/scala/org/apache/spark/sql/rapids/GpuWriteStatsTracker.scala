@@ -75,4 +75,9 @@ object GpuWriteJobStatsTracker {
   def apply(serializableHadoopConf: SerializableConfiguration,
       command: GpuDataWritingCommand): GpuWriteJobStatsTracker =
     new GpuWriteJobStatsTracker(serializableHadoopConf, command.basicMetrics, command.taskMetrics)
+
+  def apply(serializableHadoopConf: SerializableConfiguration,
+      basicMetrics: Map[String, SQLMetric],
+      taskMetrics: Map[String, SQLMetric]): GpuWriteJobStatsTracker = 
+    new GpuWriteJobStatsTracker(serializableHadoopConf, basicMetrics, taskMetrics)
 }
