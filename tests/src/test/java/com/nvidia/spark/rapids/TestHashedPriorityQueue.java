@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -68,6 +68,15 @@ public class TestHashedPriorityQueue {
     }
   }
 
+  private void insertIntoQueueAssertSizeDidntChange(
+      HashedPriorityQueue<TestObj> q, Iterator<TestObj> objs) {
+    final int originalSize = q.size();
+    while (objs.hasNext()) {
+      assertFalse(q.offer(objs.next()));
+    }
+    assertEquals(originalSize, q.size());
+  }
+
   private ArrayList<TestObj> drainQueue(HashedPriorityQueue<TestObj> q) {
     final int originalSize = q.size();
     ArrayList<TestObj> objs = new ArrayList<>(originalSize);
@@ -93,6 +102,17 @@ public class TestHashedPriorityQueue {
 
   @Test
   public void testHeapInsertInOrder() {
+    ArrayList<TestObj> objs = buildTestObjs(100);
+    HashedPriorityQueue<TestObj> q =
+        new HashedPriorityQueue<>(new TestObjPriorityComparator());
+    insertIntoQueue(q, objs.iterator());
+    insertIntoQueueAssertSizeDidntChange(q, objs.iterator());
+    ArrayList<TestObj> result = drainQueue(q);
+    assertEquals(objs, result);
+  }
+
+  @Test
+  public void testHeapInsertDuplicate() {
     ArrayList<TestObj> objs = buildTestObjs(100);
     HashedPriorityQueue<TestObj> q =
         new HashedPriorityQueue<>(new TestObjPriorityComparator());
