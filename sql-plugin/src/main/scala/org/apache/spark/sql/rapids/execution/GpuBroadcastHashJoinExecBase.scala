@@ -77,7 +77,7 @@ abstract class GpuBroadcastHashJoinMetaBase(
     }
   }
 
-  def convertToGpu():GpuExec
+  def convertToGpu(): GpuExec
 }
 
 abstract class GpuBroadcastHashJoinExecBase(
@@ -166,7 +166,7 @@ abstract class GpuBroadcastHashJoinExecBase(
     }
   }
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  protected def doColumnarBroadcastJoin(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
@@ -194,5 +194,9 @@ abstract class GpuBroadcastHashJoinExecBase(
           numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
       }
     }
+  }
+
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    doColumnarBroadcastJoin()
   }
 }

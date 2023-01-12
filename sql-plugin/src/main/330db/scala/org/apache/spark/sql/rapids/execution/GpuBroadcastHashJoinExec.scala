@@ -16,12 +16,18 @@
 
 package org.apache.spark.sql.rapids.execution
 
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 
+import org.apache.spark.TaskContext
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.JoinType
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ExecutorBroadcast, HashedRelation}
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ExecutorBroadcast, ExecutorBroadcastMode, HashedRelation}
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuBroadcastHashJoinMeta(
     join: BroadcastHashJoinExec,
@@ -74,10 +80,98 @@ case class GpuBroadcastHashJoinExec(
     right: SparkPlan)(executorBroadcast: Option[ExecutorBroadcast[HashedRelation]])
       extends GpuBroadcastHashJoinExecBase(
       leftKeys, rightKeys, joinType, buildSide, condition, left, right) {
+  import GpuMetric._
 
   override def otherCopyArgs: Seq[AnyRef] = executorBroadcast :: Nil
 
+  override def requiredChildDistribution: Seq[Distribution] = {
+    if (isExecutorBroadcast) {
+      buildSide match {
+        case GpuBuildLeft =>
+          BroadcastDistribution(ExecutorBroadcastMode) :: UnspecifiedDistribution :: Nil
+        case GpuBuildRight =>
+          UnspecifiedDistribution :: BroadcastDistribution(ExecutorBroadcastMode) :: Nil
+      } 
+    } else {
+      super.requiredChildDistribution
+    }
+  }
+
   def isExecutorBroadcast(): Boolean = {
     executorBroadcast.isDefined
+  }
+
+  private def getExecutorBatch(
+      buildRelation: RDD[ColumnarBatch], 
+      buildSchema: StructType): ColumnarBatch = {
+    
+    // For now, we only support SinglePartition, so we should only need to get one of the
+    // partitions from the iterator
+    val iter = buildRelation.toLocalIterator
+    if (iter.hasNext) {
+      iter.next
+    } else {
+      GpuColumnVector.emptyBatch(buildSchema)
+    }
+  }
+
+  private def getExecutorBuiltBatchAndStreamIter(
+      buildRelation: RDD[ColumnarBatch],
+      buildSchema: StructType,
+      streamIter: Iterator[ColumnarBatch],
+      coalesceMetricsMap: Map[String, GpuMetric]): (ColumnarBatch, Iterator[ColumnarBatch]) = {
+    val semWait = coalesceMetricsMap(GpuMetric.SEMAPHORE_WAIT_TIME)
+
+    val bufferedStreamIter = new CloseableBufferedIterator(streamIter.buffered)
+    closeOnExcept(bufferedStreamIter) { _ =>
+      withResource(new NvtxRange("first stream batch", NvtxColor.RED)) { _ =>
+        if (bufferedStreamIter.hasNext) {
+          bufferedStreamIter.head
+        } else {
+          GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWait)
+        }
+      }
+
+      val buildBatch = getExecutorBatch(buildRelation, buildSchema)
+      (buildBatch, bufferedStreamIter)
+    }
+  }
+
+  private def doExecutorBroadcastJoin(): RDD[ColumnarBatch] = {
+    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    val opTime = gpuLongMetric(OP_TIME)
+    val streamTime = gpuLongMetric(STREAM_TIME)
+    val joinTime = gpuLongMetric(JOIN_TIME)
+    val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
+
+    val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
+
+    val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+
+    val buildRelation = buildPlan.executeColumnar()
+
+    val rdd = streamedPlan.executeColumnar()
+    val buildSchema = buildPlan.schema
+    rdd.mapPartitions { it =>
+      val (builtBatch, streamIter) =
+        getExecutorBuiltBatchAndStreamIter(
+          buildRelation,
+          buildSchema,
+          new CollectTimeIterator("executor broadcast join stream", it, streamTime),
+          allMetrics)
+      withResource(builtBatch) { _ =>
+        doJoin(builtBatch, streamIter, targetSize, spillCallback,
+          numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
+      }
+    }
+  }
+
+  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    if (isExecutorBroadcast) {
+      doExecutorBroadcastJoin()
+    } else {
+      doColumnarBroadcastJoin()
+    }
   }
 }

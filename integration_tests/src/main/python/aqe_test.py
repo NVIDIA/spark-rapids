@@ -20,7 +20,7 @@ from data_gen import *
 from marks import ignore_order, allow_non_gpu
 from spark_session import with_cpu_session, is_databricks113_or_later
 
-_adaptive_conf = { "spark.sql.adaptive.enabled": "true" }
+_adaptive_conf = { "spark.sql.adaptive.enabled": "true", "spark.rapids.sql.debug.logTransformations": "true" }
 # Databricks-11.3 added new operator EXECUTOR_BROADCAST which does executor side broadcast.
 # SparkPlan is different as there is no BroadcastExchange which is replaced by Exchange.
 # Below config is to fall back BroadcastHashJoinExec and ShuffleExchangeExec to CPU for only Databricks-11.3
@@ -46,7 +46,7 @@ def create_skew_df(spark, length):
 # This replicates the skew join test from scala tests, and is here to test
 # the computeStats(...) implementation in GpuRangeExec
 @ignore_order(local=True)
-@allow_non_gpu(*db_113_cpu_bhj_join_allow)
+# @allow_non_gpu(*db_113_cpu_bhj_join_allow)
 def test_aqe_skew_join():
     def do_join(spark):
         left, right = create_skew_df(spark, 500)
