@@ -49,11 +49,11 @@ object RapidsDeltaWriteStrategy extends SparkStrategy {
  * write code cannot directly replace the AdaptiveSparkPlanExec to force it to be
  * columnar, because it's tied to the QueryExecution which can only be created with
  * logical plans. Thus our workaround is to inject a node in the logical plan for
- * the write and ensure the physical node appears to Spark as a write so the
- * AdaptiveSparkPlanExec node is a child of it rather than the parent. This provides
- * the necessary parent node for the AdaptiveSparkPlanExec so the GPU transition
- * planning code can correctly determine whether the AQE plan should be GPU columnar
- * or CPU row.
+ * the write and ensure the physical node appears to Spark as a command node so the
+ * AdaptiveSparkPlanExec node is a child of it rather than the parent. The
+ * InsertAdaptiveSparkPlan Rule in Spark will avoid placing the AdpativeSparkPlanExec
+ * node in front of command-like nodes, and the physical form of this node is one
+ * of those nodes.
  */
 case class RapidsDeltaWrite(child: LogicalPlan) extends UnaryNode {
   override def output: Seq[Attribute] = child.output
@@ -82,7 +82,8 @@ case class RapidsDeltaWriteExec(child: SparkPlan) extends V2CommandExec with Una
 /**
  * A stand-in physical node for a GPU Delta write. It needs to appear as a writing
  * command or data source command so the AdaptiveSparkPlanExec does not appear at the
- * root of the plan to write. See the description for RapidsDeltaWrite for details.
+ * root of the plan to write. See the description for RapidsDeltaWrite and the logic
+ * of the InsertAdaptiveSparkPlan Rule in Spark for details.
  */
 case class GpuRapidsDeltaWriteExec(child: SparkPlan) extends V2CommandExec
     with UnaryExecNode with GpuExec {

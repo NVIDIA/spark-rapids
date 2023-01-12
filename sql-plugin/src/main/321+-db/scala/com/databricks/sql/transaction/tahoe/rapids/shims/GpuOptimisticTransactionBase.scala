@@ -176,10 +176,12 @@ abstract class GpuOptimisticTransactionBase
     // columns and rows when AQE is involved. Without this node in the plan, AdaptiveSparkPlanExec
     // could be the root node of the plan. In that case we do not have enough context to know
     // whether the AdaptiveSparkPlanExec should be columnar or not, since the GPU overrides do not
-    // see how the parent is using the AdaptiveSparkPlanExec outputs. By using this stub node, the
-    // parent node is present and it will be planned accordingly. We could force the AQE node to be
-    // columnar by explicitly replacing the node, but that breaks the connection between the
-    // queryExecution and the AdaptiveSparkPlanExec node that will actually execute.
+    // see how the parent is using the AdaptiveSparkPlanExec outputs. By using this stub node that
+    // appears to be a data writing node to AQE (it derives from V2CommandExec), the
+    // AdaptiveSparkPlanExec will be planned as a child of this new node. That provides enough
+    // context to plan the AQE sub-plan properly with respect to columnar and row transitions.
+    // We could force the AQE node to be columnar here by explicitly replacing the node, but that
+    // breaks the connection between the queryExecution and the node that will actually execute.
     val gpuWritePlan = Dataset.ofRows(spark, RapidsDeltaWrite(normalizedQueryExecution.logical))
     val queryExecution = gpuWritePlan.queryExecution
 
