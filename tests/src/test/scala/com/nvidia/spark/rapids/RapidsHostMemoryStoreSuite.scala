@@ -65,10 +65,12 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
           val (bufferSize, handle) = withResource(buildContiguousTable()) { ct =>
             val len = ct.getBuffer.getLength
             // store takes ownership of the table
-            val handle = RapidsBufferCatalog.addContiguousTable(
+            val id = devStore.addContiguousTable(
               ct,
               spillPriority,
               RapidsBuffer.defaultSpillCallback)
+            val handle =
+              catalog.makeNewHandle(id, spillPriority, RapidsBuffer.defaultSpillCallback)
             (len, handle)
           }
 
@@ -99,10 +101,11 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
           withResource(buildContiguousTable()) { ct =>
             withResource(HostMemoryBuffer.allocate(ct.getBuffer.getLength)) { expectedBuffer =>
               expectedBuffer.copyFromDeviceBuffer(ct.getBuffer)
-              val handle = RapidsBufferCatalog.addContiguousTable(
+              val id = devStore.addContiguousTable(
                 ct,
                 spillPriority,
                 RapidsBuffer.defaultSpillCallback)
+              val handle = catalog.makeNewHandle(id, spillPriority, RapidsBuffer.defaultSpillCallback)
               devStore.synchronousSpill(0)
               withResource(catalog.acquireBuffer(handle)) { buffer =>
                 withResource(buffer.getMemoryBuffer) { actualBuffer =>
@@ -132,10 +135,12 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
           withResource(buildContiguousTable()) { ct =>
             withResource(GpuColumnVector.from(ct.getTable, sparkTypes)) {
               expectedBatch =>
-                val handle = RapidsBufferCatalog.addContiguousTable(
+                val id = devStore.addContiguousTable(
                   ct,
                   spillPriority,
                   RapidsBuffer.defaultSpillCallback)
+                val handle =
+                  catalog.makeNewHandle(id, spillPriority, RapidsBuffer.defaultSpillCallback)
                 devStore.synchronousSpill(0)
                 withResource(catalog.acquireBuffer(handle)) { buffer =>
                   assertResult(StorageTier.HOST)(buffer.storageTier)
@@ -166,10 +171,12 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
             withResource(buildContiguousTable(1)) { smallTable =>
               withResource(GpuColumnVector.from(bigTable.getTable, sparkTypes)) { expectedBatch =>
                 // store takes ownership of the table
-                val bigHandle = RapidsBufferCatalog.addContiguousTable(
+                val id = devStore.addContiguousTable(
                   bigTable,
                   spillPriority,
                   RapidsBuffer.defaultSpillCallback)
+                val bigHandle =
+                  catalog.makeNewHandle(id, spillPriority, RapidsBuffer.defaultSpillCallback)
                 devStore.synchronousSpill(0)
                 verify(mockStore, never()).copyBuffer(ArgumentMatchers.any[RapidsBuffer],
                   ArgumentMatchers.any[MemoryBuffer],

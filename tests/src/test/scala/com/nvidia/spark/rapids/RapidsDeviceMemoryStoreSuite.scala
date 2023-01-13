@@ -68,10 +68,10 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
       val bufferId = MockRapidsBufferId(7)
       val meta = withResource(buildContiguousTable()) { ct =>
         val meta = MetaUtils.buildTableMeta(bufferId.tableId, ct)
-        // store takes ownership of the buffer
-        ct.getBuffer.incRefCount()
-        store.addBuffer(
-          bufferId, ct.getBuffer, meta, spillPriority, RapidsBuffer.defaultSpillCallback, false)
+        withResource(ct) { _ =>
+          store.addBuffer(
+            bufferId, ct.getBuffer, meta, spillPriority, RapidsBuffer.defaultSpillCallback, false)
+        }
         meta
       }
       val captor: ArgumentCaptor[RapidsBuffer] = ArgumentCaptor.forClass(classOf[RapidsBuffer])
@@ -91,15 +91,15 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         withResource(HostMemoryBuffer.allocate(ct.getBuffer.getLength)) { expectedHostBuffer =>
           expectedHostBuffer.copyFromDeviceBuffer(ct.getBuffer)
           val meta = MetaUtils.buildTableMeta(bufferId.tableId, ct)
-          // store takes ownership of the buffer
-          ct.getBuffer.incRefCount()
-          store.addBuffer(
-            bufferId,
-            ct.getBuffer,
-            meta,
-            initialSpillPriority = 3,
-            RapidsBuffer.defaultSpillCallback,
-            needsSync = false)
+          withResource(ct) { _ =>
+            store.addBuffer(
+              bufferId,
+              ct.getBuffer,
+              meta,
+              initialSpillPriority = 3,
+              RapidsBuffer.defaultSpillCallback,
+              needsSync = false)
+          }
           val handle =
             catalog.makeNewHandle(bufferId, -1, RapidsBuffer.defaultSpillCallback)
           withResource(catalog.acquireBuffer(handle)) { buffer =>
@@ -116,7 +116,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
   }
 
   test("get column batch") {
-    val catalog = RapidsBufferCatalog.singleton
+    val catalog = new RapidsBufferCatalog
     val sparkTypes = Array[DataType](IntegerType, StringType, DoubleType,
       DecimalType(ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION, 5))
     withResource(new RapidsDeviceMemoryStore(catalog)) { store =>
@@ -125,10 +125,10 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         withResource(GpuColumnVector.from(ct.getTable, sparkTypes)) {
           expectedBatch =>
             val meta = MetaUtils.buildTableMeta(bufferId.tableId, ct)
-            // store takes ownership of the buffer
-            ct.getBuffer.incRefCount()
-            store.addBuffer(bufferId, ct.getBuffer, meta, initialSpillPriority = 3,
-              RapidsBuffer.defaultSpillCallback, false)
+            withResource(ct) { _ =>
+              store.addBuffer(bufferId, ct.getBuffer, meta, initialSpillPriority = 3,
+                RapidsBuffer.defaultSpillCallback, false)
+            }
             val handle =
               catalog.makeNewHandle(bufferId, -1, RapidsBuffer.defaultSpillCallback)
             withResource(catalog.acquireBuffer(handle)) { buffer =>
@@ -142,7 +142,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
   }
 
   test("cannot receive spilled buffers") {
-    val catalog = RapidsBufferCatalog.singleton
+    val catalog = new RapidsBufferCatalog
     withResource(new RapidsDeviceMemoryStore(catalog)) { store =>
       assertThrows[IllegalStateException](store.copyBuffer(
         mock[RapidsBuffer], mock[MemoryBuffer], Cuda.DEFAULT_STREAM))
@@ -150,7 +150,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
   }
 
   test("size statistics") {
-    val catalog = RapidsBufferCatalog.singleton
+    val catalog = new RapidsBufferCatalog
     withResource(new RapidsDeviceMemoryStore(catalog)) { store =>
       assertResult(0)(store.currentSize)
       val bufferSizes = new Array[Long](2)

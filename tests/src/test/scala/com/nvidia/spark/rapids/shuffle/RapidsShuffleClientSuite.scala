@@ -230,8 +230,8 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
         val tmCaptor = ArgumentCaptor.forClass(classOf[TableMeta])
         verify(client, times(1)).track(any[DeviceMemoryBuffer](), tmCaptor.capture())
         verifyTableMeta(tableMeta, tmCaptor.getValue.asInstanceOf[TableMeta])
-        verify(mockStorage, times(1))
-            .addBuffer(any(), dmbCaptor.capture(), any(), any(), any(), any())
+        verify(mockCatalog, times(1))
+            .addBuffer(dmbCaptor.capture(), any(), any(), any(), any())
 
         val receivedBuff = dmbCaptor.getValue.asInstanceOf[DeviceMemoryBuffer]
         assertResult(tableMeta.bufferMeta().size())(receivedBuff.getLength)
@@ -281,8 +281,8 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
       val tmCaptor = ArgumentCaptor.forClass(classOf[TableMeta])
       verify(client, times(1)).track(any[DeviceMemoryBuffer](), tmCaptor.capture())
       verifyTableMeta(tableMeta, tmCaptor.getValue.asInstanceOf[TableMeta])
-      verify(mockStorage, times(1))
-          .addBuffer(any(), dmbCaptor.capture(), any(), any(), any(), any())
+      verify(mockCatalog, times(1))
+          .addBuffer(dmbCaptor.capture(), any(), any(), any(), any())
       verify(mockCatalog, times(1)).removeBuffer(any())
 
       val receivedBuff = dmbCaptor.getValue.asInstanceOf[DeviceMemoryBuffer]
@@ -334,8 +334,8 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
         verifyTableMeta(tm, tmCaptor.getAllValues().get(ix).asInstanceOf[TableMeta])
       }
 
-      verify(mockStorage, times(5))
-          .addBuffer(any(), dmbCaptor.capture(), any(), any(), any(), any())
+      verify(mockCatalog, times(5))
+          .addBuffer(dmbCaptor.capture(), any(), any(), any(), any())
 
       assertResult(totalExpectedSize)(
         dmbCaptor.getAllValues().toArray().map(_.asInstanceOf[DeviceMemoryBuffer].getLength).sum)
@@ -387,8 +387,8 @@ class RapidsShuffleClientSuite extends RapidsShuffleTestHelper {
         verifyTableMeta(tm, tmCaptor.getAllValues().get(ix).asInstanceOf[TableMeta])
       }
 
-      verify(mockStorage, times(20))
-          .addBuffer(any(), dmbCaptor.capture(), any(), any(), any(), any())
+      verify(mockCatalog, times(20))
+          .addBuffer(dmbCaptor.capture(), any(), any(), any(), any())
 
       assertResult(totalExpectedSize)(
         dmbCaptor.getAllValues().toArray().map(_.asInstanceOf[DeviceMemoryBuffer].getLength).sum)

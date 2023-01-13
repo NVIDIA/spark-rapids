@@ -18,18 +18,15 @@ package com.nvidia.spark.rapids.shuffle
 
 import java.nio.ByteBuffer
 import java.util.concurrent.Executor
-
 import scala.collection.mutable.ArrayBuffer
-
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, DeviceMemoryBuffer, HostMemoryBuffer}
-import com.nvidia.spark.rapids.{Arm, GpuColumnVector, MetaUtils, RapidsConf, RapidsDeviceMemoryStore, ShuffleMetadata, ShuffleReceivedBufferCatalog}
+import com.nvidia.spark.rapids.{Arm, GpuColumnVector, MetaUtils, RapidsBufferHandle, RapidsConf, RapidsDeviceMemoryStore, ShuffleMetadata, ShuffleReceivedBufferCatalog}
 import com.nvidia.spark.rapids.format.TableMeta
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{spy, when}
 import org.scalatest.{BeforeAndAfterEach, FunSuite}
 import org.scalatest.mockito.MockitoSugar
-
 import org.apache.spark.sql.rapids.ShuffleMetricsUpdater
 import org.apache.spark.sql.types.IntegerType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -135,15 +132,19 @@ class RapidsShuffleTestHelper extends FunSuite
     mockCopyExecutor = new ImmediateExecutor
     mockBssExecutor = mock[Executor]
     mockHandler = mock[RapidsShuffleFetchHandler]
-    mockStorage = mock[RapidsDeviceMemoryStore]
     mockCatalog = mock[ShuffleReceivedBufferCatalog]
     mockConf = mock[RapidsConf]
     testMetricsUpdater = spy(new TestShuffleMetricsUpdater)
 
     val dmbCaptor = ArgumentCaptor.forClass(classOf[DeviceMemoryBuffer])
-    when(mockStorage.addBuffer(any(), dmbCaptor.capture(), any(), any(), any(), any()))
+    when(mockCatalog.addBuffer(dmbCaptor.capture(), any(), any(), any(), any()))
       .thenAnswer(_ => {
-        buffersToClose.append(dmbCaptor.getValue.asInstanceOf[DeviceMemoryBuffer])
+        val buffer = dmbCaptor.getValue.asInstanceOf[DeviceMemoryBuffer]
+        // when calling addBuffer it is the responsibility of the caller to call
+        // close on the original buffer
+        buffer.incRefCount()
+        buffersToClose.append(buffer)
+        mock[RapidsBufferHandle]
       })
 
     client = spy(new RapidsShuffleClient(
@@ -151,7 +152,6 @@ class RapidsShuffleTestHelper extends FunSuite
       mockTransport,
       mockExecutor,
       mockCopyExecutor,
-      mockStorage,
       mockCatalog))
   }
 }

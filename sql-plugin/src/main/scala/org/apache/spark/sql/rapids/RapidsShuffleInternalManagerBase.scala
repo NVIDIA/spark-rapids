@@ -890,7 +890,6 @@ class RapidsCachingWriter[K, V](
     mapId: Long,
     metricsReporter: ShuffleWriteMetricsReporter,
     catalog: ShuffleBufferCatalog,
-    shuffleStorage: RapidsDeviceMemoryStore,
     rapidsShuffleServer: Option[RapidsShuffleServer],
     metrics: Map[String, SQLMetric])
   extends ShuffleWriter[K, V]
@@ -1207,7 +1206,6 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
           mapId,
           metricsReporter,
           getCatalogOrThrow,
-          RapidsBufferCatalog.getDeviceStorage,
           server,
           gpu.dependency.metrics)
       case bmssh: BypassMergeSortShuffleHandle[_, _] =>

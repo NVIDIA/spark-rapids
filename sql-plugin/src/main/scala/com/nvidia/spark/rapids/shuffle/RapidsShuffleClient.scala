@@ -84,13 +84,13 @@ case class PendingTransferRequest(client: RapidsShuffleClient,
  * @param exec Executor used to handle tasks that take time, and should not be in the
  *             transport's thread
  * @param clientCopyExecutor Executors used to handle synchronous mem copies
+ * @param catalog catalog to use to track received shuffle blocks
  */
 class RapidsShuffleClient(
     val connection: ClientConnection,
     transport: RapidsShuffleTransport,
     exec: Executor,
     clientCopyExecutor: Executor,
-    devStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage,
     catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog)
       extends Logging with Arm with AutoCloseable {
 

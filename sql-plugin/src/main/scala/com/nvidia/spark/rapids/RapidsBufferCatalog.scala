@@ -55,7 +55,7 @@ trait RapidsBufferHandle {
  * Catalog for lookup of buffers by ID. The constructor is only visible for testing, generally
  * `RapidsBufferCatalog.singleton` should be used instead.
  */
-class RapidsBufferCatalog extends Arm {
+class RapidsBufferCatalog extends AutoCloseable with Arm {
 
   /** Map of buffer IDs to buffers sorted by storage tier */
   private[this] val bufferMap = new ConcurrentHashMap[RapidsBufferId, Seq[RapidsBuffer]]
@@ -322,6 +322,13 @@ class RapidsBufferCatalog extends Arm {
 
   /** Return the number of buffers currently in the catalog. */
   def numBuffers: Int = bufferMap.size()
+
+  override def close(): Unit = {
+    bufferIdToHandles.forEach { case (_, handles) =>
+      handles.foreach(removeBuffer)
+    }
+    bufferIdToHandles.clear()
+  }
 }
 
 object RapidsBufferCatalog extends Logging with Arm {
@@ -389,6 +396,10 @@ object RapidsBufferCatalog extends Logging with Arm {
   }
 
   private def closeImpl(): Unit = {
+    if (singleton != null) {
+      singleton.close()
+    }
+
     if (memoryEventHandler != null) {
       // Workaround for shutdown ordering problems where device buffers allocated with this handler
       // are being freed after the handler is destroyed
