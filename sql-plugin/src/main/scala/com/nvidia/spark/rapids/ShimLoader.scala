@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ import org.apache.spark.{SPARK_BRANCH, SPARK_BUILD_DATE, SPARK_BUILD_USER, SPARK
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin}
 import org.apache.spark.api.resource.ResourceDiscoveryPlugin
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.Strategy
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.{ColumnarRule, SparkPlan}
@@ -383,6 +384,10 @@ object ShimLoader extends Logging {
 
   def newUdfLogicalPlanRules(): Rule[LogicalPlan] = {
     newInstanceOf("com.nvidia.spark.udf.LogicalPlanRules")
+  }
+
+  def newStrategyRules(): Strategy = {
+    newInstanceOf("com.nvidia.spark.rapids.StrategyRules")
   }
 
   def newInternalExclusiveModeGpuDiscoveryPlugin(): ResourceDiscoveryPlugin = {
