@@ -451,7 +451,10 @@ object RapidsBufferCatalog extends Logging with Arm {
   }
 
   /**
-   * Adds a contiguous table to the device storage, taking ownership of the table.
+   * Adds a contiguous table to the device storage. This does NOT take ownership of the
+   * contiguous table, so it is the responsibility of the caller to close it. The refcount of the
+   * underlying device buffer will be incremented so the contiguous table can be closed before
+   * this buffer is destroyed.
    * @param contigTable contiguous table to trackNewHandle in device storage
    * @param initialSpillPriority starting spill priority value for the buffer
    * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
@@ -468,7 +471,8 @@ object RapidsBufferCatalog extends Logging with Arm {
   }
 
   /**
-   * Adds a buffer to the device storage, taking ownership of the buffer.
+   * Adds a buffer to the device storage. This does NOT take ownership of the
+   * buffer, so it is the responsibility of the caller to close it.
    * @param buffer buffer that will be owned by the store
    * @param tableMeta metadata describing the buffer layout
    * @param initialSpillPriority starting spill priority value for the buffer
