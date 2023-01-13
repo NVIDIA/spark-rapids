@@ -138,4 +138,6 @@ case class GpuCreateDataSourceTableAsSelectCommand(
 
   // use same logic as GpuInsertIntoHadoopFsRelationCommand
   override def requireSingleBatch: Boolean = needSort && useStableSort
+
+  override def child = query
 }
