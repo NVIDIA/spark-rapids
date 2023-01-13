@@ -293,7 +293,7 @@ class GpuBroadcastMeta(
   override def tagPlanForGpu(): Unit = {
     if (!TrampolineUtil.isSupportedRelation(exchange.mode)) {
       willNotWorkOnGpu(
-        s"Unrecognized BroadcastMode - ${exchange.mode}." +
+        s"unsupported BroadcastMode: ${exchange.mode}. " +
           s"GPU supports only IdentityBroadcastMode and HashedRelationBroadcastMode")
     }
     def isSupported(rm: RapidsMeta[_, _, _]): Boolean = rm.wrapped match {
