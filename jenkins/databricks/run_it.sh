@@ -32,6 +32,7 @@ if [[ -z "$SPARK_HOME" ]]; then
     export SPARK_HOME=$DB_HOME/spark
 fi
 
+SCALA_BINARY_VER=${SCALA_BINARY_VER:-'2.12'}
 CONDA_HOME=${CONDA_HOME:-"/databricks/conda"}
 
 # Try to use "cudf-udf" conda environment for the python cudf-udf tests.
@@ -64,11 +65,22 @@ if [[ "$TEST" == "cache_test" || "$TEST" == "cache_test.py" ]]; then
 fi
 
 if [[ "$TEST_TAGS" == "iceberg" ]]; then
-    ICEBERG_VERSION=${ICEBERG_VERSION:-0.13.2}
     ICEBERG_SPARK_VER=$(echo $SPARK_VER | cut -d. -f1,2)
 
+    # Set Iceberg related versions. See https://iceberg.apache.org/multi-engine-support/#apache-spark
+    # Available versions https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.3_2.12/
+    case "$SPARK_VER" in
+        "3.3.0")
+            ICEBERG_VERSION=${ICEBERG_VERSION:-0.14.1}
+            ;;
+        "3.2.1" | "3.1.2")
+            ICEBERG_VERSION=${ICEBERG_VERSION:-0.13.2}
+            ;;
+        *) echo "Unexpected Spark version: $SPARK_VER"; exit 1;;
+    esac
+
     export SPARK_SUBMIT_FLAGS="$SPARK_SUBMIT_FLAGS \
-        --packages org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_2.12:${ICEBERG_VERSION} \
+        --packages org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
         --conf spark.sql.extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
         --conf spark.sql.catalog.spark_catalog=org.apache.iceberg.spark.SparkSessionCatalog \
         --conf spark.sql.catalog.spark_catalog.type=hadoop \
