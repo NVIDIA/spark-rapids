@@ -17,13 +17,13 @@
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
-import org.apache.spark.sql.execution.command.CreateDataSourceTableAsSelectCommand
+
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.rapids.GpuDataSource
-import org.apache.spark.sql.rapids.GpuOrcFileFormat
-import org.apache.spark.sql.rapids.shims.GpuCreateDataSourceTableAsSelectCommand
+import org.apache.spark.sql.execution.command.CreateDataSourceTableAsSelectCommand
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
+import org.apache.spark.sql.rapids.{GpuDataSource, GpuOrcFileFormat}
+import org.apache.spark.sql.rapids.shims.GpuCreateDataSourceTableAsSelectCommand
 
 final class CreateDataSourceTableAsSelectCommandMeta(
     cmd: CreateDataSourceTableAsSelectCommand,

@@ -17,8 +17,8 @@
 package org.apache.spark.sql.hive.rapids.shims
 
 import  com.nvidia.spark.rapids._
-import org.apache.spark.sql.execution.command.DataWritingCommand
-import org.apache.spark.sql.execution.command.RunnableCommand
+
+import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 
 trait HiveProviderCmdShims extends HiveProvider {
 

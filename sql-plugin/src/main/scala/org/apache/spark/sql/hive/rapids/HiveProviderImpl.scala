@@ -29,10 +29,10 @@ import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
 import org.apache.spark.sql.hive.execution.{HiveTableScanExec}
+import org.apache.spark.sql.hive.rapids.shims.HiveProviderCmdShims
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
-import org.apache.spark.sql.hive.rapids.shims.HiveProviderCmdShims
 
 class HiveProviderImpl extends HiveProviderCmdShims {
 

@@ -82,11 +82,13 @@ trait Spark340PlusShims extends Spark331PlusShims {
     super.getExprs ++ shimExprs
   }
 
-  override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],DataWritingCommandRule[_ <: DataWritingCommand]] = {
+  override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
+      DataWritingCommandRule[_ <: DataWritingCommand]] = {
     Map.empty
   }
 
-  override def getRunnableCmds: Map[Class[_ <: RunnableCommand], RunnableCommandRule[_ <: RunnableCommand]] = {
+  override def getRunnableCmds: Map[Class[_ <: RunnableCommand],
+      RunnableCommandRule[_ <: RunnableCommand]] = {
     Seq(
       GpuOverrides.runnableCmd[CreateDataSourceTableAsSelectCommand](
         "Write to a data source",

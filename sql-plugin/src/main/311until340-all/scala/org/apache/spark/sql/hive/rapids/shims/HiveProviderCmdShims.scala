@@ -16,10 +16,11 @@
 
 package org.apache.spark.sql.hive.rapids.shims
 
-import  com.nvidia.spark.rapids._
-import org.apache.spark.sql.execution.command.DataWritingCommand
+import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.OptimizedCreateHiveTableAsSelectCommandMeta
+
+import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.hive.execution.OptimizedCreateHiveTableAsSelectCommand
-import org.apache.spark.sql.execution.command.RunnableCommand
 
 trait HiveProviderCmdShims extends HiveProvider {
 

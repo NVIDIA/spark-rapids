@@ -3627,14 +3627,17 @@ object GpuOverrides extends Logging {
         .map(r => r.wrap(cmd, conf, parent, r).asInstanceOf[RunnableCommandMeta[INPUT]])
         .getOrElse(new RuleNotFoundRunnableCommandMeta(cmd, conf, parent))
 
-  val commonRunnableCmds: Map[Class[_ <: RunnableCommand], RunnableCommandRule[_ <: RunnableCommand]] =
+  val commonRunnableCmds: Map[Class[_ <: RunnableCommand],
+    RunnableCommandRule[_ <: RunnableCommand]] =
     Seq(
       runnableCmd[SaveIntoDataSourceCommand](
         "Write to a data source",
         (a, conf, p, r) => new SaveIntoDataSourceCommandMeta(a, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
 
-  val runnableCmds = commonRunnableCmds ++ GpuHiveOverrides.runnableCmds ++ SparkShimImpl.getRunnableCmds
+  val runnableCmds = commonRunnableCmds ++ 
+    GpuHiveOverrides.runnableCmds ++ 
+    SparkShimImpl.getRunnableCmds
 
   def wrapPlan[INPUT <: SparkPlan](
       plan: INPUT,

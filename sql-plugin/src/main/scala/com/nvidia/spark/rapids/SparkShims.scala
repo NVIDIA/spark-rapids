@@ -85,7 +85,8 @@ trait SparkShims {
   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
   def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]]
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
-  def getDataWriteCmds: Map[Class[_ <: DataWritingCommand], DataWritingCommandRule[_ <: DataWritingCommand]]
+  def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
+    DataWritingCommandRule[_ <: DataWritingCommand]]
   def getRunnableCmds: Map[Class[_ <: RunnableCommand], RunnableCommandRule[_ <: RunnableCommand]]
 
   def newBroadcastQueryStageExec(

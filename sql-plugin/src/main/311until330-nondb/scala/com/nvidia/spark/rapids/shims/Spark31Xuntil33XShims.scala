@@ -43,14 +43,16 @@ trait Spark31Xuntil33XShims extends SparkShims {
     new FileScanRDD(sparkSession, readFunction, filePartitions)
   }
 
-  override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],DataWritingCommandRule[_ <: DataWritingCommand]] = {
+  override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
+      DataWritingCommandRule[_ <: DataWritingCommand]] = {
     Seq(GpuOverrides.dataWriteCmd[CreateDataSourceTableAsSelectCommand](
       "Create table with select command",
       (a, conf, p, r) => new CreateDataSourceTableAsSelectCommandMeta(a, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
   }
 
-  override def getRunnableCmds: Map[Class[_ <: RunnableCommand], RunnableCommandRule[_ <: RunnableCommand]] = {
+  override def getRunnableCmds: Map[Class[_ <: RunnableCommand],
+      RunnableCommandRule[_ <: RunnableCommand]] = {
     Map.empty
   }
 }
