@@ -25,10 +25,10 @@ spark_version=${1:-"3.1.1"}
 PRE_IFS=$IFS
 IFS="-" read -r -a spark_version <<< "$1"
 IFS=$PRE_IFS
-# New name pattern for spark version >= 3.3.0
-# Old name pattern for spark version < 3.3.0 and SNAPSHOT
+# From spark 3.3.0, the pre-built binary tar starts to use new name pattern
 if [[ ${#spark_version[@]} == 1 ]] && [[ `echo -e "${spark_version[0]}\n3.3.0" | sort -V | head -n 1` == "3.3.0" ]]; then
     BIN_HADOOP_VER="bin-hadoop3"
+# For spark version <3.3.0 and SNAPSHOT version, use previous name pattern
 else
     BIN_HADOOP_VER="bin-hadoop3.2"
 fi
