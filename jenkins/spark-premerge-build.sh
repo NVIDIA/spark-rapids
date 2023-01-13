@@ -172,7 +172,7 @@ fi
 
 # Download a full version of spark
 . jenkins/hadoop-def.sh $SPARK_VER
-wget -P $ARTF_ROOT $SPARK_REPO/spark/spark-$SPARK_VER/spark-$SPARK_VER-$BIN_HADOOP_VER.tgz
+wget -P $ARTF_ROOT $SPARK_REPO/org/apache/spark/$SPARK_VER/spark-$SPARK_VER-$BIN_HADOOP_VER.tgz
 
 export SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-$BIN_HADOOP_VER"
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
