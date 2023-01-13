@@ -16,40 +16,62 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, ClusteredDistribution, UnspecifiedDistribution}
+import com.nvidia.spark.rapids.shims.ShimSparkPlan
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, BroadcastMode, Distribution}
+import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.rapids.execution.JoinTypeChecks
 
 class DistributionSuite extends SparkQueryCompareTestSuite {
 
-  val seq1 = Seq((10, 20), (10, 30), (20, 20), (20, 30), (30, 20))
-  val seq2 = Seq((10, 20), (20, 300), (30, 400), (10, 400))
+  test("test Custom BroadcastMode") {
+    case class CustomBroadcastExec() extends ShimSparkPlan {
+      override protected def doExecute(): RDD[InternalRow] =
+        throw new IllegalStateException("should not be here")
 
-  test("BroadcastDistribution and UnknownDistribution") {
-    val conf = new SparkConf()
-    withGpuSparkSession(spark => {
-      import spark.implicits._
-      val df1 = seq1.toDF("a", "b")
-      val df2 = seq2.toDF("aa", "bb")
-      val df = df1.join(df2, df1("a") === df2("aa"), "inner")
-      df.collect()
+      override def output: Seq[Attribute] = Nil
 
-      val distributions = df.queryExecution.sparkPlan.requiredChildDistribution
+      override def children: Seq[SparkPlan] = Nil
 
-      assert(distributions(0).isInstanceOf[UnspecifiedDistribution.type], true)
-      assert(distributions(1).isInstanceOf[BroadcastDistribution], true)
-    }, conf)
-  }
+      override def requiredChildDistribution: Seq[Distribution] =
+        Seq(BroadcastDistribution(customBroadcastMode))
 
-  test("ClusteredDistribution") {
-    val conf = new SparkConf()
-    withGpuSparkSession(spark => {
-      import spark.implicits._
-      val df1 = seq1.toDF("a", "b")
-      val df = df1.groupBy("a").sum("b")
-      df.collect()
-      val distributions = df.queryExecution.sparkPlan.requiredChildDistribution
+      private val customBroadcastMode = new BroadcastMode {
+        override def transform(rows: Array[InternalRow]): Any = rows
 
-      assert(distributions(0).isInstanceOf[ClusteredDistribution], true)
-    }, conf)
+        override def transform(rows: Iterator[InternalRow], sizeHint: Option[Long]): Any = null
+
+        override def canonicalized: BroadcastMode = this
+      }
+    }
+
+    class CustomExecMeta(
+        plan: CustomBroadcastExec,
+        conf: RapidsConf,
+        parent: Option[RapidsMeta[_, _, _]],
+        rule: DataFromReplacementRule)
+        extends SparkPlanMeta[CustomBroadcastExec](plan, conf, parent, rule) {
+      override val childPlans: Seq[SparkPlanMeta[SparkPlan]] = Nil
+      override val childExprs: Seq[BaseExprMeta[_]] = Nil
+      override val childScans: Seq[ScanMeta[_]] = Nil
+      override val childParts: Seq[PartMeta[_]] = Nil
+
+      override def convertToGpu(): GpuExec =
+        throw new IllegalStateException("should not be called")
+    }
+    val rapidsConf = new RapidsConf(Map[String, String]())
+    val execRule = GpuOverrides.exec[CustomBroadcastExec]("Custom BroadcastMode Check",
+      JoinTypeChecks.equiJoinExecChecks,
+      (join, conf, p, r) => new CustomExecMeta(join, conf, p, r))
+
+    val meta = execRule.wrap(
+      new CustomBroadcastExec, rapidsConf, None, new NoRuleDataFromReplacementRule)
+    meta.tagForGpu()
+    assert(!meta.canThisBeReplaced)
+    assert(meta.explain(false).contains(" cannot run on GPU because unsupported " +
+      "required distribution: BroadcastDistribution"))
   }
 }

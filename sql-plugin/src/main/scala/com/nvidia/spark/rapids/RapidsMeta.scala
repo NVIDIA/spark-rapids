@@ -709,8 +709,10 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     }
     // All ExecMeta extend SparkMeta. We need to check if the requiredChildDistribution
     // is recognized or not. If it's unrecognized Distribution then we fall back to CPU.
-    if (!DistributionUtil.isSupported(plan.requiredChildDistribution)) {
-      willNotWorkOnGpu("Unrecognized Distribution found in SparkPlan not supported by GPU")
+    plan.requiredChildDistribution.foreach { d =>
+      if (!DistributionUtil.isSupported(d)) {
+        willNotWorkOnGpu(s"unsupported required distribution: $d")
+      }
     }
 
     checkExistingTags()

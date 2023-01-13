@@ -21,17 +21,15 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 object DistributionUtil {
 
-  def isSupported(distributions: Seq[Distribution]): Boolean = {
-    distributions.forall { dist =>
-      dist match {
-        case _: UnspecifiedDistribution.type => true
-        case _: AllTuples.type => true
-        case b: BroadcastDistribution => TrampolineUtil.isSupportedRelation(b.mode)
-        case _: ClusteredDistribution => true
-        case _: OrderedDistribution => true
-        case _: StatefulOpClusteredDistribution => true
-        case _ => false
-      }
+  def isSupported(distribution: Distribution): Boolean = {
+    distribution match {
+      case UnspecifiedDistribution => true
+      case AllTuples => true
+      case b: BroadcastDistribution => TrampolineUtil.isSupportedRelation(b.mode)
+      case _: ClusteredDistribution => true
+      case _: OrderedDistribution => true
+      case _: StatefulOpClusteredDistribution => true
+      case _ => false
     }
   }
 }
