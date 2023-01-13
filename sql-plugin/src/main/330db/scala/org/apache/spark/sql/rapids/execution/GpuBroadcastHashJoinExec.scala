@@ -20,11 +20,14 @@ import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.TaskContext
+import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
+import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ExecutorBroadcast, ExecutorBroadcastMode, HashedRelation}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -82,6 +85,16 @@ case class GpuBroadcastHashJoinExec(
       leftKeys, rightKeys, joinType, buildSide, condition, left, right) {
   import GpuMetric._
 
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
+    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS),
+    STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
+    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
+    NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
+    NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
+    CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME)
+  ) ++ semaphoreMetrics ++ spillMetrics
+
   override def otherCopyArgs: Seq[AnyRef] = executorBroadcast :: Nil
 
   override def requiredChildDistribution: Seq[Distribution] = {
@@ -101,15 +114,39 @@ case class GpuBroadcastHashJoinExec(
     executorBroadcast.isDefined
   }
 
+  def shuffleExchange: GpuShuffleExchangeExec = buildPlan match {
+    case bqse: ShuffleQueryStageExec if bqse.plan.isInstanceOf[GpuShuffleExchangeExec] =>
+      bqse.plan.asInstanceOf[GpuShuffleExchangeExec]
+    case bqse: ShuffleQueryStageExec if bqse.plan.isInstanceOf[ReusedExchangeExec] =>
+      bqse.plan.asInstanceOf[ReusedExchangeExec].child.asInstanceOf[GpuShuffleExchangeExec]
+    case gpu: GpuShuffleExchangeExec => gpu
+    case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuShuffleExchangeExec]
+  }
+
+  private def shuffleCoalesceIterator(
+    buildRelation: RDD[ColumnarBatch],
+    buildSchema: StructType): Iterator[ColumnarBatch] = {
+
+    val rapidsConf = new RapidsConf(conf)
+    val targetSize = rapidsConf.gpuTargetBatchSizeBytes
+    val dataTypes = GpuColumnVector.extractTypes(buildSchema)
+    val metricsMap = allMetrics
+
+    buildRelation.partitions.map { part =>
+      val it = buildRelation.compute(part, TaskContext.get())
+      new GpuShuffleCoalesceIterator(
+        new HostShuffleCoalesceIterator(it, targetSize, dataTypes, metricsMap),
+          dataTypes, metricsMap).asInstanceOf[Iterator[ColumnarBatch]]
+    }.reduceLeft(_ ++ _)
+  }
+
   private def getExecutorBatch(
       buildRelation: RDD[ColumnarBatch], 
       buildSchema: StructType): ColumnarBatch = {
-    
-    // For now, we only support SinglePartition, so we should only need to get one of the
-    // partitions from the iterator
-    val iter = buildRelation.toLocalIterator
-    if (iter.hasNext) {
-      iter.next
+
+    val it = shuffleCoalesceIterator(buildRelation, buildSchema)
+    if (it.hasNext) {
+      it.next
     } else {
       GpuColumnVector.emptyBatch(buildSchema)
     }
@@ -149,7 +186,7 @@ case class GpuBroadcastHashJoinExec(
 
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
 
-    val buildRelation = buildPlan.executeColumnar()
+    val buildRelation = shuffleExchange.executeColumnar()
 
     val rdd = streamedPlan.executeColumnar()
     val buildSchema = buildPlan.schema
