@@ -695,17 +695,7 @@ case class GpuStringRepeat(input: Expression, repeatTimes: Expression)
   }
 
   def doColumnar(input: GpuColumnVector, repeatTimes: GpuColumnVector): ColumnVector = {
-    val repeatTimesCV = repeatTimes.getBase
-
-    // Compute the output size to check for overflow.
-    withResource(input.getBase.repeatStringsSizes(repeatTimesCV)) { outputSizes =>
-      if (outputSizes.getTotalSize > Int.MaxValue.asInstanceOf[Long]) {
-        throw new RuntimeException("Output strings have total size exceed maximum allowed size")
-      }
-
-      // Finally repeat the strings using the pre-computed strings' sizes.
-      input.getBase.repeatStrings(repeatTimesCV, outputSizes.getStringSizes)
-    }
+    input.getBase.repeatStrings(repeatTimes.getBase)
   }
 
   def doColumnar(input: GpuColumnVector, repeatTimes: GpuScalar): ColumnVector = {
