@@ -145,6 +145,8 @@ trait SparkShims {
 
   def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan]
 
+  def parentReadsShuffleData(shufflePlan: SparkPlan, parent: SparkPlan): Boolean = false
+
   /**
    * Walk the plan recursively and return a list of operators that match the predicate
    */

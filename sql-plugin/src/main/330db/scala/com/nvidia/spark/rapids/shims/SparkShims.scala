@@ -24,6 +24,8 @@ import org.apache.spark.sql.catalyst.trees.TreePattern._
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
+import org.apache.spark.sql.execution.exchange.{EXECUTOR_BROADCAST, ShuffleExchangeLike}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinExec, GpuBroadcastNestedLoopJoinExec}
 
 object SparkShimImpl extends Spark321PlusDBShims {
   // AnsiCast is removed from Spark3.4.0
@@ -52,6 +54,17 @@ object SparkShimImpl extends Spark321PlusDBShims {
     super.getExecs ++ PythonMapInArrowExecShims.execs
 
   override def reproduceEmptyStringBug: Boolean = false
+
+  override def parentReadsShuffleData(shufflePlan: SparkPlan, parent: SparkPlan): Boolean = {
+    val shuffle = shufflePlan.asInstanceOf[ShuffleExchangeLike]
+    parent match {
+      case bhj: GpuBroadcastHashJoinExec =>
+        shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST)
+      case bnlj: GpuBroadcastNestedLoopJoinExec =>
+        shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST)
+      case _ => false
+    }
+  }
 }
 
 trait ShimGetArrayStructFields extends ExtractValue {

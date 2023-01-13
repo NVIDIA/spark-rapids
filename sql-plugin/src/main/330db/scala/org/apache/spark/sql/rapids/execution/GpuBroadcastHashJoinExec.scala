@@ -28,7 +28,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Dist
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ExecutorBroadcast, ExecutorBroadcastMode, HashedRelation}
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ExecutorBroadcastMode}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -52,11 +52,6 @@ class GpuBroadcastHashJoinMeta(
       case GpuBuildRight => right
     }
     verifyBuildSideWasReplaced(buildSideMeta)
-    val execBroadcast = if (join.isExecutorBroadcast) {
-      Some(join.executorBroadcast)
-    } else {
-      None
-    }
 
     val joinExec = GpuBroadcastHashJoinExec(
       leftKeys.map(_.convertToGpu()),
@@ -64,7 +59,9 @@ class GpuBroadcastHashJoinMeta(
       join.joinType,
       buildSide,
       joinCondition,
-      left, right)(execBroadcast)
+      left,
+      right,
+      join.isExecutorBroadcast)
     // For inner joins we can apply a post-join condition for any conditions that cannot be
     // evaluated directly in a mixed join that leverages a cudf AST expression
     filterCondition.map(c => GpuFilterExec(c, joinExec)).getOrElse(joinExec)
@@ -80,7 +77,8 @@ case class GpuBroadcastHashJoinExec(
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
     left: SparkPlan,
-    right: SparkPlan)(executorBroadcast: Option[ExecutorBroadcast[HashedRelation]])
+    right: SparkPlan, 
+    executorBroadcast: Boolean)
       extends GpuBroadcastHashJoinExecBase(
       leftKeys, rightKeys, joinType, buildSide, condition, left, right) {
   import GpuMetric._
@@ -94,8 +92,6 @@ case class GpuBroadcastHashJoinExec(
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME)
   ) ++ semaphoreMetrics ++ spillMetrics
-
-  override def otherCopyArgs: Seq[AnyRef] = executorBroadcast :: Nil
 
   override def requiredChildDistribution: Seq[Distribution] = {
     if (isExecutorBroadcast) {
@@ -111,7 +107,7 @@ case class GpuBroadcastHashJoinExec(
   }
 
   def isExecutorBroadcast(): Boolean = {
-    executorBroadcast.isDefined
+    executorBroadcast
   }
 
   def shuffleExchange: GpuShuffleExchangeExec = buildPlan match {
@@ -123,6 +119,10 @@ case class GpuBroadcastHashJoinExec(
     case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuShuffleExchangeExec]
   }
 
+  // Because of the nature of the executor-side broadcast, every executor needs to read the 
+  // shuffle data directly from the executor that produces the broadcast data. 
+  // Note that we can't call mapPartitions here because we're on an executor, and we don't 
+  // have access to a SparkContext.
   private def shuffleCoalesceIterator(
     buildRelation: RDD[ColumnarBatch],
     buildSchema: StructType): Iterator[ColumnarBatch] = {

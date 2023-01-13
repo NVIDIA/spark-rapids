@@ -148,6 +148,11 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             // and a shuffle query stage, so we instead insert it around the custom shuffle
             // reader later on, in the next top-level case clause.
             s
+          case Some(x) if SparkShimImpl.parentReadsShuffleData(plan, x) =>
+            // In some cases, the parent might have to read the shuffle data directly, so
+            // we don't need the post-shuffle coalesce exec since the parent should 
+            // coalesce the shuffle data as needed
+            s
           case _ =>
             // Directly wrap shuffle query stage with coalesce batches operator
             addPostShuffleCoalesce(s)
