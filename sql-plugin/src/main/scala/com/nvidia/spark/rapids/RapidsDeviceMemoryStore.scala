@@ -66,14 +66,14 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
    * @param initialSpillPriority starting spill priority value for the buffer
    * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
    *                      It should never allocate GPU memory and really just be used for metrics.
-   * @return RapidsBufferId identifying this table
+   * @return RapidsBufferHandle handle for this table
    */
   def addTable(
       table: Table,
       contigBuffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback): RapidsBufferId = {
+      spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback): RapidsBufferHandle = {
     // We increment this because this rapids device memory has two pointers to the buffer:
     // the actual contig buffer, and the table. When this `RapidsBuffer` releases its resources,
     // it will decrement the ref count for the contig buffer (negating this incRefCount),
@@ -93,7 +93,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       logDebug(s"Adding table for: [id=$id, size=${buffer.size}, " +
         s"meta_id=${buffer.meta.bufferMeta.id}, meta_size=${buffer.meta.bufferMeta.size}]")
       addDeviceBuffer(buffer, needsSync = true)
-      id
+      catalog.makeNewHandle(id, initialSpillPriority, spillCallback)
     }
   }
 
@@ -112,13 +112,13 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
    *                      It should never allocate GPU memory and really just be used for metrics.
    * @param needsSync whether the spill framework should stream synchronize while adding
    *                  this device buffer (defaults to true)
-   * @return RapidsBufferId identifying this table
+   * @return RapidsBufferHandle handle for this table
    */
   def addContiguousTable(
       contigTable: ContiguousTable,
       initialSpillPriority: Long,
       spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback,
-      needsSync: Boolean = true): RapidsBufferId = {
+      needsSync: Boolean = true): RapidsBufferHandle = {
     addContiguousTable(
       TempSpillBufferId(),
       contigTable,
@@ -140,14 +140,14 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
    *                      It should never allocate GPU memory and really just be used for metrics.
    * @param needsSync whether the spill framework should stream synchronize while adding
    *                             this device buffer (defaults to true)
-   * @return RapidsBufferId identifying this table
+   * @return RapidsBufferHandle handle for this table
    */
   def addContiguousTable(
       id: RapidsBufferId,
       contigTable: ContiguousTable,
       initialSpillPriority: Long,
       spillCallback: SpillCallback,
-      needsSync: Boolean): RapidsBufferId = {
+      needsSync: Boolean): RapidsBufferHandle = {
     val contigBuffer = contigTable.getBuffer
     val size = contigBuffer.getLength
     val meta = MetaUtils.buildTableMeta(id.tableId, contigTable)
@@ -165,7 +165,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
         s"uncompressed=${buffer.meta.bufferMeta.uncompressedSize}, " +
         s"meta_id=${buffer.meta.bufferMeta.id}, meta_size=${buffer.meta.bufferMeta.size}]")
       addDeviceBuffer(buffer, needsSync)
-      id
+      catalog.makeNewHandle(id, initialSpillPriority, spillCallback)
     }
   }
 
@@ -183,14 +183,14 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
    *                      It should never allocate GPU memory and really just be used for metrics.
    * @param needsSync whether the spill framework should stream synchronize while adding
    *                  this device buffer (defaults to true)
-   * @return RapidsBufferId identifying this buffer
+   * @return RapidsBufferHandle handle for this buffer
    */
   def addBuffer(
       buffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
       spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback,
-      needsSync: Boolean = true): RapidsBufferId = {
+      needsSync: Boolean = true): RapidsBufferHandle = {
     addBuffer(
       TempSpillBufferId(),
       buffer,
@@ -212,7 +212,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
    *                      It should never allocate GPU memory and really just be used for metrics.
    * @param needsSync whether the spill framework should stream synchronize while adding
    *                  this device buffer (defaults to true)
-   * @return RapidsBufferId identifying this buffer
+   * @return RapidsBufferHandle handle for this RapidsBuffer
    */
   def addBuffer(
       id: RapidsBufferId,
@@ -220,7 +220,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       tableMeta: TableMeta,
       initialSpillPriority: Long,
       spillCallback: SpillCallback,
-      needsSync: Boolean): RapidsBufferId = {
+      needsSync: Boolean): RapidsBufferHandle = {
     buffer.incRefCount()
     freeOnExcept(
       new RapidsDeviceMemoryBuffer(
@@ -236,7 +236,7 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
         s"meta_id=${tableMeta.bufferMeta.id}, " +
         s"meta_size=${tableMeta.bufferMeta.size}]")
       addDeviceBuffer(buff, needsSync)
-      id
+      catalog.makeNewHandle(id, initialSpillPriority, spillCallback)
     }
   }
 

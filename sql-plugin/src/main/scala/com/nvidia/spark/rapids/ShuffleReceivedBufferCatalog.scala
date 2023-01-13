@@ -92,7 +92,6 @@ class ShuffleReceivedBufferCatalog(
         initialSpillPriority,
         defaultSpillCallback,
         needsSync)
-      catalog.makeNewHandle(bufferId, initialSpillPriority, defaultSpillCallback)
     }
   }
 

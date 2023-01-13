@@ -91,7 +91,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         withResource(HostMemoryBuffer.allocate(ct.getBuffer.getLength)) { expectedHostBuffer =>
           expectedHostBuffer.copyFromDeviceBuffer(ct.getBuffer)
           val meta = MetaUtils.buildTableMeta(bufferId.tableId, ct)
-          withResource(ct) { _ =>
+          val handle = withResource(ct) { _ =>
             store.addBuffer(
               bufferId,
               ct.getBuffer,
@@ -100,8 +100,6 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
               RapidsBuffer.defaultSpillCallback,
               needsSync = false)
           }
-          val handle =
-            catalog.makeNewHandle(bufferId, -1, RapidsBuffer.defaultSpillCallback)
           withResource(catalog.acquireBuffer(handle)) { buffer =>
             withResource(buffer.getMemoryBuffer.asInstanceOf[DeviceMemoryBuffer]) { devbuf =>
               withResource(HostMemoryBuffer.allocate(devbuf.getLength)) { actualHostBuffer =>
@@ -125,12 +123,10 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         withResource(GpuColumnVector.from(ct.getTable, sparkTypes)) {
           expectedBatch =>
             val meta = MetaUtils.buildTableMeta(bufferId.tableId, ct)
-            withResource(ct) { _ =>
+            val handle = withResource(ct) { _ =>
               store.addBuffer(bufferId, ct.getBuffer, meta, initialSpillPriority = 3,
                 RapidsBuffer.defaultSpillCallback, false)
             }
-            val handle =
-              catalog.makeNewHandle(bufferId, -1, RapidsBuffer.defaultSpillCallback)
             withResource(catalog.acquireBuffer(handle)) { buffer =>
               withResource(buffer.getColumnarBatch(sparkTypes)) { actualBatch =>
                 TestUtils.compareBatches(expectedBatch, actualBatch)
@@ -159,10 +155,9 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         withResource(buildContiguousTable()) { ct =>
           bufferSizes(i) = ct.getBuffer.getLength
           // store takes ownership of the table
-          store.addContiguousTable(MockRapidsBufferId(i), ct, initialSpillPriority = 0,
-            RapidsBuffer.defaultSpillCallback, false)
           bufferHandles(i) =
-            catalog.makeNewHandle(MockRapidsBufferId(i), 0, RapidsBuffer.defaultSpillCallback)
+            store.addContiguousTable(MockRapidsBufferId(i), ct, initialSpillPriority = 0,
+              RapidsBuffer.defaultSpillCallback, false)
         }
         assertResult(bufferSizes.take(i+1).sum)(store.currentSize)
       }

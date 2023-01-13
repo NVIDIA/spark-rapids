@@ -90,14 +90,12 @@ class ShuffleBufferCatalog(
       needsSync: Boolean): RapidsBufferHandle = {
     val bufferId = nextShuffleBufferId(blockId)
     withResource(contigTable) { _ =>
-      deviceStore.addContiguousTable(
+      val handle = deviceStore.addContiguousTable(
         bufferId,
         contigTable,
         initialSpillPriority,
         defaultSpillCallback,
         needsSync)
-      val handle = catalog.makeNewHandle(
-        bufferId, initialSpillPriority, defaultSpillCallback)
       trackCachedHandle(bufferId, handle)
       handle
     }
@@ -126,15 +124,13 @@ class ShuffleBufferCatalog(
     tableMeta.bufferMeta.mutateId(bufferId.tableId)
     // when we call `addBuffer` the store will incRefCount
     withResource(buffer) { _ =>
-      deviceStore.addBuffer(
+      val handle = deviceStore.addBuffer(
         bufferId,
         buffer,
         tableMeta,
         initialSpillPriority,
         defaultSpillCallback,
         needsSync)
-      val handle =
-        catalog.makeNewHandle(bufferId, initialSpillPriority, defaultSpillCallback)
       trackCachedHandle(bufferId, handle)
       handle
     }

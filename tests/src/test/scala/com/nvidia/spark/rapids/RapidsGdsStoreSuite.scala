@@ -70,11 +70,10 @@ class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar
        val bufferHandles = new Array[RapidsBufferHandle](bufferIds.length)
 
        bufferIds.zipWithIndex.foreach { case(id, ix) =>
-         val size = addTableToStore(devStore, id, spillPriority)
+         val (size, handle) = addTableToStore(devStore, id, spillPriority)
          devStore.synchronousSpill(0)
          bufferSizes(ix) = size
-         bufferHandles(ix) =
-           catalog.makeNewHandle(id, spillPriority, RapidsBuffer.defaultSpillCallback)
+         bufferHandles(ix) = handle
        }
 
        val totalSize = bufferSizes.sum
@@ -116,9 +115,7 @@ class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar
         gdsStore =>
         devStore.setSpillStore(gdsStore)
         assertResult(0)(gdsStore.currentSize)
-        val bufferSize = addTableToStore(devStore, bufferId, spillPriority)
-        val handle =
-          catalog.makeNewHandle(bufferId, spillPriority, RapidsBuffer.defaultSpillCallback)
+        val (bufferSize, handle) = addTableToStore(devStore, bufferId, spillPriority)
         devStore.synchronousSpill(0)
         assertResult(bufferSize)(gdsStore.currentSize)
         assert(path.exists)
@@ -146,13 +143,13 @@ class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar
   private def addTableToStore(
       devStore: RapidsDeviceMemoryStore,
       bufferId: RapidsBufferId,
-      spillPriority: Long): Long = {
+      spillPriority: Long): (Long, RapidsBufferHandle) = {
     withResource(buildContiguousTable()) { ct =>
       val bufferSize = ct.getBuffer.getLength
       // store takes ownership of the table
-      devStore.addContiguousTable(bufferId, ct, spillPriority,
+      val handle = devStore.addContiguousTable(bufferId, ct, spillPriority,
         RapidsBuffer.defaultSpillCallback, false)
-      bufferSize
+      (bufferSize, handle)
     }
   }
 

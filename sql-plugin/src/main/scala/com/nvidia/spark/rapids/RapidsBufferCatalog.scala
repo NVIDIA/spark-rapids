@@ -445,9 +445,7 @@ object RapidsBufferCatalog extends Logging with Arm {
       tableMeta: TableMeta,
       initialSpillPriority: Long,
       spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback): RapidsBufferHandle = {
-    val id =
-      deviceStorage.addTable(table, contigBuffer, tableMeta, initialSpillPriority)
-    singleton.makeNewHandle(id, initialSpillPriority, spillCallback)
+    deviceStorage.addTable(table, contigBuffer, tableMeta, initialSpillPriority)
   }
 
   /**
@@ -465,9 +463,7 @@ object RapidsBufferCatalog extends Logging with Arm {
       contigTable: ContiguousTable,
       initialSpillPriority: Long,
       spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback): RapidsBufferHandle = {
-      val id = deviceStorage.addContiguousTable(
-        contigTable, initialSpillPriority, spillCallback)
-      singleton.makeNewHandle(id, initialSpillPriority, spillCallback)
+      deviceStorage.addContiguousTable(contigTable, initialSpillPriority, spillCallback)
   }
 
   /**
@@ -485,9 +481,7 @@ object RapidsBufferCatalog extends Logging with Arm {
       tableMeta: TableMeta,
       initialSpillPriority: Long,
       spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback): RapidsBufferHandle = {
-    val id = deviceStorage.addBuffer(
-      buffer, tableMeta, initialSpillPriority, spillCallback)
-    singleton.makeNewHandle(id, initialSpillPriority, spillCallback)
+    deviceStorage.addBuffer(buffer, tableMeta, initialSpillPriority, spillCallback)
   }
 
   /**
