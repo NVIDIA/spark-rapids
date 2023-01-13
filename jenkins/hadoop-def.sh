@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,7 +25,9 @@ spark_version=${1:-"3.1.1"}
 PRE_IFS=$IFS
 IFS="-" read -r -a spark_version <<< "$1"
 IFS=$PRE_IFS
-if [[ ${#spark_version[@]} == 1 ]] && [[ `echo -e "${spark_version[0]}\n3.3.0" | sort -V | head -n 1` == "3.3.0" ]]; then # without suffix and spark version >= 3.3.0
+# New name pattern for spark version >= 3.3.0
+# Old name pattern for spark version < 3.3.0 and SNAPSHOT
+if [[ ${#spark_version[@]} == 1 ]] && [[ `echo -e "${spark_version[0]}\n3.3.0" | sort -V | head -n 1` == "3.3.0" ]]; then
     BIN_HADOOP_VER="bin-hadoop3"
 else
     BIN_HADOOP_VER="bin-hadoop3.2"
