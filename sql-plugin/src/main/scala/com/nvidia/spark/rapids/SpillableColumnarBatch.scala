@@ -270,7 +270,9 @@ object SpillableBuffer extends Arm {
       priority: Long,
       spillCallback: SpillCallback): SpillableBuffer = {
     val meta = MetaUtils.getTableMetaNoTable(buffer)
-    val handle = RapidsBufferCatalog.addBuffer(buffer, meta, priority, spillCallback)
+    val handle = withResource(buffer) { _ => 
+      RapidsBufferCatalog.addBuffer(buffer, meta, priority, spillCallback)
+    }
     new SpillableBuffer(handle, spillCallback.semaphoreWaitTime)
   }
 }
