@@ -41,6 +41,7 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
   }
 
   test("spill updates catalog") {
+    val bufferId = MockRapidsBufferId(7, canShareDiskPaths = false)
     val spillPriority = -7
     val hostStoreMaxSize = 1L * 1024 * 1024
     val catalog = spy(new RapidsBufferCatalog)
@@ -52,7 +53,7 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
             assertResult(0)(diskStore.currentSize)
             hostStore.setSpillStore(diskStore)
             val (bufferSize, handle) =
-              addTableToStore(spillPriority)
+              addTableToStore(devStore, bufferId, spillPriority)
             val path = handle.id.getDiskPath(null)
             assert(!path.exists())
             devStore.synchronousSpill(0)
@@ -76,6 +77,9 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
   }
 
   test("get columnar batch") {
+    val bufferId = MockRapidsBufferId(1, canShareDiskPaths = false)
+    val bufferPath = bufferId.getDiskPath(null)
+    assert(!bufferPath.exists)
     val sparkTypes = Array[DataType](IntegerType, StringType, DoubleType,
       DecimalType(ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION, 5))
     val spillPriority = -7
@@ -88,8 +92,8 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
           withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager], catalog, devStore)) {
             diskStore =>
               hostStore.setSpillStore(diskStore)
-              val (_, handle) = addTableToStore(spillPriority)
-              assert(!getDiskPath(handle.id).exists())
+              val (_, handle) = addTableToStore(devStore, bufferId, spillPriority)
+              assert(!handle.id.getDiskPath(null).exists())
               val expectedBatch = withResource(catalog.acquireBuffer(handle)) { buffer =>
                 assertResult(StorageTier.DEVICE)(buffer.storageTier)
                 buffer.getColumnarBatch(sparkTypes)
@@ -110,6 +114,9 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
   }
 
   test("get memory buffer") {
+    val bufferId = MockRapidsBufferId(1, canShareDiskPaths = false)
+    val bufferPath = bufferId.getDiskPath(null)
+    assert(!bufferPath.exists)
     val spillPriority = -7
     val hostStoreMaxSize = 1L * 1024 * 1024
     val catalog = new RapidsBufferCatalog
@@ -119,8 +126,8 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
           devStore.setSpillStore(hostStore)
           withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager], catalog)) { diskStore =>
             hostStore.setSpillStore(diskStore)
-            val (_, handle) = addTableToStore(spillPriority)
-            assert(!getDiskPath(handle.id).exists())
+            val (_, handle) = addTableToStore(devStore, bufferId, spillPriority)
+            assert(!handle.id.getDiskPath(null).exists())
             val expectedBuffer = withResource(catalog.acquireBuffer(handle)) { buffer =>
               assertResult(StorageTier.DEVICE)(buffer.storageTier)
               withResource(buffer.getMemoryBuffer) { devbuf =>
@@ -156,6 +163,9 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
   }
 
   private def testBufferFileDeletion(canShareDiskPaths: Boolean): Unit = {
+    val bufferId = MockRapidsBufferId(1, canShareDiskPaths)
+    val bufferPath = bufferId.getDiskPath(null)
+    assert(!bufferPath.exists)
     val spillPriority = -7
     val hostStoreMaxSize = 1L * 1024 * 1024
     val catalog = new RapidsBufferCatalog
@@ -165,7 +175,7 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
           devStore.setSpillStore(hostStore)
           withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager], catalog)) { diskStore =>
             hostStore.setSpillStore(diskStore)
-            val (_, handle) = addTableToStore(spillPriority)
+            val (_, handle) = addTableToStore(devStore, bufferId, spillPriority)
             val bufferPath = handle.id.getDiskPath(null)
             assert(!bufferPath.exists())
             devStore.synchronousSpill(0)
@@ -182,19 +192,27 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
     }
   }
 
-  private def addTableToStore(spillPriority: Long): (Long, RapidsBufferHandle) = {
+  private def addTableToStore(
+      deviceMemoryStore: RapidsDeviceMemoryStore,
+      bufferId: RapidsBufferId,
+      spillPriority: Long): (Long, RapidsBufferHandle) = {
     withResource(buildContiguousTable()) { ct =>
       val bufferSize = ct.getBuffer.getLength
       // store takes ownership of the table
-      val handle = RapidsBufferCatalog.addContiguousTable(
+      val handle = deviceMemoryStore.addContiguousTable(
+        bufferId,
         ct,
         spillPriority,
-        RapidsBuffer.defaultSpillCallback)
+        RapidsBuffer.defaultSpillCallback,
+        false)
       (bufferSize, handle)
     }
   }
 
-  def getDiskPath(bufferId: RapidsBufferId): File = {
-    new File(TEST_FILES_ROOT, s"diskbuffer-${bufferId.tableId}")
+  case class MockRapidsBufferId(
+      tableId: Int,
+      override val canShareDiskPaths: Boolean) extends RapidsBufferId {
+    override def getDiskPath(diskBlockManager: RapidsDiskBlockManager): File =
+      new File(TEST_FILES_ROOT, s"diskbuffer-$tableId")
   }
 }
