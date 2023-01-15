@@ -428,16 +428,14 @@ class RapidsShuffleClient(
       buffer: DeviceMemoryBuffer, meta: TableMeta): RapidsBufferHandle = {
     if (buffer != null) {
       // add the buffer to the catalog so it is available for spill
-      withResource(buffer) { _ =>
-        catalog.addBuffer(
-          buffer,
-          meta,
-          SpillPriorities.INPUT_FROM_SHUFFLE_PRIORITY,
-          // set needsSync to false because we already have stream synchronized after
-          // consuming the bounce buffer, so we know these buffers are synchronized
-          // w.r.t. the CPU
-          needsSync = false)
-      }
+      catalog.addBuffer(
+        buffer,
+        meta,
+        SpillPriorities.INPUT_FROM_SHUFFLE_PRIORITY,
+        // set needsSync to false because we already have stream synchronized after
+        // consuming the bounce buffer, so we know these buffers are synchronized
+        // w.r.t. the CPU
+        needsSync = false)
     } else {
       // no device data, just tracking metadata
       catalog.addDegenerateRapidsBuffer(
