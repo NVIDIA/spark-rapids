@@ -143,9 +143,6 @@ class RapidsShuffleTestHelper extends FunSuite
     when(mockCatalog.addBuffer(dmbCaptor.capture(), any(), any(), any(), any()))
       .thenAnswer(_ => {
         val buffer = dmbCaptor.getValue.asInstanceOf[DeviceMemoryBuffer]
-        // when calling addBuffer it is the responsibility of the caller to call
-        // close on the original buffer
-        buffer.incRefCount()
         buffersToClose.append(buffer)
         mock[RapidsBufferHandle]
       })
