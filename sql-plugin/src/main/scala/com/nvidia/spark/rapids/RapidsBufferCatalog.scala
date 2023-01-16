@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import java.util.concurrent.ConcurrentHashMap
 import java.util.function.BiFunction
 
-import ai.rapids.cudf.{ContiguousTable, DeviceMemoryBuffer, Rmm, Table}
+import ai.rapids.cudf.{ContiguousTable, DeviceMemoryBuffer, Rmm}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
@@ -55,7 +55,7 @@ trait RapidsBufferHandle extends AutoCloseable {
  * Catalog for lookup of buffers by ID. The constructor is only visible for testing, generally
  * `RapidsBufferCatalog.singleton` should be used instead.
  */
-class RapidsBufferCatalog extends AutoCloseable with Arm {
+class RapidsBufferCatalog extends AutoCloseable with Arm with Logging {
 
   /** Map of buffer IDs to buffers sorted by storage tier */
   private[this] val bufferMap = new ConcurrentHashMap[RapidsBufferId, Seq[RapidsBuffer]]
@@ -330,6 +330,7 @@ class RapidsBufferCatalog extends AutoCloseable with Arm {
   private def removeBuffer(handle: RapidsBufferHandle): Boolean = {
     // if this is the last handle, remove the buffer
     if (stopTrackingHandle(handle)) {
+      logDebug(s"Removing buffer ${handle.id}")
       val buffers = bufferMap.remove(handle.id)
       buffers.safeFree()
       true
@@ -444,25 +445,6 @@ object RapidsBufferCatalog extends Logging with Arm {
   def getDeviceStorage: RapidsDeviceMemoryStore = deviceStorage
 
   def shouldUnspill: Boolean = _shouldUnspill
-
-  /**
-   * Adds a contiguous table to the device storage, taking ownership of the table.
-   * @param table cudf table based from the contiguous buffer
-   * @param contigBuffer device memory buffer backing the table
-   * @param tableMeta metadata describing the buffer layout
-   * @param initialSpillPriority starting spill priority value for the buffer
-   * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
-   *                      It should never allocate GPU memory and really just be used for metrics.
-   * @return RapidsBufferHandle associated with this buffer
-   */
-  def addTable(
-      table: Table,
-      contigBuffer: DeviceMemoryBuffer,
-      tableMeta: TableMeta,
-      initialSpillPriority: Long,
-      spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback): RapidsBufferHandle = {
-    deviceStorage.addTable(table, contigBuffer, tableMeta, initialSpillPriority)
-  }
 
   /**
    * Adds a contiguous table to the device storage. This does NOT take ownership of the

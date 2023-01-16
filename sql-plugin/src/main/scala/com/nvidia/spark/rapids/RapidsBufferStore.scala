@@ -20,6 +20,8 @@ import java.util.Comparator
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
+import scala.collection.mutable
+
 import ai.rapids.cudf.{BaseDeviceMemoryBuffer, Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.StorageTier.{DEVICE, StorageTier}
@@ -47,27 +49,81 @@ abstract class RapidsBufferStore(
   val name: String = tier.toString
 
   private class BufferTracker {
+    /**
+     * Sets a buffers state to spillable or non-spillable.
+     *
+     * If the buffer is currently being spilled or it is no longer in the `buffers` collection
+     * (e.g. it is not in this store), the action is skipped.
+     *
+     * @param buffer the buffer to mark as spillable or not
+     * @param isSpillable whether the buffer should now be spillable
+     */
+    def setSpillable(buffer: RapidsBufferBase, isSpillable: Boolean): Unit = synchronized {
+      if (isSpillable) {
+        // if this buffer is in the store and isn't currently spilling
+        if (!spilling.contains(buffer.id) && buffers.containsKey(buffer.id)) {
+          // try to add it to the spillable collection
+          if (spillable.offer(buffer)) {
+            totalBytesSpillable += buffer.size
+            logDebug(s"Buffer ${buffer.id} is spillable. " +
+              s"total=${totalBytesStored} spillable=${totalBytesSpillable}")
+          } // else it was already there (unlikely)
+        }
+      } else {
+        if (spillable.remove(buffer)) {
+          totalBytesSpillable -= buffer.size
+          logDebug(s"Buffer ${buffer.id} is not spillable. " +
+            s"total=${totalBytesStored}, spillable=${totalBytesSpillable}")
+        } // else it was already removed
+      }
+    }
+
     private[this] val comparator: Comparator[RapidsBufferBase] =
       (o1: RapidsBufferBase, o2: RapidsBufferBase) =>
         java.lang.Long.compare(o1.getSpillPriority, o2.getSpillPriority)
+    // buffers: contains all buffers in this store, whether spillable or not
     private[this] val buffers = new java.util.HashMap[RapidsBufferId, RapidsBufferBase]
+    // spillable: contains only those buffers that are currently spillable
     private[this] val spillable = new HashedPriorityQueue[RapidsBufferBase](comparator)
+    // spilling: contians only those buffers that are currently being spilled, but
+    // have not been removed from the store
+    private[this] val spilling = new mutable.HashSet[RapidsBufferId]()
+    // total bytes stored, regardless of spillable status
     private[this] var totalBytesStored: Long = 0L
+    // total bytes that are currently eligible to be spilled
+    private[this] var totalBytesSpillable: Long = 0L
 
     def add(buffer: RapidsBufferBase): Unit = synchronized {
       val old = buffers.put(buffer.id, buffer)
+      // it is unlikely that the buffer was in this collection, but removing
+      // anyway. We assume the buffer is safe in this tier, and is not spilling
+      spilling.remove(buffer.id)
       if (old != null) {
         throw new DuplicateBufferException(s"duplicate buffer registered: ${buffer.id}")
       }
-      spillable.offer(buffer)
       totalBytesStored += buffer.size
+
+      // set this buffer as spillable immediately, unless this is the device tier.
+      tier match {
+        case StorageTier.DEVICE =>
+          // noop, device buffers "spillability" is handled via DeviceMemoryBuffer ref counting
+        case _ =>
+          // all other tiers define stored buffers spillable at all times
+          if (spillable.offer(buffer)) {
+            totalBytesSpillable += buffer.size
+          }
+      }
     }
 
     def remove(id: RapidsBufferId): Unit = synchronized {
+      // when removing a buffer we no longer need to know if it was spilling
+      spilling.remove(id)
       val obj = buffers.remove(id)
       if (obj != null) {
-        spillable.remove(obj)
         totalBytesStored -= obj.size
+        if (spillable.remove(obj)) {
+          totalBytesSpillable -= obj.size
+        }
       }
     }
 
@@ -76,6 +132,7 @@ abstract class RapidsBufferStore(
         val buffs = buffers.values().toArray(new Array[RapidsBufferBase](0))
         buffers.clear()
         spillable.clear()
+        spilling.clear()
         buffs
       }
       // We need to release the `RapidsBufferStore` lock to prevent a lock order inversion
@@ -85,7 +142,15 @@ abstract class RapidsBufferStore(
     }
 
     def nextSpillableBuffer(): RapidsBufferBase = synchronized {
-      spillable.poll()
+      val buffer = spillable.poll()
+      if (buffer != null) {
+        // mark the id as "spilling" (this buffer is in the middle of a spill operation)
+        spilling.add(buffer.id)
+        totalBytesSpillable -= buffer.size
+        logDebug(s"Spilling buffer ${buffer.id}. size=${buffer.size} " +
+          s"total=${totalBytesStored}, new spillable=${totalBytesSpillable}")
+      }
+      buffer
     }
 
     def updateSpillPriority(buffer: RapidsBufferBase, priority:Long): Unit = synchronized {
@@ -94,6 +159,8 @@ abstract class RapidsBufferStore(
     }
 
     def getTotalBytes: Long = synchronized { totalBytesStored }
+
+    def getTotalSpillableBytes: Long = synchronized { totalBytesSpillable }
   }
 
   private[this] val pendingFreeBytes = new AtomicLong(0L)
@@ -113,6 +180,8 @@ abstract class RapidsBufferStore(
 
   /** Return the current byte total of buffers in this store. */
   def currentSize: Long = buffers.getTotalBytes
+
+  def currentSpillableSize: Long = buffers.getTotalSpillableBytes
 
   /**
    * Specify another store that can be used when this store needs to spill.
@@ -144,6 +213,14 @@ abstract class RapidsBufferStore(
     }
   }
 
+  protected def doSetSpillable(buffer: RapidsBufferBase, isSpillable: Boolean): Unit = {
+    buffers.setSpillable(buffer, isSpillable)
+  }
+
+  protected def setSpillable(buffer: RapidsBufferBase, isSpillable: Boolean): Unit = {
+    throw new NotImplementedError(s"This store ${this} does not implement markSpillable")
+  }
+
   /**
    * Free memory in this store by spilling buffers to the spill store synchronously.
    * @param targetTotalSize maximum total size of this store after spilling completes
@@ -162,14 +239,16 @@ abstract class RapidsBufferStore(
     require(targetTotalSize >= 0, s"Negative spill target size: $targetTotalSize")
 
     var totalSpilled: Long = 0
-    if (buffers.getTotalBytes > targetTotalSize) {
+
+    if (buffers.getTotalSpillableBytes > targetTotalSize) {
       val nvtx = new NvtxRange(nvtxSyncSpillName, NvtxColor.ORANGE)
       try {
         logDebug(s"$name store spilling to reduce usage from " +
-            s"${buffers.getTotalBytes} to $targetTotalSize bytes")
+          s"${buffers.getTotalBytes} total (${buffers.getTotalSpillableBytes} spillable) " +
+          s"to $targetTotalSize bytes")
         var waited = false
         var exhausted = false
-        while (!exhausted && buffers.getTotalBytes > targetTotalSize) {
+        while (!exhausted && buffers.getTotalSpillableBytes > targetTotalSize) {
           val amountSpilled = trySpillAndFreeBuffer(stream)
           if (amountSpilled != 0) {
             totalSpilled += amountSpilled
@@ -180,7 +259,7 @@ abstract class RapidsBufferStore(
               logWarning(s"Cannot spill further, waiting for ${pendingFreeBytes.get} " +
                   " bytes of pending buffers to be released")
               memoryFreedMonitor.synchronized {
-                val memNeeded = buffers.getTotalBytes - targetTotalSize
+                val memNeeded = buffers.getTotalSpillableBytes - targetTotalSize
                 if (memNeeded > 0 && memNeeded <= pendingFreeBytes.get) {
                   // This could be a futile wait if the thread(s) holding the pending buffers open
                   // are here waiting for more memory.
@@ -189,7 +268,9 @@ abstract class RapidsBufferStore(
               }
             } else {
               logWarning("Unable to spill enough to meet request. " +
-                  s"Total=${buffers.getTotalBytes} Target=$targetTotalSize")
+                s"Total=${buffers.getTotalBytes} " +
+                s"Spillable=${buffers.getTotalSpillableBytes} " +
+                s"Target=$targetTotalSize")
               exhausted = true
             }
           }
@@ -249,11 +330,12 @@ abstract class RapidsBufferStore(
       try {
         if (catalog.isBufferSpilled(buffer.id, buffer.storageTier)) {
           logDebug(s"Skipping spilling $buffer ${buffer.id} to ${spillStore.name} as it is " +
-              s"already stored in multiple tiers total mem=${buffers.getTotalBytes}")
+            s"already stored in multiple tiers total mem=${buffers.getTotalBytes} " +
+            s"(${buffers.getTotalSpillableBytes} spillable)")
           catalog.removeBufferTier(buffer.id, buffer.storageTier)
         } else {
           logDebug(s"Spilling $buffer ${buffer.id} to ${spillStore.name} " +
-              s"total mem=${buffers.getTotalBytes}")
+              s"total mem=${buffers.getTotalBytes} (${buffers.getTotalSpillableBytes} spillable)")
           val spillCallback = buffer.getSpillCallback
           spillCallback(buffer.storageTier, spillStore.tier, buffer.size)
           spillStore.copyBuffer(buffer, buffer.getMemoryBuffer, stream)
@@ -298,17 +380,6 @@ abstract class RapidsBufferStore(
      * @note This is an internal API only used by Rapids buffer stores.
      */
     protected def materializeMemoryBuffer: MemoryBuffer = getMemoryBuffer
-
-    /**
-     * Determine if a buffer is currently acquired.
-     * @note Unless this is called by the thread that currently "owns" an
-     * acquired buffer, the acquisition state could be changing
-     * asynchronously, and therefore the result cannot always be used as a
-     * proxy for the result obtained from the addReference method.
-     */
-    def isAcquired: Boolean = synchronized {
-      refcount > 0
-    }
 
     override def addReference(): Boolean = synchronized {
       if (isValid) {
@@ -393,6 +464,11 @@ abstract class RapidsBufferStore(
       }
     }
 
+    /**
+     * close() is called by client code to decrease the ref count of this RapidsBufferBase.
+     * In the off chance that by the time close is invoked, the buffer was freed (not valid)
+     * then this close call winds up freeing the resources of the rapids buffer.
+     */
     override def close(): Unit = synchronized {
       if (refcount == 0) {
         throw new IllegalStateException("Buffer already closed")
@@ -406,13 +482,24 @@ abstract class RapidsBufferStore(
     }
 
     /**
-     * Mark the buffer as freed and no longer valid.
+     *  setInvalid updates the buffer that it is no longer tracked by the store, and that
+     *  it is either about to be removed, or about to be placed in the pending map for
+     *  later cleanup, once all references are closed.
+     */
+    protected def setInvalid(): Unit = synchronized {
+      isValid = false
+    }
+
+    /**
+     * Mark the buffer as freed and no longer valid. This is called by the store when removing a
+     * buffer (it is no longer tracked).
+     *
      * @note The resources may not be immediately released if the buffer has outstanding references.
      * In that case the resources will be released when the reference count reaches zero.
      */
     override def free(): Unit = synchronized {
       if (isValid) {
-        isValid = false
+        setInvalid()
         buffers.remove(id)
         if (refcount == 0) {
           freeBuffer()
@@ -449,5 +536,6 @@ abstract class RapidsBufferStore(
     }
 
     override def toString: String = s"$name buffer size=$size"
+
   }
 }
