@@ -190,20 +190,23 @@ run_delta_lake_tests() {
   if [[ $SPARK_VER =~ $SPARK_32X_PATTERN ]]; then
     # There are multiple versions of deltalake that support SPARK 3.2.X
     # but for zorder tests to work we need 2.0.0+
-    DELTA_LAKE_VER="2.0.0"
+    DELTA_LAKE_VERSIONS="2.0.2"
   fi
 
   if [[ $SPARK_VER =~ $SPARK_33X_PATTERN ]]; then
-    DELTA_LAKE_VER="2.1.0"
+    DELTA_LAKE_VERSIONS="2.1.1 2.2.0"
   fi
 
-  if [ -z "$DELTA_LAKE_VER" ]; then
+  if [ -z "$DELTA_LAKE_VERSIONS" ]; then
     echo "Skipping Delta Lake tests. $SPARK_VER"
   else
-    PYSP_TEST_spark_jars_packages="io.delta:delta-core_${SCALA_BINARY_VER}:$DELTA_LAKE_VER" \
-      PYSP_TEST_spark_sql_extensions="io.delta.sql.DeltaSparkSessionExtension" \
-      PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.spark.sql.delta.catalog.DeltaCatalog" \
-      ./run_pyspark_from_build.sh -m delta_lake --delta_lake
+    for v in $DELTA_LAKE_VERSIONS; do
+      echo "Running Delta Lake tests for Delta Lake version $v"
+      PYSP_TEST_spark_jars_packages="io.delta:delta-core_${SCALA_BINARY_VER}:$v" \
+        PYSP_TEST_spark_sql_extensions="io.delta.sql.DeltaSparkSessionExtension" \
+        PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.spark.sql.delta.catalog.DeltaCatalog" \
+        ./run_pyspark_from_build.sh -m delta_lake --delta_lake
+    done
   fi
 }
 
