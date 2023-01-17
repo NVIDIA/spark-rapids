@@ -40,6 +40,7 @@ class DistributionSuite extends SparkQueryCompareTestSuite {
       override def requiredChildDistribution: Seq[Distribution] =
         Seq(BroadcastDistribution(customBroadcastMode))
 
+      // custom broadcast mode isn't IdentityBroadcastMode or HashRelationBroadcastMode
       private val customBroadcastMode = mock(classOf[BroadcastMode])
     }
 
