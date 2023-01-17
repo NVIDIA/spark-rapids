@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.TaskContext
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.SparkPlan
@@ -127,34 +127,36 @@ case class GpuBroadcastHashJoinExec(
     buildRelation: RDD[ColumnarBatch],
     buildSchema: StructType): Iterator[ColumnarBatch] = {
 
-    val rapidsConf = new RapidsConf(conf)
-    val targetSize = rapidsConf.gpuTargetBatchSizeBytes
+    val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     val dataTypes = GpuColumnVector.extractTypes(buildSchema)
     val metricsMap = allMetrics
 
-    buildRelation.partitions.map { part =>
-      val it = buildRelation.compute(part, TaskContext.get())
-      new GpuShuffleCoalesceIterator(
-        new HostShuffleCoalesceIterator(it, targetSize, dataTypes, metricsMap),
-          dataTypes, metricsMap).asInstanceOf[Iterator[ColumnarBatch]]
+    // Use the GPU Shuffle Coalesce iterator to concatenate and load batches onto the 
+    // host as needed. Since we don't have GpuShuffleCoalesceExec in the executor 
+    // broadcast scenario, we have to use that logic here to efficiently grab and 
+    // release the semaphore while doing I/O
+    val iter = buildRelation.partitions.map { part =>
+      buildRelation.compute(part, TaskContext.get())
     }.reduceLeft(_ ++ _)
+    new GpuShuffleCoalesceIterator(
+      new HostShuffleCoalesceIterator(iter, targetSize, dataTypes, metricsMap),
+        dataTypes, metricsMap).asInstanceOf[Iterator[ColumnarBatch]]
   }
 
-  private def getExecutorBatch(
+  private def getExecutorBroadcastBatch(
       buildRelation: RDD[ColumnarBatch], 
-      buildSchema: StructType): ColumnarBatch = {
+      buildSchema: StructType,
+      buildOutput: Seq[Attribute]): ColumnarBatch = {
 
     val it = shuffleCoalesceIterator(buildRelation, buildSchema)
-    if (it.hasNext) {
-      it.next
-    } else {
-      GpuColumnVector.emptyBatch(buildSchema)
-    }
+    // In a broadcast hash join, right now the GPU expects a single batch
+    ConcatAndConsumeAll.getSingleBatchWithVerification(it, buildOutput)
   }
 
   private def getExecutorBuiltBatchAndStreamIter(
       buildRelation: RDD[ColumnarBatch],
       buildSchema: StructType,
+      buildOutput: Seq[Attribute],
       streamIter: Iterator[ColumnarBatch],
       coalesceMetricsMap: Map[String, GpuMetric]): (ColumnarBatch, Iterator[ColumnarBatch]) = {
     val semWait = coalesceMetricsMap(GpuMetric.SEMAPHORE_WAIT_TIME)
@@ -169,7 +171,7 @@ case class GpuBroadcastHashJoinExec(
         }
       }
 
-      val buildBatch = getExecutorBatch(buildRelation, buildSchema)
+      val buildBatch = getExecutorBroadcastBatch(buildRelation, buildSchema, buildOutput)
       (buildBatch, bufferedStreamIter)
     }
   }
@@ -189,12 +191,14 @@ case class GpuBroadcastHashJoinExec(
     val buildRelation = shuffleExchange.executeColumnar()
 
     val rdd = streamedPlan.executeColumnar()
-    val buildSchema = buildPlan.schema
+    val localBuildSchema = buildPlan.schema
+    val localBuildOutput = buildPlan.output
     rdd.mapPartitions { it =>
       val (builtBatch, streamIter) =
         getExecutorBuiltBatchAndStreamIter(
           buildRelation,
-          buildSchema,
+          localBuildSchema,
+          localBuildOutput,
           new CollectTimeIterator("executor broadcast join stream", it, streamTime),
           allMetrics)
       withResource(builtBatch) { _ =>
