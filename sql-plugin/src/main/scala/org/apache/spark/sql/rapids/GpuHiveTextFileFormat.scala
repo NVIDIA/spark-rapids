@@ -16,25 +16,26 @@
 
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.{ColumnarFileFormat, CsvFormatType, FileFormatChecks, InsertIntoHadoopFsRelationCommandMeta, WriteFileOp}
+import ai.rapids.cudf.TableWriter
+import com.nvidia.spark.rapids.{ColumnarFileFormat, ColumnarOutputWriter, ColumnarOutputWriterFactory, InsertIntoHadoopFsRelationCommandMeta}
+import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.datasources.InsertIntoHadoopFsRelationCommand
-import org.apache.spark.sql.types.{ArrayType, BinaryType, IntegerType, LongType, MapType, StructField, StructType}
+import org.apache.spark.sql.types.{ArrayType, BinaryType, DataType, MapType, StructField, StructType}
 
 object GpuHiveTextFileFormat extends Logging {
 
-  def hasUnsupportedType(column: StructField): Boolean = {
-    column.dataType match {
-      case IntegerType => true // CALEB: Remove.
-      case LongType => true // CALEB: Remove.
-      case ArrayType(_,_) => true
-      case StructType(_)  => true
-      case MapType(_,_,_) => true
-      case BinaryType     => true
-      case _              => false
-    }
+  def isSupportedType(dataType: DataType): Boolean = dataType match {
+    case ArrayType(_,_) => false
+    case StructType(_)  => false
+    case MapType(_,_,_) => false
+    case BinaryType     => false
+    case _              => true
   }
+
+  def hasUnsupportedType(column: StructField): Boolean = !isSupportedType(column.dataType)
 
   def tagGpuSupport(meta: InsertIntoHadoopFsRelationCommandMeta,
                     insertToFileCommand: InsertIntoHadoopFsRelationCommand)
@@ -43,7 +44,7 @@ object GpuHiveTextFileFormat extends Logging {
     meta.willNotWorkOnGpu("CALEB: Hive output is not supported yet")
 
     // TODO: Figure out why this doesn't work.
-    FileFormatChecks.tag(meta, insertToFileCommand.schema, CsvFormatType, WriteFileOp)
+    // FileFormatChecks.tag(meta, insertToFileCommand.schema, CsvFormatType, WriteFileOp)
 
     // Workaround for FileFormatChecks.tag() dropping the ball.
     println(s"CALEB: insertToFileCommand.query.schema: ${insertToFileCommand.query.schema}.")
@@ -53,7 +54,48 @@ object GpuHiveTextFileFormat extends Logging {
           s"unsupported for writing in ${insertToFileCommand.fileFormat} file format")
       }
     )
-    None
-  }
 
+    // TODO: Check output format. Only Hive delimited text is supported.
+
+    Some(new GpuHiveTextFileFormat())
+  }
+}
+
+class GpuHiveTextFileFormat extends ColumnarFileFormat with Logging {
+
+  override def supportDataType(dataType: DataType): Boolean =
+    GpuHiveTextFileFormat.isSupportedType(dataType)
+
+  override def prepareWrite(sparkSession: SparkSession,
+                            job: Job,
+                            options: Map[String, String],
+                            dataSchema: StructType): ColumnarOutputWriterFactory = {
+    new ColumnarOutputWriterFactory {
+      override def getFileExtension(context: TaskAttemptContext): String = "txt"
+
+      override def newInstance(path: String,
+                               dataSchema: StructType,
+                               context: TaskAttemptContext): ColumnarOutputWriter = {
+        new GpuHiveTextWriter(path, dataSchema, context)
+      }
+    }
+  }
+}
+
+class GpuHiveTextWriter(override val path: String,
+                        dataSchema: StructType,
+                        context: TaskAttemptContext)
+  extends ColumnarOutputWriter(context, dataSchema, "HiveText") {
+  override val tableWriter: TableWriter = {
+    val writeOptions = ai.rapids.cudf.CSVWriterOptions.builder()
+      .withFieldDelimiter('\u0001')
+      .withRowDelimiter("\n")
+      .withIncludeHeader(false)
+      .withTrueValue("true")
+      .withFalseValue("false")
+      .withNullValue("\\N")
+      // .withQuoteStyle(QuoteStyle.NONE) // TODO: Enable after available in spark-rapids-jni.
+
+    ai.rapids.cudf.Table.getCSVBufferWriter(writeOptions.build, this)
+  }
 }

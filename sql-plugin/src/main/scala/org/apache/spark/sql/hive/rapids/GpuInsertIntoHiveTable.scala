@@ -16,28 +16,35 @@
 
 package org.apache.spark.sql.hive.rapids
 
-import java.util.Locale
+import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuDataWritingCommand}
 
+import java.util.Locale
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.hive.conf.HiveConf
 import org.apache.hadoop.hive.ql.ErrorMsg
 import org.apache.hadoop.hive.ql.plan.TableDesc
-
 import org.apache.spark.SparkException
+import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.sql.{AnalysisException, Row, SparkSession}
-import org.apache.spark.sql.catalyst.catalog.{CatalogTable, CatalogTableType, ExternalCatalog, ExternalCatalogUtils, ExternalCatalogWithListener}
+import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType, ExternalCatalog, ExternalCatalogUtils, ExternalCatalogWithListener}
+import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Literal}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.CommandUtils
+import org.apache.spark.sql.execution.datasources.FileFormatWriter
 import org.apache.spark.sql.hive.HiveExternalCatalog
 import org.apache.spark.sql.hive.HiveShim.{ShimFileSinkDesc => FileSinkDesc}
 import org.apache.spark.sql.hive.client.HiveClientImpl
 import org.apache.spark.sql.hive.client.hive._
 import org.apache.spark.sql.hive.execution.SaveAsHiveFile
+import org.apache.spark.sql.rapids.{GpuFileFormatWriter, GpuHiveTextFileFormat}
 import org.apache.spark.sql.types.{DataType, DoubleType, FloatType, StringType}
+import org.apache.spark.sql.vectorized.ColumnarBatch
+
+import java.net.URI
 
 // TODO:
 //  1. Meta should bail out if there is a bucket spec.
@@ -101,20 +108,59 @@ private object RapidsHiveErrors {
 
 }
 
+// Base trait from which all hive insert statement physical execution extends.
+private[hive] trait GpuSaveAsHiveFile extends GpuDataWritingCommand with SaveAsHiveFile {
+
+  // TODO: Apache Spark 3.3 handles file compression options,
+  //       (and takes a FileSinkDesc instead of FileFormat).
+  //       GPU Hive text writer does not support compression for output.
+  protected def gpuSaveAsHiveFile(sparkSession: SparkSession,
+                               plan: SparkPlan,
+                               hadoopConf: Configuration,
+                               fileFormat: ColumnarFileFormat,
+                               outputLocation: String,
+                               customPartitionLocations: Map[TablePartitionSpec,String] = Map.empty,
+                               partitionAttributes: Seq[Attribute] = Nil,
+                               bucketSpec: Option[BucketSpec] = None,
+                               options: Map[String, String] = Map.empty): Set[String] = {
+
+    val committer = FileCommitProtocol.instantiate(
+      sparkSession.sessionState.conf.fileCommitProtocolClass,
+      jobId = java.util.UUID.randomUUID().toString,
+      outputPath = outputLocation)
+
+    GpuFileFormatWriter.write(
+      sparkSession = sparkSession,
+      plan = plan,
+      fileFormat = fileFormat,
+      committer = committer,
+      outputSpec =
+        FileFormatWriter.OutputSpec(outputLocation, customPartitionLocations, outputColumns),
+      hadoopConf = hadoopConf,
+      partitionColumns = partitionAttributes,
+      bucketSpec = bucketSpec,
+      statsTrackers = Seq(gpuWriteJobStatsTracker(hadoopConf)),
+      options = options,
+      useStableSort = false,                  // TODO: Fetch from RapidsConf.
+      concurrentWriterPartitionFlushSize = 0L // TODO: Fetch from RapidsConf.
+     )
+  }
+}
+
 case class GpuInsertIntoHiveTable(
     table: CatalogTable,
     partition: Map[String, Option[String]],
     query: LogicalPlan,
     overwrite: Boolean,
     ifPartitionNotExists: Boolean,
-    outputColumnNames: Seq[String]) extends SaveAsHiveFile {
+    outputColumnNames: Seq[String]) extends GpuSaveAsHiveFile {
 
   /**
    * Inserts all the rows in the table into Hive.  Row objects are properly serialized with the
    * `org.apache.hadoop.hive.serde2.SerDe` and the
    * `org.apache.hadoop.mapred.OutputFormat` provided by the table definition.
    */
-  override def run(sparkSession: SparkSession, child: SparkPlan): Seq[Row] = {
+  override def runColumnar(sparkSession: SparkSession, child: SparkPlan): Seq[ColumnarBatch] = {
     val externalCatalog = sparkSession.sharedState.externalCatalog
     val hadoopConf = sparkSession.sessionState.newHadoopConf()
 
@@ -151,7 +197,7 @@ case class GpuInsertIntoHiveTable(
     // however for now we return an empty list to simplify compatibility checks with hive, which
     // does not return anything for insert operations.
     // TODO: implement hive compatibility as rules.
-    Seq.empty[Row]
+    Seq.empty[ColumnarBatch]
   }
 
   private def processInsert(
@@ -212,11 +258,11 @@ case class GpuInsertIntoHiveTable(
       attr.withName(name.toLowerCase(Locale.ROOT))
     }
 
-    val writtenParts = saveAsHiveFile(
+    val writtenParts = gpuSaveAsHiveFile(
       sparkSession = sparkSession,
       plan = child,
       hadoopConf = hadoopConf,
-      fileSinkConf = fileSinkConf,
+      fileFormat = new GpuHiveTextFileFormat(),
       outputLocation = tmpLocation.toString,
       partitionAttributes = partitionAttributes)
 
@@ -358,9 +404,4 @@ case class GpuInsertIntoHiveTable(
         isSrcLocal = false)
     }
   }
-
-  /*
-  override protected def withNewChildInternal(newChild: LogicalPlan): GpuInsertIntoHiveTable =
-    copy(query = newChild)
-   */
 }
