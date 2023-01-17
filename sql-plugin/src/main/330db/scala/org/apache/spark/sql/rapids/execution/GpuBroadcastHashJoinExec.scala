@@ -119,39 +119,6 @@ case class GpuBroadcastHashJoinExec(
     case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuShuffleExchangeExec]
   }
 
-  // Because of the nature of the executor-side broadcast, every executor needs to read the 
-  // shuffle data directly from the executor that produces the broadcast data. 
-  // Note that we can't call mapPartitions here because we're on an executor, and we don't 
-  // have access to a SparkContext.
-  private def shuffleCoalesceIterator(
-    buildRelation: RDD[ColumnarBatch],
-    buildSchema: StructType): Iterator[ColumnarBatch] = {
-
-    val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
-    val dataTypes = GpuColumnVector.extractTypes(buildSchema)
-    val metricsMap = allMetrics
-
-    // Use the GPU Shuffle Coalesce iterator to concatenate and load batches onto the 
-    // host as needed. Since we don't have GpuShuffleCoalesceExec in the executor 
-    // broadcast scenario, we have to use that logic here to efficiently grab and 
-    // release the semaphore while doing I/O
-    val iter = buildRelation.partitions.map { part =>
-      buildRelation.compute(part, TaskContext.get())
-    }.reduceLeft(_ ++ _)
-    new GpuShuffleCoalesceIterator(
-      new HostShuffleCoalesceIterator(iter, targetSize, dataTypes, metricsMap),
-        dataTypes, metricsMap).asInstanceOf[Iterator[ColumnarBatch]]
-  }
-
-  private def getExecutorBroadcastBatch(
-      buildRelation: RDD[ColumnarBatch], 
-      buildSchema: StructType,
-      buildOutput: Seq[Attribute]): ColumnarBatch = {
-
-    val it = shuffleCoalesceIterator(buildRelation, buildSchema)
-    // In a broadcast hash join, right now the GPU expects a single batch
-    ConcatAndConsumeAll.getSingleBatchWithVerification(it, buildOutput)
-  }
 
   private def getExecutorBuiltBatchAndStreamIter(
       buildRelation: RDD[ColumnarBatch],
@@ -160,6 +127,8 @@ case class GpuBroadcastHashJoinExec(
       streamIter: Iterator[ColumnarBatch],
       coalesceMetricsMap: Map[String, GpuMetric]): (ColumnarBatch, Iterator[ColumnarBatch]) = {
     val semWait = coalesceMetricsMap(GpuMetric.SEMAPHORE_WAIT_TIME)
+    val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+    val metricsMap = allMetrics
 
     val bufferedStreamIter = new CloseableBufferedIterator(streamIter.buffered)
     closeOnExcept(bufferedStreamIter) { _ =>
@@ -170,8 +139,8 @@ case class GpuBroadcastHashJoinExec(
           GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWait)
         }
       }
-
-      val buildBatch = getExecutorBroadcastBatch(buildRelation, buildSchema, buildOutput)
+      val buildBatch = GpuExecutorBroadcastHelper.getExecutorBroadcastBatch(buildRelation,
+          buildSchema, buildOutput, metricsMap, targetSize)
       (buildBatch, bufferedStreamIter)
     }
   }
