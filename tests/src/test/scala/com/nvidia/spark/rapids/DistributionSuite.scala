@@ -17,11 +17,12 @@
 package com.nvidia.spark.rapids
 
 import com.nvidia.spark.rapids.shims.ShimSparkPlan
+import org.mockito.Mockito._
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution}
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, BroadcastMode, Distribution}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.execution.JoinTypeChecks
 
@@ -39,7 +40,7 @@ class DistributionSuite extends SparkQueryCompareTestSuite {
       override def requiredChildDistribution: Seq[Distribution] =
         Seq(BroadcastDistribution(customBroadcastMode))
 
-      private val customBroadcastMode = CustomBroadcastMode.buildCustomBroadcastMode
+      private val customBroadcastMode = mock(classOf[BroadcastMode])
     }
 
     class CustomExecMeta(
