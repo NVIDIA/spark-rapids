@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,7 @@ import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
-class GpuBroadcastNestedLoopJoinMeta(
+abstract class GpuBroadcastNestedLoopJoinMetaBase(
     join: BroadcastNestedLoopJoinExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
@@ -80,50 +80,6 @@ class GpuBroadcastNestedLoopJoinMeta(
     if (!canThisBeReplaced) {
       buildSide.willNotWorkOnGpu(
         "the BroadcastNestedLoopJoin this feeds is not on the GPU")
-    }
-  }
-
-  override def convertToGpu(): GpuExec = {
-    val Seq(left, right) = childPlans.map(_.convertIfNeeded())
-    // The broadcast part of this must be a BroadcastExchangeExec
-    val buildSide = gpuBuildSide match {
-      case GpuBuildLeft => left
-      case GpuBuildRight => right
-    }
-    verifyBuildSideWasReplaced(buildSide)
-
-    val condition = conditionMeta.map(_.convertToGpu())
-    val isAstCondition = conditionMeta.forall(_.canThisBeAst)
-    join.joinType match {
-      case _: InnerLike =>
-      case LeftOuter | LeftSemi | LeftAnti if gpuBuildSide == GpuBuildLeft =>
-        throw new IllegalStateException(s"Unsupported build side for join type ${join.joinType}")
-      case RightOuter if gpuBuildSide == GpuBuildRight =>
-        throw new IllegalStateException(s"Unsupported build side for join type ${join.joinType}")
-      case LeftOuter | RightOuter | LeftSemi | LeftAnti | ExistenceJoin(_) =>
-        // Cannot post-filter these types of joins
-        assert(isAstCondition, s"Non-AST condition in ${join.joinType}")
-      case _ => throw new IllegalStateException(s"Unsupported join type ${join.joinType}")
-    }
-
-    val joinExec = GpuBroadcastNestedLoopJoinExec(
-      left, right,
-      join.joinType, gpuBuildSide,
-      if (isAstCondition) condition else None,
-      conf.gpuTargetBatchSizeBytes)
-    if (isAstCondition) {
-      joinExec
-    } else {
-      // condition cannot be implemented via AST so fallback to a post-filter if necessary
-      condition.map {
-        // TODO: Restore batch coalescing logic here.
-        // Avoid requesting a post-filter-coalesce here, as we've seen poor performance with
-        // the cross join microbenchmark. This is a short-term hack for the benchmark, and
-        // ultimately this should be solved with the resolution of one or more of the following:
-        // https://github.com/NVIDIA/spark-rapids/issues/3749
-        // https://github.com/NVIDIA/spark-rapids/issues/3750
-        c => GpuFilterExec(c, joinExec, coalesceAfter = false)
-      }.getOrElse(joinExec)
     }
   }
 }
@@ -304,7 +260,7 @@ class ConditionalNestedLoopJoinIterator(
   }
 }
 
-object GpuBroadcastNestedLoopJoinExec extends Arm {
+object GpuBroadcastNestedLoopJoinExecBase extends Arm {
   def nestedLoopJoin(
       joinType: JoinType,
       buildSide: GpuBuildSide,
@@ -377,7 +333,7 @@ object GpuBroadcastNestedLoopJoinExec extends Arm {
   }
 }
 
-case class GpuBroadcastNestedLoopJoinExec(
+abstract class GpuBroadcastNestedLoopJoinExecBase(
     left: SparkPlan,
     right: SparkPlan,
     joinType: JoinType,
@@ -600,7 +556,7 @@ case class GpuBroadcastNestedLoopJoinExec(
       val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
       val semWait = gpuLongMetric(SEMAPHORE_WAIT_TIME)
       val counts = streamed.executeColumnar().map(getRowCountAndClose)
-      GpuBroadcastNestedLoopJoinExec.divideIntoBatches(
+      GpuBroadcastNestedLoopJoinExecBase.divideIntoBatches(
         counts.map(s => s * buildCount),
         targetSizeBytes,
         numOutputRows,
@@ -635,7 +591,7 @@ case class GpuBroadcastNestedLoopJoinExec(
         LazySpillableColumnarBatch(_, spillCallback, "built_batch")
       }
 
-      GpuBroadcastNestedLoopJoinExec.nestedLoopJoin(
+      GpuBroadcastNestedLoopJoinExecBase.nestedLoopJoin(
         nestedLoopJoinType, buildSide, numFirstTableColumns,
         spillableBuiltBatch,
         lazyStream, streamAttributes, targetSizeBytes, boundCondition, spillCallback,
