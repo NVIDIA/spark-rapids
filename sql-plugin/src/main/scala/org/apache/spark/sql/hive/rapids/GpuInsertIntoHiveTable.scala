@@ -45,11 +45,6 @@ import org.apache.spark.sql.rapids.GpuFileFormatWriter
 import org.apache.spark.sql.types.{DataType, DoubleType, FloatType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-
-// TODO:
-//  1. Meta should bail out if there is a bucket spec.
-
-//  TODO: QueryExecutionErrors/QueryCompilationErrors: Missing functions might need shims.
 private object RapidsHiveErrors {
 
   // Lifted from org.apache.spark.sql.errors.QueryErrorsBase.
@@ -105,15 +100,14 @@ private object RapidsHiveErrors {
   def cannotRemovePartitionDirError(partitionPath: Path): Throwable = {
     new RuntimeException(s"Cannot remove partition directory '$partitionPath'")
   }
-
 }
 
 // Base trait from which all hive insert statement physical execution extends.
 private[hive] trait GpuSaveAsHiveFile extends GpuDataWritingCommand with SaveAsHiveFile {
 
-  // TODO: Apache Spark 3.3 handles file compression options,
-  //       (and takes a FileSinkDesc instead of FileFormat).
-  //       GPU Hive text writer does not support compression for output.
+  // TODO(future): Apache Spark 3.3 handles file compression options,
+  //               (and takes a FileSinkDesc instead of FileFormat).
+  //               GPU Hive text writer does not support compression for output.
   protected def gpuSaveAsHiveFile(sparkSession: SparkSession,
                                plan: SparkPlan,
                                hadoopConf: Configuration,
@@ -230,7 +224,7 @@ case class GpuInsertIntoHiveTable(
     // It would be nice to just return the childRdd unchanged so insert operations could be chained,
     // however for now we return an empty list to simplify compatibility checks with hive, which
     // does not return anything for insert operations.
-    // TODO: implement hive compatibility as rules.
+    // TODO (From Apache Spark): implement hive compatibility as rules.
     Seq.empty[ColumnarBatch]
   }
 
@@ -434,7 +428,7 @@ case class GpuInsertIntoHiveTable(
       externalCatalog.loadTable(
         table.database,
         table.identifier.table,
-        tmpLocation.toString, // TODO: URI
+        tmpLocation.toString, // TODO (From Apache Spark): URI
         overwrite,
         isSrcLocal = false)
     }

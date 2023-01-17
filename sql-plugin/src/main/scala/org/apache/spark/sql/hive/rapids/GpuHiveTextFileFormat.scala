@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.hive.rapids
 
-import ai.rapids.cudf.TableWriter
+import ai.rapids.cudf.{Table, TableWriter}
 import com.google.common.base.Charsets
 import com.nvidia.spark.rapids.{ColumnarFileFormat, ColumnarOutputWriter, ColumnarOutputWriterFactory, FileFormatChecks, HiveDelimitedTextFormatType, WriteFileOp}
 import java.nio.charset.Charset
@@ -80,6 +80,10 @@ object GpuHiveTextFileFormat extends Logging {
       meta.willNotWorkOnGpu("only UTF-8 and ASCII are supported as the charset")
     }
 
+    if (insertCommand.table.bucketSpec.isDefined) {
+      meta.willNotWorkOnGpu("bucketed tables are not supported")
+    }
+
     FileFormatChecks.tag(meta,
                          insertCommand.table.schema,
                          HiveDelimitedTextFormatType,
@@ -124,6 +128,6 @@ class GpuHiveTextWriter(override val path: String,
       .withNullValue("\\N")
       // .withQuoteStyle(QuoteStyle.NONE) // TODO: Enable after available in spark-rapids-jni.
 
-    ai.rapids.cudf.Table.getCSVBufferWriter(writeOptions.build, this)
+    Table.getCSVBufferWriter(writeOptions.build, this)
   }
 }
