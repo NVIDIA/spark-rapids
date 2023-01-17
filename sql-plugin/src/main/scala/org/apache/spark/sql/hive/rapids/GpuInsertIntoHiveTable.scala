@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.hive.rapids
 
-import com.nvidia.spark.rapids.{ColumnarFileFormat, GpuDataWritingCommand}
+import com.nvidia.spark.rapids.{ColumnarFileFormat, DataFromReplacementRule, DataWritingCommandMeta, GpuDataWritingCommand, RapidsConf, RapidsMeta}
 
 import java.util.Locale
 import org.apache.hadoop.conf.Configuration
@@ -40,8 +40,8 @@ import org.apache.spark.sql.hive.HiveExternalCatalog
 import org.apache.spark.sql.hive.HiveShim.{ShimFileSinkDesc => FileSinkDesc}
 import org.apache.spark.sql.hive.client.HiveClientImpl
 import org.apache.spark.sql.hive.client.hive._
-import org.apache.spark.sql.hive.execution.SaveAsHiveFile
-import org.apache.spark.sql.rapids.{GpuFileFormatWriter, GpuHiveTextFileFormat}
+import org.apache.spark.sql.hive.execution.{InsertIntoHiveTable, SaveAsHiveFile}
+import org.apache.spark.sql.rapids.GpuFileFormatWriter
 import org.apache.spark.sql.types.{DataType, DoubleType, FloatType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -147,9 +147,37 @@ private[hive] trait GpuSaveAsHiveFile extends GpuDataWritingCommand with SaveAsH
   }
 }
 
+final class GpuInsertIntoHiveTableMeta(cmd: InsertIntoHiveTable,
+                                       conf: RapidsConf,
+                                       parent: Option[RapidsMeta[_,_,_]],
+                                       rule: DataFromReplacementRule)
+  extends DataWritingCommandMeta[InsertIntoHiveTable](cmd, conf, parent, rule) {
+
+  private var fileFormat: Option[ColumnarFileFormat] = None
+
+  override def tagSelfForGpu(): Unit = {
+    // Only Hive delimited text writes are currently supported.
+    // Check whether that is the format currently in play.
+    fileFormat = GpuHiveTextFileFormat.tagGpuSupport(this)
+  }
+
+  override def convertToGpu(): GpuDataWritingCommand = {
+    GpuInsertIntoHiveTable(
+      table = wrapped.table,
+      partition = wrapped.partition,
+      fileFormat = this.fileFormat.get,
+      query = wrapped.query,
+      overwrite = wrapped.overwrite,
+      ifPartitionNotExists = wrapped.ifPartitionNotExists,
+      outputColumnNames = wrapped.outputColumnNames
+    )
+  }
+}
+
 case class GpuInsertIntoHiveTable(
     table: CatalogTable,
     partition: Map[String, Option[String]],
+    fileFormat: ColumnarFileFormat,
     query: LogicalPlan,
     overwrite: Boolean,
     ifPartitionNotExists: Boolean,
@@ -180,7 +208,13 @@ case class GpuInsertIntoHiveTable(
     val tmpLocation = getExternalTmpPath(sparkSession, hadoopConf, tableLocation)
 
     try {
-      processInsert(sparkSession, externalCatalog, hadoopConf, tableDesc, tmpLocation, child)
+      processInsert(sparkSession,
+                    externalCatalog,
+                    hadoopConf,
+                    tableDesc,
+                    fileFormat,
+                    tmpLocation,
+                    child)
     } finally {
       // Attempt to delete the staging directory and the inclusive files. If failed, the files are
       // expected to be dropped at the normal termination of VM since deleteOnExit is used.
@@ -205,6 +239,7 @@ case class GpuInsertIntoHiveTable(
       externalCatalog: ExternalCatalog,
       hadoopConf: Configuration,
       tableDesc: TableDesc,
+      fileFormat: ColumnarFileFormat,
       tmpLocation: Path,
       child: SparkPlan): Unit = {
     val fileSinkConf = new FileSinkDesc(tmpLocation.toString, tableDesc, false)
@@ -262,7 +297,7 @@ case class GpuInsertIntoHiveTable(
       sparkSession = sparkSession,
       plan = child,
       hadoopConf = hadoopConf,
-      fileFormat = new GpuHiveTextFileFormat(),
+      fileFormat = fileFormat,
       outputLocation = tmpLocation.toString,
       partitionAttributes = partitionAttributes)
 

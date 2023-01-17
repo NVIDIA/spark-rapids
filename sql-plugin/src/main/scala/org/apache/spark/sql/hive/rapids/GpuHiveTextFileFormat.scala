@@ -14,15 +14,16 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.rapids
+package org.apache.spark.sql.hive.rapids
 
 import ai.rapids.cudf.TableWriter
-import com.nvidia.spark.rapids.{ColumnarFileFormat, ColumnarOutputWriter, ColumnarOutputWriterFactory, InsertIntoHadoopFsRelationCommandMeta}
+import com.google.common.base.Charsets
+import com.nvidia.spark.rapids.{ColumnarFileFormat, ColumnarOutputWriter, ColumnarOutputWriterFactory, FileFormatChecks, HiveDelimitedTextFormatType, WriteFileOp}
+import java.nio.charset.Charset
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.execution.datasources.InsertIntoHadoopFsRelationCommand
 import org.apache.spark.sql.types.{ArrayType, BinaryType, DataType, MapType, StructField, StructType}
 
 object GpuHiveTextFileFormat extends Logging {
@@ -37,25 +38,52 @@ object GpuHiveTextFileFormat extends Logging {
 
   def hasUnsupportedType(column: StructField): Boolean = !isSupportedType(column.dataType)
 
-  def tagGpuSupport(meta: InsertIntoHadoopFsRelationCommandMeta,
-                    insertToFileCommand: InsertIntoHadoopFsRelationCommand)
+  def tagGpuSupport(meta: GpuInsertIntoHiveTableMeta)
     : Option[ColumnarFileFormat] = {
 
-    meta.willNotWorkOnGpu("CALEB: Hive output is not supported yet")
+    import GpuHiveTextFileUtils._
 
-    // TODO: Figure out why this doesn't work.
-    // FileFormatChecks.tag(meta, insertToFileCommand.schema, CsvFormatType, WriteFileOp)
+    val insertCommand = meta.wrapped
+    val storage  = insertCommand.table.storage
+    if (storage.outputFormat.getOrElse("") != textOutputFormat) {
+      meta.willNotWorkOnGpu(s"unsupported output-format found: ${storage.outputFormat}, " +
+        s"only $textOutputFormat is currently supported")
+    }
+    if (storage.serde.getOrElse("") != lazySimpleSerDe) {
+      meta.willNotWorkOnGpu(s"unsupported serde found: ${storage.serde}, " +
+        s"only $lazySimpleSerDe is currently supported")
+    }
 
-    // Workaround for FileFormatChecks.tag() dropping the ball.
-    println(s"CALEB: insertToFileCommand.query.schema: ${insertToFileCommand.query.schema}.")
-    insertToFileCommand.query.schema.foreach( field =>
-      if (hasUnsupportedType(field)) {
-        meta.willNotWorkOnGpu(s"column ${field.name} has type ${field.dataType}, " +
-          s"unsupported for writing in ${insertToFileCommand.fileFormat} file format")
-      }
-    )
+    val serializationFormat = storage.properties.getOrElse(serializationKey, "")
+    if (serializationFormat != ctrlASeparatedFormat) {
+      meta.willNotWorkOnGpu(s"unsupported serialization format found: " +
+        s"$serializationFormat, " +
+        s"only \'^A\' separated text output (i.e. serialization.format=1) " +
+        s"is currently supported")
+    }
 
-    // TODO: Check output format. Only Hive delimited text is supported.
+    val lineTerminator = storage.properties.getOrElse(lineDelimiterKey, newLine)
+    if (lineTerminator != newLine) {
+      meta.willNotWorkOnGpu(s"unsupported line terminator found: " +
+        s"$lineTerminator, " +
+        s"only newline (\'\\n\') separated text output is currently supported")
+    }
+
+    if (!storage.properties.getOrElse(escapeDelimiterKey, "").equals("")) {
+      meta.willNotWorkOnGpu("escapes are not currently supported")
+      // "serialization.escape.crlf" matters only if escapeDelimiterKey is set
+    }
+
+    val charset = Charset.forName(
+      storage.properties.getOrElse("serialization.encoding", "UTF-8"))
+    if (!(charset.equals(Charsets.US_ASCII) || charset.equals(Charsets.UTF_8))) {
+      meta.willNotWorkOnGpu("only UTF-8 and ASCII are supported as the charset")
+    }
+
+    FileFormatChecks.tag(meta,
+                         insertCommand.table.schema,
+                         HiveDelimitedTextFormatType,
+                         WriteFileOp)
 
     Some(new GpuHiveTextFileFormat())
   }

@@ -29,7 +29,7 @@ import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
-import org.apache.spark.sql.hive.execution.{HiveTableScanExec, OptimizedCreateHiveTableAsSelectCommand}
+import org.apache.spark.sql.hive.execution.{HiveTableScanExec, InsertIntoHiveTable, OptimizedCreateHiveTableAsSelectCommand}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
@@ -40,9 +40,15 @@ class HiveProviderImpl extends HiveProvider {
    */
   override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
       DataWritingCommandRule[_ <: DataWritingCommand]] = Seq (
+
     GpuOverrides.dataWriteCmd[OptimizedCreateHiveTableAsSelectCommand](
       "Create a Hive table from a query result using Spark data source APIs",
-      (a, conf, p, r) => new OptimizedCreateHiveTableAsSelectCommandMeta(a, conf, p, r))
+      (a, conf, p, r) => new OptimizedCreateHiveTableAsSelectCommandMeta(a, conf, p, r)),
+
+    GpuOverrides.dataWriteCmd[InsertIntoHiveTable](
+      desc = "Command to write to Hive Tables",
+      (insert, conf, parent, rule) => new GpuInsertIntoHiveTableMeta(insert, conf, parent, rule)
+  )
   ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
 
   /**
