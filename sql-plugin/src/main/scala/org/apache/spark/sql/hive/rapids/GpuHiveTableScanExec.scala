@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -594,11 +594,13 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
       }
     }
 
-    val cudfFormat = DateUtils.toStrf("yyyy-MM-dd", parseString = true)
-    withResource(regexFiltered.isTimestamp(cudfFormat)) { isDate =>
-      withResource(regexFiltered.asTimestamp(dt, cudfFormat)) { asDate =>
-        withResource(Scalar.fromNull(dt)) { nullScalar =>
-          isDate.ifElse(asDate, nullScalar)
+    withResource(regexFiltered) { _ =>
+      val cudfFormat = DateUtils.toStrf("yyyy-MM-dd", parseString = true)
+      withResource(regexFiltered.isTimestamp(cudfFormat)) { isDate =>
+        withResource(regexFiltered.asTimestamp(dt, cudfFormat)) { asDate =>
+          withResource(Scalar.fromNull(dt)) { nullScalar =>
+            isDate.ifElse(asDate, nullScalar)
+          }
         }
       }
     }
