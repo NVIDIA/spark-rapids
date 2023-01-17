@@ -97,6 +97,9 @@
                     <value>321cdh</value>
                 </property>
             </activation>
+            <properties>
+                <spark.shim.test.sources>${project.basedir}/src/test/311+-nondb/scala</spark.shim.test.sources>
+            </properties>
             <dependencies>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
@@ -159,6 +162,7 @@
             </activation>
             <properties>
                 <included_buildvers>${buildver}</included_buildvers>
+                <spark.shim.test.sources>${project.basedir}/src/test/311+-nondb/scala</spark.shim.test.sources>
             </properties>
             <dependencies>
                 <dependency>
@@ -423,7 +427,7 @@
                 </property>
             </activation>
             <properties>
-                <spark.shim.test.sources>${project.basedir}/src/test/320+-noncdh-nondb/scala</spark.shim.test.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/320+-noncdh-nondb/scala,${project.basedir}/src/test/311+-nondb/scala</spark.shim.test.sources>
             </properties>
         </profile>
         <profile>
@@ -447,7 +451,7 @@
                 </property>
             </activation>
             <properties>
-                <spark.shim.test.sources>${project.basedir}/src/test/320+-noncdh-nondb/scala</spark.shim.test.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/320+-noncdh-nondb/scala,${project.basedir}/src/test/311+-nondb/scala</spark.shim.test.sources>
             </properties>
         </profile>
         <profile>
@@ -459,7 +463,7 @@
                 </property>
             </activation>
             <properties>
-                <spark.shim.test.sources>${project.basedir}/src/test/320+-noncdh-nondb/scala</spark.shim.test.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/320+-noncdh-nondb/scala,${project.basedir}/src/test/311+-nondb/scala</spark.shim.test.sources>
             </properties>
         </profile>
         <profile>
@@ -495,7 +499,7 @@
                 </property>
             </activation>
             <properties>
-                <spark.shim.test.sources>${project.basedir}/src/test/330+/scala,${project.basedir}/src/test/320+-noncdh-nondb/scala</spark.shim.test.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/330+/scala,${project.basedir}/src/test/320+-noncdh-nondb/scala,${project.basedir}/src/test/311+-nondb/scala</spark.shim.test.sources>
             </properties>
         </profile>
         <profile>
@@ -507,7 +511,7 @@
                 </property>
             </activation>
             <properties>
-                <spark.shim.test.sources>${project.basedir}/src/test/330+/scala,${project.basedir}/src/test/320+-noncdh-nondb/scala</spark.shim.test.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/330+/scala,${project.basedir}/src/test/320+-noncdh-nondb/scala,${project.basedir}/src/test/311+-nondb/scala</spark.shim.test.sources>
             </properties>
         </profile>
         <profile>
@@ -519,7 +523,7 @@
                 </property>
             </activation>
             <properties>
-                <spark.shim.test.sources>${project.basedir}/src/test/330+/scala,${project.basedir}/src/test/320+-noncdh-nondb/scala</spark.shim.test.sources>
+                <spark.shim.test.sources>${project.basedir}/src/test/330+/scala,${project.basedir}/src/test/320+-noncdh-nondb/scala,${project.basedir}/src/test/311+-nondb/scala</spark.shim.test.sources>
             </properties>
         </profile>
     </profiles>
