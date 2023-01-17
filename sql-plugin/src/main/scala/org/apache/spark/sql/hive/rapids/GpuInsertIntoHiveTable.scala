@@ -24,9 +24,10 @@ import org.apache.hadoop.fs.Path
 import org.apache.hadoop.hive.conf.HiveConf
 import org.apache.hadoop.hive.ql.ErrorMsg
 import org.apache.hadoop.hive.ql.plan.TableDesc
+
 import org.apache.spark.SparkException
 import org.apache.spark.internal.io.FileCommitProtocol
-import org.apache.spark.sql.{AnalysisException, Row, SparkSession}
+import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable, CatalogTableType, ExternalCatalog, ExternalCatalogUtils, ExternalCatalogWithListener}
 import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Literal}
@@ -44,7 +45,6 @@ import org.apache.spark.sql.rapids.{GpuFileFormatWriter, GpuHiveTextFileFormat}
 import org.apache.spark.sql.types.{DataType, DoubleType, FloatType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-import java.net.URI
 
 // TODO:
 //  1. Meta should bail out if there is a bucket spec.
@@ -404,4 +404,13 @@ case class GpuInsertIntoHiveTable(
         isSrcLocal = false)
     }
   }
+
+  override def requireSingleBatch: Boolean = false // TODO: Re-evaluate. If partitioned or bucketed?
+
+  /*
+  // Override necessary because SaveAsHiveFile is a UnaryCommand.
+  // This implementation is the same as InsertIntoHiveTable.
+  override protected def withNewChildInternal(newChild: LogicalPlan): LogicalPlan =
+    copy(query = newChild)
+   */
 }
