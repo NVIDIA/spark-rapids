@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -293,7 +293,8 @@ class GpuBroadcastMeta(
   override def tagPlanForGpu(): Unit = {
     if (!TrampolineUtil.isSupportedRelation(exchange.mode)) {
       willNotWorkOnGpu(
-        "Broadcast exchange is only supported for HashedJoin or BroadcastNestedLoopJoin")
+        s"unsupported BroadcastMode: ${exchange.mode}. " +
+          s"GPU supports only IdentityBroadcastMode and HashedRelationBroadcastMode")
     }
     def isSupported(rm: RapidsMeta[_, _, _]): Boolean = rm.wrapped match {
       case _: BroadcastHashJoinExec => true
