@@ -688,6 +688,28 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     // shuffled exchanges. So broadcast exchanges are not impacted which could have an impact on
     // BroadcastHashJoin, and shuffled exchanges are not used to disable anything downstream.
     fixUpExchangeOverhead()
+
+    // 3) WriteFilesExec is a new temporary operator from Spark version 340,
+    // it can't run on GPU if parent node can't run on GPU.
+    tagChildAccordingToParent(this.asInstanceOf[SparkPlanMeta[SparkPlan]], "WriteFilesExec")
+  }
+
+  /**
+   * tag child node can't run on GPU if parent node can't run on GPU and child node is a `typeName`
+   *
+   * @param p        plan
+   * @param typeName type name
+   */
+  def tagChildAccordingToParent(p: SparkPlanMeta[SparkPlan], typeName: String): Unit = {
+    p.childPlans.foreach(e => tagChildAccordingToParent(e, typeName))
+    if (p.wrapped.getClass.getSimpleName.equals(typeName)) {
+      assert(p.parent.isDefined)
+      if (!p.parent.get.canThisBeReplaced) {
+        // parent can't run on GPU, also tag this.
+        p.willNotWorkOnGpu(
+          "WriteFilesExec can't run on GPU because parent can't run on GPU")
+      }
+    }
   }
 
   override final def tagSelfForGpu(): Unit = {

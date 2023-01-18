@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -163,7 +163,8 @@ def test_catch_int96_overflow(spark_tmp_path, data_gen):
         lambda spark: unary_op_df(spark, data_gen).coalesce(1).write.parquet(data_path), conf=confs), "org.apache.spark.SparkException: Job aborted.")
 
 @pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
-@pytest.mark.allow_non_gpu("DataWritingCommandExec")
+# Note: From Spark 340, WriteFilesExec is introduced.
+@pytest.mark.allow_non_gpu("DataWritingCommandExec", "WriteFilesExec")
 def test_int96_write_conf(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     confs = copy_and_update(writer_confs, {
@@ -285,7 +286,8 @@ def test_parquet_write_legacy_fallback(spark_tmp_path, ts_write, ts_rebase, spar
             'DataWritingCommandExec',
             conf=all_confs)
 
-@allow_non_gpu('DataWritingCommandExec')
+@allow_non_gpu('DataWritingCommandExec', "WriteFilesExec")
+# Note: From Spark 340, WriteFilesExec is introduced.
 @pytest.mark.parametrize('write_options', [{"parquet.encryption.footer.key": "k1"},
                                            {"parquet.encryption.column.keys": "k2:a"},
                                            {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
