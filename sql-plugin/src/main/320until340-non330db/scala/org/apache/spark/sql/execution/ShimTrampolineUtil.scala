@@ -22,10 +22,8 @@ import org.apache.spark.sql.types.{DataType, StructType}
 
 object ShimTrampolineUtil {
 
-  // unionLikeMerge was only added in Spark 3.2 so be bug compatible and call merge
-  // https://issues.apache.org/jira/browse/SPARK-36673
   def unionLikeMerge(left: DataType, right: DataType): DataType =
-    StructType.merge(left, right)
+    StructType.unionLikeMerge(left, right)
 
   def isSupportedRelation(mode: BroadcastMode): Boolean = mode match {
     case _ : HashedRelationBroadcastMode => true
@@ -33,4 +31,3 @@ object ShimTrampolineUtil {
     case _ => false
   }
 }
-

@@ -16,10 +16,18 @@
 
 package org.apache.spark.sql.rapids.execution
 
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, IdentityBroadcastMode}
+import org.apache.spark.sql.execution.joins.{ExecutorBroadcastMode, HashedRelationBroadcastMode}
 import org.apache.spark.sql.types.{DataType, StructType}
 
 object ShimTrampolineUtil {
 
   def unionLikeMerge(left: DataType, right: DataType): DataType =
     StructType.unionLikeMerge(left, right)
+
+  def isSupportedRelation(mode: BroadcastMode): Boolean = mode match {
+    case _ : HashedRelationBroadcastMode => true
+    case IdentityBroadcastMode | ExecutorBroadcastMode => true
+    case _ => false
+  }
 }
