@@ -68,7 +68,7 @@ class RapidsBufferCatalog extends AutoCloseable with Arm {
       override val id: RapidsBufferId,
       var priority: Long,
       spillCallback: SpillCallback)
-    extends RapidsBufferHandle with Arm {
+    extends RapidsBufferHandle {
 
     override def setSpillPriority(newPriority: Long): Unit = {
       priority = newPriority
@@ -142,7 +142,9 @@ class RapidsBufferCatalog extends AutoCloseable with Arm {
    * returns true, otherwise it returns false.
    *
    * @param handle handle to stop tracking
-   * @return
+   * @return true: if this was the last `RapidsBufferHandle` associated with the
+   *         underlying buffer.
+   *         false: if there are remaining live handles
    */
   private def stopTrackingHandle(handle: RapidsBufferHandle): Boolean = {
     withResource(acquireBuffer(handle)) { buffer =>
@@ -159,9 +161,7 @@ class RapidsBufferCatalog extends AutoCloseable with Arm {
           null
         } else {
           val newHandles = handles.filter(h => h != handle).map { h =>
-            if (h.getSpillPriority > maxPriority) {
-              maxPriority = h.getSpillPriority
-            }
+            maxPriority = maxPriority.max(h.getSpillPriority)
             h
           }
           if (newHandles.isEmpty) {
@@ -308,6 +308,10 @@ class RapidsBufferCatalog extends AutoCloseable with Arm {
   /**
    * Remove a buffer handle from the catalog and, if it this was the final handle,
    * release the resources of the registered buffers.
+   *
+   * @return true: if the buffer for this handle was removed from the spill framework
+   *               (`handle` was the last handle)
+   *         false: if buffer was not removed due to other live handles.
    */
   def removeBuffer(handle: RapidsBufferHandle): Boolean = {
     // if this is the last handle, remove the buffer
@@ -324,7 +328,7 @@ class RapidsBufferCatalog extends AutoCloseable with Arm {
   def numBuffers: Int = bufferMap.size()
 
   override def close(): Unit = {
-    bufferIdToHandles.forEach { case (_, handles) =>
+    bufferIdToHandles.values.forEach { handles =>
       handles.foreach(removeBuffer)
     }
     bufferIdToHandles.clear()
@@ -396,9 +400,7 @@ object RapidsBufferCatalog extends Logging with Arm {
   }
 
   private def closeImpl(): Unit = {
-    if (singleton != null) {
-      singleton.close()
-    }
+    singleton.close()
 
     if (memoryEventHandler != null) {
       // Workaround for shutdown ordering problems where device buffers allocated with this handler

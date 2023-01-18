@@ -58,16 +58,13 @@ class JustRowsColumnarBatch(numRows: Int, semWait: GpuMetric)
   override def numRows(): Int = numRows
   override def setSpillPriority(priority: Long): Unit = () // NOOP nothing to spill
 
-  private def makeJustRowsBatch(): ColumnarBatch = {
+  def getColumnarBatch(): ColumnarBatch = {
     GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWait)
     new ColumnarBatch(Array.empty, numRows)
   }
+
   override def close(): Unit = () // NOOP nothing to close
   override val sizeInBytes: Long = 0L
-
-  def getColumnarBatch(): ColumnarBatch = {
-    makeJustRowsBatch()
-  }
 }
 
 /**

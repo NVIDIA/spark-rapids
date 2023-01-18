@@ -194,10 +194,8 @@ class ShuffleBufferCatalog(
           tableMap.remove(id.tableId)
           val didRemove = catalog.removeBuffer(bufferIdToHandle.get(id))
           if (!didRemove) {
-            logWarning(s"Unable to remove from underlying storage ${id} when cleaning " +
+            logWarning(s"Unable to remove $id from underlying storage when cleaning " +
               s"shuffle blocks.")
-          } else {
-            logWarning(s"Did remove ${id}")
           }
         }
       }
