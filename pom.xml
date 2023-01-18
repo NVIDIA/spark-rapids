@@ -1159,9 +1159,15 @@
                                         <exclude name="*non330db*/*"/>
                                     </dirset>
                                 </pathconvert>
-                                <sequential>
-                                    <shimplify shims="${noSnapshot.buildvers},${snapshot.buildvers},${databricks.buildvers},340" if="shimplify"/>
-                                </sequential>
+                                <ac:for param="bv" list="${noSnapshot.buildvers},${snapshot.buildvers},${databricks.buildvers},340" trim="true">
+                                    <sequential>
+                                        <multirootfileset id="spark@{bv}.fileset" basedirs="${spark@{bv}.sources}">
+                                            <include name="**/*.java"/>
+                                            <include name="**/*.scala"/>
+                                        </multirootfileset>
+                                    </sequential>
+                                </ac:for>
+                                <shimplify shims="${noSnapshot.buildvers},${snapshot.buildvers},${databricks.buildvers},340" if="shimplify"/>
                             </target>
                         </configuration>
                     </execution>
