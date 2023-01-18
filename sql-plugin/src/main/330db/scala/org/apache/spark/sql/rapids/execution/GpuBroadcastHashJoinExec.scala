@@ -46,7 +46,10 @@ class GpuBroadcastHashJoinMeta(
           bqse.plan.isInstanceOf[ReusedExchangeExec] &&
           bqse.plan.asInstanceOf[ReusedExchangeExec]
               .child.isInstanceOf[GpuBroadcastExchangeExec]
-      case sqse: ShuffleQueryStageExec => sqse.plan.isInstanceOf[GpuShuffleExchangeExecBase]
+      case sqse: ShuffleQueryStageExec => sqse.plan.isInstanceOf[GpuShuffleExchangeExecBase] ||
+          sqse.plan.isInstanceOf[ReusedExchangeExec] &&
+          sqse.plan.asInstanceOf[ReusedExchangeExec]
+              .child.isInstanceOf[GpuShuffleExchangeExecBase]
       case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExec] ||
           reused.child.isInstanceOf[GpuShuffleExchangeExecBase]
       case _: GpuBroadcastExchangeExec | _: GpuShuffleExchangeExecBase => true
@@ -60,7 +63,10 @@ class GpuBroadcastHashJoinMeta(
           bqse.plan.isInstanceOf[ReusedExchangeExec] &&
               bqse.plan.asInstanceOf[ReusedExchangeExec]
                   .child.isInstanceOf[GpuBroadcastExchangeExec]
-      case sqse: ShuffleQueryStageExec => sqse.plan.isInstanceOf[GpuShuffleExchangeExecBase]
+      case sqse: ShuffleQueryStageExec => sqse.plan.isInstanceOf[GpuShuffleExchangeExecBase] ||
+          sqse.plan.isInstanceOf[ReusedExchangeExec] &&
+          sqse.plan.asInstanceOf[ReusedExchangeExec]
+              .child.isInstanceOf[GpuShuffleExchangeExecBase]
       case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExec] ||
           reused.child.isInstanceOf[GpuShuffleExchangeExecBase]
       case _: GpuBroadcastExchangeExec | _: GpuShuffleExchangeExecBase => true

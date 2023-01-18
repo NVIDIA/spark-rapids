@@ -59,7 +59,8 @@ def create_fact_table(table_name, table_format, length=2000):
 _dpp_conf = [('spark.sql.optimizer.dynamicPartitionPruning.enabled', 'true')]
 _exchange_reuse_conf = _dpp_conf + [
     ('spark.sql.optimizer.dynamicPartitionPruning.reuseBroadcastOnly', 'true'),
-    ('spark.sql.exchange.reuse', 'true')
+    ('spark.sql.exchange.reuse', 'true'),
+    ("spark.rapids.sql.debug.logTransformations", "true"),
 ]
 _bypass_conf = _dpp_conf + [
     ('spark.sql.optimizer.dynamicPartitionPruning.reuseBroadcastOnly', 'true'),
