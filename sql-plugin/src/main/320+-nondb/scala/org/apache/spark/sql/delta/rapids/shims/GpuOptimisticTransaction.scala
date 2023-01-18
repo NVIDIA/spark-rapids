@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * This file was derived from OptimisticTransaction.scala and TransactionalWrite.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
@@ -27,14 +27,14 @@ import scala.collection.mutable.ListBuffer
 
 import ai.rapids.cudf.ColumnView
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.delta.{GpuDeltaJobStatisticsTracker, GpuStatisticsCollection}
+import com.nvidia.spark.rapids.delta.{GpuDeltaJobStatisticsTracker, GpuRapidsDeltaWriteExec, GpuStatisticsCollection, RapidsDeltaWrite}
 import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkException
 import org.apache.spark.sql.Dataset
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeSet, Expression, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.logical.LocalRelation
 import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.actions.FileAction
@@ -45,7 +45,7 @@ import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{BasicWriteJobStatsTracker, FileFormatWriter}
 import org.apache.spark.sql.functions.to_json
-import org.apache.spark.sql.rapids.{BasicColumnarWriteJobStatsTracker, ColumnarWriteJobStatsTracker, GpuFileFormatWriter}
+import org.apache.spark.sql.rapids.{BasicColumnarWriteJobStatsTracker, ColumnarWriteJobStatsTracker, GpuFileFormatWriter, GpuWriteJobStatsTracker}
 import org.apache.spark.sql.rapids.GpuV1WriteUtils.GpuEmpty2Null
 import org.apache.spark.sql.types.{StringType, StructType}
 import org.apache.spark.util.{Clock, SerializableConfiguration}
@@ -88,16 +88,10 @@ class GpuOptimisticTransaction
       DeltaInvariantCheckerExec.buildInvariantChecks(plan.output, constraints, plan.session)
     GpuCheckDeltaInvariant.maybeConvertToGpu(cpuInvariants, rapidsConf) match {
       case Some(gpuInvariants) =>
-        val gpuPlan = plan match {
-          case g: GpuExec => g
-          case p => GpuRowToColumnarExec(p, TargetSize(rapidsConf.gpuTargetBatchSizeBytes))
-        }
+        val gpuPlan = convertToGpu(plan)
         GpuDeltaInvariantCheckerExec(gpuPlan, gpuInvariants)
       case None =>
-        val cpuPlan = plan match {
-          case g: GpuExec => GpuColumnarToRowExec(g)
-          case p => p
-        }
+        val cpuPlan = convertToCpu(plan)
         DeltaInvariantCheckerExec(cpuPlan, constraints)
     }
   }
@@ -122,7 +116,7 @@ class GpuOptimisticTransaction
     val projectList: Seq[NamedExpression] = plan.output.map {
       case p if partSet.contains(p) && p.dataType == StringType =>
         needConvert = true
-        Alias(GpuEmpty2Null(p), p.name)()
+        GpuAlias(GpuEmpty2Null(p), p.name)()
       case attr => attr
     }
     if (needConvert) GpuProjectExec(projectList.toList, plan) else plan
@@ -164,8 +158,22 @@ class GpuOptimisticTransaction
     val (data, partitionSchema) = performCDCPartition(inputData)
     val outputPath = deltaLog.dataPath
 
-    val (queryExecution, output, generatedColumnConstraints, _) =
+    val (normalizedQueryExecution, output, generatedColumnConstraints, _) =
       normalizeData(deltaLog, data)
+
+    // Build a new plan with a stub GpuDeltaWrite node to work around undesired transitions between
+    // columns and rows when AQE is involved. Without this node in the plan, AdaptiveSparkPlanExec
+    // could be the root node of the plan. In that case we do not have enough context to know
+    // whether the AdaptiveSparkPlanExec should be columnar or not, since the GPU overrides do not
+    // see how the parent is using the AdaptiveSparkPlanExec outputs. By using this stub node that
+    // appears to be a data writing node to AQE (it derives from V2CommandExec), the
+    // AdaptiveSparkPlanExec will be planned as a child of this new node. That provides enough
+    // context to plan the AQE sub-plan properly with respect to columnar and row transitions.
+    // We could force the AQE node to be columnar here by explicitly replacing the node, but that
+    // breaks the connection between the queryExecution and the node that will actually execute.
+    val gpuWritePlan = Dataset.ofRows(spark, RapidsDeltaWrite(normalizedQueryExecution.logical))
+    val queryExecution = gpuWritePlan.queryExecution
+
     val partitioningColumns = getPartitioningColumns(partitionSchema, output)
 
     val committer = getCommitter(outputPath)
@@ -219,14 +227,15 @@ class GpuOptimisticTransaction
         case GpuColumnarToRowExec(child, _) => child
         case p => p
       }
+      val gpuRapidsWrite = queryPhysicalPlan match {
+        case g: GpuRapidsDeltaWriteExec => Some(g)
+        case _ => None
+      }
 
       val empty2NullPlan = convertEmptyToNullIfNeeded(queryPhysicalPlan,
         partitioningColumns, constraints)
       val planWithInvariants = addInvariantChecks(empty2NullPlan, constraints)
-      val physicalPlan = planWithInvariants match {
-        case g: GpuExec => g
-        case p => GpuRowToColumnarExec(p, TargetSize(rapidsConf.gpuTargetBatchSizeBytes))
-      }
+      val physicalPlan = convertToGpu(planWithInvariants)
 
       val statsTrackers: ListBuffer[ColumnarWriteJobStatsTracker] = ListBuffer()
 
@@ -236,6 +245,11 @@ class GpuOptimisticTransaction
           BasicWriteJobStatsTracker.metrics)
         registerSQLMetrics(spark, basicWriteJobStatsTracker.driverSideMetrics)
         statsTrackers.append(basicWriteJobStatsTracker)
+        gpuRapidsWrite.foreach { grw =>
+          val hadoopConf = new SerializableConfiguration(spark.sparkContext.hadoopConfiguration)
+          val tracker = new GpuWriteJobStatsTracker(hadoopConf, grw.basicMetrics, grw.taskMetrics)
+          statsTrackers.append(tracker)
+        }
       }
 
       // Retain only a minimal selection of Spark writer options to avoid any potential
@@ -289,5 +303,17 @@ class GpuOptimisticTransaction
     }
 
     resultFiles.toSeq ++ committer.changeFiles
+  }
+
+  private def convertToCpu(plan: SparkPlan): SparkPlan = plan match {
+    case GpuRowToColumnarExec(p, _) => p
+    case p: GpuExec => GpuColumnarToRowExec(p)
+    case p => p
+  }
+
+  private def convertToGpu(plan: SparkPlan): SparkPlan = plan match {
+    case GpuColumnarToRowExec(p, _) => p
+    case p: GpuExec => p
+    case p => GpuRowToColumnarExec(p, TargetSize(rapidsConf.gpuTargetBatchSizeBytes))
   }
 }

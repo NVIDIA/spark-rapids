@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.
+# Copyright (c) 2022-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -90,6 +90,12 @@ def decode_jsons(json_data):
         # Skip whitespace between records
         while idx < len(json_data) and json_data[idx].isspace():
             idx += 1
+    # reorder to produce a consistent output for comparison
+    def json_to_sort_key(j):
+        keys = sorted(j.keys())
+        paths = sorted([ v.get("path", "") for v in j.values() ])
+        return ','.join(keys + paths)
+    jsons.sort(key=json_to_sort_key)
     return jsons
 
 def assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path):
@@ -657,3 +663,20 @@ def test_delta_write_auto_optimize_sql_conf_fallback(confkey, spark_tmp_path):
         data_path,
         "ExecutedCommandExec",
         conf=confs)
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+def test_delta_write_aqe_join(spark_tmp_path):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    confs=copy_and_update(delta_writes_enabled_conf, {"spark.sql.adaptive.enabled": "true"})
+    def do_join(spark, path):
+        df = unary_op_df(spark, int_gen)
+        df.join(df, ["a"], "inner").write.format("delta").save(path)
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        do_join,
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=confs)
+    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,12 +58,12 @@ case class GpuDecimalMultiply(
 case class GpuAdd(
     left: Expression,
     right: Expression,
-    failOnError: Boolean) extends GpuAddBase(left, right, failOnError)
+    failOnError: Boolean) extends GpuAddBase(failOnError)
 
 case class GpuSubtract(
     left: Expression,
     right: Expression,
-    failOnError: Boolean) extends GpuSubtractBase(left, right, failOnError)
+    failOnError: Boolean) extends GpuSubtractBase(failOnError)
 
 case class GpuRemainder(left: Expression, right: Expression) extends GpuRemainderBase(left, right)
 

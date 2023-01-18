@@ -511,21 +511,18 @@ void databricksBuild() {
 
         stage("Test agaist $SPARK_MAJOR DB") {
             script {
-                // TODO re-enable DB11.3 after all failed tests get fixed
-                if (env.DB_RUNTIME != '11.3' ) {
-                    container('cpu') {
-                        try {
-                            withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
-                                def TEST_PARAMS = " -w $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID" +
-                                    " -p $DATABRICKS_PRIVKEY -l ./jenkins/databricks/test.sh -v $BASE_SPARK_VERSION -d /home/ubuntu/test.sh"
-                                if (params.SPARK_CONF) {
-                                    TEST_PARAMS += " -f ${params.SPARK_CONF}"
-                                }
-                                sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS"
+                container('cpu') {
+                    try {
+                        withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
+                            def TEST_PARAMS = " -w $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID" +
+                                " -p $DATABRICKS_PRIVKEY -l ./jenkins/databricks/test.sh -v $BASE_SPARK_VERSION -d /home/ubuntu/test.sh"
+                            if (params.SPARK_CONF) {
+                                TEST_PARAMS += " -f ${params.SPARK_CONF}"
                             }
-                        } finally {
-                            common.publishPytestResult(this, "${STAGE_NAME}")
+                            sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS"
                         }
+                    } finally {
+                        common.publishPytestResult(this, "${STAGE_NAME}")
                     }
                 }
             }
