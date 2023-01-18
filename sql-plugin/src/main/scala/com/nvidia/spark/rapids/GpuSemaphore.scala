@@ -96,28 +96,29 @@ object GpuSemaphore {
       instance = null
     }
   }
-}
 
-private final class GpuSemaphore() extends Logging with Arm {
-  private val maxPermits = 1000
-  private val semaphore = new Semaphore(maxPermits)
+  private val MAX_PERMITS = 1000
 
-  // Map to track which tasks have acquired the semaphore.
-  case class TaskInfo(count: MutableInt, thread: Thread, numPermits: Int)
-  private val activeTasks = new ConcurrentHashMap[Long, TaskInfo]
-
-  def computeNumPermits(conf: SQLConf): Int = {
+  private def computeNumPermits(conf: SQLConf): Int = {
     val concurrentStr = conf.getConfString(RapidsConf.CONCURRENT_GPU_TASKS.key, null)
     val concurrentInt = Option(concurrentStr)
       .map(ConfHelper.toInteger(_, RapidsConf.CONCURRENT_GPU_TASKS.key))
       .getOrElse(RapidsConf.CONCURRENT_GPU_TASKS.defaultValue)
-    val permits = maxPermits / concurrentInt
-    if (permits <= 0) {
-      1
-    } else {
-      permits
-    }
+    // concurrentInt <= 0 is the same as 1 (fail to the safest value)
+    // concurrentInt > MAX_PERMITS becomes the same as MAX_PERMITS
+    // (who has more than 1000 threads anyways).
+    val permits = MAX_PERMITS / math.min(math.max(concurrentInt, 1), MAX_PERMITS)
+    math.max(permits, 1)
   }
+}
+
+private final class GpuSemaphore() extends Logging with Arm {
+  import GpuSemaphore._
+  private val semaphore = new Semaphore(MAX_PERMITS)
+
+  // Map to track which tasks have acquired the semaphore.
+  case class TaskInfo(count: MutableInt, thread: Thread, numPermits: Int)
+  private val activeTasks = new ConcurrentHashMap[Long, TaskInfo]
 
   def acquireIfNecessary(context: TaskContext, waitMetric: GpuMetric): Unit = {
     withResource(new NvtxWithMetrics("Acquire GPU", NvtxColor.RED, waitMetric)) { _ =>
