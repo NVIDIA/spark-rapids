@@ -20,7 +20,12 @@ from data_gen import *
 from marks import ignore_order, allow_non_gpu
 from spark_session import with_cpu_session, is_databricks113_or_later
 
-_adaptive_conf = { "spark.sql.adaptive.enabled": "true", "spark.rapids.sql.debug.logTransformations": "true" }
+_adaptive_conf = { "spark.sql.adaptive.enabled": "true" }
+# Databricks-11.3 added new operator EXECUTOR_BROADCAST which does executor side broadcast.
+# SparkPlan is different as there is no BroadcastExchange which is replaced by Exchange.
+# Below config is to fall back BroadcastNestedLoopJoinExec and ShuffleExchangeExec to CPU for only Databricks-11.3
+# Follow on issue to support/investigate EXECUTOR_BROADCAST - https://github.com/NVIDIA/spark-rapids/issues/7425
+db_113_cpu_bnlj_join_allow=["BroadcastNestedLoopJoinExec", "ShuffleExchangeExec"] if is_databricks113_or_later() else []
 
 def create_skew_df(spark, length):
     root = spark.range(0, length)
@@ -137,7 +142,7 @@ joins = [
 # broadcast join. The bug currently manifests in Databricks, but could
 # theoretically show up in other Spark distributions
 @ignore_order(local=True)
-@allow_non_gpu('BroadcastNestedLoopJoinExec','BroadcastHashJoinExec', 'Cast', 'DateSub')
+@allow_non_gpu('BroadcastNestedLoopJoinExec', 'Cast', 'DateSub', *db_113_cpu_bnlj_join_allow)
 @pytest.mark.parametrize('join', joins, ids=idfn)
 def test_aqe_join_reused_exchange_inequality_condition(spark_tmp_path, join):
     data_path = spark_tmp_path + '/PARQUET_DATA'
