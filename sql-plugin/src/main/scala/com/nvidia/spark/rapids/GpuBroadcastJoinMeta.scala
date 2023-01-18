@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,14 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.nvidia.spark.rapids.shims
-
-import com.nvidia.spark.rapids._
+package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.execution.GpuBroadcastExchangeExec
 
 abstract class GpuBroadcastJoinMeta[INPUT <: SparkPlan](plan: INPUT,
     conf: RapidsConf,
@@ -34,10 +32,8 @@ abstract class GpuBroadcastJoinMeta[INPUT <: SparkPlan](plan: INPUT,
           bqse.plan.isInstanceOf[ReusedExchangeExec] &&
           bqse.plan.asInstanceOf[ReusedExchangeExec]
               .child.isInstanceOf[GpuBroadcastExchangeExec]
-      case sqse: ShuffleQueryStageExec => sqse.plan.isInstanceOf[GpuShuffleExchangeExecBase]
-      case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExec] ||
-          reused.child.isInstanceOf[GpuShuffleExchangeExecBase]
-      case _: GpuBroadcastExchangeExec | _: GpuShuffleExchangeExecBase => true
+      case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExec]
+      case _: GpuBroadcastExchangeExec => true
       case _ => buildSide.canThisBeReplaced
     }
   }
@@ -48,10 +44,8 @@ abstract class GpuBroadcastJoinMeta[INPUT <: SparkPlan](plan: INPUT,
           bqse.plan.isInstanceOf[ReusedExchangeExec] &&
               bqse.plan.asInstanceOf[ReusedExchangeExec]
                   .child.isInstanceOf[GpuBroadcastExchangeExec]
-      case sqse: ShuffleQueryStageExec => sqse.plan.isInstanceOf[GpuShuffleExchangeExecBase]
-      case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExec] ||
-          reused.child.isInstanceOf[GpuShuffleExchangeExecBase]
-      case _: GpuBroadcastExchangeExec | _: GpuShuffleExchangeExecBase => true
+      case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExec]
+      case _: GpuBroadcastExchangeExec => true
       case _ => false
     }
     if (!buildSideOnGpu) {

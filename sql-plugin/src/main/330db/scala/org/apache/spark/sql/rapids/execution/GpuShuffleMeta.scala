@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExec, RapidsConf, Ra
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
 import org.apache.spark.sql.execution.exchange.{EXECUTOR_BROADCAST, ShuffleExchangeExec}
-import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
+import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
 
 
 class GpuShuffleMeta(
@@ -39,10 +39,6 @@ class GpuShuffleMeta(
       // rules for BroadcastExchange apply for whether this should be replaced or not
       case EXECUTOR_BROADCAST =>
         // Copied from GpuBroadcastMeta
-        // if (!TrampolineUtil.isSupportedRelation(shuffle.mode)) {
-        //   willNotWorkOnGpu(
-        //     "Broadcast exchange is only supported for HashedJoin or BroadcastNestedLoopJoin")
-        // }
         // ensure the outputPartitioning is SinglePartition
         if (!shuffle.outputPartitioning.equals(SinglePartition)) {
           willNotWorkOnGpu("Executor-side broadcast can only be converted" + 
@@ -51,13 +47,12 @@ class GpuShuffleMeta(
 
         def isSupported(rm: RapidsMeta[_, _, _]): Boolean = rm.wrapped match {
           case _: BroadcastHashJoinExec => true
-          case _: BroadcastNestedLoopJoinExec => true
           case _ => false
         }
         if (parent.isDefined) {
           if (!parent.exists(isSupported)) {
-            willNotWorkOnGpu("converted BroadcastExchange only works on the GPU if being used " +
-                "with a GPU version of BroadcastHashJoinExec or BroadcastNestedLoopJoinExec")
+            willNotWorkOnGpu("executor broadcast only works on the GPU if being used " +
+                "with a GPU version of BroadcastHashJoinExec")
           }
         }
 
