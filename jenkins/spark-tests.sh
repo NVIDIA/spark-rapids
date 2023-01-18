@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2019-2022, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2019-2023, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -96,8 +96,8 @@ fi
 
 tar xzf "$RAPIDS_INT_TESTS_TGZ" -C $ARTF_ROOT && rm -f "$RAPIDS_INT_TESTS_TGZ"
 
-$MVN_GET_CMD -DremoteRepositories=$SPARK_REPO \
-    -DgroupId=org.apache -DartifactId=spark -Dversion=$SPARK_VER -Dclassifier=bin-hadoop3.2 -Dpackaging=tgz
+. jenkins/hadoop-def.sh $SPARK_VER
+wget -P $ARTF_ROOT $SPARK_REPO/org/apache/spark/$SPARK_VER/spark-$SPARK_VER-$BIN_HADOOP_VER.tgz
 
 # Download parquet-hadoop jar for parquet-read encryption tests
 PARQUET_HADOOP_VER=`mvn help:evaluate -q -N -Dexpression=parquet.hadoop.version -DforceStdout -Dbuildver=${SHUFFLE_SPARK_SHIM/spark/}`
@@ -106,7 +106,7 @@ if [[ "$(printf '%s\n' "1.12.0" "$PARQUET_HADOOP_VER" | sort -V | head -n1)" = "
       -DgroupId=org.apache.parquet -DartifactId=parquet-hadoop -Dversion=$PARQUET_HADOOP_VER -Dclassifier=tests
 fi
 
-export SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-bin-hadoop3.2"
+export SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-$BIN_HADOOP_VER"
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
     rm -f $SPARK_HOME.tgz

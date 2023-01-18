@@ -198,17 +198,19 @@ This may require some modifications to IDEs' standard Maven import functionality
 
 #### IntelliJ IDEA
 
-Last tested with IntelliJ IDEA 2022.1.3 (Community Edition)
+Last tested with IntelliJ IDEA 2022.3.1 (Community Edition)
 
 To start working with the project in IDEA is as easy as
 [opening](https://blog.jetbrains.com/idea/2008/03/opening-maven-projects-is-easy-as-pie/) the top level (parent)
 [pom.xml](pom.xml).
 
+In the most recent versions of IDEA [unselect](https://www.jetbrains.com/help/idea/2022.3/maven-importing.html)
+"Import using the new IntelliJ Workspace Model API (experimental)".
 In order to make sure that IDEA handles profile-specific source code roots within a single Maven module correctly,
-[unselect](https://www.jetbrains.com/help/idea/2021.2/maven-importing.html) "Keep source and test folders on reimport".
+[unselect](https://www.jetbrains.com/help/idea/2022.3/maven-importing.html) "Keep source and test folders on reimport".
 
 If you develop a feature that has to interact with the Shim layer or simply need to test the Plugin with a different
-Spark version, open [Maven tool window](https://www.jetbrains.com/help/idea/2021.2/maven-projects-tool-window.html) and
+Spark version, open [Maven tool window](https://www.jetbrains.com/help/idea/2022.3/maven-projects-tool-window.html) and
 select one of the `release3xx` profiles (e.g, `release320`) for Apache Spark 3.2.0.
 
 Go to `File | Settings | Build, Execution, Deployment | Build Tools | Maven | Importing` and make sure

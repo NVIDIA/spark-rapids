@@ -53,3 +53,12 @@ GPU accelerated. These operations will fallback to the CPU.
 [Automatic optimization](https://docs.databricks.com/optimizations/auto-optimize.html)
 during Delta Lake writes is not supported. Write operations that are configured to
 automatically optimize or automatically compact will fallback to the CPU.
+
+### RapidsDeltaWrite Node in Query Plans
+
+A side-effect of performing a GPU accelerated Delta Lake write is a new node will appear in the
+query plan, RapidsDeltaWrite. Normally the writing of Delta Lake files is not represented by a
+dedicated node in query plans, as it is implicitly covered by higher-level operations such as
+SaveIntoDataSourceCommand that wrap the entire query along with the write operation afterwards.
+The RAPIDS Accelerator places a node in the plan being written to mark the point at which the
+write occurs and adds statistics showing the time spent performing the low-level write operation.

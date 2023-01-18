@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.
+# Copyright (c) 2021-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import pyspark.sql.functions as f
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect
 from data_gen import *
 from conftest import is_databricks_runtime
 from marks import approximate_float, allow_non_gpu, ignore_order
-
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_spark_330_or_later
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
 
 json_supported_gens = [
     # Spark does not escape '\r' or '\n' even though it uses it to mark end of record
@@ -359,3 +359,12 @@ def test_json_read_count(spark_tmp_path, v1_enabled_list):
     assert_gpu_and_cpu_row_counts_equal(
             lambda spark : spark.read.schema(schema).json(data_path),
             conf=updated_conf)
+
+def test_from_json_map():
+    # The test here is working around some inconsistencies in how the keys are parsed for maps
+    # on the GPU the keys are dense, but on the CPU they are sparse
+    json_string_gen = StringGen(r'{"a": "[0-9]{0,5}"(, "b": "[A-Z]{0,5}")?}')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.from_json(f.col('a'), 'MAP<STRING,STRING>')),
+        conf={"spark.rapids.sql.expression.JsonToStructs": "true"})

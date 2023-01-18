@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -78,13 +78,20 @@ public final class HashedPriorityQueue<T> extends AbstractQueue<T> {
   @Override
   public boolean offer(T obj) {
     ensureCapacityToInsert();
-    // Start with the new object at the bottom of the heap and sift it up
-    // until heap properties are restored.
     MutableInt location = new MutableInt(size);
-    locationMap.put(obj, location);
-    size += 1;
-    siftUp(obj, location);
-    return true;
+    MutableInt oldLocation = locationMap.putIfAbsent(obj, location);
+    if (oldLocation == null) {
+      // Inserted a new object since we didn't have a prior location.
+      // Start with the new object at the bottom of the heap and sift it up
+      // until heap properties are restored.
+      size += 1;
+      siftUp(obj, location);
+      return true;
+    } else {
+      // we return false in the case where the object is already
+      // in the locationMap
+      return false;
+    }
   }
 
   @Override

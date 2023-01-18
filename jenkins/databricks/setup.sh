@@ -36,5 +36,32 @@ if [ -f $SPARK_HOME/conf/spark-env.sh ]; then
     sudo chmod 777 `echo $local_dir | xargs`
 fi
 
-# Install Python modules for integration test
-sudo pip install pytest sre_yield pandas pyarrow
+CONDA_HOME=${CONDA_HOME:-"/databricks/conda"}
+
+# Try to use "cudf-udf" conda environment for the python cudf-udf tests.
+if [ -d "${CONDA_HOME}/envs/cudf-udf" ]; then
+    export PATH=${CONDA_HOME}/envs/cudf-udf/bin:${CONDA_HOME}/bin:$PATH
+    export PYSPARK_PYTHON=${CONDA_HOME}/envs/cudf-udf/bin/python
+fi
+
+# Get Python version (major.minor). i.e., python3.8 for DB10.4 and python3.9 for DB11.3
+python_version=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
+
+# override incompatible versions between databricks and cudf
+if [ -d "${CONDA_HOME}/envs/cudf-udf" ]; then
+    CONDA_SITE_PATH="${CONDA_HOME}/envs/cudf-udf/lib/${python_version}/site-packages"
+    PATCH_PACKAGES_PATH="$PWD/package-overrides/${python_version}"
+    mkdir -p ${PATCH_PACKAGES_PATH}
+    TO_PATCH=(
+        google
+        llvmlite
+        numba
+        numpy
+        pyarrow
+    )
+
+    echo creating symlinks to override conflicting packages
+    for p in "${TO_PATCH[@]}"; do
+        ln -f -s ${CONDA_SITE_PATH}/${p} ${PATCH_PACKAGES_PATH}
+    done
+fi

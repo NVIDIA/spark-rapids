@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -3175,7 +3175,7 @@ object GpuOverrides extends Logging {
       }),
     expr[Reverse](
       "Returns a reversed string or an array with reverse order of elements",
-      ExprChecks.unaryProject(TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all), 
+      ExprChecks.unaryProject(TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all),
         TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all),
         TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all),
         TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all)),
@@ -3281,7 +3281,7 @@ object GpuOverrides extends Logging {
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-              TypeSig.NULL + 
+              TypeSig.NULL +
               TypeSig.STRUCT +
               TypeSig.ARRAY).nested(),
           TypeSig.all))),
@@ -3428,6 +3428,52 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new BinaryExprMeta[GetJsonObject](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGetJsonObject(lhs, rhs)
+      }
+    ),
+    expr[JsonToStructs](
+      "Returns a struct value with the given `jsonStr` and `schema`",
+      ExprChecks.projectOnly(
+        TypeSig.MAP.nested(TypeSig.STRING),
+        (TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(TypeSig.all),
+        Seq(ParamCheck("jsonStr", TypeSig.STRING, TypeSig.STRING))),
+      (a, conf, p, r) => new UnaryExprMeta[JsonToStructs](a, conf, p, r) {
+        override def tagExprForGpu(): Unit =
+          GpuJsonScan.tagJsonToStructsSupport(a.options, this)
+
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuJsonToStructs(a.schema, a.options, child, a.timeZoneId)
+      }).disabledByDefault("parsing JSON from a column has a large number of issues and " +
+      "should be considered beta quality right now."),
+    expr[JsonTuple](
+      "Returns a tuple like the function get_json_object, but it takes multiple names. " + 
+        "All the input parameters and output column types are string.",
+      ExprChecks.projectOnly(
+        TypeSig.ARRAY.nested(TypeSig.STRUCT + TypeSig.STRING),
+        TypeSig.ARRAY.nested(TypeSig.STRUCT + TypeSig.STRING),
+        Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING)),
+        Some(RepeatingParamCheck("field", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+      (a, conf, p, r) => new GeneratorExprMeta[JsonTuple](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (childExprs.length >= 50) {
+            // If the number of field parameters is too large, fall back to CPU to avoid 
+            // potential performance problems.
+            willNotWorkOnGpu("JsonTuple with large number of fields is not supported on GPU")
+          }
+          // If any field argument contains special characters as follows, fall back to CPU.
+          (a.children.tail).map { fieldExpr =>
+            extractLit(fieldExpr).foreach { field => 
+              if (field.value != null) {
+                val fieldStr = field.value.asInstanceOf[UTF8String].toString
+                val specialCharacters = List(".", "[", "]", "{", "}", "\\", "\'", "\"")
+                if (specialCharacters.exists(fieldStr.contains(_))) {
+                  willNotWorkOnGpu(s"""JsonTuple with special character in field \"$fieldStr\" """
+                     + "is not supported on GPU")
+                }
+              }
+            }
+          }
+        }
+        override def convertToGpu(): GpuExpression = GpuJsonTuple(childExprs.map(_.convertToGpu()))
       }
     ),
     expr[org.apache.spark.sql.execution.ScalarSubquery](
@@ -4048,7 +4094,8 @@ object GpuOverrides extends Logging {
   ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[SparkPlan]), r) }.toMap
 
   lazy val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
-    commonExecs ++ SparkShimImpl.getExecs ++ GpuHiveOverrides.execs
+    commonExecs ++ GpuHiveOverrides.execs ++ ExternalSource.execRules ++
+      SparkShimImpl.getExecs // Shim execs at the end; shims get the last word in substitutions.
 
   def getTimeParserPolicy: TimeParserPolicy = {
     val policy = SQLConf.get.getConfString(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "EXCEPTION")
@@ -4355,7 +4402,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
           logDebug(s"Fallback for RDDScanExec delta log: $rdd")
         }
         found
-      case aqe: AdaptiveSparkPlanExec if 
+      case aqe: AdaptiveSparkPlanExec if
         !AQEUtils.isAdaptiveExecutionSupportedInSparkVersion(plan.conf) =>
         logDebug(s"AdaptiveSparkPlanExec found on unsupported Spark Version: $aqe")
         true

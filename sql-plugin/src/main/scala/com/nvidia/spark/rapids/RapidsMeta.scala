@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import java.time.ZoneId
 
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.shims.SparkShimImpl
+import com.nvidia.spark.rapids.shims.{DistributionUtil, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
@@ -707,6 +707,13 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     if (!childRunnableCmds.forall(_.canThisBeReplaced)) {
       willNotWorkOnGpu("not all commands can be replaced")
     }
+    // All ExecMeta extend SparkMeta. We need to check if the requiredChildDistribution
+    // is recognized or not. If it's unrecognized Distribution then we fall back to CPU.
+    plan.requiredChildDistribution.foreach { d =>
+      if (!DistributionUtil.isSupported(d)) {
+        willNotWorkOnGpu(s"unsupported required distribution: $d")
+      }
+    }
 
     checkExistingTags()
 
@@ -1375,6 +1382,9 @@ final class RuleNotFoundRunnableCommandMeta[INPUT <: RunnableCommand](
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]])
     extends RunnableCommandMeta[INPUT](cmd, conf, parent, new NoRuleDataFromReplacementRule) {
+
+  // Do not complain by default, as many commands are metadata-only.
+  override def suppressWillWorkOnGpuInfo: Boolean = true
 
   override def tagSelfForGpu(): Unit =
     willNotWorkOnGpu(s"GPU does not currently support the command ${cmd.getClass}")
