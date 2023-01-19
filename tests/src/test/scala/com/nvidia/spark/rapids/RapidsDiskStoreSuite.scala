@@ -181,7 +181,7 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
             devStore.synchronousSpill(0)
             hostStore.synchronousSpill(0)
             assert(bufferPath.exists)
-            catalog.removeBuffer(handle)
+            handle.close()
             if (canShareDiskPaths) {
               assert(bufferPath.exists())
             } else {
