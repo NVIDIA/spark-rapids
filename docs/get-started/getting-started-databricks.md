@@ -55,7 +55,8 @@ The number of GPUs per node dictates the number of Spark executors that can run 
     detected.
 5. In Databricks 11.3, an incorrect result is returned for window frames defined by a range in case 
    of DecimalTypes with precision greater than 38. There is a bug filed in Apache Spark for it 
-   [here](https://issues.apache.org/jira/browse/SPARK-41793)
+   [here](https://issues.apache.org/jira/browse/SPARK-41793), whereas when using the plugin the 
+   correct result will be returned.  
 	
 ## Start a Databricks Cluster
 Create a Databricks cluster by going to "Compute", then clicking `+ Create compute`.  Ensure the
