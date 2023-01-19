@@ -18,7 +18,7 @@ package org.apache.spark.sql.hive.rapids.shims
 
 import ai.rapids.cudf.{CSVWriterOptions, QuoteStyle, Table, TableWriter}
 import com.google.common.base.Charsets
-import com.nvidia.spark.rapids.{ColumnarFileFormat, ColumnarOutputWriter, ColumnarOutputWriterFactory, FileFormatChecks, HiveDelimitedTextFormatType, WriteFileOp}
+import com.nvidia.spark.rapids.{ColumnarFileFormat, ColumnarOutputWriter, ColumnarOutputWriterFactory, FileFormatChecks, HiveDelimitedTextFormatType, RapidsConf, WriteFileOp}
 import java.nio.charset.Charset
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
 
@@ -29,8 +29,20 @@ import org.apache.spark.sql.types.{DataType, StructType}
 
 object GpuHiveTextFileFormat extends Logging {
 
+  private def checkIfEnabled(meta: GpuInsertIntoHiveTableMeta): Unit = {
+    if (!meta.conf.isHiveDelimitedTextEnabled) {
+      meta.willNotWorkOnGpu("Hive text I/O has been disabled. To enable this, " +
+        s"set ${RapidsConf.ENABLE_HIVE_TEXT} to true")
+    }
+    if (!meta.conf.isHiveDelimitedTextWriteEnabled) {
+      meta.willNotWorkOnGpu("writing Hive delimited text tables has been disabled, " +
+        s"to enable this, set ${RapidsConf.ENABLE_HIVE_TEXT_WRITE} to true")
+    }
+  }
+
   def tagGpuSupport(meta: GpuInsertIntoHiveTableMeta)
-    : Option[ColumnarFileFormat] = {
+  : Option[ColumnarFileFormat] = {
+    checkIfEnabled(meta)
 
     val insertCommand = meta.wrapped
     val storage  = insertCommand.table.storage

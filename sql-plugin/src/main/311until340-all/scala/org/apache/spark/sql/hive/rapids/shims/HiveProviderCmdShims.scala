@@ -29,12 +29,15 @@ trait HiveProviderCmdShims extends HiveProvider {
    */
   override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
       DataWritingCommandRule[_ <: DataWritingCommand]] = Seq (
+
     GpuOverrides.dataWriteCmd[OptimizedCreateHiveTableAsSelectCommand](
       "Create a Hive table from a query result using Spark data source APIs",
       (a, conf, p, r) => new OptimizedCreateHiveTableAsSelectCommandMeta(a, conf, p, r)),
+
     GpuOverrides.dataWriteCmd[InsertIntoHiveTable](
       desc = "Command to write to Hive Tables",
       (insert, conf, parent, rule) => new GpuInsertIntoHiveTableMeta(insert, conf, parent, rule))
+
   ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
 
   override def getRunnableCmds: Map[Class[_ <: RunnableCommand],

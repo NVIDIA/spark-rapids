@@ -45,7 +45,6 @@ import org.apache.spark.sql.types.{DataType, DoubleType, FloatType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 private object RapidsHiveErrors {
-
   // Lifted from org.apache.spark.sql.errors.QueryErrorsBase.
   // Converts an error class parameter to its SQL representation
   def toSQLValue(v: Any, t: DataType): String = Literal.create(v, t) match {
@@ -104,9 +103,11 @@ private object RapidsHiveErrors {
 // Base trait from which all hive insert statement physical execution extends.
 private[hive] trait GpuSaveAsHiveFile extends GpuDataWritingCommand with SaveAsHiveFile {
 
-  // TODO(future): Apache Spark 3.3 handles file compression options,
-  //               (and takes a FileSinkDesc instead of FileFormat).
-  //               GPU Hive text writer does not support compression for output.
+  // TODO(future): Examine compressions options.
+  // - Apache Spark 3.1-3 has code to examine Hadoop compression settings
+  //   (and takes a FileSinkDesc instead of FileFormat).
+  // - Apache Spark 3.4 has removed all that logic.
+  // - GPU Hive text writer does not support compression for output.
   protected def gpuSaveAsHiveFile(sparkSession: SparkSession,
                                plan: SparkPlan,
                                hadoopConf: Configuration,
