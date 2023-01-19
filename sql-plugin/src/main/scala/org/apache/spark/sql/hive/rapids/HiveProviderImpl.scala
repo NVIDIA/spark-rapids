@@ -29,6 +29,7 @@ import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
 import org.apache.spark.sql.hive.execution.HiveTableScanExec
+import org.apache.spark.sql.hive.rapids.GpuHiveTextFileUtils._
 import org.apache.spark.sql.hive.rapids.shims.HiveProviderCmdShims
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
@@ -204,16 +205,6 @@ class HiveProviderImpl extends HiveProviderCmdShims {
             if (!conf.isHiveDelimitedTextReadEnabled) {
               willNotWorkOnGpu("reading Hive delimited text tables has been disabled, " +
                                s"to enable this, set ${RapidsConf.ENABLE_HIVE_TEXT_READ} to true")
-            }
-          }
-
-          private def hasUnsupportedType(column: AttributeReference): Boolean = {
-            column.dataType match {
-              case ArrayType(_,_) => true
-              case StructType(_)  => true
-              case MapType(_,_,_) => true
-              case BinaryType     => true
-              case _              => false
             }
           }
 

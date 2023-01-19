@@ -25,19 +25,9 @@ import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.hive.rapids.GpuHiveTextFileUtils._
-import org.apache.spark.sql.types.{ArrayType, BinaryType, DataType, MapType, StructField, StructType}
+import org.apache.spark.sql.types.{DataType, StructType}
 
 object GpuHiveTextFileFormat extends Logging {
-
-  def isSupportedType(dataType: DataType): Boolean = dataType match {
-    case ArrayType(_,_) => false
-    case StructType(_)  => false
-    case MapType(_,_,_) => false
-    case BinaryType     => false
-    case _              => true
-  }
-
-  def hasUnsupportedType(column: StructField): Boolean = !isSupportedType(column.dataType)
 
   def tagGpuSupport(meta: GpuInsertIntoHiveTableMeta)
     : Option[ColumnarFileFormat] = {
@@ -94,8 +84,7 @@ object GpuHiveTextFileFormat extends Logging {
 
 class GpuHiveTextFileFormat extends ColumnarFileFormat with Logging {
 
-  override def supportDataType(dataType: DataType): Boolean =
-    GpuHiveTextFileFormat.isSupportedType(dataType)
+  override def supportDataType(dataType: DataType): Boolean = isSupportedType(dataType)
 
   override def prepareWrite(sparkSession: SparkSession,
                             job: Job,

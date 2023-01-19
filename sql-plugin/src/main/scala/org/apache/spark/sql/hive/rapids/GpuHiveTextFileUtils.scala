@@ -15,6 +15,9 @@
  */
 package org.apache.spark.sql.hive.rapids
 
+import org.apache.spark.sql.catalyst.expressions.AttributeReference
+import org.apache.spark.sql.types.{ArrayType, BinaryType, DataType, MapType, StructField, StructType}
+
 object GpuHiveTextFileUtils {
   val textInputFormat      = "org.apache.hadoop.mapred.TextInputFormat"
   val textOutputFormat     = "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat"
@@ -24,4 +27,15 @@ object GpuHiveTextFileUtils {
   val lineDelimiterKey     = "line.delim"
   val escapeDelimiterKey   = "escape.delim"
   val newLine              = "\n"
+
+  def isSupportedType(dataType: DataType): Boolean = dataType match {
+    case ArrayType(_,_) => false
+    case StructType(_)  => false
+    case MapType(_,_,_) => false
+    case BinaryType     => false
+    case _              => true
+  }
+
+  def hasUnsupportedType(column: StructField): Boolean = !isSupportedType(column.dataType)
+  def hasUnsupportedType(column: AttributeReference): Boolean = !isSupportedType(column.dataType)
 }
