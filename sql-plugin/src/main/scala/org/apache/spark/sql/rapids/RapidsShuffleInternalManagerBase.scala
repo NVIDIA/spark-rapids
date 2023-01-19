@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import java.util.concurrent.{Callable, ConcurrentHashMap, ExecutionException, Ex
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 
 import scala.collection.mutable
-import scala.collection.mutable.{ArrayBuffer, ListBuffer}
+import scala.collection.mutable.ListBuffer
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
@@ -881,12 +881,14 @@ class RapidsCachingWriter[K, V](
     mapId: Long,
     metricsReporter: ShuffleWriteMetricsReporter,
     catalog: ShuffleBufferCatalog,
-    shuffleStorage: RapidsDeviceMemoryStore,
     rapidsShuffleServer: Option[RapidsShuffleServer],
-    metrics: Map[String, SQLMetric]) extends ShuffleWriter[K, V] with Logging {
+    metrics: Map[String, SQLMetric])
+  extends ShuffleWriter[K, V]
+    with Logging
+    with Arm {
   private val numParts = handle.dependency.partitioner.numPartitions
   private val sizes = new Array[Long](numParts)
-  private val writtenBufferIds = new ArrayBuffer[ShuffleBufferId](numParts)
+
   private val uncompressedMetric: SQLMetric = metrics("dataSize")
 
   override def write(records: Iterator[Product2[K, V]]): Unit = {
@@ -904,45 +906,49 @@ class RapidsCachingWriter[K, V](
         recordsWritten = recordsWritten + batch.numRows()
         var partSize: Long = 0
         val blockId = ShuffleBlockId(handle.shuffleId, mapId, partId)
-        val bufferId = catalog.nextShuffleBufferId(blockId)
         if (batch.numRows > 0 && batch.numCols > 0) {
           // Add the table to the shuffle store
-          batch.column(0) match {
+          val handle = batch.column(0) match {
             case c: GpuPackedTableColumn =>
               val contigTable = c.getContiguousTable
               partSize = c.getTableBuffer.getLength
               uncompressedMetric += partSize
-              shuffleStorage.addContiguousTable(
-                bufferId,
+              catalog.addContiguousTable(
+                blockId,
                 contigTable,
                 SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY,
+                RapidsBuffer.defaultSpillCallback,
                 // we don't need to sync here, because we sync on the cuda
                 // stream after sliceInternalOnGpu (contiguous_split)
                 needsSync = false)
             case c: GpuCompressedColumnVector =>
               val buffer = c.getTableBuffer
-              buffer.incRefCount()
               partSize = buffer.getLength
               val tableMeta = c.getTableMeta
-              // update the table metadata for the buffer ID generated above
-              tableMeta.bufferMeta.mutateId(bufferId.tableId)
               uncompressedMetric += tableMeta.bufferMeta().uncompressedSize()
-              shuffleStorage.addBuffer(
-                bufferId,
+              catalog.addBuffer(
+                blockId,
                 buffer,
                 tableMeta,
                 SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY,
+                RapidsBuffer.defaultSpillCallback,
                 // we don't need to sync here, because we sync on the cuda
                 // stream after compression.
                 needsSync = false)
-            case c => throw new IllegalStateException(s"Unexpected column type: ${c.getClass}")
+            case c =>
+              throw new IllegalStateException(s"Unexpected column type: ${c.getClass}")
           }
           bytesWritten += partSize
           sizes(partId) += partSize
+          handle
         } else {
           // no device data, tracking only metadata
           val tableMeta = MetaUtils.buildDegenerateTableMeta(batch)
-          catalog.registerNewBuffer(new DegenerateRapidsBuffer(bufferId, tableMeta))
+          val handle =
+            catalog.addDegenerateRapidsBuffer(
+              blockId,
+              tableMeta,
+              RapidsBuffer.defaultSpillCallback)
 
           // The size of the data is really only used to tell if the data should be shuffled or not
           // a 0 indicates that we should not shuffle anything.  This is here for the special case
@@ -952,8 +958,8 @@ class RapidsCachingWriter[K, V](
           if (batch.numRows > 0) {
             sizes(partId) += 100
           }
+          handle
         }
-        writtenBufferIds.append(bufferId)
       }
       metricsReporter.incBytesWritten(bytesWritten)
       metricsReporter.incRecordsWritten(recordsWritten)
@@ -966,7 +972,7 @@ class RapidsCachingWriter[K, V](
    * Used to remove shuffle buffers when the writing task detects an error, calling `stop(false)`
    */
   private def cleanStorage(): Unit = {
-    writtenBufferIds.foreach(catalog.removeBuffer)
+    catalog.removeCachedHandles()
   }
 
   override def stop(success: Boolean): Option[MapStatus] = {
@@ -1120,8 +1126,8 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
       val catalog = getCatalogOrThrow
       val requestHandler = new RapidsShuffleRequestHandler() {
         override def acquireShuffleBuffer(tableId: Int): RapidsBuffer = {
-          val shuffleBufferId = catalog.getShuffleBufferId(tableId)
-          catalog.acquireBuffer(shuffleBufferId)
+          val handle = catalog.getShuffleBufferHandle(tableId)
+          catalog.acquireBuffer(handle)
         }
 
         override def getShuffleBufferMetas(sbbId: ShuffleBlockBatchId): Seq[TableMeta] = {
@@ -1191,7 +1197,6 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
           mapId,
           metricsReporter,
           getCatalogOrThrow,
-          RapidsBufferCatalog.getDeviceStorage,
           server,
           gpu.dependency.metrics)
       case bmssh: BypassMergeSortShuffleHandle[_, _] =>
