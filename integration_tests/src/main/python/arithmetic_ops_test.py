@@ -389,8 +389,8 @@ def test_mod_mixed_decimal(lhs, rhs):
 
 # @pytest.mark.xfail(reason='BUG https://github.com/NVIDIA/spark-rapids/issues/7553')
 @pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 5),
-    DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3), DecimalGen(4, 2), 
-    DecimalGen(3, -2), DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)
+    DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(3, -2), 
+    DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)
     ], ids=idfn)
 @pytest.mark.parametrize('rhs', [ byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 3),
     DecimalGen(10, -2), DecimalGen(15, 3), DecimalGen(30, 12), DecimalGen(3, -3),
