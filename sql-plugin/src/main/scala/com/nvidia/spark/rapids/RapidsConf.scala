@@ -468,7 +468,6 @@ object RapidsConf {
           "Tasks may temporarily block when the number of concurrent tasks in the executor " +
           "exceeds this amount. Allowing too many concurrent tasks on the same GPU may lead to " +
           "GPU out of memory errors.")
-      .startupOnly()
       .integerConf
       .createWithDefault(1)
 
