@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,35 +20,20 @@ import java.nio.charset.Charset
 
 import com.google.common.base.Charsets
 import com.nvidia.spark.RapidsUDF
-import com.nvidia.spark.rapids.{DataWritingCommandRule, ExecChecks, ExecRule, ExprChecks, ExprMeta, ExprRule, GpuExec, GpuExpression, GpuOverrides, HiveProvider, OptimizedCreateHiveTableAsSelectCommandMeta, RapidsConf, RepeatingParamCheck, SparkPlanMeta, TypeSig}
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.sql.catalyst.catalog.{CatalogStorageFormat, HiveTableRelation}
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
-import org.apache.spark.sql.hive.execution.{HiveTableScanExec, InsertIntoHiveTable, OptimizedCreateHiveTableAsSelectCommand}
+import org.apache.spark.sql.hive.execution.HiveTableScanExec
+import org.apache.spark.sql.hive.rapids.shims.HiveProviderCmdShims
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
-class HiveProviderImpl extends HiveProvider {
-
-  /**
-   * Builds the data writing command rules that are specific to spark-hive Catalyst nodes.
-   */
-  override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
-      DataWritingCommandRule[_ <: DataWritingCommand]] = Seq (
-
-    GpuOverrides.dataWriteCmd[OptimizedCreateHiveTableAsSelectCommand](
-      "Create a Hive table from a query result using Spark data source APIs",
-      (a, conf, p, r) => new OptimizedCreateHiveTableAsSelectCommandMeta(a, conf, p, r)),
-
-    GpuOverrides.dataWriteCmd[InsertIntoHiveTable](
-      desc = "Command to write to Hive Tables",
-      (insert, conf, parent, rule) => new GpuInsertIntoHiveTableMeta(insert, conf, parent, rule))
-  ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
+class HiveProviderImpl extends HiveProviderCmdShims {
 
   /**
    * Builds the expression rules that are specific to spark-hive Catalyst nodes.

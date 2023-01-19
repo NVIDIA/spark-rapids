@@ -214,16 +214,6 @@ then the node must release the semaphore by calling
 acquires the semaphore for the first time.  This prevents task failures from
 leaking references to the semaphore and possibly causing deadlocks.
 
-#### Disabling the Semaphore
-If there is ever a need to execute without the semaphore semantics, the
-semaphore code can be disabled at runtime by setting the Java system property
-`com.nvidia.spark.rapids.semaphore.enabled` to `false` before the `GpuSemaphore` class
-is loaded.  Typically this would be set as one of the Spark executor Java
-options, e.g.:
-```
---conf spark.executor.extraJavaOptions=-Dcom.nvidia.spark.rapids.semaphore.enabled=false
-```
-
 ## Debugging Tips
 An easy way to debug the plugin is to run in
 [Spark local mode](https://spark.apache.org/docs/latest/submitting-applications.html#master-urls).

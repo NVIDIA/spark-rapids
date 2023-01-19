@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -56,8 +56,14 @@ class RapidsDiskStore(
         copyBufferToPath(hostBuffer, path, append = false)
       }
       logDebug(s"Spilled to $path $fileOffset:${incoming.size}")
-      new this.RapidsDiskBuffer(id, fileOffset, incoming.size, incoming.meta,
-        incoming.getSpillPriority, incoming.spillCallback, deviceStorage)
+      new RapidsDiskBuffer(
+        id,
+        fileOffset,
+        incoming.size,
+        incoming.meta,
+        incoming.getSpillPriority,
+        incoming.getSpillCallback,
+        deviceStorage)
     }
   }
 

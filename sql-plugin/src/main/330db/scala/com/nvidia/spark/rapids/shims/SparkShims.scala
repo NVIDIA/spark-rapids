@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import org.apache.parquet.schema.MessageType
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.trees.TreePattern._
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 
@@ -50,6 +51,19 @@ object SparkShimImpl extends Spark321PlusDBShims {
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     super.getExecs ++ PythonMapInArrowExecShims.execs
+
+  override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
+      DataWritingCommandRule[_ <: DataWritingCommand]] = {
+    Seq(GpuOverrides.dataWriteCmd[CreateDataSourceTableAsSelectCommand](
+    "Create table with select command",
+    (a, conf, p, r) => new CreateDataSourceTableAsSelectCommandMeta(a, conf, p, r))
+    ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
+  }
+
+  override def getRunnableCmds: Map[Class[_ <: RunnableCommand],
+      RunnableCommandRule[_ <: RunnableCommand]] = {
+      Map.empty
+  }
 
   override def reproduceEmptyStringBug: Boolean = false
 }
