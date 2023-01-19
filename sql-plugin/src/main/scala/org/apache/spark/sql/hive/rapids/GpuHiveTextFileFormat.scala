@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.hive.rapids
 
-import ai.rapids.cudf.{Table, TableWriter}
+import ai.rapids.cudf.{CSVWriterOptions, QuoteStyle, Table, TableWriter}
 import com.google.common.base.Charsets
 import com.nvidia.spark.rapids.{ColumnarFileFormat, ColumnarOutputWriter, ColumnarOutputWriterFactory, FileFormatChecks, HiveDelimitedTextFormatType, WriteFileOp}
 import java.nio.charset.Charset
@@ -103,7 +103,7 @@ class GpuHiveTextFileFormat extends ColumnarFileFormat with Logging {
                             options: Map[String, String],
                             dataSchema: StructType): ColumnarOutputWriterFactory = {
     new ColumnarOutputWriterFactory {
-      override def getFileExtension(context: TaskAttemptContext): String = "txt"
+      override def getFileExtension(context: TaskAttemptContext): String = ".txt"
 
       override def newInstance(path: String,
                                dataSchema: StructType,
@@ -119,14 +119,14 @@ class GpuHiveTextWriter(override val path: String,
                         context: TaskAttemptContext)
   extends ColumnarOutputWriter(context, dataSchema, "HiveText") {
   override val tableWriter: TableWriter = {
-    val writeOptions = ai.rapids.cudf.CSVWriterOptions.builder()
+    val writeOptions = CSVWriterOptions.builder()
       .withFieldDelimiter('\u0001')
       .withRowDelimiter("\n")
       .withIncludeHeader(false)
       .withTrueValue("true")
       .withFalseValue("false")
       .withNullValue("\\N")
-      // .withQuoteStyle(QuoteStyle.NONE) // TODO: Enable after available in spark-rapids-jni.
+      .withQuoteStyle(QuoteStyle.NONE)
 
     Table.getCSVBufferWriter(writeOptions.build, this)
   }
