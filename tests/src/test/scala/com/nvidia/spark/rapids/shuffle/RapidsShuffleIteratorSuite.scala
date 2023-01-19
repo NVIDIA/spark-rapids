@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shuffle
 
-import com.nvidia.spark.rapids.{RapidsBuffer, ShuffleReceivedBufferId}
+import com.nvidia.spark.rapids.{RapidsBuffer, RapidsBufferHandle}
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
@@ -181,19 +181,18 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
     val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
     when(mockTransport.makeClient(any())).thenReturn(client)
     doNothing().when(client).doFetch(any(), ac.capture())
-    val bufferId = ShuffleReceivedBufferId(1)
     val mockBuffer = mock[RapidsBuffer]
 
     val cb = new ColumnarBatch(Array.empty, 10)
-
+    val handle = mock[RapidsBufferHandle]
     when(mockBuffer.getColumnarBatch(Array.empty)).thenReturn(cb)
-    when(mockCatalog.acquireBuffer(any[ShuffleReceivedBufferId]())).thenReturn(mockBuffer)
+    when(mockCatalog.acquireBuffer(any[RapidsBufferHandle]())).thenReturn(mockBuffer)
     doNothing().when(mockCatalog).removeBuffer(any())
     cl.start()
 
     val handler = ac.getValue.asInstanceOf[RapidsShuffleFetchHandler]
     handler.start(1)
-    handler.batchReceived(bufferId)
+    handler.batchReceived(handle)
 
     verify(mockTransport, times(0)).cancelPending(handler)
 
