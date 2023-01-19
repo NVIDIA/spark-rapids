@@ -161,6 +161,15 @@ per task may be too low to achieve the desired concurrency. See the
 [section on configuring the number of tasks per executor](#number-of-tasks-per-executor) for more
 details.
 
+This value can be set on a per-job basis like most other configs. If multiple tasks are running
+at the same time with different concurrency levels, then it is interpreted as how much of the
+GPU each task is allowed to use (1/concurrentGpuTasks). For example if the concurrency is set
+to 1, then each task is assumed to take the entire GPU, so only one of those tasks will
+be allowed on the GPU at a time. If it is set to 2, then each task takes 1/2 of the GPU
+and up to 2 of them could be on the GPU at once. This also works for mixing tasks with
+different settings. For example 1 task with a concurrency of 2 could share the GPU with
+2 tasks that have a concurrency of 4. In practice this is not likely to show up frequently.
+
 ## Shuffle Partitions
 Configuration key:
 [`spark.sql.shuffle.partitions`](https://spark.apache.org/docs/latest/sql-performance-tuning.html#other-configuration-options)

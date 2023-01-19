@@ -263,9 +263,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         }
       }
 
-      val concurrentGpuTasks = conf.concurrentGpuTasks
-      logInfo(s"The number of concurrent GPU tasks allowed is $concurrentGpuTasks")
-      GpuSemaphore.initialize(concurrentGpuTasks)
+      GpuSemaphore.initialize()
     } catch {
       // Exceptions in executor plugin can cause a single thread to die but the executor process
       // sticks around without any useful info until it hearbeat times out. Print what happened
