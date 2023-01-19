@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -80,7 +80,7 @@ case class GpuBatchScanExec(
 
           val newRows = new InternalRowSet(p.expressions.map(_.dataType))
           newRows ++= newPartitions.map(_.asInstanceOf[HasPartitionKey].partitionKey())
-          val oldRows = p.partitionValuesOpt.get
+          val oldRows = KeyGroupedPartitioningShim.getPartitionValues(p)
 
           if (oldRows.size != newRows.size) {
             throw new SparkException("Data source must have preserved the original partitioning " +
