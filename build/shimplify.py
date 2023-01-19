@@ -64,6 +64,9 @@ def delete_prior_comment_if_allowed(contents, tag, filename):
     log.debug("removing comments {}:{}:{}".format(filename, opening_shim_comment_line, closing_shim_comment_line))
     del contents[opening_shim_comment_line:(closing_shim_comment_line + 1)]
 
+def git_rename(shim_file, first_shim):
+    log.debug("git rename {} to the dir of {}".format(shim_file, first_shim))
+
 def task_impl():
     """Simplifies the old version range directory system
 
@@ -107,6 +110,7 @@ def task_impl():
 
     for shim_file, bv_list in files2bv.items():
         log.debug("calling upsert_shim_json shim_file={} bv_list={}".format(shim_file, bv_list))
-        upsert_shim_json(str(shim_file), bv_list)
+        upsert_shim_json(shim_file, bv_list)
+        git_rename(shim_file, bv_list[0])
 
 task_impl()
