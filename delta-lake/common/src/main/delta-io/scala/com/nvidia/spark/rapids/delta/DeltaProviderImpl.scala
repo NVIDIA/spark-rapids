@@ -130,14 +130,14 @@ class DeltaCreatableRelationProviderMeta(
  * @note This is instantiated via reflection from ShimLoader.
  */
 class DeltaProbeImpl extends DeltaProbe {
-  override def getDeltaProvider: Option[DeltaProvider] = {
+  override def getDeltaProvider: DeltaProvider = {
     val cpuClassName = "org.apache.spark.sql.delta.sources.DeltaDataSource"
     val hasDeltaJar = UnshimmedTrampolineUtil.classIsLoadable(cpuClassName) &&
         Try(ShimLoader.loadClass(cpuClassName)).isSuccess
     if (hasDeltaJar) {
-      Some(DeltaProviderImpl)
+      DeltaProviderImpl
     } else {
-      None
+      NoDeltaProvider
     }
   }
 }

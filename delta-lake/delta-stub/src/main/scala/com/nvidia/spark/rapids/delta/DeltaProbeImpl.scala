@@ -21,5 +21,5 @@ package com.nvidia.spark.rapids.delta
  * @note This is instantiated via reflection from ShimLoader
  */
 class DeltaProbeImpl extends DeltaProbe {
-  override def getDeltaProvider: Option[DeltaProvider] = None
+  override def getDeltaProvider: DeltaProvider = NoDeltaProvider
 }

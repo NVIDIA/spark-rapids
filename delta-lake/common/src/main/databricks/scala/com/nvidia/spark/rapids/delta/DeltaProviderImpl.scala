@@ -126,5 +126,5 @@ class DeltaCreatableRelationProviderMeta(
  */
 class DeltaProbeImpl extends DeltaProbe {
   // Delta Lake is built-in for Databricks instances, so no probing is necessary.
-  override def getDeltaProvider: Option[DeltaProvider] = Some(DeltaProviderImpl)
+  override def getDeltaProvider: DeltaProvider = DeltaProviderImpl
 }

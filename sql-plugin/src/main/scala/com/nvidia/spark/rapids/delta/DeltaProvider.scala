@@ -22,9 +22,9 @@ import org.apache.spark.sql.Strategy
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.sources.CreatableRelationProvider
 
-/** Probe interface to determine if Delta Lake is available. */
+/** Probe interface to determine which Delta Lake provider to use. */
 trait DeltaProbe {
-  def getDeltaProvider: Option[DeltaProvider]
+  def getDeltaProvider: DeltaProvider
 }
 
 /** Interfaces to avoid accessing the optional Delta Lake jars directly in common code. */
@@ -39,7 +39,7 @@ trait DeltaProvider {
 
 object DeltaProvider {
   private lazy val provider = {
-    ShimLoader.newDeltaProbe().getDeltaProvider.getOrElse(NoDeltaProvider)
+    ShimLoader.newDeltaProbe().getDeltaProvider
   }
 
   def apply(): DeltaProvider = provider
