@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -468,7 +468,6 @@ object RapidsConf {
           "Tasks may temporarily block when the number of concurrent tasks in the executor " +
           "exceeds this amount. Allowing too many concurrent tasks on the same GPU may lead to " +
           "GPU out of memory errors.")
-      .startupOnly()
       .integerConf
       .createWithDefault(1)
 
@@ -1872,7 +1871,7 @@ object RapidsConf {
     if (asTable) {
       printToggleHeader("Commands\n")
     }
-    GpuOverrides.runnableCmds.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
+    GpuOverrides.commonRunnableCmds.values.toSeq.sortBy(_.tag.toString).foreach(_.confHelp(asTable))
     if (asTable) {
       printToggleHeader("Scans\n")
     }

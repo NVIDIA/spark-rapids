@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
 import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{Arm, GpuSemaphore, NoopMetric, RapidsBuffer, RapidsConf, ShuffleReceivedBufferCatalog, ShuffleReceivedBufferId}
+import com.nvidia.spark.rapids.{Arm, GpuSemaphore, NoopMetric, RapidsBuffer, RapidsBufferHandle, RapidsConf, ShuffleReceivedBufferCatalog}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -66,10 +66,9 @@ class RapidsShuffleIterator(
 
   /**
    * A result for a successful buffer received
-   * @param bufferId - the shuffle received buffer id as tracked in the catalog
+   * @param handle - the shuffle received buffer handle as tracked in the catalog
    */
-  case class BufferReceived(
-      bufferId: ShuffleReceivedBufferId) extends ShuffleClientResult
+  case class BufferReceived(handle: RapidsBufferHandle) extends ShuffleClientResult
 
   /**
    * A result for a failed attempt at receiving block metadata, or corresponding batches.
@@ -222,7 +221,7 @@ class RapidsShuffleIterator(
           def clientDone: Boolean = clientExpectedBatches > 0 &&
             clientExpectedBatches == clientResolvedBatches
 
-          def batchReceived(bufferId: ShuffleReceivedBufferId): Boolean =
+          def batchReceived(handle: RapidsBufferHandle): Boolean = {
             resolvedBatches.synchronized {
               if (taskComplete) {
                 false
@@ -235,7 +234,7 @@ class RapidsShuffleIterator(
                   }
                   totalBatchesResolved = totalBatchesResolved + 1
                   clientResolvedBatches = clientResolvedBatches + 1
-                  resolvedBatches.offer(BufferReceived(bufferId))
+                  resolvedBatches.offer(BufferReceived(handle))
 
                   if (clientDone) {
                     logDebug(s"Task: $taskAttemptId Client $blockManagerId is " +
@@ -250,6 +249,7 @@ class RapidsShuffleIterator(
                 true
               }
             }
+          }
 
           override def transferError(errorMessage: String, throwable: Throwable): Unit = {
             resolvedBatches.synchronized {
@@ -286,8 +286,8 @@ class RapidsShuffleIterator(
       logWarning(s"Iterator for task ${taskAttemptId} closing, " +
           s"but it is not done. Closing ${resolvedBatches.size()} resolved batches!!")
       resolvedBatches.forEach {
-        case BufferReceived(bufferId) =>
-          GpuShuffleEnv.getReceivedCatalog.removeBuffer(bufferId)
+        case BufferReceived(handle) =>
+          GpuShuffleEnv.getReceivedCatalog.removeBuffer(handle)
         case _ =>
       }
       // tell the client to cancel pending requests
@@ -349,11 +349,11 @@ class RapidsShuffleIterator(
     result = pollForResult(timeoutSeconds)
     val blockedTime = System.currentTimeMillis() - blockedStart
     result match {
-      case Some(BufferReceived(bufferId)) =>
+      case Some(BufferReceived(handle)) =>
         val nvtxRangeAfterGettingBatch = new NvtxRange("RapidsShuffleIterator.gotBatch",
           NvtxColor.PURPLE)
         try {
-          sb = catalog.acquireBuffer(bufferId)
+          sb = catalog.acquireBuffer(handle)
           cb = sb.getColumnarBatch(sparkTypes)
           metricsUpdater.update(blockedTime, 1, sb.size, cb.numRows())
         } finally {
@@ -362,7 +362,7 @@ class RapidsShuffleIterator(
           if (sb != null) {
             sb.close()
           }
-          catalog.removeBuffer(bufferId)
+          catalog.removeBuffer(handle)
         }
       case Some(
         TransferError(blockManagerId, shuffleBlockBatchId, mapIndex, errorMessage, throwable)) =>

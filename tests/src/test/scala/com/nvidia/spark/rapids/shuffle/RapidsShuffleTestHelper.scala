@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import java.util.concurrent.Executor
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, DeviceMemoryBuffer, HostMemoryBuffer}
-import com.nvidia.spark.rapids.{Arm, GpuColumnVector, MetaUtils, RapidsConf, RapidsDeviceMemoryStore, ShuffleMetadata, ShuffleReceivedBufferCatalog}
+import com.nvidia.spark.rapids.{Arm, GpuColumnVector, MetaUtils, RapidsBufferHandle, RapidsConf, RapidsDeviceMemoryStore, ShuffleMetadata, ShuffleReceivedBufferCatalog}
 import com.nvidia.spark.rapids.format.TableMeta
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
@@ -135,15 +135,16 @@ class RapidsShuffleTestHelper extends FunSuite
     mockCopyExecutor = new ImmediateExecutor
     mockBssExecutor = mock[Executor]
     mockHandler = mock[RapidsShuffleFetchHandler]
-    mockStorage = mock[RapidsDeviceMemoryStore]
     mockCatalog = mock[ShuffleReceivedBufferCatalog]
     mockConf = mock[RapidsConf]
     testMetricsUpdater = spy(new TestShuffleMetricsUpdater)
 
     val dmbCaptor = ArgumentCaptor.forClass(classOf[DeviceMemoryBuffer])
-    when(mockStorage.addBuffer(any(), dmbCaptor.capture(), any(), any(), any(), any()))
+    when(mockCatalog.addBuffer(dmbCaptor.capture(), any(), any(), any(), any()))
       .thenAnswer(_ => {
-        buffersToClose.append(dmbCaptor.getValue.asInstanceOf[DeviceMemoryBuffer])
+        val buffer = dmbCaptor.getValue.asInstanceOf[DeviceMemoryBuffer]
+        buffersToClose.append(buffer)
+        mock[RapidsBufferHandle]
       })
 
     client = spy(new RapidsShuffleClient(
@@ -151,7 +152,6 @@ class RapidsShuffleTestHelper extends FunSuite
       mockTransport,
       mockExecutor,
       mockCopyExecutor,
-      mockStorage,
       mockCatalog))
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.delta.shims
 import com.databricks.sql.transaction.tahoe.{DeltaConfigs, DeltaLog, DeltaOptions, DeltaParquetFileFormat}
 import com.databricks.sql.transaction.tahoe.sources.DeltaDataSource
 import com.nvidia.spark.rapids.{CreatableRelationProviderMeta, CreatableRelationProviderRule, DataFromReplacementRule, DeltaFormatType, FileFormatChecks, GpuCreatableRelationProvider, GpuParquetFileFormat, RapidsConf, RapidsMeta, WriteFileOp}
-import com.nvidia.spark.rapids.delta.DeltaProvider
+import com.nvidia.spark.rapids.delta.DeltaProviderImplBase
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.datasources.SaveIntoDataSourceCommand
@@ -27,7 +27,11 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.ExternalSource
 import org.apache.spark.sql.sources.CreatableRelationProvider
 
-class DeltaProviderImpl extends DeltaProvider {
+/**
+ * Implements the DeltaProvider interface when Delta Lake is available at runtime.
+ * @note This is instantiated via reflection from ShimLoader.
+ */
+class DeltaProviderImpl extends DeltaProviderImplBase {
   override def getCreatableRelationRules: Map[Class[_ <: CreatableRelationProvider],
       CreatableRelationProviderRule[_ <: CreatableRelationProvider]] = {
     Seq(
