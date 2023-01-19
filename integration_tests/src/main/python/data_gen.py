@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,6 +25,13 @@ from spark_session import is_tz_utc, is_before_spark_340
 import sre_yield
 import struct
 from conftest import skip_unless_precommit_tests
+import time
+import os
+
+# set time zone to UTC for timestamp test cases to avoid `datetime` out-of-range error:
+# refer to: https://github.com/NVIDIA/spark-rapids/issues/7535
+os.environ['TZ'] = 'UTC'
+time.tzset()
 
 class DataGen:
     """Base class for data generation"""
