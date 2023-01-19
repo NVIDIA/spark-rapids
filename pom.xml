@@ -1459,21 +1459,26 @@
                     </excludes>
                 </configuration>
             </plugin>
+
+            <!--use this plugin to configure "spark.rapids.source.basedir" property-->
             <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>build-helper-maven-plugin</artifactId>
+                <groupId>org.commonjava.maven.plugins</groupId>
+                <artifactId>directory-maven-plugin</artifactId>
+                <version>0.1</version>
                 <executions>
                     <execution>
-                        <id>parent-pom-directory</id>
+                        <id>directories</id>
                         <goals>
-                            <goal>rootlocation</goal>
+                            <goal>highest-basedir</goal>
                         </goals>
+                        <phase>initialize</phase>
                         <configuration>
-                            <rootLocationProperty>spark.rapids.source.basedir</rootLocationProperty>
+                            <property>spark.rapids.source.basedir</property>
                         </configuration>
                     </execution>
                 </executions>
             </plugin>
+
             <plugin>
                 <!--
                 This is an alternative implementation of the scalastyle check invocation,
