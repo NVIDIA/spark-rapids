@@ -50,9 +50,11 @@ The number of GPUs per node dictates the number of Spark executors that can run 
 4. Databricks makes changes to the runtime without notification.
 
     Databricks makes changes to existing runtimes, applying patches, without notification.
-	[Issue-3098](https://github.com/NVIDIA/spark-rapids/issues/3098) is one example of this.  We run
-	regular integration tests on the Databricks environment to catch these issues and fix them once
-	detected.
+    [Issue-3098](https://github.com/NVIDIA/spark-rapids/issues/3098) is one example of this.  We run
+    regular integration tests on the Databricks environment to catch these issues and fix them once
+    detected.
+5. In Databricks 11.3, an incorrect result is returned for window frames defined by a range in case of DecimalTypes. 
+   There is a bug filed in Apache Spark for it [here](https://issues.apache.org/jira/browse/SPARK-41793)
 	
 ## Start a Databricks Cluster
 Create a Databricks cluster by going to "Compute", then clicking `+ Create compute`.  Ensure the
