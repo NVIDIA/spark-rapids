@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.hive.rapids
+package org.apache.spark.sql.hive.rapids.shims
 
 import ai.rapids.cudf.{CSVWriterOptions, QuoteStyle, Table, TableWriter}
 import com.google.common.base.Charsets
@@ -24,6 +24,7 @@ import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.hive.rapids.GpuHiveTextFileUtils._
 import org.apache.spark.sql.types.{ArrayType, BinaryType, DataType, MapType, StructField, StructType}
 
 object GpuHiveTextFileFormat extends Logging {
@@ -40,8 +41,6 @@ object GpuHiveTextFileFormat extends Logging {
 
   def tagGpuSupport(meta: GpuInsertIntoHiveTableMeta)
     : Option[ColumnarFileFormat] = {
-
-    import GpuHiveTextFileUtils._
 
     val insertCommand = meta.wrapped
     val storage  = insertCommand.table.storage

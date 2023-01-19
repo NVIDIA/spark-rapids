@@ -21,7 +21,6 @@ import com.nvidia.spark.rapids.shims.OptimizedCreateHiveTableAsSelectCommandMeta
 
 import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.hive.execution.{InsertIntoHiveTable, OptimizedCreateHiveTableAsSelectCommand}
-import org.apache.spark.sql.hive.rapids.GpuInsertIntoHiveTableMeta
 
 trait HiveProviderCmdShims extends HiveProvider {
 

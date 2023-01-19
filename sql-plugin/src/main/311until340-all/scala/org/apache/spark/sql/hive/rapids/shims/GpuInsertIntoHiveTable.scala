@@ -14,10 +14,9 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.hive.rapids
+package org.apache.spark.sql.hive.rapids.shims
 
 import com.nvidia.spark.rapids.{ColumnarFileFormat, DataFromReplacementRule, DataWritingCommandMeta, GpuDataWritingCommand, RapidsConf, RapidsMeta}
-
 import java.util.Locale
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
