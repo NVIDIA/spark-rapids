@@ -435,11 +435,4 @@ case class GpuInsertIntoHiveTable(
   }
 
   override def requireSingleBatch: Boolean = false // TODO: Re-evaluate. If partitioned or bucketed?
-
-  /*
-  // Override necessary because SaveAsHiveFile is a UnaryCommand.
-  // This implementation is the same as InsertIntoHiveTable.
-  override protected def withNewChildInternal(newChild: LogicalPlan): LogicalPlan =
-    copy(query = newChild)
-   */
 }
