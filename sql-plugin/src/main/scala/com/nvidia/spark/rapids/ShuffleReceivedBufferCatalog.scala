@@ -131,7 +131,7 @@ class ShuffleReceivedBufferCatalog(
   def removeBuffer(handle: RapidsBufferHandle): Unit = {
     val id = handle.id
     tableMap.remove(id.tableId)
-    catalog.removeBuffer(handle)
+    handle.close()
   }
 }
 

@@ -40,7 +40,7 @@ class DuplicateBufferException(s: String) extends RuntimeException(s) {}
  * A handle is obtained when a buffer, batch, or table is added to the spill framework
  * via the `RapidsBufferCatalog` api.
  */
-trait RapidsBufferHandle {
+trait RapidsBufferHandle extends AutoCloseable {
   val id: RapidsBufferId
 
   /**
@@ -70,6 +70,8 @@ class RapidsBufferCatalog extends AutoCloseable with Arm {
       spillCallback: SpillCallback)
     extends RapidsBufferHandle {
 
+    private var closed = false
+
     override def setSpillPriority(newPriority: Long): Unit = {
       priority = newPriority
       updateUnderlyingRapidsBuffer(this)
@@ -94,6 +96,18 @@ class RapidsBufferCatalog extends AutoCloseable with Arm {
      * @return the spill callback associated with this handle
      */
     def getSpillCallback: SpillCallback = spillCallback
+
+    override def close(): Unit = synchronized {
+      // since the handle is stored in the catalog in addition to being
+      // handed out to potentially a `SpillableColumnarBatch` or `SpillableBuffer`
+      // there is a chance we may double close it. For example, a broadcast exec
+      // that is closing its spillable (and therefore the handle) + the handle being
+      // closed from the catalog's close method. 
+      if (!closed) {
+        removeBuffer(this)
+      }
+      closed = true
+    }
   }
 
   /**
@@ -313,7 +327,7 @@ class RapidsBufferCatalog extends AutoCloseable with Arm {
    *               (`handle` was the last handle)
    *         false: if buffer was not removed due to other live handles.
    */
-  def removeBuffer(handle: RapidsBufferHandle): Boolean = {
+  private def removeBuffer(handle: RapidsBufferHandle): Boolean = {
     // if this is the last handle, remove the buffer
     if (stopTrackingHandle(handle)) {
       val buffers = bufferMap.remove(handle.id)
@@ -329,7 +343,7 @@ class RapidsBufferCatalog extends AutoCloseable with Arm {
 
   override def close(): Unit = {
     bufferIdToHandles.values.forEach { handles =>
-      handles.foreach(removeBuffer)
+      handles.foreach(_.close())
     }
     bufferIdToHandles.clear()
   }
@@ -494,13 +508,6 @@ object RapidsBufferCatalog extends Logging with Arm {
    */
   def acquireBuffer(handle: RapidsBufferHandle): RapidsBuffer =
     singleton.acquireBuffer(handle)
-
-  /**
-   * Remove a buffer handle from the catalog and, if it this was the final handle,
-   * release the resources of the registered buffers.
-   */
-  def removeBuffer(handle: RapidsBufferHandle): Unit =
-    singleton.removeBuffer(handle)
 
   def getDiskBlockManager(): RapidsDiskBlockManager = diskBlockManager
 }

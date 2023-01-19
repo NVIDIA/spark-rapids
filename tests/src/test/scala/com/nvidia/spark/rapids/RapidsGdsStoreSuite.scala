@@ -96,9 +96,9 @@ class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar
          }
        }
 
-       catalog.removeBuffer(bufferHandles(0))
+       bufferHandles(0).close()
        assert(paths(0).exists)
-       catalog.removeBuffer(bufferHandles(1))
+       bufferHandles(1).close()
        assert(!paths(0).exists)
      }
    }
@@ -130,7 +130,7 @@ class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar
           assertResult(spillPriority)(buffer.getSpillPriority)
         }
 
-        catalog.removeBuffer(handle)
+        handle.close()
         if (canShareDiskPaths) {
           assert(path.exists())
         } else {
