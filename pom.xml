@@ -932,7 +932,7 @@
                     <execution>
                         <id>shim-sources</id>
                         <goals><goal>run</goal></goals>
-                        <phase>initialize</phase>
+                        <phase>generate-sources</phase>
                         <configuration>
                             <exportAntProperties>true</exportAntProperties>
                             <target xmlns:ac="antlib:net.sf.antcontrib">
@@ -1242,6 +1242,9 @@
                     <version>3.2.0</version>
                     <executions>
                         <execution>
+                            <id>
+                        </execution>
+                        <execution>
                             <id>add-shim-sources</id>
                             <phase>generate-sources</phase>
                             <goals><goal>add-source</goal></goals>
@@ -1459,26 +1462,6 @@
                     </excludes>
                 </configuration>
             </plugin>
-
-            <!--use this plugin to configure "spark.rapids.source.basedir" property-->
-            <plugin>
-                <groupId>org.commonjava.maven.plugins</groupId>
-                <artifactId>directory-maven-plugin</artifactId>
-                <version>0.1</version>
-                <executions>
-                    <execution>
-                        <id>directories</id>
-                        <goals>
-                            <goal>highest-basedir</goal>
-                        </goals>
-                        <phase>initialize</phase>
-                        <configuration>
-                            <property>spark.rapids.source.basedir</property>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-
             <plugin>
                 <!--
                 This is an alternative implementation of the scalastyle check invocation,
