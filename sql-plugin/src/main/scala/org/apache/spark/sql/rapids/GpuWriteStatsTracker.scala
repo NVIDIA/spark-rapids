@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -75,4 +75,9 @@ object GpuWriteJobStatsTracker {
   def apply(serializableHadoopConf: SerializableConfiguration,
       command: GpuDataWritingCommand): GpuWriteJobStatsTracker =
     new GpuWriteJobStatsTracker(serializableHadoopConf, command.basicMetrics, command.taskMetrics)
+
+  def apply(serializableHadoopConf: SerializableConfiguration,
+      basicMetrics: Map[String, SQLMetric],
+      taskMetrics: Map[String, SQLMetric]): GpuWriteJobStatsTracker = 
+    new GpuWriteJobStatsTracker(serializableHadoopConf, basicMetrics, taskMetrics)
 }

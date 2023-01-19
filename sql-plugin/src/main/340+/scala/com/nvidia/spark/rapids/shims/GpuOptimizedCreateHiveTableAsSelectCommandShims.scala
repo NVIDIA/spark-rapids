@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,29 +14,31 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.shims
 
 import java.util.Locale
 
 import scala.util.control.NonFatal
 
-import com.nvidia.spark.rapids.shims.CharVarcharUtilsShims
+import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.{SaveMode, SparkSession}
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.datasources.InsertIntoHadoopFsRelationCommand
-import org.apache.spark.sql.hive.execution.OptimizedCreateHiveTableAsSelectCommand
+import org.apache.spark.sql.hive.execution.{CreateHiveTableAsSelectCommand, InsertIntoHiveTable}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuInsertIntoHadoopFsRelationCommand, GpuOrcFileFormat}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+
 /** GPU version of Spark's CreateHiveTableAsSelectBase */
-trait GpuCreateHiveTableAsSelectBase extends GpuDataWritingCommand {
+trait GpuCreateHiveTableAsSelectBase extends GpuRunnableCommand {
   val tableDesc: CatalogTable
   val query: LogicalPlan
   val outputColumnNames: Seq[String]
@@ -70,6 +72,7 @@ trait GpuCreateHiveTableAsSelectBase extends GpuDataWritingCommand {
       // TODO ideally, we should get the output data ready first and then
       // add the relation into catalog, just in case of failure occurs while data
       // processing.
+      val outputColumns = DataWritingCommand.logicalPlanOutputWithNames(query, outputColumnNames)
       val tableSchema = CharVarcharUtilsShims.getRawSchema(
         outputColumns.toStructType, sparkSession.sessionState.conf)
       assert(tableDesc.schema.isEmpty)
@@ -115,13 +118,29 @@ case class GpuOptimizedCreateHiveTableAsSelectCommand(
     query: LogicalPlan,
     outputColumnNames: Seq[String],
     mode: SaveMode,
-    cpuCmd: OptimizedCreateHiveTableAsSelectCommand) extends GpuCreateHiveTableAsSelectBase {
+    cpuCmd: CreateHiveTableAsSelectCommand) extends GpuCreateHiveTableAsSelectBase {
+  // Copy from `CreateHiveTableAsSelectCommand.getWritingCommand`, 
+  // because it is private in Spark
+  private def cpuGetWritingCommand(
+      tableDesc: CatalogTable,
+      tableExists: Boolean): DataWritingCommand = {
+    // For CTAS, there is no static partition values to insert.
+    val partition = tableDesc.partitionColumnNames.map(_ -> None).toMap
+    InsertIntoHiveTable(
+      tableDesc,
+      partition,
+      query,
+      overwrite = false,
+      ifPartitionNotExists = false,
+      outputColumnNames = outputColumnNames)
+  }
+
   override def getWritingCommand(
       catalog: SessionCatalog,
       tableDesc: CatalogTable,
       tableExists: Boolean): GpuDataWritingCommand = {
     // Leverage the existing support for InsertIntoHadoopFsRelationCommand to do the write
-    cpuCmd.getWritingCommand(catalog, tableDesc, tableExists) match {
+    cpuGetWritingCommand(tableDesc, tableExists) match {
       case c: InsertIntoHadoopFsRelationCommand =>
         val rapidsConf = new RapidsConf(conf)
         val rule = GpuOverrides.dataWriteCmds(c.getClass)
@@ -142,14 +161,16 @@ case class GpuOptimizedCreateHiveTableAsSelectCommand(
 
   // Do not support partitioned or bucketed writes
   override def requireSingleBatch: Boolean = false
+
+  override def child = query
 }
 
 final class OptimizedCreateHiveTableAsSelectCommandMeta(
-    cmd: OptimizedCreateHiveTableAsSelectCommand,
+    cmd: CreateHiveTableAsSelectCommand,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-    extends DataWritingCommandMeta[OptimizedCreateHiveTableAsSelectCommand](
+    extends RunnableCommandMeta[CreateHiveTableAsSelectCommand](
       cmd, conf, parent, rule) {
 
   override def tagSelfForGpu(): Unit = {
@@ -189,7 +210,7 @@ final class OptimizedCreateHiveTableAsSelectCommandMeta(
     }
   }
 
-  override def convertToGpu(): GpuDataWritingCommand = {
+  override def convertToGpu(): GpuRunnableCommand = {
     GpuOptimizedCreateHiveTableAsSelectCommand(
       wrapped.tableDesc,
       wrapped.query,
