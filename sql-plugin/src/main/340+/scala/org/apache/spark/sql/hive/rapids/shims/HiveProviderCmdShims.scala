@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,23 +14,22 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package org.apache.spark.sql.hive.rapids.shims
 
-import com.nvidia.spark.rapids._
+import  com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, RunnableCommand}
+import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 
-object SparkShimImpl extends Spark330PlusNonDBShims with AnsiCastRuleShims {
+trait HiveProviderCmdShims extends HiveProvider {
+
+  /**
+   * Builds the data writing command rules that are specific to spark-hive Catalyst nodes.
+   */
   override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
-      DataWritingCommandRule[_ <: DataWritingCommand]] = {
-    Seq(GpuOverrides.dataWriteCmd[CreateDataSourceTableAsSelectCommand](
-    "Create table with select command",
-    (a, conf, p, r) => new CreateDataSourceTableAsSelectCommandMeta(a, conf, p, r))
-    ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
-  }
+      DataWritingCommandRule[_ <: DataWritingCommand]] =
+    Map.empty
 
   override def getRunnableCmds: Map[Class[_ <: RunnableCommand],
-      RunnableCommandRule[_ <: RunnableCommand]] = {
+      RunnableCommandRule[_ <: RunnableCommand]] = 
     Map.empty
-  }
 }
