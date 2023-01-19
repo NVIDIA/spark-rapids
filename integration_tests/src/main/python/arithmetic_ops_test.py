@@ -385,8 +385,20 @@ def test_mod_pmod_by_zero_not_ansi(data_gen):
     DecimalGen(27, 7), DecimalGen(20, -3)], ids=idfn)
 def test_mod_mixed_decimal(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"a % b")
-    )
+        lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"a % b"))
+
+@pytest.mark.xfail(reason='')
+@pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 5),
+    DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3), DecimalGen(4, 2), 
+    DecimalGen(3, -2), DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)
+    ], ids=idfn)
+@pytest.mark.parametrize('rhs', [ byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 3),
+    DecimalGen(10, -2), DecimalGen(15, 3), DecimalGen(30, 12), DecimalGen(3, -3),
+    DecimalGen(27, 7), DecimalGen(20, -3)
+    ], ids=idfn)
+def test_pmod_mixed_decimal(lhs, rhs):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"pmod(a, b)"))
 
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_signum(data_gen):
