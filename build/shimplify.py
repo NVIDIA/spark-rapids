@@ -18,20 +18,10 @@ import logging
 log = logging.getLogger('shimplify')
 log.setLevel(logging.DEBUG)
 ch = logging.StreamHandler()
-ch.setLevel(logging.INFO)
+ch.setLevel(logging.DEBUG)
 formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
 ch.setFormatter(formatter)
 log.addHandler(ch)
-
-def upsert_files2bv(build_ver):
-    shim_source_files = project.getReference("spark{}.fileset".format(build_ver))
-    log.debug("build_ver={} shim_src.size={}".format(build_ver, shim_source_files.size()))
-    for shim_file in shim_source_files:
-        if shim_file in files2bv.keys():
-            files2bv[shim_file] += [build_ver]
-        else:
-            files2bv[shim_file] = [build_ver]
-
 
 def upsert_shim_json(filename, bv_list):
     with open(filename, 'r') as file:
@@ -51,7 +41,6 @@ def upsert_shim_json(filename, bv_list):
     with open(filename, 'w') as file:
         file.writelines(contents)
 
-
 def delete_prior_comment_if_allowed(contents, tag, filename):
     opening_shim_comment_line = None
     closing_shim_comment_line = None
@@ -64,8 +53,14 @@ def delete_prior_comment_if_allowed(contents, tag, filename):
         if not (opening_shim_comment_line is None) and (closing_shim_comment_line is None):
             raise Exception("no closing comment for {}:{}".format(filename, opening_shim_comment_line))
         pass
-    if not (opening_shim_comment_line is None) and not overwrite:
-        raise Exception("found shim comment from prior execution at {}:{}".format(filename, opening_shim_comment_line))
+    # no work
+    if opening_shim_comment_line is None:
+        return
+    if not overwrite:
+        raise Exception(
+            "found shim comment from prior execution at {}:{}, use -DoverShimplify=true to overwrite"\
+                .format(filename, opening_shim_comment_line))
+    assert not (opening_shim_comment_line is None) and not (closing_shim_comment_line is None)
     log.debug("removing comments {}:{}:{}".format(filename, opening_shim_comment_line, closing_shim_comment_line))
     del contents[opening_shim_comment_line:(closing_shim_comment_line + 1)]
 
@@ -97,13 +92,21 @@ def task_impl():
     shims_attr_csv = str(shims_attr).translate(None, ' \n\r')
     shims_arr = shims_attr_csv.split(',')
     shims_arr.sort()
-    global files2bv
+
+    # map file -> [shims it's part of]
     files2bv = {}
     for build_ver in shims_arr:
-        upsert_files2bv(build_ver)
+        shim_source_files = project.getReference("spark{}.fileset".format(build_ver))
+        log.debug("build_ver={} shim_src.size={}".format(build_ver, shim_source_files.size()))
+        for resource in shim_source_files:
+            shim_file = str(resource)
+            if shim_file in files2bv.keys():
+                files2bv[shim_file] += [build_ver]
+            else:
+                files2bv[shim_file] = [build_ver]
+
     for shim_file, bv_list in files2bv.items():
         log.debug("calling upsert_shim_json shim_file={} bv_list={}".format(shim_file, bv_list))
         upsert_shim_json(str(shim_file), bv_list)
-
 
 task_impl()
