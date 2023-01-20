@@ -483,13 +483,14 @@ def test_broadcast_nested_loop_with_conditionals_build_right_fallback(data_gen, 
 # Not all join types can be translated to a broadcast join, but this tests them to be sure we
 # can handle what spark is doing
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
-def test_broadcast_join_left_table(data_gen, join_type):
+# Specify 200 shuffle partitions to test cases where streaming side is empty
+# as in https://github.com/NVIDIA/spark-rapids/issues/7516
+@pytest.mark.parametrize('shuffle_conf', [{}, {'spark.sql.shuffle.partitions': 200}], ids=idfn)
+def test_broadcast_join_left_table(data_gen, join_type, shuffle_conf):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 250, 500)
         return broadcast(left).join(right, left.a == right.r_a, join_type)
-    # Specify 200 shuffle partitions to test cases where streaming side is empty
-    # as in https://github.com/NVIDIA/spark-rapids/issues/7516
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.sql.shuffle.partitions': '200'})
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=shuffle_conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
