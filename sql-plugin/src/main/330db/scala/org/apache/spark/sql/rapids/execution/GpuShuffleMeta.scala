@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExec, RapidsConf, Ra
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
 import org.apache.spark.sql.execution.exchange.{EXECUTOR_BROADCAST, ShuffleExchangeExec}
-import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 
 
 class GpuShuffleMeta(
@@ -47,6 +47,7 @@ class GpuShuffleMeta(
 
         def isSupported(rm: RapidsMeta[_, _, _]): Boolean = rm.wrapped match {
           case _: BroadcastHashJoinExec => true
+          case _: BroadcastNestedLoopJoinExec => true
           case _ => false
         }
         if (parent.isDefined) {

@@ -26,7 +26,7 @@ import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectComm
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.exchange.{EXECUTOR_BROADCAST, ShuffleExchangeLike}
-import org.apache.spark.sql.rapids.execution.GpuBroadcastHashJoinExec
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinExec, GpuBroadcastNestedLoopJoinExec}
 
 object SparkShimImpl extends Spark321PlusDBShims {
   // AnsiCast is removed from Spark3.4.0
@@ -73,6 +73,8 @@ object SparkShimImpl extends Spark321PlusDBShims {
       parent: SparkPlan): Boolean = {
     parent match {
       case bhj: GpuBroadcastHashJoinExec =>
+        shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST)
+      case bnlj: GpuBroadcastNestedLoopJoinExec =>
         shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST)
       case _ => false
     }
