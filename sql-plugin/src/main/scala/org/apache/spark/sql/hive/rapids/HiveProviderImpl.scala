@@ -137,14 +137,6 @@ class HiveProviderImpl extends HiveProviderCmdShims {
         (p, conf, parent, r) => new SparkPlanMeta[HiveTableScanExec](p, conf, parent, r) {
 
           private def flagIfUnsupportedStorageFormat(storage: CatalogStorageFormat): Unit = {
-            val textInputFormat      = "org.apache.hadoop.mapred.TextInputFormat"
-            val lazySimpleSerDe      = "org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe"
-            val serializationKey     = "serialization.format"
-            val ctrlASeparatedFormat = "1" // Implying '^A' field delimiter.
-            val lineDelimiterKey     = "line.delim"
-            val escapeDelimiterKey   = "escape.delim"
-            val newLine              = "\n"
-
             if (storage.inputFormat.getOrElse("") != textInputFormat) {
               willNotWorkOnGpu(s"unsupported input-format found: ${storage.inputFormat}, " +
                 s"only $textInputFormat is currently supported")
