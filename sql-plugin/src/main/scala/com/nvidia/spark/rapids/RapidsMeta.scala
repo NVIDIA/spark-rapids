@@ -259,7 +259,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   def canPartsBeReplaced: Boolean = childParts.forall(_.canThisBeReplaced)
 
   /**
-   * Return true if this supports columnar execution (ie is replaced)
+   * Return true if the resulting node in the plan will support columnar execution
    */
   def supportsColumnar: Boolean = canThisBeReplaced
 
