@@ -41,7 +41,7 @@ class GpuShuffleMeta(
         // Copied from GpuBroadcastMeta
         // ensure the outputPartitioning is SinglePartition
         if (!shuffle.outputPartitioning.equals(SinglePartition)) {
-          willNotWorkOnGpu("Executor-side broadcast can only be converted" + 
+          willNotWorkOnGpu("Executor-side broadcast can only be converted " + 
             "with output partitioning SinglePartition at this time")
         }
 

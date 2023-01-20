@@ -54,8 +54,6 @@ object GpuExecutorBroadcastHelper extends Arm {
    * Given an RDD of ColumnarBatch containing broadcast data from a shuffle, get the 
    * fully coalesced ColumnarBatch loaded on to the GPU.
    *
-   * 
-   *
    * @param buildRelation - the executor broadcast produced by a shuffle exchange
    * @param buildSchema - the schema expected for the output
    * @param buildOutput - the output attributes expected in case we receieve an empty RDD
