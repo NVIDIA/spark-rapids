@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids.execution
 import ai.rapids.cudf.{ast, GatherMap, NvtxColor, OutOfBoundsPolicy, Table}
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.ShimBinaryExecNode
+import com.nvidia.spark.rapids.shims.{GpuBroadcastJoinMeta, ShimBinaryExecNode}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
