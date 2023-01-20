@@ -12,8 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import errno
 import json
 import logging
+import os
+import subprocess
 
 log = logging.getLogger('shimplify')
 log.setLevel(logging.DEBUG)
@@ -66,6 +69,31 @@ def delete_prior_comment_if_allowed(contents, tag, filename):
 
 def git_rename(shim_file, first_shim):
     log.debug("git rename {} to the dir of {}".format(shim_file, first_shim))
+    parent_pom_dir = str(project.getProperty('spark.rapids.source.basedir'))
+    # sql-plugin/src/main/320+-nondb/scala/org/apache/spark/sql/delta/rapids/shims/GpuCheckDeltaInvariant.scala
+    rel_path = os.path.relpath(shim_file, parent_pom_dir)
+    log.debug("spark-rapids root dir: {}".format(parent_pom_dir))
+    log.debug("shim file path relative to root dir: {}".format(rel_path))
+    path_parts = rel_path.split(os.sep)
+    path_parts[3] = first_shim
+    new_shim_file = os.sep.join([parent_pom_dir] + path_parts)
+    if shim_file == new_shim_file:
+        log.info("{} is already at the right location, skipping git rename")
+        return
+    new_shim_dir = os.path.dirname(new_shim_file)
+    log.debug("creating new shim path {}".format(new_shim_dir))
+    try:
+        os.makedirs(new_shim_dir)
+    except OSError as ose:
+        if ose.errno == errno.EEXIST and os.path.isdir(new_shim_dir):
+            pass
+        else:
+            raise
+    git_cmd = ['git', 'mv', shim_file, new_shim_file]
+    ret_code = subprocess.call(git_cmd)
+    if ret_code != 0:
+        raise Exception('git rename failed')
+
 
 def task_impl():
     """Simplifies the old version range directory system
@@ -85,6 +113,7 @@ def task_impl():
     git grep '{"spark": "312"}'
     """
     log.info('############# Starting Jython Task Shimplify #######')
+    log.info("review changes and `git restore` if necessary")
     if_attr = attributes.get('if')
     if_val = None if if_attr is None else project.getProperty(if_attr)
     should_skip = if_val is None or if_val != str(True).lower()
