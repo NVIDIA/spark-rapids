@@ -872,6 +872,11 @@
         <pluginManagement>
             <plugins>
                 <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>build-helper-maven-plugin</artifactId>
+                    <version>3.3.0</version>
+                </plugin>
+                <plugin>
                   <groupId>org.apache.maven.plugins</groupId>
                   <artifactId>maven-antrun-plugin</artifactId>
                   <version>3.0.0</version>
@@ -907,6 +912,254 @@
                             <goal>run</goal>
                         </goals>
                     </execution>
+                  </executions>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.apache.ant</groupId>
+                        <artifactId>ant</artifactId>
+                        <version>1.10.12</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>ant-contrib</groupId>
+                        <artifactId>ant-contrib</artifactId>
+                        <version>1.0b3</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.python</groupId>
+                        <artifactId>jython-standalone</artifactId>
+                        <version>2.7.2</version>
+                    </dependency>
+                </dependencies>
+                </plugin>
+                <plugin>
+                  <groupId>org.apache.maven.plugins</groupId>
+                  <artifactId>maven-shade-plugin</artifactId>
+                  <version>3.2.4</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>2.12.4</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <executions>
+                        <execution>
+                            <id>default-compile</id>
+                            <phase>none</phase>
+                        </execution>
+                        <execution>
+                            <id>default-testCompile</id>
+                            <phase>none</phase>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <groupId>net.alchim31.maven</groupId>
+                    <artifactId>scala-maven-plugin</artifactId>
+                    <version>${scala.plugin.version}</version>
+                    <executions>
+                        <execution>
+                            <id>eclipse-add-source</id>
+                            <goals>
+                                <goal>add-source</goal>
+                            </goals>
+                        </execution>
+                        <execution>
+                            <id>scala-compile-first</id>
+                            <phase>process-resources</phase>
+                            <goals>
+                                <goal>compile</goal>
+                            </goals>
+                        </execution>
+                        <execution>
+                            <id>scala-test-compile-first</id>
+                            <phase>process-test-resources</phase>
+                            <goals>
+                                <goal>testCompile</goal>
+                            </goals>
+                        </execution>
+                        <execution>
+                            <id>attach-scaladocs</id>
+                            <phase>verify</phase>
+                            <goals>
+                                <goal>doc-jar</goal>
+                            </goals>
+                            <configuration>
+                                <args>
+                                    <arg>-doc-external-doc:${java.home}/lib/rt.jar#https://docs.oracle.com/javase/${java.major.version}/docs/api/index.html</arg>
+                                    <arg>-doc-external-doc:${settings.localRepository}/${scala.local-lib.path}#https://scala-lang.org/api/${scala.version}/</arg>
+                                    <arg>-doc-external-doc:${settings.localRepository}/org/apache/spark/spark-sql_${scala.binary.version}/${spark.version}/spark-sql_${scala.binary.version}-${spark.version}.jar#https://spark.apache.org/docs/${spark.version}/api/scala/index.html</arg>
+                                </args>
+                            </configuration>
+                        </execution>
+                    </executions>
+                    <configuration>
+                        <scalaVersion>${scala.version}</scalaVersion>
+                        <checkMultipleScalaVersions>true</checkMultipleScalaVersions>
+                        <failOnMultipleScalaVersions>true</failOnMultipleScalaVersions>
+                        <recompileMode>${scala.recompileMode}</recompileMode>
+                        <args>
+                            <arg>-unchecked</arg>
+                            <arg>-deprecation</arg>
+                            <arg>-feature</arg>
+                            <arg>-explaintypes</arg>
+                            <arg>-Yno-adapted-args</arg>
+                            <arg>-Ywarn-unused:imports</arg>
+                            <arg>-Xlint:missing-interpolator</arg>
+                            <arg>-Xfatal-warnings</arg>
+                        </args>
+                        <jvmArgs>
+                            <jvmArg>-Xms1024m</jvmArg>
+                            <jvmArg>-Xmx1024m</jvmArg>
+                        </jvmArgs>
+                        <addJavacArgs>${scala.javac.args}</addJavacArgs>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.scalatest</groupId>
+                    <artifactId>scalatest-maven-plugin</artifactId>
+                    <version>${scalatest-maven-plugin.version}</version>
+                    <configuration>
+                        <reportsDirectory>${project.build.directory}/surefire-reports</reportsDirectory>
+                        <junitxml>.</junitxml>
+                        <filereports>scala-test-output.txt</filereports>
+                        <argLine>${argLine} -ea -Xmx4g -Xss4m</argLine>
+                        <stderr/>
+                        <systemProperties>
+                            <rapids.shuffle.manager.override>${rapids.shuffle.manager.override}</rapids.shuffle.manager.override>
+                            <ai.rapids.refcount.debug>true</ai.rapids.refcount.debug>
+                            <java.awt.headless>true</java.awt.headless>
+                            <java.io.tmpdir>${project.build.directory}/tmp</java.io.tmpdir>
+                            <spark.ui.enabled>false</spark.ui.enabled>
+                            <spark.ui.showConsoleProgress>false</spark.ui.showConsoleProgress>
+                            <spark.unsafe.exceptionOnMemoryLeak>true</spark.unsafe.exceptionOnMemoryLeak>
+                        </systemProperties>
+                        <tagsToExclude>${test.exclude.tags}</tagsToExclude>
+                        <tagsToInclude>${test.include.tags}</tagsToInclude>
+                    </configuration>
+                    <executions>
+                        <execution>
+                            <id>test</id>
+                            <goals>
+                                <goal>test</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.rat</groupId>
+                    <artifactId>apache-rat-plugin</artifactId>
+                    <version>0.13</version>
+                    <configuration>
+                        <consoleOutput>${rat.consoleOutput}</consoleOutput>
+                    </configuration>
+                    <executions>
+                        <execution>
+                            <phase>verify</phase>
+                            <goals>
+                                <goal>check</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <groupId>org.jacoco</groupId>
+                    <artifactId>jacoco-maven-plugin</artifactId>
+                    <version>0.8.5</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <version>${maven.jar.plugin.version}</version>
+                    <executions>
+                        <execution>
+                            <id>default-test-jar</id>
+                            <goals>
+                                <goal>test-jar</goal>
+                            </goals>
+                            <configuration>
+                                <classifier>${spark.version.classifier}tests</classifier>
+                                <skipIfEmpty>true</skipIfEmpty>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>exec-maven-plugin</artifactId>
+                    <version>3.0.0</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+
+        <plugins>
+            <plugin>
+                <groupId>org.apache.rat</groupId>
+                <artifactId>apache-rat-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>**/*.md</exclude>
+                        <exclude>**/*.iml</exclude>
+                        <exclude>NOTICE-binary</exclude>
+                        <exclude>docs/dev/idea-code-style-settings.xml</exclude>
+                        <exclude>pom.xml.asc</exclude>
+                        <exclude>jenkins/databricks/*.patch</exclude>
+                        <exclude>*.jar</exclude>
+                        <exclude>docs/demo/**/*.ipynb</exclude>
+                        <exclude>docs/demo/**/*.zpln</exclude>
+                        <exclude>**/src/main/resources/META-INF/services/*</exclude>
+                        <exclude>**/src/test/resources/**</exclude>
+                        <exclude>rmm_log.txt</exclude>
+                        <exclude>dependency-reduced-pom*.xml</exclude>
+                        <exclude>**/.*/**</exclude>
+                        <exclude>**/src/main/java/com/nvidia/spark/rapids/format/*</exclude>
+                        <exclude>**/*.csv</exclude>
+                        <exclude>dist/*.txt</exclude>
+                        <exclude>**/META-INF/com.nvidia.spark.rapids.SparkShimServiceProvider</exclude>
+                        <!-- Apache Rat excludes target folder for projects that are included by
+                        default, but there are some projects that are conditionally included.  -->
+                        <exclude>**/target/**/*</exclude>
+                        <exclude>**/cufile.log</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+
+            <!--use this plugin to configure "spark.rapids.source.basedir" property-->
+            <plugin>
+                <groupId>org.commonjava.maven.plugins</groupId>
+                <artifactId>directory-maven-plugin</artifactId>
+                <version>0.1</version>
+                <executions>
+                    <execution>
+                        <id>directories</id>
+                        <goals>
+                            <goal>highest-basedir</goal>
+                        </goals>
+                        <phase>initialize</phase>
+                        <configuration>
+                            <property>spark.rapids.source.basedir</property>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <!--
+                This is an alternative implementation of the scalastyle check invocation,
+                a replacement for scalastyle-maven-plugin. It's motivated to address the following:
+                - All scala files are checked at once regardless of the module, so the developer
+                  can focus on addressing violations without being distracted by the build issues
+                  in-between
+                - We don't have to hardcode the source code roots added dynamically by other maven
+                  plugins to the project
+                - The scalastyle launch cost is amortized across all modules
+                -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <inherited>false</inherited>
+                <executions>
                     <execution>
                         <id>shim-sources</id>
                         <goals><goal>run</goal></goals>
@@ -1154,571 +1407,6 @@
                         </configuration>
                     </execution>
                     <execution>
-                        <id>create-shim-symlikns</id>
-                        <phase>generate-tesources</phase>
-                        <goals><goal>run</goal></goals>
-                        <configuration>
-                            <target xmlns:ac="antlib:net.sf.antcontrib">
-                                <ac:if>
-                                    <available file="${project.basedir}/src" type="dir"/>
-                                    <ac:then>
-                                        <patternset id="shimSourcePatternSet">
-                                            <include name="**/*.java"/>
-                                            <include name="**/*.scala"/>
-                                            <!-- exclude unshimmed files -->
-                                            <exclude name="*/scala/**"/>
-                                            <exclude name="*/java/**"/>
-                                        </patternset>
-                                        <fileset dir="${project.basedir}/src" id="allShimFilesID">
-                                            <patternset refid="shimSourcePatternSet"/>
-                                        </fileset>
-                                        <!-- TOOD consider consolitdating this task in jython -->
-                                        <script language="jython" src="${spark.rapids.source.basedir}/build/validate-shim-comments.py"/>
-                                        <fileset dir="${project.basedir}/src" id="shimFileSetId">
-                                            <patternset refid="shimSourcePatternSet"/>
-                                            <containsregexp expression='// \{\"spark-distros\":.*\"${buildver}\"'/>
-                                        </fileset>
-                                        <mkdir dir="${spark.shim.dest}"/>
-                                        <delete>
-                                            <fileset dir="${spark.shim.dest}" includes="**/*"/>
-                                        </delete>
-                                        <ac:for param="shimSourceAbsolutePath">
-                                            <path><fileset refid="shimFileSetId"/></path>
-                                            <sequential>
-                                                <ac:propertyregex override="true"
-                                                    input="@{shimSourceAbsolutePath}"
-                                                    property="shimSourcePackagePath"
-                                                    regexp="${project.basedir}/src/(main|test)/[^/]+/(.*)"
-                                                    replace="\1/\2"/>
-                                                <ac:propertyregex override="true"
-                                                    input="${shimSourcePackagePath}"
-                                                    property="shimSourcePackageDir"
-                                                    regexp="(.*)/[^/]+"
-                                                    replace="\1"/>
-                                                <mkdir dir="${spark.shim.dest}/${shimSourcePackageDir}"/>
-                                                <ac:if>
-                                                    <istrue value="${symlink.shim.files}"/>
-                                                    <then>
-                                                        <symlink resource="@{shimSourceAbsolutePath}"
-                                                            link="${spark.shim.dest}/${shimSourcePackagePath}"
-                                                            overwrite="true"/>
-                                                    </then>
-                                                    <else>
-                                                        <copy file="@{shimSourceAbsolutePath}"
-                                                            tofile="${spark.shim.dest}/${shimSourcePackagePath}"
-                                                            overwrite="true"/>
-                                                    </else>
-                                                </ac:if>
-                                            </sequential>
-                                        </ac:for>
-                                    </ac:then>
-                                </ac:if>
-                            </target>
-                        </configuration>
-                    </execution>
-                  </executions>
-                <dependencies>
-                    <dependency>
-                        <groupId>org.apache.ant</groupId>
-                        <artifactId>ant</artifactId>
-                        <version>1.10.12</version>
-                    </dependency>
-                    <dependency>
-                        <groupId>ant-contrib</groupId>
-                        <artifactId>ant-contrib</artifactId>
-                        <version>1.0b3</version>
-                    </dependency>
-                    <dependency>
-                        <groupId>org.python</groupId>
-                        <artifactId>jython-standalone</artifactId>
-                        <version>2.7.2</version>
-                    </dependency>
-                </dependencies>
-                </plugin>
-                <plugin>
-                    <groupId>org.codehaus.mojo</groupId>
-                    <artifactId>build-helper-maven-plugin</artifactId>
-                    <version>3.2.0</version>
-                    <executions>
-                        <execution>
-                            <id>add-shim-sources</id>
-                            <phase>generate-sources</phase>
-                            <goals><goal>add-source</goal></goals>
-                            <configuration>
-                                <sources>
-                                    <source>${spark.shim.dest}/main/scala</source>
-                                    <source>${spark.shim.dest}/main/java</source>
-                                </sources>
-                            </configuration>
-                        </execution>
-                        <execution>
-                            <id>add-shim-test-sources</id>
-                            <phase>generate-test-sources</phase>
-                            <goals><goal>add-test-source</goal></goals>
-                            <configuration>
-                                <sources>
-                                    <source>${spark.shim.dest}/test/scala</source>
-                                    <source>${spark.shim.dest}/test/java</source>
-                                </sources>
-                            </configuration>
-                        </execution>
-                    </executions>
-                </plugin>
-                <plugin>
-                  <groupId>org.apache.maven.plugins</groupId>
-                  <artifactId>maven-shade-plugin</artifactId>
-                  <version>3.2.4</version>
-                </plugin>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-surefire-plugin</artifactId>
-                    <version>2.12.4</version>
-                </plugin>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-compiler-plugin</artifactId>
-                    <executions>
-                        <execution>
-                            <id>default-compile</id>
-                            <phase>none</phase>
-                        </execution>
-                        <execution>
-                            <id>default-testCompile</id>
-                            <phase>none</phase>
-                        </execution>
-                    </executions>
-                </plugin>
-                <plugin>
-                    <groupId>net.alchim31.maven</groupId>
-                    <artifactId>scala-maven-plugin</artifactId>
-                    <version>${scala.plugin.version}</version>
-                    <executions>
-                        <execution>
-                            <id>eclipse-add-source</id>
-                            <goals>
-                                <goal>add-source</goal>
-                            </goals>
-                        </execution>
-                        <execution>
-                            <id>scala-compile-first</id>
-                            <phase>process-resources</phase>
-                            <goals>
-                                <goal>compile</goal>
-                            </goals>
-                        </execution>
-                        <execution>
-                            <id>scala-test-compile-first</id>
-                            <phase>process-test-resources</phase>
-                            <goals>
-                                <goal>testCompile</goal>
-                            </goals>
-                        </execution>
-                        <execution>
-                            <id>attach-scaladocs</id>
-                            <phase>verify</phase>
-                            <goals>
-                                <goal>doc-jar</goal>
-                            </goals>
-                            <configuration>
-                                <args>
-                                    <arg>-doc-external-doc:${java.home}/lib/rt.jar#https://docs.oracle.com/javase/${java.major.version}/docs/api/index.html</arg>
-                                    <arg>-doc-external-doc:${settings.localRepository}/${scala.local-lib.path}#https://scala-lang.org/api/${scala.version}/</arg>
-                                    <arg>-doc-external-doc:${settings.localRepository}/org/apache/spark/spark-sql_${scala.binary.version}/${spark.version}/spark-sql_${scala.binary.version}-${spark.version}.jar#https://spark.apache.org/docs/${spark.version}/api/scala/index.html</arg>
-                                </args>
-                            </configuration>
-                        </execution>
-                    </executions>
-                    <configuration>
-                        <scalaVersion>${scala.version}</scalaVersion>
-                        <checkMultipleScalaVersions>true</checkMultipleScalaVersions>
-                        <failOnMultipleScalaVersions>true</failOnMultipleScalaVersions>
-                        <recompileMode>${scala.recompileMode}</recompileMode>
-                        <args>
-                            <arg>-unchecked</arg>
-                            <arg>-deprecation</arg>
-                            <arg>-feature</arg>
-                            <arg>-explaintypes</arg>
-                            <arg>-Yno-adapted-args</arg>
-                            <arg>-Ywarn-unused:imports</arg>
-                            <arg>-Xlint:missing-interpolator</arg>
-                            <arg>-Xfatal-warnings</arg>
-                        </args>
-                        <jvmArgs>
-                            <jvmArg>-Xms1024m</jvmArg>
-                            <jvmArg>-Xmx1024m</jvmArg>
-                        </jvmArgs>
-                        <addJavacArgs>${scala.javac.args}</addJavacArgs>
-                    </configuration>
-                </plugin>
-                <plugin>
-                    <groupId>org.scalatest</groupId>
-                    <artifactId>scalatest-maven-plugin</artifactId>
-                    <version>${scalatest-maven-plugin.version}</version>
-                    <configuration>
-                        <reportsDirectory>${project.build.directory}/surefire-reports</reportsDirectory>
-                        <junitxml>.</junitxml>
-                        <filereports>scala-test-output.txt</filereports>
-                        <argLine>${argLine} -ea -Xmx4g -Xss4m</argLine>
-                        <stderr/>
-                        <systemProperties>
-                            <rapids.shuffle.manager.override>${rapids.shuffle.manager.override}</rapids.shuffle.manager.override>
-                            <ai.rapids.refcount.debug>true</ai.rapids.refcount.debug>
-                            <java.awt.headless>true</java.awt.headless>
-                            <java.io.tmpdir>${project.build.directory}/tmp</java.io.tmpdir>
-                            <spark.ui.enabled>false</spark.ui.enabled>
-                            <spark.ui.showConsoleProgress>false</spark.ui.showConsoleProgress>
-                            <spark.unsafe.exceptionOnMemoryLeak>true</spark.unsafe.exceptionOnMemoryLeak>
-                        </systemProperties>
-                        <tagsToExclude>${test.exclude.tags}</tagsToExclude>
-                        <tagsToInclude>${test.include.tags}</tagsToInclude>
-                    </configuration>
-                    <executions>
-                        <execution>
-                            <id>test</id>
-                            <goals>
-                                <goal>test</goal>
-                            </goals>
-                        </execution>
-                    </executions>
-                </plugin>
-                <plugin>
-                    <groupId>org.apache.rat</groupId>
-                    <artifactId>apache-rat-plugin</artifactId>
-                    <version>0.13</version>
-                    <configuration>
-                        <consoleOutput>${rat.consoleOutput}</consoleOutput>
-                    </configuration>
-                    <executions>
-                        <execution>
-                            <phase>verify</phase>
-                            <goals>
-                                <goal>check</goal>
-                            </goals>
-                        </execution>
-                    </executions>
-                </plugin>
-                <plugin>
-                    <groupId>org.jacoco</groupId>
-                    <artifactId>jacoco-maven-plugin</artifactId>
-                    <version>0.8.5</version>
-                </plugin>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-jar-plugin</artifactId>
-                    <version>${maven.jar.plugin.version}</version>
-                    <executions>
-                        <execution>
-                            <id>default-test-jar</id>
-                            <goals>
-                                <goal>test-jar</goal>
-                            </goals>
-                            <configuration>
-                                <classifier>${spark.version.classifier}tests</classifier>
-                                <skipIfEmpty>true</skipIfEmpty>
-                            </configuration>
-                        </execution>
-                    </executions>
-                </plugin>
-                <plugin>
-                    <groupId>org.codehaus.mojo</groupId>
-                    <artifactId>exec-maven-plugin</artifactId>
-                    <version>3.0.0</version>
-                </plugin>
-            </plugins>
-        </pluginManagement>
-
-        <plugins>
-            <plugin>
-                <groupId>org.apache.rat</groupId>
-                <artifactId>apache-rat-plugin</artifactId>
-                <configuration>
-                    <excludes>
-                        <exclude>**/*.md</exclude>
-                        <exclude>**/*.iml</exclude>
-                        <exclude>NOTICE-binary</exclude>
-                        <exclude>docs/dev/idea-code-style-settings.xml</exclude>
-                        <exclude>pom.xml.asc</exclude>
-                        <exclude>jenkins/databricks/*.patch</exclude>
-                        <exclude>*.jar</exclude>
-                        <exclude>docs/demo/**/*.ipynb</exclude>
-                        <exclude>docs/demo/**/*.zpln</exclude>
-                        <exclude>**/src/main/resources/META-INF/services/*</exclude>
-                        <exclude>**/src/test/resources/**</exclude>
-                        <exclude>rmm_log.txt</exclude>
-                        <exclude>dependency-reduced-pom*.xml</exclude>
-                        <exclude>**/.*/**</exclude>
-                        <exclude>**/src/main/java/com/nvidia/spark/rapids/format/*</exclude>
-                        <exclude>**/*.csv</exclude>
-                        <exclude>dist/*.txt</exclude>
-                        <exclude>**/META-INF/com.nvidia.spark.rapids.SparkShimServiceProvider</exclude>
-                        <!-- Apache Rat excludes target folder for projects that are included by
-                        default, but there are some projects that are conditionally included.  -->
-                        <exclude>**/target/**/*</exclude>
-                        <exclude>**/cufile.log</exclude>
-                    </excludes>
-                </configuration>
-            </plugin>
-
-            <!--use this plugin to configure "spark.rapids.source.basedir" property-->
-            <plugin>
-                <groupId>org.commonjava.maven.plugins</groupId>
-                <artifactId>directory-maven-plugin</artifactId>
-                <version>0.1</version>
-                <executions>
-                    <execution>
-                        <id>directories</id>
-                        <goals>
-                            <goal>highest-basedir</goal>
-                        </goals>
-                        <phase>initialize</phase>
-                        <configuration>
-                            <property>spark.rapids.source.basedir</property>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-
-            <plugin>
-                <!--
-                This is an alternative implementation of the scalastyle check invocation,
-                a replacement for scalastyle-maven-plugin. It's motivated to address the following:
-                - All scala files are checked at once regardless of the module, so the developer
-                  can focus on addressing violations without being distracted by the build issues
-                  in-between
-                - We don't have to hardcode the source code roots added dynamically by other maven
-                  plugins to the project
-                - The scalastyle launch cost is amortized across all modules
-                -->
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-antrun-plugin</artifactId>
-                <inherited>false</inherited>
-                <executions>
-                <execution>
-                        <id>shim-sources</id>
-                        <goals><goal>run</goal></goals>
-                        <phase>generate-sources</phase>
-                        <configuration>
-                            <exportAntProperties>true</exportAntProperties>
-                            <target xmlns:ac="antlib:net.sf.antcontrib">
-                                <scriptdef name="shimplify" language="jython" src="${spark.rapids.source.basedir}/build/shimplify.py">
-                                    <attribute name="shims"/>
-                                    <attribute name="if"/>
-                                </scriptdef>
-
-                                <!--
-                                    Rules for adding new shim directories:
-                                    ######################################
-                                    1. Keep includes sorted
-                                    2. Top path components such as 311until320-all should not use
-                                    wildcards until a robust pattern is developed that allows
-                                    refactoring for new shims without breaking build for
-                                    exisiting shims
-                                    3. Using wild cards to pick up scala and java with a single entry
-                                    311until320-all/* is allowed
-                                    4. Using wildcards for trivial excludes is allowed
-                                    - *nondb* dirs in db shims
-                                    - *until330* in 330
-                                    5. Begin with a common reusable pattern, and put the unique includeds
-                                    and excludes at the end
-                                    6. At the same pattern-nesting level list includes before excludes
-                                -->
-
-                                <!-- upstream Spark shims -->
-                                <pathconvert property="spark311.sources" pathsep=",">
-                                    <dirset id="spark311.dirset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
-                                        <patternset id="spark311+.pattern">
-                                            <include name="311+-non330db/*"/>
-                                            <include name="311+-nondb/*"/>
-                                            <include name="311until320-all/*"/>
-                                            <include name="311until320-noncdh/*"/>
-                                            <include name="311until320-nondb/*"/>
-                                            <include name="311until330-all/*"/>
-                                            <include name="311until330-nondb/*"/>
-                                            <include name="311until340-all/*"/>
-                                            <include name="311until340-non330db/*"/>
-                                            <include name="311until340-nondb/*"/>
-                                            <include name="pre320-treenode/*"/>
-                                        </patternset>
-                                        <include name="311-nondb/*"/>
-                                    </dirset>
-                                </pathconvert>
-                                <pathconvert property="spark312.sources" pathsep=",">
-                                    <dirset id="spark312.dirset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
-                                        <patternset refid="spark311+.pattern"/>
-                                        <include name="312-nondb/*"/>
-                                    </dirset>
-                                </pathconvert>
-                                <pathconvert property="spark313.sources" pathsep=",">
-                                    <dirset id="spark313.dirset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
-                                        <patternset refid="spark311+.pattern"/>
-                                        <include name="313/*"/>
-                                    </dirset>
-                                </pathconvert>
-                                <pathconvert property="spark314.sources" pathsep=",">
-                                    <dirset id="spark314.dirset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
-                                        <patternset refid="spark311+.pattern"/>
-                                        <include name="314/*"/>
-                                    </dirset>
-                                </pathconvert>
-                                <pathconvert property="spark320.sources" pathsep=",">
-                                    <dirset id="spark320.dirset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
-                                        <patternset id="spark320+.pattern">
-                                            <!-- inherit from 311+ with exceptions -->
-                                            <patternset refid="spark311+.pattern"/>
-                                            <exclude name="*until320*/*"/>
-                                            <exclude name="pre320-treenode/*"/>
-
-                                            <!-- uniquely 320+ -->
-                                            <include name="320+/*"/>
-                                            <include name="320+-noncdh/*"/>
-                                            <include name="320+-nondb/*"/>
-                                            <include name="320until330-all/*"/>
-                                            <include name="320until330-noncdh/*"/>
-                                            <include name="320until330-nondb/*"/>
-                                            <include name="320until340-all/*"/>
-                                            <include name="320until340-non330db/*"/>
-                                            <include name="delta-lake-common/*"/>
-                                            <include name="post320-treenode/*"/>
-                                        </patternset>
-                                        <include name="320/*"/>
-                                    </dirset>
-                                </pathconvert>
-                                <pathconvert property="spark321.sources" pathsep=",">
-                                    <dirset id="spark321.diset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
-                                        <patternset id="spark321+.pattern">
-                                            <patternset refid="spark320+.pattern"/>
-                                            <include name="321+/*"/>
-                                            <include name="321until330-all/*"/>
-                                        </patternset>
-                                        <include name="321/*"/>
-                                    </dirset>
-                                </pathconvert>
-                                <pathconvert property="spark322.sources" pathsep=",">
-                                    <dirset id="spark322.diset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
-                                        <patternset refid="spark321+.pattern"/>
-                                        <include name="322/*"/>
-                                    </dirset>
-                                </pathconvert>
-                                <pathconvert property="spark323.sources" pathsep=",">
-                                    <dirset id="spark323.diset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
-                                        <patternset refid="spark321+.pattern"/>
-                                        <include name="323/*"/>
-                                    </dirset>
-                                </pathconvert>
-                                <pathconvert property="spark330.sources" pathsep=",">
-                                    <dirset id="spark330.diset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
-                                        <patternset id="spark330+.pattern">
-                                            <patternset refid="spark321+.pattern"/>
-                                            <exclude name="*until330*/*"/>
-
-                                            <!-- uniquely 330+ -->
-                                            <include name="330+/*"/>
-                                            <include name="330+-nondb/*"/>
-                                            <include name="330+-noncdh/*"/>
-                                            <include name="330until340/*"/>
-                                            <include name="330until340-nondb/*"/>
-                                        </patternset>
-                                        <include name="330/*"/>
-                                    </dirset>
-                                </pathconvert>
-                                <pathconvert property="spark331.sources" pathsep=",">
-                                    <dirset id="spark331.diset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
-                                        <patternset id="spark331+.pattern">
-                                            <patternset refid="spark330+.pattern"/>
-                                            <include name="331+/*"/>
-                                        </patternset>
-                                        <include name="331/*"/>
-                                    </dirset>
-                                </pathconvert>
-                                <pathconvert property="spark332.sources" pathsep=",">
-                                    <dirset id="spark332.diset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
-                                        <patternset refid="spark331+.pattern"/>
-                                        <include name="332/*"/>
-                                    </dirset>
-                                </pathconvert>
-                                <pathconvert property="spark340.sources" pathsep=",">
-                                    <dirset id="spark340.diset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
-                                        <patternset id="spark340+.pattern">
-                                            <!-- inherit from 331+ with exceptions -->
-                                            <patternset refid="spark331+.pattern"/>
-                                            <exclude name="*until340*/*"/>
-                                            <include name="340+-and-330db/*"/>
-                                            <!-- uniquely 340+ -->
-                                            <include name="340+/*"/>
-                                        </patternset>
-                                        <include name="340/*"/>
-                                    </dirset>
-                                </pathconvert>
-
-                                <!-- Spark vendor shims -->
-                                <pathconvert id="spark321cdh.diset.id" property="spark321cdh.sources" pathsep=",">
-                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
-                                        <!-- inherit from 321+ upstream except noncdh -->
-                                        <patternset refid="spark321+.pattern"/>
-                                        <exclude name="*noncdh*/*"/>
-
-                                        <include name="321cdh/*"/>
-                                    </dirset>
-                                </pathconvert>
-                                <pathconvert property="spark330cdh.sources" pathsep=",">
-                                    <dirset id="spark330cdh.dirset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
-                                        <!-- inherit from 330+ upstream except noncdh -->
-                                        <patternset refid="spark330+.pattern"/>
-                                        <exclude name="*noncdh*/*"/>
-
-                                        <include name="330cdh/*"/>
-                                    </dirset>
-                                </pathconvert>
-
-                                <pathconvert property="spark312db.sources" pathsep=",">
-                                    <dirset id="spark312db.dirset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
-                                        <!-- inherit 311+ except nondb -->
-                                        <patternset refid="spark311+.pattern"/>
-                                        <exclude name="pre320-treenode/*"/>
-                                        <exclude name="*nondb*/*"/>
-
-                                        <include name="311+-db/*"/>
-                                        <include name="31xdb/*"/>
-                                        <include name="post320-treenode/*"/>
-
-                                        <include name="312db/*"/>
-                                    </dirset>
-                                </pathconvert>
-                                <pathconvert property="spark321db.sources" pathsep=",">
-                                    <dirset id="spark321db.dirset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
-                                        <patternset id="spark321db+.pattern">
-                                            <!-- inherit 321+ except nondb -->
-                                            <patternset refid="spark321+.pattern"/>
-                                            <exclude name="*nondb*/*"/>
-
-                                            <include name="311+-db/*"/>
-                                            <include name="321+-db/*"/>
-                                        </patternset>
-                                        <include name="321db/*"/>
-                                    </dirset>
-                                </pathconvert>
-                                <pathconvert property="spark330db.sources" pathsep=",">
-                                    <dirset id="spark330db.dirset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
-                                        <patternset refid="spark321db+.pattern"/>
-                                        <patternset refid="spark330+.pattern"/>
-                                        <include name="340+-and-330db/*"/>
-                                        <include name="330db/*"/>
-                                        <exclude name="*non330db*/*"/>
-                                    </dirset>
-                                </pathconvert>
-                                <ac:for param="bv" list="${noSnapshot.buildvers},${snapshot.buildvers},${databricks.buildvers},340" trim="true">
-                                    <sequential>
-                                        <multirootfileset id="spark@{bv}.fileset" basedirs="${spark@{bv}.sources}">
-                                            <include name="**/*.java"/>
-                                            <include name="**/*.scala"/>
-                                        </multirootfileset>
-                                    </sequential>
-                                </ac:for>
-                                <shimplify shims="${noSnapshot.buildvers},${snapshot.buildvers},${databricks.buildvers},340" if="shimplify"/>
-                            </target>
-                        </configuration>
-                    </execution>
-                    <execution>
                         <id>scalastyle-all-modules</id>
                         <phase>verify</phase>
                         <goals><goal>run</goal></goals>
@@ -1774,6 +1462,30 @@
                         <version>1.0.0</version>
                     </dependency>
                 </dependencies>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>add-shim-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals><goal>add-source</goal></goals>
+                        <configuration>
+                            <sources>${spark.shim.sources}</sources>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>add-shim-test-sources</id>
+                        <phase>generate-test-sources</phase>
+                        <goals><goal>add-test-source</goal></goals>
+                        <configuration>
+                            <sources>
+                                <source>${spark.shim.test.sources}</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.jacoco</groupId>
