@@ -151,7 +151,6 @@ def test_broadcast_nested_loop_join_without_condition_empty(join_type):
     assert_gpu_and_cpu_are_equal_collect(do_join)
 
 @ignore_order(local=True)
-@allow_non_gpu(*db_113_cpu_bhj_join_allow)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 def test_right_broadcast_nested_loop_join_without_condition_empty_small_batch(join_type):
     def do_join(spark):
@@ -161,7 +160,6 @@ def test_right_broadcast_nested_loop_join_without_condition_empty_small_batch(jo
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Right', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
-@allow_non_gpu(*db_113_cpu_bhj_join_allow)
 def test_empty_broadcast_hash_join(join_type):
     def do_join(spark):
         left, right = create_df(spark, long_gen, 50, 0)
