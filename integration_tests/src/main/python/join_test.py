@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -487,6 +487,8 @@ def test_broadcast_join_left_table(data_gen, join_type):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 250, 500)
         return broadcast(left).join(right, left.a == right.r_a, join_type)
+    # Specify 200 shuffle partitions to test cases where streaming side is empty
+    # as in https://github.com/NVIDIA/spark-rapids/issues/7516
     assert_gpu_and_cpu_are_equal_collect(do_join, conf={'spark.sql.shuffle.partitions': '200'})
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
