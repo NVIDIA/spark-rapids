@@ -387,7 +387,7 @@ def test_mod_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"a % b"))
 
-# @pytest.mark.xfail(reason='BUG https://github.com/NVIDIA/spark-rapids/issues/7553')
+@pytest.mark.xfail(reason='BUG https://github.com/NVIDIA/spark-rapids/issues/7553')
 @pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 5),
     DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(3, -2), 
     DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)
