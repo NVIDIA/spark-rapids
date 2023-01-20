@@ -86,8 +86,9 @@ def task_impl():
     """
     log.info('############# Starting Jython Task Shimplify #######')
     if_attr = attributes.get('if')
-    if_val = 'true' if if_attr is None else project.getProperty(if_attr)
-    if (if_val is None) or (if_val.strip() != str(True).lower()):
+    if_val = None if if_attr is None else project.getProperty(if_attr)
+    should_skip = if_val is None or if_val != str(True).lower()
+    if should_skip:
         log.info('Skipping shimplify! Set -Dshimplify=true to convert old shims')
         return
     shims_attr = attributes.get('shims')
