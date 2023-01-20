@@ -39,6 +39,7 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar with Arm {
     val bufferHandle = new RapidsBufferHandle {
       override val id: RapidsBufferId = bufferId
       override def setSpillPriority(newPriority: Long): Unit = {}
+      override def close(): Unit = {}
     }
 
     assertThrows[NoSuchElementException](catalog.acquireBuffer(bufferHandle))
@@ -64,14 +65,14 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar with Arm {
     val handle2 =
       catalog.makeNewHandle(bufferId, -1, RapidsBuffer.defaultSpillCallback)
 
-    catalog.removeBuffer(handle1)
+    handle1.close()
 
     // this does not throw
     catalog.acquireBuffer(handle2).close()
     // actually this doesn't throw either
     catalog.acquireBuffer(handle1).close()
 
-    catalog.removeBuffer(handle2)
+    handle2.close()
 
     assertThrows[NoSuchElementException](catalog.acquireBuffer(handle1))
     assertThrows[NoSuchElementException](catalog.acquireBuffer(handle2))
@@ -94,7 +95,7 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar with Arm {
     }
 
     // removing the lower priority handle, keeps the high priority spill
-    catalog.removeBuffer(handle1)
+    handle1.close()
     withResource(catalog.acquireBuffer(handle2)) { buff =>
       assertResult(0)(buff.getSpillPriority)
     }
@@ -108,12 +109,12 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar with Arm {
 
     // removing the high priority spill (0) brings us down to the
     // low priority that is remaining
-    catalog.removeBuffer(handle2)
+    handle2.close()
     withResource(catalog.acquireBuffer(handle2)) { buff =>
       assertResult(-1000)(buff.getSpillPriority)
     }
 
-    catalog.removeBuffer(handle3)
+    handle3.close()
   }
 
   test("spill callbacks are updated as handles are registered and unregistered") {
@@ -146,17 +147,17 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar with Arm {
 
     // removing handles brings back the prior inserted callback
     // low priority that is remaining
-    catalog.removeBuffer(handle3)
+    handle3.close()
     withResource(catalog.acquireBuffer(handle2)) { buff =>
       assertResult(RapidsBuffer.defaultSpillCallback)(buff.getSpillCallback)
     }
 
-    catalog.removeBuffer(handle2)
+    handle2.close()
     withResource(catalog.acquireBuffer(handle1)) { buff =>
       assertResult(null)(buff.getSpillCallback)
     }
 
-    catalog.removeBuffer(handle1)
+    handle1.close()
   }
 
   test("buffer registering slower tier does not hide faster tier") {
@@ -286,7 +287,7 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar with Arm {
     catalog.registerNewBuffer(buffer)
     val handle = catalog.makeNewHandle(
       bufferId, -1, RapidsBuffer.defaultSpillCallback)
-    catalog.removeBuffer(handle)
+    handle.close()
     verify(buffer).free()
   }
 
@@ -306,7 +307,7 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar with Arm {
     catalog.registerNewBuffer(buffer3)
 
     // removing the original handle removes all buffers from all tiers.
-    catalog.removeBuffer(handle)
+    handle.close()
     verify(buffer).free()
     verify(buffer2).free()
     verify(buffer3).free()

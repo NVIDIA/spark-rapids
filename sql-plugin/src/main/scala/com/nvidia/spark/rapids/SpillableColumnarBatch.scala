@@ -79,8 +79,6 @@ class SpillableColumnarBatchImpl (
     sparkTypes: Array[DataType],
     semWait: GpuMetric)
     extends SpillableColumnarBatch with Arm {
-  private var closed = false
-
   /**
    * The number of rows stored in this batch.
    */
@@ -113,11 +111,8 @@ class SpillableColumnarBatchImpl (
    * Remove the `ColumnarBatch` from the cache.
    */
   override def close(): Unit = {
-    if (!closed) {
-      // closing my reference
-      RapidsBufferCatalog.removeBuffer(handle)
-      closed = true
-    }
+    // closing my reference
+    handle.close()
   }
 }
 
@@ -224,8 +219,6 @@ class SpillableBuffer(
     handle: RapidsBufferHandle,
     semWait: GpuMetric) extends AutoCloseable with Arm {
 
-  private var closed = false
-
   /**
    * Set a new spill priority.
    */
@@ -246,10 +239,7 @@ class SpillableBuffer(
    * Remove the buffer from the cache.
    */
   override def close(): Unit = {
-    if (!closed) {
-      RapidsBufferCatalog.removeBuffer(handle)
-      closed = true
-    }
+    handle.close()
   }
 }
 

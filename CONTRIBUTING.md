@@ -54,6 +54,20 @@ To get an uber jar with more than 1 version you have to `mvn package` each versi
 and then use one of the defined profiles in the dist module, or a comma-separated list of
 build versions. See the next section for more details.
 
+You might see a warning during scala-maven-plugin compile goal invocation.
+```
+[INFO] Compiling 94 Scala sources and 1 Java source to /home/user/gits/NVIDIA/spark-rapids/tests/target/spark3XY/test-classes ...
+OpenJDK 64-Bit Server VM warning: CodeCache is full. Compiler has been disabled.
+OpenJDK 64-Bit Server VM warning: Try increasing the code cache size using -XX:ReservedCodeCacheSize=
+CodeCache: size=245760Kb used=236139Kb max_used=243799Kb free=9620Kb
+ bounds [0x00007f9681000000, 0x00007f9690000000, 0x00007f9690000000]
+ total_blobs=60202 nmethods=59597 adapters=504
+ compilation: disabled (not enough contiguous free space left)
+```
+
+It can be mitigated by increasing [ReservedCodeCacheSize](https://spark.apache.org/docs/3.3.1/building-spark.html#setting-up-mavens-memory-usage)
+passed in the `MAVEN_OPTS` environment variable.
+
 ### Building a Distribution for Multiple Versions of Spark
 
 By default the distribution jar only includes code for a single version of Spark. If you want

@@ -192,11 +192,7 @@ class ShuffleBufferCatalog(
         // NOTE: Not synchronizing array buffer because this shuffle should be inactive.
         bufferIds.foreach { id =>
           tableMap.remove(id.tableId)
-          val didRemove = catalog.removeBuffer(bufferIdToHandle.get(id))
-          if (!didRemove) {
-            logWarning(s"Unable to remove $id from underlying storage when cleaning " +
-              s"shuffle blocks.")
-          }
+          bufferIdToHandle.get(id).close()
         }
       }
       info.blockMap.forEachValue(Long.MaxValue, bufferRemover)
@@ -316,7 +312,7 @@ class ShuffleBufferCatalog(
   def removeBuffer(handle: RapidsBufferHandle): Unit = {
     val id = handle.id
     tableMap.remove(id.tableId)
-    catalog.removeBuffer(handle)
+    handle.close()
   }
 }
 
