@@ -86,7 +86,6 @@
                 <spark.test.version>${spark311.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark311.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -128,7 +127,6 @@
                 <rat.consoleOutput>true</rat.consoleOutput>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark312db.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
 
             <modules>
@@ -156,7 +154,6 @@
                 <spark.test.version>${spark312.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark312.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -184,7 +181,6 @@
                 <spark.test.version>${spark313.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark313.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -239,7 +235,6 @@
                 <spark.test.version>${spark320.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark320.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -292,7 +287,6 @@
                 <spark.test.version>${spark321cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark321cdh.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <repositories>
                 <repository>
@@ -351,7 +345,6 @@
                 <spark.test.version>${spark323.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark323.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -392,7 +385,6 @@
                 <rat.consoleOutput>true</rat.consoleOutput>
                 <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
                 <spark.shim.sources>${spark321db.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -420,7 +412,6 @@
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark330.sources}</spark.shim.sources>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -475,7 +466,6 @@
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark332.sources}</spark.shim.sources>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -503,7 +493,6 @@
                 <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
                 <spark.shim.sources>${spark340.sources}</spark.shim.sources>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -531,7 +520,6 @@
                 <parquet.hadoop.version>1.10.99.7.1.8.0-801</parquet.hadoop.version>
                 <spark.shim.sources>${spark330cdh.sources}</spark.shim.sources>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <repositories>
                 <repository>
@@ -585,7 +573,6 @@
                 <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
                 <spark.shim.sources>${spark330db.sources}</spark.shim.sources>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>dist</module>
@@ -726,7 +713,7 @@
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
 
         <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/src/generated</spark.shim.dest>
-        <spark.shim.test.sources>${project.basedir}/src/test/${buildver}</spark.shim.test.sources>
+        <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
         <symlink.shim.files>true</symlink.shim.files>
         <noSnapshot.buildvers>
             311,
@@ -1142,15 +1129,36 @@
                                         <exclude name="*non330db*/*"/>
                                     </dirset>
                                 </pathconvert>
-                                <ac:for param="bv" list="${noSnapshot.buildvers},${snapshot.buildvers},${databricks.buildvers},340" trim="true">
+                                <pathconvert property="spark311.test.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/test" erroronmissingdir="false">
+                                        <include name="311/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark312.test.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/test" erroronmissingdir="false">
+                                        <include name="312/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark312db.test.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/test" erroronmissingdir="false">
+                                        <include name="312db/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark321.test.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/test" erroronmissingdir="false">
+                                        <include name="321/*"/>
+                                        <include name="320+-noncdh-nondb/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <ac:for param="bv" list="311,321" trim="true">
                                     <sequential>
-                                        <multirootfileset id="spark@{bv}.fileset" basedirs="${spark@{bv}.sources}">
+                                        <multirootfileset id="spark@{bv}.fileset" basedirs="${spark@{bv}.sources},${spark@{bv}.test.sources}">
                                             <include name="**/*.java"/>
                                             <include name="**/*.scala"/>
                                         </multirootfileset>
                                     </sequential>
                                 </ac:for>
-                                <shimplify shims="${noSnapshot.buildvers},${snapshot.buildvers},${databricks.buildvers},340" if="shimplify"/>
+                                <shimplify shims="311,321" if="shimplify"/>
                             </target>
                         </configuration>
                     </execution>
