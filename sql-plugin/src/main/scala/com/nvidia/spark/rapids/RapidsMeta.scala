@@ -807,9 +807,9 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   }
 
   /**
-    * Returns whether either currently wrapped SparkPlan supports columnar execution or
-    * whether it will be replaced with something that does
-    */
+   * Returns whether either currently wrapped SparkPlan supports columnar execution or
+   * whether it will be replaced with something that does
+   */
   override def supportsColumnar: Boolean = wrapped.supportsColumnar || canThisBeReplaced 
 
   /**
