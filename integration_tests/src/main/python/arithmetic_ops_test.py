@@ -120,7 +120,7 @@ def test_subtraction(data_gen):
     DecimalGen(10, -2), DecimalGen(15, 3), DecimalGen(30, 12), DecimalGen(3, -3),
     DecimalGen(27, 7), DecimalGen(20, -3)], ids=idfn)
 @pytest.mark.parametrize('addOrSub', ['+', '-'])
-def test_addition_subtraction_mixed_decimal(lhs, rhs, addOrSub):
+def test_addition_subtraction_mixed(lhs, rhs, addOrSub):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"a {addOrSub} b")
     )
@@ -383,7 +383,7 @@ def test_mod_pmod_by_zero_not_ansi(data_gen):
 @pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 3),
     DecimalGen(10, -2), DecimalGen(15, 3), DecimalGen(30, 12), DecimalGen(3, -3),
     DecimalGen(27, 7), DecimalGen(20, -3)], ids=idfn)
-def test_mod_mixed_decimal(lhs, rhs):
+def test_mod_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"a % b"))
 
@@ -396,7 +396,7 @@ def test_mod_mixed_decimal(lhs, rhs):
     DecimalGen(10, -2), DecimalGen(15, 3), DecimalGen(30, 12), DecimalGen(3, -3),
     DecimalGen(27, 7), DecimalGen(20, -3)
     ], ids=idfn)
-def test_pmod_mixed_decimal(lhs, rhs):
+def test_pmod_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"pmod(a, b)"))
 
