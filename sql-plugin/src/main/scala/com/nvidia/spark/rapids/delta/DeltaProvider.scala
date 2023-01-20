@@ -16,15 +16,16 @@
 
 package com.nvidia.spark.rapids.delta
 
-import scala.util.Try
-
 import com.nvidia.spark.rapids.{CreatableRelationProviderRule, ExecRule, ShimLoader}
-import com.nvidia.spark.rapids.delta.shims.DeltaProviderShims
 
 import org.apache.spark.sql.Strategy
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.UnshimmedTrampolineUtil
 import org.apache.spark.sql.sources.CreatableRelationProvider
+
+/** Probe interface to determine which Delta Lake provider to use. */
+trait DeltaProbe {
+  def getDeltaProvider: DeltaProvider
+}
 
 /** Interfaces to avoid accessing the optional Delta Lake jars directly in common code. */
 trait DeltaProvider {
@@ -36,26 +37,19 @@ trait DeltaProvider {
   def getStrategyRules: Seq[Strategy]
 }
 
-class NoDeltaProvider extends DeltaProvider {
+object DeltaProvider {
+  private lazy val provider = {
+    ShimLoader.newDeltaProbe().getDeltaProvider
+  }
+
+  def apply(): DeltaProvider = provider
+}
+
+object NoDeltaProvider extends DeltaProvider {
   override def getCreatableRelationRules: Map[Class[_ <: CreatableRelationProvider],
       CreatableRelationProviderRule[_ <: CreatableRelationProvider]] = Map.empty
 
   override def getExecRules: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Map.empty
 
   override def getStrategyRules: Seq[Strategy] = Nil
-}
-
-object DeltaProvider {
-  private lazy val provider = {
-    val hasDeltaJar = DeltaProviderShims.cpuDataSourceClassName.exists { name =>
-      UnshimmedTrampolineUtil.classIsLoadable(name) && Try(ShimLoader.loadClass(name)).isSuccess
-    }
-    if (hasDeltaJar) {
-      ShimLoader.newDeltaProvider()
-    } else {
-      new NoDeltaProvider()
-    }
-  }
-
-  def apply(): DeltaProvider = provider
 }
