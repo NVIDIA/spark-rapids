@@ -356,12 +356,12 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS)) ++ spillMetrics
 
   /** BuildRight means the right relation <=> the broadcast relation. */
-  private val (streamed, broadcast) = gpuBuildSide match {
+  val (streamed, buildPlan) = gpuBuildSide match {
     case GpuBuildRight => (left, right)
     case GpuBuildLeft => (right, left)
   }
 
-  def broadcastExchange: GpuBroadcastExchangeExecBase = broadcast match {
+  def broadcastExchange: GpuBroadcastExchangeExecBase = buildPlan match {
     case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[GpuBroadcastExchangeExecBase] =>
       bqse.plan.asInstanceOf[GpuBroadcastExchangeExecBase]
     case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[ReusedExchangeExec] =>
@@ -397,18 +397,18 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     }
   }
 
-  private[this] def makeBuiltBatch(
+  protected def makeBroadcastBuiltBatch(
       broadcastRelation: Broadcast[Any],
       buildTime: GpuMetric,
       buildDataSize: GpuMetric): ColumnarBatch = {
     withResource(new NvtxWithMetrics("build join table", NvtxColor.GREEN, buildTime)) { _ =>
-      val builtBatch = GpuBroadcastHelper.getBroadcastBatch(broadcastRelation, broadcast.schema)
+      val builtBatch = GpuBroadcastHelper.getBroadcastBatch(broadcastRelation, buildPlan.schema)
       buildDataSize += GpuColumnVector.getTotalDeviceMemoryUsed(builtBatch)
       builtBatch
     }
   }
 
-  private[this] def computeBuildRowCount(
+  protected def computeBroadcastBuildRowCount(
       broadcastRelation: Broadcast[Any],
       buildTime: GpuMetric,
       buildDataSize: GpuMetric): Int = {
@@ -416,6 +416,28 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
       buildDataSize += 0
       GpuBroadcastHelper.getBroadcastBatchNumRows(broadcastRelation)
     }
+  }
+
+  protected def makeBuiltBatch(
+      relation: Any,
+      buildTime: GpuMetric,
+      buildDataSize: GpuMetric): ColumnarBatch = {
+    // NOTE: pattern matching doesn't work here because of type-invariance
+    val broadcastRelation = relation.asInstanceOf[Broadcast[Any]]
+    makeBroadcastBuiltBatch(broadcastRelation, buildTime, buildDataSize)
+  }
+
+  protected def computeBuildRowCount(
+      relation: Any,
+      buildTime: GpuMetric,
+      buildDataSize: GpuMetric): Int = {
+    // NOTE: pattern matching doesn't work here because of type-invariance
+    val broadcastRelation = relation.asInstanceOf[Broadcast[Any]]
+    computeBroadcastBuildRowCount(broadcastRelation, buildTime, buildDataSize)
+  }
+
+  protected def getBroadcastRelation(): Any = {
+    broadcastExchange.executeColumnarBroadcast[Any]()
   }
 
   override def doExecuteColumnar(): RDD[ColumnarBatch] = {
@@ -430,8 +452,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
       GpuBindReferences.bindGpuReference(_, firstTable.output ++ secondTable.output)
     }
 
-    val broadcastRelation =
-      broadcastExchange.executeColumnarBroadcast[Any]()
+    val broadcastRelation = getBroadcastRelation()
 
     val joinCondition = boundCondition.orElse {
       // For outer joins use a true condition if there are any columns in the build side
@@ -452,7 +473,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
   }
 
   private def leftExistenceJoin(
-      broadcastRelation: Broadcast[Any],
+      broadcastRelation: Any,
       exists: Boolean,
       buildTime: GpuMetric,
       buildDataSize: GpuMetric): RDD[ColumnarBatch] = {
@@ -467,7 +488,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     }
   }
 
-  private def doUnconditionalJoin(broadcastRelation: Broadcast[Any]): RDD[ColumnarBatch] = {
+  private def doUnconditionalJoin(broadcastRelation: Any): RDD[ColumnarBatch] = {
     // Existence join should have a condition
     assert(!joinType.isInstanceOf[ExistenceJoin])
 
@@ -529,7 +550,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
   }
 
   /** Special-case handling of an unconditional join that just needs to output a row count. */
-  private def doUnconditionalJoinRowCount(broadcastRelation: Broadcast[Any]): RDD[ColumnarBatch] = {
+  private def doUnconditionalJoinRowCount(broadcastRelation: Any): RDD[ColumnarBatch] = {
     if (joinType == LeftAnti) {
       // degenerate case, no rows are returned.
       left.executeColumnar().mapPartitions { _ =>
@@ -566,7 +587,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
   }
 
   private def doConditionalJoin(
-      broadcastRelation: Broadcast[Any],
+      broadcastRelation: Any,
       boundCondition: Option[GpuExpression],
       numFirstTableColumns: Int): RDD[ColumnarBatch] = {
     val buildTime = gpuLongMetric(BUILD_TIME)

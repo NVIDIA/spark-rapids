@@ -145,7 +145,7 @@ case class GpuBroadcastHashJoinExec(
     }
   }
 
-  private def doColumnarExecutorBroadcastJoin(): RDD[ColumnarBatch] = {
+  private[this] def doColumnarExecutorBroadcastJoin(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
