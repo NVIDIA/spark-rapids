@@ -20,14 +20,6 @@ import logging
 import os
 import subprocess
 
-log = logging.getLogger('shimplify')
-log.setLevel(logging.DEBUG)
-ch = logging.StreamHandler()
-ch.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
-ch.setFormatter(formatter)
-log.addHandler(ch)
-
 
 def __is_enabled_property(p):
     assert not (p is None), "Invalid property: None"
@@ -41,14 +33,22 @@ def __is_enabled_attr(attr):
     return not (attr_val is None) and __is_enabled_property(attr_val)
 
 
-
 task_enabled = __is_enabled_attr('if')
 
 # should we move files?
 move_files = __is_enabled_property('shimplifyMove')
 
 # allowed to overwrite the existing comment
-over_shimplify = __is_enabled_property("overShimplify")
+over_shimplify = __is_enabled_property('overShimplify')
+
+shimplify_trace = __is_enabled_property('traceShimplify')
+
+
+log = logging.getLogger('shimplify')
+log.setLevel(logging.DEBUG if shimplify_trace else logging.INFO)
+ch = logging.StreamHandler()
+ch.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
+log.addHandler(ch)
 
 
 def __upsert_shim_json(filename, bv_list):
