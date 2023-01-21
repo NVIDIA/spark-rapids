@@ -85,6 +85,7 @@
                 <spark.test.version>${spark311.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark311.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${spark311.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
@@ -124,6 +125,7 @@
                 <rat.consoleOutput>true</rat.consoleOutput>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark312db.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${spark312db.test.sources}</spark.shim.test.sources>
             </properties>
 
             <modules>
@@ -151,6 +153,7 @@
                 <spark.test.version>${spark312.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark312.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${spark312.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
@@ -178,6 +181,7 @@
                 <spark.test.version>${spark313.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark313.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${spark313.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
@@ -205,6 +209,7 @@
                 <spark.test.version>${spark314.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark314.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${spark314.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
@@ -232,6 +237,7 @@
                 <spark.test.version>${spark320.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark320.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${spark320.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
@@ -258,6 +264,7 @@
                 <spark.test.version>${spark321.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark321.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${spark321.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
@@ -284,6 +291,7 @@
                 <spark.test.version>${spark321cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark321cdh.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${spark321cdh.test.sources}</spark.shim.test.sources>
             </properties>
             <repositories>
                 <repository>
@@ -316,6 +324,7 @@
                 <spark.test.version>${spark322.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark322.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${spark322.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
@@ -342,6 +351,7 @@
                 <spark.test.version>${spark323.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark323.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${spark323.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
@@ -380,6 +390,7 @@
                 <rat.consoleOutput>true</rat.consoleOutput>
                 <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
                 <spark.shim.sources>${spark321db.sources}</spark.shim.sources>
+                <spark.shim.test.sources>${spark321db.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-spark321db</module>
@@ -407,6 +418,7 @@
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark330.sources}</spark.shim.sources>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <spark.shim.test.sources>${spark330.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-21x</module>
@@ -435,6 +447,7 @@
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark331.sources}</spark.shim.sources>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <spark.shim.test.sources>${spark331.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-21x</module>
@@ -463,6 +476,7 @@
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark332.sources}</spark.shim.sources>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <spark.shim.test.sources>${spark332.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-21x</module>
@@ -491,6 +505,7 @@
                 <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
                 <spark.shim.sources>${spark340.sources}</spark.shim.sources>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <spark.shim.test.sources>${spark340.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
@@ -518,6 +533,7 @@
                 <parquet.hadoop.version>1.10.99.7.1.8.0-801</parquet.hadoop.version>
                 <spark.shim.sources>${spark330cdh.sources}</spark.shim.sources>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <spark.shim.test.sources>${spark330cdh.test.sources}</spark.shim.test.sources>
             </properties>
             <repositories>
                 <repository>
@@ -570,6 +586,7 @@
                 <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
                 <spark.shim.sources>${spark330db.sources}</spark.shim.sources>
                 <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <spark.shim.test.sources>${spark330db.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
                 <module>delta-lake/delta-spark330db</module>
@@ -710,7 +727,6 @@
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
 
         <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/src/generated</spark.shim.dest>
-        <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
         <symlink.shim.files>true</symlink.shim.files>
         <noSnapshot.buildvers>
             311,
