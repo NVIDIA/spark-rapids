@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -282,9 +282,6 @@ set_dep_jars()
     dep_jars[AVROMAPRED]=${PREFIX_WS_SP_MVN_HADOOP}--org.apache.avro--avro-mapred--org.apache.avro__avro-mapred__${sw_versions[AVRO]}.jar
     artifacts[AVRO]="-DgroupId=org.apache.avro -DartifactId=avro"
     dep_jars[AVRO]=${PREFIX_WS_SP_MVN_HADOOP}--org.apache.avro--avro--org.apache.avro__avro__${sw_versions[AVRO]}.jar
-    # Delta Lake support is included in SQL jar
-    artifacts[DELTA]="-DgroupId=io.delta -DartifactId=delta-core_${SCALA_VERSION}"
-    dep_jars[DELTA]=${dep_jars[SQL]}
 
     # log4j-core
     if [[ "$BASE_SPARK_VERSION" == "3.3.0" ]]; then

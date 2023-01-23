@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -695,17 +695,7 @@ case class GpuStringRepeat(input: Expression, repeatTimes: Expression)
   }
 
   def doColumnar(input: GpuColumnVector, repeatTimes: GpuColumnVector): ColumnVector = {
-    val repeatTimesCV = repeatTimes.getBase
-
-    // Compute the output size to check for overflow.
-    withResource(input.getBase.repeatStringsSizes(repeatTimesCV)) { outputSizes =>
-      if (outputSizes.getTotalSize > Int.MaxValue.asInstanceOf[Long]) {
-        throw new RuntimeException("Output strings have total size exceed maximum allowed size")
-      }
-
-      // Finally repeat the strings using the pre-computed strings' sizes.
-      input.getBase.repeatStrings(repeatTimesCV, outputSizes.getStringSizes)
-    }
+    input.getBase.repeatStrings(repeatTimes.getBase)
   }
 
   def doColumnar(input: GpuColumnVector, repeatTimes: GpuScalar): ColumnVector = {
