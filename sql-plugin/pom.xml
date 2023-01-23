@@ -261,6 +261,12 @@
                 </dependency>
                 <dependency>
                     <groupId>org.apache.hive</groupId>
+                    <artifactId>hive-metastore-client-patched</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.hive</groupId>
                     <artifactId>hive-serde</artifactId>
                     <version>${spark.version}</version>
                     <scope>provided</scope>
