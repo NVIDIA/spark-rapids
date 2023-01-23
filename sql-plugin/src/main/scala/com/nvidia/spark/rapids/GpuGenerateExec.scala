@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -215,7 +215,9 @@ case class GpuReplicateRows(children: Seq[Expression]) extends GpuGenerator with
     // Calculate the number of rows that needs to be replicated. Here we find the mean of the
     // generator column. Multiplying the mean with size of projected columns would give us the
     // approximate memory required.
-    val meanOutputRows = math.ceil(vectors(generatorOffset).mean().getDouble)
+    val meanOutputRows = math.ceil(withResource(vectors(generatorOffset).mean()) {
+      _.getDouble
+    })
     val estimatedOutputRows = meanOutputRows * inputRows
 
     // input size of columns to be repeated
