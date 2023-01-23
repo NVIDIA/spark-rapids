@@ -28,7 +28,7 @@ import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, Broadcast
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{DataWritingCommandExec, ExecutedCommandExec}
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2ScanExecBase, DropTableExec, ShowTablesExec}
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashedRelationBroadcastMode}
 import org.apache.spark.sql.rapids.{ExternalSource, GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase, GpuBroadcastToRowExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
@@ -142,11 +142,17 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       // stage, or around the custom shuffle reader, if one exists.
       val plan = GpuTransitionOverrides.getNonQueryStagePlan(s)
       if (plan.supportsColumnar && plan.isInstanceOf[GpuExec]) {
-        parent match {
-          case Some(x) if SparkShimImpl.isCustomReaderExec(x) =>
+        (plan, parent) match {
+          case (_, Some(x)) if SparkShimImpl.isCustomReaderExec(x) =>
             // We can't insert a coalesce batches operator between a custom shuffle reader
             // and a shuffle query stage, so we instead insert it around the custom shuffle
             // reader later on, in the next top-level case clause.
+            s
+          case (ex: ShuffleExchangeLike, Some(x))
+              if SparkShimImpl.shuffleParentReadsShuffleData(ex, x) =>
+            // In some cases, the parent might have to read the shuffle data directly, so
+            // we don't need the post-shuffle coalesce exec since the parent should 
+            // coalesce the shuffle data as needed
             s
           case _ =>
             // Directly wrap shuffle query stage with coalesce batches operator
