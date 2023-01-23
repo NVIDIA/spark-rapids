@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,13 @@
 
 package org.apache.spark.sql.rapids.execution
 
-import org.apache.spark.sql.types.{DataType, StructType}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta}
 
-object ShimTrampolineUtil {
+import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 
-  def unionLikeMerge(left: DataType, right: DataType): DataType =
-    StructType.unionLikeMerge(left, right)
-}
+class GpuShuffleMeta(
+    shuffle: ShuffleExchangeExec,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends GpuShuffleMetaBase(shuffle, conf, parent, rule)

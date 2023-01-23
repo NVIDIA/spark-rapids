@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,9 +26,8 @@ import org.apache.spark.internal.config.EXECUTOR_ID
 import org.apache.spark.memory.TaskMemoryManager
 import org.apache.spark.sql.{AnalysisException, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, IdentityBroadcastMode}
+import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
 import org.apache.spark.sql.rapids.shims.SparkUpgradeExceptionShims
 import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.storage.BlockManagerId
@@ -37,11 +36,8 @@ import org.apache.spark.util.{ShutdownHookManager, Utils}
 object TrampolineUtil {
   def doExecuteBroadcast[T](child: SparkPlan): Broadcast[T] = child.doExecuteBroadcast()
 
-  def isSupportedRelation(mode: BroadcastMode): Boolean = mode match {
-    case _ : HashedRelationBroadcastMode => true
-    case IdentityBroadcastMode => true
-    case _ => false
-  }
+  def isSupportedRelation(mode: BroadcastMode): Boolean = 
+    ShimTrampolineUtil.isSupportedRelation(mode)
 
   def unionLikeMerge(left: DataType, right: DataType): DataType =
     ShimTrampolineUtil.unionLikeMerge(left, right)
