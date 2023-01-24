@@ -189,105 +189,6 @@ def test_basic_hive_text_read(std_input_path, name, schema, spark_tmp_table_fact
                                          conf=hive_text_enabled_conf)
 
 
-def rewrite_to_non_partitioned_hive_table(data_path, schema, spark_tmp_table_factory, options=None):
-    if options is None:
-        options = {}
-    opts = options
-    if schema is not None:
-        opts = copy_and_update(options, {'schema': schema})
-
-    # Return a function that does the following:
-    # 1. Creates a Hive table pointing to the input data file
-    # 2. Reads from said table, and writes the rows to a new Hive table
-    # 3. Returns the contents of that new table
-
-    def read_impl(spark):
-        tmp_table_name = spark_tmp_table_factory.get()
-        spark.catalog.createTable(tmp_table_name, source='hive', path=data_path, **opts)
-        actual_table_name = spark_tmp_table_factory.get()
-
-        # TODO: Big miss: CTAS is borked. Temp workaround: Create and overwrite table.
-        # spark.sql("CREATE TABLE " + actual_table_name +
-
-        spark.sql("CREATE TABLE " + actual_table_name + " LIKE " + tmp_table_name)
-        spark.sql("INSERT OVERWRITE TABLE " + actual_table_name +
-                  # " STORED AS TEXTFILE " +
-                  " SELECT * FROM " + tmp_table_name)
-        return spark.sql("SELECT * FROM " + actual_table_name)
-
-    return read_impl
-
-
-@approximate_float
-# @allow_non_gpu("DataWritingCommandExec")
-@pytest.mark.parametrize('name,schema,options', [
-    ('hive-delim-text/simple-boolean-values', make_schema(BooleanType()),        {}),
-    ('hive-delim-text/simple-int-values',     make_schema(ByteType()),           {}),
-    ('hive-delim-text/simple-int-values',     make_schema(ShortType()),          {}),
-    ('hive-delim-text/simple-int-values',     make_schema(IntegerType()),        {}),
-    ('hive-delim-text/simple-int-values',     make_schema(LongType()),           {}),
-    ('hive-delim-text/simple-int-values',     make_schema(FloatType()),          {}),
-    ('hive-delim-text/simple-int-values',     make_schema(DoubleType()),         {}),
-    ('hive-delim-text/simple-int-values',     make_schema(StringType()),         {}),
-    pytest.param('hive-delim-text/simple-int-values', make_schema(DecimalType(10, 2)), {},
-                 marks=pytest.mark.xfail(condition=is_spark_cdh(),
-                                         reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
-    pytest.param('hive-delim-text/simple-int-values', make_schema(DecimalType(10, 3)),   {},
-                 marks=pytest.mark.xfail(condition=is_spark_cdh(),
-                                         reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
-    # Floating Point.
-    ('hive-delim-text/simple-float-values',   make_schema(FloatType()),          {}),
-    pytest.param('hive-delim-text/simple-float-values',   make_schema(DoubleType()),         {},
-                 marks=pytest.mark.xfail(reason="Floats read as double seem off in mantissa value")),
-    pytest.param('hive-delim-text/simple-float-values', make_schema(DecimalType(10, 3)), {},
-                 marks=pytest.mark.xfail(condition=is_spark_cdh(),
-                                         reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
-    pytest.param('hive-delim-text/simple-float-values', make_schema(DecimalType(38, 10)), {},
-                 marks=pytest.mark.xfail(condition=is_spark_cdh(),
-                                         reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
-    ('hive-delim-text/simple-float-values',   make_schema(IntegerType()),        {}),
-    ('hive-delim-text/extended-float-values', make_schema(IntegerType()),        {}),
-    ('hive-delim-text/extended-float-values', make_schema(FloatType()),          {}),
-    ('hive-delim-text/extended-float-values', make_schema(DoubleType()),         {}),
-    pytest.param('hive-delim-text/extended-float-values',   make_schema(DecimalType(10, 3)),   {},
-        marks=pytest.mark.xfail(reason="GPU supports more valid values than CPU. "
-            "https://github.com/NVIDIA/spark-rapids/issues/7246")),
-    pytest.param('hive-delim-text/extended-float-values',   make_schema(DecimalType(38, 10)),   {},
-        marks=pytest.mark.xfail(reason="GPU supports more valid values than CPU. "
-            "https://github.com/NVIDIA/spark-rapids/issues/7246")),
-
-    # Custom datasets
-    ('hive-delim-text/Acquisition_2007Q3', acq_schema, {}),
-    ('hive-delim-text/Performance_2007Q3', perf_schema, {}),
-    ('hive-delim-text/trucks-1', trucks_schema, {}),
-    ('hive-delim-text/trucks-err', trucks_schema, {}),
-
-    # Date/Time
-    # TODO: Timestamp reading seems completely borked. All nulls.
-    pytest.param('hive-delim-text/timestamp', timestamp_schema, {},
-                 marks=pytest.mark.xfail(reason="Timestamp writes seem borked.")),
-                 # marks=pytest.mark.xfail(condition=is_spark_cdh(),
-                 #                         reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
-    pytest.param('hive-delim-text/date', date_schema, {},
-                 marks=pytest.mark.xfail(condition=is_spark_cdh(),
-                                         reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
-
-    # Test that lines beginning with comments ('#') aren't skipped.
-    ('hive-delim-text/comments', StructType([StructField("str", StringType()),
-                                             StructField("num", IntegerType()),
-                                             StructField("another_str", StringType())]), {}),
-
-    # Test that carriage returns ('\r'/'^M') are treated similarly to newlines ('\n')
-    ('hive-delim-text/carriage-return', StructType([StructField("str", StringType())]), {}),
-    ('hive-delim-text/carriage-return-err', StructType([StructField("str", StringType())]), {}),
-], ids=idfn)
-def test_basic_hive_text_write(std_input_path, name, schema, spark_tmp_table_factory, options):
-    assert_gpu_and_cpu_are_equal_collect(
-        rewrite_to_non_partitioned_hive_table(std_input_path + "/" + name,
-                                              schema, spark_tmp_table_factory, options),
-        conf=hive_text_write_enabled_conf)
-
-
 hive_text_supported_gens = [
     StringGen('(\\w| |\t|\ud720){0,10}', nullable=False),
     StringGen('[aAbB ]{0,10}'),
@@ -497,4 +398,107 @@ def test_custom_timestamp_formats_disabled(spark_tmp_path, data_gen, spark_tmp_t
         lambda spark: read_hive_text_table(spark, table_name),
         cpu_fallback_class_name=get_non_gpu_allowed()[0],
         conf=hive_text_enabled_conf)
+
+
+# Hive Delimited Text writer tests follow.
+
+
+def rewrite_to_non_partitioned_hive_table(data_path, schema, spark_tmp_table_factory, options=None):
+    """
+    Return a function that does the following:
+        1. Creates an external Hive table pointing to the input data file
+        2. Reads from said table, and writes the rows to a new Hive table (with GPU or CPU)
+        3. Returns the contents of that new table.
+    """
+    if options is None:
+        options = {}
+    opts = options
+    if schema is not None:
+        opts = copy_and_update(options, {'schema': schema})
+
+    def read_impl(spark):
+        tmp_table_name = spark_tmp_table_factory.get()
+        spark.catalog.createExternalTable(tmp_table_name, source='hive', path=data_path, **opts)
+        actual_table_name = spark_tmp_table_factory.get()
+
+        # TODO: Big miss: CTAS is borked. Temp workaround: Create and overwrite table.
+        # spark.sql("CREATE TABLE " + actual_table_name +
+
+        spark.sql("CREATE TABLE " + actual_table_name + " LIKE " + tmp_table_name)
+        spark.sql("INSERT OVERWRITE TABLE " + actual_table_name +
+                  # " STORED AS TEXTFILE " +
+                  " SELECT * FROM " + tmp_table_name)
+        return spark.sql("SELECT * FROM " + actual_table_name)
+
+    return read_impl
+
+
+@approximate_float
+# @allow_non_gpu("DataWritingCommandExec")
+@pytest.mark.parametrize('name,schema,options', [
+    ('hive-delim-text/simple-boolean-values', make_schema(BooleanType()),        {}),
+    ('hive-delim-text/simple-int-values',     make_schema(ByteType()),           {}),
+    ('hive-delim-text/simple-int-values',     make_schema(ShortType()),          {}),
+    ('hive-delim-text/simple-int-values',     make_schema(IntegerType()),        {}),
+    ('hive-delim-text/simple-int-values',     make_schema(LongType()),           {}),
+    ('hive-delim-text/simple-int-values',     make_schema(FloatType()),          {}),
+    ('hive-delim-text/simple-int-values',     make_schema(DoubleType()),         {}),
+    ('hive-delim-text/simple-int-values',     make_schema(StringType()),         {}),
+    pytest.param('hive-delim-text/simple-int-values', make_schema(DecimalType(10, 2)), {},
+                 marks=pytest.mark.xfail(condition=is_spark_cdh(),
+                                         reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
+    pytest.param('hive-delim-text/simple-int-values', make_schema(DecimalType(10, 3)),   {},
+                 marks=pytest.mark.xfail(condition=is_spark_cdh(),
+                                         reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
+    # Floating Point.
+    ('hive-delim-text/simple-float-values',   make_schema(FloatType()),          {}),
+    pytest.param('hive-delim-text/simple-float-values',   make_schema(DoubleType()),         {},
+                 marks=pytest.mark.xfail(reason="Floats read as double seem off in mantissa value")),
+    pytest.param('hive-delim-text/simple-float-values', make_schema(DecimalType(10, 3)), {},
+                 marks=pytest.mark.xfail(condition=is_spark_cdh(),
+                                         reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
+    pytest.param('hive-delim-text/simple-float-values', make_schema(DecimalType(38, 10)), {},
+                 marks=pytest.mark.xfail(condition=is_spark_cdh(),
+                                         reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
+    ('hive-delim-text/simple-float-values',   make_schema(IntegerType()),        {}),
+    ('hive-delim-text/extended-float-values', make_schema(IntegerType()),        {}),
+    ('hive-delim-text/extended-float-values', make_schema(FloatType()),          {}),
+    ('hive-delim-text/extended-float-values', make_schema(DoubleType()),         {}),
+    pytest.param('hive-delim-text/extended-float-values',   make_schema(DecimalType(10, 3)),   {},
+                 marks=pytest.mark.xfail(reason="GPU supports more valid values than CPU. "
+                                                "https://github.com/NVIDIA/spark-rapids/issues/7246")),
+    pytest.param('hive-delim-text/extended-float-values',   make_schema(DecimalType(38, 10)),   {},
+                 marks=pytest.mark.xfail(reason="GPU supports more valid values than CPU. "
+                                                "https://github.com/NVIDIA/spark-rapids/issues/7246")),
+
+    # Custom datasets
+    ('hive-delim-text/Acquisition_2007Q3', acq_schema, {}),
+    ('hive-delim-text/Performance_2007Q3', perf_schema, {}),
+    ('hive-delim-text/trucks-1', trucks_schema, {}),
+    ('hive-delim-text/trucks-err', trucks_schema, {}),
+
+    # Date/Time
+    # TODO: Timestamp reading seems completely borked. All nulls.
+    pytest.param('hive-delim-text/timestamp', timestamp_schema, {},
+                 marks=pytest.mark.xfail(reason="Timestamp writes seem borked.")),
+    # marks=pytest.mark.xfail(condition=is_spark_cdh(),
+    #                         reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
+    pytest.param('hive-delim-text/date', date_schema, {},
+                 marks=pytest.mark.xfail(condition=is_spark_cdh(),
+                                         reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
+
+    # Test that lines beginning with comments ('#') aren't skipped.
+    ('hive-delim-text/comments', StructType([StructField("str", StringType()),
+                                             StructField("num", IntegerType()),
+                                             StructField("another_str", StringType())]), {}),
+
+    # Test that carriage returns ('\r'/'^M') are treated similarly to newlines ('\n')
+    ('hive-delim-text/carriage-return', StructType([StructField("str", StringType())]), {}),
+    ('hive-delim-text/carriage-return-err', StructType([StructField("str", StringType())]), {}),
+], ids=idfn)
+def test_basic_hive_text_write(std_input_path, name, schema, spark_tmp_table_factory, options):
+    assert_gpu_and_cpu_are_equal_collect(
+        rewrite_to_non_partitioned_hive_table(std_input_path + "/" + name,
+                                              schema, spark_tmp_table_factory, options),
+        conf=hive_text_write_enabled_conf)
 
