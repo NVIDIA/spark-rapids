@@ -904,6 +904,7 @@
                             <exportAntProperties>true</exportAntProperties>
                             <target xmlns:ac="antlib:net.sf.antcontrib">
 
+                                <!-- deprecated -->
                                 <!--
                                     Rules for adding new shim directories:
                                     ######################################
@@ -1563,6 +1564,8 @@
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>build-helper-maven-plugin</artifactId>
                 <executions>
+
+                    <!-- deprecated -->
                     <execution>
                         <id>add-shim-sources</id>
                         <phase>generate-sources</phase>
@@ -1577,6 +1580,29 @@
                         <goals><goal>add-test-source</goal></goals>
                         <configuration>
                             <sources>${spark.shim.test.sources}</sources>
+                        </configuration>
+                    </execution>
+
+                    <execution>
+                        <id>add-shimple-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals><goal>add-source</goal></goals>
+                        <configuration>
+                            <sources>
+                                <source>${spark.shim.dest}/main/scala</source>
+                                <source>${spark.shim.dest}/main/java</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>add-shimple-test-sources</id>
+                        <phase>generate-test-sources</phase>
+                        <goals><goal>add-test-source</goal></goals>
+                        <configuration>
+                            <sources>
+                                <source>${spark.shim.dest}/test/scala</source>
+                                <source>${spark.shim.dest}/test/java</source>
+                            </sources>
                         </configuration>
                     </execution>
                 </executions>
