@@ -772,6 +772,9 @@ data.  The RAPIDS Spark `get_json_object` operation on the GPU will return `None
 `Null` in Scala when trying to match a string surrounded by single quotes.  This behavior will be
 updated in a future release to more closely match Spark.
 
+If the JSON has s single quote `'` in the path, the GPU query may fail with `ai.rapids.cudf.CudfException`.
+More examples are in [issue-12483](https://github.com/rapidsai/cudf/issues/12483).
+
 ## Approximate Percentile
 
 The GPU implementation of `approximate_percentile` uses

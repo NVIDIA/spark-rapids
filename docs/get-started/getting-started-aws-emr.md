@@ -272,7 +272,7 @@ with durable storage, efficient access, and flexibility.
 You can use the following step-by-step guide to run the example mortgage dataset using RAPIDS on
 Amazon EMR GPU clusters. For more examples, please refer to [NVIDIA/spark-rapids for
 ETL](https://github.com/NVIDIA/spark-rapids/tree/main/docs/demo) and [NVIDIA/spark-rapids for
-XGBoost](https://github.com/NVIDIA/spark-xgboost-examples/tree/spark-3/examples)
+XGBoost](https://github.com/NVIDIA/spark-rapids-examples/tree/main/examples)
 
 ![Create EMR Notebook](../img/AWS-EMR/EMR_notebook_2.png)
 
