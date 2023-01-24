@@ -727,7 +727,6 @@
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
 
         <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/src/generated</spark.shim.dest>
-        <symlink.shim.files>true</symlink.shim.files>
         <noSnapshot.buildvers>
             311,
             312,
