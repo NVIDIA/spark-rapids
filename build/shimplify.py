@@ -155,8 +155,8 @@ def task_impl():
     {"spark": "323"}
     spark-rapids-shim-json-lines ***/
 
-    The canonical location of a source file shared by multiple shims is the
-    first src/main/<top_buildver_in_the_comment>
+    The canonical location of a source file shared by multiple shims is
+    src/main/<top_buildver_in_the_comment>
 
     You can find all shim files for a particular shim easily by executing:
     git grep '{"spark": "312"}'
@@ -165,14 +165,19 @@ def task_impl():
     log.info("config: task_enabled=%s over_shimplify=%s move_files=%s",
              task_enabled, over_shimplify, move_files)
     log.info("review changes and `git restore` if necessary")
-    if not task_enabled:
-        log.info('Skipping shimplify! Set -Dshimplify=true to convert old shims')
-        return
+
     shims_attr = __ant_attr('shims')
     # remove whitespace
     shims_attr_csv = str(shims_attr).translate(None, ' \n\r')
     shims_arr = shims_attr_csv.split(',')
     shims_arr.sort()
+
+    for prop_pattern in ["spark%s.sources", "spark%s.test.sources"]:
+        __warn_shims_with_multiple_dedicated_dirs(shims_arr, prop_pattern)
+
+    if not task_enabled:
+        log.info('Skipping shimplify! Set -Dshimplify=true to convert old shims')
+        return
 
     # map file -> [shims it's part of]
     files2bv = {}
@@ -180,7 +185,7 @@ def task_impl():
         # alternatively we can use range dirs instead of files, which is more efficient
         # keeping at file level for flexibility until/unless the shim layer becomes unexpectedly
         # large
-        shim_source_files = __project().getReference("spark{}.fileset".format(build_ver))
+        shim_source_files = __project().getReference("spark%s.fileset" % build_ver)
         log.debug("build_ver=%s shim_src.size=%i", build_ver, shim_source_files.size())
         for resource in shim_source_files:
             shim_file = str(resource)
@@ -194,6 +199,34 @@ def task_impl():
         __upsert_shim_json(shim_file, bv_list)
         if move_files:
             __git_rename(shim_file, bv_list[0])
+
+
+def __warn_shims_with_multiple_dedicated_dirs(shims_arr, prop_pattern):
+    dirs2bv = {}
+    for build_ver in shims_arr:
+        log.debug("updating dirs2bv for %s", build_ver)
+        src_dirs = __ant_proj_prop(prop_pattern % build_ver)
+        shim_dirs = [] if len(src_dirs) == 0 else src_dirs.split(',')
+        for dir in shim_dirs:
+            if dir not in dirs2bv.keys():
+                dirs2bv[dir] = [build_ver]
+            else:
+                dirs2bv[dir] += [build_ver]
+    log.debug("Map build_ver -> shim_dirs %s" % dirs2bv)
+    # each shim has at least one dedicated dir, report shims
+    # with multiple dedicated dirs because they can be merged
+    single_shim_dirs = {dir: shims[0] for dir, shims in dirs2bv.items() if len(shims) == 1}
+    log.debug("shims with exclusive dirs %s", single_shim_dirs)
+    multi_dir_shims = {}
+    for dir, single_shim in single_shim_dirs.items():
+        if single_shim in multi_dir_shims.keys():
+            multi_dir_shims[single_shim].append(dir)
+        else:
+            multi_dir_shims[single_shim] = [dir]
+    for shim, dirs in multi_dir_shims.items():
+        if len(dirs) > 1:
+            log.warning("Consider consolidating %s, it spans multiple dedicated directories %s",
+                        shim, dirs)
 
 
 task_impl()
