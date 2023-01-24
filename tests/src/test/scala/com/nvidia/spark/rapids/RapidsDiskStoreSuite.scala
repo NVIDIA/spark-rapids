@@ -94,17 +94,24 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
               hostStore.setSpillStore(diskStore)
               val (_, handle) = addTableToStore(devStore, bufferId, spillPriority)
               assert(!handle.id.getDiskPath(null).exists())
-              val expectedBatch = withResource(catalog.acquireBuffer(handle)) { buffer =>
+              val expectedTable = withResource(catalog.acquireBuffer(handle)) { buffer =>
                 assertResult(StorageTier.DEVICE)(buffer.storageTier)
-                buffer.getColumnarBatch(sparkTypes)
+                withResource(buffer.getColumnarBatch(sparkTypes)) { beforeSpill =>
+                  withResource(GpuColumnVector.from(beforeSpill)) { table =>
+                    table.contiguousSplit()(0)
+                  }
+                } // closing the batch from the store so that we can spill it
               }
-              withResource(expectedBatch) { expectedBatch =>
-                devStore.synchronousSpill(0)
-                hostStore.synchronousSpill(0)
-                withResource(catalog.acquireBuffer(handle)) { buffer =>
-                  assertResult(StorageTier.DISK)(buffer.storageTier)
-                  withResource(buffer.getColumnarBatch(sparkTypes)) { actualBatch =>
-                    TestUtils.compareBatches(expectedBatch, actualBatch)
+              withResource(expectedTable) { _ =>
+                withResource(
+                    GpuColumnVector.from(expectedTable.getTable, sparkTypes)) { expectedBatch =>
+                  devStore.synchronousSpill(0)
+                  hostStore.synchronousSpill(0)
+                  withResource(catalog.acquireBuffer(handle)) { buffer =>
+                    assertResult(StorageTier.DISK)(buffer.storageTier)
+                    withResource(buffer.getColumnarBatch(sparkTypes)) { actualBatch =>
+                      TestUtils.compareBatches(expectedBatch, actualBatch)
+                    }
                   }
                 }
               }
