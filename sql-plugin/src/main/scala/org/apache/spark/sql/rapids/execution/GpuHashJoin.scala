@@ -601,6 +601,12 @@ class HashFullJoinIterator(
       try {
         val lazyLeftMap = LazySpillableGatherMap(maps(0), spillCallback, "left_map")
         val lazyRightMap = LazySpillableGatherMap(maps(1), spillCallback, "right_map")
+        withResource(new NvtxWithMetrics("update tracking mask",
+          NvtxColor.ORANGE, joinTime)) { _ =>
+          closeOnExcept(Seq(lazyLeftMap, lazyRightMap)) { _ =>
+            updateTrackingMask(if (buildSide == GpuBuildRight) lazyRightMap else lazyLeftMap)
+          }
+        }
         val (leftOutOfBoundsPolicy, rightOutOfBoundsPolicy) = {
           if (useLeftOuterJoin) {
             (OutOfBoundsPolicy.DONT_CHECK, OutOfBoundsPolicy.NULLIFY)
@@ -615,10 +621,6 @@ class HashFullJoinIterator(
           gatherer.close()
           None
         } else {
-          withResource(new NvtxWithMetrics("update tracking mask",
-            NvtxColor.ORANGE, joinTime)) { _ =>
-            updateTrackingMask(if (buildSide == GpuBuildRight) lazyRightMap else lazyLeftMap)
-          }
           Some(gatherer)
         }
       } finally {

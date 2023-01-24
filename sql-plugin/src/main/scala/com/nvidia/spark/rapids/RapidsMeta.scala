@@ -259,6 +259,11 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
   def canPartsBeReplaced: Boolean = childParts.forall(_.canThisBeReplaced)
 
   /**
+   * Return true if the resulting node in the plan will support columnar execution
+   */
+  def supportsColumnar: Boolean = canThisBeReplaced
+
+  /**
    * Returns true iff all of the data writing commands can be replaced.
    */
   def canDataWriteCmdsBeReplaced: Boolean = childDataWriteCmds.forall(_.canThisBeReplaced)
@@ -641,9 +646,9 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   private def fixUpExchangeOverhead(): Unit = {
     childPlans.foreach(_.fixUpExchangeOverhead())
     if (wrapped.isInstanceOf[ShuffleExchangeExec] &&
-      !childPlans.exists(_.canThisBeReplaced) &&
+      !childPlans.exists(_.supportsColumnar) &&
         (plan.conf.adaptiveExecutionEnabled ||
-        !parent.exists(_.canThisBeReplaced))) {
+        !parent.exists(_.supportsColumnar))) {
 
       willNotWorkOnGpu("Columnar exchange without columnar children is inefficient")
 
@@ -800,6 +805,11 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     case None =>
       wrapped.output
   }
+
+  /**
+   * Returns whether the resulting SparkPlan supports columnar execution
+   */
+  override def supportsColumnar: Boolean = wrapped.supportsColumnar || canThisBeReplaced 
 
   /**
    * Overrides this method to implement custom conversions for specific plans.
