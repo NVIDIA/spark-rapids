@@ -218,7 +218,7 @@ abstract class RapidsBufferStore(
   }
 
   protected def setSpillable(buffer: RapidsBufferBase, isSpillable: Boolean): Unit = {
-    throw new NotImplementedError(s"This store ${this} does not implement markSpillable")
+    throw new NotImplementedError(s"This store ${this} does not implement setSpillable")
   }
 
   /**
