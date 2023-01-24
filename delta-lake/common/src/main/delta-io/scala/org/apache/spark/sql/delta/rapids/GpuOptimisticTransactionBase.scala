@@ -1,10 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
- *
- * This file was derived from OptimisticTransaction.scala and TransactionalWrite.scala
- * in the Delta Lake project at https://github.com/delta-io/delta.
- *
- * Copyright (2021) The Delta Lake Project Authors.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,43 +14,33 @@
  * limitations under the License.
  */
 
-package com.databricks.sql.transaction.tahoe.rapids
+package org.apache.spark.sql.delta.rapids
 
-import com.databricks.sql.transaction.tahoe._
-import com.databricks.sql.transaction.tahoe.actions.FileAction
-import com.databricks.sql.transaction.tahoe.constraints.{Constraint, DeltaInvariantCheckerExec}
-import com.databricks.sql.transaction.tahoe.metering.DeltaLogging
-import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
-import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.{GpuAlias, GpuColumnarToRowExec, GpuExec, GpuProjectExec, GpuRowToColumnarExec, RapidsConf, TargetSize}
 
-import org.apache.spark.sql.Dataset
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, NamedExpression}
+import org.apache.spark.sql.delta.{DeltaLog, OptimisticTransaction, Snapshot}
+import org.apache.spark.sql.delta.constraints.{Constraint, DeltaInvariantCheckerExec}
+import org.apache.spark.sql.delta.metering.DeltaLogging
+import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.GpuV1WriteUtils.GpuEmpty2Null
 import org.apache.spark.sql.types.StringType
 import org.apache.spark.util.Clock
 
-/**
- * Used to perform a set of reads in a transaction and then commit a set of updates to the
- * state of the log.  All reads from the DeltaLog, MUST go through this instance rather
- * than directly to the DeltaLog otherwise they will not be check for logical conflicts
- * with concurrent updates.
- *
- * This class is not thread-safe.
- *
- * @param deltaLog The Delta Log for the table this transaction is modifying.
- * @param snapshot The snapshot that this transaction is reading at.
- * @param rapidsConf RAPIDS Accelerator config settings.
- */
-abstract class GpuOptimisticTransactionBase
-    (deltaLog: DeltaLog, snapshot: Snapshot, rapidsConf: RapidsConf)
+/** Common type from which all open-source Delta Lake implementations derive. */
+abstract class GpuOptimisticTransactionBase(
+    deltaLog: DeltaLog,
+    snapshot: Snapshot,
+    rapidsConf: RapidsConf)
     (implicit clock: Clock)
-  extends OptimisticTransaction(deltaLog, snapshot)(clock)
-  with DeltaLogging {
+    extends OptimisticTransaction(deltaLog, snapshot)(clock)
+    with DeltaLogging {
 
   /**
    * Adds checking of constraints on the table
-   * @param plan Plan to generate the table to check against constraints
+   *
+   * @param plan        Plan to generate the table to check against constraints
    * @param constraints Constraints to check on the table
    * @return GPU columnar plan to execute
    */
@@ -107,8 +92,8 @@ abstract class GpuOptimisticTransactionBase
    * partition column using the original plan's output. When the plan is modified with additional
    * projections, the partition column check won't match and will not add more conversion.
    *
-   * @param plan The original SparkPlan.
-   * @param partCols The partition columns.
+   * @param plan        The original SparkPlan.
+   * @param partCols    The partition columns.
    * @param constraints The defined constraints.
    * @return A SparkPlan potentially modified with an additional projection on top of `plan`
    */
@@ -122,12 +107,6 @@ abstract class GpuOptimisticTransactionBase
       case g: GpuExec => gpuConvertEmptyToNullIfNeeded(g, partCols, constraints)
       case _ => super.convertEmptyToNullIfNeeded(plan, partCols, constraints)
     }
-  }
-
-  override def writeFiles(
-      inputData: Dataset[_],
-      additionalConstraints: Seq[Constraint]): Seq[FileAction] = {
-    writeFiles(inputData, None, additionalConstraints)
   }
 
   protected def convertToCpu(plan: SparkPlan): SparkPlan = plan match {
