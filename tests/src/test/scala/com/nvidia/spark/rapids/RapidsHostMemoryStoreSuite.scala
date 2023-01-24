@@ -18,11 +18,13 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 import java.math.RoundingMode
+
 import ai.rapids.cudf.{ContiguousTable, Cuda, HostColumnVector, HostMemoryBuffer, MemoryBuffer, Table}
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
 import org.mockito.Mockito.{never, spy, times, verify, when}
 import org.scalatest.FunSuite
 import org.scalatest.mockito.MockitoSugar
+
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 import org.apache.spark.sql.types.{DataType, DecimalType, DoubleType, IntegerType, LongType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
