@@ -496,8 +496,8 @@ def test_parquet_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reade
             conf=all_confs)
 
 # To test https://github.com/NVIDIA/spark-rapids/pull/7405. Without the fix in that issue this test
-# would throw an exception about can't allocate negative amount. To test this we have it read a bunch
-# of empty parquet blocks by filtering on only things in the first and last of 1000 files.
+# throws an exception about can't allocate negative amount. To make this problem happen, we
+# read a bunch of empty parquet blocks by filtering on only things in the first and last of 1000 files.
 @pytest.mark.parametrize('reader_confs', [combining_multithreaded_parquet_file_reader_conf_ordered])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_read_buffer_allocation_empty_blocks(spark_tmp_path, v1_enabled_list, reader_confs):
