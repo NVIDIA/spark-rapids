@@ -52,10 +52,6 @@
             <artifactId>flatbuffers-java</artifactId>
         </dependency>
         <dependency>
-            <groupId>io.delta</groupId>
-            <artifactId>delta-core_2.12</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.apache.iceberg</groupId>
             <artifactId>iceberg-api</artifactId>
         </dependency>
@@ -260,6 +256,12 @@
                 <dependency>
                     <groupId>org.apache.hive</groupId>
                     <artifactId>hive-exec</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.apache.hive</groupId>
+                    <artifactId>hive-metastore-client-patched</artifactId>
                     <version>${spark.version}</version>
                     <scope>provided</scope>
                 </dependency>
@@ -571,7 +573,6 @@
                                         <include name="320until330-nondb/*"/>
                                         <include name="320until340-all/*"/>
                                         <include name="320until340-non330db/*"/>
-                                        <include name="delta-lake-common/*"/>
                                         <include name="post320-treenode/*"/>
                                     </patternset>
                                     <include name="320/*"/>

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -251,10 +251,7 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
   }
 }
 
-abstract class GpuAddBase(
-    left: Expression,
-    right: Expression,
-    failOnError: Boolean) extends CudfBinaryArithmetic with Serializable {
+abstract class GpuAddBase(failOnError: Boolean) extends CudfBinaryArithmetic with Serializable {
   override def inputType: AbstractDataType = TypeCollection.NumericAndInterval
 
   override def symbol: String = "+"
@@ -283,10 +280,8 @@ abstract class GpuAddBase(
   }
 }
 
-abstract class GpuSubtractBase(
-    left: Expression,
-    right: Expression,
-    failOnError: Boolean) extends CudfBinaryArithmetic with Serializable {
+abstract class GpuSubtractBase(failOnError: Boolean)
+    extends CudfBinaryArithmetic with Serializable {
   override def inputType: AbstractDataType = TypeCollection.NumericAndInterval
 
   override def symbol: String = "-"

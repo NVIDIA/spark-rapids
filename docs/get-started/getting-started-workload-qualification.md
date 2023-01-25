@@ -137,13 +137,6 @@ which is the same as the driver logs with `spark.rapids.sql.explain=all`.
 - Ability to modify the existing Spark application code
 - RAPIDS Accelerator for Apache Spark version 21.12 or newer
 
-#### Requirements with Spark 2.4.X
-
-- A Spark 2.4.X CPU cluster
-- The `rapids-4-spark-sql-meta` [jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark-sql-meta_2.11/22.12.0/rapids-4-spark-sql-meta_2.11-22.12.0.jar)
-- Ability to modify the existing Spark application code
-- RAPIDS Accelerator for Apache Spark version 22.02 or newer
-
 #### Function Documentation
 
 ```scala
@@ -194,12 +187,6 @@ Throws:
 
    ```bash
    spark-shell --jars /PathTo/rapids-4-spark_<version>.jar
-   ```
-
-   For example, on Spark 2.4.X:
-
-   ```bash
-   spark-shell --jars /PathTo/rapids-4-spark-sql-meta-<version and classifier>.jar
    ```
 
 2. Test if the class can be successfully loaded or not.

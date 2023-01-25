@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,14 +29,19 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.TempLocalBlockId
 
 class SpillableColumnarBatchSuite extends FunSuite with Arm {
+
   test("close updates catalog") {
     val id = TempSpillBufferId(0, TempLocalBlockId(new UUID(1, 2)))
     val mockBuffer = new MockBuffer(id)
     val catalog = RapidsBufferCatalog.singleton
     val oldBufferCount = catalog.numBuffers
     catalog.registerNewBuffer(mockBuffer)
+    val handle = catalog.makeNewHandle(id, -1, RapidsBuffer.defaultSpillCallback)
     assertResult(oldBufferCount + 1)(catalog.numBuffers)
-    val spillableBatch = new SpillableColumnarBatchImpl(id, 5, Array[DataType](IntegerType),
+    val spillableBatch = new SpillableColumnarBatchImpl(
+      handle,
+      5,
+      Array[DataType](IntegerType),
       NoopMetric)
     spillableBatch.close()
     assertResult(oldBufferCount)(catalog.numBuffers)
@@ -55,7 +60,10 @@ class SpillableColumnarBatchSuite extends FunSuite with Arm {
     override def getSpillPriority: Long = 0
     override def setSpillPriority(priority: Long): Unit = {}
     override def close(): Unit = {}
-    override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = null
-    override val spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback
+    override def getColumnarBatch(
+      sparkTypes: Array[DataType]): ColumnarBatch = null
+
+    override val getSpillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback
+    override def setSpillCallback(spillCallback: SpillCallback): Unit = {}
   }
 }

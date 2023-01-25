@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import java.util.concurrent.{Callable, ConcurrentHashMap, ExecutionException, Ex
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 
 import scala.collection.mutable
-import scala.collection.mutable.{ArrayBuffer, ListBuffer}
+import scala.collection.mutable.ListBuffer
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
@@ -601,9 +601,6 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
     private val queued = new LinkedBlockingQueue[(Any, Any)]
     private val futures = new mutable.Queue[Future[Option[BlockState]]]()
     private val serializerInstance = serializer.newInstance()
-    private var readBlockedTime: Long = 0L
-    private var fetchTime: Long = 0L
-    private var waitTime: Long = 0L
     private val limiter = new BytesInFlightLimiter(maxBytesInFlight)
     private val fallbackIter: Iterator[(Any, Any)] = if (numReaderThreads == 1) {
       // this is the non-optimized case, where we add metrics to capture the blocked
@@ -615,7 +612,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
 
         override def next(): (Any, Any) = {
           val fetchTimeStart = System.nanoTime()
-          readBlockedTime = 0
+          var readBlockedTime = 0L
           if (currentIter == null || !currentIter.hasNext) {
             val readBlockedStart = System.nanoTime()
             val (_, stream) = fetcherIterator.next()
@@ -623,7 +620,9 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
             currentIter = serializerInstance.deserializeStream(stream).asKeyValueIterator
           }
           val res = currentIter.next()
-          fetchTime = System.nanoTime() - fetchTimeStart
+          val fetchTime = System.nanoTime() - fetchTimeStart
+          deserializationTimeNs.foreach(_ += (fetchTime - readBlockedTime))
+          shuffleReadTimeNs.foreach(_ += fetchTime)
           res
         }
       }
@@ -663,6 +662,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
         val result = if (fallbackIter != null) {
           fallbackIter.next()
         } else {
+          var waitTime: Long = 0L
           var waitTimeStart: Long = 0L
           popFetchedIfAvailable()
           waitTime = 0L
@@ -697,8 +697,9 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
               popFetchedIfAvailable()
             case _ => 0 // TODO: do we need to handle other types here?
           }
-
           waitTime += System.nanoTime() - waitTimeStart
+          deserializationTimeNs.foreach(_ += waitTime)
+          shuffleReadTimeNs.foreach(_ += waitTime)
           res
         }
 
@@ -707,18 +708,6 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
           case _ => 0 // TODO: do we need to handle other types here?
         }
 
-        // the deserialization time is approximated by subtracting
-        // time waiting for the fetch (`readBlockedTime`) from `fetchTime`
-        // and adding any time that was waited on while deserialization
-        // tasks finished.
-        val deserTime = (fetchTime - readBlockedTime) + waitTime
-
-        // the amount of time blocked on shuffle reads is the fetch time
-        // + any time spent waiting for deserialization tasks
-        val shuffleReadTime = fetchTime + waitTime
-
-        deserializationTimeNs.foreach(_ += deserTime)
-        shuffleReadTimeNs.foreach(_ += shuffleReadTime)
         dataReadSize.foreach(_ += uncompressedSize)
 
         // if this is the last call, close our range
@@ -780,7 +769,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
             // We drain fetched results. That is, we push decode tasks
             // onto our queue until the results in the fetcher iterator
             // are all dequeued (the ones that were completed up until now).
-            readBlockedTime = 0
+            var readBlockedTime = 0L
             var didFit = true
             while (amountToDrain > 0 && fetcherIterator.hasNext && didFit) {
               amountToDrain -= 1
@@ -805,7 +794,9 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
               }
             }
             // keep track of the overall metric which includes blocked time
-            fetchTime = System.nanoTime() - fetchTimeStart
+            val fetchTime = System.nanoTime() - fetchTimeStart
+            deserializationTimeNs.foreach(_ += (fetchTime - readBlockedTime))
+            shuffleReadTimeNs.foreach(_ += fetchTime)
           }
         }
       }
@@ -890,12 +881,14 @@ class RapidsCachingWriter[K, V](
     mapId: Long,
     metricsReporter: ShuffleWriteMetricsReporter,
     catalog: ShuffleBufferCatalog,
-    shuffleStorage: RapidsDeviceMemoryStore,
     rapidsShuffleServer: Option[RapidsShuffleServer],
-    metrics: Map[String, SQLMetric]) extends ShuffleWriter[K, V] with Logging {
+    metrics: Map[String, SQLMetric])
+  extends ShuffleWriter[K, V]
+    with Logging
+    with Arm {
   private val numParts = handle.dependency.partitioner.numPartitions
   private val sizes = new Array[Long](numParts)
-  private val writtenBufferIds = new ArrayBuffer[ShuffleBufferId](numParts)
+
   private val uncompressedMetric: SQLMetric = metrics("dataSize")
 
   override def write(records: Iterator[Product2[K, V]]): Unit = {
@@ -913,45 +906,49 @@ class RapidsCachingWriter[K, V](
         recordsWritten = recordsWritten + batch.numRows()
         var partSize: Long = 0
         val blockId = ShuffleBlockId(handle.shuffleId, mapId, partId)
-        val bufferId = catalog.nextShuffleBufferId(blockId)
         if (batch.numRows > 0 && batch.numCols > 0) {
           // Add the table to the shuffle store
-          batch.column(0) match {
+          val handle = batch.column(0) match {
             case c: GpuPackedTableColumn =>
               val contigTable = c.getContiguousTable
               partSize = c.getTableBuffer.getLength
               uncompressedMetric += partSize
-              shuffleStorage.addContiguousTable(
-                bufferId,
+              catalog.addContiguousTable(
+                blockId,
                 contigTable,
                 SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY,
+                RapidsBuffer.defaultSpillCallback,
                 // we don't need to sync here, because we sync on the cuda
                 // stream after sliceInternalOnGpu (contiguous_split)
                 needsSync = false)
             case c: GpuCompressedColumnVector =>
               val buffer = c.getTableBuffer
-              buffer.incRefCount()
               partSize = buffer.getLength
               val tableMeta = c.getTableMeta
-              // update the table metadata for the buffer ID generated above
-              tableMeta.bufferMeta.mutateId(bufferId.tableId)
               uncompressedMetric += tableMeta.bufferMeta().uncompressedSize()
-              shuffleStorage.addBuffer(
-                bufferId,
+              catalog.addBuffer(
+                blockId,
                 buffer,
                 tableMeta,
                 SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY,
+                RapidsBuffer.defaultSpillCallback,
                 // we don't need to sync here, because we sync on the cuda
                 // stream after compression.
                 needsSync = false)
-            case c => throw new IllegalStateException(s"Unexpected column type: ${c.getClass}")
+            case c =>
+              throw new IllegalStateException(s"Unexpected column type: ${c.getClass}")
           }
           bytesWritten += partSize
           sizes(partId) += partSize
+          handle
         } else {
           // no device data, tracking only metadata
           val tableMeta = MetaUtils.buildDegenerateTableMeta(batch)
-          catalog.registerNewBuffer(new DegenerateRapidsBuffer(bufferId, tableMeta))
+          val handle =
+            catalog.addDegenerateRapidsBuffer(
+              blockId,
+              tableMeta,
+              RapidsBuffer.defaultSpillCallback)
 
           // The size of the data is really only used to tell if the data should be shuffled or not
           // a 0 indicates that we should not shuffle anything.  This is here for the special case
@@ -961,8 +958,8 @@ class RapidsCachingWriter[K, V](
           if (batch.numRows > 0) {
             sizes(partId) += 100
           }
+          handle
         }
-        writtenBufferIds.append(bufferId)
       }
       metricsReporter.incBytesWritten(bytesWritten)
       metricsReporter.incRecordsWritten(recordsWritten)
@@ -975,7 +972,7 @@ class RapidsCachingWriter[K, V](
    * Used to remove shuffle buffers when the writing task detects an error, calling `stop(false)`
    */
   private def cleanStorage(): Unit = {
-    writtenBufferIds.foreach(catalog.removeBuffer)
+    catalog.removeCachedHandles()
   }
 
   override def stop(success: Boolean): Option[MapStatus] = {
@@ -1129,8 +1126,8 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
       val catalog = getCatalogOrThrow
       val requestHandler = new RapidsShuffleRequestHandler() {
         override def acquireShuffleBuffer(tableId: Int): RapidsBuffer = {
-          val shuffleBufferId = catalog.getShuffleBufferId(tableId)
-          catalog.acquireBuffer(shuffleBufferId)
+          val handle = catalog.getShuffleBufferHandle(tableId)
+          catalog.acquireBuffer(handle)
         }
 
         override def getShuffleBufferMetas(sbbId: ShuffleBlockBatchId): Seq[TableMeta] = {
@@ -1200,7 +1197,6 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
           mapId,
           metricsReporter,
           getCatalogOrThrow,
-          RapidsBufferCatalog.getDeviceStorage,
           server,
           gpu.dependency.metrics)
       case bmssh: BypassMergeSortShuffleHandle[_, _] =>

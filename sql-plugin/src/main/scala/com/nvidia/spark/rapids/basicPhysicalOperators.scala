@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -118,6 +118,32 @@ object GpuProjectExec extends Arm {
   }
 }
 
+object GpuProjectExecLike {
+  def unapply(plan: SparkPlan): Option[(Seq[Expression], SparkPlan)] = plan match {
+    case gpuProjectLike: GpuProjectExecLike =>
+      Some((gpuProjectLike.projectList, gpuProjectLike.child))
+    case _ => None
+  }
+}
+
+trait GpuProjectExecLike extends ShimUnaryExecNode with GpuExec {
+
+  def projectList: Seq[Expression]
+
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
+
+  override def outputOrdering: Seq[SortOrder] = child.outputOrdering
+
+  override def outputPartitioning: Partitioning = child.outputPartitioning
+
+  override def doExecute(): RDD[InternalRow] =
+    throw new IllegalStateException(s"Row-based execution should not occur for $this")
+
+  // The same as what feeds us
+  override def outputBatching: CoalesceGoal = GpuExec.outputBatching(child)
+}
+
 case class GpuProjectExec(
    // NOTE for Scala 2.12.x and below we enforce usage of (eager) List to prevent running
    // into a deep recursion during serde of lazy lists. See
@@ -130,19 +156,9 @@ case class GpuProjectExec(
    projectList: List[NamedExpression],
    child: SparkPlan,
    useTieredProject : Boolean = false
- ) extends ShimUnaryExecNode with GpuExec {
-
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
+ ) extends GpuProjectExecLike {
 
   override def output: Seq[Attribute] = projectList.map(_.toAttribute)
-
-  override def outputOrdering: Seq[SortOrder] = child.outputOrdering
-
-  override def outputPartitioning: Partitioning = child.outputPartitioning
-
-  override def doExecute(): RDD[InternalRow] =
-    throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
@@ -164,9 +180,6 @@ case class GpuProjectExec(
       }
     }
   }
-
-  // The same as what feeds us
-  override def outputBatching: CoalesceGoal = GpuExec.outputBatching(child)
 }
 
 /** Use cudf AST expressions to project columnar batches */
@@ -181,21 +194,11 @@ case class GpuProjectAstExec(
     //   immutable/List.scala#L516
     projectList: List[Expression],
     child: SparkPlan
-) extends ShimUnaryExecNode with GpuExec {
-
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
+) extends GpuProjectExecLike {
 
   override def output: Seq[Attribute] = {
     projectList.collect { case ne: NamedExpression => ne.toAttribute }
   }
-
-  override def outputOrdering: Seq[SortOrder] = child.outputOrdering
-
-  override def outputPartitioning: Partitioning = child.outputPartitioning
-
-  override def doExecute(): RDD[InternalRow] =
-    throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
@@ -263,9 +266,6 @@ case class GpuProjectAstExec(
       }
     }
   }
-
-  // The same as what feeds us
-  override def outputBatching: CoalesceGoal = GpuExec.outputBatching(child)
 }
 
 /**

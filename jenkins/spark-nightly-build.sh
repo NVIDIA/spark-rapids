@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -77,14 +77,6 @@ function distWithReducedPom {
         $mvnExtaFlags
 }
 
-# build the Spark 2.x explain jar
-$MVN -B $MVN_URM_MIRROR -Dmaven.repo.local=$M2DIR -Dbuildver=24X clean install -DskipTests
-[[ $SKIP_DEPLOY != 'true' ]] && \
-    $MVN -B deploy $MVN_URM_MIRROR \
-        -Dmaven.repo.local=$M2DIR \
-        -DskipTests \
-        -Dbuildver=24X
-
 # build, install, and deploy all the versions we support, but skip deploy of individual dist module since we
 # only want the combined jar to be pushed.
 # Note this does not run any integration tests
@@ -119,7 +111,7 @@ distWithReducedPom "install"
 if [[ $SKIP_DEPLOY != 'true' ]]; then
     distWithReducedPom "deploy"
 
-    # this deploy sub modules except dist that is unconditionally built with Spark 3.1.1
+    # this deploys submodules except dist that is unconditionally built with Spark 3.1.1
     $MVN -B deploy -pl '!dist' \
         -Dbuildver=$SPARK_BASE_SHIM_VERSION \
         -DskipTests=$SKIP_TESTS \

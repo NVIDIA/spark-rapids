@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-import org.apache.spark.sql.catalyst.plans.{FullOuter, InnerLike, JoinType, LeftAnti, LeftSemi}
+import org.apache.spark.sql.catalyst.plans.{InnerLike, JoinType, LeftAnti, LeftSemi}
 import org.apache.spark.sql.catalyst.plans.physical.Distribution
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
@@ -134,7 +134,6 @@ case class GpuShuffledHashJoinExec(
   }
 
   override def childrenCoalesceGoal: Seq[CoalesceGoal] = (joinType, buildSide) match {
-    case (FullOuter, _) => Seq(RequireSingleBatch, RequireSingleBatch)
     case (_, GpuBuildLeft) => Seq(buildGoal, null)
     case (_, GpuBuildRight) => Seq(null, buildGoal)
   }

@@ -28,7 +28,7 @@ import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, Broadcast
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{DataWritingCommandExec, ExecutedCommandExec}
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2ScanExecBase, DropTableExec, ShowTablesExec}
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashedRelationBroadcastMode}
 import org.apache.spark.sql.rapids.{ExternalSource, GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase, GpuBroadcastToRowExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
@@ -142,11 +142,17 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       // stage, or around the custom shuffle reader, if one exists.
       val plan = GpuTransitionOverrides.getNonQueryStagePlan(s)
       if (plan.supportsColumnar && plan.isInstanceOf[GpuExec]) {
-        parent match {
-          case Some(x) if SparkShimImpl.isCustomReaderExec(x) =>
+        (plan, parent) match {
+          case (_, Some(x)) if SparkShimImpl.isCustomReaderExec(x) =>
             // We can't insert a coalesce batches operator between a custom shuffle reader
             // and a shuffle query stage, so we instead insert it around the custom shuffle
             // reader later on, in the next top-level case clause.
+            s
+          case (ex: ShuffleExchangeLike, Some(x))
+              if SparkShimImpl.shuffleParentReadsShuffleData(ex, x) =>
+            // In some cases, the parent might have to read the shuffle data directly, so
+            // we don't need the post-shuffle coalesce exec since the parent should 
+            // coalesce the shuffle data as needed
             s
           case _ =>
             // Directly wrap shuffle query stage with coalesce batches operator
@@ -402,29 +408,53 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   // This tries to prune the partition schema for GpuFileSourceScanExec by leveraging
   // the project list of the first GpuProjectExec after a GpuFileSourceScanExec.
   private def prunePartitionForFileSourceScan(plan: SparkPlan): SparkPlan = plan match {
-    case p @ GpuProjectExec(projectList, fss: GpuFileSourceScanExec, _) =>
+    case p @ GpuProjectExecLike(projectList, fss: GpuFileSourceScanExec) =>
       // A ProjectExec next to FileSourceScanExec, for cases like
       //   df.groupBy("b").agg(max($"a")), or
       //   df.select("b")
       p.withNewChildren(Seq(withPrunedPartSchema(fss, projectList)))
 
-    case p @ GpuProjectExec(
+    case p @ GpuProjectExecLike(
         projectList,
-        f @ GpuFilterExec(condition, fss: GpuFileSourceScanExec, _),
-        _) =>
+        f @ GpuFilterExec(condition, fss: GpuFileSourceScanExec, _)) =>
       // A FilterExec is between the ProjectExec and FileSourceScanExec, for cases like
       //   df.select("a").filter("a != 1")
       p.withNewChildren(Seq(
         f.withNewChildren(Seq(withPrunedPartSchema(fss, projectList :+ condition)))))
 
-    case p @ GpuProjectAstExec(projectList, fss: GpuFileSourceScanExec) =>
-      p.withNewChildren(Seq(withPrunedPartSchema(fss, projectList)))
-
-    case p @ GpuProjectAstExec(
-        projectList,
-        f @ GpuFilterExec(condition, fss: GpuFileSourceScanExec, _)) =>
+    // Partial GPU plan cases.
+    // This rule executes before rules override the ColumnarToRowExec, so the exec is the
+    // CPU version here.
+    case p @ ProjectExec(projectList, cr @ ColumnarToRowExec(fss: GpuFileSourceScanExec)) =>
+      // cpu project + gpu file scan
       p.withNewChildren(Seq(
-        f.withNewChildren(Seq(withPrunedPartSchema(fss, projectList :+ condition)))))
+        cr.withNewChildren(Seq(withPrunedPartSchema(fss, projectList)))))
+
+    case p @ ProjectExec(
+        projectList,
+        cr @ ColumnarToRowExec(f @ GpuFilterExec(condition, fss: GpuFileSourceScanExec, _))) =>
+      // cpu project + gpu filter + gpu file scan
+      p.withNewChildren(Seq(
+        cr.withNewChildren(Seq(
+          f.withNewChildren(Seq(withPrunedPartSchema(fss, projectList :+ condition)))))))
+
+    case p @ ProjectExec(
+        projectList,
+        f @ FilterExec(condition, cr @ ColumnarToRowExec(fss: GpuFileSourceScanExec))) =>
+      // cpu project + cpu filter + gpu file scan
+      p.withNewChildren(Seq(
+        f.withNewChildren(Seq(
+          cr.withNewChildren(Seq(withPrunedPartSchema(fss, projectList :+ condition)))))))
+
+    case p @ GpuProjectExecLike(
+        projectList,
+        rc @ RowToColumnarExec(
+            f @ FilterExec(condition, cr @ ColumnarToRowExec(fss: GpuFileSourceScanExec)))) =>
+      // gpu project + cpu filter + gpu file scan
+      p.withNewChildren(Seq(
+        rc.withNewChildren(Seq(
+          f.withNewChildren(Seq(
+            cr.withNewChildren(Seq(withPrunedPartSchema(fss, projectList :+ condition)))))))))
 
     case _ =>
       plan.withNewChildren(plan.children.map(prunePartitionForFileSourceScan))

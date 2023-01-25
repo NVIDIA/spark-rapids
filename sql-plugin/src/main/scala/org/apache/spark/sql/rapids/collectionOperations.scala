@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -729,61 +729,65 @@ case class GpuArraysZip(children: Seq[Expression]) extends GpuExpression with Sh
       GpuExpressionsUtils.columnarEvalToColumn(expr, batch).getBase
     }
 
-    withResource(inputs) { inputs =>
+    val cleanedInputs = withResource(inputs) { inputs =>
+      normalizeNulls(inputs)
+    }
 
-      // Compute max size of input arrays for each row
-      //
-      // input1: [[A, B, C], [D, E], [F], [G]]
-      // input2: [[a, b], [c, d, e], null, [f, g]]
-      // max array size: [3, 3, 0, 2]
-      val maxArraySize = computeMaxArraySize(inputs)
+    val padded = withResource(cleanedInputs) { cleanedInputs =>
+      padArraysToMaxLength(cleanedInputs)
+    }
 
-      // Generate offsets from max array sizes
-      //
-      // [3, 3, 0, 2] => [0, 3, 6, 6, 8]
-      val offsets = maxArraySize.generateListOffsets()
-
-      // Generate sequence indices for gathering children of input arrays
-      //
-      // [3, 3, 0, 2] => [[0, 1, 2], [0, 1, 2], [], [0, 1]]
-      val seqIndices = closeOnExcept(offsets) { _ =>
-        withResource(maxArraySize) { _ =>
-          generateSeqIndices(maxArraySize)
-        }
-      }
-
-      // Perform segment gather on input columns with indices covering each element
-      //
-      // input1: [[A, B, C], [D, E], [F], [G]]
-      // input2: [[a, b], [c, d, e], null, [f, g]]
-      // indices: [[0, 1, 2], [0, 1, 2], [], [0, 1]]
-      // children1: [A, B, C, D, E, null, G, null]
-      // children2: [a, b, null, c, d, e, f, g]
-      val gatheredChildren = closeOnExcept(offsets) { _ =>
-        withResource(seqIndices) { _ =>
-          inputs.safeMap { cv =>
-            withResource(cv.segmentedGather(seqIndices)) { gathered =>
-              gathered.getChildColumnView(0).copyToColumnVector()
-            }
-          }
-        }
-      }
-
-      // Zip gathered children along with a union offset in the form of List of Struct
-      //
-      // validity mask: [true, true, false, true]
-      // offsets: [0, 3, 6, 6, 8]
-      // children1: [A, B, C, D, E, null, G, null]
-      // children2: [a, b, null, c, d, e, f, g]
-      // zipped: [[{A, a}, {B, b}, {C, null}],
-      //          [{D, c}, {E, d}, {null, e}],
-      //          null,
-      //          [{G, f}, {null, g}]]
-      closeOnExcept(zipArrays(offsets, gatheredChildren, inputs)) { ret =>
+    withResource(padded) { _ =>
+      closeOnExcept(zipArrays(padded)) { ret =>
         GpuColumnVector.from(ret, dataType)
       }
     }
   }
+
+  /**
+   * Segmented gather in CUDF produces a NULL output for a NULL input. But we need to produce
+   * child columns that we can put together in a struct. This requires them all to have the
+   * same length. To make this work we need to make sure all of the inputs have nulls in the
+   * same places at the top level. That way when we gather things we get the same output
+   * size for all of the children of the input columns. The result of this will have the same
+   * validity for all top level columns, but possibly different offsets.
+   */
+  private def normalizeNulls(inputs: Seq[cudf.ColumnVector]): Seq[ColumnVector] = {
+    // First let's figure out if there are any nulls at all, because if there are not we don't
+    // need to do anything.
+    if (inputs.exists(_.hasNulls)) {
+      var nullOutput = inputs.head.isNull
+      try {
+        inputs.drop(1).foreach { cv =>
+          val combinedIsNull = withResource(cv.isNull) { tmpIsNull =>
+            tmpIsNull.or(nullOutput)
+          }
+          closeOnExcept(combinedIsNull) { _ =>
+            nullOutput.close()
+            nullOutput = combinedIsNull
+          }
+        }
+
+        // input1: [[A, B, C], [D, E], [F], [G]]
+        // input2: [[a, b], [c, d, e], null, [f, g]]
+        // combinedIsNull, false, false, true, false
+
+        // output1: [[A, B, C], [D, E], null, [G]]
+        // output2: [[a, b], [c, d, e], null, [f, g]]
+
+        inputs.zip(children).safeMap { case (cv, child) =>
+          withResource(GpuScalar.from(null, child.dataType)) { nullArray =>
+            nullOutput.ifElse(nullArray, cv)
+          }
+        }
+      } finally {
+        nullOutput.close()
+      }
+    } else {
+      inputs.map(_.incRefCount())
+    }
+  }
+
 
   private def computeMaxArraySize(inputs: Seq[ColumnVector]): ColumnVector = {
     // Compute array sizes of input arrays
@@ -809,28 +813,67 @@ case class GpuArraysZip(children: Seq[Expression]) extends GpuExpression with Sh
 
   private def generateSeqIndices(maxArraySize: ColumnVector): ColumnVector = {
     withResource(GpuScalar.from(0, IntegerType)) { s =>
-      val zeroCV = GpuColumnVector.from(s, maxArraySize.getRowCount.toInt, IntegerType)
-      withResource(zeroCV.getBase) { zero =>
+      withResource(ColumnVector.fromScalar(s, maxArraySize.getRowCount.toInt)) { zero =>
         ColumnVector.sequence(zero, maxArraySize)
       }
     }
   }
 
-  private def zipArrays(offsets: ColumnVector,
-                        children: Seq[ColumnVector],
-                        inputs: Seq[ColumnVector]) : ColumnVector = {
-    // Construct List of Struct with list offsets and struct fields
-    val zipped = withResource(offsets) { _ =>
-      withResource(children) { _ =>
-        withResource(ColumnVector.makeStruct(children: _*)) { struct =>
-          struct.makeListFromOffsets(offsets.getRowCount - 1, offsets)
-        }
+  /**
+   * Do a segmented gather on the inputs so that they are padded with nulls to make sure each LIST
+   * on the same row, at the top level, has the same length. The columns returned should have the
+   * same offsets and the same validity. This assumes that the validity on the inputs all match.
+   */
+  private def padArraysToMaxLength(inputs: Seq[ColumnVector]): Seq[ColumnVector] = {
+    // Compute max size of input arrays for each row, this is to know how we need to pad things.
+    //
+    // input1: [[A, B, C], [D, E], null, [G]]
+    // input2: [[a, b], [c, d, e], null, [f, g]]
+    // max array size: [3, 3, 0, 2]
+    val seqIndices = withResource(computeMaxArraySize(inputs)) { maxArraySize =>
+      // Generate sequence indices for gathering children of input arrays
+      //
+      // [3, 3, 0, 2] => [[0, 1, 2], [0, 1, 2], [], [0, 1]]
+      generateSeqIndices(maxArraySize)
+    }
+
+    // Perform segment gather on input columns with indices covering each element
+    //
+    // input1: [[A, B, C], [D, E], null, [G]]
+    // input2: [[a, b], [c, d, e], null, [f, g]]
+    // indices: [[0, 1, 2], [0, 1, 2], [], [0, 1]]
+    // output1: [[A, B, C], [D, E, null], null, [G, null]]
+    // output2: [[a, b, null], [c, d, e], null, [f, g]]
+    withResource(seqIndices) { _ =>
+      inputs.safeMap { cv =>
+        cv.segmentedGather(seqIndices)
       }
     }
-    // Set the validity of result with the joint validity of input columns, which means
-    // the output record will be null if any of input records is null.
-    withResource(zipped) { _ =>
-      zipped.mergeAndSetValidity(BinaryOp.BITWISE_AND, inputs: _*)
+  }
+
+  /**
+   * This turns LIST[X], LIST[Y], ... into a LIST[ STRUCT[X, Y, ...] ] but requires that
+   * the input LIST columns all have the same validity and offsets.
+   */
+  private def zipArrays(padded: Seq[ColumnVector]): ColumnVector = {
+    // Get the data column from the children, without any offsets
+    withResource(padded.safeMap(_.getChildColumnView(0))) { children =>
+      // Put them into a struct column view
+      withResource(ColumnView.makeStructView(children: _*)) { structView =>
+        // Make the struct a list using the input's offsets and validity
+        // in the cheapest way possible.
+        val proto = padded.head
+        withResource(proto.getValid) { valid =>
+          withResource(proto.getOffsets) { offsets =>
+            withResource(new ColumnView(DType.LIST, proto.getRowCount,
+              java.util.Optional.of[java.lang.Long](proto.getNullCount),
+              valid, offsets, Array(structView))) { retView =>
+              // Finally copy the result out to a ColumnVector so we can return it
+              retView.copyToColumnVector()
+            }
+          }
+        }
+      }
     }
   }
 }
