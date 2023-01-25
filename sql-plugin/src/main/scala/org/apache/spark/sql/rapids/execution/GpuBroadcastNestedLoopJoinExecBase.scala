@@ -473,13 +473,13 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
   }
 
   private def leftExistenceJoin(
-      broadcastRelation: Any,
+      relation: Any,
       exists: Boolean,
       buildTime: GpuMetric,
       buildDataSize: GpuMetric): RDD[ColumnarBatch] = {
     assert(gpuBuildSide == GpuBuildRight)
     streamed.executeColumnar().mapPartitionsInternal { streamedIter =>
-      val buildRows = computeBuildRowCount(broadcastRelation, buildTime, buildDataSize)
+      val buildRows = computeBuildRowCount(relation, buildTime, buildDataSize)
       if (buildRows > 0 == exists) {
         streamedIter
       } else {
@@ -488,12 +488,12 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     }
   }
 
-  private def doUnconditionalJoin(broadcastRelation: Any): RDD[ColumnarBatch] = {
+  private def doUnconditionalJoin(relation: Any): RDD[ColumnarBatch] = {
     // Existence join should have a condition
     assert(!joinType.isInstanceOf[ExistenceJoin])
 
     if (output.isEmpty) {
-      doUnconditionalJoinRowCount(broadcastRelation)
+      doUnconditionalJoinRowCount(relation)
     } else {
       val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
       val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
@@ -501,17 +501,17 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
       val buildTime = gpuLongMetric(BUILD_TIME)
       val opTime = gpuLongMetric(OP_TIME)
       val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
-      lazy val builtBatch = makeBuiltBatch(broadcastRelation, buildTime, buildDataSize)
+      lazy val builtBatch = makeBuiltBatch(relation, buildTime, buildDataSize)
       val joinIterator: RDD[ColumnarBatch] = joinType match {
         case LeftSemi =>
           if (gpuBuildSide == GpuBuildRight) {
-            leftExistenceJoin(broadcastRelation, exists=true, buildTime, buildDataSize)
+            leftExistenceJoin(relation, exists=true, buildTime, buildDataSize)
           } else {
             left.executeColumnar()
           }
         case LeftAnti =>
           if (gpuBuildSide == GpuBuildRight) {
-            leftExistenceJoin(broadcastRelation, exists=false, buildTime, buildDataSize)
+            leftExistenceJoin(relation, exists=false, buildTime, buildDataSize)
           } else {
             // degenerate case, no rows are returned.
             val childRDD = left.executeColumnar()
@@ -550,7 +550,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
   }
 
   /** Special-case handling of an unconditional join that just needs to output a row count. */
-  private def doUnconditionalJoinRowCount(broadcastRelation: Any): RDD[ColumnarBatch] = {
+  private def doUnconditionalJoinRowCount(relation: Any): RDD[ColumnarBatch] = {
     if (joinType == LeftAnti) {
       // degenerate case, no rows are returned.
       left.executeColumnar().mapPartitions { _ =>
@@ -563,7 +563,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
       } else {
         val buildTime = gpuLongMetric(BUILD_TIME)
         val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
-        computeBuildRowCount(broadcastRelation, buildTime, buildDataSize)
+        computeBuildRowCount(relation, buildTime, buildDataSize)
       }
 
       def getRowCountAndClose(cb: ColumnarBatch): Long = {
@@ -587,13 +587,13 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
   }
 
   private def doConditionalJoin(
-      broadcastRelation: Any,
+      relation: Any,
       boundCondition: Option[GpuExpression],
       numFirstTableColumns: Int): RDD[ColumnarBatch] = {
     val buildTime = gpuLongMetric(BUILD_TIME)
     val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
     val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
-    lazy val builtBatch = makeBuiltBatch(broadcastRelation, buildTime, buildDataSize)
+    lazy val builtBatch = makeBuiltBatch(relation, buildTime, buildDataSize)
     val streamAttributes = streamed.output
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
