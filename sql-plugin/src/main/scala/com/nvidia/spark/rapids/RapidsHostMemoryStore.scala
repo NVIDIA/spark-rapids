@@ -47,10 +47,12 @@ class RapidsHostMemoryStore(
   // Returns an allocated host buffer and its allocation mode
   private def allocateHostBuffer(size: Long): (HostMemoryBuffer, AllocationMode) = {
     // spill to keep within the targeted size
-    val amountSpilled = synchronousSpill(math.max(maxSize - size, 0))
-    if (amountSpilled != 0) {
-      logInfo(s"Spilled $amountSpilled bytes from the host memory store")
-      TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
+    val maybeAmountSpilled = synchronousSpill(math.max(maxSize - size, 0))
+    maybeAmountSpilled.foreach { amountSpilled =>
+      if (amountSpilled != 0) {
+        logInfo(s"Spilled $amountSpilled bytes from the host memory store")
+        TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
+      }
     }
 
     var buffer: HostMemoryBuffer = null

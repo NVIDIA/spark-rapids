@@ -176,6 +176,8 @@ abstract class RapidsBufferStore(
 
   private[this] val nvtxSyncSpillName: String = name + " sync spill"
 
+  private[this] val spillCount = new AtomicLong(0L)
+
   /** Return the current byte total of buffers in this store. */
   def currentSize: Long = buffers.getTotalBytes
 
@@ -227,65 +229,97 @@ abstract class RapidsBufferStore(
 
   /**
    * Free memory in this store by spilling buffers to the spill store synchronously.
+   *
    * @param targetTotalSize maximum total size of this store after spilling completes
-   * @return number of bytes that were spilled
+   * @return optionally number of bytes that were spilled, or None if this called
+   *         made no attempt to spill due to a detected spill race
    */
-  def synchronousSpill(targetTotalSize: Long): Long =
+  def synchronousSpill(targetTotalSize: Long): Option[Long] =
     synchronousSpill(targetTotalSize, Cuda.DEFAULT_STREAM)
 
   /**
    * Free memory in this store by spilling buffers to the spill store synchronously.
    * @param targetTotalSize maximum total size of this store after spilling completes
    * @param stream CUDA stream to use or null for default stream
-   * @return number of bytes that were spilled
+   * @return optionally number of bytes that were spilled, or None if this called
+   *         made no attempt to spill due to a detected spill race
    */
-  def synchronousSpill(targetTotalSize: Long, stream: Cuda.Stream): Long = {
+  def synchronousSpill(targetTotalSize: Long, stream: Cuda.Stream): Option[Long] = {
     require(targetTotalSize >= 0, s"Negative spill target size: $targetTotalSize")
 
+    var shouldRetry = false
     var totalSpilled: Long = 0
 
     if (buffers.getTotalSpillableBytes > targetTotalSize) {
-      val nvtx = new NvtxRange(nvtxSyncSpillName, NvtxColor.ORANGE)
-      try {
+      withResource(new NvtxRange(nvtxSyncSpillName, NvtxColor.ORANGE)) { _ =>
         logDebug(s"$name store spilling to reduce usage from " +
           s"${buffers.getTotalBytes} total (${buffers.getTotalSpillableBytes} spillable) " +
           s"to $targetTotalSize bytes")
-        var waited = false
-        var exhausted = false
-        while (!exhausted && buffers.getTotalSpillableBytes > targetTotalSize) {
-          val amountSpilled = trySpillAndFreeBuffer(stream)
-          if (amountSpilled != 0) {
-            totalSpilled += amountSpilled
-            waited = false
-          } else {
-            if (!waited && pendingFreeBytes.get > 0) {
-              waited = true
-              logWarning(s"Cannot spill further, waiting for ${pendingFreeBytes.get} " +
-                  " bytes of pending buffers to be released")
-              memoryFreedMonitor.synchronized {
-                val memNeeded = buffers.getTotalSpillableBytes - targetTotalSize
-                if (memNeeded > 0 && memNeeded <= pendingFreeBytes.get) {
-                  // This could be a futile wait if the thread(s) holding the pending buffers open
-                  // are here waiting for more memory.
-                  memoryFreedMonitor.wait(RapidsBufferStore.FREE_WAIT_TIMEOUT)
-                }
-              }
-            } else {
-              logWarning("Unable to spill enough to meet request. " +
-                s"Total=${buffers.getTotalBytes} " +
-                s"Spillable=${buffers.getTotalSpillableBytes} " +
-                s"Target=$targetTotalSize")
-              exhausted = true
+
+        def waitForPending(): Unit = {
+          logWarning(s"Cannot spill further, waiting for ${pendingFreeBytes.get} " +
+            " bytes of pending buffers to be released")
+          memoryFreedMonitor.synchronized {
+            val memNeeded = buffers.getTotalSpillableBytes - targetTotalSize
+            if (memNeeded > 0 && memNeeded <= pendingFreeBytes.get) {
+              // This could be a futile wait if the thread(s) holding the pending buffers
+              // open are here waiting for more memory.
+              memoryFreedMonitor.wait(RapidsBufferStore.FREE_WAIT_TIMEOUT)
             }
           }
         }
+
+        var waited = false
+        var exhausted = false
+
+        while (!exhausted && !shouldRetry && buffers.getTotalSpillableBytes > targetTotalSize) {
+          val mySpillCount = spillCount.incrementAndGet()
+          val maybeAmountSpilled = synchronized {
+            if (spillCount.get() == mySpillCount) {
+              Some(trySpillAndFreeBuffer(stream))
+            } else {
+              None
+            }
+          }
+          maybeAmountSpilled match {
+            case None =>
+              // another thread won and spilled before this thread did. Lets retry the original
+              // allocation again
+              shouldRetry = true
+            case Some(amountSpilled) =>
+              if (amountSpilled != 0) {
+                totalSpilled += amountSpilled
+                waited = false
+              } else {
+                // we didn't spill in this iteration, and we'll try to wait a bit to see if
+                // other threads finish up their work and release pointers to the released
+                // buffer
+                if (!waited && pendingFreeBytes.get > 0) {
+                  waited = true
+                  waitForPending()
+                } else {
+                  exhausted = true
+                  logWarning("Unable to spill enough to meet request. " +
+                    s"Total=${buffers.getTotalBytes} " +
+                    s"Spillable=${buffers.getTotalSpillableBytes} " +
+                    s"Target=$targetTotalSize")
+                }
+              }
+          }
+        }
         logDebug(s"$this spill complete")
-      } finally {
-        nvtx.close()
       }
     }
 
-    totalSpilled
+    if (totalSpilled > 0) {
+      Some(totalSpilled)
+    } else if (shouldRetry) {
+      // if we are going to retry, and didn't spill, returning None prevents extra
+      // logs where we say we spilled 0 bytes from X store
+      None
+    } else {
+      Some(0)
+    }
   }
 
   /**

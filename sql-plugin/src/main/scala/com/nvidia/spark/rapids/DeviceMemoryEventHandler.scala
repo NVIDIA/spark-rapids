@@ -153,12 +153,14 @@ class DeviceMemoryEventHandler(
         } else {
           val targetSize = Math.max(storeSpillableSize - allocSize, 0)
           logDebug(s"Targeting device store size of $targetSize bytes")
-          val amountSpilled = store.synchronousSpill(targetSize)
-          logInfo(s"Spilled $amountSpilled bytes from the device store")
-          if (isGdsSpillEnabled) {
-            TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
-          } else {
-            TrampolineUtil.incTaskMetricsMemoryBytesSpilled(amountSpilled)
+          val maybeAmountSpilled = store.synchronousSpill(targetSize)
+          maybeAmountSpilled.foreach { amountSpilled =>
+            logInfo(s"Spilled $amountSpilled bytes from the device store")
+            if (isGdsSpillEnabled) {
+              TrampolineUtil.incTaskMetricsDiskBytesSpilled(amountSpilled)
+            } else {
+              TrampolineUtil.incTaskMetricsMemoryBytesSpilled(amountSpilled)
+            }
           }
           true
         }
