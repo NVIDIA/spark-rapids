@@ -12,12 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""implementation of shimplify Ant task """
+"""implementation of shimplify Ant task in Python2.7 for Jython"""
 
 import errno
 import json
 import logging
 import os
+import re
 import subprocess
 
 # wrap Ant interactions to reduce linting warnings
@@ -42,15 +43,15 @@ def __ant_attr(name):
 
 
 def __is_enabled_property(prop_name):
-    assert not (prop_name is None), "Invalid property: None"
+    assert prop_name is not None, "Invalid property: None"
     prop_val = __ant_proj_prop(prop_name)
     return str(True).lower() == prop_val
 
 
 def __is_enabled_attr(attr):
-    assert not (attr is None), "Invalid attribute: None"
+    assert attr is not None, "Invalid attribute: None"
     attr_val = __ant_attr(attr)
-    return not (attr_val is None) and __is_enabled_property(attr_val)
+    return attr_val is not None and __is_enabled_property(attr_val)
 
 
 task_enabled = __is_enabled_attr('if')
@@ -64,6 +65,10 @@ over_shimplify = __is_enabled_property('overShimplify')
 # enable log tracing
 shimplify_trace = __is_enabled_property('traceShimplify')
 
+__shim_comment_tag = 'spark-rapids-shim-json-lines'
+__opening_shim_tag = '/*** ' + __shim_comment_tag
+__closing_shim_tag = __shim_comment_tag + ' ***/'
+
 
 log = logging.getLogger('shimplify')
 log.setLevel(logging.DEBUG if shimplify_trace else logging.INFO)
@@ -75,13 +80,13 @@ log.addHandler(ch)
 def __upsert_shim_json(filename, bv_list):
     with open(filename, 'r') as file:
         contents = file.readlines()
-    tag = 'spark-rapids-shim-json-lines'
+
     shim_comment = []
-    shim_comment.append('/*** ' + tag)
+    shim_comment.append(__opening_shim_tag)
     for build_ver in bv_list:
         shim_comment.append(json.dumps({'spark':  build_ver}))
-    shim_comment.append(tag + ' ***/')
-    __delete_prior_comment_if_allowed(contents, tag, filename)
+    shim_comment.append(__closing_shim_tag)
+    __delete_prior_comment_if_allowed(contents, __shim_comment_tag, filename)
     log.debug("Inserting comment %s to %s", shim_comment, filename)
     package_line = next(i for i in range(len(contents)) if str(contents[i]).startswith('package'))
     log.debug("filename=%s package_line_number=%d", filename, package_line)
@@ -101,7 +106,7 @@ def __delete_prior_comment_if_allowed(contents, tag, filename):
         closing_shim_comment_line = next(i for i in shim_comment_and_below
                                          if tag in str(contents[i]))
     except StopIteration as si_exc:
-        if not (opening_shim_comment_line is None) and (closing_shim_comment_line is None):
+        if (opening_shim_comment_line is not None) and (closing_shim_comment_line is None):
             raise Exception("%s: no closing comment for %s:%d"
                             % (si_exc, filename, opening_shim_comment_line))
 
@@ -111,7 +116,7 @@ def __delete_prior_comment_if_allowed(contents, tag, filename):
     if not over_shimplify:
         raise Exception("found shim comment from prior execution at %s:%d, use -DoverShimplify=true"
                         "to overwrite" % (filename, opening_shim_comment_line))
-    assert not (opening_shim_comment_line is None) and not (closing_shim_comment_line is None)
+    assert (opening_shim_comment_line is not None) and (closing_shim_comment_line is not None)
     log.debug("removing comments %s:%d:%d", filename, opening_shim_comment_line,
               closing_shim_comment_line)
     del contents[opening_shim_comment_line:(closing_shim_comment_line + 1)]
@@ -125,23 +130,29 @@ def __git_rename(shim_file, first_shim):
     log.debug("spark-rapids root dir: %s", parent_pom_dir)
     log.debug("shim file path relative to root dir: %s", rel_path)
     path_parts = rel_path.split(os.sep)
-    path_parts[3] = first_shim
+    # to enable both builds at the same time the original location should change too
+    path_parts[3] = 'spark%s' % first_shim
     new_shim_file = os.sep.join([parent_pom_dir] + path_parts)
     if shim_file == new_shim_file:
         log.info("%s is already at the right location, skipping git rename", shim_file)
         return
     new_shim_dir = os.path.dirname(new_shim_file)
     log.debug("creating new shim path %s", new_shim_dir)
-    try:
-        os.makedirs(new_shim_dir)
-    except OSError as ose:
-        if not (ose.errno == errno.EEXIST and os.path.isdir(new_shim_dir)):
-            raise
+    __makedirs(new_shim_dir)
 
     git_cmd = ['git', 'mv', shim_file, new_shim_file]
     ret_code = subprocess.call(git_cmd)
     if ret_code != 0:
         raise Exception('git rename failed')
+
+
+def __makedirs(new_dir):
+    try:
+        log.debug("__makedirs %s", new_dir)
+        os.makedirs(new_dir)
+    except OSError as ose:
+        if not (ose.errno == errno.EEXIST and os.path.isdir(new_dir)):
+            raise
 
 
 def task_impl():
@@ -161,7 +172,7 @@ def task_impl():
     You can find all shim files for a particular shim easily by executing:
     git grep '{"spark": "312"}'
     """
-    log.info('############# Starting Jython Task Shimplify #######')
+    log.info('# Starting Jython Task Shimplify #')
     log.info("config: task_enabled=%s over_shimplify=%s move_files=%s",
              task_enabled, over_shimplify, move_files)
     log.info("review changes and `git restore` if necessary")
@@ -174,11 +185,67 @@ def task_impl():
 
     for prop_pattern in ["spark%s.sources", "spark%s.test.sources"]:
         __warn_shims_with_multiple_dedicated_dirs(shims_arr, prop_pattern)
-
-    if not task_enabled:
+    if task_enabled:
+        __shimplify_layout(shims_arr)
+    else:
         log.info('Skipping shimplify! Set -Dshimplify=true to convert old shims')
-        return
 
+    __generate_symlinks()
+
+
+def __generate_symlinks():
+    """
+    link
+    <module>/src/<main|test>/<buildver>/scala/<package_path>/SomeClass.scala
+    <module>/target/<buildver>/generated/src/<main|test>/scala/<package_path>/SomeClass.scala
+    """
+    base_dir = str(__project().getBaseDir())
+    buildver = __ant_proj_prop('buildver')
+    log.info("# generating symlinks for shim %s files under %s", buildver, base_dir)
+    src_root = os.path.join(base_dir, 'src', 'main')
+    target_root = os.path.join(base_dir, 'target', "spark%s" % buildver)
+    shim_dir_pattern = re.compile(r'spark\d{3}')
+    shim_comment_pattern = re.compile(re.escape(__opening_shim_tag) +
+                                      r'\n(.*)\n' +
+                                      re.escape(__closing_shim_tag), re.DOTALL)
+    for dir, subdirs, files in os.walk(src_root, topdown=True):
+        if dir == src_root:
+            subdirs[:] = [d for d in subdirs if re.match(shim_dir_pattern, d)]
+        for f in files:
+            shim_file_path = os.path.join(dir, f)
+            log.debug("processing shim comment at %s", shim_file_path)
+            with open(shim_file_path, 'r') as shim_file:
+                shim_file_txt = shim_file.read()
+                shim_match = shim_comment_pattern.search(shim_file_txt)
+                assert shim_match is not None and shim_match.groups(), \
+                    "no shim comment located in %s" % shim_file_path
+                shim_arr = shim_match.group(1).split('\n')
+                assert len(shim_arr) > 0, "invalid empty shim comment,"\
+                    "orphan shim files should be deleted"
+                build_ver_arr = map(lambda s: str(json.loads(s).get('spark')), shim_arr)
+                log.debug("extracted shims %s", build_ver_arr)
+                assert build_ver_arr == sorted(build_ver_arr),\
+                    "%s shim list is not properly sorted" % shim_file_path
+                first_build_ver = build_ver_arr[0]
+                log.debug("top shim comment %s", first_build_ver)
+                shim_file_rel_path = os.path.relpath(shim_file_path, src_root)
+                expected_prefix = "spark%s%s" % (first_build_ver, os.sep)
+                assert shim_file_rel_path.startswith(expected_prefix),\
+                    "Unexpected path %s is not prefixed by %s" % (shim_file_rel_path,
+                                                                  expected_prefix)
+
+                if buildver in build_ver_arr:
+                    shim_file_rel_path_parts = shim_file_rel_path.split(os.sep)
+                    # drop spark3XY from spark3XY/scala/com/nvidia
+                    target_file_parts = shim_file_rel_path_parts[1:]
+                    target_rel_path = os.sep.join(target_file_parts)
+                    target_shim_file_path = os.path.join(target_root, 'generated', 'src', 'main',
+                                                         target_rel_path)
+                    __makedirs(os.path.dirname(target_shim_file_path))
+                    os.symlink(shim_file_path, target_shim_file_path)
+
+
+def __shimplify_layout(shims_arr):
     # map file -> [shims it's part of]
     files2bv = {}
     for build_ver in shims_arr:
@@ -193,7 +260,6 @@ def task_impl():
                 files2bv[shim_file] += [build_ver]
             else:
                 files2bv[shim_file] = [build_ver]
-
     for shim_file, bv_list in files2bv.items():
         log.debug("calling upsert_shim_json shim_file=%s bv_list=%s", shim_file, bv_list)
         __upsert_shim_json(shim_file, bv_list)

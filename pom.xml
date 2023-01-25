@@ -726,7 +726,7 @@
         -->
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
 
-        <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/src/generated</spark.shim.dest>
+        <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/generated/src</spark.shim.dest>
         <noSnapshot.buildvers>
             311,
             312,
@@ -1582,7 +1582,6 @@
                             <sources>${spark.shim.test.sources}</sources>
                         </configuration>
                     </execution>
-
                     <execution>
                         <id>add-shimple-sources</id>
                         <phase>generate-sources</phase>
