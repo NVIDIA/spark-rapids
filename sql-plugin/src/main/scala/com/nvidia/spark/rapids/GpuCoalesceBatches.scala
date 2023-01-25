@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -290,21 +290,15 @@ abstract class AbstractGpuCoalesceIterator(
   override def hasNext: Boolean = {
     while (!hasOnDeck && iter.hasNext) {
       val cb = iter.next()
-      try {
-        withResource(new MetricRange(opTime)) { _ =>
-          val numRows = cb.numRows()
-          numInputBatches += 1
-          numInputRows += numRows
-          if (numRows > 0) {
-            saveOnDeck(cb)
-          } else {
-            cleanupInputBatch(cb)
-          }
-        }
-      } catch {
-        case t: Throwable =>
+      withResource(new MetricRange(opTime)) { _ =>
+        val numRows = cb.numRows()
+        numInputBatches += 1
+        numInputRows += numRows
+        if (numRows > 0) {
+          saveOnDeck(cb)
+        } else {
           cleanupInputBatch(cb)
-          throw t
+        }
       }
     }
     hasOnDeck
