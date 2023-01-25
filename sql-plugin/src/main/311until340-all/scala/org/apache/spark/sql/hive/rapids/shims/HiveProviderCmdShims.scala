@@ -20,7 +20,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.OptimizedCreateHiveTableAsSelectCommandMeta
 
 import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
-import org.apache.spark.sql.hive.execution.{InsertIntoHiveTable, OptimizedCreateHiveTableAsSelectCommand}
+import org.apache.spark.sql.hive.execution.{CreateHiveTableAsSelectCommand, InsertIntoHiveTable, OptimizedCreateHiveTableAsSelectCommand}
 
 trait HiveProviderCmdShims extends HiveProvider {
 
@@ -35,8 +35,13 @@ trait HiveProviderCmdShims extends HiveProvider {
       (a, conf, p, r) => new OptimizedCreateHiveTableAsSelectCommandMeta(a, conf, p, r)),
 
     GpuOverrides.dataWriteCmd[InsertIntoHiveTable](
-      desc = "Command to write to Hive Tables",
-      (insert, conf, parent, rule) => new GpuInsertIntoHiveTableMeta(insert, conf, parent, rule))
+      desc = "Command to write to Hive tables",
+      (insert, conf, parent, rule) => new GpuInsertIntoHiveTableMeta(insert, conf, parent, rule)),
+
+    GpuOverrides.dataWriteCmd[CreateHiveTableAsSelectCommand](
+      desc = "Command to create a Hive table from the result of a Spark data source",
+      (create, conf, parent, rule) =>
+        new GpuCreateHiveTableAsSelectCommandMeta(create, conf, parent, rule))
 
   ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
 

@@ -166,6 +166,8 @@ final class GpuInsertIntoHiveTableMeta(cmd: InsertIntoHiveTable,
       outputColumnNames = wrapped.outputColumnNames
     )
   }
+
+  def getCannotBeReplacedReasons(): Option[collection.mutable.Set[String]] = cannotBeReplacedReasons
 }
 
 case class GpuInsertIntoHiveTable(
