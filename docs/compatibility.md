@@ -440,6 +440,10 @@ These are the known edge cases where running on the GPU will produce different r
 - Regular expressions that contain an end of line anchor '$' or end of string anchor '\Z' immediately
  next to a newline or a repetition that produces zero or more results
  ([#5610](https://github.com/NVIDIA/spark-rapids/pull/5610))`
+- Word and non-word boundaries, `\b` and `\B`
+- Line anchor `$` will incorrectly match any of the unicode characters `\u0085`, `\u2028`, or `\u2029` followed by
+  another line-terminator, such as `\n`. For example, the pattern `TEST$` will match `TEST\u0085\n` on the GPU but
+  not on the CPU.
 
 The following regular expression patterns are not yet supported on the GPU and will fall back to the CPU.
 
@@ -457,12 +461,6 @@ The following regular expression patterns are not yet supported on the GPU and w
   or `[a-z&&[^bc]]`
 - Empty groups: `()`
 - `regexp_replace` does not support back-references
-
-The following regular expression patterns are known to potentially produce different results on the GPU
-vs the CPU.
-
-- Word and non-word boundaries, `\b` and `\B`
-
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.
 
