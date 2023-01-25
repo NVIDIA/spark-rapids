@@ -104,12 +104,9 @@ class DeviceMemoryEventHandler(
    * Handles RMM allocation failures by spilling buffers from device memory.
    * @param allocSize the byte amount that RMM failed to allocate
    * @param retryCount the number of times this allocation has been retried after failure
-   * @note this handler locks any other threads out that are also OOMing. This is done
-   *       such that that each thread that needs to spill has an accurate count of the
-   *       bytes it must move from the device store to other stores.
    * @return true if allocation should be reattempted or false if it should fail
    */
-  override def onAllocFailure(allocSize: Long, retryCount: Int): Boolean = synchronized {
+  override def onAllocFailure(allocSize: Long, retryCount: Int): Boolean = {
     // check arguments for good measure
     require(allocSize >= 0,
       s"onAllocFailure invoked with invalid allocSize $allocSize")
