@@ -556,7 +556,10 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   override protected def hasOnDeck: Boolean = onDeck.isDefined
 
   override protected def saveOnDeck(batch: ColumnarBatch): Unit = {
-    assert(onDeck.isEmpty)
+    // wrap batch on a closeOnExcept, in case assert throws
+    closeOnExcept(batch) { _ =>
+      assert(onDeck.isEmpty)
+    }
     onDeck = Some(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
       spillCallback))
   }
