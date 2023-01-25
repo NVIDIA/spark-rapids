@@ -33,8 +33,8 @@ writes, set spark.rapids.sql.format.delta.write.enabled=false.
 
 The RAPIDS Accelerator supports the following software configurations for accelerating
 Delta Lake writes:
-- Delta Lake version 2.0.x on Apache Spark 3.2.x
-- Delta Lake version 2.1.x and 2.2.x on Apache Spark 3.3.x
+- Delta Lake version 2.0.1 on Apache Spark 3.2.x
+- Delta Lake version 2.1.1 and 2.2.0 on Apache Spark 3.3.x
 - Delta Lake on Databricks 10.4 LTS
 - Delta Lake on Databricks 11.3 LTS
 

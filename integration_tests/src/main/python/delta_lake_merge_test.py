@@ -92,9 +92,9 @@ def assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_
         cpu_result = with_cpu_session(lambda spark: do_merge(spark, cpu_path), conf=conf)
         gpu_result = with_gpu_session(lambda spark: do_merge(spark, gpu_path), conf=conf)
         assert_equal(cpu_result, gpu_result)
-        # compare merged table data results
+        # compare merged table data results, read both via CPU to make sure GPU write can be read by CPU
         cpu_result = with_cpu_session(lambda spark: read_data(spark, cpu_path).collect(), conf=conf)
-        gpu_result = with_gpu_session(lambda spark: read_data(spark, gpu_path).collect(), conf=conf)
+        gpu_result = with_cpu_session(lambda spark: read_data(spark, gpu_path).collect(), conf=conf)
         assert_equal(cpu_result, gpu_result)
         if compare_logs:
             with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
