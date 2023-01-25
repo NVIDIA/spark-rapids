@@ -31,6 +31,9 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
     extends RapidsBufferStore(StorageTier.DEVICE, catalog) with Arm {
 
+  // The RapidsDeviceMemoryStore handles spillability via ref counting
+  override protected def spillableOnAdd: Boolean = false
+
   override protected def createBuffer(other: RapidsBuffer, memoryBuffer: MemoryBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
     val deviceBuffer = {

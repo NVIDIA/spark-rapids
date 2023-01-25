@@ -74,15 +74,13 @@ abstract class RapidsBufferStore(
       }
       totalBytesStored += buffer.size
 
-      // set this buffer as spillable immediately, unless this is the device tier.
-      tier match {
-        case StorageTier.DEVICE =>
-          // noop, device buffers "spillability" is handled via DeviceMemoryBuffer ref counting
-        case _ =>
-          // all other tiers define stored buffers spillable at all times
-          if (spillable.offer(buffer)) {
-            totalBytesSpillable += buffer.size
-          }
+      // device buffers "spillability" is handled via DeviceMemoryBuffer ref counting
+      // so spillableOnAdd should be false, all other buffer tiers are spillable at
+      // all times.
+      if (spillableOnAdd) {
+        if (spillable.offer(buffer)) {
+          totalBytesSpillable += buffer.size
+        }
       }
     }
 
@@ -182,6 +180,12 @@ abstract class RapidsBufferStore(
   def currentSize: Long = buffers.getTotalBytes
 
   def currentSpillableSize: Long = buffers.getTotalSpillableBytes
+
+  /**
+   * A store that manages spillability of buffers should override this method
+   * to false, otherwise `BufferTracker` treats buffers as always spillable.
+   */
+  protected def spillableOnAdd: Boolean = true
 
   /**
    * Specify another store that can be used when this store needs to spill.
