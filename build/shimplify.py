@@ -199,15 +199,21 @@ def __generate_symlinks():
     <module>/src/<main|test>/<buildver>/scala/<package_path>/SomeClass.scala
     <module>/target/<buildver>/generated/src/<main|test>/scala/<package_path>/SomeClass.scala
     """
-    base_dir = str(__project().getBaseDir())
     buildver = __ant_proj_prop('buildver')
-    log.info("# generating symlinks for shim %s files under %s", buildver, base_dir)
-    src_root = os.path.join(base_dir, 'src', 'main')
-    target_root = os.path.join(base_dir, 'target', "spark%s" % buildver)
     shim_dir_pattern = re.compile(r'spark\d{3}')
     shim_comment_pattern = re.compile(re.escape(__opening_shim_tag) +
                                       r'\n(.*)\n' +
                                       re.escape(__closing_shim_tag), re.DOTALL)
+    for src_type in ['main', 'test']:
+        __traverse_source_tree(buildver, src_type, shim_dir_pattern, shim_comment_pattern)
+
+
+def __traverse_source_tree(buildver, src_type, shim_dir_pattern, shim_comment_pattern):
+    base_dir = str(__project().getBaseDir())
+    log.info("# generating symlinks for shim %s %s files under %s", buildver, src_type, base_dir)
+    src_root = os.path.join(base_dir, 'src', src_type)
+    target_root = os.path.join(base_dir, 'target', "spark%s" % buildver, 'generated', 'src',
+                               src_type)
     for dir, subdirs, files in os.walk(src_root, topdown=True):
         if dir == src_root:
             subdirs[:] = [d for d in subdirs if re.match(shim_dir_pattern, d)]
@@ -226,21 +232,21 @@ def __generate_symlinks():
                 log.debug("extracted shims %s", build_ver_arr)
                 assert build_ver_arr == sorted(build_ver_arr),\
                     "%s shim list is not properly sorted" % shim_file_path
-                first_build_ver = build_ver_arr[0]
-                log.debug("top shim comment %s", first_build_ver)
-                shim_file_rel_path = os.path.relpath(shim_file_path, src_root)
-                expected_prefix = "spark%s%s" % (first_build_ver, os.sep)
-                assert shim_file_rel_path.startswith(expected_prefix),\
-                    "Unexpected path %s is not prefixed by %s" % (shim_file_rel_path,
-                                                                  expected_prefix)
 
                 if buildver in build_ver_arr:
+                    first_build_ver = build_ver_arr[0]
+                    log.debug("top shim comment %s", first_build_ver)
+                    shim_file_rel_path = os.path.relpath(shim_file_path, src_root)
+                    expected_prefix = "spark%s%s" % (first_build_ver, os.sep)
+                    assert shim_file_rel_path.startswith(expected_prefix),\
+                        "Unexpected path %s is not prefixed by %s" % (shim_file_rel_path,
+                                                                      expected_prefix)
                     shim_file_rel_path_parts = shim_file_rel_path.split(os.sep)
                     # drop spark3XY from spark3XY/scala/com/nvidia
                     target_file_parts = shim_file_rel_path_parts[1:]
                     target_rel_path = os.sep.join(target_file_parts)
-                    target_shim_file_path = os.path.join(target_root, 'generated', 'src', 'main',
-                                                         target_rel_path)
+                    target_shim_file_path = os.path.join(target_root, target_rel_path)
+                    log.debug("creating symlink %s -> %s", target_shim_file_path, shim_file_path)
                     __makedirs(os.path.dirname(target_shim_file_path))
                     os.symlink(shim_file_path, target_shim_file_path)
 
