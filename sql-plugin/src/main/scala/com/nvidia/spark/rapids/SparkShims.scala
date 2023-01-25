@@ -151,7 +151,7 @@ trait SparkShims {
   def shuffleParentReadsShuffleData(shuffle: ShuffleExchangeLike, parent: SparkPlan): Boolean =
     false
 
-  def addTransitionalShuffleIfNeeded(c2r: GpuColumnarToRowExec): SparkPlan
+  def addTransitionalShuffleIfNeeded(c2r: GpuColumnarToRowExec): SparkPlan = c2r
 
   /**
    * Walk the plan recursively and return a list of operators that match the predicate

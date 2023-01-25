@@ -20,8 +20,8 @@ import ai.rapids.cudf.NvtxColor
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.rdd.RDD
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
 import org.apache.spark.sql.execution.SparkPlan
