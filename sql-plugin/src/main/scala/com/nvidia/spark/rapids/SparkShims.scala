@@ -28,7 +28,7 @@ import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
@@ -151,7 +151,7 @@ trait SparkShims {
   def shuffleParentReadsShuffleData(shuffle: ShuffleExchangeLike, parent: SparkPlan): Boolean =
     false
 
-  def addTransitionalShuffleIfNeeded(c2r: GpuColumnarToRowExec): SparkPlan = c2r
+  def addTransitionalShuffleIfNeeded(c2r: GpuColumnarToRowExec, sqse: ShuffleQueryStageExec): SparkPlan = c2r
 
   /**
    * Walk the plan recursively and return a list of operators that match the predicate
