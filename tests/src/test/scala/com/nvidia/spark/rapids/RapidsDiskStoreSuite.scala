@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,21 +52,23 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
           withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager], catalog)) { diskStore =>
             assertResult(0)(diskStore.currentSize)
             hostStore.setSpillStore(diskStore)
-            val bufferSize = addTableToStore(devStore, bufferId, spillPriority)
+            val (bufferSize, handle) =
+              addTableToStore(devStore, bufferId, spillPriority)
+            val path = handle.id.getDiskPath(null)
+            assert(!path.exists())
             devStore.synchronousSpill(0)
             hostStore.synchronousSpill(0)
             assertResult(0)(hostStore.currentSize)
             assertResult(bufferSize)(diskStore.currentSize)
-            val path = bufferId.getDiskPath(null)
             assert(path.exists)
             assertResult(bufferSize)(path.length)
             verify(catalog, times(3)).registerNewBuffer(ArgumentMatchers.any[RapidsBuffer])
             verify(catalog).removeBufferTier(
-              ArgumentMatchers.eq(bufferId), ArgumentMatchers.eq(StorageTier.DEVICE))
-            withResource(catalog.acquireBuffer(bufferId)) { buffer =>
+              ArgumentMatchers.eq(handle.id), ArgumentMatchers.eq(StorageTier.DEVICE))
+            withResource(catalog.acquireBuffer(handle)) { buffer =>
               assertResult(StorageTier.DISK)(buffer.storageTier)
               assertResult(bufferSize)(buffer.size)
-              assertResult(bufferId)(buffer.id)
+              assertResult(handle.id)(buffer.id)
               assertResult(spillPriority)(buffer.getSpillPriority)
             }
           }
@@ -75,11 +77,11 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
   }
 
   test("get columnar batch") {
-    val sparkTypes = Array[DataType](IntegerType, StringType, DoubleType,
-      DecimalType(ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION, 5))
     val bufferId = MockRapidsBufferId(1, canShareDiskPaths = false)
     val bufferPath = bufferId.getDiskPath(null)
     assert(!bufferPath.exists)
+    val sparkTypes = Array[DataType](IntegerType, StringType, DoubleType,
+      DecimalType(ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION, 5))
     val spillPriority = -7
     val hostStoreMaxSize = 1L * 1024 * 1024
     val catalog = new RapidsBufferCatalog
@@ -90,15 +92,16 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
           withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager], catalog, devStore)) {
             diskStore =>
               hostStore.setSpillStore(diskStore)
-              addTableToStore(devStore, bufferId, spillPriority)
-              val expectedBatch = withResource(catalog.acquireBuffer(bufferId)) { buffer =>
+              val (_, handle) = addTableToStore(devStore, bufferId, spillPriority)
+              assert(!handle.id.getDiskPath(null).exists())
+              val expectedBatch = withResource(catalog.acquireBuffer(handle)) { buffer =>
                 assertResult(StorageTier.DEVICE)(buffer.storageTier)
                 buffer.getColumnarBatch(sparkTypes)
               }
               withResource(expectedBatch) { expectedBatch =>
                 devStore.synchronousSpill(0)
                 hostStore.synchronousSpill(0)
-                withResource(catalog.acquireBuffer(bufferId)) { buffer =>
+                withResource(catalog.acquireBuffer(handle)) { buffer =>
                   assertResult(StorageTier.DISK)(buffer.storageTier)
                   withResource(buffer.getColumnarBatch(sparkTypes)) { actualBatch =>
                     TestUtils.compareBatches(expectedBatch, actualBatch)
@@ -123,8 +126,9 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
           devStore.setSpillStore(hostStore)
           withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager], catalog)) { diskStore =>
             hostStore.setSpillStore(diskStore)
-            addTableToStore(devStore, bufferId, spillPriority)
-            val expectedBuffer = withResource(catalog.acquireBuffer(bufferId)) { buffer =>
+            val (_, handle) = addTableToStore(devStore, bufferId, spillPriority)
+            assert(!handle.id.getDiskPath(null).exists())
+            val expectedBuffer = withResource(catalog.acquireBuffer(handle)) { buffer =>
               assertResult(StorageTier.DEVICE)(buffer.storageTier)
               withResource(buffer.getMemoryBuffer) { devbuf =>
                 closeOnExcept(HostMemoryBuffer.allocate(devbuf.getLength)) { hostbuf =>
@@ -136,7 +140,7 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
             withResource(expectedBuffer) { expectedBuffer =>
               devStore.synchronousSpill(0)
               hostStore.synchronousSpill(0)
-              withResource(catalog.acquireBuffer(bufferId)) { buffer =>
+              withResource(catalog.acquireBuffer(handle)) { buffer =>
                 assertResult(StorageTier.DISK)(buffer.storageTier)
                 withResource(buffer.getMemoryBuffer) { actualBuffer =>
                   assert(actualBuffer.isInstanceOf[HostMemoryBuffer])
@@ -171,11 +175,13 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
           devStore.setSpillStore(hostStore)
           withResource(new RapidsDiskStore(mock[RapidsDiskBlockManager], catalog)) { diskStore =>
             hostStore.setSpillStore(diskStore)
-            addTableToStore(devStore, bufferId, spillPriority)
+            val (_, handle) = addTableToStore(devStore, bufferId, spillPriority)
+            val bufferPath = handle.id.getDiskPath(null)
+            assert(!bufferPath.exists())
             devStore.synchronousSpill(0)
             hostStore.synchronousSpill(0)
             assert(bufferPath.exists)
-            catalog.removeBuffer(bufferId)
+            handle.close()
             if (canShareDiskPaths) {
               assert(bufferPath.exists())
             } else {
@@ -187,14 +193,19 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
   }
 
   private def addTableToStore(
-      devStore: RapidsDeviceMemoryStore,
+      deviceMemoryStore: RapidsDeviceMemoryStore,
       bufferId: RapidsBufferId,
-      spillPriority: Long): Long = {
+      spillPriority: Long): (Long, RapidsBufferHandle) = {
     withResource(buildContiguousTable()) { ct =>
       val bufferSize = ct.getBuffer.getLength
       // store takes ownership of the table
-      devStore.addContiguousTable(bufferId, ct, spillPriority)
-      bufferSize
+      val handle = deviceMemoryStore.addContiguousTable(
+        bufferId,
+        ct,
+        spillPriority,
+        RapidsBuffer.defaultSpillCallback,
+        false)
+      (bufferSize, handle)
     }
   }
 

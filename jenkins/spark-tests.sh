@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2019-2022, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2019-2023, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -96,8 +96,8 @@ fi
 
 tar xzf "$RAPIDS_INT_TESTS_TGZ" -C $ARTF_ROOT && rm -f "$RAPIDS_INT_TESTS_TGZ"
 
-$MVN_GET_CMD -DremoteRepositories=$SPARK_REPO \
-    -DgroupId=org.apache -DartifactId=spark -Dversion=$SPARK_VER -Dclassifier=bin-hadoop3.2 -Dpackaging=tgz
+. jenkins/hadoop-def.sh $SPARK_VER
+wget -P $ARTF_ROOT $SPARK_REPO/org/apache/spark/$SPARK_VER/spark-$SPARK_VER-$BIN_HADOOP_VER.tgz
 
 # Download parquet-hadoop jar for parquet-read encryption tests
 PARQUET_HADOOP_VER=`mvn help:evaluate -q -N -Dexpression=parquet.hadoop.version -DforceStdout -Dbuildver=${SHUFFLE_SPARK_SHIM/spark/}`
@@ -106,7 +106,7 @@ if [[ "$(printf '%s\n' "1.12.0" "$PARQUET_HADOOP_VER" | sort -V | head -n1)" = "
       -DgroupId=org.apache.parquet -DartifactId=parquet-hadoop -Dversion=$PARQUET_HADOOP_VER -Dclassifier=tests
 fi
 
-export SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-bin-hadoop3.2"
+export SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-$BIN_HADOOP_VER"
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
     rm -f $SPARK_HOME.tgz
@@ -190,20 +190,23 @@ run_delta_lake_tests() {
   if [[ $SPARK_VER =~ $SPARK_32X_PATTERN ]]; then
     # There are multiple versions of deltalake that support SPARK 3.2.X
     # but for zorder tests to work we need 2.0.0+
-    DELTA_LAKE_VER="2.0.0"
+    DELTA_LAKE_VERSIONS="2.0.2"
   fi
 
   if [[ $SPARK_VER =~ $SPARK_33X_PATTERN ]]; then
-    DELTA_LAKE_VER="2.1.0"
+    DELTA_LAKE_VERSIONS="2.1.1 2.2.0"
   fi
 
-  if [ -z "$DELTA_LAKE_VER" ]; then
+  if [ -z "$DELTA_LAKE_VERSIONS" ]; then
     echo "Skipping Delta Lake tests. $SPARK_VER"
   else
-    PYSP_TEST_spark_jars_packages="io.delta:delta-core_${SCALA_BINARY_VER}:$DELTA_LAKE_VER" \
-      PYSP_TEST_spark_sql_extensions="io.delta.sql.DeltaSparkSessionExtension" \
-      PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.spark.sql.delta.catalog.DeltaCatalog" \
-      ./run_pyspark_from_build.sh -m delta_lake --delta_lake
+    for v in $DELTA_LAKE_VERSIONS; do
+      echo "Running Delta Lake tests for Delta Lake version $v"
+      PYSP_TEST_spark_jars_packages="io.delta:delta-core_${SCALA_BINARY_VER}:$v" \
+        PYSP_TEST_spark_sql_extensions="io.delta.sql.DeltaSparkSessionExtension" \
+        PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.spark.sql.delta.catalog.DeltaCatalog" \
+        ./run_pyspark_from_build.sh -m delta_lake --delta_lake
+    done
   fi
 }
 
