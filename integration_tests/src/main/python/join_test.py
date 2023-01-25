@@ -126,7 +126,7 @@ def test_right_broadcast_nested_loop_join_without_condition_empty(join_type, aqe
     def do_join(spark):
         left, right = create_df(spark, long_gen, 50, 0)
         return left.join(broadcast(right), how=join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf={ "spark.sql.adaptive.enabled": aqe_enabled, "spark.rapids.sql.debug.logTransformations": aqe_enabled })
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf={ "spark.sql.adaptive.enabled": aqe_enabled })
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
@@ -135,7 +135,7 @@ def test_left_broadcast_nested_loop_join_without_condition_empty(join_type, aqe_
     def do_join(spark):
         left, right = create_df(spark, long_gen, 0, 50)
         return left.join(broadcast(right), how=join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf={ "spark.sql.adaptive.enabled": aqe_enabled, "spark.rapids.sql.debug.logTransformations": aqe_enabled })
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf={ "spark.sql.adaptive.enabled": aqe_enabled })
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
@@ -144,7 +144,7 @@ def test_broadcast_nested_loop_join_without_condition_empty(join_type, aqe_enabl
     def do_join(spark):
         left, right = create_df(spark, long_gen, 0, 0)
         return left.join(broadcast(right), how=join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf={ "spark.sql.adaptive.enabled": aqe_enabled, "spark.rapids.sql.debug.logTransformations": aqe_enabled })
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf={ "spark.sql.adaptive.enabled": aqe_enabled })
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)

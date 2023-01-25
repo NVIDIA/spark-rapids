@@ -134,7 +134,7 @@ joins = [
 
 # Databricks-11.3 added new operator EXECUTOR_BROADCAST which does executor side broadcast.
 # SparkPlan is different as there is no BroadcastExchange which is replaced by Exchange.
-# to handle issue in https://github.com/NVIDIA/spark-rapids/issues/7037, we need to allow a 
+# To handle issue in https://github.com/NVIDIA/spark-rapids/issues/7037, we need to allow a 
 # for a CPU ShuffleExchangeExec for a CPU Broadcast join to consume it
 db_113_cpu_bnlj_join_allow=["ShuffleExchangeExec"] if is_databricks113_or_later() else []
 
