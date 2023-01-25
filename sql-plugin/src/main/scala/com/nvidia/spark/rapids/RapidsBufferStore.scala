@@ -49,35 +49,6 @@ abstract class RapidsBufferStore(
   val name: String = tier.toString
 
   private class BufferTracker {
-    /**
-     * Sets a buffers state to spillable or non-spillable.
-     *
-     * If the buffer is currently being spilled or it is no longer in the `buffers` collection
-     * (e.g. it is not in this store), the action is skipped.
-     *
-     * @param buffer the buffer to mark as spillable or not
-     * @param isSpillable whether the buffer should now be spillable
-     */
-    def setSpillable(buffer: RapidsBufferBase, isSpillable: Boolean): Unit = synchronized {
-      if (isSpillable) {
-        // if this buffer is in the store and isn't currently spilling
-        if (!spilling.contains(buffer.id) && buffers.containsKey(buffer.id)) {
-          // try to add it to the spillable collection
-          if (spillable.offer(buffer)) {
-            totalBytesSpillable += buffer.size
-            logDebug(s"Buffer ${buffer.id} is spillable. " +
-              s"total=${totalBytesStored} spillable=${totalBytesSpillable}")
-          } // else it was already there (unlikely)
-        }
-      } else {
-        if (spillable.remove(buffer)) {
-          totalBytesSpillable -= buffer.size
-          logDebug(s"Buffer ${buffer.id} is not spillable. " +
-            s"total=${totalBytesStored}, spillable=${totalBytesSpillable}")
-        } // else it was already removed
-      }
-    }
-
     private[this] val comparator: Comparator[RapidsBufferBase] =
       (o1: RapidsBufferBase, o2: RapidsBufferBase) =>
         java.lang.Long.compare(o1.getSpillPriority, o2.getSpillPriority)
@@ -139,6 +110,35 @@ abstract class RapidsBufferStore(
       // deadlock: (1) `RapidsBufferBase.free`     calls  (2) `RapidsBufferStore.remove` and
       //           (1) `RapidsBufferStore.freeAll` calls  (2) `RapidsBufferBase.free`.
       values.safeFree()
+    }
+
+    /**
+     * Sets a buffers state to spillable or non-spillable.
+     *
+     * If the buffer is currently being spilled or it is no longer in the `buffers` collection
+     * (e.g. it is not in this store), the action is skipped.
+     *
+     * @param buffer      the buffer to mark as spillable or not
+     * @param isSpillable whether the buffer should now be spillable
+     */
+    def setSpillable(buffer: RapidsBufferBase, isSpillable: Boolean): Unit = synchronized {
+      if (isSpillable) {
+        // if this buffer is in the store and isn't currently spilling
+        if (!spilling.contains(buffer.id) && buffers.containsKey(buffer.id)) {
+          // try to add it to the spillable collection
+          if (spillable.offer(buffer)) {
+            totalBytesSpillable += buffer.size
+            logDebug(s"Buffer ${buffer.id} is spillable. " +
+              s"total=${totalBytesStored} spillable=${totalBytesSpillable}")
+          } // else it was already there (unlikely)
+        }
+      } else {
+        if (spillable.remove(buffer)) {
+          totalBytesSpillable -= buffer.size
+          logDebug(s"Buffer ${buffer.id} is not spillable. " +
+            s"total=${totalBytesStored}, spillable=${totalBytesSpillable}")
+        } // else it was already removed
+      }
     }
 
     def nextSpillableBuffer(): RapidsBufferBase = synchronized {
