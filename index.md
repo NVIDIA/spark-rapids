@@ -35,7 +35,7 @@ GpuColumnarToRow false
    +- GpuFileGpuScan parquet [c_customer_sk#0] Batched: true, DataFilters: [], Format: Parquet, Location: InMemoryFileIndex[file:/tmp/customer], PartitionFilters: [], PushedFilters: [], ReadSchema: struct<c_customer_sk:int>
 ```
 
-Learn more on how to [get started](get-started/getting-started.md).
+Learn more on how to [get started](/docs/get-started/getting-started.md).
 
 ## A Unified AI framework for ETL + ML/DL 
 A single pipeline, from ingest to data preparation to model training
