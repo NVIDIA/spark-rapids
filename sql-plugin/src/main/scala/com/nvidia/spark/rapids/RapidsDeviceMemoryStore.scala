@@ -65,6 +65,8 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
    * about to be removed/freed (unlikely, because we are holding onto the reference as we
    * are adding it again).
    *
+   * This method must be invoked with `buffer`'s lock already held! (except in tests)
+   *
    * @note public for testing
    * @param buffer - the `DeviceMemoryBuffer` to inspect
    * @return - Some(RapidsDeviceMemoryBuffer): the handler is associated with a rapids buffer
@@ -116,19 +118,22 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       initialSpillPriority: Long,
       spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback,
       needsSync: Boolean = true): RapidsBufferHandle = {
-    val existing = getExistingRapidsBufferAndAcquire(contigTable.getBuffer)
-    existing.map { rapidsBuffer =>
-      withResource(rapidsBuffer) { _ =>
-        val id = rapidsBuffer.id
-        catalog.makeNewHandle(id, initialSpillPriority, spillCallback)
+    val underlyingBuffer = contigTable.getBuffer
+    underlyingBuffer.synchronized {
+      val existing = getExistingRapidsBufferAndAcquire(underlyingBuffer)
+      existing.map { rapidsBuffer =>
+        withResource(rapidsBuffer) { _ =>
+          val id = rapidsBuffer.id
+          catalog.makeNewHandle(id, initialSpillPriority, spillCallback)
+        }
+      }.getOrElse {
+        addContiguousTable(
+          TempSpillBufferId(),
+          contigTable,
+          initialSpillPriority,
+          spillCallback,
+          needsSync)
       }
-    }.getOrElse {
-      addContiguousTable(
-        TempSpillBufferId(),
-        contigTable,
-        initialSpillPriority,
-        spillCallback,
-        needsSync)
     }
   }
 
@@ -195,20 +200,22 @@ class RapidsDeviceMemoryStore(catalog: RapidsBufferCatalog = RapidsBufferCatalog
       initialSpillPriority: Long,
       spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback,
       needsSync: Boolean = true): RapidsBufferHandle = {
-    val existing = getExistingRapidsBufferAndAcquire(buffer)
-    existing.map { rapidsBuffer =>
-      withResource(rapidsBuffer) { _ =>
-        val id = rapidsBuffer.id
-        catalog.makeNewHandle(id, initialSpillPriority, spillCallback)
+    buffer.synchronized {
+      val existing = getExistingRapidsBufferAndAcquire(buffer)
+      existing.map { rapidsBuffer =>
+        withResource(rapidsBuffer) { _ =>
+          val id = rapidsBuffer.id
+          catalog.makeNewHandle(id, initialSpillPriority, spillCallback)
+        }
+      }.getOrElse {
+        addBuffer(
+          TempSpillBufferId(),
+          buffer,
+          tableMeta,
+          initialSpillPriority,
+          spillCallback,
+          needsSync)
       }
-    }.getOrElse {
-      addBuffer(
-        TempSpillBufferId(),
-        buffer,
-        tableMeta,
-        initialSpillPriority,
-        spillCallback,
-        needsSync)
     }
   }
 
