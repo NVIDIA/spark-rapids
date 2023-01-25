@@ -262,7 +262,8 @@ abstract class AbstractGpuCoalesceIterator(
   protected def hasOnDeck: Boolean
 
   /**
-   * Save a batch for later processing.
+   * Save a batch for later processing. In case of an exception raised while
+   * saving the batch, saveOnDeck guarantees it closes batch.
    */
   protected def saveOnDeck(batch: ColumnarBatch): Unit
 
