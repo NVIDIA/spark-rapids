@@ -262,7 +262,15 @@ def __traverse_source_tree(buildver, src_type, shim_dir_pattern, shim_comment_pa
                     __makedirs(os.path.dirname(target_shim_file_path))
                     if should_overwrite:
                         __remove_file(target_shim_file_path)
-                    os.symlink(shim_file_path, target_shim_file_path)
+                    __symlink(shim_file_path, target_shim_file_path)
+
+
+def __symlink(src, target):
+    try:
+        os.symlink(src, target)
+    except OSError as ose:
+        if ose.errno != errno.EEXIST:
+            raise
 
 
 def __remove_file(target_shim_file_path):
@@ -298,9 +306,11 @@ def __shimplify_layout():
                         files2bv[shim_path] = [build_ver]
     for shim_file, bv_list in files2bv.items():
         log.debug("calling upsert_shim_json on shim_file %s bv_list=%s", shim_file, bv_list)
-        __upsert_shim_json(shim_file, bv_list)
-        if should_move_files:
-            __git_rename(shim_file, bv_list[0])
+        owner_shim = bv_list[0]
+        if owner_shim in __shims_arr:
+            __upsert_shim_json(shim_file, bv_list)
+            if should_move_files:
+                __git_rename(shim_file, owner_shim)
 
 
 def __warn_shims_with_multiple_dedicated_dirs(prop_pattern):
