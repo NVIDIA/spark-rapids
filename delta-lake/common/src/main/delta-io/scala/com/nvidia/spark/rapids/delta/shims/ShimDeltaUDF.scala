@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids.delta.shims
 
+import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
 import org.apache.spark.sql.expressions.UserDefinedFunction
 
 object ShimDeltaUDF {

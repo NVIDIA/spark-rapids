@@ -22,7 +22,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.delta.{DeltaLog, OptimisticTransaction}
 import org.apache.spark.util.Clock
 
-class GpuDeltaLog(val deltaLog: DeltaLog, rapidsConf: RapidsConf) {
+class GpuDeltaLog(val deltaLog: DeltaLog, val rapidsConf: RapidsConf) {
   private lazy implicit val _clock: Clock = deltaLog.clock
 
   /* ------------------ *
@@ -37,8 +37,8 @@ class GpuDeltaLog(val deltaLog: DeltaLog, rapidsConf: RapidsConf) {
    * Note that all reads in a transaction must go through the returned transaction object, and not
    * directly to the DeltaLog otherwise they will not be checked for conflicts.
    */
-  def startTransaction(): GpuOptimisticTransaction = {
-    new GpuOptimisticTransaction(deltaLog, rapidsConf)
+  def startTransaction(): GpuOptimisticTransactionBase = {
+    DeltaRuntimeShim.startTransaction(deltaLog, rapidsConf)
   }
 
   /**
@@ -49,7 +49,7 @@ class GpuDeltaLog(val deltaLog: DeltaLog, rapidsConf: RapidsConf) {
    * @note This uses thread-local variable to make the active transaction visible. So do not use
    *       multi-threaded code in the provided thunk.
    */
-  def withNewTransaction[T](thunk: GpuOptimisticTransaction => T): T = {
+  def withNewTransaction[T](thunk: GpuOptimisticTransactionBase => T): T = {
     try {
       val txn = startTransaction()
       OptimisticTransaction.setActive(txn)
