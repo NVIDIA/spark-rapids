@@ -99,11 +99,9 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
     val json = inputBatch.column(generatorOffset).asInstanceOf[GpuColumnVector].getBase.incRefCount
 
     // we know we are going to output at most this much
-    val estimatedOutputSizeBytes = 
-    // (json.getDeviceMemorySize * fieldExpressions.length).toDouble
-      withResourceIfAllowed(json) { json =>
-        (json.getDeviceMemorySize * fieldExpressions.length).toDouble
-      }
+    val estimatedOutputSizeBytes = withResourceIfAllowed(json) { json =>
+      (json.getDeviceMemorySize * fieldExpressions.length).toDouble
+    }
     
     val numSplitsForTargetSize = 
       math.min(inputRows, math.ceil(estimatedOutputSizeBytes / targetSizeBytes).toInt)
