@@ -16,13 +16,13 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{Scalar, Table}
-import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
+import ai.rapids.cudf.{ColumnVector, Scalar, Table}
+// import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{Expression, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.types.{DataType, StringType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -50,20 +50,32 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
     }
   }
 
+  // Infer result schema of GenerateExec from input schema
+  // private def resultSchema(inputSchema: Array[DataType],
+  //   genOffset: Int): Array[DataType] = {
+  // }
+
   def generate(inputBatch: ColumnarBatch,
       generatorOffset: Int,
       outer: Boolean): ColumnarBatch = {
+    
+    GpuColumnVector.debug("input batch = ", inputBatch)
+    // val jsonGpuExpr = GpuBindReferences.bindReference(jsonExpr, 
+    //   Seq(jsonExpr.asInstanceOf[NamedExpression].toAttribute))
+    val json = inputBatch.column(generatorOffset).asInstanceOf[GpuColumnVector].getBase.incRefCount
 
-    val jsonGpuExpr = GpuBindReferences.bindReference(jsonExpr, 
-      Seq(jsonExpr.asInstanceOf[NamedExpression].toAttribute))
     val schema = Array.fill[DataType](fieldExpressions.length)(StringType)
 
-    withResource(columnarEvalToColumn(jsonGpuExpr, inputBatch).getBase) { json =>
+    // withResource(columnarEvalToColumn(jsonGpuExpr, inputBatch).getBase) { json =>
+    // withResourceIfAllowed(json) { json =>
+      // val json = inputBatch.column(generatorOffset).asInstanceOf[GpuColumnVector].getBase.incRefCount
+      GpuColumnVector.debug("json = ", json)
       val fieldScalars = fieldExpressions.safeMap { field =>
         withResourceIfAllowed(field.columnarEval(inputBatch)) { fieldVal =>
           fieldVal match {
             case fieldScalar: GpuScalar =>
               // Specials characters like '.', '[', ']' are not supported in field names
+              GpuColumnVector.debug("scalar = ", GpuColumnVector.from(fieldScalar, 1, StringType).getBase)
               Scalar.fromString("$." + fieldScalar.getBase.getJavaString)
             case _ => throw new UnsupportedOperationException(s"JSON field must be a scalar value")
           }
@@ -72,11 +84,13 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
       withResource(fieldScalars) { fieldScalars =>
         withResource(fieldScalars.safeMap(field => json.getJSONObject(field))) { resColumns =>
           withResource(new Table(resColumns: _*)) { tbl =>
+            // GpuColumnVector.debug("table = ", tbl)
+            GpuColumnVector.debug("table = ", GpuColumnVector.from(tbl, schema))
             GpuColumnVector.from(tbl, schema)
           }
         }
       }
-    }
+    // }
   }
 
   def inputSplitIndices(inputBatch: ColumnarBatch,
@@ -89,12 +103,16 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
     if (inputRows <= 1) return Array()
     val outputRows = inputRows
 
-    val jsonGpuExpr = GpuBindReferences.bindReference(jsonExpr, 
-      Seq(jsonExpr.asInstanceOf[NamedExpression].toAttribute))
+    // val jsonGpuExpr = GpuBindReferences.bindReference(jsonExpr, 
+    //   Seq(jsonExpr.asInstanceOf[NamedExpression].toAttribute))
+    val json = inputBatch.column(generatorOffset).asInstanceOf[GpuColumnVector].getBase.incRefCount
 
     // we know we are going to output at most this much
     val estimatedOutputSizeBytes = 
-      withResource(columnarEvalToColumn(jsonGpuExpr, inputBatch).getBase) { json =>
+      // withResource(columnarEvalToColumn(jsonGpuExpr, inputBatch).getBase) { json =>
+      //   (json.getDeviceMemorySize * fieldExpressions.length).toDouble
+      // }
+      withResourceIfAllowed(json) { json =>
         (json.getDeviceMemorySize * fieldExpressions.length).toDouble
       }
     
@@ -102,6 +120,8 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
       math.min(inputRows, math.ceil(estimatedOutputSizeBytes / targetSizeBytes).toInt)
     val splitIndices = 
       GpuBatchUtils.generateSplitIndices(inputRows, numSplitsForTargetSize).distinct
+    
+    GpuColumnVector.debug("split indices = ", ColumnVector.fromInts(splitIndices: _*))
 
     // how many splits will we need to keep the output rows under max value
     val numSplitsForTargetRow = math.ceil(outputRows / maxRows).toInt
