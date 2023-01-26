@@ -431,14 +431,7 @@ def rewrite_to_non_partitioned_hive_table(data_path,
         if mode == TableWriteMode.CTAS:
             spark.sql("CREATE TABLE " + actual_table_name +
                       " SELECT * FROM " + tmp_table_name )
-            """
-            TODO: Write another function for inserting into existing tables. 
-            spark.sql("CREATE TABLE " + actual_table_name + " LIKE " + tmp_table_name)
-            spark.sql("INSERT OVERWRITE TABLE " + actual_table_name +
-                      # " STORED AS TEXTFILE " +
-                      " SELECT * FROM " + tmp_table_name)
-            """
-        else:
+        else:  # Create table, then write.
             spark.sql("CREATE TABLE " + actual_table_name + " LIKE " + tmp_table_name)
             spark.sql("INSERT OVERWRITE TABLE " + actual_table_name +
                       " SELECT * FROM " + tmp_table_name)
@@ -489,9 +482,8 @@ def rewrite_to_non_partitioned_hive_table(data_path,
     ('hive-delim-text/trucks-err', trucks_schema, {}),
 
     # Date/Time
-    # TODO: Timestamp reading seems completely borked. All nulls.
     pytest.param('hive-delim-text/timestamp', timestamp_schema, {},
-                 marks=pytest.mark.xfail(reason="Timestamp writes seem borked.")),
+                 marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/7597")),
     # marks=pytest.mark.xfail(condition=is_spark_cdh(),
     #                         reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
     pytest.param('hive-delim-text/date', date_schema, {},
