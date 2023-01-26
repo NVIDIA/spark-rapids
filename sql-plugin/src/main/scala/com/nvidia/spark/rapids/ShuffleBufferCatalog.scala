@@ -80,7 +80,7 @@ class ShuffleBufferCatalog(
    *                      It should never allocate GPU memory and really just be used for metrics.
    * @param needsSync whether the spill framework should stream synchronize while adding
    *                  this device buffer (defaults to true)
-   * @return RapidsBufferId identifying this table
+   * @return RapidsBufferHandle identifying this table
    */
   def addContiguousTable(
       blockId: ShuffleBlockId,
@@ -90,7 +90,7 @@ class ShuffleBufferCatalog(
       needsSync: Boolean): RapidsBufferHandle = {
     val bufferId = nextShuffleBufferId(blockId)
     withResource(contigTable) { _ =>
-      val handle = deviceStore.addContiguousTable(
+      val handle = catalog.addContiguousTable(
         bufferId,
         contigTable,
         initialSpillPriority,
@@ -124,7 +124,7 @@ class ShuffleBufferCatalog(
     tableMeta.bufferMeta.mutateId(bufferId.tableId)
     // when we call `addBuffer` the store will incRefCount
     withResource(buffer) { _ =>
-      val handle = deviceStore.addBuffer(
+      val handle = catalog.addBuffer(
         bufferId,
         buffer,
         tableMeta,
@@ -145,10 +145,7 @@ class ShuffleBufferCatalog(
       meta: TableMeta,
       spillCallback: SpillCallback): RapidsBufferHandle = {
     val bufferId = nextShuffleBufferId(blockId)
-    val buffer = new DegenerateRapidsBuffer(bufferId, meta)
-    catalog.registerNewBuffer(buffer)
-    val handle =
-      catalog.makeNewHandle(buffer.id, buffer.getSpillPriority, spillCallback)
+    val handle = catalog.registerDegenerateBuffer(bufferId, meta, spillCallback)
     trackCachedHandle(bufferId, handle)
     handle
   }

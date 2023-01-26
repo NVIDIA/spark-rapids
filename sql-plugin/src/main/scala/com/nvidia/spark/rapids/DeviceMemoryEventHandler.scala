@@ -35,6 +35,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
  *                            depleting the device store
  */
 class DeviceMemoryEventHandler(
+    catalog: RapidsBufferCatalog,
     store: RapidsDeviceMemoryStore,
     oomDumpDir: Option[String],
     isGdsSpillEnabled: Boolean,
@@ -153,7 +154,7 @@ class DeviceMemoryEventHandler(
         } else {
           val targetSize = Math.max(storeSpillableSize - allocSize, 0)
           logDebug(s"Targeting device store size of $targetSize bytes")
-          val maybeAmountSpilled = store.synchronousSpill(targetSize)
+          val maybeAmountSpilled = catalog.synchronousSpill(store, targetSize)
           maybeAmountSpilled.foreach { amountSpilled =>
             logInfo(s"Spilled $amountSpilled bytes from the device store")
             if (isGdsSpillEnabled) {

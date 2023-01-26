@@ -32,23 +32,23 @@ import org.apache.spark.sql.rapids.{RapidsDiskBlockManager, TempSpillBufferId}
 /** A buffer store using GPUDirect Storage (GDS). */
 class RapidsGdsStore(
     diskBlockManager: RapidsDiskBlockManager,
-    batchWriteBufferSize: Long,
-    catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
-    extends RapidsBufferStore(StorageTier.GDS, catalog) with Arm {
+    batchWriteBufferSize: Long)
+    extends RapidsBufferStore(StorageTier.GDS) with Arm {
   private[this] val batchSpiller = new BatchSpiller()
 
   override protected def createBuffer(other: RapidsBuffer, otherBuffer: MemoryBuffer,
-      stream: Cuda.Stream): RapidsBufferBase = {
+      stream: Cuda.Stream): Option[RapidsBufferBase] = {
     withResource(otherBuffer) { _ =>
       val deviceBuffer = otherBuffer match {
         case d: BaseDeviceMemoryBuffer => d
         case _ => throw new IllegalStateException("copying from buffer without device memory")
       }
-      if (deviceBuffer.getLength < batchWriteBufferSize) {
+      val res = if (deviceBuffer.getLength < batchWriteBufferSize) {
         batchSpiller.spill(other, deviceBuffer)
       } else {
         singleShotSpill(other, deviceBuffer)
       }
+      Some(res)
     }
   }
 
