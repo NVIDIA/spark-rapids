@@ -148,6 +148,8 @@ trait SparkShims {
 
   def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan]
 
+  def shuffleCanBeFixedUp(shuffle: ShuffleExchangeLike): Boolean = true
+
   def shuffleParentReadsShuffleData(shuffle: ShuffleExchangeLike, parent: SparkPlan): Boolean =
     false
 
