@@ -123,12 +123,17 @@ case class GpuBroadcastNestedLoopJoinExec(
 
   override def getBroadcastRelation(): Any = {
     if (executorBroadcast) {
+      // Get all the broadcast data from the shuffle coalesced into a single partition 
       val partitionSpecs = Seq(CoalescedPartitionSpec(0, shuffleExchange.numPartitions - 1))
       shuffleExchange.getShuffleRDD(partitionSpecs.toArray).asInstanceOf[RDD[ColumnarBatch]]
     } else {
       broadcastExchange.executeColumnarBroadcast[Any]()
     }
   }
+
+  // Ideally we cache the executor batch so we're not reading the shuffle multiple times. 
+  // This requires caching the data and making it spillable/etc. This is okay for a smaller 
+  // batch of data, but when this batch is bigger, this will make this significantly slower.
 
   private[this] def makeExecutorBuiltBatch(
       rdd: RDD[ColumnarBatch],

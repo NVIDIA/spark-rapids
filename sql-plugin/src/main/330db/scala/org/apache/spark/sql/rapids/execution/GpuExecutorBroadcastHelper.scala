@@ -35,6 +35,9 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  */
 object GpuExecutorBroadcastHelper extends Arm {
 
+  // This reads the shuffle data that we have retrieved using `getShuffleRDD` from the shuffle
+  // exchange. WARNING: Do not use this method outside of this context. This method can only be
+  // used in the context of the executor broadcast and is NOT safe for distributed compute.
   private def shuffleDataIterator(shuffleData: RDD[ColumnarBatch]): Iterator[ColumnarBatch] = {
     shuffleData.partitions.map { part =>
       shuffleData.iterator(part, TaskContext.get())
@@ -92,8 +95,14 @@ object GpuExecutorBroadcastHelper extends Arm {
   /**
    * Given an RDD of ColumnarBatch containing broadcast data from a shuffle, get the 
    * number of rows that the received batch contains
+   *
+   * The method uses shuffleDataIterator here to get the number of rows here without
+   * loading on to the GPU. The batch here needs to be closed.
+   *
    */
   def getExecutorBroadcastBatchNumRows(shuffleData: RDD[ColumnarBatch]): Int = {
+    // Ideally we cache this data so we're not reading the shuffle multiple times. 
+    // This requires caching the data and making it spillable/etc.
     val it = shuffleDataIterator(shuffleData)
     if (it.hasNext) {
       withResource(it.next) { batch =>
