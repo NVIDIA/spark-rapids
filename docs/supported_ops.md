@@ -19204,6 +19204,49 @@ dates or timestamps, or for a lack of type coercion support.
 <td><b>NS</b></td>
 </tr>
 <tr>
+<th rowSpan="2">HiveText</th>
+<th>Read</th>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
+<td>S</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
+<th>Write</th>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td>S</td>
+<td><em>PS<br/>UTC is only supported TZ for TIMESTAMP</em></td>
+<td>S</td>
+<td>S</td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+</tr>
+<tr>
 <th rowSpan="2">Iceberg</th>
 <th>Read</th>
 <td>S</td>
