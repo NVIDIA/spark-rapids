@@ -134,6 +134,7 @@ case class GpuBroadcastNestedLoopJoinExec(
   // Ideally we cache the executor batch so we're not reading the shuffle multiple times. 
   // This requires caching the data and making it spillable/etc. This is okay for a smaller 
   // batch of data, but when this batch is bigger, this will make this significantly slower.
+  // See https://github.com/NVIDIA/spark-rapids/issues/7599
 
   private[this] def makeExecutorBuiltBatch(
       rdd: RDD[ColumnarBatch],

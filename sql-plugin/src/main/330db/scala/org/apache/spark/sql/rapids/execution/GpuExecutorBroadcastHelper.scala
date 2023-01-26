@@ -87,6 +87,8 @@ object GpuExecutorBroadcastHelper extends Arm {
       metricsMap: Map[String, GpuMetric],
       targetSize: Long): ColumnarBatch = {
 
+    // TODO: Ensure we're not reading the shuffle data multiple times. 
+    // See https://github.com/NVIDIA/spark-rapids/issues/7599
     val it = shuffleCoalesceIterator(shuffleData, buildSchema, metricsMap, targetSize)
     // In a broadcast hash join, right now the GPU expects a single batch
     ConcatAndConsumeAll.getSingleBatchWithVerification(it, buildOutput)
@@ -103,6 +105,7 @@ object GpuExecutorBroadcastHelper extends Arm {
   def getExecutorBroadcastBatchNumRows(shuffleData: RDD[ColumnarBatch]): Int = {
     // Ideally we cache this data so we're not reading the shuffle multiple times. 
     // This requires caching the data and making it spillable/etc.
+    // See https://github.com/NVIDIA/spark-rapids/issues/7599
     val it = shuffleDataIterator(shuffleData)
     if (it.hasNext) {
       withResource(it.next) { batch =>
