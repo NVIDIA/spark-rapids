@@ -96,8 +96,9 @@ object GpuExecutorBroadcastHelper extends Arm {
   def getExecutorBroadcastBatchNumRows(shuffleData: RDD[ColumnarBatch]): Int = {
     val it = shuffleDataIterator(shuffleData)
     if (it.hasNext) {
-      val batch = it.next
-      batch.numRows
+      withResource(it.next) { batch =>
+        batch.numRows
+      }
     } else {
       0
     }
