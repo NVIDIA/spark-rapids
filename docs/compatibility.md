@@ -443,7 +443,7 @@ These are the known edge cases where running on the GPU will produce different r
 - Word and non-word boundaries, `\b` and `\B`
 - Line anchor `$` will incorrectly match any of the unicode characters `\u0085`, `\u2028`, or `\u2029` followed by
   another line-terminator, such as `\n`. For example, the pattern `TEST$` will match `TEST\u0085\n` on the GPU but
-  not on the CPU.
+  not on the CPU ([#7585](https://github.com/NVIDIA/spark-rapids/issues/7585)).
 
 The following regular expression patterns are not yet supported on the GPU and will fall back to the CPU.
 
