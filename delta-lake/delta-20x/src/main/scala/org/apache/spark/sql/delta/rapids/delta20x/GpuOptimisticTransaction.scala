@@ -19,7 +19,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.delta.rapids
+package org.apache.spark.sql.delta.rapids.delta20x
 
 import java.net.URI
 
@@ -27,27 +27,26 @@ import scala.collection.mutable.ListBuffer
 
 import ai.rapids.cudf.ColumnView
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.delta.{GpuDeltaJobStatisticsTracker, GpuRapidsDeltaWriteExec, GpuStatisticsCollection, RapidsDeltaWrite}
+import com.nvidia.spark.rapids.delta._
 import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkException
 import org.apache.spark.sql.Dataset
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.logical.LocalRelation
 import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.actions.FileAction
-import org.apache.spark.sql.delta.constraints.{Constraint, Constraints, DeltaInvariantCheckerExec}
-import org.apache.spark.sql.delta.metering.DeltaLogging
+import org.apache.spark.sql.delta.constraints.{Constraint, Constraints}
+import org.apache.spark.sql.delta.rapids.GpuOptimisticTransactionBase
 import org.apache.spark.sql.delta.schema.InvariantViolationException
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
-import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
+import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.datasources.{BasicWriteJobStatsTracker, FileFormatWriter}
 import org.apache.spark.sql.functions.to_json
 import org.apache.spark.sql.rapids.{BasicColumnarWriteJobStatsTracker, ColumnarWriteJobStatsTracker, GpuFileFormatWriter, GpuWriteJobStatsTracker}
-import org.apache.spark.sql.rapids.GpuV1WriteUtils.GpuEmpty2Null
-import org.apache.spark.sql.types.{StringType, StructType}
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.{Clock, SerializableConfiguration}
 
 /**
@@ -65,8 +64,7 @@ import org.apache.spark.util.{Clock, SerializableConfiguration}
 class GpuOptimisticTransaction
     (deltaLog: DeltaLog, snapshot: Snapshot, rapidsConf: RapidsConf)
     (implicit clock: Clock)
-  extends OptimisticTransaction(deltaLog, snapshot)(clock)
-  with DeltaLogging {
+  extends GpuOptimisticTransactionBase(deltaLog, snapshot, rapidsConf)(clock) {
 
   /** Creates a new OptimisticTransaction.
    *
@@ -75,77 +73,6 @@ class GpuOptimisticTransaction
    */
   def this(deltaLog: DeltaLog, rapidsConf: RapidsConf)(implicit clock: Clock) {
     this(deltaLog, deltaLog.update(), rapidsConf)
-  }
-
-  /**
-   * Adds checking of constraints on the table
-   * @param plan Plan to generate the table to check against constraints
-   * @param constraints Constraints to check on the table
-   * @return GPU columnar plan to execute
-   */
-  private def addInvariantChecks(plan: SparkPlan, constraints: Seq[Constraint]): SparkPlan = {
-    val cpuInvariants =
-      DeltaInvariantCheckerExec.buildInvariantChecks(plan.output, constraints, plan.session)
-    GpuCheckDeltaInvariant.maybeConvertToGpu(cpuInvariants, rapidsConf) match {
-      case Some(gpuInvariants) =>
-        val gpuPlan = convertToGpu(plan)
-        GpuDeltaInvariantCheckerExec(gpuPlan, gpuInvariants)
-      case None =>
-        val cpuPlan = convertToCpu(plan)
-        DeltaInvariantCheckerExec(cpuPlan, constraints)
-    }
-  }
-
-  /** GPU version of convertEmptyToNullIfNeeded */
-  private def gpuConvertEmptyToNullIfNeeded(
-      plan: GpuExec,
-      partCols: Seq[Attribute],
-      constraints: Seq[Constraint]): SparkPlan = {
-    if (!spark.conf.get(DeltaSQLConf.CONVERT_EMPTY_TO_NULL_FOR_STRING_PARTITION_COL)) {
-      return plan
-    }
-    // No need to convert if there are no constraints. The empty strings will be converted later by
-    // FileFormatWriter and FileFormatDataWriter. Note that we might still do unnecessary convert
-    // here as the constraints might not be related to the string partition columns. A precise
-    // check will need to walk the constraints to see if such columns are really involved. It
-    // doesn't seem to worth the effort.
-    if (constraints.isEmpty) return plan
-
-    val partSet = AttributeSet(partCols)
-    var needConvert = false
-    val projectList: Seq[NamedExpression] = plan.output.map {
-      case p if partSet.contains(p) && p.dataType == StringType =>
-        needConvert = true
-        GpuAlias(GpuEmpty2Null(p), p.name)()
-      case attr => attr
-    }
-    if (needConvert) GpuProjectExec(projectList.toList, plan) else plan
-  }
-
-  /**
-   * If there is any string partition column and there are constraints defined, add a projection to
-   * convert empty string to null for that column. The empty strings will be converted to null
-   * eventually even without this convert, but we want to do this earlier before check constraints
-   * so that empty strings are correctly rejected. Note that this should not cause the downstream
-   * logic in `FileFormatWriter` to add duplicate conversions because the logic there checks the
-   * partition column using the original plan's output. When the plan is modified with additional
-   * projections, the partition column check won't match and will not add more conversion.
-   *
-   * @param plan The original SparkPlan.
-   * @param partCols The partition columns.
-   * @param constraints The defined constraints.
-   * @return A SparkPlan potentially modified with an additional projection on top of `plan`
-   */
-  override def convertEmptyToNullIfNeeded(
-      plan: SparkPlan,
-      partCols: Seq[Attribute],
-      constraints: Seq[Constraint]): SparkPlan = {
-    // Reuse the CPU implementation if the plan ends up on the CPU, otherwise do the
-    // equivalent on the GPU.
-    plan match {
-      case g: GpuExec => gpuConvertEmptyToNullIfNeeded(g, partCols, constraints)
-      case _ => super.convertEmptyToNullIfNeeded(plan, partCols, constraints)
-    }
   }
 
   override def writeFiles(
@@ -193,7 +120,8 @@ class GpuOptimisticTransaction
           spark.sessionState.conf.getConf(DeltaSQLConf.DATA_SKIPPING_STRING_PREFIX_LENGTH)
 
         val statsCollection = new GpuStatisticsCollection {
-          override val dataSchema: StructType = statsDataSchema.toStructType
+          override def tableDataSchema: StructType = statsDataSchema.toStructType
+          override val dataSchema: StructType = tableDataSchema
           override val numIndexedCols: Int = indexedCols
           override val stringPrefixLength: Int = prefixLength
         }
@@ -303,17 +231,5 @@ class GpuOptimisticTransaction
     }
 
     resultFiles.toSeq ++ committer.changeFiles
-  }
-
-  private def convertToCpu(plan: SparkPlan): SparkPlan = plan match {
-    case GpuRowToColumnarExec(p, _) => p
-    case p: GpuExec => GpuColumnarToRowExec(p)
-    case p => p
-  }
-
-  private def convertToGpu(plan: SparkPlan): SparkPlan = plan match {
-    case GpuColumnarToRowExec(p, _) => p
-    case p: GpuExec => p
-    case p => GpuRowToColumnarExec(p, TargetSize(rapidsConf.gpuTargetBatchSizeBytes))
   }
 }

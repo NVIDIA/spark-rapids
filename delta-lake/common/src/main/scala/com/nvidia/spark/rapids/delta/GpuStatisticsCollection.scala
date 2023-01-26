@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * This file was derived from StatisticsCollection.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
@@ -37,6 +37,7 @@ import org.apache.spark.unsafe.types.UTF8String
 
 /** GPU version of Delta Lake's StatisticsCollection. */
 trait GpuStatisticsCollection extends ShimUsesMetadataFields with Arm {
+  def tableDataSchema: StructType
   def dataSchema: StructType
   val numIndexedCols: Int
   val stringPrefixLength: Int
@@ -47,9 +48,9 @@ trait GpuStatisticsCollection extends ShimUsesMetadataFields with Arm {
    */
   lazy val statCollectionSchema: StructType = {
     if (numIndexedCols >= 0) {
-      truncateSchema(dataSchema, numIndexedCols)._1
+      truncateSchema(tableDataSchema, numIndexedCols)._1
     } else {
-      dataSchema
+      tableDataSchema
     }
   }
 
