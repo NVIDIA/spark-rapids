@@ -461,7 +461,7 @@ object RapidsBufferCatalog extends Logging with Arm {
       contigTable: ContiguousTable,
       initialSpillPriority: Long,
       spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback): RapidsBufferHandle = {
-      deviceStorage.addContiguousTable(contigTable, initialSpillPriority, spillCallback)
+    deviceStorage.addContiguousTable(contigTable, initialSpillPriority, spillCallback)
   }
 
   /**
