@@ -1143,8 +1143,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case 'z' if mode == RegexSplitMode =>
           RegexEscaped('Z')
         case 'z' =>
-          // cuDF does not support "\z"
-          throw new RegexUnsupportedException("\\z is not supported on GPU", regex.position)
+          // cuDF does not support "\z" except for in split mode
+          throw new RegexUnsupportedException(
+            "\\z is not supported on GPU for find or replace",
+            regex.position)
         case 'Z' =>
           // \Z is really a synonymn for $. It's used in Java to preserve that behavior when
           // using modes that change the meaning of $ (such as MULTILINE or UNIX_LINES)
