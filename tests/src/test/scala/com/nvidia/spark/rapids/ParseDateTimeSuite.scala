@@ -279,6 +279,7 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     assert(res)
   }
 
+  @scala.annotation.nowarn("msg=method stringReplaceWithBackrefs in class ColumnView is deprecated")
   private def testRegex(rule: RegexReplace, values: Seq[String], expected: Seq[String]): Unit = {
     withResource(ColumnVector.fromStrings(values: _*)) { v =>
       withResource(ColumnVector.fromStrings(expected: _*)) { expected =>

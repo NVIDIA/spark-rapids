@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -631,6 +631,7 @@ object GpuCast extends Arm {
     }
   }
 
+  @scala.annotation.nowarn("msg=method stringReplaceWithBackrefs in class ColumnView is deprecated")
   private def castTimestampToString(input: ColumnView): ColumnVector = {
     // the complexity in this function is due to Spark's rules for truncating
     // the fractional part of the timestamp string. Any trailing decimal place
@@ -970,6 +971,7 @@ object GpuCast extends Arm {
   }
 
   /** This method does not close the `input` ColumnVector. */
+  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   def convertDateOrNull(
       input: ColumnVector,
       regex: String,
@@ -991,7 +993,8 @@ object GpuCast extends Arm {
   }
 
     /** This method does not close the `input` ColumnVector. */
-  def convertDateOr(
+    @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
+    def convertDateOr(
       input: ColumnVector,
       regex: String,
       cudfFormat: String,
@@ -1076,6 +1079,7 @@ object GpuCast extends Arm {
   }
 
   /** This method does not close the `input` ColumnVector. */
+  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   private def convertTimestampOrNull(
       input: ColumnVector,
       regex: String,
@@ -1096,6 +1100,7 @@ object GpuCast extends Arm {
   }
 
   /** This method does not close the `input` ColumnVector. */
+  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   private def convertTimestampOr(
       input: ColumnVector,
       regex: String,
@@ -1117,6 +1122,7 @@ object GpuCast extends Arm {
   }
 
   /** This method does not close the `input` ColumnVector. */
+  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   private def convertFullTimestampOr(
       input: ColumnVector,
       orElse: ColumnVector): ColumnVector = {
@@ -1157,6 +1163,7 @@ object GpuCast extends Arm {
     }
   }
 
+  @scala.annotation.nowarn("msg=method stringReplaceWithBackrefs in class ColumnView is deprecated")
   private def castStringToTimestamp(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
 
     // special timestamps

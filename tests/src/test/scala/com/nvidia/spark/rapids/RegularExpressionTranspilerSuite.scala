@@ -880,6 +880,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   /** cuDF containsRe helper */
+  @scala.annotation.nowarn("msg=method containsRe in class ColumnView is deprecated")
   private def gpuContains(cudfPattern: String, input: Seq[String]): Array[Boolean] = {
     val result = new Array[Boolean](input.length)
     withResource(ColumnVector.fromStrings(input: _*)) { cv =>
@@ -895,6 +896,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   private val REPLACE_STRING = "\\_\\RE\\\\P\\L\\A\\C\\E\\_"
 
   /** cuDF replaceRe helper */
+  @scala.annotation.nowarn("msg=in class ColumnView is deprecated")
   private def gpuReplace(cudfPattern: String, replaceString: String,
       input: Seq[String]): Array[String] = {
     val result = new Array[String](input.length)
@@ -931,6 +933,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     input.map(s => s.split(pattern, limit))
   }
 
+  @scala.annotation.nowarn("msg=method stringSplitRecord in class ColumnView is deprecated")
   private def gpuSplit(
       pattern: String,
       input: Seq[String],
