@@ -15,9 +15,10 @@
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from conftest import get_non_gpu_allowed
 from data_gen import *
+from enum import Enum
 from marks import *
 from pyspark.sql.types import *
-from spark_session import is_spark_cdh, with_cpu_session, with_gpu_session
+from spark_session import is_spark_cdh, with_cpu_session
 
 hive_text_enabled_conf = {"spark.rapids.sql.format.hive.text.enabled": True,
                           "spark.rapids.sql.format.hive.text.read.enabled": True}
@@ -403,7 +404,14 @@ def test_custom_timestamp_formats_disabled(spark_tmp_path, data_gen, spark_tmp_t
 # Hive Delimited Text writer tests follow.
 
 
-def rewrite_to_non_partitioned_hive_table(data_path, schema, spark_tmp_table_factory, options=None):
+TableWriteMode = Enum('TableWriteMode', ['CTAS', 'CreateThenWrite'])
+
+
+def rewrite_to_non_partitioned_hive_table(data_path,
+                                          schema,
+                                          spark_tmp_table_factory,
+                                          options=None,
+                                          mode=TableWriteMode.CTAS):
     """
     Return a function that does the following:
         1. Creates an external Hive table pointing to the input data file
@@ -420,23 +428,26 @@ def rewrite_to_non_partitioned_hive_table(data_path, schema, spark_tmp_table_fac
         tmp_table_name = spark_tmp_table_factory.get()
         spark.catalog.createExternalTable(tmp_table_name, source='hive', path=data_path, **opts)
         actual_table_name = spark_tmp_table_factory.get()
-
-        spark.sql("CREATE TABLE " + actual_table_name +
-                  " SELECT * FROM " + tmp_table_name )
-        """
-        TODO: Write another function for inserting into existing tables. 
-        spark.sql("CREATE TABLE " + actual_table_name + " LIKE " + tmp_table_name)
-        spark.sql("INSERT OVERWRITE TABLE " + actual_table_name +
-                  # " STORED AS TEXTFILE " +
-                  " SELECT * FROM " + tmp_table_name)
-        """
+        if mode == TableWriteMode.CTAS:
+            spark.sql("CREATE TABLE " + actual_table_name +
+                      " SELECT * FROM " + tmp_table_name )
+            """
+            TODO: Write another function for inserting into existing tables. 
+            spark.sql("CREATE TABLE " + actual_table_name + " LIKE " + tmp_table_name)
+            spark.sql("INSERT OVERWRITE TABLE " + actual_table_name +
+                      # " STORED AS TEXTFILE " +
+                      " SELECT * FROM " + tmp_table_name)
+            """
+        else:
+            spark.sql("CREATE TABLE " + actual_table_name + " LIKE " + tmp_table_name)
+            spark.sql("INSERT OVERWRITE TABLE " + actual_table_name +
+                      " SELECT * FROM " + tmp_table_name)
         return spark.sql("SELECT * FROM " + actual_table_name)
 
     return read_impl
 
 
 @approximate_float
-# @allow_non_gpu("DataWritingCommandExec")
 @pytest.mark.parametrize('name,schema,options', [
     ('hive-delim-text/simple-boolean-values', make_schema(BooleanType()),        {}),
     ('hive-delim-text/simple-int-values',     make_schema(ByteType()),           {}),
@@ -454,8 +465,6 @@ def rewrite_to_non_partitioned_hive_table(data_path, schema, spark_tmp_table_fac
                                          reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
     # Floating Point.
     ('hive-delim-text/simple-float-values',   make_schema(FloatType()),          {}),
-    pytest.param('hive-delim-text/simple-float-values',   make_schema(DoubleType()),         {},
-                 marks=pytest.mark.xfail(reason="Floats read as double seem off in mantissa value")),
     pytest.param('hive-delim-text/simple-float-values', make_schema(DecimalType(10, 3)), {},
                  marks=pytest.mark.xfail(condition=is_spark_cdh(),
                                          reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
@@ -499,8 +508,12 @@ def rewrite_to_non_partitioned_hive_table(data_path, schema, spark_tmp_table_fac
     ('hive-delim-text/carriage-return-err', StructType([StructField("str", StringType())]), {}),
 ], ids=idfn)
 def test_basic_hive_text_write(std_input_path, name, schema, spark_tmp_table_factory, options):
-    assert_gpu_and_cpu_are_equal_collect(
-        rewrite_to_non_partitioned_hive_table(std_input_path + "/" + name,
-                                              schema, spark_tmp_table_factory, options),
-        conf=hive_text_write_enabled_conf)
+    for mode in [TableWriteMode.CTAS, TableWriteMode.CreateThenWrite]:
+        assert_gpu_and_cpu_are_equal_collect(
+            rewrite_to_non_partitioned_hive_table(std_input_path + "/" + name,
+                                                  schema,
+                                                  spark_tmp_table_factory,
+                                                  options,
+                                                  mode),
+            conf=hive_text_write_enabled_conf)
 
