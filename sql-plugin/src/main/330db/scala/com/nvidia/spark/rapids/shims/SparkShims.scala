@@ -82,7 +82,8 @@ object SparkShimImpl extends Spark321PlusDBShims {
     }
   }
 
-  override def addTransitionalShuffleIfNeeded(c2r: GpuColumnarToRowExec, sqse: ShuffleQueryStageExec): SparkPlan = {
+  override def addTransitionalShuffleIfNeeded(c2r: GpuColumnarToRowExec,
+      sqse: ShuffleQueryStageExec): SparkPlan = {
     val plan = GpuTransitionOverrides.getNonQueryStagePlan(sqse)
     plan match {
       case shuffle: ShuffleExchangeLike if shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST) =>
