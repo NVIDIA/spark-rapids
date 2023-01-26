@@ -54,16 +54,21 @@ def __is_enabled_attr(attr):
     return attr_val is not None and __is_enabled_property(attr_val)
 
 
-task_enabled = __is_enabled_attr('if')
+def __csv_ant_prop_as_arr(name):
+    prop_val = __ant_proj_prop(name)
+    return [] if prop_val is None or len(prop_val) == 0 else prop_val.split(',')
+
+
+should_add_comment = __is_enabled_attr('if')
 
 # should we move files?
-move_files = __is_enabled_property('shimplifyMove')
+should_move_files = __is_enabled_property('shimplifyMove')
 
 # allowed to overwrite the existing comment
-over_shimplify = __is_enabled_property('overShimplify')
+should_overwrite = __is_enabled_property('overShimplify')
 
 # enable log tracing
-shimplify_trace = __is_enabled_property('traceShimplify')
+should_trace = __is_enabled_property('traceShimplify')
 
 __shim_comment_tag = 'spark-rapids-shim-json-lines'
 __opening_shim_tag = '/*** ' + __shim_comment_tag
@@ -71,7 +76,7 @@ __closing_shim_tag = __shim_comment_tag + ' ***/'
 
 
 log = logging.getLogger('shimplify')
-log.setLevel(logging.DEBUG if shimplify_trace else logging.INFO)
+log.setLevel(logging.DEBUG if should_trace else logging.INFO)
 ch = logging.StreamHandler()
 ch.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
 log.addHandler(ch)
@@ -89,7 +94,7 @@ def __upsert_shim_json(filename, bv_list):
     __delete_prior_comment_if_allowed(contents, __shim_comment_tag, filename)
     log.debug("Inserting comment %s to %s", shim_comment, filename)
     package_line = next(i for i in range(len(contents)) if str(contents[i]).startswith('package'))
-    log.debug("filename=%s package_line_number=%d", filename, package_line)
+    log.debug("filename %s package_line_number=%d", filename, package_line)
     shim_comment_str = '\n'.join(shim_comment) + '\n'
     contents.insert(package_line, shim_comment_str)
     with open(filename, 'w') as file:
@@ -113,7 +118,7 @@ def __delete_prior_comment_if_allowed(contents, tag, filename):
     # no work
     if opening_shim_comment_line is None:
         return
-    if not over_shimplify:
+    if not should_overwrite:
         raise Exception("found shim comment from prior execution at %s:%d, use -DoverShimplify=true"
                         "to overwrite" % (filename, opening_shim_comment_line))
     assert (opening_shim_comment_line is not None) and (closing_shim_comment_line is not None)
@@ -174,7 +179,7 @@ def task_impl():
     """
     log.info('# Starting Jython Task Shimplify #')
     log.info("config: task_enabled=%s over_shimplify=%s move_files=%s",
-             task_enabled, over_shimplify, move_files)
+             should_add_comment, should_overwrite, should_move_files)
     log.info("review changes and `git restore` if necessary")
 
     shims_attr = __ant_attr('shims')
@@ -185,7 +190,7 @@ def task_impl():
 
     for prop_pattern in ["spark%s.sources", "spark%s.test.sources"]:
         __warn_shims_with_multiple_dedicated_dirs(shims_arr, prop_pattern)
-    if task_enabled:
+    if should_add_comment:
         __shimplify_layout(shims_arr)
     else:
         log.info('Skipping shimplify! Set -Dshimplify=true to convert old shims')
@@ -210,10 +215,10 @@ def __generate_symlinks():
 
 def __traverse_source_tree(buildver, src_type, shim_dir_pattern, shim_comment_pattern):
     base_dir = str(__project().getBaseDir())
-    log.info("# generating symlinks for shim %s %s files under %s", buildver, src_type, base_dir)
     src_root = os.path.join(base_dir, 'src', src_type)
     target_root = os.path.join(base_dir, 'target', "spark%s" % buildver, 'generated', 'src',
                                src_type)
+    log.info("# generating symlinks for shim %s %s files under %s", buildver, src_type, target_root)
     for dir, subdirs, files in os.walk(src_root, topdown=True):
         if dir == src_root:
             subdirs[:] = [d for d in subdirs if re.match(shim_dir_pattern, d)]
@@ -248,28 +253,46 @@ def __traverse_source_tree(buildver, src_type, shim_dir_pattern, shim_comment_pa
                     target_shim_file_path = os.path.join(target_root, target_rel_path)
                     log.debug("creating symlink %s -> %s", target_shim_file_path, shim_file_path)
                     __makedirs(os.path.dirname(target_shim_file_path))
+                    if should_overwrite:
+                        __remove_file(target_shim_file_path)
                     os.symlink(shim_file_path, target_shim_file_path)
+
+
+def __remove_file(target_shim_file_path):
+    try:
+        os.remove(target_shim_file_path)
+    except OSError as ose:
+        # ignore non-exisiting files
+        if ose.errno != errno.ENOENT:
+            raise
 
 
 def __shimplify_layout(shims_arr):
     # map file -> [shims it's part of]
     files2bv = {}
     for build_ver in shims_arr:
-        # alternatively we can use range dirs instead of files, which is more efficient
-        # keeping at file level for flexibility until/unless the shim layer becomes unexpectedly
+        src_roots = __csv_ant_prop_as_arr("spark%s.sources" % build_ver)
+        test_src_roots = __csv_ant_prop_as_arr("spark%s.test.sources" % build_ver)
+        log.debug("check %s sources: %s", build_ver, src_roots)
+        log.debug("check %s test sources: %s", build_ver, test_src_roots)
+        main_and_test_roots = src_roots + test_src_roots
+        # alternatively we can use range dirs instead of files, which is more efficient.
+        # file level provides flexibility until/unless the shim layer becomes unexpectedly
         # large
-        shim_source_files = __project().getReference("spark%s.fileset" % build_ver)
-        log.debug("build_ver=%s shim_src.size=%i", build_ver, shim_source_files.size())
-        for resource in shim_source_files:
-            shim_file = str(resource)
-            if shim_file in files2bv.keys():
-                files2bv[shim_file] += [build_ver]
-            else:
-                files2bv[shim_file] = [build_ver]
+        for src_root in main_and_test_roots:
+            log.debug("os.walk looking for shim files from %s", src_root)
+            for dir, _, shim_source_files in os.walk(src_root):
+                for shim_file in shim_source_files:
+                    shim_path = os.path.join(dir, shim_file)
+                    log.debug("updating files2bv %s -> %s", shim_path, build_ver)
+                    if shim_path in files2bv.keys():
+                        files2bv[shim_path] += [build_ver]
+                    else:
+                        files2bv[shim_path] = [build_ver]
     for shim_file, bv_list in files2bv.items():
-        log.debug("calling upsert_shim_json shim_file=%s bv_list=%s", shim_file, bv_list)
+        log.debug("calling upsert_shim_json on shim_file %s bv_list=%s", shim_file, bv_list)
         __upsert_shim_json(shim_file, bv_list)
-        if move_files:
+        if should_move_files:
             __git_rename(shim_file, bv_list[0])
 
 
@@ -277,8 +300,7 @@ def __warn_shims_with_multiple_dedicated_dirs(shims_arr, prop_pattern):
     dirs2bv = {}
     for build_ver in shims_arr:
         log.debug("updating dirs2bv for %s", build_ver)
-        src_dirs = __ant_proj_prop(prop_pattern % build_ver)
-        shim_dirs = [] if len(src_dirs) == 0 else src_dirs.split(',')
+        shim_dirs = __csv_ant_prop_as_arr(prop_pattern % build_ver)
         for dir in shim_dirs:
             if dir not in dirs2bv.keys():
                 dirs2bv[dir] = [build_ver]

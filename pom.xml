@@ -1212,14 +1212,6 @@
                                 </scriptdef>
                                 <property name="shimplify.shim.list"
                                     value="${noSnapshot.buildvers},${snapshot.buildvers},${databricks.buildvers},340"/>
-                                <ac:for param="bv" list="${shimplify.shim.list}" trim="true">
-                                    <sequential>
-                                        <multirootfileset id="spark@{bv}.fileset" basedirs="${spark@{bv}.sources},${spark@{bv}.test.sources}">
-                                            <include name="**/*.java"/>
-                                            <include name="**/*.scala"/>
-                                        </multirootfileset>
-                                    </sequential>
-                                </ac:for>
                                 <shimplify shims="${shimplify.shim.list}" if="shimplify"/>
                             </target>
                         </configuration>
