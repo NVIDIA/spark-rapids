@@ -43,8 +43,7 @@ object GpuHiveTextFileUtils {
    * in [[com.nvidia.spark.rapids.GpuOverrides.fileFormats]].
    *
    * @param dataType The data-type being checked for compatibility in Hive text.
-   * @return true if the type is supported for Hive text
-   * @return false if the type is not supported for Hive text
+   * @return true if the type is supported for Hive text, false otherwise
    */
   def isSupportedType(dataType: DataType): Boolean = dataType match {
     case ArrayType(_,_) => false
