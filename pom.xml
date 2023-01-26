@@ -768,6 +768,13 @@
             321,
             331
         </jdk11.buildvers>
+        <all.buildvers>
+            ${noSnapshot.buildvers},
+            ${snapshot.buildvers},
+            ${databricks.buildvers},
+            340
+        </all.buildvers>
+        <shimplify.shims>${all.buildvers}</shimplify.shims>
     </properties>
 
     <dependencyManagement>
@@ -1210,9 +1217,7 @@
                                     <attribute name="shims"/>
                                     <attribute name="if"/>
                                 </scriptdef>
-                                <property name="shimplify.shim.list"
-                                    value="${noSnapshot.buildvers},${snapshot.buildvers},${databricks.buildvers},340"/>
-                                <shimplify shims="${shimplify.shim.list}" if="shimplify"/>
+                                <shimplify shims="${shimplify.shims}" if="shimplify"/>
                             </target>
                         </configuration>
                     </execution>

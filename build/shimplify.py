@@ -56,7 +56,19 @@ def __is_enabled_attr(attr):
 
 def __csv_ant_prop_as_arr(name):
     prop_val = __ant_proj_prop(name)
-    return [] if prop_val is None or len(prop_val) == 0 else prop_val.split(',')
+    return __csv_as_arr(prop_val)
+
+
+def __csv_attr_as_arr(name):
+    attr_val = __ant_attr(name)
+    return __csv_as_arr(attr_val)
+
+
+def __csv_as_arr(str_val):
+    if str_val in (None, ''):
+        return []
+    else:
+        return str_val.translate(None, ' \n\r').split(',')
 
 
 should_add_comment = __is_enabled_attr('if')
@@ -73,7 +85,8 @@ should_trace = __is_enabled_property('traceShimplify')
 __shim_comment_tag = 'spark-rapids-shim-json-lines'
 __opening_shim_tag = '/*** ' + __shim_comment_tag
 __closing_shim_tag = __shim_comment_tag + ' ***/'
-
+__shims_arr = sorted(__csv_attr_as_arr('shims'))
+__all_shims_arr = sorted(__csv_ant_prop_as_arr('all.buildvers'))
 
 log = logging.getLogger('shimplify')
 log.setLevel(logging.DEBUG if should_trace else logging.INFO)
@@ -182,16 +195,10 @@ def task_impl():
              should_add_comment, should_overwrite, should_move_files)
     log.info("review changes and `git restore` if necessary")
 
-    shims_attr = __ant_attr('shims')
-    # remove whitespace
-    shims_attr_csv = str(shims_attr).translate(None, ' \n\r')
-    shims_arr = shims_attr_csv.split(',')
-    shims_arr.sort()
-
     for prop_pattern in ["spark%s.sources", "spark%s.test.sources"]:
-        __warn_shims_with_multiple_dedicated_dirs(shims_arr, prop_pattern)
+        __warn_shims_with_multiple_dedicated_dirs(prop_pattern)
     if should_add_comment:
-        __shimplify_layout(shims_arr)
+        __shimplify_layout()
     else:
         log.info('Skipping shimplify! Set -Dshimplify=true to convert old shims')
 
@@ -267,10 +274,10 @@ def __remove_file(target_shim_file_path):
             raise
 
 
-def __shimplify_layout(shims_arr):
+def __shimplify_layout():
     # map file -> [shims it's part of]
     files2bv = {}
-    for build_ver in shims_arr:
+    for build_ver in __all_shims_arr:
         src_roots = __csv_ant_prop_as_arr("spark%s.sources" % build_ver)
         test_src_roots = __csv_ant_prop_as_arr("spark%s.test.sources" % build_ver)
         log.debug("check %s sources: %s", build_ver, src_roots)
@@ -296,9 +303,9 @@ def __shimplify_layout(shims_arr):
             __git_rename(shim_file, bv_list[0])
 
 
-def __warn_shims_with_multiple_dedicated_dirs(shims_arr, prop_pattern):
+def __warn_shims_with_multiple_dedicated_dirs(prop_pattern):
     dirs2bv = {}
-    for build_ver in shims_arr:
+    for build_ver in __all_shims_arr:
         log.debug("updating dirs2bv for %s", build_ver)
         shim_dirs = __csv_ant_prop_as_arr(prop_pattern % build_ver)
         for dir in shim_dirs:
