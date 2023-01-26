@@ -128,6 +128,54 @@ def test_aqe_struct_self_join(spark_tmp_table_factory):
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=_adaptive_conf)
 
 
+@allow_non_gpu("ProjectExec")
+def test_aqe_broadcast_join_project_fallback(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    def prep(spark):
+        data = [
+            (("Adam ", "", "Green"), "1", "M", 1000, "http://widgets.net"),
+            (("Bob ", "Middle", "Green"), "2", "M", 2000, "http://widgets.org"),
+            (("Cathy ", "", "Green"), "3", "F", 3000, "http://widgets.net")
+        ]
+        schema = (StructType()
+                  .add("name", StructType()
+                       .add("firstname", StringType())
+                       .add("middlename", StringType())
+                       .add("lastname", StringType()))
+                  .add("id", StringType())
+                  .add("gender", StringType())
+                  .add("salary", IntegerType())
+                  .add("website", StringType()))
+
+        df = spark.createDataFrame(spark.sparkContext.parallelize(data),schema)
+        df2 = df.withColumn("dt",current_date().alias("dt")).withColumn("ts",current_timestamp().alias("ts"))
+
+        df2.printSchema
+        df2.write.format("parquet").mode("overwrite").save(data_path)
+
+    with_cpu_session(prep)
+
+    def do_it(spark):
+        newdf2 = spark.read.parquet(data_path)
+        newdf2.createOrReplaceTempView("df2")
+
+        # Using parse_url to fallback the project in the subquery that is joined here
+        # Since parse_url is an expression that will never likely be ported to GPU, it 
+        # makes for a suitable test here
+        return spark.sql(
+            """
+            select 
+                a.name.firstname,
+                a.name.lastname,
+                b.host
+            from df2 a join (select id, parse_url(website,'HOST') as host from df2) b
+                on a.id = b.id
+            """
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=_adaptive_conf)
+
+
 joins = [
     'inner',
     'cross',

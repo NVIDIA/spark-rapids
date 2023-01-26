@@ -646,7 +646,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   private def fixUpExchangeOverhead(): Unit = {
     childPlans.foreach(_.fixUpExchangeOverhead())
     if (wrapped.isInstanceOf[ShuffleExchangeExec] &&
-        SparkShimImpl.shuffleCanBeFixedUp(wrapped.asInstanceOf[ShuffleExchangeExec]) &&
+        !SparkShimImpl.isExecutorBroadcastShuffle(wrapped.asInstanceOf[ShuffleExchangeExec]) &&
         !childPlans.exists(_.supportsColumnar) &&
         (plan.conf.adaptiveExecutionEnabled ||
         !parent.exists(_.supportsColumnar))) {
