@@ -287,6 +287,7 @@ _pmod_gens = numeric_gens + [ decimal_gen_32bit, decimal_gen_64bit, _decimal_gen
                               DecimalGen(precision=37, scale=0), DecimalGen(precision=37, scale=10),
                               _decimal_gen_7_7]
 
+@allow_non_gpu("ProjectExec", "Pmod")
 @pytest.mark.parametrize('data_gen', _pmod_gens, ids=idfn)
 def test_pmod(data_gen):
     string_type = to_cast_string(data_gen.data_type)
@@ -321,6 +322,7 @@ def test_mod_pmod_long_min_value():
 
 # pmod currently falls back for Decimal(precision=38)
 # https://github.com/NVIDIA/spark-rapids/issues/6336
+@allow_non_gpu("ProjectExec", "Pmod")
 @pytest.mark.parametrize('data_gen', [decimal_gen_32bit, decimal_gen_64bit, _decimal_gen_18_0,
                                       decimal_gen_128bit, _decimal_gen_30_2, _decimal_gen_36_5], ids=idfn)
 @pytest.mark.parametrize('overflow_exp', [
@@ -364,6 +366,7 @@ def test_cast_neg_to_decimal_err():
         ansi_enabled_conf,
         exception_type + exception_content)
 
+@allow_non_gpu("ProjectExec", "Pmod")
 @pytest.mark.parametrize('data_gen', _pmod_gens, ids=idfn)
 def test_mod_pmod_by_zero_not_ansi(data_gen):
     string_type = to_cast_string(data_gen.data_type)
