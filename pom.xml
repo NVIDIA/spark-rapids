@@ -725,8 +725,6 @@
             with the ones deployed to a remote Maven repo
         -->
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
-
-        <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/generated/src</spark.shim.dest>
         <noSnapshot.buildvers>
             311,
             312,
@@ -774,7 +772,6 @@
             ${databricks.buildvers},
             340
         </all.buildvers>
-        <shimplify.shims>${all.buildvers}</shimplify.shims>
     </properties>
 
     <dependencyManagement>
@@ -910,8 +907,6 @@
                         <configuration>
                             <exportAntProperties>true</exportAntProperties>
                             <target xmlns:ac="antlib:net.sf.antcontrib">
-
-                                <!-- deprecated -->
                                 <!--
                                     Rules for adding new shim directories:
                                     ######################################
@@ -991,7 +986,7 @@
                                     </dirset>
                                 </pathconvert>
                                 <pathconvert property="spark321.sources" pathsep=",">
-                                    <dirset id="spark321.diset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
                                         <patternset id="spark321+.pattern">
                                             <patternset refid="spark320+.pattern"/>
                                             <include name="321+/*"/>
@@ -1001,19 +996,19 @@
                                     </dirset>
                                 </pathconvert>
                                 <pathconvert property="spark322.sources" pathsep=",">
-                                    <dirset id="spark322.diset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
                                         <patternset refid="spark321+.pattern"/>
                                         <include name="322/*"/>
                                     </dirset>
                                 </pathconvert>
                                 <pathconvert property="spark323.sources" pathsep=",">
-                                    <dirset id="spark323.diset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
                                         <patternset refid="spark321+.pattern"/>
                                         <include name="323/*"/>
                                     </dirset>
                                 </pathconvert>
                                 <pathconvert property="spark330.sources" pathsep=",">
-                                    <dirset id="spark330.diset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
                                         <patternset id="spark330+.pattern">
                                             <patternset refid="spark321+.pattern"/>
                                             <exclude name="*until330*/*"/>
@@ -1029,7 +1024,7 @@
                                     </dirset>
                                 </pathconvert>
                                 <pathconvert property="spark331.sources" pathsep=",">
-                                    <dirset id="spark331.diset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
                                         <patternset id="spark331+.pattern">
                                             <patternset refid="spark330+.pattern"/>
                                             <include name="331+/*"/>
@@ -1038,13 +1033,13 @@
                                     </dirset>
                                 </pathconvert>
                                 <pathconvert property="spark332.sources" pathsep=",">
-                                    <dirset id="spark332.diset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
                                         <patternset refid="spark331+.pattern"/>
                                         <include name="332/*"/>
                                     </dirset>
                                 </pathconvert>
                                 <pathconvert property="spark340.sources" pathsep=",">
-                                    <dirset id="spark340.diset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
                                         <patternset id="spark340+.pattern">
                                             <!-- inherit from 331+ with exceptions -->
                                             <patternset refid="spark331+.pattern"/>
@@ -1058,7 +1053,7 @@
                                 </pathconvert>
 
                                 <!-- Spark vendor shims -->
-                                <pathconvert id="spark321cdh.diset.id" property="spark321cdh.sources" pathsep=",">
+                                <pathconvert property="spark321cdh.sources" pathsep=",">
                                     <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
                                         <!-- inherit from 321+ upstream except noncdh -->
                                         <patternset refid="spark321+.pattern"/>
@@ -1208,20 +1203,6 @@
                         </configuration>
                     </execution>
                     <execution>
-                        <id>shimplify-shim-sources</id>
-                        <goals><goal>run</goal></goals>
-                        <phase>generate-sources</phase>
-                        <configuration>
-                            <target xmlns:ac="antlib:net.sf.antcontrib">
-                                <scriptdef name="shimplify" language="jython" src="${spark.rapids.source.basedir}/build/shimplify.py">
-                                    <attribute name="shims"/>
-                                    <attribute name="if"/>
-                                </scriptdef>
-                                <shimplify shims="${shimplify.shims}" if="shimplify"/>
-                            </target>
-                        </configuration>
-                    </execution>
-                    <execution>
                         <id>generate-build-info</id>
                         <phase>generate-resources</phase>
                         <configuration>
@@ -1263,11 +1244,6 @@
                         <groupId>ant-contrib</groupId>
                         <artifactId>ant-contrib</artifactId>
                         <version>1.0b3</version>
-                    </dependency>
-                    <dependency>
-                        <groupId>org.python</groupId>
-                        <artifactId>jython-standalone</artifactId>
-                        <version>2.7.2</version>
                     </dependency>
                 </dependencies>
                 </plugin>
@@ -1484,6 +1460,7 @@
                     </execution>
                 </executions>
             </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
@@ -1561,8 +1538,6 @@
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>build-helper-maven-plugin</artifactId>
                 <executions>
-
-                    <!-- deprecated -->
                     <execution>
                         <id>add-shim-sources</id>
                         <phase>generate-sources</phase>
@@ -1577,28 +1552,6 @@
                         <goals><goal>add-test-source</goal></goals>
                         <configuration>
                             <sources>${spark.shim.test.sources}</sources>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>add-shimple-sources</id>
-                        <phase>generate-sources</phase>
-                        <goals><goal>add-source</goal></goals>
-                        <configuration>
-                            <sources>
-                                <source>${spark.shim.dest}/main/scala</source>
-                                <source>${spark.shim.dest}/main/java</source>
-                            </sources>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>add-shimple-test-sources</id>
-                        <phase>generate-test-sources</phase>
-                        <goals><goal>add-test-source</goal></goals>
-                        <configuration>
-                            <sources>
-                                <source>${spark.shim.dest}/test/scala</source>
-                                <source>${spark.shim.dest}/test/java</source>
-                            </sources>
                         </configuration>
                     </execution>
                 </executions>
