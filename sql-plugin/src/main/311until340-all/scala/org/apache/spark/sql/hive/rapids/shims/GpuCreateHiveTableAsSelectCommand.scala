@@ -16,8 +16,9 @@
 
 package org.apache.spark.sql.hive.rapids.shims
 
-import com.nvidia.spark.rapids.shims.GpuCreateHiveTableAsSelectBase
 import com.nvidia.spark.rapids.{DataFromReplacementRule, DataWritingCommandMeta, GpuDataWritingCommand, GpuOverrides, RapidsConf, RapidsMeta}
+import com.nvidia.spark.rapids.shims.GpuCreateHiveTableAsSelectBase
+
 import org.apache.spark.sql.{SaveMode, SparkSession}
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
