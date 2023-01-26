@@ -21,7 +21,6 @@ import com.nvidia.spark.rapids.{DataFromReplacementRule, DataWritingCommandMeta,
 import org.apache.spark.sql.{SaveMode, SparkSession}
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.hive.execution.{CreateHiveTableAsSelectCommand, InsertIntoHiveTable}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
@@ -31,10 +30,9 @@ final class GpuCreateHiveTableAsSelectCommandMeta(cmd: CreateHiveTableAsSelectCo
                                                   rule: DataFromReplacementRule)
   extends DataWritingCommandMeta[CreateHiveTableAsSelectCommand](cmd, conf, parent, rule) {
 
-    var cpuWritingCommand: DataWritingCommand = null
-    override def tagSelfForGpu(): Unit = {
+    var cpuWritingCommand: InsertIntoHiveTable = null
 
-      willNotWorkOnGpu("CALEB: GCHTASCM: CHTAS not implemented yet!") // TODO: Remove.
+    override def tagSelfForGpu(): Unit = {
 
       val spark = SparkSession.active
       val tableDesc = cmd.tableDesc // For the *new* table.
@@ -56,14 +54,13 @@ final class GpuCreateHiveTableAsSelectCommandMeta(cmd: CreateHiveTableAsSelectCo
           None
       }
 
-      val createTableMeta = this
-
       if (writingCommand.isDefined) {
+        cpuWritingCommand = writingCommand.get
         val insertMeta = new GpuInsertIntoHiveTableMeta(
-          writingCommand.get,
+          cpuWritingCommand,
           conf,
           None,
-          GpuOverrides.dataWriteCmds(writingCommand.get.getClass))
+          GpuOverrides.dataWriteCmds(cpuWritingCommand.getClass))
 
         insertMeta.tagForGpu()
         if (!insertMeta.canThisBeReplaced) {
@@ -73,7 +70,14 @@ final class GpuCreateHiveTableAsSelectCommandMeta(cmd: CreateHiveTableAsSelectCo
         }
       }
     }
-    override def convertToGpu(): GpuDataWritingCommand = null
+
+    override def convertToGpu(): GpuDataWritingCommand = new GpuCreateHiveTableAsSelectCommand(
+      tableDesc = wrapped.tableDesc,
+      query = wrapped.query,
+      outputColumnNames = wrapped.outputColumnNames,
+      mode = wrapped.mode,
+      cpuCmd = wrapped
+    )
 }
 
 case class GpuCreateHiveTableAsSelectCommand(

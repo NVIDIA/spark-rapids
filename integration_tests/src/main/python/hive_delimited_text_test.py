@@ -421,13 +421,15 @@ def rewrite_to_non_partitioned_hive_table(data_path, schema, spark_tmp_table_fac
         spark.catalog.createExternalTable(tmp_table_name, source='hive', path=data_path, **opts)
         actual_table_name = spark_tmp_table_factory.get()
 
-        # TODO: Big miss: CTAS is borked. Temp workaround: Create and overwrite table.
-        # spark.sql("CREATE TABLE " + actual_table_name +
-
+        spark.sql("CREATE TABLE " + actual_table_name +
+                  " SELECT * FROM " + tmp_table_name )
+        """
+        TODO: Write another function for inserting into existing tables. 
         spark.sql("CREATE TABLE " + actual_table_name + " LIKE " + tmp_table_name)
         spark.sql("INSERT OVERWRITE TABLE " + actual_table_name +
                   # " STORED AS TEXTFILE " +
                   " SELECT * FROM " + tmp_table_name)
+        """
         return spark.sql("SELECT * FROM " + actual_table_name)
 
     return read_impl
