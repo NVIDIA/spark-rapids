@@ -21,50 +21,80 @@ import os
 import re
 import subprocess
 
-# wrap Ant interactions to reduce linting warnings
-# TODO pass only Python types if possible
-
 
 def __project():
+    """
+    Wraps access to the implicitly provided Ant project reference[1] to reduce undefined-name
+    linting warnings
+
+    TODO Pass only Python types if possible
+
+    [1] https://ant.apache.org/manual/api/org/apache/tools/ant/Project.html
+    """
     return project
 
 
+def __task():
+    """
+    Wraps access to the implicitly provided Ant task attributes map to reduce
+    undefined-name linting warnings
+    """
+    return __self
+
+
+def __fail(message):
+    "Fails this task with the error message"
+    __task.fail(message)
+
+
 def __attributes():
+    """
+    Wraps access to the implicitly provided Ant task attributes map to reduce
+    undefined-name linting warnings
+
+    TODO Pass only Python types if possible
+    """
     return attributes
 
 
-# get Ant project property as string
 def __ant_proj_prop(name):
+    """Retrun an Ant project property value as a Python string"""
     return str(__project().getProperty(name))
 
 
 def __ant_attr(name):
+    """Retrun this Ant task attribute value as a Python string"""
     return str(__attributes().get(name))
 
 
 def __is_enabled_property(prop_name):
+    """Returns True if the required project property is set to true"""
     assert prop_name is not None, "Invalid property: None"
     prop_val = __ant_proj_prop(prop_name)
     return str(True).lower() == prop_val
 
 
 def __is_enabled_attr(attr):
+    """Returns True if the required project property is set to true"""
     assert attr is not None, "Invalid attribute: None"
     attr_val = __ant_attr(attr)
     return attr_val is not None and __is_enabled_property(attr_val)
 
 
 def __csv_ant_prop_as_arr(name):
+    """Splits a CSV value for a propety into a list"""
     prop_val = __ant_proj_prop(name)
     return __csv_as_arr(prop_val)
 
 
 def __csv_attr_as_arr(name):
+    """Splits a CSV value for an attribute into a list"""
     attr_val = __ant_attr(name)
     return __csv_as_arr(attr_val)
 
 
 def __csv_as_arr(str_val):
+    """Splits a string CSV value into a list, returns [] if undefined or empty"""
     if str_val in (None, ''):
         return []
     else:
@@ -74,12 +104,12 @@ def __csv_as_arr(str_val):
 should_add_comment = __is_enabled_attr('if')
 
 # should we move files?
-should_move_files = __is_enabled_property('shimplifyMove')
+should_move_files = __is_enabled_property('shimplify.move')
 
-# allowed to overwrite the existing comment
-should_overwrite = __is_enabled_property('overShimplify')
+# allowed to overwrite the existing comment?
+should_overwrite = __is_enabled_property('shimplify.overwrite')
 
-# enable log tracing
+# enable log tracing?
 should_trace = __is_enabled_property('traceShimplify')
 
 __shim_comment_tag = 'spark-rapids-shim-json-lines'
@@ -125,15 +155,14 @@ def __delete_prior_comment_if_allowed(contents, tag, filename):
                                          if tag in str(contents[i]))
     except StopIteration as si_exc:
         if (opening_shim_comment_line is not None) and (closing_shim_comment_line is None):
-            raise Exception("%s: no closing comment for %s:%d"
-                            % (si_exc, filename, opening_shim_comment_line))
-
-    # no work
+            __fail("%s: no closing comment for %s:%d"
+                   % (si_exc, filename, opening_shim_comment_line))
     if opening_shim_comment_line is None:
+        # no work
         return
     if not should_overwrite:
-        raise Exception("found shim comment from prior execution at %s:%d, use -DoverShimplify=true"
-                        "to overwrite" % (filename, opening_shim_comment_line))
+        __fail("found shim comment from prior execution at %s:%d, use -Dshimplify.overwrite=true"
+               "to overwrite" % (filename, opening_shim_comment_line))
     assert (opening_shim_comment_line is not None) and (closing_shim_comment_line is not None)
     log.debug("removing comments %s:%d:%d", filename, opening_shim_comment_line,
               closing_shim_comment_line)
@@ -161,7 +190,7 @@ def __git_rename(shim_file, first_shim):
     git_cmd = ['git', 'mv', shim_file, new_shim_file]
     ret_code = subprocess.call(git_cmd)
     if ret_code != 0:
-        raise Exception('git rename failed')
+        __fail('git rename failed')
 
 
 def __makedirs(new_dir):
