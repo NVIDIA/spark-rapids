@@ -25,7 +25,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{CoalescedPartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ExecutorBroadcastMode}
@@ -157,7 +157,9 @@ case class GpuBroadcastHashJoinExec(
 
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
 
-    val buildRelation = shuffleExchange.executeColumnar()
+    val partitionSpecs = Seq(CoalescedPartitionSpec(0, shuffleExchange.numPartitions - 1))
+    val buildRelation = shuffleExchange.getShuffleRDD(partitionSpecs.toArray)
+        .asInstanceOf[RDD[ColumnarBatch]]
 
     val rdd = streamedPlan.executeColumnar()
     val localBuildSchema = buildPlan.schema

@@ -24,7 +24,7 @@ import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, InnerLike, JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{CoalescedPartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
@@ -123,7 +123,8 @@ case class GpuBroadcastNestedLoopJoinExec(
 
   override def getBroadcastRelation(): Any = {
     if (executorBroadcast) {
-      shuffleExchange.executeColumnar()
+      val partitionSpecs = Seq(CoalescedPartitionSpec(0, shuffleExchange.numPartitions - 1))
+      shuffleExchange.getShuffleRDD(partitionSpecs.toArray).asInstanceOf[RDD[ColumnarBatch]]
     } else {
       broadcastExchange.executeColumnarBroadcast[Any]()
     }
