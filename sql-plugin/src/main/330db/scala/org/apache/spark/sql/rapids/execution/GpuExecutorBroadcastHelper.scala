@@ -108,9 +108,13 @@ object GpuExecutorBroadcastHelper extends Arm {
     // See https://github.com/NVIDIA/spark-rapids/issues/7599
     val it = shuffleDataIterator(shuffleData)
     if (it.hasNext) {
-      withResource(it.next) { batch =>
-        batch.numRows
+      var numRows = 0
+      while (it.hasNext) {
+        withResource(it.next) { batch =>
+          numRows += batch.numRows
+        }
       }
+      numRows
     } else {
       0
     }
