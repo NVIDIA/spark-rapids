@@ -244,37 +244,6 @@ run_avro_tests() {
 
 rapids_shuffle_smoke_test() {
     echo "Run rapids_shuffle_smoke_test..."
-    echo "SHUFFLE_SPARK_SHIM=$SHUFFLE_SPARK_SHIM"
-
-    # basic ucx check
-    #ucx_info -d
-
-    # run in standalone mode
-    # export SPARK_MASTER_HOST=localhost
-    # export SPARK_MASTER=spark://$SPARK_MASTER_HOST:7077
-    # $SPARK_HOME/sbin/start-master.sh -h $SPARK_MASTER_HOST
-    # $SPARK_HOME/sbin/spark-daemon.sh start org.apache.spark.deploy.worker.Worker 1 $SPARK_MASTER
-
-#    invoke_shuffle_integration_test() {
-#      #PYSP_TEST_spark_master=$SPARK_MASTER \
-#        PYSP_TEST_spark_cores_max=2 \
-#        PYSP_TEST_spark_executor_cores=1 \
-#        PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
-#        PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0 \
-#        PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=0.1 \
-#        PYSP_TEST_spark_rapids_memory_gpu_allocFraction=0.1 \
-#        SPARK_SUBMIT_FLAGS="$SPARK_CONF" TEST_PARALLEL=1 \
-#        ./integration_tests/run_pyspark_from_build.sh -m shuffle_test # --test_type=$TEST_TYPE
-#    }
-
-    # using UCX shuffle
-    # The UCX_TLS=^posix config is removing posix from the list of memory transports
-    # so that IPC regions are obtained using SysV API instead. This was done because of
-    # itermittent test failures. See: https://github.com/NVIDIA/spark-rapids/issues/6572
-#    PYSP_TEST_spark_rapids_shuffle_mode=UCX \
-#    PYSP_TEST_spark_executorEnv_UCX_ERROR_SIGNALS="" \
-#    PYSP_TEST_spark_executorEnv_UCX_TLS="^posix" \
-#        invoke_shuffle_integration_test
 
     # using MULTITHREADED shuffle
     PYSP_TEST_spark_rapids_shuffle_mode=MULTITHREADED \
@@ -288,10 +257,6 @@ rapids_shuffle_smoke_test() {
     PYSP_TEST_spark_rapids_memory_gpu_allocFraction=0.1 \
     SPARK_SUBMIT_FLAGS="$SPARK_CONF" TEST_PARALLEL=1 \
     ./run_pyspark_from_build.sh -m shuffle_test
-#        invoke_shuffle_integration_test
-
-    # $SPARK_HOME/sbin/spark-daemon.sh stop org.apache.spark.deploy.worker.Worker 1
-    # $SPARK_HOME/sbin/stop-master.sh
 }
 
 # TEST_MODE
@@ -300,8 +265,9 @@ rapids_shuffle_smoke_test() {
 # - ICEBERG_ONLY: iceberg tests only
 # - AVRO_ONLY: avro tests only (with --packages option instead of --jars)
 # - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
-#TEST_MODE=${TEST_MODE:-'DEFAULT'}
-TEST_MODE='SHUFFLE'
+# - MULTITHREADED_SHUFFLE: shuffle tests only
+TEST_MODE=${TEST_MODE:-'DEFAULT'}
+
 if [[ $TEST_MODE == "DEFAULT" ]]; then
   ./run_pyspark_from_build.sh
 
@@ -325,7 +291,8 @@ if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "AVRO_ONLY" ]]; then
   run_avro_tests
 fi
 
-if [[ "$TEST_MODE" == "SHUFFLE" ]]; then
+# Mutithreaded Shuffle test
+if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "MULTITHREADED_SHUFFLE" ]]; then
         rapids_shuffle_smoke_test
 fi
 

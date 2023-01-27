@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ CUDF_VER=${CUDF_VER:-"23.02.0-SNAPSHOT"}
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-"cuda11"}
 PROJECT_VER=${PROJECT_VER:-"23.02.0-SNAPSHOT"}
 PROJECT_TEST_VER=${PROJECT_TEST_VER:-"23.02.0-SNAPSHOT"}
-SPARK_VER=${SPARK_VER:-"3.3.0"}
+SPARK_VER=${SPARK_VER:-"3.1.1"}
 # Make a best attempt to set the default value for the shuffle shim.
 # Note that SPARK_VER for non-Apache Spark flavors (i.e. databricks,
 # cloudera, and others) may not be a simple as just the version number, so
@@ -46,7 +46,7 @@ PROJECT_TEST_REPO=${PROJECT_TEST_REPO:-"$URM_URL"}
 SPARK_REPO=${SPARK_REPO:-"$URM_URL"}
 
 echo "CUDF_VER: $CUDF_VER, CUDA_CLASSIFIER: $CUDA_CLASSIFIER, PROJECT_VER: $PROJECT_VER \
-    SPARK_VER: $SPARK_VER, SCALA_BINARY_VER: $SCALA_BINARY_VER, SHUFFLE_SPARK_SHIM: $SHUFFLE_SPARK_SHIM"
+    SPARK_VER: $SPARK_VER, SCALA_BINARY_VER: $SCALA_BINARY_VER"
 
 # Spark shim versions
 # get Spark shim versions from pom
