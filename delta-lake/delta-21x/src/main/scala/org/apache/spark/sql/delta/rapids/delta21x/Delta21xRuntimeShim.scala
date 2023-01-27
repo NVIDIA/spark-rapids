@@ -14,12 +14,31 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.delta.shims
+package org.apache.spark.sql.delta.rapids.delta21x
+
+import com.nvidia.spark.rapids.RapidsConf
+import com.nvidia.spark.rapids.delta.DeltaProvider
+import com.nvidia.spark.rapids.delta.delta21x.Delta21xProvider
 
 import org.apache.spark.sql.delta.{DeltaLog, DeltaUDF, Snapshot}
+import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuOptimisticTransactionBase}
 import org.apache.spark.sql.expressions.UserDefinedFunction
+import org.apache.spark.util.Clock
 
-class PreDelta22RuntimeShim extends DeltaRuntimeShim {
+/**
+ * Delta runtime shim for Delta 2.1.x on Spark 3.3.x.
+ * @note This class is instantiated via reflection from DeltaProbeImpl
+ */
+class Delta21xRuntimeShim extends DeltaRuntimeShim {
+  override def getDeltaProvider: DeltaProvider = Delta21xProvider
+
+  override def startTransaction(
+      log: DeltaLog,
+      conf: RapidsConf,
+      clock: Clock): GpuOptimisticTransactionBase = {
+    new GpuOptimisticTransaction(log, conf)(clock)
+  }
+
   override def stringFromStringUdf(f: String => String): UserDefinedFunction = {
     DeltaUDF.stringStringUdf(f)
   }
