@@ -16,6 +16,7 @@ import json
 import os.path
 import pyspark.sql.functions as f
 import pytest
+import re
 import sys
 
 from asserts import *
@@ -44,12 +45,26 @@ delta_writes_enabled_conf = {"spark.rapids.sql.format.delta.write.enabled": "tru
 def fixup_path(d):
     """Modify the 'path' value to remove random IDs in the pathname"""
     parts = d["path"].split("-")
-    d["path"] = "-".join(parts[0:2]) + ".".join(parts[-1].split(".")[-2:])
+    d["path"] = "-".join(parts[0:1]) + ".".join(parts[-1].split(".")[-2:])
 
 def del_keys(key_list, c_val, g_val):
     for key in key_list:
         c_val.pop(key, None)
         g_val.pop(key, None)
+
+def fixup_operation_metrics(opm):
+    """Update the specified operationMetrics node to facilitate log comparisons"""
+    for k in "executionTimeMs", "numOutputBytes", "rewriteTimeMs", "scanTimeMs":
+        opm.pop(k, None)
+
+TMP_TABLE_PATTERN=re.compile("tmp_table_\w+")
+
+def fixup_operation_parameters(opp):
+    """Update the specified operationParameters node to facilitate log comparisons"""
+    for key in ("predicate", "matchedPredicates", "notMatchedPredicates"):
+        pred = opp.get(key)
+        if pred:
+            opp[key] = TMP_TABLE_PATTERN.sub("tmp_table", pred)
 
 def assert_delta_log_json_equivalent(filename, c_json, g_json):
     assert c_json.keys() == g_json.keys(), "Delta log {} has mismatched keys:\nCPU: {}\nGPU: {}".format(filename, c_json, g_json)
@@ -67,11 +82,17 @@ def assert_delta_log_json_equivalent(filename, c_json, g_json):
             del_keys(("modificationTime", "size"), c_val, g_val)
             fixup_path(c_val)
             fixup_path(g_val)
+        elif key == "cdc":
+            assert c_val.keys() == g_val.keys(), "Delta log {} 'cdc' keys mismatch:\nCPU: {}\nGPU: {}".format(filename, c_val, g_val)
+            del_keys(("size",), c_val, g_val)
+            fixup_path(c_val)
+            fixup_path(g_val)
         elif key == "commitInfo":
             assert c_val.keys() == g_val.keys(), "Delta log {} 'commitInfo' keys mismatch:\nCPU: {}\nGPU: {}".format(filename, c_val, g_val)
             del_keys(("timestamp", "txnId"), c_val, g_val)
-            c_val["operationMetrics"].pop("numOutputBytes", None)
-            g_val["operationMetrics"].pop("numOutputBytes", None)
+            for v in c_val, g_val:
+                fixup_operation_metrics(v.get("operationMetrics", {}))
+                fixup_operation_parameters(v.get("operationParameters", {}))
         elif key == "remove":
             assert c_val.keys() == g_val.keys(), "Delta log {} 'remove' keys mismatch:\nCPU: {}\nGPU: {}".format(filename, c_val, g_val)
             del_keys(("deletionTimestamp", "size"), c_val, g_val)
