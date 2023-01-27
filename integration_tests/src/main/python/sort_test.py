@@ -55,6 +55,7 @@ def test_single_orderby(data_gen, order):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).orderBy(order))
 
+@allow_non_gpu('ShuffleExchangeExec')
 @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
 @pytest.mark.parametrize('order', [
     pytest.param(f.col('a').asc()),
