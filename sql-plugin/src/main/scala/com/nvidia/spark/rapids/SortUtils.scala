@@ -166,13 +166,13 @@ class GpuSorter(
   def upperBound(findIn: ColumnarBatch, find: ColumnarBatch): ColumnVector = {
     withResource(GpuColumnVector.from(findIn)) { findInTbl =>
       withResource(GpuColumnVector.from(find)) { findTbl =>
-        // findInTbl.upperBound(findTbl, cudfOrdering: _*)
-        GpuColumnVector.debug("FIND IN TABLE", findInTbl)
-        GpuColumnVector.debug("FIND TABLE", findTbl)
-        System.err.println(s"CUDF ORDERING ${cudfOrdering.toList}")
-        val ret = findInTbl.upperBound(findTbl, cudfOrdering: _*)
-        GpuColumnVector.debug("UPPER BOUND RESULT", ret)
-        ret
+        findInTbl.upperBound(findTbl, cudfOrdering: _*)
+        // GpuColumnVector.debug("FIND IN TABLE", findInTbl)
+        // GpuColumnVector.debug("FIND TABLE", findTbl)
+        // System.err.println(s"CUDF ORDERING ${cudfOrdering.toList}")
+        // val ret = findInTbl.upperBound(findTbl, cudfOrdering: _*)
+        // GpuColumnVector.debug("UPPER BOUND RESULT", ret)
+        // ret
       }
     }
   }
@@ -187,13 +187,13 @@ class GpuSorter(
   def lowerBound(findIn: ColumnarBatch, find: ColumnarBatch): ColumnVector = {
     withResource(GpuColumnVector.from(findIn)) { findInTbl =>
       withResource(GpuColumnVector.from(find)) { findTbl =>
-        // findInTbl.lowerBound(findTbl, cudfOrdering: _*)
-        GpuColumnVector.debug("FIND IN TABLE", findInTbl)
-        GpuColumnVector.debug("FIND TABLE", findTbl)
-        System.err.println(s"CUDF ORDERING ${cudfOrdering.toList}")
-        val ret = findInTbl.lowerBound(findTbl, cudfOrdering: _*)
-        GpuColumnVector.debug("LOWER BOUND RESULT", ret)
-        ret
+        findInTbl.lowerBound(findTbl, cudfOrdering: _*)
+        // GpuColumnVector.debug("FIND IN TABLE", findInTbl)
+        // GpuColumnVector.debug("FIND TABLE", findTbl)
+        // System.err.println(s"CUDF ORDERING ${cudfOrdering.toList}")
+        // val ret = findInTbl.lowerBound(findTbl, cudfOrdering: _*)
+        // GpuColumnVector.debug("LOWER BOUND RESULT", ret)
+        // ret
       }
     }
   }

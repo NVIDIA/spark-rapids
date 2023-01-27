@@ -57,11 +57,15 @@ def test_single_orderby(data_gen, order):
 
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 # @allow_non_gpu('ShuffleExchangeExec')
 >>>>>>> some testing work for range partitioning
 =======
 >>>>>>> tentative work for logging upper bounds for range partitioning
+=======
+@allow_non_gpu('ShuffleExchangeExec')
+>>>>>>> removed prints
 @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
 @pytest.mark.parametrize('order', [
     pytest.param(f.col('a').asc()),

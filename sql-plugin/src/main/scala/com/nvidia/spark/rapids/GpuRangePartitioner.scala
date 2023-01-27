@@ -100,9 +100,9 @@ object GpuRangePartitioner extends Logging {
       if (cumWeight >= target) {
         // Skip duplicate values.
         if (previousBound.isEmpty || ordering.gt(key, previousBound.get)) {
-          for (i <- 0 until key.numFields) {
-            logWarning(s"${key.getByte(i)}")
-          }
+          // for (i <- 0 until key.numFields) {
+          //   logWarning(s"${key.getByte(i)}")
+          // }
           bounds += key
           target += step
           j += 1
@@ -176,7 +176,7 @@ object GpuRangePartitioner extends Logging {
     }
     // logDebug("rangeBounds.asInstanceOf[Array[InternalRow]]")
     // val result = rangeBounds.asInstanceOf[Array[InternalRow]]
-    logWarning(s"range partitioning bounds")
+    // logWarning(s"range partitioning bounds")
     // for (e <- result) {logWarning(e.mkString(" "))}
     rangeBounds.asInstanceOf[Array[InternalRow]]
   }
