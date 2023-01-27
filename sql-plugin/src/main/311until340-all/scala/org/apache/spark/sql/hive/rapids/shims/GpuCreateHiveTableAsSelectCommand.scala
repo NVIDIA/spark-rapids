@@ -31,7 +31,7 @@ final class GpuCreateHiveTableAsSelectCommandMeta(cmd: CreateHiveTableAsSelectCo
                                                   rule: DataFromReplacementRule)
   extends DataWritingCommandMeta[CreateHiveTableAsSelectCommand](cmd, conf, parent, rule) {
 
-    var cpuWritingCommand: InsertIntoHiveTable = null
+    private var cpuWritingCommand: Option[InsertIntoHiveTable] = None
 
     override def tagSelfForGpu(): Unit = {
 
@@ -48,20 +48,19 @@ final class GpuCreateHiveTableAsSelectCommandMeta(cmd: CreateHiveTableAsSelectCo
 
       val catalog = spark.sessionState.catalog
       val tableExists = catalog.tableExists(tableDesc.identifier)
-      val writingCommand = cmd.getWritingCommand(catalog, tableDesc, tableExists) match {
+      cpuWritingCommand = cmd.getWritingCommand(catalog, tableDesc, tableExists) match {
         case insertToHiveTable: InsertIntoHiveTable => Some(insertToHiveTable)
         case c =>
           willNotWorkOnGpu("Unsupported write command " + c)
           None
       }
 
-      if (writingCommand.isDefined) {
-        cpuWritingCommand = writingCommand.get
+      if (cpuWritingCommand.isDefined) {
         val insertMeta = new GpuInsertIntoHiveTableMeta(
-          cpuWritingCommand,
+          cpuWritingCommand.get,
           conf,
           None,
-          GpuOverrides.dataWriteCmds(cpuWritingCommand.getClass))
+          GpuOverrides.dataWriteCmds(cpuWritingCommand.get.getClass))
 
         insertMeta.tagForGpu()
         if (!insertMeta.canThisBeReplaced) {
@@ -72,7 +71,7 @@ final class GpuCreateHiveTableAsSelectCommandMeta(cmd: CreateHiveTableAsSelectCo
       }
     }
 
-    override def convertToGpu(): GpuDataWritingCommand = new GpuCreateHiveTableAsSelectCommand(
+    override def convertToGpu(): GpuDataWritingCommand = GpuCreateHiveTableAsSelectCommand(
       tableDesc = wrapped.tableDesc,
       query = wrapped.query,
       outputColumnNames = wrapped.outputColumnNames,
@@ -91,7 +90,7 @@ case class GpuCreateHiveTableAsSelectCommand(
       catalog: SessionCatalog,
       tableDesc: CatalogTable,
       tableExists: Boolean): GpuDataWritingCommand = {
-    // Leverage the existing support for InsertIntoHadoopFsRelationCommand to do the write
+    // Leverage GpuInsertIntoHiveTable to do the write
     cpuCmd.getWritingCommand(catalog, tableDesc, tableExists) match {
       case c: InsertIntoHiveTable =>
         val rapidsConf = new RapidsConf(conf)
@@ -102,6 +101,14 @@ case class GpuCreateHiveTableAsSelectCommand(
           throw new IllegalStateException("Unable to convert writing command: " +
               meta.explain(all = false))
         }
+        // Note: The notion that the GpuInsertIntoHiveTable could have been constructed
+        // ahead of time, in [[GpuCreateHiveTableAsSelectCommandMeta.tagSelfForGpu()]]
+        // is illusory. The `tableDesc` available earlier is from *before* the Hive
+        // table was created. As such, it is incomplete. For instance, it might not
+        // contain table location information.
+        // The [[tableDesc]] argument to getWritingCommand() is the one constructed
+        // *after* table creation. So the GpuInsertIntoHiveTable needs to be constructed
+        // at runtime, i.e. in the runColumnar() path, i.e. here in getWritingCommand().
         meta.convertToGpu()
       case c =>
         throw new UnsupportedOperationException(s"Unsupported write command: $c")
