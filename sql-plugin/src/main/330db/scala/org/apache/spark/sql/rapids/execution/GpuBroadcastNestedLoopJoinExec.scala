@@ -124,7 +124,7 @@ case class GpuBroadcastNestedLoopJoinExec(
   override def getBroadcastRelation(): Any = {
     if (executorBroadcast) {
       // Get all the broadcast data from the shuffle coalesced into a single partition 
-      val partitionSpecs = Seq(CoalescedPartitionSpec(0, shuffleExchange.numPartitions - 1))
+      val partitionSpecs = Seq(CoalescedPartitionSpec(0, shuffleExchange.numPartitions))
       shuffleExchange.getShuffleRDD(partitionSpecs.toArray).asInstanceOf[RDD[ColumnarBatch]]
     } else {
       broadcastExchange.executeColumnarBroadcast[Any]()

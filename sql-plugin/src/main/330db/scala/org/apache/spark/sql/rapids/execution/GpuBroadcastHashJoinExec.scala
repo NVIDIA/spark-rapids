@@ -158,7 +158,7 @@ case class GpuBroadcastHashJoinExec(
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
 
     // Get all the broadcast data from the shuffle coalesced into a single partition 
-    val partitionSpecs = Seq(CoalescedPartitionSpec(0, shuffleExchange.numPartitions - 1))
+    val partitionSpecs = Seq(CoalescedPartitionSpec(0, shuffleExchange.numPartitions))
     val buildRelation = shuffleExchange.getShuffleRDD(partitionSpecs.toArray)
         .asInstanceOf[RDD[ColumnarBatch]]
 
