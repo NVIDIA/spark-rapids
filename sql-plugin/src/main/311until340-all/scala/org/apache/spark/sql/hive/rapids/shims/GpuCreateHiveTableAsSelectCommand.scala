@@ -64,7 +64,7 @@ final class GpuCreateHiveTableAsSelectCommandMeta(cmd: CreateHiveTableAsSelectCo
 
         insertMeta.tagForGpu()
         if (!insertMeta.canThisBeReplaced) {
-          insertMeta.getCannotBeReplacedReasons.get.foreach( reason => {
+          insertMeta.getCannotBeReplacedReasons().get.foreach( reason => {
             willNotWorkOnGpu(reason)
           })
         }
@@ -96,11 +96,7 @@ case class GpuCreateHiveTableAsSelectCommand(
         val rapidsConf = new RapidsConf(conf)
         val rule = GpuOverrides.dataWriteCmds(c.getClass)
         val meta = new GpuInsertIntoHiveTableMeta(c, rapidsConf, None, rule)
-        meta.tagForGpu()
-        if (!meta.canThisBeReplaced) {
-          throw new IllegalStateException("Unable to convert writing command: " +
-              meta.explain(all = false))
-        }
+        meta.tagForGpu() // Initializes the cpuWritingCommand.
         // Note: The notion that the GpuInsertIntoHiveTable could have been constructed
         // ahead of time, in [[GpuCreateHiveTableAsSelectCommandMeta.tagSelfForGpu()]]
         // is illusory. The `tableDesc` available earlier is from *before* the Hive
@@ -111,6 +107,8 @@ case class GpuCreateHiveTableAsSelectCommand(
         // at runtime, i.e. in the runColumnar() path, i.e. here in getWritingCommand().
         meta.convertToGpu()
       case c =>
+        // Assertion failure, really. The writing command has to be `InsertIntoHiveTable`,
+        // as per checks above, in `tagSelfForGpu()`.
         throw new UnsupportedOperationException(s"Unsupported write command: $c")
     }
   }
