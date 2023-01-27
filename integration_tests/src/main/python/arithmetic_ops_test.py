@@ -287,8 +287,8 @@ _pmod_gens = numeric_gens + [ decimal_gen_32bit, decimal_gen_64bit, _decimal_gen
                               DecimalGen(precision=37, scale=0), DecimalGen(precision=37, scale=10),
                               _decimal_gen_7_7]
 
-@allow_non_gpu("ProjectExec", "Pmod")
-@pytest.mark.parametrize('data_gen', _pmod_gens, ids=idfn)
+# only testing numeric_gens because of https://github.com/NVIDIA/spark-rapids/issues/7553
+@pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 def test_pmod(data_gen):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_and_cpu_are_equal_collect(
@@ -299,8 +299,13 @@ def test_pmod(data_gen):
                 'pmod(b, cast(null as {}))'.format(string_type),
                 'pmod(a, b)'))
 
+test_pmod_fallback_decimal_gens = [ decimal_gen_32bit, decimal_gen_64bit, _decimal_gen_18_0, decimal_gen_128bit,
+                              _decimal_gen_30_2, _decimal_gen_36_5,
+                              DecimalGen(precision=37, scale=0), DecimalGen(precision=37, scale=10),
+                              _decimal_gen_7_7]
+
 @allow_non_gpu("ProjectExec", "Pmod")
-@pytest.mark.parametrize('data_gen', [_decimal_gen_38_0, _decimal_gen_38_10], ids=idfn)
+@pytest.mark.parametrize('data_gen', test_pmod_fallback_decimal_gens + [_decimal_gen_38_0, _decimal_gen_38_10], ids=idfn)
 def test_pmod_fallback(data_gen):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_fallback_collect(
