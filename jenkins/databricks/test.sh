@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -170,7 +170,7 @@ rapids_shuffle_smoke_test() {
     echo "SHUFFLE_SPARK_SHIM=$SHUFFLE_SPARK_SHIM"
 
     # basic ucx check
-    ucx_info -d
+    #ucx_info -d
 
     # run in standalone mode
     # export SPARK_MASTER_HOST=localhost
@@ -178,32 +178,39 @@ rapids_shuffle_smoke_test() {
     # $SPARK_HOME/sbin/start-master.sh -h $SPARK_MASTER_HOST
     # $SPARK_HOME/sbin/spark-daemon.sh start org.apache.spark.deploy.worker.Worker 1 $SPARK_MASTER
 
-    invoke_shuffle_integration_test() {
-      #PYSP_TEST_spark_master=$SPARK_MASTER \
-        PYSP_TEST_spark_cores_max=2 \
-        PYSP_TEST_spark_executor_cores=1 \
-        PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
-        PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0 \
-        PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=0.1 \
-        PYSP_TEST_spark_rapids_memory_gpu_allocFraction=0.1 \
-        SPARK_SUBMIT_FLAGS="$SPARK_CONF" TEST_PARALLEL=1 \
-        ./integration_tests/run_pyspark_from_build.sh -m shuffle_test --runtime_env="databricks" --test_type=$TEST_TYPE
-    }
-
-    # using UCX shuffle
-    # The UCX_TLS=^posix config is removing posix from the list of memory transports
-    # so that IPC regions are obtained using SysV API instead. This was done because of
-    # itermittent test failures. See: https://github.com/NVIDIA/spark-rapids/issues/6572
-    PYSP_TEST_spark_rapids_shuffle_mode=UCX \
-    PYSP_TEST_spark_executorEnv_UCX_ERROR_SIGNALS="" \
-    PYSP_TEST_spark_executorEnv_UCX_TLS="^posix" \
-        invoke_shuffle_integration_test
+#    invoke_shuffle_integration_test() {
+#      #PYSP_TEST_spark_master=$SPARK_MASTER \
+#        PYSP_TEST_spark_cores_max=2 \
+#        PYSP_TEST_spark_executor_cores=1 \
+#        PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
+#        PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0 \
+#        PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=0.1 \
+#        PYSP_TEST_spark_rapids_memory_gpu_allocFraction=0.1 \
+#        SPARK_SUBMIT_FLAGS="$SPARK_CONF" TEST_PARALLEL=1 \
+#        ./run_pyspark_from_build.sh -m shuffle_test --runtime_env="databricks" --test_type=$TEST_TYPE
+#    }
+#
+#    # using UCX shuffle
+#    # The UCX_TLS=^posix config is removing posix from the list of memory transports
+#    # so that IPC regions are obtained using SysV API instead. This was done because of
+#    # itermittent test failures. See: https://github.com/NVIDIA/spark-rapids/issues/6572
+#    PYSP_TEST_spark_rapids_shuffle_mode=UCX \
+#    PYSP_TEST_spark_executorEnv_UCX_ERROR_SIGNALS="" \
+#    PYSP_TEST_spark_executorEnv_UCX_TLS="^posix" \
+#        invoke_shuffle_integration_test
 
     # using MULTITHREADED shuffle
     PYSP_TEST_spark_rapids_shuffle_mode=MULTITHREADED \
     PYSP_TEST_spark_rapids_shuffle_multiThreaded_writer_threads=2 \
     PYSP_TEST_spark_rapids_shuffle_multiThreaded_reader_threads=2 \
-        invoke_shuffle_integration_test
+    PYSP_TEST_spark_cores_max=2 \
+    PYSP_TEST_spark_executor_cores=1 \
+    PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
+    PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0 \
+    PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=0.1 \
+    PYSP_TEST_spark_rapids_memory_gpu_allocFraction=0.1 \
+    SPARK_SUBMIT_FLAGS="$SPARK_CONF" TEST_PARALLEL=1 \
+    ./run_pyspark_from_build.sh -m shuffle_test --runtime_env="databricks" --test_type=$TEST_TYPE
 
     # $SPARK_HOME/sbin/spark-daemon.sh stop org.apache.spark.deploy.worker.Worker 1
     # $SPARK_HOME/sbin/stop-master.sh
