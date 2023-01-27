@@ -33,8 +33,8 @@ writes, set spark.rapids.sql.format.delta.write.enabled=false.
 
 The RAPIDS Accelerator supports the following software configurations for accelerating
 Delta Lake writes:
-- Delta Lake version 2.0.x on Apache Spark 3.2.x
-- Delta Lake version 2.1.x and 2.2.x on Apache Spark 3.3.x
+- Delta Lake version 2.0.1 on Apache Spark 3.2.x
+- Delta Lake version 2.1.1 and 2.2.0 on Apache Spark 3.3.x
 - Delta Lake on Databricks 10.4 LTS
 - Delta Lake on Databricks 11.3 LTS
 
@@ -62,3 +62,29 @@ dedicated node in query plans, as it is implicitly covered by higher-level opera
 SaveIntoDataSourceCommand that wrap the entire query along with the write operation afterwards.
 The RAPIDS Accelerator places a node in the plan being written to mark the point at which the
 write occurs and adds statistics showing the time spent performing the low-level write operation.
+
+## Merging Into Delta Lake Tables
+
+Delta Lake merge acceleration is experimental and is disabled by default. To enable acceleration
+of Delta Lake merge operations, set spark.rapids.sql.command.MergeIntoCommand=true and also set
+spark.rapids.sql.command.MergeIntoCommandEdge=true on Databricks platforms.
+
+Merging into Delta Lake tables via the SQL `MERGE INTO` statement or via the DeltaTable `merge`
+API on non-Databricks platforms is supported.
+
+### Limitations with DeltaTable `merge` API on non-Databricks Platforms
+
+For non-Databricks platforms, the DeltaTable `merge` API directly instantiates a CPU
+`MergeIntoCommand` instance and invokes it. This does not go through the normal Spark Catalyst
+optimizer, and the merge operation will not be visible in the Spark SQL UI on these platforms.
+Since the Catalyst optimizer is bypassed, the RAPIDS Accelerator cannot replace the operation
+with a GPU accelerated version. As a result, DeltaTable `merge` operations on non-Databricks
+platforms will not be GPU accelerated. In those cases the query will need to be modified to use
+a SQL `MERGE INTO` statement instead.
+
+### RapidsProcessDeltaMergeJoin Node in Query Plans
+
+A side-effect of performing GPU accelerated Delta Lake merge operations is a new node will appear
+in the query plan, RapidsProcessDeltaMergeJoin. Normally the Delta Lake merge is performed via
+a join and then post-processing of the join via a MapPartitions node. Instead the GPU performs
+the join post-processing via this new RapidsProcessDeltaMergeJoin node.

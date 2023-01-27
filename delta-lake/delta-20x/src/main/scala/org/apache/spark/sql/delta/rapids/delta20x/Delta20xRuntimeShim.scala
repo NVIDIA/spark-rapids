@@ -14,17 +14,37 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.delta.shims
+package org.apache.spark.sql.delta.rapids.delta20x
+
+import com.nvidia.spark.rapids.RapidsConf
+import com.nvidia.spark.rapids.delta.DeltaProvider
+import com.nvidia.spark.rapids.delta.delta20x.Delta20xProvider
 
 import org.apache.spark.sql.delta.{DeltaLog, DeltaUDF, Snapshot}
+import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShim, GpuOptimisticTransactionBase}
 import org.apache.spark.sql.expressions.UserDefinedFunction
+import org.apache.spark.util.Clock
 
-class Delta22PlusRuntimeShim extends DeltaRuntimeShim {
+/**
+ * Delta runtime shim for Delta 2.0.x on Spark 3.2.x.
+ *
+ * @note This class is instantiated via reflection from DeltaProbeImpl
+ */
+class Delta20xRuntimeShim extends DeltaRuntimeShim {
+  override def getDeltaProvider: DeltaProvider = Delta20xProvider
+
+  override def startTransaction(
+      log: DeltaLog,
+      conf: RapidsConf,
+      clock: Clock): GpuOptimisticTransactionBase = {
+    new GpuOptimisticTransaction(log, conf)(clock)
+  }
+
   override def stringFromStringUdf(f: String => String): UserDefinedFunction = {
-    DeltaUDF.stringFromString(f)
+    DeltaUDF.stringStringUdf(f)
   }
 
   override def unsafeVolatileSnapshotFromLog(deltaLog: DeltaLog): Snapshot = {
-    deltaLog.unsafeVolatileSnapshot
+    deltaLog.snapshot
   }
 }
