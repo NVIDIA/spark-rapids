@@ -78,7 +78,7 @@ object GpuHiveTextFileFormat extends Logging {
     val charset = Charset.forName(
       storage.properties.getOrElse("serialization.encoding", "UTF-8"))
     if (!charset.equals(Charsets.UTF_8)) {
-      meta.willNotWorkOnGpu("only UTF-8 and ASCII are supported as the charset")
+      meta.willNotWorkOnGpu("only UTF-8 is supported as the charset")
     }
 
     if (insertCommand.table.bucketSpec.isDefined) {
