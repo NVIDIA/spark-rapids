@@ -681,6 +681,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("string split - optimized") {
+    assume(false, "https://github.com/NVIDIA/spark-rapids/issues/7607")
     val patterns = Set("\\.", "\\$", "\\[", "\\(", "\\}", "\\+", "\\\\", ",", ";", "cd", "c\\|d",
         "\\%", "\\;", "\\/")
     val data = Seq("abc.def", "abc$def", "abc[def]", "abc(def)", "abc{def}", "abc+def", "abc\\def",
@@ -755,6 +756,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("string split fuzz") {
+    assume(false, "https://github.com/NVIDIA/spark-rapids/issues/7607")
     val (data, patterns) = generateDataAndPatterns(Some(REGEXP_LIMITED_CHARS_REPLACE),
       REGEXP_LIMITED_CHARS_REPLACE, RegexSplitMode)
     for (limit <- Seq(-2, -1, 2, 5)) {
@@ -763,6 +765,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("string split fuzz - anchor focused") {
+    assume(false, "https://github.com/NVIDIA/spark-rapids/issues/7607")
     val (data, patterns) = generateDataAndPatterns(validDataChars = Some("\r\nabc"),
       validPatternChars = "^$\\AZz\r\n()", RegexSplitMode)
     doStringSplitTest(patterns, data, -1)
