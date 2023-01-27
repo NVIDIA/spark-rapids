@@ -16,9 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import scala.collection.mutable.ArrayBuffer
-
-import ai.rapids.cudf.{ColumnVector, Scalar, Table}
+import ai.rapids.cudf.Scalar
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimExpression
 
@@ -51,41 +49,38 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
     }
   }
 
-  def generate(inputBatch: ColumnarBatch,
+  override def generate(inputBatch: ColumnarBatch,
       generatorOffset: Int,
       outer: Boolean): ColumnarBatch = {
     
-    val json = inputBatch.column(generatorOffset).asInstanceOf[GpuColumnVector].getBase.incRefCount
-    val schema = GpuColumnVector.extractTypes(inputBatch).take(generatorOffset) ++ 
-                 Array.fill[DataType](fieldExpressions.length)(StringType)
-
-    val notJsonTupleCols = ArrayBuffer[ColumnVector]()
-    for (i <- 0 until generatorOffset) {
-      notJsonTupleCols += inputBatch.column(i).asInstanceOf[GpuColumnVector].getBase.incRefCount
+    val json = inputBatch.column(generatorOffset).asInstanceOf[GpuColumnVector].getBase
+    val schema = Array.fill[DataType](fieldExpressions.length)(StringType)
+    val nonGeneratorCols = (0 until generatorOffset).map { i =>
+      inputBatch.column(i).asInstanceOf[GpuColumnVector].incRefCount
     }
 
-    withResourceIfAllowed(json) { json =>
-      val fieldScalars = fieldExpressions.safeMap { field =>
-        withResourceIfAllowed(field.columnarEval(inputBatch)) { fieldVal =>
-          fieldVal match {
-            case fieldScalar: GpuScalar =>
-              // Specials characters like '.', '[', ']' are not supported in field names
-              Scalar.fromString("$." + fieldScalar.getBase.getJavaString)
-            case _ => throw new UnsupportedOperationException(s"JSON field must be a scalar value")
-          }
+    val fieldScalars = fieldExpressions.safeMap { field =>
+      withResourceIfAllowed(field.columnarEval(inputBatch)) { fieldVal =>
+        fieldVal match {
+          case fieldScalar: GpuScalar =>
+            // Specials characters like '.', '[', ']' are not supported in field names
+            Scalar.fromString("$." + fieldScalar.getBase.getJavaString)
+          case _ => throw new UnsupportedOperationException(s"JSON field must be a scalar value")
         }
       }
-      withResource(fieldScalars) { fieldScalars =>
-        withResource(fieldScalars.safeMap(field => json.getJSONObject(field))) { resCols =>
-          withResource(new Table((notJsonTupleCols.toArray ++ resCols): _*)) { tbl =>
-            GpuColumnVector.from(tbl, schema)
-          }
+    }
+
+    withResource(fieldScalars) { fieldScalars =>
+      withResource(fieldScalars.safeMap(field => json.getJSONObject(field))) { resultCols =>
+        val generatorCols = resultCols.map(_.incRefCount).zip(schema).map { case (col, dataType) =>
+          GpuColumnVector.from(col, dataType)
         }
+        new ColumnarBatch((nonGeneratorCols ++ generatorCols).toArray, inputBatch.numRows)
       }
     }
   }
 
-  def inputSplitIndices(inputBatch: ColumnarBatch,
+  override def inputSplitIndices(inputBatch: ColumnarBatch,
       generatorOffset: Int,
       outer: Boolean,
       targetSizeBytes: Long,
@@ -96,12 +91,10 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
     if (inputRows <= 1) return Array()
 
     val outputRows = inputRows
-    val json = inputBatch.column(generatorOffset).asInstanceOf[GpuColumnVector].getBase.incRefCount
+    val json = inputBatch.column(generatorOffset).asInstanceOf[GpuColumnVector].getBase
 
     // we know we are going to output at most this much
-    val estimatedOutputSizeBytes = withResourceIfAllowed(json) { json =>
-      (json.getDeviceMemorySize * fieldExpressions.length).toDouble
-    }
+    val estimatedOutputSizeBytes = (json.getDeviceMemorySize * fieldExpressions.length).toDouble
     
     val numSplitsForTargetSize = 
       math.min(inputRows, math.ceil(estimatedOutputSizeBytes / targetSizeBytes).toInt)
