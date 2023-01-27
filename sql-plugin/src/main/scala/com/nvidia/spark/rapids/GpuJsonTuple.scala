@@ -72,8 +72,8 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
 
     withResource(fieldScalars) { fieldScalars =>
       withResource(fieldScalars.safeMap(field => json.getJSONObject(field))) { resultCols =>
-        val generatorCols = resultCols.map(_.incRefCount).zip(schema).map { case (col, dataType) =>
-          GpuColumnVector.from(col, dataType)
+        val generatorCols = resultCols.safeMap(_.incRefCount).zip(schema).safeMap {
+          case (col, dataType) => GpuColumnVector.from(col, dataType)
         }
         new ColumnarBatch((nonGeneratorCols ++ generatorCols).toArray, inputBatch.numRows)
       }
