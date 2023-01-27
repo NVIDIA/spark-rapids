@@ -490,18 +490,9 @@ object GpuToTimestamp extends Arm {
         // the string as well which works well for fixed-length formats but if/when we want to
         // support variable-length formats (such as timestamps with milliseconds) then we will need
         // to use regex instead.
-        val isTimestamp = withResource(col.matchesRe(fmt.validRegex)) { matches =>
+        withResource(col.matchesRe(fmt.validRegex)) { matches =>
           withResource(col.isTimestamp(strfFormat)) { isTimestamp =>
             isTimestamp.and(matches)
-          }
-        }
-        withResource(isTimestamp) { _ =>
-          withResource(col.getCharLengths) { len =>
-            withResource(Scalar.fromInt(sparkFormat.length)) { expectedLen =>
-              withResource(len.equalTo(expectedLen)) { lenMatches =>
-                lenMatches.and(isTimestamp)
-              }
-            }
           }
         }
       case _ =>

@@ -437,23 +437,18 @@ disable regular expressions on the GPU, set `spark.rapids.sql.regexp.enabled=fal
 
 These are the known edge cases where running on the GPU will produce different results to the CPU:
 
-- Regular expressions that contain an end of line anchor '$' or end of string anchor '\Z' immediately
+- Regular expressions that contain an end of line anchor '$' or end of string anchor '\Z' or '\z' immediately
  next to a newline or a repetition that produces zero or more results
  ([#5610](https://github.com/NVIDIA/spark-rapids/pull/5610))`
-- Word and non-word boundaries, `\b` and `\B`
-- Line anchor `$` will incorrectly match any of the unicode characters `\u0085`, `\u2028`, or `\u2029` followed by
-  another line-terminator, such as `\n`. For example, the pattern `TEST$` will match `TEST\u0085\n` on the GPU but
-  not on the CPU ([#7585](https://github.com/NVIDIA/spark-rapids/issues/7585)).
 
 The following regular expression patterns are not yet supported on the GPU and will fall back to the CPU.
 
 - Line anchor `^` is not supported in some contexts, such as when combined with a choice (`^|a`).
-- Line anchor `$` is not supported in some rare contexts.
+- Line anchor `$` is not supported by `regexp_replace`, and in some rare contexts.
 - String anchor `\Z` is not supported by `regexp_replace`, and in some rare contexts.
-- String anchor `\z` is not supported
 - Patterns containing an end of line or string anchor immediately next to a newline or repetition that produces zero
   or more results
-- Line anchor `$` and string anchors `\Z` are not supported in patterns containing `\W` or `\D`
+- Line anchor `$` and string anchors `\z` and `\Z` are not supported in patterns containing `\W` or `\D`
 - Line and string anchors are not supported by `string_split` and `str_to_map`
 - Lazy quantifiers, such as `a*?`
 - Possessive quantifiers, such as `a*+`
@@ -461,6 +456,12 @@ The following regular expression patterns are not yet supported on the GPU and w
   or `[a-z&&[^bc]]`
 - Empty groups: `()`
 - `regexp_replace` does not support back-references
+
+The following regular expression patterns are known to potentially produce different results on the GPU
+vs the CPU.
+
+- Word and non-word boundaries, `\b` and `\B`
+
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.
 

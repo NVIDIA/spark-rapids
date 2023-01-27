@@ -628,8 +628,6 @@ class RegexParser(pattern: String) {
 object RegexParser {
   private val regexpChars = Set('\u0000', '\\', '.', '^', '$', '\u0007', '\u001b', '\f')
 
-  def parse(pattern: String): RegexAST = new RegexParser(pattern).parse
-
   def isRegExpString(s: String): Boolean = {
 
     def isRegExpString(ast: RegexAST): Boolean = ast match {
@@ -844,7 +842,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
         None
       )
     } else {
-      RegexGroup(capture = capture, RegexParser.parse("\r|\u0085|\u2028|\u2029|\r\n"), None)
+      RegexGroup(capture = capture,
+        RegexChoice(
+          RegexCharacterClass(negated = false, characters = terminatorChars),
+          RegexSequence(ListBuffer(RegexChar('\r'), RegexChar('\n')))), None)
     }
   }
 
@@ -1143,10 +1144,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case 'z' if mode == RegexSplitMode =>
           RegexEscaped('Z')
         case 'z' =>
-          // cuDF does not support "\z" except for in split mode
-          throw new RegexUnsupportedException(
-            "\\z is not supported on GPU for find or replace",
-            regex.position)
+          // cuDF does not support "\z" but supports "$", which is equivalent
+          RegexChar('$')
         case 'Z' =>
           // \Z is really a synonymn for $. It's used in Java to preserve that behavior when
           // using modes that change the meaning of $ (such as MULTILINE or UNIX_LINES)
