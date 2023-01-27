@@ -21,10 +21,10 @@ from marks import allow_non_gpu
 def mk_json_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
 
-json_str_patterns = [r'\{"store": \{"fruit": \[\{"weight":\d,"type":"[a-z]{1,9}"\}\],' \
-                     r'"bicycle":\{"price":\d\d\.\d\d,"color":"[a-z]{0,4}"\}\}, ' \
+json_str_patterns = [r'\{"store": \{"fruit": \[\{"weight":\d,"type":"[a-z]{1,9}"\}\], ' \
+                     r'"bicycle":\{"price":\d\d\.\d\d,"color":"[a-z]{0,4}"\}\},' \
                      r'"email":"[a-z]{1,5}\@[a-z]{3,10}\.com","owner":"[a-z]{3,8}"\}',
-                     r'\{"a":"[a-z]{1,3}", "b\$":"[b-z]{1,3}"\}']
+                     r'\{"a": "[a-z]{1,3}", "b\$":"[b-z]{1,3}"\}']
 
 @pytest.mark.parametrize('json_str_pattern', json_str_patterns, ids=idfn)
 def test_json_tuple(json_str_pattern):
