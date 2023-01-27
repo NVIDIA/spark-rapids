@@ -374,6 +374,7 @@ class JsonPartitionReader(
    * Spark then has its own rules for supporting NaN and Infinity, which are not
    * valid numbers in JSON.
    */
+  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   private def sanitizeNumbers(input: ColumnVector): ColumnVector = {
     // Note that this is not 100% consistent with Spark versions prior to Spark 3.3.0
     // due to https://issues.apache.org/jira/browse/SPARK-38060
