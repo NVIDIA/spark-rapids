@@ -19,13 +19,12 @@ package com.nvidia.spark.rapids.delta
 import scala.util.Try
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.delta.shims.DeltaRuntimeShim
 
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.delta.{DeltaConfigs, DeltaLog, DeltaOptions, DeltaParquetFileFormat}
+import org.apache.spark.sql.delta.DeltaLog
+import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
 import org.apache.spark.sql.delta.sources.DeltaDataSource
 import org.apache.spark.sql.execution.datasources.SaveIntoDataSourceCommand
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.ExternalSource
 import org.apache.spark.sql.rapids.execution.UnshimmedTrampolineUtil
 import org.apache.spark.sql.sources.CreatableRelationProvider
@@ -33,7 +32,7 @@ import org.apache.spark.sql.sources.CreatableRelationProvider
 /**
  * Implements the DeltaProvider interface for open source delta.io Delta Lake.
  */
-object DeltaProviderImpl extends DeltaProviderImplBase {
+abstract class DeltaIOProvider extends DeltaProviderImplBase {
   override def getCreatableRelationRules: Map[Class[_ <: CreatableRelationProvider],
       CreatableRelationProviderRule[_ <: CreatableRelationProvider]] = {
     Seq(
@@ -42,8 +41,7 @@ object DeltaProviderImpl extends DeltaProviderImplBase {
         (a, conf, p, r) => {
           require(p.isDefined, "Must provide parent meta")
           new DeltaCreatableRelationProviderMeta(a, conf, p, r)
-        }
-      )
+        })
     ).map(r => (r.getClassFor.asSubclass(classOf[CreatableRelationProvider]), r)).toMap
   }
 }
@@ -61,61 +59,16 @@ class DeltaCreatableRelationProviderMeta(
       throw new IllegalStateException(s"Expected SaveIntoDataSourceCommand, found ${s.getClass}")
   }
 
-  private def checkIncompatibleConfs(deltaLog: DeltaLog, sqlConf: SQLConf): Unit = {
-    def getSQLConf(key: String): Option[String] = {
-      try {
-        Option(sqlConf.getConfString(key))
-      } catch {
-        case _: NoSuchElementException => None
-      }
-    }
-
-    val optimizeWriteEnabled = {
-      val deltaOptions = new DeltaOptions(saveCmd.options, sqlConf)
-      deltaOptions.optimizeWrite.orElse {
-        getSQLConf("spark.databricks.delta.optimizeWrite.enabled").map(_.toBoolean).orElse {
-          val metadata = DeltaRuntimeShim.unsafeVolatileSnapshotFromLog(deltaLog).metadata
-          DeltaConfigs.AUTO_OPTIMIZE.fromMetaData(metadata).orElse {
-            metadata.configuration.get("delta.autoOptimize.optimizeWrite").orElse {
-              getSQLConf("spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite")
-            }.map(_.toBoolean)
-          }
-        }
-      }.getOrElse(false)
-    }
-    if (optimizeWriteEnabled) {
-      willNotWorkOnGpu("optimized write of Delta Lake tables is not supported")
-    }
-
-    val autoCompactEnabled =
-      getSQLConf("spark.databricks.delta.autoCompact.enabled").orElse {
-        val metadata = DeltaRuntimeShim.unsafeVolatileSnapshotFromLog(deltaLog).metadata
-        metadata.configuration.get("delta.autoOptimize.autoCompact").orElse {
-          getSQLConf("spark.databricks.delta.properties.defaults.autoOptimize.autoCompact")
-        }
-      }.exists(_.toBoolean)
-    if (autoCompactEnabled) {
-      willNotWorkOnGpu("automatic compaction of Delta Lake tables is not supported")
-    }
-  }
-
   override def tagSelfForGpu(): Unit = {
     if (!conf.isDeltaWriteEnabled) {
       willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
           s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
     }
-    FileFormatChecks.tag(this, saveCmd.query.schema, DeltaFormatType, WriteFileOp)
     val path = saveCmd.options.get("path")
     if (path.isDefined) {
       val deltaLog = DeltaLog.forTable(SparkSession.active, path.get, saveCmd.options)
-      deltaLog.fileFormat() match {
-        case _: DeltaParquetFileFormat =>
-          GpuParquetFileFormat.tagGpuSupport(this, SparkSession.active,
-            saveCmd.options, saveCmd.query.schema)
-        case f =>
-          willNotWorkOnGpu(s"file format $f is not supported")
-      }
-      checkIncompatibleConfs(deltaLog, SQLConf.get)
+      RapidsDeltaUtils.tagForDeltaWrite(this, saveCmd.query.schema, deltaLog, saveCmd.options,
+        SparkSession.active)
     } else {
       willNotWorkOnGpu("no path specified for Delta Lake table")
     }
@@ -135,7 +88,7 @@ class DeltaProbeImpl extends DeltaProbe {
     val hasDeltaJar = UnshimmedTrampolineUtil.classIsLoadable(cpuClassName) &&
         Try(ShimLoader.loadClass(cpuClassName)).isSuccess
     if (hasDeltaJar) {
-      DeltaProviderImpl
+      DeltaRuntimeShim.getDeltaProvider
     } else {
       NoDeltaProvider
     }

@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -493,6 +493,25 @@ def test_parquet_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reade
         'spark.sql.files.minPartitionNum': '1'})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
+            conf=all_confs)
+
+# To test https://github.com/NVIDIA/spark-rapids/pull/7405. Without the fix in that issue this test
+# throws an exception about can't allocate negative amount. To make this problem happen, we
+# read a bunch of empty parquet blocks by filtering on only things in the first and last of 1000 files.
+@pytest.mark.parametrize('reader_confs', [combining_multithreaded_parquet_file_reader_conf_ordered])
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_parquet_read_buffer_allocation_empty_blocks(spark_tmp_path, v1_enabled_list, reader_confs):
+    data_path = spark_tmp_path + '/PARQUET_DATA/'
+    with_cpu_session(
+            lambda spark : spark.range(0, 1000, 1, 1000).write.parquet(data_path))
+    # we want all the files to be read by a single Spark task
+    all_confs = copy_and_update(reader_confs, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.files.maxPartitionBytes': '2g',
+        'spark.sql.files.minPartitionNum': '1',
+        'spark.sql.openCostInBytes': '1'})
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.parquet(data_path).filter("id < 2 or id > 990"),
             conf=all_confs)
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)

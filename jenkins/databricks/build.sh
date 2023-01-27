@@ -238,6 +238,8 @@ set_dep_jars()
     dep_jars[HIVESERDE]=${PREFIX_WS_SP_MVN_HADOOP}--org.apache.hive--hive-serde--org.apache.hive__hive-serde__${sw_versions[HIVE_FULL]}.jar
     artifacts[HIVESTORAGE]="-DgroupId=org.apache.hive -DartifactId=hive-storage-api"
     dep_jars[HIVESTORAGE]=${PREFIX_WS_SP_MVN_HADOOP}--org.apache.hive--hive-storage-api--org.apache.hive__hive-storage-api__${sw_versions[HIVESTORAGE_API]}.jar
+    artifacts[HIVEMETASTORECLIENTPATCHED]="-DgroupId=org.apache.hive -DartifactId=hive-metastore-client-patched"
+    dep_jars[HIVEMETASTORECLIENTPATCHED]=${PREFIX_SPARK}--patched-hive-with-glue--hive-12679-patch-${HIVE_VER_STRING}__hadoop-${sw_versions[HADOOP]}_${SCALA_VERSION}_deploy.jar
     artifacts[PARQUETHADOOP]="-DgroupId=org.apache.parquet -DartifactId=parquet-hadoop"
     dep_jars[PARQUETHADOOP]=${PREFIX_WS_SP_MVN_HADOOP}--org.apache.parquet--parquet-hadoop--org.apache.parquet__parquet-hadoop__${sw_versions[PARQUET]}-databricks${sw_versions[DB]}.jar
     artifacts[PARQUETCOMMON]="-DgroupId=org.apache.parquet -DartifactId=parquet-common"
@@ -293,6 +295,7 @@ set_dep_jars()
     if [[ $BASE_SPARK_VERSION == "3.1.2" ]]
     then
         dep_jars[HIVE]=${PREFIX_SPARK}--sql--hive--hive_${SCALA_VERSION}_deploy_shaded.jar
+        dep_jars[HIVEMETASTORECLIENTPATCHED]=${PREFIX_SPARK}--patched-hive-with-glue--hive-12679-patch_deploy.jar
         dep_jars[PARQUETFORMAT]=${PREFIX_WS_SP_MVN_HADOOP}--org.apache.parquet--parquet-format--org.apache.parquet__parquet-format__2.4.0.jar
         dep_jars[AVROSPARK]=${PREFIX_SPARK}--vendor--avro--avro_${SCALA_VERSION}_deploy_shaded.jar
         dep_jars[AVROMAPRED]=${PREFIX_WS_SP_MVN_HADOOP}--org.apache.avro--avro-mapred-hadoop2--org.apache.avro__avro-mapred-hadoop2__${sw_versions[AVRO]}.jar

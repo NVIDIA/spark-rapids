@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -262,7 +262,8 @@ abstract class AbstractGpuCoalesceIterator(
   protected def hasOnDeck: Boolean
 
   /**
-   * Save a batch for later processing.
+   * Save a batch for later processing. In case of an exception raised while
+   * saving the batch, saveOnDeck guarantees it closes batch.
    */
   protected def saveOnDeck(batch: ColumnarBatch): Unit
 
@@ -290,21 +291,15 @@ abstract class AbstractGpuCoalesceIterator(
   override def hasNext: Boolean = {
     while (!hasOnDeck && iter.hasNext) {
       val cb = iter.next()
-      try {
-        withResource(new MetricRange(opTime)) { _ =>
-          val numRows = cb.numRows()
-          numInputBatches += 1
-          numInputRows += numRows
-          if (numRows > 0) {
-            saveOnDeck(cb)
-          } else {
-            cleanupInputBatch(cb)
-          }
-        }
-      } catch {
-        case t: Throwable =>
+      withResource(new MetricRange(opTime)) { _ =>
+        val numRows = cb.numRows()
+        numInputBatches += 1
+        numInputRows += numRows
+        if (numRows > 0) {
+          saveOnDeck(cb)
+        } else {
           cleanupInputBatch(cb)
-          throw t
+        }
       }
     }
     hasOnDeck
@@ -561,7 +556,10 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   override protected def hasOnDeck: Boolean = onDeck.isDefined
 
   override protected def saveOnDeck(batch: ColumnarBatch): Unit = {
-    assert(onDeck.isEmpty)
+    // wrap batch on a closeOnExcept, in case assert throws
+    closeOnExcept(batch) { _ =>
+      assert(onDeck.isEmpty)
+    }
     onDeck = Some(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
       spillCallback))
   }
