@@ -383,6 +383,7 @@ def test_mod_pmod_by_zero_not_ansi(data_gen):
 @pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 3),
     DecimalGen(10, -2), DecimalGen(15, 3), DecimalGen(30, 12), DecimalGen(3, -3),
     DecimalGen(27, 7), DecimalGen(20, -3)], ids=idfn)
+@pytest.mark.skipif(is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7595')
 def test_mod_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"a % b"))

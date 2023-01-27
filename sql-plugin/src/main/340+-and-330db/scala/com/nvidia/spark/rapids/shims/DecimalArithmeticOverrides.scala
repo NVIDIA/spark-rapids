@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,9 +20,9 @@ import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.{BinaryAstExprMeta, BinaryExprMeta, DecimalUtil, ExprChecks, ExprRule, GpuExpression, TypeSig}
 import com.nvidia.spark.rapids.GpuOverrides.expr
 
-import org.apache.spark.sql.catalyst.expressions.{Divide, Expression, IntegralDivide, Multiply}
+import org.apache.spark.sql.catalyst.expressions.{Divide, Expression, IntegralDivide, Multiply, Remainder}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{DecimalMultiplyChecks, GpuAnsi, GpuDecimalDivide, GpuDecimalMultiply, GpuDivide, GpuIntegralDecimalDivide, GpuIntegralDivide, GpuMultiply}
+import org.apache.spark.sql.rapids.{DecimalMultiplyChecks, GpuAnsi, GpuDecimalDivide, GpuDecimalMultiply, GpuDivide, GpuIntegralDecimalDivide, GpuIntegralDivide, GpuMultiply, GpuRemainder}
 import org.apache.spark.sql.types.DecimalType
 
 object DecimalArithmeticOverrides {
@@ -93,6 +93,16 @@ object DecimalArithmeticOverrides {
             } else {
               GpuIntegralDivide(lhs, rhs)
             }
+        }),
+      expr[Remainder](
+        "Remainder or modulo",
+        ExprChecks.binaryProject(
+          TypeSig.gpuNumeric, TypeSig.cpuNumeric,
+          ("lhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric),
+          ("rhs", TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric)),
+        (a, conf, p, r) => new BinaryExprMeta[Remainder](a, conf, p, r) {
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+            GpuRemainder(lhs, rhs)
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }
