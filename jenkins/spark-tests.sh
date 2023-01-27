@@ -190,7 +190,7 @@ run_delta_lake_tests() {
   if [[ $SPARK_VER =~ $SPARK_32X_PATTERN ]]; then
     # There are multiple versions of deltalake that support SPARK 3.2.X
     # but for zorder tests to work we need 2.0.0+
-    DELTA_LAKE_VERSIONS="2.0.2"
+    DELTA_LAKE_VERSIONS="2.0.1"
   fi
 
   if [[ $SPARK_VER =~ $SPARK_33X_PATTERN ]]; then

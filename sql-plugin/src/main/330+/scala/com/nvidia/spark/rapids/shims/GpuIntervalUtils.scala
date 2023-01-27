@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -167,6 +167,7 @@ object GpuIntervalUtils extends Arm {
    * @param t              day-time interval type
    * @return long column of micros
    */
+ @scala.annotation.nowarn("msg=method extractRe in class ColumnView is deprecated")
   def castStringToDTInterval(cv: ColumnView, t: DT): ColumnVector = {
     (t.startField, t.endField) match {
       case (DT.DAY, DT.DAY) => withResource(cv.extractRe(dayLiteralRegex)) {

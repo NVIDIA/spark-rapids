@@ -482,6 +482,7 @@ case class GpuHiveTextPartitionReaderFactory(sqlConf: SQLConf,
 }
 
 // Reader that converts from chunked data buffers into cudf.Table.
+@scala.annotation.nowarn("msg=method stringSplit in class ColumnView is deprecated")
 class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
                                           csvOptions: CSVOptions,
                                           params: Map[String, String],
@@ -585,6 +586,7 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
    *   1. The input strings are not trimmed of whitespace.
    *   2. Invalid date strings do not cause exceptions.
    */
+  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   override def castStringToDate(input: ColumnVector, dt: DType): ColumnVector = {
     // Filter out any dates that do not conform to the `yyyy-MM-dd` format.
     val supportedDateRegex = raw"\A\d{4}-\d{2}-\d{2}\Z"
@@ -606,6 +608,7 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
     }
   }
 
+  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   override def castStringToTimestamp(lhs: ColumnVector, sparkFormat: String, dType: DType)
   : ColumnVector = {
     // Currently, only the following timestamp pattern is supported:

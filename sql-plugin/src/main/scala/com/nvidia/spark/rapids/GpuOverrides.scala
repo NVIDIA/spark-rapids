@@ -3650,8 +3650,9 @@ object GpuOverrides extends Logging {
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
 
   val runnableCmds = commonRunnableCmds ++ 
-    GpuHiveOverrides.runnableCmds ++ 
-    SparkShimImpl.getRunnableCmds
+    GpuHiveOverrides.runnableCmds ++
+      ExternalSource.runnableCmds ++
+      SparkShimImpl.getRunnableCmds
 
   def wrapPlan[INPUT <: SparkPlan](
       plan: INPUT,
