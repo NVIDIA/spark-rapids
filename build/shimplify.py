@@ -223,17 +223,18 @@ def task_impl():
     buildvers_from_dirs = []
     for prop_pattern in ["spark%s.sources", "spark%s.test.sources"]:
         dirs2bv = __build_dirs_to_buildvers_map(prop_pattern)
-        __log.info("Map dirs2bv = %s", dirs2bv)
+        __log.debug("Map dirs2bv = %s", dirs2bv)
         __warn_shims_with_multiple_dedicated_dirs(dirs2bv)
         for dir, buildvers in dirs2bv.items():
             for dir_substr in __shims_dirs:
                 if dir_substr in dir:
                     buildvers_from_dirs += buildvers
-        buildvers_from_dirs.sort()
-    if len(buildvers_from_dirs) > 0:
+
+    buildvers_from_dirs_sorted_deduped = sorted(set(buildvers_from_dirs))
+    if len(buildvers_from_dirs_sorted_deduped) > 0:
         __log.info("shimplify.dirs = %s, overriding shims from dirs: %s", __shims_dirs,
-                   buildvers_from_dirs)
-        __shims_arr[:] = buildvers_from_dirs
+                   buildvers_from_dirs_sorted_deduped)
+        __shims_arr[:] = buildvers_from_dirs_sorted_deduped
 
     if __should_add_comment:
         __shimplify_layout()
@@ -262,7 +263,8 @@ def __traverse_source_tree(buildver, src_type, shim_dir_pattern, shim_comment_pa
     src_root = os.path.join(base_dir, 'src', src_type)
     target_root = os.path.join(base_dir, 'target', "spark%s" % buildver, 'generated', 'src',
                                src_type)
-    __log.info("# generating symlinks for shim %s %s files under %s", buildver, src_type, target_root)
+    __log.info("# generating symlinks for shim %s %s files under %s", buildver, src_type,
+               target_root)
     for dir, subdirs, files in os.walk(src_root, topdown=True):
         if dir == src_root:
             subdirs[:] = [d for d in subdirs if re.match(shim_dir_pattern, d)]
