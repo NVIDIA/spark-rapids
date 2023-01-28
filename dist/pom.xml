@@ -40,47 +40,6 @@
 
     <properties>
         <target.classifier/>
-        <noSnapshot.buildvers>
-            311,
-            312,
-            313,
-            320,
-            321,
-            321cdh,
-            322,
-            323,
-            330,
-            331,
-            330cdh
-        </noSnapshot.buildvers>
-        <snapshot.buildvers>
-            332
-        </snapshot.buildvers>
-        <databricks.buildvers>
-            312db,
-            321db,
-            330db
-        </databricks.buildvers>
-        <!--
-          Build and run unit tests on one specific version for each sub-version (e.g. 311, 320, 330)
-          Base shim version (311 currently) should be covered in default mvn verify command of premerge script, 
-          so base shim version is removed from the premergeUT list.
-          Separate the versions to two parts (premergeUT1, premergeUT2) for balancing the duration
-        -->
-        <premergeUT1.buildvers>
-            320
-        </premergeUT1.buildvers>
-        <premergeUT2.buildvers>
-            330
-        </premergeUT2.buildvers>
-        <premergeUTF8.buildvers>
-            320
-        </premergeUTF8.buildvers>
-        <jdk11.buildvers>
-            312,
-            321,
-            331
-        </jdk11.buildvers>
         <dist.jar.name>${project.build.directory}/${project.build.finalName}-${cuda.version}.jar</dist.jar.name>
     </properties>
     <profiles>
