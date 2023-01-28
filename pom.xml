@@ -991,7 +991,7 @@
                                     </dirset>
                                 </pathconvert>
                                 <pathconvert property="spark321.sources" pathsep=",">
-                                    <dirset id="spark321.diset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
                                         <patternset id="spark321+.pattern">
                                             <patternset refid="spark320+.pattern"/>
                                             <include name="321+/*"/>
@@ -1001,19 +1001,19 @@
                                     </dirset>
                                 </pathconvert>
                                 <pathconvert property="spark322.sources" pathsep=",">
-                                    <dirset id="spark322.diset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
                                         <patternset refid="spark321+.pattern"/>
                                         <include name="322/*"/>
                                     </dirset>
                                 </pathconvert>
                                 <pathconvert property="spark323.sources" pathsep=",">
-                                    <dirset id="spark323.diset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
                                         <patternset refid="spark321+.pattern"/>
                                         <include name="323/*"/>
                                     </dirset>
                                 </pathconvert>
                                 <pathconvert property="spark330.sources" pathsep=",">
-                                    <dirset id="spark330.diset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
                                         <patternset id="spark330+.pattern">
                                             <patternset refid="spark321+.pattern"/>
                                             <exclude name="*until330*/*"/>
@@ -1029,7 +1029,7 @@
                                     </dirset>
                                 </pathconvert>
                                 <pathconvert property="spark331.sources" pathsep=",">
-                                    <dirset id="spark331.diset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
                                         <patternset id="spark331+.pattern">
                                             <patternset refid="spark330+.pattern"/>
                                             <include name="331+/*"/>
@@ -1038,13 +1038,13 @@
                                     </dirset>
                                 </pathconvert>
                                 <pathconvert property="spark332.sources" pathsep=",">
-                                    <dirset id="spark332.diset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
                                         <patternset refid="spark331+.pattern"/>
                                         <include name="332/*"/>
                                     </dirset>
                                 </pathconvert>
                                 <pathconvert property="spark340.sources" pathsep=",">
-                                    <dirset id="spark340.diset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
                                         <patternset id="spark340+.pattern">
                                             <!-- inherit from 331+ with exceptions -->
                                             <patternset refid="spark331+.pattern"/>
@@ -1058,7 +1058,7 @@
                                 </pathconvert>
 
                                 <!-- Spark vendor shims -->
-                                <pathconvert id="spark321cdh.diset.id" property="spark321cdh.sources" pathsep=",">
+                                <pathconvert property="spark321cdh.sources" pathsep=",">
                                     <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
                                         <!-- inherit from 321+ upstream except noncdh -->
                                         <patternset refid="spark321+.pattern"/>
