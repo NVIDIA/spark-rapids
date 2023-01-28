@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,17 +34,19 @@ class GpuIntervalUtilsTest extends FunSuite with Arm {
     val caseName = s"testToDayTimeIntervalString for " +
         s"from ${DT.fieldToString(fromField)} to ${DT.fieldToString(endField)}"
     test(caseName) {
-      val micros = ColumnVector.fromLongs(testData.map(e => e._1): _*)
-      withResource(GpuIntervalUtils.toDayTimeIntervalString(micros, fromField, endField)) {
-        gpuRet =>
-          withResource(ColumnVector.fromStrings(testData.map(e => e._2): _*)) { expected =>
-            withResource(ColumnVector.fromStrings(testData.map(e =>
-              IntervalUtils.toDayTimeIntervalString(e._1, IntervalStringStyles.ANSI_STYLE,
-                fromField, endField)): _*)) { cpuRet =>
-              CudfTestHelper.assertColumnsAreEqual(expected, gpuRet)
-              CudfTestHelper.assertColumnsAreEqual(cpuRet, gpuRet)
+      withResource(ColumnVector.fromStrings(testData.map(e => e._2): _*)) { expected =>
+        withResource(ColumnVector.fromStrings(testData.map(e =>
+          IntervalUtils.toDayTimeIntervalString(e._1, IntervalStringStyles.ANSI_STYLE,
+            fromField, endField)): _*)) { cpuRet =>
+          withResource(ColumnVector.fromLongs(testData.map(e => e._1): _*)) { micros =>
+            withResource(
+              GpuIntervalUtils.toDayTimeIntervalString(micros, fromField, endField)
+            ) { gpuRet =>
+                  CudfTestHelper.assertColumnsAreEqual(expected, gpuRet)
+                  CudfTestHelper.assertColumnsAreEqual(cpuRet, gpuRet)
             }
           }
+        }
       }
     }
   }
