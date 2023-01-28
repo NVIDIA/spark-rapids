@@ -87,12 +87,6 @@ def __csv_ant_prop_as_arr(name):
     return __csv_as_arr(prop_val)
 
 
-def __csv_attr_as_arr(name):
-    """Splits a CSV value for an attribute into a list"""
-    attr_val = __ant_attr(name)
-    return __csv_as_arr(attr_val)
-
-
 def __csv_as_arr(str_val):
     """Splits a string CSV value into a list, returns [] if undefined or empty"""
     if str_val in (None, ''):
@@ -115,7 +109,9 @@ __should_trace = __is_enabled_property('shimplify.trace')
 __shim_comment_tag = 'spark-rapids-shim-json-lines'
 __opening_shim_tag = '/*** ' + __shim_comment_tag
 __closing_shim_tag = __shim_comment_tag + ' ***/'
-__shims_arr = sorted(__csv_attr_as_arr('shims'))
+__shims_arr = sorted(__csv_ant_prop_as_arr('shimplify.shims'))
+__shims_dirs = sorted(__csv_ant_prop_as_arr('shimplify.dirs'))
+
 __all_shims_arr = sorted(__csv_ant_prop_as_arr('all.buildvers'))
 
 __log = logging.getLogger('shimplify')
@@ -221,16 +217,28 @@ def task_impl():
     """
     __log.info('# Starting Jython Task Shimplify #')
     __log.info("config: task_enabled=%s over_shimplify=%s move_files=%s",
-             __should_add_comment, __should_overwrite, __should_move_files)
+               __should_add_comment, __should_overwrite, __should_move_files)
     __log.info("review changes and `git restore` if necessary")
 
+    buildvers_from_dirs = []
     for prop_pattern in ["spark%s.sources", "spark%s.test.sources"]:
-        __warn_shims_with_multiple_dedicated_dirs(prop_pattern)
+        dirs2bv = __build_dirs_to_buildvers_map(prop_pattern)
+        __log.info("Map dirs2bv = %s", dirs2bv)
+        __warn_shims_with_multiple_dedicated_dirs(dirs2bv)
+        for dir, buildvers in dirs2bv.items():
+            for dir_substr in __shims_dirs:
+                if dir_substr in dir:
+                    buildvers_from_dirs += buildvers
+        buildvers_from_dirs.sort()
+    if len(buildvers_from_dirs) > 0:
+        __log.info("shimplify.dirs = %s, overriding shims from dirs: %s", __shims_dirs,
+                   buildvers_from_dirs)
+        __shims_arr[:] = buildvers_from_dirs
+
     if __should_add_comment:
         __shimplify_layout()
     else:
         __log.info('Skipping shimplify! Set -Dshimplify=true to convert old shims')
-
     __generate_symlinks()
 
 
@@ -342,17 +350,7 @@ def __shimplify_layout():
                 __git_rename(shim_file, owner_shim)
 
 
-def __warn_shims_with_multiple_dedicated_dirs(prop_pattern):
-    dirs2bv = {}
-    for build_ver in __all_shims_arr:
-        __log.debug("updating dirs2bv for %s", build_ver)
-        shim_dirs = __csv_ant_prop_as_arr(prop_pattern % build_ver)
-        for dir in shim_dirs:
-            if dir not in dirs2bv.keys():
-                dirs2bv[dir] = [build_ver]
-            else:
-                dirs2bv[dir] += [build_ver]
-    __log.debug("Map build_ver -> shim_dirs %s" % dirs2bv)
+def __warn_shims_with_multiple_dedicated_dirs(dirs2bv):
     # each shim has at least one dedicated dir, report shims
     # with multiple dedicated dirs because they can be merged
     single_shim_dirs = {dir: shims[0] for dir, shims in dirs2bv.items() if len(shims) == 1}
@@ -366,7 +364,21 @@ def __warn_shims_with_multiple_dedicated_dirs(prop_pattern):
     for shim, dirs in multi_dir_shims.items():
         if len(dirs) > 1:
             __log.warning("Consider consolidating %s, it spans multiple dedicated directories %s",
-                        shim, dirs)
+                          shim, dirs)
+
+
+def __build_dirs_to_buildvers_map(prop_pattern):
+    dirs2bv = {}
+    for build_ver in __all_shims_arr:
+        __log.debug("updating dirs2bv for %s", build_ver)
+        shim_dirs = __csv_ant_prop_as_arr(prop_pattern % build_ver)
+        for dir in shim_dirs:
+            if dir not in dirs2bv.keys():
+                dirs2bv[dir] = [build_ver]
+            else:
+                dirs2bv[dir] += [build_ver]
+    __log.debug("Map build_ver -> shim_dirs %s" % dirs2bv)
+    return dirs2bv
 
 
 task_impl()

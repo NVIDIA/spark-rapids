@@ -1214,10 +1214,9 @@
                         <configuration>
                             <target xmlns:ac="antlib:net.sf.antcontrib">
                                 <scriptdef name="shimplify" language="jython" src="${spark.rapids.source.basedir}/build/shimplify.py">
-                                    <attribute name="shims"/>
                                     <attribute name="if"/>
                                 </scriptdef>
-                                <shimplify shims="${shimplify.shims}" if="shimplify"/>
+                                <shimplify if="shimplify"/>
                             </target>
                         </configuration>
                     </execution>
