@@ -24,7 +24,6 @@ import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.ShimExpression
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.{PartitionPruningRDD, RDD}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
@@ -33,7 +32,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-object GpuRangePartitioner extends Logging {
+object GpuRangePartitioner {
   /**
    * Sketches the input RDD via reservoir sampling on each partition.
    *
@@ -100,9 +99,6 @@ object GpuRangePartitioner extends Logging {
       if (cumWeight >= target) {
         // Skip duplicate values.
         if (previousBound.isEmpty || ordering.gt(key, previousBound.get)) {
-          // for (i <- 0 until key.numFields) {
-          //   logWarning(s"${key.getByte(i)}")
-          // }
           bounds += key
           target += step
           j += 1
@@ -125,9 +121,6 @@ object GpuRangePartitioner extends Logging {
       s"Sample points per partition must be greater than 0 but found $samplePointsPerPartitionHint")
 
     implicit val ordering: LazilyGeneratedOrdering = new LazilyGeneratedOrdering(sorter.cpuOrdering)
-
-    // logWarning(s"Number of partitions = $partitions")
-    // rdd.foreach(x => GpuColumnVector.debug("\ncreateRangeBounds ColumnarBatch:", x))
 
     // An array of upper bounds for the first (partitions - 1) partitions
     val rangeBounds : Array[InternalRow] = {
@@ -156,7 +149,6 @@ object GpuRangePartitioner extends Logging {
               // The weight is 1 over the sampling probability.
               val weight = (n.toDouble / sample.length).toFloat
               for (key <- sample) {
-                // logWarning(key)
                 candidates += ((key, weight))
               }
             }
@@ -164,7 +156,6 @@ object GpuRangePartitioner extends Logging {
           if (imbalancedPartitions.nonEmpty) {
             // Re-sample imbalanced partitions with the desired sampling probability.
             val imbalanced = new PartitionPruningRDD(rdd, imbalancedPartitions.contains)
-            imbalanced.foreach(x => GpuColumnVector.debug("\nColumnarBatch:", x))
             val seed = byteswap32(-rdd.id - 1)
             val reSampled = randomResample(imbalanced, fraction, seed, sorter)
             val weight = (1.0 / fraction).toFloat
@@ -174,10 +165,6 @@ object GpuRangePartitioner extends Logging {
         }
       }
     }
-    // logDebug("rangeBounds.asInstanceOf[Array[InternalRow]]")
-    // val result = rangeBounds.asInstanceOf[Array[InternalRow]]
-    // logWarning(s"range partitioning bounds")
-    // for (e <- result) {logWarning(e.mkString(" "))}
     rangeBounds.asInstanceOf[Array[InternalRow]]
   }
 }
