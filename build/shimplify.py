@@ -161,7 +161,7 @@ def __delete_prior_comment_if_allowed(contents, tag, filename):
                "to overwrite" % (filename, opening_shim_comment_line))
     assert (opening_shim_comment_line is not None) and (closing_shim_comment_line is not None)
     __log.debug("removing comments %s:%d:%d", filename, opening_shim_comment_line,
-              closing_shim_comment_line)
+                closing_shim_comment_line)
     del contents[opening_shim_comment_line:(closing_shim_comment_line + 1)]
 
 
