@@ -689,14 +689,22 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     // BroadcastHashJoin, and shuffled exchanges are not used to disable anything downstream.
     fixUpExchangeOverhead()
 
-    // 3) WriteFilesExec is a new temporary operator from Spark version 340,
-    // it can't run on GPU if parent node can't run on GPU.
+    // 3) Some child nodes can't run on GPU if parent nodes can't run on GPU.
+    // WriteFilesExec is a new operator from Spark version 340,
+    // Did not extract a shim code for simplicity
     tagChildAccordingToParent(this.asInstanceOf[SparkPlanMeta[SparkPlan]], "WriteFilesExec")
   }
 
   /**
    * tag child node can't run on GPU if parent node can't run on GPU and child node is a `typeName`
-   *
+   * From Spark 340, plan is like:
+   *    InsertIntoHadoopFsRelationCommand
+   *    +- WriteFiles
+   *      +- sub plan
+   * Instead of:
+   *    InsertIntoHadoopFsRelationCommand
+   *    +- sub plan
+   * WriteFiles is a temporary node and does not have input and output, it acts like a tag node.
    * @param p        plan
    * @param typeName type name
    */

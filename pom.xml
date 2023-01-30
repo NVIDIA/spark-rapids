@@ -72,13 +72,6 @@
     <profiles>
         <profile>
             <id>release311</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-                <property>
-                    <name>buildver</name>
-                    <value>311</value>
-                </property>
-            </activation>
             <properties>
                 <buildver>311</buildver>
                 <spark.version>${spark311.version}</spark.version>
@@ -493,10 +486,7 @@
         <profile>
             <id>release340</id>
             <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>340</value>
-                </property>
+                <activeByDefault>true</activeByDefault>
             </activation>
             <properties>
                 <buildver>340</buildver>
@@ -645,7 +635,7 @@
 
     <properties>
         <allowConventionalDistJar>false</allowConventionalDistJar>
-        <buildver>311</buildver>
+        <buildver>340</buildver>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <java.major.version>8</java.major.version>
@@ -1551,7 +1541,24 @@
                         <phase>generate-test-sources</phase>
                         <goals><goal>add-test-source</goal></goals>
                         <configuration>
-                            <sources>${spark.shim.test.sources}</sources>
+                            <sources>
+                                <source>${project.basedir}/src/main/311+-non330db/scala</source>
+                                <source>${project.basedir}/src/main/311+-nondb/scala</source>
+                                <source>${project.basedir}/src/main/320+-noncdh/scala</source>
+                                <source>${project.basedir}/src/main/320+-nondb/scala</source>
+                                <source>${project.basedir}/src/main/320+/java</source>
+                                <source>${project.basedir}/src/main/320+/scala</source>
+                                <source>${project.basedir}/src/main/321+/scala</source>
+                                <source>${project.basedir}/src/main/330+-noncdh/scala</source>
+                                <source>${project.basedir}/src/main/330+-nondb/scala</source>
+                                <source>${project.basedir}/src/main/330+/scala</source>
+                                <source>${project.basedir}/src/main/331+/scala</source>
+                                <source>${project.basedir}/src/main/340+-and-330db/scala</source>
+                                <source>${project.basedir}/src/main/340+/scala</source>
+                                <source>${project.basedir}/src/main/340/scala</source>
+                                <source>${project.basedir}/src/main/delta-lake-common/scala</source>
+                                <source>${project.basedir}/src/main/post320-treenode/scala</source>
+                            </sources>
                         </configuration>
                     </execution>
                 </executions>

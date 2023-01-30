@@ -19,7 +19,7 @@ from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_before_spark_320
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_before_spark_320, is_before_spark_340
 import pyspark.sql.functions as f
 import pyspark.sql.utils
 import random
@@ -569,3 +569,28 @@ def test_write_empty_data_single_writer(spark_tmp_path):
     with_gpu_session(lambda spark: spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
                      .write.mode("overwrite").partitionBy('c1', 'c2').parquet(data_path))
     with_cpu_session(lambda spark: spark.read.parquet(data_path).collect())
+
+@ignore_order
+@pytest.mark.skipif(is_before_spark_340(), reason="`spark.sql.optimizer.plannedWrite.enabled` is only supported in Spark 340+")
+# empty string will not set the `planned_write_enabled` option
+@pytest.mark.parametrize('planned_write_enabled', ["", "true", "false"])
+# df to be written has 25 partitions
+#   0 will not set the concurrent writers option
+#   100 > 25 will always use concurrent writer without fallback
+#   20 <25 will fall back to single writer from concurrent writer
+@pytest.mark.parametrize('max_concurrent_writers', [0, 100, 20])
+def test_write_with_planned_write_enabled(spark_tmp_path, planned_write_enabled, max_concurrent_writers):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    conf = {}
+    if planned_write_enabled != "":
+        conf = copy_and_update({"spark.sql.optimizer.plannedWrite.enabled": planned_write_enabled})
+    if max_concurrent_writers != 0:
+        conf = copy_and_update({"spark.sql.maxConcurrentOutputFileWriters": max_concurrent_writers})
+
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: get_25_partitions_df(spark)  # df has 25 partitions for (c1, c2)
+            .repartition(2)
+            .write.mode("overwrite").partitionBy('c1', 'c2').parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        conf)
