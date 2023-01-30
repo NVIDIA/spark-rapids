@@ -100,7 +100,7 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
       math.min(inputRows, math.ceil(estimatedOutputSizeBytes / targetSizeBytes).toInt)
     val splitIndices = 
       GpuBatchUtils.generateSplitIndices(inputRows, numSplitsForTargetSize).distinct
-    
+
     // how many splits will we need to keep the output rows under max value
     val numSplitsForTargetRow = math.ceil(outputRows / maxRows).toInt
 
