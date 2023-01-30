@@ -20,7 +20,7 @@
 
 set -x
 
-CUDF_VER=${CUDF_VER:-23.02} # TODO: update to 23.04 when available
+CUDF_VER=${CUDF_VER:-23.04}
 CUDA_VER=${CUDA_VER:-11.0}
 
 # Need to explicitly add conda into PATH environment, to activate conda environment.

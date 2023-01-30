@@ -654,8 +654,7 @@
         <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
-        <!--TODO: update to 23.04.0-SNAPSHOT when available-->
-        <spark-rapids-jni.version>23.02.0-SNAPSHOT</spark-rapids-jni.version>
+        <spark-rapids-jni.version>23.04.0-SNAPSHOT</spark-rapids-jni.version>
         <scala.binary.version>2.12</scala.binary.version>
         <alluxio.client.version>2.8.0</alluxio.client.version>
         <scala.recompileMode>incremental</scala.recompileMode>
