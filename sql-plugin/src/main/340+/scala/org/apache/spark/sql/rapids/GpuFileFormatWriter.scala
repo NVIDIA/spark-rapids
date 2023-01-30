@@ -169,10 +169,18 @@ object GpuFileFormatWriter extends Logging {
     job.getConfiguration.set("spark.sql.sources.writeJobUUID", description.uuid)
 
     if (writeFilesOpt.isDefined) {
+      // Typically plan is like:
+      //   Execute InsertIntoHadoopFsRelationCommand
+      //     +- WriteFiles
+      //       +- Sort // already sorted
+      //         +- Sub plan
+      // No need to sort again when execute `WriteFiles`
+
       // build `WriteFilesSpec` for `WriteFiles`
       val concurrentOutputWriterSpecFunc = (plan: SparkPlan) => {
         val orderingExpr = GpuBindReferences.bindReferences(requiredOrdering
           .map(attr => SortOrder(attr, Ascending)), outputSpec.outputColumns)
+        // this sort plan does not execute, only use its output
         val sortPlan = createSortPlan(plan, orderingExpr, useStableSort)
         val batchSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(sparkSession.sessionState.conf)
         GpuWriteFiles.createConcurrentOutputWriterSpec(sparkSession, sortColumns,
@@ -185,6 +193,8 @@ object GpuFileFormatWriter extends Logging {
       )
       executeWrite(sparkSession, plan.asInstanceOf[GpuWriteFilesExec], writeSpec, job)
     } else {
+      // In this path, Spark version is less than 340 or 'spark.sql.optimizer.plannedWrite.enabled'
+      // is disabled, should sort the data if necessary.
       executeWrite(sparkSession, plan, job, description, committer, outputSpec,
         requiredOrdering, partitionColumns, sortColumns, orderingMatched, useStableSort)
     }
