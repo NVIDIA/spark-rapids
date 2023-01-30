@@ -80,6 +80,18 @@ def test_single_orderby_fallback_for_multilevel_array(data_gen, order):
             lambda spark : unary_op_df(spark, data_gen).orderBy(order),
             "SortExec")
 
+# only default null ordering for direction is supported for array types
+@allow_non_gpu('SortExec', 'ShuffleExchangeExec')
+@pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('order', [
+    pytest.param(f.col('a').asc_nulls_last()),
+    pytest.param(f.col('a').desc_nulls_first()),
+], ids=idfn)
+def test_single_orderby_on_array_fallback_for_nullorder(data_gen, order):
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, data_gen).orderBy(order),
+            "SortExec")
+
 @pytest.mark.parametrize('shuffle_parts', [
     pytest.param(1),
     pytest.param(200)
