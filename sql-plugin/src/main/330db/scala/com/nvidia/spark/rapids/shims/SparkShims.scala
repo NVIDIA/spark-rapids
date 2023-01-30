@@ -70,10 +70,7 @@ object SparkShimImpl extends Spark321PlusDBShims {
   override def reproduceEmptyStringBug: Boolean = false
 
   override def isExecutorBroadcastShuffle(shuffle: ShuffleExchangeLike): Boolean = {
-    shuffle.shuffleOrigin match {
-      case EXECUTOR_BROADCAST => true
-      case _ => false
-    }
+    shuffle.shuffleOrigin.equals(EXECUTOR_BROADCAST)
   }
 
   override def shuffleParentReadsShuffleData(shuffle: ShuffleExchangeLike,

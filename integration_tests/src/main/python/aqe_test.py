@@ -15,7 +15,7 @@
 import pytest
 from pyspark.sql.functions import when, col, current_date, current_timestamp
 from pyspark.sql.types import *
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import *
 from marks import ignore_order, allow_non_gpu
 from spark_session import with_cpu_session, is_databricks113_or_later
@@ -129,7 +129,7 @@ def test_aqe_struct_self_join(spark_tmp_table_factory):
 
 
 @allow_non_gpu("ProjectExec")
-def test_aqe_broadcast_join_project_fallback(spark_tmp_path):
+def test_aqe_broadcast_join_non_columnar_child(spark_tmp_path):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     def prep(spark):
         data = [
@@ -159,21 +159,20 @@ def test_aqe_broadcast_join_project_fallback(spark_tmp_path):
         newdf2 = spark.read.parquet(data_path)
         newdf2.createOrReplaceTempView("df2")
 
-        # Using parse_url to fallback the project in the subquery that is joined here
-        # Since parse_url is an expression that will never likely be ported to GPU, it 
-        # makes for a suitable test here
         return spark.sql(
             """
             select 
                 a.name.firstname,
                 a.name.lastname,
-                b.host
-            from df2 a join (select id, parse_url(website,'HOST') as host from df2) b
+                b.full_url
+            from df2 a join (select id, concat(website,'/path') as full_url from df2) b
                 on a.id = b.id
             """
         )
 
-    assert_gpu_and_cpu_are_equal_collect(do_it, conf=_adaptive_conf)
+    conf = copy_and_update({ 'spark.rapids.sql.expression.Concat': 'false' }, _adaptive_conf)
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
 
 
 joins = [
