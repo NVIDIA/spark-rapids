@@ -26,7 +26,6 @@
 #   GPG_PASSPHRASE: The passphrase used to sign files, only required when <SIGN_FILE> is true.
 #   SIGN_TOOL:      Tool to sign files, e.g., gpg, nvsec, only required when $1 is 'true'
 #   GPG_PASSPHRASE: gpg passphrase to sign artifacts, only required when <SIGN_TOOL> is gpg
-#   NVSEC_CFG_FILE: nvsec credentials to sign artifacts, only required when <SIGN_TOOL> is nvsec
 #   MVN_SETTINGS:   Maven configuration file
 #   POM_FILE:       Project pom file to be deployed
 #   OUT_PATH:       The path where jar files are
@@ -66,7 +65,6 @@ echo "Plan to deploy ${FPATH}.jar to $SERVER_URL (ID:$SERVER_ID)"
 if [ "$SIGN_FILE" == true ]; then
     case $SIGN_TOOL in
         nvsec)
-            cp $NVSEC_CFG_FILE ~/.nvsec.cfg
             DEPLOY_CMD="$MVN gpg:sign-and-deploy-file -Dgpg.executable=nvsec_sign"
             ;;
         gpg)
