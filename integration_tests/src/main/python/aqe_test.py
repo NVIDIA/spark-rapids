@@ -15,7 +15,7 @@
 import pytest
 from pyspark.sql.functions import when, col, current_date, current_timestamp
 from pyspark.sql.types import *
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
 from marks import ignore_order, allow_non_gpu
 from spark_session import with_cpu_session, is_databricks113_or_later
@@ -150,7 +150,6 @@ def test_aqe_broadcast_join_non_columnar_child(spark_tmp_path):
         df = spark.createDataFrame(spark.sparkContext.parallelize(data),schema)
         df2 = df.withColumn("dt",current_date().alias("dt")).withColumn("ts",current_timestamp().alias("ts"))
 
-        df2.printSchema
         df2.write.format("parquet").mode("overwrite").save(data_path)
 
     with_cpu_session(prep)
@@ -172,7 +171,10 @@ def test_aqe_broadcast_join_non_columnar_child(spark_tmp_path):
 
     conf = copy_and_update({ 'spark.rapids.sql.expression.Concat': 'false' }, _adaptive_conf)
 
-    assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
+    if is_databricks113_or_later():
+        assert_cpu_and_gpu_are_equal_collect_with_capture(do_it, exist_classes="GpuShuffleExchangeExec",conf=conf)
+    else:
+        assert_cpu_and_gpu_are_equal_collect_with_capture(do_it, exist_classes="GpuBroadcastExchangeExec",conf=conf)
 
 
 joins = [
@@ -211,7 +213,6 @@ def test_aqe_join_reused_exchange_inequality_condition(spark_tmp_path, join):
         df = spark.createDataFrame(spark.sparkContext.parallelize(data),schema)
         df2 = df.withColumn("dt",current_date().alias("dt")).withColumn("ts",current_timestamp().alias("ts"))
 
-        df2.printSchema
         df2.write.format("parquet").mode("overwrite").save(data_path)
 
     with_cpu_session(prep)
