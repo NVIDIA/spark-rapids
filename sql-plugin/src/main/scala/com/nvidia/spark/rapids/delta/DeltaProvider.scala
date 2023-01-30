@@ -16,10 +16,11 @@
 
 package com.nvidia.spark.rapids.delta
 
-import com.nvidia.spark.rapids.{CreatableRelationProviderRule, ExecRule, ShimLoader}
+import com.nvidia.spark.rapids.{CreatableRelationProviderRule, ExecRule, RunnableCommandRule, ShimLoader}
 
 import org.apache.spark.sql.Strategy
 import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.sources.CreatableRelationProvider
 
 /** Probe interface to determine which Delta Lake provider to use. */
@@ -33,6 +34,9 @@ trait DeltaProvider {
       CreatableRelationProviderRule[_ <: CreatableRelationProvider]]
 
   def getExecRules: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]]
+
+  def getRunnableCommandRules: Map[Class[_ <: RunnableCommand],
+      RunnableCommandRule[_ <: RunnableCommand]]
 
   def getStrategyRules: Seq[Strategy]
 }
@@ -50,6 +54,9 @@ object NoDeltaProvider extends DeltaProvider {
       CreatableRelationProviderRule[_ <: CreatableRelationProvider]] = Map.empty
 
   override def getExecRules: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Map.empty
+
+  override def getRunnableCommandRules: Map[Class[_ <: RunnableCommand],
+      RunnableCommandRule[_ <: RunnableCommand]] = Map.empty
 
   override def getStrategyRules: Seq[Strategy] = Nil
 }

@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.delta
 
-import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuOverrides}
+import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuOverrides, TypeSig}
 
 import org.apache.spark.sql.Strategy
 import org.apache.spark.sql.execution.SparkPlan
@@ -25,6 +25,11 @@ abstract class DeltaProviderImplBase extends DeltaProvider {
 
   override def getExecRules: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     Seq(
+      GpuOverrides.exec[RapidsProcessDeltaMergeJoinExec](
+        "Post-processing of join as part of Delta Lake table merge",
+        ExecChecks(TypeSig.all, TypeSig.all),
+        (wrapped, conf, p, r) => new RapidsProcessDeltaMergeJoinMeta(wrapped, conf, p, r)
+      ),
       GpuOverrides.exec[RapidsDeltaWriteExec](
         "GPU write into a Delta Lake table",
         ExecChecks.hiddenHack(),
@@ -32,5 +37,7 @@ abstract class DeltaProviderImplBase extends DeltaProvider {
     ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[SparkPlan]), r) }.toMap
   }
 
-  override def getStrategyRules: Seq[Strategy] = Seq(RapidsDeltaWriteStrategy)
+  override def getStrategyRules: Seq[Strategy] = Seq(
+    RapidsProcessDeltaMergeJoinStrategy,
+    RapidsDeltaWriteStrategy)
 }

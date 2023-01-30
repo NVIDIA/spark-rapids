@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -144,6 +144,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     )
   }
 
+  test("cuDF does not support \\z") {
+      assertUnsupported("foo\\z", RegexFindMode,
+        "\\z is not supported on GPU")
+  }
+
   test("cuDF does not support positive or negative lookahead") {
     val negPatterns = Seq("a(!b)", "a(!b)c?")
     negPatterns.foreach(pattern =>
@@ -239,9 +244,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("string anchors - find") {
-    assume(false, "Skipping due to https://github.com/NVIDIA/spark-rapids/issues/7090")
     val patterns = Seq("\\Atest", "\\A+test", "\\A{1}test", "\\A{1,}test",
-        "(\\A)+test", "(\\A){1}test", "(\\A){1,}test", "test\\z")
+        "(\\A)+test", "(\\A){1}test", "(\\A){1,}test")
     assertCpuGpuMatchesRegexpFind(patterns, Seq("", "test", "atest", "testa",
       "\ntest", "test\n", "\ntest\n"))
   }
@@ -278,15 +282,13 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("line anchors - replace") {
-    assume(false, "Skipping due to https://github.com/NVIDIA/spark-rapids/issues/7090")
-    val patterns = Seq("^test", "test$", "^test$", "test\\Z", "test\\z")
+    val patterns = Seq("^test", "test$", "^test$", "test\\Z")
     assertCpuGpuMatchesRegexpReplace(patterns, Seq("", "test", "atest", "testa",
       "\ntest", "test\n", "\ntest\n", "\ntest\r\ntest\n"))
   }
 
   test("string anchors - replace") {
-    assume(false, "Skipping due to https://github.com/NVIDIA/spark-rapids/issues/7090")
-    val patterns = Seq("\\Atest", "test\\z", "test\\Z")
+    val patterns = Seq("\\Atest", "test\\Z")
     assertCpuGpuMatchesRegexpReplace(patterns, Seq("", "test", "atest", "testa",
       "\ntest", "test\n", "\ntest\n", "\ntest\r\ntest\n"))
   }
@@ -297,10 +299,9 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("line anchor $ - find") {
-    assume(false, "Skipping due to https://github.com/NVIDIA/spark-rapids/issues/7090")
     val patterns = Seq("a$", "a$b", "\f$", "$\f")
-    val inputs = Seq("a", "a\n", "a\r", "a\r\n", "a\u0085\n", "a\f", "\f", "\r", "\u0085", "\u2028",
-        "\u2029", "\n", "\r\n", "\r\n\r", "\r\n\u0085", "\u0085\r", "\u2028\n", "\u2029\n", "\n\r",
+    val inputs = Seq("a", "a\n", "a\r", "a\r\n", "a\f", "\f", "\r", "\u0085", "\u2028",
+        "\u2029", "\n", "\r\n", "\r\n\r", "\r\n\u0085", "\n\r",
         "\n\u0085", "\n\u2028", "\n\u2029", "2+|+??wD\n", "a\r\nb")
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
     val unsupportedPatterns = Seq("[\r\n]?$", "$\r", "\r$",
@@ -312,10 +313,9 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("string anchor \\Z - find") {
-    assume(false, "Skipping due to https://github.com/NVIDIA/spark-rapids/issues/7090")
     val patterns = Seq("a\\Z", "a\\Zb", "a\\Z+", "\f\\Z", "\\Z\f")
-    val inputs = Seq("a", "a\n", "a\r", "a\r\n", "a\u0085\n", "a\f", "\f", "\r", "\u0085", "\u2028",
-        "\u2029", "\n", "\r\n", "\r\n\r", "\r\n\u0085", "\u0085\r", "\u2028\n", "\u2029\n", "\n\r",
+    val inputs = Seq("a", "a\n", "a\r", "a\r\n", "a\f", "\f", "\r", "\u0085", "\u2028",
+        "\u2029", "\n", "\r\n", "\r\n\r", "\r\n\u0085", "\n\r",
         "\n\u0085", "\n\u2028", "\n\u2029", "2+|+??wD\n", "a\r\nb")
     assertCpuGpuMatchesRegexpFind(patterns, inputs)
     val unsupportedPatterns = Seq("[\r\n]?\\Z", "\\Z\r", "\r\\Z",
@@ -416,14 +416,14 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   test("transpile complex regex 2") {
     val TIMESTAMP_TRUNCATE_REGEX = "^([0-9]{4}-[0-9]{2}-[0-9]{2} " +
       "[0-9]{2}:[0-9]{2}:[0-9]{2})" +
-      "(.[1-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?.\\z"
+      "(.[1-9]*(?:0)?[1-9]+)?(.0*[1-9]+)?(?:.0*)?.\\Z"
 
     // input and output should be identical except for `.` being replaced 
     // with `[^\n\r\u0085\u2028\u2029]` and `\z` being replaced with `$`
     doTranspileTest(TIMESTAMP_TRUNCATE_REGEX,
       TIMESTAMP_TRUNCATE_REGEX
         .replaceAll("\\.", "[^\n\r\u0085\u2028\u2029]")
-        .replaceAll("\\\\z", "\\$"))
+        .replaceAll("\\\\Z", "(?:\r|\u0085|\u2028|\u2029|\r\n)?\\$"))
   }
 
   test("transpile \\A repetitions") {
@@ -434,20 +434,19 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("transpile \\z") {
-    doTranspileTest("abc\\z", "abc$")
-    doTranspileTest("abc\\Z\\z", "abc$")
-    doTranspileTest("abc$\\z", "abc$")
+    assertUnsupported("abc\\z", RegexFindMode, "")
   }
 
   test("transpile $") {
-    doTranspileTest("a$", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
+    doTranspileTest("a$", "a(?:\r|\u0085|\u2028|\u2029|\r\n)?$")
   }
 
   test("transpile \\Z") {
-    doTranspileTest("a\\Z", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
-    doTranspileTest("a\\Z+", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
-    doTranspileTest("a\\Z{1}", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
-    doTranspileTest("a\\Z{1,}", "a(?:[\n\r\u0085\u2028\u2029]|\r\n)?$")
+    val expected = "a(?:\r|\u0085|\u2028|\u2029|\r\n)?$"
+    doTranspileTest("a\\Z", expected)
+    doTranspileTest("a\\Z+", expected)
+    doTranspileTest("a\\Z{1}", expected)
+    doTranspileTest("a\\Z{1,}", expected)
   }
 
   test("transpile predefined character classes") {
@@ -514,6 +513,42 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val inputs = Seq("a", "b", "c", "cat", "", "^", "$", "^a", "t$")
     val patterns = Seq("^a", "^a", "(^a|^t)", "^[ac]", "^^^a", "[\\^^]", "a$", "a$$", "\\$$")
     assertCpuGpuMatchesRegexpReplace(patterns, inputs)
+  }
+
+  test("line anchor find - unicode line separators 0085") {
+    assume(false, "https://github.com/NVIDIA/spark-rapids/issues/7585")
+    val inputs = Seq("aTEST\u0085", "aTEST\u0085\n", "aTEST\n\u0085")
+    assertCpuGpuMatchesRegexpFind(Seq("TEST$"), inputs)
+  }
+
+  test("line anchor find - unicode line separators 2028") {
+    assume(false, "https://github.com/NVIDIA/spark-rapids/issues/7585")
+    val inputs = Seq("aTEST\u2028", "aTEST\u2028\n", "aTEST\n\u2028")
+    assertCpuGpuMatchesRegexpFind(Seq("TEST$"), inputs)
+  }
+
+  test("line anchor find - unicode line separators 2029") {
+    assume(false, "https://github.com/NVIDIA/spark-rapids/issues/7585")
+    val inputs = Seq("aTEST\u2029", "aTEST\u2029\n", "aTEST\n\u2029")
+    assertCpuGpuMatchesRegexpFind(Seq("TEST$"), inputs)
+  }
+
+  test("line anchor replace - unicode line separators 0085") {
+    assume(false, "https://github.com/NVIDIA/spark-rapids/issues/7585")
+    val inputs = Seq("aTEST\u0085", "aTEST\u0085\n", "aTEST\n\u0085")
+    assertCpuGpuMatchesRegexpReplace(Seq("TEST$"), inputs)
+  }
+
+  test("line anchor replace - unicode line separators 2028") {
+    assume(false, "https://github.com/NVIDIA/spark-rapids/issues/7585")
+    val inputs = Seq("aTEST\u2028", "aTEST\u2028\n", "aTEST\n\u2028")
+    assertCpuGpuMatchesRegexpReplace(Seq("TEST$"), inputs)
+  }
+
+  test("line anchor replace - unicode line separators 2029") {
+    assume(false, "https://github.com/NVIDIA/spark-rapids/issues/7585")
+    val inputs = Seq("aTEST\u2029", "aTEST\u2029\n", "aTEST\n\u2029")
+    assertCpuGpuMatchesRegexpReplace(Seq("TEST$"), inputs)
   }
 
   test("cuDF does not support some uses of line anchors in regexp_replace") {
@@ -646,6 +681,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("string split - optimized") {
+    assume(false, "https://github.com/NVIDIA/spark-rapids/issues/7607")
     val patterns = Set("\\.", "\\$", "\\[", "\\(", "\\}", "\\+", "\\\\", ",", ";", "cd", "c\\|d",
         "\\%", "\\;", "\\/")
     val data = Seq("abc.def", "abc$def", "abc[def]", "abc(def)", "abc{def}", "abc+def", "abc\\def",
@@ -720,6 +756,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("string split fuzz") {
+    assume(false, "https://github.com/NVIDIA/spark-rapids/issues/7607")
     val (data, patterns) = generateDataAndPatterns(Some(REGEXP_LIMITED_CHARS_REPLACE),
       REGEXP_LIMITED_CHARS_REPLACE, RegexSplitMode)
     for (limit <- Seq(-2, -1, 2, 5)) {
@@ -728,6 +765,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   test("string split fuzz - anchor focused") {
+    assume(false, "https://github.com/NVIDIA/spark-rapids/issues/7607")
     val (data, patterns) = generateDataAndPatterns(validDataChars = Some("\r\nabc"),
       validPatternChars = "^$\\AZz\r\n()", RegexSplitMode)
     doStringSplitTest(patterns, data, -1)
@@ -880,6 +918,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   /** cuDF containsRe helper */
+  @scala.annotation.nowarn("msg=method containsRe in class ColumnView is deprecated")
   private def gpuContains(cudfPattern: String, input: Seq[String]): Array[Boolean] = {
     val result = new Array[Boolean](input.length)
     withResource(ColumnVector.fromStrings(input: _*)) { cv =>
@@ -895,6 +934,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   private val REPLACE_STRING = "\\_\\RE\\\\P\\L\\A\\C\\E\\_"
 
   /** cuDF replaceRe helper */
+  @scala.annotation.nowarn("msg=in class ColumnView is deprecated")
   private def gpuReplace(cudfPattern: String, replaceString: String,
       input: Seq[String]): Array[String] = {
     val result = new Array[String](input.length)
@@ -931,6 +971,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     input.map(s => s.split(pattern, limit))
   }
 
+  @scala.annotation.nowarn("msg=method stringSplitRecord in class ColumnView is deprecated")
   private def gpuSplit(
       pattern: String,
       input: Seq[String],

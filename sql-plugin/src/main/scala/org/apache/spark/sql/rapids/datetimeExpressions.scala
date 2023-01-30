@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -481,6 +481,7 @@ object GpuToTimestamp extends Arm {
     }
   }
 
+  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   def isTimestamp(col: ColumnVector, sparkFormat: String, strfFormat: String) : ColumnVector = {
     CORRECTED_COMPATIBLE_FORMATS.get(sparkFormat) match {
       case Some(fmt) =>
@@ -489,9 +490,18 @@ object GpuToTimestamp extends Arm {
         // the string as well which works well for fixed-length formats but if/when we want to
         // support variable-length formats (such as timestamps with milliseconds) then we will need
         // to use regex instead.
-        withResource(col.matchesRe(fmt.validRegex)) { matches =>
+        val isTimestamp = withResource(col.matchesRe(fmt.validRegex)) { matches =>
           withResource(col.isTimestamp(strfFormat)) { isTimestamp =>
             isTimestamp.and(matches)
+          }
+        }
+        withResource(isTimestamp) { _ =>
+          withResource(col.getCharLengths) { len =>
+            withResource(Scalar.fromInt(sparkFormat.length)) { expectedLen =>
+              withResource(len.equalTo(expectedLen)) { lenMatches =>
+                lenMatches.and(isTimestamp)
+              }
+            }
           }
         }
       case _ =>
@@ -541,6 +551,7 @@ object GpuToTimestamp extends Arm {
    * Parse string to timestamp when timeParserPolicy is LEGACY. This was the default behavior
    * prior to Spark 3.0
    */
+  @scala.annotation.nowarn("msg=in class ColumnView is deprecated")
   def parseStringAsTimestampWithLegacyParserPolicy(
       lhs: GpuColumnVector,
       sparkFormat: String,
@@ -588,6 +599,7 @@ object GpuToTimestamp extends Arm {
    * Filter out strings that have a newline before the first non-whitespace character
    * and then strip all leading and trailing whitespace.
    */
+  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   private def rejectLeadingNewlineThenStrip(lhs: GpuColumnVector) = {
     withResource(lhs.getBase.matchesRe("\\A[ \\t]*[\\n]+")) { hasLeadingNewline =>
       withResource(Scalar.fromNull(DType.STRING)) { nullValue =>
