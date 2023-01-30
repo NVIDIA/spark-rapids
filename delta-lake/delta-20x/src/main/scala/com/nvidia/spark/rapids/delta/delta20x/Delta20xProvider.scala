@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.delta.delta20x
 import com.nvidia.spark.rapids.{GpuOverrides, RunnableCommandRule}
 import com.nvidia.spark.rapids.delta.DeltaIOProvider
 
-import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand}
+import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, UpdateCommand}
 import org.apache.spark.sql.execution.command.RunnableCommand
 
 object Delta20xProvider extends DeltaIOProvider {
@@ -34,7 +34,11 @@ object Delta20xProvider extends DeltaIOProvider {
       GpuOverrides.runnableCmd[MergeIntoCommand](
         "Merge of a source query/table into a Delta Lake table",
         (a, conf, p, r) => new MergeIntoCommandMeta(a, conf, p, r))
-          .disabledByDefault("Delta Lake merge support is experimental")
+          .disabledByDefault("Delta Lake merge support is experimental"),
+      GpuOverrides.runnableCmd[UpdateCommand](
+        "Update rows in a Delta Lake table",
+        (a, conf, p, r) => new UpdateCommandMeta(a, conf, p, r))
+          .disabledByDefault("Delta Lake update support is experimental")
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
   }
 }

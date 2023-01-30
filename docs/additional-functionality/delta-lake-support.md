@@ -97,3 +97,12 @@ spark.rapids.sql.command.DeleteCommandEdge=true on Databricks platforms.
 
 Deleting data from Delta Lake tables via the SQL `DELETE FROM` statement or via the DeltaTable
 `delete` API is supported.
+
+## Update Operations on Delta Lake Tables
+
+Delta Lake update acceleration is experimental and is disabled by default. To enable acceleration
+of Delta Lake update operations, set spark.rapids.sql.command.Updatecommand=true and also set
+spark.rapids.sql.command.UpdateCommandEdge=true on Databricks platforms.
+
+Updating data from Delta Lake tables via the SQL `UPDATE` statement or via the DeltaTable
+`update` API is supported.
