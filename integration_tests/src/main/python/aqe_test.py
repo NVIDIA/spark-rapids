@@ -169,7 +169,7 @@ def test_aqe_broadcast_join_non_columnar_child(spark_tmp_path):
             """
         )
 
-    conf = copy_and_update({ 'spark.rapids.sql.expression.Concat': 'false' }, _adaptive_conf)
+    conf = copy_and_update(_adaptive_conf, { 'spark.rapids.sql.expression.Concat': 'false' })
 
     if is_databricks113_or_later():
         assert_cpu_and_gpu_are_equal_collect_with_capture(do_it, exist_classes="GpuShuffleExchangeExec",conf=conf)
