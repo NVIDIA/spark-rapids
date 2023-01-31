@@ -466,7 +466,7 @@ def _assert_gpu_and_cpu_are_equal(func,
         from_cpu = with_cpu_session(bring_back, conf=conf)
         global cpu_end
         cpu_end = time.time()
-    
+
     def run_on_gpu():
         print('### GPU RUN ###')
         global gpu_start
@@ -475,7 +475,7 @@ def _assert_gpu_and_cpu_are_equal(func,
         from_gpu = with_gpu_session(bring_back, conf=conf)
         global gpu_end
         gpu_end = time.time()
-    
+
     if is_cpu_first:
         run_on_cpu()
         run_on_gpu()
