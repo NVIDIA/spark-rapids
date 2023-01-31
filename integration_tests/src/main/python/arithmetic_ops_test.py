@@ -299,7 +299,9 @@ def test_mod_db11_3(data_gen):
 
 # pmod currently falls back for Decimal(precision=38)
 # https://github.com/NVIDIA/spark-rapids/issues/6336
-_pmod_gens = numeric_gens + [ decimal_gen_32bit, decimal_gen_64bit, _decimal_gen_18_0, decimal_gen_128bit,
+# only testing numeric_gens because of https://github.com/NVIDIA/spark-rapids/issues/7553
+_pmod_gens = numeric_gens
+test_pmod_fallback_decimal_gens = [ decimal_gen_32bit, decimal_gen_64bit, _decimal_gen_18_0, decimal_gen_128bit,
                               _decimal_gen_30_2, _decimal_gen_36_5,
                               DecimalGen(precision=37, scale=0), DecimalGen(precision=37, scale=10),
                               _decimal_gen_7_7]
@@ -315,8 +317,9 @@ def test_pmod(data_gen):
                 'pmod(b, cast(null as {}))'.format(string_type),
                 'pmod(a, b)'))
 
+
 @allow_non_gpu("ProjectExec", "Pmod")
-@pytest.mark.parametrize('data_gen', [_decimal_gen_38_0, _decimal_gen_38_10], ids=idfn)
+@pytest.mark.parametrize('data_gen', test_pmod_fallback_decimal_gens + [_decimal_gen_38_0, _decimal_gen_38_10], ids=idfn)
 def test_pmod_fallback(data_gen):
     string_type = to_cast_string(data_gen.data_type)
     assert_gpu_fallback_collect(
@@ -338,6 +341,7 @@ def test_mod_pmod_long_min_value():
 
 # pmod currently falls back for Decimal(precision=38)
 # https://github.com/NVIDIA/spark-rapids/issues/6336
+@pytest.mark.xfail(reason='Decimals type disabled https://github.com/NVIDIA/spark-rapids/issues/7553')
 @pytest.mark.parametrize('data_gen', [decimal_gen_32bit, decimal_gen_64bit, _decimal_gen_18_0,
                                       decimal_gen_128bit, _decimal_gen_30_2, _decimal_gen_36_5], ids=idfn)
 @pytest.mark.parametrize('overflow_exp', [
@@ -421,18 +425,54 @@ def test_mod_fallback(lhs, rhs):
     assert_gpu_fallback_collect(
         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"a % b"), 'Remainder')
 
-@pytest.mark.xfail(reason='BUG https://github.com/NVIDIA/spark-rapids/issues/7553')
-@pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 5),
-    DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(3, -2), 
-    DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)
-    ], ids=idfn)
-@pytest.mark.parametrize('rhs', [ byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 3),
-    DecimalGen(10, -2), DecimalGen(15, 3), DecimalGen(30, 12), DecimalGen(3, -3),
-    DecimalGen(27, 7), DecimalGen(20, -3)
-    ], ids=idfn)
-def test_pmod_mixed(lhs, rhs):
+# Split into 4 tests to permute https://github.com/NVIDIA/spark-rapids/issues/7553 failures
+# @pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 5),
+#     DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3), DecimalGen(4, 2), DecimalGen(3, -2),
+#     DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)], ids=idfn)
+# @pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen, DecimalGen(6, 3),
+#     DecimalGen(10, -2), DecimalGen(15, 3), DecimalGen(30, 12), DecimalGen(3, -3),
+#     DecimalGen(27, 7), DecimalGen(20, -3)], ids=idfn)
+# def test_mod_mixed(lhs, rhs):
+#     assert_gpu_and_cpu_are_equal_collect(
+#         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"a % b"))
+
+@pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
+@pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
+def test_pmod_mixed_numeric(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"pmod(a, b)"))
+
+@allow_non_gpu("ProjectExec", "Pmod")
+@pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3),
+    DecimalGen(4, 2), DecimalGen(3, -2), DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)
+    ], ids=idfn)
+@pytest.mark.parametrize('rhs', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
+def test_pmod_mixed_decimal_lhs(lhs, rhs):
+    assert_gpu_fallback_collect(
+        lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"pmod(a, b)"),
+        "Pmod")
+
+@allow_non_gpu("ProjectExec", "Pmod")
+@pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
+@pytest.mark.parametrize('rhs', [DecimalGen(6, 3), DecimalGen(10, -2), DecimalGen(15, 3),
+    DecimalGen(30, 12), DecimalGen(3, -3), DecimalGen(27, 7), DecimalGen(20, -3)
+    ], ids=idfn)
+def test_pmod_mixed_decimal_rhs(lhs, rhs):
+    assert_gpu_fallback_collect(
+        lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"pmod(a, b)"),
+        "Pmod")
+
+@allow_non_gpu("ProjectExec", "Pmod")
+@pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3),
+    DecimalGen(4, 2), DecimalGen(3, -2), DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)
+    ], ids=idfn)
+@pytest.mark.parametrize('rhs', [DecimalGen(6, 3), DecimalGen(10, -2), DecimalGen(15, 3),
+    DecimalGen(30, 12), DecimalGen(3, -3), DecimalGen(27, 7), DecimalGen(20, -3)
+    ], ids=idfn)
+def test_pmod_mixed_decimal(lhs, rhs):
+    assert_gpu_fallback_collect(
+        lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"pmod(a, b)"),
+        "Pmod")
 
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_signum(data_gen):
