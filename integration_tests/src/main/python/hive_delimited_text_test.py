@@ -509,3 +509,20 @@ def test_basic_hive_text_write(std_input_path, name, schema, spark_tmp_table_fac
                                                   mode),
             conf=hive_text_write_enabled_conf)
 
+
+@approximate_float
+@pytest.mark.parametrize('name,schema,options', [
+    # Date/Time
+    pytest.param('hive-delim-text/timestamp', timestamp_schema, {},
+                 marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/7597"))
+], ids=idfn)
+def test_hive_text_timestamp_write(std_input_path, name, schema, spark_tmp_table_factory, options):
+    for mode in [TableWriteMode.CTAS]:
+        assert_gpu_and_cpu_are_equal_collect(
+            rewrite_to_non_partitioned_hive_table(std_input_path + "/" + name,
+                                                  schema,
+                                                  spark_tmp_table_factory,
+                                                  options,
+                                                  mode),
+            conf=hive_text_write_enabled_conf)
+
