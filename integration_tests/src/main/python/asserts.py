@@ -321,6 +321,18 @@ def assert_gpu_fallback_write(write_func,
         base_path,
         cpu_fallback_class_name,
         conf={}):
+    assert_gpu_fallback_write(write_func,
+                              read_func,
+                              base_path,
+                              [cpu_fallback_class_name], # make a single item list
+                              conf)
+
+# Similar to
+def assert_gpu_fallback_write(write_func,
+                              read_func,
+                              base_path,
+                              cpu_fallback_class_name_list,
+                              conf={}):
     conf = _prep_incompat_conf(conf)
 
     print('### CPU RUN ###')
@@ -335,7 +347,7 @@ def assert_gpu_fallback_write(write_func,
     gpu_path = base_path + '/GPU'
     with_gpu_session(lambda spark : write_func(spark, gpu_path), conf=conf)
     gpu_end = time.time()
-    jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertCapturedAndGpuFellBack(cpu_fallback_class_name, 10000)
+    [jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertCapturedAndGpuFellBack(cpu_fallback_class_name, 10000) for cpu_fallback_class_name in cpu_fallback_class_name_list]
     print('### WRITE: GPU TOOK {} CPU TOOK {} ###'.format(
         gpu_end - gpu_start, cpu_end - cpu_start))
 

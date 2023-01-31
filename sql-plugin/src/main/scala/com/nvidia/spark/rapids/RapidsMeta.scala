@@ -715,7 +715,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
       if (!p.parent.get.canThisBeReplaced) {
         // parent can't run on GPU, also tag this.
         p.willNotWorkOnGpu(
-          "WriteFilesExec can't run on GPU because parent can't run on GPU")
+          s"$typeName can't run on GPU because parent can't run on GPU")
       }
     }
   }

@@ -583,9 +583,9 @@ def test_write_with_planned_write_enabled(spark_tmp_path, planned_write_enabled,
     data_path = spark_tmp_path + '/PARQUET_DATA'
     conf = {}
     if planned_write_enabled != "":
-        conf = copy_and_update({"spark.sql.optimizer.plannedWrite.enabled": planned_write_enabled})
+        conf = copy_and_update(conf, {"spark.sql.optimizer.plannedWrite.enabled": planned_write_enabled})
     if max_concurrent_writers != 0:
-        conf = copy_and_update({"spark.sql.maxConcurrentOutputFileWriters": max_concurrent_writers})
+        conf = copy_and_update(conf, {"spark.sql.maxConcurrentOutputFileWriters": max_concurrent_writers})
 
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: get_25_partitions_df(spark)  # df has 25 partitions for (c1, c2)

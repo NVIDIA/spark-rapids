@@ -1,12 +1,11 @@
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -54,8 +53,6 @@ class GpuWriteFilesMeta(
 
   override def convertToGpu(): GpuExec = {
     // WriteFilesExec only has one child
-    assert(childPlans.size == 1)
-
     val child = childPlans.head.convertIfNeeded()
     GpuWriteFilesExec(
       child,
@@ -89,24 +86,24 @@ case class GpuWriteFilesExec(
       s"${getClass.getCanonicalName} does not support row-based execution")
 
   /**
-   * Gpu version for SparkPlan.executeWrite
+   * Similar with SparkPlan.executeWrite
    */
-  def executeColumnarWrite(
+  def executeWrite(
       writeFilesSpec: GpuWriteFilesSpec): RDD[WriterCommitMessage] = executeQuery {
+    // Copied from SparkPlan.executeWrite
     if (isCanonicalizedPlan) {
       throw SparkException.internalError("A canonicalized plan is not supposed to be executed.")
     }
-    doExecuteColumnarWrite(writeFilesSpec)
+    doExecuteWrite(writeFilesSpec)
   }
 
-
   /**
-   * Gpu version for SparkPlan.doExecuteWrite
+   * Similar with SparkPlan.doExecuteWrite
    *
    * @param writeFilesSpec
    * @return
    */
-  protected def doExecuteColumnarWrite(
+  private def doExecuteWrite(
       writeFilesSpec: GpuWriteFilesSpec): RDD[WriterCommitMessage] = {
     val rdd = child.executeColumnar()
     // SPARK-23271 If we are attempting to write a zero partition rdd, create a dummy single

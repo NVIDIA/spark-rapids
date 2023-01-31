@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -322,7 +322,7 @@ object GpuFileFormatWriter extends Logging {
 
     writeAndCommit(job, description, committer) {
       // columnar write
-      val rdd = planForWrites.executeColumnarWrite(writeFilesSpec)
+      val rdd = planForWrites.executeWrite(writeFilesSpec)
       val ret = new Array[WriteTaskResult](rdd.partitions.length)
       session.sparkContext.runJob(
         rdd,
