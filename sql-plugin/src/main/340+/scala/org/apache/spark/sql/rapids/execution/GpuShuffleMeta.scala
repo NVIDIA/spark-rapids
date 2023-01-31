@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,13 +14,15 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.shims
+package org.apache.spark.sql.rapids.execution
 
-import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, REPARTITION, REPARTITION_WITH_NUM, ShuffleOrigin}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta}
 
-object ShuffleOriginUtil {
-  private val knownOrigins: Set[ShuffleOrigin] = Set(ENSURE_REQUIREMENTS,
-    REPARTITION, REPARTITION_WITH_NUM)
+import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
 
-  def isSupported(origin: ShuffleOrigin): Boolean = knownOrigins.contains(origin)
-}
+class GpuShuffleMeta(
+    shuffle: ShuffleExchangeExec,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends GpuShuffleMetaBase(shuffle, conf, parent, rule)
