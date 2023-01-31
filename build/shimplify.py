@@ -12,7 +12,57 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""implementation of shimplify Ant task in Python2.7 for Jython"""
+"""
+Implementation of <shimplify> Ant task in Python2.7 for Jython
+
+Simplifies the prior version range directory system
+
+Switches:
+
+if                   - task attribute whether to modify files
+shimplfy.add.shim    - new buildver
+shimlify.add.base    - based on the old buildver
+shimplify.move       - property to allow moving files to canonical location, otherwise update
+                       without moving
+shimplify.overwrite  - property to allow executing file changes repeatedly
+shimplify.trace      - property to enable trace logging
+
+If the task attribute "if" evaluates to false shimplify does not alter files on the filesystem.
+The task merely suggests to consolidate shim directories if it finds some shims that are comprised
+of multiple directories not shared with other shims. The prior design expects to find only one such
+directory per shim.
+
+If the task attribute "if" evaluates to true shimplify is allowed to make changes on the filesystem.
+It is expected that this is only done under a local git repo for an easy undo (otherwise making
+manual backups is recommended). Undo typically involves three steps
+
+First undo all potential renames
+
+git restore --staged sql-plugin tests
+
+Then undo all non-staged changes including produced by the command above.
+
+git restore sql-plugin tests
+
+Optionally review and remove empty directories
+
+git clean -f -d [--dry-run]
+
+Each shim Scala/Java file receives a comment describing all Spark builds it
+it belongs to. Lines are sorted by the Spark buildver lexicographically.
+Each line is assumed to be a JSON to keep it extensible.
+
+/*** spark-rapids-shim-json-lines
+{"spark": "312"}
+{"spark": "323"}
+spark-rapids-shim-json-lines ***/
+
+The canonical location of a source file shared by multiple shims is
+src/main/<top_buildver_in_the_comment>
+
+You can find all shim files for a particular shim, e.g. 312, easily by executing:
+git grep '{"spark": "312"}' '*.java' '*.scala'
+"""
 
 import errno
 import json
@@ -105,6 +155,9 @@ __should_overwrite = __is_enabled_property('shimplify.overwrite')
 
 # enable log tracing?
 __should_trace = __is_enabled_property('shimplify.trace')
+
+__shim_add_buildver = __ant_proj_prop('shimplify.add.shim')
+__shim_add_base = __ant_proj_prop('shimplify.add.base')
 
 __shim_comment_tag = 'spark-rapids-shim-json-lines'
 __opening_shim_tag = '/*** ' + __shim_comment_tag
@@ -199,27 +252,23 @@ def __makedirs(new_dir):
 
 
 def task_impl():
-    """Simplifies the old version range directory system
-
-    Each shim Scala/Java file receives a comment describing all Spark builds it
-    it belongs to. Lines are sorted by the Spark buildver lexicographically.
-    Each line is assumed to be a JSON to keep it extensible.
-    /*** spark-rapids-shim-json-lines
-    {"spark": "312"}
-    {"spark": "323"}
-    spark-rapids-shim-json-lines ***/
-
-    The canonical location of a source file shared by multiple shims is
-    src/main/<top_buildver_in_the_comment>
-
-    You can find all shim files for a particular shim easily by executing:
-    git grep '{"spark": "312"}'
-    """
+    """Ant task entry point """
     __log.info('# Starting Jython Task Shimplify #')
-    __log.info("config: task_enabled=%s over_shimplify=%s move_files=%s",
-               __should_add_comment, __should_overwrite, __should_move_files)
-    __log.info("review changes and `git restore` if necessary")
+    config_format = """#   config: if=%s
+    #           shimplfy.add.shim=%s
+    #           shimplify.add.base=%s
+    #           shimplify.move=%s
+    #           shimplify.overwrite=%s
+    #           shimplify.trace=%s"""
+    __log.info(config_format,
+               __should_add_comment,
+               __shim_add_buildver,
+               __shim_add_base,
+               __should_overwrite,
+               __should_move_files,
+               __should_trace)
 
+    __log.info("review changes and `git restore` if necessary")
     buildvers_from_dirs = []
     for prop_pattern in ["spark%s.sources", "spark%s.test.sources"]:
         dirs2bv = __build_dirs_to_buildvers_map(prop_pattern)
