@@ -272,7 +272,7 @@ def test_int_division_mixed(lhs, rhs):
                 'a DIV b'))
 
 @pytest.mark.parametrize('data_gen', _arith_data_gens, ids=idfn)
-@pytest.mark.skipif(not is_before_spark_340() or is_databricks113_or_later())
+@pytest.mark.skipif(is_databricks113_or_later() or is_spark_340_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7595')
 def test_mod(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
@@ -286,7 +286,7 @@ def test_mod(data_gen):
 # This test is only added because we are skipping test_mod for spark 3.4 and databricks 11.3 because of https://github.com/NVIDIA/spark-rapids/issues/7595
 # Once that is resolved we should remove this test and not skip test_mod for spark 3.4 and db 11.3
 @pytest.mark.parametrize('data_gen', _arith_data_gens, ids=idfn)
-@pytest.mark.skipif(is_before_spark_340() and not is_databricks113_or_later())
+@pytest.mark.skipif(not is_databricks113_or_later() and is_before_spark_340(), reason='https://github.com/NVIDIA/spark-rapids/issues/7595')
 def test_mod_db11_3(data_gen):
     data_type = data_gen.data_type
     assert_gpu_and_cpu_are_equal_collect(
