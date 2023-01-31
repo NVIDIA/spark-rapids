@@ -481,7 +481,7 @@ You can confirm that the update actually has happened by either inspecting its e
 `git diff` first or simply reexecuting `git commit` right away. The second time no file
 modification should be triggered by the copyright year update hook and the commit should succeed.
 
-There is a known issue for macOS users if the use the default version of `sed`. The copyright update
+There is a known issue for macOS users if they use the default version of `sed`. The copyright update
 script may fail and generate an unexpected file named `source-file-E`. As a workaround, please
 install GNU sed
 
