@@ -19,7 +19,7 @@ from datetime import date, datetime, timezone
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_before_spark_320, is_before_spark_340
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_before_spark_320, is_before_spark_340, is_spark_340_or_later
 import pyspark.sql.functions as f
 import pyspark.sql.utils
 import random
@@ -162,15 +162,39 @@ def test_catch_int96_overflow(spark_tmp_path, data_gen):
     assert_py4j_exception(lambda: with_gpu_session(
         lambda spark: unary_op_df(spark, data_gen).coalesce(1).write.parquet(data_path), conf=confs), "org.apache.spark.SparkException: Job aborted.")
 
+
+@pytest.mark.skipif(is_spark_340_or_later(), reason="`WriteFilesExec` is only supported in Spark 340+")
 @pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
-# Note: From Spark 340, WriteFilesExec is introduced.
-@pytest.mark.allow_non_gpu("DataWritingCommandExec", "WriteFilesExec")
+@pytest.mark.allow_non_gpu("DataWritingCommandExec")
 def test_int96_write_conf(spark_tmp_path, data_gen):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     confs = copy_and_update(writer_confs, {
         'spark.sql.parquet.outputTimestampType': 'INT96',
         'spark.rapids.sql.format.parquet.writer.int96.enabled': 'false'})
-    with_gpu_session(lambda spark: unary_op_df(spark, data_gen).coalesce(1).write.parquet(data_path), conf=confs)
+
+    assert_gpu_fallback_write(
+        lambda spark, path: unary_op_df(spark, data_gen).coalesce(1).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        ['DataWritingCommandExec'],
+        confs)
+
+@pytest.mark.skipif(is_before_spark_340(), reason="`WriteFilesExec` is only supported in Spark 340+")
+@pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
+# Note: From Spark 340, WriteFilesExec is introduced.
+@pytest.mark.allow_non_gpu("DataWritingCommandExec", "WriteFilesExec")
+def test_int96_write_conf_with_write_exec(spark_tmp_path, data_gen):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    confs = copy_and_update(writer_confs, {
+        'spark.sql.parquet.outputTimestampType': 'INT96',
+        'spark.rapids.sql.format.parquet.writer.int96.enabled': 'false'})
+
+    assert_gpu_fallback_write(
+        lambda spark, path: unary_op_df(spark, data_gen).coalesce(1).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        ['DataWritingCommandExec', 'WriteFilesExec'],
+        confs)
 
 def test_all_null_int96(spark_tmp_path):
     class AllNullTimestampGen(TimestampGen):
@@ -286,8 +310,7 @@ def test_parquet_write_legacy_fallback(spark_tmp_path, ts_write, ts_rebase, spar
             'DataWritingCommandExec',
             conf=all_confs)
 
-@allow_non_gpu('DataWritingCommandExec', "WriteFilesExec")
-# Note: From Spark 340, WriteFilesExec is introduced.
+@allow_non_gpu('DataWritingCommandExec')
 @pytest.mark.parametrize('write_options', [{"parquet.encryption.footer.key": "k1"},
                                            {"parquet.encryption.column.keys": "k2:a"},
                                            {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])

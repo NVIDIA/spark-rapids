@@ -16,6 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
+import scala.collection.convert.ImplicitConversions.`collection AsScalaIterable`
 import scala.collection.mutable.{ArrayBuffer, Map => MutableMap}
 import scala.util.matching.Regex
 
@@ -71,6 +72,15 @@ object ExecutionPlanCaptureCallback {
       case p: AdaptiveSparkPlanExec => p.executedPlan
       case p => PlanShims.extractExecutedPlan(p)
     }
+  }
+
+  def assertCapturedAndGpuFellBack(
+      // used by python code, should not be Array[String]
+      fallbackCpuClassList: java.util.ArrayList[String],
+      timeoutMs: Long): Unit = {
+    val gpuPlans = getResultsWithTimeout(timeoutMs = timeoutMs)
+    assert(gpuPlans.nonEmpty, "Did not capture a plan")
+    fallbackCpuClassList.foreach(fallbackCpuClass => assertDidFallBack(gpuPlans, fallbackCpuClass))
   }
 
   def assertCapturedAndGpuFellBack(fallbackCpuClass: String, timeoutMs: Long = 2000): Unit = {

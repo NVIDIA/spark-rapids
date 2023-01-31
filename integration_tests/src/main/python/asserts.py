@@ -347,7 +347,7 @@ def assert_gpu_fallback_write(write_func,
     gpu_path = base_path + '/GPU'
     with_gpu_session(lambda spark : write_func(spark, gpu_path), conf=conf)
     gpu_end = time.time()
-    [jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertCapturedAndGpuFellBack(cpu_fallback_class_name, 10000) for cpu_fallback_class_name in cpu_fallback_class_name_list]
+    jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertCapturedAndGpuFellBack(cpu_fallback_class_name_list, 10000)
     print('### WRITE: GPU TOOK {} CPU TOOK {} ###'.format(
         gpu_end - gpu_start, cpu_end - cpu_start))
 
