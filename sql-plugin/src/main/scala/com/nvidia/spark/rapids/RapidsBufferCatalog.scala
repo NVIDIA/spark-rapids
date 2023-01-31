@@ -652,7 +652,7 @@ class RapidsBufferCatalog(
    */
   private def makeRoomForBufferIfNeeded(
       buffer: RapidsBuffer,
-      spillStore: RapidsBufferStore): RapidsBuffer = {
+      spillStore: RapidsBufferStore): Unit = {
     val spillStoreMaxSize = spillStore.getMaxSize
     if (spillStoreMaxSize.isDefined) {
       // this spillStore has a maximum size requirement (host only). We need to spill from it
