@@ -394,7 +394,8 @@ def test_mod_mixed(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"a % b"))
 
-@pytest.mark.skipif(is_before_spark_340() or not is_databricks113_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7595')
+@allow_non_gpu('ProjectExec')
+@pytest.mark.skipif(not is_databricks113_or_later() or is_spark_340_or_later(), reason='https://github.com/NVIDIA/spark-rapids/issues/7595')
 @pytest.mark.parametrize('lhs', mod_mixed_decimals_lhs, ids=idfn)
 @pytest.mark.parametrize('rhs', mod_mixed_decimals_rhs, ids=idfn)
 def test_mod_fallback(lhs, rhs):
