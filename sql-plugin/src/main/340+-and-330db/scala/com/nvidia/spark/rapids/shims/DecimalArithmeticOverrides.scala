@@ -94,6 +94,12 @@ object DecimalArithmeticOverrides {
               GpuIntegralDivide(lhs, rhs)
             }
         }),
+
+      /**
+       * Because of https://github.com/NVIDIA/spark-rapids/issues/7595 we are not supporting Decimals for spark 3.4 and
+       * db 11.3. Once we do we should revert the changes made to the following tests test_mod, test_mod_mixed and test_mod_pmod_by_zero_not_ansi
+       * or we should just revert this commit
+       */
       expr[Remainder](
         "Remainder or modulo",
         ExprChecks.binaryProject(
