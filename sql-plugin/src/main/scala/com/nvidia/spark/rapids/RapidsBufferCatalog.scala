@@ -372,7 +372,7 @@ class RapidsBufferCatalog(
       initialSpillPriority: Long,
       spillCallback: SpillCallback,
       needsSync: Boolean): RapidsBufferHandle = synchronized {
-    logWarning(s"Adding buffer ${id} to ${deviceStorage}")
+    logDebug(s"Adding buffer ${id} to ${deviceStorage}")
     val rapidsBuffer = deviceStorage.addBuffer(
       id,
       buffer,
@@ -526,8 +526,7 @@ class RapidsBufferCatalog(
       targetTotalSize: Long,
       stream: Cuda.Stream): Option[Long] = {
     require(targetTotalSize >= 0, s"Negative spill target size: $targetTotalSize")
-    logWarning(s"Trying to spill ${targetTotalSize}. " +
-      s"From store ${store.name}. " +
+    logWarning(s"Targeting a ${store.name} size of $targetTotalSize. " +
       s"Current total ${store.currentSize}. " +
       s"Current spillable ${store.currentSpillableSize}")
 
@@ -613,7 +612,7 @@ class RapidsBufferCatalog(
       stream: Cuda.Stream): Unit = synchronized {
     if (buffer.addReference()) {
       withResource(buffer) { _ =>
-        logWarning(s"Spilling $buffer ${buffer.id} to ${spillStore.name}")
+        logDebug(s"Spilling $buffer ${buffer.id} to ${spillStore.name}")
         val bufferHasSpilled = isBufferSpilled(buffer.id, buffer.storageTier)
         if (!bufferHasSpilled) {
           val spillCallback = buffer.getSpillCallback
