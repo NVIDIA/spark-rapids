@@ -122,7 +122,6 @@ def test_split_re_no_limit():
             'split(a, "^[o]")'),
             conf=_regexp_conf)
 
-@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/7607")
 def test_split_optimized_no_re():
     data_gen = mk_str_gen('([bf]o{0,2}[.?+\\^$|{}]{1,2}){1,7}') \
         .with_special_case('boo.and.foo') \
@@ -149,7 +148,6 @@ def test_split_optimized_no_re():
             'split(a, "\\\\$\\\\|")'),
             conf=_regexp_conf)
 
-@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/7607")
 def test_split_optimized_no_re_combined():
     data_gen = mk_str_gen('([bf]o{0,2}[AZ.?+\\^$|{}]{1,2}){1,7}') \
         .with_special_case('booA.ZandA.Zfoo') \
@@ -184,7 +182,6 @@ def test_split_unsupported_fallback():
         'split(a, "o*"),' +
         'split(a, "o?") from string_split_table')
 
-@pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/7607")
 def test_split_regexp_disabled_no_fallback():
     conf = { 'spark.rapids.sql.regexp.enabled': 'false' }
     data_gen = mk_str_gen('([bf]o{0,2}[.?+\\^$|&_]{1,2}){1,7}') \
