@@ -25,7 +25,7 @@ import scala.math.max
 import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector, HostColumnVectorCore, HostMemoryBuffer, NvtxColor, NvtxRange, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.DateUtils.{toStrf, TimestampFormatConversionException}
 import com.nvidia.spark.rapids.jni.CastStrings
-import com.nvidia.spark.rapids.shims.GpuTypeShims
+import com.nvidia.spark.rapids.shims.{GpuSparkPath, GpuTypeShims}
 import java.util
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -222,7 +222,7 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
   metrics = execMetrics
 
   private lazy val estimatedHostBufferSize: Long = {
-    val rawPath = new Path(partFile.filePath)
+    val rawPath = new Path(GpuSparkPath(partFile.filePath))
     val fs = rawPath.getFileSystem(conf)
     val path = fs.makeQualified(rawPath)
     val fileSize = fs.getFileStatus(path).getLen

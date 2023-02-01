@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,8 @@ package com.nvidia.spark.rapids
 import java.io.FileNotFoundException
 
 import scala.util.control.NonFatal
+
+import com.nvidia.spark.rapids.shims.GpuSparkPath
 
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -366,11 +368,11 @@ object AlluxioUtils extends Logging with Arm {
     val replaceFunc = genFuncForTaskTimeReplacement(pathsToReplace)
 
     files.map { file =>
-      val replacedFileInfo = replaceFunc(file.filePath)
+      val replacedFileInfo = replaceFunc(GpuSparkPath(file.filePath))
       if (replacedFileInfo.wasReplaced) {
         logDebug(s"TASK_TIME replaced ${file.filePath} with ${replacedFileInfo.fileStr}")
         PartitionedFileInfoOptAlluxio(PartitionedFile(file.partitionValues,
-          replacedFileInfo.fileStr, file.start, file.length),
+          GpuSparkPath(replacedFileInfo.fileStr), file.start, file.length),
           Some(file))
       } else {
         PartitionedFileInfoOptAlluxio(file, None)
@@ -444,7 +446,7 @@ object AlluxioUtils extends Logging with Arm {
   def getOrigPathFromReplaced(pfs: Array[PartitionedFile],
       pathsToReplace: Map[String, String]): Array[PartitionedFileInfoOptAlluxio] = {
     pfs.map { pf =>
-      val file = pf.filePath
+      val file = GpuSparkPath(pf.filePath)
       // pathsToReplace contain strings of exact paths to replace
       val matchedSet = pathsToReplace.filter { case (_, alluxioPattern) =>
         file.startsWith(alluxioPattern)
@@ -458,7 +460,7 @@ object AlluxioUtils extends Logging with Arm {
         val replacedFile = file.replaceFirst(matchedSet.head._2, matchedSet.head._1)
         logDebug(s"getOrigPath replacedFile: $replacedFile")
         PartitionedFileInfoOptAlluxio(pf,
-          Some(PartitionedFile(pf.partitionValues, replacedFile, pf.start, file.length)))
+          Some(PartitionedFile(pf.partitionValues, GpuSparkPath(replacedFile), pf.start, file.length)))
       } else {
         PartitionedFileInfoOptAlluxio(pf, None)
       }

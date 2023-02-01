@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.shims.GpuSparkPath
+
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 
@@ -26,5 +28,5 @@ object PartitionedFileUtils {
       partitionValues: InternalRow,
       filePath: String,
       start: Long,
-      length: Long): PartitionedFile = PartitionedFile(partitionValues, filePath, start, length)
+      length: Long): PartitionedFile = PartitionedFile(partitionValues, GpuSparkPath(filePath), start, length)
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 package org.apache.spark.sql.rapids.shims
 
 import java.io.{FileNotFoundException, IOException}
+
+import com.nvidia.spark.rapids.shims.GpuSparkPath
 
 import org.apache.parquet.io.ParquetDecodingException
 
@@ -111,7 +113,7 @@ class GpuFileScanRDD(
           currentFile = files.next()
           logInfo(s"Reading File $currentFile")
           // Sets InputFileBlockHolder for the file block's information
-          InputFileBlockHolder.set(currentFile.filePath, currentFile.start, currentFile.length)
+          InputFileBlockHolder.set(GpuSparkPath(currentFile.filePath), currentFile.start, currentFile.length)
 
           if (ignoreMissingFiles || ignoreCorruptFiles) {
             currentIterator = new NextIterator[Object] {

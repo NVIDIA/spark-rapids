@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -347,7 +347,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
     private ParquetFileInfoWithBlockMeta filterParquetBlocks(PartitionedFile file) {
       FileScanTask fst = files.get(file.filePath());
       FilteredParquetFileInfo filteredInfo = filterParquetBlocks(fst);
-      constsSchemaMap.put(file.filePath(),
+      constsSchemaMap.put(file.filePath().toString(),
           Tuple2.apply(filteredInfo.idToConstant(), filteredInfo.expectedSchema()));
       return filteredInfo.parquetBlockMeta();
     }

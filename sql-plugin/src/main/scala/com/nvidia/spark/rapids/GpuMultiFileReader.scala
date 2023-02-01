@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@ import scala.language.implicitConversions
 import ai.rapids.cudf.{ColumnVector, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids.GpuMetric.{makeSpillCallback, BUFFER_TIME, FILTER_TIME, PEAK_DEVICE_MEMORY, SEMAPHORE_WAIT_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
+import com.nvidia.spark.rapids.shims.GpuSparkPath
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
@@ -336,7 +337,7 @@ abstract class MultiFilePartitionReaderFactoryBase(
     assert(partition.isInstanceOf[FilePartition])
     val filePartition = partition.asInstanceOf[FilePartition]
     val files = filePartition.files
-    val filePaths = files.map(_.filePath)
+    val filePaths = files.map(f => GpuSparkPath(f.filePath))
     val conf = broadcastedConf.value.value
 
     if (useMultiThread(filePaths)) {
@@ -721,7 +722,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     val inputFileToSet =
     fileBufsAndMeta.origPartitionedFile.getOrElse(fileBufsAndMeta.partitionedFile)
     InputFileUtils.setInputFileBlock(
-      inputFileToSet.filePath,
+      GpuSparkPath(inputFileToSet.filePath),
       inputFileToSet.start,
       inputFileToSet.length)
     fileBufsAndMeta
@@ -770,7 +771,7 @@ abstract class MultiFileCloudPartitionReaderBase(
           val inputFileToSet =
           fileBufsAndMeta.origPartitionedFile.getOrElse(fileBufsAndMeta.partitionedFile)
           InputFileUtils.setInputFileBlock(
-            inputFileToSet.filePath,
+            GpuSparkPath(inputFileToSet.filePath),
             inputFileToSet.start,
             inputFileToSet.length)
           readBuffersToBatch(fileBufsAndMeta, true)

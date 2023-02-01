@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 import scala.collection.mutable.HashMap
 
 import com.nvidia.spark.rapids.{AlluxioCfgUtils, AlluxioUtils, GpuExec, GpuMetric, GpuOrcMultiFilePartitionReaderFactory, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, SparkPlanMeta}
-import com.nvidia.spark.rapids.shims.{GpuDataSourceRDD, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{GpuDataSourceRDD, GpuSparkPath, SparkShimImpl}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rdd.RDD
@@ -512,7 +512,7 @@ case class GpuFileSourceScanExec(
 
     val filesGroupedToBuckets = partitionedFiles.groupBy { f =>
       BucketingUtils
-        .getBucketId(new Path(f.filePath).getName)
+        .getBucketId(new Path(GpuSparkPath(f.filePath)).getName)
         .getOrElse(sys.error(s"Invalid bucket file ${f.filePath}"))
     }
 

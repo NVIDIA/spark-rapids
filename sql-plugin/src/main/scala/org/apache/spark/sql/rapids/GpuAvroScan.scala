@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ import ai.rapids.cudf.{AvroOptions => CudfAvroOptions, HostMemoryBuffer, NvtxCol
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, READ_FS_TIME, SEMAPHORE_WAIT_TIME, WRITE_BUFFER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
+import com.nvidia.spark.rapids.shims.{GpuSparkPath, ShimFilePartitionReaderFactory}
 import org.apache.avro.Schema
 import org.apache.avro.file.DataFileConstants.SYNC_SIZE
 import org.apache.hadoop.conf.Configuration
@@ -232,7 +232,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
     val files = if (options.ignoreExtension) {
       partFiles
     } else {
-      partFiles.filter(_.filePath.endsWith(".avro"))
+      partFiles.filter(f => GpuSparkPath(f.filePath).endsWith(".avro"))
     }
     new GpuMultiFileCloudAvroPartitionReader(conf, files, numThreads, maxNumFileProcessed,
       filters, metrics, ignoreCorruptFiles, ignoreMissingFiles, debugDumpPrefix,
@@ -267,7 +267,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
             s"Skipped the rest of the content in the corrupted file: ${file.filePath}", e)
           AvroBlockMeta(null, 0L, Seq.empty)
       }
-      val fPath = new Path(new URI(file.filePath))
+      val fPath = new Path(new URI(GpuSparkPath(file.filePath)))
       clippedBlocks ++= singleFileInfo.blocks.map(block =>
         AvroSingleDataBlockInfo(
             fPath,
@@ -532,7 +532,7 @@ class GpuAvroPartitionReader(
     execMetrics: Map[String, GpuMetric])
   extends FilePartitionReaderBase(conf, execMetrics) with GpuAvroReaderBase {
 
-  private val partFilePath = new Path(new URI(partFile.filePath))
+  private val partFilePath = new Path(new URI(GpuSparkPath(partFile.filePath)))
   private val blockIterator: BufferedIterator[BlockInfo] = blockMeta.blocks.iterator.buffered
 
   override def next(): Boolean = {
@@ -737,7 +737,7 @@ class GpuMultiFileCloudAvroPartitionReader(
       val bufferStartTime = System.nanoTime()
       val startingBytesRead = fileSystemBytesRead()
       val result =
-        withResource(AvroFileReader.openDataReader(partFile.filePath, config)) { reader =>
+        withResource(AvroFileReader.openDataReader(GpuSparkPath(partFile.filePath), config)) { reader =>
           // Go to the start of the first block after the start position
           reader.sync(partFile.start)
           if (!reader.hasNextBlock || isDone) {
@@ -1019,8 +1019,8 @@ case class AvroFileFilterHandler(
   val ignoreExtension = options.ignoreExtension
 
   def filterBlocks(partFile: PartitionedFile): AvroBlockMeta = {
-    if (ignoreExtension || partFile.filePath.endsWith(".avro")) {
-      withResource(AvroFileReader.openMetaReader(partFile.filePath, hadoopConf)) { reader =>
+    if (ignoreExtension || GpuSparkPath(partFile.filePath).endsWith(".avro")) {
+      withResource(AvroFileReader.openMetaReader(GpuSparkPath(partFile.filePath), hadoopConf)) { reader =>
         // Get blocks only belong to this split
         reader.sync(partFile.start)
         val partBlocks = reader.getPartialBlocks(partFile.start + partFile.length)
