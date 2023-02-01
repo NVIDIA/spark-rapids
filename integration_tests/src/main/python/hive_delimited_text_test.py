@@ -512,7 +512,7 @@ def test_basic_hive_text_write(std_input_path, name, schema, spark_tmp_table_fac
 PartitionWriteMode = Enum('PartitionWriteMode', ['Static', 'Dynamic'])
 
 
-def populate_partitioned_table(spark_tmp_table_factory, mode=PartitionWriteMode.Dynamic):
+def populate_partitioned_table(spark_tmp_table_factory, mode=PartitionWriteMode.Static):
     """
     Returns a function that does the following:
         1. Creates an un-partitioned Hive table with data with the following schema:
@@ -559,11 +559,22 @@ def populate_partitioned_table(spark_tmp_table_factory, mode=PartitionWriteMode.
         return spark.sql("SELECT * FROM " + output_table +
                          " WHERE type = 'ELECTRIC' or type = 'Hybrid'")
 
-    return populate_partitions_static
+    def populate_partitions_dynamic(spark):
+        input_table = create_input_table(spark)
+        output_table = spark_tmp_table_factory.get()
+        spark.sql("CREATE TABLE " + output_table +
+                  " (make STRING, model STRING, year INT, comment STRING)"
+                  " PARTITIONED BY (type STRING) STORED AS TEXTFILE")
+        spark.sql("INSERT INTO TABLE " + output_table +
+                  " SELECT make, model, year, comment, type FROM " + input_table)
+        return spark.sql("SELECT * FROM " + output_table +
+                         " WHERE type = 'ELECTRIC' or type = 'Hybrid'")
+
+    return populate_partitions_static if mode == PartitionWriteMode.Static else populate_partitions_dynamic
 
 
 @allow_non_gpu("EqualTo,IsNotNull,Literal,Or")  # Accounts for partition predicate.
-@pytest.mark.parametrize('mode', [PartitionWriteMode.Static])
+@pytest.mark.parametrize('mode', [PartitionWriteMode.Static, PartitionWriteMode.Dynamic])
 def test_partitioned_hive_text_write(mode, spark_tmp_table_factory):
     assert_gpu_and_cpu_are_equal_collect(
         populate_partitioned_table(spark_tmp_table_factory, mode),
