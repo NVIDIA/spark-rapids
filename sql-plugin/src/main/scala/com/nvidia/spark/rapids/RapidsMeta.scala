@@ -708,7 +708,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
    * @param p        plan
    * @param typeName type name
    */
-  def tagChildAccordingToParent(p: SparkPlanMeta[SparkPlan], typeName: String): Unit = {
+  private def tagChildAccordingToParent(p: SparkPlanMeta[SparkPlan], typeName: String): Unit = {
     p.childPlans.foreach(e => tagChildAccordingToParent(e, typeName))
     if (p.wrapped.getClass.getSimpleName.equals(typeName)) {
       assert(p.parent.isDefined)
