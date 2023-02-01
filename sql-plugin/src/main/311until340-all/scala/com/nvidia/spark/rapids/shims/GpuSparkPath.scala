@@ -24,7 +24,7 @@ import scala.language.implicitConversions
 final case class GpuSparkPath(path: String)
 
 object GpuSparkPath {
-  implicit def GpuSparkPathToString(path: GpuSparkPath) = path.path
-  implicit def ArrayOfGpuSparkPathToArrayOfString(paths: Array[GpuSparkPath]) =
+  implicit def gpuSparkPathToString(path: GpuSparkPath) = path.path
+  implicit def arrayOfGpuSparkPathToArrayOfString(paths: Array[GpuSparkPath]) =
     paths.map(p => p.path)
 }

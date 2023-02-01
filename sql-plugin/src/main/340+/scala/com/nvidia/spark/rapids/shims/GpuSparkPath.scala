@@ -28,10 +28,10 @@ final case class GpuSparkPath(path: String)
 object GpuSparkPath {
   def apply(path: SparkPath): GpuSparkPath = GpuSparkPath(path.toString)
   
-  implicit def GpuSparkPathToString(path: GpuSparkPath) = path.path
+  implicit def gpuSparkPathToString(path: GpuSparkPath) = path.path
 
-  implicit def ArrayOfGpuSparkPathToArrayOfString(paths: Array[GpuSparkPath]) =
+  implicit def arrayOfGpuSparkPathToArrayOfString(paths: Array[GpuSparkPath]) =
     paths.map(p => p.path)
 
-  implicit def GpuSparkPathToSparkPath(path: GpuSparkPath) = SparkPath(path.path)
+  implicit def gpuSparkPathToSparkPath(path: GpuSparkPath) = SparkPath(path.path)
 }
