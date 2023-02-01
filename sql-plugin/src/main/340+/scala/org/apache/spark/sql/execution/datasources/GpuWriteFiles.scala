@@ -86,24 +86,24 @@ case class GpuWriteFilesExec(
       s"${getClass.getCanonicalName} does not support row-based execution")
 
   /**
-   * Similar with SparkPlan.executeWrite
+   * Gpu version for SparkPlan.executeWrite
    */
-  def executeWrite(
+  def executeColumnarWrite(
       writeFilesSpec: GpuWriteFilesSpec): RDD[WriterCommitMessage] = executeQuery {
     // Copied from SparkPlan.executeWrite
     if (isCanonicalizedPlan) {
       throw SparkException.internalError("A canonicalized plan is not supposed to be executed.")
     }
-    doExecuteWrite(writeFilesSpec)
+    doExecuteColumnarWrite(writeFilesSpec)
   }
 
   /**
-   * Similar with SparkPlan.doExecuteWrite
+   * Gpu version for SparkPlan.doExecuteWrite
    *
    * @param writeFilesSpec
    * @return
    */
-  private def doExecuteWrite(
+  private def doExecuteColumnarWrite(
       writeFilesSpec: GpuWriteFilesSpec): RDD[WriterCommitMessage] = {
     val rdd = child.executeColumnar()
     // SPARK-23271 If we are attempting to write a zero partition rdd, create a dummy single

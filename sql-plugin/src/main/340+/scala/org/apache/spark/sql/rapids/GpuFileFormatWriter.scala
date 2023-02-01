@@ -322,7 +322,7 @@ object GpuFileFormatWriter extends Logging {
 
     writeAndCommit(job, description, committer) {
       // columnar write
-      val rdd = planForWrites.executeWrite(writeFilesSpec)
+      val rdd = planForWrites.executeColumnarWrite(writeFilesSpec)
       val ret = new Array[WriteTaskResult](rdd.partitions.length)
       session.sparkContext.runJob(
         rdd,
