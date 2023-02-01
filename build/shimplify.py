@@ -15,7 +15,16 @@
 """
 Implementation of <shimplify> Ant task in Python2.7 for Jython
 
-Simplifies the prior version range directory system
+Simplifies the prior version-range directory system
+
+The if=false version is run by default during the generate-sources phase. If the user is
+to run shimplify to perform file modifications for converting to the new system or to add a new
+shim, it is recommended albeit not required to do it in a dedicated run after running `mvn install`.
+
+```bash
+mvn clean install -DskipTests
+mvn generate-sources antrun:run@shimplify=shim-sources
+```
 
 Switches:
 
