@@ -102,12 +102,12 @@ def __task():
     Wraps access to the implicitly provided Ant task attributes map to reduce
     undefined-name linting warnings
     """
-    return __self
+    return self
 
 
 def __fail(message):
     "Fails this task with the error message"
-    __task.fail(message)
+    __task().fail(message)
 
 
 def __attributes():
@@ -155,7 +155,7 @@ def __csv_as_arr(str_val):
     if str_val in (None, ''):
         return []
     else:
-        return str_val.translate(None, ' \n\r').split(',')
+        return str_val.translate(None, ' ' + os.linesep).split(',')
 
 
 __should_add_comment = __is_enabled_attr('if')
@@ -191,7 +191,7 @@ def __upsert_shim_json(filename, bv_list):
     with open(filename, 'r') as file:
         contents = file.readlines()
 
-    shim_comment = []
+    shim_comment = [os.linesep]
     shim_comment.append(__opening_shim_tag)
     for build_ver in bv_list:
         shim_comment.append(json.dumps({'spark':  build_ver}))
@@ -200,7 +200,7 @@ def __upsert_shim_json(filename, bv_list):
     __log.debug("Inserting comment %s to %s", shim_comment, filename)
     package_line = next(i for i in range(len(contents)) if str(contents[i]).startswith('package'))
     __log.debug("filename %s package_line_number=%d", filename, package_line)
-    shim_comment_str = '\n'.join(shim_comment) + '\n'
+    shim_comment_str = os.linesep.join(shim_comment) + os.linesep
     contents.insert(package_line, shim_comment_str)
     with open(filename, 'w') as file:
         file.writelines(contents)
@@ -268,14 +268,14 @@ def task_impl():
     """Ant task entry point """
     __log.info('# Starting Jython Task Shimplify #')
     config_format = """#   config:
-    #           shimplify (if)=%s
-    #           shimplify.add.base=%s
-    #           shimplify.add.shim=%s
-    #           shimplify.dirs=%s
-    #           shimplify.move=%s
-    #           shimplify.overwrite=%s
-    #           shimplify.shims=%s
-    #           shimplify.trace=%s"""
+#           shimplify (if)=%s
+#           shimplify.add.base=%s
+#           shimplify.add.shim=%s
+#           shimplify.dirs=%s
+#           shimplify.move=%s
+#           shimplify.overwrite=%s
+#           shimplify.shims=%s
+#           shimplify.trace=%s"""
     __log.info(config_format,
                __should_add_comment,
                __add_shim_base,
@@ -285,7 +285,6 @@ def task_impl():
                __should_overwrite,
                __shims_arr,
                __should_trace)
-
     __log.info("review changes and `git restore` if necessary")
     buildvers_from_dirs = []
     for prop_pattern in ["spark%s.sources", "spark%s.test.sources"]:
@@ -343,7 +342,7 @@ def __traverse_source_tree(buildver, src_type, shim_dir_pattern, shim_comment_pa
                 shim_match = shim_comment_pattern.search(shim_file_txt)
                 assert shim_match is not None and shim_match.groups(), \
                     "no shim comment located in %s" % shim_file_path
-                shim_arr = shim_match.group(1).split('\n')
+                shim_arr = shim_match.group(1).split(os.linesep)
                 assert len(shim_arr) > 0, "invalid empty shim comment,"\
                     "orphan shim files should be deleted"
                 build_ver_arr = map(lambda s: str(json.loads(s).get('spark')), shim_arr)
@@ -389,6 +388,12 @@ def __remove_file(target_shim_file_path):
 
 
 def __shimplify_layout():
+    assert __add_shim_buildver not in ([None] + __all_shims_arr),\
+           "Shim for %s already exists" % __add_shim_buildver
+    logging.debug("(__add_shim_buildver is None) or (__add_shim_base is not None) %s",
+                  (__add_shim_buildver is None) or (__add_shim_base is not None))
+    assert (__add_shim_buildver is None) or (__add_shim_base is not None),\
+           "shimplify.add.shim cannot be specified without shimplify.add.base"
     # map file -> [shims it's part of]
     files2bv = {}
     for build_ver in __all_shims_arr:
