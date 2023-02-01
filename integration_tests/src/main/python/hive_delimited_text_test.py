@@ -508,3 +508,66 @@ def test_basic_hive_text_write(std_input_path, name, schema, spark_tmp_table_fac
                                                   mode),
             conf=hive_text_write_enabled_conf)
 
+
+PartitionWriteMode = Enum('PartitionWriteMode', ['Static', 'Dynamic'])
+
+
+def populate_partitioned_table(spark_tmp_table_factory, mode=PartitionWriteMode.Dynamic):
+    """
+    Returns a function that does the following:
+        1. Creates an un-partitioned Hive table with data with the following schema:
+             1. make STRING
+             2. model STRING
+             3. year INT
+             4. type STRING (cardinality == 3)
+             5. comment STRING
+        2. Creates a partitioned Hive, with a similar schema to above, but partitioned on
+           the `type` column.
+        3. Populates the partitioned table using the un-partitioned table as input.
+             1. If the partition mode is dynamic, all the partitions are populated at once.
+             2. If the partition mode is static, the partitions are populated explicitly,
+                and sequentially.
+        4. Returns all the rows from 2 of the 3 partitions in the new table.
+    """
+
+    def create_input_table(spark):
+        tmp_input = spark_tmp_table_factory.get()
+        spark.sql("CREATE TABLE " + tmp_input +
+                  " (make STRING, model STRING, year INT, type STRING, comment STRING)" +
+                  " STORED AS TEXTFILE")
+        spark.sql("INSERT INTO TABLE " + tmp_input + " VALUES " +
+                  "('Ford',   'F-150',       2020, 'ICE',      'Popular' ),"
+                  "('GMC',    'Sierra 1500', 1997, 'ICE',      'Older'),"
+                  "('Chevy',  'D-Max',       2015, 'ICE',      'Isuzu?' ),"
+                  "('Tesla',  'CyberTruck',  2025, 'Electric', 'Fictional'),"
+                  "('Rivian', 'R1T',         2022, 'Electric', 'Heavy'),"
+                  "('Jeep',   'Gladiator',   2024, 'Hybrid',   'Upcoming')")
+        return tmp_input
+
+    def populate_partitions_static(spark):
+        input_table = create_input_table(spark)
+        output_table = spark_tmp_table_factory.get()
+        spark.sql("CREATE TABLE " + output_table +
+                  " (make STRING, model STRING, year INT, comment STRING)"
+                  " PARTITIONED BY (type STRING) STORED AS TEXTFILE")
+        spark.sql("INSERT INTO TABLE " + output_table + " PARTITION (type='ICE')" +
+                  " SELECT make, model, year, comment FROM " + input_table +
+                  " WHERE type='Electric'")
+        spark.sql("INSERT INTO TABLE " + output_table + " PARTITION (type='ICE')" +
+                  " SELECT make, model, year, comment FROM " + input_table +
+                  " WHERE type='Hybrid'")
+        return spark.sql("SELECT * FROM " + output_table +
+                         " WHERE type = 'ELECTRIC' or type = 'Hybrid'")
+
+    return populate_partitions_static
+
+
+@allow_non_gpu("EqualTo,IsNotNull,Literal,Or")  # Accounts for partition predicate.
+@pytest.mark.parametrize('mode', [PartitionWriteMode.Static])
+def test_partitioned_hive_text_write(mode, spark_tmp_table_factory):
+    assert_gpu_and_cpu_are_equal_collect(
+        populate_partitioned_table(spark_tmp_table_factory, mode),
+        conf={"hive.exec.dynamic.partition.mode": "nonstrict",
+              "spark.rapids.sql.format.hive.text.enabled": True,
+              "spark.rapids.sql.format.hive.text.write.enabled": True}
+    )
