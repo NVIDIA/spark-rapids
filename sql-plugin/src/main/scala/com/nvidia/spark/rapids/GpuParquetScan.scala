@@ -1013,7 +1013,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
     } catch {
       case e: FileNotFoundException if ignoreMissingFiles =>
         logWarning(s"Skipped missing file: ${file.filePath}", e)
-        val meta = ParquetFileInfoWithBlockMeta(new Path(new URI(GpuSparkPath(file.filePath))), Seq.empty,
+        val meta = ParquetFileInfoWithBlockMeta(
+          new Path(new URI(GpuSparkPath(file.filePath))), Seq.empty,
           file.partitionValues, null, null, false, false, false)
         BlockMetaWithPartFile(meta, file)
       // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
@@ -1023,7 +1024,8 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       case e@(_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
         logWarning(
           s"Skipped the rest of the content in the corrupted file: ${file.filePath}", e)
-        val meta = ParquetFileInfoWithBlockMeta(new Path(new URI(GpuSparkPath(file.filePath))), Seq.empty,
+        val meta = ParquetFileInfoWithBlockMeta(
+          new Path(new URI(GpuSparkPath(file.filePath))), Seq.empty,
           file.partitionValues, null, null, false, false, false)
         BlockMetaWithPartFile(meta, file)
     }

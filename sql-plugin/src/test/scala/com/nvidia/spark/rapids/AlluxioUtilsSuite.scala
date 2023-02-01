@@ -15,15 +15,13 @@
  */
 package com.nvidia.spark.rapids
 
-import scala.collection.mutable
-
-import shims.GpuSparkPath
-
+import com.nvidia.spark.rapids.shims.GpuSparkPath
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, Path}
 import org.mockito.Mockito._
 import org.scalatest.FunSuite
 import org.scalatest.mockito.MockitoSugar.mock
+import scala.collection.mutable
 
 import org.apache.spark.sql.RuntimeConfig
 import org.apache.spark.sql.execution.datasources.{PartitionDirectory, PartitionedFile}

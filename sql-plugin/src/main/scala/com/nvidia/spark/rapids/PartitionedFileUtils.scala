@@ -28,5 +28,6 @@ object PartitionedFileUtils {
       partitionValues: InternalRow,
       filePath: String,
       start: Long,
-      length: Long): PartitionedFile = PartitionedFile(partitionValues, GpuSparkPath(filePath), start, length)
+      length: Long): PartitionedFile = 
+    PartitionedFile(partitionValues, GpuSparkPath(filePath), start, length)
 }

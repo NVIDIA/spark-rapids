@@ -737,7 +737,9 @@ class GpuMultiFileCloudAvroPartitionReader(
       val bufferStartTime = System.nanoTime()
       val startingBytesRead = fileSystemBytesRead()
       val result =
-        withResource(AvroFileReader.openDataReader(GpuSparkPath(partFile.filePath), config)) { reader =>
+        withResource(
+          AvroFileReader.openDataReader(GpuSparkPath(partFile.filePath), config)
+        ) { reader =>
           // Go to the start of the first block after the start position
           reader.sync(partFile.start)
           if (!reader.hasNextBlock || isDone) {
@@ -1020,7 +1022,9 @@ case class AvroFileFilterHandler(
 
   def filterBlocks(partFile: PartitionedFile): AvroBlockMeta = {
     if (ignoreExtension || GpuSparkPath(partFile.filePath).endsWith(".avro")) {
-      withResource(AvroFileReader.openMetaReader(GpuSparkPath(partFile.filePath), hadoopConf)) { reader =>
+      withResource(
+        AvroFileReader.openMetaReader(GpuSparkPath(partFile.filePath), hadoopConf)
+      ) { reader =>
         // Get blocks only belong to this split
         reader.sync(partFile.start)
         val partBlocks = reader.getPartialBlocks(partFile.start + partFile.length)

@@ -16,9 +16,9 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.paths.SparkPath
-
 import scala.language.implicitConversions
+
+import org.apache.spark.paths.SparkPath
 
 /**
  * A helper type for the implicit conversion between `String` and `SparkPath`.

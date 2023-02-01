@@ -21,7 +21,6 @@ import java.io.FileNotFoundException
 import scala.util.control.NonFatal
 
 import com.nvidia.spark.rapids.shims.GpuSparkPath
-
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -460,7 +459,9 @@ object AlluxioUtils extends Logging with Arm {
         val replacedFile = file.replaceFirst(matchedSet.head._2, matchedSet.head._1)
         logDebug(s"getOrigPath replacedFile: $replacedFile")
         PartitionedFileInfoOptAlluxio(pf,
-          Some(PartitionedFile(pf.partitionValues, GpuSparkPath(replacedFile), pf.start, file.length)))
+          Some(PartitionedFile(
+            pf.partitionValues, GpuSparkPath(replacedFile), pf.start, file.length
+          )))
       } else {
         PartitionedFileInfoOptAlluxio(pf, None)
       }
