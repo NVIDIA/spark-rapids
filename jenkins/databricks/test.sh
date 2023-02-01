@@ -172,12 +172,7 @@ rapids_shuffle_smoke_test() {
     PYSP_TEST_spark_rapids_shuffle_mode=MULTITHREADED \
     PYSP_TEST_spark_rapids_shuffle_multiThreaded_writer_threads=2 \
     PYSP_TEST_spark_rapids_shuffle_multiThreaded_reader_threads=2 \
-    PYSP_TEST_spark_cores_max=2 \
-    PYSP_TEST_spark_executor_cores=1 \
     PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
-    PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0 \
-    PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=0.1 \
-    PYSP_TEST_spark_rapids_memory_gpu_allocFraction=0.1 \
     SPARK_SUBMIT_FLAGS="$SPARK_CONF" TEST_PARALLEL=1 \
     ./run_pyspark_from_build.sh -m shuffle_test --runtime_env="databricks" --test_type=$TEST_TYPE
 }
