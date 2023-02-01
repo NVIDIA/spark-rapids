@@ -160,14 +160,14 @@ __should_overwrite = __is_enabled_property('shimplify.overwrite')
 # enable log tracing?
 __should_trace = __is_enabled_property('shimplify.trace')
 
-__shim_add_buildver = __ant_proj_prop('shimplify.add.shim')
-__shim_add_base = __ant_proj_prop('shimplify.add.base')
+__add_shim_buildver = __ant_proj_prop('shimplify.add.shim')
+__add_shim_base = __ant_proj_prop('shimplify.add.base')
 
 __shim_comment_tag = 'spark-rapids-shim-json-lines'
 __opening_shim_tag = '/*** ' + __shim_comment_tag
 __closing_shim_tag = __shim_comment_tag + ' ***/'
 __shims_arr = sorted(__csv_ant_prop_as_arr('shimplify.shims'))
-__shims_dirs = sorted(__csv_ant_prop_as_arr('shimplify.dirs'))
+__dirs_to_derive_shims = sorted(__csv_ant_prop_as_arr('shimplify.dirs'))
 
 __all_shims_arr = sorted(__csv_ant_prop_as_arr('all.buildvers'))
 
@@ -258,18 +258,23 @@ def __makedirs(new_dir):
 def task_impl():
     """Ant task entry point """
     __log.info('# Starting Jython Task Shimplify #')
-    config_format = """#   config: if=%s
-    #           shimplfy.add.shim=%s
+    config_format = """#   config:
+    #           shimplify (if)=%s
     #           shimplify.add.base=%s
+    #           shimplify.add.shim=%s
+    #           shimplify.dirs=%s
     #           shimplify.move=%s
     #           shimplify.overwrite=%s
+    #           shimplify.shims=%s
     #           shimplify.trace=%s"""
     __log.info(config_format,
                __should_add_comment,
-               __shim_add_buildver,
-               __shim_add_base,
-               __should_overwrite,
+               __add_shim_base,
+               __add_shim_buildver,
+               __dirs_to_derive_shims,
                __should_move_files,
+               __should_overwrite,
+               __shims_arr,
                __should_trace)
 
     __log.info("review changes and `git restore` if necessary")
@@ -279,13 +284,13 @@ def task_impl():
         __log.debug("Map dirs2bv = %s", dirs2bv)
         __warn_shims_with_multiple_dedicated_dirs(dirs2bv)
         for dir, buildvers in dirs2bv.items():
-            for dir_substr in __shims_dirs:
+            for dir_substr in __dirs_to_derive_shims:
                 if dir_substr in dir:
                     buildvers_from_dirs += buildvers
 
     buildvers_from_dirs_sorted_deduped = sorted(set(buildvers_from_dirs))
     if len(buildvers_from_dirs_sorted_deduped) > 0:
-        __log.info("shimplify.dirs = %s, overriding shims from dirs: %s", __shims_dirs,
+        __log.info("shimplify.dirs = %s, overriding shims from dirs: %s", __dirs_to_derive_shims,
                    buildvers_from_dirs_sorted_deduped)
         __shims_arr[:] = buildvers_from_dirs_sorted_deduped
 
