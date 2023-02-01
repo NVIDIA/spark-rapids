@@ -22,7 +22,7 @@ import org.apache.parquet.schema.MessageType
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
 import org.apache.spark.sql.catalyst.trees.TreePattern._
-import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources._
@@ -86,7 +86,7 @@ object SparkShimImpl extends Spark321PlusDBShims {
     }
   }
 
-  override def addTransitionalShuffleIfNeeded(c2r: GpuColumnarToRowExec,
+  override def addRowShuffleToQueryStageTransitionIfNeeded(c2r: ColumnarToRowTransition,
       sqse: ShuffleQueryStageExec): SparkPlan = {
     val plan = GpuTransitionOverrides.getNonQueryStagePlan(sqse)
     plan match {
