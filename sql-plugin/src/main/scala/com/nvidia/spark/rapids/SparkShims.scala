@@ -148,6 +148,8 @@ trait SparkShims {
 
   def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan]
 
+  def isExecutorBroadcastShuffle(shuffle: ShuffleExchangeLike): Boolean = false
+
   def shuffleParentReadsShuffleData(shuffle: ShuffleExchangeLike, parent: SparkPlan): Boolean =
     false
 
