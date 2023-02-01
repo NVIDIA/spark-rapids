@@ -20,11 +20,15 @@ Simplifies the prior version range directory system
 Switches:
 
 if                   - task attribute whether to modify files
-shimplfy.add.shim    - new buildver
-shimlify.add.base    - based on the old buildver
+shimlify.add.base    - old buildver to base the new one provided by shimplfy.add.shim
+shimplfy.add.shim    - add new shim/buildver based on the one provided by shimlify.add.base
+shimplify.dirs       - comma-separated list of dirs to modify, supercedes shimplify.shims
 shimplify.move       - property to allow moving files to canonical location, otherwise update
                        without moving
-shimplify.overwrite  - property to allow executing file changes repeatedly
+shimplify.overwrite  - property to allow shimplify executing file changes repeatedly,
+                       error out otherwise
+shimplify.shims      - coma-separated list of shims to simplify instead of all, superceded by
+                       shimplify.dirs
 shimplify.trace      - property to enable trace logging
 
 If the task attribute "if" evaluates to false shimplify does not alter files on the filesystem.
