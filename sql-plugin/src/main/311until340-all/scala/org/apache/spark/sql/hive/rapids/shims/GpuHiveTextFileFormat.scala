@@ -16,12 +16,12 @@
 
 package org.apache.spark.sql.hive.rapids.shims
 
-import ai.rapids.cudf.{ColumnVector, CSVWriterOptions, DType, HostBufferConsumer, QuoteStyle, Scalar, Table, TableWriter => CudfTableWriter}
+import ai.rapids.cudf.{CSVWriterOptions, HostBufferConsumer, QuoteStyle, Scalar, Table, TableWriter => CudfTableWriter}
 import com.google.common.base.Charsets
 import com.nvidia.spark.rapids.{ColumnarFileFormat, ColumnarOutputWriter, ColumnarOutputWriterFactory, FileFormatChecks, HiveDelimitedTextFormatType, RapidsConf, WriteFileOp}
+
 import java.nio.charset.Charset
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
-
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.hive.rapids.GpuHiveTextFileUtils._
@@ -136,41 +136,16 @@ class GpuHiveTextWriter(override val path: String,
 
     val underlying: CudfTableWriter = Table.getCSVBufferWriter(writeOptions, bufferConsumer)
 
-    private def convertTimestampToString(col: ColumnVector): ColumnVector = {
-
-      val asStrings = col.asStrings() // TODO: Replace with col.asStrings(withFormat).
-      val nullsReplaced = withResource(Scalar.fromString("\\N")) { nullString =>
-        withResource(asStrings) { _ =>
-          asStrings.replaceNulls(nullString)
-        }
-      }
-      val removeT = withResource(Scalar.fromString("T")) { T =>
-        withResource(Scalar.fromString(" ")) { space =>
-          withResource(nullsReplaced) { _ =>
-            nullsReplaced.stringReplace(T, space)
-          }
-        }
-      }
-      val removeZ = withResource(Scalar.fromString("Z")) { Z =>
-        withResource(Scalar.fromString("")) { empty =>
-          withResource(removeT) { _ =>
-            removeT.stringReplace(Z, empty)
-          }
-        }
-      }
-      removeZ
-    }
-
     override def write(table: Table): Unit = {
       val columns = for (i <- 0 until table.getNumberOfColumns) yield {
-        val col = table.getColumn(i)
-        col.getType match {
-          case DType.TIMESTAMP_DAYS =>         convertTimestampToString(col)
-          case DType.TIMESTAMP_SECONDS =>      convertTimestampToString(col)
-          case DType.TIMESTAMP_MILLISECONDS => convertTimestampToString(col)
-          case DType.TIMESTAMP_MICROSECONDS => convertTimestampToString(col)
-          case DType.TIMESTAMP_NANOSECONDS =>  convertTimestampToString(col)
-          case _ => col.incRefCount()
+        table.getColumn(i) match {
+          case c if c.getType.hasTimeResolution =>
+            withResource(c.asStrings("%Y-%m-%d %H:%M:%S.%f")) { asStrings =>
+              withResource(Scalar.fromString("\\N")) { nullString =>
+                asStrings.replaceNulls(nullString)
+              }
+            }
+          case c => c.incRefCount()
         }
       }
 
