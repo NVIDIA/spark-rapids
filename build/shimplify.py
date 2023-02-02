@@ -243,6 +243,7 @@ def __git_rename_or_copy(shim_file, owner_shim, from_shim=None):
     path_parts = rel_path.split(os.sep)
     owner_path_comp = "spark%s" % owner_shim
 
+    from_path_comp = None
     if from_shim is not None:
         # may have to update package path
         from_path_comp = "spark%s" % from_shim
@@ -258,12 +259,20 @@ def __git_rename_or_copy(shim_file, owner_shim, from_shim=None):
         new_shim_dir = os.path.dirname(new_shim_file)
         __log.debug("creating new shim path %s", new_shim_dir)
         __makedirs(new_shim_dir)
-
         shell_cmd = (['git', 'mv'] if from_shim is None else ['cp']) + [shim_file, new_shim_file]
         __log.debug("rename_or_copy shelling out to run: %s", shell_cmd)
         ret_code = subprocess.call(shell_cmd)
         if ret_code != 0:
             __fail("failed to execute %s" % shell_cmd)
+
+        # TODO update package references inside the file automatically
+        if from_path_comp is not None:
+            git_add_cmd = ['git', 'add', new_shim_file]
+            ret_code = subprocess.call(git_add_cmd)
+            if ret_code != 0:
+                __fail("failed to execute %s" % git_add_cmd)
+            __log.info("%s created, manually replace inside it %s to %s ", new_shim_file,
+                       from_path_comp, owner_path_comp)
     return new_shim_file
 
 
