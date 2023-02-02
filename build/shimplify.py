@@ -29,14 +29,14 @@ mvn generate-sources antrun:run@shimplify=shim-sources
 Switches:
 
 if                   - task attribute whether to modify files
-shimlify.add.base    - old buildver to base the new one provided by shimplfy.add.shim
-shimplfy.add.shim    - add new shim/buildver based on the one provided by shimlify.add.base
-shimplify.dirs       - comma-separated list of dirs to modify, supercedes shimplify.shims
+shimlify.add.base    - old buildver to base the new one provided by shimplify.add.shim
+shimplify.add.shim    - add new shim/buildver based on the one provided by shimlify.add.base
+shimplify.dirs       - comma-separated list of dirs to modify, supersedes shimplify.shims
 shimplify.move       - property to allow moving files to canonical location, otherwise update
                        without moving
 shimplify.overwrite  - property to allow shimplify executing file changes repeatedly,
                        error out otherwise
-shimplify.shims      - coma-separated list of shims to simplify instead of all, superceded by
+shimplify.shims      - coma-separated list of shims to simplify instead of all, superseded by
                        shimplify.dirs
 shimplify.trace      - property to enable trace logging
 
@@ -121,13 +121,13 @@ def __attributes():
 
 
 def __ant_proj_prop(name):
-    """Retrun an Ant project property value as a Python string"""
+    """Returns an Ant project property value as a Python string"""
     prop_val = __project().getProperty(name)
     return None if prop_val is None else str(prop_val)
 
 
 def __ant_attr(name):
-    """Retrun this Ant task attribute value as a Python string"""
+    """Returns this Ant task attribute value as a Python string"""
     attr_val = __attributes().get(name)
     return None if attr_val is None else str(attr_val)
 
@@ -147,7 +147,7 @@ def __is_enabled_attr(attr):
 
 
 def __csv_ant_prop_as_arr(name):
-    """Splits a CSV value for a propety into a list"""
+    """Splits a CSV value for a property into a list"""
     prop_val = __ant_proj_prop(name)
     return __csv_as_arr(prop_val)
 
@@ -445,12 +445,12 @@ def __shimplify_layout():
             __shims_arr.append(__add_shim_buildver)
             __shims_arr.sort()
 
-        # copy keys to modify the original dictionary
+        # copy keys to be able to modify the original dictionary while iterating
         for shim_file in set(files2bv.keys()):
             bv_list = files2bv[shim_file]
             if __add_shim_base in bv_list:
                 # adding a lookalike
-                # case 1) dedidcated per-shim files such as SparkShims.scala and anything with
+                # case 1) dedicated per-shim files such as SparkShims.scala and anything with
                 #         a spark${buldver} in the package path: CLONE the file with modifications
                 # case 2) otherwise simply add the new buildver to the files2bv[shimfile] mapping
                 base_package = "spark%s" % __add_shim_base
