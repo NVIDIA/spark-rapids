@@ -460,7 +460,8 @@ object AlluxioUtils extends Logging with Arm {
         logDebug(s"getOrigPath replacedFile: $replacedFile")
         PartitionedFileInfoOptAlluxio(pf,
           Some(PartitionedFile(
-            pf.partitionValues, GpuSparkPathShims.to(GpuSparkPath(replacedFile)), pf.start, file.length
+            pf.partitionValues, GpuSparkPathShims.to(GpuSparkPath(replacedFile)),
+            pf.start, file.length
           )))
       } else {
         PartitionedFileInfoOptAlluxio(pf, None)

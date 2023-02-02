@@ -16,8 +16,9 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.paths.SparkPath
 import com.nvidia.spark.rapids.GpuSparkPath
+
+import org.apache.spark.paths.SparkPath
 
 object GpuSparkPathShims {
   def to(path: GpuSparkPath) = SparkPath(path.toString)
