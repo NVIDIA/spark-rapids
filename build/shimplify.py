@@ -122,12 +122,14 @@ def __attributes():
 
 def __ant_proj_prop(name):
     """Retrun an Ant project property value as a Python string"""
-    return str(__project().getProperty(name))
+    prop_val = __project().getProperty(name)
+    return None if prop_val is None else str(prop_val)
 
 
 def __ant_attr(name):
     """Retrun this Ant task attribute value as a Python string"""
-    return str(__attributes().get(name))
+    attr_val = __attributes().get(name)
+    return None if attr_val is None else str(attr_val)
 
 
 def __is_enabled_property(prop_name):
@@ -231,28 +233,38 @@ def __delete_prior_comment_if_allowed(contents, tag, filename):
     del contents[opening_shim_comment_line:(closing_shim_comment_line + 1)]
 
 
-def __git_rename(shim_file, first_shim):
-    __log.debug("git rename %s to the canonical dir of %s", shim_file, first_shim)
+def __git_rename_or_copy(shim_file, owner_shim, from_shim=None):
+    __log.debug("git rename %s to the canonical dir of %s", shim_file, owner_shim)
     parent_pom_dir = __ant_proj_prop('spark.rapids.source.basedir')
     # sql-plugin/src/main/320+-nondb/scala/org/apache/spark/...
     rel_path = os.path.relpath(shim_file, parent_pom_dir)
     __log.debug("spark-rapids root dir: %s", parent_pom_dir)
     __log.debug("shim file path relative to root dir: %s", rel_path)
     path_parts = rel_path.split(os.sep)
+    owner_path_comp = "spark%s" % owner_shim
+
+    if from_shim is not None:
+        # may have to update package path
+        from_path_comp = "spark%s" % from_shim
+        path_parts = [p.replace(from_path_comp, owner_path_comp) for p in path_parts]
+
     # to enable both builds at the same time the original location should change too
-    path_parts[3] = 'spark%s' % first_shim
+    # <module>/src/test/331 =>  <module>/src/test/spark331
+    path_parts[3] = owner_path_comp
     new_shim_file = os.sep.join([parent_pom_dir] + path_parts)
     if shim_file == new_shim_file:
         __log.info("%s is already at the right location, skipping git rename", shim_file)
-        return
-    new_shim_dir = os.path.dirname(new_shim_file)
-    __log.debug("creating new shim path %s", new_shim_dir)
-    __makedirs(new_shim_dir)
+    else:
+        new_shim_dir = os.path.dirname(new_shim_file)
+        __log.debug("creating new shim path %s", new_shim_dir)
+        __makedirs(new_shim_dir)
 
-    git_cmd = ['git', 'mv', shim_file, new_shim_file]
-    ret_code = subprocess.call(git_cmd)
-    if ret_code != 0:
-        __fail('git rename failed')
+        shell_cmd = (['git', 'mv'] if from_shim is None else ['cp']) + [shim_file, new_shim_file]
+        __log.debug("rename_or_copy shelling out to run: %s", shell_cmd)
+        ret_code = subprocess.call(shell_cmd)
+        if ret_code != 0:
+            __fail("failed to execute %s" % shell_cmd)
+    return new_shim_file
 
 
 def __makedirs(new_dir):
@@ -388,12 +400,11 @@ def __remove_file(target_shim_file_path):
 
 
 def __shimplify_layout():
-    assert __add_shim_buildver not in ([None] + __all_shims_arr),\
-           "Shim for %s already exists" % __add_shim_buildver
-    logging.debug("(__add_shim_buildver is None) or (__add_shim_base is not None) %s",
-                  (__add_shim_buildver is None) or (__add_shim_base is not None))
-    assert (__add_shim_buildver is None) or (__add_shim_base is not None),\
-           "shimplify.add.shim cannot be specified without shimplify.add.base"
+    assert ((__add_shim_buildver is None) and (__add_shim_base is None) or
+            (__add_shim_buildver is not None) and (__add_shim_base is not None)),\
+           "shimplify.add.shim cannot be specified without shimplify.add.base and vice versa"
+    assert __add_shim_base is None or __add_shim_base in __shims_arr,\
+           "shimplify.add.base is not in %s" % __shims_arr
     # map file -> [shims it's part of]
     files2bv = {}
     for build_ver in __all_shims_arr:
@@ -415,13 +426,48 @@ def __shimplify_layout():
                         files2bv[shim_path] += [build_ver]
                     else:
                         files2bv[shim_path] = [build_ver]
+
+    # adding a new shim?
+    if __add_shim_buildver is not None:
+        if __add_shim_buildver not in __all_shims_arr:
+            __log.warning("Update pom.xml to add %s to all.buildvers")
+        if __add_shim_buildver not in __shims_arr:
+            # TODO  should we just bail and ask the user to add to all.buildvers manually first?
+            __shims_arr.append(__add_shim_buildver)
+            __shims_arr.sort()
+
+        # copy keys to modify the original dictionary
+        for shim_file in set(files2bv.keys()):
+            bv_list = files2bv[shim_file]
+            if __add_shim_base in bv_list:
+                # adding a lookalike
+                # case 1) dedidcated per-shim files such as SparkShims.scala and anything with
+                #         a spark${buldver} in the package path: CLONE the file with modifications
+                # case 2) otherwise simply add the new buildver to the files2bv[shimfile] mapping
+                base_package = "spark%s" % __add_shim_base
+                shim_impl_file = 'com.nvidia.spark.rapids.shims.SparkShims'\
+                    .replace('.', os.sep) + '.scala'
+                if (base_package in shim_file) or shim_file.endswith(shim_impl_file):
+                    assert len(bv_list) == 1, "Per-shim file are expect to belong to a single "\
+                        "shim, actual number of shims: %s" % len(bv_list)
+                    new_shim_file = __git_rename_or_copy(shim_file, __add_shim_buildver,
+                                                         from_shim=__add_shim_base)
+                    # schedule new file for comment update
+                    __log.info("Adding a per-shim file %s for %s", new_shim_file,
+                               __add_shim_buildver)
+                    files2bv[new_shim_file] = [__add_shim_buildver]
+                else:
+                    # TODO figure out why __add_shim_buildver is unicode class, not a simple str
+                    # and if we care
+                    bv_list.append(__add_shim_buildver)
+
     for shim_file, bv_list in files2bv.items():
         __log.debug("calling upsert_shim_json on shim_file %s bv_list=%s", shim_file, bv_list)
         owner_shim = bv_list[0]
         if owner_shim in __shims_arr:
             __upsert_shim_json(shim_file, bv_list)
             if __should_move_files:
-                __git_rename(shim_file, owner_shim)
+                __git_rename_or_copy(shim_file, owner_shim)
 
 
 def __warn_shims_with_multiple_dedicated_dirs(dirs2bv):
