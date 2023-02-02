@@ -20,6 +20,8 @@
 #   LOCAL_JAR_PATH: Location of the RAPIDS jars
 #   SPARK_CONF: Spark configuration parameters
 #   BASE_SPARK_VERSION: Spark version [3.1.2, 3.2.1, 3.3.0]. Default is pulled from current instance.
+#   SHUFFLE_SPARK_SHIM: Set the default value for the shuffle shim. For databricks versions, append
+#                       db. Example: spark330 => spark330db
 #   ICEBERG_VERSION: The iceberg version. To find the list of supported ICEBERG versions,
 #                    check https://iceberg.apache.org/multi-engine-support/#apache-spark
 #   SCALA_BINARY_VER: Scala version of the provided binaries. Default is 2.12.
@@ -28,6 +30,7 @@
 #       - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
 #       - ICEBERG_ONLY: iceberg tests only
 #       - DELTA_LAKE_ONLY: delta_lake tests only
+#       - MULTITHREADED_SHUFFLE: shuffle tests only
 # Usage:
 # - Running tests on DB10.4/Spark 3.2.1:
 #       `BASE_SPARK_VERSION=3.2.1 ./jenkins/databricks/test.sh`
@@ -48,6 +51,8 @@ CONDA_HOME=${CONDA_HOME:-"/databricks/conda"}
 LOCAL_JAR_PATH=${LOCAL_JAR_PATH:-''}
 SPARK_CONF=${SPARK_CONF:-''}
 BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-$(< /databricks/spark/VERSION)}
+SHUFFLE_SPARK_SHIM=${SHUFFLE_SPARK_SHIM:-spark${BASE_SPARK_VERSION//./}db}
+SHUFFLE_SPARK_SHIM=${SHUFFLE_SPARK_SHIM//\-SNAPSHOT/}
 SCALA_BINARY_VER=${SCALA_BINARY_VER:-'2.12'}
 [[ -z $SPARK_SHIM_VER ]] && export SPARK_SHIM_VER=spark${BASE_SPARK_VERSION//.}db
 
