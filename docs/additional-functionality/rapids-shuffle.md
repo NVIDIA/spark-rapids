@@ -173,7 +173,7 @@ example, if two containers are trying to communicate and each have an isolated G
 these GPUs will not be optimal, forcing UCX to stage buffers to the host or use TCP.
 Additionally, if you want to use RoCE/Infiniband, the `/dev/infiniband` device should be exposed
 in the container. Also, to avoid potential `failed: Cannot allocate memory`,
-please specify `--ulimit memlock=-1` to make max locked memory as `unlimited` in container.
+please consider raising the `memlock` ulimit in the container via `--ulimit memlock=[maximum]`. Note that setting `--ulimit memlock=-1` disables the limit.
 
 If UCX will be used to communicate between containers, the IPC (`--ipc`) and
 PID namespaces (`--pid`) should also be shared.
