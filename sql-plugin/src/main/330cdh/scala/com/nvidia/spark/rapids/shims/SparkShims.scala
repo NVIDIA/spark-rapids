@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, RunnableCommand}
 
 object SparkShimImpl extends Spark330PlusNonDBShims with AnsiCastRuleShims {
@@ -33,4 +34,14 @@ object SparkShimImpl extends Spark330PlusNonDBShims with AnsiCastRuleShims {
       RunnableCommandRule[_ <: RunnableCommand]] = {
     Map.empty
   }
+
+  override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
+
+    val newRule = org.apache.spark.sql.hive.cdh.HiveOverrides.getHiveTableExecRule()
+    // scala compiler gets confused if we don't give an explicit type to the class here.
+    // ... perhaps there is a cleaner way to do this
+    val ruleClass: Class[_ <: SparkPlan] = newRule.getClassFor.asSubclass(classOf[SparkPlan])
+    super.getExecs ++ Seq(ruleClass -> newRule).toMap
+  }
+
 }

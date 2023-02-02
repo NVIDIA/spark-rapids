@@ -501,7 +501,13 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
       val buildTime = gpuLongMetric(BUILD_TIME)
       val opTime = gpuLongMetric(OP_TIME)
       val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
-      lazy val builtBatch = makeBuiltBatch(relation, buildTime, buildDataSize)
+      // NOTE: this is a def because we want a brand new `ColumnarBatch` to be returned
+      // per partition (task), since each task is going to be taking ownership
+      // of a columnar batch via `LazySpillableColumnarBatch`.
+      // There are better ways to fix this: https://github.com/NVIDIA/spark-rapids/issues/7642
+      def builtBatch = {
+        makeBuiltBatch(relation, buildTime, buildDataSize)
+      }
       val joinIterator: RDD[ColumnarBatch] = joinType match {
         case LeftSemi =>
           if (gpuBuildSide == GpuBuildRight) {
@@ -593,7 +599,13 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     val buildTime = gpuLongMetric(BUILD_TIME)
     val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
     val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
-    lazy val builtBatch = makeBuiltBatch(relation, buildTime, buildDataSize)
+    // NOTE: this is a def because we want a brand new `ColumnarBatch` to be returned
+    // per partition (task), since each task is going to be taking ownership
+    // of a columnar batch via `LazySpillableColumnarBatch`.
+    // There are better ways to fix this: https://github.com/NVIDIA/spark-rapids/issues/7642
+    def builtBatch: ColumnarBatch = {
+      makeBuiltBatch(relation, buildTime, buildDataSize)
+    }
     val streamAttributes = streamed.output
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
