@@ -16,12 +16,10 @@
 
 package com.nvidia.spark.rapids.shims
 
-import scala.collection.immutable.HashSet
-
 import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, REBALANCE_PARTITIONS_BY_COL, REBALANCE_PARTITIONS_BY_NONE, REPARTITION_BY_COL, REPARTITION_BY_NUM, ShuffleOrigin}
 
 object ShuffleOriginUtil {
-  private val knownOrigins: HashSet[ShuffleOrigin] = HashSet(ENSURE_REQUIREMENTS,
+  private val knownOrigins: Set[ShuffleOrigin] = Set(ENSURE_REQUIREMENTS,
     REPARTITION_BY_COL, REPARTITION_BY_NUM, REBALANCE_PARTITIONS_BY_NONE,
     REBALANCE_PARTITIONS_BY_COL)
 

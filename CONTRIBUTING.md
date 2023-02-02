@@ -152,7 +152,7 @@ To this end in a pre-production build you can set the Boolean property
 
 The time saved is more significant if you are merely changing
 the `aggregator` module, or the `dist` module, or just incorporating changes from
-[spark-rapids-jni](https://github.com/NVIDIA/spark-rapids-jni/blob/branch-23.02/CONTRIBUTING.md#local-testing-of-cross-repo-contributions-cudf-spark-rapids-jni-and-spark-rapids)
+[spark-rapids-jni](https://github.com/NVIDIA/spark-rapids-jni/blob/branch-23.04/CONTRIBUTING.md#local-testing-of-cross-repo-contributions-cudf-spark-rapids-jni-and-spark-rapids)
 
 For example, to quickly repackage `rapids-4-spark` after the
 initial `./build/buildall` you can iterate by invoking
@@ -480,6 +480,16 @@ Update copyright year....................................................Failed
 You can confirm that the update actually has happened by either inspecting its effect with
 `git diff` first or simply reexecuting `git commit` right away. The second time no file
 modification should be triggered by the copyright year update hook and the commit should succeed.
+
+There is a known issue for macOS users if they use the default version of `sed`. The copyright update
+script may fail and generate an unexpected file named `source-file-E`. As a workaround, please
+install GNU sed
+
+```bash
+brew install gnu-sed
+# and add to PATH to make it as default sed for your shell
+export PATH="/usr/local/opt/gnu-sed/libexec/gnubin:$PATH"
+```
 
 ### Pull request status checks
 A pull request should pass all status checks before merged.
