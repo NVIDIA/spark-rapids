@@ -188,6 +188,8 @@ __ch = logging.StreamHandler()
 __ch.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
 __log.addHandler(__ch)
 
+__shim_package_pattern = re.compile(r'spark\d{3}.*')
+
 
 def __upsert_shim_json(filename, bv_list):
     with open(filename, 'r') as file:
@@ -202,6 +204,23 @@ def __upsert_shim_json(filename, bv_list):
     __log.debug("Inserting comment %s to %s", shim_comment, filename)
     package_line = next(i for i in range(len(contents)) if str(contents[i]).startswith('package'))
     __log.debug("filename %s package_line_number=%d", filename, package_line)
+
+    # update package/import lines with the right spark{buildver}
+    # by construction this can only occur for files with len(bv_list) == 1
+    if len(bv_list) == 1:
+        build_ver = bv_list[0]
+        new_bv_package_part = "spark%s" % build_ver
+        package_str_parts = contents[package_line].split('.')
+        contents[package_line] = '.'.join(map(
+            lambda x: re.sub(__shim_package_pattern, new_bv_package_part, x),
+            package_str_parts))
+        for i in range(package_line + 1, len(contents)):
+            if contents[i].startswith('import '):
+                import_str_parts = contents[i].split('.')
+                contents[i] = '.'.join(map(
+                    lambda x: re.sub(__shim_package_pattern, new_bv_package_part, x),
+                    import_str_parts))
+
     shim_comment_str = os.linesep.join(shim_comment) + os.linesep
     contents.insert(package_line, shim_comment_str)
     with open(filename, 'w') as file:
@@ -271,8 +290,6 @@ def __git_rename_or_copy(shim_file, owner_shim, from_shim=None):
             ret_code = subprocess.call(git_add_cmd)
             if ret_code != 0:
                 __fail("failed to execute %s" % git_add_cmd)
-            __log.info("%s created, manually replace inside it %s to %s ", new_shim_file,
-                       from_path_comp, owner_path_comp)
     return new_shim_file
 
 
