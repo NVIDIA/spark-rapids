@@ -553,7 +553,7 @@ def populate_partitioned_table(spark_tmp_table_factory, mode=PartitionWriteMode.
         spark.sql("INSERT INTO TABLE " + output_table + " PARTITION (type='ICE')" +
                   " SELECT make, model, year, comment FROM " + input_table +
                   " WHERE type='Electric'")
-        spark.sql("INSERT INTO TABLE " + output_table + " PARTITION (type='ICE')" +
+        spark.sql("INSERT OVERWRITE TABLE " + output_table + " PARTITION (type='ICE')" +
                   " SELECT make, model, year, comment FROM " + input_table +
                   " WHERE type='Hybrid'")
         return spark.sql("SELECT * FROM " + output_table +
@@ -565,7 +565,7 @@ def populate_partitioned_table(spark_tmp_table_factory, mode=PartitionWriteMode.
         spark.sql("CREATE TABLE " + output_table +
                   " (make STRING, model STRING, year INT, comment STRING)"
                   " PARTITIONED BY (type STRING) STORED AS TEXTFILE")
-        spark.sql("INSERT INTO TABLE " + output_table +
+        spark.sql("INSERT OVERWRITE TABLE " + output_table +
                   " SELECT make, model, year, comment, type FROM " + input_table)
         return spark.sql("SELECT * FROM " + output_table +
                          " WHERE type = 'ELECTRIC' or type = 'Hybrid'")
