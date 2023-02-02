@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.delta
 
 import com.databricks.sql.transaction.tahoe.DeltaLog
-import com.databricks.sql.transaction.tahoe.commands.{MergeIntoCommand, MergeIntoCommandEdge}
+import com.databricks.sql.transaction.tahoe.commands.{DeleteCommand, DeleteCommandEdge, MergeIntoCommand, MergeIntoCommandEdge}
 import com.databricks.sql.transaction.tahoe.sources.DeltaDataSource
 import com.nvidia.spark.rapids._
 
@@ -46,6 +46,14 @@ object DeltaProviderImpl extends DeltaProviderImplBase {
   override def getRunnableCommandRules: Map[Class[_ <: RunnableCommand],
       RunnableCommandRule[_ <: RunnableCommand]] = {
     Seq(
+      GpuOverrides.runnableCmd[DeleteCommand](
+        "Delete rows from a Delta Lake table",
+        (a, conf, p, r) => new DeleteCommandMeta(a, conf, p, r))
+        .disabledByDefault("Delta Lake delete support is experimental"),
+      GpuOverrides.runnableCmd[DeleteCommandEdge](
+        "Delete rows from a Delta Lake table",
+        (a, conf, p, r) => new DeleteCommandEdgeMeta(a, conf, p, r))
+        .disabledByDefault("Delta Lake delete support is experimental"),
       GpuOverrides.runnableCmd[MergeIntoCommand](
         "Merge of a source query/table into a Delta table",
         (a, conf, p, r) => new MergeIntoCommandMeta(a, conf, p, r))

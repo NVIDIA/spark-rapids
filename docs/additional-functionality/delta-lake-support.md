@@ -88,3 +88,12 @@ A side-effect of performing GPU accelerated Delta Lake merge operations is a new
 in the query plan, RapidsProcessDeltaMergeJoin. Normally the Delta Lake merge is performed via
 a join and then post-processing of the join via a MapPartitions node. Instead the GPU performs
 the join post-processing via this new RapidsProcessDeltaMergeJoin node.
+
+## Delete Operations on Delta Lake Tables
+
+Delta Lake delete acceleration is experimental and is disabled by default. To enable acceleration
+of Delta Lake delete operations, set spark.rapids.sql.command.DeleteCommand=true and also set
+spark.rapids.sql.command.DeleteCommandEdge=true on Databricks platforms.
+
+Deleting data from Delta Lake tables via the SQL `DELETE FROM` statement or via the DeltaTable
+`delete` API is supported.
