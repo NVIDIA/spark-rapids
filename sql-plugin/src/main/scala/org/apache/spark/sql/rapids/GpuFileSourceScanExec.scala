@@ -20,9 +20,8 @@ import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.mutable.HashMap
 
-import com.nvidia.spark.rapids.{AlluxioCfgUtils, AlluxioUtils, GpuExec, GpuMetric, GpuOrcMultiFilePartitionReaderFactory, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, RapidsConf, SparkPlanMeta}
-import com.nvidia.spark.rapids.shims.{GpuDataSourceRDD, GpuSparkPath, SparkShimImpl}
-import org.apache.hadoop.fs.Path
+import com.nvidia.spark.rapids.{AlluxioCfgUtils, AlluxioUtils, GpuExec, GpuMetric, GpuOrcMultiFilePartitionReaderFactory, GpuParquetMultiFilePartitionReaderFactory, GpuReadCSVFileFormat, GpuReadFileFormatWithMetrics, GpuReadOrcFileFormat, GpuReadParquetFileFormat, GpuSparkPath, RapidsConf, SparkPlanMeta}
+import com.nvidia.spark.rapids.shims.{GpuDataSourceRDD, SparkShimImpl}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
@@ -512,7 +511,7 @@ case class GpuFileSourceScanExec(
 
     val filesGroupedToBuckets = partitionedFiles.groupBy { f =>
       BucketingUtils
-        .getBucketId(new Path(GpuSparkPath(f.filePath)).getName)
+        .getBucketId(GpuSparkPath(f.filePath.toString).toPath.getName)
         .getOrElse(sys.error(s"Invalid bucket file ${f.filePath}"))
     }
 

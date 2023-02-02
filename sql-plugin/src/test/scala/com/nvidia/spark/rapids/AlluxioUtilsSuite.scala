@@ -15,7 +15,7 @@
  */
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.shims.GpuSparkPath
+import com.nvidia.spark.rapids.shims.GpuSparkPathShims
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, Path}
 import org.mockito.Mockito._
@@ -73,9 +73,9 @@ class AlluxioUtilsSuite extends FunSuite {
     AlluxioUtils.resetInitInfo()
     val replaceMap = Map[String, String](("s3a://", "alluxio://localhost:19998/"))
     val partitionedFiles = Array[PartitionedFile](
-      PartitionedFile(null, GpuSparkPath("s3a://bucket_1/a.file"), 0, 0),
-      PartitionedFile(null, GpuSparkPath("s3a://bucket_2/b.file"), 0, 0),
-      PartitionedFile(null, GpuSparkPath("my_scheme://bucket_1/1.file"), 0, 0)
+      PartitionedFile(null, GpuSparkPathShims.to(GpuSparkPath("s3a://bucket_1/a.file")), 0, 0),
+      PartitionedFile(null, GpuSparkPathShims.to(GpuSparkPath("s3a://bucket_2/b.file")), 0, 0),
+      PartitionedFile(null, GpuSparkPathShims.to(GpuSparkPath("my_scheme://bucket_1/1.file")), 0, 0)
     )
     val replaced = AlluxioUtils.updateFilesTaskTimeIfAlluxio(partitionedFiles, Option(replaceMap))
     assert(replaced.size == 3)
@@ -95,7 +95,7 @@ class AlluxioUtilsSuite extends FunSuite {
       ("s3a://bucket_1", "alluxio://localhost:19998/") // should not specify this rule!
     )
     val partitionedFiles = Array[PartitionedFile](
-      PartitionedFile(null, GpuSparkPath("s3a://bucket_1/a.file"), 0, 0)
+      PartitionedFile(null, GpuSparkPathShims.to(GpuSparkPath("s3a://bucket_1/a.file")), 0, 0)
     )
     try {
       AlluxioUtils.updateFilesTaskTimeIfAlluxio(partitionedFiles, Option(replaceMap))

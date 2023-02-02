@@ -17,7 +17,6 @@
 package org.apache.spark.sql.rapids
 
 import java.io.{FileNotFoundException, IOException, OutputStream}
-import java.net.URI
 import java.util.concurrent.{Callable, TimeUnit}
 
 import scala.annotation.tailrec
@@ -30,7 +29,7 @@ import ai.rapids.cudf.{AvroOptions => CudfAvroOptions, HostMemoryBuffer, NvtxCol
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, READ_FS_TIME, SEMAPHORE_WAIT_TIME, WRITE_BUFFER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{GpuSparkPath, ShimFilePartitionReaderFactory}
+import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.avro.Schema
 import org.apache.avro.file.DataFileConstants.SYNC_SIZE
 import org.apache.hadoop.conf.Configuration
@@ -232,7 +231,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
     val files = if (options.ignoreExtension) {
       partFiles
     } else {
-      partFiles.filter(f => GpuSparkPath(f.filePath).endsWith(".avro"))
+      partFiles.filter(f => f.filePath.toString.endsWith(".avro"))
     }
     new GpuMultiFileCloudAvroPartitionReader(conf, files, numThreads, maxNumFileProcessed,
       filters, metrics, ignoreCorruptFiles, ignoreMissingFiles, debugDumpPrefix,
@@ -267,7 +266,7 @@ case class GpuAvroMultiFilePartitionReaderFactory(
             s"Skipped the rest of the content in the corrupted file: ${file.filePath}", e)
           AvroBlockMeta(null, 0L, Seq.empty)
       }
-      val fPath = new Path(new URI(GpuSparkPath(file.filePath)))
+      val fPath = GpuSparkPath(file.filePath.toString).toPath
       clippedBlocks ++= singleFileInfo.blocks.map(block =>
         AvroSingleDataBlockInfo(
             fPath,
@@ -532,7 +531,7 @@ class GpuAvroPartitionReader(
     execMetrics: Map[String, GpuMetric])
   extends FilePartitionReaderBase(conf, execMetrics) with GpuAvroReaderBase {
 
-  private val partFilePath = new Path(new URI(GpuSparkPath(partFile.filePath)))
+  private val partFilePath = GpuSparkPath(partFile.filePath.toString).toPath
   private val blockIterator: BufferedIterator[BlockInfo] = blockMeta.blocks.iterator.buffered
 
   override def next(): Boolean = {
@@ -738,7 +737,7 @@ class GpuMultiFileCloudAvroPartitionReader(
       val startingBytesRead = fileSystemBytesRead()
       val result =
         withResource(
-          AvroFileReader.openDataReader(GpuSparkPath(partFile.filePath), config)
+          AvroFileReader.openDataReader(partFile.filePath.toString, config)
         ) { reader =>
           // Go to the start of the first block after the start position
           reader.sync(partFile.start)
@@ -1021,9 +1020,9 @@ case class AvroFileFilterHandler(
   val ignoreExtension = options.ignoreExtension
 
   def filterBlocks(partFile: PartitionedFile): AvroBlockMeta = {
-    if (ignoreExtension || GpuSparkPath(partFile.filePath).endsWith(".avro")) {
+    if (ignoreExtension || partFile.filePath.toString.endsWith(".avro")) {
       withResource(
-        AvroFileReader.openMetaReader(GpuSparkPath(partFile.filePath), hadoopConf)
+        AvroFileReader.openMetaReader(partFile.filePath.toString, hadoopConf)
       ) { reader =>
         // Get blocks only belong to this split
         reader.sync(partFile.start)

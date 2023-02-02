@@ -20,7 +20,7 @@ import java.io.FileNotFoundException
 
 import scala.util.control.NonFatal
 
-import com.nvidia.spark.rapids.shims.GpuSparkPath
+import com.nvidia.spark.rapids.shims.GpuSparkPathShims
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -367,11 +367,11 @@ object AlluxioUtils extends Logging with Arm {
     val replaceFunc = genFuncForTaskTimeReplacement(pathsToReplace)
 
     files.map { file =>
-      val replacedFileInfo = replaceFunc(GpuSparkPath(file.filePath))
+      val replacedFileInfo = replaceFunc(file.filePath.toString)
       if (replacedFileInfo.wasReplaced) {
         logDebug(s"TASK_TIME replaced ${file.filePath} with ${replacedFileInfo.fileStr}")
         PartitionedFileInfoOptAlluxio(PartitionedFile(file.partitionValues,
-          GpuSparkPath(replacedFileInfo.fileStr), file.start, file.length),
+          GpuSparkPathShims.to(GpuSparkPath(replacedFileInfo.fileStr)), file.start, file.length),
           Some(file))
       } else {
         PartitionedFileInfoOptAlluxio(file, None)
@@ -445,7 +445,7 @@ object AlluxioUtils extends Logging with Arm {
   def getOrigPathFromReplaced(pfs: Array[PartitionedFile],
       pathsToReplace: Map[String, String]): Array[PartitionedFileInfoOptAlluxio] = {
     pfs.map { pf =>
-      val file = GpuSparkPath(pf.filePath)
+      val file = pf.filePath.toString
       // pathsToReplace contain strings of exact paths to replace
       val matchedSet = pathsToReplace.filter { case (_, alluxioPattern) =>
         file.startsWith(alluxioPattern)
@@ -460,7 +460,7 @@ object AlluxioUtils extends Logging with Arm {
         logDebug(s"getOrigPath replacedFile: $replacedFile")
         PartitionedFileInfoOptAlluxio(pf,
           Some(PartitionedFile(
-            pf.partitionValues, GpuSparkPath(replacedFile), pf.start, file.length
+            pf.partitionValues, GpuSparkPathShims.to(GpuSparkPath(replacedFile)), pf.start, file.length
           )))
       } else {
         PartitionedFileInfoOptAlluxio(pf, None)

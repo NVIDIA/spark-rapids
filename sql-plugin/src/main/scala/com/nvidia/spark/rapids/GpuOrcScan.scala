@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids
 
 import java.io.{DataOutputStream, FileNotFoundException, IOException}
-import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.channels.{Channels, WritableByteChannel}
 import java.util
@@ -34,7 +33,7 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.SchemaUtils._
-import com.nvidia.spark.rapids.shims.{GpuSparkPath, OrcCastingShims, OrcReadingShims, OrcShims, ShimFilePartitionReaderFactory}
+import com.nvidia.spark.rapids.shims.{OrcCastingShims, OrcReadingShims, OrcShims, ShimFilePartitionReaderFactory}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.hive.common.io.DiskRangeList
@@ -1161,7 +1160,7 @@ private case class GpuOrcFileFilterHandler(
     val conf = broadcastedConf.value.value
     OrcConf.IS_SCHEMA_EVOLUTION_CASE_SENSITIVE.setBoolean(conf, isCaseSensitive)
 
-    val filePath = new Path(new URI(GpuSparkPath(partFile.filePath)))
+    val filePath = GpuSparkPath(partFile.filePath.toString).toPath
     val fs = filePath.getFileSystem(conf)
     val orcFileReaderOpts = OrcFile.readerOptions(conf).filesystem(fs)
 

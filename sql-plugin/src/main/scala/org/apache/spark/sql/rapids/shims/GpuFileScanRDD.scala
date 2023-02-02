@@ -17,7 +17,6 @@ package org.apache.spark.sql.rapids.shims
 
 import java.io.{FileNotFoundException, IOException}
 
-import com.nvidia.spark.rapids.shims.GpuSparkPath
 import org.apache.parquet.io.ParquetDecodingException
 
 import org.apache.spark.{Partition => RDDPartition, SparkUpgradeException, TaskContext}
@@ -113,7 +112,7 @@ class GpuFileScanRDD(
           logInfo(s"Reading File $currentFile")
           // Sets InputFileBlockHolder for the file block's information
           InputFileBlockHolder.set(
-            GpuSparkPath(currentFile.filePath), currentFile.start, currentFile.length)
+            currentFile.filePath.toString, currentFile.start, currentFile.length)
 
           if (ignoreMissingFiles || ignoreCorruptFiles) {
             currentIterator = new NextIterator[Object] {

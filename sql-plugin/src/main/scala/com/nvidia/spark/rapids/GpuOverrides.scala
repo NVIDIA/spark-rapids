@@ -24,7 +24,7 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
-import com.nvidia.spark.rapids.shims.{AQEUtils, DecimalArithmeticOverrides, DeltaLakeUtils, GetMapValueMeta, GpuBatchScanExec, GpuHashPartitioning, GpuRangePartitioning, GpuSparkPath, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{AQEUtils, DecimalArithmeticOverrides, DeltaLakeUtils, GetMapValueMeta, GpuBatchScanExec, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
@@ -4326,7 +4326,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
 
         // example filename: "file:/tmp/delta-table/_delta_log/00000000000000000000.json"
         val found = f.relation.inputFiles.exists { name =>
-          checkDeltaFunc(GpuSparkPath(name))
+          checkDeltaFunc(name.toString)
         }
         if (found) {
           logDebug(s"Fallback for FileSourceScanExec delta log: $f")

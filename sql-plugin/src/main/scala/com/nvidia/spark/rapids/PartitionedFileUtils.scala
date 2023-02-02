@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.shims.GpuSparkPath
+import com.nvidia.spark.rapids.shims.GpuSparkPathShims
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.PartitionedFile
@@ -29,5 +29,5 @@ object PartitionedFileUtils {
       filePath: String,
       start: Long,
       length: Long): PartitionedFile = 
-    PartitionedFile(partitionValues, GpuSparkPath(filePath), start, length)
+    PartitionedFile(partitionValues, GpuSparkPathShims.to(GpuSparkPath(filePath)), start, length)
 }

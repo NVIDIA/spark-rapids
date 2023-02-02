@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids
 
 import java.io.{EOFException, FileNotFoundException, IOException, OutputStream}
-import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.util
@@ -37,7 +36,7 @@ import com.nvidia.spark.rapids.ParquetPartitionReader.CopyRange
 import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.ParquetFooter
-import com.nvidia.spark.rapids.shims.{GpuParquetCrypto, GpuSparkPath, GpuTypeShims, ParquetSchemaClipShims, ParquetStringPredShims, ShimFilePartitionReaderFactory, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{GpuParquetCrypto, GpuTypeShims, ParquetSchemaClipShims, ParquetStringPredShims, ShimFilePartitionReaderFactory, SparkShimImpl}
 import org.apache.commons.io.IOUtils
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
@@ -621,7 +620,7 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
       filters: Array[Filter],
       readDataSchema: StructType): ParquetFileInfoWithBlockMeta = {
     withResource(new NvtxRange("filterBlocks", NvtxColor.PURPLE)) { _ =>
-      val filePath = new Path(new URI(GpuSparkPath(file.filePath)))
+      val filePath = GpuSparkPath(file.filePath.toString).toPath
       // Make sure we aren't trying to read encrypted files. For now, remove the related
       // parquet confs from the hadoop configuration and try to catch the resulting
       // exception and print a useful message
@@ -710,7 +709,7 @@ private case class GpuParquetFileFilterHandler(@transient sqlConf: SQLConf) exte
             fileSchema, readDataSchema, isCaseSensitive, readUseFieldId)
           // Check if the read schema is compatible with the file schema.
           checkSchemaCompat(clippedSchema, readDataSchema,
-            (t: Type, d: DataType) => throwTypeIncompatibleError(t, d, GpuSparkPath(file.filePath)),
+            (t: Type, d: DataType) => throwTypeIncompatibleError(t, d, file.filePath.toString),
             isCaseSensitive, readUseFieldId)
           val clipped = GpuParquetUtils.clipBlocksToSchema(clippedSchema, blocks, isCaseSensitive)
           (clipped, clippedSchema)
@@ -1014,7 +1013,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
       case e: FileNotFoundException if ignoreMissingFiles =>
         logWarning(s"Skipped missing file: ${file.filePath}", e)
         val meta = ParquetFileInfoWithBlockMeta(
-          new Path(new URI(GpuSparkPath(file.filePath))), Seq.empty,
+          GpuSparkPath(file.filePath.toString).toPath, Seq.empty,
           file.partitionValues, null, null, false, false, false)
         BlockMetaWithPartFile(meta, file)
       // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
@@ -1025,7 +1024,7 @@ case class GpuParquetMultiFilePartitionReaderFactory(
         logWarning(
           s"Skipped the rest of the content in the corrupted file: ${file.filePath}", e)
         val meta = ParquetFileInfoWithBlockMeta(
-          new Path(new URI(GpuSparkPath(file.filePath))), Seq.empty,
+          GpuSparkPath(file.filePath.toString).toPath, Seq.empty,
           file.partitionValues, null, null, false, false, false)
         BlockMetaWithPartFile(meta, file)
     }
@@ -1827,8 +1826,8 @@ class MultiFileCloudParquetPartitionReader(
       next.isCorrectInt96RebaseMode,
       ParquetSchemaWrapper(current.memBuffersAndSizes.head.schema),
       ParquetSchemaWrapper(next.memBuffersAndSizes.head.schema),
-      GpuSparkPath(current.partitionedFile.filePath),
-      GpuSparkPath(next.partitionedFile.filePath)
+      current.partitionedFile.filePath.toString,
+      next.partitionedFile.filePath.toString
     )
   }
 
@@ -2143,7 +2142,7 @@ class MultiFileCloudParquetPartitionReader(
                 fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema,
                 numRows)
             } else {
-              val filePath = new Path(new URI(GpuSparkPath(file.filePath)))
+              val filePath = GpuSparkPath(file.filePath.toString).toPath
               while (blockChunkIter.hasNext) {
                 val blocksToRead = populateCurrentBlockChunk(blockChunkIter,
                   maxReadBatchSizeRows, maxReadBatchSizeBytes, fileBlockMeta.readSchema)

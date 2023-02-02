@@ -16,22 +16,11 @@
 
 package com.nvidia.spark.rapids.shims
 
-import scala.language.implicitConversions
-
 import org.apache.spark.paths.SparkPath
+import com.nvidia.spark.rapids.GpuSparkPath
 
-/**
- * A helper type for the implicit conversion between `String` and `SparkPath`.
- */
-final case class GpuSparkPath(path: String)
-
-object GpuSparkPath {
-  def apply(path: SparkPath): GpuSparkPath = GpuSparkPath(path.toString)
-  
-  implicit def gpuSparkPathToString(path: GpuSparkPath) = path.path
-
-  implicit def arrayOfGpuSparkPathToArrayOfString(paths: Array[GpuSparkPath]) =
-    paths.map(p => p.path)
-
-  implicit def gpuSparkPathToSparkPath(path: GpuSparkPath) = SparkPath(path.path)
+object GpuSparkPathShims {
+  def to(path: GpuSparkPath) = SparkPath(path.toString)
 }
+
+
