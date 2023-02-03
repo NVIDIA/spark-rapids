@@ -21,11 +21,6 @@ from marks import ignore_order, allow_non_gpu
 from spark_session import with_cpu_session, is_databricks113_or_later
 
 _adaptive_conf = { "spark.sql.adaptive.enabled": "true" }
-# Databricks-11.3 added new operator EXECUTOR_BROADCAST which does executor side broadcast.
-# SparkPlan is different as there is no BroadcastExchange which is replaced by Exchange.
-# Below config is to fall back BroadcastNestedLoopJoinExec and ShuffleExchangeExec to CPU for only Databricks-11.3
-# Follow on issue to support/investigate EXECUTOR_BROADCAST - https://github.com/NVIDIA/spark-rapids/issues/7425
-db_113_cpu_bnlj_join_allow=["BroadcastNestedLoopJoinExec", "ShuffleExchangeExec"] if is_databricks113_or_later() else []
 
 def create_skew_df(spark, length):
     root = spark.range(0, length)
@@ -184,6 +179,13 @@ joins = [
     'left anti',
     'anti'
 ]
+
+
+# Databricks-11.3 added new operator EXECUTOR_BROADCAST which does executor side broadcast.
+# SparkPlan is different as there is no BroadcastExchange which is replaced by Exchange.
+# To handle issue in https://github.com/NVIDIA/spark-rapids/issues/7037, we need to allow a 
+# for a CPU ShuffleExchangeExec for a CPU Broadcast join to consume it
+db_113_cpu_bnlj_join_allow=["ShuffleExchangeExec"] if is_databricks113_or_later() else []
 
 # see https://github.com/NVIDIA/spark-rapids/issues/7037
 # basically this happens when a GPU broadcast exchange is reused from 

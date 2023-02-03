@@ -27,8 +27,8 @@ import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.Scan
-import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec}
+import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
@@ -152,6 +152,14 @@ trait SparkShims {
 
   def shuffleParentReadsShuffleData(shuffle: ShuffleExchangeLike, parent: SparkPlan): Boolean =
     false
+
+  /**
+   * Adds a row-based shuffle to the transititonal shuffle query stage if needed. This 
+   * is needed when AQE plans a GPU shuffleexchange to be reused by a parent plan exec 
+   * that consumes rows
+   */
+  def addRowShuffleToQueryStageTransitionIfNeeded(c2r: ColumnarToRowTransition,
+      sqse: ShuffleQueryStageExec): SparkPlan = c2r
 
   /**
    * Walk the plan recursively and return a list of operators that match the predicate
