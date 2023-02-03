@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids.shims.spark340;
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.scalatest.FunSuite
-import com.nvidia.spark.rapids.FQSuiteName
 
 class Spark340ShimsSuite extends FunSuite with FQSuiteName {
   test("spark shims version") {
