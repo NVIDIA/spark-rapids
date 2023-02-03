@@ -213,21 +213,15 @@ abstract class RapidsBufferStore(val tier: StorageTier)
    *                     for `memoryBuffer` is transferred to this store. The store may close
    *                     `memoryBuffer` if necessary.
    * @param stream CUDA stream to use for copy or null
-   * @return optionally, the new buffer that was created. None if the store was unable
-   *         to allocate it (did not have enough room for the stores that support a storage limit)
+   * @return the new buffer that was created
    */
   def copyBuffer(
       buffer: RapidsBuffer,
       memoryBuffer: MemoryBuffer,
-      stream: Cuda.Stream): Option[RapidsBufferBase] = {
-    createBuffer(buffer, memoryBuffer, stream) match {
-      case None =>
-        None
-      case Some(newBuffer) =>
-        freeOnExcept(newBuffer) { _ =>
-          addBuffer(newBuffer)
-          Some(newBuffer)
-        }
+      stream: Cuda.Stream): RapidsBufferBase = {
+    freeOnExcept(createBuffer(buffer, memoryBuffer, stream)) { newBuffer =>
+      addBuffer(newBuffer)
+      newBuffer
     }
   }
 

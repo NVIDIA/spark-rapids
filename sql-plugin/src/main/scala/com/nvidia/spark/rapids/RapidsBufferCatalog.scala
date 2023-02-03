@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids
 
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.function.BiFunction
 
 import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange, Rmm}
@@ -622,18 +621,10 @@ class RapidsBufferCatalog(
           trySpillToMaximumSize(buffer, spillStore)
 
           // copy the buffer to spillStore
-          var newBuffer: Option[RapidsBuffer] = None
-          while (newBuffer.isEmpty) {
-            newBuffer = spillStore.copyBuffer(buffer, buffer.getMemoryBuffer, stream)
-            if (newBuffer.isEmpty) {
-              // only the host store will return None above. We assume that the allocate function
-              // from `HostMemoryBuffer` throws and breaks this loop if we run out of host memory
-              synchronousSpill(spillStore, math.max(spillStore.currentSize - buffer.size, 0))
-            }
-          }
+          val newBuffer = spillStore.copyBuffer(buffer, buffer.getMemoryBuffer, stream)
 
           // once spilled, we get back a new RapidsBuffer instance in this new tier
-          registerNewBuffer(newBuffer.get)
+          registerNewBuffer(newBuffer)
         } else {
           logDebug(s"Skipping spilling $buffer ${buffer.id} to ${spillStore.name} as it is " +
             s"already stored in multiple tiers")
@@ -687,7 +678,7 @@ class RapidsBufferCatalog(
         val newBuffer = deviceStorage.copyBuffer(
           buffer,
           memoryBuffer,
-          stream).get // device store always copies
+          stream)
         newBuffer.addReference() // add a reference since we are about to use it
         registerNewBuffer(newBuffer)
         newBuffer
