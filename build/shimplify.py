@@ -36,7 +36,7 @@ shimplify.move       - property to allow moving files to canonical location, oth
                        without moving
 shimplify.overwrite  - property to allow shimplify executing file changes repeatedly,
                        error out otherwise
-shimplify.shims      - coma-separated list of shims to simplify instead of all, superseded by
+shimplify.shims      - comma-separated list of shims to simplify instead of all, superseded by
                        shimplify.dirs
 shimplify.trace      - property to enable trace logging
 
@@ -62,7 +62,7 @@ Optionally review and remove empty directories
 git clean -f -d [--dry-run]
 
 Each shim Scala/Java file receives a comment describing all Spark builds it
-it belongs to. Lines are sorted by the Spark buildver lexicographically.
+belongs to. Lines are sorted by the Spark buildver lexicographically.
 Each line is assumed to be a JSON to keep it extensible.
 
 /*** spark-rapids-shim-json-lines
