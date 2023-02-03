@@ -21,7 +21,7 @@ import org.scalatest.FunSuite
 
 import org.apache.spark.sql.types.{DayTimeIntervalType, YearMonthIntervalType}
 
-class SparkShimsSuite extends FunSuite {
+class SparkShimsSuite extends FunSuite with FQSuiteName {
   test("spark shims version") {
     assert(VersionUtils.cmpSparkVersion(3, 2, 1) === 0)
   }

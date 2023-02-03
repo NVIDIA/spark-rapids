@@ -16,11 +16,11 @@
 
 package com.nvidia.spark.rapids.shims.spark311;
 
-import com.nvidia.spark.rapids.{ShimLoader, SparkShimVersion}
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.scalatest.FunSuite
 
-class SparkShimsSuite extends FunSuite {
+class SparkShimsSuite extends FunSuite with FQSuiteName {
   test("spark shims version") {
     assert(SparkShimImpl.getSparkShimVersion === SparkShimVersion(3, 1, 1))
   }

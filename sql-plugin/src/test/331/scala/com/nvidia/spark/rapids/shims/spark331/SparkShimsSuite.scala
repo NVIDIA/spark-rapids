@@ -16,13 +16,13 @@
 
 package com.nvidia.spark.rapids.shims.spark331;
 
-import com.nvidia.spark.rapids.{ShimLoader, SparkShimVersion, TypeSig}
+import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.scalatest.FunSuite
 
 import org.apache.spark.sql.types.{DayTimeIntervalType, YearMonthIntervalType}
 
-class SparkShimsSuite extends FunSuite {
+class SparkShimsSuite extends FunSuite with FQSuiteName {
   test("spark shims version") {
     assert(SparkShimImpl.getSparkShimVersion === SparkShimVersion(3, 3, 1))
   }
