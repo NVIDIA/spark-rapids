@@ -194,7 +194,6 @@ __shim_package_pattern = re.compile(r'spark\d{3}.*')
 def __upsert_shim_json(filename, bv_list):
     with open(filename, 'r') as file:
         contents = file.readlines()
-
     shim_comment = [os.linesep]
     shim_comment.append(__opening_shim_tag)
     for build_ver in bv_list:
@@ -204,23 +203,6 @@ def __upsert_shim_json(filename, bv_list):
     __log.debug("Inserting comment %s to %s", shim_comment, filename)
     package_line = next(i for i in range(len(contents)) if str(contents[i]).startswith('package'))
     __log.debug("filename %s package_line_number=%d", filename, package_line)
-
-    # update package/import lines with the right spark{buildver}
-    # by construction this can only occur for files with len(bv_list) == 1
-    if len(bv_list) == 1:
-        build_ver = bv_list[0]
-        new_bv_package_part = "spark%s" % build_ver
-        package_str_parts = contents[package_line].split('.')
-        contents[package_line] = '.'.join(map(
-            lambda x: re.sub(__shim_package_pattern, new_bv_package_part, x),
-            package_str_parts))
-        for i in range(package_line + 1, len(contents)):
-            if contents[i].startswith('import '):
-                import_str_parts = contents[i].split('.')
-                contents[i] = '.'.join(map(
-                    lambda x: re.sub(__shim_package_pattern, new_bv_package_part, x),
-                    import_str_parts))
-
     shim_comment_str = os.linesep.join(shim_comment) + os.linesep
     contents.insert(package_line, shim_comment_str)
     with open(filename, 'w') as file:
@@ -278,14 +260,17 @@ def __git_rename_or_copy(shim_file, owner_shim, from_shim=None):
         new_shim_dir = os.path.dirname(new_shim_file)
         __log.debug("creating new shim path %s", new_shim_dir)
         __makedirs(new_shim_dir)
-        shell_cmd = (['git', 'mv'] if from_shim is None else ['cp']) + [shim_file, new_shim_file]
-        __log.debug("rename_or_copy shelling out to run: %s", shell_cmd)
-        ret_code = subprocess.call(shell_cmd)
-        if ret_code != 0:
-            __fail("failed to execute %s" % shell_cmd)
-
-        # TODO update package references inside the file automatically
-        if from_path_comp is not None:
+        if from_path_comp is None:
+            shell_cmd = ['git', 'mv', shim_file, new_shim_file]
+            ret_code = subprocess.call(shell_cmd)
+            if ret_code != 0:
+                __fail("failed to execute %s" % shell_cmd)
+        else:
+            with open(shim_file, 'r') as src_shim_fh:
+                with open(new_shim_file, 'w') as dst_shim_fh:
+                    content = src_shim_fh.read()
+                    dst_content = content.replace(from_path_comp, owner_path_comp)
+                    dst_shim_fh.write(dst_content)
             git_add_cmd = ['git', 'add', new_shim_file]
             ret_code = subprocess.call(git_add_cmd)
             if ret_code != 0:
