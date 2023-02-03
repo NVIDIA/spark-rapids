@@ -29,7 +29,7 @@ class Spark330ShimsSuite extends FunSuite {
 
   test("shuffle manager class") {
     assert(ShimLoader.getRapidsShuffleManagerClass ===
-      classOf[com.nvidia.spark.rapids.spark340.RapidsShuffleManager].getCanonicalName)
+      classOf[com.nvidia.spark.rapids.spark330.RapidsShuffleManager].getCanonicalName)
   }
 
   test("TypeSig330") {
