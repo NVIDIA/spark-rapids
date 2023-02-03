@@ -1020,9 +1020,9 @@ case class AvroFileFilterHandler(
   val ignoreExtension = options.ignoreExtension
 
   def filterBlocks(partFile: PartitionedFile): AvroBlockMeta = {
-    val filePath = partFile.filePath.toString()
-    if (ignoreExtension || filePath.endsWith(".avro")) {
-      withResource(AvroFileReader.openMetaReader(filePath, hadoopConf)) { reader =>
+    if (ignoreExtension || partFile.filePath.toString().endsWith(".avro")) {
+      withResource(AvroFileReader.openMetaReader(partFile.filePath.toString(), hadoopConf)) {
+        reader =>
         // Get blocks only belong to this split
         reader.sync(partFile.start)
         val partBlocks = reader.getPartialBlocks(partFile.start + partFile.length)
