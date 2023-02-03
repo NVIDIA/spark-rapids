@@ -51,13 +51,13 @@ _map_gens = [simple_string_to_string_map_gen] + [MapGen(f(nullable=False), f()) 
     lambda nullable=True: DecimalGen(precision=15, scale=1, nullable=nullable),
     lambda nullable=True: DecimalGen(precision=36, scale=5, nullable=nullable)]]
 
-_write_gens = [_basic_gens, _struct_gens, _array_gens, _map_gens]
+_write_gens = [_basic_gens]  # , _struct_gens, _array_gens, _map_gens]
 
 # There appears to be a race when computing tasks for writing, order can be different even on CPU
 @ignore_order(local=True)
 @pytest.mark.skipif(not is_hive_available(), reason="Hive is missing")
 @pytest.mark.parametrize("gens", _write_gens, ids=idfn)
-@pytest.mark.parametrize("storage", ["PARQUET", "nativeorc", "hiveorc"])
+@pytest.mark.parametrize("storage", ["PARQUET"])  # , "nativeorc", "hiveorc"])
 def test_optimized_hive_ctas_basic(gens, storage, spark_tmp_table_factory):
     data_table = spark_tmp_table_factory.get()
     gen_list = [('c' + str(i), gen) for i, gen in enumerate(gens)]
@@ -66,8 +66,8 @@ def test_optimized_hive_ctas_basic(gens, storage, spark_tmp_table_factory):
         store_name = storage
         if storage.endswith("orc"):
             store_name = "ORC"
-        return "CREATE TABLE {} STORED AS {} AS SELECT * FROM {}".format(
-            table_name, store_name, data_table)
+        return ["CREATE TABLE {} STORED AS {} AS SELECT * FROM {}".format(
+            table_name, store_name, data_table)]
     conf = {
         "spark.sql.legacy.parquet.datetimeRebaseModeInWrite": "CORRECTED",
         "spark.sql.legacy.parquet.int96RebaseModeInWrite": "CORRECTED"

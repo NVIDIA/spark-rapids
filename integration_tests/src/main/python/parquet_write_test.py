@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write, assert_py4j_exception
+from asserts import assert_gpu_and_cpu_sql_writes_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write, assert_py4j_exception
 from datetime import date, datetime, timezone
 from data_gen import *
 from enum import Enum
@@ -573,23 +573,9 @@ def test_write_empty_data_single_writer(spark_tmp_path):
 PartitionWriteMode = Enum('PartitionWriteMode', ['Static', 'Dynamic'])
 
 
-def populate_partitioned_parquet_table(spark_tmp_table_factory, mode=PartitionWriteMode.Static):
-    """
-    Returns a function that does the following:
-        1. Creates an un-partitioned Hive table with data with the following schema:
-             1. make STRING
-             2. model STRING
-             3. year INT
-             4. type STRING (cardinality == 3)
-             5. comment STRING
-        2. Creates a partitioned Hive, with a similar schema to above, but partitioned on
-           the `type` column.
-        3. Populates the partitioned table using the un-partitioned table as input.
-             1. If the partition mode is dynamic, all the partitions are populated at once.
-             2. If the partition mode is static, the partitions are populated explicitly,
-                and sequentially.
-        4. Returns all the rows from 2 of the 3 partitions in the new table.
-    """
+@ignore_order(local=True)
+@pytest.mark.parametrize('mode', [PartitionWriteMode.Static, PartitionWriteMode.Dynamic])
+def test_partitioned_parquet_write(mode, spark_tmp_table_factory):
 
     def create_input_table(spark):
         tmp_input = spark_tmp_table_factory.get()
@@ -600,44 +586,43 @@ def populate_partitioned_parquet_table(spark_tmp_table_factory, mode=PartitionWr
                   "('Ford',   'F-150',       2020, 'ICE',      'Popular' ),"
                   "('GMC',    'Sierra 1500', 1997, 'ICE',      'Older'),"
                   "('Chevy',  'D-Max',       2015, 'ICE',      'Isuzu?' ),"
-                  "('Tesla',  'CyberTruck',  2025, 'Electric', 'Fictional'),"
+                  "('Tesla',  'CyberTruck',  2025, 'Electric', 'BladeRunner'),"
                   "('Rivian', 'R1T',         2022, 'Electric', 'Heavy'),"
                   "('Jeep',   'Gladiator',   2024, 'Hybrid',   'Upcoming')")
         return tmp_input
 
-    def populate_partitions_static(spark):
-        input_table = create_input_table(spark)
-        output_table = spark_tmp_table_factory.get()
-        spark.sql("CREATE TABLE " + output_table +
-                  " (make STRING, model STRING, year INT, comment STRING)"
-                  " PARTITIONED BY (type STRING) STORED AS PARQUET")
-        spark.sql("INSERT INTO TABLE " + output_table + " PARTITION (type='ICE')" +
-                  " SELECT make, model, year, comment FROM " + input_table +
-                  " WHERE type='Electric'")
-        spark.sql("INSERT OVERWRITE TABLE " + output_table + " PARTITION (type='ICE')" +
-                  " SELECT make, model, year, comment FROM " + input_table +
-                  " WHERE type='Hybrid'")
-        return spark.sql("SELECT * FROM " + output_table +
-                         " WHERE type = 'ELECTRIC' or type = 'Hybrid'")
+    input_table_name = with_cpu_session(create_input_table)
 
-    def populate_partitions_dynamic(spark):
-        input_table = create_input_table(spark)
-        output_table = spark_tmp_table_factory.get()
-        spark.sql("CREATE TABLE " + output_table +
-                  " (make STRING, model STRING, year INT, comment STRING)"
-                  " PARTITIONED BY (type STRING) STORED AS PARQUET")
-        spark.sql("INSERT OVERWRITE TABLE " + output_table +
-                  " SELECT make, model, year, comment, type FROM " + input_table)
-        return spark.sql("SELECT * FROM " + output_table +
-                         " WHERE type = 'ELECTRIC' or type = 'Hybrid'")
+    def write_partitions(spark, table_name):
+        if mode == PartitionWriteMode.Static:
+            return [
+                "CREATE TABLE {} (make STRING, model STRING, year INT, comment STRING) "
+                "PARTITIONED BY (type STRING) STORED AS PARQUET ".format(table_name),
 
-    return populate_partitions_static if mode == PartitionWriteMode.Static else populate_partitions_dynamic
+                "INSERT INTO TABLE {} PARTITION (type='ICE') "
+                "SELECT make, model, year, comment FROM {} "
+                "WHERE type = 'ICE'".format(table_name, input_table_name),
 
+                "INSERT OVERWRITE TABLE {} PARTITION (type='Electric') "
+                "SELECT make, model, year, comment FROM {} "
+                "WHERE type = 'ICE'".format(table_name, input_table_name),
 
-@allow_non_gpu("EqualTo,IsNotNull,Literal,Or")  # Accounts for partition predicate.
-@pytest.mark.parametrize('mode', [PartitionWriteMode.Static, PartitionWriteMode.Dynamic])
-def test_partitioned_parquet_write(mode, spark_tmp_table_factory):
-    assert_gpu_and_cpu_are_equal_collect(
-        populate_partitioned_parquet_table(spark_tmp_table_factory, mode),
+                "INSERT OVERWRITE TABLE {} PARTITION (type='Hybrid') "
+                "SELECT make, model, year, comment FROM {} "
+                "WHERE type = 'ICE'".format(table_name, input_table_name)
+            ]
+        elif mode == PartitionWriteMode.Dynamic:
+            return [
+                "CREATE TABLE {} (make STRING, model STRING, year INT, comment STRING) "
+                "PARTITIONED BY (type STRING) STORED AS PARQUET ".format(table_name),
+
+                "INSERT OVERWRITE TABLE {} "
+                "SELECT * FROM {} ".format(table_name, input_table_name)
+            ]
+        else:
+            raise Exception("Unsupported PartitionWriteMode {}".format(mode))
+
+    assert_gpu_and_cpu_sql_writes_are_equal_collect(
+        spark_tmp_table_factory, write_partitions,
         conf={"hive.exec.dynamic.partition.mode": "nonstrict"}
     )
