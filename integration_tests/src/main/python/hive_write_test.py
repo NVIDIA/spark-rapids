@@ -66,8 +66,8 @@ def test_optimized_hive_ctas_basic(gens, storage, spark_tmp_table_factory):
         store_name = storage
         if storage.endswith("orc"):
             store_name = "ORC"
-        return ["CREATE TABLE {} STORED AS {} AS SELECT * FROM {}".format(
-            table_name, store_name, data_table)]
+        return "CREATE TABLE {} STORED AS {} AS SELECT * FROM {}".format(
+            table_name, store_name, data_table)
     conf = {
         "spark.sql.legacy.parquet.datetimeRebaseModeInWrite": "CORRECTED",
         "spark.sql.legacy.parquet.int96RebaseModeInWrite": "CORRECTED"

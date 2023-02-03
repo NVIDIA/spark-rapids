@@ -289,8 +289,9 @@ def assert_gpu_and_cpu_sql_writes_are_equal_collect(table_name_factory, write_sq
     cpu_table = table_name_factory.get()
     cpu_start = time.time()
     def do_write(spark, table_name):
-        sql_text_array = write_sql_func(spark, table_name)
-        for sql_text in sql_text_array:
+        sql_texts = write_sql_func(spark, table_name)
+        sql_text_list = [sql_texts] if isinstance(sql_texts, str) else sql_texts
+        for sql_text in sql_text_list:
             spark.sql(sql_text)
         return None
     with_cpu_session(lambda spark : do_write(spark, cpu_table), conf=conf)
