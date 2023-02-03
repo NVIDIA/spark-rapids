@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.DynamicPruningExpression
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, InMemoryFileIndex}
@@ -30,7 +31,7 @@ class FileSourceScanExecMeta(plan: FileSourceScanExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-    extends SparkPlanMeta[FileSourceScanExec](plan, conf, parent, rule) {
+    extends SparkPlanMeta[FileSourceScanExec](plan, conf, parent, rule) with Logging {
 
   // Replaces SubqueryBroadcastExec inside dynamic pruning filters with GPU counterpart
   // if possible. Instead regarding filters as childExprs of current Meta, we create
@@ -42,6 +43,12 @@ class FileSourceScanExecMeta(plan: FileSourceScanExec,
     val convertBroadcast = (bc: SubqueryBroadcastExec) => {
       val meta = GpuOverrides.wrapAndTagPlan(bc, conf)
       meta.tagForExplain()
+      if (conf.shouldExplain) {
+        val explain = meta.explain(conf.shouldExplainAll)
+        if (explain.nonEmpty) {
+          logWarning(s"\n$explain")
+        }
+      }
       val converted = meta.convertIfNeeded()
       // Because the PlanSubqueries rule is not called (and does not work as expected),
       // we might actually have to fully convert the subquery plan as the plugin would
