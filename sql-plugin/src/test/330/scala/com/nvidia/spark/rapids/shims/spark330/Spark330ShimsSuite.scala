@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ class Spark330ShimsSuite extends FunSuite {
 
   test("shuffle manager class") {
     assert(ShimLoader.getRapidsShuffleManagerClass ===
-      classOf[com.nvidia.spark.rapids.spark330.RapidsShuffleManager].getCanonicalName)
+      classOf[com.nvidia.spark.rapids.spark340.RapidsShuffleManager].getCanonicalName)
   }
 
   test("TypeSig330") {

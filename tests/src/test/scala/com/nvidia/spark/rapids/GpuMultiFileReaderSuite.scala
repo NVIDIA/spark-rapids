@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.util.concurrent.Callable
 
 import ai.rapids.cudf.HostMemoryBuffer
+import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
 import org.apache.hadoop.conf.Configuration
 import org.scalatest.FunSuite
 
@@ -50,7 +51,7 @@ class GpuMultiFileReaderSuite extends FunSuite with Arm {
       // Setup some empty host buffers at the start
       currentFileHostBuffers = Some(new HostMemoryBuffersWithMetaDataBase {
         override def partitionedFile: PartitionedFile =
-          PartitionedFile(InternalRow.empty, "", 0, 0)
+          PartitionedFileUtilsShim.newPartitionedFile(InternalRow.empty, "", 0, 0)
         override def memBuffersAndSizes: Array[SingleHMBAndMeta] = membuffers
         override def bytesRead: Long = 0
       })
