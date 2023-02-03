@@ -251,13 +251,12 @@ abstract class RapidsBufferStore(val tier: StorageTier)
    *                     for `memoryBuffer` is transferred to this store. The store may close
    *                     `memoryBuffer` if necessary.
    * @param stream CUDA stream to use or null
-   * @return optionally, the new buffer that was created. None if the store was unable
-   *         to allocate it (did not have enough room for the stores that support a storage limit)
+   * @return the new buffer that was created.
    */
   protected def createBuffer(
      buffer: RapidsBuffer,
      memoryBuffer: MemoryBuffer,
-     stream: Cuda.Stream): Option[RapidsBufferBase]
+     stream: Cuda.Stream): RapidsBufferBase
 
   /** Update bookkeeping for a new buffer */
   protected def addBuffer(buffer: RapidsBufferBase): Unit = {
@@ -385,10 +384,8 @@ abstract class RapidsBufferStore(val tier: StorageTier)
                     this,
                     materializeMemoryBuffer,
                     Cuda.DEFAULT_STREAM)
-                if (newBuffer.addReference()) {
-                  withResource(newBuffer) { _ =>
-                    return newBuffer.getDeviceMemoryBuffer
-                  }
+                withResource(newBuffer) { _ =>
+                  return newBuffer.getDeviceMemoryBuffer
                 }
               } catch {
                 case _: DuplicateBufferException =>

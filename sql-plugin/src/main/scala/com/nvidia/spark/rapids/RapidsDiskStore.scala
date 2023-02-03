@@ -34,7 +34,7 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
   override protected def createBuffer(
       incoming: RapidsBuffer,
       incomingBuffer: MemoryBuffer,
-      stream: Cuda.Stream): Option[RapidsBufferBase] = {
+      stream: Cuda.Stream): RapidsBufferBase = {
     withResource(incomingBuffer) { _ =>
       val hostBuffer = incomingBuffer match {
         case h: HostMemoryBuffer => h
@@ -55,13 +55,13 @@ class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
         copyBufferToPath(hostBuffer, path, append = false)
       }
       logDebug(s"Spilled to $path $fileOffset:${incoming.size}")
-      Some(new RapidsDiskBuffer(
+      new RapidsDiskBuffer(
         id,
         fileOffset,
         incoming.size,
         incoming.meta,
         incoming.getSpillPriority,
-        incoming.getSpillCallback))
+        incoming.getSpillCallback)
     }
   }
 

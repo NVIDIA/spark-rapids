@@ -69,7 +69,7 @@ class RapidsBufferCatalog(
     new ConcurrentHashMap[RapidsBufferId, Seq[RapidsBufferHandleImpl]]()
 
   /** A counter used to skip a spill attempt if we detect a different thread has spilled */
-  private[this] val spillCount = new AtomicInteger(0)
+  @volatile private[this] var spillCount: Integer = 0
 
   class RapidsBufferHandleImpl(
       override val id: RapidsBufferId,
@@ -552,10 +552,11 @@ class RapidsBufferCatalog(
 
         while (!exhausted && !rmmShouldRetryAlloc &&
             store.currentSpillableSize > targetTotalSize) {
-          val mySpillCount = spillCount.incrementAndGet()
+          val mySpillCount = spillCount
           var spilled = false
           synchronized {
-            if (spillCount.get() == mySpillCount) {
+            if (spillCount == mySpillCount) {
+              spillCount += 1
               val nextSpillable = store.nextSpillable()
               if (nextSpillable != null) {
                 // we have a buffer (nextSpillable) to spill
@@ -591,14 +592,12 @@ class RapidsBufferCatalog(
       }
     }
 
-    if (totalSpilled > 0) {
-      Some(totalSpilled)
-    } else if (rmmShouldRetryAlloc) {
+    if (rmmShouldRetryAlloc) {
       // if we are going to retry, and didn't spill, returning None prevents extra
       // logs where we say we spilled 0 bytes from X store
       None
     } else {
-      Some(0)
+      Some(totalSpilled)
     }
   }
 
@@ -618,8 +617,9 @@ class RapidsBufferCatalog(
           val spillCallback = buffer.getSpillCallback
           spillCallback(buffer.storageTier, spillStore.tier, buffer.size)
 
-          // if the spillStore requires it, make room for buffer.
-          makeRoomForBufferIfNeeded(buffer, spillStore)
+          // if the spillStore specifies a maximum size spill taking this ceiling
+          // into account before trying to create a buffer there
+          trySpillToMaximumSize(buffer, spillStore)
 
           // copy the buffer to spillStore
           var newBuffer: Option[RapidsBuffer] = None
@@ -647,9 +647,9 @@ class RapidsBufferCatalog(
   }
 
   /**
-   * If `spillStore` defines a maximum size, make room for `buffer` by spilling.
+   * If `spillStore` defines a maximum size, spill to make room for `buffer`.
    */
-  private def makeRoomForBufferIfNeeded(
+  private def trySpillToMaximumSize(
       buffer: RapidsBuffer,
       spillStore: RapidsBufferStore): Unit = {
     val spillStoreMaxSize = spillStore.getMaxSize
@@ -680,12 +680,20 @@ class RapidsBufferCatalog(
     buffer: RapidsBuffer,
     memoryBuffer: MemoryBuffer,
     stream: Cuda.Stream): RapidsBuffer = synchronized {
-    val newBuffer = deviceStorage.copyBuffer(
-      buffer,
-      memoryBuffer,
-      stream).get // device store always copies
-    registerNewBuffer(newBuffer)
-    newBuffer
+    // try to acquire the buffer, if it's already in the store
+    // do not create a new one, else add a reference
+    acquireBuffer(buffer.id, StorageTier.DEVICE) match {
+      case None =>
+        val newBuffer = deviceStorage.copyBuffer(
+          buffer,
+          memoryBuffer,
+          stream).get // device store always copies
+        newBuffer.addReference() // add a reference since we are about to use it
+        registerNewBuffer(newBuffer)
+        newBuffer
+      case Some(existingBuffer) =>
+        existingBuffer
+    }
   }
 
   /**

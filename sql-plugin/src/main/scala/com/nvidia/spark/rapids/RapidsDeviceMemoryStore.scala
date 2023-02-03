@@ -36,7 +36,7 @@ class RapidsDeviceMemoryStore
   override protected def createBuffer(
       other: RapidsBuffer,
       memoryBuffer: MemoryBuffer,
-      stream: Cuda.Stream): Option[RapidsBufferBase] = {
+      stream: Cuda.Stream): RapidsBufferBase = {
     val deviceBuffer = {
       memoryBuffer match {
         case d: DeviceMemoryBuffer => d
@@ -51,13 +51,13 @@ class RapidsDeviceMemoryStore
         case b => throw new IllegalStateException(s"Unrecognized buffer: $b")
       }
     }
-    Some(new RapidsDeviceMemoryBuffer(
+    new RapidsDeviceMemoryBuffer(
       other.id,
       other.size,
       other.meta,
       deviceBuffer,
       other.getSpillPriority,
-      other.getSpillCallback))
+      other.getSpillCallback)
   }
 
   /**

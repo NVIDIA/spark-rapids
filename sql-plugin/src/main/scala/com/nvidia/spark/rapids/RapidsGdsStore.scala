@@ -37,18 +37,17 @@ class RapidsGdsStore(
   private[this] val batchSpiller = new BatchSpiller()
 
   override protected def createBuffer(other: RapidsBuffer, otherBuffer: MemoryBuffer,
-      stream: Cuda.Stream): Option[RapidsBufferBase] = {
+      stream: Cuda.Stream): RapidsBufferBase = {
     withResource(otherBuffer) { _ =>
       val deviceBuffer = otherBuffer match {
         case d: BaseDeviceMemoryBuffer => d
         case _ => throw new IllegalStateException("copying from buffer without device memory")
       }
-      val res = if (deviceBuffer.getLength < batchWriteBufferSize) {
+      if (deviceBuffer.getLength < batchWriteBufferSize) {
         batchSpiller.spill(other, deviceBuffer)
       } else {
         singleShotSpill(other, deviceBuffer)
       }
-      Some(res)
     }
   }
 

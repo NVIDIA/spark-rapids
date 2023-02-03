@@ -41,58 +41,50 @@ class RapidsHostMemoryStore(
 
   override def getMaxSize: Option[Long] = Some(maxSize)
 
-  private def allocateHostBuffer(size: Long): Option[(HostMemoryBuffer, AllocationMode)] = {
+  private def allocateHostBuffer(size: Long): (HostMemoryBuffer, AllocationMode) = {
     var buffer: HostMemoryBuffer = PinnedMemoryPool.tryAllocate(size)
     if (buffer != null) {
-      return Some((buffer, Pinned))
-    }
-
-    if (size > pageableMemoryPoolSize) {
-      if (!haveLoggedMaxExceeded) {
-        logWarning(s"Exceeding host spill max of $pageableMemoryPoolSize bytes to accommodate " +
-            s"a buffer of $size bytes. Consider increasing pageable memory store size.")
-        haveLoggedMaxExceeded = true
-      }
-      return Some((HostMemoryBuffer.allocate(size, false), Direct))
+      return (buffer, Pinned)
     }
 
     val allocation = addressAllocator.allocate(size)
     if (allocation.isDefined) {
       buffer = pool.slice(allocation.get, size)
-      return Some((buffer, Pooled))
+      return (buffer, Pooled)
     }
 
-    None
+    if (!haveLoggedMaxExceeded) {
+      logWarning(s"Exceeding host spill max of $pageableMemoryPoolSize bytes to accommodate " +
+          s"a buffer of $size bytes. Consider increasing pageable memory store size.")
+      haveLoggedMaxExceeded = true
+    }
+    (HostMemoryBuffer.allocate(size, false), Direct)
   }
 
   override protected def createBuffer(other: RapidsBuffer, otherBuffer: MemoryBuffer,
-      stream: Cuda.Stream): Option[RapidsBufferBase] = {
+      stream: Cuda.Stream): RapidsBufferBase = {
     withResource(otherBuffer) { _ =>
-      val hostAllocResult = allocateHostBuffer(other.size)
-      hostAllocResult match {
-        case None => None
-        case Some((hostBuffer, allocationMode)) =>
-          try {
-            otherBuffer match {
-              case devBuffer: DeviceMemoryBuffer =>
-                hostBuffer.copyFromDeviceBuffer(devBuffer, stream)
-              case _ =>
-                throw new IllegalStateException("copying from buffer without device memory")
-            }
-          } catch {
-            case e: Exception =>
-              hostBuffer.close()
-              throw e
-          }
-          Some(new RapidsHostMemoryBuffer(
-            other.id,
-            other.size,
-            other.meta,
-            applyPriorityOffset(other.getSpillPriority, allocationMode.spillPriorityOffset),
-            hostBuffer,
-            allocationMode,
-            other.getSpillCallback))
+      val (hostBuffer, allocationMode) = allocateHostBuffer(other.size)
+      try {
+        otherBuffer match {
+          case devBuffer: DeviceMemoryBuffer =>
+            hostBuffer.copyFromDeviceBuffer(devBuffer, stream)
+          case _ =>
+            throw new IllegalStateException("copying from buffer without device memory")
+        }
+      } catch {
+        case e: Exception =>
+          hostBuffer.close()
+          throw e
       }
+      new RapidsHostMemoryBuffer(
+        other.id,
+        other.size,
+        other.meta,
+        applyPriorityOffset(other.getSpillPriority, allocationMode.spillPriorityOffset),
+        hostBuffer,
+        allocationMode,
+        other.getSpillCallback)
     }
   }
 
