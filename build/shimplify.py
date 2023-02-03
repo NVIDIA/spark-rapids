@@ -36,7 +36,7 @@ shimplify.move       - property to allow moving files to canonical location, oth
                        without moving
 shimplify.overwrite  - property to allow shimplify executing file changes repeatedly,
                        error out otherwise
-shimplify.shims      - coma-separated list of shims to simplify instead of all, superseded by
+shimplify.shims      - comma-separated list of shims to simplify instead of all, superseded by
                        shimplify.dirs
 shimplify.trace      - property to enable trace logging
 
