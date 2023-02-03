@@ -62,7 +62,7 @@ Optionally review and remove empty directories
 git clean -f -d [--dry-run]
 
 Each shim Scala/Java file receives a comment describing all Spark builds it
-it belongs to. Lines are sorted by the Spark buildver lexicographically.
+belongs to. Lines are sorted by the Spark buildver lexicographically.
 Each line is assumed to be a JSON to keep it extensible.
 
 /*** spark-rapids-shim-json-lines
