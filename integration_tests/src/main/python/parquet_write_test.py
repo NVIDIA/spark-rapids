@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,9 +14,10 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write, assert_py4j_exception
+from asserts import assert_gpu_and_cpu_sql_writes_are_equal_collect, assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write, assert_py4j_exception
 from datetime import date, datetime, timezone
 from data_gen import *
+from enum import Enum
 from marks import *
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_before_spark_320
@@ -567,3 +568,61 @@ def test_write_empty_data_single_writer(spark_tmp_path):
     with_gpu_session(lambda spark: spark.createDataFrame(spark.sparkContext.parallelize(data), schema)
                      .write.mode("overwrite").partitionBy('c1', 'c2').parquet(data_path))
     with_cpu_session(lambda spark: spark.read.parquet(data_path).collect())
+
+
+PartitionWriteMode = Enum('PartitionWriteMode', ['Static', 'Dynamic'])
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('mode', [PartitionWriteMode.Static, PartitionWriteMode.Dynamic])
+def test_partitioned_parquet_write(mode, spark_tmp_table_factory):
+
+    def create_input_table(spark):
+        tmp_input = spark_tmp_table_factory.get()
+        spark.sql("CREATE TABLE " + tmp_input +
+                  " (make STRING, model STRING, year INT, type STRING, comment STRING)" +
+                  " STORED AS PARQUET")
+        spark.sql("INSERT INTO TABLE " + tmp_input + " VALUES " +
+                  "('Ford',   'F-150',       2020, 'ICE',      'Popular' ),"
+                  "('GMC',    'Sierra 1500', 1997, 'ICE',      'Older'),"
+                  "('Chevy',  'D-Max',       2015, 'ICE',      'Isuzu?' ),"
+                  "('Tesla',  'CyberTruck',  2025, 'Electric', 'BladeRunner'),"
+                  "('Rivian', 'R1T',         2022, 'Electric', 'Heavy'),"
+                  "('Jeep',   'Gladiator',   2024, 'Hybrid',   'Upcoming')")
+        return tmp_input
+
+    input_table_name = with_cpu_session(create_input_table)
+
+    def write_partitions(spark, table_name):
+        if mode == PartitionWriteMode.Static:
+            return [
+                "CREATE TABLE {} (make STRING, model STRING, year INT, comment STRING) "
+                "PARTITIONED BY (type STRING) STORED AS PARQUET ".format(table_name),
+
+                "INSERT INTO TABLE {} PARTITION (type='ICE') "
+                "SELECT make, model, year, comment FROM {} "
+                "WHERE type = 'ICE'".format(table_name, input_table_name),
+
+                "INSERT OVERWRITE TABLE {} PARTITION (type='Electric') "
+                "SELECT make, model, year, comment FROM {} "
+                "WHERE type = 'ICE'".format(table_name, input_table_name),
+
+                "INSERT OVERWRITE TABLE {} PARTITION (type='Hybrid') "
+                "SELECT make, model, year, comment FROM {} "
+                "WHERE type = 'ICE'".format(table_name, input_table_name)
+            ]
+        elif mode == PartitionWriteMode.Dynamic:
+            return [
+                "CREATE TABLE {} (make STRING, model STRING, year INT, comment STRING) "
+                "PARTITIONED BY (type STRING) STORED AS PARQUET ".format(table_name),
+
+                "INSERT OVERWRITE TABLE {} "
+                "SELECT * FROM {} ".format(table_name, input_table_name)
+            ]
+        else:
+            raise Exception("Unsupported PartitionWriteMode {}".format(mode))
+
+    assert_gpu_and_cpu_sql_writes_are_equal_collect(
+        spark_tmp_table_factory, write_partitions,
+        conf={"hive.exec.dynamic.partition.mode": "nonstrict"}
+    )
