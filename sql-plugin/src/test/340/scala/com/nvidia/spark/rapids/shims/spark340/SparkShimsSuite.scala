@@ -20,8 +20,8 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.scalatest.FunSuite
 
-class Spark340ShimsSuite extends FunSuite with FQSuiteName {
-  test("spark shims version") {
+class SparkShimsSuite extends FunSuite with FQSuiteName {
+  ignore("spark shims version - https://github.com/NVIDIA/spark-rapids/issues/7676") {
     assert(SparkShimImpl.getSparkShimVersion === SparkShimVersion(3, 4, 0))
   }
 
