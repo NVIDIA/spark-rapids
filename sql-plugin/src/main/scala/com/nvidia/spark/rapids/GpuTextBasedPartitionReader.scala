@@ -222,7 +222,7 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
   metrics = execMetrics
 
   private lazy val estimatedHostBufferSize: Long = {
-    val rawPath = new Path(partFile.filePath)
+    val rawPath = new Path(partFile.filePath.toString())
     val fs = rawPath.getFileSystem(conf)
     val path = fs.makeQualified(rawPath)
     val fileSize = fs.getFileStatus(path).getLen

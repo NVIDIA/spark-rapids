@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable
 
+import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, Path}
 import org.mockito.Mockito._
@@ -73,9 +74,9 @@ class AlluxioUtilsSuite extends FunSuite {
     AlluxioUtils.resetInitInfo()
     val replaceMap = Map[String, String](("s3a://", "alluxio://localhost:19998/"))
     val partitionedFiles = Array[PartitionedFile](
-      PartitionedFile(null, "s3a://bucket_1/a.file", 0, 0),
-      PartitionedFile(null, "s3a://bucket_2/b.file", 0, 0),
-      PartitionedFile(null, "my_scheme://bucket_1/1.file", 0, 0)
+      PartitionedFileUtilsShim.newPartitionedFile(null, "s3a://bucket_1/a.file", 0, 0),
+      PartitionedFileUtilsShim.newPartitionedFile(null, "s3a://bucket_2/b.file", 0, 0),
+      PartitionedFileUtilsShim.newPartitionedFile(null, "my_scheme://bucket_1/1.file", 0, 0)
     )
     val replaced = AlluxioUtils.updateFilesTaskTimeIfAlluxio(partitionedFiles, Option(replaceMap))
     assert(replaced.size == 3)
@@ -95,7 +96,7 @@ class AlluxioUtilsSuite extends FunSuite {
       ("s3a://bucket_1", "alluxio://localhost:19998/") // should not specify this rule!
     )
     val partitionedFiles = Array[PartitionedFile](
-      PartitionedFile(null, "s3a://bucket_1/a.file", 0, 0)
+      PartitionedFileUtilsShim.newPartitionedFile(null, "s3a://bucket_1/a.file", 0, 0)
     )
     try {
       AlluxioUtils.updateFilesTaskTimeIfAlluxio(partitionedFiles, Option(replaceMap))
