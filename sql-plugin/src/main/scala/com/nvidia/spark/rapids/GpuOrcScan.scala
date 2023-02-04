@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1161,7 +1161,7 @@ private case class GpuOrcFileFilterHandler(
     val conf = broadcastedConf.value.value
     OrcConf.IS_SCHEMA_EVOLUTION_CASE_SENSITIVE.setBoolean(conf, isCaseSensitive)
 
-    val filePath = new Path(new URI(partFile.filePath))
+    val filePath = new Path(new URI(partFile.filePath.toString()))
     val fs = filePath.getFileSystem(conf)
     val orcFileReaderOpts = OrcFile.readerOptions(conf).filesystem(fs)
 

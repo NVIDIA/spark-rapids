@@ -16,16 +16,15 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.hadoop.conf.Configuration
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.execution.datasources.PartitionedFile
 
-import org.apache.spark.sql.internal.SQLConf
-
-object ParquetTimestampNTZShims {
-
-  def setupTimestampNTZConfig(conf: Configuration, sqlConf: SQLConf): Unit = {
-    // This timestamp_NTZ flag is introduced in Spark 3.4.0
-    conf.setBoolean(
-      SQLConf.PARQUET_INFER_TIMESTAMP_NTZ_ENABLED.key,
-      sqlConf.parquetInferTimestampNTZEnabled)
-  }
+object PartitionedFileUtilsShim {
+  // Wrapper for case class constructor so Java code can access
+  // the default values across Spark versions.
+  def newPartitionedFile(
+      partitionValues: InternalRow,
+      filePath: String,
+      start: Long,
+      length: Long): PartitionedFile = PartitionedFile(partitionValues, filePath, start, length)
 }
