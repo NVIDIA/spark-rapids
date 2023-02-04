@@ -155,6 +155,8 @@ object RapidsShuffleInternalManagerBase extends Logging {
   private val writerSlotNumber = new AtomicInteger(0)
   private val readerSlotNumber= new AtomicInteger(0)
 
+  private var mtShuffleInitialized: Boolean = false
+
   /**
    * Send a task to a specific write slot.
    * @param slotNum the slot to submit to
@@ -180,16 +182,19 @@ object RapidsShuffleInternalManagerBase extends Logging {
   def startThreadPoolIfNeeded(
       numWriterThreads: Int,
       numReaderThreads: Int): Unit = synchronized {
-    numWriterSlots = numWriterThreads
-    numReaderSlots = numReaderThreads
-    if (writerSlots.isEmpty) {
-      (0 until numWriterSlots).foreach { slotNum =>
-        writerSlots.put(slotNum, new Slot(slotNum, "writer"))
+    if (!mtShuffleInitialized) {
+      mtShuffleInitialized = true
+      numWriterSlots = numWriterThreads
+      numReaderSlots = numReaderThreads
+      if (writerSlots.isEmpty) {
+        (0 until numWriterSlots).foreach { slotNum =>
+          writerSlots.put(slotNum, new Slot(slotNum, "writer"))
+        }
       }
-    }
-    if (readerSlots.isEmpty) {
-      (0 until numReaderSlots).foreach { slotNum =>
-        readerSlots.put(slotNum, new Slot(slotNum, "reader"))
+      if (readerSlots.isEmpty) {
+        (0 until numReaderSlots).foreach { slotNum =>
+          readerSlots.put(slotNum, new Slot(slotNum, "reader"))
+        }
       }
     }
   }
@@ -1213,6 +1218,11 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
               gpuDep.asInstanceOf[GpuShuffleDependency[K, V, V]])
             // we need to track this mapId so we can clean it up later on unregisterShuffle
             trackMapTaskForCleanup(handle.shuffleId, context.taskAttemptId())
+            // in most scenarios, the pools have already started, except for local mode
+            // here we try to start them if we see they haven't
+            RapidsShuffleInternalManagerBase.startThreadPoolIfNeeded(
+              rapidsConf.shuffleMultiThreadedWriterThreads,
+              rapidsConf.shuffleMultiThreadedReaderThreads)
             new RapidsShuffleThreadedWriter[K, V](
               blockManager,
               handleWithMetrics,
@@ -1289,6 +1299,11 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
 
             val shuffleHandleWithMetrics = new ShuffleHandleWithMetrics(
               baseHandle.shuffleId, gpuDep.metrics, gpuDep)
+            // in most scenarios, the pools have already started, except for local mode
+            // here we try to start them if we see they haven't
+            RapidsShuffleInternalManagerBase.startThreadPoolIfNeeded(
+              rapidsConf.shuffleMultiThreadedWriterThreads,
+              rapidsConf.shuffleMultiThreadedReaderThreads)
             new RapidsShuffleThreadedReader(
               startMapIndex,
               endMapIndex,
@@ -1331,20 +1346,18 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
 
   override def unregisterShuffle(shuffleId: Int): Boolean = {
     unregisterGpuShuffle(shuffleId)
-    if (!isDriver) {
-      shuffleBlockResolver match {
-        case isbr: IndexShuffleBlockResolver =>
-          Option(taskIdMapsForShuffle.remove(shuffleId)).foreach { mapTaskIds =>
-            mapTaskIds.iterator.foreach { mapTaskId =>
-              isbr.removeDataByMap(shuffleId, mapTaskId)
-            }
+    shuffleBlockResolver match {
+      case isbr: IndexShuffleBlockResolver =>
+        Option(taskIdMapsForShuffle.remove(shuffleId)).foreach { mapTaskIds =>
+          mapTaskIds.iterator.foreach { mapTaskId =>
+            isbr.removeDataByMap(shuffleId, mapTaskId)
           }
-        case _: GpuShuffleBlockResolver => // noop
-        case _ =>
-          throw new IllegalStateException(
-            "unregisterShuffle called with unexpected resolver " +
-              s"$shuffleBlockResolver and blocks left to be cleaned")
-      }
+        }
+      case _: GpuShuffleBlockResolver => // noop
+      case _ =>
+        throw new IllegalStateException(
+          "unregisterShuffle called with unexpected resolver " +
+            s"$shuffleBlockResolver and blocks left to be cleaned")
     }
     wrapped.unregisterShuffle(shuffleId)
   }
@@ -1357,7 +1370,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
       stopped = true
       server.foreach(_.close())
       transport.foreach(_.close())
-      if (!isDriver && rapidsConf.isMultiThreadedShuffleManagerMode) {
+      if (rapidsConf.isMultiThreadedShuffleManagerMode) {
         RapidsShuffleInternalManagerBase.stopThreadPool()
       }
     }
