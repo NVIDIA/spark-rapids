@@ -25,8 +25,8 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.JoinType
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
-import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.{CoalescedPartitionSpec, SparkPlan}
+import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, ExecutorBroadcastMode}
 import org.apache.spark.sql.types.StructType
@@ -37,45 +37,6 @@ class GpuBroadcastHashJoinMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule) extends GpuBroadcastHashJoinMetaBase(join, conf, parent, rule) {
-
-  // TODO: This will be moved to a shimmed version of GpuBroadcastJoinMeta[_] when
-  // BNLJ will support EXECUTOR_BROADCAST in addition to BHJ
-  override def canBuildSideBeReplaced(buildSide: SparkPlanMeta[_]): Boolean = {
-    buildSide.wrapped match {
-      case bqse: BroadcastQueryStageExec => bqse.plan.isInstanceOf[GpuBroadcastExchangeExec] ||
-          bqse.plan.isInstanceOf[ReusedExchangeExec] &&
-          bqse.plan.asInstanceOf[ReusedExchangeExec]
-              .child.isInstanceOf[GpuBroadcastExchangeExec]
-      case sqse: ShuffleQueryStageExec => sqse.plan.isInstanceOf[GpuShuffleExchangeExecBase] ||
-          sqse.plan.isInstanceOf[ReusedExchangeExec] &&
-          sqse.plan.asInstanceOf[ReusedExchangeExec]
-              .child.isInstanceOf[GpuShuffleExchangeExecBase]
-      case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExec] ||
-          reused.child.isInstanceOf[GpuShuffleExchangeExecBase]
-      case _: GpuBroadcastExchangeExec | _: GpuShuffleExchangeExecBase => true
-      case _ => buildSide.canThisBeReplaced
-    }
-  }
-
-  override def verifyBuildSideWasReplaced(buildSide: SparkPlan): Unit = {
-    val buildSideOnGpu = buildSide match {
-      case bqse: BroadcastQueryStageExec => bqse.plan.isInstanceOf[GpuBroadcastExchangeExec] ||
-          bqse.plan.isInstanceOf[ReusedExchangeExec] &&
-              bqse.plan.asInstanceOf[ReusedExchangeExec]
-                  .child.isInstanceOf[GpuBroadcastExchangeExec]
-      case sqse: ShuffleQueryStageExec => sqse.plan.isInstanceOf[GpuShuffleExchangeExecBase] ||
-          sqse.plan.isInstanceOf[ReusedExchangeExec] &&
-          sqse.plan.asInstanceOf[ReusedExchangeExec]
-              .child.isInstanceOf[GpuShuffleExchangeExecBase]
-      case reused: ReusedExchangeExec => reused.child.isInstanceOf[GpuBroadcastExchangeExec] ||
-          reused.child.isInstanceOf[GpuShuffleExchangeExecBase]
-      case _: GpuBroadcastExchangeExec | _: GpuShuffleExchangeExecBase => true
-      case _ => false
-    }
-    if (!buildSideOnGpu) {
-      throw new IllegalStateException(s"the broadcast must be on the GPU too")
-    }
-  }
 
   override def convertToGpu(): GpuExec = {
     val condition = conditionMeta.map(_.convertToGpu())
@@ -184,7 +145,7 @@ case class GpuBroadcastHashJoinExec(
     }
   }
 
-  private def doColumnarExecutorBroadcastJoin(): RDD[ColumnarBatch] = {
+  private[this] def doColumnarExecutorBroadcastJoin(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
@@ -196,7 +157,10 @@ case class GpuBroadcastHashJoinExec(
 
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
 
-    val buildRelation = shuffleExchange.executeColumnar()
+    // Get all the broadcast data from the shuffle coalesced into a single partition 
+    val partitionSpecs = Seq(CoalescedPartitionSpec(0, shuffleExchange.numPartitions))
+    val buildRelation = shuffleExchange.getShuffleRDD(partitionSpecs.toArray)
+        .asInstanceOf[RDD[ColumnarBatch]]
 
     val rdd = streamedPlan.executeColumnar()
     val localBuildSchema = buildPlan.schema

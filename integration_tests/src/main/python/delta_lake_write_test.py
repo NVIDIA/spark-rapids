@@ -58,13 +58,15 @@ def fixup_operation_metrics(opm):
         opm.pop(k, None)
 
 TMP_TABLE_PATTERN=re.compile("tmp_table_\w+")
+TMP_TABLE_PATH_PATTERN=re.compile("delta.`[^`]*`")
 
 def fixup_operation_parameters(opp):
     """Update the specified operationParameters node to facilitate log comparisons"""
     for key in ("predicate", "matchedPredicates", "notMatchedPredicates"):
         pred = opp.get(key)
         if pred:
-            opp[key] = TMP_TABLE_PATTERN.sub("tmp_table", pred)
+            subbed = TMP_TABLE_PATTERN.sub("tmp_table", pred)
+            opp[key] = TMP_TABLE_PATH_PATTERN.sub("tmp_table", subbed)
 
 def assert_delta_log_json_equivalent(filename, c_json, g_json):
     assert c_json.keys() == g_json.keys(), "Delta log {} has mismatched keys:\nCPU: {}\nGPU: {}".format(filename, c_json, g_json)

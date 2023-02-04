@@ -170,7 +170,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       addPostShuffleCoalesce(e.copy(child = optimizeAdaptiveTransitions(e.child, Some(e))))
 
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
-      GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
+      val c2r = GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
+      SparkShimImpl.addRowShuffleToQueryStageTransitionIfNeeded(c2r, e)
 
     case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
       e.plan match {
