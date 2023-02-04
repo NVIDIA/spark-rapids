@@ -200,6 +200,7 @@ object RapidsShuffleInternalManagerBase extends Logging {
   }
 
   def stopThreadPool(): Unit = synchronized {
+    mtShuffleInitialized = false
     writerSlots.values.foreach(_.shutdownNow())
     writerSlots.clear()
 
