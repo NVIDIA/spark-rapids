@@ -178,7 +178,7 @@ rapids_shuffle_smoke_test() {
     PYSP_TEST_spark_rapids_shuffle_multiThreaded_writer_threads=2 \
     PYSP_TEST_spark_rapids_shuffle_multiThreaded_reader_threads=2 \
     PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
-    SPARK_SUBMIT_FLAGS="$SPARK_CONF" TEST_PARALLEL=1 \
+    SPARK_SUBMIT_FLAGS="$SPARK_CONF" \
     bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh -m shuffle_test --runtime_env="databricks" --test_type=$TEST_TYPE
 }
 

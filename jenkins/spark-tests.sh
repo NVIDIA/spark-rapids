@@ -250,7 +250,7 @@ rapids_shuffle_smoke_test() {
     PYSP_TEST_spark_rapids_shuffle_multiThreaded_writer_threads=2 \
     PYSP_TEST_spark_rapids_shuffle_multiThreaded_reader_threads=2 \
     PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
-    SPARK_SUBMIT_FLAGS="$SPARK_CONF" TEST_PARALLEL=1 \
+    SPARK_SUBMIT_FLAGS="$SPARK_CONF" \
     ./run_pyspark_from_build.sh -m shuffle_test
 }
 
@@ -287,7 +287,7 @@ fi
 
 # Mutithreaded Shuffle test
 if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "MULTITHREADED_SHUFFLE" ]]; then
-        rapids_shuffle_smoke_test
+  rapids_shuffle_smoke_test
 fi
 
 # cudf_udf test: this mostly depends on cudf-py, so we run it into an independent CI
