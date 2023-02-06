@@ -20,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.function.BiFunction
 
 import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange, Rmm}
+import com.nvidia.spark.rapids.RapidsBufferCatalog.getExistingRapidsBufferAndAcquire
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
@@ -205,40 +206,6 @@ class RapidsBufferCatalog(
         buffer.setSpillCallback(newHandles.last.getSpillCallback)
         false // we have handles left
       }
-    }
-  }
-
-  /**
-   * Given a `DeviceMemoryBuffer` find out if a `MemoryBuffer.EventHandler` is associated
-   * with it.
-   *
-   * After getting the `RapidsBuffer` try to acquire it via `addReference`.
-   * If successful, we can point to this buffer with a new handle, otherwise the buffer is
-   * about to be removed/freed (unlikely, because we are holding onto the reference as we
-   * are adding it again).
-   *
-   * @note public for testing
-   * @param buffer - the `DeviceMemoryBuffer` to inspect
-   * @return - Some(RapidsBuffer): the handler is associated with a rapids buffer
-   *         and the rapids buffer is currently valid, or
-   *
-   *         - None: if no `RapidsBuffer` is associated with this buffer (it is
-   *           brand new to the store, or the `RapidsBuffer` is invalid and
-   *           about to be removed).
-   */
-  def getExistingRapidsBufferAndAcquire(buffer: DeviceMemoryBuffer): Option[RapidsBuffer] = {
-    val eh = buffer.getEventHandler
-    eh match {
-      case null =>
-        None
-      case rapidsBuffer: RapidsBuffer =>
-        if (rapidsBuffer.addReference()) {
-          Some(rapidsBuffer)
-        } else {
-          None
-        }
-      case _ =>
-        throw new IllegalStateException("Unknown event handler")
     }
   }
 
@@ -867,5 +834,40 @@ object RapidsBufferCatalog extends Logging with Arm {
     singleton.acquireBuffer(handle)
 
   def getDiskBlockManager(): RapidsDiskBlockManager = diskBlockManager
+
+  /**
+   * Given a `DeviceMemoryBuffer` find out if a `MemoryBuffer.EventHandler` is associated
+   * with it.
+   *
+   * After getting the `RapidsBuffer` try to acquire it via `addReference`.
+   * If successful, we can point to this buffer with a new handle, otherwise the buffer is
+   * about to be removed/freed (unlikely, because we are holding onto the reference as we
+   * are adding it again).
+   *
+   * @note public for testing
+   * @param buffer - the `DeviceMemoryBuffer` to inspect
+   * @return - Some(RapidsBuffer): the handler is associated with a rapids buffer
+   *         and the rapids buffer is currently valid, or
+   *
+   *         - None: if no `RapidsBuffer` is associated with this buffer (it is
+   *           brand new to the store, or the `RapidsBuffer` is invalid and
+   *           about to be removed).
+   */
+  private def getExistingRapidsBufferAndAcquire(
+      buffer: DeviceMemoryBuffer): Option[RapidsBuffer] = {
+    val eh = buffer.getEventHandler
+    eh match {
+      case null =>
+        None
+      case rapidsBuffer: RapidsBuffer =>
+        if (rapidsBuffer.addReference()) {
+          Some(rapidsBuffer)
+        } else {
+          None
+        }
+      case _ =>
+        throw new IllegalStateException("Unknown event handler")
+    }
+  }
 }
 

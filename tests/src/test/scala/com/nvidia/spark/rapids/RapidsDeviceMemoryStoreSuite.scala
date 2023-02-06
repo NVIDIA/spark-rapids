@@ -119,31 +119,31 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
       val ct = buildContiguousTable()
       val underlyingBuff = ct.getBuffer
       val buffSize = ct.getBuffer.getLength
-      withResource(ct) { _ =>
+      val buffer = withResource(ct) { _ =>
         val meta = MetaUtils.buildTableMeta(bufferId.tableId, ct)
-        withResource(ct) { _ =>
-          store.addBuffer(
-            bufferId,
-            ct.getBuffer,
-            meta,
-            spillPriority,
-            RapidsBuffer.defaultSpillCallback,
-            false)
-          assertResult(buffSize)(store.currentSize)
-          assertResult(0)(store.currentSpillableSize)
-        }
+        val buffer = store.addBuffer(
+          bufferId,
+          ct.getBuffer,
+          meta,
+          spillPriority,
+          RapidsBuffer.defaultSpillCallback,
+          false)
+        assertResult(buffSize)(store.currentSize)
+        assertResult(0)(store.currentSpillableSize)
+        buffer
       }
 
       // after closing the original table, the RapidsBuffer should be spillable
       assertResult(buffSize)(store.currentSize)
       assertResult(buffSize)(store.currentSpillableSize)
-      val leakedBuff =
-        withResource(catalog.getExistingRapidsBufferAndAcquire(underlyingBuff)) { buff =>
-          buff.get.getDeviceMemoryBuffer
-        }
-      assertResult(buffSize)(store.currentSize)
-      assertResult(0)(store.currentSpillableSize)
-      leakedBuff.close()
+
+      // if a device memory buffer is obtained from the buffer, it is no longer spillable
+      withResource(buffer.getDeviceMemoryBuffer) { deviceBuffer =>
+        assertResult(buffSize)(store.currentSize)
+        assertResult(0)(store.currentSpillableSize)
+      }
+
+      // once the DeviceMemoryBuffer is closed, the RapidsBuffer should be spillable again
       assertResult(buffSize)(store.currentSpillableSize)
     }
   }
