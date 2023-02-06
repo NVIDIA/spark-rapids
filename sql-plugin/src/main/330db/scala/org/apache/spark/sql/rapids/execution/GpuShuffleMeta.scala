@@ -19,9 +19,8 @@ package org.apache.spark.sql.rapids.execution
 import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExec, RapidsConf, RapidsMeta}
 
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
-import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
 import org.apache.spark.sql.execution.exchange.{EXECUTOR_BROADCAST, ShuffleExchangeExec}
-import org.apache.spark.sql.execution.joins.BroadcastHashJoinExec
+import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 
 
 class GpuShuffleMeta(
@@ -39,14 +38,9 @@ class GpuShuffleMeta(
       // rules for BroadcastExchange apply for whether this should be replaced or not
       case EXECUTOR_BROADCAST =>
         // Copied from GpuBroadcastMeta
-        // ensure the outputPartitioning is SinglePartition
-        if (!shuffle.outputPartitioning.equals(SinglePartition)) {
-          willNotWorkOnGpu("Executor-side broadcast can only be converted " + 
-            "with output partitioning SinglePartition at this time")
-        }
-
         def isSupported(rm: RapidsMeta[_, _, _]): Boolean = rm.wrapped match {
           case _: BroadcastHashJoinExec => true
+          case _: BroadcastNestedLoopJoinExec => true
           case _ => false
         }
         if (parent.isDefined) {

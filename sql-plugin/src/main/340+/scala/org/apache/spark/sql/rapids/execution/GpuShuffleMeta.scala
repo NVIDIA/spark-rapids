@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,17 +14,15 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package org.apache.spark.sql.rapids.execution
 
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.execution.datasources.PartitionedFile
+import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta}
 
-object PartitionedFileUtils {
-  // Wrapper for case class constructor so Java code can access
-  // the default values across Spark versions.
-  def newPartitionedFile(
-      partitionValues: InternalRow,
-      filePath: String,
-      start: Long,
-      length: Long): PartitionedFile = PartitionedFile(partitionValues, filePath, start, length)
-}
+import org.apache.spark.sql.execution.exchange.ShuffleExchangeExec
+
+class GpuShuffleMeta(
+    shuffle: ShuffleExchangeExec,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends GpuShuffleMetaBase(shuffle, conf, parent, rule)

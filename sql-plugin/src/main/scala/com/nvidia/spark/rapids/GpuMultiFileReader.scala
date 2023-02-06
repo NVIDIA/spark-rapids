@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -336,7 +336,7 @@ abstract class MultiFilePartitionReaderFactoryBase(
     assert(partition.isInstanceOf[FilePartition])
     val filePartition = partition.asInstanceOf[FilePartition]
     val files = filePartition.files
-    val filePaths = files.map(_.filePath)
+    val filePaths = files.map(_.filePath.toString())
     val conf = broadcastedConf.value.value
 
     if (useMultiThread(filePaths)) {
@@ -721,7 +721,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     val inputFileToSet =
     fileBufsAndMeta.origPartitionedFile.getOrElse(fileBufsAndMeta.partitionedFile)
     InputFileUtils.setInputFileBlock(
-      inputFileToSet.filePath,
+      inputFileToSet.filePath.toString(),
       inputFileToSet.start,
       inputFileToSet.length)
     fileBufsAndMeta
@@ -770,7 +770,7 @@ abstract class MultiFileCloudPartitionReaderBase(
           val inputFileToSet =
           fileBufsAndMeta.origPartitionedFile.getOrElse(fileBufsAndMeta.partitionedFile)
           InputFileUtils.setInputFileBlock(
-            inputFileToSet.filePath,
+            inputFileToSet.filePath.toString(),
             inputFileToSet.start,
             inputFileToSet.length)
           readBuffersToBatch(fileBufsAndMeta, true)

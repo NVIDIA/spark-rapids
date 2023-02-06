@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,9 +20,9 @@ import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.{BaseExprMeta, BinaryAstExprMeta, BinaryExprMeta, CastExprMeta, DecimalUtil, ExprChecks, ExprMeta, ExprRule, GpuCheckOverflow, GpuExpression, GpuPromotePrecision, LiteralExprMeta, TypeSig, UnaryExprMeta}
 import com.nvidia.spark.rapids.GpuOverrides.expr
 
-import org.apache.spark.sql.catalyst.expressions.{CastBase, CheckOverflow, Divide, Expression, IntegralDivide, Literal, Multiply, PromotePrecision}
+import org.apache.spark.sql.catalyst.expressions.{CastBase, CheckOverflow, Divide, Expression, IntegralDivide, Literal, Multiply, PromotePrecision, Remainder}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{DecimalMultiplyChecks, GpuAnsi, GpuDecimalDivide, GpuDecimalMultiply, GpuDivide, GpuIntegralDivide, GpuMultiply}
+import org.apache.spark.sql.rapids.{DecimalMultiplyChecks, GpuAnsi, GpuDecimalDivide, GpuDecimalMultiply, GpuDivide, GpuIntegralDivide, GpuMultiply, GpuRemainder}
 import org.apache.spark.sql.types.{Decimal, DecimalType}
 
 object DecimalArithmeticOverrides {
@@ -188,6 +188,16 @@ object DecimalArithmeticOverrides {
       (a, conf, p, r) => new BinaryExprMeta[IntegralDivide](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuIntegralDivide(lhs, rhs)
+      }),
+    expr[Remainder](
+      "Remainder or modulo",
+      ExprChecks.binaryProject(
+        TypeSig.gpuNumeric, TypeSig.cpuNumeric,
+        ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
+        ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
+      (a, conf, p, r) => new BinaryExprMeta[Remainder](a, conf, p, r) {
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuRemainder(lhs, rhs)
       })
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 }

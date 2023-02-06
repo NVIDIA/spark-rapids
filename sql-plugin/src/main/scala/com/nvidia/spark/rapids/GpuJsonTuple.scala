@@ -16,13 +16,12 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{Scalar, Table}
-import com.nvidia.spark.rapids.GpuExpressionsUtils.columnarEvalToColumn
+import ai.rapids.cudf.Scalar
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{Expression, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.types.{DataType, StringType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -50,53 +49,52 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
     }
   }
 
-  def generate(inputBatch: ColumnarBatch,
+  override def generate(inputBatch: ColumnarBatch,
       generatorOffset: Int,
       outer: Boolean): ColumnarBatch = {
-
-    val jsonGpuExpr = GpuBindReferences.bindReference(jsonExpr, 
-      Seq(jsonExpr.asInstanceOf[NamedExpression].toAttribute))
+    
+    val json = inputBatch.column(generatorOffset).asInstanceOf[GpuColumnVector].getBase
     val schema = Array.fill[DataType](fieldExpressions.length)(StringType)
 
-    withResource(columnarEvalToColumn(jsonGpuExpr, inputBatch).getBase) { json =>
-      val fieldScalars = fieldExpressions.safeMap { field =>
-        withResourceIfAllowed(field.columnarEval(inputBatch)) { fieldVal =>
-          fieldVal match {
-            case fieldScalar: GpuScalar =>
-              // Specials characters like '.', '[', ']' are not supported in field names
-              Scalar.fromString("$." + fieldScalar.getBase.getJavaString)
-            case _ => throw new UnsupportedOperationException(s"JSON field must be a scalar value")
-          }
+    val fieldScalars = fieldExpressions.safeMap { field =>
+      withResourceIfAllowed(field.columnarEval(inputBatch)) { fieldVal =>
+        fieldVal match {
+          case fieldScalar: GpuScalar =>
+            // Specials characters like '.', '[', ']' are not supported in field names
+            Scalar.fromString("$." + fieldScalar.getBase.getJavaString)
+          case _ => throw new UnsupportedOperationException(s"JSON field must be a scalar value")
         }
       }
-      withResource(fieldScalars) { fieldScalars =>
-        withResource(fieldScalars.safeMap(field => json.getJSONObject(field))) { resColumns =>
-          withResource(new Table(resColumns: _*)) { tbl =>
-            GpuColumnVector.from(tbl, schema)
-          }
+    }
+
+    withResource(fieldScalars) { fieldScalars =>
+      withResource(fieldScalars.safeMap(field => json.getJSONObject(field))) { resultCols =>
+        val generatorCols = resultCols.safeMap(_.incRefCount).zip(schema).safeMap {
+          case (col, dataType) => GpuColumnVector.from(col, dataType)
         }
+        val nonGeneratorCols = (0 until generatorOffset).safeMap { i =>
+          inputBatch.column(i).asInstanceOf[GpuColumnVector].incRefCount
+        }
+        new ColumnarBatch((nonGeneratorCols ++ generatorCols).toArray, inputBatch.numRows)
       }
     }
   }
 
-  def inputSplitIndices(inputBatch: ColumnarBatch,
+  override def inputSplitIndices(inputBatch: ColumnarBatch,
       generatorOffset: Int,
       outer: Boolean,
       targetSizeBytes: Long,
       maxRows: Int = Int.MaxValue): Array[Int] = {
+
     val inputRows = inputBatch.numRows
     // if the number of input rows is 1 or less, cannot split
     if (inputRows <= 1) return Array()
-    val outputRows = inputRows
 
-    val jsonGpuExpr = GpuBindReferences.bindReference(jsonExpr, 
-      Seq(jsonExpr.asInstanceOf[NamedExpression].toAttribute))
+    val outputRows = inputRows
+    val json = inputBatch.column(generatorOffset).asInstanceOf[GpuColumnVector].getBase
 
     // we know we are going to output at most this much
-    val estimatedOutputSizeBytes = 
-      withResource(columnarEvalToColumn(jsonGpuExpr, inputBatch).getBase) { json =>
-        (json.getDeviceMemorySize * fieldExpressions.length).toDouble
-      }
+    val estimatedOutputSizeBytes = (json.getDeviceMemorySize * fieldExpressions.length).toDouble
     
     val numSplitsForTargetSize = 
       math.min(inputRows, math.ceil(estimatedOutputSizeBytes / targetSizeBytes).toInt)
