@@ -121,6 +121,9 @@ def read_hive_text_sql(data_path, schema, spark_tmp_table_factory, options=None)
     return read_impl
 
 
+@pytest.mark.skipif(is_spark_cdh(),
+                    reason="Hive text reads are disabled on CDH, as per "
+                           "https://github.com/NVIDIA/spark-rapids/pull/7628")
 @approximate_float
 @pytest.mark.parametrize('name,schema,options', [
 
@@ -231,6 +234,9 @@ def read_hive_text_table(spark, text_table_name, fields="my_field"):
     return spark.sql("SELECT " + fields + " FROM " + text_table_name)
 
 
+@pytest.mark.skipif(is_spark_cdh(),
+                    reason="Hive text reads are disabled on CDH, as per "
+                           "https://github.com/NVIDIA/spark-rapids/pull/7628")
 @approximate_float
 @pytest.mark.parametrize('data_gen', hive_text_supported_gens, ids=idfn)
 def test_hive_text_round_trip(spark_tmp_path, data_gen, spark_tmp_table_factory):
@@ -270,6 +276,9 @@ def read_hive_text_table_partitions(spark, text_table_name, partition):
     return spark.sql("SELECT my_field FROM %s WHERE %s" % (text_table_name, partition))
 
 
+@pytest.mark.skipif(is_spark_cdh(),
+                    reason="Hive text reads are disabled on CDH, as per "
+                           "https://github.com/NVIDIA/spark-rapids/pull/7628")
 @approximate_float
 @allow_non_gpu("EqualTo,IsNotNull,Literal")  # Accounts for partition predicate: `WHERE dt='1'`
 @pytest.mark.parametrize('data_gen', hive_text_supported_gens, ids=idfn)
@@ -285,6 +294,9 @@ def test_hive_text_round_trip_partitioned(spark_tmp_path, data_gen, spark_tmp_ta
         conf=hive_text_enabled_conf)
 
 
+@pytest.mark.skipif(is_spark_cdh(),
+                    reason="Hive text reads are disabled on CDH, as per "
+                           "https://github.com/NVIDIA/spark-rapids/pull/7628")
 @approximate_float
 @allow_non_gpu("EqualTo,IsNotNull,Literal,Or")  # Accounts for partition predicate
 @pytest.mark.parametrize('data_gen', hive_text_supported_gens, ids=idfn)
@@ -313,6 +325,9 @@ hive_text_unsupported_gens = [
 ]
 
 
+@pytest.mark.skipif(is_spark_cdh(),
+                    reason="Hive text reads are disabled on CDH, as per "
+                           "https://github.com/NVIDIA/spark-rapids/pull/7628")
 @allow_non_gpu("org.apache.spark.sql.hive.execution.HiveTableScanExec")
 @pytest.mark.parametrize('unsupported_gen', hive_text_unsupported_gens, ids=idfn)
 def test_hive_text_fallback_for_unsupported_types(spark_tmp_path, unsupported_gen, spark_tmp_table_factory):
@@ -342,6 +357,9 @@ def test_hive_text_fallback_for_unsupported_types(spark_tmp_path, unsupported_ge
         conf=hive_text_enabled_conf)
 
 
+@pytest.mark.skipif(is_spark_cdh(),
+                    reason="Hive text reads are disabled on CDH, as per "
+                           "https://github.com/NVIDIA/spark-rapids/pull/7628")
 @pytest.mark.parametrize('data_gen', [StringGen()], ids=idfn)
 def test_hive_text_default_enabled(spark_tmp_path, data_gen, spark_tmp_table_factory):
     gen = StructGen([('my_field', data_gen)], nullable=False)
@@ -355,6 +373,9 @@ def test_hive_text_default_enabled(spark_tmp_path, data_gen, spark_tmp_table_fac
         conf={})
 
 
+@pytest.mark.skipif(is_spark_cdh(),
+                    reason="Hive text reads are disabled on CDH, as per "
+                           "https://github.com/NVIDIA/spark-rapids/pull/7628")
 @allow_non_gpu("org.apache.spark.sql.hive.execution.HiveTableScanExec")
 @pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
 def test_custom_timestamp_formats_disabled(spark_tmp_path, data_gen, spark_tmp_table_factory):
