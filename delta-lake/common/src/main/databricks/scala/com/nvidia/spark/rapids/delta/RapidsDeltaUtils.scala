@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.delta
 
-import com.databricks.sql.transaction.tahoe.{DeltaConfigs, DeltaLog, DeltaOptions, DeltaParquetFileFormat}
+import com.databricks.sql.transaction.tahoe.{DeltaLog, DeltaParquetFileFormat}
 import com.nvidia.spark.rapids.{DeltaFormatType, FileFormatChecks, GpuParquetFileFormat, RapidsMeta, WriteFileOp}
 
 import org.apache.spark.sql.SparkSession
@@ -51,23 +51,6 @@ object RapidsDeltaUtils {
       } catch {
         case _: NoSuchElementException => None
       }
-    }
-
-    val optimizeWriteEnabled = {
-      val deltaOptions = new DeltaOptions(options, sqlConf)
-      deltaOptions.optimizeWrite.orElse {
-        getSQLConf("spark.databricks.delta.optimizeWrite.enabled").map(_.toBoolean).orElse {
-          val metadata = deltaLog.snapshot.metadata
-          DeltaConfigs.AUTO_OPTIMIZE.fromMetaData(metadata).orElse {
-            metadata.configuration.get("delta.autoOptimize.optimizeWrite").orElse {
-              getSQLConf("spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite")
-            }.map(_.toBoolean)
-          }
-        }
-      }.getOrElse(false)
-    }
-    if (optimizeWriteEnabled) {
-      meta.willNotWorkOnGpu("optimized write of Delta Lake tables is not supported")
     }
 
     val autoCompactEnabled =

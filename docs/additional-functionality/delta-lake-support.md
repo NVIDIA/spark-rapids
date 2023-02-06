@@ -50,9 +50,22 @@ operation which is typically triggered via the DataFrame `write` API, e.g.:
 Table creation from selection, table insertion from SQL, and table merges are not currently
 GPU accelerated. These operations will fallback to the CPU.
 
-[Automatic optimization](https://docs.databricks.com/optimizations/auto-optimize.html)
-during Delta Lake writes is not supported. Write operations that are configured to
-automatically optimize or automatically compact will fallback to the CPU.
+#### Automatic Optimization of Writes
+
+Delta Lake on Databricks has
+[automatic optimization](https://docs.databricks.com/optimizations/auto-optimize.html)
+features for optimized writes and automatic compaction.  Automatic compaction is not supported,
+and writes configured for automatic compaction will fallback to the CPU.
+
+Optimized writes are supported only on Databricks platforms. The algorithm used is similar but
+not identical to the Databricks version. The following table describes configuration settings
+that control the operation of the optimized write.
+
+| Configuration                                               | Default | Description                                                                                |
+|-------------------------------------------------------------|---------|--------------------------------------------------------------------------------------------|
+| spark.databricks.delta.optimizeWrite.binSize                | 512     | Target uncompressed partition size in megabytes                                            |
+| spark.databricks.delta.optimizeWrite.smallPartitionFactor   | 0.5     | Merge partitions smaller than this factor multiplied by the target partition size          |
+| spark.databricks.delta.optimizeWrite.mergedPartitionFactor  | 1.2     | Avoid combining partitions larger than this factor multiplied by the target partition size |
 
 ### RapidsDeltaWrite Node in Query Plans
 
