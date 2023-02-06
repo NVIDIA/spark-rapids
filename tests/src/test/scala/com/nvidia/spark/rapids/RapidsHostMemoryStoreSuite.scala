@@ -172,7 +172,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
         override def getDiskPath(diskBlockManager: RapidsDiskBlockManager): File = null
       })
       when(mockStore.getMaxSize).thenAnswer(_ => None)
-      when(mockStore.copyBuffer(any(), any(), any())).thenAnswer(_ => Some(mockBuff))
+      when(mockStore.copyBuffer(any(), any(), any())).thenReturn(mockBuff)
       when(mockStore.tier) thenReturn (StorageTier.DISK)
       withResource(new RapidsHostMemoryStore(hostStoreMaxSize, hostStoreMaxSize)) { hostStore =>
         devStore.setSpillStore(hostStore)
