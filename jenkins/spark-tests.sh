@@ -242,12 +242,25 @@ run_avro_tests() {
     ./run_pyspark_from_build.sh -k avro
 }
 
+rapids_shuffle_smoke_test() {
+    echo "Run rapids_shuffle_smoke_test..."
+
+    # using MULTITHREADED shuffle
+    PYSP_TEST_spark_rapids_shuffle_mode=MULTITHREADED \
+    PYSP_TEST_spark_rapids_shuffle_multiThreaded_writer_threads=2 \
+    PYSP_TEST_spark_rapids_shuffle_multiThreaded_reader_threads=2 \
+    PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
+    SPARK_SUBMIT_FLAGS="$SPARK_CONF" \
+    ./run_pyspark_from_build.sh -m shuffle_test
+}
+
 # TEST_MODE
 # - DEFAULT: all tests except cudf_udf tests
 # - DELTA_LAKE_ONLY: Delta Lake tests only
 # - ICEBERG_ONLY: iceberg tests only
 # - AVRO_ONLY: avro tests only (with --packages option instead of --jars)
 # - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
+# - MULTITHREADED_SHUFFLE: shuffle tests only
 TEST_MODE=${TEST_MODE:-'DEFAULT'}
 if [[ $TEST_MODE == "DEFAULT" ]]; then
   ./run_pyspark_from_build.sh
@@ -270,6 +283,11 @@ fi
 # Avro tests
 if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "AVRO_ONLY" ]]; then
   run_avro_tests
+fi
+
+# Mutithreaded Shuffle test
+if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "MULTITHREADED_SHUFFLE" ]]; then
+  rapids_shuffle_smoke_test
 fi
 
 # cudf_udf test: this mostly depends on cudf-py, so we run it into an independent CI
