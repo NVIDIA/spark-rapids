@@ -20,7 +20,8 @@ from data_gen import *
 from enum import Enum
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_before_spark_320, is_before_spark_340, is_spark_340_or_later
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_before_spark_320, is_databricks_runtime, is_before_spark_340, is_spark_340_or_later
+
 import pyspark.sql.functions as f
 import pyspark.sql.utils
 import random
@@ -598,9 +599,12 @@ def test_write_empty_data_single_writer(spark_tmp_path):
 PartitionWriteMode = Enum('PartitionWriteMode', ['Static', 'Dynamic'])
 
 
+@pytest.mark.skipif(is_databricks_runtime(),
+                    reason="On Databricks, Hive partitioned SQL writes are routed through InsertIntoHiveTable; "
+                           "GpuInsertIntoHiveTable does not support Parquet writes.")
 @ignore_order(local=True)
 @pytest.mark.parametrize('mode', [PartitionWriteMode.Static, PartitionWriteMode.Dynamic])
-def test_partitioned_parquet_write(mode, spark_tmp_table_factory):
+def test_partitioned_sql_parquet_write(mode, spark_tmp_table_factory):
 
     def create_input_table(spark):
         tmp_input = spark_tmp_table_factory.get()
@@ -651,6 +655,41 @@ def test_partitioned_parquet_write(mode, spark_tmp_table_factory):
         spark_tmp_table_factory, write_partitions,
         conf={"hive.exec.dynamic.partition.mode": "nonstrict"}
     )
+
+
+@ignore_order(local=True)
+def test_dynamic_partitioned_parquet_write(spark_tmp_table_factory, spark_tmp_path):
+
+    def create_input_table(spark):
+        tmp_input = spark_tmp_table_factory.get()
+        spark.sql("CREATE TABLE " + tmp_input +
+                  " (make STRING, model STRING, year INT, type STRING, comment STRING)" +
+                  " STORED AS PARQUET")
+        spark.sql("INSERT INTO TABLE " + tmp_input + " VALUES " +
+                  "('Ford',   'F-150',       2020, 'ICE',      'Popular' ),"
+                  "('GMC',    'Sierra 1500', 1997, 'ICE',      'Older'),"
+                  "('Chevy',  'D-Max',       2015, 'ICE',      'Isuzu?' ),"
+                  "('Tesla',  'CyberTruck',  2025, 'Electric', 'BladeRunner'),"
+                  "('Rivian', 'R1T',         2022, 'Electric', 'Heavy'),"
+                  "('Jeep',   'Gladiator',   2024, 'Hybrid',   'Upcoming')")
+        return tmp_input
+
+    input_table_name = with_cpu_session(create_input_table)
+    base_output_path = spark_tmp_path + "/PARQUET_DYN_WRITE"
+
+    def write_partitions(spark, table_path):
+        input_df = spark.sql("SELECT * FROM {}".format(input_table_name))
+        input_df.write.mode("overwrite").partitionBy("type").parquet(table_path)
+        # Second write triggers the actual overwrite.
+        input_df.write.mode("overwrite").partitionBy("type").parquet(table_path)
+
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: write_partitions(spark, path),
+        lambda spark, path: spark.read.parquet(path),
+        base_output_path,
+        conf={}
+    )
+
 
 @ignore_order
 @pytest.mark.skipif(is_before_spark_340(), reason="`spark.sql.optimizer.plannedWrite.enabled` is only supported in Spark 340+")
