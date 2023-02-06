@@ -226,6 +226,68 @@ object GpuHashJoin extends Arm {
       case _ => false
     }
   }
+
+  /**
+   * Build the gather map(s) for the hash join unconditionally.
+   */
+  def gatherMapsLeftRightUnconditionally(
+      leftKeys: Table,
+      rightKeys: Table,
+      compareNullsEqual: Boolean,
+      joinType: JoinType): Array[GatherMap] = joinType match {
+    case LeftOuter => leftKeys.leftJoinGatherMaps(rightKeys, compareNullsEqual)
+    case RightOuter =>
+      // Reverse the output of the join, because we expect the right gather map to
+      // always be on the right
+      rightKeys.leftJoinGatherMaps(leftKeys, compareNullsEqual).reverse
+    case _: InnerLike => leftKeys.innerJoinGatherMaps(rightKeys, compareNullsEqual)
+    case LeftSemi => Array(leftKeys.leftSemiJoinGatherMap(rightKeys, compareNullsEqual))
+    case LeftAnti => Array(leftKeys.leftAntiJoinGatherMap(rightKeys, compareNullsEqual))
+    case _ =>
+      throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
+        s" supported")
+  }
+
+  /**
+   * Build the gather map(s) for the hash join conditionally.
+   */
+  def gatherMapsLeftRightConditionally(
+      leftKeys: Table,
+      leftData: ColumnarBatch,
+      rightKeys: Table,
+      rightData: ColumnarBatch,
+      compiledCondition: CompiledExpression,
+      compareNullsEqual: Boolean,
+      joinType: JoinType): Array[GatherMap] =  {
+    val nullEquality = if (compareNullsEqual) NullEquality.EQUAL else NullEquality.UNEQUAL
+    withResource(GpuColumnVector.from(leftData)) { leftTable =>
+      withResource(GpuColumnVector.from(rightData)) { rightTable =>
+        joinType match {
+          case _: InnerLike =>
+            Table.mixedInnerJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
+              compiledCondition, nullEquality)
+          case LeftOuter =>
+            Table.mixedLeftJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
+              compiledCondition, nullEquality)
+          case RightOuter =>
+            // Reverse the output of the join, because we expect the right gather map to
+            // always be on the right
+            Table.mixedLeftJoinGatherMaps(rightKeys, leftKeys, rightTable, leftTable,
+              compiledCondition, nullEquality).reverse
+          case LeftSemi =>
+            Array(Table.mixedLeftSemiJoinGatherMap(leftKeys, rightKeys, leftTable, rightTable,
+              compiledCondition, nullEquality))
+          case LeftAnti =>
+            Array(Table.mixedLeftAntiJoinGatherMap(leftKeys, rightKeys, leftTable, rightTable,
+              compiledCondition, nullEquality))
+          case _ =>
+            throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
+              s" supported")
+        }
+      }
+    }
+  }
+
 }
 
 abstract class BaseHashJoinIterator(
@@ -417,19 +479,11 @@ class HashJoinIterator(
       rightKeys: Table,
       rightData: LazySpillableColumnarBatch): Option[JoinGatherer] = {
     withResource(new NvtxWithMetrics("hash join gather map", NvtxColor.ORANGE, joinTime)) { _ =>
-      val maps = joinType match {
-        case LeftOuter => leftKeys.leftJoinGatherMaps(rightKeys, compareNullsEqual)
-        case RightOuter =>
-          // Reverse the output of the join, because we expect the right gather map to
-          // always be on the right
-          rightKeys.leftJoinGatherMaps(leftKeys, compareNullsEqual).reverse
-        case _: InnerLike => leftKeys.innerJoinGatherMaps(rightKeys, compareNullsEqual)
-        case LeftSemi => Array(leftKeys.leftSemiJoinGatherMap(rightKeys, compareNullsEqual))
-        case LeftAnti => Array(leftKeys.leftAntiJoinGatherMap(rightKeys, compareNullsEqual))
-        case _ =>
-          throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
-              s" supported")
-      }
+      val maps = GpuHashJoin.gatherMapsLeftRightUnconditionally(
+        leftKeys,
+        rightKeys,
+        compareNullsEqual,
+        joinType)
       makeGatherer(maps, leftData, rightData, joinType)
     }
   }
@@ -470,35 +524,16 @@ class ConditionalHashJoinIterator(
       leftData: LazySpillableColumnarBatch,
       rightKeys: Table,
       rightData: LazySpillableColumnarBatch): Option[JoinGatherer] = {
-    val nullEquality = if (compareNullsEqual) NullEquality.EQUAL else NullEquality.UNEQUAL
     withResource(new NvtxWithMetrics("hash join gather map", NvtxColor.ORANGE, joinTime)) { _ =>
-      withResource(GpuColumnVector.from(leftData.getBatch)) { leftTable =>
-        withResource(GpuColumnVector.from(rightData.getBatch)) { rightTable =>
-          val maps = joinType match {
-            case _: InnerLike =>
-              Table.mixedInnerJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
-                compiledCondition, nullEquality)
-            case LeftOuter =>
-              Table.mixedLeftJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
-                compiledCondition, nullEquality)
-            case RightOuter =>
-              // Reverse the output of the join, because we expect the right gather map to
-              // always be on the right
-              Table.mixedLeftJoinGatherMaps(rightKeys, leftKeys, rightTable, leftTable,
-                compiledCondition, nullEquality).reverse
-            case LeftSemi =>
-              Array(Table.mixedLeftSemiJoinGatherMap(leftKeys, rightKeys, leftTable, rightTable,
-                compiledCondition, nullEquality))
-            case LeftAnti =>
-              Array(Table.mixedLeftAntiJoinGatherMap(leftKeys, rightKeys, leftTable, rightTable,
-                compiledCondition, nullEquality))
-            case _ =>
-              throw new NotImplementedError(s"Joint Type ${joinType.getClass} is not currently" +
-                  s" supported")
-          }
-          makeGatherer(maps, leftData, rightData, joinType)
-        }
-      }
+      val maps = GpuHashJoin.gatherMapsLeftRightConditionally(
+        leftKeys,
+        leftData.getBatch,
+        rightKeys,
+        rightData.getBatch,
+        compiledCondition,
+        compareNullsEqual,
+        joinType)
+      makeGatherer(maps, leftData, rightData, joinType)
     }
   }
 
@@ -731,6 +766,7 @@ class HashFullJoinIterator(
         }
       }
     }
+    builtSideTracker.foreach(_.close())
     builtSideTracker = withResource(updatedTrackingTable) { _ =>
       Some(SpillableColumnarBatch(
         GpuColumnVector.from(updatedTrackingTable, Array[DataType](DataTypes.BooleanType)),
@@ -739,76 +775,89 @@ class HashFullJoinIterator(
   }
 }
 
-class HashedExistenceJoinIterator(
-  spillableBuiltBatch: LazySpillableColumnarBatch,
-  boundBuildKeys: Seq[GpuExpression],
-  lazyStream: Iterator[LazySpillableColumnarBatch],
-  boundStreamKeys: Seq[GpuExpression],
-  boundCondition: Option[GpuExpression],
-  numFirstConditionTableColumns: Int,
-  compareNullsEqual: Boolean,
-  opTime: GpuMetric,
-  joinTime: GpuMetric
-) extends ExistenceJoinIterator(spillableBuiltBatch, lazyStream, opTime, joinTime) {
+/**
+ * Trait implements "existsScatterMap" method for hash existence join
+ */
+trait GpuHashExistenceJoinLike extends GpuExistenceJoinLike with Arm
+    with TaskAutoCloseableResource {
 
-  val compiledConditionRes: Option[CompiledExpression] = boundCondition.map { gpuExpr =>
-    use(opTime.ns(gpuExpr.convertToAst(numFirstConditionTableColumns).compile()))
+  def compareNullsEqual: Boolean
+
+  def boundStreamKeys: Seq[GpuExpression]
+
+  def boundBuildKeys: Seq[GpuExpression]
+
+  def boundCondition: Option[GpuExpression]
+
+  def numFirstConditionTableColumns: Int
+
+  def opTime: GpuMetric
+
+  def joinTime: GpuMetric
+
+  private def leftKeysTable(leftBatch: ColumnarBatch): Table = {
+    withResource(GpuProjectExec.project(leftBatch, boundStreamKeys))(
+      GpuColumnVector.from)
   }
 
-  private def leftKeysTable(leftColumnarBatch: ColumnarBatch): Table = {
-    withResource(GpuProjectExec.project(leftColumnarBatch, boundStreamKeys)) {
-      GpuColumnVector.from(_)
+  private def rightKeysTable(rightBatch: ColumnarBatch): Table = {
+    withResource(GpuProjectExec.project(rightBatch, boundBuildKeys))(
+      GpuColumnVector.from)
+  }
+
+  type LeftSemiJoinFunc = (Table, ColumnarBatch, Table, ColumnarBatch) => Array[GatherMap]
+
+  private lazy val batchLeftSemiJoin: LeftSemiJoinFunc =
+    boundCondition.map { bCondExpr =>
+      val compiledCond = use(
+        opTime.ns(bCondExpr.convertToAst(numFirstConditionTableColumns).compile()))
+      (leftKeysTab, leftBatch, rightKeysTab, rightBatch) =>
+        GpuHashJoin.gatherMapsLeftRightConditionally(leftKeysTab, leftBatch,
+          rightKeysTab, rightBatch, compiledCond, compareNullsEqual, LeftSemi)
+    }.getOrElse {
+      (leftKeysTab, _, rightKeysTab, _) =>
+        GpuHashJoin.gatherMapsLeftRightUnconditionally(leftKeysTab, rightKeysTab,
+          compareNullsEqual, LeftSemi)
     }
-  }
 
-  private def rightKeysTable(): Table = {
-    withResource(GpuProjectExec.project(spillableBuiltBatch.getBatch, boundBuildKeys)) {
-      GpuColumnVector.from(_)
-    }
-  }
-
-  private def conditionalBatchLeftSemiJoin(
-    leftColumnarBatch: ColumnarBatch,
-    leftKeysTab: Table,
-    rightKeysTab: Table,
-    compiledCondition: CompiledExpression): GatherMap = {
-    withResource(GpuColumnVector.from(leftColumnarBatch)) { leftTab =>
-      withResource(GpuColumnVector.from(spillableBuiltBatch.getBatch)) { rightTab =>
-        Table.mixedLeftSemiJoinGatherMap(
-          leftKeysTab,
-          rightKeysTab,
-          leftTab,
-          rightTab,
-          compiledCondition,
-          if (compareNullsEqual) NullEquality.EQUAL else NullEquality.UNEQUAL)
-        }
-    }
-  }
-
-  private def unconditionalBatchLeftSemiJoin(
-    leftKeysTab: Table,
-    rightKeysTab: Table
-  ): GatherMap = {
-    leftKeysTab.leftSemiJoinGatherMap(rightKeysTab, compareNullsEqual)
-  }
-
-  override def existsScatterMap(leftColumnarBatch: ColumnarBatch): GatherMap = {
+  /**
+   * This method uses a left semijoin to construct a map of all indices
+   * into the left table batch pointing to rows that have a join partner on the
+   * right-hand side.
+   *
+   * Given Boolean column FC totaling as many rows as leftColumnarBatch, all having
+   * the value "false", scattering "true" into column FC will produce the "exists"
+   * column of ExistenceJoin
+   */
+  override def existsScatterMap(
+      leftBatch: ColumnarBatch,
+      rightBatch: ColumnarBatch): GatherMap = {
     withResource(
       new NvtxWithMetrics("existence join scatter map", NvtxColor.ORANGE, joinTime)
     ) { _ =>
-      withResource(leftKeysTable(leftColumnarBatch)) { leftKeysTab =>
-        withResource(rightKeysTable()) { rightKeysTab =>
-          compiledConditionRes.map { compiledCondition =>
-            conditionalBatchLeftSemiJoin(leftColumnarBatch, leftKeysTab, rightKeysTab,
-              compiledCondition)
-          }.getOrElse {
-            unconditionalBatchLeftSemiJoin(leftKeysTab, rightKeysTab)
-          }
+      withResource(leftKeysTable(leftBatch)) { leftKeysTab =>
+        withResource(rightKeysTable(rightBatch)) { rightKeysTab =>
+          val maps = batchLeftSemiJoin(leftKeysTab, leftBatch, rightKeysTab, rightBatch)
+          assert(maps.length == 1)
+          maps.head
         }
       }
     }
   }
 }
+
+class HashedExistenceJoinIterator(
+    spillableBuiltBatch: LazySpillableColumnarBatch,
+    val boundBuildKeys: Seq[GpuExpression],
+    lazyStream: Iterator[LazySpillableColumnarBatch],
+    val boundStreamKeys: Seq[GpuExpression],
+    val boundCondition: Option[GpuExpression],
+    val numFirstConditionTableColumns: Int,
+    val compareNullsEqual: Boolean,
+    val opTime: GpuMetric,
+    val joinTime: GpuMetric)
+  extends ExistenceJoinIterator(spillableBuiltBatch, lazyStream, opTime, joinTime)
+    with GpuHashExistenceJoinLike
 
 trait GpuHashJoin extends GpuExec {
   def left: SparkPlan
@@ -925,6 +974,18 @@ trait GpuHashJoin extends GpuExec {
     (joinLeft.output.size, boundCondition)
   }
 
+  def filterNullsForBuild(batch: ColumnarBatch): ColumnarBatch = {
+    // Filtering nulls on the build side is a workaround for Struct joins with
+    // nullable children.
+    // see https://github.com/NVIDIA/spark-rapids/issues/2126 for more info
+    val builtAnyNullable = compareNullsEqual && buildKeys.exists(_.nullable)
+    if (builtAnyNullable) {
+      GpuHashJoin.filterNulls(batch, boundBuildKeys)
+    } else {
+      GpuColumnVector.incRefCounts(batch)
+    }
+  }
+
   def doJoin(
       builtBatch: ColumnarBatch,
       stream: Iterator[ColumnarBatch],
@@ -938,16 +999,7 @@ trait GpuHashJoin extends GpuExec {
     // The 10k is mostly for tests, hopefully no one is setting anything that low in production.
     val realTarget = Math.max(targetSize, 10 * 1024)
 
-    // Filtering nulls on the build side is a workaround for Struct joins with nullable children
-    // see https://github.com/NVIDIA/spark-rapids/issues/2126 for more info
-    val builtAnyNullable = compareNullsEqual && buildKeys.exists(_.nullable)
-
-    val nullFiltered = if (builtAnyNullable) {
-      GpuHashJoin.filterNulls(builtBatch, boundBuildKeys)
-    } else {
-      GpuColumnVector.incRefCounts(builtBatch)
-    }
-
+    val nullFiltered = filterNullsForBuild(builtBatch)
     val spillableBuiltBatch = withResource(nullFiltered) {
       LazySpillableColumnarBatch(_, spillCallback, "built")
     }

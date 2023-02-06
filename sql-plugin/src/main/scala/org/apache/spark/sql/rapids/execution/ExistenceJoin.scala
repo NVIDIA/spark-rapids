@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,61 @@ import com.nvidia.spark.rapids.{Arm, GpuColumnVector, GpuMetric, LazySpillableCo
 
 import org.apache.spark.sql.types.BooleanType
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
+/**
+ * Trait that implements the basic things for GPU existence join.
+ */
+trait GpuExistenceJoinLike extends Arm {
+  /**
+   * Get a scatter map for existence join
+   */
+  def existsScatterMap(leftBatch: ColumnarBatch, rightBatch: ColumnarBatch): GatherMap
+
+  final protected def existenceJoinNextBatch(leftBatch: ColumnarBatch,
+      rightBatch: ColumnarBatch): ColumnarBatch = {
+    // left columns with exists
+    withResource(existsScatterMap(leftBatch, rightBatch)) { gatherMap =>
+      existenceJoinResult(leftBatch, gatherMap)
+    }
+  }
+
+  /**
+   * Generate existence join result according to `gatherMap`: left columns with `exists` column
+   */
+  private def existenceJoinResult(leftBatch: ColumnarBatch,
+      gatherMap: GatherMap): ColumnarBatch = {
+    // left columns with exists
+    withResource(existsColumn(leftBatch, gatherMap)) { existsColumn =>
+      val resCols = GpuColumnVector.extractBases(leftBatch) :+ existsColumn
+      val resTypes = GpuColumnVector.extractTypes(leftBatch) :+ BooleanType
+      withResource(new Table(resCols: _*)) { resTab =>
+        GpuColumnVector.from(resTab, resTypes)
+      }
+    }
+  }
+
+  private def existsColumn(leftBatch: ColumnarBatch, existsMap: GatherMap): ColumnVector = {
+    val numLeftRows = leftBatch.numRows
+    withResource(falseColumnTable(numLeftRows)) { allFalseTable =>
+      val numExistsTrueRows = existsMap.getRowCount.toInt
+      withResource(existsMap.toColumnView(0, numExistsTrueRows)) { existsView =>
+        withResource(Scalar.fromBool(true)) { trueScalar =>
+          withResource(Table.scatter(Array(trueScalar), existsView, allFalseTable)) {
+            _.getColumn(0).incRefCount()
+          }
+        }
+      }
+    }
+  }
+
+  private def falseColumnTable(numLeftRows: Int): Table = {
+    withResource(Scalar.fromBool(false)) { falseScalar =>
+      withResource(ColumnVector.fromScalar(falseScalar, numLeftRows)) {
+        new Table(_)
+      }
+    }
+  }
+}
 
 /**
  * Existence join generates an `exists` boolean column with `true` or `false` in it,
@@ -47,20 +102,9 @@ abstract class ExistenceJoinIterator(
     opTime: GpuMetric,
     joinTime: GpuMetric
 ) extends Iterator[ColumnarBatch]()
-    with TaskAutoCloseableResource with Arm {
+    with TaskAutoCloseableResource with GpuExistenceJoinLike {
 
   use(spillableBuiltBatch)
-
-  /**
-   * This method uses a left semijoin to construct a map of all indices
-   * into the left table batch pointing to rows that have a join partner on the
-   * right-hand side.
-   *
-   * Given Boolean column FC totaling as many rows as leftColumnarBatch, all having
-   * the value "false", scattering "true" into column FC will produce the "exists"
-   * column of ExistenceJoin
-   */
-  def existsScatterMap(leftColumnarBatch: ColumnarBatch): GatherMap
 
   override def hasNext: Boolean = {
     val streamHasNext = lazyStream.hasNext
@@ -74,7 +118,7 @@ abstract class ExistenceJoinIterator(
     withResource(lazyStream.next()) { lazyBatch =>
       withResource(new NvtxWithMetrics("existence join batch", NvtxColor.ORANGE, joinTime)) { _ =>
         opTime.ns {
-          val ret = existenceJoinNextBatch(lazyBatch.getBatch)
+          val ret = existenceJoinNextBatch(lazyBatch.getBatch, spillableBuiltBatch.getBatch)
           spillableBuiltBatch.allowSpilling()
           ret
         }
@@ -85,50 +129,6 @@ abstract class ExistenceJoinIterator(
   override def close(): Unit = {
     opTime.ns {
       super.close()
-    }
-  }
-
-  private def existenceJoinNextBatch(leftColumnarBatch: ColumnarBatch): ColumnarBatch = {
-    // left columns with exists
-    withResource(existsScatterMap(leftColumnarBatch)) { gatherMap =>
-      existenceJoinResult(leftColumnarBatch, gatherMap)
-    }
-  }
-
-  /**
-   * Generate existence join result according to `gatherMap`: left columns with `exists` column
-   */
-  def existenceJoinResult(leftColumnarBatch: ColumnarBatch, gatherMap: GatherMap): ColumnarBatch = {
-    // left columns with exists
-    withResource(existsColumn(leftColumnarBatch, gatherMap)) { existsColumn =>
-      val resCols = GpuColumnVector.extractBases(leftColumnarBatch) :+ existsColumn
-      val resTypes = GpuColumnVector.extractTypes(leftColumnarBatch) :+ BooleanType
-      withResource(new Table(resCols: _*)) { resTab =>
-        GpuColumnVector.from(resTab, resTypes)
-      }
-    }
-  }
-
-  private def existsColumn(leftColumnarBatch: ColumnarBatch,
-      existsScatterMap: GatherMap): ColumnVector = {
-    val numLeftRows = leftColumnarBatch.numRows
-    withResource(falseColumnTable(numLeftRows)) { allFalseTable =>
-      val numExistsTrueRows = existsScatterMap.getRowCount.toInt
-      withResource(existsScatterMap.toColumnView(0, numExistsTrueRows)) { existsView =>
-        withResource(Scalar.fromBool(true)) { trueScalar =>
-          withResource(Table.scatter(Array(trueScalar), existsView, allFalseTable)) {
-            _.getColumn(0).incRefCount()
-          }
-        }
-      }
-    }
-  }
-
-  private def falseColumnTable(numLeftRows: Int): Table = {
-    withResource(Scalar.fromBool(false)) { falseScalar =>
-      withResource(ai.rapids.cudf.ColumnVector.fromScalar(falseScalar, numLeftRows)) {
-        new Table(_)
-      }
     }
   }
 }

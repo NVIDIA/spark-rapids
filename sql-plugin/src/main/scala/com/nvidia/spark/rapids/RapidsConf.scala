@@ -1787,6 +1787,14 @@ object RapidsConf {
         .bytesConf(ByteUnit.BYTE)
         .createWithDefault(0L)
 
+  val NUM_SUB_PARTITIONS = conf("spark.rapids.sql.join.hash.numSubPartitions")
+    .doc("The number of partitions for the repartition in each partition for big hash join. " +
+      "GPU will try to repartition the data into smaller partitions in each partition when the " +
+      "data from the build side is too large to fit into a single batch.")
+    .internal()
+    .integerConf
+    .createWithDefault(16)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
