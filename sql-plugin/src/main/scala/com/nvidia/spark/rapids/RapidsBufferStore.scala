@@ -17,8 +17,6 @@
 package com.nvidia.spark.rapids
 
 import java.util.Comparator
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
 
 import scala.collection.mutable
 
@@ -30,10 +28,6 @@ import com.nvidia.spark.rapids.format.TableMeta
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
-object RapidsBufferStore {
-  private val FREE_WAIT_TIMEOUT = 10 * 1000
-}
 
 /**
  * Base class for all buffer store types.
@@ -167,17 +161,7 @@ abstract class RapidsBufferStore(val tier: StorageTier)
    */
   def getMaxSize: Option[Long] = None
 
-  def hasPendingFreeBytes: Boolean = pendingFreeBytes.get() > 0
-
-  private[this] val pendingFreeBytes = new AtomicLong(0L)
-
   private[this] val buffers = new BufferTracker
-
-  /** Tracks buffers that are waiting on outstanding references to be freed. */
-  private[this] val pendingFreeBuffers = new ConcurrentHashMap[RapidsBufferId, RapidsBufferBase]
-
-  /** A monitor that can be used to wait for memory to be freed from this store. */
-  protected[this] val memoryFreedMonitor = new Object
 
   /** A store that can be used for spilling. */
   var spillStore: RapidsBufferStore = _
@@ -263,25 +247,6 @@ abstract class RapidsBufferStore(val tier: StorageTier)
 
   def nextSpillable(): RapidsBuffer = {
     buffers.nextSpillableBuffer()
-  }
-
-  /**
-   * Waits for `targetTotalSize` to be available in this store up to FREE_WAIT_TIMEOUT.
-   * As pending buffers are closed, `pendingFreeBytes` is updated, and so we may exit
-   * from this function earlier than the timeout.
-   * @param targetTotalSize - amount of bytes we are waiting to have available
-   */
-  def waitForPending(targetTotalSize: Long): Unit = {
-    logWarning(s"Cannot spill further, waiting for ${pendingFreeBytes.get} " +
-      " bytes of pending buffers to be released")
-    memoryFreedMonitor.synchronized {
-      val memNeeded = buffers.getTotalSpillableBytes - targetTotalSize
-      if (memNeeded > 0 && memNeeded <= pendingFreeBytes.get) {
-        // This could be a futile wait if the thread(s) holding the pending buffers
-        // open are here waiting for more memory.
-        memoryFreedMonitor.wait(RapidsBufferStore.FREE_WAIT_TIMEOUT)
-      }
-    }
   }
 
   /** Base class for all buffers in this store. */
@@ -415,8 +380,6 @@ abstract class RapidsBufferStore(val tier: StorageTier)
       }
       refcount -= 1
       if (refcount == 0 && !isValid) {
-        pendingFreeBuffers.remove(id)
-        pendingFreeBytes.addAndGet(-size)
         freeBuffer()
       }
     }
@@ -434,9 +397,6 @@ abstract class RapidsBufferStore(val tier: StorageTier)
         buffers.remove(id)
         if (refcount == 0) {
           freeBuffer()
-        } else {
-          pendingFreeBuffers.put(id, this)
-          pendingFreeBytes.addAndGet(size)
         }
       } else {
         logWarning(s"Trying to free an invalid buffer => $id, size = $size, $this")
@@ -461,9 +421,6 @@ abstract class RapidsBufferStore(val tier: StorageTier)
     /** Must be called with a lock on the buffer */
     private def freeBuffer(): Unit = {
       releaseResources()
-      memoryFreedMonitor.synchronized {
-        memoryFreedMonitor.notifyAll()
-      }
     }
 
     override def toString: String = s"$name buffer size=$size"

@@ -419,10 +419,12 @@ class RapidsBufferCatalog(
    * @return buffer that has been acquired
    */
   def acquireBuffer(handle: RapidsBufferHandle): RapidsBuffer = {
+    val id = handle.id
     (0 until RapidsBufferCatalog.MAX_BUFFER_LOOKUP_ATTEMPTS).foreach { _ =>
-      val buffers = bufferMap.get(handle.id)
+      val buffers = bufferMap.get(id)
       if (buffers == null || buffers.isEmpty) {
-        throw new NoSuchElementException(s"Cannot locate buffers associated with ID: $id")
+        throw new NoSuchElementException(
+          s"Cannot locate buffers associated with ID: $id")
       }
       val buffer = buffers.head
       if (buffer.addReference()) {
@@ -510,7 +512,7 @@ class RapidsBufferCatalog(
   def synchronousSpill(
       store: RapidsBufferStore,
       targetTotalSize: Long,
-      stream: Cuda.Stream): Option[Long] = {
+      stream: Cuda.Stream = Cuda.DEFAULT_STREAM): Option[Long] = {
     val spillStore = store.spillStore
     if (spillStore == null) {
       throw new OutOfMemoryError("Requested to spill without a spill store")
@@ -533,17 +535,12 @@ class RapidsBufferCatalog(
           s"${store.currentSize} total (${store.currentSpillableSize} spillable) " +
           s"to $targetTotalSize bytes")
 
-        // waited: the store spilled, but it didn't free right away. Instead it waits for
-        // buffers to be closed by clients (since they had references)
-        var waited = false
-
         // If the store has 0 spillable bytes left, it has exhausted.
         var exhausted = false
 
         while (!exhausted && !rmmShouldRetryAlloc &&
             store.currentSpillableSize > targetTotalSize) {
           val mySpillCount = spillCount
-          var spilled = false
           synchronized {
             if (spillCount == mySpillCount) {
               spillCount += 1
@@ -552,27 +549,18 @@ class RapidsBufferCatalog(
                 // we have a buffer (nextSpillable) to spill
                 spillAndFreeBuffer(nextSpillable, spillStore, stream)
                 totalSpilled += nextSpillable.size
-                waited = false
-                spilled = true
               }
             } else {
               rmmShouldRetryAlloc = true
             }
           }
-          if (!rmmShouldRetryAlloc && !spilled) {
-            // we didn't spill in this iteration, and we'll try to wait a bit to see if
-            // other threads finish up their work and release pointers to the released
-            // buffer
-            if (!waited && store.hasPendingFreeBytes) {
-              waited = true
-              store.waitForPending(targetTotalSize)
-            } else {
-              exhausted = true
-              logWarning("Unable to spill enough to meet request. " +
+          if (!rmmShouldRetryAlloc && totalSpilled <= 0) {
+            // we didn't spill in this iteration, exit loop
+            exhausted = true
+            logWarning("Unable to spill enough to meet request. " +
                 s"Total=${store.currentSize} " +
                 s"Spillable=${store.currentSpillableSize} " +
                 s"Target=$targetTotalSize")
-            }
           }
         }
       }
