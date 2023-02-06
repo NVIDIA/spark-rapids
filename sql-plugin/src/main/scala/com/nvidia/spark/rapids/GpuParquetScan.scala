@@ -2022,7 +2022,7 @@ class MultiFileCloudParquetPartitionReader(
 
       if (combinedEmptyMeta.allEmpty) {
         val metaForEmpty = combinedEmptyMeta.metaForEmpty
-        HostMemoryEmptyMetaData(metaForEmpty.partitionedFile, // just pick one since not used
+         HostMemoryEmptyMetaData(metaForEmpty.partitionedFile, // just pick one since not used
           metaForEmpty.origPartitionedFile,
           combinedEmptyMeta.emptyBufferSize,
           combinedEmptyMeta.emptyTotalBytesRead,
@@ -2120,6 +2120,9 @@ class MultiFileCloudParquetPartitionReader(
         bufferStartTime = System.nanoTime()
         if (fileBlockMeta.blocks.isEmpty) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead
+          if (fileBlockMeta.readSchema == null) {
+            logWarning("error read schema is null for " + file)
+          }
           // no blocks so return null buffer and size 0
           HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
             fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
@@ -2128,6 +2131,9 @@ class MultiFileCloudParquetPartitionReader(
           blockChunkIter = fileBlockMeta.blocks.iterator.buffered
           if (isDone) {
             val bytesRead = fileSystemBytesRead() - startingBytesRead
+            if (fileBlockMeta.readSchema == null) {
+              logWarning("error read schema 2 is null for " + file)
+            }
             // got close before finishing
             HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
               fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
@@ -2136,6 +2142,9 @@ class MultiFileCloudParquetPartitionReader(
             if (fileBlockMeta.schema.getFieldCount == 0) {
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               val numRows = fileBlockMeta.blocks.map(_.getRowCount).sum.toInt
+              if (fileBlockMeta.readSchema == null) {
+                logWarning("error read schema 3 is null for " + file)
+              }
               HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
                 fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
                 fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema,
@@ -2154,6 +2163,9 @@ class MultiFileCloudParquetPartitionReader(
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               if (isDone) {
                 // got close before finishing
+                if (fileBlockMeta.readSchema == null) {
+                  logWarning("error read schema 5 is null for " + file)
+                }
                 hostBuffers.foreach(_.hmb.safeClose())
                 HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
                   fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
@@ -2221,9 +2233,20 @@ class MultiFileCloudParquetPartitionReader(
       } else {
         // Someone is going to process this data, even if it is just a row count
         GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
-        val nullColumns = meta.readSchema.fields.safeMap(f =>
-          GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
-        new ColumnarBatch(nullColumns, rows)
+        if (meta.readSchema == null) {
+          logWarning("read schema is null, meta is: " + meta)
+          // not sure this is ok
+          new ColumnarBatch(Array.empty, rows)
+        } else {
+          if (meta.readSchema.fields == null) {
+            logWarning("read schema fields is null, meta is: " + meta)
+            new ColumnarBatch(Array.empty, rows)
+          } else {
+            val nullColumns = meta.readSchema.fields.safeMap(f =>
+              GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
+            new ColumnarBatch(nullColumns, rows)
+          }
+        }
       }
 
       // we have to add partition values here for this batch, we already verified that
