@@ -59,6 +59,7 @@ def fixup_operation_metrics(opm):
 
 TMP_TABLE_PATTERN=re.compile("tmp_table_\w+")
 TMP_TABLE_PATH_PATTERN=re.compile("delta.`[^`]*`")
+REF_ID_PATTERN=re.compile("#[0-9]+")
 
 def fixup_operation_parameters(opp):
     """Update the specified operationParameters node to facilitate log comparisons"""
@@ -66,7 +67,8 @@ def fixup_operation_parameters(opp):
         pred = opp.get(key)
         if pred:
             subbed = TMP_TABLE_PATTERN.sub("tmp_table", pred)
-            opp[key] = TMP_TABLE_PATH_PATTERN.sub("tmp_table", subbed)
+            subbed = TMP_TABLE_PATH_PATTERN.sub("tmp_table", subbed)
+            opp[key] = REF_ID_PATTERN.sub("#refid", subbed)
 
 def assert_delta_log_json_equivalent(filename, c_json, g_json):
     assert c_json.keys() == g_json.keys(), "Delta log {} has mismatched keys:\nCPU: {}\nGPU: {}".format(filename, c_json, g_json)
@@ -116,8 +118,9 @@ def decode_jsons(json_data):
     # reorder to produce a consistent output for comparison
     def json_to_sort_key(j):
         keys = sorted(j.keys())
+        stats = sorted([ v.get("stats", "") for v in j.values() ])
         paths = sorted([ v.get("path", "") for v in j.values() ])
-        return ','.join(keys + paths)
+        return ','.join(keys + stats + paths)
     jsons.sort(key=json_to_sort_key)
     return jsons
 
