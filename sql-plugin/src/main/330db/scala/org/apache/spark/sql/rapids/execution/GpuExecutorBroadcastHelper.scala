@@ -24,14 +24,32 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+/**
+ * Helper object to handle [[EXECUTOR_BROADCAST]] from Databricks. Logically, an executor broadcast 
+ * involves the executor "broadcasting" its data to the other executors, and then each of the 
+ * executors build their own version of the broadcast relation. We accomplish a similar version 
+ * of this by reading the shuffle data in each executor and passing the columnar batch data to the
+ * GPU versions of BroadcastHashJoin and BroadcastNestedLoopJoin, which by necessity must build 
+ * these relations on the executor because they do the work of the join on the GPU device itself,
+ * which means they require a format of the data that can be used on the GPU.
+ */
 object GpuExecutorBroadcastHelper extends Arm {
+
+  // This reads the shuffle data that we have retrieved using `getShuffleRDD` from the shuffle
+  // exchange. WARNING: Do not use this method outside of this context. This method can only be
+  // used in the context of the executor broadcast and is NOT safe for distributed compute.
+  private def shuffleDataIterator(shuffleData: RDD[ColumnarBatch]): Iterator[ColumnarBatch] = {
+    shuffleData.partitions.map { part =>
+      shuffleData.iterator(part, TaskContext.get())
+    }.reduceLeft(_ ++ _)
+  }
 
   // Because of the nature of the executor-side broadcast, every executor needs to read the 
   // shuffle data directly from the executor that produces the broadcast data. 
   // Note that we can't call mapPartitions here because we're on an executor, and we don't 
   // have access to a SparkContext.
   private def shuffleCoalesceIterator(
-    buildRelation: RDD[ColumnarBatch],
+    shuffleData: RDD[ColumnarBatch],
     buildSchema: StructType,
     metricsMap: Map[String, GpuMetric],
     targetSize: Long): Iterator[ColumnarBatch] = {
@@ -42,9 +60,7 @@ object GpuExecutorBroadcastHelper extends Arm {
     // host as needed. Since we don't have GpuShuffleCoalesceExec in the plan for the 
     // executor broadcast scenario, we have to use that logic here to efficiently 
     // grab and release the semaphore while doing I/O
-    val iter = buildRelation.partitions.map { part =>
-      buildRelation.iterator(part, TaskContext.get())
-    }.reduceLeft(_ ++ _)
+    val iter = shuffleDataIterator(shuffleData)
     new GpuShuffleCoalesceIterator(
       new HostShuffleCoalesceIterator(iter, targetSize, dataTypes, metricsMap),
         dataTypes, metricsMap).asInstanceOf[Iterator[ColumnarBatch]]
@@ -54,7 +70,10 @@ object GpuExecutorBroadcastHelper extends Arm {
    * Given an RDD of ColumnarBatch containing broadcast data from a shuffle, get the 
    * fully coalesced ColumnarBatch loaded on to the GPU.
    *
-   * @param buildRelation - the executor broadcast produced by a shuffle exchange
+   * This method uses getSingleBatchWithVerification to handle the empty relation case 
+   * and the unexpected scenario of receiving more than a single batch
+   *
+   * @param shuffleData - the shuffle data from the executor for the "executor broadcast"
    * @param buildSchema - the schema expected for the output
    * @param buildOutput - the output attributes expected in case we receieve an empty RDD
    * @param metricsMap - metrics to populate while the shuffle coalesce iterator loads 
@@ -62,15 +81,43 @@ object GpuExecutorBroadcastHelper extends Arm {
    * @param targetSize - the target batch size in bytes for loading data on to the GPU 
    */
   def getExecutorBroadcastBatch(
-      buildRelation: RDD[ColumnarBatch], 
+      shuffleData: RDD[ColumnarBatch], 
       buildSchema: StructType,
       buildOutput: Seq[Attribute],
       metricsMap: Map[String, GpuMetric],
       targetSize: Long): ColumnarBatch = {
 
-    val it = shuffleCoalesceIterator(buildRelation, buildSchema, metricsMap, targetSize)
+    // TODO: Ensure we're not reading the shuffle data multiple times. 
+    // See https://github.com/NVIDIA/spark-rapids/issues/7599
+    val it = shuffleCoalesceIterator(shuffleData, buildSchema, metricsMap, targetSize)
     // In a broadcast hash join, right now the GPU expects a single batch
     ConcatAndConsumeAll.getSingleBatchWithVerification(it, buildOutput)
+  }
+
+  /**
+   * Given an RDD of ColumnarBatch containing broadcast data from a shuffle, get the 
+   * number of rows that the received batch contains
+   *
+   * The method uses shuffleDataIterator here to get the number of rows here without
+   * loading on to the GPU. The batch here needs to be closed.
+   *
+   */
+  def getExecutorBroadcastBatchNumRows(shuffleData: RDD[ColumnarBatch]): Int = {
+    // Ideally we cache this data so we're not reading the shuffle multiple times. 
+    // This requires caching the data and making it spillable/etc.
+    // See https://github.com/NVIDIA/spark-rapids/issues/7599
+    val it = shuffleDataIterator(shuffleData)
+    if (it.hasNext) {
+      var numRows = 0
+      while (it.hasNext) {
+        withResource(it.next) { batch =>
+          numRows += batch.numRows
+        }
+      }
+      numRows
+    } else {
+      0
+    }
   }
 
 }

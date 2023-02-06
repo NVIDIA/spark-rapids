@@ -50,6 +50,14 @@ pools is the number of cores in the system divided by the number of executors pe
 
 ## UCX Mode
 
+---
+**NOTE:**
+
+As of the spark-rapids 23.02 release, Ubuntu 22.04 UCX packages are not available. They
+will be available for future releases.
+
+---
+
 UCX mode (`spark.rapids.shuffle.mode=UCX`) has two components: a spillable cache, and a transport that can utilize 
 Remote Direct Memory Access (RDMA) and high-bandwidth transfers 
 within a node that has multiple GPUs. This is possible because this mode 

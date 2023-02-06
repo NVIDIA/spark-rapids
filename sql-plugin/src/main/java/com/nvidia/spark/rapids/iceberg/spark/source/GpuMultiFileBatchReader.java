@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import com.nvidia.spark.rapids.iceberg.parquet.GpuParquet;
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquetReader;
 import com.nvidia.spark.rapids.iceberg.parquet.ParquetSchemaUtil;
 import com.nvidia.spark.rapids.iceberg.parquet.TypeWithSchemaVisitor;
+import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.iceberg.*;
@@ -245,7 +246,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
       final StructType emptyPartSchema = new StructType();
       final InternalRow emptyPartValue = InternalRow.empty();
       PartitionedFile[] pFiles = files.values().stream()
-          .map(fst -> PartitionedFileUtils.newPartitionedFile(emptyPartValue,
+          .map(fst -> PartitionedFileUtilsShim.newPartitionedFile(emptyPartValue,
               fst.file().path().toString(), fst.start(), fst.length()))
           .toArray(PartitionedFile[]::new);
       rapidsReader = createRapidsReader(pFiles, emptyPartSchema);
@@ -347,7 +348,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
     private ParquetFileInfoWithBlockMeta filterParquetBlocks(PartitionedFile file) {
       FileScanTask fst = files.get(file.filePath());
       FilteredParquetFileInfo filteredInfo = filterParquetBlocks(fst);
-      constsSchemaMap.put(file.filePath(),
+      constsSchemaMap.put(file.filePath().toString(),
           Tuple2.apply(filteredInfo.idToConstant(), filteredInfo.expectedSchema()));
       return filteredInfo.parquetBlockMeta();
     }
