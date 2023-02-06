@@ -54,7 +54,7 @@ abstract class RapidsBufferStore(val tier: StorageTier)
     private[this] val buffers = new java.util.HashMap[RapidsBufferId, RapidsBufferBase]
     // spillable: contains only those buffers that are currently spillable
     private[this] val spillable = new HashedPriorityQueue[RapidsBufferBase](comparator)
-    // spilling: contians only those buffers that are currently being spilled, but
+    // spilling: contains only those buffers that are currently being spilled, but
     // have not been removed from the store
     private[this] val spilling = new mutable.HashSet[RapidsBufferId]()
     // total bytes stored, regardless of spillable status
@@ -162,7 +162,7 @@ abstract class RapidsBufferStore(val tier: StorageTier)
   /**
    * Stores that need to stay within a specific byte limit of buffers stored override
    * this function. Only the `HostMemoryBufferStore` requires such a limit.
-   * @return - maximum amount of bytes that can be stored in the store, None for no
+   * @return maximum amount of bytes that can be stored in the store, None for no
    *         limit
    */
   def getMaxSize: Option[Long] = None

@@ -246,8 +246,8 @@ class RapidsBufferCatalog(
    * Adds a buffer to the device storage. This does NOT take ownership of the
    * buffer, so it is the responsibility of the caller to close it.
    *
-   * This version of `addBuffer` creates a `TempSpillBufferId` to use to refer to
-   * this buffer.
+   * This version of `addBuffer` should not be called from the shuffle catalogs
+   * since they provide their own ids.
    *
    * @param buffer buffer that will be owned by the store
    * @param tableMeta metadata describing the buffer layout
@@ -288,8 +288,8 @@ class RapidsBufferCatalog(
    * underlying device buffer will be incremented so the contiguous table can be closed before
    * this buffer is destroyed.
    *
-   * This version of `addContiguousTable` creates a `TempSpillBufferId` to use
-   * to refer to this table.
+   * This version of `addContiguousTable` should not be called from the shuffle catalogs
+   * since they provide their own ids.
    *
    * @param contigTable contiguous table to track in storage
    * @param initialSpillPriority starting spill priority value for the buffer
@@ -419,12 +419,8 @@ class RapidsBufferCatalog(
    * @return buffer that has been acquired
    */
   def acquireBuffer(handle: RapidsBufferHandle): RapidsBuffer = {
-    acquireBuffer(handle.id)
-  }
-
-  private def acquireBuffer(id: RapidsBufferId): RapidsBuffer = {
     (0 until RapidsBufferCatalog.MAX_BUFFER_LOOKUP_ATTEMPTS).foreach { _ =>
-      val buffers = bufferMap.get(id)
+      val buffers = bufferMap.get(handle.id)
       if (buffers == null || buffers.isEmpty) {
         throw new NoSuchElementException(s"Cannot locate buffers associated with ID: $id")
       }
@@ -505,25 +501,20 @@ class RapidsBufferCatalog(
 
   /**
    * Free memory in `store` by spilling buffers to the spill store synchronously.
-   * @param targetTotalSize maximum total size of this store after spilling completes
-   * @return optionally number of bytes that were spilled, or None if this called
-   *         made no attempt to spill due to a detected spill race
-   */
-  def synchronousSpill(store: RapidsBufferStore, targetTotalSize: Long): Option[Long] =
-    synchronousSpill(store, targetTotalSize, Cuda.DEFAULT_STREAM)
-
-  /**
-   * Free memory in `store` by spilling buffers to the spill store synchronously.
    * @param store store to spill from
    * @param targetTotalSize maximum total size of this store after spilling completes
    * @param stream CUDA stream to use or null for default stream
    * @return optionally number of bytes that were spilled, or None if this called
    *         made no attempt to spill due to a detected spill race
    */
-  private def synchronousSpill(
+  def synchronousSpill(
       store: RapidsBufferStore,
       targetTotalSize: Long,
       stream: Cuda.Stream): Option[Long] = {
+    val spillStore = store.spillStore
+    if (spillStore == null) {
+      throw new OutOfMemoryError("Requested to spill without a spill store")
+    }
     require(targetTotalSize >= 0, s"Negative spill target size: $targetTotalSize")
     logWarning(s"Targeting a ${store.name} size of $targetTotalSize. " +
       s"Current total ${store.currentSize}. " +
@@ -559,10 +550,6 @@ class RapidsBufferCatalog(
               val nextSpillable = store.nextSpillable()
               if (nextSpillable != null) {
                 // we have a buffer (nextSpillable) to spill
-                val spillStore = store.spillStore
-                if (spillStore == null) {
-                  throw new OutOfMemoryError("Requested to spill without a spill store")
-                }
                 spillAndFreeBuffer(nextSpillable, spillStore, stream)
                 totalSpilled += nextSpillable.size
                 waited = false
@@ -607,7 +594,7 @@ class RapidsBufferCatalog(
   private def spillAndFreeBuffer(
       buffer: RapidsBuffer,
       spillStore: RapidsBufferStore,
-      stream: Cuda.Stream): Unit = synchronized {
+      stream: Cuda.Stream): Unit = {
     if (buffer.addReference()) {
       withResource(buffer) { _ =>
         logDebug(s"Spilling $buffer ${buffer.id} to ${spillStore.name}")
@@ -618,7 +605,7 @@ class RapidsBufferCatalog(
 
           // if the spillStore specifies a maximum size spill taking this ceiling
           // into account before trying to create a buffer there
-          trySpillToMaximumSize(buffer, spillStore)
+          trySpillToMaximumSize(buffer, spillStore, stream)
 
           // copy the buffer to spillStore
           val newBuffer = spillStore.copyBuffer(buffer, buffer.getMemoryBuffer, stream)
@@ -642,14 +629,15 @@ class RapidsBufferCatalog(
    */
   private def trySpillToMaximumSize(
       buffer: RapidsBuffer,
-      spillStore: RapidsBufferStore): Unit = {
+      spillStore: RapidsBufferStore,
+      stream: Cuda.Stream): Unit = {
     val spillStoreMaxSize = spillStore.getMaxSize
     if (spillStoreMaxSize.isDefined) {
       // this spillStore has a maximum size requirement (host only). We need to spill from it
       // in order to make room for `buffer`.
       val targetTotalSize =
         math.max(spillStoreMaxSize.get - buffer.size, 0)
-      val maybeAmountSpilled = synchronousSpill(spillStore, targetTotalSize)
+      val maybeAmountSpilled = synchronousSpill(spillStore, targetTotalSize, stream)
       maybeAmountSpilled.foreach { amountSpilled =>
         if (amountSpilled != 0) {
           logInfo(s"Spilled $amountSpilled bytes from the ${spillStore.name} store")
