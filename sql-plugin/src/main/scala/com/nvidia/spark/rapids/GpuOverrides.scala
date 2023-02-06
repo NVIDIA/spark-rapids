@@ -1698,11 +1698,12 @@ object GpuOverrides extends Logging {
     ),
     expr[Pmod](
       "Pmod",
-      ExprChecks.binaryProject(TypeSig.gpuNumeric, TypeSig.cpuNumeric,
-        ("lhs", TypeSig.gpuNumeric.withPsNote(TypeEnum.DECIMAL,
+      // Decimal support disabled https://github.com/NVIDIA/spark-rapids/issues/7553
+      ExprChecks.binaryProject(TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric,
+        ("lhs", (TypeSig.integral + TypeSig.fp).withPsNote(TypeEnum.DECIMAL,
           s"decimals with precision ${DecimalType.MAX_PRECISION} are not supported"),
             TypeSig.cpuNumeric),
-        ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
+        ("rhs", (TypeSig.integral + TypeSig.fp), TypeSig.cpuNumeric)),
       (a, conf, p, r) => new BinaryExprMeta[Pmod](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           a.dataType match {
@@ -1947,16 +1948,6 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new BinaryAstExprMeta[Pow](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuPow(lhs, rhs)
-      }),
-    expr[Remainder](
-      "Remainder or modulo",
-      ExprChecks.binaryProject(
-        TypeSig.gpuNumeric, TypeSig.cpuNumeric,
-        ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
-        ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
-      (a, conf, p, r) => new BinaryExprMeta[Remainder](a, conf, p, r) {
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuRemainder(lhs, rhs)
       }),
     expr[AggregateExpression](
       "Aggregate expression",

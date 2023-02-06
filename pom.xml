@@ -1199,7 +1199,7 @@
                                 </pathconvert>
                                 <pathconvert property="spark340.test.sources" pathsep=",">
                                     <dirset dir="${project.basedir}/src/test" erroronmissingdir="false">
-                                        <include name="330/*"/>
+                                        <include name="340/*"/>
                                         <include name="320+-noncdh-nondb/*"/>
                                         <include name="330+/*"/>
                                     </dirset>
