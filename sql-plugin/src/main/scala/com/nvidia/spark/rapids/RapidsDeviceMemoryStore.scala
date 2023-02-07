@@ -138,7 +138,14 @@ class RapidsDeviceMemoryStore
 
     override val storageTier: StorageTier = StorageTier.DEVICE
 
-    contigBuffer.setEventHandler(this)
+    // If this require triggers, we are re-adding a `DeviceMemoryBuffer` outside of
+    // the catalog lock, which should not possible. The event handler is set to null
+    // when we free the `RapidsDeviceMemoryBuffer` and if the buffer is not free, we
+    // take out another handle (in the catalog).
+    // TODO: This is not robust (to rely on outside locking and addReference/free)
+    //  and should be revisited.
+    require(contigBuffer.setEventHandler(this) == null,
+      "DeviceMemoryBuffer with non-null event handler failed to add!!")
 
     /**
      * Override from the MemoryBuffer.EventHandler interface.

@@ -259,6 +259,8 @@ abstract class RapidsBufferStore(val tier: StorageTier)
       catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton)
       extends RapidsBuffer with Arm {
     private val MAX_UNSPILL_ATTEMPTS = 100
+
+    // isValid and refcount must be used with the `RapidsBufferBase` lock held
     protected[this] var isValid = true
     protected[this] var refcount = 0
 

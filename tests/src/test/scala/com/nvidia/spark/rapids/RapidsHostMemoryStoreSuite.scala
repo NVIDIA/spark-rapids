@@ -57,6 +57,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
   test("spill updates catalog") {
     val spillPriority = -7
     val hostStoreMaxSize = 1L * 1024 * 1024
+    val mockStore = mock[RapidsHostMemoryStore]
     withResource(new RapidsDeviceMemoryStore) { devStore =>
       val catalog = spy(new RapidsBufferCatalog(devStore))
       withResource(new RapidsHostMemoryStore(hostStoreMaxSize, hostStoreMaxSize)) {
@@ -64,6 +65,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
           assertResult(0)(hostStore.currentSize)
           assertResult(hostStoreMaxSize)(hostStore.numBytesFree)
           devStore.setSpillStore(hostStore)
+          hostStore.setSpillStore(mockStore)
 
           val (bufferSize, handle) = withResource(buildContiguousTable()) { ct =>
             val len = ct.getBuffer.getLength
@@ -94,12 +96,13 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
   test("get columnar batch") {
     val spillPriority = -10
     val hostStoreMaxSize = 1L * 1024 * 1024
-
+    val mockStore = mock[RapidsHostMemoryStore]
     withResource(new RapidsDeviceMemoryStore) { devStore =>
       val catalog = new RapidsBufferCatalog(devStore)
       withResource(new RapidsHostMemoryStore(hostStoreMaxSize, hostStoreMaxSize)) {
         hostStore =>
           devStore.setSpillStore(hostStore)
+          hostStore.setSpillStore(mockStore)
           var expectedBuffer: HostMemoryBuffer = null
           val handle = withResource(buildContiguousTable()) { ct =>
             expectedBuffer = HostMemoryBuffer.allocate(ct.getBuffer.getLength)
@@ -129,11 +132,13 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
       DecimalType(ai.rapids.cudf.DType.DECIMAL64_MAX_PRECISION, 5))
     val spillPriority = -10
     val hostStoreMaxSize = 1L * 1024 * 1024
+    val mockStore = mock[RapidsHostMemoryStore]
     withResource(new RapidsDeviceMemoryStore) { devStore =>
       val catalog = new RapidsBufferCatalog(devStore)
       withResource(new RapidsHostMemoryStore(hostStoreMaxSize, hostStoreMaxSize)) {
         hostStore =>
           devStore.setSpillStore(hostStore)
+          hostStore.setSpillStore(mockStore)
           var expectedBatch: ColumnarBatch = null
           val handle = withResource(buildContiguousTable()) { ct =>
             // make a copy of the table so we can compare it later to the
