@@ -83,6 +83,8 @@ import logging
 import os
 import re
 import subprocess
+import sys
+import traceback
 
 
 def __project():
@@ -189,6 +191,10 @@ __ch.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
 __log.addHandler(__ch)
 
 __shim_package_pattern = re.compile(r'spark\d{3}.*')
+__shim_dir_pattern = re.compile(r'spark\d{3}')
+__shim_comment_pattern = re.compile(re.escape(__opening_shim_tag) +
+                                    r'\n(.*)\n' +
+                                    re.escape(__closing_shim_tag), re.DOTALL)
 
 
 def __upsert_shim_json(filename, bv_list):
@@ -344,32 +350,32 @@ def __generate_symlinks():
     <module>/target/<buildver>/generated/src/<main|test>/scala/<package_path>/SomeClass.scala
     """
     buildver = __ant_proj_prop('buildver')
-    shim_dir_pattern = re.compile(r'spark\d{3}')
-    shim_comment_pattern = re.compile(re.escape(__opening_shim_tag) +
-                                      r'\n(.*)\n' +
-                                      re.escape(__closing_shim_tag), re.DOTALL)
     for src_type in ['main', 'test']:
-        __traverse_source_tree(buildver, src_type, shim_dir_pattern, shim_comment_pattern)
+        __log.info("# generating symlinks for shim %s %s files", buildver, src_type)
+        __traverse_source_tree_of_all_shims(
+            src_type,
+            lambda src_type, path, build_ver_arr: __generate_symlink_to_file(buildver,
+                                                                             src_type,
+                                                                             path,
+                                                                             build_ver_arr))
 
 
-def __traverse_source_tree(buildver, src_type, shim_dir_pattern, shim_comment_pattern):
+def __traverse_source_tree_of_all_shims(src_type, func):
+    """Walks src/<src_type>/sparkXYZ"""
     base_dir = str(__project().getBaseDir())
     src_root = os.path.join(base_dir, 'src', src_type)
-    target_root = os.path.join(base_dir, 'target', "spark%s" % buildver, 'generated', 'src',
-                               src_type)
-    __log.info("# generating symlinks for shim %s %s files under %s", buildver, src_type,
-               target_root)
     for dir, subdirs, files in os.walk(src_root, topdown=True):
         if dir == src_root:
-            subdirs[:] = [d for d in subdirs if re.match(shim_dir_pattern, d)]
+            subdirs[:] = [d for d in subdirs if re.match(__shim_dir_pattern, d)]
         for f in files:
             shim_file_path = os.path.join(dir, f)
             __log.debug("processing shim comment at %s", shim_file_path)
             with open(shim_file_path, 'r') as shim_file:
                 shim_file_txt = shim_file.read()
-                shim_match = shim_comment_pattern.search(shim_file_txt)
+                shim_match = __shim_comment_pattern.search(shim_file_txt)
                 assert shim_match is not None and shim_match.groups(), \
-                    "no shim comment located in %s" % shim_file_path
+                    "no shim comment located in %s, " \
+                    "orphan shim files should be deleted" % shim_file_path
                 shim_arr = shim_match.group(1).split(os.linesep)
                 assert len(shim_arr) > 0, "invalid empty shim comment,"\
                     "orphan shim files should be deleted"
@@ -377,25 +383,31 @@ def __traverse_source_tree(buildver, src_type, shim_dir_pattern, shim_comment_pa
                 __log.debug("extracted shims %s", build_ver_arr)
                 assert build_ver_arr == sorted(build_ver_arr),\
                     "%s shim list is not properly sorted" % shim_file_path
+                func(src_type, shim_file_path, build_ver_arr)
 
-                if buildver in build_ver_arr:
-                    first_build_ver = build_ver_arr[0]
-                    __log.debug("top shim comment %s", first_build_ver)
-                    shim_file_rel_path = os.path.relpath(shim_file_path, src_root)
-                    expected_prefix = "spark%s%s" % (first_build_ver, os.sep)
-                    assert shim_file_rel_path.startswith(expected_prefix),\
-                        "Unexpected path %s is not prefixed by %s" % (shim_file_rel_path,
-                                                                      expected_prefix)
-                    shim_file_rel_path_parts = shim_file_rel_path.split(os.sep)
-                    # drop spark3XY from spark3XY/scala/com/nvidia
-                    target_file_parts = shim_file_rel_path_parts[1:]
-                    target_rel_path = os.sep.join(target_file_parts)
-                    target_shim_file_path = os.path.join(target_root, target_rel_path)
-                    __log.debug("creating symlink %s -> %s", target_shim_file_path, shim_file_path)
-                    __makedirs(os.path.dirname(target_shim_file_path))
-                    if __should_overwrite:
-                        __remove_file(target_shim_file_path)
-                    __symlink(shim_file_path, target_shim_file_path)
+
+def __generate_symlink_to_file(buildver, src_type, shim_file_path, build_ver_arr):
+    if buildver in build_ver_arr:
+        base_dir = str(__project().getBaseDir())
+        src_root = os.path.join(base_dir, 'src', src_type)
+        target_root = os.path.join(base_dir, 'target', "spark%s" % buildver, 'generated', 'src',
+                               src_type)
+        first_build_ver = build_ver_arr[0]
+        __log.debug("top shim comment %s", first_build_ver)
+        shim_file_rel_path = os.path.relpath(shim_file_path, src_root)
+        expected_prefix = "spark%s%s" % (first_build_ver, os.sep)
+        assert shim_file_rel_path.startswith(expected_prefix), "Unexpected: %s is not prefixed" \
+               "by %s" % (shim_file_rel_path, expected_prefix)
+        shim_file_rel_path_parts = shim_file_rel_path.split(os.sep)
+        # drop spark3XY from spark3XY/scala/com/nvidia
+        target_file_parts = shim_file_rel_path_parts[1:]
+        target_rel_path = os.sep.join(target_file_parts)
+        target_shim_file_path = os.path.join(target_root, target_rel_path)
+        __log.debug("creating symlink %s -> %s", target_shim_file_path, shim_file_path)
+        __makedirs(os.path.dirname(target_shim_file_path))
+        if __should_overwrite:
+            __remove_file(target_shim_file_path)
+        __symlink(shim_file_path, target_shim_file_path)
 
 
 def __symlink(src, target):
@@ -416,6 +428,7 @@ def __remove_file(target_shim_file_path):
 
 
 def __shimplify_layout():
+    __log.info("executing __shimplify_layout")
     assert ((__add_shim_buildver is None) and (__add_shim_base is None) or
             (__add_shim_buildver is not None) and (__add_shim_base is not None)),\
            "shimplify.add.shim cannot be specified without shimplify.add.base and vice versa"
@@ -423,11 +436,11 @@ def __shimplify_layout():
            "shimplify.add.base is not in %s" % __shims_arr
     # map file -> [shims it's part of]
     files2bv = {}
-    for build_ver in __all_shims_arr:
-        src_roots = __csv_ant_prop_as_arr("spark%s.sources" % build_ver)
-        test_src_roots = __csv_ant_prop_as_arr("spark%s.test.sources" % build_ver)
-        __log.debug("check %s sources: %s", build_ver, src_roots)
-        __log.debug("check %s test sources: %s", build_ver, test_src_roots)
+    for buildver in __all_shims_arr:
+        src_roots = __csv_ant_prop_as_arr("spark%s.sources" % buildver)
+        test_src_roots = __csv_ant_prop_as_arr("spark%s.test.sources" % buildver)
+        __log.debug("check %s sources: %s", buildver, src_roots)
+        __log.debug("check %s test sources: %s", buildver, test_src_roots)
         main_and_test_roots = src_roots + test_src_roots
         # alternatively we can use range dirs instead of files, which is more efficient.
         # file level provides flexibility until/unless the shim layer becomes unexpectedly
@@ -436,54 +449,77 @@ def __shimplify_layout():
             __log.debug("os.walk looking for shim files from %s", src_root)
             for dir, _, shim_source_files in os.walk(src_root):
                 for shim_file in shim_source_files:
+                    __log.info("encountered RapidsShuffleManager %s %s %s", src_root, dir,
+                               shim_file)
                     shim_path = os.path.join(dir, shim_file)
-                    __log.debug("updating files2bv %s -> %s", shim_path, build_ver)
+                    __log.debug("updating files2bv %s -> %s", shim_path, buildver)
                     if shim_path in files2bv.keys():
-                        files2bv[shim_path] += [build_ver]
+                        files2bv[shim_path] += [buildver]
                     else:
-                        files2bv[shim_path] = [build_ver]
+                        files2bv[shim_path] = [buildver]
+
+    # if the user allows to overwrite / reorganize shimplified shims,
+    # commonly while adding or removing shims we must includes new shim locations
+    if __should_overwrite or __add_shim_buildver is not None:
+        for src_type in ['main', 'test']:
+            __traverse_source_tree_of_all_shims(
+                src_type,
+                lambda unused_src_type, shim_file_path, build_ver_arr:
+                __update_files2bv(files2bv, shim_file_path, build_ver_arr))
 
     # adding a new shim?
     if __add_shim_buildver is not None:
-        if __add_shim_buildver not in __all_shims_arr:
-            __log.warning("Update pom.xml to add %s to all.buildvers")
-        if __add_shim_buildver not in __shims_arr:
-            # TODO  should we just bail and ask the user to add to all.buildvers manually first?
-            __shims_arr.append(__add_shim_buildver)
-            __shims_arr.sort()
-
-        # copy keys to be able to modify the original dictionary while iterating
-        for shim_file in set(files2bv.keys()):
-            bv_list = files2bv[shim_file]
-            if __add_shim_base in bv_list:
-                # adding a lookalike
-                # case 1) dedicated per-shim files such as SparkShims.scala and anything with
-                #         a spark${buldver} in the package path: CLONE the file with modifications
-                # case 2) otherwise simply add the new buildver to the files2bv[shimfile] mapping
-                base_package = "spark%s" % __add_shim_base
-                shim_impl_file = 'com.nvidia.spark.rapids.shims.SparkShims'\
-                    .replace('.', os.sep) + '.scala'
-                if (base_package in shim_file) or shim_file.endswith(shim_impl_file):
-                    assert len(bv_list) == 1, "Per-shim file are expect to belong to a single "\
-                        "shim, actual number of shims: %s" % len(bv_list)
-                    new_shim_file = __git_rename_or_copy(shim_file, __add_shim_buildver,
-                                                         from_shim=__add_shim_base)
-                    # schedule new file for comment update
-                    __log.info("Adding a per-shim file %s for %s", new_shim_file,
-                               __add_shim_buildver)
-                    files2bv[new_shim_file] = [__add_shim_buildver]
-                else:
-                    # TODO figure out why __add_shim_buildver is unicode class, not a simple str
-                    # and if we care
-                    bv_list.append(__add_shim_buildver)
+        __add_new_shim_to_file_map(files2bv)
 
     for shim_file, bv_list in files2bv.items():
-        __log.debug("calling upsert_shim_json on shim_file %s bv_list=%s", shim_file, bv_list)
-        owner_shim = bv_list[0]
+        sorted_build_vers = sorted(bv_list)
+        __log.debug("calling upsert_shim_json on shim_file %s bv_list=%s", shim_file,
+                    sorted_build_vers)
+        owner_shim = sorted_build_vers[0]
         if owner_shim in __shims_arr:
-            __upsert_shim_json(shim_file, bv_list)
+            __upsert_shim_json(shim_file, sorted_build_vers)
             if __should_move_files:
                 __git_rename_or_copy(shim_file, owner_shim)
+
+
+def __update_files2bv(files2bv, path, buildver_arr):
+    assert path not in files2bv.keys(), "new path %s %s should be "\
+        "encountered only once, current map\n%s" % (path, buildver_arr, files2bv)
+    __log.debug("Adding %s %s to files to shim map", path, buildver_arr)
+    files2bv[path] = buildver_arr
+
+
+def __add_new_shim_to_file_map(files2bv):
+    if __add_shim_buildver not in __all_shims_arr:
+        __log.warning("Update pom.xml to add %s to all.buildvers", __add_shim_buildver)
+    if __add_shim_buildver not in __shims_arr:
+        # TODO  should we just bail and ask the user to add to all.buildvers manually first?
+        __shims_arr.append(__add_shim_buildver)
+
+    # copy keys to be able to modify the original dictionary while iterating
+    for shim_file in set(files2bv.keys()):
+        bv_list = files2bv[shim_file]
+        if __add_shim_base in bv_list:
+            # adding a lookalike
+            # case 1) dedicated per-shim files such as SparkShims.scala and anything with
+            #         a spark${buldver} in the package path: CLONE the file with modifications
+            # case 2) otherwise simply add the new buildver to the files2bv[shimfile] mapping
+            base_package = "spark%s" % __add_shim_base
+            shim_impl_file = 'com.nvidia.spark.rapids.shims.SparkShims'\
+                .replace('.', os.sep) + '.scala'
+            if (base_package in shim_file) or shim_file.endswith(shim_impl_file):
+                assert len(bv_list) == 1, "Per-shim file are expect to belong to a single "\
+                        "shim, actual number of shims: %s" % len(bv_list)
+                new_shim_file = __git_rename_or_copy(shim_file, __add_shim_buildver,
+                                                     from_shim=__add_shim_base)
+                # schedule new file for comment update
+                __log.info("Adding a per-shim file %s for %s", new_shim_file,
+                           __add_shim_buildver)
+                files2bv[new_shim_file] = [__add_shim_buildver]
+            else:
+                # TODO figure out why __add_shim_buildver is unicode class, not a simple str
+                # and if we care
+                bv_list.append(__add_shim_buildver)
 
 
 def __warn_shims_with_multiple_dedicated_dirs(dirs2bv):
