@@ -24,11 +24,6 @@ import org.apache.spark.sql.connector.read.{HasPartitionKey, InputPartition}
 object KeyGroupedPartitioningShim {
 
   def checkPartitions(p: KeyGroupedPartitioning, newPartitions: Array[InputPartition]): Unit = {
-    if (newPartitions.exists(!_.isInstanceOf[HasPartitionKey])) {
-      throw new SparkException("Data source must have preserved the original partitioning " +
-        "during runtime filtering: not all partitions implement HasPartitionKey after " +
-        "filtering")
-    }
 
     val newRows = new InternalRowSet(p.expressions.map(_.dataType))
     newRows ++= newPartitions.map(_.asInstanceOf[HasPartitionKey].partitionKey())

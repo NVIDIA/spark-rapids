@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.shims
 import com.google.common.base.Objects
 import com.nvidia.spark.rapids.{GpuBatchScanExecMetrics, ScanWithMetrics}
 
+import org.apache.spark.SparkException
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, DynamicPruningExpression, Expression, Literal}
@@ -70,6 +71,11 @@ case class GpuBatchScanExec(
 
       originalPartitioning match {
         case p: KeyGroupedPartitioning =>
+          if (newPartitions.exists(!_.isInstanceOf[HasPartitionKey])) {
+            throw new SparkException("Data source must have preserved the original partitioning " +
+              "during runtime filtering: not all partitions implement HasPartitionKey after " +
+              "filtering")
+          }
           KeyGroupedPartitioningShim.checkPartitions(p, newPartitions)
           groupPartitions(newPartitions).get.map(_._2)
 
