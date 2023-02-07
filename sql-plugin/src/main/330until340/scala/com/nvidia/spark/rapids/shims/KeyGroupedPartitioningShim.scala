@@ -16,12 +16,34 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.SparkException
 import org.apache.spark.sql.catalyst.plans.physical.KeyGroupedPartitioning
+import org.apache.spark.sql.catalyst.util.InternalRowSet
+import org.apache.spark.sql.connector.read.{HasPartitionKey, InputPartition}
 
 object KeyGroupedPartitioningShim {
 
-  def getPartitionValues(p: KeyGroupedPartitioning): Seq[InternalRow] = {
-    p.partitionValuesOpt.get
+  def checkPartitions(p: KeyGroupedPartitioning, newPartitions: Array[InputPartition]): Unit = {
+    if (newPartitions.exists(!_.isInstanceOf[HasPartitionKey])) {
+      throw new SparkException("Data source must have preserved the original partitioning " +
+        "during runtime filtering: not all partitions implement HasPartitionKey after " +
+        "filtering")
+    }
+
+    val newRows = new InternalRowSet(p.expressions.map(_.dataType))
+    newRows ++= newPartitions.map(_.asInstanceOf[HasPartitionKey].partitionKey())
+    val oldRows = p.partitionValuesOpt.get
+
+    if (oldRows.size != newRows.size) {
+      throw new SparkException("Data source must have preserved the original partitioning " +
+        "during runtime filtering: the number of unique partition values obtained " +
+        s"through HasPartitionKey changed: before ${oldRows.size}, after ${newRows.size}")
+    }
+
+    if (!oldRows.forall(newRows.contains)) {
+      throw new SparkException("Data source must have preserved the original partitioning " +
+        "during runtime filtering: the number of unique partition values obtained " +
+        s"through HasPartitionKey remain the same but do not exactly match")
+    }
   }
 }

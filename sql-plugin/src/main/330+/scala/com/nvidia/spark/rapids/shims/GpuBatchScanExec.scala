@@ -19,13 +19,11 @@ package com.nvidia.spark.rapids.shims
 import com.google.common.base.Objects
 import com.nvidia.spark.rapids.{GpuBatchScanExecMetrics, ScanWithMetrics}
 
-import org.apache.spark.SparkException
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, DynamicPruningExpression, Expression, Literal}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.physical.{KeyGroupedPartitioning, SinglePartition}
-import org.apache.spark.sql.catalyst.util.InternalRowSet
 import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.connector.read._
 import org.apache.spark.sql.execution.datasources.rapids.DataSourceStrategyUtils
@@ -72,28 +70,7 @@ case class GpuBatchScanExec(
 
       originalPartitioning match {
         case p: KeyGroupedPartitioning =>
-          if (newPartitions.exists(!_.isInstanceOf[HasPartitionKey])) {
-            throw new SparkException("Data source must have preserved the original partitioning " +
-                "during runtime filtering: not all partitions implement HasPartitionKey after " +
-                "filtering")
-          }
-
-          val newRows = new InternalRowSet(p.expressions.map(_.dataType))
-          newRows ++= newPartitions.map(_.asInstanceOf[HasPartitionKey].partitionKey())
-          val oldRows = KeyGroupedPartitioningShim.getPartitionValues(p)
-
-          if (oldRows.size != newRows.size) {
-            throw new SparkException("Data source must have preserved the original partitioning " +
-                "during runtime filtering: the number of unique partition values obtained " +
-                s"through HasPartitionKey changed: before ${oldRows.size}, after ${newRows.size}")
-          }
-
-          if (!oldRows.forall(newRows.contains)) {
-            throw new SparkException("Data source must have preserved the original partitioning " +
-                "during runtime filtering: the number of unique partition values obtained " +
-                s"through HasPartitionKey remain the same but do not exactly match")
-          }
-
+          KeyGroupedPartitioningShim.checkPartitions(p, newPartitions)
           groupPartitions(newPartitions).get.map(_._2)
 
         case _ =>

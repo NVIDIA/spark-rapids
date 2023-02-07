@@ -16,12 +16,37 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.SparkException
 import org.apache.spark.sql.catalyst.plans.physical.KeyGroupedPartitioning
+import org.apache.spark.sql.catalyst.util.InternalRowComparableWrapper
+import org.apache.spark.sql.connector.read.{HasPartitionKey, InputPartition}
 
 object KeyGroupedPartitioningShim {
 
-  def getPartitionValues(p: KeyGroupedPartitioning): Seq[InternalRow] = {
-    p.partitionValues
+  def checkPartitions(p: KeyGroupedPartitioning, newPartitions: Array[InputPartition]): Unit = {
+    if (newPartitions.exists(!_.isInstanceOf[HasPartitionKey])) {
+      throw new SparkException("Data source must have preserved the original partitioning " +
+        "during runtime filtering: not all partitions implement HasPartitionKey after " +
+        "filtering")
+    }
+    val newPartitionValues = newPartitions.map(partition =>
+      InternalRowComparableWrapper(partition.asInstanceOf[HasPartitionKey], p.expressions))
+      .toSet
+    val oldPartitionValues = p.partitionValues
+      .map(partition => InternalRowComparableWrapper(partition, p.expressions)).toSet
+    // We require the new number of partition values to be equal or less than the old number
+    // of partition values here. In the case of less than, empty partitions will be added for
+    // those missing values that are not present in the new input partitions.
+    if (oldPartitionValues.size < newPartitionValues.size) {
+      throw new SparkException("During runtime filtering, data source must either report " +
+        "the same number of partition values, or a subset of partition values from the " +
+        s"original. Before: ${oldPartitionValues.size} partition values. " +
+        s"After: ${newPartitionValues.size} partition values")
+    }
+
+    if (!newPartitionValues.forall(oldPartitionValues.contains)) {
+      throw new SparkException("During runtime filtering, data source must not report new " +
+        "partition values that are not present in the original partitioning.")
+    }
   }
 }
