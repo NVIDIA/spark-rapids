@@ -428,7 +428,11 @@ def test_custom_timestamp_formats_disabled(spark_tmp_path, data_gen, spark_tmp_t
 TableWriteMode = Enum('TableWriteMode', ['CTAS', 'CreateThenWrite'])
 
 
+@pytest.mark.skipif(is_spark_cdh(),
+                    reason="Hive text is disabled on CDH, as per "
+                           "https://github.com/NVIDIA/spark-rapids/pull/7628")
 @approximate_float
+@pytest.mark.parametrize('mode', [TableWriteMode.CTAS, TableWriteMode.CreateThenWrite])
 @pytest.mark.parametrize('input_dir,schema,options', [
     ('hive-delim-text/simple-boolean-values', make_schema(BooleanType()),        {}),
     ('hive-delim-text/simple-int-values',     make_schema(ByteType()),           {}),
@@ -487,43 +491,41 @@ TableWriteMode = Enum('TableWriteMode', ['CTAS', 'CreateThenWrite'])
     ('hive-delim-text/carriage-return', StructType([StructField("str", StringType())]), {}),
     ('hive-delim-text/carriage-return-err', StructType([StructField("str", StringType())]), {}),
 ], ids=idfn)
-def test_basic_hive_text_write(std_input_path, input_dir, schema, spark_tmp_table_factory, options):
-    for mode in [TableWriteMode.CTAS, TableWriteMode.CreateThenWrite]:
+def test_basic_hive_text_write(std_input_path, input_dir, schema, spark_tmp_table_factory, mode, options):
+    # Configure table options, including schema.
+    if options is None:
+        options = {}
+    opts = options
+    if schema is not None:
+        opts = copy_and_update(options, {'schema': schema})
 
-        # Configure table options, including schema.
-        if options is None:
-            options = {}
-        opts = options
-        if schema is not None:
-            opts = copy_and_update(options, {'schema': schema})
+    # Initialize data path.
+    data_path = std_input_path + "/" + input_dir
 
-        # Initialize data path.
-        data_path = std_input_path + "/" + input_dir
+    def create_input_table(spark):
+        input_table_name = spark_tmp_table_factory.get()
+        spark.catalog.createExternalTable(input_table_name, source='hive', path=data_path, **opts)
+        return input_table_name
 
-        def create_input_table(spark):
-            input_table_name = spark_tmp_table_factory.get()
-            spark.catalog.createExternalTable(input_table_name, source='hive', path=data_path, **opts)
-            return input_table_name
+    input_table = with_cpu_session(create_input_table)
 
-        input_table = with_cpu_session(create_input_table)
+    def write_table_sql(spark, table_name):
+        if mode == TableWriteMode.CTAS:
+            return [
+                "CREATE TABLE {} SELECT * FROM {}".format(table_name, input_table)
+            ]
+        elif mode == TableWriteMode.CreateThenWrite:
+            return [
+                "CREATE TABLE {} LIKE {}".format(table_name, input_table),
 
-        def write_table_sql(spark, table_name):
-            if mode == TableWriteMode.CTAS:
-                return [
-                    "CREATE TABLE {} SELECT * FROM {}".format(table_name, input_table)
-                ]
-            elif mode == TableWriteMode.CreateThenWrite:
-                return [
-                    "CREATE TABLE {} LIKE {}".format(table_name, input_table),
+                "INSERT OVERWRITE TABLE {} "
+                " SELECT * FROM {} ".format(table_name, input_table)
+            ]
 
-                    "INSERT OVERWRITE TABLE {} "
-                    " SELECT * FROM {} ".format(table_name, input_table)
-                ]
-
-        assert_gpu_and_cpu_sql_writes_are_equal_collect(
-            spark_tmp_table_factory,
-            write_table_sql,
-            conf=hive_text_write_enabled_conf)
+    assert_gpu_and_cpu_sql_writes_are_equal_collect(
+        spark_tmp_table_factory,
+        write_table_sql,
+        conf=hive_text_write_enabled_conf)
 
 
 PartitionWriteMode = Enum('PartitionWriteMode', ['Static', 'Dynamic'])
