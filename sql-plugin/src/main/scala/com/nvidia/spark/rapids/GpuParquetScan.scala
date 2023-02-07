@@ -1968,7 +1968,11 @@ class MultiFileCloudParquetPartitionReader(
       val result = input(iterLoc)
       result match {
         case emptyHMData: HostMemoryEmptyMetaData =>
-          if (metaForEmpty == null) {
+          if (metaForEmpty == null || emptyHMData.numRows > 0) {
+            // we can mix empty meta due to ignore missing files with
+            // buffers that are just counting rows. If we choose one with ignore
+            // missing files the metadata could be different, so here if we
+            // have any that have rows, use that for the metadata
             metaForEmpty = emptyHMData
           }
           val totalNumRows = result.memBuffersAndSizes.map(_.numRows).sum
@@ -2228,25 +2232,14 @@ class MultiFileCloudParquetPartitionReader(
     case meta: HostMemoryEmptyMetaData =>
       // Not reading any data, but add in partition data if needed
       val rows = meta.numRows.toInt
-      val origBatch = if (rows == 0) {
-        new ColumnarBatch(Array.empty, 0)
+      val origBatch = if (meta.readSchema.isEmpty || meta.readSchema == null) {
+        new ColumnarBatch(Array.empty, rows)
       } else {
         // Someone is going to process this data, even if it is just a row count
         GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
-        if (meta.readSchema == null) {
-          logWarning("read schema is null, meta is: " + meta)
-          // not sure this is ok
-          new ColumnarBatch(Array.empty, rows)
-        } else {
-          if (meta.readSchema.fields == null) {
-            logWarning("read schema fields is null, meta is: " + meta)
-            new ColumnarBatch(Array.empty, rows)
-          } else {
-            val nullColumns = meta.readSchema.fields.safeMap(f =>
-              GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
-            new ColumnarBatch(nullColumns, rows)
-          }
-        }
+        val nullColumns = meta.readSchema.fields.safeMap(f =>
+          GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
+        new ColumnarBatch(nullColumns, rows)
       }
 
       // we have to add partition values here for this batch, we already verified that
