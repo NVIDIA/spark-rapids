@@ -85,7 +85,8 @@ object GpuHiveTextFileFormat extends Logging {
       meta.willNotWorkOnGpu("bucketed tables are not supported")
     }
 
-    if (insertCommand.conf.getConfString("hive.exec.compress.output", "false") == "true") {
+    if (insertCommand.conf.getConfString("hive.exec.compress.output", "false").toLowerCase
+          != "false") {
       meta.willNotWorkOnGpu("compressed output is not supported, " +
         "set hive.exec.compress.output to false to enable writing Hive text via GPU")
     }
