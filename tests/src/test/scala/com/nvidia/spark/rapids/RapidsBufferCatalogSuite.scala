@@ -255,8 +255,10 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar with Arm {
 
   test("multiple calls to unspill return existing DEVICE buffer") {
     val deviceStore = spy(new RapidsDeviceMemoryStore)
+    val mockStore = mock[RapidsBufferStore]
     val hostStore = new RapidsHostMemoryStore(10000, 1000)
     deviceStore.setSpillStore(hostStore)
+    hostStore.setSpillStore(mockStore)
     val catalog = new RapidsBufferCatalog(deviceStore)
     val handle = withResource(DeviceMemoryBuffer.allocate(1024)) { buff =>
       val meta = MetaUtils.getTableMetaNoTable(buff)
