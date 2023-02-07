@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,6 +20,8 @@
 #   LOCAL_JAR_PATH: Location of the RAPIDS jars
 #   SPARK_CONF: Spark configuration parameters
 #   BASE_SPARK_VERSION: Spark version [3.1.2, 3.2.1, 3.3.0]. Default is pulled from current instance.
+#   SHUFFLE_SPARK_SHIM: Set the default value for the shuffle shim. For databricks versions, append
+#                       db. Example: spark330 => spark330db
 #   ICEBERG_VERSION: The iceberg version. To find the list of supported ICEBERG versions,
 #                    check https://iceberg.apache.org/multi-engine-support/#apache-spark
 #   SCALA_BINARY_VER: Scala version of the provided binaries. Default is 2.12.
@@ -28,6 +30,7 @@
 #       - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
 #       - ICEBERG_ONLY: iceberg tests only
 #       - DELTA_LAKE_ONLY: delta_lake tests only
+#       - MULTITHREADED_SHUFFLE: shuffle tests only
 # Usage:
 # - Running tests on DB10.4/Spark 3.2.1:
 #       `BASE_SPARK_VERSION=3.2.1 ./jenkins/databricks/test.sh`
@@ -48,6 +51,8 @@ CONDA_HOME=${CONDA_HOME:-"/databricks/conda"}
 LOCAL_JAR_PATH=${LOCAL_JAR_PATH:-''}
 SPARK_CONF=${SPARK_CONF:-''}
 BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-$(< /databricks/spark/VERSION)}
+SHUFFLE_SPARK_SHIM=${SHUFFLE_SPARK_SHIM:-spark${BASE_SPARK_VERSION//./}db}
+SHUFFLE_SPARK_SHIM=${SHUFFLE_SPARK_SHIM//\-SNAPSHOT/}
 SCALA_BINARY_VER=${SCALA_BINARY_VER:-'2.12'}
 [[ -z $SPARK_SHIM_VER ]] && export SPARK_SHIM_VER=spark${BASE_SPARK_VERSION//.}db
 
@@ -144,6 +149,7 @@ IS_SPARK_311_OR_LATER=0
 # - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
 # - ICEBERG_ONLY: iceberg tests only
 # - DELTA_LAKE_ONLY: delta_lake tests only
+# - MULTITHREADED_SHUFFLE: shuffle tests only
 TEST_MODE=${TEST_MODE:-'DEFAULT'}
 TEST_TYPE="nightly"
 PCBS_CONF="com.nvidia.spark.ParquetCachedBatchSerializer"
@@ -163,6 +169,18 @@ DELTA_LAKE_CONFS="--driver-memory 2g"
 # Enable event log for qualification & profiling tools testing
 export PYSP_TEST_spark_eventLog_enabled=true
 mkdir -p /tmp/spark-events
+
+rapids_shuffle_smoke_test() {
+    echo "Run rapids_shuffle_smoke_test..."
+
+    # using MULTITHREADED shuffle
+    PYSP_TEST_spark_rapids_shuffle_mode=MULTITHREADED \
+    PYSP_TEST_spark_rapids_shuffle_multiThreaded_writer_threads=2 \
+    PYSP_TEST_spark_rapids_shuffle_multiThreaded_reader_threads=2 \
+    PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
+    SPARK_SUBMIT_FLAGS="$SPARK_CONF" \
+    bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh -m shuffle_test --runtime_env="databricks" --test_type=$TEST_TYPE
+}
 
 ## limit parallelism to avoid OOM kill
 export TEST_PARALLEL=${TEST_PARALLEL:-4}
@@ -219,5 +237,10 @@ else
         ## Run Delta Lake tests
         SPARK_SUBMIT_FLAGS="$SPARK_CONF $DELTA_LAKE_CONFS" TEST_PARALLEL=1 \
             bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m "delta_lake" --delta_lake --test_type=$TEST_TYPE
+    fi
+
+    if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "MULTITHREADED_SHUFFLE" ]]; then
+        ## Mutithreaded Shuffle test
+        rapids_shuffle_smoke_test
     fi
 fi

@@ -19,11 +19,12 @@ package com.nvidia.spark.rapids.shims
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
+import org.apache.spark.sql.catalyst.expressions.Empty2Null
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
 import org.apache.spark.sql.execution.{CollectLimitExec, GlobalLimitExec, SparkPlan}
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, RunnableCommand}
-import org.apache.spark.sql.execution.datasources.V1WritesUtils.Empty2Null
+import org.apache.spark.sql.execution.datasources.{GpuWriteFilesMeta, WriteFilesExec}
 import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
 import org.apache.spark.sql.rapids.GpuV1WriteUtils.GpuEmpty2Null
 
@@ -57,7 +58,15 @@ trait Spark340PlusShims extends Spark331PlusShims {
       }
     ).disabledByDefault("Collect Limit replacement can be slower on the GPU, if huge number " +
         "of rows in a batch it could help by limiting the number of rows transferred from " +
-        "GPU to CPU")
+        "GPU to CPU"),
+    GpuOverrides.exec[WriteFilesExec](
+      "v1 write files",
+      // WriteFilesExec always has patterns:
+      //   InsertIntoHadoopFsRelationCommand(WriteFilesExec) or InsertIntoHiveTable(WriteFilesExec)
+      // The parent node of `WriteFilesExec` will check the types, here just let type check pass
+      ExecChecks(TypeSig.all, TypeSig.all),
+      (write, conf, p, r) => new GpuWriteFilesMeta(write, conf, p, r)
+    )
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =

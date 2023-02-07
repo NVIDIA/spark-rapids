@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,17 +14,19 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.shims
 
+import org.apache.spark.paths.SparkPath
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 
-object PartitionedFileUtils {
+object PartitionedFileUtilsShim {
   // Wrapper for case class constructor so Java code can access
   // the default values across Spark versions.
   def newPartitionedFile(
       partitionValues: InternalRow,
       filePath: String,
       start: Long,
-      length: Long): PartitionedFile = PartitionedFile(partitionValues, filePath, start, length)
+      length: Long): PartitionedFile = PartitionedFile(partitionValues,
+    SparkPath.fromPathString(filePath), start, length)
 }

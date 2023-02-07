@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -289,8 +289,10 @@ def assert_gpu_and_cpu_sql_writes_are_equal_collect(table_name_factory, write_sq
     cpu_table = table_name_factory.get()
     cpu_start = time.time()
     def do_write(spark, table_name):
-        sql_text = write_sql_func(spark, table_name)
-        spark.sql(sql_text)
+        sql_texts = write_sql_func(spark, table_name)
+        sql_text_list = [sql_texts] if isinstance(sql_texts, str) else sql_texts
+        for sql_text in sql_text_list:
+            spark.sql(sql_text)
         return None
     with_cpu_session(lambda spark : do_write(spark, cpu_table), conf=conf)
     cpu_end = time.time()
@@ -321,6 +323,18 @@ def assert_gpu_fallback_write(write_func,
         base_path,
         cpu_fallback_class_name,
         conf={}):
+    assert_gpu_fallback_write(write_func,
+                              read_func,
+                              base_path,
+                              [cpu_fallback_class_name], # make a single item list
+                              conf)
+
+# Similar to
+def assert_gpu_fallback_write(write_func,
+                              read_func,
+                              base_path,
+                              cpu_fallback_class_name_list,
+                              conf={}):
     conf = _prep_incompat_conf(conf)
 
     print('### CPU RUN ###')
@@ -335,7 +349,7 @@ def assert_gpu_fallback_write(write_func,
     gpu_path = base_path + '/GPU'
     with_gpu_session(lambda spark : write_func(spark, gpu_path), conf=conf)
     gpu_end = time.time()
-    jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertCapturedAndGpuFellBack(cpu_fallback_class_name, 10000)
+    jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertCapturedAndGpuFellBack(cpu_fallback_class_name_list, 10000)
     print('### WRITE: GPU TOOK {} CPU TOOK {} ###'.format(
         gpu_end - gpu_start, cpu_end - cpu_start))
 
