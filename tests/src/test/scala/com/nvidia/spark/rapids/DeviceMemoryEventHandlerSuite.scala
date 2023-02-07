@@ -27,7 +27,7 @@ class DeviceMemoryEventHandlerSuite extends FunSuite with MockitoSugar {
     val mockCatalog = mock[RapidsBufferCatalog]
     val mockStore = mock[RapidsDeviceMemoryStore]
     when(mockStore.currentSize).thenReturn(1024)
-    when(mockCatalog.synchronousSpill(any(), any())).thenAnswer(_ => Some(1024))
+    when(mockCatalog.synchronousSpill(any(), any(), any())).thenAnswer(_ => Some(1024))
     val handler = new DeviceMemoryEventHandler(
       mockCatalog,
       mockStore,
@@ -41,7 +41,7 @@ class DeviceMemoryEventHandlerSuite extends FunSuite with MockitoSugar {
     val mockCatalog = mock[RapidsBufferCatalog]
     val mockStore = mock[RapidsDeviceMemoryStore]
     when(mockStore.currentSize).thenReturn(0)
-    when(mockCatalog.synchronousSpill(any(), any())).thenAnswer(_ => Some(0))
+    when(mockCatalog.synchronousSpill(any(), any(), any())).thenAnswer(_ => Some(0))
     val handler = new DeviceMemoryEventHandler(
       mockCatalog,
       mockStore,
@@ -57,7 +57,7 @@ class DeviceMemoryEventHandlerSuite extends FunSuite with MockitoSugar {
     val mockCatalog = mock[RapidsBufferCatalog]
     val mockStore = mock[RapidsDeviceMemoryStore]
     when(mockStore.currentSize).thenReturn(0)
-    when(mockCatalog.synchronousSpill(any(), any())).thenAnswer(_ => Some(0))
+    when(mockCatalog.synchronousSpill(any(), any(), any())).thenAnswer(_ => Some(0))
     val handler = new DeviceMemoryEventHandler(
       mockCatalog,
       mockStore,
@@ -76,7 +76,7 @@ class DeviceMemoryEventHandlerSuite extends FunSuite with MockitoSugar {
     val mockCatalog = mock[RapidsBufferCatalog]
     val mockStore = mock[RapidsDeviceMemoryStore]
     when(mockStore.currentSize).thenReturn(1024)
-    when(mockCatalog.synchronousSpill(any(), any())).thenAnswer(_ => Some(1024))
+    when(mockCatalog.synchronousSpill(any(), any(), any())).thenAnswer(_ => Some(1024))
     val handler = new DeviceMemoryEventHandler(
       mockCatalog,
       mockStore,
@@ -90,7 +90,7 @@ class DeviceMemoryEventHandlerSuite extends FunSuite with MockitoSugar {
     val mockCatalog = mock[RapidsBufferCatalog]
     val mockStore = mock[RapidsDeviceMemoryStore]
     when(mockStore.currentSize).thenReturn(1024)
-    when(mockCatalog.synchronousSpill(any(), any())).thenAnswer(_ => Some(1024))
+    when(mockCatalog.synchronousSpill(any(), any(), any())).thenAnswer(_ => Some(1024))
     val handler = new DeviceMemoryEventHandler(
       mockCatalog,
       mockStore,
