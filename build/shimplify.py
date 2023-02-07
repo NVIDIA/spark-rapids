@@ -310,14 +310,19 @@ def task_impl():
                __should_trace)
     __log.info("review changes and `git restore` if necessary")
     buildvers_from_dirs = []
+    dirs2bv = {}
+
     for prop_pattern in ["spark%s.sources", "spark%s.test.sources"]:
-        dirs2bv = __build_dirs_to_buildvers_map(prop_pattern)
-        __log.debug("Map dirs2bv = %s", dirs2bv)
-        __warn_shims_with_multiple_dedicated_dirs(dirs2bv)
-        for dir, buildvers in dirs2bv.items():
-            for dir_substr in __dirs_to_derive_shims:
-                if dir_substr in dir:
-                    buildvers_from_dirs += buildvers
+        per_pattern_dir_map = __build_dirs_to_buildvers_map(prop_pattern)
+        __log.debug("Map dirs2bv = %s", per_pattern_dir_map)
+        __warn_shims_with_multiple_dedicated_dirs(per_pattern_dir_map)
+        dirs2bv.update(per_pattern_dir_map)
+
+    # restrict set of dirs to shimplify.dirs?
+    for dir, buildvers in dirs2bv.items():
+        for dir_substr in __dirs_to_derive_shims:
+            if dir_substr in dir:
+                buildvers_from_dirs += buildvers
 
     buildvers_from_dirs_sorted_deduped = sorted(set(buildvers_from_dirs))
     if len(buildvers_from_dirs_sorted_deduped) > 0:
