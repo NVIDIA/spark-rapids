@@ -103,6 +103,7 @@ Name | Description | Default Value | Applicable at
 <a name="sql.format.hive.text.read.double.enabled"></a>spark.rapids.sql.format.hive.text.read.double.enabled|Hive text file reading is not 100% compatible when reading doubles.|true|Runtime
 <a name="sql.format.hive.text.read.enabled"></a>spark.rapids.sql.format.hive.text.read.enabled|When set to false disables Hive text table read acceleration|true|Runtime
 <a name="sql.format.hive.text.read.float.enabled"></a>spark.rapids.sql.format.hive.text.read.float.enabled|Hive text file reading is not 100% compatible when reading floats.|true|Runtime
+<a name="sql.format.hive.text.write.enabled"></a>spark.rapids.sql.format.hive.text.write.enabled|When set to false disables Hive text table write acceleration|false|Runtime
 <a name="sql.format.iceberg.enabled"></a>spark.rapids.sql.format.iceberg.enabled|When set to false disables all Iceberg acceleration|true|Runtime
 <a name="sql.format.iceberg.read.enabled"></a>spark.rapids.sql.format.iceberg.read.enabled|When set to false disables Iceberg input acceleration|true|Runtime
 <a name="sql.format.json.enabled"></a>spark.rapids.sql.format.json.enabled|When set to true enables all json input and output acceleration. (only input is currently supported anyways)|false|Runtime

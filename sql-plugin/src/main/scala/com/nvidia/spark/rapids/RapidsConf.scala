@@ -1144,6 +1144,12 @@ object RapidsConf {
       .booleanConf
       .createWithDefault(true)
 
+  val ENABLE_HIVE_TEXT_WRITE: ConfEntryWithDefault[Boolean] =
+    conf("spark.rapids.sql.format.hive.text.write.enabled")
+      .doc("When set to false disables Hive text table write acceleration")
+      .booleanConf
+      .createWithDefault(false)
+
   val ENABLE_READ_HIVE_FLOATS = conf("spark.rapids.sql.format.hive.text.read.float.enabled")
       .doc("Hive text file reading is not 100% compatible when reading floats.")
       .booleanConf
@@ -2199,6 +2205,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isHiveDelimitedTextEnabled: Boolean = get(ENABLE_HIVE_TEXT)
 
   lazy val isHiveDelimitedTextReadEnabled: Boolean = get(ENABLE_HIVE_TEXT_READ)
+
+  lazy val isHiveDelimitedTextWriteEnabled: Boolean = get(ENABLE_HIVE_TEXT_WRITE)
 
   lazy val shouldHiveReadFloats: Boolean = get(ENABLE_READ_HIVE_FLOATS)
 
