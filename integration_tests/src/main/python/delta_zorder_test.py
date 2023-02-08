@@ -125,7 +125,7 @@ def test_delta_dfp_reuse_broadcast_exchange(spark_tmp_table_factory, s_index, aq
             .mode("overwrite") \
             .partitionBy("key", "skey") \
             .saveAsTable(fact_table)
-        spark.sql("OPTIMIZE {} ZORDER BY ex_key".format(fact_table))
+        spark.sql("OPTIMIZE {} ZORDER BY ex_key".format(fact_table)).show()
 
         df = gen_df(spark, [
             ('key', LongGen(nullable=False, min_val=0, max_val=9, special_cases=[])),
