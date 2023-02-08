@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.shims
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.DynamicPruningExpression
+import org.apache.spark.sql.catalyst.expressions.{DynamicPruningExpression, Expression}
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, InMemoryFileIndex}
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
@@ -81,41 +81,27 @@ class FileSourceScanExecMeta(plan: FileSourceScanExec,
     }
   }
 
+  private def convertDynamicPruningFilters(filters: Seq[Expression]): Seq[Expression] = {
+    filters.map { filter =>
+      filter.transformDown {
+        case dpe @ DynamicPruningExpression(inSub: InSubqueryExec) =>
+          inSub.plan match {
+            case bc: SubqueryBroadcastExec =>
+              dpe.copy(inSub.copy(plan = convertBroadcast(bc)))
+            case reuse @ ReusedSubqueryExec(bc: SubqueryBroadcastExec) =>
+              dpe.copy(inSub.copy(plan = reuse.copy(convertBroadcast(bc))))
+            case _ =>
+              dpe
+          }
+      }
+    }
+  }
 
   // Support partitionFilters in Dynamic Partition Pruning
-  private lazy val partitionFilters = {
-    wrapped.partitionFilters.map { filter =>
-      filter.transformDown {
-        case dpe @ DynamicPruningExpression(inSub: InSubqueryExec) =>
-          inSub.plan match {
-            case bc: SubqueryBroadcastExec =>
-              dpe.copy(inSub.copy(plan = convertBroadcast(bc)))
-            case reuse @ ReusedSubqueryExec(bc: SubqueryBroadcastExec) =>
-              dpe.copy(inSub.copy(plan = reuse.copy(convertBroadcast(bc))))
-            case _ =>
-              dpe
-          }
-      }
-    }
-  }
+  private lazy val partitionFilters = convertDynamicPruningFilters(wrapped.partitionFilters)
 
   // Support dataFilters in Dynamic File Pruning
-  private lazy val dataFilters = {
-    wrapped.dataFilters.map { filter =>
-      filter.transformDown {
-        case dpe @ DynamicPruningExpression(inSub: InSubqueryExec) =>
-          inSub.plan match {
-            case bc: SubqueryBroadcastExec =>
-              dpe.copy(inSub.copy(plan = convertBroadcast(bc)))
-            case reuse @ ReusedSubqueryExec(bc: SubqueryBroadcastExec) =>
-              dpe.copy(inSub.copy(plan = reuse.copy(convertBroadcast(bc))))
-            case _ =>
-              dpe
-          }
-      }
-    }
-  }
-
+  private lazy val dataFilters = convertDynamicPruningFilters(wrapped.dataFilters)
 
   // partition filters and data filters are not run on the GPU
   override val childExprs: Seq[ExprMeta[_]] = Seq.empty
