@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.DynamicPruningExpression
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, InMemoryFileIndex}
@@ -31,7 +30,7 @@ class FileSourceScanExecMeta(plan: FileSourceScanExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-    extends SparkPlanMeta[FileSourceScanExec](plan, conf, parent, rule) with Logging {
+    extends SparkPlanMeta[FileSourceScanExec](plan, conf, parent, rule) {
 
   // Replaces SubqueryBroadcastExec inside dynamic pruning filters with GPU counterpart
   // if possible. Instead regarding filters as childExprs of current Meta, we create
@@ -39,49 +38,42 @@ class FileSourceScanExecMeta(plan: FileSourceScanExec,
   // FileSourceScan is independent from the replacement of the partitionFilters. It is
   // possible that the FileSourceScan is on the CPU, while the dynamic partitionFilters
   // are on the GPU. And vice versa.
-  private def convertBroadcast(bc: SubqueryBroadcastExec):BaseSubqueryExec = {
-    val meta = GpuOverrides.wrapAndTagPlan(bc, conf)
-    meta.tagForExplain()
-    if (conf.shouldExplain) {
-      val explain = meta.explain(conf.shouldExplainAll)
-      if (explain.nonEmpty) {
-        logWarning(s"\n$explain")
-      }
-    }
-    val converted = meta.convertIfNeeded()
-    // Because the PlanSubqueries rule is not called (and does not work as expected),
-    // we might actually have to fully convert the subquery plan as the plugin would
-    // intend (in this case calling GpuTransitionOverrides to insert GpuCoalesceBatches,
-    // etc.) to match the other side of the join to reuse the BroadcastExchange.
-    // This happens when SubqueryBroadcast has the original (Gpu)BroadcastExchangeExec
-    converted match {
-      case e: GpuSubqueryBroadcastExec => e.child match {
-        // If the GpuBroadcastExchange is here, then we will need to run the transition
-        // overrides here
-        case _: GpuBroadcastExchangeExec =>
-          var updated = ApplyColumnarRulesAndInsertTransitions(Seq(), true)
-              .apply(converted)
-          updated = (new GpuTransitionOverrides()).apply(updated)
-          updated match {
-            case h: GpuBringBackToHost =>
-              h.child.asInstanceOf[BaseSubqueryExec]
-            case c2r: GpuColumnarToRowExec =>
-              c2r.child.asInstanceOf[BaseSubqueryExec]
-            case _: GpuSubqueryBroadcastExec =>
-              updated.asInstanceOf[BaseSubqueryExec]
-          }
-        // Otherwise, if this SubqueryBroadcast is using a ReusedExchange, then we don't
-        // do anything further
-        case _: ReusedExchangeExec =>
+  private lazy val partitionFilters = {
+    val convertBroadcast = (bc: SubqueryBroadcastExec) => {
+      val meta = GpuOverrides.wrapAndTagPlan(bc, conf)
+      meta.tagForExplain()
+      val converted = meta.convertIfNeeded()
+      // Because the PlanSubqueries rule is not called (and does not work as expected),
+      // we might actually have to fully convert the subquery plan as the plugin would
+      // intend (in this case calling GpuTransitionOverrides to insert GpuCoalesceBatches,
+      // etc.) to match the other side of the join to reuse the BroadcastExchange.
+      // This happens when SubqueryBroadcast has the original (Gpu)BroadcastExchangeExec
+      converted match {
+        case e: GpuSubqueryBroadcastExec => e.child match {
+          // If the GpuBroadcastExchange is here, then we will need to run the transition
+          // overrides here
+          case _: GpuBroadcastExchangeExec =>
+            var updated = ApplyColumnarRulesAndInsertTransitions(Seq(), true)
+                .apply(converted)
+            updated = (new GpuTransitionOverrides()).apply(updated)
+            updated match {
+              case h: GpuBringBackToHost =>
+                h.child.asInstanceOf[BaseSubqueryExec]
+              case c2r: GpuColumnarToRowExec =>
+                c2r.child.asInstanceOf[BaseSubqueryExec]
+              case _: GpuSubqueryBroadcastExec =>
+                updated.asInstanceOf[BaseSubqueryExec]
+            }
+          // Otherwise, if this SubqueryBroadcast is using a ReusedExchange, then we don't
+          // do anything further
+          case _: ReusedExchangeExec =>
+            converted.asInstanceOf[BaseSubqueryExec]
+        }
+        case _ =>
           converted.asInstanceOf[BaseSubqueryExec]
       }
-      case _ =>
-        converted.asInstanceOf[BaseSubqueryExec]
     }
-  }
 
-
-  private lazy val partitionFilters = {
     wrapped.partitionFilters.map { filter =>
       filter.transformDown {
         case dpe @ DynamicPruningExpression(inSub: InSubqueryExec) =>
@@ -96,23 +88,6 @@ class FileSourceScanExecMeta(plan: FileSourceScanExec,
       }
     }
   }
-
-  private lazy val dataFilters = {
-    wrapped.dataFilters.map { filter =>
-      filter.transformDown {
-        case dpe @ DynamicPruningExpression(inSub: InSubqueryExec) =>
-          inSub.plan match {
-            case bc: SubqueryBroadcastExec =>
-              dpe.copy(inSub.copy(plan = convertBroadcast(bc)))
-            case reuse @ ReusedSubqueryExec(bc: SubqueryBroadcastExec) =>
-              dpe.copy(inSub.copy(plan = reuse.copy(convertBroadcast(bc))))
-            case _ =>
-              dpe
-          }
-      }
-    }
-  }
-
 
   // partition filters and data filters are not run on the GPU
   override val childExprs: Seq[ExprMeta[_]] = Seq.empty
@@ -131,7 +106,7 @@ class FileSourceScanExecMeta(plan: FileSourceScanExec,
   }
 
   override def convertToCpu(): SparkPlan = {
-    wrapped.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
+    wrapped.copy(partitionFilters = partitionFilters)
   }
 
   override def convertToGpu(): GpuExec = {
@@ -165,7 +140,7 @@ class FileSourceScanExecMeta(plan: FileSourceScanExec,
             conf,
             wrapped.relation,
             partitionFilters,
-            dataFilters)
+            wrapped.dataFilters)
         } else {
           // convert time algorithm and read large files
           (wrapped.relation.location, None)
@@ -191,7 +166,7 @@ class FileSourceScanExecMeta(plan: FileSourceScanExec,
       wrapped.optionalBucketSet,
       // TODO: Does Databricks have coalesced bucketing implemented?
       None,
-      dataFilters,
+      wrapped.dataFilters,
       wrapped.tableIdentifier,
       wrapped.disableBucketedScan,
       queryUsesInputFile = false,
