@@ -8,18 +8,14 @@ Generated on 2023-02-08
 |:---|:---|
 |[#6419](https://github.com/NVIDIA/spark-rapids/issues/6419)|[FEA] Support write a Hive text table |
 |[#7280](https://github.com/NVIDIA/spark-rapids/issues/7280)|[FEA] Support UpdateCommand for Delta Lake|
-|[#7425](https://github.com/NVIDIA/spark-rapids/issues/7425)|[FEA] Investigate EXECUTOR_BROADCAST for Databricks-11.3|
 |[#7281](https://github.com/NVIDIA/spark-rapids/issues/7281)|[FEA] Support DeleteCommand for Delta Lake|
 |[#5272](https://github.com/NVIDIA/spark-rapids/issues/5272)|[FEA] Support from_json to get a MapType|
-|[#7594](https://github.com/NVIDIA/spark-rapids/issues/7594)|Add warnings to an allowlist for deprecated Java regex APIs|
 |[#7007](https://github.com/NVIDIA/spark-rapids/issues/7007)|[FEA] Support Delta table MERGE INTO on Databricks.|
-|[#7521](https://github.com/NVIDIA/spark-rapids/issues/7521)|[FEA] allow user to set concurrentGpuTasks after startup|
-|[#7392](https://github.com/NVIDIA/spark-rapids/issues/7392)|[FEA] Fallback to CPU when there is unrecognized requiredChildDistribution and outputPartitioning in the SparkPlan|
+|[#7521](https://github.com/NVIDIA/spark-rapids/issues/7521)|[FEA] Allow user to set concurrentGpuTasks after startup|
 |[#3300](https://github.com/NVIDIA/spark-rapids/issues/3300)|[FEA] Support batched full join|
 |[#6698](https://github.com/NVIDIA/spark-rapids/issues/6698)|[FEA] Support json_tuple|
 |[#6885](https://github.com/NVIDIA/spark-rapids/issues/6885)|[FEA] Support reverse|
 |[#6879](https://github.com/NVIDIA/spark-rapids/issues/6879)|[FEA] Support Databricks 11.3 ML LTS|
-|[#6784](https://github.com/NVIDIA/spark-rapids/issues/6784)|[FEA] Investigate `GpuExpression` supporting an estimate API|
 
 ### Performance
 |||
@@ -29,7 +25,6 @@ Generated on 2023-02-08
 |[#6807](https://github.com/NVIDIA/spark-rapids/issues/6807)|Improve the current documentation on RapidsShuffleManager|
 |[#5039](https://github.com/NVIDIA/spark-rapids/issues/5039)|[FEA] Parallelize shuffle compress/decompress with opportunistic idle task threads|
 |[#7196](https://github.com/NVIDIA/spark-rapids/issues/7196)|RegExpExtract does both extract and contains_re which is inefficient|
-|[#6204](https://github.com/NVIDIA/spark-rapids/issues/6204)|[SPARK-37194][SQL] Avoid unnecessary sort in v1 write if it's not dynamic partition|
 |[#6862](https://github.com/NVIDIA/spark-rapids/issues/6862)|[FEA] GpuRowToColumnarExec for Binary is really slow compared to string|
 
 ### Bugs Fixed
@@ -69,7 +64,7 @@ Generated on 2023-02-08
 |[#7443](https://github.com/NVIDIA/spark-rapids/issues/7443)|[BUG] prune_partition_column_test fails for Avro|
 |[#7415](https://github.com/NVIDIA/spark-rapids/issues/7415)|[BUG] regex integration test failures on Databricks-11.3|
 |[#7226](https://github.com/NVIDIA/spark-rapids/issues/7226)|[BUG] GpuFileSourceScanExec always generates all partition columns|
-|[#7402](https://github.com/NVIDIA/spark-rapids/issues/7402)|[BUG]array_test.py::test_array_intersect failing cloudera|
+|[#7402](https://github.com/NVIDIA/spark-rapids/issues/7402)|[BUG] array_test.py::test_array_intersect failing cloudera|
 |[#7324](https://github.com/NVIDIA/spark-rapids/issues/7324)|[BUG] Support DayTimeIntervalType in Databricks-11.3 to fix integration tests|
 |[#7426](https://github.com/NVIDIA/spark-rapids/issues/7426)|[BUG] bloop compile times out on Databricks 11.3|
 |[#7328](https://github.com/NVIDIA/spark-rapids/issues/7328)|[BUG] Databricks-11.3 integration test failing due to IllegalStateException: the broadcast must be on the GPU too|
@@ -87,7 +82,7 @@ Generated on 2023-02-08
 |[#7378](https://github.com/NVIDIA/spark-rapids/issues/7378)|[BUG][ORC] `GpuInsertIntoHadoopFsRelationCommand` should use staging directory for dynamic partition overwrite|
 |[#7374](https://github.com/NVIDIA/spark-rapids/issues/7374)|[BUG] Hive reader does not always fall back to CPU when table contains nested types|
 |[#7284](https://github.com/NVIDIA/spark-rapids/issues/7284)|[BUG] Generated supported data source file is inaccurate for write data formats|
-|[#7347](https://github.com/NVIDIA/spark-rapids/issues/7347)|[BUG]  Fix integration tests in Databricks-11.3 runtime by removing config spark.sql.ansi.strictIndexOperator|
+|[#7347](https://github.com/NVIDIA/spark-rapids/issues/7347)|[BUG] Fix integration tests in Databricks-11.3 runtime by removing config spark.sql.ansi.strictIndexOperator|
 |[#7326](https://github.com/NVIDIA/spark-rapids/issues/7326)|[BUG] Support RoundCeil and RoundFloor on Databricks-11.3 shim to fix integration tests.|
 |[#7352](https://github.com/NVIDIA/spark-rapids/issues/7352)|[BUG] Databricks-11.3 IT failures - IllegalArgumentException: requirement failed for complexTypeExtractors|
 |[#6285](https://github.com/NVIDIA/spark-rapids/issues/6285)|[BUG] Add null values back to test_array_intersect for Spark 3.3+ and Databricks 10.4+|
@@ -106,6 +101,7 @@ Generated on 2023-02-08
 ### PRs
 |||
 |:---|:---|
+|[#7697](https://github.com/NVIDIA/spark-rapids/pull/7697)|Disable Dynamic partitioning tests on CDH|
 |[#7556](https://github.com/NVIDIA/spark-rapids/pull/7556)|Write support for Hive delimited text tables|
 |[#7681](https://github.com/NVIDIA/spark-rapids/pull/7681)|Disable Hive delimited text reader tests for CDH.|
 |[#7610](https://github.com/NVIDIA/spark-rapids/pull/7610)|Add multithreaded Shuffle test|
