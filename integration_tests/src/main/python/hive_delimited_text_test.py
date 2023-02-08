@@ -546,7 +546,7 @@ def test_partitioned_hive_text_write(mode, spark_tmp_table_factory):
                   "('Ford',   'F-150',       2020, 'ICE',      'Popular' ),"
                   "('GMC',    'Sierra 1500', 1997, 'ICE',      'Older'),"
                   "('Chevy',  'D-Max',       2015, 'ICE',      'Isuzu?' ),"
-                  "('Tesla',  'CyberTruck',  2025, 'Electric', 'Fictional'),"
+                  "('Tesla',  'CyberTruck',  2025, 'Electric', 'BladeRunner'),"
                   "('Rivian', 'R1T',         2022, 'Electric', 'Heavy'),"
                   "('Jeep',   'Gladiator',   2024, 'Hybrid',   'Upcoming')")
         return tmp_input
