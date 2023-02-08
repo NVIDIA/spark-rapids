@@ -20,7 +20,7 @@ from data_gen import *
 from enum import Enum
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_before_spark_320, is_databricks_runtime
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_before_spark_320, is_spark_cdh, is_databricks_runtime
 import pyspark.sql.functions as f
 import pyspark.sql.utils
 import random
@@ -573,8 +573,8 @@ def test_write_empty_data_single_writer(spark_tmp_path):
 PartitionWriteMode = Enum('PartitionWriteMode', ['Static', 'Dynamic'])
 
 
-@pytest.mark.skipif(is_databricks_runtime(),
-                    reason="On Databricks, Hive partitioned SQL writes are routed through InsertIntoHiveTable; "
+@pytest.mark.skipif(is_databricks_runtime() or is_spark_cdh(),
+                    reason="On Databricks and CDH, Hive partitioned SQL writes are routed through InsertIntoHiveTable; "
                            "GpuInsertIntoHiveTable does not support Parquet writes.")
 @ignore_order(local=True)
 @pytest.mark.parametrize('mode', [PartitionWriteMode.Static, PartitionWriteMode.Dynamic])
