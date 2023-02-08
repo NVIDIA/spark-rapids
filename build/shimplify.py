@@ -191,9 +191,9 @@ __ch.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
 __log.addHandler(__ch)
 
 __shim_dir_pattern = re.compile(r'spark\d{3}')
-__shim_comment_pattern = re.compile('^' + re.escape(__opening_shim_tag) +
+__shim_comment_pattern = re.compile(re.escape(__opening_shim_tag) +
                                     r'\n(.*)\n' +
-                                    re.escape(__closing_shim_tag) + '$', re.DOTALL)
+                                    re.escape(__closing_shim_tag), re.DOTALL)
 
 
 def __upsert_shim_json(filename, bv_list):
@@ -336,10 +336,14 @@ def task_impl():
         __shims_arr[:] = buildvers_from_dirs_sorted_deduped
 
     if __should_add_comment:
+        __log.info('Shim layout is being updated! Review and git commit (or restore to undo)'
+                   '-Dshimplify=true`. New symlinks will be generated in a regular build with the '
+                   'default -Dshimplify=false')
         __shimplify_layout()
     else:
-        __log.info('Skipping shimplify! Set -Dshimplify=true to convert old shims')
-    __generate_symlinks()
+        __log.info('Shim layout is not updated! If desired invoke '
+                   '`mvn generate-sources -Dshimplify=true` to manipulate shims')
+        __generate_symlinks()
 
 
 def __generate_symlinks():
