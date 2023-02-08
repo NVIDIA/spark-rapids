@@ -1969,10 +1969,10 @@ class MultiFileCloudParquetPartitionReader(
       result match {
         case emptyHMData: HostMemoryEmptyMetaData =>
           if (metaForEmpty == null || emptyHMData.numRows > 0) {
-            // we can mix empty meta due to ignore missing files with
-            // buffers that are just counting rows. If we choose one with ignore
-            // missing files the metadata could be different, so here if we
-            // have any that have rows, use that for the metadata
+            // we might have multiple EmptyMetaData results. If some are due to ignoring
+            // missing files and others are row counts, we want to make sure we
+            // take the metadata information from the ones with row counts because
+            // the ones from ignoring missing files has less information with it.
             metaForEmpty = emptyHMData
           }
           val totalNumRows = result.memBuffersAndSizes.map(_.numRows).sum
@@ -2026,7 +2026,7 @@ class MultiFileCloudParquetPartitionReader(
 
       if (combinedEmptyMeta.allEmpty) {
         val metaForEmpty = combinedEmptyMeta.metaForEmpty
-         HostMemoryEmptyMetaData(metaForEmpty.partitionedFile, // just pick one since not used
+        HostMemoryEmptyMetaData(metaForEmpty.partitionedFile, // just pick one since not used
           metaForEmpty.origPartitionedFile,
           combinedEmptyMeta.emptyBufferSize,
           combinedEmptyMeta.emptyTotalBytesRead,
@@ -2220,7 +2220,7 @@ class MultiFileCloudParquetPartitionReader(
     case meta: HostMemoryEmptyMetaData =>
       // Not reading any data, but add in partition data if needed
       val rows = meta.numRows.toInt
-      val origBatch = if (meta.readSchema.isEmpty || meta.readSchema == null) {
+      val origBatch = if (meta.readSchema.isEmpty) {
         new ColumnarBatch(Array.empty, rows)
       } else {
         // Someone is going to process this data, even if it is just a row count
