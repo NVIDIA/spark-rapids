@@ -531,6 +531,9 @@ def test_basic_hive_text_write(std_input_path, input_dir, schema, spark_tmp_tabl
 PartitionWriteMode = Enum('PartitionWriteMode', ['Static', 'Dynamic'])
 
 
+@pytest.mark.skipif(is_spark_cdh(),
+                    reason="Hive text is disabled on CDH, as per "
+                           "https://github.com/NVIDIA/spark-rapids/pull/7628")
 @ignore_order(local=True)
 @pytest.mark.parametrize('mode', [PartitionWriteMode.Static, PartitionWriteMode.Dynamic])
 def test_partitioned_hive_text_write(mode, spark_tmp_table_factory):
