@@ -450,8 +450,7 @@ TableWriteMode = Enum('TableWriteMode', ['CTAS', 'CreateThenWrite'])
                  marks=pytest.mark.xfail(condition=is_spark_cdh(),
                                          reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
     # Floating Point.
-    pytest.param('hive-delim-text/simple-float-values',   make_schema(FloatType()),          {},
-                 marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/7686")),
+    ('hive-delim-text/simple-float-values',   make_schema(FloatType()),          {}),
     pytest.param('hive-delim-text/simple-float-values', make_schema(DecimalType(10, 3)), {},
                  marks=pytest.mark.xfail(condition=is_spark_cdh(),
                                          reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
