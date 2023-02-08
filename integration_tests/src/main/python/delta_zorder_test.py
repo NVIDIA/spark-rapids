@@ -156,6 +156,7 @@ def test_delta_dfp_reuse_broadcast_exchange(spark_tmp_table_factory, s_index, aq
         exist_classes,
         # Ensure Dynamic File Pruning kicks in by setting thresholds to 0
         conf=dict(_exchange_reuse_conf + [
+            ('spark.databricks.optimizer.dynamicFilePruning', 'true'),
             ('spark.databricks.optimizer.deltaTableSizeThreshold', '0'),
             ('spark.databricks.optimizer.deltaTableFilesThreshold', '0'),
             ('spark.sql.adaptive.enabled', aqe_enabled)]))
