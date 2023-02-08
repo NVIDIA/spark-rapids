@@ -190,27 +190,26 @@ __ch = logging.StreamHandler()
 __ch.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
 __log.addHandler(__ch)
 
-__shim_package_pattern = re.compile(r'spark\d{3}.*')
 __shim_dir_pattern = re.compile(r'spark\d{3}')
-__shim_comment_pattern = re.compile(re.escape(__opening_shim_tag) +
+__shim_comment_pattern = re.compile('^' + re.escape(__opening_shim_tag) +
                                     r'\n(.*)\n' +
-                                    re.escape(__closing_shim_tag), re.DOTALL)
+                                    re.escape(__closing_shim_tag) + '$', re.DOTALL)
 
 
 def __upsert_shim_json(filename, bv_list):
     with open(filename, 'r') as file:
         contents = file.readlines()
-    shim_comment = [os.linesep]
-    shim_comment.append(__opening_shim_tag)
+    __delete_prior_comment_if_allowed(contents, __shim_comment_tag, filename)
+    shim_comment = [__opening_shim_tag]
     for build_ver in bv_list:
         shim_comment.append(json.dumps({'spark':  build_ver}))
     shim_comment.append(__closing_shim_tag)
-    __delete_prior_comment_if_allowed(contents, __shim_comment_tag, filename)
+    shim_comment = map(lambda x: x + '\n', shim_comment)
     __log.debug("Inserting comment %s to %s", shim_comment, filename)
     package_line = next(i for i in range(len(contents)) if str(contents[i]).startswith('package'))
     __log.debug("filename %s package_line_number=%d", filename, package_line)
-    shim_comment_str = os.linesep.join(shim_comment) + os.linesep
-    contents.insert(package_line, shim_comment_str)
+    for i in range(len(shim_comment)):
+        contents.insert(package_line + i, shim_comment[i])
     with open(filename, 'w') as file:
         file.writelines(contents)
 
@@ -449,8 +448,6 @@ def __shimplify_layout():
             __log.debug("os.walk looking for shim files from %s", src_root)
             for dir, _, shim_source_files in os.walk(src_root):
                 for shim_file in shim_source_files:
-                    __log.info("encountered RapidsShuffleManager %s %s %s", src_root, dir,
-                               shim_file)
                     shim_path = os.path.join(dir, shim_file)
                     __log.debug("updating files2bv %s -> %s", shim_path, buildver)
                     if shim_path in files2bv.keys():
