@@ -38,7 +38,8 @@ class FileSourceScanExecMeta(plan: FileSourceScanExec,
   // a new meta for SubqueryBroadcastExec. The reason is that the GPU replacement of
   // FileSourceScan is independent from the replacement of the partitionFilters. It is
   // possible that the FileSourceScan is on the CPU, while the dynamic partitionFilters
-  // are on the GPU. And vice versa.
+  // are on the GPU. And vice versa. The same applies for dataFilters in the case of
+  // Dynamic File Pruning
   private def convertBroadcast(bc: SubqueryBroadcastExec):BaseSubqueryExec = {
     val meta = GpuOverrides.wrapAndTagPlan(bc, conf)
     meta.tagForExplain()
@@ -81,6 +82,7 @@ class FileSourceScanExecMeta(plan: FileSourceScanExec,
   }
 
 
+  // Support partitionFilters in Dynamic Partition Pruning
   private lazy val partitionFilters = {
     wrapped.partitionFilters.map { filter =>
       filter.transformDown {
@@ -97,6 +99,7 @@ class FileSourceScanExecMeta(plan: FileSourceScanExec,
     }
   }
 
+  // Support dataFilters in Dynamic File Pruning
   private lazy val dataFilters = {
     wrapped.dataFilters.map { filter =>
       filter.transformDown {
