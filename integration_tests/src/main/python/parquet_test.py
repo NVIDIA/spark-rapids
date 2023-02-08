@@ -544,11 +544,11 @@ def test_parquet_read_ignore_missing(spark_tmp_path, v1_enabled_list, reader_con
         src_path = sc._jvm.org.apache.hadoop.fs.Path(data_path)
         dst_path = sc._jvm.org.apache.hadoop.fs.Path(data_path_tmp)
         fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(config)
-        # just make sure we have all the files
         fs.delete(src_path)
         sc._jvm.org.apache.hadoop.fs.FileUtil.copy(fs, dst_path, fs, src_path, False, config)
+        # input_file_name doesn't use combine so get the input file names in a different dataframe
+        # that we ultimately don't return
         df = spark.read.parquet(data_path)
-        # input_file_name doesn't use combine
         df_with_file_names = df.withColumn("input_file", input_file_name())
         distinct_file_names = df_with_file_names.select("input_file").distinct().sort("input_file")
         num_files = distinct_file_names.count()
