@@ -2124,9 +2124,6 @@ class MultiFileCloudParquetPartitionReader(
         bufferStartTime = System.nanoTime()
         if (fileBlockMeta.blocks.isEmpty) {
           val bytesRead = fileSystemBytesRead() - startingBytesRead
-          if (fileBlockMeta.readSchema == null) {
-            logWarning("error read schema is null for " + file)
-          }
           // no blocks so return null buffer and size 0
           HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
             fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
@@ -2135,9 +2132,6 @@ class MultiFileCloudParquetPartitionReader(
           blockChunkIter = fileBlockMeta.blocks.iterator.buffered
           if (isDone) {
             val bytesRead = fileSystemBytesRead() - startingBytesRead
-            if (fileBlockMeta.readSchema == null) {
-              logWarning("error read schema 2 is null for " + file)
-            }
             // got close before finishing
             HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
               fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
@@ -2146,9 +2140,6 @@ class MultiFileCloudParquetPartitionReader(
             if (fileBlockMeta.schema.getFieldCount == 0) {
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               val numRows = fileBlockMeta.blocks.map(_.getRowCount).sum.toInt
-              if (fileBlockMeta.readSchema == null) {
-                logWarning("error read schema 3 is null for " + file)
-              }
               HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
                 fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
                 fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema,
@@ -2167,9 +2158,6 @@ class MultiFileCloudParquetPartitionReader(
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               if (isDone) {
                 // got close before finishing
-                if (fileBlockMeta.readSchema == null) {
-                  logWarning("error read schema 5 is null for " + file)
-                }
                 hostBuffers.foreach(_.hmb.safeClose())
                 HostMemoryEmptyMetaData(file, origPartitionedFile, 0, bytesRead,
                   fileBlockMeta.isCorrectedRebaseMode, fileBlockMeta.isCorrectedInt96RebaseMode,
