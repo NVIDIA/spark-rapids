@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ class FileSourceScanExecMeta(plan: FileSourceScanExec,
   // possible that the FileSourceScan is on the CPU, while the dynamic partitionFilters
   // are on the GPU. And vice versa. The same applies for dataFilters in the case of
   // Dynamic File Pruning
-  private def convertBroadcast(bc: SubqueryBroadcastExec):BaseSubqueryExec = {
+  private def convertBroadcast(bc: SubqueryBroadcastExec): BaseSubqueryExec = {
     val meta = GpuOverrides.wrapAndTagPlan(bc, conf)
     meta.tagForExplain()
     if (conf.shouldExplain) {
