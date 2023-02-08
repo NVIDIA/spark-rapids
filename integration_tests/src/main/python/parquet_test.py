@@ -514,7 +514,7 @@ def test_parquet_read_buffer_allocation_empty_blocks(spark_tmp_path, v1_enabled_
             lambda spark : spark.read.parquet(data_path).filter("id < 2 or id > 990"),
             conf=all_confs)
 
-@pytest.mark.parametrize('reader_confs', [combining_multithreaded_parquet_file_reader_conf_ordered])
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_read_ignore_missing(spark_tmp_path, v1_enabled_list, reader_confs):
     data_path = spark_tmp_path + '/PARQUET_DATA/'
