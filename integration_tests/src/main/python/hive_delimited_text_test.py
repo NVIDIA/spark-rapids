@@ -432,6 +432,7 @@ TableWriteMode = Enum('TableWriteMode', ['CTAS', 'CreateThenWrite'])
                     reason="Hive text is disabled on CDH, as per "
                            "https://github.com/NVIDIA/spark-rapids/pull/7628")
 @approximate_float
+@ignore_order(local=True)
 @pytest.mark.parametrize('mode', [TableWriteMode.CTAS, TableWriteMode.CreateThenWrite])
 @pytest.mark.parametrize('input_dir,schema,options', [
     ('hive-delim-text/simple-boolean-values', make_schema(BooleanType()),        {}),
