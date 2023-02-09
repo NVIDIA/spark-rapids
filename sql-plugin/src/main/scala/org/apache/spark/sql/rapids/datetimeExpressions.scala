@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
+import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, RegexProgram, Scalar}
 import com.nvidia.spark.rapids.{Arm, BinaryExprMeta, BoolUtils, DataFromReplacementRule, DateUtils, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -481,7 +481,6 @@ object GpuToTimestamp extends Arm {
     }
   }
 
-  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   def isTimestamp(col: ColumnVector, sparkFormat: String, strfFormat: String) : ColumnVector = {
     CORRECTED_COMPATIBLE_FORMATS.get(sparkFormat) match {
       case Some(fmt) =>
@@ -490,7 +489,8 @@ object GpuToTimestamp extends Arm {
         // the string as well which works well for fixed-length formats but if/when we want to
         // support variable-length formats (such as timestamps with milliseconds) then we will need
         // to use regex instead.
-        val isTimestamp = withResource(col.matchesRe(fmt.validRegex)) { matches =>
+        val prog = new RegexProgram(fmt.validRegex, CaptureGroups.NON_CAPTURE)
+        val isTimestamp = withResource(col.matchesRe(prog)) { matches =>
           withResource(col.isTimestamp(strfFormat)) { isTimestamp =>
             isTimestamp.and(matches)
           }
@@ -587,7 +587,8 @@ object GpuToTimestamp extends Arm {
     // check the final value against a regex to determine if it is valid or not, so we produce
     // null values for any invalid inputs
     withResource(Scalar.fromNull(dtype)) { nullValue =>
-      withResource(fixedUp.matchesRe(format.validRegex)) { isValidDate =>
+      val prog = new RegexProgram(format.validRegex, CaptureGroups.NON_CAPTURE)
+      withResource(fixedUp.matchesRe(prog)) { isValidDate =>
         withResource(asTimestampOrNull(fixedUp, dtype, strfFormat, asTimestamp)) { timestamp =>
           isValidDate.ifElse(timestamp, nullValue)
         }
@@ -601,7 +602,8 @@ object GpuToTimestamp extends Arm {
    */
   @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   private def rejectLeadingNewlineThenStrip(lhs: GpuColumnVector) = {
-    withResource(lhs.getBase.matchesRe("\\A[ \\t]*[\\n]+")) { hasLeadingNewline =>
+    val prog = new RegexProgram("\\A[ \\t]*[\\n]+", CaptureGroups.NON_CAPTURE)
+    withResource(lhs.getBase.matchesRe(prog)) { hasLeadingNewline =>
       withResource(Scalar.fromNull(DType.STRING)) { nullValue =>
         withResource(lhs.getBase.strip()) { stripped =>
           hasLeadingNewline.ifElse(nullValue, stripped)

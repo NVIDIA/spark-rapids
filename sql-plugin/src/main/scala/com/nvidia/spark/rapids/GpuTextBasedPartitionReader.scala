@@ -22,7 +22,7 @@ import java.util.Optional
 import scala.collection.mutable.ListBuffer
 import scala.math.max
 
-import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector, HostColumnVectorCore, HostMemoryBuffer, NvtxColor, NvtxRange, Scalar, Schema, Table}
+import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, HostColumnVector, HostColumnVectorCore, HostMemoryBuffer, NvtxColor, NvtxRange, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.DateUtils.{toStrf, TimestampFormatConversionException}
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.GpuTypeShims
@@ -446,7 +446,8 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
 
     // filter by regexp first to eliminate invalid entries
     val regexpFiltered = withResource(lhs.strip()) { stripped =>
-      withResource(stripped.matchesRe(regex)) { matchesRe =>
+      val prog = new RegexProgram(regex, CaptureGroups.NON_CAPTURE)
+      withResource(stripped.matchesRe(prog)) { matchesRe =>
         withResource(Scalar.fromNull(DType.STRING)) { nullString =>
           matchesRe.ifElse(stripped, nullString)
         }

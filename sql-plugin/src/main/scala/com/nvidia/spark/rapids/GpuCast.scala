@@ -971,13 +971,11 @@ object GpuCast extends Arm {
   }
 
   /** This method does not close the `input` ColumnVector. */
-  // @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   def convertDateOrNull(
       input: ColumnVector,
       regex: String,
       cudfFormat: String): ColumnVector = {
 
-    // val isValidDate = withResource(input.matchesRe(regex)) { isMatch =>
     val prog = new RegexProgram(regex, CaptureGroups.NON_CAPTURE)
     val isValidDate = withResource(input.matchesRe(prog)) { isMatch =>
       withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
@@ -995,14 +993,14 @@ object GpuCast extends Arm {
   }
 
     /** This method does not close the `input` ColumnVector. */
-    @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
     def convertDateOr(
       input: ColumnVector,
       regex: String,
       cudfFormat: String,
       orElse: ColumnVector): ColumnVector = {
-
-    val isValidDate = withResource(input.matchesRe(regex)) { isMatch =>
+    
+    val prog = new RegexProgram(regex, CaptureGroups.NON_CAPTURE)
+    val isValidDate = withResource(input.matchesRe(prog)) { isMatch =>
       withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
         isMatch.and(isTimestamp)
       }
@@ -1081,14 +1079,14 @@ object GpuCast extends Arm {
   }
 
   /** This method does not close the `input` ColumnVector. */
-  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   private def convertTimestampOrNull(
       input: ColumnVector,
       regex: String,
       cudfFormat: String): ColumnVector = {
 
     withResource(Scalar.fromNull(DType.TIMESTAMP_MICROSECONDS)) { orElse =>
-      val isValidTimestamp = withResource(input.matchesRe(regex)) { isMatch =>
+      val prog = new RegexProgram(regex, CaptureGroups.NON_CAPTURE)
+      val isValidTimestamp = withResource(input.matchesRe(prog)) { isMatch =>
         withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
           isMatch.and(isTimestamp)
         }
@@ -1102,7 +1100,6 @@ object GpuCast extends Arm {
   }
 
   /** This method does not close the `input` ColumnVector. */
-  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   private def convertTimestampOr(
       input: ColumnVector,
       regex: String,
@@ -1110,7 +1107,8 @@ object GpuCast extends Arm {
       orElse: ColumnVector): ColumnVector = {
 
     withResource(orElse) { orElse =>
-      val isValidTimestamp = withResource(input.matchesRe(regex)) { isMatch =>
+      val prog = new RegexProgram(regex, CaptureGroups.NON_CAPTURE)
+      val isValidTimestamp = withResource(input.matchesRe(prog)) { isMatch =>
         withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
           isMatch.and(isTimestamp)
         }
@@ -1124,7 +1122,6 @@ object GpuCast extends Arm {
   }
 
   /** This method does not close the `input` ColumnVector. */
-  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   private def convertFullTimestampOr(
       input: ColumnVector,
       orElse: ColumnVector): ColumnVector = {
@@ -1150,7 +1147,8 @@ object GpuCast extends Arm {
       }
 
       val isValidTimestamp = withResource(isCudfMatch) { _ =>
-        withResource(input.matchesRe(TIMESTAMP_REGEX_FULL)) { isRegexMatch =>
+        val prog = new RegexProgram(TIMESTAMP_REGEX_FULL, CaptureGroups.NON_CAPTURE)
+        withResource(input.matchesRe(prog)) { isRegexMatch =>
           isCudfMatch.and(isRegexMatch)
         }
       }
