@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -350,7 +350,9 @@ object GpuDeviceManager extends Logging {
   }
 
   /** Wrap a thread factory with one that will set the GPU device on each thread created. */
-  def wrapThreadFactory(factory: ThreadFactory): ThreadFactory = new ThreadFactory() {
+  def wrapThreadFactory(factory: ThreadFactory,
+      before: () => Unit = null,
+      after: () => Unit = null): ThreadFactory = new ThreadFactory() {
     private[this] val devId = getDeviceId.getOrElse {
       throw new IllegalStateException("Device ID is not set")
     }
@@ -358,7 +360,16 @@ object GpuDeviceManager extends Logging {
     override def newThread(runnable: Runnable): Thread = {
       factory.newThread(() => {
         Cuda.setDevice(devId)
-        runnable.run()
+        try {
+          if (before != null) {
+            before()
+          }
+          runnable.run()
+        } finally {
+          if (after != null) {
+            after()
+          }
+        }
       })
     }
   }

@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer}
+import ai.rapids.cudf.{Cuda, CudfException, DeviceMemoryBuffer}
 import org.scalatest.{BeforeAndAfter, FunSuite}
 
 import org.apache.spark.SparkConf
@@ -54,8 +54,15 @@ class GpuDeviceManagerSuite extends FunSuite with Arm with BeforeAndAfter {
       // initial allocation should fit within pool size
       withResource(DeviceMemoryBuffer.allocate(allocSize)) { _ =>
         assertThrows[OutOfMemoryError] {
-          // this should exceed the specified pool size
-          DeviceMemoryBuffer.allocate(allocSize).close()
+          try {
+            // this should exceed the specified pool size
+            DeviceMemoryBuffer.allocate(allocSize).close()
+          } catch {
+            case e: CudfException =>
+              System.err.println(e)
+              e.printStackTrace(System.err)
+              throw e
+          }
         }
       }
     }
