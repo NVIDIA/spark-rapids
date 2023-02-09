@@ -55,18 +55,16 @@ def test_single_orderby(data_gen, order):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).orderBy(order))
 
-@allow_non_gpu('ShuffleExchangeExec')
-# @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
-@pytest.mark.parametrize('data_gen', [ArrayGen(byte_gen)], ids=idfn)
+@pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
 @pytest.mark.parametrize('order', [
     pytest.param(f.col('a').asc()),
-    # pytest.param(f.col('a').asc_nulls_first()),
+    pytest.param(f.col('a').asc_nulls_first()),
     pytest.param(f.col('a').asc_nulls_last(),
         marks=pytest.mark.xfail(reason='opposite null order not supported')),
-    # pytest.param(f.col('a').desc()),
+    pytest.param(f.col('a').desc()),
     pytest.param(f.col('a').desc_nulls_first(),
         marks=pytest.mark.xfail(reason='opposite null order not supported')),
-    # pytest.param(f.col('a').desc_nulls_last()),
+    pytest.param(f.col('a').desc_nulls_last()),
 ], ids=idfn)
 def test_single_orderby_on_array(data_gen, order):
     assert_gpu_and_cpu_are_equal_collect(
@@ -81,17 +79,17 @@ def test_single_orderby_fallback_for_multilevel_array(data_gen, order):
             lambda spark : unary_op_df(spark, data_gen).orderBy(order),
             "SortExec")
 
-# # only default null ordering for direction is supported for array types
-# @allow_non_gpu('SortExec', 'ShuffleExchangeExec')
-# @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
-# @pytest.mark.parametrize('order', [
-#     pytest.param(f.col('a').asc_nulls_last()),
-#     pytest.param(f.col('a').desc_nulls_first()),
-# ], ids=idfn)
-# def test_single_orderby_on_array_fallback_for_nullorder(data_gen, order):
-#     assert_gpu_fallback_collect(
-#             lambda spark : unary_op_df(spark, data_gen).orderBy(order),
-#             "SortExec")
+# only default null ordering for direction is supported for array types
+@allow_non_gpu('SortExec', 'ShuffleExchangeExec')
+@pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
+@pytest.mark.parametrize('order', [
+    pytest.param(f.col('a').asc_nulls_last()),
+    pytest.param(f.col('a').desc_nulls_first()),
+], ids=idfn)
+def test_single_orderby_on_array_fallback_for_nullorder(data_gen, order):
+    assert_gpu_fallback_collect(
+            lambda spark : unary_op_df(spark, data_gen).orderBy(order),
+            "SortExec")
 
 @pytest.mark.parametrize('shuffle_parts', [
     pytest.param(1),
@@ -163,9 +161,7 @@ def test_single_nested_orderby_with_limit(data_gen, order):
 @pytest.mark.parametrize('order,data_gen', [
     pytest.param(f.col('a').asc_nulls_last(), all_basic_struct_gen),
     pytest.param(f.col('a').desc_nulls_first(), all_basic_struct_gen),
-    pytest.param(f.col('a').asc(), ArrayGen(string_gen)),
     pytest.param(f.col('a').asc_nulls_last(), ArrayGen(string_gen)),
-    pytest.param(f.col('a').desc(), ArrayGen(string_gen)),
     pytest.param(f.col('a').desc_nulls_first(), ArrayGen(string_gen))
 ], ids=idfn)
 def test_single_nested_orderby_with_limit_fallback(data_gen, order):
