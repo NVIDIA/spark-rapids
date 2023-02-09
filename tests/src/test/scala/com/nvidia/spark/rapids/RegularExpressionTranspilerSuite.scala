@@ -21,7 +21,7 @@ import java.util.regex.Pattern
 import scala.collection.mutable.{HashSet, ListBuffer}
 import scala.util.{Random, Try}
 
-import ai.rapids.cudf.{ColumnVector, CudfException}
+import ai.rapids.cudf.{CaptureGroups, ColumnVector, CudfException, RegexProgram}
 import com.nvidia.spark.rapids.RegexParser.toReadableString
 import org.scalatest.FunSuite
 
@@ -915,11 +915,11 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   }
 
   /** cuDF containsRe helper */
-  @scala.annotation.nowarn("msg=method containsRe in class ColumnView is deprecated")
   private def gpuContains(cudfPattern: String, input: Seq[String]): Array[Boolean] = {
     val result = new Array[Boolean](input.length)
     withResource(ColumnVector.fromStrings(input: _*)) { cv =>
-      withResource(cv.containsRe(cudfPattern)) { c =>
+      val prog = new RegexProgram(cudfPattern, CaptureGroups.NON_CAPTURE)
+      withResource(cv.containsRe(prog)) { c =>
         withResource(c.copyToHost()) { hv =>
           result.indices.foreach(i => result(i) = hv.getBoolean(i))
         }
