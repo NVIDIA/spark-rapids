@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.hive.rapids.shims
 
-import ai.rapids.cudf.{CSVWriterOptions, HostBufferConsumer, QuoteStyle, Scalar, Table, TableWriter => CudfTableWriter}
+import ai.rapids.cudf.{CSVWriterOptions, DType, HostBufferConsumer, QuoteStyle, Scalar, Table, TableWriter => CudfTableWriter}
 import com.google.common.base.Charsets
 import com.nvidia.spark.rapids.{ColumnarFileFormat, ColumnarOutputWriter, ColumnarOutputWriterFactory, FileFormatChecks, HiveDelimitedTextFormatType, RapidsConf, WriteFileOp}
 import java.nio.charset.Charset
@@ -125,14 +125,19 @@ class GpuHiveTextWriter(override val path: String,
                         context: TaskAttemptContext)
   extends ColumnarOutputWriter(context, dataSchema, "HiveText") {
 
-  // This CSV writer reformats timestamps. By default, the CUDF CSV writer
-  // writes timestamps in the following format:
-  //   "2020-09-16T22:32:01.123456Z"
-  // Such a timestamp is incompatible with Hive's LazySimpleSerDe format:
-  //   "uuuu-MM-dd HH:mm:ss[.SSS...]"
-  // (Specifically, the `T` between `dd` and `HH`, and the `Z` at the end.)
-  class TimestampReformattingCSVWriter(writeOptions: CSVWriterOptions,
-                                       bufferConsumer: HostBufferConsumer)
+  /**
+   * This CSV writer reformats columns, to iron out inconsistencies between
+   * CUDF serialization results and the values expected by Apache Spark
+   * (and Apache Hive's) `LazySimpleSerDe`.
+   *
+   * This writer currently reformats timestamp and floating point
+   * columns.
+   *
+   * @param writeOptions CSVWriterOptions for serializing in CSV with CUDF
+   * @param bufferConsumer In-memory buffer for storing the written results
+   */
+  class ComplianceReformattingCSVWriter(writeOptions: CSVWriterOptions,
+                                        bufferConsumer: HostBufferConsumer)
     extends CudfTableWriter {
 
     val underlying: CudfTableWriter = Table.getCSVBufferWriter(writeOptions, bufferConsumer)
@@ -141,9 +146,26 @@ class GpuHiveTextWriter(override val path: String,
       val columns = for (i <- 0 until table.getNumberOfColumns) yield {
         table.getColumn(i) match {
           case c if c.getType.hasTimeResolution =>
+            // By default, the CUDF CSV writer writes timestamps in the following format:
+            //   "2020-09-16T22:32:01.123456Z"
+            // Hive's LazySimpleSerDe format expects timestamps to be formatted thus:
+            //   "uuuu-MM-dd HH:mm:ss[.SSS...]"
+            // (Specifically, no `T` between `dd` and `HH`, and no `Z` at the end.)
             withResource(c.asStrings("%Y-%m-%d %H:%M:%S.%f")) { asStrings =>
               withResource(Scalar.fromString("\\N")) { nullString =>
                 asStrings.replaceNulls(nullString)
+              }
+            }
+          case c if c.getType == DType.FLOAT32 || c.getType == DType.FLOAT64 =>
+            // By default, the CUDF CSV writer writes floats with value `Infinity`
+            // as `"Inf"`.
+            // Hive's LazySimplSerDe expects such values to be written as `"Infinity"`.
+            // All occurrences of `Inf` need to be replaced with `Infinity`.
+            withResource(c.castTo(DType.STRING)) { asStrings =>
+              withResource(Scalar.fromString("Inf")) { infString =>
+                withResource(Scalar.fromString("Infinity")) { infinityString =>
+                  asStrings.stringReplace(infString, infinityString)
+                }
               }
             }
           case c => c.incRefCount()
@@ -172,8 +194,8 @@ class GpuHiveTextWriter(override val path: String,
       .withNullValue("\\N")
       .withQuoteStyle(QuoteStyle.NONE)
 
-    new TimestampReformattingCSVWriter(writeOptions = writeOptions.build,
-                                            bufferConsumer = this)
+    new ComplianceReformattingCSVWriter(writeOptions = writeOptions.build,
+                                        bufferConsumer = this)
   }
 }
 
