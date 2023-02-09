@@ -425,7 +425,7 @@ void databricksBuild() {
                             " -d $DATABRICKS_DRIVER -o $DATABRICKS_WORKER -e $NUM_WORKERS"
 
                     // handle init scripts if exist
-                    if ( env.INIT_SCRIPTS ){
+                    if (env.INIT_SCRIPTS) {
                         sh "bash -c 'dbfs mkdirs $dbfs_path'"
                         env.INIT_SCRIPTS.split(',').each {
                             sh "bash -c 'dbfs cp --overwrite jenkins/databricks/${it} $dbfs_path'"
@@ -477,7 +477,7 @@ void databricksBuild() {
         if (CLUSTER_ID) {
             container('cpu') {
                 retry(3) {
-                    if ( env.INIT_SCRIPTS ){
+                    if (env.INIT_SCRIPTS) {
                         sh "bash -c 'dbfs rm -r $dbfs_path'"
                     }
                     sh "python3 ./jenkins/databricks/shutdown.py -s $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID -d"
