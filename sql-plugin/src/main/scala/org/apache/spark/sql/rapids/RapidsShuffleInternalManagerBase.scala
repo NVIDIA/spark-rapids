@@ -1115,8 +1115,30 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
   protected lazy val resolver =
     if (shouldFallThroughOnEverything || rapidsConf.isMultiThreadedShuffleManagerMode) {
       wrapped.shuffleBlockResolver
-    } else {
-      new GpuShuffleBlockResolver(wrapped.shuffleBlockResolver, getCatalogOrThrow)
+    } else { // we didn't fallback && we are using the UCX shuffle
+      val catalog = GpuShuffleEnv.getCatalog
+      if (catalog == null) {
+        if (isDriver) {
+          // this is an OK state to be in. It means we didn't fall back
+          // (`shouldFallbackThroughOnEverything` is false) and this is just the driver
+          // in a job with RapidsShuffleManager enabled. We want to just use the regular
+          // shuffle block resolver here, since we don't do anything on the driver.
+          wrapped.shuffleBlockResolver
+        } else {
+          // this would be bad: if we are an executor, didn't fallback, and RapidsShuffleManager
+          // is enabled, we need to fail.
+          throw new IllegalStateException(
+            "An executor with RapidsShuffleManager is trying to use a ShuffleBufferCatalog " +
+                "that isn't initialized."
+          )
+        }
+      } else {
+        // A driver in local mode with the RapidsShuffleManager enabled would go through this
+        // else statement, because the "executor" is the driver, and isDriver=true, or
+        // The regular case where the executor has RapidsShuffleManager enabled.
+        // What these cases have in common is that `catalog` is defined.
+        new GpuShuffleBlockResolver(wrapped.shuffleBlockResolver, catalog)
+      }
     }
 
   private[this] lazy val transport: Option[RapidsShuffleTransport] = {
@@ -1340,7 +1362,7 @@ abstract class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: B
   def unregisterGpuShuffle(shuffleId: Int): Unit = {
     val catalog = GpuShuffleEnv.getCatalog
     if (catalog != null) {
-      logInfo(s"Unregistering shuffle $shuffleId")
+      logInfo(s"Unregistering shuffle $shuffleId from shuffle buffer catalog")
       catalog.unregisterShuffle(shuffleId)
     }
   }
