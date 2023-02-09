@@ -450,8 +450,7 @@ TableWriteMode = Enum('TableWriteMode', ['CTAS', 'CreateThenWrite'])
                  marks=pytest.mark.xfail(condition=is_spark_cdh(),
                                          reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
     # Floating Point.
-    pytest.param('hive-delim-text/simple-float-values',   make_schema(FloatType()),          {},
-                 marks=pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/7686")),
+    ('hive-delim-text/simple-float-values',   make_schema(FloatType()),          {}),
     pytest.param('hive-delim-text/simple-float-values', make_schema(DecimalType(10, 3)), {},
                  marks=pytest.mark.xfail(condition=is_spark_cdh(),
                                          reason="https://github.com/NVIDIA/spark-rapids/issues/7423")),
@@ -547,7 +546,7 @@ def test_partitioned_hive_text_write(mode, spark_tmp_table_factory):
                   "('Ford',   'F-150',       2020, 'ICE',      'Popular' ),"
                   "('GMC',    'Sierra 1500', 1997, 'ICE',      'Older'),"
                   "('Chevy',  'D-Max',       2015, 'ICE',      'Isuzu?' ),"
-                  "('Tesla',  'CyberTruck',  2025, 'Electric', 'Fictional'),"
+                  "('Tesla',  'CyberTruck',  2025, 'Electric', 'BladeRunner'),"
                   "('Rivian', 'R1T',         2022, 'Electric', 'Heavy'),"
                   "('Jeep',   'Gladiator',   2024, 'Hybrid',   'Upcoming')")
         return tmp_input
