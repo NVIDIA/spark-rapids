@@ -22,7 +22,7 @@ import java.util.Optional
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DecimalUtils, DType, Scalar}
+import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DecimalUtils, DType, RegexProgram, Scalar}
 import ai.rapids.cudf
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.CastStrings
@@ -971,13 +971,15 @@ object GpuCast extends Arm {
   }
 
   /** This method does not close the `input` ColumnVector. */
-  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
+  // @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   def convertDateOrNull(
       input: ColumnVector,
       regex: String,
       cudfFormat: String): ColumnVector = {
 
-    val isValidDate = withResource(input.matchesRe(regex)) { isMatch =>
+    // val isValidDate = withResource(input.matchesRe(regex)) { isMatch =>
+    val prog = new RegexProgram(regex, CaptureGroups.NON_CAPTURE)
+    val isValidDate = withResource(input.matchesRe(prog)) { isMatch =>
       withResource(input.isTimestamp(cudfFormat)) { isTimestamp =>
         isMatch.and(isTimestamp)
       }
