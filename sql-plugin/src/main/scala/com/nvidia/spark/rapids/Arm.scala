@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /** Implementation of the automatic-resource-management pattern */
 trait Arm {
@@ -155,6 +157,34 @@ trait Arm {
     } finally {
       h.close()
     }
+  }
+
+  def withRetry(
+      input: SpillableColumnarBatch)
+      (fn: ColumnarBatch => ColumnarBatch): Seq[SpillableColumnarBatch] = {
+    val retry = new RmmRapidsRetryHelper(input, null, null)
+    retry.withRetry(fn)
+  }
+
+  def withRetry(
+      input: SpillableColumnarBatch,
+      splitPolicy: SpillableColumnarBatch => Seq[SpillableColumnarBatch])
+      (fn: ColumnarBatch => ColumnarBatch): Seq[SpillableColumnarBatch] = {
+    val retry = new RmmRapidsRetryHelper(input, splitPolicy, null)
+    retry.withRetry(fn)
+  }
+
+  def withRetryAndMerge(
+      input: SpillableColumnarBatch,
+      splitPolicy: SpillableColumnarBatch => Seq[SpillableColumnarBatch],
+      mergePolicy: Seq[SpillableColumnarBatch] => SpillableColumnarBatch)
+      (fn: ColumnarBatch => ColumnarBatch): SpillableColumnarBatch = {
+    val retry = new RmmRapidsRetryHelper(input, splitPolicy, mergePolicy)
+    val result = retry.withRetry(fn)
+    require(result.size == 1,
+      s"withRetryAndMerge failed because it couldn't merge to 1 batch, instead " +
+         s"${result.size} batches were produced.")
+    result.head
   }
 }
 

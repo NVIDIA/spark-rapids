@@ -46,6 +46,8 @@ trait SpillableColumnarBatch extends AutoCloseable {
   def getColumnarBatch(): ColumnarBatch
 
   def sizeInBytes: Long
+
+  def dataTypes: Array[DataType]
 }
 
 /**
@@ -65,6 +67,8 @@ class JustRowsColumnarBatch(numRows: Int, semWait: GpuMetric)
 
   override def close(): Unit = () // NOOP nothing to close
   override val sizeInBytes: Long = 0L
+
+  override def dataTypes: Array[DataType] = Array.empty
 }
 
 /**
@@ -79,6 +83,8 @@ class SpillableColumnarBatchImpl (
     sparkTypes: Array[DataType],
     semWait: GpuMetric)
     extends SpillableColumnarBatch with Arm {
+
+  override def dataTypes: Array[DataType] = sparkTypes
   /**
    * The number of rows stored in this batch.
    */
