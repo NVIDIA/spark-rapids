@@ -23,14 +23,14 @@ shim, it is recommended albeit not required to do it in a dedicated run after ru
 
 ```bash
 mvn clean install -DskipTests
-mvn generate-sources antrun:run@shimplify=shim-sources
+mvn generate-sources antrun:run@shimplify-shim-sources
 ```
 
 Switches:
 
-if                   - task attribute whether to modify files
-shimlify.add.base    - old buildver to base the new one provided by shimplify.add.shim
-shimplify.add.shim    - add new shim/buildver based on the one provided by shimlify.add.base
+shimplify            - property passed to task attribute `if` whether to modify files
+shimplify.add.base   - old buildver to base the new one provided by shimplify.add.shim
+shimplify.add.shim   - add new shim/buildver based on the one provided by shimplify.add.base
 shimplify.dirs       - comma-separated list of dirs to modify, supersedes shimplify.shims
 shimplify.move       - property to allow moving files to canonical location, otherwise update
                        without moving
