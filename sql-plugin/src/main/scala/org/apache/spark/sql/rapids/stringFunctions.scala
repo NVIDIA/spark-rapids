@@ -1130,7 +1130,6 @@ case class GpuRegExpReplace(
       cudfRegexPattern, cudfReplacementString)
   }
 
-  @scala.annotation.nowarn("msg=method replaceRegex in class ColumnView is deprecated")
   override def doColumnar(
       strExpr: GpuColumnVector,
       searchExpr: GpuScalar,
@@ -1145,10 +1144,11 @@ case class GpuRegExpReplace(
           len.equalTo(zero)
         }
       }
+      val prog = new RegexProgram(cudfRegexPattern, CaptureGroups.NON_CAPTURE)
       withResource(isEmpty) { _ =>
         withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
           withResource(GpuScalar.from(cudfReplacementString, DataTypes.StringType)) { rep =>
-            withResource(strExpr.getBase.replaceRegex(cudfRegexPattern, rep)) { replacement =>
+            withResource(strExpr.getBase.replaceRegex(prog, rep)) { replacement =>
               isEmpty.ifElse(emptyString, replacement)
             }
           }
@@ -1156,7 +1156,7 @@ case class GpuRegExpReplace(
       }
     } else {
       withResource(Scalar.fromString(cudfReplacementString)) { rep =>
-        strExpr.getBase.replaceRegex(cudfRegexPattern, rep)
+        strExpr.getBase.replaceRegex(prog, rep)
       }
     }
   }
@@ -1256,7 +1256,6 @@ case class GpuRegExpExtract(
 
   override def prettyName: String = "regexp_extract"
 
-  @scala.annotation.nowarn("msg=method extractRe in class ColumnView is deprecated")
   override def doColumnar(
       str: GpuColumnVector,
       regexp: GpuScalar,
@@ -1292,7 +1291,7 @@ case class GpuRegExpExtract(
     // | 'a1a'  | '1'   | '1'   |
     // | '1a1'  | ''    | NULL  |
 
-    withResource(str.getBase.extractRe(extractPattern)) { extract =>
+    withResource(str.getBase.extractRe(new RegexProgram(extractPattern))) { extract =>
       withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
         val outputNullAndInputNotNull =
           withResource(extract.getColumn(groupIndex).isNull) { outputNull =>
@@ -1387,7 +1386,8 @@ case class GpuRegExpExtractAll(
       idx: GpuScalar): ColumnVector = {
     idx.getValue.asInstanceOf[Int] match {
       case 0 =>
-        str.getBase.extractAllRecord(cudfRegexPattern, 0)
+        val prog = new RegexProgram(cudfRegexPattern, CaptureGroups.NON_CAPTURE)
+        str.getBase.extractAllRecord(prog, 0)
       case intIdx =>
         // Extract matches corresponding to idx. cuDF's extract_all_record does not support
         // group idx, so we must manually extract the relevant matches. Example:
@@ -1401,9 +1401,10 @@ case class GpuRegExpExtractAll(
         // 2nd element afterwards from the cuDF list
 
         val rowCount = str.getRowCount
+        val prog = new RegexProgram(cudfRegexPattern)
 
         val extractedWithNulls = withResource(
-          str.getBase.extractAllRecord(cudfRegexPattern, intIdx)) { allExtracted =>
+          str.getBase.extractAllRecord(prog, intIdx)) { allExtracted =>
             withResource(allExtracted.countElements) { listSizes =>
               withResource(listSizes.max) { maxSize =>
                 val maxSizeInt = maxSize.getInt
@@ -1527,7 +1528,6 @@ case class GpuSubstringIndex(strExpr: Expression,
   // This is a bit hacked up at the moment. We are going to use a regular expression to extract
   // a single value. It only works if the delim is a single character. A full version of
   // substring_index for the GPU has been requested at https://github.com/rapidsai/cudf/issues/5158
-  @scala.annotation.nowarn("msg=method extractRe in class ColumnView is deprecated")
   override def doColumnar(str: GpuColumnVector, delim: GpuScalar,
       count: GpuScalar): ColumnVector = {
     if (regexp == null) {
@@ -1537,7 +1537,7 @@ case class GpuSubstringIndex(strExpr: Expression,
         }
       }
     } else {
-      withResource(str.getBase.extractRe(regexp)) { table: Table =>
+      withResource(str.getBase.extractRe(new RegexProgram(regexp))) { table: Table =>
         table.getColumn(0).incRefCount()
       }
     }

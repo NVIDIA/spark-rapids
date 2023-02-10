@@ -942,7 +942,8 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
         cv.stringReplaceWithBackrefs(cudfPattern, converted)
       } else {
         withResource(GpuScalar.from(converted, DataTypes.StringType)) { replace =>
-          cv.replaceRegex(cudfPattern, replace)
+          val prog = new RegexProgram(cudfPattern, CaptureGroups.NON_CAPTURE)
+          cv.replaceRegex(prog, replace)
         }
       }
       withResource(c) { c => 
