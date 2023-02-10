@@ -599,7 +599,6 @@ object GpuToTimestamp extends Arm {
    * Filter out strings that have a newline before the first non-whitespace character
    * and then strip all leading and trailing whitespace.
    */
-  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   private def rejectLeadingNewlineThenStrip(lhs: GpuColumnVector) = {
     val prog = new RegexProgram("\\A[ \\t]*[\\n]+", CaptureGroups.NON_CAPTURE)
     withResource(lhs.getBase.matchesRe(prog)) { hasLeadingNewline =>

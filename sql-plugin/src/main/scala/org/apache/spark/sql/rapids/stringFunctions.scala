@@ -1379,7 +1379,6 @@ case class GpuRegExpExtractAll(
 
   override def prettyName: String = "regexp_extract_all"
 
-  @scala.annotation.nowarn("msg=method extractAllRecord in class ColumnView is deprecated")
   override def doColumnar(
       str: GpuColumnVector,
       regexp: GpuScalar,
