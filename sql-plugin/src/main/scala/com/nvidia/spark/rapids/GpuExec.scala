@@ -103,6 +103,11 @@ object GpuMetric extends Logging {
   val DESCRIPTION_READ_FS_TIME = "time to read fs data"
   val DESCRIPTION_WRITE_BUFFER_TIME = "time to write data to buffer"
 
+  def unwrap(input: GpuMetric): SQLMetric = input match {
+      case w :WrappedGpuMetric => w.sqlMetric
+      case i => throw new IllegalArgumentException(s"found unsupported GpuMetric ${i.getClass}")
+  }
+
   def unwrap(input: Map[String, GpuMetric]): Map[String, SQLMetric] = input.collect {
     // remove the metrics that are not registered (NoopMetric)
     case (k, w: WrappedGpuMetric) => (k, w.sqlMetric)
