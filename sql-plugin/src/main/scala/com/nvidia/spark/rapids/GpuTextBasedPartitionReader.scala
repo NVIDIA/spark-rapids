@@ -403,7 +403,6 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
     }
   }
 
-  @scala.annotation.nowarn("msg=in class ColumnView is deprecated")
   def castStringToTimestamp(
       lhs: ColumnVector,
       sparkFormat: String,
@@ -462,8 +461,8 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
       // `@` was chosen somewhat arbitrarily but should be safe since we do not support any
       // date/time formats that contain the `@` character
       val placeholder = "@"
-      withResource(regexpFiltered.stringReplaceWithBackrefs(
-        raw"(\.\d{3})(Z?)\Z", raw"\1$placeholder\2")) { tmp =>
+      val prog = new RegexProgram(raw"(\.\d{3})(Z?)\Z")
+      withResource(regexpFiltered.stringReplaceWithBackrefs(prog, raw"\1$placeholder\2")) { tmp =>
         withResource(Scalar.fromString(placeholder)) { from =>
           withResource(Scalar.fromString("000")) { to =>
             tmp.stringReplace(from, to)

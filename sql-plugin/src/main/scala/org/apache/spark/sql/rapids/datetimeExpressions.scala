@@ -551,7 +551,6 @@ object GpuToTimestamp extends Arm {
    * Parse string to timestamp when timeParserPolicy is LEGACY. This was the default behavior
    * prior to Spark 3.0
    */
-  @scala.annotation.nowarn("msg=in class ColumnView is deprecated")
   def parseStringAsTimestampWithLegacyParserPolicy(
       lhs: GpuColumnVector,
       sparkFormat: String,
@@ -580,7 +579,7 @@ object GpuToTimestamp extends Arm {
     val fixedUp = rulesWithSeparator
       .foldLeft(rejectLeadingNewlineThenStrip(lhs))((cv, regexRule) => {
         withResource(cv) {
-          _.stringReplaceWithBackrefs(regexRule.search, regexRule.replace)
+          _.stringReplaceWithBackrefs(new RegexProgram(regexRule.search), regexRule.replace)
         }
       })
 

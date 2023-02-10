@@ -631,7 +631,6 @@ object GpuCast extends Arm {
     }
   }
 
-  @scala.annotation.nowarn("msg=method stringReplaceWithBackrefs in class ColumnView is deprecated")
   private def castTimestampToString(input: ColumnView): ColumnVector = {
     // the complexity in this function is due to Spark's rules for truncating
     // the fractional part of the timestamp string. Any trailing decimal place
@@ -654,7 +653,8 @@ object GpuCast extends Arm {
         // the decimal point and the last non-zero digit
         // the second group (non-capture) covers the remaining zeroes
         withResource(firstPass) { _ =>
-          firstPass.stringReplaceWithBackrefs("(\\.[0-9]*[1-9]+)(?:0+)?$", "\\1")
+          val prog = new RegexProgram("(\\.[0-9]*[1-9]+)(?:0+)?$")
+          firstPass.stringReplaceWithBackrefs(prog, "\\1")
         }
       }
     }
@@ -1163,7 +1163,6 @@ object GpuCast extends Arm {
     }
   }
 
-  @scala.annotation.nowarn("msg=method stringReplaceWithBackrefs in class ColumnView is deprecated")
   private def castStringToTimestamp(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
 
     // special timestamps
@@ -1175,7 +1174,8 @@ object GpuCast extends Arm {
 
     // prepend today's date to timestamp formats without dates
     sanitizedInput = withResource(sanitizedInput) { _ =>
-      sanitizedInput.stringReplaceWithBackrefs(TIMESTAMP_REGEX_NO_DATE, s"${todayStr}T\\1")
+      val prog = new RegexProgram(TIMESTAMP_REGEX_NO_DATE)
+      sanitizedInput.stringReplaceWithBackrefs(prog, s"${todayStr}T\\1")
     }
 
     withResource(sanitizedInput) { sanitizedInput =>

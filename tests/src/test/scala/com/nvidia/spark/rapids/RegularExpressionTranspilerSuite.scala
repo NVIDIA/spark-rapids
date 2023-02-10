@@ -931,7 +931,6 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
   private val REPLACE_STRING = "\\_\\RE\\\\P\\L\\A\\C\\E\\_"
 
   /** cuDF replaceRe helper */
-  @scala.annotation.nowarn("msg=in class ColumnView is deprecated")
   private def gpuReplace(cudfPattern: String, replaceString: String,
       input: Seq[String]): Array[String] = {
     val result = new Array[String](input.length)
@@ -939,7 +938,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val (hasBackrefs, converted) = GpuRegExpUtils.backrefConversion(replace)
     withResource(ColumnVector.fromStrings(input: _*)) { cv =>
       val c = if (hasBackrefs) {
-        cv.stringReplaceWithBackrefs(cudfPattern, converted)
+        cv.stringReplaceWithBackrefs(new RegexProgram(cudfPattern), converted)
       } else {
         withResource(GpuScalar.from(converted, DataTypes.StringType)) { replace =>
           val prog = new RegexProgram(cudfPattern, CaptureGroups.NON_CAPTURE)

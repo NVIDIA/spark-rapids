@@ -1137,6 +1137,7 @@ case class GpuRegExpReplace(
     // For empty strings and a regex containing only a zero-match repetition,
     // the behavior in some versions of Spark is different.
     // see https://github.com/NVIDIA/spark-rapids/issues/5456
+    val prog = new RegexProgram(cudfRegexPattern, CaptureGroups.NON_CAPTURE)
     if (SparkShimImpl.reproduceEmptyStringBug &&
         GpuRegExpUtils.isEmptyRepetition(javaRegexpPattern)) {
       val isEmpty = withResource(strExpr.getBase.getCharLengths) { len =>
@@ -1144,7 +1145,6 @@ case class GpuRegExpReplace(
           len.equalTo(zero)
         }
       }
-      val prog = new RegexProgram(cudfRegexPattern, CaptureGroups.NON_CAPTURE)
       withResource(isEmpty) { _ =>
         withResource(GpuScalar.from("", DataTypes.StringType)) { emptyString =>
           withResource(GpuScalar.from(cudfReplacementString, DataTypes.StringType)) { rep =>
@@ -1173,9 +1173,9 @@ case class GpuRegExpReplaceWithBackref(
 
   override def dataType: DataType = StringType
 
-  @scala.annotation.nowarn("msg=method stringReplaceWithBackrefs in class ColumnView is deprecated")
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
-    input.getBase.stringReplaceWithBackrefs(cudfRegexPattern, cudfReplacementString)
+    val prog = new RegexProgram(cudfRegexPattern)
+    input.getBase.stringReplaceWithBackrefs(prog, cudfReplacementString)
   }
 
 }
