@@ -482,7 +482,6 @@ case class GpuHiveTextPartitionReaderFactory(sqlConf: SQLConf,
 }
 
 // Reader that converts from chunked data buffers into cudf.Table.
-@scala.annotation.nowarn("msg=method stringSplit in class ColumnView is deprecated")
 class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
                                           csvOptions: CSVOptions,
                                           params: Map[String, String],
@@ -503,7 +502,7 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
     // The delimiter is currently hard coded to ^A. This should be able to support any format
     //  but we don't want to test that yet
     val splitTable = withResource(dataBufferer.getColumnAndRelease) { cv =>
-      cv.stringSplit("\u0001", false)
+      cv.stringSplit("\u0001")
     }
 
     // inputFileCudfSchema       == Schema of the input file/buffer.

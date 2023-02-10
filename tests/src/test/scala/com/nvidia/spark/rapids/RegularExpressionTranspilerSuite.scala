@@ -968,14 +968,18 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     input.map(s => s.split(pattern, limit))
   }
 
-  @scala.annotation.nowarn("msg=method stringSplitRecord in class ColumnView is deprecated")
   private def gpuSplit(
       pattern: String,
       input: Seq[String],
       limit: Int,
       isRegex: Boolean): Seq[Array[String]] = {
     withResource(ColumnVector.fromStrings(input: _*)) { cv =>
-      withResource(cv.stringSplitRecord(pattern, limit, isRegex)) { x =>
+      val x = if (isRegex) {
+        cv.stringSplitRecord(new RegexProgram(pattern, CaptureGroups.NON_CAPTURE), limit)
+      } else {
+        cv.stringSplitRecord(pattern, limit)
+      }
+      withResource(x) { x =>
         withResource(x.copyToHost()) { hcv =>
           (0 until hcv.getRowCount.toInt).map(i => {
             val list = hcv.getList(i)

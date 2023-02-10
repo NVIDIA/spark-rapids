@@ -1783,13 +1783,16 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression,
 
   override def prettyName: String = "split"
 
-  @scala.annotation.nowarn("msg=method stringSplitRecord in class ColumnView is deprecated")
   override def doColumnar(str: GpuColumnVector, regex: GpuScalar,
       limit: GpuScalar): ColumnVector = {
     limit.getValue.asInstanceOf[Int] match {
       case 0 =>
         // Same as splitting as many times as possible
-        str.getBase.stringSplitRecord(pattern, -1, isRegExp)
+        if (isRegExp) {
+          str.getBase.stringSplitRecord(new RegexProgram(pattern, CaptureGroups.NON_CAPTURE), -1)
+        } else {
+          str.getBase.stringSplitRecord(pattern, -1)
+        }
       case 1 =>
         // Short circuit GPU and just return a list containing the original input string
         withResource(str.getBase.isNull) { isNull =>
@@ -1801,7 +1804,11 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression,
           }
         }
       case n =>
-        str.getBase.stringSplitRecord(pattern, n, isRegExp)
+        if (isRegExp) {
+          str.getBase.stringSplitRecord(new RegexProgram(pattern, CaptureGroups.NON_CAPTURE), n)
+        } else {
+          str.getBase.stringSplitRecord(pattern, n)
+        }
     }
   }
 
@@ -1908,15 +1915,23 @@ case class GpuStringToMap(strExpr: Expression,
     }
   }
 
-  @scala.annotation.nowarn("msg=in class ColumnView is deprecated")
   private def toMap(str: GpuColumnVector): GpuColumnVector = {
     // Firstly, split the input strings into lists of strings.
-    withResource(str.getBase.stringSplitRecord(pairDelim, isPairDelimRegExp)) { listsOfStrings =>
+    val listsOfStrings = if (isPairDelimRegExp) {
+      str.getBase.stringSplitRecord(new RegexProgram(pairDelim, CaptureGroups.NON_CAPTURE))
+    } else {
+      str.getBase.stringSplitRecord(pairDelim)
+    }
+    withResource(listsOfStrings) { listsOfStrings =>
       // Extract strings column from the output lists column.
       withResource(listsOfStrings.getChildColumnView(0)) { stringsCol =>
         // Split the key-value strings into pairs of strings of key-value (using limit = 2).
-        withResource(stringsCol.stringSplit(keyValueDelim, 2, isKeyValueDelimRegExp)) {
-          keysValuesTable =>
+        val keysValuesTable = if (isKeyValueDelimRegExp) {
+          stringsCol.stringSplit(new RegexProgram(keyValueDelim, CaptureGroups.NON_CAPTURE), 2)
+        } else {
+          stringsCol.stringSplit(keyValueDelim, 2)
+        }
+        withResource(keysValuesTable) { keysValuesTable =>
 
           def toMapFromValues(values: ColumnVector): GpuColumnVector = {
             // This code is safe, because the `keysValuesTable` always has at least one column
