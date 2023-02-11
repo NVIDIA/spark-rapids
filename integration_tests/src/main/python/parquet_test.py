@@ -516,6 +516,7 @@ def test_parquet_read_buffer_allocation_empty_blocks(spark_tmp_path, v1_enabled_
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/7733")
 def test_parquet_read_ignore_missing(spark_tmp_path, v1_enabled_list, reader_confs):
     data_path = spark_tmp_path + '/PARQUET_DATA/'
     data_path_tmp = spark_tmp_path + '/PARQUET_DATA_TMP/'
