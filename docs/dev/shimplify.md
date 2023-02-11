@@ -104,20 +104,107 @@ After that you can execute conversion in one or more iterations depending on spe
 mvn generate-sources antrun:run@shimplify-shim-sources -Dshimplify=true [-D...]
 ```
 
-With `-Dshimplify=true`, shimplify is put on the write call path to generate and inject spark-rapids-shim-json-lines comments to all shim source files. The files are not yet moved to their owner shim directory, and so it is easy to verify with `git diff` the comments being injected. If you see
-any issue you can fix its cause and re-execute the command with by adding
-`-Dshimplify.overwrite=true`. However, it is usually easier to just have git restore the previous state:
+With `-Dshimplify=true`, shimplify is put on the write call path to generate and inject
+spark-rapids-shim-json-lines comments to all shim source files. The files are not yet moved to their
+owner shim directory, and so it is easy to verify with `git diff` the comments being injected. If
+you see any issue you can fix its cause and re-execute the command with by adding
+`-Dshimplify.overwrite=true`. However, it is usually easier to just have git restore the
+previous state:
 
 ```bash
 git restore sql-plugin tests
 ```
 
+Once the shim comments looks good (as expected, it was tested), you can repeat it and now actually
+move the files to designated locations by invoking
+
+```bash
+mvn generate-sources antrun:run@shimplify=shim-sources -Dshimplify=true -Dshimplify.move=true
+```
+
+Now you can run a package build with the simplified directory structure and run a few integration tests preferably in the test standalone mode with the RAPIDS Shuffle Manager on for increased coverage:
+
+```bash
+mvn clean package -DskipTests -Dbuildver=331
+SPARK_HOME=~/dist/spark-3.3.1-bin-hadoop3 \
+    NUM_LOCAL_EXECS=2 \
+    PYSP_TEST_spark_rapids_shuffle_mode=MULTITHREADED \
+    PYSP_TEST_spark_rapids_shuffle_multiThreaded_writer_threads=2 \
+    PYSP_TEST_spark_rapids_shuffle_multiThreaded_reader_threads=2 \
+    PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.spark331.RapidsShuffleManager \
+    PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0 \
+    PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=0.1 \
+    PYSP_TEST_spark_rapids_memory_gpu_allocFraction=0.1 \
+    ./integration_tests/run_pyspark_from_build.sh -k test_hash_grpby_sum
+```
+
+If smoke testing does not reveal any issues proceed to committing the change. If there are issues
+you can undo with
+
+```bash
+git restore --staged sql-plugin tests
+git restore sql-plugin tests
+```
+
+and by reviewing and removing the new directories with
+
+```bash
+git clean -f -d --dry-run
+```
+
+### Partial Conversion
+
+It is not expected to be really necessary but it is possible to convert a subset of the shims
+
+* Either by adding -Dshimplify.shims=buildver1,buildver2,... to the commands above
+* Or by specifying a list of directories you would like to delete to have a simpler directory
+-Dshimplify.dirs=311until340-non330db,320until330-noncdh
+
+The latter is just a minor twist on the former. Instead of having an explicit list of shims, it
+first computes the list of all `buildver` values using provided directories. After this *all* the
+files for the shims, not just under specified directories are converted.
+
+In both cases, the conversion does not leave the rest of the shims totally unaffected when
+there are common files with a specified shim. However, it guarantees to leave the previous dedicated
+files under `src/(main|test)/${buildver}` in place for shims outside the list. This is useful when
+developers of a certain shim would like to continue working on it without adapting the new method.
+However, for the simplicity of future refactoring the full transition is preferred.
 
 ## Adding a new Shim
 
+Shimplify can clone an existing shim based as a basis of the new shim. For example when adding
+support for a new [maintenance][5] version of Spark, say 3.2.4, it's expected to be similar to 3.2.3
+
+If just 3.2.3 or all shims after the full transition have already been converted you can execute
+
+```bash
+mvn generate-sources antrun:run@shimplify=shim-sources -Dshimplify=true \
+    -Dshimplify.move=true -Dshimplify.overwrite=true \
+    -Dshimplify.add.shim=324 -Dshimplify.add.base=323
+```
+
+to clone 323 as 324. This will add `{"spark": "324"}` to every shared file constituting the 323
+shim. Moreover, it will create
+
+* a copy of dedicated 323 files with spark323 under spark324 shim
+directory
+* substitute spark324 for spark323 in the package name and path,
+* and modify the comment from `{"spark": "323"}` to `{"spark": "324"}`
+
+Review the new repo state, e.g., using `git grep '{"spark": "324"}'`
+Besides of having to add the `release324` profile to various pom.xml as before, this is likely to be insufficient to complete the work on 324. It is expected to work on resolving potential compilation
+failures manually.
+
 ## Deleting a Shim
+
+Every Spark build is de-supported eventually. To drop a build say 311 you can run a bulk
+search&replace in your IDE deleting all occurrences of `{"spark": "311"}` including the newline
+character an empty line. Shimplify will fail the build until all the orphaned files are removed.
+
+After adding or deleting shims you can run the integration tests above.
 
 [1]: https://github.com/NVIDIA/spark-rapids/issues/3223
 [2]: ../../build/shimplify.py
 [3]: https://github.com/NVIDIA/spark-rapids/blob/74ce729ca1306db01359e68f7f0b7cc31cd3d850/pom.xml#L494-L500
 [4]: https://jsonlines.org/
+[5]: https://spark.apache.org/versioning-policy.html
