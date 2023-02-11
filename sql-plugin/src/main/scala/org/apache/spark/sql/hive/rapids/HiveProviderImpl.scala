@@ -28,11 +28,11 @@ import org.apache.spark.sql.catalyst.catalog.{CatalogStorageFormat, HiveTableRel
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.hive.{HiveGenericUDF, HiveSimpleUDF}
-import org.apache.spark.sql.hive.execution.{HiveTableScanExec}
+import org.apache.spark.sql.hive.execution.HiveTableScanExec
+import org.apache.spark.sql.hive.rapids.GpuHiveTextFileUtils._
 import org.apache.spark.sql.hive.rapids.shims.HiveProviderCmdShims
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
-
 
 class HiveProviderImpl extends HiveProviderCmdShims {
 
@@ -137,14 +137,6 @@ class HiveProviderImpl extends HiveProviderCmdShims {
         (p, conf, parent, r) => new SparkPlanMeta[HiveTableScanExec](p, conf, parent, r) {
 
           private def flagIfUnsupportedStorageFormat(storage: CatalogStorageFormat): Unit = {
-            val textInputFormat      = "org.apache.hadoop.mapred.TextInputFormat"
-            val lazySimpleSerDe      = "org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe"
-            val serializationKey     = "serialization.format"
-            val ctrlASeparatedFormat = "1" // Implying '^A' field delimiter.
-            val lineDelimiterKey     = "line.delim"
-            val escapeDelimiterKey   = "escape.delim"
-            val newLine              = "\n"
-
             if (storage.inputFormat.getOrElse("") != textInputFormat) {
               willNotWorkOnGpu(s"unsupported input-format found: ${storage.inputFormat}, " +
                 s"only $textInputFormat is currently supported")
@@ -205,16 +197,6 @@ class HiveProviderImpl extends HiveProviderCmdShims {
             if (!conf.isHiveDelimitedTextReadEnabled) {
               willNotWorkOnGpu("reading Hive delimited text tables has been disabled, " +
                                s"to enable this, set ${RapidsConf.ENABLE_HIVE_TEXT_READ} to true")
-            }
-          }
-
-          private def hasUnsupportedType(column: AttributeReference): Boolean = {
-            column.dataType match {
-              case ArrayType(_,_) => true
-              case StructType(_)  => true
-              case MapType(_,_,_) => true
-              case BinaryType     => true
-              case _              => false
             }
           }
 

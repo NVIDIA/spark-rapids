@@ -1970,7 +1970,11 @@ class MultiFileCloudParquetPartitionReader(
       val result = input(iterLoc)
       result match {
         case emptyHMData: HostMemoryEmptyMetaData =>
-          if (metaForEmpty == null) {
+          if (metaForEmpty == null || emptyHMData.numRows > 0) {
+            // we might have multiple EmptyMetaData results. If some are due to ignoring
+            // missing files and others are row counts, we want to make sure we
+            // take the metadata information from the ones with row counts because
+            // the ones from ignoring missing files has less information with it.
             metaForEmpty = emptyHMData
           }
           val totalNumRows = result.memBuffersAndSizes.map(_.numRows).sum
@@ -2218,8 +2222,8 @@ class MultiFileCloudParquetPartitionReader(
     case meta: HostMemoryEmptyMetaData =>
       // Not reading any data, but add in partition data if needed
       val rows = meta.numRows.toInt
-      val origBatch = if (rows == 0) {
-        new ColumnarBatch(Array.empty, 0)
+      val origBatch = if (meta.readSchema.isEmpty) {
+        new ColumnarBatch(Array.empty, rows)
       } else {
         // Someone is going to process this data, even if it is just a row count
         GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))

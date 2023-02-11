@@ -371,7 +371,7 @@ abstract class BaseHashJoinIterator(
   }
 
   private def estimatedNumBatches(cb: ColumnarBatch): Int = joinType match {
-    case _: InnerLike | LeftOuter | RightOuter =>
+    case _: InnerLike | LeftOuter | RightOuter | FullOuter =>
       // We want the gather map size to be around the target size. There are two gather maps
       // that are made up of ints, so estimate how many rows per batch on the stream side
       // will produce the desired gather map size.

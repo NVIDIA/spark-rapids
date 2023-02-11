@@ -20,7 +20,8 @@ from data_gen import *
 from enum import Enum
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_before_spark_320, is_databricks_runtime
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_before_spark_320, is_spark_cdh, is_databricks_runtime, is_before_spark_340, is_spark_340_or_later
+
 import pyspark.sql.functions as f
 import pyspark.sql.utils
 import random
@@ -163,6 +164,8 @@ def test_catch_int96_overflow(spark_tmp_path, data_gen):
     assert_py4j_exception(lambda: with_gpu_session(
         lambda spark: unary_op_df(spark, data_gen).coalesce(1).write.parquet(data_path), conf=confs), "org.apache.spark.SparkException: Job aborted.")
 
+
+@pytest.mark.skipif(is_spark_340_or_later(), reason="`WriteFilesExec` is only supported in Spark 340+")
 @pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
 @pytest.mark.allow_non_gpu("DataWritingCommandExec")
 def test_int96_write_conf(spark_tmp_path, data_gen):
@@ -170,7 +173,30 @@ def test_int96_write_conf(spark_tmp_path, data_gen):
     confs = copy_and_update(writer_confs, {
         'spark.sql.parquet.outputTimestampType': 'INT96',
         'spark.rapids.sql.format.parquet.writer.int96.enabled': 'false'})
-    with_gpu_session(lambda spark: unary_op_df(spark, data_gen).coalesce(1).write.parquet(data_path), conf=confs)
+
+    assert_gpu_fallback_write(
+        lambda spark, path: unary_op_df(spark, data_gen).coalesce(1).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        ['DataWritingCommandExec'],
+        confs)
+
+@pytest.mark.skipif(is_before_spark_340(), reason="`WriteFilesExec` is only supported in Spark 340+")
+@pytest.mark.parametrize('data_gen', [TimestampGen()], ids=idfn)
+# Note: From Spark 340, WriteFilesExec is introduced.
+@pytest.mark.allow_non_gpu("DataWritingCommandExec", "WriteFilesExec")
+def test_int96_write_conf_with_write_exec(spark_tmp_path, data_gen):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    confs = copy_and_update(writer_confs, {
+        'spark.sql.parquet.outputTimestampType': 'INT96',
+        'spark.rapids.sql.format.parquet.writer.int96.enabled': 'false'})
+
+    assert_gpu_fallback_write(
+        lambda spark, path: unary_op_df(spark, data_gen).coalesce(1).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        ['DataWritingCommandExec', 'WriteFilesExec'],
+        confs)
 
 def test_all_null_int96(spark_tmp_path):
     class AllNullTimestampGen(TimestampGen):
@@ -573,8 +599,8 @@ def test_write_empty_data_single_writer(spark_tmp_path):
 PartitionWriteMode = Enum('PartitionWriteMode', ['Static', 'Dynamic'])
 
 
-@pytest.mark.skipif(is_databricks_runtime(),
-                    reason="On Databricks, Hive partitioned SQL writes are routed through InsertIntoHiveTable; "
+@pytest.mark.skipif(is_databricks_runtime() or is_spark_cdh(),
+                    reason="On Databricks and CDH, Hive partitioned SQL writes are routed through InsertIntoHiveTable; "
                            "GpuInsertIntoHiveTable does not support Parquet writes.")
 @ignore_order(local=True)
 @pytest.mark.parametrize('mode', [PartitionWriteMode.Static, PartitionWriteMode.Dynamic])
@@ -663,3 +689,29 @@ def test_dynamic_partitioned_parquet_write(spark_tmp_table_factory, spark_tmp_pa
         base_output_path,
         conf={}
     )
+
+
+@ignore_order
+@pytest.mark.skipif(is_before_spark_340(), reason="`spark.sql.optimizer.plannedWrite.enabled` is only supported in Spark 340+")
+# empty string will not set the `planned_write_enabled` option
+@pytest.mark.parametrize('planned_write_enabled', ["", "true", "false"])
+# df to be written has 25 partitions
+#   0 will not set the concurrent writers option
+#   100 > 25 will always use concurrent writer without fallback
+#   20 <25 will fall back to single writer from concurrent writer
+@pytest.mark.parametrize('max_concurrent_writers', [0, 100, 20])
+def test_write_with_planned_write_enabled(spark_tmp_path, planned_write_enabled, max_concurrent_writers):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    conf = {}
+    if planned_write_enabled != "":
+        conf = copy_and_update(conf, {"spark.sql.optimizer.plannedWrite.enabled": planned_write_enabled})
+    if max_concurrent_writers != 0:
+        conf = copy_and_update(conf, {"spark.sql.maxConcurrentOutputFileWriters": max_concurrent_writers})
+
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: get_25_partitions_df(spark)  # df has 25 partitions for (c1, c2)
+            .repartition(2)
+            .write.mode("overwrite").partitionBy('c1', 'c2').parquet(path),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        conf)

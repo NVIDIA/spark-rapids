@@ -150,8 +150,9 @@ class GpuPartitioningSuite extends FunSuite with Arm {
     TestUtils.withGpuSparkSession(conf) { _ =>
       GpuShuffleEnv.init(new RapidsConf(conf), new RapidsDiskBlockManager(conf))
       val spillPriority = 7L
-      val catalog = new RapidsBufferCatalog
-      withResource(new RapidsDeviceMemoryStore(catalog)) { deviceStore =>
+
+      withResource(new RapidsDeviceMemoryStore) { store =>
+        val catalog = new RapidsBufferCatalog(store)
         val partitionIndices = Array(0, 2, 2)
         val gp = new GpuPartitioning {
           override val numPartitions: Int = partitionIndices.length
@@ -195,7 +196,7 @@ class GpuPartitioningSuite extends FunSuite with Arm {
               if (GpuCompressedColumnVector.isBatchCompressed(partBatch)) {
                 val gccv = columns.head.asInstanceOf[GpuCompressedColumnVector]
                 val devBuffer = gccv.getTableBuffer
-                val handle = deviceStore.addBuffer(devBuffer, gccv.getTableMeta, spillPriority)
+                val handle = catalog.addBuffer(devBuffer, gccv.getTableMeta, spillPriority)
                 withResource(buildSubBatch(batch, startRow, endRow)) { expectedBatch =>
                   withResource(catalog.acquireBuffer(handle)) { buffer =>
                     withResource(buffer.getColumnarBatch(sparkTypes)) { batch =>
