@@ -22,7 +22,7 @@ import com.nvidia.spark.rapids.{GpuBatchScanExecMetrics, ScanWithMetrics}
 import org.apache.spark.SparkException
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, DynamicPruningExpression, Expression, Literal}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, DynamicPruningExpression, Expression, Literal, SortOrder}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.physical.{KeyGroupedPartitioning, SinglePartition}
 import org.apache.spark.sql.catalyst.util.{truncatedString, InternalRowSet}
@@ -34,7 +34,8 @@ case class GpuBatchScanExec(
     output: Seq[AttributeReference],
     @transient scan: Scan,
     runtimeFilters: Seq[Expression] = Seq.empty,
-    keyGroupedPartitioning: Option[Seq[Expression]] = None)
+    keyGroupedPartitioning: Option[Seq[Expression]] = None,
+    ordering: Option[Seq[SortOrder]] = None)
     extends DataSourceV2ScanExecBase with GpuBatchScanExecMetrics {
   @transient lazy val batch: Batch = scan.toBatch
 
