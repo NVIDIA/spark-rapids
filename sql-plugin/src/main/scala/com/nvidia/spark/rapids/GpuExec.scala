@@ -109,12 +109,14 @@ object GpuMetric extends Logging {
   }
 
   def unwrap(input: Map[String, GpuMetric]): Map[String, SQLMetric] = input.collect {
-    // remove the metrics that are not registered (NoopMetric)
-    case (k, w: WrappedGpuMetric) => (k, w.sqlMetric)
+    // remove the metrics that are not registered
+    case (k, w) if w != NoopMetric => (k, unwrap(w))
   }
 
+  def wrap(input: SQLMetric): GpuMetric = WrappedGpuMetric(input)
+
   def wrap(input: Map[String, SQLMetric]): Map[String, GpuMetric] = input.map {
-    case (k, v) => (k, WrappedGpuMetric(v))
+    case (k, v) => (k, wrap(v))
   }
 
   object DEBUG_LEVEL extends MetricsLevel(0)
