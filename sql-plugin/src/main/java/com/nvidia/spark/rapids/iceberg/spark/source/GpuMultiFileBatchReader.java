@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import com.nvidia.spark.rapids.iceberg.parquet.GpuParquet;
 import com.nvidia.spark.rapids.iceberg.parquet.GpuParquetReader;
 import com.nvidia.spark.rapids.iceberg.parquet.ParquetSchemaUtil;
 import com.nvidia.spark.rapids.iceberg.parquet.TypeWithSchemaVisitor;
+import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.iceberg.*;
@@ -72,6 +73,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
   private final FileFormat fileFormat;
   private final int numThreads;
   private final int maxNumFileProcessed;
+  private final boolean queryUsesInputFile;
 
   private NameMapping nameMapping = null;
   private boolean needNext = true;
@@ -85,7 +87,8 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
       boolean useChunkedReader,
       String parquetDebugDumpPrefix, int numThreads, int maxNumFileProcessed,
       boolean useMultiThread, FileFormat fileFormat,
-      scala.collection.immutable.Map<String, GpuMetric> metrics) {
+      scala.collection.immutable.Map<String, GpuMetric> metrics,
+      boolean queryUsesInputFile) {
     super(table, task);
     this.expectedSchema = expectedSchema;
     this.caseSensitive = caseSensitive;
@@ -100,6 +103,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
     this.metrics = metrics;
     this.numThreads = numThreads;
     this.maxNumFileProcessed = maxNumFileProcessed;
+    this.queryUsesInputFile = queryUsesInputFile;
     String nameMapping = table.properties().get(TableProperties.DEFAULT_NAME_MAPPING);
     if (nameMapping != null) {
       this.nameMapping = NameMappingParser.fromJson(nameMapping);
@@ -242,7 +246,7 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
       final StructType emptyPartSchema = new StructType();
       final InternalRow emptyPartValue = InternalRow.empty();
       PartitionedFile[] pFiles = files.values().stream()
-          .map(fst -> PartitionedFileUtils.newPartitionedFile(emptyPartValue,
+          .map(fst -> PartitionedFileUtilsShim.newPartitionedFile(emptyPartValue,
               fst.file().path().toString(), fst.start(), fst.length()))
           .toArray(PartitionedFile[]::new);
       rapidsReader = createRapidsReader(pFiles, emptyPartSchema);
@@ -333,14 +337,18 @@ class GpuMultiFileBatchReader extends BaseDataReader<ColumnarBatch> {
           false, // ignoreCorruptFiles
           false, // useFieldId
           scala.collection.immutable.Map$.MODULE$.empty(), // alluxioPathReplacementMap
-          false // alluxioReplacementTaskTime
+          false, // alluxioReplacementTaskTime
+          -1, // combineThresholdsize
+          -1, // combineWaitTime
+          queryUsesInputFile,
+          true // keepReadsInOrder
       );
     }
 
     private ParquetFileInfoWithBlockMeta filterParquetBlocks(PartitionedFile file) {
       FileScanTask fst = files.get(file.filePath());
       FilteredParquetFileInfo filteredInfo = filterParquetBlocks(fst);
-      constsSchemaMap.put(file.filePath(),
+      constsSchemaMap.put(file.filePath().toString(),
           Tuple2.apply(filteredInfo.idToConstant(), filteredInfo.expectedSchema()));
       return filteredInfo.parquetBlockMeta();
     }

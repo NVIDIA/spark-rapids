@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids._
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.sql.execution.datasources.DataSourceUtils
@@ -25,8 +24,7 @@ import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 object SparkShimImpl extends Spark320PlusShims
     with Spark320PlusNonDBShims
     with Spark31Xuntil33XShims
-    with Spark320until340Shims {
-  override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
+    with AnsiCastRuleShims {
 
   override def getParquetFilters(
       schema: MessageType,

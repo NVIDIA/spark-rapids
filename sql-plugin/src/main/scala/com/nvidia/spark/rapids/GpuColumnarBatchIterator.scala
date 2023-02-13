@@ -17,6 +17,8 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.TaskContext
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -74,6 +76,90 @@ class SingleGpuColumnarBatchIterator(private var batch: ColumnarBatch)
     if (batch != null) {
       batch.close()
       batch = null
+    }
+  }
+}
+
+/**
+ * An iterator that appends partition columns to each batch in the input iterator.
+ *
+ * This iterator will correctly handle multiple partition values for each partition column
+ * for a chunked read.
+ *
+ * @param inputIter the input iterator of GPU columnar batch
+ * @param partValues partition values collected from all the batches in the input iterator
+ * @param partRowNums row numbers collected from all the batches in the input iterator, it
+ *                    should have the same size with "partValues".
+ * @param partSchema the partition schema
+ */
+class GpuColumnarBatchWithPartitionValuesIterator(
+    inputIter: GpuColumnarBatchIterator,
+    partValues: Array[InternalRow],
+    partRowNums: Array[Long],
+    partSchema: StructType) extends Iterator[ColumnarBatch] with Arm {
+  assert(partValues.length == partRowNums.length)
+
+  private var leftValues: Array[InternalRow] = partValues
+  private var leftRowNums: Array[Long] = partRowNums
+
+  override def hasNext: Boolean = inputIter.hasNext
+
+  override def next(): ColumnarBatch = {
+    if (!hasNext) throw new NoSuchElementException()
+    val hasPartitionCols = partSchema.nonEmpty
+    val batch = inputIter.next()
+    if (hasPartitionCols) {
+      val (readPartValues, readPartRows) = closeOnExcept(batch) { _ =>
+        computeValuesAndRowNumsForBatch(batch.numRows())
+      }
+      MultiFileReaderUtils.addMultiplePartitionValuesAndClose(batch, readPartValues,
+        readPartRows, partSchema)
+    } else {
+      batch
+    }
+  }
+
+  private[this] def computeValuesAndRowNumsForBatch(batchRowNum: Int):
+      (Array[InternalRow], Array[Long]) = {
+    val leftTotalRowNum = leftRowNums.sum
+    if (leftTotalRowNum == batchRowNum) {
+      // case a) All is read
+      (leftValues, leftRowNums)
+    } else if (leftTotalRowNum > batchRowNum) {
+      // case b) Partial is read
+      var consumedRowNum = 0L
+      var pos = 0
+      // 1: Locate the position for the current read
+      while (consumedRowNum < batchRowNum) {
+        // Not test "pos < leftRowNums.length" here because this is ensured
+        // by "leftTotalRowNum > batchRowNum"
+        consumedRowNum += leftRowNums(pos)
+        pos += 1
+      }
+      // 2: Split the arrays of values and row numbers for the current read
+      val (readValues, remainValues) = leftValues.splitAt(pos)
+      val (readRowNums, remainRowNums) = leftRowNums.splitAt(pos)
+      if (consumedRowNum == batchRowNum) {
+        // Good luck! Just at the edge of a partition
+        leftValues = remainValues
+        leftRowNums = remainRowNums
+      } else { // consumedRowNum > batchRowNum, and pos > 0
+        // A worse case, inside a partition, need to correct the splits.
+        // e.g.
+        //    Row numbers: [2, 3, 2]
+        //    Batch row number: 4,
+        // The original split result is:  [2, 3] and [2]
+        // And the corrected output is: [2, 2] and [1, 2]
+        val remainRowNumForSplitPart = consumedRowNum - batchRowNum
+        leftRowNums = remainRowNumForSplitPart +: remainRowNums
+        readRowNums(pos - 1) = readRowNums(pos - 1) - remainRowNumForSplitPart
+        leftValues = readValues(pos - 1) +: remainValues
+      }
+      (readValues, readRowNums)
+    } else { // leftTotalRowNum < batchRowNum
+      // This should not happen, so throw an exception
+      throw new IllegalStateException(s"Partition row number <$leftTotalRowNum> " +
+        s"does not match that of the read batch <$batchRowNum>.")
     }
   }
 }

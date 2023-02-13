@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.
+# Copyright (c) 2022-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ import json
 import os.path
 import pyspark.sql.functions as f
 import pytest
+import re
 import sys
 
 from asserts import *
@@ -44,12 +45,30 @@ delta_writes_enabled_conf = {"spark.rapids.sql.format.delta.write.enabled": "tru
 def fixup_path(d):
     """Modify the 'path' value to remove random IDs in the pathname"""
     parts = d["path"].split("-")
-    d["path"] = "-".join(parts[0:2]) + ".".join(parts[-1].split(".")[-2:])
+    d["path"] = "-".join(parts[0:1]) + ".".join(parts[-1].split(".")[-2:])
 
 def del_keys(key_list, c_val, g_val):
     for key in key_list:
         c_val.pop(key, None)
         g_val.pop(key, None)
+
+def fixup_operation_metrics(opm):
+    """Update the specified operationMetrics node to facilitate log comparisons"""
+    for k in "executionTimeMs", "numOutputBytes", "rewriteTimeMs", "scanTimeMs":
+        opm.pop(k, None)
+
+TMP_TABLE_PATTERN=re.compile("tmp_table_\w+")
+TMP_TABLE_PATH_PATTERN=re.compile("delta.`[^`]*`")
+REF_ID_PATTERN=re.compile("#[0-9]+")
+
+def fixup_operation_parameters(opp):
+    """Update the specified operationParameters node to facilitate log comparisons"""
+    for key in ("predicate", "matchedPredicates", "notMatchedPredicates"):
+        pred = opp.get(key)
+        if pred:
+            subbed = TMP_TABLE_PATTERN.sub("tmp_table", pred)
+            subbed = TMP_TABLE_PATH_PATTERN.sub("tmp_table", subbed)
+            opp[key] = REF_ID_PATTERN.sub("#refid", subbed)
 
 def assert_delta_log_json_equivalent(filename, c_json, g_json):
     assert c_json.keys() == g_json.keys(), "Delta log {} has mismatched keys:\nCPU: {}\nGPU: {}".format(filename, c_json, g_json)
@@ -58,7 +77,7 @@ def assert_delta_log_json_equivalent(filename, c_json, g_json):
         # Strip out the values that are expected to be different
         c_tags = c_val.get("tags", {})
         g_tags = g_val.get("tags", {})
-        del_keys(["INSERTION_TIME"], c_tags, g_tags)
+        del_keys(["INSERTION_TIME", "MAX_INSERTION_TIME", "MIN_INSERTION_TIME"], c_tags, g_tags)
         if key == "metaData":
             assert c_val.keys() == g_val.keys(), "Delta log {} 'metaData' keys mismatch:\nCPU: {}\nGPU: {}".format(filename, c_val, g_val)
             del_keys(("createdTime", "id"), c_val, g_val)
@@ -67,17 +86,43 @@ def assert_delta_log_json_equivalent(filename, c_json, g_json):
             del_keys(("modificationTime", "size"), c_val, g_val)
             fixup_path(c_val)
             fixup_path(g_val)
+        elif key == "cdc":
+            assert c_val.keys() == g_val.keys(), "Delta log {} 'cdc' keys mismatch:\nCPU: {}\nGPU: {}".format(filename, c_val, g_val)
+            del_keys(("size",), c_val, g_val)
+            fixup_path(c_val)
+            fixup_path(g_val)
         elif key == "commitInfo":
             assert c_val.keys() == g_val.keys(), "Delta log {} 'commitInfo' keys mismatch:\nCPU: {}\nGPU: {}".format(filename, c_val, g_val)
             del_keys(("timestamp", "txnId"), c_val, g_val)
-            c_val["operationMetrics"].pop("numOutputBytes", None)
-            g_val["operationMetrics"].pop("numOutputBytes", None)
+            for v in c_val, g_val:
+                fixup_operation_metrics(v.get("operationMetrics", {}))
+                fixup_operation_parameters(v.get("operationParameters", {}))
         elif key == "remove":
             assert c_val.keys() == g_val.keys(), "Delta log {} 'remove' keys mismatch:\nCPU: {}\nGPU: {}".format(filename, c_val, g_val)
             del_keys(("deletionTimestamp", "size"), c_val, g_val)
             fixup_path(c_val)
             fixup_path(g_val)
         assert c_val == g_val, "Delta log {} is different at key '{}':\nCPU: {}\nGPU: {}".format(filename, key, c_val, g_val)
+
+def decode_jsons(json_data):
+    """Decode the JSON records in a string"""
+    jsons = []
+    idx = 0
+    decoder = json.JSONDecoder()
+    while idx < len(json_data):
+        js, idx = decoder.raw_decode(json_data, idx=idx)
+        jsons.append(js)
+        # Skip whitespace between records
+        while idx < len(json_data) and json_data[idx].isspace():
+            idx += 1
+    # reorder to produce a consistent output for comparison
+    def json_to_sort_key(j):
+        keys = sorted(j.keys())
+        stats = sorted([ v.get("stats", "") for v in j.values() ])
+        paths = sorted([ v.get("path", "") for v in j.values() ])
+        return ','.join(keys + stats + paths)
+    jsons.sort(key=json_to_sort_key)
+    return jsons
 
 def assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path):
     cpu_log_data = spark.sparkContext.wholeTextFiles(data_path + "/CPU/_delta_log/*").collect()
@@ -88,12 +133,10 @@ def assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path):
     for file, cpu_json_data in cpu_logs_data:
         gpu_json_data = gpu_logs_dict.get(file)
         assert gpu_json_data, "CPU Delta log file {} is missing from GPU Delta logs".format(file)
-        cpu_json_lines = cpu_json_data.splitlines()
-        gpu_json_lines = gpu_json_data.splitlines()
-        assert len(cpu_json_lines) == len(gpu_json_lines), "Different line counts in {}:\nCPU: {}\nGPU: {}".format(file, cpu_json_data, gpu_json_data)
-        for c_line, g_line in zip(cpu_json_lines, gpu_json_lines):
-            cpu_json = json.loads(c_line)
-            gpu_json = json.loads(g_line)
+        cpu_jsons = decode_jsons(cpu_json_data)
+        gpu_jsons = decode_jsons(gpu_json_data)
+        assert len(cpu_jsons) == len(gpu_jsons), "Different line counts in {}:\nCPU: {}\nGPU: {}".format(file, cpu_json_data, gpu_json_data)
+        for cpu_json, gpu_json in zip(cpu_jsons, gpu_jsons):
             assert_delta_log_json_equivalent(file, cpu_json, gpu_json)
 
 @allow_non_gpu("ExecutedCommandExec", *delta_meta_allow)
@@ -102,11 +145,8 @@ def assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path):
 @pytest.mark.parametrize("disable_conf",
                          [{"spark.rapids.sql.format.delta.write.enabled": "false"},
                           {"spark.rapids.sql.format.parquet.enabled": "false"},
-                          {"spark.rapids.sql.format.parquet.write.enabled": "false"},
-                          {}  # verify disabled by default
-                          ], ids=idfn)
+                          {"spark.rapids.sql.format.parquet.write.enabled": "false"}], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/7329')
 def test_delta_write_disabled_fallback(spark_tmp_path, disable_conf):
     data_path = spark_tmp_path + "/DELTA_DATA"
     assert_gpu_fallback_write(
@@ -278,7 +318,6 @@ def test_delta_write_round_trip_cdf_table_prop(spark_tmp_path):
 @ignore_order
 @pytest.mark.parametrize("ts_write", ["INT96", "TIMESTAMP_MICROS", "TIMESTAMP_MILLIS"], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/7329')
 def test_delta_write_legacy_timestamp_fallback(spark_tmp_path, ts_write):
     gen = TimestampGen(start=datetime(1590, 1, 1, tzinfo=timezone.utc))
     data_path = spark_tmp_path + "/DELTA_DATA"
@@ -301,7 +340,6 @@ def test_delta_write_legacy_timestamp_fallback(spark_tmp_path, ts_write):
                                            {"parquet.encryption.column.keys": "k2:a"},
                                            {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/7329')
 def test_delta_write_encryption_option_fallback(spark_tmp_path, write_options):
     def write_func(spark, path):
         writer = unary_op_df(spark, int_gen).coalesce(1).write.format("delta")
@@ -323,7 +361,6 @@ def test_delta_write_encryption_option_fallback(spark_tmp_path, write_options):
                                            {"parquet.encryption.column.keys": "k2:a"},
                                            {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/7329')
 def test_delta_write_encryption_runtimeconfig_fallback(spark_tmp_path, write_options):
     data_path = spark_tmp_path + "/DELTA_DATA"
     assert_gpu_fallback_write(
@@ -340,7 +377,6 @@ def test_delta_write_encryption_runtimeconfig_fallback(spark_tmp_path, write_opt
                                            {"parquet.encryption.column.keys": "k2:a"},
                                            {"parquet.encryption.footer.key": "k1", "parquet.encryption.column.keys": "k2:a"}])
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/7329')
 def test_delta_write_encryption_hadoopconfig_fallback(spark_tmp_path, write_options):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_hadoop_confs(spark):
@@ -365,7 +401,6 @@ def test_delta_write_encryption_hadoopconfig_fallback(spark_tmp_path, write_opti
 @ignore_order
 @pytest.mark.parametrize('codec', ['gzip'])
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/7329')
 def test_delta_write_compression_fallback(spark_tmp_path, codec):
     data_path = spark_tmp_path + "/DELTA_DATA"
     confs=copy_and_update(delta_writes_enabled_conf, {"spark.sql.parquet.compression.codec": codec})
@@ -380,7 +415,6 @@ def test_delta_write_compression_fallback(spark_tmp_path, codec):
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/7329')
 def test_delta_write_legacy_format_fallback(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     confs=copy_and_update(delta_writes_enabled_conf, {"spark.sql.parquet.writeLegacyFormat": "true"})
@@ -467,7 +501,6 @@ def test_delta_write_constraint_check(spark_tmp_path):
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/7329')
 def test_delta_write_constraint_check_fallback(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     # create table with check constraint
@@ -608,7 +641,6 @@ def test_delta_write_multiple_identity_columns(spark_tmp_path):
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.skipif(is_databricks_runtime() and is_before_spark_330(),
                     reason="Databricks 10.4 does not properly handle options passed during DataFrame API write")
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/7329')
 def test_delta_write_auto_optimize_write_opts_fallback(confkey, spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     assert_gpu_fallback_write(
@@ -627,7 +659,6 @@ def test_delta_write_auto_optimize_write_opts_fallback(confkey, spark_tmp_path):
     "delta.autoOptimize.autoCompact" ], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.skipif(not is_databricks_runtime(), reason="Auto optimize only supported on Databricks")
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/7329')
 def test_delta_write_auto_optimize_table_props_fallback(confkey, spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     def setup_tables(spark):
@@ -649,7 +680,6 @@ def test_delta_write_auto_optimize_table_props_fallback(confkey, spark_tmp_path)
     "spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite",
     "spark.databricks.delta.properties.defaults.autoOptimize.autoCompact" ], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-@pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/7329')
 def test_delta_write_auto_optimize_sql_conf_fallback(confkey, spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     confs=copy_and_update(delta_writes_enabled_conf, {confkey: "true"})
@@ -659,3 +689,20 @@ def test_delta_write_auto_optimize_sql_conf_fallback(confkey, spark_tmp_path):
         data_path,
         "ExecutedCommandExec",
         conf=confs)
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+def test_delta_write_aqe_join(spark_tmp_path):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    confs=copy_and_update(delta_writes_enabled_conf, {"spark.sql.adaptive.enabled": "true"})
+    def do_join(spark, path):
+        df = unary_op_df(spark, int_gen)
+        df.join(df, ["a"], "inner").write.format("delta").save(path)
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        do_join,
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=confs)
+    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))

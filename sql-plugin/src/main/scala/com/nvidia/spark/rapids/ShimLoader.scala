@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import java.net.URL
 
 import com.nvidia.spark.GpuCachedBatchSerializer
-import com.nvidia.spark.rapids.delta.DeltaProvider
+import com.nvidia.spark.rapids.delta.DeltaProbe
 import com.nvidia.spark.rapids.iceberg.IcebergProvider
 import org.apache.commons.lang3.reflect.MethodUtils
 import scala.annotation.tailrec
@@ -30,6 +30,7 @@ import org.apache.spark.{SPARK_BRANCH, SPARK_BUILD_DATE, SPARK_BUILD_USER, SPARK
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin}
 import org.apache.spark.api.resource.ResourceDiscoveryPlugin
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.Strategy
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.{ColumnarRule, SparkPlan}
@@ -57,13 +58,13 @@ import org.apache.spark.util.MutableURLClassLoader
 
     E.g., Spark 3.2.0 Shim will use
 
-    jar:file:/home/spark/rapids-4-spark_2.12-22.12.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-22.12.0.jar!/spark320/
+    jar:file:/home/spark/rapids-4-spark_2.12-23.02.0.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-23.02.0.jar!/spark320/
 
     Spark 3.1.1 will use
 
-    jar:file:/home/spark/rapids-4-spark_2.12-22.12.0.jar!/spark3xx-common/
-    jar:file:/home/spark/rapids-4-spark_2.12-22.12.0.jar!/spark311/
+    jar:file:/home/spark/rapids-4-spark_2.12-23.02.0.jar!/spark3xx-common/
+    jar:file:/home/spark/rapids-4-spark_2.12-23.02.0.jar!/spark311/
 
     Using these Jar URL's allows referencing different bytecode produced from identical sources
     by incompatible Scala / Spark dependencies.
@@ -385,6 +386,10 @@ object ShimLoader extends Logging {
     newInstanceOf("com.nvidia.spark.udf.LogicalPlanRules")
   }
 
+  def newStrategyRules(): Strategy = {
+    newInstanceOf("com.nvidia.spark.rapids.StrategyRules")
+  }
+
   def newInternalExclusiveModeGpuDiscoveryPlugin(): ResourceDiscoveryPlugin = {
     newInstanceOf("com.nvidia.spark.rapids.InternalExclusiveModeGpuDiscoveryPlugin")
   }
@@ -408,8 +413,8 @@ object ShimLoader extends Logging {
   def newAvroProvider(): AvroProvider = ShimLoader.newInstanceOf[AvroProvider](
     "org.apache.spark.sql.rapids.AvroProviderImpl")
 
-  def newDeltaProvider(): DeltaProvider = ShimLoader.newInstanceOf[DeltaProvider](
-    "com.nvidia.spark.rapids.delta.shims.DeltaProviderImpl")
+  def newDeltaProbe(): DeltaProbe = ShimLoader.newInstanceOf[DeltaProbe](
+    "com.nvidia.spark.rapids.delta.DeltaProbeImpl")
 
   def newIcebergProvider(): IcebergProvider = ShimLoader.newInstanceOf[IcebergProvider](
     "com.nvidia.spark.rapids.iceberg.IcebergProviderImpl")

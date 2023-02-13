@@ -11,9 +11,9 @@ At the end of this guide, the reader will be able to run a sample Apache Spark a
 on NVIDIA GPUs on Databricks.
 
 ## Prerequisites
-    * Apache Spark 3.x running in Databricks Runtime 9.1 ML or 10.4 ML with GPU
-    * AWS: 9.1 LTS ML (GPU, Scala 2.12, Spark 3.1.2) or 10.4 LTS ML (GPU, Scala 2.12, Spark 3.2.1)
-    * Azure: 9.1 LTS ML (GPU, Scala 2.12, Spark 3.1.2) or 10.4 LTS ML (GPU, Scala 2.12, Spark 3.2.1)
+    * Apache Spark 3.x running in Databricks Runtime 9.1 ML, 10.4 ML or 11.3 ML with GPU
+    * AWS: 9.1 LTS ML (GPU, Scala 2.12, Spark 3.1.2), 10.4 LTS ML (GPU, Scala 2.12, Spark 3.2.1) or 11.3 LTS ML (GPU, Scala 2.12, Spark 3.3.0)
+    * Azure: 9.1 LTS ML (GPU, Scala 2.12, Spark 3.1.2) or 10.4 LTS ML (GPU, Scala 2.12, Spark 3.2.1) or 11.3 LTS ML (GPU, Scala 2.12, Spark 3.3.0)
 
 Databricks may do [maintenance
 releases](https://docs.databricks.com/release-notes/runtime/maintenance-updates.html) for their
@@ -50,23 +50,26 @@ The number of GPUs per node dictates the number of Spark executors that can run 
 4. Databricks makes changes to the runtime without notification.
 
     Databricks makes changes to existing runtimes, applying patches, without notification.
-	[Issue-3098](https://github.com/NVIDIA/spark-rapids/issues/3098) is one example of this.  We run
-	regular integration tests on the Databricks environment to catch these issues and fix them once
-	detected.
+    [Issue-3098](https://github.com/NVIDIA/spark-rapids/issues/3098) is one example of this.  We run
+    regular integration tests on the Databricks environment to catch these issues and fix them once
+    detected.
+5. In Databricks 11.3, an incorrect result is returned for window frames defined by a range in case 
+   of DecimalTypes with precision greater than 38. There is a bug filed in Apache Spark for it 
+   [here](https://issues.apache.org/jira/browse/SPARK-41793), whereas when using the plugin the 
+   correct result will be returned.  
 	
 ## Start a Databricks Cluster
-Create a Databricks cluster by going to Clusters, then clicking `+ Create Cluster`.  Ensure the
+Create a Databricks cluster by going to "Compute", then clicking `+ Create compute`.  Ensure the
 cluster meets the prerequisites above by configuring it as follows:
 1. Select the Databricks Runtime Version from one of the supported runtimes specified in the
    Prerequisites section.
-2. Under Autopilot Options, disable autoscaling.
-3. Choose the number of workers that matches the number of GPUs you want to use.
-4. Select a worker type.  On AWS, use nodes with 1 GPU each such as `p3.2xlarge` or `g4dn.xlarge`.
+2. Choose the number of workers that matches the number of GPUs you want to use.
+3. Select a worker type. On AWS, use nodes with 1 GPU each such as `p3.2xlarge` or `g4dn.xlarge`.
    p2 nodes do not meet the architecture requirements (Pascal or higher) for the Spark worker
    (although they can be used for the driver node).  For Azure, choose GPU nodes such as
-   Standard_NC6s_v3.  For GCP, choose N1 or A2 instance types with GPUs. 
-5. Select the driver type. Generally this can be set to be the same as the worker.
-6. Start the cluster.
+   Standard_NC6s_v3. For GCP, choose N1 or A2 instance types with GPUs. 
+4. Select the driver type. Generally this can be set to be the same as the worker.
+5. Start the cluster.
 
 ## Advanced Cluster Configuration
 
@@ -84,7 +87,10 @@ cluster.
     installed.  Users will need to use 21.12.0 or later on Databricks 9.1 LTS ML. 
    - [Databricks 10.4 LTS
      ML](https://docs.databricks.com/release-notes/runtime/10.4ml.html#system-environment) has CUDA 11
-     installed.  Users will need to use 22.04.0 or later on Databricks 10.4 LTS ML. 
+     installed.  Users will need to use 22.04.0 or later on Databricks 10.4 LTS ML.
+   - [Databricks 11.3 LTS
+     ML](https://docs.databricks.com/release-notes/runtime/11.3ml.html#system-environment) has CUDA 11
+     installed.  Users will need to use 23.02.0 or later on Databricks 11.3 LTS ML.
      
      In both cases use
      [generate-init-script.ipynb](../demo/Databricks/generate-init-script.ipynb) which will install
@@ -93,25 +99,25 @@ cluster.
 2. Once you are in the notebook, click the “Run All” button.
 3. Ensure that the newly created init.sh script is present in the output from cell 2 and that the
    contents of the script are correct.
-4. Go back and edit your cluster to configure it to use the init script.  To do this, click the
-   “Clusters” button on the left panel, then select your cluster.
-5. Click the “Edit” button, then navigate down to the “Advanced Options” section.  Select the “Init
+4. Go back and edit your cluster to configure it to use the init script. To do this, click the
+   “Compute” button on the left panel, then select your cluster.
+5. Click the “Edit” button, then navigate down to the “Advanced Options” section. Select the “Init
    Scripts” tab in the advanced options section, and paste the initialization script:
    `dbfs:/databricks/init_scripts/init.sh`, then click “Add”.
 
     ![Init Script](../img/Databricks/initscript.png)
 
 6. Now select the “Spark” tab, and paste the following config options into the Spark Config section.
-   Change the config values based on the workers you choose.  See Apache Spark
+   Change the config values based on the workers you choose. See Apache Spark
    [configuration](https://spark.apache.org/docs/latest/configuration.html) and RAPIDS Accelerator
    for Apache Spark [descriptions](../configs.md) for each config.
 
     The
     [`spark.task.resource.gpu.amount`](https://spark.apache.org/docs/latest/configuration.html#scheduling)
     configuration is defaulted to 1 by Databricks. That means that only 1 task can run on an
-    executor with 1 GPU, which is limiting, especially on the reads and writes from Parquet.  Set
+    executor with 1 GPU, which is limiting, especially on the reads and writes from Parquet. Set
     this to 1/(number of cores per executor) which will allow multiple tasks to run in parallel just
-    like the CPU side.  Having the value smaller is fine as well.
+    like the CPU side. Having the value smaller is fine as well.
     Note: Please remove the `spark.task.resource.gpu.amount` config for a single-node Databricks 
     cluster because Spark local mode does not support GPU scheduling.
    
@@ -153,7 +159,7 @@ for more details.
 
 ## Import the GPU Mortgage Example Notebook
 Import the example [notebook](../demo/Databricks/Mortgage-ETL-db.ipynb) from the repo into your
-workspace, then open the notebook. Please find this [instruction](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-22.12/docs/get-started/xgboost-examples/dataset/mortgage.md)
+workspace, then open the notebook. Please find this [instruction](https://github.com/NVIDIA/spark-rapids-examples/blob/main/docs/get-started/xgboost-examples/dataset/mortgage.md)
 to download the dataset.
 
 ```bash
@@ -184,7 +190,7 @@ output_path='dbfs:///FileStore/tables/mortgage_parquet_gpu/output/'
 Run the notebook by clicking “Run All”. 
 
 ## Hints
-Spark logs in Databricks are removed upon cluster shutdown.  It is possible to save logs in a cloud
+Spark logs in Databricks are removed upon cluster shutdown. It is possible to save logs in a cloud
 storage location using Databricks [cluster log
 delivery](https://docs.databricks.com/clusters/configure.html#cluster-log-delivery-1).  Enable this
 option before starting the cluster to capture the logs.

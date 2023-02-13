@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.
+# Copyright (c) 2022-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -305,11 +305,7 @@ def test_re_replace_anchors():
             'REGEXP_REPLACE(a, "\\\\ATEST$", "PROD")',
             'REGEXP_REPLACE(a, "^TEST\\\\Z", "PROD")',
             'REGEXP_REPLACE(a, "TEST\\\\Z", "PROD")',
-            'REGEXP_REPLACE(a, "TEST\\\\z", "PROD")',
-            'REGEXP_REPLACE(a, "\\\\zTEST", "PROD")',
             'REGEXP_REPLACE(a, "^TEST$", "PROD")',
-            'REGEXP_REPLACE(a, "^TEST\\\\z", "PROD")',
-            'REGEXP_REPLACE(a, "TEST\\\\z", "PROD")',
         ),
         conf=_regexp_conf)
 

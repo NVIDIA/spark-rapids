@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import java.time.ZoneId
 
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.shims.SparkShimImpl
+import com.nvidia.spark.rapids.shims.{DistributionUtil, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
@@ -257,6 +257,11 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    * Returns true iff all of the partitioning can be replaced.
    */
   def canPartsBeReplaced: Boolean = childParts.forall(_.canThisBeReplaced)
+
+  /**
+   * Return true if the resulting node in the plan will support columnar execution
+   */
+  def supportsColumnar: Boolean = canThisBeReplaced
 
   /**
    * Returns true iff all of the data writing commands can be replaced.
@@ -641,9 +646,10 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   private def fixUpExchangeOverhead(): Unit = {
     childPlans.foreach(_.fixUpExchangeOverhead())
     if (wrapped.isInstanceOf[ShuffleExchangeExec] &&
-      !childPlans.exists(_.canThisBeReplaced) &&
+        !SparkShimImpl.isExecutorBroadcastShuffle(wrapped.asInstanceOf[ShuffleExchangeExec]) &&
+        !childPlans.exists(_.supportsColumnar) &&
         (plan.conf.adaptiveExecutionEnabled ||
-        !parent.exists(_.canThisBeReplaced))) {
+        !parent.exists(_.supportsColumnar))) {
 
       willNotWorkOnGpu("Columnar exchange without columnar children is inefficient")
 
@@ -706,6 +712,13 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
 
     if (!childRunnableCmds.forall(_.canThisBeReplaced)) {
       willNotWorkOnGpu("not all commands can be replaced")
+    }
+    // All ExecMeta extend SparkMeta. We need to check if the requiredChildDistribution
+    // is recognized or not. If it's unrecognized Distribution then we fall back to CPU.
+    plan.requiredChildDistribution.foreach { d =>
+      if (!DistributionUtil.isSupported(d)) {
+        willNotWorkOnGpu(s"unsupported required distribution: $d")
+      }
     }
 
     checkExistingTags()
@@ -793,6 +806,11 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
     case None =>
       wrapped.output
   }
+
+  /**
+   * Returns whether the resulting SparkPlan supports columnar execution
+   */
+  override def supportsColumnar: Boolean = wrapped.supportsColumnar || canThisBeReplaced 
 
   /**
    * Overrides this method to implement custom conversions for specific plans.
@@ -943,6 +961,7 @@ object DataTypeMeta {
       Some(expr.dataType)
     } catch {
       case _: java.lang.UnsupportedOperationException => None
+      case _: org.apache.spark.SparkException => None
     }
     new DataTypeMeta(wrapped, overrideType)
   }
@@ -1375,6 +1394,9 @@ final class RuleNotFoundRunnableCommandMeta[INPUT <: RunnableCommand](
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]])
     extends RunnableCommandMeta[INPUT](cmd, conf, parent, new NoRuleDataFromReplacementRule) {
+
+  // Do not complain by default, as many commands are metadata-only.
+  override def suppressWillWorkOnGpuInfo: Boolean = true
 
   override def tagSelfForGpu(): Unit =
     willNotWorkOnGpu(s"GPU does not currently support the command ${cmd.getClass}")

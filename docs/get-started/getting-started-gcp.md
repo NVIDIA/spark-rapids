@@ -358,7 +358,7 @@ Jupyter link. Download the sample [Mortgage ETL on GPU Jupyter
 Notebook](../demo/GCP/Mortgage-ETL.ipynb) and upload it to Jupyter.
 
 To get example data for the sample notebook, please refer to these
-[instructions](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-22.12/docs/get-started/xgboost-examples/dataset/mortgage.md).
+[instructions](https://github.com/NVIDIA/spark-rapids-examples/blob/main/docs/get-started/xgboost-examples/dataset/mortgage.md).
 Download the desired data, decompress it, and upload the csv files to a GCS bucket.
 
 ![Dataproc Web Interfaces](../img/GCP/dataproc-service.png)
@@ -394,12 +394,12 @@ val (xgbClassificationModel, _) = benchmark("train") {
 ## Submit Spark jobs to a Dataproc Cluster Accelerated by GPUs
 Similar to spark-submit for on-prem clusters, Dataproc supports submitting Spark applications to
 Dataproc clusters.  The previous mortgage examples are also available as a [spark
-application](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.12/examples/XGBoost-Examples).
+application](https://github.com/NVIDIA/spark-rapids-examples/tree/main/examples/XGBoost-Examples).
 
 Follow these
-[instructions](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-22.12/docs/get-started/xgboost-examples/building-sample-apps/scala.md)
+[instructions](https://github.com/NVIDIA/spark-rapids-examples/blob/main/docs/get-started/xgboost-examples/building-sample-apps/scala.md)
 to Build the
-[xgboost-example](https://github.com/NVIDIA/spark-rapids-examples/blob/branch-22.12/docs/get-started/xgboost-examples)
+[xgboost-example](https://github.com/NVIDIA/spark-rapids-examples/blob/main/docs/get-started/xgboost-examples)
 jars. Upload the `sample_xgboost_apps-${VERSION}-SNAPSHOT-jar-with-dependencies.jar` to a GCS
 bucket by dragging and dropping the jar file from your local machine into the GCS web console or by running:
 ```

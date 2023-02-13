@@ -22,12 +22,12 @@ import org.apache.spark.sql.errors.{QueryCompilationErrors, QueryExecutionErrors
 
 trait RapidsErrorUtilsFor330plus {
 
-  def sqlArrayIndexNotStartAtOneError(): ArrayIndexOutOfBoundsException = {
-    new ArrayIndexOutOfBoundsException("SQL array indices start at 1")
-  }
-
   def divByZeroError(origin: Origin): ArithmeticException = {
     QueryExecutionErrors.divideByZeroError(origin.context)
+  }
+
+  def intervalDivByZeroError(origin: Origin): ArithmeticException = {
+    divByZeroError(origin)
   }
 
   def divOverflowError(origin: Origin): ArithmeticException = {

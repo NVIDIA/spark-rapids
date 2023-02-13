@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package org.apache.spark.sql.rapids.execution
 
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, IdentityBroadcastMode}
+import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
 import org.apache.spark.sql.types.{DataType, StructType}
 
 object ShimTrampolineUtil {
@@ -24,4 +26,11 @@ object ShimTrampolineUtil {
   // https://issues.apache.org/jira/browse/SPARK-36673
   def unionLikeMerge(left: DataType, right: DataType): DataType =
     StructType.merge(left, right)
+
+  def isSupportedRelation(mode: BroadcastMode): Boolean = mode match {
+    case _ : HashedRelationBroadcastMode => true
+    case IdentityBroadcastMode => true
+    case _ => false
+  }
 }
+
