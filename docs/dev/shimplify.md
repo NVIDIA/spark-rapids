@@ -191,9 +191,10 @@ directory
 * substitute spark324 for spark323 in the package name and path,
 * and modify the comment from `{"spark": "323"}` to `{"spark": "324"}`
 
-Review the new repo state, e.g., using `git grep '{"spark": "324"}'`
-Besides of having to add the `release324` profile to various pom.xml as before, this is likely to be insufficient to complete the work on 324. It is expected to work on resolving potential compilation
-failures manually.
+Review the new repo state, e.g., using `git grep '{"spark": "324"}'`.
+Besides having to add the `release324` profile to various pom.xml as before, this alone
+is likely to be insufficient to complete the work on 324. It is expected you will need to
+work on resolving potential compilation failures manually.
 
 ## Deleting a Shim
 
