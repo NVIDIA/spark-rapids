@@ -18,7 +18,7 @@
 # The initscript to set up environment for the cudf_udf tests on Databricks
 # Will be automatically pushed into the dbfs:/databricks/init_scripts once it is updated.
 
-set -x
+set -ex
 
 CUDF_VER=${CUDF_VER:-23.04}
 CUDA_VER=${CUDA_VER:-11.0}
@@ -26,7 +26,9 @@ CUDA_VER=${CUDA_VER:-11.0}
 # Need to explicitly add conda into PATH environment, to activate conda environment.
 export PATH=/databricks/conda/bin:$PATH
 # Set Python for the running instance
-PYTHON_VERSION=$(${PYSPARK_PYTHON} -c 'import sys; print("{}.{}".format(sys.version_info.major, sys.version_info.minor))')
+# PYTHON_VERSION=$(${PYSPARK_PYTHON} -c 'import sys; print("{}.{}".format(sys.version_info.major, sys.version_info.minor))')
+# TODO: revert this change after https://github.com/rapidsai/cudf/issues/12764 is resolved
+PYTHON_VERSION='3.8'
 
 base=$(conda info --base)
 # Create and activate 'cudf-udf' conda env for cudf-udf tests
