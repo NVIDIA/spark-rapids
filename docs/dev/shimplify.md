@@ -22,7 +22,7 @@ converted shims if a longer transition is desired.
 
 ## Simplified Shim Source Directory Structure
 
-In our build each supported Apache Spark build and its corresponding Shim is identified by its
+In our build each supported Apache Spark build and its corresponding shim is identified by its
 [`buildver`][3] property. Every Maven submodule requiring shimming (`sql-plugin`, `tests` as of the
 time of this writing) have a new set of special sibling directories
 `src/(main|test)/spark${buildver}`.
@@ -75,7 +75,7 @@ lists of directories for `build-helper` Maven plugin to add (one for each shim) 
 transition to shimplify, the pom will have only 4 add source statements that is independent of the
 number of supported shims.
 
-With the shimplify format in place it is easy to review all the files for a single Shim without
+With the shimplify format in place it is easy to review all the files for a single shim without
 relying on Maven:
 
 ```bash
@@ -191,9 +191,10 @@ directory
 * substitute spark324 for spark323 in the package name and path,
 * and modify the comment from `{"spark": "323"}` to `{"spark": "324"}`
 
-Review the new repo state, e.g., using `git grep '{"spark": "324"}'`
-Besides of having to add the `release324` profile to various pom.xml as before, this is likely to be insufficient to complete the work on 324. It is expected to work on resolving potential compilation
-failures manually.
+Review the new repo state, e.g., using `git grep '{"spark": "324"}'`.
+Besides having to add the `release324` profile to various pom.xml as before, this alone
+is likely to be insufficient to complete the work on 324. It is expected you will need to
+work on resolving potential compilation failures manually.
 
 ## Deleting a Shim
 
