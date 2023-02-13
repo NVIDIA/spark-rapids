@@ -22,7 +22,7 @@ converted shims if a longer transition is desired.
 
 ## Simplified Shim Source Directory Structure
 
-In our build each supported Apache Spark build and its corresponding Shim is identified by its
+In our build each supported Apache Spark build and its corresponding shim is identified by its
 [`buildver`][3] property. Every Maven submodule requiring shimming (`sql-plugin`, `tests` as of the
 time of this writing) have a new set of special sibling directories
 `src/(main|test)/spark${buildver}`.
