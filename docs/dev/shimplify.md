@@ -205,7 +205,7 @@ character an empty line. Shimplify will fail the build until all the orphaned fi
 After adding or deleting shims you can run the integration tests above.
 
 [1]: https://github.com/NVIDIA/spark-rapids/issues/3223
-[2]: ../../build/shimplify.py
+[2]: https://github.com/NVIDIA/spark-rapids/blob/main/build/shimplify.py
 [3]: https://github.com/NVIDIA/spark-rapids/blob/74ce729ca1306db01359e68f7f0b7cc31cd3d850/pom.xml#L494-L500
 [4]: https://jsonlines.org/
 [5]: https://spark.apache.org/versioning-policy.html
