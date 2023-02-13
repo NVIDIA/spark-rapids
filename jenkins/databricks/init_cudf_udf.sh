@@ -38,7 +38,8 @@ conda create -y -n cudf-udf -c conda-forge python=$PYTHON_VERSION mamba && \
 
 # Use mamba to install cudf-udf packages to speed up conda resolve time
 conda install -y -c conda-forge mamba python=$PYTHON_VERSION
-${base}/envs/cudf-udf/bin/mamba remove -y c-ares zstd libprotobuf pandas
+# Do not error out "This operation will remove conda without replacing it with another version of conda." for now
+${base}/envs/cudf-udf/bin/mamba remove -y c-ares zstd libprotobuf pandas || true
 
 REQUIRED_PACKAGES=(
   cudatoolkit=$CUDA_VER
