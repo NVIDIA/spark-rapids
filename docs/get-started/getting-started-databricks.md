@@ -53,11 +53,16 @@ The number of GPUs per node dictates the number of Spark executors that can run 
     [Issue-3098](https://github.com/NVIDIA/spark-rapids/issues/3098) is one example of this.  We run
     regular integration tests on the Databricks environment to catch these issues and fix them once
     detected.
+   
 5. In Databricks 11.3, an incorrect result is returned for window frames defined by a range in case 
    of DecimalTypes with precision greater than 38. There is a bug filed in Apache Spark for it 
    [here](https://issues.apache.org/jira/browse/SPARK-41793), whereas when using the plugin the 
-   correct result will be returned.  
-	
+   correct result will be returned.
+
+6. In Databricks 10.4, query may fail when Dynamic File Pruning is enabled. As a workaround, please
+   disable the feature by setting `spark.databricks.optimizer.dynamicFilePruning false`. More details
+   are in [issue-7648](https://github.com/NVIDIA/spark-rapids/issues/7648).
+   
 ## Start a Databricks Cluster
 Create a Databricks cluster by going to "Compute", then clicking `+ Create compute`.  Ensure the
 cluster meets the prerequisites above by configuring it as follows:

@@ -48,10 +48,11 @@ New functionality and performance improvements for this release include:
 * Hive text table write 
 * Databricks 11.3 ML LTS support
 * Support batched full join to improve full join's performance
-* Join reordering support  
 * Qualification and Profiling tool:
-  * Support cost estimations for EMR
-  * EMR bootstrap tool
+  * EMR user tools support for qualification
+  * EMR user tools support for bootstrap
+  * Updated estimated speedup factors for on-prem, Dataproc, and EMR environments for qualification
+  
   
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
