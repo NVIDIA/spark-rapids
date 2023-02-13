@@ -75,7 +75,7 @@ lists of directories for `build-helper` Maven plugin to add (one for each shim) 
 transition to shimplify, the pom will have only 4 add source statements that is independent of the
 number of supported shims.
 
-With the shimplify format in place it is easy to review all the files for a single Shim without
+With the shimplify format in place it is easy to review all the files for a single shim without
 relying on Maven:
 
 ```bash
