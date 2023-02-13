@@ -42,3 +42,4 @@ trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase {
   }
 
 }
+
