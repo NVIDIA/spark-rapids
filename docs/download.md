@@ -64,7 +64,7 @@ The output if signature verify:
 
 ### Release Notes
 New functionality and performance improvements for this release include:
-* Delta Lake MERGE/DELETE/UPDATE 
+* Delta Lake MERGE/DELETE/UPDATE(experimental feature)
 * Function `from_json`
 * Hive text table write 
 * Databricks 11.3 ML LTS support
