@@ -717,8 +717,10 @@ class HashFullJoinIterator(
     val updatedTrackingTable = withResource(filteredGatherMap) { filteredMap =>
       // Get the current tracking table, or all true table to start with
       val builtTrackingTable = builtSideTracker.map { spillableBatch =>
-        withResource(spillableBatch.getColumnarBatch()) { trackingBatch =>
-          GpuColumnVector.from(trackingBatch)
+        withResource(spillableBatch) { scb =>
+          withResource(scb.getColumnarBatch()) { trackingBatch =>
+            GpuColumnVector.from(trackingBatch)
+          }
         }
       }.getOrElse {
         trueColumnTable(numBuiltRows)
@@ -729,14 +731,11 @@ class HashFullJoinIterator(
         }
       }
     }
-    val newScb = withResource(updatedTrackingTable) { _ =>
-      SpillableColumnarBatch(
+    builtSideTracker = withResource(updatedTrackingTable) { _ =>
+      Some(SpillableColumnarBatch(
         GpuColumnVector.from(updatedTrackingTable, Array[DataType](DataTypes.BooleanType)),
-        SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+        SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback))
     }
-    // Close old spillable batch and replace with updated one.
-    builtSideTracker.foreach(_.close())
-    builtSideTracker = Some(newScb)
   }
 }
 
