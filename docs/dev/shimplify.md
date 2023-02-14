@@ -122,7 +122,9 @@ move the files to designated locations by invoking
 mvn generate-sources antrun:run@shimplify=shim-sources -Dshimplify=true -Dshimplify.move=true
 ```
 
-Now you can run a package build with the simplified directory structure and run a few integration tests preferably in the test standalone mode with the RAPIDS Shuffle Manager on for increased coverage:
+Now you can run a package build with the simplified directory structure and run a few integration
+tests preferably in the test standalone mode with the RAPIDS Shuffle Manager on for increased
+coverage:
 
 ```bash
 mvn clean package -DskipTests -Dbuildver=331
@@ -170,7 +172,14 @@ files under `src/(main|test)/${buildver}` in place for shims outside the list. T
 developers of a certain shim would like to continue working on it without adapting the new method.
 However, for the simplicity of future refactoring the full transition is preferred.
 
-## Adding a new Shim
+### Evolving shims without automatic conversion
+
+Suppose a bulk-conversion of existing shims is not an option whereas the next shimming issue
+requires difficult refactoring of version ranges with adding more directories with exceptions.
+Now it can be resolved easily by placing just the affected files to owner shim directories and
+adding shim JSON lines comments by hand.
+
+## Adding a new shim
 
 Shimplify can clone an existing shim based as a basis of the new shim. For example when adding
 support for a new [maintenance][5] version of Spark, say 3.2.4, it's expected to be similar to 3.2.3
