@@ -130,7 +130,7 @@ private final class GpuSemaphore() extends Logging with Arm {
         } else {
           refs.numPermits
         }
-        logDebug(s"Task $taskAttemptId acquiring GPU with ${refs.numPermits} permits")
+        logDebug(s"Task $taskAttemptId acquiring GPU with $permits permits")
         semaphore.acquire(permits)
         if (refs != null) {
           refs.count.increment()
