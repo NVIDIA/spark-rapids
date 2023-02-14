@@ -978,7 +978,6 @@
                                             <include name="320until330-noncdh/*"/>
                                             <include name="320until330-nondb/*"/>
                                             <include name="320until340-all/*"/>
-                                            <include name="320until340-nondb/*"/>
                                             <include name="320until340-non330db/*"/>
                                             <include name="delta-lake-common/*"/>
                                             <include name="post320-treenode/*"/>
