@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1201,7 +1201,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
     // From 3.3.0, Spark will check this filed ID config
     ParquetFieldIdShims.setupParquetFieldIdWriteConfig(hadoopConf, sqlConf)
 
-    // From 3.3.2, Schema converter
+    // From 3.3.2, Spark schema converter needs this conf
     ParquetLegacyNanoAsLongShims.setupLegacyParquetNanosAsLong(hadoopConf)
 
     hadoopConf
