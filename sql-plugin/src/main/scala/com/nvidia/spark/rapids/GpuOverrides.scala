@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,8 +44,8 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.aggregate.{HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
-import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec, RunnableCommand}
-import org.apache.spark.sql.execution.datasources.{FileFormat, InsertIntoHadoopFsRelationCommand, SaveIntoDataSourceCommand}
+import org.apache.spark.sql.execution.command.{DataWritingCommand, DataWritingCommandExec, ExecutedCommandExec, RunnableCommand}
+import org.apache.spark.sql.execution.datasources.{InsertIntoHadoopFsRelationCommand, SaveIntoDataSourceCommand}
 import org.apache.spark.sql.execution.datasources.csv.CSVFileFormat
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
@@ -367,57 +367,6 @@ final class InsertIntoHadoopFsRelationCommandMeta(
   }
 }
 
-final class CreateDataSourceTableAsSelectCommandMeta(
-    cmd: CreateDataSourceTableAsSelectCommand,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-  extends DataWritingCommandMeta[CreateDataSourceTableAsSelectCommand](cmd, conf, parent, rule) {
-
-  private var origProvider: Class[_] = _
-  private var gpuProvider: Option[ColumnarFileFormat] = None
-
-  override def tagSelfForGpu(): Unit = {
-    if (cmd.table.bucketSpec.isDefined) {
-      willNotWorkOnGpu("bucketing is not supported")
-    }
-    if (cmd.table.provider.isEmpty) {
-      willNotWorkOnGpu("provider must be defined")
-    }
-
-    val spark = SparkSession.active
-    origProvider =
-      GpuDataSource.lookupDataSourceWithFallback(cmd.table.provider.get, spark.sessionState.conf)
-    // Note that the data source V2 always fallsback to the V1 currently.
-    // If that changes then this will start failing because we don't have a mapping.
-    gpuProvider = origProvider.getConstructor().newInstance() match {
-      case f: FileFormat if GpuOrcFileFormat.isSparkOrcFormat(f) =>
-        GpuOrcFileFormat.tagGpuSupport(this, spark, cmd.table.storage.properties, cmd.query.schema)
-      case _: ParquetFileFormat =>
-        GpuParquetFileFormat.tagGpuSupport(this, spark,
-          cmd.table.storage.properties, cmd.query.schema)
-      case ds =>
-        willNotWorkOnGpu(s"Data source class not supported: ${ds}")
-        None
-    }
-  }
-
-  override def convertToGpu(): GpuDataWritingCommand = {
-    val newProvider = gpuProvider.getOrElse(
-      throw new IllegalStateException("fileFormat unexpected, tagSelfForGpu not called?"))
-
-    GpuCreateDataSourceTableAsSelectCommand(
-      cmd.table,
-      cmd.mode,
-      cmd.query,
-      cmd.outputColumnNames,
-      origProvider,
-      newProvider,
-      conf.stableSort,
-      conf.concurrentWriterPartitionFlushSize)
-  }
-}
-
 /**
  * Holds everything that is needed to replace a `RunnableCommand` with a
  * GPU enabled version.
@@ -450,6 +399,9 @@ trait GpuOverridesListener {
 sealed trait FileFormatType
 object CsvFormatType extends FileFormatType {
   override def toString = "CSV"
+}
+object HiveDelimitedTextFormatType extends FileFormatType {
+  override def toString = "HiveText"
 }
 object ParquetFormatType extends FileFormatType {
   override def toString = "Parquet"
@@ -832,9 +784,14 @@ object GpuOverrides extends Logging {
   lazy val fileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map(
     (CsvFormatType, FileFormatChecks(
       cudfRead = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-          GpuTypeShims.additionalCsvSupportedTypes,
+        GpuTypeShims.additionalCsvSupportedTypes,
       cudfWrite = TypeSig.none,
       sparkSig = TypeSig.cpuAtomics)),
+    (HiveDelimitedTextFormatType, FileFormatChecks(
+      // Keep the supported types in sync with GpuHiveTextFileUtils.isSupportedType.
+      cudfRead = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
+      cudfWrite = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
+      sparkSig = TypeSig.all)),
     (DeltaFormatType, FileFormatChecks(
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
           TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +
@@ -1749,11 +1706,12 @@ object GpuOverrides extends Logging {
     ),
     expr[Pmod](
       "Pmod",
-      ExprChecks.binaryProject(TypeSig.gpuNumeric, TypeSig.cpuNumeric,
-        ("lhs", TypeSig.gpuNumeric.withPsNote(TypeEnum.DECIMAL,
+      // Decimal support disabled https://github.com/NVIDIA/spark-rapids/issues/7553
+      ExprChecks.binaryProject(TypeSig.integral + TypeSig.fp, TypeSig.cpuNumeric,
+        ("lhs", (TypeSig.integral + TypeSig.fp).withPsNote(TypeEnum.DECIMAL,
           s"decimals with precision ${DecimalType.MAX_PRECISION} are not supported"),
             TypeSig.cpuNumeric),
-        ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
+        ("rhs", (TypeSig.integral + TypeSig.fp), TypeSig.cpuNumeric)),
       (a, conf, p, r) => new BinaryExprMeta[Pmod](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           a.dataType match {
@@ -1808,32 +1766,6 @@ object GpuOverrides extends Logging {
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuSubtract(lhs, rhs, ansiEnabled)
-      }),
-    expr[Multiply](
-      "Multiplication",
-      ExprChecks.binaryProjectAndAst(
-        TypeSig.implicitCastsAstTypes,
-        TypeSig.gpuNumeric + TypeSig.psNote(TypeEnum.DECIMAL,
-          "Because of Spark's inner workings the full range of decimal precision " +
-              "(even for 128-bit values) is not supported."),
-        TypeSig.cpuNumeric,
-        ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
-        ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
-      (a, conf, p, r) => new BinaryAstExprMeta[Multiply](a, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          if (SQLConf.get.ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
-            willNotWorkOnGpu("GPU Multiplication does not support ANSI mode")
-          }
-        }
-
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          a.dataType match {
-            case _: DecimalType => throw new IllegalStateException(
-              "Decimal Multiply should be converted in CheckOverflow")
-            case _ =>
-              GpuMultiply(lhs, rhs)
-          }
-        }
       }),
     expr[And](
       "Logical AND",
@@ -2024,47 +1956,6 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new BinaryAstExprMeta[Pow](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuPow(lhs, rhs)
-      }),
-    expr[Divide](
-      "Division",
-      ExprChecks.binaryProject(
-        TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-        TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-        ("lhs", TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-            TypeSig.DOUBLE + TypeSig.DECIMAL_128),
-        ("rhs", TypeSig.DOUBLE + TypeSig.DECIMAL_128,
-            TypeSig.DOUBLE + TypeSig.DECIMAL_128)),
-      (a, conf, p, r) => new BinaryExprMeta[Divide](a, conf, p, r) {
-        // Division of Decimal types is a little odd. To work around some issues with
-        // what Spark does the tagging/checks are in CheckOverflow instead of here.
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          a.dataType match {
-            case _: DecimalType =>
-              throw new IllegalStateException("Internal Error: Decimal Divide operations " +
-                  "should be converted to the GPU in the CheckOverflow rule")
-            case _ =>
-              GpuDivide(lhs, rhs)
-          }
-      }),
-    expr[IntegralDivide](
-      "Division with a integer result",
-      ExprChecks.binaryProject(
-        TypeSig.LONG, TypeSig.LONG,
-        ("lhs", TypeSig.LONG + TypeSig.DECIMAL_128, TypeSig.LONG + TypeSig.DECIMAL_128),
-        ("rhs", TypeSig.LONG + TypeSig.DECIMAL_128, TypeSig.LONG + TypeSig.DECIMAL_128)),
-      (a, conf, p, r) => new BinaryExprMeta[IntegralDivide](a, conf, p, r) {
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuIntegralDivide(lhs, rhs)
-      }),
-    expr[Remainder](
-      "Remainder or modulo",
-      ExprChecks.binaryProject(
-        TypeSig.gpuNumeric, TypeSig.cpuNumeric,
-        ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
-        ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
-      (a, conf, p, r) => new BinaryExprMeta[Remainder](a, conf, p, r) {
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuRemainder(lhs, rhs)
       }),
     expr[AggregateExpression](
       "Aggregate expression",
@@ -3230,6 +3121,16 @@ object GpuOverrides extends Logging {
         override def convertToGpu(child: Expression): GpuExpression =
           GpuSize(child, a.legacySizeOfNull)
       }),
+    expr[Reverse](
+      "Returns a reversed string or an array with reverse order of elements",
+      ExprChecks.unaryProject(TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all),
+        TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all),
+        TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all),
+        TypeSig.STRING + TypeSig.ARRAY.nested(TypeSig.all)),
+      (a, conf, p, r) => new UnaryExprMeta[Reverse](a, conf, p, r) {
+        override def convertToGpu(input: Expression): GpuExpression =
+          GpuReverse(input)
+      }),
     expr[UnscaledValue](
       "Convert a Decimal to an unscaled long value for some aggregation optimizations",
       ExprChecks.unaryProject(TypeSig.LONG, TypeSig.LONG,
@@ -3328,7 +3229,7 @@ object GpuOverrides extends Logging {
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(ParamCheck("input",
           (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-              TypeSig.NULL + 
+              TypeSig.NULL +
               TypeSig.STRUCT +
               TypeSig.ARRAY).nested(),
           TypeSig.all))),
@@ -3475,6 +3376,52 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new BinaryExprMeta[GetJsonObject](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuGetJsonObject(lhs, rhs)
+      }
+    ),
+    expr[JsonToStructs](
+      "Returns a struct value with the given `jsonStr` and `schema`",
+      ExprChecks.projectOnly(
+        TypeSig.MAP.nested(TypeSig.STRING),
+        (TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY).nested(TypeSig.all),
+        Seq(ParamCheck("jsonStr", TypeSig.STRING, TypeSig.STRING))),
+      (a, conf, p, r) => new UnaryExprMeta[JsonToStructs](a, conf, p, r) {
+        override def tagExprForGpu(): Unit =
+          GpuJsonScan.tagJsonToStructsSupport(a.options, this)
+
+        override def convertToGpu(child: Expression): GpuExpression =
+          GpuJsonToStructs(a.schema, a.options, child, a.timeZoneId)
+      }).disabledByDefault("parsing JSON from a column has a large number of issues and " +
+      "should be considered beta quality right now."),
+    expr[JsonTuple](
+      "Returns a tuple like the function get_json_object, but it takes multiple names. " + 
+        "All the input parameters and output column types are string.",
+      ExprChecks.projectOnly(
+        TypeSig.ARRAY.nested(TypeSig.STRUCT + TypeSig.STRING),
+        TypeSig.ARRAY.nested(TypeSig.STRUCT + TypeSig.STRING),
+        Seq(ParamCheck("json", TypeSig.STRING, TypeSig.STRING)),
+        Some(RepeatingParamCheck("field", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+      (a, conf, p, r) => new GeneratorExprMeta[JsonTuple](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          if (childExprs.length >= 50) {
+            // If the number of field parameters is too large, fall back to CPU to avoid 
+            // potential performance problems.
+            willNotWorkOnGpu("JsonTuple with large number of fields is not supported on GPU")
+          }
+          // If any field argument contains special characters as follows, fall back to CPU.
+          (a.children.tail).map { fieldExpr =>
+            extractLit(fieldExpr).foreach { field => 
+              if (field.value != null) {
+                val fieldStr = field.value.asInstanceOf[UTF8String].toString
+                val specialCharacters = List(".", "[", "]", "{", "}", "\\", "\'", "\"")
+                if (specialCharacters.exists(fieldStr.contains(_))) {
+                  willNotWorkOnGpu(s"""JsonTuple with special character in field \"$fieldStr\" """
+                     + "is not supported on GPU")
+                }
+              }
+            }
+          }
+        }
+        override def convertToGpu(): GpuExpression = GpuJsonTuple(childExprs.map(_.convertToGpu()))
       }
     ),
     expr[org.apache.spark.sql.execution.ScalarSubquery](
@@ -3668,15 +3615,12 @@ object GpuOverrides extends Logging {
       DataWritingCommandRule[_ <: DataWritingCommand]] = Seq(
     dataWriteCmd[InsertIntoHadoopFsRelationCommand](
       "Write to Hadoop filesystem",
-      (a, conf, p, r) => new InsertIntoHadoopFsRelationCommandMeta(a, conf, p, r)),
-    dataWriteCmd[CreateDataSourceTableAsSelectCommand](
-      "Create table with select command",
-      (a, conf, p, r) => new CreateDataSourceTableAsSelectCommandMeta(a, conf, p, r))
+      (a, conf, p, r) => new InsertIntoHadoopFsRelationCommandMeta(a, conf, p, r))
   ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
 
   val dataWriteCmds: Map[Class[_ <: DataWritingCommand],
       DataWritingCommandRule[_ <: DataWritingCommand]] =
-    commonDataWriteCmds ++ GpuHiveOverrides.dataWriteCmds
+    commonDataWriteCmds ++ GpuHiveOverrides.dataWriteCmds ++ SparkShimImpl.getDataWriteCmds
 
   def runnableCmd[INPUT <: RunnableCommand](
       desc: String,
@@ -3696,12 +3640,18 @@ object GpuOverrides extends Logging {
         .map(r => r.wrap(cmd, conf, parent, r).asInstanceOf[RunnableCommandMeta[INPUT]])
         .getOrElse(new RuleNotFoundRunnableCommandMeta(cmd, conf, parent))
 
-  val runnableCmds: Map[Class[_ <: RunnableCommand], RunnableCommandRule[_ <: RunnableCommand]] =
+  val commonRunnableCmds: Map[Class[_ <: RunnableCommand],
+    RunnableCommandRule[_ <: RunnableCommand]] =
     Seq(
       runnableCmd[SaveIntoDataSourceCommand](
         "Write to a data source",
         (a, conf, p, r) => new SaveIntoDataSourceCommandMeta(a, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
+
+  val runnableCmds = commonRunnableCmds ++ 
+    GpuHiveOverrides.runnableCmds ++
+      ExternalSource.runnableCmds ++
+      SparkShimImpl.getRunnableCmds
 
   def wrapPlan[INPUT <: SparkPlan](
       plan: INPUT,
@@ -4095,7 +4045,8 @@ object GpuOverrides extends Logging {
   ).collect { case r if r != null => (r.getClassFor.asSubclass(classOf[SparkPlan]), r) }.toMap
 
   lazy val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
-    commonExecs ++ SparkShimImpl.getExecs ++ GpuHiveOverrides.execs
+    commonExecs ++ GpuHiveOverrides.execs ++ ExternalSource.execRules ++
+      SparkShimImpl.getExecs // Shim execs at the end; shims get the last word in substitutions.
 
   def getTimeParserPolicy: TimeParserPolicy = {
     val policy = SQLConf.get.getConfString(SQLConf.LEGACY_TIME_PARSER_POLICY.key, "EXCEPTION")
@@ -4402,7 +4353,7 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
           logDebug(s"Fallback for RDDScanExec delta log: $rdd")
         }
         found
-      case aqe: AdaptiveSparkPlanExec if 
+      case aqe: AdaptiveSparkPlanExec if
         !AQEUtils.isAdaptiveExecutionSupportedInSparkVersion(plan.conf) =>
         logDebug(s"AdaptiveSparkPlanExec found on unsupported Spark Version: $aqe")
         true

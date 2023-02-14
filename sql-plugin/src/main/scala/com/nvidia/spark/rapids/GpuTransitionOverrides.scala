@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,10 +28,11 @@ import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, Broadcast
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{DataWritingCommandExec, ExecutedCommandExec}
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2ScanExecBase, DropTableExec, ShowTablesExec}
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashedRelationBroadcastMode}
 import org.apache.spark.sql.rapids.{ExternalSource, GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase, GpuBroadcastToRowExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.types.StructType
 
 /**
  * Rules that run after the row to columnar and columnar to row transitions have been inserted.
@@ -141,11 +142,17 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       // stage, or around the custom shuffle reader, if one exists.
       val plan = GpuTransitionOverrides.getNonQueryStagePlan(s)
       if (plan.supportsColumnar && plan.isInstanceOf[GpuExec]) {
-        parent match {
-          case Some(x) if SparkShimImpl.isCustomReaderExec(x) =>
+        (plan, parent) match {
+          case (_, Some(x)) if SparkShimImpl.isCustomReaderExec(x) =>
             // We can't insert a coalesce batches operator between a custom shuffle reader
             // and a shuffle query stage, so we instead insert it around the custom shuffle
             // reader later on, in the next top-level case clause.
+            s
+          case (ex: ShuffleExchangeLike, Some(x))
+              if SparkShimImpl.shuffleParentReadsShuffleData(ex, x) =>
+            // In some cases, the parent might have to read the shuffle data directly, so
+            // we don't need the post-shuffle coalesce exec since the parent should 
+            // coalesce the shuffle data as needed
             s
           case _ =>
             // Directly wrap shuffle query stage with coalesce batches operator
@@ -163,21 +170,21 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       addPostShuffleCoalesce(e.copy(child = optimizeAdaptiveTransitions(e.child, Some(e))))
 
     case ColumnarToRowExec(e: ShuffleQueryStageExec) =>
-      GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
+      val c2r = GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
+      SparkShimImpl.addRowShuffleToQueryStageTransitionIfNeeded(c2r, e)
 
     case ColumnarToRowExec(e: BroadcastQueryStageExec) =>
       e.plan match {
         case ReusedExchangeExec(output, b: GpuBroadcastExchangeExec) => 
           // we can't directly re-use a GPU broadcast exchange to feed a CPU broadcast
           // join but Spark will sometimes try and do this
-          val index = 0
           val keys = output.map { a => a.asInstanceOf[Expression] }
-          val keyExprs = b.mode match {
-            case HashedRelationBroadcastMode(keys, _) => Some(keys)
-            case IdentityBroadcastMode => None
+          val (index, keyExprs) = b.mode match {
+            case HashedRelationBroadcastMode(keys, _) => (None, Some(keys))
+            case IdentityBroadcastMode => (Some(0), None)
             case m => throw new UnsupportedOperationException(s"Unknown broadcast mode $m")
           }
-          GpuBroadcastToRowExec(index, keys, e)(keyExprs)
+          GpuBroadcastToRowExec(keys, b.mode, e)(index, keyExprs)
         case _ => GpuColumnarToRowExec(optimizeAdaptiveTransitions(e, Some(plan)))
       }
 
@@ -346,37 +353,112 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
   // This walks from the output to the input to look for any uses of InputFileName,
   // InputFileBlockStart, or InputFileBlockLength when we use a Parquet read because
   // we can't support the coalesce file reader optimization when this is used.
-  private def updateScansForInput(plan: SparkPlan,
-      disableUntilInput: Boolean = false): SparkPlan = plan match {
-    case batchScan: GpuBatchScanExec =>
-      if ((batchScan.scan.isInstanceOf[GpuParquetScan] ||
-           batchScan.scan.isInstanceOf[GpuOrcScan] ||
-           ExternalSource.isSupportedScan(batchScan.scan)) &&
+  private def updateScansForInputAndOrder(plan: SparkPlan,
+      disableUntilInput: Boolean = false): SparkPlan = {
+    plan match {
+      case batchScan: GpuBatchScanExec =>
+        if ((batchScan.scan.isInstanceOf[GpuParquetScan] ||
+          batchScan.scan.isInstanceOf[GpuOrcScan] ||
+          ExternalSource.isSupportedScan(batchScan.scan)) &&
           (disableUntilInput || disableScanUntilInput(batchScan))) {
-        val scanCopy = batchScan.scan match {
-          case parquetScan: GpuParquetScan =>
-            parquetScan.copy(queryUsesInputFile=true)
-          case orcScan: GpuOrcScan =>
-            orcScan.copy(queryUsesInputFile=true)
-          case eScan if ExternalSource.isSupportedScan(eScan) =>
-            ExternalSource.copyScanWithInputFileTrue(eScan)
-          case _ => throw new RuntimeException("Wrong format") // never reach here
+          val scanCopy = batchScan.scan match {
+            case parquetScan: GpuParquetScan =>
+              parquetScan.copy(queryUsesInputFile = true)
+            case orcScan: GpuOrcScan =>
+              orcScan.copy(queryUsesInputFile = true)
+            case eScan if ExternalSource.isSupportedScan(eScan) =>
+              ExternalSource.copyScanWithInputFileTrue(eScan)
+            case _ => throw new RuntimeException("Wrong format") // never reach here
+          }
+          batchScan.copy(scan = scanCopy)
+        } else {
+          batchScan
         }
-        batchScan.copy(scan=scanCopy)
-      } else {
-        batchScan
-      }
-    case fileSourceScan: GpuFileSourceScanExec =>
-      if ((disableUntilInput || disableScanUntilInput(fileSourceScan))) {
-        fileSourceScan.copy(queryUsesInputFile=true)(fileSourceScan.rapidsConf)
-      } else {
-        fileSourceScan
-      }
-    case p =>
-      val planDisableUntilInput = disableScanUntilInput(p) && hasDirectLineToInput(p)
-      p.withNewChildren(p.children.map(c => {
-        updateScansForInput(c, planDisableUntilInput || disableUntilInput)
-      }))
+      case fileSourceScan: GpuFileSourceScanExec =>
+        if ((disableUntilInput || disableScanUntilInput(fileSourceScan))) {
+          fileSourceScan.copy(queryUsesInputFile = true)(fileSourceScan.rapidsConf)
+        } else {
+          fileSourceScan
+        }
+      case p =>
+        val planDisableUntilInput = disableScanUntilInput(p) && hasDirectLineToInput(p)
+        p.withNewChildren(p.children.map(c => {
+          updateScansForInputAndOrder(c, planDisableUntilInput || disableUntilInput)
+        }))
+    }
+  }
+
+  private def withPrunedPartSchema(
+      fss: GpuFileSourceScanExec,
+      referenceList: Seq[Expression]): GpuFileSourceScanExec = {
+    // Luckily partition columns do not support nested types. So only need to prune the
+    // top level columns.
+    val prunedPartSchema = StructType(fss.relation.partitionSchema.filter { f =>
+      // The partition columns used in the referenceList will be kept.
+      referenceList.exists { expr =>
+        expr.find {
+          // It is safe to use the column name for comparison for the two cases listed in
+          // `prunePartitionForFileSourceScan`
+          case attr: AttributeReference => attr.name == f.name
+          case _ => false
+        }.isDefined
+      }})
+    fss.copy(requiredPartitionSchema = Some(prunedPartSchema))(fss.rapidsConf)
+  }
+
+  // This tries to prune the partition schema for GpuFileSourceScanExec by leveraging
+  // the project list of the first GpuProjectExec after a GpuFileSourceScanExec.
+  private def prunePartitionForFileSourceScan(plan: SparkPlan): SparkPlan = plan match {
+    case p @ GpuProjectExecLike(projectList, fss: GpuFileSourceScanExec) =>
+      // A ProjectExec next to FileSourceScanExec, for cases like
+      //   df.groupBy("b").agg(max($"a")), or
+      //   df.select("b")
+      p.withNewChildren(Seq(withPrunedPartSchema(fss, projectList)))
+
+    case p @ GpuProjectExecLike(
+        projectList,
+        f @ GpuFilterExec(condition, fss: GpuFileSourceScanExec, _)) =>
+      // A FilterExec is between the ProjectExec and FileSourceScanExec, for cases like
+      //   df.select("a").filter("a != 1")
+      p.withNewChildren(Seq(
+        f.withNewChildren(Seq(withPrunedPartSchema(fss, projectList :+ condition)))))
+
+    // Partial GPU plan cases.
+    // This rule executes before rules override the ColumnarToRowExec, so the exec is the
+    // CPU version here.
+    case p @ ProjectExec(projectList, cr @ ColumnarToRowExec(fss: GpuFileSourceScanExec)) =>
+      // cpu project + gpu file scan
+      p.withNewChildren(Seq(
+        cr.withNewChildren(Seq(withPrunedPartSchema(fss, projectList)))))
+
+    case p @ ProjectExec(
+        projectList,
+        cr @ ColumnarToRowExec(f @ GpuFilterExec(condition, fss: GpuFileSourceScanExec, _))) =>
+      // cpu project + gpu filter + gpu file scan
+      p.withNewChildren(Seq(
+        cr.withNewChildren(Seq(
+          f.withNewChildren(Seq(withPrunedPartSchema(fss, projectList :+ condition)))))))
+
+    case p @ ProjectExec(
+        projectList,
+        f @ FilterExec(condition, cr @ ColumnarToRowExec(fss: GpuFileSourceScanExec))) =>
+      // cpu project + cpu filter + gpu file scan
+      p.withNewChildren(Seq(
+        f.withNewChildren(Seq(
+          cr.withNewChildren(Seq(withPrunedPartSchema(fss, projectList :+ condition)))))))
+
+    case p @ GpuProjectExecLike(
+        projectList,
+        rc @ RowToColumnarExec(
+            f @ FilterExec(condition, cr @ ColumnarToRowExec(fss: GpuFileSourceScanExec)))) =>
+      // gpu project + cpu filter + gpu file scan
+      p.withNewChildren(Seq(
+        rc.withNewChildren(Seq(
+          f.withNewChildren(Seq(
+            cr.withNewChildren(Seq(withPrunedPartSchema(fss, projectList :+ condition)))))))))
+
+    case _ =>
+      plan.withNewChildren(plan.children.map(prunePartitionForFileSourceScan))
   }
 
   // This walks from the output to the input so disableUntilInput can walk its way from when
@@ -586,7 +668,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       GpuOverrides.logDuration(rapidsConf.shouldExplain,
         t => f"GPU plan transition optimization took $t%.2f ms") {
         var updatedPlan = insertHashOptimizeSorts(plan)
-        updatedPlan = updateScansForInput(updatedPlan)
+        updatedPlan = updateScansForInputAndOrder(updatedPlan)
+        if (rapidsConf.isFileScanPrunePartitionEnabled) {
+          updatedPlan = prunePartitionForFileSourceScan(updatedPlan)
+        }
         updatedPlan = insertColumnarFromGpu(updatedPlan)
         updatedPlan = insertCoalesce(updatedPlan)
         // only insert shuffle coalesces when using normal shuffle

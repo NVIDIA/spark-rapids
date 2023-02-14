@@ -1,6 +1,6 @@
 #!/usr/local/env groovy
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,17 +30,13 @@ import ipp.blossom.*
 
 def githubHelper // blossom github helper
 def TEMP_IMAGE_BUILD = true
-def CUDA_NAME = 'cuda11.0' // hardcode cuda version for docker build part
+def CUDA_NAME = 'cuda11.0.3' // hardcode cuda version for docker build part
 def PREMERGE_DOCKERFILE = 'jenkins/Dockerfile-blossom.ubuntu'
 def IMAGE_PREMERGE // temp image for premerge test
 def IMAGE_DB = pod.getCPUYAML("${common.ARTIFACTORY_NAME}/sw-spark-docker/spark:rapids-databricks")
 def PREMERGE_TAG
 def skipped = false
 def db_build = false
-def PROJECT_VER // project version retrieved from 'version-def.sh' to determine compatible stages
-def major_ver // major version extracted from project version
-def minor_ver // minor version extracted from project version
-def PREMERGE_CI_2_ARGUMENT // argument for 'spark-premerge-build.sh' running from stage of Premerge CI 2
 def sourcePattern = 'shuffle-plugin/src/main/scala/,udf-compiler/src/main/scala/,' +
     'sql-plugin/src/main/java/,sql-plugin/src/main/scala/'
 
@@ -81,6 +77,12 @@ RUNTIME_MAP = [
                 '3.2.1',
                 'init_cudf_udf.sh',
                 '3.2.1'
+        ],
+        '11.3': [
+                '11.3.x-gpu-ml-scala2.12',
+                '3.3.0',
+                'init_cudf_udf.sh',
+                '3.3.0'
         ]
 ]
 
@@ -163,37 +165,6 @@ pipeline {
             }
         } // end of Init githubHelper
 
-        // TODO: deprecate this stage as dedicated jenkinsfile for each branch
-        stage("Determine Project Version") {
-            when {
-                expression {
-                    !skipped
-                }
-            }
-
-            steps {
-                script {
-                    container('cpu') {
-                        // Retrieve PROJECT_VER from version-def.sh, e.g, '<major>.<minor>.<patch>-SNAPSHOT'
-                        PROJECT_VER = sh(returnStdout: true,
-                                        script: '''#!/bin/bash
-                                                source jenkins/version-def.sh >& /dev/null
-                                                echo $PROJECT_VER
-                                                ''').trim()
-                        PROJECT_VER = PROJECT_VER.split('-')[0] // Remove trailing '-SNAPSHOT'
-                        echo PROJECT_VER
-
-                        def versions = PROJECT_VER.split('\\.')
-                        major_ver = versions[0].toInteger()
-                        minor_ver = versions[1].toInteger()
-
-                        PREMERGE_CI_2_ARGUMENT = "ci_2"
-                        echo PREMERGE_CI_2_ARGUMENT
-                    }
-                }
-            }
-        }
-
         stage('Build docker image') {
             when {
                 beforeAgent true
@@ -227,7 +198,7 @@ pipeline {
                         }
 
                         if (TEMP_IMAGE_BUILD) {
-                            IMAGE_TAG = "dev-ubuntu18-${CUDA_NAME}"
+                            IMAGE_TAG = "dev-ubuntu20-${CUDA_NAME}"
                             PREMERGE_TAG = "${IMAGE_TAG}-${BUILD_TAG}"
                             IMAGE_PREMERGE = "${ARTIFACTORY_NAME}/sw-spark-docker-local/plugin:${PREMERGE_TAG}"
                             def CUDA_VER = "$CUDA_NAME" - "cuda"
@@ -235,7 +206,7 @@ pipeline {
                             uploadDocker(IMAGE_PREMERGE)
                         } else {
                             // if no pre-merge dockerfile change, use nightly image
-                            IMAGE_PREMERGE = "$ARTIFACTORY_NAME/sw-spark-docker-local/plugin:dev-ubuntu18-$CUDA_NAME-blossom-dev"
+                            IMAGE_PREMERGE = "$ARTIFACTORY_NAME/sw-spark-docker-local/plugin:dev-ubuntu20-$CUDA_NAME-blossom-dev"
                         }
                     }
                 }
@@ -321,14 +292,6 @@ pipeline {
                 } // end of mvn verify stage
 
                 stage('Premerge CI 2') {
-                    when {
-                        beforeAgent true
-                        beforeOptions true
-                        anyOf {
-                            expression { major_ver >= 22 }
-                        }
-                    }
-
                     options {
                         lock(label: "${params.GPU_POOL}", quantity: 1, variable: 'GPU_RESOURCE')
                     }
@@ -348,7 +311,7 @@ pipeline {
                             container('gpu') {
                                 timeout(time: 4, unit: 'HOURS') {
                                     try {
-                                        sh "$PREMERGE_SCRIPT $PREMERGE_CI_2_ARGUMENT"
+                                        sh "$PREMERGE_SCRIPT ci_2"
                                     } finally {
                                         common.publishPytestResult(this, "${STAGE_NAME}")
                                     }
@@ -362,7 +325,7 @@ pipeline {
                     when {
                         beforeAgent true
                         anyOf {
-                            expression { db_build && major_ver >= 22 }
+                            expression { db_build }
                         }
                     }
 
@@ -395,8 +358,7 @@ pipeline {
                     when {
                         beforeAgent true
                         anyOf {
-                            expression { db_build && major_ver == 22 && minor_ver >= 4 }
-                            expression { db_build && major_ver >= 23 }
+                            expression { db_build }
                         }
                     }
 
@@ -424,6 +386,39 @@ pipeline {
                         }
                     }
                 } // end of DB runtime 10.4
+
+                stage('DB runtime 11.3') {
+                    when {
+                        beforeAgent true
+                        anyOf {
+                            expression { db_build }
+                        }
+                    }
+
+                    agent {
+                        kubernetes {
+                            label "premerge-ci-db-11.3-${BUILD_NUMBER}"
+                            cloud 'sc-ipp-blossom-prod'
+                            yaml "${IMAGE_DB}"
+                        }
+                    }
+                    environment {
+                        DB_RUNTIME = '11.3'
+                        DATABRICKS_RUNTIME = "${RUNTIME_MAP["$DB_RUNTIME"][ID_RUNTIME]}"
+                        BASE_SPARK_VERSION = "${RUNTIME_MAP["$DB_RUNTIME"][ID_SPARK]}"
+                        BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS = "${RUNTIME_MAP["$DB_RUNTIME"][ID_INSTALL]}"
+                        INIT_SCRIPTS = getInitScripts("$INIT_SCRIPTS_DIR",
+                                "${RUNTIME_MAP["$DB_RUNTIME"][ID_INITSCRIPTS]}")
+                    }
+                    steps {
+                        script {
+                            timeout(time: 5, unit: 'HOURS') {
+                                unstash "source_tree"
+                                databricksBuild()
+                            }
+                        }
+                    }
+                } // end of DB runtime 11.3
 
                 stage('Dummy stage: blue ocean log view') {
                     steps {

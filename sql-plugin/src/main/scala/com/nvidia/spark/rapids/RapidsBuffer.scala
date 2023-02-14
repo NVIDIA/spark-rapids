@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -101,8 +101,6 @@ trait RapidsBuffer extends AutoCloseable {
   /** The storage tier for this buffer */
   val storageTier: StorageTier
 
-  val spillCallback: SpillCallback
-
   /**
    * Get the columnar batch within this buffer. The caller must have
    * successfully acquired the buffer beforehand.
@@ -172,12 +170,26 @@ trait RapidsBuffer extends AutoCloseable {
   def getSpillPriority: Long
 
   /**
+   * Gets the spill metrics callback currently associated with this buffer.
+   * @return the current callback
+   */
+  def getSpillCallback: SpillCallback
+
+  /**
    * Set the spill priority for this buffer. Lower values are higher priority
    * for spilling, meaning buffers with lower values will be preferred for
    * spilling over buffers with a higher value.
+   * @note should only be called from the buffer catalog
    * @param priority new priority value for this buffer
    */
   def setSpillPriority(priority: Long): Unit
+
+  /**
+   * Update the metrics callback that will be invoked next time a spill occurs.
+   * @note should only be called from the buffer catalog
+   * @param spillCallback the new callback
+   */
+  def setSpillCallback(spillCallback: SpillCallback): Unit
 }
 
 /**
@@ -226,9 +238,11 @@ sealed class DegenerateRapidsBuffer(
 
   override def getSpillPriority: Long = Long.MaxValue
 
+  override val getSpillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback
+
   override def setSpillPriority(priority: Long): Unit = {}
 
-  override def close(): Unit = {}
+  override def setSpillCallback(callback: SpillCallback): Unit = {}
 
-  override val spillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback
+  override def close(): Unit = {}
 }

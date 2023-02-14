@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{SparkSession, SparkSessionExtensions}
+import org.apache.spark.sql.{SparkSession, SparkSessionExtensions, Strategy}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.{ColumnarRule, SparkPlan}
 
@@ -25,9 +25,12 @@ import org.apache.spark.sql.execution.{ColumnarRule, SparkPlan}
  * Extension point to enable GPU SQL processing.
  */
 class SQLExecPlugin extends (SparkSessionExtensions => Unit) with Logging {
+  private val strategyRules: Strategy = ShimLoader.newStrategyRules()
+
   override def apply(extensions: SparkSessionExtensions): Unit = {
     extensions.injectColumnar(columnarOverrides)
     extensions.injectQueryStagePrepRule(queryStagePrepOverrides)
+    extensions.injectPlannerStrategy(_ => strategyRules)
   }
 
   private def columnarOverrides(sparkSession: SparkSession): ColumnarRule = {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,7 +49,8 @@ import org.apache.spark.util.collection.BitSet
  * GPU version of Spark's `FileSourceScanExec`
  *
  * @param relation The file-based relation to scan.
- * @param output Output attributes of the scan, including data attributes and partition attributes.
+ * @param originalOutput Output attributes of the scan, including data attributes and partition
+ *                       attributes.
  * @param requiredSchema Required schema of the underlying relation, excluding partition columns.
  * @param partitionFilters Predicates to use for partition pruning.
  * @param optionalBucketSet Bucket ids for bucket pruning.
@@ -65,7 +66,7 @@ import org.apache.spark.util.collection.BitSet
  */
 case class GpuFileSourceScanExec(
     @transient relation: HadoopFsRelation,
-    output: Seq[Attribute],
+    originalOutput: Seq[Attribute],
     requiredSchema: StructType,
     partitionFilters: Seq[Expression],
     optionalBucketSet: Option[BitSet],
@@ -74,9 +75,22 @@ case class GpuFileSourceScanExec(
     tableIdentifier: Option[TableIdentifier],
     disableBucketedScan: Boolean = false,
     queryUsesInputFile: Boolean = false,
-    alluxioPathsMap: Option[Map[String, String]])(@transient val rapidsConf: RapidsConf)
+    alluxioPathsMap: Option[Map[String, String]],
+    requiredPartitionSchema: Option[StructType] = None)(@transient val rapidsConf: RapidsConf)
     extends GpuDataSourceScanExec with GpuExec {
   import GpuMetric._
+
+  override val output: Seq[Attribute] = requiredPartitionSchema.map { requiredPartSchema =>
+    // output attrs = data attrs ++ partition attrs
+    val (dataOutAttrs, partOutAttrs) = originalOutput.splitAt(requiredSchema.length)
+    val prunedPartOutAttrs = requiredPartSchema.map { f =>
+      partOutAttrs(relation.partitionSchema.indexOf(f))
+    }
+    dataOutAttrs ++ prunedPartOutAttrs
+  }.getOrElse(originalOutput)
+
+  private[rapids] val readPartitionSchema =
+    requiredPartitionSchema.getOrElse(relation.partitionSchema)
 
   // this is set only when we either explicitly replaced a path for CONVERT_TIME
   // or when TASK_TIME if one of the paths will be replaced.
@@ -351,7 +365,7 @@ case class GpuFileSourceScanExec(
         val reader = fileFormat.buildReaderWithPartitionValuesAndMetrics(
           sparkSession = relation.sparkSession,
           dataSchema = relation.dataSchema,
-          partitionSchema = relation.partitionSchema,
+          partitionSchema = readPartitionSchema,
           requiredSchema = requiredSchema,
           filters = pushedDownFilters,
           options = relation.options,
@@ -498,7 +512,7 @@ case class GpuFileSourceScanExec(
 
     val filesGroupedToBuckets = partitionedFiles.groupBy { f =>
       BucketingUtils
-        .getBucketId(new Path(f.filePath).getName)
+        .getBucketId(new Path(f.filePath.toString()).getName)
         .getOrElse(sys.error(s"Invalid bucket file ${f.filePath}"))
     }
 
@@ -574,15 +588,29 @@ case class GpuFileSourceScanExec(
       readFile: Option[(PartitionedFile) => Iterator[InternalRow]],
       partitions: Seq[FilePartition]): RDD[InternalRow] = {
 
+    // Prune the partition values for each partition
+    val prunedPartitions = requiredPartitionSchema.map { partSchema =>
+      val idsAndTypes = partSchema.map(f => (relation.partitionSchema.indexOf(f), f.dataType))
+      partitions.map { p =>
+        val partFiles = p.files.map { pf =>
+          val prunedPartValues = idsAndTypes.map { case (id, dType) =>
+            pf.partitionValues.get(id, dType)
+          }
+          pf.copy(partitionValues = InternalRow.fromSeq(prunedPartValues))
+        }
+        p.copy(files = partFiles)
+      }
+    }.getOrElse(partitions)
+
     if (isPerFileReadEnabled) {
       logInfo("Using the original per file reader")
-      SparkShimImpl.getFileScanRDD(relation.sparkSession, readFile.get, partitions,
+      SparkShimImpl.getFileScanRDD(relation.sparkSession, readFile.get, prunedPartitions,
         requiredSchema)
     } else {
       logDebug(s"Using Datasource RDD, files are: " +
-        s"${partitions.flatMap(_.files).mkString(",")}")
+        s"${prunedPartitions.flatMap(_.files).mkString(",")}")
       // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
-      GpuDataSourceRDD(relation.sparkSession.sparkContext, partitions, readerFactory)
+      GpuDataSourceRDD(relation.sparkSession.sparkContext, prunedPartitions, readerFactory)
     }
   }
 
@@ -602,7 +630,7 @@ case class GpuFileSourceScanExec(
           broadcastedHadoopConf,
           relation.dataSchema,
           requiredSchema,
-          relation.partitionSchema,
+          readPartitionSchema,
           pushedDownFilters.toArray,
           rapidsConf,
           allMetrics,
@@ -614,7 +642,7 @@ case class GpuFileSourceScanExec(
           broadcastedHadoopConf,
           relation.dataSchema,
           requiredSchema,
-          relation.partitionSchema,
+          readPartitionSchema,
           pushedDownFilters.toArray,
           rapidsConf,
           allMetrics,

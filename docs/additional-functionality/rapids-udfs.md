@@ -53,15 +53,19 @@ Other forms of Spark UDFs are not supported, such as:
 For supported UDFs, the RAPIDS Accelerator will detect a GPU implementation
 if the UDF class implements the
 [RapidsUDF](../../sql-plugin/src/main/java/com/nvidia/spark/RapidsUDF.java)
-interface. This interface requires implementing the following method:
+interface. Unlike the CPU UDF which processes data one row at a time, the
+GPU version processes a columnar batch of rows. This reduces invocation
+overhead and enables parallel processing of the data by the GPU.
+
+This interface requires implementing the following method:
 
 ```java
-  ai.rapids.cudf.ColumnVector evaluateColumnar(ai.rapids.cudf.ColumnVector... args);
+  ai.rapids.cudf.ColumnVector evaluateColumnar(int numRows, ai.rapids.cudf.ColumnVector... args);
 ```
 
-Unlike the CPU UDF which processes data one row at a time, the GPU version
-processes a columnar batch of rows. This reduces invocation overhead and
-enables parallel processing of the data by the GPU.
+The implementation of `evaluateColumnar` must return a column with the
+specified number of rows. All input columns will contain the same number
+of rows.
 
 ### Interpreting Inputs
 
@@ -135,7 +139,7 @@ type `DECIMAL64(scale=-2)`.
 ## RAPIDS Accelerated UDF Examples
 
 <!-- Note: should update the branch name to tag when releasing-->
-Source code for examples of RAPIDS accelerated UDFs is provided in the [udf-examples](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.12/examples/UDF-Examples/RAPIDS-accelerated-UDFs) project.
+Source code for examples of RAPIDS accelerated UDFs is provided in the [udf-examples](https://github.com/NVIDIA/spark-rapids-examples/tree/main/examples/UDF-Examples/RAPIDS-accelerated-UDFs) project.
 
 ## GPU Support for Pandas UDF
 

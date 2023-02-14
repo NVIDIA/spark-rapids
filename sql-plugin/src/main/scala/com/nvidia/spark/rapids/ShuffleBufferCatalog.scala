@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import java.util.function.{Consumer, IntUnaryOperator}
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.Cuda
+import ai.rapids.cudf.{ContiguousTable, Cuda, DeviceMemoryBuffer}
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.SparkEnv
@@ -50,9 +50,113 @@ case class ShuffleBufferId(
 class ShuffleBufferCatalog(
     catalog: RapidsBufferCatalog,
     diskBlockManager: RapidsDiskBlockManager) extends Arm with Logging {
+
+  private val deviceStore = RapidsBufferCatalog.getDeviceStorage
+
+  private val bufferIdToHandle = new ConcurrentHashMap[RapidsBufferId, RapidsBufferHandle]()
+
+  private def trackCachedHandle(
+      bufferId: ShuffleBufferId,
+      bufferHandle: RapidsBufferHandle): Unit = {
+    bufferIdToHandle.put(bufferId, bufferHandle)
+  }
+
+  def removeCachedHandles(): Unit = {
+    bufferIdToHandle.forEach { case (_, handle) =>
+      removeBuffer(handle)
+    }
+  }
+
+  /**
+   * Adds a contiguous table shuffle table to the device storage. This does NOT take ownership of
+   * the contiguous table, so it is the responsibility of the caller to close it.
+   * The refcount of the underlying device buffer will be incremented so the contiguous table
+   * can be closed before this buffer is destroyed.
+   *
+   * @param blockId Spark's `ShuffleBlockId` that identifies this buffer
+   * @param contigTable contiguous table to track in storage
+   * @param initialSpillPriority starting spill priority value for the buffer
+   * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
+   *                      It should never allocate GPU memory and really just be used for metrics.
+   * @param needsSync whether the spill framework should stream synchronize while adding
+   *                  this device buffer (defaults to true)
+   * @return RapidsBufferId identifying this table
+   */
+  def addContiguousTable(
+      blockId: ShuffleBlockId,
+      contigTable: ContiguousTable,
+      initialSpillPriority: Long,
+      defaultSpillCallback: SpillCallback,
+      needsSync: Boolean): RapidsBufferHandle = {
+    val bufferId = nextShuffleBufferId(blockId)
+    withResource(contigTable) { _ =>
+      val handle = deviceStore.addContiguousTable(
+        bufferId,
+        contigTable,
+        initialSpillPriority,
+        defaultSpillCallback,
+        needsSync)
+      trackCachedHandle(bufferId, handle)
+      handle
+    }
+  }
+
+  /**
+   * Adds a buffer to the device storage, taking ownership of the buffer.
+   *
+   * @param blockId Spark's `ShuffleBlockId` that identifies this buffer
+   * @param buffer buffer that will be owned by the store
+   * @param tableMeta metadata describing the buffer layout
+   * @param initialSpillPriority starting spill priority value for the buffer
+   * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
+   *                      It should never allocate GPU memory and really just be used for metrics.
+   * @return RapidsBufferHandle associated with this buffer
+   */
+  def addBuffer(
+      blockId: ShuffleBlockId,
+      buffer: DeviceMemoryBuffer,
+      tableMeta: TableMeta,
+      initialSpillPriority: Long,
+      defaultSpillCallback: SpillCallback,
+      needsSync: Boolean): RapidsBufferHandle = {
+    val bufferId = nextShuffleBufferId(blockId)
+    // update the table metadata for the buffer ID generated above
+    tableMeta.bufferMeta.mutateId(bufferId.tableId)
+    // when we call `addBuffer` the store will incRefCount
+    withResource(buffer) { _ =>
+      val handle = deviceStore.addBuffer(
+        bufferId,
+        buffer,
+        tableMeta,
+        initialSpillPriority,
+        defaultSpillCallback,
+        needsSync)
+      trackCachedHandle(bufferId, handle)
+      handle
+    }
+  }
+
+  /**
+   * Register a new buffer with the catalog. An exception will be thrown if an
+   * existing buffer was registered with the same block ID (extremely unlikely)
+   */
+  def addDegenerateRapidsBuffer(
+      blockId: ShuffleBlockId,
+      meta: TableMeta,
+      spillCallback: SpillCallback): RapidsBufferHandle = {
+    val bufferId = nextShuffleBufferId(blockId)
+    val buffer = new DegenerateRapidsBuffer(bufferId, meta)
+    catalog.registerNewBuffer(buffer)
+    val handle =
+      catalog.makeNewHandle(buffer.id, buffer.getSpillPriority, spillCallback)
+    trackCachedHandle(bufferId, handle)
+    handle
+  }
+
   /**
    * Information stored for each active shuffle.
    * NOTE: ArrayBuffer in blockMap must be explicitly locked when using it!
+   *
    * @param blockMap mapping of block ID to array of buffers for the block
    */
   private case class ShuffleInfo(
@@ -88,7 +192,7 @@ class ShuffleBufferCatalog(
         // NOTE: Not synchronizing array buffer because this shuffle should be inactive.
         bufferIds.foreach { id =>
           tableMap.remove(id.tableId)
-          catalog.removeBuffer(id)
+          bufferIdToHandle.get(id).close()
         }
       }
       info.blockMap.forEachValue(Long.MaxValue, bufferRemover)
@@ -126,6 +230,20 @@ class ShuffleBufferCatalog(
     }
   }
 
+  def blockIdToBufferHandles(blockId: ShuffleBlockId): Array[RapidsBufferHandle] = {
+    val info = activeShuffles.get(blockId.shuffleId)
+    if (info == null) {
+      throw new NoSuchElementException(s"unknown shuffle $blockId.shuffleId")
+    }
+    val entries = info.blockMap.get(blockId)
+    if (entries == null) {
+      throw new NoSuchElementException(s"unknown shuffle block $blockId")
+    }
+    entries.synchronized {
+      entries.map(bufferIdToHandle.get).toArray
+    }
+  }
+
   /** Get all the buffer metadata that correspond to a shuffle block identifier. */
   def blockIdToMetas(blockId: ShuffleBlockId): Seq[TableMeta] = {
     blockIdToBuffersIds(blockId).map(catalog.getBufferMeta)
@@ -151,76 +269,50 @@ class ShuffleBufferCatalog(
     blockBufferIds.synchronized {
       blockBufferIds.append(id)
     }
-
     id
   }
 
-  /** Allocate a new table identifier for a shuffle block and update the shuffle block mapping. */
-  def nextTableId(blockId: ShuffleBlockId): Int = {
-    val shuffleBufferId = nextShuffleBufferId(blockId)
-    shuffleBufferId.tableId
-  }
-
-  /** Lookup the shuffle buffer identifier that corresponds to the specified table identifier. */
-  def getShuffleBufferId(tableId: Int): ShuffleBufferId = {
+  /** Lookup the shuffle buffer handle that corresponds to the specified table identifier. */
+  def getShuffleBufferHandle(tableId: Int): RapidsBufferHandle = {
     val shuffleBufferId = tableMap.get(tableId)
     if (shuffleBufferId == null) {
       throw new NoSuchElementException(s"unknown table ID $tableId")
     }
-    shuffleBufferId
+    bufferIdToHandle.get(shuffleBufferId)
   }
-
-  /**
-   * Register a new buffer with the catalog. An exception will be thrown if an
-   * existing buffer was registered with the same buffer ID.
-   */
-  def registerNewBuffer(buffer: RapidsBuffer): Unit = catalog.registerNewBuffer(buffer)
 
   /**
    * Update the spill priority of a shuffle buffer that soon will be read locally.
-   * @param id shuffle buffer identifier of buffer to update
+   * @param handle shuffle buffer handle of buffer to update
    */
-  def updateSpillPriorityForLocalRead(id: ShuffleBufferId): Unit = {
-    withResource(catalog.acquireBuffer(id)) { buffer =>
-      buffer.setSpillPriority(SpillPriorities.INPUT_FROM_SHUFFLE_PRIORITY)
-    }
+  def updateSpillPriorityForLocalRead(handle: RapidsBufferHandle): Unit = {
+    handle.setSpillPriority(SpillPriorities.INPUT_FROM_SHUFFLE_PRIORITY)
   }
 
   /**
-   * Lookup the shuffle buffer that corresponds to the specified shuffle buffer ID and acquire it.
+   * Lookup the shuffle buffer that corresponds to the specified buffer handle and acquire it.
    * NOTE: It is the responsibility of the caller to close the buffer.
-   * @param id shuffle buffer identifier
+   * @param handle shuffle buffer handle
    * @return shuffle buffer that has been acquired
    */
-  def acquireBuffer(id: ShuffleBufferId): RapidsBuffer = {
-    val buffer = catalog.acquireBuffer(id)
+  def acquireBuffer(handle: RapidsBufferHandle): RapidsBuffer = {
+    val buffer = catalog.acquireBuffer(handle)
     // Shuffle buffers that have been read are less likely to be read again,
     // so update the spill priority based on this access
-    val spillPriority = SpillPriorities.getShuffleOutputBufferReadPriority
-    buffer.setSpillPriority(spillPriority)
+    handle.setSpillPriority(SpillPriorities.getShuffleOutputBufferReadPriority)
     buffer
   }
 
   /**
-   * Lookup the shuffle buffer that corresponds to the specified table ID and acquire it.
-   * NOTE: It is the responsibility of the caller to close the buffer.
-   * @param tableId table identifier
-   * @return shuffle buffer that has been acquired
-   */
-  def acquireBuffer(tableId: Int): RapidsBuffer = {
-    val shuffleBufferId = getShuffleBufferId(tableId)
-    acquireBuffer(shuffleBufferId)
-  }
-
-  /**
-   * Remove a buffer and table given a buffer ID
+   * Remove a buffer and table given a buffer handle
    * NOTE: This function is not thread safe! The caller should only invoke if
-   * the [[ShuffleBufferId]] being removed is not being utilized by another thread.
-   * @param id buffer identifier
+   * the handle being removed is not being utilized by another thread.
+   * @param handle buffer handle
    */
-  def removeBuffer(id: ShuffleBufferId): Unit = {
+  def removeBuffer(handle: RapidsBufferHandle): Unit = {
+    val id = handle.id
     tableMap.remove(id.tableId)
-    catalog.removeBuffer(id)
+    handle.close()
   }
 }
 

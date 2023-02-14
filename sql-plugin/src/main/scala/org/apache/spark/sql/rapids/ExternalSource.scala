@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,8 @@ import com.nvidia.spark.rapids.iceberg.IcebergProvider
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.connector.read.{PartitionReaderFactory, Scan}
-import org.apache.spark.sql.execution.FileSourceScanExec
+import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
+import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.sources.{CreatableRelationProvider, Filter}
 import org.apache.spark.util.{SerializableConfiguration, Utils}
@@ -64,6 +65,12 @@ object ExternalSource extends Logging {
   private lazy val deltaProvider = DeltaProvider()
 
   private lazy val creatableRelations = deltaProvider.getCreatableRelationRules
+
+  lazy val runnableCmds: Map[Class[_ <: RunnableCommand],
+      RunnableCommandRule[_ <: RunnableCommand]] = deltaProvider.getRunnableCommandRules
+
+  lazy val execRules: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
+    deltaProvider.getExecRules
 
   /** If the file format is supported as an external source */
   def isSupportedFormat(format: FileFormat): Boolean = {

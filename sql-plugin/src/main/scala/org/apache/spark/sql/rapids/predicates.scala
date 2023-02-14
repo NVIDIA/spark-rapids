@@ -21,20 +21,11 @@ import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes, NullIntolerant, Predicate}
+import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, BooleanType, DataType, DoubleType, FloatType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-trait GpuPredicateHelper {
-  protected def splitConjunctivePredicates(condition: Expression): Seq[Expression] = {
-    condition match {
-      case GpuAnd(cond1, cond2) =>
-        splitConjunctivePredicates(cond1) ++ splitConjunctivePredicates(cond2)
-      case other => other :: Nil
-    }
-  }
-}
 
 case class GpuNot(child: Expression) extends CudfUnaryExpression
     with Predicate with ImplicitCastInputTypes with NullIntolerant {

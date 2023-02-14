@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2020-2022, NVIDIA CORPORATION.
+  Copyright (c) 2020-2023, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -22,12 +22,12 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent</artifactId>
-        <version>22.12.0</version>
+        <version>23.02.0</version>
     </parent>
     <artifactId>rapids-4-spark_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Distribution</name>
     <description>Creates the distribution package of the RAPIDS plugin for Apache Spark</description>
-    <version>22.12.0</version>
+    <version>23.02.0</version>
     <dependencies>
         <dependency>
             <groupId>com.nvidia</groupId>
@@ -40,47 +40,6 @@
 
     <properties>
         <target.classifier/>
-        <noSnapshot.buildvers>
-            311,
-            312,
-            313,
-            320,
-            321,
-            321cdh,
-            322,
-            323,
-            330,
-            331,
-            330cdh
-        </noSnapshot.buildvers>
-        <snapshot.buildvers>
-            314,
-            332
-        </snapshot.buildvers>
-        <databricks.buildvers>
-            312db,
-            321db
-        </databricks.buildvers>
-        <!--
-          Build and run unit tests on one specific version for each sub-version (e.g. 311, 320, 330)
-          Base shim version (311 currently) should be covered in default mvn verify command of premerge script, 
-          so base shim version is removed from the premergeUT list.
-          Separate the versions to two parts (premergeUT1, premergeUT2) for balancing the duration
-        -->
-        <premergeUT1.buildvers>
-            320
-        </premergeUT1.buildvers>
-        <premergeUT2.buildvers>
-            330
-        </premergeUT2.buildvers>
-        <premergeUTF8.buildvers>
-            320
-        </premergeUTF8.buildvers>
-        <jdk11.buildvers>
-            312,
-            321,
-            331
-        </jdk11.buildvers>
         <dist.jar.name>${project.build.directory}/${project.build.finalName}-${cuda.version}.jar</dist.jar.name>
     </properties>
     <profiles>
@@ -130,6 +89,14 @@
             <properties>
                 <included_buildvers>
                     ${jdk11.buildvers}
+                </included_buildvers>
+            </properties>
+        </profile>
+        <profile>
+            <id>databricks</id>
+            <properties>
+                <included_buildvers>
+                    ${databricks.buildvers}
                 </included_buildvers>
             </properties>
         </profile>
@@ -489,18 +456,18 @@
                                             <arg value="${project.basedir}/../docs/supported_ops.md"/>
                                         </java>
                                         <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
-                                            <arg value="${project.basedir}/../tools/src/main/resources/supportedDataSource.csv"/>
+                                            <arg value="${project.basedir}/../tools/generated_files/supportedDataSource.csv"/>
                                         </java>
                                         <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
-                                            <arg value="${project.basedir}/../tools/src/main/resources/operatorsScore.csv"/>
+                                            <arg value="${project.basedir}/../tools/generated_files/operatorsScore.csv"/>
                                             <arg value="operatorScore"/>
                                         </java>
                                         <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
-                                            <arg value="${project.basedir}/../tools/src/main/resources/supportedExecs.csv"/>
+                                            <arg value="${project.basedir}/../tools/generated_files/supportedExecs.csv"/>
                                             <arg value="execs"/>
                                         </java>
                                         <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
-                                            <arg value="${project.basedir}/../tools/src/main/resources/supportedExprs.csv"/>
+                                            <arg value="${project.basedir}/../tools/generated_files/supportedExprs.csv"/>
                                             <arg value="exprs"/>
                                         </java>
                                     </ac:then>
