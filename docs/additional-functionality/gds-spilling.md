@@ -9,6 +9,7 @@ nav_order: 6
 **NOTE**
 
 _GPUDirect Storage (GDS) Spilling_ is a beta feature!
+It requires to install CUDA 11.8 to use this feature.
 
 ---
 The [RAPIDS Shuffle Manager](rapids-shuffle.md) has a spillable cache that keeps GPU data in device
