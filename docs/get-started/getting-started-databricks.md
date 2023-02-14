@@ -59,7 +59,7 @@ The number of GPUs per node dictates the number of Spark executors that can run 
    [here](https://issues.apache.org/jira/browse/SPARK-41793), whereas when using the plugin the 
    correct result will be returned.
 
-6. In Databricks 10.4, query may fail when Dynamic File Pruning is enabled. As a workaround, please
+6. A query may fail when Dynamic File Pruning is enabled. As a workaround, please
    disable the feature by setting `spark.databricks.optimizer.dynamicFilePruning false`. More details
    are in [issue-7648](https://github.com/NVIDIA/spark-rapids/issues/7648).
    
