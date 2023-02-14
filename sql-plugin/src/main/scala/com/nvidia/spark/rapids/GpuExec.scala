@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -108,20 +108,16 @@ object GpuMetric extends Logging {
     case i => throw new IllegalArgumentException(s"found unsupported GpuMetric ${i.getClass}")
   }
 
-  def unwrap(input: Map[String, GpuMetric]): Map[String, SQLMetric] = input.filter {
+  def unwrap(input: Map[String, GpuMetric]): Map[String, SQLMetric] = input.collect {
     // remove the metrics that are not registered
-    case (_, NoopMetric) => false
-    case _ => true
-    // sadly mapValues produces a non-serializable result, so we have to hack it a bit to force
-    // it to be materialized
-  }.mapValues(unwrap).toArray.toMap
+    case (k, w) if w != NoopMetric => (k, unwrap(w))
+  }
 
   def wrap(input: SQLMetric): GpuMetric = WrappedGpuMetric(input)
 
-  def wrap(input: Map[String, SQLMetric]): Map[String, GpuMetric] =
-  // sadly mapValues produces a non-serializable result, so we have to hack it a bit to force
-  // it to be materialized
-    input.mapValues(wrap).toArray.toMap
+  def wrap(input: Map[String, SQLMetric]): Map[String, GpuMetric] = input.map {
+    case (k, v) => (k, wrap(v))
+  }
 
   object DEBUG_LEVEL extends MetricsLevel(0)
   object MODERATE_LEVEL extends MetricsLevel(1)
@@ -160,7 +156,7 @@ sealed abstract class GpuMetric extends Serializable {
   def +=(v: Long): Unit
   def add(v: Long): Unit
 
-  def ns[T](f: => T): T = {
+  final def ns[T](f: => T): T = {
     val start = System.nanoTime()
     try {
       f
@@ -177,7 +173,7 @@ object NoopMetric extends GpuMetric {
   override def value: Long = 0
 }
 
-case class WrappedGpuMetric(sqlMetric: SQLMetric) extends GpuMetric {
+final case class WrappedGpuMetric(sqlMetric: SQLMetric) extends GpuMetric {
   def +=(v: Long): Unit = sqlMetric.add(v)
   def add(v: Long): Unit = sqlMetric.add(v)
   override def set(v: Long): Unit = sqlMetric.set(v)

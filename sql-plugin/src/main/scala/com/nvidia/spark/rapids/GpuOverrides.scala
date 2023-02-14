@@ -400,6 +400,9 @@ sealed trait FileFormatType
 object CsvFormatType extends FileFormatType {
   override def toString = "CSV"
 }
+object HiveDelimitedTextFormatType extends FileFormatType {
+  override def toString = "HiveText"
+}
 object ParquetFormatType extends FileFormatType {
   override def toString = "Parquet"
 }
@@ -781,9 +784,14 @@ object GpuOverrides extends Logging {
   lazy val fileFormats: Map[FileFormatType, Map[FileFormatOp, FileFormatChecks]] = Map(
     (CsvFormatType, FileFormatChecks(
       cudfRead = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-          GpuTypeShims.additionalCsvSupportedTypes,
+        GpuTypeShims.additionalCsvSupportedTypes,
       cudfWrite = TypeSig.none,
       sparkSig = TypeSig.cpuAtomics)),
+    (HiveDelimitedTextFormatType, FileFormatChecks(
+      // Keep the supported types in sync with GpuHiveTextFileUtils.isSupportedType.
+      cudfRead = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
+      cudfWrite = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
+      sparkSig = TypeSig.all)),
     (DeltaFormatType, FileFormatChecks(
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
           TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +

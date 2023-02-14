@@ -21,6 +21,7 @@ import java.io.File
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, MemoryBuffer}
 import com.nvidia.spark.rapids.StorageTier.{DEVICE, DISK, HOST, StorageTier}
 import com.nvidia.spark.rapids.format.TableMeta
+import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito._
 import org.scalatest.FunSuite
 import org.scalatest.mockito.MockitoSugar
@@ -250,6 +251,44 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar with Arm {
     assert(catalog.isBufferSpilled(bufferId, DEVICE))
     assert(catalog.isBufferSpilled(bufferId, HOST))
     assert(!catalog.isBufferSpilled(bufferId, DISK))
+  }
+
+  test("multiple calls to unspill return existing DEVICE buffer") {
+    val deviceStore = spy(new RapidsDeviceMemoryStore)
+    val mockStore = mock[RapidsBufferStore]
+    val hostStore = new RapidsHostMemoryStore(10000, 1000)
+    deviceStore.setSpillStore(hostStore)
+    hostStore.setSpillStore(mockStore)
+    val catalog = new RapidsBufferCatalog(deviceStore)
+    val handle = withResource(DeviceMemoryBuffer.allocate(1024)) { buff =>
+      val meta = MetaUtils.getTableMetaNoTable(buff)
+      catalog.addBuffer(
+        buff, meta, -1, RapidsBuffer.defaultSpillCallback)
+    }
+    withResource(handle) { _ =>
+      catalog.synchronousSpill(deviceStore, 0)
+      val acquiredHostBuffer = catalog.acquireBuffer(handle)
+      withResource(acquiredHostBuffer) { _ =>
+        assertResult(HOST)(acquiredHostBuffer.storageTier)
+        val unspilled =
+          catalog.unspillBufferToDeviceStore(
+            acquiredHostBuffer,
+            acquiredHostBuffer.getMemoryBuffer,
+            Cuda.DEFAULT_STREAM)
+        withResource(unspilled) { _ =>
+          assertResult(DEVICE)(unspilled.storageTier)
+        }
+        val unspilledSame = catalog.unspillBufferToDeviceStore(
+          acquiredHostBuffer,
+          acquiredHostBuffer.getMemoryBuffer,
+          Cuda.DEFAULT_STREAM)
+        withResource(unspilledSame) { _ =>
+          assertResult(unspilled)(unspilledSame)
+        }
+        // verify that we invoked the copy function exactly once
+        verify(deviceStore, times(1)).copyBuffer(any(), any(), any())
+      }
+    }
   }
 
   test("remove buffer tier") {

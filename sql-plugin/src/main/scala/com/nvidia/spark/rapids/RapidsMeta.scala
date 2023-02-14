@@ -991,6 +991,7 @@ object DataTypeMeta {
       Some(expr.dataType)
     } catch {
       case _: java.lang.UnsupportedOperationException => None
+      case _: org.apache.spark.SparkException => None
     }
     new DataTypeMeta(wrapped, overrideType)
   }

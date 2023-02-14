@@ -85,7 +85,7 @@ class ShuffleReceivedBufferCatalog(
     tableMeta.bufferMeta.mutateId(bufferId.tableId)
     // when we call `addBuffer` the store will incRefCount
     withResource(buffer) { _ =>
-      deviceStore.addBuffer(
+      catalog.addBuffer(
         bufferId,
         buffer,
         tableMeta,
@@ -107,9 +107,7 @@ class ShuffleReceivedBufferCatalog(
       meta: TableMeta,
       spillCallback: SpillCallback): RapidsBufferHandle = {
     val bufferId = nextShuffleReceivedBufferId()
-    val buffer = new DegenerateRapidsBuffer(bufferId, meta)
-    catalog.registerNewBuffer(buffer)
-    catalog.makeNewHandle(bufferId, -1, spillCallback)
+    catalog.registerDegenerateBuffer(bufferId, meta, spillCallback)
   }
 
   /**
