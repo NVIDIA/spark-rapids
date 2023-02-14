@@ -182,7 +182,7 @@ adding shim JSON lines comments by hand.
 ## Adding a new shim
 
 Shimplify can clone an existing shim based as a basis of the new shim. For example when adding
-support for a new [maintenance][5] version of Spark, say 3.2.4, it's expected to be similar to 3.2.3
+support for a new [maintenance][5] version of Spark, say 3.2.4, it's expected to be similar to 3.2.3.
 
 If just 3.2.3 or all shims after the full transition have already been converted you can execute
 
