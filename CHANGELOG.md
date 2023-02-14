@@ -1,5 +1,5 @@
 # Change log
-Generated on 2023-02-08
+Generated on 2023-02-14
 
 ## Release 23.02
 
@@ -30,13 +30,16 @@ Generated on 2023-02-08
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#7448](https://github.com/NVIDIA/spark-rapids/issues/7448)|[BUG] GDS cufile test failed in elder cuda runtime|
+|[#7686](https://github.com/NVIDIA/spark-rapids/issues/7686)|[BUG] Large floating point values written as `Inf` not `Infinity` in Hive text writer|
+|[#7703](https://github.com/NVIDIA/spark-rapids/issues/7703)|[BUG] test_basic_hive_text_write fails|
+|[#7693](https://github.com/NVIDIA/spark-rapids/issues/7693)|[BUG] `test_partitioned_sql_parquet_write` fails on CDH|
 |[#7382](https://github.com/NVIDIA/spark-rapids/issues/7382)|[BUG] add dynamic partition overwrite tests for all formats|
 |[#7597](https://github.com/NVIDIA/spark-rapids/issues/7597)|[BUG] Incompatible timestamps in Hive delimited text writes|
 |[#7675](https://github.com/NVIDIA/spark-rapids/issues/7675)|[BUG] Multi-threaded shuffle bails with division-by-zero ArithmeticException|
 |[#7530](https://github.com/NVIDIA/spark-rapids/issues/7530)|[BUG] Add tests for RapidsShuffleManager|
 |[#7679](https://github.com/NVIDIA/spark-rapids/issues/7679)|[BUG] test_partitioned_parquet_write[PartitionWriteMode.Dynamic] failed in databricks runtimes|
 |[#7637](https://github.com/NVIDIA/spark-rapids/issues/7637)|[BUG] GpuBroadcastNestedLoopJoinExec:  Close called too many times|
-|[#7639](https://github.com/NVIDIA/spark-rapids/issues/7639)|[BUG] Databricks premerge failing with cannot find pytest|
 |[#7595](https://github.com/NVIDIA/spark-rapids/issues/7595)|[BUG] test_mod_mixed decimal test fails on 330db (Databricks 11.3) and TBD 340|
 |[#7575](https://github.com/NVIDIA/spark-rapids/issues/7575)|[BUG] On Databricks 11.3, Executor broadcast shuffles should stay on GPU even without columnar children |
 |[#7607](https://github.com/NVIDIA/spark-rapids/issues/7607)|[BUG] RegularExpressionTranspilerSuite exhibits multiple failures|
@@ -101,6 +104,14 @@ Generated on 2023-02-08
 ### PRs
 |||
 |:---|:---|
+|[#7761](https://github.com/NVIDIA/spark-rapids/pull/7761)|[Doc] remove xgboost demo from aws-emr doc due to nccl issue [skip ci]|
+|[#7760](https://github.com/NVIDIA/spark-rapids/pull/7760)|Add notice in gds to install cuda 11.8 [skip ci]|
+|[#7570](https://github.com/NVIDIA/spark-rapids/pull/7570)|[Doc] 23.02 doc updates [skip ci]|
+|[#7735](https://github.com/NVIDIA/spark-rapids/pull/7735)|Update JNI version to released 23.02.0|
+|[#7721](https://github.com/NVIDIA/spark-rapids/pull/7721)|Fix issue where UCX mode was trying to use catalog from the driver|
+|[#7713](https://github.com/NVIDIA/spark-rapids/pull/7713)|Workaround for incompatible serialization for `Inf` floats in Hive text write|
+|[#7700](https://github.com/NVIDIA/spark-rapids/pull/7700)|Init 23.02 changelog and move 22 changelog to archives [skip ci]|
+|[#7708](https://github.com/NVIDIA/spark-rapids/pull/7708)|Set Hive write test to ignore order on verification.|
 |[#7697](https://github.com/NVIDIA/spark-rapids/pull/7697)|Disable Dynamic partitioning tests on CDH|
 |[#7556](https://github.com/NVIDIA/spark-rapids/pull/7556)|Write support for Hive delimited text tables|
 |[#7681](https://github.com/NVIDIA/spark-rapids/pull/7681)|Disable Hive delimited text reader tests for CDH.|
