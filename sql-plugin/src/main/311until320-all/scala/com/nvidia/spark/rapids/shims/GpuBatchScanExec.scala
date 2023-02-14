@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,10 +23,11 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.connector.read._
+import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
 
 case class GpuBatchScanExec(
     output: Seq[AttributeReference],
-    @transient scan: Scan) extends ShimDataSourceV2ScanExecBase with GpuBatchScanExecMetrics {
+    @transient scan: Scan) extends DataSourceV2ScanExecBase with GpuBatchScanExecMetrics {
   @transient lazy val batch: Batch = scan.toBatch
 
   @transient override lazy val partitions: Seq[InputPartition] = batch.planInputPartitions()
