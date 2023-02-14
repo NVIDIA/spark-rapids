@@ -92,7 +92,7 @@ sudo apt -y install zip unzip
 sudo "$(which pip)" install pytest sre_yield requests pandas pyarrow findspark pytest-xdist pytest-order
 
 # Get Python version (major.minor). i.e., python3.8 for DB10.4 and python3.9 for DB11.3
-sw_versions[PYTHON]=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
+sw_versions[PYTHON]=$($(which python3) -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
 
 export SPARK_HOME=/databricks/spark
 # change to not point at databricks confs so we don't conflict with their settings
