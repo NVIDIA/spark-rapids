@@ -66,7 +66,9 @@ if [ -d "${CONDA_HOME}/envs/cudf-udf" ]; then
 fi
 
 # Get Python version (major.minor). i.e., python3.8 for DB10.4 and python3.9 for DB11.3
-sw_versions[PYTHON]=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
+#sw_versions[PYTHON]=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
+# NOTE: cudf 23.02+ do not support python 3.9. ref: https://docs.rapids.ai/notices/rsn0022/
+sw_versions[PYTHON]='python3.8'
 
 # override incompatible versions between databricks and cudf
 if [ -d "${CONDA_HOME}/envs/cudf-udf" ]; then
