@@ -176,42 +176,50 @@ class ConditionalNestedLoopJoinIterator(
     }
   }
 
-  override def computeNumJoinRows(cb: ColumnarBatch): Long = {
+  override def computeNumJoinRows(scb: SpillableColumnarBatch): Long = {
     withResource(GpuColumnVector.from(builtBatch.getBatch)) { builtTable =>
-      withResource(GpuColumnVector.from(cb)) { streamTable =>
-        val (left, right) = buildSide match {
-          case GpuBuildLeft => (builtTable, streamTable)
-          case GpuBuildRight => (streamTable, builtTable)
-        }
-        joinType match {
-          case _: InnerLike =>left.conditionalInnerJoinRowCount(right, condition)
-          case LeftOuter => left.conditionalLeftJoinRowCount(right, condition)
-          case RightOuter => right.conditionalLeftJoinRowCount(left, condition)
-          case LeftSemi => left.conditionalLeftSemiJoinRowCount(right, condition)
-          case LeftAnti => left.conditionalLeftAntiJoinRowCount(right, condition)
-          case _ => throw new IllegalStateException(s"Unsupported join type $joinType")
+      withResource(scb.getColumnarBatch()) { cb =>
+        withResource(GpuColumnVector.from(cb)) { streamTable =>
+          val (left, right) = buildSide match {
+            case GpuBuildLeft => (builtTable, streamTable)
+            case GpuBuildRight => (streamTable, builtTable)
+          }
+          joinType match {
+            case _: InnerLike => left.conditionalInnerJoinRowCount(right, condition)
+            case LeftOuter => left.conditionalLeftJoinRowCount(right, condition)
+            case RightOuter => right.conditionalLeftJoinRowCount(left, condition)
+            case LeftSemi => left.conditionalLeftSemiJoinRowCount(right, condition)
+            case LeftAnti => left.conditionalLeftAntiJoinRowCount(right, condition)
+            case _ => throw new IllegalStateException(s"Unsupported join type $joinType")
+          }
         }
       }
     }
   }
 
   override def createGatherer(
-      cb: ColumnarBatch,
+      scb: SpillableColumnarBatch,
       numJoinRows: Option[Long]): Option[JoinGatherer] = {
     if (numJoinRows.contains(0)) {
       // nothing matched
       return None
     }
     withResource(GpuColumnVector.from(builtBatch.getBatch)) { builtTable =>
-      withResource(GpuColumnVector.from(cb)) { streamTable =>
-        closeOnExcept(LazySpillableColumnarBatch(cb, spillCallback, "stream_data")) { streamBatch =>
-          val builtSpillOnly = LazySpillableColumnarBatch.spillOnly(builtBatch)
-          val (leftTable, leftBatch, rightTable, rightBatch) = buildSide match {
-            case GpuBuildLeft => (builtTable, builtSpillOnly, streamTable, streamBatch)
-            case GpuBuildRight => (streamTable, streamBatch, builtTable, builtSpillOnly)
+      withResource(scb.getColumnarBatch()) { cb =>
+        withResource(GpuColumnVector.from(cb)) { streamTable =>
+          closeOnExcept(LazySpillableColumnarBatch(cb, spillCallback, "stream_data")) {
+            streamBatch =>
+            closeOnExcept(LazySpillableColumnarBatch.spillOnly(builtBatch)) { builtSpillOnly =>
+              val (leftTable, leftBatch, rightTable, rightBatch) = buildSide match {
+                case GpuBuildLeft => (builtTable, builtSpillOnly, streamTable, streamBatch)
+                case GpuBuildRight => (streamTable, streamBatch, builtTable, builtSpillOnly)
+              }
+              val maps = computeGatherMaps(leftTable, rightTable, numJoinRows)
+              closeOnExcept(maps) { _ =>
+                makeGatherer(maps, leftBatch, rightBatch, joinType)
+              }
+            }
           }
-          val maps = computeGatherMaps(leftTable, rightTable, numJoinRows)
-          makeGatherer(maps, leftBatch, rightBatch, joinType)
         }
       }
     }

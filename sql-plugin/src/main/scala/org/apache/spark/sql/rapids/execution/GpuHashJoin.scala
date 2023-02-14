@@ -100,6 +100,11 @@ object JoinTypeChecks {
 
 object GpuHashJoin extends Arm {
 
+  // Temporary for testing
+  var retryOOMCount = 0
+  var doSplitOOM = false
+  var minBatchSize = 100
+
   def tagJoin(
       meta: SparkPlanMeta[_],
       joinType: JoinType,
@@ -260,39 +265,45 @@ abstract class BaseHashJoinIterator(
       1.0
   }
 
-  override def computeNumJoinRows(cb: ColumnarBatch): Long = {
+  override def computeNumJoinRows(scb: SpillableColumnarBatch): Long = {
     // TODO: Replace this estimate with exact join row counts using the corresponding cudf APIs
     //       being added in https://github.com/rapidsai/cudf/issues/9053.
     joinType match {
       // Full Outer join is implemented via LeftOuter/RightOuter, so use same estimate.
       case _: InnerLike | LeftOuter | RightOuter | FullOuter =>
-        Math.ceil(cb.numRows() * streamMagnificationFactor).toLong
-      case _ => cb.numRows()
+        Math.ceil(scb.numRows() * streamMagnificationFactor).toLong
+      case _ => scb.numRows()
+    }
+  }
+
+  override def createGathererHandleSplit(scb: SpillableColumnarBatch,
+      except:Throwable): Option[JoinGatherer] = {
+    // This should work for all join types. There should be no need to do this for any
+    // of the existence joins because the output rows will never be larger than the
+    // input rows on the stream side.
+    if (joinType.isInstanceOf[InnerLike]
+        || joinType == LeftOuter
+        || joinType == RightOuter
+        || joinType == FullOuter) {
+      // Because this is just an estimate, it is possible for us to get this wrong, so
+      // make sure we at least split the batch in half.
+      val numBatches = Math.max(2, estimatedNumBatches(scb))
+
+      // Split batch and return no gatherer so the outer loop will try again
+      splitAndSave(scb, numBatches, Some(except))
+      None
+    } else {
+      throw except
     }
   }
 
   override def createGatherer(
-      cb: ColumnarBatch,
+      scb: SpillableColumnarBatch,
       numJoinRows: Option[Long]): Option[JoinGatherer] = {
-    try {
+    withResource(scb.getColumnarBatch()) { cb =>
       withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
         joinGatherer(builtKeys, built, cb)
       }
-    } catch {
-      // This should work for all join types. There should be no need to do this for any
-      // of the existence joins because the output rows will never be larger than the
-      // input rows on the stream side.
-      case oom: OutOfMemoryError if joinType.isInstanceOf[InnerLike]
-          || joinType == LeftOuter
-          || joinType == RightOuter
-          || joinType == FullOuter =>
-        // Because this is just an estimate, it is possible for us to get this wrong, so
-        // make sure we at least split the batch in half.
-        val numBatches = Math.max(2, estimatedNumBatches(cb))
-
-        // Split batch and return no gatherer so the outer loop will try again
-        splitAndSave(cb, numBatches, Some(oom))
-        None
     }
   }
 
@@ -370,7 +381,7 @@ abstract class BaseHashJoinIterator(
     }
   }
 
-  private def estimatedNumBatches(cb: ColumnarBatch): Int = joinType match {
+  private def estimatedNumBatches(scb: SpillableColumnarBatch): Int = joinType match {
     case _: InnerLike | LeftOuter | RightOuter | FullOuter =>
       // We want the gather map size to be around the target size. There are two gather maps
       // that are made up of ints, so estimate how many rows per batch on the stream side
@@ -378,7 +389,7 @@ abstract class BaseHashJoinIterator(
       val approximateStreamRowCount = ((targetSize.toDouble / 2) /
           DType.INT32.getSizeInBytes) / streamMagnificationFactor
       val estimatedRowsPerStreamBatch = Math.min(Int.MaxValue, approximateStreamRowCount)
-      Math.ceil(cb.numRows() / estimatedRowsPerStreamBatch).toInt
+      Math.ceil(scb.numRows() / estimatedRowsPerStreamBatch).toInt
     case _ => 1
   }
 }

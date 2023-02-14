@@ -18,11 +18,13 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{GatherMap, NvtxColor, OutOfBoundsPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, SplitAndRetryOOM}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.{InnerLike, JoinType, LeftOuter, RightOuter}
+import org.apache.spark.sql.rapids.execution.GpuHashJoin
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 trait TaskAutoCloseableResource extends AutoCloseable {
@@ -181,16 +183,17 @@ abstract class SplittableJoinIterator(
   // If the join explodes this holds batches from the stream side split into smaller pieces.
   private val pendingSplits = scala.collection.mutable.Queue[SpillableColumnarBatch]()
 
-  protected def computeNumJoinRows(cb: ColumnarBatch): Long
+  protected def computeNumJoinRows(scb: SpillableColumnarBatch): Long
 
   /**
    * Create a join gatherer.
-   * @param cb next column batch from the streaming side of the join
+   * @param scb next column batch from the streaming side of the join
    * @param numJoinRows if present, the number of join output rows computed for this batch
    * @return some gatherer to use next or None if there is no next gatherer or the loop should try
    *         to build the gatherer again (e.g.: to skip a degenerate join result batch)
    */
-  protected def createGatherer(cb: ColumnarBatch, numJoinRows: Option[Long]): Option[JoinGatherer]
+  protected def createGatherer(scb: SpillableColumnarBatch,
+      numJoinRows:Option[Long]): Option[JoinGatherer]
 
   override def hasNextStreamBatch: Boolean = {
     isInitialJoin || pendingSplits.nonEmpty || stream.hasNext
@@ -200,50 +203,130 @@ abstract class SplittableJoinIterator(
     val wasInitialJoin = isInitialJoin
     isInitialJoin = false
     if (pendingSplits.nonEmpty || stream.hasNext) {
-      val cb = if (pendingSplits.nonEmpty) {
-        opTime.ns {
-          withResource(pendingSplits.dequeue()) {
-            _.getColumnarBatch()
-          }
-        }
+      val scb = if (pendingSplits.nonEmpty) {
+        pendingSplits.dequeue()
       } else {
         val batch = withResource(stream.next()) { lazyBatch =>
           opTime.ns {
-            lazyBatch.releaseBatch()
+            SpillableColumnarBatch(lazyBatch.releaseBatch(),
+              SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
           }
         }
         batch
       }
       opTime.ns {
-        withResource(cb) { cb =>
-          val numJoinRows = computeNumJoinRows(cb)
+        withResource(scb) { _ =>
+          val numJoinRows = computeNumJoinRows(scb)
 
           // We want the gather maps size to be around the target size. There are two gather maps
           // that are made up of ints, so compute how many rows on the stream side will produce the
           // desired gather maps size.
           val maxJoinRows = Math.max(1, targetSize / (2 * Integer.BYTES))
-          if (numJoinRows > maxJoinRows && cb.numRows() > 1) {
+          if (numJoinRows > maxJoinRows && scb.numRows() > 1) {
             // Need to split the batch to reduce the gather maps size. This takes a simplistic
             // approach of assuming the data is uniformly distributed in the stream table.
-            val numSplits = Math.min(cb.numRows(),
+            val numSplits = Math.min(scb.numRows(),
               Math.ceil(numJoinRows.toDouble / maxJoinRows).toInt)
-            splitAndSave(cb, numSplits)
+            splitAndSave(scb, numSplits)
 
             // Return no gatherer so the outer loop will try again
             return None
           }
 
-          createGatherer(cb, Some(numJoinRows))
+          createGathererWithRetry(scb, Some(numJoinRows))
         }
       }
     } else {
       opTime.ns {
         assert(wasInitialJoin)
         import scala.collection.JavaConverters._
-        withResource(GpuColumnVector.emptyBatch(streamAttributes.asJava)) { cb =>
-          createGatherer(cb, None)
+        withResource(
+          SpillableColumnarBatch(GpuColumnVector.emptyBatch(streamAttributes.asJava),
+            SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)) { scb =>
+          createGathererWithRetry(scb, None)
         }
       }
+    }
+  }
+
+  protected def createGathererHandleSplit(scb: SpillableColumnarBatch,
+      except: Throwable): Option[JoinGatherer] = {
+    val oom = new OutOfMemoryError("Out of Memory - unable to split input data")
+    if (except != null) {
+      oom.addSuppressed(except)
+    }
+    throw oom
+  }
+
+  protected def createGathererWithRetry(
+      scb: SpillableColumnarBatch,
+      numJoinRows: Option[Long]): Option[JoinGatherer] = {
+    var numRetries = 0
+    var doSplit = false
+    var done = false
+    var fail = false
+    var retryExcept: Throwable = null
+    var result : Option[JoinGatherer] = None
+    // Temporary hack for testing
+    RmmSpark.associateCurrentThreadWithTask(1)
+    while (!done && !doSplit && !fail) {
+      // If we are retrying, block until we get the go ahead
+      if (numRetries > 0) {
+        RmmSpark.blockThreadUntilReady()
+      }
+      if (GpuHashJoin.retryOOMCount > 0) {
+        RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+        GpuHashJoin.retryOOMCount -= 1
+      } else if (GpuHashJoin.doSplitOOM) {
+        RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+        GpuHashJoin.doSplitOOM = false
+      }
+      try {
+        result = createGatherer(scb, numJoinRows)
+        done = true
+      } catch {
+        case retryOOM: RetryOOM =>
+          if (retryExcept == null) {
+            retryExcept = retryOOM
+          } else {
+            retryExcept.addSuppressed(retryOOM)
+          }
+          numRetries = numRetries + 1
+          println(s"Retrying, retries so far is ${numRetries}")
+        case splitAndRetryOOM: SplitAndRetryOOM => // we are the only thread
+          if (retryExcept == null) {
+            retryExcept = splitAndRetryOOM
+          } else {
+            retryExcept.addSuppressed(splitAndRetryOOM)
+          }
+          println(s"Split, retries so far is ${numRetries}")
+          doSplit = true
+        // Temporary: This case is here to keep current functionality
+        case outOfMem: OutOfMemoryError =>
+          if (retryExcept == null) {
+            retryExcept = outOfMem
+          } else {
+            retryExcept.addSuppressed(outOfMem)
+          }
+          println(s"Split, retries so far is ${numRetries}")
+          doSplit = true
+        case other: Throwable =>
+          if (retryExcept == null) {
+            retryExcept = other
+          } else {
+            retryExcept.addSuppressed(other)
+          }
+          fail = true
+      }
+    }
+    // Temporary for testing
+    RmmSpark.removeCurrentThreadAssociation()
+    if (done) {
+      result
+    } else if (doSplit) {
+      createGathererHandleSplit(scb, retryExcept)
+    } else { // fail case
+      throw retryExcept
     }
   }
 
@@ -259,36 +342,41 @@ abstract class SplittableJoinIterator(
   /**
    * Split a stream-side input batch, making all splits spillable, and replacing this batch with
    * the splits in the stream-side input
-   * @param cb stream-side input batch to split
+   * @param scb stream-side input batch to split
    * @param numBatches number of splits to produce with approximately the same number of rows each
-   * @param oom a prior OOM exception that this will try to recover from by splitting
+   * @param except a prior OOM exception that this will try to recover from by splitting
    */
   protected def splitAndSave(
-      cb: ColumnarBatch,
+      scb: SpillableColumnarBatch,
       numBatches: Int,
-      oom: Option[OutOfMemoryError] = None): Unit = {
-    val batchSize = cb.numRows() / numBatches
-    if (oom.isDefined && batchSize < 100) {
+      except: Option[Throwable] = None): Unit = {
+    val batchSize = scb.numRows() / numBatches
+    if (except.isDefined && batchSize < GpuHashJoin.minBatchSize) {
       // We just need some kind of cutoff to not get stuck in a loop if the batches get to be too
       // small but we want to at least give it a chance to work (mostly for tests where the
       // targetSize can be set really small)
-      throw oom.get
+      val oom = new OutOfMemoryError(
+        s"Out of Memory - reached split limit of ${GpuHashJoin.minBatchSize} rows")
+      oom.addSuppressed(except.get)
+      throw oom
     }
     val msg = s"Split stream batch into $numBatches batches of about $batchSize rows"
-    if (oom.isDefined) {
+    if (except.isDefined) {
       logWarning(s"OOM Encountered: $msg")
     } else {
       logInfo(msg)
     }
-    val splits = withResource(GpuColumnVector.from(cb)) { tab =>
-      val splitIndexes = (1 until numBatches).map(num => num * batchSize)
-      tab.contiguousSplit(splitIndexes: _*)
-    }
-    withResource(splits) { splits =>
-      val schema = GpuColumnVector.extractTypes(cb)
-      pendingSplits ++= splits.map { ct =>
-        SpillableColumnarBatch(ct, schema,
-          SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+    withResource(scb.getColumnarBatch()) { cb =>
+      val splits = withResource(GpuColumnVector.from(cb)) { tab =>
+        val splitIndexes = (1 until numBatches).map(num => num * batchSize)
+        tab.contiguousSplit(splitIndexes: _*)
+      }
+      withResource(splits) { splits =>
+        val schema = GpuColumnVector.extractTypes(cb)
+        pendingSplits ++= splits.map { ct =>
+          SpillableColumnarBatch(ct, schema,
+            SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+        }
       }
     }
   }

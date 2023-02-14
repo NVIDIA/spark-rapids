@@ -715,6 +715,14 @@ object RapidsBufferCatalog extends Logging with Arm {
     deviceStorage = rdms
   }
 
+  // For testing
+  def setCatalog(catalog: RapidsBufferCatalog): Unit = {
+    if (_singleton != null) {
+      _singleton.close()
+    }
+    _singleton = catalog
+  }
+
   def init(rapidsConf: RapidsConf): Unit = {
     // We are going to re-initialize so make sure all of the old things were closed...
     closeImpl()
