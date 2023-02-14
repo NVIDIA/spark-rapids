@@ -204,8 +204,24 @@ character an empty line. Shimplify will fail the build until all the orphaned fi
 
 After adding or deleting shims you can run the integration tests above.
 
+## Symlinks & IDE
+
+IDEs may or may not reveal whether a file is accessed via a symlink. IntelliJ IDEA treats the
+original file path and a path via a symlink to the same file as two independent files by default.
+
+In the context of shimplify, only the generated symlink path is part of the project
+because the owner shim path is not `add-source`d during build and therefore during IDEA Project
+Import. The user can install the [Resolve Symlinks][6] plugin to prevent IDEA from opening multiple
+windows for the same physical source file. As of the time of this writing, it works seamlessly with
+the exception when the file is open via a Debugger either on a breakpoint hit or subsequent clicking
+on the affected stack frame in which case you will see an extra editor tab being added.
+
+No matter whether or not you use the Resolve Symlinks plugin, IDEA is able to add a break point
+set directly via the original physical file or a symlink path.
+
 [1]: https://github.com/NVIDIA/spark-rapids/issues/3223
 [2]: https://github.com/NVIDIA/spark-rapids/blob/main/build/shimplify.py
 [3]: https://github.com/NVIDIA/spark-rapids/blob/74ce729ca1306db01359e68f7f0b7cc31cd3d850/pom.xml#L494-L500
 [4]: https://jsonlines.org/
 [5]: https://spark.apache.org/versioning-policy.html
+[6]: https://plugins.jetbrains.com/plugin/16429-idea-resolve-symlinks
