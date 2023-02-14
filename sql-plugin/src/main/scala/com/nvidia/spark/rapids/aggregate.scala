@@ -434,7 +434,8 @@ object GpuHashAggregateIterator extends Arm with Logging {
    * Compute the aggregations on the projected input columns, and close input batch.
    *
    * @note public for testing
-   * @param toAggregateBatch input batch to aggregate
+   * @param metrics metrics that will be updated during aggregation
+   * @param inputSpillable input spillable batch to aggregate
    * @param helper an internal object that carries state required to execute the aggregate from
    *               different parts of the codebase.
    * @return aggregated batch
@@ -483,9 +484,10 @@ object GpuHashAggregateIterator extends Arm with Logging {
   }
 
   /**
-   * Concatenates batches after extracting them from `LazySpillableColumnarBatch`
+   * Concatenates batches after extracting them from `SpllableColumnarBatch`
    * @note the input batches are not closed as part of this operation
-   * @param toConcat lazy spillable batches to concatenate
+   * @param metrics metrics that will be updated during aggregation
+   * @param toConcat spillable batches to concatenate
    * @return concatenated batch result
    */
   def concatenateBatches(
