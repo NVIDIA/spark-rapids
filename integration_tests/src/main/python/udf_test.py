@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,9 +15,13 @@
 import pytest
 
 from conftest import is_at_least_precommit_run
-from spark_session import is_databricks91_or_later, is_before_spark_330
+from spark_session import is_databricks91_or_later, is_before_spark_330, is_databricks113_or_later
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
+
+if is_databricks113_or_later():
+    pytest.skip('https://github.com/NVIDIA/spark-rapids/issues/7639', allow_module_level=True)
+
 try:
     require_minimum_pandas_version()
 except Exception as e:
