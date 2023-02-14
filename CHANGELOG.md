@@ -104,6 +104,7 @@ Generated on 2023-02-14
 ### PRs
 |||
 |:---|:---|
+|[#7761](https://github.com/NVIDIA/spark-rapids/pull/7761)|[Doc] remove xgboost demo from aws-emr doc due to nccl issue [skip ci]|
 |[#7760](https://github.com/NVIDIA/spark-rapids/pull/7760)|Add notice in gds to install cuda 11.8 [skip ci]|
 |[#7570](https://github.com/NVIDIA/spark-rapids/pull/7570)|[Doc] 23.02 doc updates [skip ci]|
 |[#7735](https://github.com/NVIDIA/spark-rapids/pull/7735)|Update JNI version to released 23.02.0|
