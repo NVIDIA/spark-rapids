@@ -19,8 +19,6 @@ import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
-import org.apache.spark.sql.vectorized.ColumnarBatch
-
 /** Implementation of the automatic-resource-management pattern */
 trait Arm {
 
@@ -157,51 +155,6 @@ trait Arm {
     } finally {
       h.close()
     }
-  }
-
-  def toSpillableIterator(it: Iterator[ColumnarBatch]): Iterator[SpillableColumnarBatch] = {
-    new Iterator[SpillableColumnarBatch] {
-      override def hasNext: Boolean = it.hasNext
-      override def next(): SpillableColumnarBatch = {
-        SpillableColumnarBatch(
-          it.next(),
-          SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-          RapidsBuffer.defaultSpillCallback)
-      }
-    }
-  }
-
-  def withRetry(
-      input: SpillableColumnarBatch)
-      (fn: ColumnarBatch => ColumnarBatch): Iterator[SpillableColumnarBatch] = {
-    toSpillableIterator(new RmmRapidsRetryIterator(
-      Seq(input).iterator,
-      fn,
-      null,
-      null))
-  }
-
-  def withRetry(
-      input: SpillableColumnarBatch,
-      splitPolicy: SpillableColumnarBatch => Seq[SpillableColumnarBatch])
-      (fn: ColumnarBatch => ColumnarBatch): Iterator[SpillableColumnarBatch] = {
-    toSpillableIterator(new RmmRapidsRetryIterator(
-      Seq(input).iterator,
-      fn,
-      splitPolicy,
-      null))
-  }
-
-  def withRetryAndMerge(
-      input: SpillableColumnarBatch,
-      splitPolicy: SpillableColumnarBatch => Seq[SpillableColumnarBatch],
-      mergePolicy: Seq[SpillableColumnarBatch] => SpillableColumnarBatch)
-      (fn: ColumnarBatch => ColumnarBatch): Iterator[SpillableColumnarBatch] = {
-    toSpillableIterator(new RmmRapidsRetryIterator(
-      Seq(input).iterator,
-      fn,
-      splitPolicy,
-      mergePolicy))
   }
 }
 

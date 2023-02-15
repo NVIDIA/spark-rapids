@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids
 
 import java.util
-
 import scala.annotation.tailrec
 import scala.collection.mutable
 
@@ -26,9 +25,10 @@ import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.GpuHashAggregateIterator.{computeAggregateAndClose, concatenateBatches, AggHelper}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetry
 import com.nvidia.spark.rapids.shims.{AggregationTagging, ShimUnaryExecNode}
-
 import org.apache.spark.TaskContext
+
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -288,7 +288,7 @@ object GpuHashAggregateIterator extends Arm with Logging {
 
     def aggregate(preProcessed: SpillableColumnarBatch): Iterator[SpillableColumnarBatch] = {
       if (forceMerge) {
-        withRetryAndMerge(preProcessed, splitPolicy, mergePolicy) { preProcessedAttempt =>
+        withRetry(preProcessed, splitPolicy, mergePolicy) { preProcessedAttempt =>
           aggregate(preProcessedAttempt)
         }
       } else {

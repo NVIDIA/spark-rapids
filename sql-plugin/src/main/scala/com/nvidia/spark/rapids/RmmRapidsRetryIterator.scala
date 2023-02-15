@@ -23,9 +23,50 @@ import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, SplitAndRetryOOM}
 
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+object RmmRapidsRetryIterator {
+  private def toSpillableIterator(
+      it: Iterator[ColumnarBatch]): Iterator[SpillableColumnarBatch] = {
+    new Iterator[SpillableColumnarBatch] {
+      override def hasNext: Boolean = it.hasNext
+      override def next(): SpillableColumnarBatch = {
+        SpillableColumnarBatch(
+          it.next(),
+          SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+          RapidsBuffer.defaultSpillCallback)
+      }
+    }
+  }
+
+  def withRetry(
+      input: SpillableColumnarBatch)
+      (fn: ColumnarBatch => ColumnarBatch): Iterator[SpillableColumnarBatch] = {
+    toSpillableIterator(new RmmRapidsRetryIterator(Seq(input).iterator, fn))
+  }
+
+  def withRetry(
+      input: SpillableColumnarBatch,
+      splitPolicy: SpillableColumnarBatch => Seq[SpillableColumnarBatch])
+      (fn: ColumnarBatch => ColumnarBatch): Iterator[SpillableColumnarBatch] = {
+    toSpillableIterator(new RmmRapidsRetryIterator(Seq(input).iterator, fn, splitPolicy))
+  }
+
+  def withRetry(
+      input: SpillableColumnarBatch,
+      splitPolicy: SpillableColumnarBatch => Seq[SpillableColumnarBatch],
+      mergePolicy: Seq[SpillableColumnarBatch] => SpillableColumnarBatch)
+      (fn: ColumnarBatch => ColumnarBatch): Iterator[SpillableColumnarBatch] = {
+    toSpillableIterator(new RmmRapidsRetryIterator(
+      Seq(input).iterator,
+      fn,
+      splitPolicy,
+      mergePolicy))
+  }
+}
+
 /**
  * RmmRapidsRetryHelper is used to attempt work on the GPU with the ability to retry it,
  * abstracting the retry logic from the calling code.
+ *
  * @param input a SpillableColumnarBatch that we would like to attempt work with
  * @param splitPolicy a function that can split a SpillableColumnarBatch into multiple
  *                    spillable batches, can be set to null in case splits are not handled.
@@ -39,6 +80,20 @@ class RmmRapidsRetryIterator[T](
     splitPolicy: SpillableColumnarBatch => Seq[SpillableColumnarBatch],
     mergePolicy: Seq[SpillableColumnarBatch] => SpillableColumnarBatch)
     extends Iterator[T] with Arm {
+
+  def this(
+      input: Iterator[SpillableColumnarBatch],
+      fn: ColumnarBatch => T) = {
+    this(input, fn, null, null)
+  }
+
+  def this(
+      input: Iterator[SpillableColumnarBatch],
+      fn: ColumnarBatch => T,
+      splitPolicy: SpillableColumnarBatch => Seq[SpillableColumnarBatch]) = {
+    this(input, fn, splitPolicy, null)
+  }
+
   private val attemptStack = new mutable.ArrayStack[SpillableColumnarBatch]()
 
   override def hasNext: Boolean = input.hasNext || attemptStack.nonEmpty
