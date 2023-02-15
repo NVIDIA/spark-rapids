@@ -1202,7 +1202,7 @@ protected class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer wi
     ParquetFieldIdShims.setupParquetFieldIdWriteConfig(hadoopConf, sqlConf)
 
     // From 3.3.2, Spark schema converter needs this conf
-    ParquetLegacyNanoAsLongShims.setupLegacyParquetNanosAsLong(hadoopConf)
+    ParquetLegacyNanoAsLongShims.setupLegacyParquetNanosAsLongForPCBS(hadoopConf)
 
     hadoopConf
   }
