@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.shims
 import org.apache.hadoop.conf.Configuration
 
 object ParquetLegacyNanoAsLongShims {
-  def setupLegacyParquetNanosAsLong(conf: Configuration): Unit = {
-    // Parquet Infer Timestamp NTZ is considered in Spark 3.3.2
+  def setupLegacyParquetNanosAsLongForPCBS(conf: Configuration): Unit = {
+    // LEGACY_PARQUET_NANOS_AS_LONG is only considered in Spark 3.3.2 and later
   }
 }

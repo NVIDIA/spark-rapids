@@ -21,7 +21,16 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.spark.sql.internal.SQLConf
 
 object ParquetLegacyNanoAsLongShims {
-  def setupLegacyParquetNanosAsLong(conf: Configuration): Unit = {
+  /**
+   * This method should strictly be used by ParquetCachedBatchSerializer(PCBS) as it is hard coding
+   * the value of LEGACY_PARQUET_NANOS_AS_LONG.
+   *
+   * As far as PCBS is concerned it really doesn't matter what we set it to as long as
+   * ParquetSchemaConverter doesn't see a "null" value.
+   *
+   * @param conf Hadoop conf
+   */
+  def setupLegacyParquetNanosAsLongForPCBS(conf: Configuration): Unit = {
     conf.setBoolean(SQLConf.LEGACY_PARQUET_NANOS_AS_LONG.key, true)
   }
 }
