@@ -33,17 +33,14 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * @param mergePolicy a function that can be used to merge SpillableColumnarBatches that had
  *                    been previously split, can be set to null in case merging is not handled
  *                    or not required.
- * @param maxRetries the maximum amount of times the retry loop will re-attempt on RetryOOM or
- *                   SplitAndRetryOOM (3 retries by default)
  */
 class RmmRapidsRetryHelper(
     input: SpillableColumnarBatch,
     splitPolicy: SpillableColumnarBatch => Seq[SpillableColumnarBatch],
-    mergePolicy: Seq[SpillableColumnarBatch] => SpillableColumnarBatch,
-    maxRetries: Int = 3) extends Arm {
+    mergePolicy: Seq[SpillableColumnarBatch] => SpillableColumnarBatch)
+    extends Arm {
   // TODO: in the future we probably want to take this from the SpillableColumnarBatch
   private val inputSpillCallback = RapidsBuffer.defaultSpillCallback
-  private var numRetries = 0
   private var doSplit = false
   private val attemptStack = new mutable.ArrayStack[SpillableColumnarBatch]()
 
@@ -64,18 +61,49 @@ class RmmRapidsRetryHelper(
    */
   def withRetry(fn: ColumnarBatch => ColumnarBatch): Seq[SpillableColumnarBatch] = {
     val results = new ArrayBuffer[SpillableColumnarBatch]()
-    attemptStack.push(input)
+    val resultAppender = (result: ColumnarBatch) => {
+      results.append(SpillableColumnarBatch(
+        result,
+        SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+        inputSpillCallback))
+    }
+    try {
+      doRetry[ColumnarBatch](fn, Some(resultAppender))
+    } catch {
+      case t: Throwable =>
+        results.safeClose(t)
+        throw t
+    }
+    if (results.size == 1) {
+      results
+    } else {
+      // Like with `split`, we just OOM if `merge` fails for now.
+      // In the future we may want to have a "dontMergeOnOOM" policy
+      // where it could be best effort => it may be acceptable for
+      // some of the operators to return several batches...
+      val merged = merge(results)
+      if (merged == null) {
+        results
+      } else {
+        Seq(merged)
+      }
+    }
+  }
 
+  private def doRetry[T](
+      fn: ColumnarBatch => T,
+      resultAppender: Option[T => Unit] = None): Unit = {
+    attemptStack.push(input)
     // this is set on the first exception, and we add suppressed if there are others
     // during the retry attempts
     var oom: Throwable = null
-
-    var result: Option[SpillableColumnarBatch] = None
-    while (attemptStack.nonEmpty && numRetries < maxRetries) {
-      if (numRetries > 0) {
+    var firstAttempt: Boolean = true
+    while (attemptStack.nonEmpty) {
+      if (!firstAttempt) {
         // call thread block API
         RmmSpark.blockThreadUntilReady()
       }
+      firstAttempt = false
       val popped = attemptStack.pop()
       val attempt = try {
         if (doSplit) {
@@ -93,19 +121,16 @@ class RmmRapidsRetryHelper(
       } catch {
         case t: Throwable =>
           // exception occurred while trying to split
-          // we close our attempts/results and throw
-          (attemptStack ++ results).safeClose(t)
+          // we close our attempts and rethrow
+          attemptStack.safeClose(t)
           throw t
       }
       doSplit = false
       try {
-        result = withResource(attempt.getColumnarBatch()) { cb =>
-          Some(SpillableColumnarBatch(
-            fn(cb),
-            SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-            inputSpillCallback))
+        withResource(attempt.getColumnarBatch()) { cb =>
+          val result = fn(cb)
+          resultAppender.foreach(appender => appender(result))
         }
-        numRetries = 0 // reset retry counter since we succeeded for this attempt
       } catch {
         case retryOOM: RetryOOM =>
           if (oom == null) {
@@ -116,7 +141,6 @@ class RmmRapidsRetryHelper(
 
           // put it back
           attemptStack.push(attempt)
-          numRetries = numRetries + 1
         case splitAndRetryOOM: SplitAndRetryOOM => // we are the only thread
           if (oom == null) {
             oom = splitAndRetryOOM
@@ -125,7 +149,6 @@ class RmmRapidsRetryHelper(
           }
           // put it back
           attemptStack.push(attempt)
-          numRetries = numRetries + 1
           doSplit = true
         case other: Throwable =>
           if (oom == null) {
@@ -135,38 +158,11 @@ class RmmRapidsRetryHelper(
           }
           // close any buffers we were trying to work with
           attemptStack.push(attempt)
-          (attemptStack ++ results).safeClose(oom)
+          attemptStack.safeClose(oom)
 
           // we want to throw early here, since we got an exception
           // we were not prepared to handle
           throw oom
-      }
-      if (result.isDefined){
-        attempt.close()
-        results.append(result.get)
-      } else if (numRetries >= maxRetries) {
-        val ranOutOfRetriesOOM =
-          new OutOfMemoryError(s"OOM after $numRetries retries out of $maxRetries")
-        if (oom != null) {
-          ranOutOfRetriesOOM.addSuppressed(oom)
-        }
-        (attemptStack ++ results).safeClose(ranOutOfRetriesOOM)
-        throw ranOutOfRetriesOOM
-      }
-    }
-
-    if (results.size == 1) {
-      results
-    } else {
-      // Like with `split`, we just OOM if `merge` fails for now.
-      // In the future we may want to have a "dontMergeOnOOM" policy
-      // where it could be best effort => it may be acceptable for
-      // some of the operators to return several batches...
-      val merged = merge(results)
-      if (merged == null) {
-        results
-      } else {
-        Seq(merged)
       }
     }
   }
