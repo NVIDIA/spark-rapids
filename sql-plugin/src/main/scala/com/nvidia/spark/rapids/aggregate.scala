@@ -25,7 +25,7 @@ import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.GpuHashAggregateIterator.{computeAggregateAndClose, concatenateBatches, AggHelper}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetry
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetry, splitInHalfByRows}
 import com.nvidia.spark.rapids.shims.{AggregationTagging, ShimUnaryExecNode}
 import org.apache.spark.TaskContext
 
@@ -288,11 +288,11 @@ object GpuHashAggregateIterator extends Arm with Logging {
 
     def aggregate(preProcessed: SpillableColumnarBatch): Iterator[SpillableColumnarBatch] = {
       if (forceMerge) {
-        withRetry(preProcessed, splitPolicy, mergePolicy) { preProcessedAttempt =>
+        withRetry(preProcessed, splitInHalfByRows, mergePolicy) { preProcessedAttempt =>
           aggregate(preProcessedAttempt)
         }
       } else {
-        withRetry(preProcessed, splitPolicy) { preProcessedAttempt =>
+        withRetry(preProcessed, splitInHalfByRows) { preProcessedAttempt =>
           aggregate(preProcessedAttempt)
         }
       }
@@ -364,34 +364,7 @@ object GpuHashAggregateIterator extends Arm with Logging {
     }
   }
 
-  lazy val splitPolicy: SpillableColumnarBatch => Seq[SpillableColumnarBatch] = {
-    (spillable: SpillableColumnarBatch) => {
-      val toSplitRows = spillable.numRows
-      if (toSplitRows <= 1) {
-        throw new OutOfMemoryError(s"A batch of $toSplitRows cannot be split!")
-      }
-      val (firstHalf, secondHalf) = withResource(spillable.getColumnarBatch()) { src =>
-        withResource(GpuColumnVector.from(src)) { tbl =>
-          val splitIx = (tbl.getRowCount / 2).toInt
-          withResource(tbl.contiguousSplit(splitIx)) { cts =>
-            val batches = cts.map(_.getTable).map(GpuColumnVector.from(_, spillable.dataTypes))
-            val spillables = batches.map { b =>
-              SpillableColumnarBatch(
-                b,
-                SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-                // TODO: need to figure out how to pick the right callback
-                RapidsBuffer.defaultSpillCallback)
-            }
-            require(spillables.length == 2)
-            (spillables.head, spillables.last)
-          }
-        }
-      }
-      logDebug(s"Split a batch with $toSplitRows rows into two batches of " +
-          s"${firstHalf.numRows()} and ${secondHalf.numRows()} rows respectively.")
-      Seq(firstHalf, secondHalf)
-    }
-  }
+
 
   def getMergePolicy(
       mergeHelper: AggHelper): Seq[SpillableColumnarBatch] => SpillableColumnarBatch = {

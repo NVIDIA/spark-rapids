@@ -23,7 +23,33 @@ import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, SplitAndRetryOOM}
 
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-object RmmRapidsRetryIterator {
+object RmmRapidsRetryIterator extends Arm {
+  def splitInHalfByRows(
+      spillable: SpillableColumnarBatch): Seq[SpillableColumnarBatch] = {
+    val toSplitRows = spillable.numRows
+    if (toSplitRows <= 1) {
+      throw new OutOfMemoryError(s"A batch of $toSplitRows cannot be split!")
+    }
+    val (firstHalf, secondHalf) = withResource(spillable.getColumnarBatch()) { src =>
+      withResource(GpuColumnVector.from(src)) { tbl =>
+        val splitIx = (tbl.getRowCount / 2).toInt
+        withResource(tbl.contiguousSplit(splitIx)) { cts =>
+          val batches = cts.map(_.getTable).map(GpuColumnVector.from(_, spillable.dataTypes))
+          val spillables = batches.map { b =>
+            SpillableColumnarBatch(
+              b,
+              SpillPriorities.ACTIVE_BATCHING_PRIORITY,
+              // TODO: need to figure out how to pick the right callback
+              RapidsBuffer.defaultSpillCallback)
+          }
+          require(spillables.length == 2)
+          (spillables.head, spillables.last)
+        }
+      }
+    }
+    Seq(firstHalf, secondHalf)
+  }
+
   private def toSpillableIterator(
       it: Iterator[ColumnarBatch]): Iterator[SpillableColumnarBatch] = {
     new Iterator[SpillableColumnarBatch] {
