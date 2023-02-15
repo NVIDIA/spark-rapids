@@ -286,13 +286,11 @@ object GpuHashAggregateIterator extends Arm with Logging {
       }
     }
 
-    def aggregate(preProcessed: SpillableColumnarBatch): Seq[SpillableColumnarBatch] = {
+    def aggregate(preProcessed: SpillableColumnarBatch): Iterator[SpillableColumnarBatch] = {
       if (forceMerge) {
-        val merged =
-          withRetryAndMerge(preProcessed, splitPolicy, mergePolicy) { preProcessedAttempt =>
-            aggregate(preProcessedAttempt)
-          }
-        Seq(merged)
+        withRetryAndMerge(preProcessed, splitPolicy, mergePolicy) { preProcessedAttempt =>
+          aggregate(preProcessedAttempt)
+        }
       } else {
         withRetry(preProcessed, splitPolicy) { preProcessedAttempt =>
           aggregate(preProcessedAttempt)
@@ -423,10 +421,15 @@ object GpuHashAggregateIterator extends Arm with Logging {
     }
   }
 
-  // abstracted away for a unit test..
+  /**
+   * @note abstracted away for a unit test..
+   * @param helper
+   * @param preProcessed
+   * @return
+   */
   def aggregate(
       helper: AggHelper,
-      preProcessed: SpillableColumnarBatch): Seq[SpillableColumnarBatch] = {
+      preProcessed: SpillableColumnarBatch): Iterator[SpillableColumnarBatch] = {
     helper.aggregate(preProcessed)
   }
 
@@ -464,13 +467,11 @@ object GpuHashAggregateIterator extends Arm with Logging {
 
       // 2) perform the aggregation
       // OOM retry means we could get a list of batches
-      val aggregatedBatches: Seq[SpillableColumnarBatch] = {
-        aggregate(helper, preProcessed)
-      }
+      val aggregatedBatchesIterator = aggregate(helper, preProcessed)
 
       // 3) a post-processing step required in some scenarios, casting or picking
       // apart a struct
-      aggregatedBatches.map { aggregatedSpillable =>
+      aggregatedBatchesIterator.map { aggregatedSpillable =>
         withResource(aggregatedSpillable) { _ =>
           withResource(aggregatedSpillable.getColumnarBatch()) { aggregated =>
             SpillableColumnarBatch(
@@ -480,7 +481,7 @@ object GpuHashAggregateIterator extends Arm with Logging {
           }
         }
       }
-    }
+    }.toSeq // force materialization
   }
 
   /**
@@ -648,7 +649,10 @@ class GpuHashAggregateIterator(
       forceMerge = false, useTieredProject = useTieredProject)
     while (cbIter.hasNext) {
       val spillableChildBatch =
-        SpillableColumnarBatch(cbIter.next(), -1, RapidsBuffer.defaultSpillCallback)
+        SpillableColumnarBatch(
+          cbIter.next(),
+          SpillPriorities.ACTIVE_BATCHING_PRIORITY,
+          RapidsBuffer.defaultSpillCallback)
 
       // make sure that computeAggregateAndClose cannot fail
       val aggregatedSpillables =
@@ -765,7 +769,8 @@ class GpuHashAggregateIterator(
     val aggSpillables =
       computeAggregateAndClose(metrics, concatBatch, concatAndMergeHelper)
 
-    require(aggSpillables.size == 1)
+    require(aggSpillables.size == 1,
+      s"Expected 1 batch while merging, but instead got ${aggSpillables.size}")
     aggSpillables.head
   }
 
@@ -842,7 +847,8 @@ class GpuHashAggregateIterator(
           SpillableColumnarBatch(keyBatchingIter.next(), -1, RapidsBuffer.defaultSpillCallback)
         withResource(
           computeAggregateAndClose(metrics, spillable, mergeSortedHelper)) { aggSpillables =>
-          require(aggSpillables.size == 1)
+          require(aggSpillables.size == 1,
+            s"Expected 1 batch while merging, but instead got ${aggSpillables.size}")
           withResource(aggSpillables.head) {_.getColumnarBatch()}
         }
       }

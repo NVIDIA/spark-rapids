@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids
 
 import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, SplitAndRetryOOM}
@@ -34,15 +33,22 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  *                    been previously split, can be set to null in case merging is not handled
  *                    or not required.
  */
-class RmmRapidsRetryHelper(
-    input: SpillableColumnarBatch,
+class RmmRapidsRetryIterator[T](
+    input: Iterator[SpillableColumnarBatch],
+    fn: ColumnarBatch => T,
     splitPolicy: SpillableColumnarBatch => Seq[SpillableColumnarBatch],
     mergePolicy: Seq[SpillableColumnarBatch] => SpillableColumnarBatch)
-    extends Arm {
-  // TODO: in the future we probably want to take this from the SpillableColumnarBatch
-  private val inputSpillCallback = RapidsBuffer.defaultSpillCallback
-  private var doSplit = false
+    extends Iterator[T] with Arm {
   private val attemptStack = new mutable.ArrayStack[SpillableColumnarBatch]()
+
+  override def hasNext: Boolean = input.hasNext || attemptStack.nonEmpty
+
+  override def next(): T = {
+    if (!hasNext) {
+      throw new IllegalStateException("Closed called on an empty iterator.")
+    }
+    doRetry()
+  }
 
   /**
    * withRetry takes a function `fn` that takes as input a `ColumnarBatch` and outputs
@@ -59,46 +65,49 @@ class RmmRapidsRetryHelper(
    * @param fn function to process a batch in an OOM-safe way ColumnarBatch => ColumnarBatch
    * @return Seq[SpillableColumnarBatch] for successful results
    */
-  def withRetry(fn: ColumnarBatch => ColumnarBatch): Seq[SpillableColumnarBatch] = {
-    val results = new ArrayBuffer[SpillableColumnarBatch]()
-    val resultAppender = (result: ColumnarBatch) => {
-      results.append(SpillableColumnarBatch(
-        result,
-        SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-        inputSpillCallback))
-    }
-    try {
-      doRetry[ColumnarBatch](fn, Some(resultAppender))
-    } catch {
-      case t: Throwable =>
-        results.safeClose(t)
-        throw t
-    }
-    if (results.size == 1) {
-      results
-    } else {
-      // Like with `split`, we just OOM if `merge` fails for now.
-      // In the future we may want to have a "dontMergeOnOOM" policy
-      // where it could be best effort => it may be acceptable for
-      // some of the operators to return several batches...
-      val merged = merge(results)
-      if (merged == null) {
-        results
-      } else {
-        Seq(merged)
-      }
-    }
-  }
+  //def withRetry(fn: ColumnarBatch => ColumnarBatch): Seq[SpillableColumnarBatch] = {
+  //  val results = new ArrayBuffer[SpillableColumnarBatch]()
+  //  val resultAppender = (result: ColumnarBatch) => {
+  //    results.append(SpillableColumnarBatch(
+  //      result,
+  //      SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+  //      inputSpillCallback))
+  //  }
+  //  try {
+  //    doRetry[ColumnarBatch](fn, Some(resultAppender))
+  //  } catch {
+  //    case t: Throwable =>
+  //      results.safeClose(t)
+  //      throw t
+  //  }
+  //  if (results.size == 1) {
+  //    results
+  //  } else {
+  //    // Like with `split`, we just OOM if `merge` fails for now.
+  //    // In the future we may want to have a "dontMergeOnOOM" policy
+  //    // where it could be best effort => it may be acceptable for
+  //    // some of the operators to return several batches...
+  //    val merged = merge(results)
+  //    if (merged == null) {
+  //      results
+  //    } else {
+  //      Seq(merged)
+  //    }
+  //  }
+  //}
 
-  private def doRetry[T](
-      fn: ColumnarBatch => T,
-      resultAppender: Option[T => Unit] = None): Unit = {
-    attemptStack.push(input)
+  private def doRetry(): T = {
     // this is set on the first exception, and we add suppressed if there are others
     // during the retry attempts
     var oom: Throwable = null
     var firstAttempt: Boolean = true
-    while (attemptStack.nonEmpty) {
+    var result: Option[T] = None
+    var doSplit = false
+    while ((input.hasNext || attemptStack.nonEmpty) &&
+        result.isEmpty) {
+      if (attemptStack.isEmpty && input.hasNext) {
+        attemptStack.push(input.next())
+      }
       if (!firstAttempt) {
         // call thread block API
         RmmSpark.blockThreadUntilReady()
@@ -128,8 +137,7 @@ class RmmRapidsRetryHelper(
       doSplit = false
       try {
         withResource(attempt.getColumnarBatch()) { cb =>
-          val result = fn(cb)
-          resultAppender.foreach(appender => appender(result))
+          result = Some(fn(cb))
         }
       } catch {
         case retryOOM: RetryOOM =>
@@ -165,6 +173,7 @@ class RmmRapidsRetryHelper(
           throw oom
       }
     }
+    result.get
   }
 
   // It is assumed that OOM in this function is not handled.
@@ -191,4 +200,5 @@ class RmmRapidsRetryHelper(
       }
     }
   }
+
 }

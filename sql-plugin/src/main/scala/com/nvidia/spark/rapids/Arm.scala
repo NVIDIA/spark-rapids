@@ -159,32 +159,49 @@ trait Arm {
     }
   }
 
+  def toSpillableIterator(it: Iterator[ColumnarBatch]): Iterator[SpillableColumnarBatch] = {
+    new Iterator[SpillableColumnarBatch] {
+      override def hasNext: Boolean = it.hasNext
+      override def next(): SpillableColumnarBatch = {
+        SpillableColumnarBatch(
+          it.next(),
+          SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+          RapidsBuffer.defaultSpillCallback)
+      }
+    }
+  }
+
   def withRetry(
       input: SpillableColumnarBatch)
-      (fn: ColumnarBatch => ColumnarBatch): Seq[SpillableColumnarBatch] = {
-    val retry = new RmmRapidsRetryHelper(input, null, null)
-    retry.withRetry(fn)
+      (fn: ColumnarBatch => ColumnarBatch): Iterator[SpillableColumnarBatch] = {
+    toSpillableIterator(new RmmRapidsRetryIterator(
+      Seq(input).iterator,
+      fn,
+      null,
+      null))
   }
 
   def withRetry(
       input: SpillableColumnarBatch,
       splitPolicy: SpillableColumnarBatch => Seq[SpillableColumnarBatch])
-      (fn: ColumnarBatch => ColumnarBatch): Seq[SpillableColumnarBatch] = {
-    val retry = new RmmRapidsRetryHelper(input, splitPolicy, null)
-    retry.withRetry(fn)
+      (fn: ColumnarBatch => ColumnarBatch): Iterator[SpillableColumnarBatch] = {
+    toSpillableIterator(new RmmRapidsRetryIterator(
+      Seq(input).iterator,
+      fn,
+      splitPolicy,
+      null))
   }
 
   def withRetryAndMerge(
       input: SpillableColumnarBatch,
       splitPolicy: SpillableColumnarBatch => Seq[SpillableColumnarBatch],
       mergePolicy: Seq[SpillableColumnarBatch] => SpillableColumnarBatch)
-      (fn: ColumnarBatch => ColumnarBatch): SpillableColumnarBatch = {
-    val retry = new RmmRapidsRetryHelper(input, splitPolicy, mergePolicy)
-    val result = retry.withRetry(fn)
-    require(result.size == 1,
-      s"withRetryAndMerge failed because it couldn't merge to 1 batch, instead " +
-         s"${result.size} batches were produced.")
-    result.head
+      (fn: ColumnarBatch => ColumnarBatch): Iterator[SpillableColumnarBatch] = {
+    toSpillableIterator(new RmmRapidsRetryIterator(
+      Seq(input).iterator,
+      fn,
+      splitPolicy,
+      mergePolicy))
   }
 }
 

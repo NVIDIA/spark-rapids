@@ -89,7 +89,7 @@ class RapidsAggregateRetrySuite
 
     // attempt a cuDF reduction
     withResource(input) { _ =>
-      GpuHashAggregateIterator.aggregate(aggHelper, input)
+      GpuHashAggregateIterator.aggregate(aggHelper, input).toSeq
     }
   }
 
@@ -119,13 +119,12 @@ class RapidsAggregateRetrySuite
 
   def doGroupBy(
       input: SpillableColumnarBatch,
-      isSorted: Boolean = false,
       forceMerge: Boolean = false): Seq[SpillableColumnarBatch] = {
 
     // attempt a cuDF group by
     val partiallyAgged =
       GpuHashAggregateIterator.aggregate(
-        makeGroupByAggHelper(forceMerge = false), input)
+        makeGroupByAggHelper(forceMerge = false), input).toSeq
 
     if (forceMerge) {
       // when we are merging in this case we want to create a new helper for
@@ -137,7 +136,7 @@ class RapidsAggregateRetrySuite
       val singleBatch = GpuHashAggregateIterator.concatenateBatches(
         mockMetrics, partiallyAgged)
       GpuHashAggregateIterator.aggregate(
-        makeGroupByAggHelper(forceMerge = true), singleBatch)
+        makeGroupByAggHelper(forceMerge = true), singleBatch).toSeq
     } else {
       partiallyAgged
     }
