@@ -104,6 +104,11 @@ case class GpuMapConcat(children: Seq[Expression]) extends GpuComplexTypeMerging
 }
 
 object GpuElementAtMeta {
+  /**
+   * Construct the expression rule for `ElementAt`.
+   * @param nullOnInvalidAccessToMap Returns `null` or throws an exception on invalid access to map column.
+   * For Spark 3.4, this argument is `true`, and for other Spark versions, it is `false`.
+   */
   def elementAtRule(nullOnInvalidAccessToMap: Boolean): ExprRule[_ <: Expression] = {
     GpuOverrides.expr[ElementAt](
       "Returns element of array at given(1-based) index in value if column is array. " +
