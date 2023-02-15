@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{Rmm, RmmAllocationMode, RmmEventHandler, Table}
+import ai.rapids.cudf.{CudfException, Rmm, RmmAllocationMode, RmmEventHandler, Table}
 import com.nvidia.spark.rapids.jni.RmmSpark
 import org.mockito.Mockito._
 import org.scalatest.BeforeAndAfterEach
@@ -159,6 +159,36 @@ class RapidsAggregateRetrySuite
     }
     // we need to request a ColumnarBatch twice here for the retry
     verify(reductionBatch, times(2)).getColumnarBatch()
+  }
+
+  test("computeAndAggregate reduction with two retries") {
+    val reductionBatch = buildReductionBatch()
+    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 2)
+    val result = doReduction(reductionBatch)
+    assertResult(1)(result.length)
+    withResource(result.head) { spillable =>
+      withResource(spillable.getColumnarBatch) { cb =>
+        assertResult(1)(cb.numRows)
+        val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
+        withResource(gcv.getBase.copyToHost()) { hcv =>
+          assertResult(9)(hcv.getLong(0))
+        }
+      }
+    }
+    // we need to request a ColumnarBatch three times, because of 1 regular attempt,
+    // and two retries
+    verify(reductionBatch, times(3)).getColumnarBatch()
+  }
+
+  test("computeAndAggregate reduction with cudf exception") {
+    val reductionBatch = buildReductionBatch()
+    RmmSpark.forceCudfException(RmmSpark.getCurrentThreadId)
+    assertThrows[CudfException] {
+      doReduction(reductionBatch)
+    }
+    // columnar batch was obtained once, but since this was not a retriable exception
+    // we don't retry it
+    verify(reductionBatch, times(1)).getColumnarBatch()
   }
 
   test("computeAndAggregate group by with retry") {
