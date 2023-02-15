@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023 NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,8 @@ import com.nvidia.spark.rapids.TestUtils.{findOperator, getFinalPlan}
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.execution.{SortExec, SparkPlan}
+import org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
+import org.apache.spark.sql.rapids.execution.GpuBroadcastHashJoinExec
 
 /** Test plan modifications to add optimizing sorts after hash joins in the plan */
 class HashSortOptimizeSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir {
@@ -51,7 +53,7 @@ class HashSortOptimizeSuite extends SparkQueryCompareTestSuite with FunSuiteWith
    * specified join node.
    **/
   private def validateOptimizeSort(queryPlan: SparkPlan, joinNode: SparkPlan): Unit = {
-    val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(Some(queryPlan))
+    val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(queryPlan)
     val sortNode = findOperator(executedPlan, _.isInstanceOf[GpuSortExec])
     assert(sortNode.isDefined, "No sort node found")
     val gse = sortNode.get.asInstanceOf[GpuSortExec]

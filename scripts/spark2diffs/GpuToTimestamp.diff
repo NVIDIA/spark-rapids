@@ -1,8 +1,0 @@
-1c1
-< object GpuToTimestamp {
----
-> object GpuToTimestamp extends Arm {
-55d54
-< }
-56a56
->   /** remove whitespace before month and day */

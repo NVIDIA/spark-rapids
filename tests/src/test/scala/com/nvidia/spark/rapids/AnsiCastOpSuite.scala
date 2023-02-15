@@ -414,22 +414,22 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   }
 
   testCastFailsForBadInputs("Test bad cast 1 from strings to floats", invalidFloatStringsDf,
-      msg = GpuCast.INVALID_NUMBER_MSG) {
+      msg = INVALID_ROW_VALUE_MSG) {
     frame =>frame.select(col("c0").cast(FloatType))
   }
 
   testCastFailsForBadInputs("Test bad cast 2 from strings to floats", invalidFloatStringsDf,
-      msg = GpuCast.INVALID_NUMBER_MSG) {
+      msg = INVALID_ROW_VALUE_MSG) {
     frame =>frame.select(col("c1").cast(FloatType))
   }
 
   testCastFailsForBadInputs("Test bad cast 1 from strings to double", invalidFloatStringsDf,
-      msg = GpuCast.INVALID_NUMBER_MSG) {
+      msg = INVALID_ROW_VALUE_MSG) {
     frame =>frame.select(col("c0").cast(DoubleType))
   }
 
   testCastFailsForBadInputs("Test bad cast 2 from strings to double", invalidFloatStringsDf,
-      msg = GpuCast.INVALID_NUMBER_MSG) {
+      msg = INVALID_ROW_VALUE_MSG) {
     frame =>frame.select(col("c1").cast(DoubleType))
   }
 
@@ -726,17 +726,12 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   ///////////////////////////////////////////////////////////////////////////
   // Copying between Hive tables, which has special rules
   ///////////////////////////////////////////////////////////////////////////
-  if (cmpSparkVersion(3, 4, 0) < 0) {
-    // The following two tests are failing in Spark 3.4.0.
-    // Disable them temporarily,
-    // and tracked by https://github.com/NVIDIA/spark-rapids/issues/5748
-    testSparkResultsAreEqual("Copy ints to long", testInts, sparkConf) {
-      frame => doTableCopy(frame, HIVE_INT_SQL_TYPE, HIVE_LONG_SQL_TYPE)
-    }
+  testSparkResultsAreEqual("Copy ints to long", testInts, sparkConf) {
+    frame => doTableCopy(frame, HIVE_INT_SQL_TYPE, HIVE_LONG_SQL_TYPE)
+  }
 
-    testSparkResultsAreEqual("Copy long to float", testLongs, sparkConf) {
-      frame => doTableCopy(frame, HIVE_LONG_SQL_TYPE, HIVE_FLOAT_SQL_TYPE)
-    }
+  testSparkResultsAreEqual("Copy long to float", testLongs, sparkConf) {
+    frame => doTableCopy(frame, HIVE_LONG_SQL_TYPE, HIVE_FLOAT_SQL_TYPE)
   }
 
   private def testCastTo(castTo: DataType)(frame: DataFrame): DataFrame ={

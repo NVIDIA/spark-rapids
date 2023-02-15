@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.
+# Copyright (c) 2022-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -287,7 +287,6 @@ def test_re_replace_backrefs():
         ),
         conf=_regexp_conf)
 
-@pytest.mark.skip(reason='https://github.com/NVIDIA/spark-rapids/issues/7090')
 def test_re_replace_anchors():
     gen = mk_str_gen('.{0,2}TEST[\ud720 A]{0,5}TEST[\r\n\u0085\u2028\u2029]?') \
         .with_special_case("TEST") \
@@ -306,11 +305,7 @@ def test_re_replace_anchors():
             'REGEXP_REPLACE(a, "\\\\ATEST$", "PROD")',
             'REGEXP_REPLACE(a, "^TEST\\\\Z", "PROD")',
             'REGEXP_REPLACE(a, "TEST\\\\Z", "PROD")',
-            'REGEXP_REPLACE(a, "TEST\\\\z", "PROD")',
-            'REGEXP_REPLACE(a, "\\\\zTEST", "PROD")',
             'REGEXP_REPLACE(a, "^TEST$", "PROD")',
-            'REGEXP_REPLACE(a, "^TEST\\\\z", "PROD")',
-            'REGEXP_REPLACE(a, "TEST\\\\z", "PROD")',
         ),
         conf=_regexp_conf)
 

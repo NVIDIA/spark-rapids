@@ -58,7 +58,7 @@ Spark getting a value of `1.03` but under the RAPIDS accelerator it produces `1.
 Python will produce `1.02`, Java does not have the ability to do a round like this built in, but if
 you do the simple operation of `Math.round(1.025 * 100.0)/100.0` you also get `1.02`.
 
-For the `degrees` functions, Spark's implementation relies on Java JDK's built-in functions `Math.toDegrees`. It is `angrad * 180.0 / PI` in Java 8 while `angrad * (180d / PI)` in Java 9+. So their results will differ depending on the JDK runtime versions when considering overflow. The RAPIDS Accelerator follows the bahavior of Java 9+. Therefore, with JDK 8 or below, the `degrees` on GPU will not overflow on some very large numbers while the CPU version does.
+For the `degrees` functions, Spark's implementation relies on Java JDK's built-in functions `Math.toDegrees`. It is `angrad * 180.0 / PI` in Java 8 while `angrad * (180d / PI)` in Java 9+. So their results will differ depending on the JDK runtime versions when considering overflow. The RAPIDS Accelerator follows the behavior of Java 9+. Therefore, with JDK 8 or below, the `degrees` on GPU will not overflow on some very large numbers while the CPU version does.
 
 For aggregations the underlying implementation is doing the aggregations in parallel and due to race
 conditions within the computation itself the result may not be the same each time the query is
@@ -83,179 +83,6 @@ after Spark 3.1.0.
 We do not disable operations that produce different results due to `-0.0` in the data because it is
 considered to be a rare occurrence.
 
-## Decimal Support
-
-Apache Spark supports decimal values with a precision up to 38. This equates to 128-bits.
-However, when actually processing the data, in most cases, it is temporarily converted to 
-Java's `BigDecimal` type which allows for effectively unlimited precision. This lets Spark do
-complicated calculations without the risk of missing an overflow and causing data corruption.
-It also lets Spark support some operations that require intermediate values that are larger than
-a 128-bit representation can support.
-
-The RAPIDS Accelerator currently is limited to a maximum of 128-bits for storing or processing
-decimal values. This allows us to fully support the majority of decimal operations. But there are
-a few operations that we cannot support to the same degree as Spark can on the CPU.
-
-### Decimal Sum Aggregation
-
-When Apache Spark does a sum aggregation on decimal values it will store the result in a value
-with a precision that is the input precision + 10, but with a maximum precision of 38.
-For an input precision of 9 and above, Spark will do the aggregations as a Java `BigDecimal`
-value which is slow, but guarantees that any overflow can be detected because it can work with
-effectively unlimited precision. For inputs with a precision of 8 or below Spark will internally do
-the calculations as a long value, 64-bits. When the precision is 8, you would need at least 
-174,467,442,482 values/rows contributing to a single aggregation result before the overflow is no
-longer detected. Even then all the values would need to be either the largest or the smallest value
-possible to be stored in the type for the overflow to cause data corruption.
-
-For the RAPIDS Accelerator we don't have direct access to unlimited precision for our calculations
-like the CPU does, and the aggregations are processed in batches within each task. Therefore it is
-possible for the GPU to detect an intermediate overflow after aggregating a batch, e.g.: a sum
-aggregation on positive and negative values, where the accumulating sum value temporarily
-overflows but returns within bounds before the final cast back into a decimal with precision 38.
-
-For input values with a precision of 8 and below we follow Spark and process the data the
-same way, as a 64-bit value. For larger values we will do extra calculations looking at the
-higher order digits to be able to detect overflow in all cases. But because of this you may see
-some performance differences depending on the input precision used. The differences will show up
-when going from an input precision of 8 to 9 and again when going from an input precision of 28 to 29.
-
-### Decimal Average
-
-Average is effectively doing a `sum(input)/count(input)`, except the scale of the output type is
-the scale of the input + 4. As such it inherits some of the same issues that both sum and divide
-have. It also inherits some issues from Spark itself. See
-https://issues.apache.org/jira/browse/SPARK-37024 for a detailed description of some issues
-with average in Spark.
-
-In order to be able to guarantee doing the divide with half up rounding at the end we only support
-average on input values with a precision of 23 or below. This is 38 - 10 for the sum guarantees
-and then 5 less to be able to shift the left-hand side of the divide enough to get a correct
-answer that can be rounded to the result that Spark would produce.
-
-### Divide and Multiply
-
-Division and multiplication of decimal types is a little complicated in Apache Spark. For 
-some arbitrary reason divide and multiply in Spark require that the precision and scale of 
-the left-hand side and the right-hand side match. As such when planning a divide or multiply 
-Spark will look at the original inputs to calculate the output precision and scale. Then it will
-cast the inputs to a common wider value where the scale is the max of the two input scales,
-and the precision is max of the two input non-scale portions (precision - scale) + the new
-scale. Then it will do the divide or multiply as a `BigDecimal` value, and return the result as
-a `BigDecimal` but lie about the precision and scale of the return type. Finally, Spark will
-insert a `CheckOverflow` expression that will round the scale of the BigDecimal value to that
-of the desired output type and check that the final precision will fit in the precision of the
-desired output type. 
-
-In order to match exactly with what Spark is doing the RAPIDS Accelerator would need at least
-256-bit decimal values. We might implement that at some point, but until then we try to cover as
-much of division and multiplication as possible.
-
-To combat this we look at the query plan and try to determine what is the smallest precision
-and scale for each parameter that would let us still produce the exact same answer as Apache
-Spark. We effectively try to undo what Spark did when widening the types to make them common.
-
-#### Division
-
-In Spark the output of a division operation is
-
-```scala
-val precision = p1 - s1 + s2 + max(6, s1 + p2 + 1)
-val scale = max(6, s1 + p2 + 1)
-```
-
-Where `p1` and `s1` are the precision and scale of the left-hand side of the operation and
-`p2` and `s2` are the precision and scale of the right-hand side of the operation. But decimal
-divide inherently produces a result where the output scale is `s1 - s2`. In addition to this 
-Spark will round the result to the given scale, and not just truncate it. This means that to
-produce the same result as Apache Spark we have to increase the scale of the left-hand side
-operation to be at least `output_scale + s2 + 1`. The `+ 1` is so the output is large enough that
-we can round it to the desired result.  If this causes the precision of the left-hand side
-to go above 38, the maximum precision that 128-bits can hold, then we have to fall back to the
-CPU. Unfortunately the math is a bit complicated so there is no simple rule of thumb for this.
-
-#### Multiplication
-
-In Spark the output of a multiplication operation is
-
-```scala
-val precision = p1 + p2 + 1
-val scale = s1 + s2
-```
-
-Where `p1` and `s1` are the precision and scale of the left-hand side of the operation and
-`p2` and `s2` are the precision and scale of the right-hand side of the operation. Fortunately,
-decimal multiply inherently produces the same scale, but Spark will round the result. As such,
-the RAPIDS Accelerator must add an extra decimal place to the scale and the precision, so we can
-round correctly. This means that if `p1 + p2 > 36` we will fall back to the CPU to do processing. 
-
-### How to get more decimal operations on the GPU?
-
-Spark is very conservative in calculating the output types for decimal operations. It does this
-to avoid overflow in the worst case scenario, but generally will end up using a much larger type
-than is needed to store the final result. This means that over the course of a large query the
-precision and scale can grow to a size that would force the RAPIDS Accelerator to fall back
-to the CPU out of an abundance of caution. If you find yourself in this situation you can often
-cast the results to something smaller and still get the same answer. These casts should be done 
-with some knowledge about the data being processed.
-
-For example if we had a query like
-
-```sql
-SELECT SUM(cs_wholesale_cost * cs_quantity)/
-       SUM(cs_sales_price * cs_quantity) cost_to_sale
-  FROM catalog_sales
-  GROUP BY cs_sold_date_sk
-  ORDER BY cs_sold_date_sk
-```
-
-where `cs_wholesale_cost` and `cs_sale_price` are both decimal values with a precision of 7 
-and a scale of 2, `Decimal(7, 2)`, and `cs_quantity` is a 32-bit integer. Only the first half 
-of the query will be on the GPU. The following explanation is a bit complicated but tries to
-break down the processing into the distinct steps that Spark takes.
-
-  1. Multiplying a `Decimal(7, 2)` by an integer produces a `Decimal(18, 2)` value. This is the
-     same for both multiply operations in the query.
-  2. The `sum` operation on the resulting `Decimal(18, 2)` column produces a `Decimal(28, 2)`.
-     This also is the same for both sum aggregations in the query.
-  3. The final divide operation is dividing a `Decimal(28, 2)` by another `Decimal(28, 2)` and
-     produces a `Decimal(38, 10)`.
-
-We cannot guarantee that on the GPU the divide will produce the exact same result as
-the CPU for all possible inputs. But we know that we have at most 1,000,000 line items
-for each `cs_sold_date_sk`, and the average price/cost is no where close to the maximum
-value that `Decimal(7, 2)` can hold. So we can cast the result of the sums to a more
-reasonable `Decimal(14, 2)` and still produce an equivalent result, but totally on the GPU.
-
-```sql
-SELECT CAST(SUM(cs_wholesale_cost * cs_quantity) AS Decimal(14,2))/
-       CAST(SUM(cs_sales_price * cs_quantity) AS Decimal(14,2)) cost_to_sale
-  FROM catalog_sales
-  GROUP BY cs_sold_date_sk
-  ORDER BY cs_sold_date_sk
-```
-
-This should be done with some caution as it does reduce the range of values that the query could
-process before overflowing. It also can produce different result types. In this case instead of
-producing a `Decimal(38, 10)` the result is a `Decimal(31, 17)`. If you really want the exact
-same result type you can cast the result back to a `Decimal(38, 10)`, and the result will be
-identical to before. But, it can have a positive impact to performance.
-
-If you have made it this far in the documentation then you probably know what you are doing
-and will use the following power only for good. It can often be difficult to
-determine if adding casts to put some processing on the GPU would improve performance or not.
-It can also be difficult to detect if a query might produce incorrect results because of a cast.
-To help answer some of these questions we provide
-`spark.rapids.sql.decimalOverflowGuarantees` that if set to false will disable guarantees for
-overflow checking and run all decimal operations on the GPU, even if it cannot guarantee that
-it will produce the exact same result as Spark. This should **never** be set to false in
-production because it disables all guarantees, and if your data does overflow, it might produce
-either a `null` value or worse an incorrect decimal value. But, it should give you more
-information about what the performance impact might be if you tuned it with casting. If
-you compare the results to GPU results with the guarantees still in place it should give you 
-an idea if casting would still produce a correct answer. Even with this you should go through
-the query and your data and see what level of guarantees for outputs you are comfortable with.
-
 ## Unicode
 
 Spark delegates Unicode operations to the underlying JVM. Each version of Java complies with a
@@ -272,7 +99,7 @@ There are also discrepancies/issues with specific types that are detailed below.
 
 ### CSV Strings
 Writing strings to a CSV file in general for Spark can be problematic unless you can ensure that
-your data does not have any line deliminators in it. The GPU accelerated CSV parser handles quoted
+your data does not have any line deliminator in it. The GPU accelerated CSV parser handles quoted
 line deliminators similar to `multiLine` mode.  But there are still a number of issues surrounding
 it and they should be avoided.
 
@@ -355,6 +182,27 @@ INTERVAL MINUTE TO SECOND | INTERVAL '30:40.999999' MINUTE TO SECOND  | 30:40.99
 INTERVAL SECOND | INTERVAL '40.999999' SECOND               | 40.999999|
 
 Currently, the RAPIDS Accelerator only supports the ANSI style.
+
+## Hive Text File
+
+Hive text files are very similar to CSV, but not exactly the same.
+
+### Hive Text File Floating Point
+
+Parsing floating-point values has the same limitations as [casting from string to float](#String-to-Float).
+
+Also parsing of some values will not produce bit for bit identical results to what the CPU does.
+They are within round-off errors except when they are close enough to overflow to Inf or -Inf which
+then results in a number being returned when the CPU would have returned null.
+
+### Hive Text File Decimal
+
+Hive has some limitations in what decimal values it can parse. The GPU kernels that we use
+to parse decimal values do not have the same limitations. This means that there are times
+when the CPU version would return a null for an input value, but the GPU version will
+return a value. This typically happens for numbers with large negative exponents where
+the GPU will return `0` and Hive will return `null`. 
+See https://github.com/NVIDIA/spark-rapids/issues/7246
 
 ## ORC
 
@@ -484,7 +332,28 @@ val df = spark.read.schema(schema).json("people.json")
 
 ### JSON supporting types
 
-The nested types(array, map and struct) are not supported yet in current version.
+In the current version, nested types (array, struct, and map types) are not yet supported in regular JSON parsing.
+
+### `from_json` function
+
+This particular function supports to output a map type with limited functionalities. In particular, the output map is not resulted from a regular JSON parsing but instead it will just contain plain text of key-value pairs extracted directly from the input JSON string.
+
+Due to such limitations, the input JSON schema must be `MAP<STRING,STRING>` and nothing else. Furthermore, there is no validation, no error tolerance, no data conversion as well as string formatting is performed. This may lead to some minor differences in the output if compared to the result of Spark CPU's `from_json`, such as:
+ * Floating point numbers in the input JSON string such as `1.2000` will not be reformatted to `1.2`. Instead, the output will be the same as the input.
+ * If the input JSON is given as multiple rows, any row containing invalid JSON format will lead to an application crash. On the other hand, Spark CPU version just produces nulls for the invalid rows, as shown below:
+ ```
+scala> val df = Seq("{}", "BAD", "{\"A\": 100}").toDF
+df: org.apache.spark.sql.DataFrame = [value: string]
+
+scala> df.selectExpr("from_json(value, 'MAP<STRING,STRING>')").show()
++----------+
+|   entries|
++----------+
+|        {}|
+|      null|
+|{A -> 100}|
++----------+
+```
 
 ### JSON Floating Point
 
@@ -568,18 +437,23 @@ disable regular expressions on the GPU, set `spark.rapids.sql.regexp.enabled=fal
 
 These are the known edge cases where running on the GPU will produce different results to the CPU:
 
-- Regular expressions that contain an end of line anchor '$' or end of string anchor '\Z' or '\z' immediately
+- Regular expressions that contain an end of line anchor '$' or end of string anchor '\Z' immediately
  next to a newline or a repetition that produces zero or more results
  ([#5610](https://github.com/NVIDIA/spark-rapids/pull/5610))`
+- Word and non-word boundaries, `\b` and `\B`
+- Line anchor `$` will incorrectly match any of the unicode characters `\u0085`, `\u2028`, or `\u2029` followed by
+  another line-terminator, such as `\n`. For example, the pattern `TEST$` will match `TEST\u0085\n` on the GPU but
+  not on the CPU ([#7585](https://github.com/NVIDIA/spark-rapids/issues/7585)).
 
 The following regular expression patterns are not yet supported on the GPU and will fall back to the CPU.
 
 - Line anchor `^` is not supported in some contexts, such as when combined with a choice (`^|a`).
-- Line anchor `$` is not supported by `regexp_replace`, and in some rare contexts.
+- Line anchor `$` is not supported in some rare contexts.
 - String anchor `\Z` is not supported by `regexp_replace`, and in some rare contexts.
+- String anchor `\z` is not supported
 - Patterns containing an end of line or string anchor immediately next to a newline or repetition that produces zero
   or more results
-- Line anchor `$` and string anchors `\z` and `\Z` are not supported in patterns containing `\W` or `\D`
+- Line anchor `$` and string anchors `\Z` are not supported in patterns containing `\W` or `\D`
 - Line and string anchors are not supported by `string_split` and `str_to_map`
 - Lazy quantifiers, such as `a*?`
 - Possessive quantifiers, such as `a*+`
@@ -587,12 +461,6 @@ The following regular expression patterns are not yet supported on the GPU and w
   or `[a-z&&[^bc]]`
 - Empty groups: `()`
 - `regexp_replace` does not support back-references
-
-The following regular expression patterns are known to potentially produce different results on the GPU
-vs the CPU.
-
-- Word and non-word boundaries, `\b` and `\B`
-
 
 Work is ongoing to increase the range of regular expressions that can run on the GPU.
 
@@ -903,6 +771,9 @@ data.  The RAPIDS Spark `get_json_object` operation on the GPU will return `None
 `Null` in Scala when trying to match a string surrounded by single quotes.  This behavior will be
 updated in a future release to more closely match Spark.
 
+If the JSON has a single quote `'` in the path, the GPU query may fail with `ai.rapids.cudf.CudfException`.
+More examples are in [issue-12483](https://github.com/rapidsai/cudf/issues/12483).
+
 ## Approximate Percentile
 
 The GPU implementation of `approximate_percentile` uses
@@ -960,4 +831,3 @@ Seq(0L, Long.MaxValue).toDF("val")
 
 But this is not something that can be done generically and requires inner knowledge about
 what can trigger a side effect.
-

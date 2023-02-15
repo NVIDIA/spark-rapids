@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_co
 from conftest import is_databricks_runtime, is_emr_runtime
 from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan
-from spark_session import with_cpu_session, with_spark_session
+from spark_session import with_cpu_session, with_spark_session, is_databricks113_or_later
 
 pytestmark = [pytest.mark.nightly_resource_consuming_test]
 
@@ -121,27 +121,30 @@ def join_batch_size_test_params(*args):
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
-def test_right_broadcast_nested_loop_join_without_condition_empty(join_type):
+@pytest.mark.parametrize("aqe_enabled", ["true", "false"], ids=idfn)
+def test_right_broadcast_nested_loop_join_without_condition_empty(join_type, aqe_enabled):
     def do_join(spark):
         left, right = create_df(spark, long_gen, 50, 0)
         return left.join(broadcast(right), how=join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf={ "spark.sql.adaptive.enabled": aqe_enabled })
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
-def test_left_broadcast_nested_loop_join_without_condition_empty(join_type):
+@pytest.mark.parametrize("aqe_enabled", ["true", "false"], ids=idfn)
+def test_left_broadcast_nested_loop_join_without_condition_empty(join_type, aqe_enabled):
     def do_join(spark):
         left, right = create_df(spark, long_gen, 0, 50)
         return left.join(broadcast(right), how=join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf={ "spark.sql.adaptive.enabled": aqe_enabled })
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
-def test_broadcast_nested_loop_join_without_condition_empty(join_type):
+@pytest.mark.parametrize("aqe_enabled", ["true", "false"], ids=idfn)
+def test_broadcast_nested_loop_join_without_condition_empty(join_type, aqe_enabled):
     def do_join(spark):
         left, right = create_df(spark, long_gen, 0, 0)
         return left.join(broadcast(right), how=join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf={ "spark.sql.adaptive.enabled": aqe_enabled })
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
@@ -474,11 +477,14 @@ def test_broadcast_nested_loop_with_conditionals_build_right_fallback(data_gen, 
 # Not all join types can be translated to a broadcast join, but this tests them to be sure we
 # can handle what spark is doing
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
-def test_broadcast_join_left_table(data_gen, join_type):
+# Specify 200 shuffle partitions to test cases where streaming side is empty
+# as in https://github.com/NVIDIA/spark-rapids/issues/7516
+@pytest.mark.parametrize('shuffle_conf', [{}, {'spark.sql.shuffle.partitions': 200}], ids=idfn)
+def test_broadcast_join_left_table(data_gen, join_type, shuffle_conf):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 250, 500)
         return broadcast(left).join(right, left.a == right.r_a, join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=shuffle_conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this

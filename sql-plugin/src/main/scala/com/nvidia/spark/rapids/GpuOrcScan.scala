@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1161,7 +1161,7 @@ private case class GpuOrcFileFilterHandler(
     val conf = broadcastedConf.value.value
     OrcConf.IS_SCHEMA_EVOLUTION_CASE_SENSITIVE.setBoolean(conf, isCaseSensitive)
 
-    val filePath = new Path(new URI(partFile.filePath))
+    val filePath = new Path(new URI(partFile.filePath.toString()))
     val fs = filePath.getFileSystem(conf)
     val orcFileReaderOpts = OrcFile.readerOptions(conf).filesystem(fs)
 
@@ -1591,7 +1591,8 @@ class MultiFileCloudOrcPartitionReader(
     ignoreMissingFiles: Boolean,
     ignoreCorruptFiles: Boolean)
   extends MultiFileCloudPartitionReaderBase(conf, files, numThreads, maxNumFileProcessed, filters,
-    execMetrics, ignoreCorruptFiles) with MultiFileReaderFunctions with OrcPartitionReaderBase {
+    execMetrics, maxReadBatchSizeRows, maxReadBatchSizeBytes,
+    ignoreCorruptFiles) with MultiFileReaderFunctions with OrcPartitionReaderBase {
 
   private case class HostMemoryEmptyMetaData(
     override val partitionedFile: PartitionedFile,
@@ -1600,13 +1601,13 @@ class MultiFileCloudOrcPartitionReader(
     updatedReadSchema: TypeDescription,
     readSchema: StructType) extends HostMemoryBuffersWithMetaDataBase {
 
-    override def memBuffersAndSizes: Array[(HostMemoryBuffer, Long)] =
-      Array(null.asInstanceOf[HostMemoryBuffer] -> bufferSize)
+    override def memBuffersAndSizes: Array[SingleHMBAndMeta] =
+      Array(SingleHMBAndMeta.empty(bufferSize))
   }
 
   private case class HostMemoryBuffersWithMetaData(
     override val partitionedFile: PartitionedFile,
-    override val memBuffersAndSizes: Array[(HostMemoryBuffer, Long)],
+    override val memBuffersAndSizes: Array[SingleHMBAndMeta],
     override val bytesRead: Long,
     updatedReadSchema: TypeDescription,
     requestedMapping: Option[Array[Int]]) extends HostMemoryBuffersWithMetaDataBase
@@ -1642,7 +1643,7 @@ class MultiFileCloudOrcPartitionReader(
     private def doRead(): HostMemoryBuffersWithMetaDataBase = {
       val startingBytesRead = fileSystemBytesRead()
 
-      val hostBuffers = new ArrayBuffer[(HostMemoryBuffer, Long)]
+      val hostBuffers = new ArrayBuffer[SingleHMBAndMeta]
       val filterStartTime = System.nanoTime()
       val ctx = filterHandler.filterStripes(partFile, dataSchema, readDataSchema,
         partitionSchema)
@@ -1672,12 +1673,14 @@ class MultiFileCloudOrcPartitionReader(
               while (blockChunkIter.hasNext) {
                 val blocksToRead = populateCurrentBlockChunk(blockChunkIter, maxReadBatchSizeRows,
                   maxReadBatchSizeBytes)
-                hostBuffers += readPartFile(ctx, blocksToRead)
+                val info = readPartFile(ctx, blocksToRead)
+                val numRows = blocksToRead.map(_.infoBuilder.getNumberOfRows).sum.toInt
+                hostBuffers += SingleHMBAndMeta(info._1, info._2, numRows, Seq.empty, null)
               }
               val bytesRead = fileSystemBytesRead() - startingBytesRead
               if (isDone) {
                 // got close before finishing
-                hostBuffers.foreach(_._1.safeClose())
+                hostBuffers.foreach(_.hmb.safeClose())
                 HostMemoryEmptyMetaData(
                   partFile, 0, bytesRead, ctx.updatedReadSchema, readDataSchema)
               } else {
@@ -1689,7 +1692,7 @@ class MultiFileCloudOrcPartitionReader(
         }
       } catch {
         case e: Throwable =>
-          hostBuffers.foreach(_._1.safeClose())
+          hostBuffers.foreach(_.hmb.safeClose())
           throw e
       }
       val bufferTime = System.nanoTime() - bufferTimeStart
@@ -1751,9 +1754,10 @@ class MultiFileCloudOrcPartitionReader(
 
       case buffer: HostMemoryBuffersWithMetaData =>
         val memBuffersAndSize = buffer.memBuffersAndSizes
-        val (hostBuffer, size) = memBuffersAndSize.head
-        val batchReader = decodeToBatch(hostBuffer, size, buffer.updatedReadSchema,
-          buffer.requestedMapping, filterHandler.isCaseSensitive, files) match {
+        val hmbInfo = memBuffersAndSize.head
+        val batchReader = decodeToBatch(hmbInfo.hmb, hmbInfo.bytes, buffer.updatedReadSchema,
+          buffer.requestedMapping, filterHandler.isCaseSensitive,
+          files) match {
           case Some(batch) =>
             val tmp = addPartitionValues(batch,
             buffer.partitionedFile.partitionValues, partitionSchema)

@@ -1,4 +1,0 @@
-5c5
-<       fsse.sqlContext.sparkSession,
----
->       SparkShimImpl.sessionFromPlan(fsse),

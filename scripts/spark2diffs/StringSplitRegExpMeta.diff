@@ -1,4 +1,0 @@
-3c3
-<     parent: Option[RapidsMeta[_, _]],
----
->     parent: Option[RapidsMeta[_, _, _]],

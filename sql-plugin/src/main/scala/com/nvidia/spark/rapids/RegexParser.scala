@@ -439,7 +439,7 @@ class RegexParser(pattern: String) {
             // escape character \e
             consumeExpected(ch)
             RegexChar('\u001b')
-          case _ if regexPunct.contains(ch) => 
+          case _ if regexPunct.contains(ch) =>
             // other punctuation
             // note that this may include metacharacters from earlier, this is just to
             // handle characters not covered by the previous cases earlier
@@ -628,6 +628,8 @@ class RegexParser(pattern: String) {
 object RegexParser {
   private val regexpChars = Set('\u0000', '\\', '.', '^', '$', '\u0007', '\u001b', '\f')
 
+  def parse(pattern: String): RegexAST = new RegexParser(pattern).parse
+
   def isRegExpString(s: String): Boolean = {
 
     def isRegExpString(ast: RegexAST): Boolean = ast match {
@@ -691,7 +693,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
   private def countCaptureGroups(regex: RegexAST): Int = {
     regex match {
       case RegexSequence(parts) => parts.foldLeft(0)((c, re) => c + countCaptureGroups(re))
-      case RegexGroup(capture, base, _) => 
+      case RegexGroup(capture, base, _) =>
         if (capture) {
           1 + countCaptureGroups(base)
         } else {
@@ -842,10 +844,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         None
       )
     } else {
-      RegexGroup(capture = capture,
-        RegexChoice(
-          RegexCharacterClass(negated = false, characters = terminatorChars),
-          RegexSequence(ListBuffer(RegexChar('\r'), RegexChar('\n')))), None)
+      RegexGroup(capture = capture, RegexParser.parse("\r|\u0085|\u2028|\u2029|\r\n"), None)
     }
   }
 
@@ -874,7 +873,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           case r @ RegexOctalChar(_) => r.codePoint.toChar
           case r @ RegexHexDigit(_) => r.codePoint.toChar
           case other => throw new RegexUnsupportedException(
-            s"Unexpected expression at start of character range: ${other.toRegexString}", 
+            s"Unexpected expression at start of character range: ${other.toRegexString}",
             other.position)
         }
         start <= '\r' && end >= '\r'
@@ -972,7 +971,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
           // ignore
       }
     }
-    
+
     def isEmptyRepetition(regex: RegexAST): Boolean = {
       regex match {
         case RegexRepetition(_, term) => term match {
@@ -1144,8 +1143,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
         case 'z' if mode == RegexSplitMode =>
           RegexEscaped('Z')
         case 'z' =>
-          // cuDF does not support "\z" but supports "$", which is equivalent
-          RegexChar('$')
+          // cuDF does not support "\z" except for in split mode
+          throw new RegexUnsupportedException(
+            "\\z is not supported on GPU for find or replace",
+            regex.position)
         case 'Z' =>
           // \Z is really a synonymn for $. It's used in Java to preserve that behavior when
           // using modes that change the meaning of $ (such as MULTILINE or UNIX_LINES)

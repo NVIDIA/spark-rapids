@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2022, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,10 +26,10 @@ for VAR in $OVERWRITE_PARAMS; do
 done
 IFS=$PRE_IFS
 
-CUDF_VER=${CUDF_VER:-"23.02.0-SNAPSHOT"}
+CUDF_VER=${CUDF_VER:-"23.04.0-SNAPSHOT"}
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-"cuda11"}
-PROJECT_VER=${PROJECT_VER:-"23.02.0-SNAPSHOT"}
-PROJECT_TEST_VER=${PROJECT_TEST_VER:-"23.02.0-SNAPSHOT"}
+PROJECT_VER=${PROJECT_VER:-"23.04.0-SNAPSHOT"}
+PROJECT_TEST_VER=${PROJECT_TEST_VER:-"23.04.0-SNAPSHOT"}
 SPARK_VER=${SPARK_VER:-"3.1.1"}
 # Make a best attempt to set the default value for the shuffle shim.
 # Note that SPARK_VER for non-Apache Spark flavors (i.e. databricks,
@@ -103,5 +103,8 @@ SPARK_SHIM_VERSIONS_PREMERGE_UTF8=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 # jdk11 cases
 set_env_var_SPARK_SHIM_VERSIONS_ARR -Pjdk11
 SPARK_SHIM_VERSIONS_JDK11=("${SPARK_SHIM_VERSIONS_ARR[@]}")
+# databricks shims
+set_env_var_SPARK_SHIM_VERSIONS_ARR -Pdatabricks
+SPARK_SHIM_VERSIONS_DATABRICKS=("${SPARK_SHIM_VERSIONS_ARR[@]}")
 
 echo "SPARK_BASE_SHIM_VERSION: $SPARK_BASE_SHIM_VERSION"

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.
+# Copyright (c) 2021-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gp
 from conftest import spark_tmp_table_factory
 from data_gen import *
 from marks import ignore_order, allow_non_gpu
-from spark_session import is_before_spark_320, with_cpu_session, is_before_spark_312, is_databricks_runtime
+from spark_session import is_before_spark_320, with_cpu_session, is_before_spark_312, is_databricks_runtime, is_databricks113_or_later
 
 
 def create_dim_table(table_name, table_format, length=500):
@@ -168,10 +168,16 @@ def test_dpp_reuse_broadcast_exchange(spark_tmp_table_factory, store_format, s_i
     create_fact_table(fact_table, store_format, length=10000)
     filter_val = create_dim_table(dim_table, store_format, length=2000)
     statement = _statements[s_index].format(fact_table, dim_table, filter_val)
+    if is_databricks113_or_later() and aqe_enabled == 'true':
+        # SubqueryBroadcastExec is unoptimized in Databricks 11.3 with EXECUTOR_BROADCAST
+        # See https://github.com/NVIDIA/spark-rapids/issues/7425
+        exist_classes='DynamicPruningExpression,SubqueryBroadcastExec,ReusedExchangeExec'
+    else:
+        exist_classes='DynamicPruningExpression,GpuSubqueryBroadcastExec,ReusedExchangeExec'
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.sql(statement),
         # The existence of GpuSubqueryBroadcastExec indicates the reuse works on the GPU
-        exist_classes='DynamicPruningExpression,GpuSubqueryBroadcastExec,ReusedExchangeExec',
+        exist_classes,
         conf=dict(_exchange_reuse_conf + [('spark.sql.adaptive.enabled', aqe_enabled)]))
 
 
@@ -289,9 +295,13 @@ def test_dpp_like_any(spark_tmp_table_factory, store_format, aqe_enabled):
     WHERE s.filter LIKE ANY ('%00%', '%01%', '%10%', '%11%')
     """.format(fact_table, dim_table)
 
+    if is_databricks113_or_later() and aqe_enabled == 'true':
+        exist_classes='DynamicPruningExpression,SubqueryBroadcastExec,ReusedExchangeExec'
+    else:
+        exist_classes='DynamicPruningExpression,GpuSubqueryBroadcastExec,ReusedExchangeExec'
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.sql(statement),
-        exist_classes='DynamicPruningExpression,GpuSubqueryBroadcastExec,ReusedExchangeExec',
+        exist_classes,
         conf=dict(_exchange_reuse_conf + [('spark.sql.adaptive.enabled', aqe_enabled)]))
 
 # Test handling DPP expressions from a HashedRelation that rearranges columns

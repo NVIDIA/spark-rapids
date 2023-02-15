@@ -22,7 +22,6 @@ import java.sql.Timestamp
 import java.time.LocalDateTime
 import java.util.TimeZone
 
-import ai.rapids.cudf.ColumnVector
 import scala.collection.JavaConverters._
 import scala.util.{Failure, Random, Success, Try}
 
@@ -258,9 +257,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("Test all supported casts with in-range values") {
-    // Temporarily disable it for Spark 340.
-    // Tracked by https://github.com/NVIDIA/spark-rapids/issues/5748
-    assume(cmpSparkVersion(3, 4, 0) < 0)
     // test cast() and ansi_cast()
     Seq(false, true).foreach { ansiEnabled =>
 
@@ -957,27 +953,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
         testCastToDecimal(DataTypes.StringType, scale = scale, precision = 37,
           customDataGenerator = Some(exponentsAsStrings),
           ansiEnabled = true)
-      }
-    }
-  }
-
-  test("CAST string to float - sanitize step") {
-    val testPairs = Seq(
-      ("\tinf", "inf"),
-      ("\riNf", "iNf"),
-      ("\t+InFinITy", "+InFinITy"),
-      ("\tInFinITy", "InFinITy"),
-      ("\t-InFinITy", "-InFinITy"),
-      ("\t61f", "61"),
-      (".8E4f", ".8E4")
-    )
-    val inputs = testPairs.map(_._1)
-    val expected = testPairs.map(_._2)
-    withResource(ColumnVector.fromStrings(inputs: _*)) { v =>
-      withResource(ColumnVector.fromStrings(expected: _*)) { expected =>
-        withResource(GpuCast.sanitizeStringToFloat(v, ansiEnabled = false)) { actual =>
-          CudfTestHelper.assertColumnsAreEqual(expected, actual)
-        }
       }
     }
   }

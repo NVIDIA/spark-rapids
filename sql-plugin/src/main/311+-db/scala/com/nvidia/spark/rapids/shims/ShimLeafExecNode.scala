@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ trait ShimLeafExecNode extends LeafExecNode {
   // For AQE support in Databricks, all Exec nodes implement computeStats(). This is actually
   // a recursive call to traverse the entire physical plan to aggregate this number. For the
   // end of the computation, this means that all LeafExecNodes must implement this method to
-  // avoid a stack overflow. For now, based on feedback from Databricks, Long.MaxValue is 
+  // avoid a stack overflow. For now, based on feedback from Databricks, Long.MaxValue is
   // sufficient to satisfy this computation.
   override def computeStats(): Statistics = {
     Statistics(
@@ -40,4 +40,6 @@ trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase {
       sizeInBytes = Long.MaxValue
     )
   }
+
 }
+

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,7 +62,7 @@ class RapidsCachingReader[K, C](
     try {
       val blocksForRapidsTransport = new ArrayBuffer[(BlockManagerId, Seq[(BlockId, Long, Int)])]()
       val cachedBlocks = new ArrayBuffer[BlockId]()
-      val cachedBufferIds = new ArrayBuffer[ShuffleBufferId]()
+      val cachedBufferHandles = new ArrayBuffer[RapidsBufferHandle]()
       val blocksByAddressMap: Map[BlockManagerId, Seq[(BlockId, Long, Int)]] = blocksByAddress.toMap
 
       blocksByAddressMap.keys.foreach(blockManagerId => {
@@ -75,27 +75,27 @@ class RapidsCachingReader[K, C](
             blockInfos.foreach(
               blockInfo => {
                 val blockId = blockInfo._1
-                val shuffleBufferIds: IndexedSeq[ShuffleBufferId] = blockId match {
+                val shuffleBufferHandles: IndexedSeq[RapidsBufferHandle] = blockId match {
                   case sbbid: ShuffleBlockBatchId =>
                     (sbbid.startReduceId to sbbid.endReduceId).flatMap { reduceId =>
                       cachedBlocks.append(blockId)
                       val sBlockId = ShuffleBlockId(sbbid.shuffleId, sbbid.mapId, reduceId)
-                      catalog.blockIdToBuffersIds(sBlockId)
+                      catalog.blockIdToBufferHandles(sBlockId)
                     }
                   case sbid: ShuffleBlockId =>
                     cachedBlocks.append(blockId)
-                    catalog.blockIdToBuffersIds(sbid)
+                    catalog.blockIdToBufferHandles(sbid)
                   case _ => throw new IllegalArgumentException(
                     s"${blockId.getClass} $blockId is not currently supported")
                 }
 
-                cachedBufferIds ++= shuffleBufferIds
+                cachedBufferHandles ++= shuffleBufferHandles
 
                 // Update the spill priorities of these buffers to indicate they are about
                 // to be read and therefore should not be spilled if possible.
-                shuffleBufferIds.foreach(catalog.updateSpillPriorityForLocalRead)
+                shuffleBufferHandles.foreach(catalog.updateSpillPriorityForLocalRead)
 
-                if (shuffleBufferIds.nonEmpty) {
+                if (shuffleBufferHandles.nonEmpty) {
                   metrics.incLocalBlocksFetched(1)
                 }
               })
@@ -140,10 +140,10 @@ class RapidsCachingReader[K, C](
 
       val itRange = new NvtxRange("Shuffle Iterator prep", NvtxColor.BLUE)
       try {
-        val cachedIt = cachedBufferIds.iterator.map(bufferId => {
+        val cachedIt = cachedBufferHandles.iterator.map(bufferHandle => {
           // No good way to get a metric in here for semaphore wait time
           GpuSemaphore.acquireIfNecessary(context, NoopMetric)
-          val cb = withResource(catalog.acquireBuffer(bufferId)) { buffer =>
+          val cb = withResource(catalog.acquireBuffer(bufferHandle)) { buffer =>
             buffer.getColumnarBatch(sparkTypes)
           }
           val cachedBytesRead = GpuColumnVector.getTotalDeviceMemoryUsed(cb)

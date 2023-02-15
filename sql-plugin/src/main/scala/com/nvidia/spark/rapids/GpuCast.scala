@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -182,69 +182,6 @@ object GpuCast extends Arm {
   val OVERFLOW_MESSAGE: String = "overflow occurred"
 
   val INVALID_NUMBER_MSG: String = "At least one value is either null or is an invalid number"
-
-  def sanitizeStringToFloat(
-      input: ColumnVector,
-      ansiEnabled: Boolean): ColumnVector = {
-
-    // This regex is just strict enough to filter out known edge cases that would result
-    // in incorrect values. We further filter out invalid values using the cuDF isFloat method.
-    val VALID_FLOAT_REGEX =
-      "^" +                             // start of line
-        "[Nn][Aa][Nn]" +                // NaN
-        "|" +
-        "(" +
-          "[+\\-]?" +                   // optional sign preceding Inf or numeric
-          "(" +
-            "([Ii][Nn][Ff]" +           // Inf, Infinity
-            "([Ii][Nn][Ii][Tt][Yy])?)" +
-            "|" +
-            "(" +
-              "(" +
-                "([0-9]+)|" +           // digits, OR
-                "([0-9]*\\.[0-9]+)|" +  // decimal with optional leading and mandatory trailing, OR
-                "([0-9]+\\.[0-9]*)" +   // decimal with mandatory leading and optional trailing
-              ")" +
-              "([eE][+\\-]?[0-9]+)?" +  // exponent
-              "[fFdD]?" +               // floating-point designator
-            ")" +
-          ")" +
-        ")" +
-      "$"                               // end of line
-
-    withResource(input.lstrip()) { stripped =>
-      withResource(GpuScalar.from(null, DataTypes.StringType)) { nullString =>
-        // filter out strings containing breaking whitespace
-        val withoutWhitespace = withResource(ColumnVector.fromStrings("\r", "\n")) {
-          verticalWhitespace =>
-            withResource(stripped.contains(verticalWhitespace)) {
-              _.ifElse(nullString, stripped)
-            }
-        }
-        // filter out any strings that are not valid floating point numbers according
-        // to the regex pattern
-        val floatOrNull = withResource(withoutWhitespace) { _ =>
-          withResource(withoutWhitespace.matchesRe(VALID_FLOAT_REGEX)) { isFloat =>
-            if (ansiEnabled) {
-              withResource(isFloat.all()) { allMatch =>
-                // Check that all non-null values are valid floats.
-                if (allMatch.isValid && !allMatch.getBoolean) {
-                  throw new NumberFormatException(GpuCast.INVALID_NUMBER_MSG)
-                }
-                withoutWhitespace.incRefCount()
-              }
-            } else {
-              isFloat.ifElse(withoutWhitespace, nullString)
-            }
-          }
-        }
-        // strip floating-point designator 'f' or 'd' but don't strip the 'f' from 'Inf'
-        withResource(floatOrNull) {
-          _.stringReplaceWithBackrefs("([^nN])[fFdD]$", "\\1")
-        }
-      }
-    }
-  }
 
   def doCast(
       input: ColumnView,
@@ -491,7 +428,10 @@ object GpuCast extends Arm {
       case (StringType, ByteType | ShortType | IntegerType | LongType ) =>
         CastStrings.toInteger(input, ansiMode,
           GpuColumnVector.getNonNestedRapidsType(toDataType))
-      case (StringType, BooleanType | FloatType | DoubleType | DateType | TimestampType) =>
+      case (StringType, FloatType | DoubleType) =>
+        CastStrings.toFloat(input, ansiMode,
+          GpuColumnVector.getNonNestedRapidsType(toDataType))
+      case (StringType, BooleanType | DateType | TimestampType) =>
         withResource(input.strip()) { trimmed =>
           toDataType match {
             case BooleanType =>
@@ -504,9 +444,6 @@ object GpuCast extends Arm {
               }
             case TimestampType =>
               castStringToTimestamp(trimmed, ansiMode)
-            case FloatType | DoubleType =>
-              castStringToFloats(trimmed, ansiMode,
-                GpuColumnVector.getNonNestedRapidsType(toDataType))
           }
         }
       case (StringType, dt: DecimalType) =>
@@ -694,6 +631,7 @@ object GpuCast extends Arm {
     }
   }
 
+  @scala.annotation.nowarn("msg=method stringReplaceWithBackrefs in class ColumnView is deprecated")
   private def castTimestampToString(input: ColumnView): ColumnVector = {
     // the complexity in this function is due to Spark's rules for truncating
     // the fractional part of the timestamp string. Any trailing decimal place
@@ -1032,59 +970,8 @@ object GpuCast extends Arm {
     }
   }
 
-  def castStringToFloats(
-      input: ColumnVector,
-      ansiEnabled: Boolean,
-      dType: DType,
-      alreadySanitized: Boolean = false): ColumnVector = {
-    // 1. identify the nans
-    // 2. identify the floats. "null" and letters are not considered floats
-    // 3. if ansi is enabled we want to throw an exception if the string is neither float nor nan
-    // 4. convert everything that's not floats to null
-    // 5. set the indices where we originally had nans to Float.NaN
-    //
-    // NOTE Limitation: "1.7976931348623159E308" and "-1.7976931348623159E308" are not considered
-    // Inf even though Spark does
-
-    val NAN_REGEX = "^[nN][aA][nN]$"
-
-    val sanitized = if (alreadySanitized) {
-      input.incRefCount()
-    } else {
-      GpuCast.sanitizeStringToFloat(input, ansiEnabled)
-    }
-
-    withResource(sanitized) { _ =>
-      //Now identify the different variations of nans
-      withResource(sanitized.matchesRe(NAN_REGEX)) { isNan =>
-        // now check if the values are floats
-        withResource(sanitized.isFloat) { isFloat =>
-          if (ansiEnabled) {
-            withResource(isNan.or(isFloat)) { nanOrFloat =>
-              withResource(nanOrFloat.all()) { allNanOrFloat =>
-                // Check that all non-null values are valid floats or NaN.
-                if (allNanOrFloat.isValid && !allNanOrFloat.getBoolean) {
-                  throw new NumberFormatException(GpuCast.INVALID_NUMBER_MSG)
-                }
-              }
-            }
-          }
-          val floatsOnly = withResource(sanitized.castTo(dType)) { casted =>
-            withResource(Scalar.fromNull(dType)) {
-              isFloat.ifElse(casted, _)
-            }
-          }
-          withResource(floatsOnly) { _ =>
-            withResource(FloatUtils.getNanScalar(dType)) {
-              isNan.ifElse(_, floatsOnly)
-            }
-          }
-        }
-      }
-    }
-  }
-
   /** This method does not close the `input` ColumnVector. */
+  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   def convertDateOrNull(
       input: ColumnVector,
       regex: String,
@@ -1106,7 +993,8 @@ object GpuCast extends Arm {
   }
 
     /** This method does not close the `input` ColumnVector. */
-  def convertDateOr(
+    @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
+    def convertDateOr(
       input: ColumnVector,
       regex: String,
       cudfFormat: String,
@@ -1191,6 +1079,7 @@ object GpuCast extends Arm {
   }
 
   /** This method does not close the `input` ColumnVector. */
+  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   private def convertTimestampOrNull(
       input: ColumnVector,
       regex: String,
@@ -1211,6 +1100,7 @@ object GpuCast extends Arm {
   }
 
   /** This method does not close the `input` ColumnVector. */
+  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   private def convertTimestampOr(
       input: ColumnVector,
       regex: String,
@@ -1232,6 +1122,7 @@ object GpuCast extends Arm {
   }
 
   /** This method does not close the `input` ColumnVector. */
+  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   private def convertFullTimestampOr(
       input: ColumnVector,
       orElse: ColumnVector): ColumnVector = {
@@ -1272,6 +1163,7 @@ object GpuCast extends Arm {
     }
   }
 
+  @scala.annotation.nowarn("msg=method stringReplaceWithBackrefs in class ColumnView is deprecated")
   private def castStringToTimestamp(input: ColumnVector, ansiMode: Boolean): ColumnVector = {
 
     // special timestamps

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,8 +60,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
 
   testSparkResultsAreEqual("to_date yyyy-MM-dd",
       datesAsStrings,
-      assumeCondition = _ => (false,
-        "https://github.com/NVIDIA/spark-rapids/issues/7090"),
       conf = CORRECTED_TIME_PARSER_POLICY) {
     df => df.withColumn("c1", to_date(col("c0"), "yyyy-MM-dd"))
   }
@@ -114,11 +112,8 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     df => df.withColumn("c1", to_date(col("c0"), "yyyy-MM-dd"))
   }
 
-
   testSparkResultsAreEqual("to_timestamp yyyy-MM-dd",
       timestampsAsStrings,
-    assumeCondition = _ => (false,
-      "https://github.com/NVIDIA/spark-rapids/issues/7090"),
       conf = CORRECTED_TIME_PARSER_POLICY) {
     df => df.withColumn("c1", to_timestamp(col("c0"), "yyyy-MM-dd"))
   }
@@ -139,9 +134,7 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
 
   testSparkResultsAreEqual("unix_timestamp parse date",
       timestampsAsStrings,
-    assumeCondition = _ => (false,
-      "https://github.com/NVIDIA/spark-rapids/issues/7090"),
-    conf = CORRECTED_TIME_PARSER_POLICY) {
+      CORRECTED_TIME_PARSER_POLICY) {
     df => df.withColumn("c1", unix_timestamp(col("c0"), "yyyy-MM-dd"))
   }
 
@@ -286,6 +279,7 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     assert(res)
   }
 
+  @scala.annotation.nowarn("msg=method stringReplaceWithBackrefs in class ColumnView is deprecated")
   private def testRegex(rule: RegexReplace, values: Seq[String], expected: Seq[String]): Unit = {
     withResource(ColumnVector.fromStrings(values: _*)) { v =>
       withResource(ColumnVector.fromStrings(expected: _*)) { expected =>

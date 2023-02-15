@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,14 +27,13 @@ import com.nvidia.spark.rapids.format.TableMeta
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 
 /** A buffer store using files on the local disks. */
-class RapidsDiskStore(
-    diskBlockManager: RapidsDiskBlockManager,
-    catalog: RapidsBufferCatalog = RapidsBufferCatalog.singleton,
-    deviceStorage: RapidsDeviceMemoryStore = RapidsBufferCatalog.getDeviceStorage)
-    extends RapidsBufferStore(StorageTier.DISK, catalog) {
+class RapidsDiskStore(diskBlockManager: RapidsDiskBlockManager)
+    extends RapidsBufferStore(StorageTier.DISK) {
   private[this] val sharedBufferFiles = new ConcurrentHashMap[RapidsBufferId, File]
 
-  override protected def createBuffer(incoming: RapidsBuffer, incomingBuffer: MemoryBuffer,
+  override protected def createBuffer(
+      incoming: RapidsBuffer,
+      incomingBuffer: MemoryBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
     withResource(incomingBuffer) { _ =>
       val hostBuffer = incomingBuffer match {
@@ -56,8 +55,13 @@ class RapidsDiskStore(
         copyBufferToPath(hostBuffer, path, append = false)
       }
       logDebug(s"Spilled to $path $fileOffset:${incoming.size}")
-      new this.RapidsDiskBuffer(id, fileOffset, incoming.size, incoming.meta,
-        incoming.getSpillPriority, incoming.spillCallback, deviceStorage)
+      new RapidsDiskBuffer(
+        id,
+        fileOffset,
+        incoming.size,
+        incoming.meta,
+        incoming.getSpillPriority,
+        incoming.getSpillCallback)
     }
   }
 
@@ -89,10 +93,9 @@ class RapidsDiskStore(
       size: Long,
       meta: TableMeta,
       spillPriority: Long,
-      spillCallback: SpillCallback,
-      deviceStorage: RapidsDeviceMemoryStore)
+      spillCallback: SpillCallback)
       extends RapidsBufferBase(
-        id, size, meta, spillPriority, spillCallback, deviceStorage = deviceStorage) {
+        id, size, meta, spillPriority, spillCallback) {
     private[this] var hostBuffer: Option[HostMemoryBuffer] = None
 
     override val storageTier: StorageTier = StorageTier.DISK

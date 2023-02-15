@@ -1,5 +1,0 @@
-appIndex,sqlID,nodeID,nodeName,nodeDescription,reason
-1,0,2,SerializeFromObject,"SerializeFromObject [staticinvoke(class org.apache.spark.unsafe.types.UTF8String, StringType, fromSt","Contains Dataset or RDD"
-1,0,3,MapElements,MapElements com.nvidia.spark.rapids.tool.profiling.QualificationInfoSuite$$$Lambda$1571/993650587@7b,"Contains Dataset or RDD"
-1,0,4,Filter,Filter com.nvidia.spark.rapids.tool.profiling.QualificationInfoSuite$$$Lambda$1569/1828787392@2eb6d3,"Contains Dataset or RDD"
-1,0,10,SerializeFromObject,"SerializeFromObject [staticinvoke(class org.apache.spark.unsafe.types.UTF8String, StringType, fromSt","Contains Dataset or RDD"

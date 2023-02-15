@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import scala.concurrent.Future
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, GpuRangePartitioning, ShimUnaryExecNode, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, GpuRangePartitioning, ShimUnaryExecNode, ShuffleOriginUtil, SparkShimImpl}
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
@@ -40,7 +40,7 @@ import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.MutablePair
 
-class GpuShuffleMeta(
+abstract class GpuShuffleMetaBase(
     shuffle: ShuffleExchangeExec,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
@@ -81,6 +81,10 @@ class GpuShuffleMeta(
 
   override def tagPlanForGpu(): Unit = {
 
+    if (!ShuffleOriginUtil.isSupported(shuffle.shuffleOrigin)) {
+      willNotWorkOnGpu(s"${shuffle.shuffleOrigin} not supported on GPU")
+    }
+
     shuffle.outputPartitioning match {
       case _: RoundRobinPartitioning
         if SparkShimImpl.sessionFromPlan(shuffle).sessionState.conf
@@ -98,11 +102,11 @@ class GpuShuffleMeta(
     // When AQE is enabled, we need to preserve meta data as outputAttributes and
     // availableRuntimeDataTransition to the spark plan for the subsequent query stages.
     // These meta data will be fetched in the SparkPlanMeta of CustomShuffleReaderExec.
-    if (wrapped.getTagValue(GpuShuffleMeta.shuffleExOutputAttributes).isEmpty) {
-      wrapped.setTagValue(GpuShuffleMeta.shuffleExOutputAttributes, outputAttributes)
+    if (wrapped.getTagValue(GpuShuffleMetaBase.shuffleExOutputAttributes).isEmpty) {
+      wrapped.setTagValue(GpuShuffleMetaBase.shuffleExOutputAttributes, outputAttributes)
     }
-    if (wrapped.getTagValue(GpuShuffleMeta.availableRuntimeDataTransition).isEmpty) {
-      wrapped.setTagValue(GpuShuffleMeta.availableRuntimeDataTransition,
+    if (wrapped.getTagValue(GpuShuffleMetaBase.availableRuntimeDataTransition).isEmpty) {
+      wrapped.setTagValue(GpuShuffleMetaBase.availableRuntimeDataTransition,
         availableRuntimeDataTransition)
     }
   }
@@ -115,13 +119,14 @@ class GpuShuffleMeta(
     )(shuffle.outputPartitioning)
 }
 
-object GpuShuffleMeta {
+object GpuShuffleMetaBase {
 
   val shuffleExOutputAttributes = TreeNodeTag[Seq[Attribute]](
     "rapids.gpu.shuffleExOutputAttributes")
 
   val availableRuntimeDataTransition = TreeNodeTag[Boolean](
     "rapids.gpu.availableRuntimeDataTransition")
+
 }
 
 /**

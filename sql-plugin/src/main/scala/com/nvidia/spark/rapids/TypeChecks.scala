@@ -2232,11 +2232,15 @@ object SupportedOpsForTools {
         val formatLowerCase = format.toString.toLowerCase
         val formatEnabled = formatLowerCase match {
           case "csv" => conf.isCsvEnabled && conf.isCsvReadEnabled
+          case "delta" =>
+            // Delta Lake reads of data files appear as a normal Parquet read
+            conf.isParquetEnabled && conf.isParquetReadEnabled
           case "parquet" => conf.isParquetEnabled && conf.isParquetReadEnabled
           case "orc" => conf.isOrcEnabled && conf.isOrcReadEnabled
           case "json" => conf.isJsonEnabled && conf.isJsonReadEnabled
           case "avro" => conf.isAvroEnabled && conf.isAvroReadEnabled
           case "iceberg" => conf.isIcebergEnabled && conf.isIcebergReadEnabled
+          case "hivetext" => conf.isHiveDelimitedTextEnabled && conf.isHiveDelimitedTextReadEnabled
           case _ =>
             throw new IllegalArgumentException("Format is unknown we need to add it here!")
         }

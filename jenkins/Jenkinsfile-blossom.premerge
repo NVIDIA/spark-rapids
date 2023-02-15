@@ -1,6 +1,6 @@
 #!/usr/local/env groovy
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,59 +30,15 @@ import ipp.blossom.*
 
 def githubHelper // blossom github helper
 def TEMP_IMAGE_BUILD = true
-def CUDA_NAME = 'cuda11.0' // hardcode cuda version for docker build part
+def CUDA_NAME = 'cuda11.0.3' // hardcode cuda version for docker build part
 def PREMERGE_DOCKERFILE = 'jenkins/Dockerfile-blossom.ubuntu'
 def IMAGE_PREMERGE // temp image for premerge test
 def IMAGE_DB = pod.getCPUYAML("${common.ARTIFACTORY_NAME}/sw-spark-docker/spark:rapids-databricks")
 def PREMERGE_TAG
 def skipped = false
 def db_build = false
-def PROJECT_VER // project version retrieved from 'version-def.sh' to determine compatible stages
-def major_ver // major version extracted from project version
-def minor_ver // minor version extracted from project version
-def PREMERGE_CI_2_ARGUMENT // argument for 'spark-premerge-build.sh' running from stage of Premerge CI 2
 def sourcePattern = 'shuffle-plugin/src/main/scala/,udf-compiler/src/main/scala/,' +
     'sql-plugin/src/main/java/,sql-plugin/src/main/scala/'
-
-// constant parameters for aws and azure databricks cluster
-// CSP params
-ID_HOST = 0
-ID_TOKEN = 1
-ID_DRIVER = 2
-ID_WORKER = 3
-PARAM_MAP = [
-        'aws'  : [
-                "${common.AWS_DATABRICKS_URL}",
-                'SPARK_AWS_DATABRICKS_TOKEN',
-                'g4dn.2xlarge',
-                'g4dn.2xlarge'
-        ],
-        'azure': [
-                "${common.AZURE_DATABRICKS_URL}",
-                'SPARK_AZURE_DATABRICKS_TOKEN',
-                'Standard_NC6s_v3',
-                'Standard_NC6s_v3'
-        ]
-]
-// runtime params
-ID_RUNTIME = 0
-ID_SPARK = 1
-ID_INITSCRIPTS = 2
-ID_INSTALL = 3
-RUNTIME_MAP = [
-        '9.1': [
-                '9.1.x-gpu-ml-scala2.12',
-                '3.1.2',
-                'init_cudf_udf.sh',
-                '3.1.2'
-        ],
-        '10.4': [
-                '10.4.x-gpu-ml-scala2.12',
-                '3.2.1',
-                'init_cudf_udf.sh',
-                '3.2.1'
-        ]
-]
 
 pipeline {
     agent {
@@ -98,6 +54,13 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '50'))
         skipDefaultCheckout true
         timeout(time: 12, unit: 'HOURS')
+    }
+
+    parameters {
+        string(name: 'REF', defaultValue: '',
+            description: 'Merged commit of specific PR')
+        string(name: 'GITHUB_DATA', defaultValue: '',
+            description: 'Json-formatted github data from upstream blossom-ci')
     }
 
     environment {
@@ -116,11 +79,11 @@ pipeline {
         IDLE_TIMEOUT = '240' // 4 hours
         NUM_WORKERS = '0'
         DB_TYPE = getDbType()
-        DATABRICKS_HOST = "${PARAM_MAP["$DB_TYPE"][ID_HOST]}"
-        DATABRICKS_TOKEN = credentials("${PARAM_MAP["$DB_TYPE"][ID_TOKEN]}")
+        DATABRICKS_HOST = DbUtils.getHost("$DB_TYPE")
+        DATABRICKS_TOKEN = credentials("${DbUtils.getToken("$DB_TYPE")}")
         DATABRICKS_PUBKEY = credentials("SPARK_DATABRICKS_PUBKEY")
-        DATABRICKS_DRIVER = "${PARAM_MAP["$DB_TYPE"][ID_DRIVER]}"
-        DATABRICKS_WORKER = "${PARAM_MAP["$DB_TYPE"][ID_WORKER]}"
+        DATABRICKS_DRIVER = DbUtils.getDriver("$DB_TYPE")
+        DATABRICKS_WORKER = DbUtils.getWorker("$DB_TYPE")
         INIT_SCRIPTS_DIR = "dbfs:/databricks/init_scripts/${BUILD_TAG}"
     }
 
@@ -128,7 +91,7 @@ pipeline {
         stage("Init githubHelper") {
             steps {
                 script {
-                    githubHelper = GithubHelper.getInstance("${GITHUB_TOKEN}", githubData)
+                    githubHelper = GithubHelper.getInstance("${GITHUB_TOKEN}", params.GITHUB_DATA)
                     // desc contains the PR ID and can be accessed from different builds
                     currentBuild.description = githubHelper.getBuildDescription()
                     try {
@@ -155,36 +118,6 @@ pipeline {
                 }
             }
         } // end of Init githubHelper
-
-        stage("Determine Project Version") {
-            when {
-                expression {
-                    !skipped
-                }
-            }
-
-            steps {
-                script {
-                    container('cpu') {
-                        // Retrieve PROJECT_VER from version-def.sh, e.g, '<major>.<minor>.<patch>-SNAPSHOT'
-                        PROJECT_VER = sh(returnStdout: true,
-                                        script: '''#!/bin/bash
-                                                source jenkins/version-def.sh >& /dev/null
-                                                echo $PROJECT_VER
-                                                ''').trim()
-                        PROJECT_VER = PROJECT_VER.split('-')[0] // Remove trailing '-SNAPSHOT'
-                        echo PROJECT_VER
-
-                        def versions = PROJECT_VER.split('\\.')
-                        major_ver = versions[0].toInteger()
-                        minor_ver = versions[1].toInteger()
-
-                        PREMERGE_CI_2_ARGUMENT = "ci_2"
-                        echo PREMERGE_CI_2_ARGUMENT
-                    }
-                }
-            }
-        }
 
         stage('Build docker image') {
             when {
@@ -219,7 +152,7 @@ pipeline {
                         }
 
                         if (TEMP_IMAGE_BUILD) {
-                            IMAGE_TAG = "dev-ubuntu18-${CUDA_NAME}"
+                            IMAGE_TAG = "dev-ubuntu20-${CUDA_NAME}"
                             PREMERGE_TAG = "${IMAGE_TAG}-${BUILD_TAG}"
                             IMAGE_PREMERGE = "${ARTIFACTORY_NAME}/sw-spark-docker-local/plugin:${PREMERGE_TAG}"
                             def CUDA_VER = "$CUDA_NAME" - "cuda"
@@ -227,7 +160,7 @@ pipeline {
                             uploadDocker(IMAGE_PREMERGE)
                         } else {
                             // if no pre-merge dockerfile change, use nightly image
-                            IMAGE_PREMERGE = "$ARTIFACTORY_NAME/sw-spark-docker-local/plugin:dev-ubuntu18-$CUDA_NAME-blossom-dev"
+                            IMAGE_PREMERGE = "$ARTIFACTORY_NAME/sw-spark-docker-local/plugin:dev-ubuntu20-$CUDA_NAME-blossom-dev"
                         }
                     }
                 }
@@ -252,13 +185,6 @@ pipeline {
                 script {
                     githubHelper.updateCommitStatus("$BUILD_URL", "Running - includes databricks", GitHubCommitState.PENDING)
                     unstash "source_tree"
-                    container('cpu') {
-                        sh """
-                            bash -c 'dbfs mkdirs $INIT_SCRIPTS_DIR'
-                            bash -c 'dbfs cp --overwrite jenkins/databricks/init_cudf_udf.sh $INIT_SCRIPTS_DIR'
-                            bash -c 'dbfs cp --overwrite jenkins/databricks/init_cuda11_runtime.sh $INIT_SCRIPTS_DIR'
-                        """
-                    }
                 }
             }
         }
@@ -313,14 +239,6 @@ pipeline {
                 } // end of mvn verify stage
 
                 stage('Premerge CI 2') {
-                    when {
-                        beforeAgent true
-                        beforeOptions true
-                        anyOf {
-                            expression { major_ver >= 22 }
-                        }
-                    }
-
                     options {
                         lock(label: "${params.GPU_POOL}", quantity: 1, variable: 'GPU_RESOURCE')
                     }
@@ -340,7 +258,7 @@ pipeline {
                             container('gpu') {
                                 timeout(time: 4, unit: 'HOURS') {
                                     try {
-                                        sh "$PREMERGE_SCRIPT $PREMERGE_CI_2_ARGUMENT"
+                                        sh "$PREMERGE_SCRIPT ci_2"
                                     } finally {
                                         common.publishPytestResult(this, "${STAGE_NAME}")
                                     }
@@ -354,7 +272,7 @@ pipeline {
                     when {
                         beforeAgent true
                         anyOf {
-                            expression { db_build && major_ver >= 22 }
+                            expression { db_build }
                         }
                     }
 
@@ -367,11 +285,10 @@ pipeline {
                     }
                     environment {
                         DB_RUNTIME = '9.1'
-                        DATABRICKS_RUNTIME = "${RUNTIME_MAP["$DB_RUNTIME"][ID_RUNTIME]}"
-                        BASE_SPARK_VERSION = "${RUNTIME_MAP["$DB_RUNTIME"][ID_SPARK]}"
-                        BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS = "${RUNTIME_MAP["$DB_RUNTIME"][ID_INSTALL]}"
-                        INIT_SCRIPTS = getInitScripts("$INIT_SCRIPTS_DIR",
-                                "${RUNTIME_MAP["$DB_RUNTIME"][ID_INITSCRIPTS]}")
+                        DATABRICKS_RUNTIME = DbUtils.getRuntime("$DB_RUNTIME")
+                        BASE_SPARK_VERSION = DbUtils.getSparkVer("$DB_RUNTIME")
+                        BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS = DbUtils.getInstallVer("$DB_RUNTIME")
+                        INIT_SCRIPTS = DbUtils.getInitScripts("$DB_RUNTIME")
                     }
                     steps {
                         script {
@@ -387,8 +304,7 @@ pipeline {
                     when {
                         beforeAgent true
                         anyOf {
-                            expression { db_build && major_ver == 22 && minor_ver >= 4 }
-                            expression { db_build && major_ver >= 23 }
+                            expression { db_build }
                         }
                     }
 
@@ -401,11 +317,10 @@ pipeline {
                     }
                     environment {
                         DB_RUNTIME = '10.4'
-                        DATABRICKS_RUNTIME = "${RUNTIME_MAP["$DB_RUNTIME"][ID_RUNTIME]}"
-                        BASE_SPARK_VERSION = "${RUNTIME_MAP["$DB_RUNTIME"][ID_SPARK]}"
-                        BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS = "${RUNTIME_MAP["$DB_RUNTIME"][ID_INSTALL]}"
-                        INIT_SCRIPTS = getInitScripts("$INIT_SCRIPTS_DIR",
-                                "${RUNTIME_MAP["$DB_RUNTIME"][ID_INITSCRIPTS]}")
+                        DATABRICKS_RUNTIME = DbUtils.getRuntime("$DB_RUNTIME")
+                        BASE_SPARK_VERSION = DbUtils.getSparkVer("$DB_RUNTIME")
+                        BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS = DbUtils.getInstallVer("$DB_RUNTIME")
+                        INIT_SCRIPTS = DbUtils.getInitScripts("$DB_RUNTIME")
                     }
                     steps {
                         script {
@@ -416,6 +331,38 @@ pipeline {
                         }
                     }
                 } // end of DB runtime 10.4
+
+                stage('DB runtime 11.3') {
+                    when {
+                        beforeAgent true
+                        anyOf {
+                            expression { db_build }
+                        }
+                    }
+
+                    agent {
+                        kubernetes {
+                            label "premerge-ci-db-11.3-${BUILD_NUMBER}"
+                            cloud 'sc-ipp-blossom-prod'
+                            yaml "${IMAGE_DB}"
+                        }
+                    }
+                    environment {
+                        DB_RUNTIME = '11.3'
+                        DATABRICKS_RUNTIME = DbUtils.getRuntime("$DB_RUNTIME")
+                        BASE_SPARK_VERSION = DbUtils.getSparkVer("$DB_RUNTIME")
+                        BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS = DbUtils.getInstallVer("$DB_RUNTIME")
+                        INIT_SCRIPTS = DbUtils.getInitScripts("$DB_RUNTIME")
+                    }
+                    steps {
+                        script {
+                            timeout(time: 5, unit: 'HOURS') {
+                                unstash "source_tree"
+                                databricksBuild()
+                            }
+                        }
+                    }
+                } // end of DB runtime 11.3
 
                 stage('Dummy stage: blue ocean log view') {
                     steps {
@@ -447,12 +394,6 @@ pipeline {
                     }
                 }
 
-                if (db_build) {
-                    container('cpu') {
-                        sh "bash -c 'dbfs rm -r $INIT_SCRIPTS_DIR || true'"
-                    }
-                }
-
                 if (TEMP_IMAGE_BUILD) {
                     container('cpu') {
                         deleteDockerTempTag("${PREMERGE_TAG}") // clean premerge temp image
@@ -469,14 +410,10 @@ String getDbType() {
     return params.DATABRICKS_TYPE ? params.DATABRICKS_TYPE : 'aws'
 }
 
-// e.g. foo.sh,bar.sh --> /dbfs/path/foo.sh,/dbfs/path/bar.sh
-String getInitScripts(String rootDir, String files) {
-    return rootDir + '/' + files.replace(',', ',' + rootDir + '/')
-}
-
 void databricksBuild() {
     def CLUSTER_ID = ''
     def SPARK_MAJOR = BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS.replace('.', '')
+    def dbfs_path = "$INIT_SCRIPTS_DIR-$DB_TYPE"
     try {
         stage("Create $SPARK_MAJOR DB") {
             script {
@@ -485,7 +422,18 @@ void databricksBuild() {
                     sh "tar -zcf spark-rapids-ci.tgz *"
                     def CREATE_PARAMS = " -r $DATABRICKS_RUNTIME -w $DATABRICKS_HOST -t $DATABRICKS_TOKEN" +
                             " -s $DB_TYPE -n CI-${BUILD_TAG}-${BASE_SPARK_VERSION} -k \"$DATABRICKS_PUBKEY\" -i $IDLE_TIMEOUT" +
-                            " -d $DATABRICKS_DRIVER -o $DATABRICKS_WORKER -e $NUM_WORKERS -f $INIT_SCRIPTS"
+                            " -d $DATABRICKS_DRIVER -o $DATABRICKS_WORKER -e $NUM_WORKERS"
+
+                    // handle init scripts if exist
+                    if (env.INIT_SCRIPTS) {
+                        sh "bash -c 'dbfs mkdirs $dbfs_path'"
+                        env.INIT_SCRIPTS.split(',').each {
+                            sh "bash -c 'dbfs cp --overwrite jenkins/databricks/${it} $dbfs_path'"
+                        }
+                        // foo.sh,bar.sh --> dbfs:/path/foo.sh,dbfs:/path/bar.sh
+                        CREATE_PARAMS += " -f $dbfs_path/" + env.INIT_SCRIPTS.replace(',', ",$dbfs_path/")
+                    }
+
                     CLUSTER_ID = sh(script: "python3 ./jenkins/databricks/create.py $CREATE_PARAMS",
                             returnStdout: true).trim()
                     echo CLUSTER_ID
@@ -529,6 +477,9 @@ void databricksBuild() {
         if (CLUSTER_ID) {
             container('cpu') {
                 retry(3) {
+                    if (env.INIT_SCRIPTS) {
+                        sh "bash -c 'dbfs rm -r $dbfs_path'"
+                    }
                     sh "python3 ./jenkins/databricks/shutdown.py -s $DATABRICKS_HOST -t $DATABRICKS_TOKEN -c $CLUSTER_ID -d"
                 }
             }

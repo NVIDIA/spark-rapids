@@ -10,7 +10,7 @@ nav_order: 12
 
 ### What versions of Apache Spark does the RAPIDS Accelerator for Apache Spark support?
 
-The RAPIDS Accelerator for Apache Spark requires version 3.1.1, 3.1.2, 3.1.3, 3.2.0, 3.2.1, 3.2.2 or 3.3.0 of
+The RAPIDS Accelerator for Apache Spark requires version 3.1.1, 3.1.2, 3.1.3, 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.3.0 or 3.3.1 of
 Apache Spark. Because the plugin replaces parts of the physical plan that Apache Spark considers to
 be internal the code for those plans can change even between bug fix releases. As a part of our
 process, we try to stay on top of these changes and release updates as quickly as possible.
@@ -20,7 +20,7 @@ process, we try to stay on top of these changes and release updates as quickly a
 The RAPIDS Accelerator for Apache Spark officially supports:
 - [Apache Spark](get-started/getting-started-on-prem.md)
 - [AWS EMR 6.2+](get-started/getting-started-aws-emr.md)
-- [Databricks Runtime 9.1, 10.4](get-started/getting-started-databricks.md)
+- [Databricks Runtime 9.1, 10.4, 11.3](get-started/getting-started-databricks.md)
 - [Google Cloud Dataproc 2.0](get-started/getting-started-gcp.md)
 - [Azure Synapse](get-started/getting-started-azure-synapse-analytics.md)
 - Cloudera provides the plugin packaged through
@@ -262,10 +262,7 @@ efficient to stay on the CPU instead of going back and forth.
 
 ### Is Dynamic Partition Pruning (DPP) Supported?
 
-Yes, DPP still works.  It might not be as efficient as it could be, and we are working to improve it.
-
-DPP is not supported on Databricks with the plugin.
-Queries on Databricks will not fail but it can not benefit from DPP.
+Yes, DPP works.  
 
 ### Is Adaptive Query Execution (AQE) Supported?
 
@@ -358,18 +355,18 @@ for the RAPIDS plugin.
 
 ### Are table layout formats supported?
 
-Yes, there is GPU support for Delta Lake read 
-and [Apache Iceberg 0.13 read](./additional-functionality/iceberg-support.md).  
-Write operations will fall back to the CPU.
+Yes, there is GPU support for [Delta Lake](./additional-functionality/delta-lake-support.md) and
+[Apache Iceberg](./additional-functionality/iceberg-support.md). See the additional support
+documentation for specifics on the operations supported for these formats.
 
 ### How many tasks can I run per executor? How many should I run per executor?
 
-There is no limit on the number of tasks per executor that you can run.  Generally we recommend 2 to
+There is no limit on the number of tasks per executor that you can run. Generally we recommend 2 to
 6 tasks per executor and 1 GPU per executor. The GPU typically benefits from having 2 tasks run
 in [parallel](configs.md#sql.concurrentGpuTasks) on it at a time, assuming your GPU has enough
 memory to support that. Having 2 to 3 times as many tasks off of the GPU as on the GPU allows for
 I/O to be run in parallel with the processing. If you increase the tasks too high you can overload
-the I/O and starting the initial processing can suffer.  But if you have a lot of processing that
+the I/O and starting the initial processing can suffer. But if you have a lot of processing that
 cannot be done on the GPU, like complex UDFs, the more tasks you have the more CPU processing you
 can throw at it.
 

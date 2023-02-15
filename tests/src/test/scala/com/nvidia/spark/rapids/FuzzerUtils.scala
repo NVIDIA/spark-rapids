@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2022, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -278,20 +278,20 @@ class EnhancedRandom(protected val r: Random, protected val options: FuzzerOptio
 
   def nextInt(): Int = {
     r.nextInt(5) match {
-      case 0 => Int.MinValue
-      case 1 => Int.MaxValue
-      case 2 => (r.nextDouble() * Int.MinValue).toInt
-      case 3 => (r.nextDouble() * Int.MaxValue).toInt
+      case 0 => options.intMin
+      case 1 => options.intMax
+      case 2 => (r.nextDouble() * options.intMin).toInt
+      case 3 => (r.nextDouble() * options.intMax).toInt
       case 4 => 0
     }
   }
 
   def nextLong(): Long = {
     r.nextInt(5) match {
-      case 0 => Long.MinValue
-      case 1 => Long.MaxValue
-      case 2 => (r.nextDouble() * Long.MinValue).toLong
-      case 3 => (r.nextDouble() * Long.MaxValue).toLong
+      case 0 => options.longMin
+      case 1 => options.longMax
+      case 2 => (r.nextDouble() * options.longMin).toLong
+      case 3 => (r.nextDouble() * options.longMax).toLong
       case 4 => 0
     }
   }
@@ -360,4 +360,8 @@ class EnhancedRandom(protected val r: Random, protected val options: FuzzerOptio
 
 case class FuzzerOptions(
     validStringChars: Option[String] = None,
-    maxStringLen: Int = 64)
+    maxStringLen: Int = 64,
+    intMin: Int = Int.MinValue,
+    intMax: Int = Int.MaxValue,
+    longMin: Long = Long.MinValue,
+    longMax: Long = Long.MaxValue)

@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -68,7 +68,9 @@ parquet_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_
 # test with original parquet file reader, the multi-file parallel reader for cloud, and coalesce file reader for
 # non-cloud
 original_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'PERFILE'}
-multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED'}
+multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
+        'spark.rapids.sql.format.parquet.multithreaded.combine.sizeBytes': '0',
+        'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': True}
 coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING'}
 coalesce_parquet_file_reader_multithread_filter_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.coalescing.reader.numFilterParallel': '2',
@@ -79,12 +81,20 @@ coalesce_parquet_file_reader_multithread_filter_conf = {'spark.rapids.sql.format
 native_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'PERFILE',
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
 native_multithreaded_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
-        'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
+        'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE',
+        'spark.rapids.sql.format.parquet.multithreaded.combine.sizeBytes': '0',
+        'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': True}
 native_coalesce_parquet_file_reader_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE'}
 native_coalesce_parquet_file_reader_chunked_conf = {'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
         'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE',
         'spark.rapids.sql.reader.chunked': True}
+combining_multithreaded_parquet_file_reader_conf_ordered = {'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
+         'spark.rapids.sql.format.parquet.multithreaded.combine.sizeBytes': '64m',
+         'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': True}
+combining_multithreaded_parquet_file_reader_conf_unordered = pytest.param({'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
+         'spark.rapids.sql.format.parquet.multithreaded.combine.sizeBytes': '64m',
+         'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': False}, marks=pytest.mark.ignore_order(local=True))
 
 
 # For now the native configs are not compatible with spark.sql.parquet.writeLegacyFormat written files
@@ -95,7 +105,8 @@ reader_opt_confs_native = [native_parquet_file_reader_conf, native_multithreaded
                     native_coalesce_parquet_file_reader_chunked_conf]
 
 reader_opt_confs_no_native = [original_parquet_file_reader_conf, multithreaded_parquet_file_reader_conf,
-                    coalesce_parquet_file_reader_conf, coalesce_parquet_file_reader_multithread_filter_conf]
+                    coalesce_parquet_file_reader_conf, coalesce_parquet_file_reader_multithread_filter_conf,
+                    combining_multithreaded_parquet_file_reader_conf_ordered]
 
 reader_opt_confs = reader_opt_confs_native + reader_opt_confs_no_native
 
@@ -399,7 +410,8 @@ def test_parquet_read_round_trip_legacy(spark_tmp_path, parquet_gens, v1_enabled
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_parquet_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs):
+@pytest.mark.parametrize('batch_size', [100, INT_MAX])
+def test_parquet_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader_confs, batch_size):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
     # we should go with a more standard set of generators
     parquet_gens = [byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
@@ -419,7 +431,9 @@ def test_parquet_simple_partitioned_read(spark_tmp_path, v1_enabled_list, reader
             lambda spark : gen_df(spark, gen_list).write.parquet(third_data_path),
             conf=rebase_write_corrected_conf)
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = copy_and_update(reader_confs,
+            {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+             'spark.rapids.sql.batchSizeBytes': batch_size})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
@@ -445,7 +459,8 @@ def test_parquet_partitioned_read_just_partitions(spark_tmp_path, v1_enabled_lis
             lambda spark : spark.read.parquet(data_path).select("key"),
             conf=all_confs)
 
-@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+reader_opt_confs_with_unordered = reader_opt_confs + [combining_multithreaded_parquet_file_reader_conf_unordered]
+@pytest.mark.parametrize('reader_confs', reader_opt_confs_with_unordered)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reader_confs):
     # Once https://github.com/NVIDIA/spark-rapids/issues/133 and https://github.com/NVIDIA/spark-rapids/issues/132 are fixed
@@ -454,13 +469,23 @@ def test_parquet_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reade
     first_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
     with_cpu_session(
-            lambda spark : gen_df(spark, first_gen_list, 1).write.parquet(first_data_path))
+            lambda spark : gen_df(spark, first_gen_list, 10).write.parquet(first_data_path))
     # generate with 1 column less
     second_parquet_gens = [byte_gen, short_gen, int_gen]
     second_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(second_parquet_gens)]
     second_data_path = spark_tmp_path + '/PARQUET_DATA/key=1'
     with_cpu_session(
-            lambda spark : gen_df(spark, second_gen_list, 1).write.parquet(second_data_path))
+            lambda spark : gen_df(spark, second_gen_list, 10).write.parquet(second_data_path))
+    # third with same as first
+    third_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    third_data_path = spark_tmp_path + '/PARQUET_DATA/key=2'
+    with_cpu_session(
+            lambda spark : gen_df(spark, third_gen_list, 10).write.parquet(third_data_path))
+    # fourth with same as second
+    fourth_gen_list = [('_c' + str(i), gen) for i, gen in enumerate(second_parquet_gens)]
+    fourth_data_path = spark_tmp_path + '/PARQUET_DATA/key=3'
+    with_cpu_session(
+            lambda spark : gen_df(spark, fourth_gen_list, 10).write.parquet(fourth_data_path))
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = copy_and_update(reader_confs, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
@@ -468,6 +493,93 @@ def test_parquet_read_schema_missing_cols(spark_tmp_path, v1_enabled_list, reade
         'spark.sql.files.minPartitionNum': '1'})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
+            conf=all_confs)
+
+# To test https://github.com/NVIDIA/spark-rapids/pull/7405. Without the fix in that issue this test
+# throws an exception about can't allocate negative amount. To make this problem happen, we
+# read a bunch of empty parquet blocks by filtering on only things in the first and last of 1000 files.
+@pytest.mark.parametrize('reader_confs', [combining_multithreaded_parquet_file_reader_conf_ordered])
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_parquet_read_buffer_allocation_empty_blocks(spark_tmp_path, v1_enabled_list, reader_confs):
+    data_path = spark_tmp_path + '/PARQUET_DATA/'
+    with_cpu_session(
+            lambda spark : spark.range(0, 1000, 1, 1000).write.parquet(data_path))
+    # we want all the files to be read by a single Spark task
+    all_confs = copy_and_update(reader_confs, {
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.files.maxPartitionBytes': '2g',
+        'spark.sql.files.minPartitionNum': '1',
+        'spark.sql.openCostInBytes': '1'})
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : spark.read.parquet(data_path).filter("id < 2 or id > 990"),
+            conf=all_confs)
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/7733")
+def test_parquet_read_ignore_missing(spark_tmp_path, v1_enabled_list, reader_confs):
+    data_path = spark_tmp_path + '/PARQUET_DATA/'
+    data_path_tmp = spark_tmp_path + '/PARQUET_DATA_TMP/'
+
+    # we need to create the files, get the dataframe but remove the file before we
+    # actually read the file contents. Here we save the data into a second directory
+    # so that when CPU runs, it can remove the file and then put the data back to run
+    # on the GPU.
+    def setup_data(spark):
+        df = spark.range(0, 1000, 1, 2).write.parquet(data_path)
+        sc = spark.sparkContext
+        config = sc._jsc.hadoopConfiguration()
+        src_path = sc._jvm.org.apache.hadoop.fs.Path(data_path)
+        dst_path = sc._jvm.org.apache.hadoop.fs.Path(data_path_tmp)
+        fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(config)
+        sc._jvm.org.apache.hadoop.fs.FileUtil.copy(fs, src_path, fs, dst_path, False, config)
+        df
+
+    with_cpu_session(lambda spark : setup_data(spark))
+    file_deleted = ""
+
+    def read_and_remove(spark):
+        sc = spark.sparkContext
+        config = sc._jsc.hadoopConfiguration()
+        path = sc._jvm.org.apache.hadoop.fs.Path(data_path_tmp)
+        src_path = sc._jvm.org.apache.hadoop.fs.Path(data_path)
+        dst_path = sc._jvm.org.apache.hadoop.fs.Path(data_path_tmp)
+        fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(config)
+        fs.delete(src_path)
+        sc._jvm.org.apache.hadoop.fs.FileUtil.copy(fs, dst_path, fs, src_path, False, config)
+        # input_file_name doesn't use combine so get the input file names in a different dataframe
+        # that we ultimately don't return
+        df = spark.read.parquet(data_path)
+        df_with_file_names = df.withColumn("input_file", input_file_name())
+        distinct_file_names = df_with_file_names.select("input_file").distinct().sort("input_file")
+        num_files = distinct_file_names.count()
+        assert(num_files == 2)
+        files_to_read=[]
+        for i in range(0, 2):
+            files_to_read.insert(i, distinct_file_names.collect()[i][0])
+
+        df_to_test = spark.read.parquet(files_to_read[0], files_to_read[1])
+        # we do our best to try to remove the one Spark will read first but its not
+        # guaranteed
+        file_to_delete = files_to_read[1]
+        path_to_delete = sc._jvm.org.apache.hadoop.fs.Path(file_to_delete)
+        fs.delete(path_to_delete)
+        df_with_file_names_after = df.withColumn("input_file", input_file_name())
+        distinct_file_names_after = df_with_file_names_after.select("input_file").distinct()
+        num_files_after_delete = distinct_file_names_after.count()
+        assert(num_files_after_delete == 1)
+        return df_to_test
+
+
+    # we want all the files to be read by a single Spark task
+    all_confs = copy_and_update(reader_confs, {
+        'spark.sql.files.ignoreMissingFiles': 'true',
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.sql.files.maxPartitionBytes': '2g',
+        'spark.sql.files.minPartitionNum': '1',
+        'spark.sql.openCostInBytes': '1'})
+    assert_gpu_and_cpu_row_counts_equal(
+            lambda spark : read_and_remove(spark),
             conf=all_confs)
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
@@ -541,7 +653,8 @@ def test_parquet_input_meta(spark_tmp_path, v1_enabled_list, reader_confs):
     with_cpu_session(
             lambda spark : unary_op_df(spark, long_gen).write.parquet(second_data_path))
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': 'true'})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path)\
                     .filter(f.col('a') > 0)\
@@ -556,7 +669,7 @@ def test_parquet_input_meta(spark_tmp_path, v1_enabled_list, reader_confs):
                'FileSourceScanExec', 'ColumnarToRowExec',
                'BatchScanExec', 'ParquetScan')
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
-@pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.parquet.enabled', 'spark.rapids.sql.format.orc.parquet.enabled'])
+@pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.parquet.enabled', 'spark.rapids.sql.format.parquet.read.enabled'])
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_input_meta_fallback(spark_tmp_path, v1_enabled_list, reader_confs, disable_conf):
     first_data_path = spark_tmp_path + '/PARQUET_DATA/key=0'
@@ -930,7 +1043,8 @@ def with_id(i):
 # Field ID test cases were re-written from:
 # https://github.com/apache/spark/blob/v3.3.0-rc3/sql/core/src/test/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetFieldIdIOSuite.scala
 @pytest.mark.skipif(is_before_spark_330(), reason='Field ID is not supported before Spark 330')
-def test_parquet_read_field_id_using_correctly(spark_tmp_path):
+@pytest.mark.parametrize('footer_read', ["JAVA", "NATIVE", "AUTO"], ids=idfn)
+def test_parquet_read_field_id_using_correctly(spark_tmp_path, footer_read):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     write_schema = StructType([StructField("random", IntegerType(), metadata=with_id(1)),
                                StructField("name", StringType(), metadata=with_id(0))])
@@ -946,15 +1060,18 @@ def test_parquet_read_field_id_using_correctly(spark_tmp_path):
         StructField("a", StringType(), True, metadata=with_id(0)),
         StructField("b", IntegerType(), True, metadata=with_id(1)),
     ])
+    conf = copy_and_update(enable_parquet_field_id_read,
+                           {"spark.rapids.sql.format.parquet.reader.footer.type": footer_read})
+
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema).parquet(data_path),
-        conf=enable_parquet_field_id_read)
+        conf=conf)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema).parquet(data_path).where("b < 50"),
-        conf=enable_parquet_field_id_read)
+        conf=conf)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema).parquet(data_path).where("a >= 'oh'"),
-        conf=enable_parquet_field_id_read)
+        conf=conf)
 
     read_schema_mixed = StructType([
         StructField("name", StringType(), True),
@@ -962,7 +1079,7 @@ def test_parquet_read_field_id_using_correctly(spark_tmp_path):
     ])
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema_mixed).parquet(data_path),
-        conf=enable_parquet_field_id_read)
+        conf=conf)
 
     read_schema_mixed_half_matched = StructType([
         StructField("unmatched", StringType(), True),
@@ -970,15 +1087,16 @@ def test_parquet_read_field_id_using_correctly(spark_tmp_path):
     ])
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema_mixed_half_matched).parquet(data_path),
-        conf=enable_parquet_field_id_read)
+        conf=conf)
 
     # not specify schema
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path).where("name >= 'oh'"),
-        conf=enable_parquet_field_id_read)
+        conf=conf)
 
 @pytest.mark.skipif(is_before_spark_330(), reason='Field ID is not supported before Spark 330')
-def test_parquet_read_field_id_absence(spark_tmp_path):
+@pytest.mark.parametrize('footer_read', ["JAVA", "NATIVE", "AUTO"], ids=idfn)
+def test_parquet_read_field_id_absence(spark_tmp_path, footer_read):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     write_schema = StructType([StructField("a", IntegerType(), metadata=with_id(3)),
                                StructField("randomName", StringType())])
@@ -987,6 +1105,9 @@ def test_parquet_read_field_id_absence(spark_tmp_path):
     with_cpu_session(lambda spark: spark.createDataFrame(write_data, write_schema).repartition(1)
                      .write.mode("overwrite").parquet(data_path),
                      conf=enable_parquet_field_id_write)
+
+    conf = copy_and_update(enable_parquet_field_id_read,
+                           {"spark.rapids.sql.format.parquet.reader.footer.type": footer_read})
 
     # 3 different cases for the 3 columns to read:
     #   - a: ID 1 is not found, but there is column with name `a`, still return null
@@ -999,10 +1120,11 @@ def test_parquet_read_field_id_absence(spark_tmp_path):
     ])
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema).parquet(data_path),
-        conf=enable_parquet_field_id_read)
+        conf=conf)
 
 @pytest.mark.skipif(is_before_spark_330(), reason='Field ID is not supported before Spark 330')
-def test_parquet_read_multiple_field_id_matches(spark_tmp_path):
+@pytest.mark.parametrize('footer_read', ["JAVA", "NATIVE", "AUTO"], ids=idfn)
+def test_parquet_read_multiple_field_id_matches(spark_tmp_path, footer_read):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     write_schema = StructType([
         StructField("a", IntegerType(), True, metadata=with_id(1)),  # duplicated field ID
@@ -1015,15 +1137,19 @@ def test_parquet_read_multiple_field_id_matches(spark_tmp_path):
                      .write.mode("overwrite").parquet(data_path),
                      conf=enable_parquet_field_id_write)
 
+    conf = copy_and_update(enable_parquet_field_id_read,
+                           {"spark.rapids.sql.format.parquet.reader.footer.type": footer_read})
+
     read_schema = StructType([StructField("a", IntegerType(), True, metadata=with_id(1))])
     # Both CPU and GPU invokes `ParquetReadSupport.clipParquetSchema` which throws an exception
     assert_gpu_and_cpu_error(
         lambda spark: spark.read.schema(read_schema).parquet(data_path).collect(),
-        conf=enable_parquet_field_id_read,
+        conf=conf,
         error_message="Found duplicate field(s)")
 
 @pytest.mark.skipif(is_before_spark_330(), reason='Field ID is not supported before Spark 330')
-def test_parquet_read_without_field_id(spark_tmp_path):
+@pytest.mark.parametrize('footer_read', ["JAVA", "NATIVE", "AUTO"], ids=idfn)
+def test_parquet_read_without_field_id(spark_tmp_path, footer_read):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     # Parquet without field ID
     write_schema = StructType([
@@ -1036,13 +1162,17 @@ def test_parquet_read_without_field_id(spark_tmp_path):
     with_cpu_session(lambda spark: spark.createDataFrame(write_data, write_schema).repartition(1)
                      .write.mode("overwrite").parquet(data_path),
                      conf=enable_parquet_field_id_write)
+
+    conf = copy_and_update(enable_parquet_field_id_read,
+                           {"spark.rapids.sql.format.parquet.reader.footer.type": footer_read})
+
     read_schema = StructType([StructField("a", IntegerType(), True, metadata=with_id(1))])
 
     # Spark read schema expects field Ids, but Parquet file schema doesn't contain any field Ids.
     # If `spark.sql.parquet.fieldId.read.ignoreMissing` is false(default value), throws exception
     assert_gpu_and_cpu_error(
         lambda spark: spark.read.schema(read_schema).parquet(data_path).collect(),
-        conf=enable_parquet_field_id_read,
+        conf=conf,
         error_message="Parquet file schema doesn't contain any field Ids")
 
     # Spark read schema expects field Ids, but Parquet file schema doesn't contain any field Ids.
@@ -1050,13 +1180,14 @@ def test_parquet_read_without_field_id(spark_tmp_path):
     # return a column with all values are null for the unmatched field IDs
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema).parquet(data_path),
-        conf=copy_and_update(enable_parquet_field_id_read,
+        conf=copy_and_update(conf,
                              {"spark.sql.parquet.fieldId.read.ignoreMissing": "true"}))
 
 #  test global config: field_id_write_enable=false, field_id_read_enable=true
 #  test global config: field_id_write_enable=true,  field_id_read_enable=true
 @pytest.mark.skipif(is_before_spark_330(), reason='Field ID is not supported before Spark 330')
-def test_parquet_read_field_id_global_flags(spark_tmp_path):
+@pytest.mark.parametrize('footer_read', ["JAVA", "NATIVE", "AUTO"], ids=idfn)
+def test_parquet_read_field_id_global_flags(spark_tmp_path, footer_read):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     write_schema = StructType([
         StructField("a", IntegerType(), True, metadata=with_id(1)),
@@ -1075,9 +1206,13 @@ def test_parquet_read_field_id_global_flags(spark_tmp_path):
     with_cpu_session(lambda spark: spark.createDataFrame(write_data, write_schema).repartition(1)
                      .write.mode("overwrite").parquet(data_path),
                      conf=disable_parquet_field_id_write)
+
+    conf = copy_and_update(enable_parquet_field_id_read,
+                           {"spark.rapids.sql.format.parquet.reader.footer.type": footer_read})
+
     assert_gpu_and_cpu_error(
         lambda spark: spark.read.schema(read_schema).parquet(data_path).collect(),
-        conf=enable_parquet_field_id_read,
+        conf=conf,
         error_message="Parquet file schema doesn't contain any field Ids")
 
     # write field IDs into Parquet
@@ -1087,7 +1222,7 @@ def test_parquet_read_field_id_global_flags(spark_tmp_path):
                      conf=enable_parquet_field_id_write)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema).parquet(data_path),
-        conf=enable_parquet_field_id_read)
+        conf=conf)
 
 @pytest.mark.skipif(is_before_spark_330(), reason='DayTimeInterval is not supported before Pyspark 3.3.0')
 def test_parquet_read_daytime_interval_cpu_file(spark_tmp_path):

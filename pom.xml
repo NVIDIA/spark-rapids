@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2020-2022, NVIDIA CORPORATION.
+  Copyright (c) 2020-2023, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@
     <artifactId>rapids-4-spark-parent</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Root Project</name>
     <description>The root project of the RAPIDS Accelerator for Apache Spark</description>
-    <version>23.02.0-SNAPSHOT</version>
+    <version>23.04.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <url>https://nvidia.github.io/spark-rapids/</url>
@@ -71,24 +71,6 @@
     </developers>
     <profiles>
         <profile>
-            <id>release24X</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>24X</value>
-                </property>
-            </activation>
-            <properties>
-                <scala.binary.version>2.11</scala.binary.version>
-                <scala.version>2.11.12</scala.version>
-                <spark.version>${spark248.version}</spark.version>
-                <spark.test.version>${spark248.version}</spark.test.version>
-            </properties>
-            <modules>
-                <module>spark2-sql-plugin</module>
-            </modules>
-        </profile>
-        <profile>
             <id>release311</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
@@ -98,13 +80,15 @@
                 </property>
             </activation>
             <properties>
+                <buildver>311</buildver>
                 <spark.version>${spark311.version}</spark.version>
                 <spark.test.version>${spark311.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark311.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
+                <spark.shim.test.sources>${spark311.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
+                <module>delta-lake/delta-stub</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shuffle-plugin</module>
@@ -112,7 +96,6 @@
                 <module>tests</module>
                 <module>udf-compiler</module>
                 <module>api_validation</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -126,9 +109,9 @@
                 </property>
             </activation>
             <properties>
+                <buildver>312db</buildver>
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
-                <shim.module.name>spark312db</shim.module.name>
                 <spark.version.classifier>spark312db</spark.version.classifier>
                 <!--
                      Note that we are using the Spark version for all of the Databricks dependencies as well.
@@ -142,10 +125,11 @@
                 <rat.consoleOutput>true</rat.consoleOutput>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark312db.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
+                <spark.shim.test.sources>${spark312db.test.sources}</spark.shim.test.sources>
             </properties>
 
             <modules>
+                <module>delta-lake/delta-stub</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shuffle-plugin</module>
@@ -164,20 +148,21 @@
                 </property>
             </activation>
             <properties>
+                <buildver>312</buildver>
                 <spark.version>${spark312.version}</spark.version>
                 <spark.test.version>${spark312.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark312.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
+                <spark.shim.test.sources>${spark312.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
+                <module>delta-lake/delta-stub</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
             </modules>
@@ -191,20 +176,21 @@
                 </property>
             </activation>
             <properties>
+                <buildver>313</buildver>
                 <spark.version>${spark313.version}</spark.version>
                 <spark.test.version>${spark313.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark313.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
+                <spark.shim.test.sources>${spark313.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
+                <module>delta-lake/delta-stub</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
             </modules>
@@ -218,20 +204,21 @@
                 </property>
             </activation>
             <properties>
+                <buildver>314</buildver>
                 <spark.version>${spark314.version}</spark.version>
                 <spark.test.version>${spark314.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark314.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
+                <spark.shim.test.sources>${spark314.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
+                <module>delta-lake/delta-stub</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
                 <module>api_validation</module>
             </modules>
@@ -245,20 +232,21 @@
                 </property>
             </activation>
             <properties>
+                <buildver>320</buildver>
                 <spark.version>${spark320.version}</spark.version>
                 <spark.test.version>${spark320.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark320.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
+                <spark.shim.test.sources>${spark320.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
+                <module>delta-lake/delta-20x</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -271,20 +259,21 @@
                 </property>
             </activation>
             <properties>
+                <buildver>321</buildver>
                 <spark.version>${spark321.version}</spark.version>
                 <spark.test.version>${spark321.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark321.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
+                <spark.shim.test.sources>${spark321.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
+                <module>delta-lake/delta-20x</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -297,11 +286,12 @@
                 </property>
             </activation>
             <properties>
+                <buildver>321cdh</buildver>
                 <spark.version>${spark321cdh.version}</spark.version>
                 <spark.test.version>${spark321cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
                 <spark.shim.sources>${spark321cdh.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
+                <spark.shim.test.sources>${spark321cdh.test.sources}</spark.shim.test.sources>
             </properties>
             <repositories>
                 <repository>
@@ -310,13 +300,13 @@
                 </repository>
             </repositories>
             <modules>
+                <module>delta-lake/delta-20x</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -329,20 +319,21 @@
                 </property>
             </activation>
             <properties>
+                <buildver>322</buildver>
                 <spark.version>${spark322.version}</spark.version>
                 <spark.test.version>${spark322.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark322.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
+                <spark.shim.test.sources>${spark322.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
+                <module>delta-lake/delta-20x</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -355,20 +346,21 @@
                 </property>
             </activation>
             <properties>
+                <buildver>323</buildver>
                 <spark.version>${spark323.version}</spark.version>
                 <spark.test.version>${spark323.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark323.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
+                <spark.shim.test.sources>${spark323.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
+                <module>delta-lake/delta-20x</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -382,9 +374,9 @@
                 </property>
             </activation>
             <properties>
+                <buildver>321db</buildver>
                 <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
                 <scala.plugin.version>3.4.4</scala.plugin.version>
-                <shim.module.name>spark321db</shim.module.name>
                 <spark.version.classifier>spark321db</spark.version.classifier>
                 <!--
                      Note that we are using the Spark version for all of the Databricks dependencies as well.
@@ -398,9 +390,10 @@
                 <rat.consoleOutput>true</rat.consoleOutput>
                 <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
                 <spark.shim.sources>${spark321db.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
+                <spark.shim.test.sources>${spark321db.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
+                <module>delta-lake/delta-spark321db</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shuffle-plugin</module>
@@ -419,20 +412,23 @@
                 </property>
             </activation>
             <properties>
+                <buildver>330</buildver>
                 <spark.version>${spark330.version}</spark.version>
                 <spark.test.version>${spark330.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark330.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <spark.shim.test.sources>${spark330.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
+                <module>delta-lake/delta-21x</module>
+                <module>delta-lake/delta-22x</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -445,20 +441,23 @@
                 </property>
             </activation>
             <properties>
+                <buildver>331</buildver>
                 <spark.version>${spark331.version}</spark.version>
                 <spark.test.version>${spark331.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark331.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <spark.shim.test.sources>${spark331.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
+                <module>delta-lake/delta-21x</module>
+                <module>delta-lake/delta-22x</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -471,20 +470,23 @@
                 </property>
             </activation>
             <properties>
+                <buildver>332</buildver>
                 <spark.version>${spark332.version}</spark.version>
                 <spark.test.version>${spark332.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.2</parquet.hadoop.version>
                 <spark.shim.sources>${spark332.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <spark.shim.test.sources>${spark332.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
+                <module>delta-lake/delta-21x</module>
+                <module>delta-lake/delta-22x</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -497,20 +499,22 @@
                 </property>
             </activation>
             <properties>
+                <buildver>340</buildver>
                 <spark.version>${spark340.version}</spark.version>
                 <spark.test.version>${spark340.version}</spark.test.version>
                 <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
                 <spark.shim.sources>${spark340.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <spark.shim.test.sources>${spark340.test.sources}</spark.shim.test.sources>
             </properties>
             <modules>
+                <module>delta-lake/delta-stub</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -523,11 +527,13 @@
                 </property>
             </activation>
             <properties>
+                <buildver>330cdh</buildver>
                 <spark.version>${spark330cdh.version}</spark.version>
                 <spark.test.version>${spark330cdh.version}</spark.test.version>
                 <parquet.hadoop.version>1.10.99.7.1.8.0-801</parquet.hadoop.version>
                 <spark.shim.sources>${spark330cdh.sources}</spark.shim.sources>
-                <spark.shim.test.sources>${project.basedir}/src/test/${buildver}/scala</spark.shim.test.sources>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <spark.shim.test.sources>${spark330cdh.test.sources}</spark.shim.test.sources>
             </properties>
             <repositories>
                 <repository>
@@ -542,13 +548,54 @@
                 </repository>
             </repositories>
             <modules>
+                <module>delta-lake/delta-21x</module>
+                <module>delta-lake/delta-22x</module>
                 <module>dist</module>
                 <module>integration_tests</module>
                 <module>shuffle-plugin</module>
                 <module>sql-plugin</module>
                 <module>tests</module>
                 <module>udf-compiler</module>
-                <module>tools</module>
+                <module>aggregator</module>
+            </modules>
+        </profile>
+        <profile>
+            <!-- Note Databricks requires 2 properties -Ddatabricks and -Dbuildver=330db -->
+            <!-- Note that 330db backports many features from Spark3.4.0 -->
+            <id>release330db</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>330db</value>
+                </property>
+            </activation>
+            <properties>
+                <!-- Downgrade scala plugin version due to: https://github.com/sbt/sbt/issues/4305 -->
+                <scala.plugin.version>3.4.4</scala.plugin.version>
+                <spark.version.classifier>spark330db</spark.version.classifier>
+                <!--
+                     Note that we are using the Spark version for all of the Databricks dependencies as well.
+                     The jenkins/databricks/build.sh script handles installing the jars as maven artifacts.
+                     This is to make it easier and not have to change version numbers for each individual dependency
+                     and deal with differences between Databricks versions
+                -->
+                <spark.version>${spark330db.version}</spark.version>
+                <spark.test.version>${spark330db.version}</spark.test.version>
+                <hadoop.client.version>3.3.1</hadoop.client.version>
+                <rat.consoleOutput>true</rat.consoleOutput>
+                <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
+                <spark.shim.sources>${spark330db.sources}</spark.shim.sources>
+                <iceberg.version>${spark330.iceberg.version}</iceberg.version>
+                <spark.shim.test.sources>${spark330db.test.sources}</spark.shim.test.sources>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-spark330db</module>
+                <module>dist</module>
+                <module>integration_tests</module>
+                <module>shuffle-plugin</module>
+                <module>sql-plugin</module>
+                <module>tests</module>
+                <module>udf-compiler</module>
                 <module>aggregator</module>
             </modules>
         </profile>
@@ -607,7 +654,7 @@
         <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda11</cuda.version>
-        <spark-rapids-jni.version>23.02.0-SNAPSHOT</spark-rapids-jni.version>
+        <spark-rapids-jni.version>23.04.0-SNAPSHOT</spark-rapids-jni.version>
         <scala.binary.version>2.12</scala.binary.version>
         <alluxio.client.version>2.8.0</alluxio.client.version>
         <scala.recompileMode>incremental</scala.recompileMode>
@@ -619,7 +666,12 @@
              so code coverage does not include the shaded classes.
         -->
         <rapids.shade.package>${spark.version.classifier}.com.nvidia.shaded.spark</rapids.shade.package>
-        <test.exclude.tags/>
+        <!--
+            cuda-toolkit 11.5+ will install nvidia GDS package by default
+            if no compatible GDS device on test machine, the scala test would fail
+            so we exclude GdsTest tag as default
+        -->
+        <test.exclude.tags>GdsTest</test.exclude.tags>
         <test.include.tags/>
         <rapids.shuffle.manager.override>true</rapids.shuffle.manager.override>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -632,7 +684,6 @@
         <!--
          If you update a dependency version so it is no longer a SNAPSHOT
          please update the snapshot-shims profile as well so it is accurate -->
-        <spark248.version>2.4.8</spark248.version>
         <spark311.version>3.1.1</spark311.version>
         <spark312.version>3.1.2</spark312.version>
         <spark312db.version>3.1.2-databricks</spark312db.version>
@@ -649,13 +700,13 @@
         <spark332.version>3.3.2-SNAPSHOT</spark332.version>
         <spark340.version>3.4.0-SNAPSHOT</spark340.version>
         <spark330cdh.version>3.3.0.3.3.7180.0-274</spark330cdh.version>
+        <spark330db.version>3.3.0-databricks</spark330db.version>
         <mockito.version>3.6.0</mockito.version>
         <scala.plugin.version>4.3.0</scala.plugin.version>
         <maven.jar.plugin.version>3.2.0</maven.jar.plugin.version>
         <scalatest-maven-plugin.version>2.0.2</scalatest-maven-plugin.version>
         <guava.cdh.version>30.0-jre</guava.cdh.version>
         <arrow.cdh.version>2.0.0</arrow.cdh.version>
-        <shim.module.name>${spark.version.classifier}</shim.module.name>
         <slf4j.version>1.7.30</slf4j.version>
         <flatbuffers.java.version>1.11.0</flatbuffers.java.version>
         <hadoop.client.version>3.3.1</hadoop.client.version>
@@ -665,7 +716,7 @@
         <maven.clean.plugin.version>3.1.0</maven.clean.plugin.version>
         <maven.scalastyle.skip>false</maven.scalastyle.skip>
         <dist.jar.compress>true</dist.jar.compress>
-
+        <spark330.iceberg.version>0.14.1</spark330.iceberg.version>
         <!--
             If true, disables verification that all Shims be built as of one and the same git
             commit hash. Do not use for CI!
@@ -674,6 +725,53 @@
             with the ones deployed to a remote Maven repo
         -->
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
+        <noSnapshot.buildvers>
+            311,
+            312,
+            313,
+            320,
+            321,
+            321cdh,
+            322,
+            323,
+            330,
+            331,
+            330cdh
+        </noSnapshot.buildvers>
+        <snapshot.buildvers>
+            332
+        </snapshot.buildvers>
+        <databricks.buildvers>
+            312db,
+            321db,
+            330db
+        </databricks.buildvers>
+        <!--
+          Build and run unit tests on one specific version for each sub-version (e.g. 311, 320, 330)
+          Base shim version (311 currently) should be covered in default mvn verify command of premerge script,
+          so base shim version is removed from the premergeUT list.
+          Separate the versions to two parts (premergeUT1, premergeUT2) for balancing the duration
+        -->
+        <premergeUT1.buildvers>
+            320
+        </premergeUT1.buildvers>
+        <premergeUT2.buildvers>
+            330
+        </premergeUT2.buildvers>
+        <premergeUTF8.buildvers>
+            320
+        </premergeUTF8.buildvers>
+        <jdk11.buildvers>
+            312,
+            321,
+            331
+        </jdk11.buildvers>
+        <all.buildvers>
+            ${noSnapshot.buildvers},
+            ${snapshot.buildvers},
+            ${databricks.buildvers},
+            340
+        </all.buildvers>
     </properties>
 
     <dependencyManagement>
@@ -795,13 +893,315 @@
                 <plugin>
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>build-helper-maven-plugin</artifactId>
-                    <version>3.2.0</version>
+                    <version>3.3.0</version>
                 </plugin>
                 <plugin>
                   <groupId>org.apache.maven.plugins</groupId>
                   <artifactId>maven-antrun-plugin</artifactId>
-                  <version>3.0.0</version>
+                  <version>3.1.0</version>
                   <executions>
+                    <execution>
+                        <id>create-source-path-properties</id>
+                        <goals><goal>run</goal></goals>
+                        <phase>initialize</phase>
+                        <configuration>
+                            <exportAntProperties>true</exportAntProperties>
+                            <target xmlns:ac="antlib:net.sf.antcontrib">
+                                <!--
+                                    Rules for adding new shim directories:
+                                    ######################################
+                                    1. Keep includes sorted
+                                    2. Top path components such as 311until320-all should not use
+                                    wildcards until a robust pattern is developed that allows
+                                    refactoring for new shims without breaking build for
+                                    exisiting shims
+                                    3. Using wild cards to pick up scala and java with a single entry
+                                    311until320-all/* is allowed
+                                    4. Using wildcards for trivial excludes is allowed
+                                    - *nondb* dirs in db shims
+                                    - *until330* in 330
+                                    5. Begin with a common reusable pattern, and put the unique includeds
+                                    and excludes at the end
+                                    6. At the same pattern-nesting level list includes before excludes
+                                -->
+
+                                <!-- upstream Spark shims -->
+                                <pathconvert property="spark311.sources" pathsep=",">
+                                    <dirset id="spark311.dirset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                        <patternset id="spark311+.pattern">
+                                            <include name="311+-non330db/*"/>
+                                            <include name="311+-nondb/*"/>
+                                            <include name="311until320-all/*"/>
+                                            <include name="311until320-noncdh/*"/>
+                                            <include name="311until320-nondb/*"/>
+                                            <include name="311until330-all/*"/>
+                                            <include name="311until330-nondb/*"/>
+                                            <include name="311until340-all/*"/>
+                                            <include name="311until340-non330db/*"/>
+                                            <include name="311until340-nondb/*"/>
+                                            <include name="pre320-treenode/*"/>
+                                        </patternset>
+                                        <include name="311-nondb/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark312.sources" pathsep=",">
+                                    <dirset id="spark312.dirset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                        <patternset refid="spark311+.pattern"/>
+                                        <include name="312-nondb/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark313.sources" pathsep=",">
+                                    <dirset id="spark313.dirset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                        <patternset refid="spark311+.pattern"/>
+                                        <include name="313/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark314.sources" pathsep=",">
+                                    <dirset id="spark314.dirset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                        <patternset refid="spark311+.pattern"/>
+                                        <include name="314/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark320.sources" pathsep=",">
+                                    <dirset id="spark320.dirset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                        <patternset id="spark320+.pattern">
+                                            <!-- inherit from 311+ with exceptions -->
+                                            <patternset refid="spark311+.pattern"/>
+                                            <exclude name="*until320*/*"/>
+                                            <exclude name="pre320-treenode/*"/>
+
+                                            <!-- uniquely 320+ -->
+                                            <include name="320+/*"/>
+                                            <include name="320+-noncdh/*"/>
+                                            <include name="320+-nondb/*"/>
+                                            <include name="320until330-all/*"/>
+                                            <include name="320until330-noncdh/*"/>
+                                            <include name="320until330-nondb/*"/>
+                                            <include name="320until340-all/*"/>
+                                            <include name="320until340-non330db/*"/>
+                                            <include name="delta-lake-common/*"/>
+                                            <include name="post320-treenode/*"/>
+                                        </patternset>
+                                        <include name="320/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark321.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                        <patternset id="spark321+.pattern">
+                                            <patternset refid="spark320+.pattern"/>
+                                            <include name="321+/*"/>
+                                            <include name="321until330-all/*"/>
+                                        </patternset>
+                                        <include name="321/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark322.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                        <patternset refid="spark321+.pattern"/>
+                                        <include name="322/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark323.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                        <patternset refid="spark321+.pattern"/>
+                                        <include name="323/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark330.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                        <patternset id="spark330+.pattern">
+                                            <patternset refid="spark321+.pattern"/>
+                                            <exclude name="*until330*/*"/>
+
+                                            <!-- uniquely 330+ -->
+                                            <include name="330+/*"/>
+                                            <include name="330+-nondb/*"/>
+                                            <include name="330+-noncdh/*"/>
+                                            <include name="330until340/*"/>
+                                            <include name="330until340-nondb/*"/>
+                                        </patternset>
+                                        <include name="330/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark331.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                        <patternset id="spark331+.pattern">
+                                            <patternset refid="spark330+.pattern"/>
+                                            <include name="331+/*"/>
+                                        </patternset>
+                                        <include name="331/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark332.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                        <patternset refid="spark331+.pattern"/>
+                                        <include name="332/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark340.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                        <patternset id="spark340+.pattern">
+                                            <!-- inherit from 331+ with exceptions -->
+                                            <patternset refid="spark331+.pattern"/>
+                                            <exclude name="*until340*/*"/>
+                                            <include name="340+-and-330db/*"/>
+                                            <!-- uniquely 340+ -->
+                                            <include name="340+/*"/>
+                                        </patternset>
+                                        <include name="340/*"/>
+                                    </dirset>
+                                </pathconvert>
+
+                                <!-- Spark vendor shims -->
+                                <pathconvert property="spark321cdh.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                        <!-- inherit from 321+ upstream except noncdh -->
+                                        <patternset refid="spark321+.pattern"/>
+                                        <exclude name="*noncdh*/*"/>
+
+                                        <include name="321cdh/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark330cdh.sources" pathsep=",">
+                                    <dirset id="spark330cdh.dirset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                        <!-- inherit from 330+ upstream except noncdh -->
+                                        <patternset refid="spark330+.pattern"/>
+                                        <exclude name="*noncdh*/*"/>
+
+                                        <include name="330cdh/*"/>
+                                    </dirset>
+                                </pathconvert>
+
+                                <pathconvert property="spark312db.sources" pathsep=",">
+                                    <dirset id="spark312db.dirset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                        <!-- inherit 311+ except nondb -->
+                                        <patternset refid="spark311+.pattern"/>
+                                        <exclude name="pre320-treenode/*"/>
+                                        <exclude name="*nondb*/*"/>
+
+                                        <include name="311+-db/*"/>
+                                        <include name="31xdb/*"/>
+                                        <include name="post320-treenode/*"/>
+
+                                        <include name="312db/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark321db.sources" pathsep=",">
+                                    <dirset id="spark321db.dirset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                        <patternset id="spark321db+.pattern">
+                                            <!-- inherit 321+ except nondb -->
+                                            <patternset refid="spark321+.pattern"/>
+                                            <exclude name="*nondb*/*"/>
+
+                                            <include name="311+-db/*"/>
+                                            <include name="321+-db/*"/>
+                                        </patternset>
+                                        <include name="321db/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark330db.sources" pathsep=",">
+                                    <dirset id="spark330db.dirset.id" dir="${project.basedir}/src/main" erroronmissingdir="false">
+                                        <patternset refid="spark321db+.pattern"/>
+                                        <patternset refid="spark330+.pattern"/>
+                                        <include name="340+-and-330db/*"/>
+                                        <include name="330db/*"/>
+                                        <exclude name="*non330db*/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark311.test.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/test" erroronmissingdir="false">
+                                        <include name="311/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark312.test.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/test" erroronmissingdir="false">
+                                        <include name="312/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark313.test.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/test" erroronmissingdir="false">
+                                        <include name="313/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark320.test.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/test" erroronmissingdir="false">
+                                        <include name="320/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark321.test.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/test" erroronmissingdir="false">
+                                        <include name="321/*"/>
+                                        <include name="320+-noncdh-nondb/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark321cdh.test.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/test" erroronmissingdir="false">
+                                        <include name="321cdh/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark322.test.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/test" erroronmissingdir="false">
+                                        <include name="322/*"/>
+                                        <include name="320+-noncdh-nondb/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark323.test.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/test" erroronmissingdir="false">
+                                        <include name="323/*"/>
+                                        <include name="320+-noncdh-nondb/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark330.test.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/test" erroronmissingdir="false">
+                                        <include name="330/*"/>
+                                        <include name="320+-noncdh-nondb/*"/>
+                                        <include name="330+/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark331.test.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/test" erroronmissingdir="false">
+                                        <include name="331/*"/>
+                                        <include name="320+-noncdh-nondb/*"/>
+                                        <include name="330+/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark332.test.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/test" erroronmissingdir="false">
+                                        <include name="332/*"/>
+                                        <include name="320+-noncdh-nondb/*"/>
+                                        <include name="330+/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark330cdh.test.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/test" erroronmissingdir="false">
+                                        <include name="330cdh/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark312db.test.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/test" erroronmissingdir="false">
+                                        <include name="312db/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark321db.test.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/test" erroronmissingdir="false">
+                                        <include name="321db/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark330db.test.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/test" erroronmissingdir="false">
+                                        <include name="330db/*"/>
+                                    </dirset>
+                                </pathconvert>
+                                <pathconvert property="spark340.test.sources" pathsep=",">
+                                    <dirset dir="${project.basedir}/src/test" erroronmissingdir="false">
+                                        <include name="340/*"/>
+                                        <include name="320+-noncdh-nondb/*"/>
+                                        <include name="330+/*"/>
+                                    </dirset>
+                                </pathconvert>
+                            </target>
+                        </configuration>
+                    </execution>
                     <execution>
                         <id>generate-build-info</id>
                         <phase>generate-resources</phase>
@@ -866,7 +1266,7 @@
                             <phase>none</phase>
                         </execution>
                         <execution>
-                            <id>default-test-compile</id>
+                            <id>default-testCompile</id>
                             <phase>none</phase>
                         </execution>
                     </executions>
@@ -1038,7 +1438,6 @@
                         default, but there are some projects that are conditionally included.  -->
                         <exclude>**/target/**/*</exclude>
                         <exclude>**/cufile.log</exclude>
-                        <exclude>scripts/spark2diffs/*.diff</exclude>
                     </excludes>
                 </configuration>
             </plugin>
@@ -1063,21 +1462,22 @@
             </plugin>
 
             <plugin>
-                <!--
-                This is an alternative implementation of the scalastyle check invocation,
-                a replacement for scalastyle-maven-plugin. It's motivated to address the following:
-                - All scala files are checked at once regardless of the module, so the developer
-                  can focus on addressing violations without being distracted by the build issues
-                  in-between
-                - We don't have to hardcode the source code roots added dynamically by other maven
-                  plugins to the project
-                - The scalastyle launch cost is amortized across all modules
-                -->
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
+                <!-- parent-pom only executions -->
                 <inherited>false</inherited>
                 <executions>
                     <execution>
+                        <!--
+                        This is an alternative implementation of the scalastyle check invocation,
+                        a replacement for scalastyle-maven-plugin. It's motivated to address the following:
+                        - All scala files are checked at once regardless of the module, so the developer
+                        can focus on addressing violations without being distracted by the build issues
+                        in-between
+                        - We don't have to hardcode the source code roots added dynamically by other maven
+                        plugins to the project
+                        - The scalastyle launch cost is amortized across all modules
+                        -->
                         <id>scalastyle-all-modules</id>
                         <phase>verify</phase>
                         <goals><goal>run</goal></goals>
@@ -1133,6 +1533,28 @@
                         <version>1.0.0</version>
                     </dependency>
                 </dependencies>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>add-shim-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals><goal>add-source</goal></goals>
+                        <configuration>
+                            <sources>${spark.shim.sources}</sources>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>add-shim-test-sources</id>
+                        <phase>generate-test-sources</phase>
+                        <goals><goal>add-test-source</goal></goals>
+                        <configuration>
+                            <sources>${spark.shim.test.sources}</sources>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.jacoco</groupId>

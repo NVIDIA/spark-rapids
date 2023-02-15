@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ object ParquetTimestampNTZShims {
   def setupTimestampNTZConfig(conf: Configuration, sqlConf: SQLConf): Unit = {
     // This timestamp_NTZ flag is introduced in Spark 3.4.0
     conf.setBoolean(
-      SQLConf.PARQUET_TIMESTAMP_NTZ_ENABLED.key,
-      sqlConf.parquetTimestampNTZEnabled)
+      SQLConf.PARQUET_INFER_TIMESTAMP_NTZ_ENABLED.key,
+      sqlConf.parquetInferTimestampNTZEnabled)
   }
 }

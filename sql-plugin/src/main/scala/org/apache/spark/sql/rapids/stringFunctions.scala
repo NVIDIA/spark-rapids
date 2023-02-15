@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -695,17 +695,7 @@ case class GpuStringRepeat(input: Expression, repeatTimes: Expression)
   }
 
   def doColumnar(input: GpuColumnVector, repeatTimes: GpuColumnVector): ColumnVector = {
-    val repeatTimesCV = repeatTimes.getBase
-
-    // Compute the output size to check for overflow.
-    withResource(input.getBase.repeatStringsSizes(repeatTimesCV)) { outputSizes =>
-      if (outputSizes.getTotalSize > Int.MaxValue.asInstanceOf[Long]) {
-        throw new RuntimeException("Output strings have total size exceed maximum allowed size")
-      }
-
-      // Finally repeat the strings using the pre-computed strings' sizes.
-      input.getBase.repeatStrings(repeatTimesCV, outputSizes.getStringSizes)
-    }
+    input.getBase.repeatStrings(repeatTimes.getBase)
   }
 
   def doColumnar(input: GpuColumnVector, repeatTimes: GpuScalar): ColumnVector = {
@@ -1054,6 +1044,7 @@ case class GpuRLike(left: Expression, right: Expression, pattern: String)
     throw new IllegalStateException("Really should not be here, " +
       "Cannot have a scalar as left side operand in RLike")
 
+  @scala.annotation.nowarn("msg=method containsRe in class ColumnView is deprecated")
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     lhs.getBase.containsRe(pattern)
   }
@@ -1140,6 +1131,7 @@ case class GpuRegExpReplace(
       cudfRegexPattern, cudfReplacementString)
   }
 
+  @scala.annotation.nowarn("msg=method replaceRegex in class ColumnView is deprecated")
   override def doColumnar(
       strExpr: GpuColumnVector,
       searchExpr: GpuScalar,
@@ -1182,6 +1174,7 @@ case class GpuRegExpReplaceWithBackref(
 
   override def dataType: DataType = StringType
 
+  @scala.annotation.nowarn("msg=method stringReplaceWithBackrefs in class ColumnView is deprecated")
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
     input.getBase.stringReplaceWithBackrefs(cudfRegexPattern, cudfReplacementString)
   }
@@ -1264,6 +1257,7 @@ case class GpuRegExpExtract(
 
   override def prettyName: String = "regexp_extract"
 
+  @scala.annotation.nowarn("msg=method extractRe in class ColumnView is deprecated")
   override def doColumnar(
       str: GpuColumnVector,
       regexp: GpuScalar,
@@ -1387,11 +1381,11 @@ case class GpuRegExpExtractAll(
 
   override def prettyName: String = "regexp_extract_all"
 
+  @scala.annotation.nowarn("msg=method extractAllRecord in class ColumnView is deprecated")
   override def doColumnar(
       str: GpuColumnVector,
       regexp: GpuScalar,
       idx: GpuScalar): ColumnVector = {
-
     idx.getValue.asInstanceOf[Int] match {
       case 0 =>
         str.getBase.extractAllRecord(cudfRegexPattern, 0)
@@ -1534,6 +1528,7 @@ case class GpuSubstringIndex(strExpr: Expression,
   // This is a bit hacked up at the moment. We are going to use a regular expression to extract
   // a single value. It only works if the delim is a single character. A full version of
   // substring_index for the GPU has been requested at https://github.com/rapidsai/cudf/issues/5158
+  @scala.annotation.nowarn("msg=method extractRe in class ColumnView is deprecated")
   override def doColumnar(str: GpuColumnVector, delim: GpuScalar,
       count: GpuScalar): ColumnVector = {
     if (regexp == null) {
@@ -1789,6 +1784,7 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression,
 
   override def prettyName: String = "split"
 
+  @scala.annotation.nowarn("msg=method stringSplitRecord in class ColumnView is deprecated")
   override def doColumnar(str: GpuColumnVector, regex: GpuScalar,
       limit: GpuScalar): ColumnVector = {
     limit.getValue.asInstanceOf[Int] match {
@@ -1913,6 +1909,7 @@ case class GpuStringToMap(strExpr: Expression,
     }
   }
 
+  @scala.annotation.nowarn("msg=in class ColumnView is deprecated")
   private def toMap(str: GpuColumnVector): GpuColumnVector = {
     // Firstly, split the input strings into lists of strings.
     withResource(str.getBase.stringSplitRecord(pairDelim, isPairDelimRegExp)) { listsOfStrings =>
