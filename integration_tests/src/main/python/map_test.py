@@ -443,8 +443,6 @@ def test_element_at_map_string_col_keys_ansi_null(data_gen):
             'element_at(a, b)'),
         conf=ansi_enabled_conf)
 
-@pytest.mark.skipif(is_spark_340_or_later(),
-                    reason="Only in Spark 3.1.X ~3.3.X + ANSI mode, map key throws on no such element")
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 @pytest.mark.skipif(is_spark_340_or_later() or is_databricks113_or_later(),
                     reason="Since Spark3.4 and DB11.3, null will always be returned on invalid access to map")
@@ -491,8 +489,6 @@ def test_element_at_map_timestamp_keys(data_gen):
             'element_at(a, null)'),
         conf={'spark.sql.ansi.enabled': False})
 
-@pytest.mark.skipif(is_spark_340_or_later(),
-                    reason="Only in Spark 3.1.X ~3.3.X + ANSI mode, map key throws on no such element")
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 @pytest.mark.skipif(is_spark_340_or_later() or is_databricks113_or_later(),
                     reason="Since Spark3.4 and DB11.3, null will always be returned on invalid access to map")
