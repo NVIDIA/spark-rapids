@@ -121,7 +121,7 @@ object GpuElementAtMeta {
           TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY) +
           TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT +
             TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY)
-            .withPsNote(TypeEnum.MAP ,"If it's map, only primitive key types are supported."),
+            .withPsNote(TypeEnum.MAP, "If it's map, only primitive key types are supported."),
           TypeSig.ARRAY.nested(TypeSig.all) + TypeSig.MAP.nested(TypeSig.all)),
         ("index/key", (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128)
           .withPsNote(
