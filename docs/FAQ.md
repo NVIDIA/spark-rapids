@@ -20,7 +20,7 @@ process, we try to stay on top of these changes and release updates as quickly a
 The RAPIDS Accelerator for Apache Spark officially supports:
 - [Apache Spark](get-started/getting-started-on-prem.md)
 - [AWS EMR 6.2+](get-started/getting-started-aws-emr.md)
-- [Databricks Runtime 9.1, 10.4](get-started/getting-started-databricks.md)
+- [Databricks Runtime 9.1, 10.4, 11.3](get-started/getting-started-databricks.md)
 - [Google Cloud Dataproc 2.0](get-started/getting-started-gcp.md)
 - [Azure Synapse](get-started/getting-started-azure-synapse-analytics.md)
 - Cloudera provides the plugin packaged through
@@ -355,9 +355,9 @@ for the RAPIDS plugin.
 
 ### Are table layout formats supported?
 
-Yes, there is GPU support for Delta Lake read 
-and [Apache Iceberg 0.13 read](./additional-functionality/iceberg-support.md).  
-Write operations will fall back to the CPU.
+Yes, there is GPU support for [Delta Lake](./additional-functionality/delta-lake-support.md) and
+[Apache Iceberg](./additional-functionality/iceberg-support.md). See the additional support
+documentation for specifics on the operations supported for these formats.
 
 ### How many tasks can I run per executor? How many should I run per executor?
 
@@ -407,7 +407,7 @@ There are multiple reasons why this a problematic configuration:
 
 Yes, but it requires support from the underlying cluster manager to isolate the MIG GPU instance
 for each executor (e.g.: by setting `CUDA_VISIBLE_DEVICES`,
-[YARN with docker isolation](https://github.com/NVIDIA/spark-rapids-examples/tree/branch-22.12/examples/MIG-Support)
+[YARN with docker isolation](https://github.com/NVIDIA/spark-rapids-examples/tree/main/examples/MIG-Support)
 or other means).
 
 Note that MIG is not recommended for use with the RAPIDS Accelerator since it significantly

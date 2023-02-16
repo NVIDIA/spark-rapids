@@ -8,13 +8,59 @@ nav_order: 5
 
 The RAPIDS Shuffle Manager is an implementation of the `ShuffleManager` interface in Apache Spark
 that allows custom mechanisms to exchange shuffle data. We currently expose two modes of operation:
-UCX and Multi Threaded (experimental). 
+Multi Threaded and UCX. 
+
+In Spark, shuffle managers are configured via the `spark.shuffle.manager` configuration variable. 
+The following table shows the appropriate configuration to use for each Spark version supported
+in our plugin:
+
+| Spark Shim      | spark.shuffle.manager value                              |
+| --------------- | -------------------------------------------------------- |
+| 3.1.1           | com.nvidia.spark.rapids.spark311.RapidsShuffleManager    |
+| 3.1.2           | com.nvidia.spark.rapids.spark312.RapidsShuffleManager    |
+| 3.1.3           | com.nvidia.spark.rapids.spark313.RapidsShuffleManager    |
+| 3.2.0           | com.nvidia.spark.rapids.spark320.RapidsShuffleManager    |
+| 3.2.1           | com.nvidia.spark.rapids.spark321.RapidsShuffleManager    |
+| 3.2.1 CDH       | com.nvidia.spark.rapids.spark321cdh.RapidsShuffleManager |
+| 3.2.2           | com.nvidia.spark.rapids.spark322.RapidsShuffleManager    |
+| 3.2.3           | com.nvidia.spark.rapids.spark323.RapidsShuffleManager    |
+| 3.3.0           | com.nvidia.spark.rapids.spark330.RapidsShuffleManager    |
+| 3.3.1           | com.nvidia.spark.rapids.spark331.RapidsShuffleManager    |
+| Databricks 9.1  | com.nvidia.spark.rapids.spark312db.RapidsShuffleManager  |
+| Databricks 10.4 | com.nvidia.spark.rapids.spark321db.RapidsShuffleManager  |
+| Databricks 11.3 | com.nvidia.spark.rapids.spark330db.RapidsShuffleManager  |
+
+## Multi-Threaded Mode
+
+Mult-threaded mode (default) is similar to the built-in Spark shuffle, but it attempts to use
+more CPU threads for compute-intensive tasks, such as compression and decompression. 
+
+Minimum configuration:
+
+```shell
+--conf spark.shuffle.manager=com.nvidia.spark.rapids.[shim package].RapidsShuffleManager \
+--conf spark.driver.extraClassPath=${SPARK_RAPIDS_PLUGIN_JAR} \
+--conf spark.executor.extraClassPath=${SPARK_RAPIDS_PLUGIN_JAR}
+```
+
+By default, a thread pool of 20 threads is used for shuffle writes and reads. This
+configuration can be independently changed for writers and readers using:
+`spark.rapids.shuffle.multiThreaded.[writer|reader].threads`. An appropriate value for these
+pools is the number of cores in the system divided by the number of executors per machine.
 
 ## UCX Mode
 
-UCX mode is the default for the RAPIDS Shuffle Manager. It has two components: a spillable cache, 
-and a transport that can utilize Remote Direct Memory Access (RDMA) and high-bandwidth transfers 
-within a node that has multiple GPUs. This is possible because the plugin 
+---
+**NOTE:**
+
+As of the spark-rapids 23.02 release, Ubuntu 22.04 UCX packages are not available. They
+will be available for future releases.
+
+---
+
+UCX mode (`spark.rapids.shuffle.mode=UCX`) has two components: a spillable cache, and a transport that can utilize 
+Remote Direct Memory Access (RDMA) and high-bandwidth transfers 
+within a node that has multiple GPUs. This is possible because this mode 
 utilizes [Unified Communication X (UCX)](https://www.openucx.org/) as its transport.
 
 - **Spillable cache**: This store keeps GPU data close by where it was produced in device memory,
@@ -134,7 +180,8 @@ want to take advantage of PCIe peer-to-peer or NVLink need to be visible within 
 example, if two containers are trying to communicate and each have an isolated GPU, the link between
 these GPUs will not be optimal, forcing UCX to stage buffers to the host or use TCP.
 Additionally, if you want to use RoCE/Infiniband, the `/dev/infiniband` device should be exposed
-in the container.
+in the container. Also, to avoid potential `failed: Cannot allocate memory`,
+please consider raising the `memlock` ulimit in the container via `--ulimit memlock=[maximum]`. Note that setting `--ulimit memlock=-1` disables the limit.
 
 If UCX will be used to communicate between containers, the IPC (`--ipc`) and
 PID namespaces (`--pid`) should also be shared.
@@ -317,6 +364,7 @@ In this section, we are using a docker container built using the sample dockerfi
     ```shell
     ...
     --conf spark.shuffle.manager=com.nvidia.spark.rapids.[shim package].RapidsShuffleManager \
+    --conf spark.rapids.shuffle.mode=UCX \
     --conf spark.shuffle.service.enabled=false \
     --conf spark.dynamicAllocation.enabled=false \
     --conf spark.executor.extraClassPath=${SPARK_RAPIDS_PLUGIN_JAR} \
@@ -361,10 +409,11 @@ Save the script in DBFS and add it to the "Init Scripts" list:
 Databricks 9.1:
 
 ```
+spark.shuffle.manager com.nvidia.spark.rapids.spark312db.RapidsShuffleManager
+spark.rapids.shuffle.mode UCX
 spark.shuffle.service.enabled false
 spark.executorEnv.UCX_MEMTYPE_CACHE n
 spark.executorEnv.UCX_ERROR_SIGNALS ""
-spark.shuffle.manager com.nvidia.spark.rapids.spark312db.RapidsShuffleManager
 ```
 
 Example of configuration panel with the new settings:
@@ -433,24 +482,3 @@ for this, other than to trigger a GC cycle on the driver.
 Spark has a configuration `spark.cleaner.periodicGC.interval` (defaults to 30 minutes), that
 can be used to periodically cause garbage collection. If you are experiencing OOM situations, or
 performance degradation with several Spark actions, consider tuning this setting in your jobs.
-
-## Multi Threaded Mode (experimental)
-
-This mode is similar to the built-in Spark shuffle, but it attempts to use more CPU threads
-for compute-intensive tasks, such as compression and decompression. This mode does not use UCX, and
-so it does not require a UCX installation.
-
-Minimum configuration:
-
-```shell
---conf spark.shuffle.manager=com.nvidia.spark.rapids.[shim package].RapidsShuffleManager \
---conf spark.driver.extraClassPath=${SPARK_RAPIDS_PLUGIN_JAR} \
---conf spark.executor.extraClassPath=${SPARK_RAPIDS_PLUGIN_JAR} \
---conf spark.rapids.shuffle.mode=MULTITHREADED
-```
-
-By default, a thread pool of 20 threads is used for shuffle writes and reads. This
-configuration can be independently changed for writers and readers using:
-`spark.rapids.shuffle.multiThreaded.[writer|reader].threads`. An appropriate value for these
-pools is the number of cores in the system divided by the number of executors per machine.
-
