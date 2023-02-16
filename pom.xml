@@ -940,6 +940,7 @@
                                             <include name="311until320-noncdh/*"/>
                                             <include name="311until320-nondb/*"/>
                                             <include name="311until330-all/*"/>
+                                            <include name="311until332-all/*"/>
                                             <include name="311until330-nondb/*"/>
                                             <include name="311until340-all/*"/>
                                             <include name="311until340-non330db/*"/>
@@ -1040,7 +1041,9 @@
                                 <pathconvert property="spark332.sources" pathsep=",">
                                     <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
                                         <patternset refid="spark331+.pattern"/>
+                                        <exclude name="*until332*/*"/>
                                         <include name="332/*"/>
+                                        <include name="332+/*"/>
                                     </dirset>
                                 </pathconvert>
                                 <pathconvert property="spark340.sources" pathsep=",">
