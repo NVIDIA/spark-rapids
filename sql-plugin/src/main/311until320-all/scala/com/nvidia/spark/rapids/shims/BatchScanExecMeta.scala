@@ -16,12 +16,19 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.plans.physical.KeyGroupedPartitioning
+import com.nvidia.spark.rapids._
 
-object KeyGroupedPartitioningShim {
+import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 
-  def getPartitionValues(p: KeyGroupedPartitioning): Seq[InternalRow] = {
-    p.partitionValues
-  }
+class BatchScanExecMeta(p: BatchScanExec,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends SparkPlanMeta[BatchScanExec](p, conf, parent, rule) {
+
+  override val childScans: scala.Seq[ScanMeta[_]] =
+    Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
+
+  override def convertToGpu(): GpuExec =
+    GpuBatchScanExec(p.output, childScans.head.convertToGpu())
 }
