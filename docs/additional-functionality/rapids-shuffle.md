@@ -327,23 +327,8 @@ In this section, we are using a docker container built using the sample dockerfi
 
 ### Spark App Configuration
 
-1. Choose the version of the shuffle manager that matches your Spark version.
-   Currently we support:
-
-   | Spark Shim      | spark.shuffle.manager value                              |
-   | --------------- | -------------------------------------------------------- |
-   | 3.1.1           | com.nvidia.spark.rapids.spark311.RapidsShuffleManager    |
-   | 3.1.2           | com.nvidia.spark.rapids.spark312.RapidsShuffleManager    |
-   | 3.1.3           | com.nvidia.spark.rapids.spark313.RapidsShuffleManager    |
-   | 3.2.0           | com.nvidia.spark.rapids.spark320.RapidsShuffleManager    |
-   | 3.2.1           | com.nvidia.spark.rapids.spark321.RapidsShuffleManager    |
-   | 3.2.1 CDH       | com.nvidia.spark.rapids.spark321cdh.RapidsShuffleManager |
-   | 3.2.2           | com.nvidia.spark.rapids.spark322.RapidsShuffleManager    |
-   | 3.2.3           | com.nvidia.spark.rapids.spark323.RapidsShuffleManager    |
-   | 3.3.0           | com.nvidia.spark.rapids.spark330.RapidsShuffleManager    |
-   | 3.3.1           | com.nvidia.spark.rapids.spark331.RapidsShuffleManager    |
-   | Databricks 9.1  | com.nvidia.spark.rapids.spark312db.RapidsShuffleManager  |
-   | Databricks 10.4 | com.nvidia.spark.rapids.spark321db.RapidsShuffleManager  |
+1. Choose the version of the shuffle manager that matches your Spark version. Please refer to
+   the table at the top of this document for `spark.shuffle.manager` values.
 
 2. Settings for UCX 1.12.1+:
 
@@ -352,6 +337,7 @@ In this section, we are using a docker container built using the sample dockerfi
     ```shell
     ...
     --conf spark.shuffle.manager=com.nvidia.spark.rapids.[shim package].RapidsShuffleManager \
+    --conf spark.rapids.shuffle.mode=UCX \
     --conf spark.shuffle.service.enabled=false \
     --conf spark.dynamicAllocation.enabled=false \
     --conf spark.executor.extraClassPath=${SPARK_RAPIDS_PLUGIN_JAR} \
