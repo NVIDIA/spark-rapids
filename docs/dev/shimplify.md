@@ -107,7 +107,7 @@ mvn generate-sources -Dshimplify=true [-D...]
 With `-Dshimplify=true`, shimplify is put on the write call path to generate and inject
 spark-rapids-shim-json-lines comments to all shim source files. The files are not yet moved to their
 owner shim directory, and so it is easy to verify with `git diff` the comments being injected. If
-you see any issue you can fix its cause and re-execute the command with by adding
+you see any issue you can fix it and re-execute the command by adding
 `-Dshimplify.overwrite=true`. However, it is usually easier to just have git restore the
 previous state:
 
