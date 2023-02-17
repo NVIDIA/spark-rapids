@@ -132,11 +132,82 @@ abstract class AbstractGpuJoinIterator(
     }
   }
 
+  private def nextCbFromGathererWithRetry(gather: JoinGatherer, nextRows: Int): ColumnarBatch = {
+    var numRetries = 0
+    var doSplit = false
+    var done = false
+    var fail = false
+    var retryRowCount = nextRows
+    var retryExcept: Throwable = null
+    var result : ColumnarBatch = null
+    // Temporary hack for testing
+    RmmSpark.associateCurrentThreadWithTask(1)
+    while (!done && !fail) {
+      // If we are retrying, block until we get the go ahead
+      if (numRetries > 0) {
+        RmmSpark.blockThreadUntilReady()
+        gather.restore // restore from last checkpoint
+      }
+      if (GpuHashJoin.retryGatherCount > 0) {
+        RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+        GpuHashJoin.retryGatherCount -= 1
+      } else if (GpuHashJoin.splitGatherCount > 0) {
+        RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
+        GpuHashJoin.splitGatherCount -= 1
+      }
+      if (doSplit) {
+        doSplit = false
+        val rowsLeft = gather.numRowsLeft
+        retryRowCount = Math.min(Math.min(retryRowCount / 2, rowsLeft), Integer.MAX_VALUE).toInt
+        if (retryRowCount < GpuHashJoin.minBatchSize) {
+          val oom = new OutOfMemoryError("Out of Memory - unable to split input data")
+          if (retryExcept != null) {
+            oom.addSuppressed(retryExcept)
+          }
+          throw oom
+        }
+      }
+      gather.checkpoint
+      try {
+        result = gather.gatherNext(retryRowCount)
+        done = true
+      } catch {
+        case retryOOM: RetryOOM =>
+          if (retryExcept == null) {
+            retryExcept = retryOOM
+          } else {
+            retryExcept.addSuppressed(retryOOM)
+          }
+          numRetries = numRetries + 1
+          println(s"Retrying, tries so far is ${numRetries}")
+        case splitAndRetryOOM: SplitAndRetryOOM => // we are the only thread
+          if (retryExcept == null) {
+            retryExcept = splitAndRetryOOM
+          } else {
+            retryExcept.addSuppressed(splitAndRetryOOM)
+          }
+          numRetries = numRetries + 1
+          println(s"Split, tries so far is ${numRetries}")
+          doSplit = true
+        case other: Throwable =>
+          if (retryExcept == null) {
+            retryExcept = other
+          } else {
+            retryExcept.addSuppressed(other)
+          }
+          throw retryExcept
+      }
+    }
+    // Temporary for testing
+    RmmSpark.removeCurrentThreadAssociation()
+    result
+  }
+
   private def nextCbFromGatherer(): Option[ColumnarBatch] = {
     withResource(new NvtxWithMetrics(gatherNvtxName, NvtxColor.DARK_GREEN, joinTime)) { _ =>
       val ret = gathererStore.map { gather =>
         val nextRows = JoinGatherer.getRowsInNextBatch(gather, targetSize)
-        gather.gatherNext(nextRows)
+        nextCbFromGathererWithRetry(gather, nextRows)
       }
       if (gathererStore.exists(_.isDone)) {
         gathererStore.foreach(_.close())

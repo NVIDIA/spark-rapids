@@ -103,6 +103,8 @@ object GpuHashJoin extends Arm {
   // Temporary for testing
   var retryOOMCount = 0
   var doSplitOOM = false
+  var retryGatherCount = 0
+  var splitGatherCount = 0
   var minBatchSize = 100
 
   def tagJoin(

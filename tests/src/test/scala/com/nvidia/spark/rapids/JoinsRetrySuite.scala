@@ -56,7 +56,7 @@ class JoinsRetrySuite
       .set("spark.sql.join.preferSortMergeJoin", "false")
       .set("spark.sql.shuffle.partitions", "2") // hack to try and work around bug in cudf
 
-  def testWithRetry(
+  def testWithGatherCreateRetry(
       numRetries: Integer,
       doSplit: Boolean,
       dfA: SparkSession => DataFrame,
@@ -80,44 +80,104 @@ class JoinsRetrySuite
     compareResults(true, 0.0, cpuResult, gpuResult)
   }
 
-  test("Test hash join with retries") {
-    testWithRetry(numRetries = 3, doSplit = false,
+  def testWithGatherNextRetry(
+      numRetries: Integer,
+      splitCount: Integer,
+      dfA: SparkSession => DataFrame,
+      dfB: SparkSession => DataFrame,
+      conf: SparkConf = new SparkConf()
+      ) (fun: (DataFrame, DataFrame) => DataFrame): Unit = {
+    GpuHashJoin.retryGatherCount = numRetries
+    GpuHashJoin.splitGatherCount = splitCount
+    val gpuResult = withGpuSparkSession(spark => {
+      val df1 = dfA(spark)
+      val df2 = dfB(spark)
+      fun(df1, df2).collect()
+    }, conf)
+    assert(GpuHashJoin.retryGatherCount == 0)
+    // Validate correct results.
+    val cpuResult = withCpuSparkSession(spark => {
+      val df1 = dfA(spark)
+      val df2 = dfB(spark)
+      fun(df1, df2).collect()
+    }, conf)
+    compareResults(true, 0.0, cpuResult, gpuResult)
+  }
+
+  test("Test hash join with gather create retries") {
+    testWithGatherCreateRetry(numRetries = 3, doSplit = false,
       longsDf, biggerLongsDf, conf = shuffledJoinConf) {
       (A, B) => A.join(B, A("longs") === B("longs"))
     }
   }
-  test("Test hash join with split") {
-    testWithRetry(numRetries = 0, doSplit = true,
+  test("Test hash join with gather create split") {
+    testWithGatherCreateRetry(numRetries = 0, doSplit = true,
       longsDf, biggerLongsDf, conf = shuffledJoinConf) {
       (A, B) => A.join(B, A("longs") === B("longs"))
     }
   }
-  test("Test hash join with retries and split") {
-    testWithRetry(numRetries = 2, doSplit = true,
+  test("Test hash join with gather create retries and split") {
+    testWithGatherCreateRetry(numRetries = 2, doSplit = true,
       longsDf, biggerLongsDf, conf = shuffledJoinConf) {
       (A, B) => A.join(B, A("longs") === B("longs"))
     }
   }
-  test("Test hash semi join with retries") {
-    testWithRetry(numRetries = 2, doSplit = false,
+  test("Test hash semi join with gather create retries") {
+    testWithGatherCreateRetry(numRetries = 2, doSplit = false,
       longsDf, biggerLongsDf, conf = shuffledJoinConf) {
       (A, B) => A.join(B, A("longs") === B("longs"), "LeftSemi")
     }
   }
-  test("Test hash anti join with retries") {
-    testWithRetry(numRetries = 2, doSplit = false,
+  test("Test hash anti join with gather create retries") {
+    testWithGatherCreateRetry(numRetries = 2, doSplit = false,
       longsDf, biggerLongsDf, conf = shuffledJoinConf) {
       (A, B) => A.join(B, A("longs") === B("longs"), "LeftAnti")
     }
   }
-  test("Test hash right join with retries and split") {
-    testWithRetry(numRetries = 2, doSplit = true,
+  test("Test hash right join with gather create retries and split") {
+    testWithGatherCreateRetry(numRetries = 2, doSplit = true,
       longsDf, biggerLongsDf, conf = shuffledJoinConf) {
       (A, B) => A.join(B, A("longs") === B("longs"), "Right")
     }
   }
-  test("Test hash full join with retries and split") {
-    testWithRetry(numRetries = 2, doSplit = true,
+  test("Test hash full join with gather create retries and split") {
+    testWithGatherCreateRetry(numRetries = 2, doSplit = true,
+      longsDf, biggerLongsDf, conf = shuffledJoinConf) {
+      (A, B) => A.join(B, A("longs") === B("longs"), "FullOuter")
+    }
+  }
+  test("Test hash join with gather next retries") {
+    testWithGatherNextRetry(numRetries = 3, splitCount = 0,
+      longsDf, biggerLongsDf, conf = shuffledJoinConf) {
+      (A, B) => A.join(B, A("longs") === B("longs"))
+    }
+  }
+  test("Test hash join with gather next split") {
+    testWithGatherNextRetry(numRetries = 0, splitCount = 1,
+      longsDf, biggerLongsDf, conf = shuffledJoinConf) {
+      (A, B) => A.join(B, A("longs") === B("longs"))
+    }
+  }
+  test("Test hash semi join with gather next retries") {
+    testWithGatherNextRetry(numRetries = 3, splitCount = 0,
+      longsDf, biggerLongsDf, conf = shuffledJoinConf) {
+      (A, B) => A.join(B, A("longs") === B("longs"), "LeftSemi")
+    }
+  }
+  test("Test hash anti join with gather next retries") {
+    testWithGatherNextRetry(numRetries = 1, splitCount = 0,
+      longsDf, biggerLongsDf, conf = shuffledJoinConf) {
+      (A, B) => A.join(B, A("longs") === B("longs"), "LeftAnti")
+    }
+  }
+  test("Test hash right join with gather next retries and split") {
+    testWithGatherNextRetry(numRetries = 2, splitCount = 1,
+      longsDf, biggerLongsDf, conf = shuffledJoinConf) {
+      (A, B) => A.join(B, A("longs") === B("longs"), "Right")
+    }
+  }
+  test("Test hash full join with gather next retries and split") {
+    testWithGatherNextRetry(numRetries = 2, splitCount = 1,
       longsDf, biggerLongsDf, conf = shuffledJoinConf) {
       (A, B) => A.join(B, A("longs") === B("longs"), "FullOuter")
     }
