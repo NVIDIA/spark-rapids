@@ -31,7 +31,7 @@ Previous `src/(main|test)/${buildver}` and
 version-range-with-exceptions directories such as `src/main/311until340-non330db` are deprecated and
 will be removed soon as a result of the conversion to the new structure.
 
-`shimplify` changes the way the source code is shared among Shims by using an explicit
+`shimplify` changes the way the source code is shared among shims by using an explicit
 lexicographically sorted list of `buildver` property values
 in a source-code level comment instead of the shared directories.
 
@@ -43,7 +43,7 @@ spark-rapids-shim-json-lines ***/
 ```
 
 The content inside the tags `spark-rapids-shim-json-lines` is in the [JSON Lines][4] format where
-each line is an extensible object with the Shim metadata currently consisting just of the Spark
+each line is an extensible object with the shim metadata currently consisting just of the Spark
 build dependency version. The top object in the comment, the minimum version in the comment
 intuitively represents the first version of Spark requiring shimming in the plugin, albeit it might
 not be the original one as support for older Spark releases is eventually dropped. This `buildver`
@@ -101,7 +101,7 @@ on the current state of the `spark-rapids` repo.
 After that you can execute conversion in one or more iterations depending on specified -D parameters
 
 ```bash
-mvn generate-sources antrun:run@shimplify-shim-sources -Dshimplify=true [-D...]
+mvn generate-sources -Dshimplify=true [-D...]
 ```
 
 With `-Dshimplify=true`, shimplify is put on the write call path to generate and inject
@@ -119,7 +119,7 @@ Once the shim comments looks good (as expected, it was tested), you can repeat i
 move the files to designated locations by invoking
 
 ```bash
-mvn generate-sources antrun:run@shimplify=shim-sources -Dshimplify=true -Dshimplify.move=true
+mvn generate-sources -Dshimplify=true -Dshimplify.move=true
 ```
 
 Now you can run a package build with the simplified directory structure and run a few integration
@@ -187,7 +187,7 @@ support for a new [maintenance][5] version of Spark, say 3.2.4, it's expected to
 If just 3.2.3 or all shims after the full transition have already been converted you can execute
 
 ```bash
-mvn generate-sources antrun:run@shimplify=shim-sources -Dshimplify=true \
+mvn generate-sources -Dshimplify=true \
     -Dshimplify.move=true -Dshimplify.overwrite=true \
     -Dshimplify.add.shim=324 -Dshimplify.add.base=323
 ```
@@ -207,11 +207,18 @@ work on resolving potential compilation failures manually.
 
 ## Deleting a Shim
 
-Every Spark build is de-supported eventually. To drop a build say 311 you can run a bulk
-search&replace in your IDE deleting all occurrences of `{"spark": "311"}` including the newline
-character an empty line. Shimplify will fail the build until all the orphaned files are removed.
+Every Spark build is de-supported eventually. To drop a build say 311 you can run
 
-After adding or deleting shims you can run the integration tests above.
+```bash
+mvn generate-sources -Dshimplify=true -Dshimplify.move=true \
+    -Dshimplify.remove.shim=311
+```
+
+This command will remove the comment line `{"spark": "311"}` from all source files contributing to
+the 311 shim. If a file belongs exclusively to 311 it will be removed.
+
+After adding or deleting shims you should sanity-check the diff in the local git repo and
+run the integration tests above.
 
 ## Symlinks & IDE
 
