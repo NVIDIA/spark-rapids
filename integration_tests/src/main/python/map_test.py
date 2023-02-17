@@ -417,13 +417,15 @@ def test_get_map_value_element_at_map_string_col_keys(data_gen):
         conf={'spark.sql.ansi.enabled': False})
 
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
-@pytest.mark.skipif(is_spark_340_or_later() or is_databricks113_or_later(),
+@pytest.mark.skipif(is_spark_340_or_later(),
                     reason="Since Spark3.4 and DB11.3, null will always be returned on invalid access to map")
 def test_element_at_map_string_col_keys_ansi_fail(data_gen):
     keys = StringGen(pattern='NOT_FOUND')
     message = "org.apache.spark.SparkNoSuchElementException" if (not is_before_spark_330() or is_databricks104_or_later()) else "java.util.NoSuchElementException"
     # For 3.3.X strictIndexOperator should not affect element_at
-    test_conf = copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': 'false'})
+    # DB 11.3 has removed this conf
+
+    test_conf = copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': 'false'}) if not is_databricks113_or_later() else ansi_enabled_conf
     assert_gpu_and_cpu_error(
         lambda spark: two_col_df(spark, data_gen, keys).selectExpr(
             'element_at(a, b)').collect(),
