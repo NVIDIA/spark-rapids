@@ -469,7 +469,7 @@ def __shimplify_layout():
 
     # if the user allows to overwrite / reorganize shimplified shims,
     # commonly while adding or removing shims we must include new shim locations
-    if __should_overwrite or __add_shim_buildver is not None or __remove_shim_buildver is not None:
+    if __should_overwrite:
         for src_type in ['main', 'test']:
             __traverse_source_tree_of_all_shims(
                 src_type,
@@ -485,8 +485,13 @@ def __shimplify_layout():
 
     for shim_file, bv_list in files2bv.items():
         if len(bv_list) == 0:
-            __log.info("Removing orphaned file %s", shim_file)
-            __shell_exec(['git', 'rm', shim_file])
+            if __should_move_files:
+                __log.info("Removing orphaned file %s", shim_file)
+                __shell_exec(['git', 'rm', shim_file])
+            else:
+                __log.info("Detected an orphaned shim file %s, possibly while removing a shim."
+                           " git rm it manually or rerun with -Dshimplify.move=true",
+                           shim_file)
         else:
             sorted_build_vers = sorted(bv_list)
             __log.debug("calling upsert_shim_json on shim_file %s bv_list=%s", shim_file,
