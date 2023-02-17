@@ -232,7 +232,7 @@ windows for the same physical source file. As of the time of this writing, it wo
 the exception when the file is open via a Debugger either on a breakpoint hit or subsequent clicking
 on the affected stack frame in which case you will see an extra editor tab being added.
 
-No matter whether or not you use the Resolve Symlinks plugin, IDEA is able to add a break point
+No matter whether or not you use the [Resolve Symlinks][6] plugin, IDEA is able to add a breakpoint
 set directly via the original physical file or a symlink path.
 
 [1]: https://github.com/NVIDIA/spark-rapids/issues/3223
