@@ -22,10 +22,10 @@ import scala.collection.mutable
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.GpuHashAggregateIterator.{computeAggregateAndClose, concatenateBatches, AggHelper}
+import com.nvidia.spark.rapids.GpuHashAggregateIterator.{computeAggregateAndClose, concatenateBatches, getMergePolicy, AggHelper}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetry, splitInHalfByRows}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitInHalfByRows, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.shims.{AggregationTagging, ShimUnaryExecNode}
 import org.apache.spark.TaskContext
 
@@ -275,9 +275,6 @@ object GpuHashAggregateIterator extends Arm with Logging {
       }
     }
 
-    // makes the assumption that this is always a merge AggHelper
-    private val mergePolicy = getMergePolicy(this)
-
     def aggregate(preProcessed: ColumnarBatch): ColumnarBatch = {
       if (groupingOrdinals.nonEmpty) {
         performGroupByAggregation(preProcessed)
@@ -287,13 +284,12 @@ object GpuHashAggregateIterator extends Arm with Logging {
     }
 
     def aggregate(preProcessed: SpillableColumnarBatch): Iterator[SpillableColumnarBatch] = {
-      if (forceMerge) {
-        withRetry(preProcessed, splitInHalfByRows, mergePolicy) { preProcessedAttempt =>
-          aggregate(preProcessedAttempt)
-        }
-      } else {
-        withRetry(preProcessed, splitInHalfByRows) { preProcessedAttempt =>
-          aggregate(preProcessedAttempt)
+      withRetry(preProcessed, splitInHalfByRows) { preProcessedAttempt =>
+        withResource(preProcessedAttempt.getColumnarBatch()) { cb =>
+          val aggCb = aggregate(cb)
+          SpillableColumnarBatch(aggCb,
+            SpillPriorities.ACTIVE_BATCHING_PRIORITY,
+            RapidsBuffer.defaultSpillCallback)
         }
       }
     }
@@ -364,33 +360,42 @@ object GpuHashAggregateIterator extends Arm with Logging {
     }
   }
 
-
-
   def getMergePolicy(
-      mergeHelper: AggHelper): Seq[SpillableColumnarBatch] => SpillableColumnarBatch = {
-    (results: Seq[SpillableColumnarBatch]) => {
-      val cbs = results.map(_.getColumnarBatch())
+      mergeHelper: AggHelper): Iterator[SpillableColumnarBatch] => SpillableColumnarBatch = {
+    (results: Iterator[SpillableColumnarBatch]) => {
+      // The merge we are trying to do is all or nothing. We materialize the whole
+      // sequence of spillables, and need all spillables for this operation to complete.
+      val resultsSeq = results.toSeq
 
-      val tbls = withResource(cbs) {
-        _.map(cb => GpuColumnVector.from(cb))
-      }
+      // withRetrySingle guarantees resultsSeq is closed on error, and expects
+      // a function that returns 1 item
+      val spillableConcatenated = withRetryNoSplit(resultsSeq) { cbs =>
+        val tbls = cbs.safeMap { sb =>
+          withResource(sb.getColumnarBatch()) { cb =>
+            GpuColumnVector.from(cb)
+          }
+        }
 
-      val tbl = withResource(tbls) { _ =>
-        cudf.Table.concatenate(tbls: _*)
-      }
-
-      val aggregated = withResource(tbl) { _ =>
-        withResource(GpuColumnVector.from(tbl, results.head.dataTypes)) { cb =>
-          mergeHelper.aggregate(cb)
+        withResource(tbls) { _ =>
+          withResource(GpuColumnVector.from(
+            cudf.Table.concatenate(tbls: _*), resultsSeq.head.dataTypes)) { concatCb =>
+            SpillableColumnarBatch(
+              concatCb,
+              SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+              RapidsBuffer.defaultSpillCallback)
+          }
         }
       }
 
-      logDebug(
-        s"Merged batches of ${results.map(_.numRows).mkString(", ")} into a single batch")
-      SpillableColumnarBatch(aggregated,
-        SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-        // TODO: need to figure out how to pick the right callback
-        RapidsBuffer.defaultSpillCallback)
+      withRetryNoSplit(spillableConcatenated) { sc =>
+        withResource(sc.getColumnarBatch()) { cb =>
+          val mergeAggregated = mergeHelper.aggregate(cb)
+          SpillableColumnarBatch(mergeAggregated,
+            SpillPriorities.ACTIVE_BATCHING_PRIORITY,
+            // TODO: need to figure out how to pick the right callback
+            RapidsBuffer.defaultSpillCallback)
+        }
+      }
     }
   }
 
@@ -419,12 +424,11 @@ object GpuHashAggregateIterator extends Arm with Logging {
   def computeAggregateAndClose(
       metrics: GpuHashAggregateMetrics,
       inputSpillable: SpillableColumnarBatch,
-      helper: AggHelper): Seq[SpillableColumnarBatch] = {
+      helper: AggHelper): Iterator[SpillableColumnarBatch] = {
     val computeAggTime = metrics.computeAggTime
     val opTime = metrics.opTime
     withResource(new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime,
       opTime)) { _ =>
-
       // 1) a pre-processing step required before we go into the cuDF aggregate,
       // in some cases casting and in others creating a struct (MERGE_M2 for instance,
       // requires a struct)
@@ -454,7 +458,7 @@ object GpuHashAggregateIterator extends Arm with Logging {
           }
         }
       }
-    }.toSeq // force materialization
+    }
   }
 
   /**
@@ -627,10 +631,8 @@ class GpuHashAggregateIterator(
           SpillPriorities.ACTIVE_BATCHING_PRIORITY,
           RapidsBuffer.defaultSpillCallback)
 
-      // make sure that computeAggregateAndClose cannot fail
-      val aggregatedSpillables =
-        computeAggregateAndClose(metrics, spillableChildBatch, aggHelper)
-      aggregatedSpillables.foreach(aggregatedBatches.add)
+      computeAggregateAndClose(metrics, spillableChildBatch, aggHelper)
+        .foreach(aggregatedBatches.add)
     }
   }
 
@@ -739,12 +741,9 @@ class GpuHashAggregateIterator(
     val concatBatch = withResource(batches) { _ =>
       concatenateBatches(metrics, batches)
     }
-    val aggSpillables =
-      computeAggregateAndClose(metrics, concatBatch, concatAndMergeHelper)
-
-    require(aggSpillables.size == 1,
-      s"Expected 1 batch while merging, but instead got ${aggSpillables.size}")
-    aggSpillables.head
+    val mergeToSingleBatch = getMergePolicy(concatAndMergeHelper)
+    mergeToSingleBatch(
+      computeAggregateAndClose(metrics, concatBatch, concatAndMergeHelper))
   }
 
   /** Build an iterator that uses a sort-based approach to merge aggregated batches together. */
@@ -817,13 +816,14 @@ class GpuHashAggregateIterator(
       override def next(): ColumnarBatch = {
         // batches coming out of the sort need to be merged
         val spillable =
-          SpillableColumnarBatch(keyBatchingIter.next(), -1, RapidsBuffer.defaultSpillCallback)
-        withResource(
-          computeAggregateAndClose(metrics, spillable, mergeSortedHelper)) { aggSpillables =>
-          require(aggSpillables.size == 1,
-            s"Expected 1 batch while merging, but instead got ${aggSpillables.size}")
-          withResource(aggSpillables.head) {_.getColumnarBatch()}
-        }
+          SpillableColumnarBatch(
+            keyBatchingIter.next(),
+            SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+            RapidsBuffer.defaultSpillCallback)
+        val mergeToSingleBatch = getMergePolicy(mergeSortedHelper)
+        val resultSpillable = mergeToSingleBatch(
+          computeAggregateAndClose(metrics, spillable, mergeSortedHelper))
+        withResource(resultSpillable) { _.getColumnarBatch() }
       }
     }
   }
