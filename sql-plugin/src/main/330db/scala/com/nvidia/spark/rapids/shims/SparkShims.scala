@@ -52,7 +52,9 @@ object SparkShimImpl extends Spark321PlusDBShims {
   }
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    val elementAtExpr = Seq(GpuElementAtMeta.elementAtRule(true)).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+    val elementAtExpr = Seq(
+      GpuElementAtMeta.elementAtRule(true)
+    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs ++ elementAtExpr
   }
 
