@@ -29,6 +29,7 @@ import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.exchange.{EXECUTOR_BROADCAST, ShuffleExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinExec, GpuBroadcastNestedLoopJoinExec}
+import org.apache.spark.sql.rapids.GpuElementAtMeta
 
 object SparkShimImpl extends Spark321PlusDBShims {
   // AnsiCast is removed from Spark3.4.0
@@ -50,8 +51,10 @@ object SparkShimImpl extends Spark321PlusDBShims {
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
   }
 
-  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
-    super.getExprs ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+    val elementAtExpr = Seq(GpuElementAtMeta.elementAtRule(true)).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+    super.getExprs ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs ++ elementAtExpr
+  }
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     super.getExecs ++ PythonMapInArrowExecShims.execs
