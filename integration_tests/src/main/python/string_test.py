@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -377,6 +377,12 @@ def test_substring_column():
             'SUBSTRING(\'abc\', b, NULL)',
             'SUBSTRING(\'abc\', b)',
             'SUBSTRING(a, b)'))
+
+def test_ephemeral_substring():
+    str_gen = mk_str_gen('.{0,30}')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: three_col_df(spark, str_gen, int_gen, int_gen)\
+            .filter("substr(a, 1, 3) > 'mmm'"))
 
 def test_repeat_scalar_and_column():
     gen_s = StringGen(nullable=False)
