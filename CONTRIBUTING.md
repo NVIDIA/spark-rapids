@@ -264,7 +264,7 @@ interested in. For example, to generate the Bloop projects for the Spark 3.2.0 d
 just for the production code run:
 
 ```shell script
-mvn install ch.epfl.scala:maven-bloop_2.13:1.4.9:bloopInstall -pl aggregator -am \
+mvn install ch.epfl.scala:bloop-maven-plugin:bloopInstall -pl aggregator -am \
   -DdownloadSources=true \
   -Dbuildver=320 \
   -DskipTests \
@@ -296,7 +296,7 @@ You can now open the spark-rapids as a
 
 Read on for VS Code Scala Metals instructions.
 
-# Bloop, Scala Metals, and Visual Studio Code
+#### Bloop, Scala Metals, and Visual Studio Code
 
 _Last tested with 1.63.0-insider (Universal) Commit: bedf867b5b02c1c800fbaf4d6ce09cefba_
 
@@ -337,6 +337,26 @@ jps -l
 72356 bloop.Server
 72349 scala.meta.metals.Main
 ```
+
+##### Known Issues
+
+###### java.lang.RuntimeException: boom`
+
+Metals background compilation process status appears to be resetting to 0% after reaching 99%
+and you see a peculiar error message [`java.lang.RuntimeException: boom`][1]. You can work around
+it by making sure Metals Server, Bloop Server are running on Java 11+.
+
+1. To this end make sure that Bloop projects are generated using Java 11+
+
+    ```bash
+    JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64 \
+      mvn install ch.epfl.scala:bloop-maven-plugin:bloopInstall \
+      -DdownloadSources=true \
+      -Dbuildver=331 \
+      -Dskip -DskipTests -Dmaven.javadoc.skip
+    ```
+
+1. Add `metals.javaHome` to VSCode preferences to point to Java 11+.
 
 #### Other IDEs
 We welcome pull requests with tips how to setup your favorite IDE!
@@ -514,3 +534,5 @@ Options:
 
 ## Attribution
 Portions adopted from https://github.com/rapidsai/cudf/blob/main/CONTRIBUTING.md, https://github.com/NVIDIA/nvidia-docker/blob/master/CONTRIBUTING.md, and https://github.com/NVIDIA/DALI/blob/main/CONTRIBUTING.md
+
+[1]: https://github.com/sourcegraph/scip-java/blob/b7d268233f1a303f66b6d9804a68f64b1e5d7032/semanticdb-javac/src/main/java/com/sourcegraph/semanticdb_javac/SemanticdbTaskListener.java#L76

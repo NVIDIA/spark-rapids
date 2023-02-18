@@ -19,8 +19,6 @@ set -e
 
 shopt -s extglob
 
-BLOOP_VERSION=${BLOOP_VERSION:-"1.4.13"}
-BLOOP_SCALA_VERSION=${BLOOP_SCALA_VERSION:-"2.13"}
 SKIP_CLEAN=1
 BUILD_ALL_DEBUG=0
 
@@ -66,7 +64,7 @@ function bloopInstall() {
       bloopTmpConfigDir="$bloopTmpDir/.bloop$bv"
       mkdir -p $bloopTmpConfigDir
       $MVN -B clean install \
-        ch.epfl.scala:maven-bloop_${BLOOP_SCALA_VERSION}:${BLOOP_VERSION}:bloopInstall \
+        ch.epfl.scala:bloop-maven-plugin:bloopInstall \
         -pl aggregator -am \
         -Dbloop.configDirectory="$bloopTmpConfigDir" \
         -DdownloadSources=true \
