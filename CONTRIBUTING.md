@@ -340,11 +340,11 @@ jps -l
 
 ##### Known Issues
 
-###### java.lang.RuntimeException: boom`
+###### java.lang.RuntimeException: boom
 
 Metals background compilation process status appears to be resetting to 0% after reaching 99%
 and you see a peculiar error message [`java.lang.RuntimeException: boom`][1]. You can work around
-it by making sure Metals Server, Bloop Server are running on Java 11+.
+it by making sure Metals Server (Bloop client) and Bloop Server are both running on Java 11+.
 
 1. To this end make sure that Bloop projects are generated using Java 11+
 
@@ -356,8 +356,11 @@ it by making sure Metals Server, Bloop Server are running on Java 11+.
       -Dskip -DskipTests -Dmaven.javadoc.skip
     ```
 
-1. Add `metals.javaHome` to VSCode preferences to point to Java 11+.
+1. Add [`metals.javaHome`][2] to VSCode preferences to point to Java 11+.
 
+[1]: https://github.com/sourcegraph/scip-java/blob/b7d268233f1a303f66b6d9804a68f64b1e5d7032/semanticdb-javac/src/main/java/com/sourcegraph/semanticdb_javac/SemanticdbTaskListener.java#L76
+
+[2]: https://github.com/scalameta/metals-vscode/pull/644/files#diff-04bba6a35cad1c794cbbe677678a51de13441b7a6ee8592b7b50be1f05c6f626R132
 #### Other IDEs
 We welcome pull requests with tips how to setup your favorite IDE!
 
@@ -534,5 +537,3 @@ Options:
 
 ## Attribution
 Portions adopted from https://github.com/rapidsai/cudf/blob/main/CONTRIBUTING.md, https://github.com/NVIDIA/nvidia-docker/blob/master/CONTRIBUTING.md, and https://github.com/NVIDIA/DALI/blob/main/CONTRIBUTING.md
-
-[1]: https://github.com/sourcegraph/scip-java/blob/b7d268233f1a303f66b6d9804a68f64b1e5d7032/semanticdb-javac/src/main/java/com/sourcegraph/semanticdb_javac/SemanticdbTaskListener.java#L76
