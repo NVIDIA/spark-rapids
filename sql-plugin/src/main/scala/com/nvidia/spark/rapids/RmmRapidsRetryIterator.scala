@@ -160,7 +160,7 @@ object RmmRapidsRetryIterator extends Arm {
 
     override def invokeFn(k: K): T = {
       val res = super.invokeFn(k)
-      k.close()
+      k.close() // close `k` only if we didn't throw from `invokeFn`
       res
     }
 
@@ -295,7 +295,7 @@ object RmmRapidsRetryIterator extends Arm {
    * because we are down to 1 row, this function throws `OutOfMemoryError`.
    * @return a Seq[SpillableColumnarBatch] with 2 elements.
    */
-  def splitInHalfByRows(): SpillableColumnarBatch => Seq[SpillableColumnarBatch] = {
+  def splitInHalfByRows: SpillableColumnarBatch => Seq[SpillableColumnarBatch] = {
     (spillable: SpillableColumnarBatch) => {
       withResource(spillable) { _ =>
         val toSplitRows = spillable.numRows()
