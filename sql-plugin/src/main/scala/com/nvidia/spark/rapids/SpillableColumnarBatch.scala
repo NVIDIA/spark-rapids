@@ -26,6 +26,8 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * Holds a ColumnarBatch that the backing buffers on it can be spilled.
  */
 trait SpillableColumnarBatch extends AutoCloseable {
+  def getSpillCallback: SpillCallback
+
   /**
    * The number of rows stored in this batch.
    */
@@ -55,13 +57,13 @@ trait SpillableColumnarBatch extends AutoCloseable {
  * spillable, even though in reality there is no backing buffer.  It does this by just keeping the
  * row count in memory, and not dealing with the catalog at all.
  */
-class JustRowsColumnarBatch(numRows: Int, semWait: GpuMetric)
+class JustRowsColumnarBatch(numRows: Int, spillCallback: SpillCallback)
     extends SpillableColumnarBatch with Arm {
   override def numRows(): Int = numRows
   override def setSpillPriority(priority: Long): Unit = () // NOOP nothing to spill
 
   def getColumnarBatch(): ColumnarBatch = {
-    GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWait)
+    GpuSemaphore.acquireIfNecessary(TaskContext.get(), spillCallback.semaphoreWaitTime)
     new ColumnarBatch(Array.empty, numRows)
   }
 
@@ -69,6 +71,8 @@ class JustRowsColumnarBatch(numRows: Int, semWait: GpuMetric)
   override val sizeInBytes: Long = 0L
 
   override def dataTypes: Array[DataType] = Array.empty
+
+  override def getSpillCallback: SpillCallback = spillCallback
 }
 
 /**
@@ -81,7 +85,7 @@ class SpillableColumnarBatchImpl (
     handle: RapidsBufferHandle,
     rowCount: Int,
     sparkTypes: Array[DataType],
-    semWait: GpuMetric)
+    spillCallback: SpillCallback)
     extends SpillableColumnarBatch with Arm {
 
   override def dataTypes: Array[DataType] = sparkTypes
@@ -108,7 +112,7 @@ class SpillableColumnarBatchImpl (
 
   override def getColumnarBatch(): ColumnarBatch = {
     withRapidsBuffer { rapidsBuffer =>
-      GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWait)
+      GpuSemaphore.acquireIfNecessary(TaskContext.get(), spillCallback.semaphoreWaitTime)
       rapidsBuffer.getColumnarBatch(sparkTypes)
     }
   }
@@ -120,6 +124,8 @@ class SpillableColumnarBatchImpl (
     // closing my reference
     handle.close()
   }
+
+  override def getSpillCallback: SpillCallback = spillCallback
 }
 
 object SpillableColumnarBatch extends Arm {
@@ -139,7 +145,7 @@ object SpillableColumnarBatch extends Arm {
     if (batch.numCols() <= 0) {
       // We consumed it
       batch.close()
-      new JustRowsColumnarBatch(numRows, spillCallback.semaphoreWaitTime)
+      new JustRowsColumnarBatch(numRows, spillCallback)
     } else {
       val types = GpuColumnVector.extractTypes(batch)
       val handle = addBatch(batch, priority, spillCallback)
@@ -147,7 +153,7 @@ object SpillableColumnarBatch extends Arm {
         handle,
         numRows,
         types,
-        spillCallback.semaphoreWaitTime)
+        spillCallback)
     }
   }
 
@@ -171,7 +177,7 @@ object SpillableColumnarBatch extends Arm {
         handle,
         ct.getRowCount.toInt,
         sparkTypes,
-        spillCallback.semaphoreWaitTime)
+        spillCallback)
     }
   }
 

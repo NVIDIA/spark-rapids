@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import java.util
+
 import scala.annotation.tailrec
 import scala.collection.mutable
 
@@ -27,8 +28,8 @@ import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.shims.{AggregationTagging, ShimUnaryExecNode}
-import org.apache.spark.TaskContext
 
+import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -280,7 +281,7 @@ object GpuHashAggregateIterator extends Arm with Logging {
       SpillableColumnarBatch(
         projectedCb,
         SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-        RapidsBuffer.defaultSpillCallback)
+        inputSpillable.getSpillCallback)
     }
 
     def aggregate(preProcessed: ColumnarBatch): ColumnarBatch = {
@@ -300,7 +301,7 @@ object GpuHashAggregateIterator extends Arm with Logging {
             SpillableColumnarBatch(
               aggregate(cb),
               SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-              RapidsBuffer.defaultSpillCallback)
+              preProcessed.getSpillCallback)
           }
         }.toSeq
 
@@ -313,7 +314,7 @@ object GpuHashAggregateIterator extends Arm with Logging {
             SpillableColumnarBatch(
               aggregate(cb),
               SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-              RapidsBuffer.defaultSpillCallback)
+              concatted.getSpillCallback)
           }
         }
       } else {
@@ -393,7 +394,7 @@ object GpuHashAggregateIterator extends Arm with Logging {
       SpillableColumnarBatch(
         postProcessed,
         SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-        RapidsBuffer.defaultSpillCallback)
+        aggregatedSpillable.getSpillCallback)
     }
   }
 
@@ -474,7 +475,7 @@ object GpuHashAggregateIterator extends Arm with Logging {
                 val cb = GpuColumnVector.from(concatenated, dataTypes)
                 SpillableColumnarBatch(cb,
                   SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-                  RapidsBuffer.defaultSpillCallback)
+                  attempt.head.getSpillCallback)
               }
             }
           }
@@ -619,7 +620,7 @@ class GpuHashAggregateIterator(
         SpillableColumnarBatch(
           cbIter.next(),
           SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-          RapidsBuffer.defaultSpillCallback)
+          metrics.spillCallback)
 
       aggregatedBatches.add(
         computeAggregateAndClose(metrics, spillableChildBatch, aggHelper))
@@ -807,7 +808,7 @@ class GpuHashAggregateIterator(
           SpillableColumnarBatch(
             keyBatchingIter.next(),
             SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-            RapidsBuffer.defaultSpillCallback)
+            metrics.spillCallback)
         val resultSpillable =
           computeAggregateAndClose(metrics, spillable, mergeSortedHelper)
         withResource(resultSpillable) { _ =>
