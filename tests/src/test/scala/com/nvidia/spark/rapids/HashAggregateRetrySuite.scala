@@ -18,20 +18,18 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{CudfException, Rmm, RmmAllocationMode, RmmEventHandler, Table}
+import ai.rapids.cudf.{CudfException, Table}
 import com.nvidia.spark.rapids.jni.RmmSpark
 import org.mockito.Mockito._
-import org.scalatest.BeforeAndAfterEach
-import org.scalatest.FunSuite
 import org.scalatest.mockito.MockitoSugar
 
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.{CudfAggregate, CudfSum}
 import org.apache.spark.sql.types.{DataType, IntegerType, LongType}
 
-class RapidsAggregateRetrySuite
-    extends FunSuite
-        with BeforeAndAfterEach with MockitoSugar with Arm {
+class HashAggregateRetrySuite
+    extends RmmSparkRetrySuiteBase
+        with MockitoSugar
+        with Arm {
   private def buildReductionBatch(): SpillableColumnarBatch = {
     val reductionTable = new Table.TestBuilder()
       .column(5L, null.asInstanceOf[java.lang.Long], 3L, 1L)
@@ -50,32 +48,6 @@ class RapidsAggregateRetrySuite
     withResource(groupByTable) { tbl =>
       val cb = GpuColumnVector.from(tbl, Seq(IntegerType, LongType).toArray[DataType])
       spy(SpillableColumnarBatch(cb, -1, RapidsBuffer.defaultSpillCallback))
-    }
-  }
-
-  private var rmmWasInitialized = false
-
-  override def beforeEach(): Unit = {
-    SparkSession.getActiveSession.foreach(_.stop())
-    SparkSession.clearActiveSession()
-    if (!Rmm.isInitialized) {
-      rmmWasInitialized = true
-      Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
-    }
-    val deviceStorage = new RapidsDeviceMemoryStore()
-    val catalog = new RapidsBufferCatalog(deviceStorage)
-    RapidsBufferCatalog.setCatalog(catalog)
-    val mockEventHandler = new BaseRmmEventHandler()
-    RmmSpark.setEventHandler(mockEventHandler)
-    RmmSpark.associateThreadWithTask(RmmSpark.getCurrentThreadId, 1)
-  }
-
-  override def afterEach(): Unit = {
-    RmmSpark.removeThreadAssociation(RmmSpark.getCurrentThreadId)
-    RmmSpark.clearEventHandler()
-    RapidsBufferCatalog.close()
-    if (rmmWasInitialized) {
-      Rmm.shutdown()
     }
   }
 
@@ -303,15 +275,5 @@ class RapidsAggregateRetrySuite
     }
     // we need to request a ColumnarBatch twice here for the retry
     verify(groupByBatch, times(2)).getColumnarBatch()
-  }
-
-  private class BaseRmmEventHandler extends RmmEventHandler {
-    override def getAllocThresholds: Array[Long] = null
-    override def getDeallocThresholds: Array[Long] = null
-    override def onAllocThreshold(totalAllocSize: Long): Unit = {}
-    override def onDeallocThreshold(totalAllocSize: Long): Unit = {}
-    override def onAllocFailure(sizeRequested: Long, retryCount: Int): Boolean = {
-      false
-    }
   }
 }
