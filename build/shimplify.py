@@ -551,7 +551,7 @@ def __remove_shim_from_file_map(files2bv):
         try:
             bv_list.remove(__remove_shim_buildver)
         except ValueError as ve:
-            # __remove_shim_buildver is mot in the list
+            # __remove_shim_buildver is not in the list
             __log.debug("%s: file %s does not belong to shim %s, skipping it", ve, shim_file,
                         __remove_shim_buildver)
             pass
