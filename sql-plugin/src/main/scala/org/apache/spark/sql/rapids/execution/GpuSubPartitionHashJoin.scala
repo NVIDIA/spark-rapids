@@ -17,12 +17,12 @@ package org.apache.spark.sql.rapids.execution
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{GatherMap, HashType, NvtxColor, Table}
+import ai.rapids.cudf.{GatherMap, HashType, NullEquality, NvtxColor, Table}
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids.{AbstractGpuJoinIterator, Arm, GpuBoundReference, GpuBuildLeft, GpuBuildRight, GpuBuildSide, GpuColumnVector, GpuExpression, GpuMetric, GpuProjectExec, GpuShuffledHashJoinExec, JoinGatherer, LazySpillableColumnarBatch, NvtxWithMetrics, SerializedTableColumn, SpillableColumnarBatch, SpillCallback, SpillPriorities, SplittableJoinIterator, TaskAutoCloseableResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
-import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, InnerLike, JoinType}
+import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -637,6 +637,59 @@ abstract class BaseSubHashJoinIterator(
       rightBatch: ColumnarBatch): Option[JoinGatherer]
 }
 
+/**
+ * An iterator that does a hash full join.
+ */
+class SubHashFullJoinIterator(
+    buildIter: Iterator[ColumnarBatch],
+    boundBuildKeys: Seq[GpuExpression],
+    buildSchema: StructType,
+    streamIter: Iterator[ColumnarBatch],
+    boundStreamKeys: Seq[GpuExpression],
+    streamSchema: StructType,
+    numPartitions: Int,
+    buildSide: GpuBuildSide,
+    targetSize: Long,
+    compareNullsEqual: Boolean,
+    boundCondition: Option[GpuExpression],
+    numFirstConditionTableColumns: Int,
+    spillCallback: SpillCallback,
+    opTime: GpuMetric,
+    joinTime: GpuMetric)
+  extends BaseSubHashJoinIterator(buildIter, boundBuildKeys, buildSchema, streamIter,
+    boundStreamKeys, streamSchema, numPartitions, buildSide, FullOuter, targetSize,
+    spillCallback, opTime, joinTime) {
+
+  private lazy val batchFullOuterJoin = boundCondition.map { bCondExpr =>
+    val nullEquality = if (compareNullsEqual) NullEquality.EQUAL else NullEquality.UNEQUAL
+    val compiledCond = use(opTime.ns(
+      bCondExpr.convertToAst(numFirstConditionTableColumns).compile()))
+    (leftKeys: Table, leftData: ColumnarBatch, rightKeys: Table, rightData: ColumnarBatch) =>
+      withResource(GpuColumnVector.from(leftData)) { leftTable =>
+        withResource(GpuColumnVector.from(rightData)) { rightTable =>
+          Table.mixedFullJoinGatherMaps(leftKeys, rightKeys, leftTable, rightTable,
+            compiledCond, nullEquality)
+        }
+      }
+    }.getOrElse {
+      (leftKeys: Table, _: ColumnarBatch, rightKeys: Table, _: ColumnarBatch) =>
+        leftKeys.fullJoinGatherMaps(rightKeys, compareNullsEqual)
+    }
+
+  override protected def joinGathererLeftRight(
+      leftKeys: Table,
+      leftBatch: ColumnarBatch,
+      rightKeys: Table,
+      rightBatch: ColumnarBatch): Option[JoinGatherer] = {
+    // Gather maps will be closed inside "makeGatherer"
+    makeGatherer(
+      batchFullOuterJoin(leftKeys, leftBatch, rightKeys, rightBatch),
+      LazySpillableColumnarBatch(leftBatch, spillCallback, "sub left batch"),
+      LazySpillableColumnarBatch(rightBatch, spillCallback, "sub right batch"))
+  }
+
+}
+
 class SubHashJoinIterator(
     buildIter: Iterator[ColumnarBatch],
     boundBuildKeys: Seq[GpuExpression],
@@ -745,8 +798,11 @@ trait GpuSubPartitionHashJoin extends Arm { self: GpuHashJoin =>
         new SubHashExistenceJoinIterator(filteredBuildIter, boundBuildKeys, buildSchema,
           streamIter, boundStreamKeys, boundCondition, numFirstConditionTableColumns,
           compareNullsEqual, numPartitions, spillCallback, opTime, joinTime)
-      // case FullOuter =>
-        // TBD
+      case FullOuter =>
+        new SubHashFullJoinIterator(filteredBuildIter, boundBuildKeys, buildSchema,
+          streamIter, boundStreamKeys, streamSchema, numPartitions, buildSide, realTarget,
+          compareNullsEqual, boundCondition, numFirstConditionTableColumns, spillCallback,
+          opTime, joinTime)
       case _ =>
         boundCondition.map { bCondition =>
           // SubConditionalHashJoinIterator will close the compiled condition

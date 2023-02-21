@@ -163,10 +163,7 @@ case class GpuShuffledHashJoinExec(
     streamedPlan.executeColumnar().zipPartitions(buildPlan.executeColumnar()) {
       (streamIter, buildIter) => {
         val batchAwareIter = new BatchTypeSizeAwareIterator(buildIter, bigJoinThreshold)
-        // Temporarily disable FullOuter join for join by sub-partition algorithm,
-        // because it is not supported yet. Adding it back is tracked by
-        // https://github.com/NVIDIA/spark-rapids/issues/7793
-        if (batchAwareIter.isBatchesSizeOverflow && joinType != FullOuter) {
+        if (batchAwareIter.isBatchesSizeOverflow) {
           // For the quite big joins, when the built batch will go beyond the
           // the target batch size.
           val gpuBuildIter = GpuShuffledHashJoinExec.ensureBatchesOnGpu(batchAwareIter,
