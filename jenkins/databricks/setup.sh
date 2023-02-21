@@ -45,8 +45,8 @@ if [ -z "$($PYSPARK_PYTHON -m pip --version || true)" ]; then
 fi
 
 # Get Python version (major.minor). i.e., python3.8 for DB10.4 and python3.9 for DB11.3
-python_versionn=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
+PYTHON_VERSION=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
 # Set the path of python site-packages, and install packages here.
-PYTHON_SITE_PACKAGES="$HOME/.local/lib/${python_versionn}/site-packages"
+PYTHON_SITE_PACKAGES="$HOME/.local/lib/${PYTHON_VERSION}/site-packages"
 # Use "python -m pip install" to make sure pip matches with python.
 $PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES pytest sre_yield requests pandas pyarrow findspark pytest-xdist pytest-order
