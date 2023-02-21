@@ -74,7 +74,10 @@ class RapidsAggregateRetrySuite
     }
   }
 
-  def doReduction(input: SpillableColumnarBatch): Seq[SpillableColumnarBatch] = {
+  def doReduction(input: SpillableColumnarBatch): SpillableColumnarBatch = {
+    val mockMetrics = mock[GpuHashAggregateMetrics]
+    when(mockMetrics.opTime).thenReturn(NoopMetric)
+    when(mockMetrics.concatTime).thenReturn(NoopMetric)
     val aggHelper = spy(new GpuHashAggregateIterator.AggHelper(
       Seq.empty, Seq.empty, Seq.empty,
       forceMerge = false, isSorted = false))
@@ -89,7 +92,8 @@ class RapidsAggregateRetrySuite
 
     // attempt a cuDF reduction
     withResource(input) { _ =>
-      GpuHashAggregateIterator.aggregate(aggHelper, input).toSeq
+      GpuHashAggregateIterator.aggregate(
+        aggHelper, input, mockMetrics)
     }
   }
 
@@ -119,35 +123,23 @@ class RapidsAggregateRetrySuite
 
   def doGroupBy(
       input: SpillableColumnarBatch,
-      forceMerge: Boolean = false): Seq[SpillableColumnarBatch] = {
+      forceMerge: Boolean = false): SpillableColumnarBatch = {
+    val mockMetrics = mock[GpuHashAggregateMetrics]
+    when(mockMetrics.opTime).thenReturn(NoopMetric)
+    when(mockMetrics.concatTime).thenReturn(NoopMetric)
 
     // attempt a cuDF group by
-    val partiallyAgged =
-      GpuHashAggregateIterator.aggregate(
-        makeGroupByAggHelper(forceMerge = false), input).toSeq
-
-    if (forceMerge) {
-      // when we are merging in this case we want to create a new helper for
-      // merge, and call aggregate again, like the regular aggregate does
-      val mockMetrics = mock[GpuHashAggregateMetrics]
-      when(mockMetrics.opTime).thenReturn(NoopMetric)
-      when(mockMetrics.concatTime).thenReturn(NoopMetric)
-
-      val singleBatch = GpuHashAggregateIterator.concatenateBatches(
-        mockMetrics, partiallyAgged)
-      GpuHashAggregateIterator.aggregate(
-        makeGroupByAggHelper(forceMerge = true), singleBatch).toSeq
-    } else {
-      partiallyAgged
-    }
+    GpuHashAggregateIterator.aggregate(
+      makeGroupByAggHelper(forceMerge = false),
+      input,
+      mockMetrics)
   }
 
   test("computeAndAggregate reduction with retry") {
     val reductionBatch = buildReductionBatch()
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
     val result = doReduction(reductionBatch)
-    assertResult(1)(result.length)
-    withResource(result.head) { spillable =>
+    withResource(result) { spillable =>
       withResource(spillable.getColumnarBatch) { cb =>
         assertResult(1)(cb.numRows)
         val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
@@ -164,8 +156,7 @@ class RapidsAggregateRetrySuite
     val reductionBatch = buildReductionBatch()
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 2)
     val result = doReduction(reductionBatch)
-    assertResult(1)(result.length)
-    withResource(result.head) { spillable =>
+    withResource(result) { spillable =>
       withResource(spillable.getColumnarBatch) { cb =>
         assertResult(1)(cb.numRows)
         val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
@@ -194,8 +185,7 @@ class RapidsAggregateRetrySuite
     val groupByBatch = buildGroupByBatch()
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
     val result = doGroupBy(groupByBatch)
-    assertResult(1)(result.length)
-    withResource(result.head) { spillable =>
+    withResource(result) { spillable =>
       withResource(spillable.getColumnarBatch) { cb =>
         assertResult(3)(cb.numRows)
         val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
@@ -228,27 +218,13 @@ class RapidsAggregateRetrySuite
     val reductionBatch = buildReductionBatch()
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
     val result = doReduction(reductionBatch)
-    assertResult(2)(result.length)
-    withResource(result.head) { spillable =>
+    withResource(result) { spillable =>
       withResource(spillable.getColumnarBatch) { cb =>
         assertResult(1)(cb.numRows)
         val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
 
-        // I expect the 4 row batch to be split in half, the first two
-        // rows add up to 5
         withResource(gcv.getBase.copyToHost()) { hcv =>
-          assertResult(5)(hcv.getLong(0))
-        }
-      }
-    }
-    withResource(result.last) { spillable =>
-      withResource(spillable.getColumnarBatch) { cb =>
-        assertResult(1)(cb.numRows)
-        val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
-
-        // The second two rows add up to 4
-        withResource(gcv.getBase.copyToHost()) { hcv =>
-          assertResult(4L)(hcv.getLong(0))
+          assertResult(9L)(hcv.getLong(0))
         }
       }
     }
@@ -260,39 +236,22 @@ class RapidsAggregateRetrySuite
     val groupByBatch = buildGroupByBatch()
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
     val result = doGroupBy(groupByBatch)
-    assertResult(2)(result.length)
-    withResource(result.head) { spillable =>
+    withResource(result) { spillable =>
       withResource(spillable.getColumnarBatch) { cb =>
-        assertResult(2)(cb.numRows)
+        assertResult(3)(cb.numRows)
         val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
         val aggv = cb.column(1).asInstanceOf[GpuColumnVector]
-        var rowsLeftToMatch = 2
+        var rowsLeftToMatch = 3
         withResource(aggv.getBase.copyToHost()) { aggvh =>
           withResource(gcv.getBase.copyToHost()) { grph =>
-            (0 until 2).foreach { row =>
+            (0 until 3).foreach { row =>
               if (grph.isNull(row)) {
                 assertResult(2L)(aggvh.getLong(row))
                 rowsLeftToMatch -= 1
               } else if (grph.getInt(row) == 5) {
                 assertResult(1L)(aggvh.getLong(row))
                 rowsLeftToMatch -= 1
-              }
-            }
-          }
-        }
-        assertResult(0)(rowsLeftToMatch)
-      }
-    }
-    withResource(result.last) { spillable =>
-      withResource(spillable.getColumnarBatch) { cb =>
-        assertResult(1)(cb.numRows)
-        val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
-        val aggv = cb.column(1).asInstanceOf[GpuColumnVector]
-        var rowsLeftToMatch = 1
-        withResource(aggv.getBase.copyToHost()) { aggvh =>
-          withResource(gcv.getBase.copyToHost()) { grph =>
-            (0 until 1).foreach { row =>
-              if (grph.getInt(row) == 1) {
+              } else if (grph.getInt(row) == 1) {
                 assertResult(7L)(aggvh.getLong(row))
                 rowsLeftToMatch -= 1
               }
@@ -312,8 +271,7 @@ class RapidsAggregateRetrySuite
     // we force a split because that would cause us to compute two aggs
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId)
     val result = doGroupBy(groupByBatch, forceMerge = true)
-    assertResult(1)(result.length)
-    withResource(result.head) { spillable =>
+    withResource(result) { spillable =>
       withResource(spillable.getColumnarBatch) { cb =>
         assertResult(3)(cb.numRows)
         val gcv = cb.column(0).asInstanceOf[GpuColumnVector]

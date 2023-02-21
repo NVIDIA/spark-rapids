@@ -291,14 +291,33 @@ object GpuHashAggregateIterator extends Arm with Logging {
       }
     }
 
-    def aggregate(preProcessed: SpillableColumnarBatch): Iterator[SpillableColumnarBatch] = {
-      withRetry(preProcessed, splitInHalfByRows) { preProcessedAttempt =>
-        withResource(preProcessedAttempt.getColumnarBatch()) { cb =>
-          val aggCb = aggregate(cb)
-          SpillableColumnarBatch(aggCb,
-            SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-            RapidsBuffer.defaultSpillCallback)
+    def aggregate(
+        metrics: GpuHashAggregateMetrics,
+        preProcessed: SpillableColumnarBatch): SpillableColumnarBatch = {
+      val aggregatedSeq =
+        withRetry(preProcessed, splitInHalfByRows) { preProcessedAttempt =>
+          withResource(preProcessedAttempt.getColumnarBatch()) { cb =>
+            SpillableColumnarBatch(
+              aggregate(cb),
+              SpillPriorities.ACTIVE_BATCHING_PRIORITY,
+              RapidsBuffer.defaultSpillCallback)
+          }
+        }.toSeq
+
+      // We need to merge the aggregated batches into 1 before calling post process,
+      // if the aggregate code had to split on a retry
+      if (aggregatedSeq.size > 1) {
+        val concatted = concatenateBatches(metrics, aggregatedSeq)
+        withRetryNoSplit(concatted) { attempt =>
+          withResource(attempt.getColumnarBatch()) { cb =>
+            SpillableColumnarBatch(
+              aggregate(cb),
+              SpillPriorities.ACTIVE_BATCHING_PRIORITY,
+              RapidsBuffer.defaultSpillCallback)
+          }
         }
+      } else {
+        aggregatedSeq.head
       }
     }
 
@@ -386,8 +405,9 @@ object GpuHashAggregateIterator extends Arm with Logging {
    */
   def aggregate(
       helper: AggHelper,
-      preProcessed: SpillableColumnarBatch): Iterator[SpillableColumnarBatch] = {
-    helper.aggregate(preProcessed)
+      preProcessed: SpillableColumnarBatch,
+      metrics: GpuHashAggregateMetrics): SpillableColumnarBatch = {
+    helper.aggregate(metrics, preProcessed)
   }
 
   /**
@@ -416,14 +436,9 @@ object GpuHashAggregateIterator extends Arm with Logging {
 
       // 2) perform the aggregation
       // OOM retry means we could get a list of batches
-      val aggregatedBatchesIterator = aggregate(helper, preProcessed)
+      val aggregatedSpillable = aggregate(helper, preProcessed, metrics)
 
-      // 3) we need to merge the aggregated batches into 1 before calling post process,
-      // if the aggregate code had to split on a retry
-      val aggregatedSpillable =
-        concatenateBatches(metrics, aggregatedBatchesIterator.toSeq)
-
-      // 4) a post-processing step required in some scenarios, casting or picking
+      // 3) a post-processing step required in some scenarios, casting or picking
       // apart a struct
       helper.postProcess(aggregatedSpillable)
     }

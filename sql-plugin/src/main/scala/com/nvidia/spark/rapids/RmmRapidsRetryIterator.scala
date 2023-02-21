@@ -72,7 +72,7 @@ object RmmRapidsRetryIterator extends Arm {
    * @param fn          the work to perform. Takes T and produces an output K
    * @tparam T element type that must be AutoCloseable
    * @tparam K `fn` result type
-   * @return an iterator of K
+   * @return a single item of type K
    */
   def withRetryNoSplit[T <: AutoCloseable, K](
       input: T)
@@ -90,7 +90,7 @@ object RmmRapidsRetryIterator extends Arm {
    * @param fn          the work to perform. Takes T and produces an output K
    * @tparam T element type that must be AutoCloseable
    * @tparam K `fn` result type
-   * @return an iterator of K
+   * @return a single item of type K
    */
   def withRetryNoSplit[T <: AutoCloseable, K](
       input: Seq[T])
@@ -100,6 +100,10 @@ object RmmRapidsRetryIterator extends Arm {
       new RmmRapidsRetryAutoCloseableIterator(Seq(wrapped).iterator, fn))
   }
 
+  /**
+   * Helper method to drain an iterator and ensuring that it was non-empty
+   * and it had a single item in it.
+   */
   private def drainSingleWithVerification[K](it: Iterator[K]): K = {
     require(it.hasNext,
       "Couldn't drain a single item with a closed iterator!")
