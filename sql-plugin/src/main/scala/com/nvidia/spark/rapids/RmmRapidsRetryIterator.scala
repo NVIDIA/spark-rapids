@@ -26,11 +26,17 @@ object RmmRapidsRetryIterator extends Arm {
   /**
    * withRetry for Iterator[T]. This helper calls a function `fn` as it takes
    * elements from the iterator given in `input`, and it can retry the work in `fn`,
-   * and optionally split items into smaller chunks. The resulting iterator may or
+   * and optionally split items into smaller chunks. The `splitPolicy` function must
+   * close the item passed to it. The resulting iterator may or
    * may not have the same number of elements as the source iterator.
    *
+   * This function will close the elements of `input` as `fn` is successfully
+   * invoked. If the iterator `input` is not empty, in the event of an unhandled
+   * exception, it is closed entirely by `withRetry`.
+   *
    * @param input an iterator of T
-   * @param splitPolicy a function that can split a T into a Seq[T]
+   * @param splitPolicy a function that can split an item of type T into a Seq[T]. The split
+   *                    function must close the item passed to it.
    * @param fn the work to perform. Takes T and produces an output K
    * @tparam T element type that must be AutoCloseable
    * @tparam K `fn` result type
@@ -49,8 +55,13 @@ object RmmRapidsRetryIterator extends Arm {
    * The resulting iterator may be 1 element, if successful on the first attempt or retry,
    * or it could be multiple if splits were required.
    *
+   * This function will close the elements of `input` as `fn` is successfully
+   * invoked. If the iterator `input` is not empty, in the event of an unhandled
+   * exception, it is closed entirely by `withRetry`.
+   *
    * @param input a single item T
-   * @param splitPolicy a function that can split a T into a Seq[T]
+   * @param splitPolicy a function that can split an item of type T into a Seq[T]. The split
+   *                    function must close the item passed to it.
    * @param fn the work to perform. Takes T and produces an output K
    * @tparam T element type that must be AutoCloseable
    * @tparam K `fn` result type
@@ -67,6 +78,10 @@ object RmmRapidsRetryIterator extends Arm {
    * withRetryNoSplit for T. This helper calls a function `fn` with the `input`, and it will
    * retry the call to `fn` if needed. This does not split the
    * input into multiple chunks. The result is a single item of type K.
+   *
+   * This function will close the elements of `input` as `fn` is successfully
+   * invoked. If the iterator `input` is not empty, in the event of an unhandled
+   * exception, it is closed entirely by `withRetryNoSplit`.
    *
    * @param input       a single item T
    * @param fn          the work to perform. Takes T and produces an output K
@@ -86,6 +101,10 @@ object RmmRapidsRetryIterator extends Arm {
    * given in `input`, and it will retry the call to `fn` if needed. This does not split the
    * input into multiple chunks. The result is a single item of type K.
    *
+   * This function will close the elements of `input` as `fn` is successfully
+   * invoked. If the iterator `input` is not empty, in the event of an unhandled
+   * exception, it is closed entirely by `withRetryNoSplit`.
+   *
    * @param input       a single item T
    * @param fn          the work to perform. Takes T and produces an output K
    * @tparam T element type that must be AutoCloseable
@@ -95,7 +114,7 @@ object RmmRapidsRetryIterator extends Arm {
   def withRetryNoSplit[T <: AutoCloseable, K](
       input: Seq[T])
       (fn: Seq[T] => K): K = {
-    val wrapped = AutoCloseableSeq(input)
+    val wrapped = AutoCloseableSeqInternal(input)
     drainSingleWithVerification(
       new RmmRapidsRetryAutoCloseableIterator(Seq(wrapped).iterator, fn))
   }
@@ -118,7 +137,7 @@ object RmmRapidsRetryIterator extends Arm {
    * @param ts the Seq to wrap
    * @tparam T the type of the items in `ts`
    */
-  private case class AutoCloseableSeq[T <: AutoCloseable](ts: Seq[T])
+  private case class AutoCloseableSeqInternal[T <: AutoCloseable](ts: Seq[T])
       extends Seq[T] with AutoCloseable{
     override def close(): Unit = {
       ts.foreach(_.safeClose())
@@ -140,14 +159,14 @@ object RmmRapidsRetryIterator extends Arm {
    * is capable of handling splitting one K into a sequence of them.
    *
    * When an attempt to invoke function `fn` is successful, the item K in `input` will be
-   * closed.
+   * closed. In the case of a failure, all items in `input` will be closed.
    *
    * @tparam K element type that must be AutoCloseable
    * @tparam T `fn` result type
    * @param input an iterator of K
    * @param fn a function that takes K and produces T
-   * @param splitPolicy an optional function that can split K into a Seq[K], if provided
-   *                    `splitPolicy` must take ownership of items passed to it.
+   * @param splitPolicy a function that can split an item of type T into a Seq[T]. The split
+   *                    function must close the item passed to it.
    */
   class RmmRapidsRetryAutoCloseableIterator[K <: AutoCloseable, T](
       input: Iterator[K],
@@ -179,8 +198,8 @@ object RmmRapidsRetryIterator extends Arm {
       } catch {
         case t: Throwable =>
           // exception occurred while trying to handle this retry
-          // we close our attempts and rethrow
-          attemptStack.foreach(_.safeClose(t))
+          // we close our inputs, and attempts (which includes the item we last attempted)
+          (input ++ attemptStack.iterator).toArray[AutoCloseable].safeClose(t)
           throw t
       }
     }
@@ -215,7 +234,7 @@ object RmmRapidsRetryIterator extends Arm {
     override def next(): T = {
       // this is set on the first exception, and we add suppressed if there are others
       // during the retry attempts
-      var oom: Throwable = null
+      var lastException: Throwable = null
       var firstAttempt: Boolean = true
       var result: Option[T] = None
       var doSplit = false
@@ -249,35 +268,38 @@ object RmmRapidsRetryIterator extends Arm {
           result = Some(invokeFn(attempt))
         } catch {
           case retryOOM: RetryOOM =>
-            if (oom == null) {
-              oom = retryOOM
+            if (lastException == null) {
+              lastException = retryOOM
             } else {
-              oom.addSuppressed(retryOOM)
+              retryOOM.addSuppressed(lastException)
+              lastException = retryOOM
             }
 
             // put it back
             attemptStack.push(attempt)
           case splitAndRetryOOM: SplitAndRetryOOM => // we are the only thread
-            if (oom == null) {
-              oom = splitAndRetryOOM
+            if (lastException == null) {
+              lastException = splitAndRetryOOM
             } else {
-              oom.addSuppressed(splitAndRetryOOM)
+              splitAndRetryOOM.addSuppressed(lastException)
+              lastException = splitAndRetryOOM
             }
             // put it back
             attemptStack.push(attempt)
             doSplit = true
           case other: Throwable =>
-            if (oom == null) {
-              oom = other
+            if (lastException == null) {
+              lastException = other
             } else {
-              oom.addSuppressed(other)
+              other.addSuppressed(lastException)
+              lastException = other
             }
             // put this attempt back on our stack, so that it will be closed
             attemptStack.push(attempt)
 
             // we want to throw early here, since we got an exception
             // we were not prepared to handle
-            throw oom
+            throw lastException
         }
       }
       result.get
@@ -297,9 +319,12 @@ object RmmRapidsRetryIterator extends Arm {
    * Common split function from a single SpillableColumnarBatch to a sequence of them,
    * that tries to split the input into two chunks. If the input cannot be split in two,
    * because we are down to 1 row, this function throws `OutOfMemoryError`.
+   *
+   * Note how this function closes the input `spillable` that is passed in.
+   *
    * @return a Seq[SpillableColumnarBatch] with 2 elements.
    */
-  def splitInHalfByRows: SpillableColumnarBatch => Seq[SpillableColumnarBatch] = {
+  def splitSpillableInHalfByRows: SpillableColumnarBatch => Seq[SpillableColumnarBatch] = {
     (spillable: SpillableColumnarBatch) => {
       withResource(spillable) { _ =>
         val toSplitRows = spillable.numRows()

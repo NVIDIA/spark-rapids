@@ -25,7 +25,7 @@ import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.GpuHashAggregateIterator.{computeAggregateAndClose, concatenateBatches, AggHelper}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitInHalfByRows, withRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.shims.{AggregationTagging, ShimUnaryExecNode}
 import org.apache.spark.TaskContext
 
@@ -295,7 +295,7 @@ object GpuHashAggregateIterator extends Arm with Logging {
         metrics: GpuHashAggregateMetrics,
         preProcessed: SpillableColumnarBatch): SpillableColumnarBatch = {
       val aggregatedSeq =
-        withRetry(preProcessed, splitInHalfByRows) { preProcessedAttempt =>
+        withRetry(preProcessed, splitSpillableInHalfByRows) { preProcessedAttempt =>
           withResource(preProcessedAttempt.getColumnarBatch()) { cb =>
             SpillableColumnarBatch(
               aggregate(cb),

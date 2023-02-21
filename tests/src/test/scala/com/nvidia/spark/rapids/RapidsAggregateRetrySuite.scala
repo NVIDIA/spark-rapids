@@ -20,6 +20,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{CudfException, Rmm, RmmAllocationMode, RmmEventHandler, Table}
 import com.nvidia.spark.rapids.jni.RmmSpark
+import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito._
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.FunSuite
@@ -61,10 +62,10 @@ class RapidsAggregateRetrySuite
     val deviceStorage = new RapidsDeviceMemoryStore()
     val catalog = new RapidsBufferCatalog(deviceStorage)
     RapidsBufferCatalog.setCatalog(catalog)
-    val baseEventHandler = new BaseRmmEventHandler()
-    RmmSpark.setEventHandler(baseEventHandler)
+    val mockEventHandler = mock[RmmEventHandler]
+    when(mockEventHandler.onAllocFailure(any(), any())).thenReturn(false)
+    RmmSpark.setEventHandler(mockEventHandler)
     RmmSpark.associateThreadWithTask(RmmSpark.getCurrentThreadId, 1)
-
   }
 
   override def afterEach(): Unit = {
@@ -298,16 +299,5 @@ class RapidsAggregateRetrySuite
     }
     // we need to request a ColumnarBatch twice here for the retry
     verify(groupByBatch, times(2)).getColumnarBatch()
-  }
-
-  class BaseRmmEventHandler extends RmmEventHandler {
-    override def getAllocThresholds: Array[Long] = null
-    override def getDeallocThresholds: Array[Long] = null
-    override def onAllocThreshold(l: Long): Unit = {}
-    override def onDeallocThreshold(l: Long): Unit = {}
-
-    override def onAllocFailure(size: Long, retryCount: Int): Boolean = {
-      false
-    }
   }
 }
