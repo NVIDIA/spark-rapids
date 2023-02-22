@@ -19,29 +19,50 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{GatherMap, HashType, NvtxColor, Table}
 import ai.rapids.cudf.ast.CompiledExpression
-import com.nvidia.spark.rapids.{AbstractGpuJoinIterator, Arm, GpuBoundReference, GpuBuildLeft, GpuBuildRight, GpuBuildSide, GpuColumnVector, GpuExpression, GpuMetric, GpuProjectExec, JoinGatherer, LazySpillableColumnarBatch, NvtxWithMetrics, SerializedTableColumn, SpillableColumnarBatch, SpillCallback, SpillPriorities, SplittableJoinIterator}
+import com.nvidia.spark.rapids.{AbstractGpuJoinIterator, Arm, GpuBoundReference, GpuBuildLeft, GpuBuildRight, GpuBuildSide, GpuColumnVector, GpuExpression, GpuMetric, GpuProjectExec, GpuShuffledHashJoinExec, JoinGatherer, LazySpillableColumnarBatch, NvtxWithMetrics, SerializedTableColumn, SpillableColumnarBatch, SpillCallback, SpillPriorities, SplittableJoinIterator, TaskAutoCloseableResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
-import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, InnerLike, JoinType}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * Iterator that can tell if the data size of all the batches from current position
- * is larger than the specified `targetBatchSize`.
+ * is larger than the specified `targetBatchSize`, and whether the batches are
+ * serialized.
  */
-class BatchSizeAwareIterator(
+class BatchTypeSizeAwareIterator(
     inputIter: Iterator[ColumnarBatch],
-    isInputSerialized: Boolean,
-    targetBatchSize: Long) extends Iterator[ColumnarBatch] {
+    targetBatchSize: Long) extends Iterator[ColumnarBatch] with TaskAutoCloseableResource {
 
   assert(targetBatchSize >= 0,
     s"Target batch size should not be negative, but get $targetBatchSize")
 
   private val readBatchesQueue = ArrayBuffer.empty[ColumnarBatch]
 
-  TaskContext.get().addTaskCompletionListener[Unit](_ => readBatchesQueue.safeClose())
+  // Initialize it early by prefetching one batch to avoid duplicate checks on each batch
+  private val anyBatchSerialized = {
+    if (inputIter.hasNext) {
+      readBatchesQueue += inputIter.next()
+    }
+    readBatchesQueue.nonEmpty &&
+      GpuShuffledHashJoinExec.isBatchSerialized(readBatchesQueue.head)
+  }
+
+  private lazy val getBatchSize: ColumnarBatch => Long = if (anyBatchSerialized) {
+    // Need to take care of this case because of the optimization introduced by
+    // https://github.com/NVIDIA/spark-rapids/pull/4588.
+    // Roughly return the serialized data length as the batch size.
+    SerializedTableColumn.getMemoryUsed
+  } else {
+    GpuColumnVector.getTotalDeviceMemoryUsed
+  }
+
+  override def close(): Unit = if (!closed) {
+    readBatchesQueue.safeClose()
+    readBatchesQueue.clear()
+    super.close()
+  }
 
   override def hasNext: Boolean = readBatchesQueue.nonEmpty || inputIter.hasNext
 
@@ -57,23 +78,19 @@ class BatchSizeAwareIterator(
    * the given `targetBatchSize`.
    */
   def isBatchesSizeOverflow: Boolean = {
-    var readBatchesSize = 0L
+    var readBatchesSize = readBatchesQueue.map(getBatchSize).sum
     while (inputIter.hasNext && readBatchesSize <= targetBatchSize) {
       val batch = inputIter.next()
-      readBatchesSize += getBatchSize(batch)
       readBatchesQueue += batch
+      readBatchesSize += getBatchSize(batch)
     }
     readBatchesSize > targetBatchSize
   }
 
-  private val getBatchSize: ColumnarBatch => Long = if (isInputSerialized) {
-    // Need to take care of this case because of the optimization introduced by
-    // https://github.com/NVIDIA/spark-rapids/pull/4588.
-    // Roughly return the serialized data length as the batch size.
-    SerializedTableColumn.getMemoryUsed
-  } else {
-    GpuColumnVector.getTotalDeviceMemoryUsed
-  }
+  /**
+   * Whether the batches in the input iterator are serialized.
+   */
+  def areBatchesSerialized: Boolean = anyBatchSerialized
 }
 
 object GpuSubPartitionHashJoin extends Arm {
