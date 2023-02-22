@@ -745,7 +745,8 @@ case class GpuStringRepeat(input: Expression, repeatTimes: Expression)
 case class GpuStringReplace(
     srcExpr: Expression,
     searchExpr: Expression,
-    replaceExpr: Expression)
+    replaceExpr: Expression,
+    override val hasSideEffects: Boolean = false)
   extends GpuTernaryExpression with ImplicitCastInputTypes {
 
   override def dataType: DataType = srcExpr.dataType

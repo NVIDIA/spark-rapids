@@ -16,19 +16,22 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal, RegExpReplace}
-import org.apache.spark.sql.rapids.{GpuRegExpReplace, GpuRegExpReplaceWithBackref, GpuRegExpUtils, GpuStringReplace}
+import org.apache.spark.sql.rapids.{GpuRegExpReplace, GpuRegExpReplaceWithBackref, GpuRegExpUtils, GpuRLike, GpuStringReplace}
 import org.apache.spark.sql.types.DataTypes
 import org.apache.spark.unsafe.types.UTF8String
 
 sealed trait GpuRegExpReplaceAction
 object ActionStringReplace extends GpuRegExpReplaceAction
-case class ActionStringReplaceMulti(patterns: Seq[String])
+case class ActionStringReplaceMulti(patterns: Seq[String],
+    javaPattern: String,
+    cudfPattern: String,
+    replacement: String)
   extends GpuRegExpReplaceAction
 case class ActionRegExpReplace(
-  javaPattern: String,
-  cudfPattern: String,
-  replacement: String,
-  containsBackref: Boolean
+    javaPattern: String,
+    cudfPattern: String,
+    replacement: String,
+    containsBackref: Boolean
 ) extends GpuRegExpReplaceAction
 
 class GpuRegExpReplaceMeta(
@@ -66,19 +69,15 @@ class GpuRegExpReplaceMeta(
               //
               // - Both strings must be supported by string_replace, so cannot contain regexp chars
               // - There must be no back-references
-              // - The second string must not overlap with the replacement string because this
-              //   could cause incorrect results. For example, if we replace "AB|CD" with "C" for
-              //   the input "ABD", we would first replace "AB" with "C", resulting in "CD", which
-              //   would now match the second string, and the original string would not have
-              //   matched.
               val str1 = a.toRegexString
               val str2 = b.toRegexString
-              //TODO this check is probably too broad at the moment and could be refined
-              val overlap = str2.contains(replacement)
               if (GpuOverrides.isSupportedStringReplacePattern(str1) &&
-                  GpuOverrides.isSupportedStringReplacePattern(str2) &&
-                  !overlap) {
-                action = Some(ActionStringReplaceMulti(Seq(str1, str2)))
+                  GpuOverrides.isSupportedStringReplacePattern(str2)) {
+                action = Some(ActionStringReplaceMulti(Seq(str1, str2),
+                  s.toString,
+                  pattern.toRegexString,
+                  replacement
+                ))
               } else {
                 maybeBackref.foreach {
                   case (hasBackref, convertedRep) =>
@@ -129,9 +128,41 @@ class GpuRegExpReplaceMeta(
     action match {
       case Some(ActionStringReplace) =>
         GpuStringReplace(lhs, regexp, rep)
-      case Some(ActionStringReplaceMulti(patterns)) =>
-        GpuStringReplace(
-          GpuStringReplace(lhs, GpuLiteral(patterns.head), rep), GpuLiteral(patterns(1)), rep)
+      case Some(ActionStringReplaceMulti(patterns, javaPattern, cudfPattern, replacement))
+          if patterns.length == 2 =>
+        // We can't just replace the two strings in turn because it can lead to incorrect
+        // results, so we first replace string1 with a placeholder that is guaranteed to not
+        // appear in the string, then we replace string2 and finally replace the placeholder.
+        //
+        // Example:
+        // - input string "cabd"
+        // - pattern "ab|cd"
+        // - replacement string ""
+        //
+        // step 1: replace "ab" with "^", resulting in "c^d"
+        // step 2: replace "cd" with "^", resulting in "c^d"
+        // step 3: replace "^" with "", resulting in "cd"
+        //
+        // We also have to check if the input data contains the placeholder and fall back to
+        // regexp_replace in that case. We artificially declare that the expression has
+        // side-effects to trigger the gather/scatter logic so that we only invoke
+        // regexp_replace when needed
+        val placeholder = GpuLiteral("^")
+
+        // first replace string 1 with a special placeholder
+        val repl1 = GpuStringReplace(lhs, GpuLiteral(patterns.head), placeholder)
+        // now replace string 2
+        val repl2 = GpuStringReplace(repl1, GpuLiteral(patterns(1)), rep)
+        // finally replace the placeholder
+        // declare that this has side-effects to force the scatter-gather algorithm
+        val stringReplace = GpuStringReplace(repl2, placeholder, rep, hasSideEffects = true)
+
+        val regexpReplace = GpuRegExpReplace(
+          lhs, regexp, rep, javaPattern, cudfPattern, replacement)
+
+        val containsPlaceholder = GpuRLike(lhs, GpuLiteral("\\^"), "\\^")
+
+        GpuIf(containsPlaceholder, regexpReplace, stringReplace)
       case Some(ActionRegExpReplace(javaPattern, cudfPattern, cudfReplacement, containsBackref)) =>
         if (containsBackref) {
           GpuRegExpReplaceWithBackref(lhs, cudfPattern, cudfReplacement)

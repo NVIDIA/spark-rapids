@@ -244,10 +244,13 @@ def test_re_replace():
         conf=_regexp_conf)
 
 def test_re_replace_choice_opt():
-    gen = mk_str_gen('[a-d]{3,9}')
+    gen = mk_str_gen('[a-d]{1,2}') \
+        .with_special_case("cabd")
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'REGEXP_REPLACE(a, "ab|bc", "")',
+                'REGEXP_REPLACE(a, "ab|cd", "")',
+                'REGEXP_REPLACE(a, "ab|cd", "bc")',
                 'REGEXP_REPLACE(a, "ab|bc", "x")',
                 'REGEXP_REPLACE(a, "ab|cd", "b")',
                 'REGEXP_REPLACE(a, "ab|cd", "c")',
