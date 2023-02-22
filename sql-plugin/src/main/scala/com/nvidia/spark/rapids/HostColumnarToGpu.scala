@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -269,8 +269,14 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     // refine the estimate for number of rows based on this batch
     batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes, maxDeviceMemory,
       ret.numRows())
-
     ret
+  }
+
+  override val supportsRetryIterator: Boolean = false
+
+  override def getCoalesceRetryIterator: Iterator[ColumnarBatch] = {
+    throw new UnsupportedOperationException(
+      "HostColumnarToGpu iterator does not support retry iterators")
   }
 
   override def cleanupConcatIsDone(): Unit = {

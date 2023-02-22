@@ -54,7 +54,8 @@ object RmmRapidsRetryIterator extends Arm {
       input: Iterator[T],
       splitPolicy: T => Seq[T])
       (fn: T => K): Iterator[K] = {
-    new RmmRapidsRetryAutoCloseableIterator(input, fn, splitPolicy)
+    val attemptIter = new AutoCloseableAttemptSpliterator(input, fn, splitPolicy)
+    new RmmRapidsRetryAutoCloseableIterator(attemptIter)
   }
 
   /**
@@ -86,10 +87,9 @@ object RmmRapidsRetryIterator extends Arm {
       input: T,
       splitPolicy: T => Seq[T])
       (fn: T => K): Iterator[K] = {
-    new RmmRapidsRetryAutoCloseableIterator(
-      SingleItemAutoCloseableIteratorInternal(input),
-      fn,
-      splitPolicy)
+    val attemptIter = new AutoCloseableAttemptSpliterator(
+      SingleItemAutoCloseableIteratorInternal(input), fn, splitPolicy)
+    new RmmRapidsRetryAutoCloseableIterator(attemptIter)
   }
 
   /**
@@ -117,10 +117,10 @@ object RmmRapidsRetryIterator extends Arm {
   def withRetryNoSplit[T <: AutoCloseable, K](
       input: T)
       (fn: T => K): K = {
+    val attemptIter = new AutoCloseableAttemptSpliterator(
+      SingleItemAutoCloseableIteratorInternal(input), fn)
     drainSingleWithVerification(
-      new RmmRapidsRetryAutoCloseableIterator(
-        SingleItemAutoCloseableIteratorInternal(input),
-        fn))
+      new RmmRapidsRetryAutoCloseableIterator(attemptIter))
   }
 
   /**
@@ -149,10 +149,31 @@ object RmmRapidsRetryIterator extends Arm {
       input: Seq[T])
       (fn: Seq[T] => K): K = {
     val wrapped = AutoCloseableSeqInternal(input)
+    val attemptIter = new AutoCloseableAttemptSpliterator(
+      SingleItemAutoCloseableIteratorInternal(wrapped), fn)
     drainSingleWithVerification(
-      new RmmRapidsRetryAutoCloseableIterator(
-        SingleItemAutoCloseableIteratorInternal(wrapped),
-        fn))
+      new RmmRapidsRetryAutoCloseableIterator(attemptIter))
+  }
+
+  /**
+   * no-input withRetryNoSplit. This helper calls a function `fn` retrying the call if needed.
+   * The result is a single item of type K.
+   *
+   * The expectation when code enters `withRetryNoSplit` is that all of the caller's data is
+   * spillable already, allowing the thread to be blocked, and its data eventually spilled
+   * because of other higher priority work.
+   *
+   * `fn` must be idempotent: this is a requirement because we may call `fn` multiple times
+   * while handling retries.
+   *
+   * @param fn the work to perform. It is a function that takes nothing and produces K
+   * @tparam K `fn` result type
+   * @return a single item of type K
+   */
+  def withRetryNoSplit[K](fn: => K): K = {
+    val attemptIter = new NoInputSpliterator(fn)
+    drainSingleWithVerification(
+      new RmmRapidsRetryAutoCloseableIterator(attemptIter))
   }
 
   /**
@@ -195,28 +216,71 @@ object RmmRapidsRetryIterator extends Arm {
   private case class SingleItemAutoCloseableIteratorInternal[T <: AutoCloseable](ts: T)
     extends Iterator[T] with AutoCloseable {
 
-    private var wasCalled = false
-    override def hasNext: Boolean = !wasCalled
+    private var wasCalledSuccessfully = false
+    override def hasNext: Boolean = !wasCalledSuccessfully
     override def next(): T = {
-      wasCalled = true
+      wasCalledSuccessfully = true
       ts
     }
     override def close(): Unit = {
-      if (!wasCalled) {
+      if (!wasCalledSuccessfully) {
         ts.close()
       }
     }
   }
 
   /**
-   * RmmRapidsRetryAutoCloseableIterator exposes an iterator that can retry work,
-   * specified by `fn`, abstracting away the retry specifics. Elements passed to this iterator
-   * must be AutoCloseable.
+   * A trait that defines an iterator of type K that supports two extra things:
+   * the ability to split its input, and the ability to close itself.
    *
-   * It assumes the type K is AutoCloseable, and that if a split policy is specified, that it
-   * is capable of handling splitting one K into a sequence of them.
+   * Note that the input's type is not defined and is not relevant to this trait.
    *
-   * When an attempt to invoke function `fn` is successful, the item K in `input` will be
+   * @tparam K the resulting type
+   */
+  trait Spliterator[K] extends Iterator[K] with AutoCloseable {
+    override def hasNext: Boolean
+
+    def split(): Unit
+
+    override def next(): K
+
+    override def close(): Unit
+  }
+
+  /**
+   * A spliterator that doesn't take any inputs, hence it is "empty", and it doesn't know
+   * how to split. It allows the caller to call the function `fn` once on `next`.
+   * @param fn the work to perform. It is a function that takes nothing and produces K
+   * @tparam K the resulting type
+   */
+  class NoInputSpliterator[K](fn: => K) extends Spliterator[K] {
+    private var wasCalledSuccessfully: Boolean = false
+
+    override def hasNext: Boolean = !wasCalledSuccessfully
+
+    override def split(): Unit = {
+      throw new OutOfMemoryError(
+        "Attempted to handle a split, but was not initialized with a splitPolicy.")
+    }
+
+    override def next(): K = {
+      val res = fn
+      wasCalledSuccessfully = true
+      res
+    }
+
+    override def close(): Unit = {}
+  }
+
+  /**
+   * A spliterator that takes an input iterator of auto closeable T, and a function `fn`
+   * that can map `T` to `K`, with an additional `splitPolicy` that can split `T` into a
+   * `Seq[T]`
+   *
+   * It assumes the type T is AutoCloseable, and that if a split policy is specified, that it
+   * is capable of handling splitting one T into a sequence of them.
+   *
+   * When an attempt to invoke function `fn` is successful, the item T in `input` will be
    * closed. In the case of a failure, all attempts will be closed. It is the responsibility
    * of the caller to close any remaining items in `input` that have not been attempted.
    *
@@ -230,24 +294,66 @@ object RmmRapidsRetryIterator extends Arm {
    * @param splitPolicy a function that can split an item of type T into a Seq[T]. The split
    *                    function must close the item passed to it.
    */
-  class RmmRapidsRetryAutoCloseableIterator[T <: AutoCloseable, K](
+  class AutoCloseableAttemptSpliterator[T <: AutoCloseable, K](
       input: Iterator[T],
       fn: T => K,
       splitPolicy: T => Seq[T])
-      extends RmmRapidsRetryIterator(input, fn, splitPolicy)
-        with Arm {
-
-    def this(
-        input: Iterator[T],
-        fn: T => K) = {
+      extends Iterator[K]
+          with Spliterator[K] {
+    def this(input: Iterator[T], fn: T => K) =
       this(input, fn, null)
+
+    protected val attemptStack = new mutable.ArrayStack[T]()
+
+    override def hasNext: Boolean = input.hasNext || attemptStack.nonEmpty
+
+    override def split(): Unit = {
+      // If `split` OOMs, we are already the last thread standing
+      // there is likely not much we can do, and for now we don't handle
+      // this OOM
+      if (splitPolicy == null) {
+        throw new OutOfMemoryError(
+          "Attempted to handle a split, but was not initialized with a splitPolicy.")
+      }
+      // splitPolicy must take ownership of the argument
+      val splitted = splitPolicy(attemptStack.pop())
+      // the splitted sequence needs to be inserted in reverse order
+      // so we try the first item first.
+      splitted.reverse.foreach(attemptStack.push)
     }
 
-    override def invokeFn(k: T): K = {
-      val res = super.invokeFn(k)
-      k.close() // close `k` only if we didn't throw from `invokeFn`
+    override def next(): K = {
+      if (attemptStack.isEmpty && input.hasNext) {
+        attemptStack.push(input.next())
+      }
+      val popped = attemptStack.head
+      val res = fn(popped)
+      attemptStack.pop().close()
       res
     }
+
+    override def close(): Unit = {
+      attemptStack.safeClose()
+      attemptStack.clear()
+    }
+  }
+
+  /**
+   * RmmRapidsRetryAutoCloseableIterator exposes an iterator that can retry work,
+   * specified by `fn`, abstracting away the retry specifics. Elements passed to this iterator
+   * must be AutoCloseable.
+   *
+   * It assumes the type T is AutoCloseable, and that if a split policy is specified, that it
+   * is capable of handling splitting one T into a sequence of them.
+   *
+   * @tparam T element type that must be AutoCloseable
+   * @tparam K result type
+   * @param attemptIter an iterator of T
+   */
+  class RmmRapidsRetryAutoCloseableIterator[T <: AutoCloseable, K](
+      attemptIter: Spliterator[K])
+      extends RmmRapidsRetryIterator[T, K](attemptIter)
+        with Arm {
 
     override def hasNext: Boolean = super.hasNext
 
@@ -261,7 +367,7 @@ object RmmRapidsRetryIterator extends Arm {
         case t: Throwable =>
           // exception occurred while trying to handle this retry
           // we close our attempts (which includes the item we last attempted)
-          attemptStack.safeClose(t)
+          attemptIter.close()
           throw t
       }
     }
@@ -273,25 +379,13 @@ object RmmRapidsRetryIterator extends Arm {
    *
    * @tparam T element type
    * @tparam K `fn` result type
-   * @param input an iterator of T
-   * @param fn a function that takes T and produces K
-   * @param splitPolicy an optional function that can split T into a Seq[T], if provided
-   *                    `splitPolicy` must take ownership of items passed to it.
+   * @param attemptIter an iterator of T
    */
-  class RmmRapidsRetryIterator[T, K](
-      input: Iterator[T],
-      fn: T => K,
-      splitPolicy: T => Seq[T]) extends Iterator[K] with Arm {
-    def this(input: Iterator[T], fn: T => K) =
-      this(input, fn, null)
+  class RmmRapidsRetryIterator[T, K](attemptIter: Spliterator[K])
+      extends Iterator[K]
+          with Arm {
 
-    protected val attemptStack = new mutable.ArrayStack[T]()
-
-    override def hasNext: Boolean = input.hasNext || attemptStack.nonEmpty
-
-    protected def invokeFn(k: T): K = {
-      fn(k)
-    }
+    override def hasNext: Boolean = attemptIter.hasNext
 
     override def next(): K = {
       // this is set on the first exception, and we add suppressed if there are others
@@ -300,75 +394,46 @@ object RmmRapidsRetryIterator extends Arm {
       var firstAttempt: Boolean = true
       var result: Option[K] = None
       var doSplit = false
-      while (result.isEmpty && (attemptStack.nonEmpty || input.hasNext)) {
-        if (attemptStack.isEmpty && input.hasNext) {
-          attemptStack.push(input.next())
-        }
+      while (result.isEmpty && attemptIter.hasNext) {
         if (!firstAttempt) {
           // call thread block API
           RmmSpark.blockThreadUntilReady()
         }
         firstAttempt = false
-        val popped = attemptStack.pop()
-        val attempt =
-          if (doSplit) {
-            // If `split` OOMs, we are already the last thread standing
-            // there is likely not much we can do, and for now we don't handle
-            // this OOM
-            val splitted = splitAndClose(popped)
-            // the splitted sequence needs to be inserted in reverse order
-            // so we try the first item first.
-            splitted.reverse.foreach(attemptStack.push)
-            attemptStack.pop()
-          } else {
-            popped
-          }
+        if (doSplit) {
+          attemptIter.split()
+        }
         doSplit = false
         try {
           // call the user's function
-          result = Some(invokeFn(attempt))
+          result = Some(attemptIter.next())
         } catch {
           case retryOOM: RetryOOM =>
             if (lastException != null) {
               retryOOM.addSuppressed(lastException)
             }
             lastException = retryOOM
-            // put it back
-            attemptStack.push(attempt)
           case splitAndRetryOOM: SplitAndRetryOOM => // we are the only thread
             if (lastException != null) {
               splitAndRetryOOM.addSuppressed(lastException)
             }
             lastException = splitAndRetryOOM
-            // put it back
-            attemptStack.push(attempt)
             doSplit = true
           case other: Throwable =>
             if (lastException != null) {
               other.addSuppressed(lastException)
             }
             lastException = other
-            // put this attempt back on our stack, so that it will be closed
-            attemptStack.push(attempt)
-
             // we want to throw early here, since we got an exception
             // we were not prepared to handle
             throw lastException
         }
       }
-      result.get
-    }
-
-    // It is assumed that OOM in this function is not handled.
-    private def splitAndClose(item:T): Seq[T] = {
-      if (splitPolicy == null) {
-        // put item into the attempt stack, to be closed
-        attemptStack.push(item)
-        throw new OutOfMemoryError(
-          "Attempted to handle a split, but was not initialized with a splitPolicy.")
+      if (result.isEmpty) {
+        // then lastException must be set, throw it.
+        throw lastException
       }
-      // splitPolicy must close `item`
-      splitPolicy(item)
+      result.get
     }
   }
 
