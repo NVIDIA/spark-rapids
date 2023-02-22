@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -94,5 +94,14 @@ if [[ -n "$LOCAL_JAR_PATH" ]]; then
     export LOCAL_JAR_PATH=$LOCAL_JAR_PATH
 fi
 
+set +e
 # Run integration testing
 ./integration_tests/run_pyspark_from_build.sh --runtime_env='databricks' --test_type=$TEST_TYPE
+ret=$?
+set -e
+if [ "$ret" = 5 ]; then
+  # avoid exit script w/ code 5 when the cases are skipped in specific test
+  echo "Do exit Exit code 5: No tests were collected"
+  exit 0
+fi
+exit "$ret"
