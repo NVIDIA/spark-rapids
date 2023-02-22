@@ -266,22 +266,22 @@ object GpuHashAggregateIterator extends Arm with Logging {
      *                         merge case, or from the `inputProjection` in the update case.
      * @return a pre-processed batch that can be later cuDF aggregated
      */
-    def preProcess(inputSpillable: SpillableColumnarBatch): SpillableColumnarBatch = {
-      val projectedCb = withResource(inputSpillable) { _ =>
-        withResource(inputSpillable.getColumnarBatch()) { inputBatch =>
-          withResource(new NvtxRange("pre-process", NvtxColor.DARK_GREEN)) { _ =>
-            if (useTieredProject) {
-              preStepBoundTiered.get.tieredProject(inputBatch)
-            } else {
-              GpuProjectExec.project(inputBatch, preStepBound.get)
-            }
+    def preProcess(
+        toAggregateBatch: ColumnarBatch,
+        metrics: GpuHashAggregateMetrics): SpillableColumnarBatch = {
+      val projectedCb = withResource(toAggregateBatch) { inputBatch  =>
+        withResource(new NvtxRange("pre-process", NvtxColor.DARK_GREEN)) { _ =>
+          if (useTieredProject) {
+            preStepBoundTiered.get.tieredProject(inputBatch)
+          } else {
+            GpuProjectExec.project(inputBatch, preStepBound.get)
           }
         }
       }
       SpillableColumnarBatch(
         projectedCb,
         SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-        inputSpillable.getSpillCallback)
+        metrics.spillCallback)
     }
 
     def aggregate(preProcessed: ColumnarBatch): ColumnarBatch = {
@@ -416,14 +416,14 @@ object GpuHashAggregateIterator extends Arm with Logging {
    *
    * @note public for testing
    * @param metrics metrics that will be updated during aggregation
-   * @param inputSpillable input spillable batch to aggregate
+   * @param inputBatch input batch to aggregate
    * @param helper an internal object that carries state required to execute the aggregate from
    *               different parts of the codebase.
    * @return aggregated batch
    */
   def computeAggregateAndClose(
       metrics: GpuHashAggregateMetrics,
-      inputSpillable: SpillableColumnarBatch,
+      inputBatch: ColumnarBatch,
       helper: AggHelper): SpillableColumnarBatch = {
     val computeAggTime = metrics.computeAggTime
     val opTime = metrics.opTime
@@ -433,7 +433,7 @@ object GpuHashAggregateIterator extends Arm with Logging {
       // in some cases casting and in others creating a struct (MERGE_M2 for instance,
       // requires a struct)
       // OOM retry happens within the projection in preProcess
-      val preProcessed = helper.preProcess(inputSpillable)
+      val preProcessed = helper.preProcess(inputBatch, metrics)
 
       // 2) perform the aggregation
       // OOM retry means we could get a list of batches
@@ -616,14 +616,8 @@ class GpuHashAggregateIterator(
       inputAttributes, groupingExpressions, aggregateExpressions,
       forceMerge = false, useTieredProject = useTieredProject)
     while (cbIter.hasNext) {
-      val spillableChildBatch =
-        SpillableColumnarBatch(
-          cbIter.next(),
-          SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-          metrics.spillCallback)
-
       aggregatedBatches.add(
-        computeAggregateAndClose(metrics, spillableChildBatch, aggHelper))
+        computeAggregateAndClose(metrics, cbIter.next(), aggHelper))
     }
   }
 
@@ -730,7 +724,8 @@ class GpuHashAggregateIterator(
     //   of batches for the partial aggregate case. This would be done in case
     //   a retry failed a certain number of times.
     val concatBatch = withResource(batches) { _ =>
-      concatenateBatches(metrics, batches)
+      val concatSpillable = concatenateBatches(metrics, batches)
+      withResource(concatSpillable) { _.getColumnarBatch() }
     }
     computeAggregateAndClose(metrics, concatBatch, concatAndMergeHelper)
   }
@@ -804,13 +799,8 @@ class GpuHashAggregateIterator(
 
       override def next(): ColumnarBatch = {
         // batches coming out of the sort need to be merged
-        val spillable =
-          SpillableColumnarBatch(
-            keyBatchingIter.next(),
-            SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-            metrics.spillCallback)
         val resultSpillable =
-          computeAggregateAndClose(metrics, spillable, mergeSortedHelper)
+          computeAggregateAndClose(metrics, keyBatchingIter.next(), mergeSortedHelper)
         withResource(resultSpillable) { _ =>
           resultSpillable.getColumnarBatch()
         }
