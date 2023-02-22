@@ -243,6 +243,17 @@ def test_re_replace():
                 'REGEXP_REPLACE(a, "TEST", NULL)'),
         conf=_regexp_conf)
 
+def test_re_replace_choice_opt():
+    gen = mk_str_gen('[a-d]{3,9}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'REGEXP_REPLACE(a, "ab|bc", "")',
+                'REGEXP_REPLACE(a, "ab|bc", "x")',
+                'REGEXP_REPLACE(a, "ab|cd", "b")',
+                'REGEXP_REPLACE(a, "ab|cd", "c")',
+                'REGEXP_REPLACE(a, "ab|cd", "x")'),
+        conf=_regexp_conf)
+
 # We have shims to support empty strings for zero-repetition patterns
 # See https://github.com/NVIDIA/spark-rapids/issues/5456
 def test_re_replace_repetition():
