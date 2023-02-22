@@ -101,7 +101,7 @@ ret=$?
 set -e
 if [ "$ret" = 5 ]; then
   # avoid exit script w/ code 5 when the cases are skipped in specific test
-  echo "Do exit Exit code 5: No tests were collected"
+  echo "Suppress Exit code 5: No tests were collected"
   exit 0
 fi
 exit "$ret"
