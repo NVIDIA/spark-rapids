@@ -33,29 +33,19 @@ if [[ -z "$SPARK_HOME" ]]; then
 fi
 
 SCALA_BINARY_VER=${SCALA_BINARY_VER:-'2.12'}
-CONDA_HOME=${CONDA_HOME:-"/databricks/conda"}
 
-# Try to use "cudf-udf" conda environment for the python cudf-udf tests.
-if [ -d "${CONDA_HOME}/envs/cudf-udf" ]; then
-    export PATH=${CONDA_HOME}/envs/cudf-udf/bin:${CONDA_HOME}/bin:$PATH
-    export PYSPARK_PYTHON=${CONDA_HOME}/envs/cudf-udf/bin/python
-fi
-
+# Set PYSPARK_PYTHON to keep the version of driver/workers python consistent.
+export PYSPARK_PYTHON=${PYSPARK_PYTHON:-"$(which python)"}
 # Get Python version (major.minor). i.e., python3.8 for DB10.4 and python3.9 for DB11.3
-python_version=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
-
-# override incompatible versions between databricks and cudf
-if [ -d "${CONDA_HOME}/envs/cudf-udf" ]; then
-    PATCH_PACKAGES_PATH="$PWD/package-overrides/${python_version}"
-fi
+PYTHON_VERSION=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
+# Set the path of python site-packages, packages were installed here by 'jenkins/databricks/setup.sh'.
+PYTHON_SITE_PACKAGES="$HOME/.local/lib/${PYTHON_VERSION}/site-packages"
 
 # Get the correct py4j file.
 PY4J_FILE=$(find $SPARK_HOME/python/lib -type f -iname "py4j*.zip")
-# Set the path of python site-packages
-PYTHON_SITE_PACKAGES=/databricks/python3/lib/${python_version}/site-packages
 # Databricks Koalas can conflict with the actual Pandas version, so put site packages first.
 # Note that Koala is deprecated for DB10.4+ and it is recommended to use Pandas API on Spark instead.
-export PYTHONPATH=$PATCH_PACKAGES_PATH:$PYTHON_SITE_PACKAGES:$SPARK_HOME/python:$SPARK_HOME/python/pyspark/:$PY4J_FILE
+export PYTHONPATH=$PYTHON_SITE_PACKAGES:$SPARK_HOME/python:$SPARK_HOME/python/pyspark/:$PY4J_FILE
 
 # Disable parallel test as multiple tests would be executed by leveraging external parallelism, e.g. Jenkins parallelism
 export TEST_PARALLEL=${TEST_PARALLEL:-0}
