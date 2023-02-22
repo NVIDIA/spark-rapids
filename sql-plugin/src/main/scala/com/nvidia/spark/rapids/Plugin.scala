@@ -78,6 +78,8 @@ object RapidsPluginUtils extends Logging {
     logWarning(s"RAPIDS Accelerator $pluginVersion using cudf $cudfVersion.")
   }
 
+  val extraPlugins = getExtraPlugins
+
   def logPluginMode(conf: RapidsConf): Unit = {
     if (conf.isSqlEnabled && conf.isSqlExecuteOnGPU) {
       logWarning("RAPIDS Accelerator is enabled, to disable GPU " +
@@ -200,16 +202,18 @@ object RapidsPluginUtils extends Logging {
     }
   }
 
-  def getExtraPlugins: Seq[SparkPlugin] = {
+  private def getExtraPlugins: Seq[SparkPlugin] = {
     val resourceName = "spark-rapids-extra-plugins"
     val classLoader = RapidsPluginUtils.getClass.getClassLoader
     val resource = classLoader.getResourceAsStream(resourceName)
     if (resource == null) {
-      logWarning(s"Could not find file $resourceName in the classpath, not loading extra plugins")
+      logDebug(s"Could not find file $resourceName in the classpath, not loading extra plugins")
+      Seq.empty
+    } else {
+      val pluginClasses = scala.io.Source.fromInputStream(resource).getLines().toSeq
+      val plugins = loadExtensions(classOf[SparkPlugin], pluginClasses)
+      plugins
     }
-    val pluginClasses = scala.io.Source.fromInputStream(resource).getLines().toSeq
-    val plugins = loadExtensions(classOf[SparkPlugin], pluginClasses)
-    plugins
   }
 }
 
@@ -219,7 +223,7 @@ object RapidsPluginUtils extends Logging {
 class RapidsDriverPlugin extends DriverPlugin with Logging {
   var rapidsShuffleHeartbeatManager: RapidsShuffleHeartbeatManager = null
   private lazy val extraDriverPlugins =
-    RapidsPluginUtils.getExtraPlugins.map(_.driverPlugin()).filterNot(_ == null)
+    RapidsPluginUtils.extraPlugins.map(_.driverPlugin()).filterNot(_ == null)
 
   override def receive(msg: Any): AnyRef = {
     if (rapidsShuffleHeartbeatManager == null) {
@@ -233,14 +237,6 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
         rapidsShuffleHeartbeatManager.executorHeartbeat(id)
       case m => throw new IllegalStateException(s"Unknown message $m")
     }
-  }
-
-  private def initExtraDriverPlugins(
-      plugins: Seq[DriverPlugin],
-      sc: SparkContext,
-      pluginContext: PluginContext): Unit = {
-    logWarning(s"Initializing extra driver plugins ${plugins.mkString(",")}")
-    plugins.foreach(_.init(sc, pluginContext))
   }
 
   override def init(
@@ -259,7 +255,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
             conf.shuffleTransportEarlyStartHeartbeatTimeout)
       }
     }
-    initExtraDriverPlugins(extraDriverPlugins, sc, pluginContext)
+    extraDriverPlugins.foreach(_.init(sc, pluginContext))
     conf.rapidsConfMap
   }
 
@@ -278,15 +274,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
 class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   var rapidsShuffleHeartbeatEndpoint: RapidsShuffleHeartbeatEndpoint = null
   private lazy val extraExecutorPlugins =
-    RapidsPluginUtils.getExtraPlugins.map(_.executorPlugin()).filterNot(_ == null)
-
-  private def initExtraExecutorPlugins(
-      plugins: Seq[SparkPlugin],
-      pluginContext: PluginContext,
-      extraConf: java.util.Map[String, String]): Unit = {
-    logWarning(s"Initializing extra executor plugins ${plugins.mkString(",")}")
-    extraExecutorPlugins.foreach(_.init(pluginContext, extraConf))
-  }
+    RapidsPluginUtils.extraPlugins.map(_.executorPlugin()).filterNot(_ == null)
 
   override def init(
       pluginContext: PluginContext,
@@ -336,7 +324,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         }
       }
 
-      initExtraExecutorPlugins(RapidsPluginUtils.getExtraPlugins, pluginContext, extraConf)
+      extraExecutorPlugins.foreach(_.init(pluginContext, extraConf))
       GpuSemaphore.initialize()
     } catch {
       // Exceptions in executor plugin can cause a single thread to die but the executor process
