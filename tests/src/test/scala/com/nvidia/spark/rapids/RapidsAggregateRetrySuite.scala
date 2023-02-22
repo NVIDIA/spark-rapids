@@ -25,6 +25,7 @@ import org.scalatest.BeforeAndAfterEach
 import org.scalatest.FunSuite
 import org.scalatest.mockito.MockitoSugar
 
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.rapids.{CudfAggregate, CudfSum}
 import org.apache.spark.sql.types.{DataType, IntegerType, LongType}
 
@@ -52,12 +53,15 @@ class RapidsAggregateRetrySuite
     }
   }
 
-  override def beforeEach(): Unit = {
-    if (Rmm.isInitialized) {
-      Rmm.shutdown()
-    }
+  private var rmmWasInitialized = false
 
-    Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
+  override def beforeEach(): Unit = {
+    SparkSession.getActiveSession.foreach(_.stop())
+    SparkSession.clearActiveSession()
+    if (!Rmm.isInitialized) {
+      rmmWasInitialized = true
+      Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
+    }
     val deviceStorage = new RapidsDeviceMemoryStore()
     val catalog = new RapidsBufferCatalog(deviceStorage)
     RapidsBufferCatalog.setCatalog(catalog)
@@ -67,8 +71,10 @@ class RapidsAggregateRetrySuite
   }
 
   override def afterEach(): Unit = {
+    RmmSpark.removeThreadAssociation(RmmSpark.getCurrentThreadId)
+    RmmSpark.clearEventHandler()
     RapidsBufferCatalog.close()
-    if (Rmm.isInitialized) {
+    if (rmmWasInitialized) {
       Rmm.shutdown()
     }
   }

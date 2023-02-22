@@ -24,6 +24,7 @@ import org.scalatest.BeforeAndAfterEach
 import org.scalatest.FunSuite
 import org.scalatest.mockito.MockitoSugar
 
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.types.{DataType, LongType}
 
 class WithRetrySuite
@@ -39,13 +40,16 @@ class WithRetrySuite
       spy(SpillableColumnarBatch(cb, -1, RapidsBuffer.defaultSpillCallback))
     }
   }
+  
+  private var rmmWasInitialized = false
 
   override def beforeEach(): Unit = {
-    if (Rmm.isInitialized) {
-      Rmm.shutdown()
+    SparkSession.getActiveSession.foreach(_.stop())
+    SparkSession.clearActiveSession()
+    if (!Rmm.isInitialized) {
+      rmmWasInitialized = true
+      Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
     }
-
-    Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
     val deviceStorage = new RapidsDeviceMemoryStore()
     val catalog = new RapidsBufferCatalog(deviceStorage)
     RapidsBufferCatalog.setCatalog(catalog)
@@ -55,8 +59,10 @@ class WithRetrySuite
   }
 
   override def afterEach(): Unit = {
+    RmmSpark.removeThreadAssociation(RmmSpark.getCurrentThreadId)
+    RmmSpark.clearEventHandler()
     RapidsBufferCatalog.close()
-    if (Rmm.isInitialized) {
+    if (rmmWasInitialized) {
       Rmm.shutdown()
     }
   }
