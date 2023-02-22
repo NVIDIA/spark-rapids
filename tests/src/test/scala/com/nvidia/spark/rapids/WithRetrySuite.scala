@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{Rmm, RmmAllocationMode, RmmEventHandler, Table}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.jni.{RmmSpark, SplitAndRetryOOM}
-import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito._
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.FunSuite
@@ -50,8 +49,7 @@ class WithRetrySuite
     val deviceStorage = new RapidsDeviceMemoryStore()
     val catalog = new RapidsBufferCatalog(deviceStorage)
     RapidsBufferCatalog.setCatalog(catalog)
-    val mockEventHandler = mock[RmmEventHandler]
-    when(mockEventHandler.onAllocFailure(any(), any())).thenReturn(false)
+    val mockEventHandler = new BaseRmmEventHandler()
     RmmSpark.setEventHandler(mockEventHandler)
     RmmSpark.associateThreadWithTask(RmmSpark.getCurrentThreadId, 1)
   }
@@ -120,6 +118,16 @@ class WithRetrySuite
           verify(item, times(1)).close()
         }
       }
+    }
+  }
+
+  private class BaseRmmEventHandler extends RmmEventHandler {
+    override def getAllocThresholds: Array[Long] = null
+    override def getDeallocThresholds: Array[Long] = null
+    override def onAllocThreshold(totalAllocSize: Long): Unit = {}
+    override def onDeallocThreshold(totalAllocSize: Long): Unit = {}
+    override def onAllocFailure(sizeRequested: Long, retryCount: Int): Boolean = {
+      false
     }
   }
 }
