@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019, 2021, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,8 +27,7 @@ class SortExecSuite extends SparkQueryCompareTestSuite {
     (dfA, dfB) => dfA.join(dfB, dfA("longs") === dfB("longs"))
   }
 
-  private val sortJoinMultiBatchConf = sortJoinConf.clone()
-    .set(RapidsConf.GPU_BATCH_SIZE_BYTES.key, "3")
+  private val sortJoinMultiBatchConf = sortJoinConf.set(RapidsConf.GPU_BATCH_SIZE_BYTES.key, "3")
 
   testSparkResultsAreEqual2("join longs multiple batches", longsDf, longsDf,
       conf = sortJoinMultiBatchConf, sort = true) {
