@@ -131,6 +131,21 @@ class WithRetrySuite
     }
   }
 
+  test("withRetry closes input on missing split policy") {
+    val myItems = Seq(buildBatch, buildBatch)
+    assertThrows[OutOfMemoryError] {
+      try {
+        withRetry(myItems.iterator, splitPolicy = null) { _ =>
+          throw new SplitAndRetryOOM("unhandled split-and-retry")
+        }.toSeq
+      } finally {
+        verify(myItems.head, times(1)).close()
+        verify(myItems.last, times(0)).close()
+        myItems(1).close()
+      }
+    }
+  }
+
   private class BaseRmmEventHandler extends RmmEventHandler {
     override def getAllocThresholds: Array[Long] = null
     override def getDeallocThresholds: Array[Long] = null
