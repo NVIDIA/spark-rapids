@@ -989,15 +989,13 @@ trait GpuHashJoin extends GpuExec {
   def doJoin(
       builtBatch: ColumnarBatch,
       stream: Iterator[ColumnarBatch],
-      targetSize: Long,
+      realTarget: Long,
       spillCallback: SpillCallback,
       numOutputRows: GpuMetric,
       joinOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
       opTime: GpuMetric,
       joinTime: GpuMetric): Iterator[ColumnarBatch] = {
-    // The 10k is mostly for tests, hopefully no one is setting anything that low in production.
-    val realTarget = Math.max(targetSize, 10 * 1024)
 
     val nullFiltered = filterNullsForBuild(builtBatch)
     val spillableBuiltBatch = withResource(nullFiltered) {

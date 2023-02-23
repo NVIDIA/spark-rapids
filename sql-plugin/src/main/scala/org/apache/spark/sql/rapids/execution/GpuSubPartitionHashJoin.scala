@@ -33,7 +33,9 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  */
 class BatchTypeSizeAwareIterator(
     inputIter: Iterator[ColumnarBatch],
-    targetBatchSize: Long) extends Iterator[ColumnarBatch] with TaskAutoCloseableResource {
+    targetBatchSize: Long,
+    intputBatchSize: GpuMetric) extends Iterator[ColumnarBatch]
+  with Arm with TaskAutoCloseableResource {
 
   assert(targetBatchSize >= 0,
     s"Target batch size should not be negative, but get $targetBatchSize")
@@ -68,9 +70,16 @@ class BatchTypeSizeAwareIterator(
 
   override def next(): ColumnarBatch = {
     if (!hasNext) throw new NoSuchElementException()
-    if (readBatchesQueue.nonEmpty) {
-      readBatchesQueue.remove(0)
-    } else inputIter.next()
+    closeOnExcept {
+      if (readBatchesQueue.nonEmpty) {
+        readBatchesQueue.remove(0)
+      } else {
+        inputIter.next()
+      }
+    } { batch =>
+      intputBatchSize += getBatchSize(batch)
+      batch
+    }
   }
 
   /**
@@ -775,7 +784,7 @@ trait GpuSubPartitionHashJoin extends Arm { self: GpuHashJoin =>
   def doJoinBySubPartition(
       builtIter: Iterator[ColumnarBatch],
       streamIter: Iterator[ColumnarBatch],
-      targetSize: Long,
+      realTarget: Long,
       numPartitions: Int,
       spillCallback: SpillCallback,
       numOutputRows: GpuMetric,
@@ -783,9 +792,6 @@ trait GpuSubPartitionHashJoin extends Arm { self: GpuHashJoin =>
       numOutputBatches: GpuMetric,
       opTime: GpuMetric,
       joinTime: GpuMetric): Iterator[ColumnarBatch] = {
-    // (Same as the computation in "doJoin")
-    // The 10k is mostly for tests, hopefully no one is setting anything that low in production.
-    val realTarget = Math.max(targetSize, 10 * 1024)
 
     val filteredBuildIter = builtIter.map { cb =>
       withResource(cb) { _ =>
