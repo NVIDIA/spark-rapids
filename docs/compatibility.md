@@ -296,13 +296,14 @@ The JSON format read is a very experimental feature which is expected to have so
 it by default. If you would like to test it, you need to enable `spark.rapids.sql.format.json.enabled` and 
 `spark.rapids.sql.format.json.read.enabled`.
 
-It will cause error on invalid data. For example, the following is valid:
+Reading input containing invalid JSON format (in any row) will throw runtime exception.
+An example of valid input is as following:
 ``` console
 {"name":"Andy", "age":30}
 {"name":"Justin", "age":19}
 ```
 
-The followings will cause error:
+The following input is invalid and will cause error:
 ```console
 {"name":"Andy", "age":30} ,,,,
 {"name":"Justin", "age":19}
