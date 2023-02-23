@@ -48,3 +48,7 @@ def pytest_addoption(parser):
     parser.addoption(
         "--delta_lake", action="store_true", default=False, help="if true enable Delta Lake tests"
     )
+    parser.addoption(
+        "--test_oom_injection_mode", action='store', default="random",
+        help="in what way, if any, should the tests inject OOMs at test time. Valid options are: random, always, or never"
+    )

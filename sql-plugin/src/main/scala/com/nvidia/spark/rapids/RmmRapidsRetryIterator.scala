@@ -21,7 +21,10 @@ import scala.collection.mutable
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, SplitAndRetryOOM}
 
-object RmmRapidsRetryIterator extends Arm {
+import org.apache.spark.internal.Logging
+import org.apache.spark.sql.internal.SQLConf
+
+object RmmRapidsRetryIterator extends Arm with Logging {
 
   /**
    * withRetry for Iterator[T]. This helper calls a function `fn` as it takes
@@ -391,6 +394,11 @@ object RmmRapidsRetryIterator extends Arm {
   class RmmRapidsRetryIterator[T, K](attemptIter: Spliterator[K])
       extends Iterator[K]
           with Arm {
+    // used to figure out if we should inject an OOM (only for tests)
+    private val config = new RapidsConf(SQLConf.get)
+
+    // this is true if an OOM was injected (only for tests)
+    private var injectedOOM = false
 
     override def hasNext: Boolean = attemptIter.hasNext
 
@@ -413,7 +421,17 @@ object RmmRapidsRetryIterator extends Arm {
         doSplit = false
         try {
           // call the user's function
+          if (config.injectionEnabled && !injectedOOM) {
+            injectedOOM = true
+            RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
+          }
           result = Some(attemptIter.next())
+          if (injectedOOM) {
+            // if for some reason we don't throw, say a code path that
+            // allocates from RMM conditionally, we want to remove the retry
+            // we registered before we leave the withRetry block.
+            RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 0)
+          }
         } catch {
           case retryOOM: RetryOOM =>
             if (lastException != null) {
