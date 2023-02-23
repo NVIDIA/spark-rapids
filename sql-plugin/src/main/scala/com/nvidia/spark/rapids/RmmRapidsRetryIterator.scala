@@ -308,9 +308,12 @@ object RmmRapidsRetryIterator extends Arm {
     // It is assumed that OOM in this function is not handled.
     private def splitAndClose(item: K): Seq[K] = {
       if (splitPolicy == null) {
+        // put item into the attempt stack, to be closed
+        attemptStack.push(item)
         throw new OutOfMemoryError(
           "Attempted to handle a split, but was not initialized with a splitPolicy.")
       }
+      // splitPolicy must close `item`
       splitPolicy(item)
     }
   }
