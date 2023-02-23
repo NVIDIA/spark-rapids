@@ -75,10 +75,11 @@ class WithRetrySuite
           throw new IllegalStateException("unhandled exception")
         }.toSeq
       } finally {
-        myItems.foreach { item =>
-          // verify that close was called
-          verify(item, times(1)).close()
-        }
+        // verify that close was called on the first item,
+        // which was attempted, but not the second
+        verify(myItems.head, times(1)).close()
+        verify(myItems.last, times(0)).close()
+        myItems(1).close()
       }
     }
   }
@@ -119,10 +120,13 @@ class WithRetrySuite
           }
         }.toSeq
       } finally {
-        (myItems ++ myAttempts).foreach { item =>
-          // verify that close was called
+        myAttempts.foreach { item =>
+          // verify that close was called on all attempts
           verify(item, times(1)).close()
         }
+        verify(myItems.head, times(1)).close()
+        verify(myItems.last, times(0)).close()
+        myItems(1).close()
       }
     }
   }

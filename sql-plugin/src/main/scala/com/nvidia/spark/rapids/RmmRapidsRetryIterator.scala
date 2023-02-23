@@ -71,7 +71,10 @@ object RmmRapidsRetryIterator extends Arm {
       input: T,
       splitPolicy: T => Seq[T])
       (fn: T => K): Iterator[K] = {
-    new RmmRapidsRetryAutoCloseableIterator(Seq(input).iterator, fn, splitPolicy)
+    new RmmRapidsRetryAutoCloseableIterator(
+      SingleItemAutoCloseableIteratorInternal(input),
+      fn,
+      splitPolicy)
   }
 
   /**
@@ -93,7 +96,9 @@ object RmmRapidsRetryIterator extends Arm {
       input: T)
       (fn: T => K): K = {
     drainSingleWithVerification(
-      new RmmRapidsRetryAutoCloseableIterator(Seq(input).iterator, fn))
+      new RmmRapidsRetryAutoCloseableIterator(
+        SingleItemAutoCloseableIteratorInternal(input),
+        fn))
   }
 
   /**
@@ -116,7 +121,9 @@ object RmmRapidsRetryIterator extends Arm {
       (fn: Seq[T] => K): K = {
     val wrapped = AutoCloseableSeqInternal(input)
     drainSingleWithVerification(
-      new RmmRapidsRetryAutoCloseableIterator(Seq(wrapped).iterator, fn))
+      new RmmRapidsRetryAutoCloseableIterator(
+        SingleItemAutoCloseableIteratorInternal(wrapped),
+        fn))
   }
 
   /**
@@ -151,6 +158,28 @@ object RmmRapidsRetryIterator extends Arm {
   }
 
   /**
+   * An iterator of a single item that is able to close if .next
+   * has not been called on it.
+   * @param ts the AutoCloseable item to close if this iterator hasn't been drained
+   * @tparam T the type of `ts`, must be AutoCloseable
+   */
+  private case class SingleItemAutoCloseableIteratorInternal[T <: AutoCloseable](ts: T)
+    extends Iterator[T] with AutoCloseable {
+
+    private var wasCalled = false
+    override def hasNext: Boolean = !wasCalled
+    override def next(): T = {
+      wasCalled = true
+      ts
+    }
+    override def close(): Unit = {
+      if (!wasCalled) {
+        ts.close()
+      }
+    }
+  }
+
+  /**
    * RmmRapidsRetryAutoCloseableIterator exposes an iterator that can retry work,
    * specified by `fn`, abstracting away the retry specifics. Elements passed to this iterator
    * must be AutoCloseable.
@@ -159,7 +188,8 @@ object RmmRapidsRetryIterator extends Arm {
    * is capable of handling splitting one K into a sequence of them.
    *
    * When an attempt to invoke function `fn` is successful, the item K in `input` will be
-   * closed. In the case of a failure, all items in `input` will be closed.
+   * closed. In the case of a failure, all attempts will be closed. It is the responsibility
+   * of the caller to close any remaining items in `input` that have not been attempted.
    *
    * @tparam K element type that must be AutoCloseable
    * @tparam T `fn` result type
@@ -198,8 +228,8 @@ object RmmRapidsRetryIterator extends Arm {
       } catch {
         case t: Throwable =>
           // exception occurred while trying to handle this retry
-          // we close our inputs, and attempts (which includes the item we last attempted)
-          (input ++ attemptStack.iterator).toArray[AutoCloseable].safeClose(t)
+          // we close our attempts (which includes the item we last attempted)
+          attemptStack.safeClose(t)
           throw t
       }
     }
