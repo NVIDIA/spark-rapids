@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.shims
 
 import com.databricks.sql.execution.window.RunningWindowFunctionExec
-import com.databricks.sql.optimizer.PlanDynamicPruningFilters
+import com.databricks.sql.optimizer.{EphemeralSubstring, PlanDynamicPruningFilters}
 import com.nvidia.spark.rapids._
 import org.apache.hadoop.fs.FileStatus
 
@@ -35,6 +35,7 @@ import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.exchange._
 import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window._
+import org.apache.spark.sql.rapids.GpuSubstring
 import org.apache.spark.sql.rapids.execution._
 import org.apache.spark.sql.rapids.execution.shims.{GpuSubqueryBroadcastMeta,ReuseGpuBroadcastExchangeAndSubquery}
 import org.apache.spark.sql.rapids.shims._
@@ -128,6 +129,25 @@ trait Spark321PlusDBShims extends SparkShims
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     super.getExecs ++ shimExecs
+
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+    val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+      GpuOverrides.expr[EphemeralSubstring](
+        "Ephemeral version of substring operator",
+        ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY,
+          Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY),
+            ParamCheck("pos", TypeSig.INT, TypeSig.INT),
+            ParamCheck("len", TypeSig.INT, TypeSig.INT))),
+        (in, conf, p, r) => new TernaryExprMeta[EphemeralSubstring](in, conf, p, r) {
+          override def convertToGpu(
+              column: Expression,
+              position: Expression,
+              length: Expression): GpuExpression =
+            GpuSubstring(column, position, length)
+        })
+    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+    exprs ++ super.getExprs
+  }
 
   /**
    * Case class ShuffleQueryStageExec holds an additional field shuffleOrigin
