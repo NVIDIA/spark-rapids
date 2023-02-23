@@ -725,6 +725,8 @@
             with the ones deployed to a remote Maven repo
         -->
         <ignore.shim.revisions.check>false</ignore.shim.revisions.check>
+
+        <spark.shim.dest>${project.basedir}/target/${spark.version.classifier}/generated/src</spark.shim.dest>
         <noSnapshot.buildvers>
             311,
             312,
@@ -772,6 +774,7 @@
             ${databricks.buildvers},
             340
         </all.buildvers>
+        <shimplify.shims>${all.buildvers}</shimplify.shims>
     </properties>
 
     <dependencyManagement>
@@ -907,6 +910,8 @@
                         <configuration>
                             <exportAntProperties>true</exportAntProperties>
                             <target xmlns:ac="antlib:net.sf.antcontrib">
+
+                                <!-- deprecated -->
                                 <!--
                                     Rules for adding new shim directories:
                                     ######################################
@@ -1206,6 +1211,19 @@
                         </configuration>
                     </execution>
                     <execution>
+                        <id>shimplify-shim-sources</id>
+                        <goals><goal>run</goal></goals>
+                        <phase>generate-sources</phase>
+                        <configuration>
+                            <target xmlns:ac="antlib:net.sf.antcontrib">
+                                <scriptdef name="shimplify" language="jython" src="${spark.rapids.source.basedir}/build/shimplify.py">
+                                    <attribute name="if"/>
+                                </scriptdef>
+                                <shimplify if="shimplify"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                    <execution>
                         <id>generate-build-info</id>
                         <phase>generate-resources</phase>
                         <configuration>
@@ -1247,6 +1265,11 @@
                         <groupId>ant-contrib</groupId>
                         <artifactId>ant-contrib</artifactId>
                         <version>1.0b3</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.python</groupId>
+                        <artifactId>jython-standalone</artifactId>
+                        <version>2.7.2</version>
                     </dependency>
                 </dependencies>
                 </plugin>
@@ -1541,6 +1564,8 @@
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>build-helper-maven-plugin</artifactId>
                 <executions>
+
+                    <!-- deprecated -->
                     <execution>
                         <id>add-shim-sources</id>
                         <phase>generate-sources</phase>
@@ -1555,6 +1580,28 @@
                         <goals><goal>add-test-source</goal></goals>
                         <configuration>
                             <sources>${spark.shim.test.sources}</sources>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>add-shimple-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals><goal>add-source</goal></goals>
+                        <configuration>
+                            <sources>
+                                <source>${spark.shim.dest}/main/scala</source>
+                                <source>${spark.shim.dest}/main/java</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>add-shimple-test-sources</id>
+                        <phase>generate-test-sources</phase>
+                        <goals><goal>add-test-source</goal></goals>
+                        <configuration>
+                            <sources>
+                                <source>${spark.shim.dest}/test/scala</source>
+                                <source>${spark.shim.dest}/test/java</source>
+                            </sources>
                         </configuration>
                     </execution>
                 </executions>
