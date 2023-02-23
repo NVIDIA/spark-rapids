@@ -176,6 +176,8 @@ class GpuOptimisticTransaction(
     val constraints =
       Constraints.getAll(metadata, spark) ++ generatedColumnConstraints ++ additionalConstraints
 
+    val isOptimize = isOptimizeCommand(queryExecution.analyzed)
+
     SQLExecution.withNewExecutionId(queryExecution, Option("deltaTransactionalWrite")) {
       val outputSpec = FileFormatWriter.OutputSpec(
         outputPath.toString,
@@ -194,7 +196,9 @@ class GpuOptimisticTransaction(
 
       val empty2NullPlan = convertEmptyToNullIfNeeded(queryPhysicalPlan,
         partitioningColumns, constraints)
-      val planWithInvariants = addInvariantChecks(empty2NullPlan, constraints)
+      val optimizedPlan =
+        applyOptimizeWriteIfNeeded(spark, empty2NullPlan, partitionSchema, isOptimize)
+      val planWithInvariants = addInvariantChecks(optimizedPlan, constraints)
       val physicalPlan = convertToGpu(planWithInvariants)
 
       val statsTrackers: ListBuffer[ColumnarWriteJobStatsTracker] = ListBuffer()

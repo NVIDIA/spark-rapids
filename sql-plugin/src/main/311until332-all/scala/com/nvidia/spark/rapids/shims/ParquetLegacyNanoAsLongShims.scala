@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,10 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.catalyst.expressions.SortOrder
-import org.apache.spark.sql.execution.datasources.v2.DataSourceV2ScanExecBase
+import org.apache.hadoop.conf.Configuration
 
-trait ShimDataSourceV2ScanExecBase extends DataSourceV2ScanExecBase {
-  override def ordering: Option[Seq[SortOrder]] = None
+object ParquetLegacyNanoAsLongShims {
+  def setupLegacyParquetNanosAsLongForPCBS(conf: Configuration): Unit = {
+    // LEGACY_PARQUET_NANOS_AS_LONG is only considered in Spark 3.3.2 and later
+  }
 }

@@ -23,22 +23,23 @@ shim, it is recommended albeit not required to do it in a dedicated run after ru
 
 ```bash
 mvn clean install -DskipTests
-mvn generate-sources antrun:run@shimplify-shim-sources
+mvn generate-sources
 ```
 
 Switches:
 
-shimplify            - property passed to task attribute `if` whether to modify files
-shimplify.add.base   - old buildver to base the new one provided by shimplify.add.shim
-shimplify.add.shim   - add new shim/buildver based on the one provided by shimplify.add.base
-shimplify.dirs       - comma-separated list of dirs to modify, supersedes shimplify.shims
-shimplify.move       - property to allow moving files to canonical location, otherwise update
-                       without moving
-shimplify.overwrite  - property to allow shimplify executing file changes repeatedly,
-                       error out otherwise
-shimplify.shims      - comma-separated list of shims to simplify instead of all, superseded by
-                       shimplify.dirs
-shimplify.trace      - property to enable trace logging
+shimplify               - property passed to task attribute `if` whether to modify files
+shimplify.add.base      - old buildver to base the new one provided by shimplify.add.shim
+shimplify.add.shim      - add new shim/buildver based on the one provided by shimplify.add.base
+shimplify.dirs          - comma-separated list of dirs to modify, supersedes shimplify.shims
+shimplify.move          - property to allow moving files to canonical location, otherwise update
+                          without moving
+shimplify.overwrite     - property to allow shimplify executing file changes repeatedly,
+                          error out otherwise
+shimplify.shims         - comma-separated list of shims to simplify instead of all, superseded by
+                          shimplify.dirs
+shimplify.remove.shim   - drop support for shim/buildver, its exclusive files are removed
+shimplify.trace         - property to enable trace logging
 
 If the task attribute "if" evaluates to false shimplify does not alter files on the filesystem.
 The task merely suggests to consolidate shim directories if it finds some shims that are comprised
@@ -62,7 +63,7 @@ Optionally review and remove empty directories
 git clean -f -d [--dry-run]
 
 Each shim Scala/Java file receives a comment describing all Spark builds it
-belongs to. Lines are sorted by the Spark buildver lexicographically.
+belongs to. Lines are sorted by the Spark `buildver` lexicographically.
 Each line is assumed to be a JSON to keep it extensible.
 
 /*** spark-rapids-shim-json-lines
@@ -165,14 +166,19 @@ __should_add_comment = __is_enabled_attr('if')
 # should we move files?
 __should_move_files = __is_enabled_property('shimplify.move')
 
-# allowed to overwrite the existing comment?
-__should_overwrite = __is_enabled_property('shimplify.overwrite')
-
 # enable log tracing?
 __should_trace = __is_enabled_property('shimplify.trace')
 
 __add_shim_buildver = __ant_proj_prop('shimplify.add.shim')
 __add_shim_base = __ant_proj_prop('shimplify.add.base')
+
+__remove_shim_buildver = __ant_proj_prop('shimplify.remove.shim')
+
+# allowed to overwrite the existing comment?
+__should_overwrite = (__is_enabled_property('shimplify.overwrite')
+                      or __add_shim_buildver is not None
+                      or __remove_shim_buildver is not None)
+
 
 __shim_comment_tag = 'spark-rapids-shim-json-lines'
 __opening_shim_tag = '/*** ' + __shim_comment_tag
@@ -229,7 +235,7 @@ def __delete_prior_comment_if_allowed(contents, tag, filename):
         # no work
         return
     if not __should_overwrite:
-        __fail("found shim comment from prior execution at %s:%d, use -Dshimplify.overwrite=true"
+        __fail("found shim comment from prior execution at %s:%d, use -Dshimplify.overwrite=true "
                "to overwrite" % (filename, opening_shim_comment_line))
     assert (opening_shim_comment_line is not None) and (closing_shim_comment_line is not None)
     __log.debug("removing comments %s:%d:%d", filename, opening_shim_comment_line,
@@ -265,9 +271,7 @@ def __git_rename_or_copy(shim_file, owner_shim, from_shim=None):
         __makedirs(new_shim_dir)
         if from_path_comp is None:
             shell_cmd = ['git', 'mv', shim_file, new_shim_file]
-            ret_code = subprocess.call(shell_cmd)
-            if ret_code != 0:
-                __fail("failed to execute %s" % shell_cmd)
+            __shell_exec(shell_cmd)
         else:
             with open(shim_file, 'r') as src_shim_fh:
                 with open(new_shim_file, 'w') as dst_shim_fh:
@@ -275,10 +279,14 @@ def __git_rename_or_copy(shim_file, owner_shim, from_shim=None):
                     dst_content = content.replace(from_path_comp, owner_path_comp)
                     dst_shim_fh.write(dst_content)
             git_add_cmd = ['git', 'add', new_shim_file]
-            ret_code = subprocess.call(git_add_cmd)
-            if ret_code != 0:
-                __fail("failed to execute %s" % git_add_cmd)
+            __shell_exec(git_add_cmd)
     return new_shim_file
+
+
+def __shell_exec(shell_cmd):
+    ret_code = subprocess.call(shell_cmd)
+    if ret_code != 0:
+        __fail("failed to execute %s" % shell_cmd)
 
 
 def __makedirs(new_dir):
@@ -392,12 +400,12 @@ def __generate_symlink_to_file(buildver, src_type, shim_file_path, build_ver_arr
         base_dir = str(__project().getBaseDir())
         src_root = os.path.join(base_dir, 'src', src_type)
         target_root = os.path.join(base_dir, 'target', "spark%s" % buildver, 'generated', 'src',
-                               src_type)
+                                   src_type)
         first_build_ver = build_ver_arr[0]
         __log.debug("top shim comment %s", first_build_ver)
         shim_file_rel_path = os.path.relpath(shim_file_path, src_root)
         expected_prefix = "spark%s%s" % (first_build_ver, os.sep)
-        assert shim_file_rel_path.startswith(expected_prefix), "Unexpected: %s is not prefixed" \
+        assert shim_file_rel_path.startswith(expected_prefix), "Unexpected: %s is not prefixed " \
                "by %s" % (shim_file_rel_path, expected_prefix)
         shim_file_rel_path_parts = shim_file_rel_path.split(os.sep)
         # drop spark3XY from spark3XY/scala/com/nvidia
@@ -435,6 +443,8 @@ def __shimplify_layout():
            "shimplify.add.shim cannot be specified without shimplify.add.base and vice versa"
     assert __add_shim_base is None or __add_shim_base in __shims_arr,\
            "shimplify.add.base is not in %s" % __shims_arr
+    assert __add_shim_buildver is None or __remove_shim_buildver is None,\
+           "Adding and deleting a shim in a single invocation is not supported!"
     # map file -> [shims it's part of]
     files2bv = {}
     for buildver in __all_shims_arr:
@@ -458,8 +468,8 @@ def __shimplify_layout():
                         files2bv[shim_path] = [buildver]
 
     # if the user allows to overwrite / reorganize shimplified shims,
-    # commonly while adding or removing shims we must includes new shim locations
-    if __should_overwrite or __add_shim_buildver is not None:
+    # commonly while adding or removing shims we must include new shim locations
+    if __should_overwrite:
         for src_type in ['main', 'test']:
             __traverse_source_tree_of_all_shims(
                 src_type,
@@ -470,15 +480,27 @@ def __shimplify_layout():
     if __add_shim_buildver is not None:
         __add_new_shim_to_file_map(files2bv)
 
+    if __remove_shim_buildver is not None:
+        __remove_shim_from_file_map(files2bv)
+
     for shim_file, bv_list in files2bv.items():
-        sorted_build_vers = sorted(bv_list)
-        __log.debug("calling upsert_shim_json on shim_file %s bv_list=%s", shim_file,
-                    sorted_build_vers)
-        owner_shim = sorted_build_vers[0]
-        if owner_shim in __shims_arr:
-            __upsert_shim_json(shim_file, sorted_build_vers)
+        if len(bv_list) == 0:
             if __should_move_files:
-                __git_rename_or_copy(shim_file, owner_shim)
+                __log.info("Removing orphaned file %s", shim_file)
+                __shell_exec(['git', 'rm', shim_file])
+            else:
+                __log.info("Detected an orphaned shim file %s, possibly while removing a shim."
+                           " git rm it manually or rerun with -Dshimplify.move=true",
+                           shim_file)
+        else:
+            sorted_build_vers = sorted(bv_list)
+            __log.debug("calling upsert_shim_json on shim_file %s bv_list=%s", shim_file,
+                        sorted_build_vers)
+            owner_shim = sorted_build_vers[0]
+            if owner_shim in __shims_arr:
+                __upsert_shim_json(shim_file, sorted_build_vers)
+                if __should_move_files:
+                    __git_rename_or_copy(shim_file, owner_shim)
 
 
 def __update_files2bv(files2bv, path, buildver_arr):
@@ -519,6 +541,20 @@ def __add_new_shim_to_file_map(files2bv):
                 # TODO figure out why __add_shim_buildver is unicode class, not a simple str
                 # and if we care
                 bv_list.append(__add_shim_buildver)
+
+
+def __remove_shim_from_file_map(files2bv):
+    __log.info("Removing %s shim, pom.xml should be updated manually.", __remove_shim_buildver)
+    # copy keys to be able to modify the original dictionary while iterating
+    for shim_file in set(files2bv.keys()):
+        bv_list = files2bv[shim_file]
+        try:
+            bv_list.remove(__remove_shim_buildver)
+        except ValueError as ve:
+            # __remove_shim_buildver is not in the list
+            __log.debug("%s: file %s does not belong to shim %s, skipping it", ve, shim_file,
+                        __remove_shim_buildver)
+            pass
 
 
 def __warn_shims_with_multiple_dedicated_dirs(dirs2bv):

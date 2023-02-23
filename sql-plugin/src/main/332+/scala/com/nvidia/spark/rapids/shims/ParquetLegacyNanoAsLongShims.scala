@@ -16,12 +16,21 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.plans.physical.KeyGroupedPartitioning
+import org.apache.hadoop.conf.Configuration
 
-object KeyGroupedPartitioningShim {
+import org.apache.spark.sql.internal.SQLConf
 
-  def getPartitionValues(p: KeyGroupedPartitioning): Seq[InternalRow] = {
-    p.partitionValuesOpt.get
+object ParquetLegacyNanoAsLongShims {
+  /**
+   * This method should strictly be used by ParquetCachedBatchSerializer(PCBS) as it is hard coding
+   * the value of LEGACY_PARQUET_NANOS_AS_LONG.
+   *
+   * As far as PCBS is concerned it really doesn't matter what we set it to as long as
+   * ParquetSchemaConverter doesn't see a "null" value.
+   *
+   * @param conf Hadoop conf
+   */
+  def setupLegacyParquetNanosAsLongForPCBS(conf: Configuration): Unit = {
+    conf.setBoolean(SQLConf.LEGACY_PARQUET_NANOS_AS_LONG.key, true)
   }
 }

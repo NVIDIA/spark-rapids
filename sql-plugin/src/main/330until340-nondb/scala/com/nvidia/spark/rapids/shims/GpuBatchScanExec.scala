@@ -25,8 +25,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, DynamicPruningExpression, Expression, Literal}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.plans.physical.{KeyGroupedPartitioning, SinglePartition}
-import org.apache.spark.sql.catalyst.util.InternalRowSet
-import org.apache.spark.sql.catalyst.util.truncatedString
+import org.apache.spark.sql.catalyst.util.{truncatedString, InternalRowSet}
 import org.apache.spark.sql.connector.read._
 import org.apache.spark.sql.execution.datasources.rapids.DataSourceStrategyUtils
 import org.apache.spark.sql.execution.datasources.v2._
@@ -36,7 +35,7 @@ case class GpuBatchScanExec(
     @transient scan: Scan,
     runtimeFilters: Seq[Expression] = Seq.empty,
     keyGroupedPartitioning: Option[Seq[Expression]] = None)
-    extends ShimDataSourceV2ScanExecBase with GpuBatchScanExecMetrics {
+    extends DataSourceV2ScanExecBase with GpuBatchScanExecMetrics {
   @transient lazy val batch: Batch = scan.toBatch
 
   // All expressions are filter expressions used on the CPU.
@@ -74,24 +73,24 @@ case class GpuBatchScanExec(
         case p: KeyGroupedPartitioning =>
           if (newPartitions.exists(!_.isInstanceOf[HasPartitionKey])) {
             throw new SparkException("Data source must have preserved the original partitioning " +
-                "during runtime filtering: not all partitions implement HasPartitionKey after " +
-                "filtering")
+              "during runtime filtering: not all partitions implement HasPartitionKey after " +
+              "filtering")
           }
 
           val newRows = new InternalRowSet(p.expressions.map(_.dataType))
           newRows ++= newPartitions.map(_.asInstanceOf[HasPartitionKey].partitionKey())
-          val oldRows = KeyGroupedPartitioningShim.getPartitionValues(p)
+          val oldRows = p.partitionValuesOpt.get
 
           if (oldRows.size != newRows.size) {
             throw new SparkException("Data source must have preserved the original partitioning " +
-                "during runtime filtering: the number of unique partition values obtained " +
-                s"through HasPartitionKey changed: before ${oldRows.size}, after ${newRows.size}")
+              "during runtime filtering: the number of unique partition values obtained " +
+              s"through HasPartitionKey changed: before ${oldRows.size}, after ${newRows.size}")
           }
 
           if (!oldRows.forall(newRows.contains)) {
             throw new SparkException("Data source must have preserved the original partitioning " +
-                "during runtime filtering: the number of unique partition values obtained " +
-                s"through HasPartitionKey remain the same but do not exactly match")
+              "during runtime filtering: the number of unique partition values obtained " +
+              s"through HasPartitionKey remain the same but do not exactly match")
           }
 
           groupPartitions(newPartitions).get.map(_._2)

@@ -28,6 +28,7 @@ import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectComm
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFilters
 import org.apache.spark.sql.execution.exchange.{EXECUTOR_BROADCAST, ShuffleExchangeExec, ShuffleExchangeLike}
+import org.apache.spark.sql.rapids.GpuElementAtMeta
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinExec, GpuBroadcastNestedLoopJoinExec}
 
 object SparkShimImpl extends Spark321PlusDBShims {
@@ -50,8 +51,12 @@ object SparkShimImpl extends Spark321PlusDBShims {
       pushDownInFilterThreshold, caseSensitive, datetimeRebaseMode)
   }
 
-  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
-    super.getExprs ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+    val elementAtExpr: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+      GpuElementAtMeta.elementAtRule(true)
+    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+    super.getExprs ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs ++ elementAtExpr
+  }
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
     super.getExecs ++ PythonMapInArrowExecShims.execs

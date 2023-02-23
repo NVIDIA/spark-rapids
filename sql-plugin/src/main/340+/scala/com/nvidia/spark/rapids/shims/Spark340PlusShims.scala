@@ -26,6 +26,7 @@ import org.apache.spark.sql.execution.{CollectLimitExec, GlobalLimitExec, SparkP
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources.{GpuWriteFilesMeta, WriteFilesExec}
 import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
+import org.apache.spark.sql.rapids.GpuElementAtMeta
 import org.apache.spark.sql.rapids.GpuV1WriteUtils.GpuEmpty2Null
 
 trait Spark340PlusShims extends Spark331PlusShims {
@@ -86,7 +87,8 @@ trait Spark340PlusShims extends Spark331PlusShims {
         (a, conf, p, r) => new UnaryExprMeta[Empty2Null](a, conf, p, r) {
           override def convertToGpu(child: Expression): GpuExpression = GpuEmpty2Null(child)
         }
-      )
+      ),
+      GpuElementAtMeta.elementAtRule(true)
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ shimExprs
   }

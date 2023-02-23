@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -323,6 +323,14 @@ def test_simple_get_map_value_ansi_fail(data_gen):
             conf=ansi_enabled_conf,
             error_message=message)
 
+@pytest.mark.skipif(is_before_spark_340() and not is_databricks113_or_later(),
+                    reason="Only in Spark 3.4+ with ANSI mode, map key returns null on no such element")
+@pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
+def test_simple_get_map_value_ansi_null(data_gen):
+        assert_gpu_and_cpu_are_equal_collect(
+                lambda spark: unary_op_df(spark, data_gen).selectExpr(
+                        'a["NOT_FOUND"]'),
+                conf=ansi_enabled_conf)
 
 @pytest.mark.skipif(not is_spark_33X() or is_databricks_runtime(),
                     reason="Only in Spark 3.3.X + ANSI mode + Strict Index, map key throws on no such element")
@@ -408,14 +416,13 @@ def test_get_map_value_element_at_map_string_col_keys(data_gen):
             'element_at(a, b)', 'a[b]'),
         conf={'spark.sql.ansi.enabled': False})
 
-
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 @pytest.mark.skipif(is_spark_340_or_later() or is_databricks113_or_later(),
                     reason="Since Spark3.4 and DB11.3, null will always be returned on invalid access to map")
 def test_element_at_map_string_col_keys_ansi_fail(data_gen):
     keys = StringGen(pattern='NOT_FOUND')
     message = "org.apache.spark.SparkNoSuchElementException" if (not is_before_spark_330() or is_databricks104_or_later()) else "java.util.NoSuchElementException"
-    # For 3.3.0+ strictIndexOperator should not affect element_at
+    # For 3.3.X strictIndexOperator should not affect element_at
     test_conf = copy_and_update(ansi_enabled_conf, {'spark.sql.ansi.strictIndexOperator': 'false'})
     assert_gpu_and_cpu_error(
         lambda spark: two_col_df(spark, data_gen, keys).selectExpr(
@@ -423,6 +430,15 @@ def test_element_at_map_string_col_keys_ansi_fail(data_gen):
         conf=test_conf,
         error_message=message)
 
+@pytest.mark.skipif(is_before_spark_340() and not is_databricks113_or_later(),
+                    reason="Only in Spark 3.4 + with ANSI mode, map key returns null on no such element")
+@pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
+def test_element_at_map_string_col_keys_ansi_null(data_gen):
+    keys = StringGen(pattern='NOT_FOUND')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, data_gen, keys).selectExpr(
+            'element_at(a, b)'),
+        conf=ansi_enabled_conf)
 
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 @pytest.mark.skipif(is_spark_340_or_later() or is_databricks113_or_later(),
@@ -436,6 +452,15 @@ def test_get_map_value_string_col_keys_ansi_fail(data_gen):
         conf=ansi_enabled_conf,
         error_message=message)
 
+@pytest.mark.skipif(is_before_spark_340() and not is_databricks113_or_later(),
+                    reason="Only in Spark 3.4 + ANSI mode, map key returns null on no such element")
+@pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
+def test_get_map_value_string_col_keys_ansi_null(data_gen):
+    keys = StringGen(pattern='NOT_FOUND')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, data_gen, keys).selectExpr(
+            'a[b]'),
+        conf=ansi_enabled_conf)
 
 @pytest.mark.parametrize('data_gen',
                          [MapGen(DateGen(nullable=False), value(), max_length=6)
@@ -461,7 +486,6 @@ def test_element_at_map_timestamp_keys(data_gen):
             'element_at(a, null)'),
         conf={'spark.sql.ansi.enabled': False})
 
-
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
 @pytest.mark.skipif(is_spark_340_or_later() or is_databricks113_or_later(),
                     reason="Since Spark3.4 and DB11.3, null will always be returned on invalid access to map")
@@ -475,6 +499,14 @@ def test_map_element_at_ansi_fail(data_gen):
             conf=test_conf,
             error_message=message)
 
+@pytest.mark.skipif(is_before_spark_340() and not is_databricks113_or_later(),
+                    reason="Only in Spark 3.4 + ANSI mode, map key returns null on no such element")
+@pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
+def test_map_element_at_ansi_null(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr(
+                'element_at(a, "NOT_FOUND")'),
+            conf=ansi_enabled_conf)
 
 @pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
 def test_transform_values(data_gen):

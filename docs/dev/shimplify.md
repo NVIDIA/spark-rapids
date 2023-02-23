@@ -22,7 +22,7 @@ converted shims if a longer transition is desired.
 
 ## Simplified Shim Source Directory Structure
 
-In our build each supported Apache Spark build and its corresponding Shim is identified by its
+In our build each supported Apache Spark build and its corresponding shim is identified by its
 [`buildver`][3] property. Every Maven submodule requiring shimming (`sql-plugin`, `tests` as of the
 time of this writing) have a new set of special sibling directories
 `src/(main|test)/spark${buildver}`.
@@ -31,7 +31,7 @@ Previous `src/(main|test)/${buildver}` and
 version-range-with-exceptions directories such as `src/main/311until340-non330db` are deprecated and
 will be removed soon as a result of the conversion to the new structure.
 
-`shimplify` changes the way the source code is shared among Shims by using an explicit
+`shimplify` changes the way the source code is shared among shims by using an explicit
 lexicographically sorted list of `buildver` property values
 in a source-code level comment instead of the shared directories.
 
@@ -43,7 +43,7 @@ spark-rapids-shim-json-lines ***/
 ```
 
 The content inside the tags `spark-rapids-shim-json-lines` is in the [JSON Lines][4] format where
-each line is an extensible object with the Shim metadata currently consisting just of the Spark
+each line is an extensible object with the shim metadata currently consisting just of the Spark
 build dependency version. The top object in the comment, the minimum version in the comment
 intuitively represents the first version of Spark requiring shimming in the plugin, albeit it might
 not be the original one as support for older Spark releases is eventually dropped. This `buildver`
@@ -75,7 +75,7 @@ lists of directories for `build-helper` Maven plugin to add (one for each shim) 
 transition to shimplify, the pom will have only 4 add source statements that is independent of the
 number of supported shims.
 
-With the shimplify format in place it is easy to review all the files for a single Shim without
+With the shimplify format in place it is easy to review all the files for a single shim without
 relying on Maven:
 
 ```bash
@@ -101,13 +101,13 @@ on the current state of the `spark-rapids` repo.
 After that you can execute conversion in one or more iterations depending on specified -D parameters
 
 ```bash
-mvn generate-sources antrun:run@shimplify-shim-sources -Dshimplify=true [-D...]
+mvn generate-sources -Dshimplify=true [-D...]
 ```
 
 With `-Dshimplify=true`, shimplify is put on the write call path to generate and inject
 spark-rapids-shim-json-lines comments to all shim source files. The files are not yet moved to their
 owner shim directory, and so it is easy to verify with `git diff` the comments being injected. If
-you see any issue you can fix its cause and re-execute the command with by adding
+you see any issue you can fix it and re-execute the command by adding
 `-Dshimplify.overwrite=true`. However, it is usually easier to just have git restore the
 previous state:
 
@@ -119,10 +119,12 @@ Once the shim comments looks good (as expected, it was tested), you can repeat i
 move the files to designated locations by invoking
 
 ```bash
-mvn generate-sources antrun:run@shimplify=shim-sources -Dshimplify=true -Dshimplify.move=true
+mvn generate-sources -Dshimplify=true -Dshimplify.move=true
 ```
 
-Now you can run a package build with the simplified directory structure and run a few integration tests preferably in the test standalone mode with the RAPIDS Shuffle Manager on for increased coverage:
+Now you can run a package build with the simplified directory structure and run a few integration
+tests preferably in the test standalone mode with the RAPIDS Shuffle Manager on for increased
+coverage:
 
 ```bash
 mvn clean package -DskipTests -Dbuildver=331
@@ -170,15 +172,22 @@ files under `src/(main|test)/${buildver}` in place for shims outside the list. T
 developers of a certain shim would like to continue working on it without adapting the new method.
 However, for the simplicity of future refactoring the full transition is preferred.
 
-## Adding a new Shim
+### Evolving shims without automatic conversion
+
+Suppose a bulk-conversion of existing shims is not an option whereas the next shimming issue
+requires difficult refactoring of version ranges with adding more directories with exceptions.
+Now it can be resolved easily by placing just the affected files to owner shim directories and
+adding shim JSON lines comments by hand.
+
+## Adding a new shim
 
 Shimplify can clone an existing shim based as a basis of the new shim. For example when adding
-support for a new [maintenance][5] version of Spark, say 3.2.4, it's expected to be similar to 3.2.3
+support for a new [maintenance][5] version of Spark, say 3.2.4, it's expected to be similar to 3.2.3.
 
 If just 3.2.3 or all shims after the full transition have already been converted you can execute
 
 ```bash
-mvn generate-sources antrun:run@shimplify=shim-sources -Dshimplify=true \
+mvn generate-sources -Dshimplify=true \
     -Dshimplify.move=true -Dshimplify.overwrite=true \
     -Dshimplify.add.shim=324 -Dshimplify.add.base=323
 ```
@@ -191,20 +200,44 @@ directory
 * substitute spark324 for spark323 in the package name and path,
 * and modify the comment from `{"spark": "323"}` to `{"spark": "324"}`
 
-Review the new repo state, e.g., using `git grep '{"spark": "324"}'`
-Besides of having to add the `release324` profile to various pom.xml as before, this is likely to be insufficient to complete the work on 324. It is expected to work on resolving potential compilation
-failures manually.
+Review the new repo state, e.g., using `git grep '{"spark": "324"}'`.
+Besides having to add the `release324` profile to various pom.xml as before, this alone
+is likely to be insufficient to complete the work on 324. It is expected you will need to
+work on resolving potential compilation failures manually.
 
 ## Deleting a Shim
 
-Every Spark build is de-supported eventually. To drop a build say 311 you can run a bulk
-search&replace in your IDE deleting all occurrences of `{"spark": "311"}` including the newline
-character an empty line. Shimplify will fail the build until all the orphaned files are removed.
+Every Spark build is de-supported eventually. To drop a build say 311 you can run
 
-After adding or deleting shims you can run the integration tests above.
+```bash
+mvn generate-sources -Dshimplify=true -Dshimplify.move=true \
+    -Dshimplify.remove.shim=311
+```
+
+This command will remove the comment line `{"spark": "311"}` from all source files contributing to
+the 311 shim. If a file belongs exclusively to 311 it will be removed.
+
+After adding or deleting shims you should sanity-check the diff in the local git repo and
+run the integration tests above.
+
+## Symlinks & IDE
+
+IDEs may or may not reveal whether a file is accessed via a symlink. IntelliJ IDEA treats the
+original file path and a path via a symlink to the same file as two independent files by default.
+
+In the context of shimplify, only the generated symlink path is part of the project
+because the owner shim path is not `add-source`d during build and therefore during IDEA Project
+Import. The user can install the [Resolve Symlinks][6] plugin to prevent IDEA from opening multiple
+windows for the same physical source file. As of the time of this writing, it works seamlessly with
+the exception when the file is open via a Debugger either on a breakpoint hit or subsequent clicking
+on the affected stack frame in which case you will see an extra editor tab being added.
+
+No matter whether or not you use the [Resolve Symlinks][6] plugin, IDEA is able to add a breakpoint
+set directly via the original physical file or a symlink path.
 
 [1]: https://github.com/NVIDIA/spark-rapids/issues/3223
-[2]: ../../build/shimplify.py
+[2]: https://github.com/NVIDIA/spark-rapids/blob/main/build/shimplify.py
 [3]: https://github.com/NVIDIA/spark-rapids/blob/74ce729ca1306db01359e68f7f0b7cc31cd3d850/pom.xml#L494-L500
 [4]: https://jsonlines.org/
 [5]: https://spark.apache.org/versioning-policy.html
+[6]: https://plugins.jetbrains.com/plugin/16429-idea-resolve-symlinks

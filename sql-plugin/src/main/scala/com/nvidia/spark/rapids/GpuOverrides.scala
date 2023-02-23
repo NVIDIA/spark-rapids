@@ -24,7 +24,7 @@ import scala.util.control.NonFatal
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
-import com.nvidia.spark.rapids.shims.{AQEUtils, DecimalArithmeticOverrides, DeltaLakeUtils, GetMapValueMeta, GpuBatchScanExec, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{AQEUtils, BatchScanExecMeta, DecimalArithmeticOverrides, DeltaLakeUtils, GetMapValueMeta, GpuHashPartitioning, GpuRangePartitioning, GpuSpecifiedWindowFrameMeta, GpuTypeShims, GpuWindowExpressionMeta, OffsetWindowFunctionMeta, SparkShimImpl}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
@@ -2358,6 +2358,7 @@ object GpuOverrides extends Logging {
       }),
     expr[StringSplit](
        "Splits `str` around occurrences that match `regex`",
+      // Java's split API produces different behaviors than cudf when splitting with empty pattern
       ExprChecks.projectOnly(TypeSig.ARRAY.nested(TypeSig.STRING),
         TypeSig.ARRAY.nested(TypeSig.STRING),
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
@@ -2411,58 +2412,7 @@ object GpuOverrides extends Logging {
           }
         }
       }),
-    expr[ElementAt](
-      "Returns element of array at given(1-based) index in value if column is array. " +
-        "Returns value for the given key in value if column is map.",
-      ExprChecks.binaryProject(
-        (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
-          TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY).nested(), TypeSig.all,
-        ("array/map", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-          TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY) +
-          TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT +
-            TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY)
-            .withPsNote(TypeEnum.MAP ,"If it's map, only primitive key types are supported."),
-          TypeSig.ARRAY.nested(TypeSig.all) + TypeSig.MAP.nested(TypeSig.all)),
-        ("index/key", (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128)
-          .withPsNote(
-            Seq(TypeEnum.BOOLEAN, TypeEnum.BYTE, TypeEnum.SHORT, TypeEnum.LONG,
-              TypeEnum.FLOAT, TypeEnum.DOUBLE, TypeEnum.DATE, TypeEnum.TIMESTAMP,
-              TypeEnum.STRING, TypeEnum.DECIMAL), "Unsupported as array index."),
-          TypeSig.all)),
-      (in, conf, p, r) => new BinaryExprMeta[ElementAt](in, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          // To distinguish the supported nested type between Array and Map
-          val checks = in.left.dataType match {
-            case _: MapType =>
-              // Match exactly with the checks for GetMapValue
-              ExprChecks.binaryProject(
-                (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
-                  TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY).nested(),
-                TypeSig.all,
-                ("map",
-                  TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT +
-                    TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY),
-                  TypeSig.MAP.nested(TypeSig.all)),
-                ("key", TypeSig.commonCudfTypes + TypeSig.DECIMAL_128, TypeSig.all))
-            case _: ArrayType =>
-              // Match exactly with the checks for GetArrayItem
-              ExprChecks.binaryProject(
-                (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.NULL +
-                  TypeSig.DECIMAL_128 + TypeSig.MAP + TypeSig.BINARY).nested(),
-                TypeSig.all,
-                ("array", TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
-                  TypeSig.STRUCT + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.MAP +
-                  TypeSig.BINARY),
-                  TypeSig.ARRAY.nested(TypeSig.all)),
-                ("ordinal", TypeSig.INT, TypeSig.INT))
-            case _ => throw new IllegalStateException("Only Array or Map is supported as input.")
-          }
-          checks.tag(this)
-        }
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
-          GpuElementAt(lhs, rhs, failOnError = in.failOnError)
-        }
-      }),
+    GpuElementAtMeta.elementAtRule(false),
     expr[MapKeys](
       "Returns an unordered array containing the keys of the map",
       ExprChecks.unaryProject(
@@ -2505,6 +2455,7 @@ object GpuOverrides extends Logging {
       }),
     expr[StringToMap](
       "Creates a map after splitting the input string into pairs of key-value strings",
+      // Java's split API produces different behaviors than cudf when splitting with empty pattern
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.STRING),
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("pairDelim", TypeSig.lit(TypeEnum.STRING), TypeSig.lit(TypeEnum.STRING)),
@@ -3693,13 +3644,7 @@ object GpuOverrides extends Logging {
         (TypeSig.commonCudfTypes + TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY +
           TypeSig.DECIMAL_128 + TypeSig.BINARY).nested(),
         TypeSig.all),
-      (p, conf, parent, r) => new SparkPlanMeta[BatchScanExec](p, conf, parent, r) {
-        override val childScans: scala.Seq[ScanMeta[_]] =
-          Seq(GpuOverrides.wrapScan(p.scan, conf, Some(this)))
-
-        override def convertToGpu(): GpuExec =
-          GpuBatchScanExec(p.output, childScans.head.convertToGpu())
-      }),
+      (p, conf, parent, r) => new BatchScanExecMeta(p, conf, parent, r)),
     exec[CoalesceExec](
       "The backend for the dataframe coalesce method",
       ExecChecks((_gpuCommonTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT + TypeSig.ARRAY +

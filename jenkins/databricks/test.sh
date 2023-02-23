@@ -27,7 +27,6 @@
 #   SCALA_BINARY_VER: Scala version of the provided binaries. Default is 2.12.
 #   TEST_MODE: Can be one of the following (`DEFAULT` is the default value):
 #       - DEFAULT: all tests except cudf_udf tests
-#       - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
 #       - ICEBERG_ONLY: iceberg tests only
 #       - DELTA_LAKE_ONLY: delta_lake tests only
 #       - MULTITHREADED_SHUFFLE: shuffle tests only
@@ -59,33 +58,20 @@ SCALA_BINARY_VER=${SCALA_BINARY_VER:-'2.12'}
 # install required packages
 sudo apt -y install zip unzip
 
-# Try to use "cudf-udf" conda environment for the python cudf-udf tests.
-if [ -d "${CONDA_HOME}/envs/cudf-udf" ]; then
-    export PATH=${CONDA_HOME}/envs/cudf-udf/bin:${CONDA_HOME}/bin:$PATH
-    export PYSPARK_PYTHON=${CONDA_HOME}/envs/cudf-udf/bin/python
+# Set PYSPARK_PYTHON to keep the version of driver/workers python consistent.
+export PYSPARK_PYTHON=${PYSPARK_PYTHON:-"$(which python)"}
+# Install if python pip does not exist.
+if [ -z "$($PYSPARK_PYTHON -m pip --version || true)" ]; then
+    curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py && \
+        $PYSPARK_PYTHON get-pip.py && rm get-pip.py
 fi
 
 # Get Python version (major.minor). i.e., python3.8 for DB10.4 and python3.9 for DB11.3
-sw_versions[PYTHON]=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
-
-# override incompatible versions between databricks and cudf
-if [ -d "${CONDA_HOME}/envs/cudf-udf" ]; then
-    CONDA_SITE_PATH="${CONDA_HOME}/envs/cudf-udf/lib/${sw_versions[PYTHON]}/site-packages"
-    PATCH_PACKAGES_PATH="$PWD/package-overrides/${sw_versions[PYTHON]}"
-    mkdir -p ${PATCH_PACKAGES_PATH}
-    TO_PATCH=(
-        google
-        llvmlite
-        numba
-        numpy
-        pyarrow
-    )
-
-    echo creating symlinks to override conflicting packages
-    for p in "${TO_PATCH[@]}"; do
-        ln -f -s ${CONDA_SITE_PATH}/${p} ${PATCH_PACKAGES_PATH}
-    done
-fi
+PYTHON_VERSION=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
+# Set the path of python site-packages, and install packages here.
+PYTHON_SITE_PACKAGES="$HOME/.local/lib/${PYTHON_VERSION}/site-packages"
+# Use "python -m pip install" to make sure pip matches with python.
+$PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES pytest sre_yield requests pandas pyarrow findspark pytest-xdist pytest-order
 
 export SPARK_HOME=/databricks/spark
 # change to not point at databricks confs so we don't conflict with their settings
@@ -110,21 +96,13 @@ esac
 sw_versions[ICEBERG_SPARK]=$(echo $BASE_SPARK_VERSION | cut -d. -f1,2)
 # Get the correct py4j file.
 PY4J_FILE=$(find $SPARK_HOME/python/lib -type f -iname "py4j*.zip")
-# Set the path of python site-packages
-PYTHON_SITE_PACKAGES=/databricks/python3/lib/${sw_versions[PYTHON]}/site-packages
 # Databricks Koalas can conflict with the actual Pandas version, so put site packages first.
 # Note that Koala is deprecated for DB10.4+ and it is recommended to use Pandas API on Spark instead.
-export PYTHONPATH=$PATCH_PACKAGES_PATH:$PYTHON_SITE_PACKAGES:$SPARK_HOME/python:$SPARK_HOME/python/pyspark/:$PY4J_FILE
+export PYTHONPATH=$PYTHON_SITE_PACKAGES:$SPARK_HOME/python:$SPARK_HOME/python/pyspark/:$PY4J_FILE
 sudo ln -s /databricks/jars/ $SPARK_HOME/jars || true
 sudo chmod 777 /databricks/data/logs/
 sudo chmod 777 /databricks/data/logs/*
 echo { \"port\":\"15002\" } > ~/.databricks-connect
-
-CUDF_UDF_TEST_ARGS="--conf spark.python.daemon.module=rapids.daemon_databricks \
-    --conf spark.rapids.memory.gpu.minAllocFraction=0 \
-    --conf spark.rapids.memory.gpu.allocFraction=0.1 \
-    --conf spark.rapids.python.memory.gpu.allocFraction=0.1 \
-    --conf spark.rapids.python.concurrentPythonWorkers=2"
 
 ## 'spark.foo=1,spark.bar=2,...' to 'export PYSP_TEST_spark_foo=1 export PYSP_TEST_spark_bar=2'
 if [ -n "$SPARK_CONF" ]; then
@@ -146,7 +124,6 @@ IS_SPARK_311_OR_LATER=0
 
 # TEST_MODE
 # - DEFAULT: all tests except cudf_udf tests
-# - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
 # - ICEBERG_ONLY: iceberg tests only
 # - DELTA_LAKE_ONLY: delta_lake tests only
 # - MULTITHREADED_SHUFFLE: shuffle tests only
@@ -196,13 +173,6 @@ if [ -d "$LOCAL_JAR_PATH" ]; then
         fi
     fi
 
-    if [[ "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
-        ## Run cudf-udf tests
-        CUDF_UDF_TEST_ARGS="$CUDF_UDF_TEST_ARGS --conf spark.executorEnv.PYTHONPATH=`ls $LOCAL_JAR_PATH/rapids-4-spark_*.jar | grep -v 'tests.jar'`"
-        LOCAL_JAR_PATH=$LOCAL_JAR_PATH SPARK_SUBMIT_FLAGS="$SPARK_CONF $CUDF_UDF_TEST_ARGS" TEST_PARALLEL=1 \
-            bash $LOCAL_JAR_PATH/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" -m "cudf_udf" --cudf_udf --test_type=$TEST_TYPE
-    fi
-
     if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then
         ## Run Iceberg tests
         LOCAL_JAR_PATH=$LOCAL_JAR_PATH SPARK_SUBMIT_FLAGS="$SPARK_CONF $ICEBERG_CONFS" TEST_PARALLEL=1 \
@@ -218,13 +188,6 @@ else
             PYSP_TEST_spark_sql_cache_serializer=${PCBS_CONF} \
             bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE -k cache_test
         fi
-    fi
-
-    if [[ "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
-        ## Run cudf-udf tests
-        CUDF_UDF_TEST_ARGS="$CUDF_UDF_TEST_ARGS --conf spark.executorEnv.PYTHONPATH=`ls /home/ubuntu/spark-rapids/dist/target/rapids-4-spark_*.jar | grep -v 'tests.jar'`"
-        SPARK_SUBMIT_FLAGS="$SPARK_CONF $CUDF_UDF_TEST_ARGS" TEST_PARALLEL=0 \
-            bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m "cudf_udf" --cudf_udf --test_type=$TEST_TYPE
     fi
 
     if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "ICEBERG_ONLY" ]]; then

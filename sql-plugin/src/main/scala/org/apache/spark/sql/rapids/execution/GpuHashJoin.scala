@@ -545,7 +545,7 @@ class HashFullJoinIterator(
   private val useLeftOuterJoin = (buildSide == GpuBuildRight)
   private val numBuiltRows = built.numRows
 
-  private[this] var builtSideTracker : Option[LazySpillableColumnarBatch] = None
+  private[this] var builtSideTracker : Option[SpillableColumnarBatch] = None
 
   private val nullEquality = if (compareNullsEqual) NullEquality.EQUAL else NullEquality.UNEQUAL
 
@@ -643,12 +643,14 @@ class HashFullJoinIterator(
       builtSideTracker match {
         case None => None
         case Some(tracker) => {
-          val filteredBatch = withResource(tracker.releaseBatch()) { trackerBatch =>
-            withResource(GpuColumnVector.from(trackerBatch)) { trackerTab =>
-              val batch = built.getBatch
-              withResource(GpuColumnVector.from(batch)) { builtTable =>
-                withResource(builtTable.filter(trackerTab.getColumn(0))) { filterTab =>
-                  GpuColumnVector.from(filterTab, GpuColumnVector.extractTypes(batch))
+          val filteredBatch = withResource(tracker) { scb =>
+            withResource(scb.getColumnarBatch()) { trackerBatch =>
+              withResource(GpuColumnVector.from(trackerBatch)) { trackerTab =>
+                val batch = built.getBatch
+                withResource(GpuColumnVector.from(batch)) { builtTable =>
+                  withResource(builtTable.filter(trackerTab.getColumn(0))) { filterTab =>
+                    GpuColumnVector.from(filterTab, GpuColumnVector.extractTypes(batch))
+                  }
                 }
               }
             }
@@ -715,8 +717,10 @@ class HashFullJoinIterator(
     val updatedTrackingTable = withResource(filteredGatherMap) { filteredMap =>
       // Get the current tracking table, or all true table to start with
       val builtTrackingTable = builtSideTracker.map { spillableBatch =>
-        withResource(spillableBatch.releaseBatch()) { trackingBatch =>
-          GpuColumnVector.from(trackingBatch)
+        withResource(spillableBatch) { scb =>
+          withResource(scb.getColumnarBatch()) { trackingBatch =>
+            GpuColumnVector.from(trackingBatch)
+          }
         }
       }.getOrElse {
         trueColumnTable(numBuiltRows)
@@ -727,12 +731,10 @@ class HashFullJoinIterator(
         }
       }
     }
-    builtSideTracker = withResource(updatedTrackingTable) { newTab =>
-      withResource(GpuColumnVector.from(newTab, Array[DataType](DataTypes.BooleanType))) { cb =>
-        val lazyBatch = LazySpillableColumnarBatch(cb, spillCallback, "tracking_batch")
-        lazyBatch.allowSpilling()
-        Some(lazyBatch)
-      }
+    builtSideTracker = withResource(updatedTrackingTable) { _ =>
+      Some(SpillableColumnarBatch(
+        GpuColumnVector.from(updatedTrackingTable, Array[DataType](DataTypes.BooleanType)),
+        SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback))
     }
   }
 }

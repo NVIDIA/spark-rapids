@@ -23,7 +23,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{ColumnVector, DType, Scalar, Schema, Table}
+import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
@@ -374,24 +374,24 @@ class JsonPartitionReader(
    * Spark then has its own rules for supporting NaN and Infinity, which are not
    * valid numbers in JSON.
    */
-  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   private def sanitizeNumbers(input: ColumnVector): ColumnVector = {
     // Note that this is not 100% consistent with Spark versions prior to Spark 3.3.0
     // due to https://issues.apache.org/jira/browse/SPARK-38060
     // cuDF `isFloat` supports some inputs that are not valid JSON numbers, such as `.1`, `1.`,
     // and `+1` so we use a regular expression to match valid JSON numbers instead
     val jsonNumberRegexp = "^-?[0-9]+(?:\\.[0-9]+)?(?:[eE][\\-\\+]?[0-9]+)?$"
+    val prog = new RegexProgram(jsonNumberRegexp, CaptureGroups.NON_CAPTURE)
     val isValid = if (parsedOptions.allowNonNumericNumbers) {
       withResource(ColumnVector.fromStrings("NaN", "+INF", "-INF", "+Infinity",
         "Infinity", "-Infinity")) { nonNumeric =>
-        withResource(input.matchesRe(jsonNumberRegexp)) { isJsonNumber =>
+        withResource(input.matchesRe(prog)) { isJsonNumber =>
           withResource(input.contains(nonNumeric)) { nonNumeric =>
             isJsonNumber.or(nonNumeric)
           }
         }
       }
     } else {
-      input.matchesRe(jsonNumberRegexp)
+      input.matchesRe(prog)
     }
     withResource(isValid) { _ =>
       withResource(Scalar.fromNull(DType.STRING)) { nullString =>

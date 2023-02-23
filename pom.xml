@@ -697,7 +697,7 @@
         <spark323.version>3.2.3</spark323.version>
         <spark330.version>3.3.0</spark330.version>
         <spark331.version>3.3.1</spark331.version>
-        <spark332.version>3.3.2-SNAPSHOT</spark332.version>
+        <spark332.version>3.3.2</spark332.version>
         <spark340.version>3.4.0-SNAPSHOT</spark340.version>
         <spark330cdh.version>3.3.0.3.3.7180.0-274</spark330cdh.version>
         <spark330db.version>3.3.0-databricks</spark330db.version>
@@ -738,10 +738,10 @@
             323,
             330,
             331,
+            332,
             330cdh
         </noSnapshot.buildvers>
         <snapshot.buildvers>
-            332
         </snapshot.buildvers>
         <databricks.buildvers>
             312db,
@@ -940,6 +940,7 @@
                                             <include name="311until320-noncdh/*"/>
                                             <include name="311until320-nondb/*"/>
                                             <include name="311until330-all/*"/>
+                                            <include name="311until332-all/*"/>
                                             <include name="311until330-nondb/*"/>
                                             <include name="311until340-all/*"/>
                                             <include name="311until340-non330db/*"/>
@@ -1040,7 +1041,9 @@
                                 <pathconvert property="spark332.sources" pathsep=",">
                                     <dirset dir="${project.basedir}/src/main" erroronmissingdir="false">
                                         <patternset refid="spark331+.pattern"/>
+                                        <exclude name="*until332*/*"/>
                                         <include name="332/*"/>
+                                        <include name="332+/*"/>
                                     </dirset>
                                 </pathconvert>
                                 <pathconvert property="spark340.sources" pathsep=",">
