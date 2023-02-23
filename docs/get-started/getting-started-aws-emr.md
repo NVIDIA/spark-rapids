@@ -14,6 +14,7 @@ Different versions of EMR ship with different versions of Spark, RAPIDS Accelera
 
 | EMR | Spark | RAPIDS Accelerator jar | cuDF jar | xgboost4j-spark jar
 | --- | --- | --- | ---| --- |
+| 6.9 | 3.3.0 | rapids-4-spark_2.12-22.08.0.jar | Bundled with rapids-4-spark | xgboost4j-spark_3.0-1.4.2-0.3.0.jar |
 | 6.8 | 3.3.0 | rapids-4-spark_2.12-22.06.0.jar | Bundled with rapids-4-spark | xgboost4j-spark_3.0-1.4.2-0.3.0.jar |
 | 6.7 | 3.2.1 | rapids-4-spark_2.12-22.02.0.jar | cudf-22.02.0-cuda11.jar | xgboost4j-spark_3.0-1.2.0-0.1.0.jar |
 | 6.6 | 3.2.0 | rapids-4-spark_2.12-22.02.0.jar | cudf-22.02.0-cuda11.jar | xgboost4j-spark_3.0-1.2.0-0.1.0.jar |
@@ -40,7 +41,7 @@ g4dn.2xlarge nodes:
 
 ```
 aws emr create-cluster \
---release-label emr-6.7.0 \
+--release-label emr-6.9.0 \
 --applications Name=Hadoop Name=Spark Name=Livy Name=JupyterEnterpriseGateway \
 --service-role EMR_DefaultRole \
 --ec2-attributes KeyName=my-key-pair,InstanceProfile=EMR_EC2_DefaultRole \
@@ -80,8 +81,8 @@ detailed cluster configuration page.
 
 #### Step 1:  Software Configuration and Steps
 
-Select **emr-6.8.0** for the release, uncheck all the software options, and then check **Hadoop
-3.2.1**, **Spark 3.3.0**, **Livy 0.7.1** and **JupyterEnterpriseGateway 2.1.0**.
+Select **emr-6.9.0** for the release, uncheck all the software options, and then check **Hadoop
+3.3.3**, **Spark 3.3.0**, **Livy 0.7.1** and **JupyterEnterpriseGateway 2.6.0**.
 
 In the "Edit software settings" field, copy and paste the configuration from the [EMR
 document](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-rapids.html). You can also
@@ -261,7 +262,7 @@ submitted. The mortgage examples we use are also available as a spark applicatio
 **spark shell** to run the scala code or **pyspark** to run the python code on master node through
 CLI.
 
-### Running GPU Accelerated Mortgage ETL and XGBoost Example using EMR Notebook
+### Running GPU Accelerated Mortgage ETL Example using EMR Notebook
 
 An EMR Notebook is a "serverless" Jupyter notebook. Unlike a traditional notebook, the contents of
 an EMR Notebook itself—the equations, visualizations, queries, models, code, and narrative text—are
@@ -270,8 +271,7 @@ with durable storage, efficient access, and flexibility.
 
 You can use the following step-by-step guide to run the example mortgage dataset using RAPIDS on
 Amazon EMR GPU clusters. For more examples, please refer to [NVIDIA/spark-rapids for
-ETL](https://github.com/NVIDIA/spark-rapids/tree/main/docs/demo) and [NVIDIA/spark-rapids for
-XGBoost](https://github.com/NVIDIA/spark-xgboost-examples/tree/spark-3/examples)
+ETL](https://github.com/NVIDIA/spark-rapids/tree/main/docs/demo)
 
 ![Create EMR Notebook](../img/AWS-EMR/EMR_notebook_2.png)
 
@@ -289,13 +289,7 @@ Download [the Mortgate ETL PySpark Notebook](../demo/AWS-EMR/Mortgage-ETL-GPU-EM
 to use PySpark as kernel. This example use 1 year (year 2000) data for a two node g4dn GPU
 cluster. You can adjust settings in the notebook for full mortgage dataset ETL.
 
-When executing the ETL code, you can also saw the Spark Job Progress within the notebook and the
+When executing the ETL code, you can also see the Spark Job Progress within the notebook and the
 code will also display how long it takes to run the query
 
 ![Create EMR Notebook](../img/AWS-EMR/EMR_notebook_3.png)
-
-#### Run Mortgage XGBoost Scala Notebook on EMR GPU Cluster 
-
-Please refer to this [quick start
-guide](https://github.com/NVIDIA/spark-xgboost-examples/blob/spark-2/getting-started-guides/csp/aws/Using_EMR_Notebook.md)
-to running GPU accelerated XGBoost on EMR Spark Cluster.
