@@ -23,8 +23,10 @@ import scala.collection.mutable
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.GpuHashAggregateIterator.{computeAggregateAndClose, concatenateBatches, AggHelper}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.shims.{AggregationTagging, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -153,6 +155,336 @@ object AggregateModeInfo {
   }
 }
 
+object GpuHashAggregateIterator extends Arm with Logging {
+  /**
+   * Internal class used in `computeAggregates` for the pre, agg, and post steps
+   *
+   * @param inputAttributes input attributes to identify the input columns from the input batches
+   * @param groupingExpressions expressions used for producing the grouping keys
+   * @param aggregateExpressions GPU aggregate expressions used to produce the aggregations
+   * @param forceMerge if true, we are merging two pre-aggregated batches, so we should use
+   *                   the merge steps for each aggregate function
+   * @param isSorted if the batch is sorted this is set to true and is passed to cuDF
+   *                 as an optimization hint
+   * @param useTieredProject if true, used tiered project for input projections
+   */
+  class AggHelper(
+      inputAttributes: Seq[Attribute],
+      groupingExpressions: Seq[NamedExpression],
+      aggregateExpressions: Seq[GpuAggregateExpression],
+      forceMerge: Boolean,
+      isSorted: Boolean = false,
+      useTieredProject : Boolean = true) extends Arm {
+
+    // `CudfAggregate` instances to apply, either update or merge aggregates
+    // package private for testing
+    private[rapids] val cudfAggregates = new mutable.ArrayBuffer[CudfAggregate]()
+
+    // integers for each column the aggregate is operating on
+    // package private for testing
+    private[rapids] val aggOrdinals = new mutable.ArrayBuffer[Int]
+
+    // grouping ordinals are the indices of the tables to aggregate that need to be
+    // the grouping key
+    // package private for testing
+    private[rapids] val groupingOrdinals: Array[Int] = groupingExpressions.indices.toArray
+
+    // the resulting data type from the cuDF aggregate (from
+    // the update or merge aggregate, be it reduction or group by)
+    private[rapids] val postStepDataTypes = new mutable.ArrayBuffer[DataType]()
+
+    private val groupingAttributes = groupingExpressions.map(_.toAttribute)
+    private val aggBufferAttributes = groupingAttributes ++
+        aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
+
+    // `GpuAggregateFunction` can add a pre and post step for update
+    // and merge aggregates.
+    private val preStep = new mutable.ArrayBuffer[Expression]()
+    private val postStep = new mutable.ArrayBuffer[Expression]()
+    private val postStepAttr = new mutable.ArrayBuffer[Attribute]()
+
+    // we add the grouping expression first, which should bind as pass-through
+    if (forceMerge) {
+      // a grouping expression can do actual computation, but we cannot do that computation again
+      // on a merge, nor would we want to if we could. So use the attributes instead of the
+      // original expression when we are forcing a merge.
+      preStep ++= groupingAttributes
+    } else {
+      preStep ++= groupingExpressions
+    }
+    postStep ++= groupingAttributes
+    postStepAttr ++= groupingAttributes
+    postStepDataTypes ++=
+        groupingExpressions.map(_.dataType)
+
+    private var ix = groupingAttributes.length
+    for (aggExp <- aggregateExpressions) {
+      val aggFn = aggExp.aggregateFunction
+      if ((aggExp.mode == Partial || aggExp.mode == Complete) && !forceMerge) {
+        val ordinals = (ix until ix + aggFn.updateAggregates.length)
+        aggOrdinals ++= ordinals
+        ix += ordinals.length
+        val updateAggs = aggFn.updateAggregates
+        postStepDataTypes ++= updateAggs.map(_.dataType)
+        cudfAggregates ++= updateAggs
+        preStep ++= aggFn.inputProjection
+        postStep ++= aggFn.postUpdate
+        postStepAttr ++= aggFn.postUpdateAttr
+      } else {
+        val ordinals = (ix until ix + aggFn.mergeAggregates.length)
+        aggOrdinals ++= ordinals
+        ix += ordinals.length
+        val mergeAggs = aggFn.mergeAggregates
+        postStepDataTypes ++= mergeAggs.map(_.dataType)
+        cudfAggregates ++= mergeAggs
+        preStep ++= aggFn.preMerge
+        postStep ++= aggFn.postMerge
+        postStepAttr ++= aggFn.postMergeAttr
+      }
+    }
+
+    // a bound expression that is applied before the cuDF aggregate
+    private val preStepAttributes = if (forceMerge) {
+      aggBufferAttributes
+    } else {
+      inputAttributes
+    }
+    private val (preStepBound, preStepBoundTiered) = if (useTieredProject) {
+      (None, Some(GpuBindReferences.bindGpuReferencesTiered(preStep.toList,
+        preStepAttributes.toList)))
+    } else {
+      (Some(GpuBindReferences.bindGpuReferences(preStep, preStepAttributes.toList)), None)
+    }
+
+    // a bound expression that is applied after the cuDF aggregate
+    private val postStepBound =
+      GpuBindReferences.bindGpuReferences(postStep, postStepAttr)
+
+    /**
+     * Apply the "pre" step: preMerge for merge, or pass-through in the update case
+     * @param toAggregateBatch - input (to the agg) batch from the child directly in the
+     *                         merge case, or from the `inputProjection` in the update case.
+     * @return a pre-processed batch that can be later cuDF aggregated
+     */
+    def preProcess(
+        toAggregateBatch: ColumnarBatch,
+        metrics: GpuHashAggregateMetrics): SpillableColumnarBatch = {
+      val projectedCb = withResource(toAggregateBatch) { inputBatch  =>
+        withResource(new NvtxRange("pre-process", NvtxColor.DARK_GREEN)) { _ =>
+          if (useTieredProject) {
+            preStepBoundTiered.get.tieredProject(inputBatch)
+          } else {
+            GpuProjectExec.project(inputBatch, preStepBound.get)
+          }
+        }
+      }
+      SpillableColumnarBatch(
+        projectedCb,
+        SpillPriorities.ACTIVE_BATCHING_PRIORITY,
+        metrics.spillCallback)
+    }
+
+    def aggregate(preProcessed: ColumnarBatch): ColumnarBatch = {
+      if (groupingOrdinals.nonEmpty) {
+        performGroupByAggregation(preProcessed)
+      } else {
+        performReduction(preProcessed)
+      }
+    }
+
+    def aggregate(
+        metrics: GpuHashAggregateMetrics,
+        preProcessed: SpillableColumnarBatch): SpillableColumnarBatch = {
+      val aggregatedSeq =
+        withRetry(preProcessed, splitSpillableInHalfByRows) { preProcessedAttempt =>
+          withResource(preProcessedAttempt.getColumnarBatch()) { cb =>
+            SpillableColumnarBatch(
+              aggregate(cb),
+              SpillPriorities.ACTIVE_BATCHING_PRIORITY,
+              preProcessed.getSpillCallback)
+          }
+        }.toSeq
+
+      // We need to merge the aggregated batches into 1 before calling post process,
+      // if the aggregate code had to split on a retry
+      if (aggregatedSeq.size > 1) {
+        val concatted = concatenateBatches(metrics, aggregatedSeq)
+        withRetryNoSplit(concatted) { attempt =>
+          withResource(attempt.getColumnarBatch()) { cb =>
+            SpillableColumnarBatch(
+              aggregate(cb),
+              SpillPriorities.ACTIVE_BATCHING_PRIORITY,
+              concatted.getSpillCallback)
+          }
+        }
+      } else {
+        aggregatedSeq.head
+      }
+    }
+
+    /**
+     * Invoke reduction functions as defined in each `CudfAggreagte`
+     * @param preProcessed - a batch after the "pre" step
+     * @return
+     */
+    def performReduction(preProcessed: ColumnarBatch): ColumnarBatch = {
+      withResource(new NvtxRange("reduce", NvtxColor.BLUE)) { _ =>
+        val cvs = mutable.ArrayBuffer[GpuColumnVector]()
+        cudfAggregates.zipWithIndex.foreach { case (cudfAgg, ix) =>
+          val aggFn = cudfAgg.reductionAggregate
+          val cols = GpuColumnVector.extractColumns(preProcessed)
+          val reductionCol = cols(aggOrdinals(ix))
+          withResource(aggFn(reductionCol.getBase)) { res =>
+            cvs += GpuColumnVector.from(
+              cudf.ColumnVector.fromScalar(res, 1), cudfAgg.dataType)
+          }
+        }
+        new ColumnarBatch(cvs.toArray, 1)
+      }
+    }
+
+    /**
+     * Used to produce a group-by aggregate
+     * @param preProcessed the batch after the "pre" step
+     * @return a Table that has been cuDF aggregated
+     */
+    def performGroupByAggregation(preProcessed: ColumnarBatch): ColumnarBatch = {
+      withResource(new NvtxRange("groupby", NvtxColor.BLUE)) { _ =>
+        withResource(GpuColumnVector.from(preProcessed)) { preProcessedTbl =>
+          val groupOptions = cudf.GroupByOptions.builder()
+              .withIgnoreNullKeys(false)
+              .withKeysSorted(isSorted)
+              .build()
+
+          val cudfAggsOnColumn = cudfAggregates.zip(aggOrdinals).map {
+            case (cudfAgg, ord) => cudfAgg.groupByAggregate.onColumn(ord)
+          }
+
+          // perform the aggregate
+          val aggTbl = preProcessedTbl
+              .groupBy(groupOptions, groupingOrdinals:_*)
+              .aggregate(cudfAggsOnColumn: _*)
+
+          withResource(aggTbl) { _ =>
+            GpuColumnVector.from(aggTbl, postStepDataTypes.toArray)
+          }
+        }
+      }
+    }
+
+    /**
+     * Used to produce the outbound batch from the aggregate that could be
+     * shuffled or could be passed through the evaluateExpression if we are in the final
+     * stage.
+     * It takes a cuDF aggregated batch and applies the "post" step:
+     * postUpdate for update, or postMerge for merge
+     * @param resultBatch - cuDF aggregated batch
+     * @return output batch from the aggregate
+     */
+    def postProcess(
+        aggregatedSpillable: SpillableColumnarBatch): SpillableColumnarBatch = {
+      val postProcessed =
+        withResource(aggregatedSpillable) { _ =>
+          withResource(aggregatedSpillable.getColumnarBatch()) { aggregated =>
+            withResource(new NvtxRange("post-process", NvtxColor.ORANGE)) { _ =>
+              GpuProjectExec.project(aggregated, postStepBound)
+            }
+          }
+        }
+      SpillableColumnarBatch(
+        postProcessed,
+        SpillPriorities.ACTIVE_BATCHING_PRIORITY,
+        aggregatedSpillable.getSpillCallback)
+    }
+  }
+
+  /**
+   * @note abstracted away for a unit test..
+   * @param helper
+   * @param preProcessed
+   * @return
+   */
+  def aggregate(
+      helper: AggHelper,
+      preProcessed: SpillableColumnarBatch,
+      metrics: GpuHashAggregateMetrics): SpillableColumnarBatch = {
+    helper.aggregate(metrics, preProcessed)
+  }
+
+  /**
+   * Compute the aggregations on the projected input columns, and close input batch.
+   *
+   * @note public for testing
+   * @param metrics metrics that will be updated during aggregation
+   * @param inputBatch input batch to aggregate
+   * @param helper an internal object that carries state required to execute the aggregate from
+   *               different parts of the codebase.
+   * @return aggregated batch
+   */
+  def computeAggregateAndClose(
+      metrics: GpuHashAggregateMetrics,
+      inputBatch: ColumnarBatch,
+      helper: AggHelper): SpillableColumnarBatch = {
+    val computeAggTime = metrics.computeAggTime
+    val opTime = metrics.opTime
+    withResource(new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime,
+      opTime)) { _ =>
+      // 1) a pre-processing step required before we go into the cuDF aggregate,
+      // in some cases casting and in others creating a struct (MERGE_M2 for instance,
+      // requires a struct)
+      // OOM retry happens within the projection in preProcess
+      val preProcessed = helper.preProcess(inputBatch, metrics)
+
+      // 2) perform the aggregation
+      // OOM retry means we could get a list of batches
+      val aggregatedSpillable = aggregate(helper, preProcessed, metrics)
+
+      // 3) a post-processing step required in some scenarios, casting or picking
+      // apart a struct
+      helper.postProcess(aggregatedSpillable)
+    }
+  }
+
+  /**
+   * Concatenates batches after extracting them from `SpllableColumnarBatch`
+   * @note the input batches are not closed as part of this operation
+   * @param metrics metrics that will be updated during aggregation
+   * @param toConcat spillable batches to concatenate
+   * @return concatenated batch result
+   */
+  def concatenateBatches(
+      metrics: GpuHashAggregateMetrics,
+      toConcat: Seq[SpillableColumnarBatch]): SpillableColumnarBatch = {
+    if (toConcat.size == 1) {
+      toConcat.head
+    } else {
+      withRetryNoSplit(toConcat) { attempt =>
+        val concatTime = metrics.concatTime
+        val opTime = metrics.opTime
+        withResource(
+          new NvtxWithMetrics("concatenateBatches", NvtxColor.BLUE, concatTime,
+            opTime)) { _ =>
+          val batchesToConcat = attempt.map(_.getColumnarBatch())
+          withResource(batchesToConcat) { _ =>
+            val numCols = batchesToConcat.head.numCols()
+            val dataTypes = (0 until numCols).map {
+              c => batchesToConcat.head.column(c).dataType
+            }.toArray
+            withResource(batchesToConcat.map(GpuColumnVector.from)) { tbl =>
+              withResource(cudf.Table.concatenate(tbl: _*)) { concatenated =>
+                val cb = GpuColumnVector.from(concatenated, dataTypes)
+                SpillableColumnarBatch(cb,
+                  SpillPriorities.ACTIVE_BATCHING_PRIORITY,
+                  attempt.head.getSpillCallback)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 /**
  * Iterator that takes another columnar batch iterator as input and emits new columnar batches that
  * are aggregated based on the specified grouping and aggregation expressions. This iterator tries
@@ -217,7 +549,7 @@ class GpuHashAggregateIterator(
   private[this] val isReductionOnly = groupingExpressions.isEmpty
   private[this] val boundExpressions = setupReferences()
   private[this] val targetMergeBatchSize = computeTargetMergeBatchSize(configuredTargetBatchSize)
-  private[this] val aggregatedBatches = new util.ArrayDeque[LazySpillableColumnarBatch]
+  private[this] val aggregatedBatches = new util.ArrayDeque[SpillableColumnarBatch]
   private[this] var outOfCoreIter: Option[GpuOutOfCoreSortIterator] = None
 
   /** Iterator for fetching aggregated batches if a sort-based fallback has occurred */
@@ -255,8 +587,8 @@ class GpuHashAggregateIterator(
       } else {
         // this will be the last batch
         hasReductionOnlyBatch = false
-        withResource(aggregatedBatches.pop()) { lazyBatch =>
-          GpuColumnVector.incRefCounts(lazyBatch.getBatch)
+        withResource(aggregatedBatches.pop()) { spillableBatch =>
+          spillableBatch.getColumnarBatch()
         }
       }
     }
@@ -280,20 +612,12 @@ class GpuHashAggregateIterator(
 
   /** Aggregate all input batches and place the results in the aggregatedBatches queue. */
   private def aggregateInputBatches(): Unit = {
-    val aggHelper = new AggHelper(forceMerge = false, useTieredProject = useTieredProject)
+    val aggHelper = new AggHelper(
+      inputAttributes, groupingExpressions, aggregateExpressions,
+      forceMerge = false, useTieredProject = useTieredProject)
     while (cbIter.hasNext) {
-      val childBatch = cbIter.next()
-      val isLastInputBatch = GpuColumnVector.isTaggedAsFinalBatch(childBatch)
-
-      val spillableBatch =
-        withResource(computeAggregateAndClose(childBatch, aggHelper)) { aggBatch =>
-          LazySpillableColumnarBatch(aggBatch, metrics.spillCallback, "aggbatch")
-        }
-      // Avoid making batch spillable for the common case of the last and only batch
-      if (!(isLastInputBatch && aggregatedBatches.isEmpty)) {
-        spillableBatch.allowSpilling()
-      }
-      aggregatedBatches.add(spillableBatch)
+      aggregatedBatches.add(
+        computeAggregateAndClose(metrics, cbIter.next(), aggHelper))
     }
   }
 
@@ -319,7 +643,7 @@ class GpuHashAggregateIterator(
             logWarning(s"Unable to merge reduction-only aggregated batches within " +
                 s"target batch limit of $targetMergeBatchSize, attempting to merge remaining " +
                 s"${aggregatedBatches.size()} batches beyond limit")
-            withResource(mutable.ArrayBuffer[LazySpillableColumnarBatch]()) { batchesToConcat =>
+            withResource(mutable.ArrayBuffer[SpillableColumnarBatch]()) { batchesToConcat =>
               aggregatedBatches.forEach(b => batchesToConcat += b)
               aggregatedBatches.clear()
               val batch = concatenateAndMerge(batchesToConcat)
@@ -339,7 +663,7 @@ class GpuHashAggregateIterator(
    * @return true if at least one merge operation occurred
    */
   private def mergePass(): Boolean = {
-    val batchesToConcat: mutable.ArrayBuffer[LazySpillableColumnarBatch] = mutable.ArrayBuffer.empty
+    val batchesToConcat: mutable.ArrayBuffer[SpillableColumnarBatch] = mutable.ArrayBuffer.empty
     var wasBatchMerged = false
     // Current size in bytes of the batches targeted for the next concatenation
     var concatSize: Long = 0L
@@ -354,7 +678,7 @@ class GpuHashAggregateIterator(
         // order of aggregated batches.
         while (batchesLeftInPass > 0 && !isConcatSearchFinished) {
           val candidate = aggregatedBatches.getFirst
-          val potentialSize = concatSize + candidate.deviceMemorySize
+          val potentialSize = concatSize + candidate.sizeInBytes
           isConcatSearchFinished = concatSize > 0 && potentialSize > targetMergeBatchSize
           if (!isConcatSearchFinished) {
             batchesLeftInPass -= 1
@@ -366,9 +690,7 @@ class GpuHashAggregateIterator(
 
       val mergedBatch = if (batchesToConcat.length > 1) {
         wasBatchMerged = true
-        val batch = concatenateAndMerge(batchesToConcat)
-        batch.allowSpilling()
-        batch
+        concatenateAndMerge(batchesToConcat)
       } else {
         // Unable to find a neighboring buffer to produce a valid merge in this pass,
         // so simply put this buffer back on the queue for other passes.
@@ -387,7 +709,8 @@ class GpuHashAggregateIterator(
   }
 
   private lazy val concatAndMergeHelper =
-    new AggHelper(forceMerge = true, useTieredProject = useTieredProject)
+    new AggHelper(inputAttributes, groupingExpressions, aggregateExpressions,
+      forceMerge = true, useTieredProject = useTieredProject)
 
   /**
    * Concatenate batches together and perform a merge aggregation on the result. The input batches
@@ -396,13 +719,15 @@ class GpuHashAggregateIterator(
    * @return lazy spillable batch which has NOT been marked spillable
    */
   private def concatenateAndMerge(
-      batches: mutable.ArrayBuffer[LazySpillableColumnarBatch]): LazySpillableColumnarBatch = {
+      batches: mutable.ArrayBuffer[SpillableColumnarBatch]): SpillableColumnarBatch = {
+    // TODO: concatenateAndMerge (and calling code) could output a sequence
+    //   of batches for the partial aggregate case. This would be done in case
+    //   a retry failed a certain number of times.
     val concatBatch = withResource(batches) { _ =>
-      concatenateBatches(batches)
+      val concatSpillable = concatenateBatches(metrics, batches)
+      withResource(concatSpillable) { _.getColumnarBatch() }
     }
-    withResource(computeAggregateAndClose(concatBatch, concatAndMergeHelper)) { mergedBatch =>
-      LazySpillableColumnarBatch(mergedBatch, metrics.spillCallback, "agg merged batch")
-    }
+    computeAggregateAndClose(metrics, concatBatch, concatAndMergeHelper)
   }
 
   /** Build an iterator that uses a sort-based approach to merge aggregated batches together. */
@@ -413,8 +738,8 @@ class GpuHashAggregateIterator(
       override def hasNext: Boolean = !aggregatedBatches.isEmpty
 
       override def next(): ColumnarBatch = {
-        withResource(aggregatedBatches.removeFirst()) { lazyBatch =>
-          GpuColumnVector.incRefCounts(lazyBatch.getBatch)
+        withResource(aggregatedBatches.removeFirst()) { spillable =>
+          spillable.getColumnarBatch()
         }
       }
     }
@@ -469,11 +794,16 @@ class GpuHashAggregateIterator(
       override def hasNext: Boolean = keyBatchingIter.hasNext
 
       private val mergeSortedHelper =
-        new AggHelper(true, isSorted = true, useTieredProject = useTieredProject)
+        new AggHelper(inputAttributes, groupingExpressions, aggregateExpressions,
+          forceMerge = true, isSorted = true, useTieredProject = useTieredProject)
 
       override def next(): ColumnarBatch = {
         // batches coming out of the sort need to be merged
-        computeAggregateAndClose(keyBatchingIter.next(), mergeSortedHelper)
+        val resultSpillable =
+          computeAggregateAndClose(metrics, keyBatchingIter.next(), mergeSortedHelper)
+        withResource(resultSpillable) { _ =>
+          resultSpillable.getColumnarBatch()
+        }
       }
     }
   }
@@ -521,31 +851,6 @@ class GpuHashAggregateIterator(
         metrics.numOutputRows += ret.numRows()
         metrics.numOutputBatches += 1
         ret
-      }
-    }
-  }
-
-  /**
-   * Concatenates batches after extracting them from `LazySpillableColumnarBatch`
-   * @note the input batches are not closed as part of this operation
-   * @param spillableBatchesToConcat lazy spillable batches to concatenate
-   * @return concatenated batch result
-   */
-  private def concatenateBatches(
-      spillableBatchesToConcat: mutable.ArrayBuffer[LazySpillableColumnarBatch]): ColumnarBatch = {
-    val concatTime = metrics.concatTime
-    val opTime = metrics.opTime
-    withResource(new NvtxWithMetrics("concatenateBatches", NvtxColor.BLUE, concatTime,
-      opTime)) { _ =>
-      val batchesToConcat = spillableBatchesToConcat.map(_.getBatch)
-      val numCols = batchesToConcat.head.numCols()
-      val dataTypes = (0 until numCols).map {
-        c => batchesToConcat.head.column(c).dataType
-      }.toArray
-      withResource(batchesToConcat.map(GpuColumnVector.from)) { tbl =>
-        withResource(cudf.Table.concatenate(tbl: _*)) { concatenated =>
-          GpuColumnVector.from(concatenated, dataTypes)
-        }
       }
     }
   }
@@ -599,210 +904,6 @@ class GpuHashAggregateIterator(
       boundResultReferences)
   }
 
-  /**
-   * Internal class used in `computeAggregates` for the pre, agg, and post steps
-   *
-   * @param forceMerge - if true, we are merging two pre-aggregated batches, so we should use
-   *                the merge steps for each aggregate function
-   * @param isSorted - if the batch is sorted this is set to true and is passed to cuDF
-   *                   as an optimization hint
-   * @param useTieredProject - if true, used tiered project for input projections
-   */
-  class AggHelper(forceMerge: Boolean, isSorted: Boolean = false,
-      useTieredProject : Boolean = true) {
-    // `CudfAggregate` instances to apply, either update or merge aggregates
-    private val cudfAggregates = new mutable.ArrayBuffer[CudfAggregate]()
-
-    // integers for each column the aggregate is operating on
-    private val aggOrdinals = new mutable.ArrayBuffer[Int]
-
-    // the resulting data type from the cuDF aggregate (from
-    // the update or merge aggregate, be it reduction or group by)
-    private val postStepDataTypes = new mutable.ArrayBuffer[DataType]()
-
-    private val groupingAttributes = groupingExpressions.map(_.toAttribute)
-    private val aggBufferAttributes = groupingAttributes ++
-      aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
-
-    // `GpuAggregateFunction` can add a pre and post step for update
-    // and merge aggregates.
-    private val preStep = new mutable.ArrayBuffer[Expression]()
-    private val postStep = new mutable.ArrayBuffer[Expression]()
-    private val postStepAttr = new mutable.ArrayBuffer[Attribute]()
-
-    // we add the grouping expression first, which should bind as pass-through
-    if (forceMerge) {
-      // a grouping expression can do actual computation, but we cannot do that computation again
-      // on a merge, nor would we want to if we could. So use the attributes instead of the
-      // original expression when we are forcing a merge.
-      preStep ++= groupingAttributes
-    } else {
-      preStep ++= groupingExpressions
-    }
-    postStep ++= groupingAttributes
-    postStepAttr ++= groupingAttributes
-    postStepDataTypes ++=
-      groupingExpressions.map(_.dataType)
-
-    private var ix = groupingAttributes.length
-    for (aggExp <- aggregateExpressions) {
-      val aggFn = aggExp.aggregateFunction
-      if ((aggExp.mode == Partial || aggExp.mode == Complete) && !forceMerge) {
-        val ordinals = (ix until ix + aggFn.updateAggregates.length)
-        aggOrdinals ++= ordinals
-        ix += ordinals.length
-        val updateAggs = aggFn.updateAggregates
-        postStepDataTypes ++= updateAggs.map(_.dataType)
-        cudfAggregates ++= updateAggs
-        preStep ++= aggFn.inputProjection
-        postStep ++= aggFn.postUpdate
-        postStepAttr ++= aggFn.postUpdateAttr
-      } else {
-        val ordinals = (ix until ix + aggFn.mergeAggregates.length)
-        aggOrdinals ++= ordinals
-        ix += ordinals.length
-        val mergeAggs = aggFn.mergeAggregates
-        postStepDataTypes ++= mergeAggs.map(_.dataType)
-        cudfAggregates ++= mergeAggs
-        preStep ++= aggFn.preMerge
-        postStep ++= aggFn.postMerge
-        postStepAttr ++= aggFn.postMergeAttr
-      }
-    }
-
-    // a bound expression that is applied before the cuDF aggregate
-    private val preStepAttributes = if (forceMerge) {
-      aggBufferAttributes
-    } else {
-      inputAttributes
-    }
-    private val (preStepBound, preStepBoundTiered) = if (useTieredProject) {
-      (None, Some(GpuBindReferences.bindGpuReferencesTiered(preStep.toList,
-        preStepAttributes.toList)))
-    } else {
-      (Some(GpuBindReferences.bindGpuReferences(preStep, preStepAttributes.toList)), None)
-    }
-
-    // a bound expression that is applied after the cuDF aggregate
-    private val postStepBound =
-      GpuBindReferences.bindGpuReferences(postStep, postStepAttr)
-
-    /**
-     * Apply the "pre" step: preMerge for merge, or pass-through in the update case
-     * @param toAggregateBatch - input (to the agg) batch from the child directly in the
-     *                         merge case, or from the `inputProjection` in the update case.
-     * @return a pre-processed batch that can be later cuDF aggregated
-     */
-    def preProcess(toAggregateBatch: ColumnarBatch): ColumnarBatch = {
-      withResource(new NvtxRange("pre-process", NvtxColor.DARK_GREEN)) { _ =>
-        if (useTieredProject) {
-          preStepBoundTiered.get.tieredProject(toAggregateBatch)
-        } else {
-          GpuProjectExec.project(toAggregateBatch, preStepBound.get)
-        }
-      }
-    }
-
-    /**
-     * Invoke reduction functions as defined in each `CudfAggreagte`
-     * @param preProcessed - a batch after the "pre" step
-     * @return
-     */
-    def performReduction(preProcessed: ColumnarBatch): ColumnarBatch = {
-      withResource(new NvtxRange("reduce", NvtxColor.BLUE)) { _ =>
-        val cvs = mutable.ArrayBuffer[GpuColumnVector]()
-        cudfAggregates.zipWithIndex.foreach { case (cudfAgg, ix) =>
-          val aggFn = cudfAgg.reductionAggregate
-          val cols = GpuColumnVector.extractColumns(preProcessed)
-          val reductionCol = cols(aggOrdinals(ix))
-          withResource(aggFn(reductionCol.getBase)) { res =>
-            cvs += GpuColumnVector.from(
-              cudf.ColumnVector.fromScalar(res, 1), cudfAgg.dataType)
-          }
-        }
-        new ColumnarBatch(cvs.toArray, 1)
-      }
-    }
-
-    /**
-     * Used to produce a group-by aggregate
-     * @param preProcessed the batch after the "pre" step
-     * @return a Table that has been cuDF aggregated
-     */
-    def performGroupByAggregation(preProcessed: ColumnarBatch): ColumnarBatch = {
-      withResource(new NvtxRange("groupby", NvtxColor.BLUE)) { _ =>
-        withResource(GpuColumnVector.from(preProcessed)) { preProcessedTbl =>
-          val groupOptions = cudf.GroupByOptions.builder()
-            .withIgnoreNullKeys(false)
-            .withKeysSorted(isSorted)
-            .build()
-
-          val cudfAggsOnColumn = cudfAggregates.zip(aggOrdinals).map {
-            case (cudfAgg, ord) => cudfAgg.groupByAggregate.onColumn(ord)
-          }
-
-          // perform the aggregate
-          val aggTbl = preProcessedTbl
-            .groupBy(groupOptions, groupingExpressions.indices: _*)
-            .aggregate(cudfAggsOnColumn: _*)
-
-          withResource(aggTbl) { _ =>
-            GpuColumnVector.from(aggTbl, postStepDataTypes.toArray)
-          }
-        }
-      }
-    }
-
-    /**
-     * Used to produce the outbound batch from the aggregate that could be
-     * shuffled or could be passed through the evaluateExpression if we are in the final
-     * stage.
-     * It takes a cuDF aggregated batch and applies the "post" step:
-     * postUpdate for update, or postMerge for merge
-     * @param resultBatch - cuDF aggregated batch
-     * @return output batch from the aggregate
-     */
-    def postProcess(resultBatch: ColumnarBatch): ColumnarBatch = {
-      withResource(new NvtxRange("post-process", NvtxColor.ORANGE)) { _ =>
-        GpuProjectExec.project(resultBatch, postStepBound)
-      }
-    }
-  }
-
-  /**
-   * Compute the aggregations on the projected input columns, and close input batch.
-   * @param toAggregateBatch input batch to aggregate
-   * @param helper an internal object that carries state required to execute the aggregate from
-   *               different parts of the codebase.
-   * @return aggregated batch
-   */
-  private def computeAggregateAndClose(
-      toAggregateBatch: ColumnarBatch, helper: AggHelper): ColumnarBatch = {
-    val computeAggTime = metrics.computeAggTime
-    val opTime = metrics.opTime
-    withResource(new NvtxWithMetrics("computeAggregate", NvtxColor.CYAN, computeAggTime,
-      opTime)) { _ =>
-      // a pre-processing step required before we go into the cuDF aggregate, in some cases
-      // casting and in others creating a struct (MERGE_M2 for instance, requires a struct)
-      val preProcessed = withResource(toAggregateBatch) { _ =>
-        helper.preProcess(toAggregateBatch)
-      }
-
-      val aggregated = withResource(preProcessed) { _ =>
-        if (groupingExpressions.nonEmpty) {
-          helper.performGroupByAggregation(preProcessed)
-        } else {
-          helper.performReduction(preProcessed)
-        }
-      }
-
-      // a post-processing step required in some scenarios, casting or picking
-      // apart a struct
-      withResource(aggregated) { _ =>
-        helper.postProcess(aggregated)
-      }
-    }
-  }
 }
 
 object GpuBaseAggregateMeta {
