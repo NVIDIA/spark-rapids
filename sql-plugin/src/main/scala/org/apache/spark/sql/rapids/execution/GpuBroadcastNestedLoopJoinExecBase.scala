@@ -16,7 +16,8 @@
 
 package org.apache.spark.sql.rapids.execution
 
-import ai.rapids.cudf.{ast, GatherMap, NvtxColor, OutOfBoundsPolicy, Table}
+import ai.rapids.cudf
+import ai.rapids.cudf.{ast, GatherMap, NvtxColor, OutOfBoundsPolicy, Scalar, Table}
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.{GpuBroadcastJoinMeta, ShimBinaryExecNode}
@@ -32,6 +33,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
+import org.apache.spark.sql.types.BooleanType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 abstract class GpuBroadcastNestedLoopJoinMetaBase(
@@ -282,12 +284,16 @@ object GpuBroadcastNestedLoopJoinExecBase extends Arm {
       assert(joinType.isInstanceOf[InnerLike], s"Unexpected unconditional join type: $joinType")
       new CrossJoinIterator(builtBatch, stream, targetSize, buildSide, opTime, joinTime)
     } else {
-      val compiledAst = boundCondition.get.convertToAst(numFirstTableColumns).compile()
       if (joinType.isInstanceOf[ExistenceJoin]) {
-        // existence join
-        new ConditionalNestedLoopExistenceJoinIterator(
-          builtBatch, stream, compiledAst, opTime, joinTime)
+        if (builtBatch.numCols == 0) {
+          degenerateExistsJoinIterator(stream, builtBatch, boundCondition.get)
+        } else {
+          val compiledAst = boundCondition.get.convertToAst(numFirstTableColumns).compile()
+          new ConditionalNestedLoopExistenceJoinIterator(
+            builtBatch, stream, compiledAst, opTime, joinTime)
+        }
       } else {
+        val compiledAst = boundCondition.get.convertToAst(numFirstTableColumns).compile()
         new ConditionalNestedLoopJoinIterator(joinType, buildSide, builtBatch,
           stream, streamAttributes, targetSize, compiledAst, spillCallback,
           opTime = opTime, joinTime = joinTime)
@@ -298,6 +304,37 @@ object GpuBroadcastNestedLoopJoinExecBase extends Arm {
         numOutputRows += cb.numRows()
         numOutputBatches += 1
         cb
+    }
+  }
+
+  private def degenerateExistsJoinIterator(
+      stream: Iterator[LazySpillableColumnarBatch],
+      builtBatch: LazySpillableColumnarBatch,
+      boundCondition: GpuExpression): Iterator[ColumnarBatch] = {
+    new Iterator[ColumnarBatch] {
+      override def hasNext: Boolean = stream.hasNext
+
+      override def next(): ColumnarBatch = {
+        withResource(stream.next()) { streamSpillable =>
+          val streamBatch = streamSpillable.getBatch
+          val existsCol: ColumnVector = if (builtBatch.numRows == 0) {
+            withResource(Scalar.fromBool(false)) { falseScalar =>
+              GpuColumnVector.from(cudf.ColumnVector.fromScalar(falseScalar, streamBatch.numRows),
+                BooleanType)
+            }
+          } else {
+            withResource(GpuExpressionsUtils.columnarEvalToColumn(
+              boundCondition, streamBatch)) { condEval =>
+              withResource(Scalar.fromBool(false)) { falseScalar =>
+                GpuColumnVector.from(condEval.getBase.replaceNulls(falseScalar), BooleanType)
+              }
+            }
+          }
+          withResource(new ColumnarBatch(Array(existsCol), streamBatch.numRows)) { existsBatch =>
+            GpuColumnVector.combineColumns(streamBatch, existsBatch)
+          }
+        }
+      }
     }
   }
 

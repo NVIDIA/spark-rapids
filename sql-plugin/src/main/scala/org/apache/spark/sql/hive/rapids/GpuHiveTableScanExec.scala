@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.hive.rapids
 
-import ai.rapids.cudf.{ColumnVector, DType, Scalar, Schema, Table}
+import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.RebaseHelper.withResource
 import com.nvidia.spark.rapids.{ColumnarPartitionReaderWithPartitionValues, CSVPartitionReaderBase, DateUtils, GpuColumnVector, GpuExec, GpuMetric, HostStringColBufferer, HostStringColBuffererFactory, PartitionReaderIterator, PartitionReaderWithBytesRead, RapidsConf}
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, DEBUG_LEVEL, DESCRIPTION_BUFFER_TIME, DESCRIPTION_FILTER_TIME, DESCRIPTION_GPU_DECODE_TIME, DESCRIPTION_PEAK_DEVICE_MEMORY, ESSENTIAL_LEVEL, FILTER_TIME, GPU_DECODE_TIME, MODERATE_LEVEL, NUM_OUTPUT_ROWS, PEAK_DEVICE_MEMORY}
@@ -482,7 +482,6 @@ case class GpuHiveTextPartitionReaderFactory(sqlConf: SQLConf,
 }
 
 // Reader that converts from chunked data buffers into cudf.Table.
-@scala.annotation.nowarn("msg=method stringSplit in class ColumnView is deprecated")
 class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
                                           csvOptions: CSVOptions,
                                           params: Map[String, String],
@@ -503,7 +502,7 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
     // The delimiter is currently hard coded to ^A. This should be able to support any format
     //  but we don't want to test that yet
     val splitTable = withResource(dataBufferer.getColumnAndRelease) { cv =>
-      cv.stringSplit("\u0001", false)
+      cv.stringSplit("\u0001")
     }
 
     // inputFileCudfSchema       == Schema of the input file/buffer.
@@ -586,11 +585,11 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
    *   1. The input strings are not trimmed of whitespace.
    *   2. Invalid date strings do not cause exceptions.
    */
-  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   override def castStringToDate(input: ColumnVector, dt: DType): ColumnVector = {
     // Filter out any dates that do not conform to the `yyyy-MM-dd` format.
     val supportedDateRegex = raw"\A\d{4}-\d{2}-\d{2}\Z"
-    val regexFiltered = withResource(input.matchesRe(supportedDateRegex)) { matchesRegex =>
+    val prog = new RegexProgram(supportedDateRegex, CaptureGroups.NON_CAPTURE)
+    val regexFiltered = withResource(input.matchesRe(prog)) { matchesRegex =>
       withResource(Scalar.fromNull(DType.STRING)) { nullString =>
         matchesRegex.ifElse(input, nullString)
       }
@@ -608,7 +607,6 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
     }
   }
 
-  @scala.annotation.nowarn("msg=method matchesRe in class ColumnView is deprecated")
   override def castStringToTimestamp(lhs: ColumnVector, sparkFormat: String, dType: DType)
   : ColumnVector = {
     // Currently, only the following timestamp pattern is supported:
@@ -619,7 +617,8 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
     // Input strings that do not match this format strictly must be replaced with nulls.
     //                 yyyy-  MM -  dd    HH  :  mm  :  ss [SSS...     ]
     val regex = raw"\A\d{4}-\d{2}-\d{2} \d{2}\:\d{2}\:\d{2}(?:\.\d{1,9})?\Z"
-    val regexFiltered = withResource(lhs.matchesRe(regex)) { matchesRegex =>
+    val prog = new RegexProgram(regex, CaptureGroups.NON_CAPTURE)
+    val regexFiltered = withResource(lhs.matchesRe(prog)) { matchesRegex =>
       withResource(Scalar.fromNull(DType.STRING)) { nullString =>
         matchesRegex.ifElse(lhs, nullString)
       }

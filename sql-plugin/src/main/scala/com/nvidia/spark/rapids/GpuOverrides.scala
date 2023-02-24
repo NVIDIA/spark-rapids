@@ -2358,6 +2358,7 @@ object GpuOverrides extends Logging {
       }),
     expr[StringSplit](
        "Splits `str` around occurrences that match `regex`",
+      // Java's split API produces different behaviors than cudf when splitting with empty pattern
       ExprChecks.projectOnly(TypeSig.ARRAY.nested(TypeSig.STRING),
         TypeSig.ARRAY.nested(TypeSig.STRING),
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
@@ -2454,6 +2455,7 @@ object GpuOverrides extends Logging {
       }),
     expr[StringToMap](
       "Creates a map after splitting the input string into pairs of key-value strings",
+      // Java's split API produces different behaviors than cudf when splitting with empty pattern
       ExprChecks.projectOnly(TypeSig.MAP.nested(TypeSig.STRING), TypeSig.MAP.nested(TypeSig.STRING),
         Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING),
           ParamCheck("pairDelim", TypeSig.lit(TypeEnum.STRING), TypeSig.lit(TypeEnum.STRING)),

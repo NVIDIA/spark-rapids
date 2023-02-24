@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit.{DAYS, HOURS, MINUTES, SECONDS}
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType, RegexProgram, Scalar}
 import com.nvidia.spark.rapids.{Arm, BoolUtils, CloseableHolder}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -167,21 +167,19 @@ object GpuIntervalUtils extends Arm {
    * @param t              day-time interval type
    * @return long column of micros
    */
- @scala.annotation.nowarn("msg=method extractRe in class ColumnView is deprecated")
   def castStringToDTInterval(cv: ColumnView, t: DT): ColumnVector = {
     (t.startField, t.endField) match {
-      case (DT.DAY, DT.DAY) => withResource(cv.extractRe(dayLiteralRegex)) {
-        groupsTable => {
+      case (DT.DAY, DT.DAY) =>
+        withResource(cv.extractRe(new RegexProgram(dayLiteralRegex))) { groupsTable =>
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromDayToDay(sign,
               groupsTable.getColumn(2) // day
             )
           }
         }
-      }
 
-      case (DT.DAY, DT.HOUR) => withResource(cv.extractRe(dayHourLiteralRegex)) {
-        groupsTable => {
+      case (DT.DAY, DT.HOUR) =>
+        withResource(cv.extractRe(new RegexProgram(dayHourLiteralRegex))) { groupsTable =>
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromDayToHour(sign,
               groupsTable.getColumn(2), // day
@@ -189,10 +187,9 @@ object GpuIntervalUtils extends Arm {
             )
           }
         }
-      }
 
-      case (DT.DAY, DT.MINUTE) => withResource(cv.extractRe(dayMinuteLiteralRegex)) {
-        groupsTable => {
+      case (DT.DAY, DT.MINUTE) =>
+        withResource(cv.extractRe(new RegexProgram(dayMinuteLiteralRegex))) { groupsTable =>
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromDayToMinute(sign,
               groupsTable.getColumn(2), // day
@@ -201,10 +198,9 @@ object GpuIntervalUtils extends Arm {
             )
           }
         }
-      }
 
-      case (DT.DAY, DT.SECOND) => withResource(cv.extractRe(daySecondLiteralRegex)) {
-        groupsTable => {
+      case (DT.DAY, DT.SECOND) =>
+        withResource(cv.extractRe(new RegexProgram(daySecondLiteralRegex))) { groupsTable =>
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromDayToSecond(sign,
               groupsTable.getColumn(2), // day
@@ -215,19 +211,18 @@ object GpuIntervalUtils extends Arm {
             )
           }
         }
-      }
 
-      case (DT.HOUR, DT.HOUR) => withResource(cv.extractRe(hourLiteralRegex)) { groupsTable => {
-        withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
-          addFromHourToHour(sign,
-            groupsTable.getColumn(2) // hour
-          )
+      case (DT.HOUR, DT.HOUR) =>
+        withResource(cv.extractRe(new RegexProgram(hourLiteralRegex))) { groupsTable =>
+          withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
+            addFromHourToHour(sign,
+              groupsTable.getColumn(2) // hour
+            )
+          }
         }
-      }
-      }
 
-      case (DT.HOUR, DT.MINUTE) => withResource(cv.extractRe(hourMinuteLiteralRegex)) {
-        groupsTable => {
+      case (DT.HOUR, DT.MINUTE) =>
+        withResource(cv.extractRe(new RegexProgram(hourMinuteLiteralRegex))) { groupsTable =>
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromHourToMinute(sign,
               groupsTable.getColumn(2), // hour
@@ -235,34 +230,30 @@ object GpuIntervalUtils extends Arm {
             )
           }
         }
-      }
 
-      case (DT.HOUR, DT.SECOND) => withResource(cv.extractRe(hourSecondLiteralRegex)) {
-        groupsTable => {
-          withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) {
-            sign =>
-              addFromHourToSecond(sign,
-                groupsTable.getColumn(2), // hour
-                groupsTable.getColumn(3), // minute
-                groupsTable.getColumn(4), // second
-                groupsTable.getColumn(5) // micros
-              )
+      case (DT.HOUR, DT.SECOND) =>
+        withResource(cv.extractRe(new RegexProgram(hourSecondLiteralRegex))) { groupsTable =>
+          withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
+            addFromHourToSecond(sign,
+              groupsTable.getColumn(2), // hour
+              groupsTable.getColumn(3), // minute
+              groupsTable.getColumn(4), // second
+              groupsTable.getColumn(5) // micros
+            )
           }
         }
-      }
 
-      case (DT.MINUTE, DT.MINUTE) => withResource(cv.extractRe(minuteLiteralRegex)) {
-        groupsTable => {
+      case (DT.MINUTE, DT.MINUTE) =>
+        withResource(cv.extractRe(new RegexProgram(minuteLiteralRegex))) { groupsTable =>
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromMinuteToMinute(sign,
               groupsTable.getColumn(2) // minute
             )
           }
         }
-      }
 
-      case (DT.MINUTE, DT.SECOND) => withResource(cv.extractRe(minuteSecondLiteralRegex)) {
-        groupsTable => {
+      case (DT.MINUTE, DT.SECOND) =>
+        withResource(cv.extractRe(new RegexProgram(minuteSecondLiteralRegex))) { groupsTable =>
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromMinuteToSecond(sign,
               groupsTable.getColumn(2), // minute
@@ -271,10 +262,9 @@ object GpuIntervalUtils extends Arm {
             )
           }
         }
-      }
 
-      case (DT.SECOND, DT.SECOND) => withResource(cv.extractRe(secondLiteralRegex)) {
-        groupsTable => {
+      case (DT.SECOND, DT.SECOND) =>
+        withResource(cv.extractRe(new RegexProgram(secondLiteralRegex))) { groupsTable =>
           withResource(finalSign(groupsTable.getColumn(0), groupsTable.getColumn(1))) { sign =>
             addFromSecondToSecond(sign,
               groupsTable.getColumn(2), // second
@@ -282,7 +272,6 @@ object GpuIntervalUtils extends Arm {
             )
           }
         }
-      }
 
       case _ =>
         throw new RuntimeException(

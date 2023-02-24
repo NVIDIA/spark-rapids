@@ -22,7 +22,7 @@ import java.util.Optional
 import scala.collection.mutable.ListBuffer
 import scala.math.max
 
-import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector, HostColumnVectorCore, HostMemoryBuffer, NvtxColor, NvtxRange, Scalar, Schema, Table}
+import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, HostColumnVector, HostColumnVectorCore, HostMemoryBuffer, NvtxColor, NvtxRange, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.DateUtils.{toStrf, TimestampFormatConversionException}
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.GpuTypeShims
@@ -403,7 +403,6 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
     }
   }
 
-  @scala.annotation.nowarn("msg=in class ColumnView is deprecated")
   def castStringToTimestamp(
       lhs: ColumnVector,
       sparkFormat: String,
@@ -446,7 +445,8 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
 
     // filter by regexp first to eliminate invalid entries
     val regexpFiltered = withResource(lhs.strip()) { stripped =>
-      withResource(stripped.matchesRe(regex)) { matchesRe =>
+      val prog = new RegexProgram(regex, CaptureGroups.NON_CAPTURE)
+      withResource(stripped.matchesRe(prog)) { matchesRe =>
         withResource(Scalar.fromNull(DType.STRING)) { nullString =>
           matchesRe.ifElse(stripped, nullString)
         }
@@ -461,8 +461,8 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
       // `@` was chosen somewhat arbitrarily but should be safe since we do not support any
       // date/time formats that contain the `@` character
       val placeholder = "@"
-      withResource(regexpFiltered.stringReplaceWithBackrefs(
-        raw"(\.\d{3})(Z?)\Z", raw"\1$placeholder\2")) { tmp =>
+      val prog = new RegexProgram(raw"(\.\d{3})(Z?)\Z")
+      withResource(regexpFiltered.stringReplaceWithBackrefs(prog, raw"\1$placeholder\2")) { tmp =>
         withResource(Scalar.fromString(placeholder)) { from =>
           withResource(Scalar.fromString("000")) { to =>
             tmp.stringReplace(from, to)
