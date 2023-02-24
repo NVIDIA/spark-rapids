@@ -30,15 +30,23 @@ object RmmRapidsRetryIterator extends Arm {
    * close the item passed to it. The resulting iterator may or
    * may not have the same number of elements as the source iterator.
    *
+   * While T is a generic `AutoCloseable` subclass most of the time we expect it to be
+   * `SpillableColumnarBatch`. The expectation when code enters `withRetry` is that
+   * all of the caller's data is spillable already, allowing the thread to be blocked, and
+   * its data eventually spilled because of other higher priority work.
+   *
    * This function will close the elements of `input` as `fn` is successfully
-   * invoked. If the iterator `input` is not empty, in the event of an unhandled
-   * exception, it is closed entirely by `withRetry`.
+   * invoked. Elements of `input` not manifested are the responsibility of the caller to
+   * close!
+   *
+   * `fn` must be idempotent: this is a requirement because we may call `fn` multiple times
+   * while handling retries.
    *
    * @param input an iterator of T
    * @param splitPolicy a function that can split an item of type T into a Seq[T]. The split
    *                    function must close the item passed to it.
    * @param fn the work to perform. Takes T and produces an output K
-   * @tparam T element type that must be AutoCloseable
+   * @tparam T element type that must be AutoCloseable (likely `SpillableColumnarBatch`)
    * @tparam K `fn` result type
    * @return an iterator of K
    */
@@ -55,15 +63,22 @@ object RmmRapidsRetryIterator extends Arm {
    * The resulting iterator may be 1 element, if successful on the first attempt or retry,
    * or it could be multiple if splits were required.
    *
+   * While T is a generic `AutoCloseable` subclass most of the time we expect it to be
+   * `SpillableColumnarBatch`. The expectation when code enters `withRetry` is that
+   * all of the caller's data is spillable already, allowing the thread to be blocked, and
+   * its data eventually spilled because of other higher priority work.
+   *
    * This function will close the elements of `input` as `fn` is successfully
-   * invoked. If the iterator `input` is not empty, in the event of an unhandled
-   * exception, it is closed entirely by `withRetry`.
+   * invoked. In the event of an unhandled exception `input` is also closed.
+   *
+   * `fn` must be idempotent: this is a requirement because we may call `fn` multiple times
+   * while handling retries.
    *
    * @param input a single item T
    * @param splitPolicy a function that can split an item of type T into a Seq[T]. The split
    *                    function must close the item passed to it.
    * @param fn the work to perform. Takes T and produces an output K
-   * @tparam T element type that must be AutoCloseable
+   * @tparam T element type that must be AutoCloseable (likely `SpillableColumnarBatch`)
    * @tparam K `fn` result type
    * @return an iterator of K
    */
@@ -82,13 +97,20 @@ object RmmRapidsRetryIterator extends Arm {
    * retry the call to `fn` if needed. This does not split the
    * input into multiple chunks. The result is a single item of type K.
    *
+   * While T is a generic `AutoCloseable` subclass most of the time we expect it to be
+   * `SpillableColumnarBatch`. The expectation when code enters `withRetryNoSplit` is that
+   * all of the caller's data is spillable already, allowing the thread to be blocked, and
+   * its data eventually spilled because of other higher priority work.
+   *
    * This function will close the elements of `input` as `fn` is successfully
-   * invoked. If the iterator `input` is not empty, in the event of an unhandled
-   * exception, it is closed entirely by `withRetryNoSplit`.
+   * invoked. In the event of an unhandled exception `input` is also closed.
+   *
+   * `fn` must be idempotent: this is a requirement because we may call `fn` multiple times
+   * while handling retries.
    *
    * @param input       a single item T
    * @param fn          the work to perform. Takes T and produces an output K
-   * @tparam T element type that must be AutoCloseable
+   * @tparam T element type that must be AutoCloseable (likely `SpillableColumnarBatch`)
    * @tparam K `fn` result type
    * @return a single item of type K
    */
@@ -106,13 +128,20 @@ object RmmRapidsRetryIterator extends Arm {
    * given in `input`, and it will retry the call to `fn` if needed. This does not split the
    * input into multiple chunks. The result is a single item of type K.
    *
+   * While T is a generic `AutoCloseable` subclass most of the time we expect it to be
+   * `SpillableColumnarBatch`. The expectation when code enters `withRetryNoSplit` is that
+   * all of the caller's data is spillable already, allowing the thread to be blocked, and
+   * its data eventually spilled because of other higher priority work.
+   *
    * This function will close the elements of `input` as `fn` is successfully
-   * invoked. If the iterator `input` is not empty, in the event of an unhandled
-   * exception, it is closed entirely by `withRetryNoSplit`.
+   * invoked. In the event of an unhandled exception, all elements of `input` are closed.
+   *
+   * `fn` must be idempotent: this is a requirement because we may call `fn` multiple times
+   * while handling retries.
    *
    * @param input       a single item T
    * @param fn          the work to perform. Takes T and produces an output K
-   * @tparam T element type that must be AutoCloseable
+   * @tparam T element type that must be AutoCloseable (likely `SpillableColumnarBatch`)
    * @tparam K `fn` result type
    * @return a single item of type K
    */
@@ -191,27 +220,30 @@ object RmmRapidsRetryIterator extends Arm {
    * closed. In the case of a failure, all attempts will be closed. It is the responsibility
    * of the caller to close any remaining items in `input` that have not been attempted.
    *
-   * @tparam K element type that must be AutoCloseable
-   * @tparam T `fn` result type
-   * @param input an iterator of K
-   * @param fn a function that takes K and produces T
+   * `fn` must be idempotent: this is a requirement because we may call `fn` multiple times
+   * while handling retries.
+   *
+   * @tparam T element type that must be AutoCloseable
+   * @tparam K `fn` result type
+   * @param input an iterator of T
+   * @param fn a function that takes T and produces K
    * @param splitPolicy a function that can split an item of type T into a Seq[T]. The split
    *                    function must close the item passed to it.
    */
-  class RmmRapidsRetryAutoCloseableIterator[K <: AutoCloseable, T](
-      input: Iterator[K],
-      fn: K => T,
-      splitPolicy: K => Seq[K])
+  class RmmRapidsRetryAutoCloseableIterator[T <: AutoCloseable, K](
+      input: Iterator[T],
+      fn: T => K,
+      splitPolicy: T => Seq[T])
       extends RmmRapidsRetryIterator(input, fn, splitPolicy)
         with Arm {
 
     def this(
-        input: Iterator[K],
-        fn: K => T) = {
+        input: Iterator[T],
+        fn: T => K) = {
       this(input, fn, null)
     }
 
-    override def invokeFn(k: K): T = {
+    override def invokeFn(k: T): K = {
       val res = super.invokeFn(k)
       k.close() // close `k` only if we didn't throw from `invokeFn`
       res
@@ -219,9 +251,9 @@ object RmmRapidsRetryIterator extends Arm {
 
     override def hasNext: Boolean = super.hasNext
 
-    override def next(): T = {
+    override def next(): K = {
       if (!hasNext) {
-        throw new IllegalStateException("Closed called on an empty iterator.")
+        throw new NoSuchElementException("Closed called on an empty iterator.")
       }
       try {
         super.next()
@@ -239,37 +271,36 @@ object RmmRapidsRetryIterator extends Arm {
    * RmmRapidsRetryIterator exposes an iterator that can retry work,
    * specified by `fn`, abstracting away the retry specifics.
    *
-   * @tparam K element type that must be AutoCloseable
-   * @tparam T `fn` result type
-   * @param input an iterator of K
-   * @param fn a function that takes K and produces T
-   * @param splitPolicy an optional function that can split K into a Seq[K], if provided
+   * @tparam T element type
+   * @tparam K `fn` result type
+   * @param input an iterator of T
+   * @param fn a function that takes T and produces K
+   * @param splitPolicy an optional function that can split T into a Seq[T], if provided
    *                    `splitPolicy` must take ownership of items passed to it.
    */
-  class RmmRapidsRetryIterator[K, T](
-      input: Iterator[K],
-      fn: K => T,
-      splitPolicy: K => Seq[K]) extends Iterator[T] with Arm {
-    def this(input: Iterator[K], fn: K => T) =
+  class RmmRapidsRetryIterator[T, K](
+      input: Iterator[T],
+      fn: T => K,
+      splitPolicy: T => Seq[T]) extends Iterator[K] with Arm {
+    def this(input: Iterator[T], fn: T => K) =
       this(input, fn, null)
 
-    protected val attemptStack = new mutable.ArrayStack[K]()
+    protected val attemptStack = new mutable.ArrayStack[T]()
 
     override def hasNext: Boolean = input.hasNext || attemptStack.nonEmpty
 
-    protected def invokeFn(k: K): T = {
+    protected def invokeFn(k: T): K = {
       fn(k)
     }
 
-    override def next(): T = {
+    override def next(): K = {
       // this is set on the first exception, and we add suppressed if there are others
       // during the retry attempts
       var lastException: Throwable = null
       var firstAttempt: Boolean = true
-      var result: Option[T] = None
+      var result: Option[K] = None
       var doSplit = false
-      while ((input.hasNext || attemptStack.nonEmpty) &&
-          result.isEmpty) {
+      while (result.isEmpty && (attemptStack.nonEmpty || input.hasNext)) {
         if (attemptStack.isEmpty && input.hasNext) {
           attemptStack.push(input.next())
         }
@@ -298,32 +329,25 @@ object RmmRapidsRetryIterator extends Arm {
           result = Some(invokeFn(attempt))
         } catch {
           case retryOOM: RetryOOM =>
-            if (lastException == null) {
-              lastException = retryOOM
-            } else {
+            if (lastException != null) {
               retryOOM.addSuppressed(lastException)
-              lastException = retryOOM
             }
-
+            lastException = retryOOM
             // put it back
             attemptStack.push(attempt)
           case splitAndRetryOOM: SplitAndRetryOOM => // we are the only thread
-            if (lastException == null) {
-              lastException = splitAndRetryOOM
-            } else {
+            if (lastException != null) {
               splitAndRetryOOM.addSuppressed(lastException)
-              lastException = splitAndRetryOOM
             }
+            lastException = splitAndRetryOOM
             // put it back
             attemptStack.push(attempt)
             doSplit = true
           case other: Throwable =>
-            if (lastException == null) {
-              lastException = other
-            } else {
+            if (lastException != null) {
               other.addSuppressed(lastException)
-              lastException = other
             }
+            lastException = other
             // put this attempt back on our stack, so that it will be closed
             attemptStack.push(attempt)
 
@@ -336,7 +360,7 @@ object RmmRapidsRetryIterator extends Arm {
     }
 
     // It is assumed that OOM in this function is not handled.
-    private def splitAndClose(item: K): Seq[K] = {
+    private def splitAndClose(item:T): Seq[T] = {
       if (splitPolicy == null) {
         // put item into the attempt stack, to be closed
         attemptStack.push(item)
