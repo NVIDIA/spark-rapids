@@ -31,7 +31,7 @@ import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2ScanExecBase, 
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashedRelationBroadcastMode}
 import org.apache.spark.sql.rapids.{ExternalSource, GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
-import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase, GpuBroadcastToRowExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.execution.{ExchangeMappingCache, GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase, GpuBroadcastToRowExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.types.StructType
 
 /**
@@ -662,6 +662,42 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case _ => plan
   }
 
+  /** Mark nodes as GPU planning completed. */
+  private def markGpuPlanningComplete(plan: SparkPlan): SparkPlan = {
+    plan.foreach {
+      case g: GpuBroadcastExchangeExec => g.markGpuPlanningComplete()
+      case _ =>
+    }
+    plan
+  }
+
+  /**
+   * On some Spark platforms, AQE planning ends up not reusing as many GPU exchanges as possible.
+   * This searches the plan for any GPU broadcast exchanges and checks if their original CPU plans
+   * match any other previously seen GPU broadcasts with the same CPU plan.
+   */
+  private def fixupExchangeReuse(p: SparkPlan): SparkPlan = {
+    def doFixup(plan: SparkPlan): SparkPlan = {
+      plan.transformUp {
+        case g: GpuBroadcastExchangeExec =>
+          ExchangeMappingCache.findGpuExchangeReplacement(g.cpuCanonical).map { other =>
+            if (other eq g) {
+              g
+            } else {
+              ReusedExchangeExec(g.output, other)
+            }
+          }.getOrElse(g)
+      }
+    }
+
+    // If an exchange is at the top of the plan being remapped, this is likely due to AQE
+    // re-planning, and we're not allowed to change an exchange to a reused exchange in that case.
+    p match {
+      case e: Exchange => e.mapChildren(doFixup)
+      case _ => doFixup(p)
+    }
+  }
+
   override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
     this.rapidsConf = new RapidsConf(plan.conf)
     if (rapidsConf.isSqlEnabled && rapidsConf.isSqlExecuteOnGPU) {
@@ -703,6 +739,9 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         // plugin performs its final transformations of the plan. In this case, we 
         // need to apply any remaining rules that should have been applied.
         updatedPlan = SparkShimImpl.applyPostShimPlanRules(updatedPlan)
+
+        updatedPlan = markGpuPlanningComplete(updatedPlan)
+        updatedPlan = fixupExchangeReuse(updatedPlan)
 
         if (rapidsConf.logQueryTransformations) {
           logWarning(s"Transformed query:" +
