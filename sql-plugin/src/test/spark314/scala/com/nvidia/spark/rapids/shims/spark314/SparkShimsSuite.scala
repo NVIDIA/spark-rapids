@@ -25,7 +25,7 @@ import org.scalatest.FunSuite
 
 class SparkShimsSuite extends FunSuite with FQSuiteName {
   test("spark shims version") {
-    assert(SparkShimImpl.getSparkShimVersion === SparkShimVersion(3, 1, 3))
+    assert(SparkShimImpl.getSparkShimVersion === SparkShimVersion(3, 1, 4))
   }
 
   test("shuffle manager class") {
