@@ -211,11 +211,15 @@ def test_sortmerge_join_wrong_key_fallback(data_gen, join_type):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', basic_nested_gens + [decimal_gen_128bit], ids=idfn)
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
-def test_hash_join_ridealong(data_gen, join_type):
+@pytest.mark.parametrize('sub_part_enabled', ['false', 'true'], ids=['SubPartition_OFF', 'SubPartition_ON'])
+def test_hash_join_ridealong(data_gen, join_type, sub_part_enabled):
     def do_join(spark):
         left, right = create_ridealong_df(spark, short_gen, data_gen, 50, 500)
         return left.join(right, left.key == right.r_key, join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_hash_join_conf)
+    _all_conf = copy_and_update(_hash_join_conf, {
+        "spark.rapids.sql.test.subPartitioning.enabled": sub_part_enabled
+    })
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_all_conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this
@@ -865,24 +869,6 @@ def test_existence_join_in_broadcast_nested_loop_join(spark_tmp_table_factory, a
     assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, capture_regexp,
                                                       conf={"spark.sql.adaptive.enabled": aqeEnabled})
 
-
-sub_join_decimal_gens = [decimal_gen_64bit,
-    pytest.param(decimal_gen_128bit, marks=[pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/7814")])]
-
-@validate_execs_in_gpu_plan('GpuShuffledHashJoinExec')
-@ignore_order(local=True)
-@pytest.mark.parametrize('data_gen', basic_nested_gens + sub_join_decimal_gens, ids=idfn)
-@pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
-def test_hash_join_subpartitioning_ridealong(data_gen, join_type):
-    def do_join(spark):
-        left, right = create_ridealong_df(spark, short_gen, data_gen, 50, 500)
-        return left.join(right, left.key == right.r_key, join_type)
-    _all_conf = copy_and_update(_hash_join_conf, {
-        "spark.rapids.sql.test.subPartitioning.enabled": "true"
-    })
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_all_conf)
-
-
 @ignore_order
 @pytest.mark.parametrize('aqeEnabled', [True, False], ids=['aqe:on', 'aqe:off'])
 def test_degenerate_broadcast_nested_loop_existence_join(spark_tmp_table_factory, aqeEnabled):
@@ -906,4 +892,3 @@ def test_degenerate_broadcast_nested_loop_existence_join(spark_tmp_table_factory
     capture_regexp = r"GpuBroadcastNestedLoopJoin ExistenceJoin\(exists#[0-9]+\),"
     assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, capture_regexp,
                                                       conf={"spark.sql.adaptive.enabled": aqeEnabled})
-

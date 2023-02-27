@@ -684,8 +684,7 @@ class ConditionalNestedLoopExistenceJoinIterator(
 
   use(condition)
 
-  override def existsScatterMap(leftColumnarBatch: ColumnarBatch,
-      rightColumnarBatch: ColumnarBatch): GatherMap = {
+  override def existsScatterMap(leftColumnarBatch: ColumnarBatch): GatherMap = {
     withResource(
       new NvtxWithMetrics("existence join scatter map", NvtxColor.ORANGE, joinTime)) { _ =>
       withResource(GpuColumnVector.from(leftColumnarBatch)) { leftTab =>

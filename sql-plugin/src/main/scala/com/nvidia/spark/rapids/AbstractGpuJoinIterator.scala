@@ -151,86 +151,6 @@ abstract class AbstractGpuJoinIterator(
   }
 }
 
-object SplittableJoinIterator {
-  /**
-   * Create a join gatherer from gather maps.
-   *
-   * @param maps      gather maps produced from a cudf join. All the maps
-   *                  will be closed after done.
-   * @param leftData  batch corresponding to the left table in the join
-   * @param rightData batch corresponding to the right table in the join
-   * @param joinType  the join type
-   * @param spillCallback the callback for spill operation
-   * @return some gatherer or None if the are no rows to gather in this join batch
-   */
-  def makeGatherer(
-      maps: Array[GatherMap],
-      leftData: LazySpillableColumnarBatch,
-      rightData: LazySpillableColumnarBatch,
-      joinType: JoinType,
-      spillCallback: SpillCallback): Option[JoinGatherer] = {
-    assert(maps.length > 0 && maps.length <= 2)
-    try {
-      val leftMap = maps.head
-      val rightMap = if (maps.length > 1) {
-        if (rightData.numCols == 0) {
-          // No data so don't bother with it
-          None
-        } else {
-          Some(maps(1))
-        }
-      } else {
-        None
-      }
-
-      val lazyLeftMap = LazySpillableGatherMap(leftMap, spillCallback, "left_map")
-      val gatherer = rightMap match {
-        case None =>
-          // When there isn't a `rightMap` we are in either LeftSemi or LeftAnti joins.
-          // In these cases, the map and the table are both the left side, and everything in the map
-          // is a match on the left table, so we don't want to check for bounds.
-          rightData.close()
-          JoinGatherer(lazyLeftMap, leftData, OutOfBoundsPolicy.DONT_CHECK)
-        case Some(right) =>
-          // Inner joins -- manifest the intersection of both left and right sides. The gather maps
-          //   contain the number of rows that must be manifested, and every index
-          //   must be within bounds, so we can skip the bounds checking.
-          //
-          // Left outer  -- Left outer manifests all rows for the left table. The left gather map
-          //   must contain valid indices, so we skip the check for the left side. The right side
-          //   has to be checked, since we need to produce nulls (for the right) for those
-          //   rows on the left side that don't have a match on the right.
-          //
-          // Right outer -- Is the opposite from left outer (skip right bounds check, keep left)
-          //
-          // Full outer  -- Can produce nulls for any left or right rows that don't have a match
-          //   in the opposite table. So we must check both gather maps.
-          //
-          val leftOutOfBoundsPolicy = joinType match {
-            case _: InnerLike | LeftOuter => OutOfBoundsPolicy.DONT_CHECK
-            case _ => OutOfBoundsPolicy.NULLIFY
-          }
-          val rightOutOfBoundsPolicy = joinType match {
-            case _: InnerLike | RightOuter => OutOfBoundsPolicy.DONT_CHECK
-            case _ => OutOfBoundsPolicy.NULLIFY
-          }
-          val lazyRightMap = LazySpillableGatherMap(right, spillCallback, "right_map")
-          JoinGatherer(lazyLeftMap, leftData, lazyRightMap, rightData,
-            leftOutOfBoundsPolicy, rightOutOfBoundsPolicy)
-      }
-      if (gatherer.isDone) {
-        // Nothing matched...
-        gatherer.close()
-        None
-      } else {
-        Some(gatherer)
-      }
-    } finally {
-      maps.safeClose()
-    }
-  }
-}
-
 /**
  * Base class for join iterators that split and spill batches to avoid GPU OOM errors.
  * @param gatherNvtxName name to use for the NVTX range when producing the join gather maps
@@ -385,6 +305,64 @@ abstract class SplittableJoinIterator(
       leftData: LazySpillableColumnarBatch,
       rightData: LazySpillableColumnarBatch,
       joinType: JoinType): Option[JoinGatherer] = {
-    SplittableJoinIterator.makeGatherer(maps, leftData, rightData, joinType, spillCallback)
+    assert(maps.length > 0 && maps.length <= 2)
+    try {
+      val leftMap = maps.head
+      val rightMap = if (maps.length > 1) {
+        if (rightData.numCols == 0) {
+          // No data so don't bother with it
+          None
+        } else {
+          Some(maps(1))
+        }
+      } else {
+        None
+      }
+
+      val lazyLeftMap = LazySpillableGatherMap(leftMap, spillCallback, "left_map")
+      val gatherer = rightMap match {
+        case None =>
+          // When there isn't a `rightMap` we are in either LeftSemi or LeftAnti joins.
+          // In these cases, the map and the table are both the left side, and everything in the map
+          // is a match on the left table, so we don't want to check for bounds.
+          rightData.close()
+          JoinGatherer(lazyLeftMap, leftData, OutOfBoundsPolicy.DONT_CHECK)
+        case Some(right) =>
+          // Inner joins -- manifest the intersection of both left and right sides. The gather maps
+          //   contain the number of rows that must be manifested, and every index
+          //   must be within bounds, so we can skip the bounds checking.
+          //
+          // Left outer  -- Left outer manifests all rows for the left table. The left gather map
+          //   must contain valid indices, so we skip the check for the left side. The right side
+          //   has to be checked, since we need to produce nulls (for the right) for those
+          //   rows on the left side that don't have a match on the right.
+          //
+          // Right outer -- Is the opposite from left outer (skip right bounds check, keep left)
+          //
+          // Full outer  -- Can produce nulls for any left or right rows that don't have a match
+          //   in the opposite table. So we must check both gather maps.
+          //
+          val leftOutOfBoundsPolicy = joinType match {
+            case _: InnerLike | LeftOuter => OutOfBoundsPolicy.DONT_CHECK
+            case _ => OutOfBoundsPolicy.NULLIFY
+          }
+          val rightOutOfBoundsPolicy = joinType match {
+            case _: InnerLike | RightOuter => OutOfBoundsPolicy.DONT_CHECK
+            case _ => OutOfBoundsPolicy.NULLIFY
+          }
+          val lazyRightMap = LazySpillableGatherMap(right, spillCallback, "right_map")
+          JoinGatherer(lazyLeftMap, leftData, lazyRightMap, rightData,
+            leftOutOfBoundsPolicy, rightOutOfBoundsPolicy)
+      }
+      if (gatherer.isDone) {
+        // Nothing matched...
+        gatherer.close()
+        None
+      } else {
+        Some(gatherer)
+      }
+    } finally {
+      maps.foreach(_.close())
+    }
   }
 }

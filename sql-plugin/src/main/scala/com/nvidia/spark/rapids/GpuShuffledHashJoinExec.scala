@@ -30,7 +30,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.rapids.GpuOr
 import org.apache.spark.sql.rapids.execution.{BatchTypeSizeAwareIterator, GpuHashJoin, GpuSubPartitionHashJoin, JoinTypeChecks}
-import org.apache.spark.sql.types.BooleanType
+import org.apache.spark.sql.types.{BooleanType, Decimal, DecimalType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuShuffledHashJoinMeta(
@@ -145,7 +145,7 @@ case class GpuShuffledHashJoinExec(
     val batchSizeBytes = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     val numPartitions = RapidsConf.NUM_SUB_PARTITIONS.get(conf)
     val testSubPartition =
-      RapidsConf.TEST_CONF.get(conf) && RapidsConf.HASH_SUB_PARTITIONING_ENABLED.get(conf)
+      RapidsConf.TEST_CONF.get(conf) && RapidsConf.HASH_SUB_PARTITION_TEST_ENABLED.get(conf)
     val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
     val localBuildOutput = buildPlan.output
 
@@ -165,11 +165,20 @@ case class GpuShuffledHashJoinExec(
     // Small data does not need joins by sub-partitioning
     val bigJoinThreshold = Math.max(batchSizeBytes, 100 * 1024 * 1024)
 
+    // A WAR for issue https://github.com/NVIDIA/spark-rapids/issues/7814
+    // Can be removed once the issue is fixed.
+    val noBigDecimal = (localBuildOutput ++ streamedPlan.output).forall { attr =>
+      attr.dataType match {
+        case dec: DecimalType => dec.precision <= Decimal.MAX_LONG_DIGITS
+        case _ => true
+      }
+    }
+
     streamedPlan.executeColumnar().zipPartitions(buildPlan.executeColumnar()) {
       (streamIter, buildIter) => {
         val batchAwareIter = new BatchTypeSizeAwareIterator(buildIter, bigJoinThreshold,
           buildDataSize)
-        if (batchAwareIter.isBatchesSizeOverflow || testSubPartition) {
+        if ((batchAwareIter.isBatchesSizeOverflow || testSubPartition) && noBigDecimal) {
           // For the quite big joins, when the built batch will go beyond the
           // the target batch size.
           val gpuBuildIter = GpuShuffledHashJoinExec.ensureBatchesOnGpu(
