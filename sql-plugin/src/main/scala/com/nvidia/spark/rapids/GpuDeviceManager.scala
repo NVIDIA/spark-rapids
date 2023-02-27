@@ -297,7 +297,7 @@ object GpuDeviceManager extends Logging {
           Rmm.logToStdout()
         case c if "stderr".equalsIgnoreCase(c) =>
           features += "LOG: STDERR"
-          Rmm.logToStdout()
+          Rmm.logToStderr()
         case c =>
           logWarning(s"RMM logging set to '$c' is not supported and is being ignored.")
           null
