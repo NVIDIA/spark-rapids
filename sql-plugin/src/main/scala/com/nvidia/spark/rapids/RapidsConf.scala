@@ -1787,6 +1787,12 @@ object RapidsConf {
         .bytesConf(ByteUnit.BYTE)
         .createWithDefault(0L)
 
+  val HACK_READ_S3_FIES_FROM_LOCAL_DISK_CACHE =
+    conf("spark.rapids.sql.hackReadS3FilesFromLocalDiskCache")
+      .doc("hack code")
+      .booleanConf
+      .createWithDefault(value = false)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -2376,6 +2382,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isDetectDeltaCheckpointQueries: Boolean = get(DETECT_DELTA_CHECKPOINT_QUERIES)
 
   lazy val concurrentWriterPartitionFlushSize:Long = get(CONCURRENT_WRITER_PARTITION_FLUSH_SIZE)
+
+  lazy val hackReadS3FilesFromLocalDiskCache: Boolean = get(HACK_READ_S3_FIES_FROM_LOCAL_DISK_CACHE)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values

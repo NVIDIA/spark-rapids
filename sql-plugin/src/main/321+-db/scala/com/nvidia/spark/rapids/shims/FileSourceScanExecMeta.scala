@@ -159,6 +159,13 @@ class FileSourceScanExecMeta(plan: FileSourceScanExec,
           // convert time algorithm and read large files
           (wrapped.relation.location, None)
         }
+      } else if (conf.hackReadS3FilesFromLocalDiskCache) {
+        // replace s3 path to local cache
+        val newLocation = AlluxioUtils.replaceS3PathToLocal(
+          wrapped.relation,
+          partitionFilters,
+          wrapped.dataFilters)
+        (newLocation, None)
       } else {
         // it's not convert time algorithm or read large files, do not replace
         (wrapped.relation.location, None)

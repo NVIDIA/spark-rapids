@@ -597,6 +597,100 @@ object AlluxioUtils extends Logging with Arm {
     (location, mapIfReplacedPaths)
   }
 
+  /**
+   * Similar to the above function `replacePathIfNeeded`
+   * Replace S3 path to local path, e.g.: s3://a/b/c => file:/
+   */
+  def replaceS3PathToLocal(
+      relation: HadoopFsRelation,
+      partitionFilters: Seq[Expression],
+      dataFilters: Seq[Expression]): FileIndex = {
+    logWarning(s"my-debug: enabled local cache, is trying to replace the paths")
+    val replaceFunc = (f: Path) => {
+      val rootCachePath = "/local_disk0/local_cache/"
+      val pathStr = f.toString
+      val res = if (pathStr.startsWith("s3://")) {
+        // Replace to local cache path
+        val newPathStr = pathStr.replaceFirst("s3://", "file://" + rootCachePath)
+        logWarning(s"my-debug: Replacing from $pathStr to $newPathStr")
+        AlluxioPathReplaceConvertTime(new Path(newPathStr), None)
+      } else {
+        AlluxioPathReplaceConvertTime(f, None)
+      }
+
+      res
+    }
+
+    def replacePathsInPartitionSpec(spec: PartitionSpec): PartitionSpec = {
+      val paths = spec.partitions.map { p =>
+        org.apache.spark.sql.execution.datasources.PartitionPath(p.values,
+          replaceFunc(p.path).filePath)
+      }
+      PartitionSpec(spec.partitionColumns, paths)
+    }
+
+    def createNewFileIndexWithPathsReplaced(
+        spec: PartitionSpec,
+        rootPaths: Seq[Path]): InMemoryFileIndex = {
+      val specAdjusted = replacePathsInPartitionSpec(spec)
+      val replacedPaths = rootPaths.map(replaceFunc(_).filePath)
+      new InMemoryFileIndex(
+        relation.sparkSession,
+        replacedPaths,
+        relation.options,
+        Option(relation.dataSchema),
+        userSpecifiedPartitionSpec = Some(specAdjusted))
+    }
+
+    val location = relation.location match {
+      case cfi: CatalogFileIndex =>
+        logDebug("Handling CatalogFileIndex")
+        val memFI = cfi.filterPartitions(Nil)
+        createNewFileIndexWithPathsReplaced(memFI.partitionSpec(), memFI.rootPaths)
+      case inMemoryIndex: InMemoryFileIndex =>
+        logWarning(s"my-debug: Handling file index type: ${relation.location.getClass}")
+
+        // With the base Spark FileIndex type we don't know how to modify it to
+        // just replace the paths so we have to try to recompute.
+        def isDynamicPruningFilter(e: Expression): Boolean =
+          e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
+
+        val partitionDirs = relation.location.listFiles(
+          partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
+
+        // replace all of input files
+        val inputFiles = partitionDirs.flatMap(partitionDir => {
+          partitionDir.files.map(f => replaceFunc(f.getPath).filePath)
+        })
+
+        // replace all of rootPaths which are already unique
+        val rootPaths = relation.location.rootPaths.map(replaceFunc(_).filePath)
+
+        val parameters: Map[String, String] = relation.options
+
+        // infer PartitionSpec
+        val (partitionSpec, _) = GpuPartitioningUtils.inferPartitioning(
+          relation.sparkSession,
+          rootPaths,
+          inputFiles,
+          parameters,
+          Option(relation.dataSchema),
+          replaceFunc)
+
+        // generate a new InMemoryFileIndex holding paths with alluxio schema
+        new InMemoryFileIndex(
+          relation.sparkSession,
+          inputFiles,
+          parameters,
+          Option(relation.dataSchema),
+          userSpecifiedPartitionSpec = Some(partitionSpec))
+      case _ =>
+        throw new RuntimeException("error logic")
+    }
+
+    location
+  }
+
   // If reading large s3 files on a cluster with slower disks, skip using Alluxio.
   def shouldReadDirectlyFromS3(rapidsConf: RapidsConf, pds: Seq[PartitionDirectory]): Boolean = {
     if (!rapidsConf.enableAlluxioSlowDisk) {
