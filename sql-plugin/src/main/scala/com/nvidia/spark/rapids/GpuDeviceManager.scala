@@ -280,8 +280,11 @@ object GpuDeviceManager extends Logging {
       }
 
       if (conf.isUvmEnabled) {
-        init = init | RmmAllocationMode.CUDA_MANAGED_MEMORY
         features += "UVM"
+        // Enable managed memory only if async allocator is not used.
+        if ((init | RmmAllocationMode.CUDA_ASYNC) == 0) {
+          init = init | RmmAllocationMode.CUDA_MANAGED_MEMORY
+        }
       }
 
       val logConf: Rmm.LogConf = conf.rmmDebugLocation match {
