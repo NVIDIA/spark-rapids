@@ -280,10 +280,13 @@ object GpuDeviceManager extends Logging {
       }
 
       if (conf.isUvmEnabled) {
-        features += "UVM"
         // Enable managed memory only if async allocator is not used.
         if ((init | RmmAllocationMode.CUDA_ASYNC) == 0) {
+          features += "UVM"
           init = init | RmmAllocationMode.CUDA_MANAGED_MEMORY
+        } else {
+          throw new IllegalArgumentException(
+            "CUDA Unified Memory is not supported in CUDA_ASYNC allocation mode");
         }
       }
 
