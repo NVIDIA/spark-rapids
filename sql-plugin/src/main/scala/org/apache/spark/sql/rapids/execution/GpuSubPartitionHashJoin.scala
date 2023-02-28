@@ -438,17 +438,7 @@ class GpuSubPartitionPairIterator(
     if (closed) return false
     if (pairConsumed) {
       do {
-        if (partitionPair.isEmpty && hasNextBatch()) {
-          val (partIds, spillBuildBatch) = buildSubIterator.next()
-          closeOnExcept(spillBuildBatch) { _ =>
-            closeOnExcept(ArrayBuffer.empty[SpillableColumnarBatch]) { streamBuf =>
-              partIds.foreach { id =>
-                streamBuf ++= streamSubPartitioner.releaseBatchesByPartition(id)
-              }
-              partitionPair = Some(new PartitionPair(spillBuildBatch, streamBuf))
-            }
-          }
-        }
+        partitionPair = tryPullNextPair()
       } while (partitionPair.exists(_.isEmpty) && skipEmptyPairs)
       pairConsumed = false
     }
@@ -475,7 +465,7 @@ class GpuSubPartitionPairIterator(
     closed = true
   }
 
-  private val hasNextBatch: () => Boolean = if (skipEmptyPairs) {
+  private[this] val hasNextBatch: () => Boolean = if (skipEmptyPairs) {
     // Check the batch numbers directly can stop early when the remaining partitions
     // are all empty on both build side and stream side.
     () => buildSubPartitioner.batchesCount > 0 || streamSubPartitioner.batchesCount > 0
@@ -483,6 +473,19 @@ class GpuSubPartitionPairIterator(
     () => buildSubIterator.hasNext
   }
 
+  private[this] def tryPullNextPair(): Option[PartitionPair] = {
+    if(hasNextBatch()) {
+      val (partIds, spillBuildBatch) = buildSubIterator.next()
+      closeOnExcept(spillBuildBatch) { _ =>
+        closeOnExcept(ArrayBuffer.empty[SpillableColumnarBatch]) { streamBuf =>
+          partIds.foreach { id =>
+            streamBuf ++= streamSubPartitioner.releaseBatchesByPartition(id)
+          }
+          Some(new PartitionPair(spillBuildBatch, streamBuf))
+        }
+      }
+    } else None
+  }
 }
 
 /** Base class for joins by sub-partitioning algorithm */
