@@ -309,9 +309,21 @@ object GpuDeviceManager extends Logging {
       }
 
       Cuda.setDevice(gpuId)
-      Rmm.initialize(init, logConf, poolAllocation)
-      RapidsBufferCatalog.init(conf)
+      try {
+        Rmm.initialize(init, logConf, poolAllocation)
+      } catch {
+        case ex: Throwable =>
+          if ((init | RmmAllocationMode.CUDA_ASYNC) != 0) {
+            logWarning(
+              "RMM failed to initialize with ASYNC allocator and will fallback to ARENA allocator")
+            init = init & (~RmmAllocationMode.CUDA_ASYNC) & RmmAllocationMode.ARENA
+            Rmm.initialize(init, logConf, poolAllocation)
+          } else {
+            throw ex
+          }
+      }
 
+      RapidsBufferCatalog.init(conf)
       GpuShuffleEnv.init(conf, RapidsBufferCatalog.getDiskBlockManager())
     }
   }
