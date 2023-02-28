@@ -744,7 +744,6 @@
         <snapshot.buildvers>
         </snapshot.buildvers>
         <databricks.buildvers>
-            312db,
             321db,
             330db
         </databricks.buildvers>
