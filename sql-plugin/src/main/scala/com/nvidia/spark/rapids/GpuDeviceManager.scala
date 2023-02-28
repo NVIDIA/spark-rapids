@@ -326,8 +326,8 @@ object GpuDeviceManager extends Logging {
             Rmm.initialize(init, logConf, poolAllocation)
           } catch {
             case secondEx: Throwable => {
-              logWarning("Failed to initialize RMM again with ARENA allocator. " +
-                "There is no more fallback option - I'm dead.")
+              logError(
+                "Failed to initialize RMM with either ASYNC or ARENA allocators. Exiting...")
               secondEx.addSuppressed(firstEx)
               throw secondEx
             }
