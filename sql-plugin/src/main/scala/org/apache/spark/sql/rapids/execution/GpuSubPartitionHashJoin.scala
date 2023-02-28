@@ -147,7 +147,7 @@ object GpuSubPartitionHashJoin extends Arm {
       }
       // Make the concatenated table spillable.
       withResource(concatTable) { _ =>
-        withResource(GpuColumnVector.from(concatTable, types)) { concatBatch =>
+        closeOnExcept(GpuColumnVector.from(concatTable, types)) { concatBatch =>
           SpillableColumnarBatch(concatBatch, SpillPriorities.ACTIVE_BATCHING_PRIORITY,
             spillCallback)
         }
@@ -315,7 +315,8 @@ class GpuBatchSubPartitionIterator(
   override def next(): (Seq[Int], Option[SpillableColumnarBatch]) = {
     if (!hasNext) throw new NoSuchElementException()
     // Get the next partition ids for this output.
-    val (ids, poss) = nextPartitionIdsAndPoss().unzip
+    val parts = nextPartitions()
+    val (ids, _) = parts.unzip
     // Take over the batches of one or multiple partitions according to the ids. And
     // concatenate them in a single batch.
     val spillBatches = closeOnExcept(ArrayBuffer.empty[SpillableColumnarBatch]) { buf =>
@@ -328,21 +329,21 @@ class GpuBatchSubPartitionIterator(
       spillBatches, spillCallback)
     closeOnExcept(retBatch) { _ =>
       // Update the remaining partitions
-      poss.foreach(remainingPartIdsAndSizes.remove)
+      remainingPartIdsAndSizes --= parts
       (ids, retBatch)
     }
   }
 
-  private[this] def nextPartitionIdsAndPoss(): Seq[(Int, Int)] = {
-    val ret = ArrayBuffer.empty[(Int, Int)]
+  private[this] def nextPartitions(): Seq[(Int, Long)] = {
+    val ret = ArrayBuffer.empty[(Int, Long)]
     var accPartitionSize = 0L
     // always append the first one, assume "remainingPartIdsAndSizes" is nonempty.
-    val (firstPartId, firstPartSize) = remainingPartIdsAndSizes.head
+    val firstPart@(firstPartId, firstPartSize) = remainingPartIdsAndSizes.head
     if (firstPartSize > targetBatchSize) {
       logWarning(s"Got partition that size($firstPartSize) is larger than" +
         s" target size($targetBatchSize)")
     }
-    ret += ((firstPartId, 0))
+    ret += firstPart
     accPartitionSize += firstPartSize
     // For each output, try to collect small nonempty partitions to reach
     // "targetBatchSize" as much as possible.
@@ -358,10 +359,10 @@ class GpuBatchSubPartitionIterator(
     //    next: <empty>
     //    next: <empty>
     if (firstPartSize > 0) {
-      remainingPartIdsAndSizes.tail.zipWithIndex.foreach { case ((partId, partSize), pos) =>
+      remainingPartIdsAndSizes.tail.foreach { case part@(partId, partSize) =>
         // Do not coalesce empty partitions, and output them one by one.
         if (partSize > 0 && (accPartitionSize + partSize) <= targetBatchSize) {
-          ret += ((partId, pos))
+          ret += part
           accPartitionSize += partSize
         }
       }
@@ -592,7 +593,7 @@ trait GpuSubPartitionHashJoin extends Arm { self: GpuHashJoin =>
           val (build, stream) = pair.get
           val buildCb = build.map(_.getColumnarBatch())
             .getOrElse(GpuColumnVector.emptyBatch(buildSchema))
-          closeOnExcept(buildCb) { _ =>
+          withResource(buildCb) { _ =>
             closeOnExcept(stream.safeMap(_.getColumnarBatch())) { streamCbs =>
               // FIXME Any resource leak risk for this conversion from a Seq to an iterator?
               // I believe no deep copy here, and "toIterator" should be equivalent

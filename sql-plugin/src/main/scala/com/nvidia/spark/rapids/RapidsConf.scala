@@ -1251,11 +1251,14 @@ object RapidsConf {
     .createWithDefault(Nil)
 
   val HASH_SUB_PARTITION_TEST_ENABLED = conf("spark.rapids.sql.test.subPartitioning.enabled")
-    .doc("When enabled it forces hash joins to use the sub-partitioning algorithm if " +
-      s"${TEST_CONF.key} is also enabled. This is intended for tests.")
+    .doc("Setting to true will force hash joins to use the sub-partitioning algorithm if " +
+      s"${TEST_CONF.key} is also enabled, while false means always disabling it. This is " +
+      "intended for tests. Do not set any value under production environments, since it " +
+      "will override the default behavior that will choose one automatically according to " +
+      "the input batch size")
     .internal()
     .booleanConf
-    .createWithDefault(false)
+    .createOptional
 
   val LOG_TRANSFORMATIONS = conf("spark.rapids.sql.debug.logTransformations")
     .doc("When enabled, all query transformations will be logged.")

@@ -144,8 +144,8 @@ case class GpuShuffledHashJoinExec(
     val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
     val batchSizeBytes = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     val numPartitions = RapidsConf.NUM_SUB_PARTITIONS.get(conf)
-    val testSubPartition =
-      RapidsConf.TEST_CONF.get(conf) && RapidsConf.HASH_SUB_PARTITION_TEST_ENABLED.get(conf)
+    val subPartConf = RapidsConf.HASH_SUB_PARTITION_TEST_ENABLED.get(conf)
+       .map(_ && RapidsConf.TEST_CONF.get(conf))
     val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
     val localBuildOutput = buildPlan.output
 
@@ -178,7 +178,9 @@ case class GpuShuffledHashJoinExec(
       (streamIter, buildIter) => {
         val batchAwareIter = new BatchTypeSizeAwareIterator(buildIter, bigJoinThreshold,
           buildDataSize)
-        if ((batchAwareIter.isBatchesSizeOverflow || testSubPartition) && noBigDecimal) {
+        // SubPartition conf has higher priority.
+        val trySubPartition = subPartConf.getOrElse(batchAwareIter.isBatchesSizeOverflow)
+        if (trySubPartition && noBigDecimal) {
           // For the quite big joins, when the built batch will go beyond the
           // the target batch size.
           val gpuBuildIter = GpuShuffledHashJoinExec.ensureBatchesOnGpu(
