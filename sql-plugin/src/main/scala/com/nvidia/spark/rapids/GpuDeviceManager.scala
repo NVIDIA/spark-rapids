@@ -318,15 +318,25 @@ object GpuDeviceManager extends Logging {
       try {
         Rmm.initialize(init, logConf, poolAllocation)
       } catch {
-        case ex: Throwable =>
+        case firstEx: CudfException =>
           if ((init | RmmAllocationMode.CUDA_ASYNC) != 0) {
-            logWarning(
-              "RMM failed to initialize with ASYNC allocator and will fallback to ARENA allocator")
+            logWarning("Failed to initialize RMM with ASYNC allocator. " +
+              "Try to initialize it again with ARENA allocator as a fallback option.")
             init = init & (~RmmAllocationMode.CUDA_ASYNC) & RmmAllocationMode.ARENA
-            Rmm.initialize(init, logConf, poolAllocation)
+            try {
+              Rmm.initialize(init, logConf, poolAllocation)
+            } catch {
+              case secondEx: Throwable => {
+                logWarning("Failed to initialize RMM again with ARENA allocator. " +
+                  "There is no more fallback option - I'm dead.")
+                secondEx.addSuppressed(firstEx)
+                throw secondEx
+              }
+            }
           } else {
-            throw ex
+            throw firstEx
           }
+        case ex: Throwable => throw ex
       }
 
       RapidsBufferCatalog.init(conf)
