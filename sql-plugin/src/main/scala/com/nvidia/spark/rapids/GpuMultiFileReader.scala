@@ -71,13 +71,10 @@ object SingleHMBAndMeta {
 trait HostMemoryBuffersWithMetaDataBase {
   // PartitionedFile to be read
   def partitionedFile: PartitionedFile
-
   // Original PartitionedFile if path was replaced with Alluxio
   def origPartitionedFile: Option[PartitionedFile] = None
-
   // An array of BlockChunk(HostMemoryBuffer and its data size) read from PartitionedFile
   def memBuffersAndSizes: Array[SingleHMBAndMeta]
-
   // Total bytes read
   def bytesRead: Long
 
