@@ -1931,7 +1931,7 @@ class MultiFileCloudParquetPartitionReader(
       }
       val newHmbBufferInfo = SingleHMBAndMeta(buf, offset,
         combinedMeta.allPartValues.map(_._1).sum, Seq.empty, schemaToUse)
-      HostMemoryBuffersWithMetaData(
+      val newHmbMeta = HostMemoryBuffersWithMetaData(
         metaToUse.partitionedFile,
         metaToUse.origPartitionedFile, // this doesn't matter since already read
         Array(newHmbBufferInfo),
@@ -1942,6 +1942,10 @@ class MultiFileCloudParquetPartitionReader(
         metaToUse.clippedSchema,
         metaToUse.readSchema,
         Some(combinedMeta.allPartValues))
+      val filterTime = combinedMeta.toCombine.map(_.getFilterTime).sum
+      val bufferTime = combinedMeta.toCombine.map(_.getBufferTime).sum
+      newHmbMeta.setMetrics(filterTime, bufferTime)
+      newHmbMeta
     }
     logDebug(s"Took ${(System.currentTimeMillis() - startCombineTime)} " +
       s"ms to do combine of ${toCombineHmbs.size} files, " +
