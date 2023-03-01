@@ -159,6 +159,31 @@ object GpuSubPartitionHashJoin extends Arm {
 
     Option(retBatch)
   }
+
+  /**
+   * Create an iterator that takes over the input resources, and make sure closing
+   * all the resources when needed.
+   */
+  def safeIteratorFromSeq[R <: AutoCloseable](closeables: Seq[R]): Iterator[R] = {
+    new Iterator[R] with TaskAutoCloseableResource {
+
+      private[this] val remainingBatches: ArrayBuffer[R] =
+        ArrayBuffer(closeables: _*)
+
+      override def hasNext: Boolean = remainingBatches.nonEmpty && !closed
+
+      override def next(): R = {
+        if (!hasNext) throw new NoSuchElementException()
+        remainingBatches.remove(0)
+      }
+
+      override def close(): Unit = {
+        remainingBatches.safeClose()
+        remainingBatches.clear()
+        super.close()
+      }
+    }
+  }
 }
 
 /**
@@ -332,7 +357,7 @@ class GpuBatchSubPartitionIterator(
   private[this] def nextPartitions(): Seq[Int] = {
     val ret = ArrayBuffer.empty[Int]
     var accPartitionSize = 0L
-    // always append the first one, assume "remainingPartIdsAndSizes" is nonempty.
+    // always append the first one.
     val firstPartId = remainingPartIds.head
     val firstPartSize = computePartitionSize(firstPartId)
     if (firstPartSize > targetBatchSize) {
@@ -566,7 +591,7 @@ abstract class BaseSubHashJoinIterator(
   protected def setupJoinIterator(pair: PartitionPair): Option[Iterator[ColumnarBatch]]
 }
 
-trait GpuSubPartitionHashJoin extends Arm { self: GpuHashJoin =>
+trait GpuSubPartitionHashJoin extends Arm with Logging { self: GpuHashJoin =>
 
   protected lazy val buildSchema: StructType = StructType.fromAttributes(buildPlan.output)
 
@@ -582,8 +607,11 @@ trait GpuSubPartitionHashJoin extends Arm { self: GpuHashJoin =>
       opTime: GpuMetric,
       joinTime: GpuMetric): Iterator[ColumnarBatch] = {
 
+    // A log for test to verify that sub-partitioning is used.
+    logInfo(s"$joinType hash join is executed by sub-partitioning ...")
+
     new BaseSubHashJoinIterator(builtIter, boundBuildKeys, streamIter,
-      boundStreamKeys, numPartitions, realTarget, spillCallback, opTime) {
+        boundStreamKeys, numPartitions, realTarget, spillCallback, opTime) {
 
       private[this] def canOptimizeOut(pair: PartitionPair): Boolean = {
         val (build, stream) = pair.get
@@ -604,16 +632,14 @@ trait GpuSubPartitionHashJoin extends Arm { self: GpuHashJoin =>
           val buildCb = build.map(_.getColumnarBatch())
             .getOrElse(GpuColumnVector.emptyBatch(buildSchema))
           withResource(buildCb) { _ =>
-            closeOnExcept(stream.safeMap(_.getColumnarBatch())) { streamCbs =>
-              // FIXME Any resource leak risk for this conversion from a Seq to an iterator?
-              // I believe no deep copy here, and "toIterator" should be equivalent
-              // to "release".
-              val streamIter = streamCbs.toIterator
-              // Leverage the original join iterators
-              val joinIter = doJoin(buildCb, streamIter, realTarget, spillCallback,
-                numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
-              Some(joinIter)
+            val streamIter = closeOnExcept(stream.safeMap(_.getColumnarBatch())) { streamCbs =>
+              GpuSubPartitionHashJoin.safeIteratorFromSeq(streamCbs)
             }
+
+            // Leverage the original join iterators
+            val joinIter = doJoin(buildCb, streamIter, realTarget, spillCallback,
+              numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
+            Some(joinIter)
           }
         }
       }
