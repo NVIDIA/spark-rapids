@@ -60,7 +60,7 @@ class WindowRetrySuite
       GpuSpecialFrameBoundary(UnboundedFollowing))
     val (groupAggs, outputColumns) = setupCountAgg(frame)
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
-    groupAggs.doAggs(
+    groupAggs.doAggsAndClose(
       false,
       Seq.empty[SortOrder],
       Array.empty,
@@ -89,7 +89,7 @@ class WindowRetrySuite
       GpuSpecialFrameBoundary(CurrentRow))
     val (groupAggs, outputColumns) = setupCountAgg(frame)
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
-    groupAggs.doAggs(
+    groupAggs.doAggsAndClose(
       false,
       Seq.empty[SortOrder],
       Array.empty,
@@ -120,7 +120,7 @@ class WindowRetrySuite
     val orderSpec = SortOrder(child, Ascending) :: Nil
     val (groupAggs, outputColumns) = setupCountAgg(frame, orderSpec = orderSpec)
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
-    groupAggs.doAggs(
+    groupAggs.doAggsAndClose(
       false,
       orderSpec,
       Array(0),
@@ -154,7 +154,7 @@ class WindowRetrySuite
     outputColumns(0) = theMock
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1)
     assertThrows[java.lang.OutOfMemoryError] {
-      groupAggs.doAggs(
+      groupAggs.doAggsAndClose(
         false,
         Seq.empty[SortOrder],
         Array.empty,
@@ -178,7 +178,7 @@ class WindowRetrySuite
       GpuSpecialFrameBoundary(CurrentRow))
     val (groupAggs, outputColumns) = setupCountAgg(frame)
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1)
-    groupAggs.doAggs(
+    groupAggs.doAggsAndClose(
       false,
       Seq.empty[SortOrder],
       Array.empty,

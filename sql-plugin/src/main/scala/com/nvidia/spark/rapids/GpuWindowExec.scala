@@ -1117,7 +1117,7 @@ class GroupedAggregations extends Arm {
    * Do all of the aggregations and put them in the output columns. There may be extra processing
    * after this before you get to a final result.
    */
-  def doAggs(isRunningBatched: Boolean,
+  def doAggsAndClose(isRunningBatched: Boolean,
       boundOrderSpec: Seq[SortOrder],
       orderByPositions: Array[Int],
       partByPositions: Array[Int],
@@ -1250,8 +1250,14 @@ trait BasicWindowCalc extends Arm {
         SpillPriorities.ACTIVE_BATCHING_PRIORITY,
         spillCallback)
 
-      aggregations.doAggs(isRunningBatched, boundOrderSpec, orderByPositions,
-        partByPositions, inputSpillable, outputColumns)
+      // this takes ownership of `inputSpillable`
+      aggregations.doAggsAndClose(
+        isRunningBatched,
+        boundOrderSpec,
+        orderByPositions,
+        partByPositions,
+        inputSpillable,
+        outputColumns)
 
       // if the window aggregates were successful, lets splice the passThrough
       // columns
