@@ -255,6 +255,8 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
             conf.shuffleTransportEarlyStartHeartbeatTimeout)
       }
     }
+    logDebug("Loading extra driver plugins: " +
+      s"${extraDriverPlugins.map(_.getClass.getName).mkString(",")}")
     extraDriverPlugins.foreach(_.init(sc, pluginContext))
     conf.rapidsConfMap
   }
@@ -324,6 +326,8 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         }
       }
 
+      logDebug("Loading extra executor plugins: " +
+        s"${extraExecutorPlugins.map(_.getClass.getName).mkString(",")}")
       extraExecutorPlugins.foreach(_.init(pluginContext, extraConf))
       GpuSemaphore.initialize()
     } catch {
