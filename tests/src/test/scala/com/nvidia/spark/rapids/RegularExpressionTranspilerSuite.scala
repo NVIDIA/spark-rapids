@@ -409,7 +409,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     val patterns = Seq("a[-b]", "a[+-]", "a[-+]", "a[-]", "a[^-]")
     val expected = Seq(raw"a[\-b]", raw"a[+\-]", raw"a[\-+]", raw"a[\-]", "a(?:[\r]|[^\\-])")
     val transpiler = new CudfRegexTranspiler(RegexFindMode)
-    val transpiled = patterns.map(transpiler.transpile(_, None)._1)
+    val transpiled = patterns.map(transpiler.transpile(_, None, None)._1)
     assert(transpiled === expected)
   }
 
@@ -455,6 +455,19 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     doTranspileTest("\\p{Alnum}", "[a-zA-Z0-9]")
     doTranspileTest("\\p{Punct}", "[!\"#$%&'()*+,\\-./:;<=>?@\\^_`{|}~\\[\\]]")
     doTranspileTest("\\p{Print}", "[a-zA-Z0-9!\"#$%&'()*+,\\-./:;<=>?@\\^_`{|}~\\[\\]\u0020]")
+  }
+
+  test("transpile with group index to extract") {
+    doTranspileTest("(a)(b)", "(a)(?:b)", 1)
+    doTranspileTest("(a)(b)", "(?:a)(b)", 2)
+    doTranspileTest("(a)(b)(c)(d)", "(?:a)(?:b)(?:c)(?:d)", 0)
+    doTranspileTest("(a)(?:b)(c)", "(a)(?:b)(?:c)", 1)
+    doTranspileTest("(a)(b)(c)(d)", "(?:a)(?:b)(?:c)(?:d)", 5)
+    doTranspileTest("(a(b))(c)(d)", "(a(?:b))(?:c)(?:d)", 1)
+    doTranspileTest("(a(b))(c)(d)", "(?:a(b))(?:c)(?:d)", 2)
+    doTranspileTest("(ab)+(c)(d)", "(ab)+(?:c)(?:d)", 1)
+    doTranspileTest("(ab)+(c)(d)", "(?:ab)+(c)(?:d)", 2)
+    doTranspileTest("ab", "ab", 1)
   }
 
   test("compare CPU and GPU: character range including unescaped + and -") {
@@ -569,7 +582,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
 
     def test(pattern: String, expected: String): Unit = {
       val t = new CudfRegexTranspiler(RegexFindMode)
-      val (actual, _) = t.transpile(pattern, None)
+      val (actual, _) = t.transpile(pattern, None, None)
       assert(toReadableString(expected) === toReadableString(actual))
     }
 
@@ -802,7 +815,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       val (isRegex, cudfPattern) = if (RegexParser.isRegExpString(pattern)) {
         transpiler.transpileToSplittableString(pattern) match {
           case Some(simplified) => (false, simplified)
-          case _ => (true, transpiler.transpile(pattern, None)._1)
+          case _ => (true, transpiler.transpile(pattern, None, None)._1)
         }
       } else {
         (false, pattern)
@@ -868,7 +881,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     for ((javaPattern, patternIndex) <- javaPatterns.zipWithIndex) {
       val cpu = cpuContains(javaPattern, input)
       val (cudfPattern, _) =
-          new CudfRegexTranspiler(RegexFindMode).transpile(javaPattern, None)
+          new CudfRegexTranspiler(RegexFindMode).transpile(javaPattern, None, None)
       val gpu = try {
         gpuContains(cudfPattern, input)
       } catch {
@@ -893,7 +906,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
       val cpu = cpuReplace(javaPattern, input)
       val (cudfPattern, replaceString) =
           (new CudfRegexTranspiler(RegexReplaceMode)).transpile(javaPattern,
-              Some(REPLACE_STRING))
+              None, Some(REPLACE_STRING))
       val gpu = try {
         gpuReplace(cudfPattern, replaceString.get, input)
       } catch {
@@ -995,14 +1008,26 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     assert(toReadableString(transpiled) === toReadableString(expected))
   }
 
+  private def doTranspileTest(pattern: String, expected: String, groupIdx: Int) {
+    val transpiled: String = transpile(pattern, groupIdx)
+    assert(toReadableString(transpiled) === toReadableString(expected))
+  }
+
   private def transpile(pattern: String, mode: RegexMode): String = {
     val replace = mode match {
       case RegexReplaceMode => Some(REPLACE_STRING)
       case _ => None
     }
-    val (cudfPattern, _) = new CudfRegexTranspiler(mode).transpile(pattern, replace)
+    val (cudfPattern, _) = new CudfRegexTranspiler(mode).transpile(pattern, None, replace)
     cudfPattern
   }
+
+  private def transpile(pattern: String, groupIndex: Int): String = {
+    val (cudfPattern, _) = new CudfRegexTranspiler(RegexFindMode).transpile(
+        pattern, Some(groupIndex), None)
+    cudfPattern
+  }
+
 
   private def assertUnsupported(pattern: String, mode: RegexMode, message: String): Unit = {
     val e = intercept[RegexUnsupportedException] {

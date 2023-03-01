@@ -48,7 +48,8 @@ class GpuRegExpReplaceMeta(
           try {
             javaPattern = Some(s.toString())
             val (pat, repl) = 
-                new CudfRegexTranspiler(RegexReplaceMode).getTranspiledAST(s.toString, replacement)
+                new CudfRegexTranspiler(RegexReplaceMode).getTranspiledAST(s.toString, None,
+                    replacement)
             GpuRegExpUtils.validateRegExpComplexity(this, pat)
             cudfPattern = Some(pat.toRegexString)
             repl.map { r => GpuRegExpUtils.backrefConversion(r.toRegexString) }.foreach {

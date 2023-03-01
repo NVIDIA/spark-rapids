@@ -1013,7 +1013,7 @@ class GpuRLikeMeta(
           try {
             // verify that we support this regex and can transpile it to cuDF format
             val (transpiledAST, _) =
-                new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(str.toString, None)
+                new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(str.toString, None, None)
             GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
             pattern = Some(transpiledAST.toRegexString)
           } catch {
@@ -1199,13 +1199,23 @@ class GpuRegExpExtractMeta(
       case _ =>
     }
 
+    val groupIdx = expr.idx match {
+      case Literal(value, DataTypes.IntegerType) =>
+        val idx = value.asInstanceOf[Int]
+        Some(idx)
+      case _ =>
+        willNotWorkOnGpu("GPU only supports literal index")
+        None
+    }
+
     expr.regexp match {
       case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
         try {
           val javaRegexpPattern = str.toString
           // verify that we support this regex and can transpile it to cuDF format
           val (transpiledAST, _) =
-            new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(javaRegexpPattern, None)
+            new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(
+              javaRegexpPattern, groupIdx, None)
           GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
           pattern = Some(transpiledAST.toRegexString)
           numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
@@ -1217,18 +1227,14 @@ class GpuRegExpExtractMeta(
         willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
     }
 
-    expr.idx match {
-      case Literal(value, DataTypes.IntegerType) =>
-        val idx = value.asInstanceOf[Int]
-        if (idx < 0) {
-          willNotWorkOnGpu("the specified group index cannot be less than zero")
-        }
-        if (idx > numGroups) {
-          willNotWorkOnGpu(
-            s"regex group count is $numGroups, but the specified group index is $idx")
-        }
-      case _ =>
-        willNotWorkOnGpu("GPU only supports literal index")
+    groupIdx.map { idx =>
+      if (idx < 0) {
+        willNotWorkOnGpu("the specified group index cannot be less than zero")
+      }
+      if (idx > numGroups) {
+        willNotWorkOnGpu(
+          s"regex group count is $numGroups, but the specified group index is $idx")
+      }
     }
   }
 
@@ -1273,7 +1279,10 @@ case class GpuRegExpExtract(
       case i: Int if i == 0 =>
         ("(" + cudfRegexPattern + ")", 0)
       case i =>
-        (cudfRegexPattern, i.asInstanceOf[Int] - 1)
+        // (cudfRegexPattern, i.asInstanceOf[Int] - 1)
+        // Since we have transpiled all but one of the capture groups to non-capturing, the index
+        // here moves to 0 to single out the one capture group left
+        (cudfRegexPattern, 0)
     }
 
     // There are some differences in behavior between cuDF and Java so we have
@@ -1319,6 +1328,21 @@ class GpuRegExpExtractAllMeta(
 
   override def tagExprForGpu(): Unit = {
     GpuRegExpUtils.tagForRegExpEnabled(this)
+    val groupIdx = expr.idx match {
+      case Literal(value, DataTypes.IntegerType) =>
+        val idx = value.asInstanceOf[Int]
+        if (idx < 0) {
+          willNotWorkOnGpu("the specified group index cannot be less than zero")
+        }
+        if (idx > numGroups) {
+          willNotWorkOnGpu(
+            s"regex group count is $numGroups, but the specified group index is $idx")
+        }
+        Some(idx)
+      case _ =>
+        willNotWorkOnGpu("GPU only supports literal index")
+        None
+    }
 
     expr.regexp match {
       case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
@@ -1326,7 +1350,8 @@ class GpuRegExpExtractAllMeta(
           val javaRegexpPattern = str.toString
           // verify that we support this regex and can transpile it to cuDF format
           val (transpiledAST, _) =
-            new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(javaRegexpPattern, None)
+            new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(
+              javaRegexpPattern, groupIdx, None)
           GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
           pattern = Some(transpiledAST.toRegexString)
           numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
@@ -1338,19 +1363,6 @@ class GpuRegExpExtractAllMeta(
         willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
     }
 
-    expr.idx match {
-      case Literal(value, DataTypes.IntegerType) =>
-        val idx = value.asInstanceOf[Int]
-        if (idx < 0) {
-          willNotWorkOnGpu("the specified group index cannot be less than zero")
-        }
-        if (idx > numGroups) {
-          willNotWorkOnGpu(
-            s"regex group count is $numGroups, but the specified group index is $idx")
-        }
-      case _ =>
-        willNotWorkOnGpu("GPU only supports literal index")
-    }
   }
 
   override def convertToGpu(
@@ -1711,7 +1723,7 @@ abstract class StringSplitRegExpMeta[INPUT <: TernaryExpression](expr: INPUT,
             pattern = simplified
           case None =>
             try {
-              val (transpiledAST, _) = transpiler.getTranspiledAST(utf8Str.toString, None)
+              val (transpiledAST, _) = transpiler.getTranspiledAST(utf8Str.toString, None, None)
               GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
               pattern = transpiledAST.toRegexString
               isRegExp = true
