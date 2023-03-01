@@ -199,7 +199,7 @@ object GpuSubPartitionHashJoin extends Arm {
  *   4 -> empty
  *   5 -> (8, 8) (A single batch)
  */
-private[rapids] class GpuBatchSubPartitioner(
+class GpuBatchSubPartitioner(
     inputIter: Iterator[ColumnarBatch],
     inputBoundKeys: Seq[GpuExpression],
     numPartitions: Int,
