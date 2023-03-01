@@ -25,6 +25,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{AggregationOverWindow, DType, GroupByOptions, GroupByScanAggregation, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanAggregation, ScanType, Table, WindowOptions}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimUnaryExecNode}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -872,6 +873,8 @@ class GroupedAggregations extends Arm {
                 val aggColumn = result.getColumn(resultIndex)
 
                 outputIndexes.foreach { outIndex =>
+                  require(outputColumns(outIndex) == null,
+                    "Attempted to overwrite a window output column!!")
                   outputColumns(outIndex) = func.windowOutput(aggColumn)
                 }
             }
@@ -936,6 +939,8 @@ class GroupedAggregations extends Arm {
 
         withResource(combined) { combined =>
           outputIndexes.foreach { outIndex =>
+            require(outputColumns(outIndex) == null,
+              "Attempted to overwrite a window output column!!")
             outputColumns(outIndex) = combined.incRefCount()
           }
         }
@@ -1063,8 +1068,10 @@ class GroupedAggregations extends Arm {
       val columns =
         (readIndex until (readIndex + numScans)).map(scannedAndReplaced.getColumn).toArray
       withResource(func.scanCombine(isRunningBatched, columns)) { col =>
-        outputLocations.foreach { i =>
-          outputColumns(i) = col.incRefCount()
+        outputLocations.foreach { outIndex =>
+          require(outputColumns(outIndex) == null,
+            "Attempted to overwrite a window output column!!")
+          outputColumns(outIndex) = col.incRefCount()
         }
       }
       readIndex += numScans
@@ -1117,13 +1124,27 @@ class GroupedAggregations extends Arm {
       inputSpillable: SpillableColumnarBatch,
       outputColumns: Array[cudf.ColumnVector]): Unit = {
     withRetryNoSplit(inputSpillable) { attempt =>
-      withResource(attempt.getColumnarBatch()) { attemptCb =>
-        doRunningWindowOptimizedAggs(
-          isRunningBatched, partByPositions, attemptCb, outputColumns)
-        doRowAggs(
-          boundOrderSpec, orderByPositions, partByPositions, attemptCb, outputColumns)
-        doRangeAggs(
-          boundOrderSpec, orderByPositions, partByPositions, attemptCb, outputColumns)
+      // when there are exceptions in this body, we always want to close
+      // `outputColumns` before a likely retry.
+      try {
+        withResource(attempt.getColumnarBatch()) { attemptCb =>
+          doRunningWindowOptimizedAggs(
+            isRunningBatched, partByPositions, attemptCb, outputColumns)
+          doRowAggs(
+            boundOrderSpec, orderByPositions, partByPositions, attemptCb, outputColumns)
+          doRangeAggs(
+            boundOrderSpec, orderByPositions, partByPositions, attemptCb, outputColumns)
+        }
+      } catch {
+        case t: Throwable =>
+          // on exceptions we want to throw away any columns in outputColumns that
+          // are not pass-through
+          val columnsToClose = outputColumns.filter(_ != null)
+          outputColumns.indices.foreach { col =>
+            outputColumns(col) = null
+          }
+          columnsToClose.safeClose(t)
+          throw t
       }
     }
   }
@@ -1224,13 +1245,6 @@ trait BasicWindowCalc extends Arm {
   def computeBasicWindow(
       cb: ColumnarBatch, spillCallback: SpillCallback): Array[cudf.ColumnVector] = {
     closeOnExcept(new Array[cudf.ColumnVector](boundWindowOps.length)) { outputColumns =>
-      // First the pass through unchanged columns
-      passThrough.foreach {
-        case (inputIndex, outputIndex) =>
-          outputColumns(outputIndex) =
-            cb.column(inputIndex).asInstanceOf[GpuColumnVector].getBase.incRefCount()
-      }
-
       val inputSpillable = SpillableColumnarBatch(
         GpuProjectExec.project(cb, initialProjections),
         SpillPriorities.ACTIVE_BATCHING_PRIORITY,
@@ -1238,6 +1252,14 @@ trait BasicWindowCalc extends Arm {
 
       aggregations.doAggs(isRunningBatched, boundOrderSpec, orderByPositions,
         partByPositions, inputSpillable, outputColumns)
+
+      // if the window aggregates were successful, lets splice the passThrough
+      // columns
+      passThrough.foreach {
+        case (inputIndex, outputIndex) =>
+          outputColumns(outputIndex) =
+            cb.column(inputIndex).asInstanceOf[GpuColumnVector].getBase.incRefCount()
+      }
 
       outputColumns
     }

@@ -30,11 +30,11 @@ class WindowRetrySuite
         with MockitoSugar
         with Arm {
   private def buildInputBatch() = {
-    val reductionTable = new Table.TestBuilder()
+    val windowTable = new Table.TestBuilder()
       .column(1.asInstanceOf[java.lang.Integer], 1, 1, 1)
       .column(5L, null.asInstanceOf[java.lang.Long], 3L, 3L)
       .build()
-    withResource(reductionTable) { tbl =>
+    withResource(windowTable) { tbl =>
       val cb = GpuColumnVector.from(tbl, Seq(IntegerType, LongType).toArray[DataType])
       spy(SpillableColumnarBatch(cb, -1, RapidsBuffer.defaultSpillCallback))
     }
@@ -149,6 +149,9 @@ class WindowRetrySuite
       GpuSpecialFrameBoundary(UnboundedPreceding),
       GpuSpecialFrameBoundary(CurrentRow))
     val (groupAggs, outputColumns) = setupCountAgg(frame)
+    // simulate a successful window operation
+    val theMock = mock[ColumnVector]
+    outputColumns(0) = theMock
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1)
     assertThrows[java.lang.OutOfMemoryError] {
       groupAggs.doAggs(
@@ -159,6 +162,10 @@ class WindowRetrySuite
         inputBatch,
         outputColumns)
     }
+    // when we throw we must have closed any columns in `outputColumns` that are not null
+    // and we would have marked them null
+    assertResult(null)(outputColumns(0))
+    verify(theMock, times(1)).close()
     verify(inputBatch, times(1)).getColumnarBatch()
     verify(inputBatch, times(1)).close()
   }
