@@ -77,10 +77,11 @@ trait HostMemoryBuffersWithMetaDataBase {
   def memBuffersAndSizes: Array[SingleHMBAndMeta]
   // Total bytes read
   def bytesRead: Long
-  // Percentage of time spent on filtering
-  private var _filterTimePct: Double = 0L
-  // Percentage of time spent on buffering
-  private var _bufferTimePct: Double = 0L
+
+  // Time spent on filtering
+  private var _filterTime: Long = 0L
+  // Time spent on buffering
+  private var _bufferTime: Long = 0L
 
   // The partition values which are needed if combining host memory buffers
   // after read by the multithreaded reader but before sending to GPU.
@@ -89,13 +90,22 @@ trait HostMemoryBuffersWithMetaDataBase {
   // Called by parquet/orc/avro scanners to set the amount of time (in nanoseconds)
   // that filtering and buffering incurred in one of the scan runners.
   def setMetrics(filterTime: Long, bufferTime: Long): Unit = {
-    val totalTime = filterTime + bufferTime
-    _filterTimePct = filterTime.toDouble / totalTime
-    _bufferTimePct = bufferTime.toDouble / totalTime
+    _bufferTime = bufferTime
+    _filterTime = filterTime
   }
 
-  def getBufferTimePct: Double = _bufferTimePct
-  def getFilterTimePct: Double = _filterTimePct
+  def getBufferTime: Long = _bufferTime
+  def getFilterTime: Long = _filterTime
+
+  def getBufferTimePct: Double = {
+    val totalTime = _filterTime + _bufferTime
+    _bufferTime.toDouble / totalTime
+  }
+
+  def getFilterTimePct: Double = {
+    val totalTime = _filterTime + _bufferTime
+    _filterTime.toDouble / totalTime
+  }
 }
 
 // This is a common trait for all kind of file formats
