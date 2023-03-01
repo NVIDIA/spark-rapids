@@ -211,8 +211,7 @@ object RapidsPluginUtils extends Logging {
       Seq.empty
     } else {
       val pluginClasses = scala.io.Source.fromInputStream(resource).getLines().toSeq
-      val plugins = loadExtensions(classOf[SparkPlugin], pluginClasses)
-      plugins
+      loadExtensions(classOf[SparkPlugin], pluginClasses)
     }
   }
 }
