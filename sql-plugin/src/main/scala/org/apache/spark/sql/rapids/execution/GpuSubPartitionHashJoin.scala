@@ -303,25 +303,20 @@ class GpuBatchSubPartitionIterator(
   extends Iterator[(Seq[Int], Option[SpillableColumnarBatch])] with Arm with Logging {
 
   // The partitions to be read. Initially it is all the partitions.
-  // Stored as
-  //   [(partition1_id, partition1_size), (partition2_id, partition2_size), ...]
-  private lazy val remainingPartIdsAndSizes: ArrayBuffer[(Int, Long)] =
-    ArrayBuffer.range(0, batchSubPartitioner.partitionsCount).map { id =>
-      (id, batchSubPartitioner.getBatchesByPartition(id).map(_.sizeInBytes).sum)
-    }
+  private val remainingPartIds: ArrayBuffer[Int] =
+    ArrayBuffer.range(0, batchSubPartitioner.partitionsCount)
 
-  override def hasNext: Boolean = remainingPartIdsAndSizes.nonEmpty
+  override def hasNext: Boolean = remainingPartIds.nonEmpty
 
   override def next(): (Seq[Int], Option[SpillableColumnarBatch]) = {
     if (!hasNext) throw new NoSuchElementException()
     // Get the next partition ids for this output.
-    val parts = nextPartitions()
-    val (ids, _) = parts.unzip
+    val partIds = nextPartitions()
     // Take over the batches of one or multiple partitions according to the ids. And
     // concatenate them in a single batch.
     val spillBatches = closeOnExcept(ArrayBuffer.empty[SpillableColumnarBatch]) { buf =>
-      ids.foreach { id =>
-        buf ++= batchSubPartitioner.releaseBatchesByPartition(id)
+      partIds.foreach { pid =>
+        buf ++= batchSubPartitioner.releaseBatchesByPartition(pid)
       }
       buf
     }
@@ -329,21 +324,22 @@ class GpuBatchSubPartitionIterator(
       spillBatches, spillCallback)
     closeOnExcept(retBatch) { _ =>
       // Update the remaining partitions
-      remainingPartIdsAndSizes --= parts
-      (ids, retBatch)
+      remainingPartIds --= partIds
+      (partIds, retBatch)
     }
   }
 
-  private[this] def nextPartitions(): Seq[(Int, Long)] = {
-    val ret = ArrayBuffer.empty[(Int, Long)]
+  private[this] def nextPartitions(): Seq[Int] = {
+    val ret = ArrayBuffer.empty[Int]
     var accPartitionSize = 0L
     // always append the first one, assume "remainingPartIdsAndSizes" is nonempty.
-    val firstPart@(firstPartId, firstPartSize) = remainingPartIdsAndSizes.head
+    val firstPartId = remainingPartIds.head
+    val firstPartSize = computePartitionSize(firstPartId)
     if (firstPartSize > targetBatchSize) {
       logWarning(s"Got partition that size($firstPartSize) is larger than" +
         s" target size($targetBatchSize)")
     }
-    ret += firstPart
+    ret += firstPartId
     accPartitionSize += firstPartSize
     // For each output, try to collect small nonempty partitions to reach
     // "targetBatchSize" as much as possible.
@@ -359,15 +355,21 @@ class GpuBatchSubPartitionIterator(
     //    next: <empty>
     //    next: <empty>
     if (firstPartSize > 0) {
-      remainingPartIdsAndSizes.tail.foreach { case part@(partId, partSize) =>
+      remainingPartIds.tail.foreach { partId =>
+        val partSize = computePartitionSize(partId)
         // Do not coalesce empty partitions, and output them one by one.
         if (partSize > 0 && (accPartitionSize + partSize) <= targetBatchSize) {
-          ret += part
+          ret += partId
           accPartitionSize += partSize
         }
       }
     }
     ret
+  }
+
+  private[this] def computePartitionSize(partId: Int): Long = {
+    val batches = batchSubPartitioner.getBatchesByPartition(partId)
+    if (batches != null) batches.map(_.sizeInBytes).sum else 0L
   }
 }
 
@@ -438,6 +440,8 @@ class GpuSubPartitionPairIterator(
     if (closed) return false
     if (pairConsumed) {
       do {
+        partitionPair.foreach(_.close())
+        partitionPair = None
         partitionPair = tryPullNextPair()
       } while (partitionPair.exists(_.isEmpty) && skipEmptyPairs)
       pairConsumed = false
@@ -456,13 +460,13 @@ class GpuSubPartitionPairIterator(
   }
 
   override def close(): Unit = if (!closed) {
+    closed = true
     // for real safe close
     val e = new Exception()
     buildSubPartitioner.safeClose(e)
     streamSubPartitioner.safeClose(e)
     partitionPair.foreach(_.close())
     partitionPair = None
-    closed = true
   }
 
   private[this] val hasNextBatch: () => Boolean = if (skipEmptyPairs) {
@@ -515,7 +519,10 @@ abstract class BaseSubHashJoinIterator(
   }
 
   override def hasNext: Boolean = {
+    if (closed) return false
     var mayContinue = true
+    // Loop to support optimizing out some pairs by returning a None instead
+    // of a join iterator.
     while (nextCb.isEmpty && mayContinue) {
       if (joinIter.exists(_.hasNext)) {
         nextCb = joinIter.map(_.next())
@@ -535,7 +542,7 @@ abstract class BaseSubHashJoinIterator(
               joinIter = setupJoinIterator(pair)
             }
           }
-          // try to pull next one right away to avoid a loop again
+          // try to pull next batch right away to avoid a loop again
           if (joinIter.exists(_.hasNext)) {
             nextCb = joinIter.map(_.next())
           }
