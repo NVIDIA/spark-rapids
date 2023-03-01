@@ -22,22 +22,17 @@ import scala.io.BufferedSource
 
 /**
  * Alluxio master address and port reader.
- * It reads from `/opt/alluxio-2.8.0/conf/alluxio-site.properties`
+ * It reads from `/opt/alluxio/conf/alluxio-site.properties`
  */
 class AlluxioConfigReader {
 
-  private val alluxioHome: String = "/opt/alluxio-2.8.0"
-
-  def readAlluxioMasterAndPort(): (String, String) = {
-    readMasterAndPort(alluxioHome)
+  def readAlluxioMasterAndPort(conf: RapidsConf): (String, String) = {
+    readMasterAndPort(conf.getAlluxioHome)
   }
 
-
-  // By default, read from /opt/alluxio-2.8.0 if not setting ALLUXIO_HOME to get master and port
+  // By default, read from /opt/alluxio, refer to `spark.rapids.alluxio.home` config in `RapidsConf`
   // The default port is 19998
-  private[rapids] def readMasterAndPort(defaultHomePath: String): (String, String) = {
-    val homePath = scala.util.Properties.envOrElse("ALLUXIO_HOME", defaultHomePath)
-
+  private[rapids] def readMasterAndPort(homePath: String): (String, String) = {
     var buffered_source: BufferedSource = null
     try {
       buffered_source = scala.io.Source.fromFile(homePath + "/conf/alluxio-site.properties")
@@ -55,7 +50,9 @@ class AlluxioConfigReader {
       case _: FileNotFoundException =>
         throw new RuntimeException(s"Alluxio config file not found in " +
           s"$homePath/conf/alluxio-site.properties, " +
-          "please check if ALLUXIO_HOME is set correctly")
+          "the default value of `spark.rapids.alluxio.home` is /opt/alluxio, " +
+          "please create a link `/opt/alluxio` to Alluxio installation home, " +
+          "or set `spark.rapids.alluxio.home` to Alluxio installation home")
     } finally {
       if (buffered_source != null) buffered_source.close
     }

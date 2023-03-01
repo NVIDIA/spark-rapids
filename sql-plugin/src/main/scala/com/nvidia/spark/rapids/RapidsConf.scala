@@ -1501,6 +1501,13 @@ object RapidsConf {
         .createWithDefault(20)
 
   // ALLUXIO CONFIGS
+  val ALLUXIO_HOME = conf("spark.rapids.alluxio.home")
+    .doc("The Alluxio installation home path or link to the installation home path. " +
+      "You can create a link to Alluxio installation path, " +
+      "e.g: ln -s /opt/alluxio-x.y.z /opt/alluxio")
+    .startupOnly()
+    .stringConf
+    .createWithDefault("/opt/alluxio")
 
   val ALLUXIO_PATHS_REPLACE = conf("spark.rapids.alluxio.pathsToReplace")
     .doc("List of paths to be replaced with corresponding Alluxio scheme. " +
@@ -1519,10 +1526,6 @@ object RapidsConf {
   val ALLUXIO_AUTOMOUNT_ENABLED = conf("spark.rapids.alluxio.automount.enabled")
     .doc("Enable the feature of auto mounting the cloud storage to Alluxio. " +
       "It requires the Alluxio master is the same node of Spark driver node. " +
-      "When it's true, it requires an environment variable ALLUXIO_HOME be set properly. " +
-      "The default value of ALLUXIO_HOME is \"/opt/alluxio-2.8.0\". " +
-      "You can set it as an environment variable when running a spark-submit or " +
-      "you can use spark.yarn.appMasterEnv.ALLUXIO_HOME to set it on Yarn. " +
       "The Alluxio master's host and port will be read from alluxio.master.hostname and " +
       "alluxio.master.rpc.port(default: 19998) from ALLUXIO_HOME/conf/alluxio-site.properties, " +
       "then replace a cloud path which matches spark.rapids.alluxio.bucket.regex like " +
@@ -2320,6 +2323,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val gpuReadMemorySpeed: Double = get(OPTIMIZER_GPU_READ_SPEED)
 
   lazy val gpuWriteMemorySpeed: Double = get(OPTIMIZER_GPU_WRITE_SPEED)
+
+  lazy val getAlluxioHome: String = get(ALLUXIO_HOME)
 
   lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
 
