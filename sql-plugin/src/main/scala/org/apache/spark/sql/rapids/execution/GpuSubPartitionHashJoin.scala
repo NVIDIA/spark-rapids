@@ -265,7 +265,7 @@ class GpuBatchSubPartitioner(
   }
 
   override def close(): Unit = {
-    pendingParts.flatten.safeClose()
+    pendingParts.filterNot(_ == null).flatten.safeClose()
     // batches are closed, safe to set all to null
     (0 until realNumPartitions).foreach(releaseBatchesByPartition)
   }
@@ -598,7 +598,7 @@ trait GpuSubPartitionHashJoin extends Arm with Logging { self: GpuHashJoin =>
   def doJoinBySubPartition(
       builtIter: Iterator[ColumnarBatch],
       streamIter: Iterator[ColumnarBatch],
-      realTarget: Long,
+      targetSize: Long,
       numPartitions: Int,
       spillCallback: SpillCallback,
       numOutputRows: GpuMetric,
@@ -611,7 +611,7 @@ trait GpuSubPartitionHashJoin extends Arm with Logging { self: GpuHashJoin =>
     logInfo(s"$joinType hash join is executed by sub-partitioning ...")
 
     new BaseSubHashJoinIterator(builtIter, boundBuildKeys, streamIter,
-        boundStreamKeys, numPartitions, realTarget, spillCallback, opTime) {
+        boundStreamKeys, numPartitions, targetSize, spillCallback, opTime) {
 
       private[this] def canOptimizeOut(pair: PartitionPair): Boolean = {
         val (build, stream) = pair.get
@@ -637,7 +637,7 @@ trait GpuSubPartitionHashJoin extends Arm with Logging { self: GpuHashJoin =>
             }
 
             // Leverage the original join iterators
-            val joinIter = doJoin(buildCb, streamIter, realTarget, spillCallback,
+            val joinIter = doJoin(buildCb, streamIter, targetSize, spillCallback,
               numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
             Some(joinIter)
           }

@@ -928,7 +928,7 @@ trait GpuHashJoin extends GpuExec {
   def doJoin(
       builtBatch: ColumnarBatch,
       stream: Iterator[ColumnarBatch],
-      realTarget: Long,
+      targetSize: Long,
       spillCallback: SpillCallback,
       numOutputRows: GpuMetric,
       joinOutputRows: GpuMetric,
@@ -972,7 +972,7 @@ trait GpuHashJoin extends GpuExec {
       case FullOuter =>
         new HashFullJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream,
           boundStreamKeys, streamedPlan.output, boundCondition, numFirstConditionTableColumns,
-          realTarget, buildSide, compareNullsEqual, spillCallback, opTime, joinTime)
+          targetSize, buildSide, compareNullsEqual, spillCallback, opTime, joinTime)
       case _ =>
         if (boundCondition.isDefined) {
           // ConditionalHashJoinIterator will close the compiled condition
@@ -980,11 +980,11 @@ trait GpuHashJoin extends GpuExec {
             boundCondition.get.convertToAst(numFirstConditionTableColumns).compile()
           new ConditionalHashJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream,
             boundStreamKeys, streamedPlan.output, compiledCondition,
-            realTarget, joinType, buildSide, compareNullsEqual, spillCallback, opTime, joinTime)
+            targetSize, joinType, buildSide, compareNullsEqual, spillCallback, opTime, joinTime)
         } else {
           new HashJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream, boundStreamKeys,
-            streamedPlan.output, realTarget, joinType, buildSide, compareNullsEqual, spillCallback,
-            opTime, joinTime)
+            streamedPlan.output, targetSize, joinType, buildSide, compareNullsEqual,
+            spillCallback, opTime, joinTime)
         }
     }
 
