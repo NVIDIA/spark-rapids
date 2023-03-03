@@ -101,7 +101,7 @@ class GpuSubPartitionSuite extends SparkQueryCompareTestSuite {
             actualRowNum += batches.map(_.numRows()).sum
           }
         }
-        assertResult(6)(actualRowNum)
+        assertResult(nonemptyBatch.numRows())(actualRowNum)
         // every partition becomes null after being released
         assert(ids.forall(subPartitioner.getBatchesByPartition(_) == null))
         subPartitioner.close()
@@ -165,7 +165,7 @@ class GpuSubPartitionSuite extends SparkQueryCompareTestSuite {
             }
           }
         }
-        assertResult(6)(actualRowNum)
+        assertResult(nonemptyBatch.numRows())(actualRowNum)
         subPartitioner.close()
       }
     }
