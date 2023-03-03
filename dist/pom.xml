@@ -415,7 +415,7 @@
                                 <property name="included_buildvers" value="${included_buildvers}"/>
                                 <ant
                                     antfile="${project.basedir}/maven-antrun/build-parallel-worlds.xml"
-                                    target="build-parallel-worlds"
+                                    target="remove-dependencies-from-pom"
                                 />
                             </target>
                         </configuration>

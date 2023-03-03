@@ -199,7 +199,8 @@
             <fileset dir="${project.build.directory}/parallel-world/spark3xx-common"
                      includesfile="${project.basedir}/unshimmed-common-from-spark311.txt"/>
         </delete>
-
+    </target>
+    <target name="remove-dependencies-from-pom" depends="build-parallel-worlds">
         <echo level="info">Generating dependency-reduced-pom.xml</echo>
         <resources id="aggregatorDependencyRegexWithoutWhitespace">
             <string>&lt;dependency&gt;</string>
