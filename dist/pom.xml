@@ -439,7 +439,7 @@ root = ET.fromstring(pom_xml)
 # verify: either no child element dependencies or it is empty
 deps = root.findall('{%s}dependencies' % ns)
 assert len(deps) == 0 or len(deps) == 1 and len(deps[0]) == 0, \
-       "Dist pom must not have depepndencies"
+       "Dist pom must not have dependencies"
 self.log("... OK")
 ]]>
                                 </scriptdef>
