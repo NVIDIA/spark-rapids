@@ -771,6 +771,7 @@
             ${noSnapshot.buildvers},
             ${snapshot.buildvers},
             ${databricks.buildvers},
+            314,
             340
         </all.buildvers>
         <shimplify.shims>${all.buildvers}</shimplify.shims>
