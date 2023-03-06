@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,8 @@ import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{AggregationOverWindow, DType, GroupByOptions, GroupByScanAggregation, NullPolicy, NvtxColor, ReplacePolicy, ReplacePolicyWithColumn, Scalar, ScanAggregation, ScanType, Table, WindowOptions}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -533,16 +535,10 @@ trait GpuWindowBaseExec extends ShimUnaryExecNode with GpuExec {
 
   import GpuMetric._
 
-  def needsSpillMetrics: Boolean = false
-
   override lazy val additionalMetrics: Map[String, GpuMetric] = {
     val required = Map(
       OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
-    if (needsSpillMetrics) {
-      required ++ spillMetrics
-    } else {
-      required
-    }
+    required ++ spillMetrics
   }
 
   override def output: Seq[Attribute] = windowOps.map(_.toAttribute)
@@ -877,6 +873,8 @@ class GroupedAggregations extends Arm {
                 val aggColumn = result.getColumn(resultIndex)
 
                 outputIndexes.foreach { outIndex =>
+                  require(outputColumns(outIndex) == null,
+                    "Attempted to overwrite a window output column!!")
                   outputColumns(outIndex) = func.windowOutput(aggColumn)
                 }
             }
@@ -941,6 +939,8 @@ class GroupedAggregations extends Arm {
 
         withResource(combined) { combined =>
           outputIndexes.foreach { outIndex =>
+            require(outputColumns(outIndex) == null,
+              "Attempted to overwrite a window output column!!")
             outputColumns(outIndex) = combined.incRefCount()
           }
         }
@@ -1068,8 +1068,10 @@ class GroupedAggregations extends Arm {
       val columns =
         (readIndex until (readIndex + numScans)).map(scannedAndReplaced.getColumn).toArray
       withResource(func.scanCombine(isRunningBatched, columns)) { col =>
-        outputLocations.foreach { i =>
-          outputColumns(i) = col.incRefCount()
+        outputLocations.foreach { outIndex =>
+          require(outputColumns(outIndex) == null,
+            "Attempted to overwrite a window output column!!")
+          outputColumns(outIndex) = col.incRefCount()
         }
       }
       readIndex += numScans
@@ -1115,15 +1117,36 @@ class GroupedAggregations extends Arm {
    * Do all of the aggregations and put them in the output columns. There may be extra processing
    * after this before you get to a final result.
    */
-  def doAggs(isRunningBatched: Boolean,
+  def doAggsAndClose(isRunningBatched: Boolean,
       boundOrderSpec: Seq[SortOrder],
       orderByPositions: Array[Int],
       partByPositions: Array[Int],
-      inputCb: ColumnarBatch,
+      inputSpillable: SpillableColumnarBatch,
       outputColumns: Array[cudf.ColumnVector]): Unit = {
-    doRunningWindowOptimizedAggs(isRunningBatched, partByPositions, inputCb, outputColumns)
-    doRowAggs(boundOrderSpec, orderByPositions, partByPositions, inputCb, outputColumns)
-    doRangeAggs(boundOrderSpec, orderByPositions, partByPositions, inputCb, outputColumns)
+    withRetryNoSplit(inputSpillable) { attempt =>
+      // when there are exceptions in this body, we always want to close
+      // `outputColumns` before a likely retry.
+      try {
+        withResource(attempt.getColumnarBatch()) { attemptCb =>
+          doRunningWindowOptimizedAggs(
+            isRunningBatched, partByPositions, attemptCb, outputColumns)
+          doRowAggs(
+            boundOrderSpec, orderByPositions, partByPositions, attemptCb, outputColumns)
+          doRangeAggs(
+            boundOrderSpec, orderByPositions, partByPositions, attemptCb, outputColumns)
+        }
+      } catch {
+        case t: Throwable =>
+          // on exceptions we want to throw away any columns in outputColumns that
+          // are not pass-through
+          val columnsToClose = outputColumns.filter(_ != null)
+          outputColumns.indices.foreach { col =>
+            outputColumns(col) = null
+          }
+          columnsToClose.safeClose(t)
+          throw t
+      }
+    }
   }
 
   /**
@@ -1216,20 +1239,32 @@ trait BasicWindowCalc extends Arm {
    * `castResultsIfNeeded` or it could be different because the window operations know about a
    * post processing step that needs to happen prior to `castResultsIfNeeded`.
    * @param cb the batch to do window aggregations on.
+   * @param spillCallback the spill metrics callback
    * @return the cudf columns that are the results of doing the aggregations.
    */
-  def computeBasicWindow(cb: ColumnarBatch): Array[cudf.ColumnVector] = {
+  def computeBasicWindow(
+      cb: ColumnarBatch, spillCallback: SpillCallback): Array[cudf.ColumnVector] = {
     closeOnExcept(new Array[cudf.ColumnVector](boundWindowOps.length)) { outputColumns =>
-      // First the pass through unchanged columns
+      val inputSpillable = SpillableColumnarBatch(
+        GpuProjectExec.project(cb, initialProjections),
+        SpillPriorities.ACTIVE_BATCHING_PRIORITY,
+        spillCallback)
+
+      // this takes ownership of `inputSpillable`
+      aggregations.doAggsAndClose(
+        isRunningBatched,
+        boundOrderSpec,
+        orderByPositions,
+        partByPositions,
+        inputSpillable,
+        outputColumns)
+
+      // if the window aggregates were successful, lets splice the passThrough
+      // columns
       passThrough.foreach {
         case (inputIndex, outputIndex) =>
           outputColumns(outputIndex) =
             cb.column(inputIndex).asInstanceOf[GpuColumnVector].getBase.incRefCount()
-      }
-
-      withResource(GpuProjectExec.project(cb, initialProjections)) { initProjCb =>
-        aggregations.doAggs(isRunningBatched, boundOrderSpec, orderByPositions,
-          partByPositions, initProjCb, outputColumns)
       }
 
       outputColumns
@@ -1254,7 +1289,8 @@ class GpuWindowIterator(
     val outputTypes: Array[DataType],
     numOutputBatches: GpuMetric,
     numOutputRows: GpuMetric,
-    opTime: GpuMetric) extends Iterator[ColumnarBatch] with BasicWindowCalc {
+    opTime: GpuMetric,
+    spillCallback: SpillCallback) extends Iterator[ColumnarBatch] with BasicWindowCalc {
 
   override def isRunningBatched: Boolean = false
 
@@ -1263,7 +1299,7 @@ class GpuWindowIterator(
   override def next(): ColumnarBatch = {
     withResource(input.next()) { cb =>
       withResource(new NvtxWithMetrics("window", NvtxColor.CYAN, opTime)) { _ =>
-        val ret = withResource(computeBasicWindow(cb)) { cols =>
+        val ret = withResource(computeBasicWindow(cb, spillCallback)) { cols =>
           convertToBatch(outputTypes, cols)
         }
         numOutputBatches += 1
@@ -1385,7 +1421,8 @@ class GpuRunningWindowIterator(
     val outputTypes: Array[DataType],
     numOutputBatches: GpuMetric,
     numOutputRows: GpuMetric,
-    opTime: GpuMetric) extends Iterator[ColumnarBatch] with BasicWindowCalc {
+    opTime: GpuMetric,
+    spillCallback: SpillCallback) extends Iterator[ColumnarBatch] with BasicWindowCalc {
   import GpuBatchedWindowIterator._
   TaskContext.get().addTaskCompletionListener[Unit](_ => close())
 
@@ -1457,7 +1494,7 @@ class GpuRunningWindowIterator(
     val fixers = fixerIndexMap
     val numRows = cb.numRows()
 
-    withResource(computeBasicWindow(cb)) { basic =>
+    withResource(computeBasicWindow(cb, spillCallback)) { basic =>
       withResource(GpuProjectExec.project(cb, boundPartitionSpec)) { parts =>
         val partColumns = GpuColumnVector.extractBases(parts)
         withResourceIfAllowed(arePartsEqual(lastParts, partColumns)) { partsEqual =>
@@ -1545,6 +1582,7 @@ case class GpuRunningWindowExec(
     val numOutputBatches = gpuLongMetric(GpuMetric.NUM_OUTPUT_BATCHES)
     val numOutputRows = gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
     val opTime = gpuLongMetric(GpuMetric.OP_TIME)
+    val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
 
     val boundWindowOps = GpuBindReferences.bindGpuReferences(windowOps, child.output)
     val boundPartitionSpec = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, child.output)
@@ -1552,7 +1590,7 @@ case class GpuRunningWindowExec(
 
     child.executeColumnar().mapPartitions { iter =>
       new GpuRunningWindowIterator(iter, boundWindowOps, boundPartitionSpec, boundOrderSpec,
-        output.map(_.dataType).toArray, numOutputBatches, numOutputRows, opTime)
+        output.map(_.dataType).toArray, numOutputBatches, numOutputRows, opTime, spillCallback)
     }
   }
 }
@@ -1730,7 +1768,7 @@ class GpuCachedDoublePassWindowIterator(
   def firstPassComputeAndCache(cb: ColumnarBatch): Unit = {
     val fixers = fixerIndexMap
     val numRows = cb.numRows()
-    withResource(computeBasicWindow(cb)) { basic =>
+    withResource(computeBasicWindow(cb, spillCallback)) { basic =>
       withResource(GpuProjectExec.project(cb, boundPartitionSpec)) { parts =>
         val partColumns = GpuColumnVector.extractBases(parts)
 
@@ -1851,8 +1889,6 @@ case class GpuCachedDoublePassWindowExec(
     override val cpuPartitionSpec: Seq[Expression],
     override val cpuOrderSpec: Seq[SortOrder]) extends GpuWindowBaseExec {
 
-  override def needsSpillMetrics: Boolean = true
-
   override def otherCopyArgs: Seq[AnyRef] = cpuPartitionSpec :: cpuOrderSpec :: Nil
 
   override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
@@ -1895,6 +1931,7 @@ case class GpuWindowExec(
     val numOutputBatches = gpuLongMetric(GpuMetric.NUM_OUTPUT_BATCHES)
     val numOutputRows = gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
     val opTime = gpuLongMetric(GpuMetric.OP_TIME)
+    val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
 
     val boundWindowOps = GpuBindReferences.bindGpuReferences(windowOps, child.output)
     val boundPartitionSpec = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, child.output)
@@ -1902,7 +1939,7 @@ case class GpuWindowExec(
 
     child.executeColumnar().mapPartitions { iter =>
         new GpuWindowIterator(iter, boundWindowOps, boundPartitionSpec, boundOrderSpec,
-          output.map(_.dataType).toArray, numOutputBatches, numOutputRows, opTime)
+          output.map(_.dataType).toArray, numOutputBatches, numOutputRows, opTime, spillCallback)
     }
   }
 }
