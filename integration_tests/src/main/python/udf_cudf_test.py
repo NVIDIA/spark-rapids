@@ -15,12 +15,8 @@
 import pytest
 
 from conftest import is_at_least_precommit_run
-from spark_session import is_databricks113_or_later
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
-
-if is_databricks113_or_later():
-    pytest.skip('https://github.com/NVIDIA/spark-rapids/issues/7639', allow_module_level=True)
 
 try:
     require_minimum_pandas_version()

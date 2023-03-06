@@ -236,7 +236,7 @@ No matter whether or not you use the [Resolve Symlinks][6] plugin, IDEA is able 
 set directly via the original physical file or a symlink path.
 
 [1]: https://github.com/NVIDIA/spark-rapids/issues/3223
-[2]: https://github.com/NVIDIA/spark-rapids/blob/main/build/shimplify.py
+[2]: https://github.com/NVIDIA/spark-rapids/blob/b7b1a5d544b6a3ac35ed064b5c32ee0d63c78845/build/shimplify.py#L15-L79
 [3]: https://github.com/NVIDIA/spark-rapids/blob/74ce729ca1306db01359e68f7f0b7cc31cd3d850/pom.xml#L494-L500
 [4]: https://jsonlines.org/
 [5]: https://spark.apache.org/versioning-policy.html

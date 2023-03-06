@@ -23,7 +23,7 @@ from asserts import *
 from data_gen import *
 from conftest import is_databricks_runtime
 from marks import *
-from parquet_write_test import parquet_part_write_gens, parquet_write_gens_list, writer_confs
+from parquet_write_test import limited_timestamp, parquet_part_write_gens, parquet_write_gens_list, writer_confs
 from pyspark.sql.types import *
 from spark_session import is_before_spark_320, is_before_spark_330, with_cpu_session
 
@@ -726,8 +726,7 @@ def test_delta_write_aqe_join(spark_tmp_path):
     "spark.databricks.delta.optimizeWrite.enabled",
     "spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite"], ids=idfn)
 @pytest.mark.parametrize("aqe_enabled", [True, False], ids=idfn)
-def test_delta_write_optimized(spark_tmp_path, enable_conf_key, aqe_enabled):
-    from delta.tables import DeltaTable
+def test_delta_write_optimized_aqe(spark_tmp_path, enable_conf_key, aqe_enabled):
     num_chunks = 20
     def do_write(data_path, is_optimize_write):
         confs=copy_and_update(delta_writes_enabled_conf, {
@@ -751,11 +750,80 @@ def test_delta_write_optimized(spark_tmp_path, enable_conf_key, aqe_enabled):
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(not is_databricks_runtime(), reason="Delta Lake optimized writes are only supported on Databricks")
+def test_delta_write_optimized_supported_types(spark_tmp_path):
+    num_chunks = 20
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    confs=copy_and_update(writer_confs, delta_writes_enabled_conf, {
+        "spark.sql.execution.sortBeforeRepartition": "true",
+        "spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite": "true"
+    })
+    simple_gens = [ byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
+                    string_gen, boolean_gen, date_gen, limited_timestamp() ]
+    genlist = simple_gens + \
+        [ StructGen([("child" + str(i), gen) for i, gen in enumerate(simple_gens)]) ] + \
+        [ StructGen([("x", StructGen([("y", int_gen)]))]) ]
+    gens = [("c" + str(i), gen) for i, gen in enumerate(genlist)]
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gens) \
+            .repartition(num_chunks).write.format("delta").save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=confs)
+    opmetrics = get_last_operation_metrics(data_path + "/GPU")
+    assert int(opmetrics["numFiles"]) < 20
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(not is_databricks_runtime(), reason="Delta Lake optimized writes are only supported on Databricks")
+def test_delta_write_optimized_supported_types_partitioned(spark_tmp_path):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    confs=copy_and_update(writer_confs, delta_writes_enabled_conf, {
+        "spark.sql.execution.sortBeforeRepartition": "true",
+        "spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite": "true"
+    })
+    genlist = [ SetValuesGen(StringType(), ["a", "b", "c"]) ] + \
+              [ x for sublist in parquet_write_gens_list for x in sublist ]
+    gens = [("c" + str(i), gen) for i, gen in enumerate(genlist)]
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gens) \
+            .write.format("delta").partitionBy("c0").save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        conf=confs)
+
+@allow_non_gpu("ExecutedCommandExec", *delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.skipif(not is_databricks_runtime(), reason="Delta Lake optimized writes are only supported on Databricks")
+@pytest.mark.parametrize("gen", [
+    simple_string_to_string_map_gen,
+    StructGen([("x", ArrayGen(int_gen))]),
+    ArrayGen(StructGen([("x", long_gen)]))], ids=idfn)
+def test_delta_write_optimized_unsupported_sort_fallback(spark_tmp_path, gen):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    confs=copy_and_update(delta_writes_enabled_conf, {
+        "spark.sql.execution.sortBeforeRepartition": "true",
+        "spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite": "true"
+    })
+    assert_gpu_fallback_write(
+        lambda spark, path: unary_op_df(spark, gen).coalesce(1).write.format("delta").save(path),
+        lambda spark, path: spark.read.format("delta").load(path),
+        data_path,
+        "ExecutedCommandExec",
+        conf=confs)
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.skipif(not is_databricks_runtime(), reason="Delta Lake optimized writes are only supported on Databricks")
 def test_delta_write_optimized_table_confs(spark_tmp_path):
-    from delta.tables import DeltaTable
     data_path = spark_tmp_path + "/DELTA_DATA"
     gpu_data_path = data_path + "/GPU"
     num_chunks = 20
@@ -797,7 +865,6 @@ def test_delta_write_optimized_table_confs(spark_tmp_path):
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.skipif(not is_databricks_runtime(), reason="Delta Lake optimized writes are only supported on Databricks")
 def test_delta_write_optimized_partitioned(spark_tmp_path):
-    from delta.tables import DeltaTable
     data_path = spark_tmp_path + "/DELTA_DATA"
     gpu_data_path = data_path + "/GPU"
     num_chunks = 20
