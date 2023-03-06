@@ -1201,8 +1201,7 @@ class GpuRegExpExtractMeta(
 
     val groupIdx = expr.idx match {
       case Literal(value, DataTypes.IntegerType) =>
-        val idx = value.asInstanceOf[Int]
-        Some(idx)
+        Some(value.asInstanceOf[Int])
       case _ =>
         willNotWorkOnGpu("GPU only supports literal index")
         None
@@ -1330,19 +1329,12 @@ class GpuRegExpExtractAllMeta(
     GpuRegExpUtils.tagForRegExpEnabled(this)
     val groupIdx = expr.idx match {
       case Literal(value, DataTypes.IntegerType) =>
-        val idx = value.asInstanceOf[Int]
-        if (idx < 0) {
-          willNotWorkOnGpu("the specified group index cannot be less than zero")
-        }
-        if (idx > numGroups) {
-          willNotWorkOnGpu(
-            s"regex group count is $numGroups, but the specified group index is $idx")
-        }
-        Some(idx)
+        Some(value.asInstanceOf[Int])
       case _ =>
         willNotWorkOnGpu("GPU only supports literal index")
         None
     }
+
 
     expr.regexp match {
       case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
@@ -1363,6 +1355,15 @@ class GpuRegExpExtractAllMeta(
         willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
     }
 
+    groupIdx.map { idx =>
+      if (idx < 0) {
+        willNotWorkOnGpu("the specified group index cannot be less than zero")
+      }
+      if (idx > numGroups) {
+        willNotWorkOnGpu(
+          s"regex group count is $numGroups, but the specified group index is $idx")
+      }
+    }
   }
 
   override def convertToGpu(
@@ -1371,7 +1372,7 @@ class GpuRegExpExtractAllMeta(
       idx: Expression): GpuExpression = {
     val cudfPattern = pattern.getOrElse(
       throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern"))
-    GpuRegExpExtractAll(str, regexp, idx, numGroups, cudfPattern)
+    GpuRegExpExtractAll(str, regexp, idx, cudfPattern)
   }
 }
 
@@ -1379,7 +1380,6 @@ case class GpuRegExpExtractAll(
     str: Expression,
     regexp: Expression,
     idx: Expression,
-    numGroups: Int,
     cudfRegexPattern: String)
   extends GpuRegExpTernaryBase with ImplicitCastInputTypes with NullIntolerant {
 
@@ -1415,11 +1415,13 @@ case class GpuRegExpExtractAll(
         val prog = new RegexProgram(cudfRegexPattern)
 
         val extractedWithNulls = withResource(
-          str.getBase.extractAllRecord(prog, intIdx)) { allExtracted =>
+          // Now the index is always 1 because we have transpiled all the capture groups to the
+          // single group that we care about, so we just have to handle the idx = 1 case here
+          str.getBase.extractAllRecord(prog, 1)) { allExtracted =>
             withResource(allExtracted.countElements) { listSizes =>
               withResource(listSizes.max) { maxSize =>
                 val maxSizeInt = maxSize.getInt
-                val stringCols = Range(intIdx - 1, maxSizeInt, numGroups).safeMap {
+                val stringCols = Range(0, maxSizeInt, 1).safeMap {
                   i =>
                     withResource(Scalar.fromInt(i)) { scalarIndex =>
                       withResource(ColumnVector.fromScalar(scalarIndex, rowCount.toInt)) {

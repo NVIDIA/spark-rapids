@@ -467,6 +467,7 @@ class RegularExpressionTranspilerSuite extends FunSuite with Arm {
     doTranspileTest("(a(b))(c)(d)", "(?:a(b))(?:c)(?:d)", 2)
     doTranspileTest("(ab)+(c)(d)", "(ab)+(?:c)(?:d)", 1)
     doTranspileTest("(ab)+(c)(d)", "(?:ab)+(c)(?:d)", 2)
+    doTranspileTest("([a-z0-9]((([abcd](\\d?)))))", "(?:[a-z0-9](?:((?:[abcd](?:[0-9]?)))))", 3)
     doTranspileTest("ab", "ab", 1)
   }
 
