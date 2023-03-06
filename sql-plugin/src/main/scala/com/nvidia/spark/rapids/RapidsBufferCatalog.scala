@@ -694,7 +694,9 @@ object RapidsBufferCatalog extends Logging with Arm {
   def singleton: RapidsBufferCatalog = {
     if (_singleton == null) {
       synchronized {
-        _singleton = new RapidsBufferCatalog(deviceStorage)
+        if (_singleton == null) {
+          _singleton = new RapidsBufferCatalog(deviceStorage)
+        }
       }
     }
     _singleton
@@ -710,9 +712,24 @@ object RapidsBufferCatalog extends Logging with Arm {
     }
   }
 
-  // For testing
+  /**
+   * Set a `RapidsDeviceMemoryStore` instance to use when instantiating our
+   * catalog.
+   * @note This should only be called from tests!
+   */
   def setDeviceStorage(rdms: RapidsDeviceMemoryStore): Unit = {
     deviceStorage = rdms
+  }
+
+  /**
+   * Set a `RapidsBufferCatalog` instance to use our singleton.
+   * @note This should only be called from tests!
+   */
+  def setCatalog(catalog: RapidsBufferCatalog): Unit = synchronized {
+    if (_singleton != null) {
+      _singleton.close()
+    }
+    _singleton = catalog
   }
 
   def init(rapidsConf: RapidsConf): Unit = {

@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2022-2023, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -36,32 +36,17 @@ if [ -f $SPARK_HOME/conf/spark-env.sh ]; then
     sudo chmod 777 `echo $local_dir | xargs`
 fi
 
-CONDA_HOME=${CONDA_HOME:-"/databricks/conda"}
-
-# Try to use "cudf-udf" conda environment for the python cudf-udf tests.
-if [ -d "${CONDA_HOME}/envs/cudf-udf" ]; then
-    export PATH=${CONDA_HOME}/envs/cudf-udf/bin:${CONDA_HOME}/bin:$PATH
-    export PYSPARK_PYTHON=${CONDA_HOME}/envs/cudf-udf/bin/python
+# Set PYSPARK_PYTHON to keep the version of driver/workers python consistent.
+export PYSPARK_PYTHON=${PYSPARK_PYTHON:-"$(which python)"}
+# Install if python pip does not exist.
+if [ -z "$($PYSPARK_PYTHON -m pip --version || true)" ]; then
+    curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py && \
+        $PYSPARK_PYTHON get-pip.py && rm get-pip.py
 fi
 
 # Get Python version (major.minor). i.e., python3.8 for DB10.4 and python3.9 for DB11.3
-python_version=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
-
-# override incompatible versions between databricks and cudf
-if [ -d "${CONDA_HOME}/envs/cudf-udf" ]; then
-    CONDA_SITE_PATH="${CONDA_HOME}/envs/cudf-udf/lib/${python_version}/site-packages"
-    PATCH_PACKAGES_PATH="$PWD/package-overrides/${python_version}"
-    mkdir -p ${PATCH_PACKAGES_PATH}
-    TO_PATCH=(
-        google
-        llvmlite
-        numba
-        numpy
-        pyarrow
-    )
-
-    echo creating symlinks to override conflicting packages
-    for p in "${TO_PATCH[@]}"; do
-        ln -f -s ${CONDA_SITE_PATH}/${p} ${PATCH_PACKAGES_PATH}
-    done
-fi
+PYTHON_VERSION=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
+# Set the path of python site-packages, and install packages here.
+PYTHON_SITE_PACKAGES="$HOME/.local/lib/${PYTHON_VERSION}/site-packages"
+# Use "python -m pip install" to make sure pip matches with python.
+$PYSPARK_PYTHON -m pip install --target $PYTHON_SITE_PACKAGES pytest sre_yield requests pandas pyarrow findspark pytest-xdist pytest-order

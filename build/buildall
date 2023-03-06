@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2021-2022, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2021-2023, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,8 +19,6 @@ set -e
 
 shopt -s extglob
 
-BLOOP_VERSION=${BLOOP_VERSION:-"1.4.13"}
-BLOOP_SCALA_VERSION=${BLOOP_SCALA_VERSION:-"2.13"}
 SKIP_CLEAN=1
 BUILD_ALL_DEBUG=0
 
@@ -66,7 +64,7 @@ function bloopInstall() {
       bloopTmpConfigDir="$bloopTmpDir/.bloop$bv"
       mkdir -p $bloopTmpConfigDir
       $MVN -B clean install \
-        ch.epfl.scala:maven-bloop_${BLOOP_SCALA_VERSION}:${BLOOP_VERSION}:bloopInstall \
+        ch.epfl.scala:bloop-maven-plugin:bloopInstall \
         -pl aggregator -am \
         -Dbloop.configDirectory="$bloopTmpConfigDir" \
         -DdownloadSources=true \
@@ -265,6 +263,7 @@ export -f build_single_shim
 time (
   # printf a single buildver array element per line
   if [[ "$SKIP_DIST_DEPS" != "1" ]]; then
+    $MVN initialize
     printf "%s\n" "${SPARK_SHIM_VERSIONS[@]}" | \
       xargs -t -I% -P "$BUILD_PARALLEL" -n 1 \
       bash -c 'build_single_shim "$@"' _ %

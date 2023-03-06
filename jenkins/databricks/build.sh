@@ -337,7 +337,7 @@ else
 fi
 
 if [[ "$WITH_BLOOP" == "1" ]]; then
-    MVN_OPT="ch.epfl.scala:maven-bloop_2.13:bloopInstall $MVN_OPT"
+    MVN_OPT="ch.epfl.scala:bloop-maven-plugin:bloopInstall $MVN_OPT"
 fi
 
 # Build the RAPIDS plugin by running package command for databricks
