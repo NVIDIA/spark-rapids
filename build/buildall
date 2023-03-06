@@ -263,9 +263,11 @@ export -f build_single_shim
 time (
   # printf a single buildver array element per line
   if [[ "$SKIP_DIST_DEPS" != "1" ]]; then
-    # Excute init to download huge artifacts like spark-rapids-jni in a single thread
-    # --fail-nerver to ignore missing intermediate dependencies and because this step
-    # is optional, real persistent issues will still fail the build subsequently
+    # Execute initialize to download huge artifacts like spark-rapids-jni in a single thread to
+    # avoid repeating this work in parallel
+    # Use --fail-nerver to ignore missing intermediate dependencies and because this step
+    # is executed before a real build commences which will still catch real persistent issues
+    #
     $MVN --fail-never initialize
 
     printf "%s\n" "${SPARK_SHIM_VERSIONS[@]}" | \
