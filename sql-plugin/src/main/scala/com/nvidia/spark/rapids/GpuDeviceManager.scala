@@ -321,7 +321,7 @@ object GpuDeviceManager extends Logging {
         case firstEx: CudfException if ((init | RmmAllocationMode.CUDA_ASYNC) != 0) => {
           logWarning("Failed to initialize RMM with ASYNC allocator. " +
             "Try to initialize it again with ARENA allocator as a fallback option.")
-          init = init & (~RmmAllocationMode.CUDA_ASYNC) & RmmAllocationMode.ARENA
+          init = init & (~RmmAllocationMode.CUDA_ASYNC) | RmmAllocationMode.ARENA
           try {
             Rmm.initialize(init, logConf, poolAllocation)
           } catch {
