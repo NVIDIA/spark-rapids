@@ -41,6 +41,7 @@
     <properties>
         <target.classifier/>
         <dist.jar.name>${project.build.directory}/${project.build.finalName}-${cuda.version}.jar</dist.jar.name>
+        <dist.jar.pom.url>jar:file:${dist.jar.name}!/META-INF/maven/${project.groupId}/${project.artifactId}/pom.xml</dist.jar.pom.url>
     </properties>
     <profiles>
         <profile>
@@ -342,7 +343,7 @@
                         <id>default-resources</id>
                         <phase>process-resources</phase>
                         <configuration>
-                            <outputDirectory>${project.build.directory}/parallel-world</outputDirectory>>
+                            <outputDirectory>${project.build.directory}/parallel-world</outputDirectory>
                         </configuration>
                     </execution>
                 </executions>
@@ -368,10 +369,6 @@
                             <archive><compress>${dist.jar.compress}</compress></archive>
                             <classesDirectory>${project.build.directory}/parallel-world</classesDirectory>
                             <classifier>${cuda.version}</classifier>
-                            <excludes>
-                                <!-- get rid of all maven poms from shim builds -->
-                                <exclude>META-INF/maven/**</exclude>
-                            </excludes>
                         </configuration>
                     </execution>
                     <execution>
@@ -418,7 +415,7 @@
                                 <property name="included_buildvers" value="${included_buildvers}"/>
                                 <ant
                                     antfile="${project.basedir}/maven-antrun/build-parallel-worlds.xml"
-                                    target="build-parallel-worlds"
+                                    target="remove-dependencies-from-pom"
                                 />
                             </target>
                         </configuration>
@@ -428,12 +425,28 @@
                         <goals>
                             <goal>run</goal>
                         </goals>
-                        <id>reduce-pom-deps-in-the-jar</id>
+                        <id>check-pom-dependencies-empty</id>
                         <configuration>
                             <target>
-                                <zip update="true" basedir="${project.build.directory}/extra-resources"
-                                    compress="${dist.jar.compress}"
-                                    destfile="${dist.jar.name}"/>
+                                <scriptdef name="validateReducedPom" language="jython">
+<![CDATA[
+import xml.etree.ElementTree as ET
+
+self.log("Verifying pom.xml in distribution jar has zero dependencies ...")
+pom_xml = project.getProperty("pomXmlInJar")
+ns = 'http://maven.apache.org/POM/4.0.0'
+root = ET.fromstring(pom_xml)
+# verify: either no child element dependencies or it is empty
+deps = root.findall('{%s}dependencies' % ns)
+assert len(deps) == 0 or len(deps) == 1 and len(deps[0]) == 0, \
+       "Dist pom must not have dependencies"
+self.log("... OK")
+]]>
+                                </scriptdef>
+                                <loadresource property="pomXmlInJar">
+                                    <url url="${dist.jar.pom.url}"/>
+                                </loadresource>
+                                <validateReducedPom/>
                             </target>
                         </configuration>
                     </execution>
@@ -536,14 +549,14 @@
                                     <groupId>com.nvidia</groupId>
                                     <artifactId>spark-rapids-jni</artifactId>
                                     <classifier>${cuda.version}</classifier>
-                                    <excludes>META-INF</excludes>
+                                    <excludes>META-INF/**</excludes>
                                     <outputDirectory>${project.build.directory}/parallel-world</outputDirectory>
                                     <overWrite>true</overWrite>
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>org.openucx</groupId>
                                     <artifactId>jucx</artifactId>
-                                    <excludes>META-INF</excludes>
+                                    <excludes>META-INF/**</excludes>
                                     <outputDirectory>${project.build.directory}/parallel-world</outputDirectory>
                                     <overWrite>true</overWrite>
                                 </artifactItem>

@@ -343,6 +343,25 @@ object RapidsConf {
     .stringConf
     .createWithDefault("NONE")
 
+  val SPARK_RMM_STATE_DEBUG = conf("spark.rapids.memory.gpu.state.debug")
+      .doc("To better recover from out of memory errors, RMM will track several states for " +
+          "the threads that interact with the GPU. This provides a log of those state " +
+          "transitions to aid in debugging it. STDOUT or STDERR will have the logging go there " +
+          "empty string will disable logging and anything else will be treated as a file to " +
+          "write the logs to.")
+      .startupOnly()
+      .stringConf
+      .createWithDefault("")
+
+  val SPARK_RMM_STATE_ENABLE = conf("spark.rapids.memory.gpu.state.enable")
+      .doc("Enabled or disable using the SparkRMM state tracking to improve " +
+          "OOM response. This includes possibly retrying parts of the processing in " +
+          "the case of an OOM")
+      .startupOnly()
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   val GPU_OOM_DUMP_DIR = conf("spark.rapids.memory.gpu.oomDumpDir")
     .doc("The path to a local directory where a heap dump will be created if the GPU " +
       "encounters an unrecoverable out-of-memory (OOM) error. The filename will be of the " +
@@ -1958,6 +1977,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val logQueryTransformations: Boolean = get(LOG_TRANSFORMATIONS)
 
   lazy val rmmDebugLocation: String = get(RMM_DEBUG)
+
+  lazy val sparkRmmDebugLocation: String = get(SPARK_RMM_STATE_DEBUG)
+
+  lazy val sparkRmmStateEnable: Boolean = get(SPARK_RMM_STATE_ENABLE)
 
   lazy val gpuOomDumpDir: Option[String] = get(GPU_OOM_DUMP_DIR)
 
