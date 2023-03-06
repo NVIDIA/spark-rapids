@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -96,10 +96,10 @@ jobs:
           java-version: 8
 
       # add blackduck properties https://synopsys.atlassian.net/wiki/spaces/INTDOCS/pages/631308372/Methods+for+Configuring+Analysis#Using-a-configuration-file
+      # currently hardcode projects here to avoid intermittent mvn scan failures
       - name: Setup blackduck properties
         run: |
-          PROJECTS=$(mvn -am dependency:tree | grep maven-dependency-plugin | awk '{ out="com.nvidia:"$(NF-1);print out }' | grep rapids | xargs | sed -e 's/ /,/g')
-          echo detect.maven.build.command="-pl=$PROJECTS -am" >> application.properties
+          echo detect.maven.build.command="com.nvidia:rapids-4-spark-parent,com.nvidia:rapids-4-spark-sql_2.12 -am" >> application.properties
           echo detect.maven.included.scopes=compile >> application.properties
 
       - name: Run blossom action
