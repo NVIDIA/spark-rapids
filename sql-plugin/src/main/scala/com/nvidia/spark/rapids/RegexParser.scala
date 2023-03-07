@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1004,11 +1004,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
       regex match {
         case RegexGroup(capture, term, lookahead) if capture => {
           current += 1
-          if (n != current) {
-            RegexGroup(false, updateGroupsForExtract(term, n), lookahead)
-          } else {
-            RegexGroup(true, updateGroupsForExtract(term, n), lookahead)
-          }
+          RegexGroup(n == current, updateGroupsForExtract(term, n), lookahead)
         }
         case RegexSequence(parts) => 
           RegexSequence(parts.map(updateGroupsForExtract(_, n)))

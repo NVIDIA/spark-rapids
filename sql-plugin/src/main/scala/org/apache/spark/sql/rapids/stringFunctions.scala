@@ -1226,7 +1226,7 @@ class GpuRegExpExtractMeta(
         willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
     }
 
-    groupIdx.map { idx =>
+    groupIdx.foreach { idx =>
       if (idx < 0) {
         willNotWorkOnGpu("the specified group index cannot be less than zero")
       }
@@ -1278,7 +1278,6 @@ case class GpuRegExpExtract(
       case i: Int if i == 0 =>
         ("(" + cudfRegexPattern + ")", 0)
       case i =>
-        // (cudfRegexPattern, i.asInstanceOf[Int] - 1)
         // Since we have transpiled all but one of the capture groups to non-capturing, the index
         // here moves to 0 to single out the one capture group left
         (cudfRegexPattern, 0)
@@ -1355,7 +1354,7 @@ class GpuRegExpExtractAllMeta(
         willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
     }
 
-    groupIdx.map { idx =>
+    groupIdx.foreach { idx =>
       if (idx < 0) {
         willNotWorkOnGpu("the specified group index cannot be less than zero")
       }
