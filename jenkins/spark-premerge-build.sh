@@ -99,6 +99,10 @@ rapids_shuffle_smoke_test() {
     $SPARK_HOME/sbin/spark-daemon.sh start org.apache.spark.deploy.worker.Worker 1 $SPARK_MASTER
 
     invoke_shuffle_integration_test() {
+      # check out what else is on the GPU
+      nvidia-smi
+
+      TEST_PARALLEL=0 \
       PYSP_TEST_spark_master=$SPARK_MASTER \
         PYSP_TEST_spark_cores_max=2 \
         PYSP_TEST_spark_executor_cores=1 \
