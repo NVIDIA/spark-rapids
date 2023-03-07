@@ -589,6 +589,10 @@ abstract class AbstractGpuCoalesceIterator(
     addBatchToConcat(batch)
   }
 
+  /**
+   * Splits a `BatchesToCoalesce` instance into two.
+   * @return Seq[BatchesToCoalesce] with 2 items.
+   */
   protected def splitBatchesToCoalesceFn: BatchesToCoalesce => Seq[BatchesToCoalesce] = {
     (batchesToCoalesce: BatchesToCoalesce) => {
       closeOnExcept(batchesToCoalesce) { _ =>
@@ -604,6 +608,13 @@ abstract class AbstractGpuCoalesceIterator(
   }
 }
 
+/**
+ * A helper class that contains a sequence of SpillableColumnarBatch and that
+ * can be used to split the sequence into two. This class is auto closeable,
+ * as it is sent to code that will close it, and in turn close the SpillableColumnarBatch
+ * instances in `batches`
+ * @param batches a sequence of `SpillableColumnarBatch` to manage.
+ */
 case class BatchesToCoalesce(batches: Seq[SpillableColumnarBatch])
     extends AutoCloseable {
   override def close(): Unit = {
