@@ -362,7 +362,7 @@ class RapidsShuffleIterator(
         try {
           sb = catalog.acquireBuffer(handle)
           cb = sb.getColumnarBatch(sparkTypes)
-          metricsUpdater.update(blockedTime, 1, sb.size, cb.numRows())
+          metricsUpdater.update(blockedTime, 1, sb.getMemoryUsedBytes, cb.numRows())
         } finally {
           nvtxRangeAfterGettingBatch.close()
           range.close()

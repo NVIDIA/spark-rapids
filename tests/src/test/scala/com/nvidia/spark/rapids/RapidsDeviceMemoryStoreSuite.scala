@@ -168,7 +168,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with MockitoSugar {
       val resultBuffer = captor.getValue
       assertResult(bufferId)(resultBuffer.id)
       assertResult(spillPriority)(resultBuffer.getSpillPriority)
-      assertResult(meta)(resultBuffer.meta)
+      assertResult(meta)(resultBuffer.getMeta)
     }
   }
 
@@ -226,13 +226,6 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with MockitoSugar {
             }
         }
       }
-    }
-  }
-
-  test("cannot receive spilled buffers") {
-    withResource(new RapidsDeviceMemoryStore) { store =>
-      assertThrows[IllegalStateException](store.copyBuffer(
-        mock[RapidsBuffer], mock[MemoryBuffer], Cuda.DEFAULT_STREAM))
     }
   }
 
@@ -315,22 +308,22 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with MockitoSugar {
 
     override protected def createBuffer(
         b: RapidsBuffer,
-        m: MemoryBuffer,
         s: Cuda.Stream): RapidsBufferBase = {
-      withResource(m) { _ =>
-        spilledBuffers += b.id
-        new MockRapidsBuffer(b.id, b.size, b.meta, b.getSpillPriority)
-      }
+      spilledBuffers += b.id
+      new MockRapidsBuffer(b.id, b.getPackedSizeBytes, b.getMeta, b.getSpillPriority)
     }
 
     class MockRapidsBuffer(id: RapidsBufferId, size: Long, meta: TableMeta, spillPriority: Long)
-        extends RapidsBufferBase(id, size, meta, spillPriority) {
+        extends RapidsBufferBase(id, meta, spillPriority) {
       override protected def releaseResources(): Unit = {}
 
       override val storageTier: StorageTier = StorageTier.HOST
 
       override def getMemoryBuffer: MemoryBuffer =
         throw new UnsupportedOperationException
+
+      /** The size of this buffer in bytes. */
+      override def getMemoryUsedBytes: Long = size
     }
   }
 }

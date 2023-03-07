@@ -82,8 +82,8 @@ class BufferSendState(
         val bufferTransferRequest = transferRequest.requests(btr, ix)
         withResource(requestHandler.acquireShuffleBuffer(
           bufferTransferRequest.bufferId())) { table =>
-          bufferMetas(ix) = table.meta.bufferMeta()
-          new SendBlock(bufferTransferRequest.bufferId(), table.size)
+          bufferMetas(ix) = table.getMeta.bufferMeta()
+          new SendBlock(bufferTransferRequest.bufferId(), table.getPackedSizeBytes)
         }
       }
 

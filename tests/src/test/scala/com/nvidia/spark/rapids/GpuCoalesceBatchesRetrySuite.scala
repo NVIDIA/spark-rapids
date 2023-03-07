@@ -204,7 +204,7 @@ class GpuCoalesceBatchesRetrySuite
       val batches = iter.asInstanceOf[CoalesceIteratorMocks].getBatches()
       assertResult(10)(batches.length)
       batches.foreach(b =>
-        verify(b, times(1)).close()
+        verify(b, times(3)).close()
       )
     }
   }

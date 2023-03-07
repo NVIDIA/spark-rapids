@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, PinnedMemoryPool}
+import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange, PinnedMemoryPool}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.SpillPriorities.{applyPriorityOffset, HOST_MEMORY_BUFFER_DIRECT_OFFSET, HOST_MEMORY_BUFFER_PAGEABLE_OFFSET, HOST_MEMORY_BUFFER_PINNED_OFFSET}
 import com.nvidia.spark.rapids.StorageTier.StorageTier
@@ -42,10 +42,15 @@ class RapidsHostMemoryStore(
 
   override def getMaxSize: Option[Long] = Some(maxSize)
 
-  private def allocateHostBuffer(size: Long): (HostMemoryBuffer, AllocationMode) = {
-    var buffer: HostMemoryBuffer = PinnedMemoryPool.tryAllocate(size)
-    if (buffer != null) {
-      return (buffer, Pinned)
+  private def allocateHostBuffer(
+      size: Long,
+      preferPinned: Boolean = true): (HostMemoryBuffer, AllocationMode) = {
+    var buffer: HostMemoryBuffer = null
+    if (preferPinned) {
+      PinnedMemoryPool.tryAllocate(size)
+      if (buffer != null) {
+        return (buffer, Pinned)
+      }
     }
 
     val allocation = addressAllocator.allocate(size)
@@ -62,26 +67,46 @@ class RapidsHostMemoryStore(
     (HostMemoryBuffer.allocate(size, false), Direct)
   }
 
-  override protected def createBuffer(other: RapidsBuffer, otherBuffer: MemoryBuffer,
+  override protected def createBuffer(
+      other: RapidsBuffer,
       stream: Cuda.Stream): RapidsBufferBase = {
-    withResource(otherBuffer) { _ =>
-      val (hostBuffer, allocationMode) = allocateHostBuffer(other.size)
-      try {
-        otherBuffer match {
-          case devBuffer: DeviceMemoryBuffer =>
-            hostBuffer.copyFromDeviceBuffer(devBuffer, stream)
-          case _ =>
-            throw new IllegalStateException("copying from buffer without device memory")
+    withResource(other.getCopyIterator) { otherBufferIterator =>
+      val isChunked = otherBufferIterator.isChunked
+      val totalCopySize = otherBufferIterator.getTotalCopySize
+      val (hostBuffer, allocationMode) = allocateHostBuffer(totalCopySize, false)
+      withResource(new NvtxRange("spill to host", NvtxColor.BLUE)) { _ =>
+        var hostOffset = 0L
+        val start = System.nanoTime()
+        while (otherBufferIterator.hasNext) {
+          val otherBuffer = otherBufferIterator.next()
+          withResource(otherBuffer) { _ =>
+            try {
+              otherBuffer match {
+                case devBuffer: DeviceMemoryBuffer =>
+                  hostBuffer.copyFromMemoryBufferAsync(
+                    hostOffset, devBuffer, 0, otherBuffer.getLength, stream)
+                  hostOffset += otherBuffer.getLength
+                case _ =>
+                  throw new IllegalStateException("copying from buffer without device memory")
+              }
+            } catch {
+              case e: Exception =>
+                hostBuffer.close()
+                throw e
+            }
+          }
         }
-      } catch {
-        case e: Exception =>
-          hostBuffer.close()
-          throw e
+        stream.sync()
+        val end = System.nanoTime()
+        val szMB = (totalCopySize.toDouble / 1024.0 / 1024.0).toLong
+        val bw = (szMB.toDouble / ((end - start).toDouble / 1000000000.0)).toLong
+        logDebug(s"Spill to host (mode=$allocationMode, chunked=$isChunked) " +
+          s"size=$szMB MiB bandwidth=$bw MiB/sec")
       }
       new RapidsHostMemoryBuffer(
         other.id,
-        other.size,
-        other.meta,
+        totalCopySize,
+        other.getMeta,
         applyPriorityOffset(other.getSpillPriority, allocationMode.spillPriorityOffset),
         hostBuffer,
         allocationMode)
@@ -103,7 +128,7 @@ class RapidsHostMemoryStore(
       buffer: HostMemoryBuffer,
       allocationMode: AllocationMode)
       extends RapidsBufferBase(
-        id, size, meta, spillPriority) {
+        id, meta, spillPriority) {
     override val storageTier: StorageTier = StorageTier.HOST
 
     override def getMemoryBuffer: MemoryBuffer = {
@@ -121,5 +146,8 @@ class RapidsHostMemoryStore(
       }
       buffer.close()
     }
+
+    /** The size of this buffer in bytes. */
+    override def getMemoryUsedBytes: Long = size
   }
 }

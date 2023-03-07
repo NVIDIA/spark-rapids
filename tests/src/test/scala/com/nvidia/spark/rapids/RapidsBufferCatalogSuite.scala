@@ -227,26 +227,33 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar {
       withResource(handle) { _ =>
         catalog.synchronousSpill(deviceStore, 0)
         val acquiredHostBuffer = catalog.acquireBuffer(handle)
-        withResource(acquiredHostBuffer) { _ =>
+        val unspilled = withResource(acquiredHostBuffer) { _ =>
           assertResult(HOST)(acquiredHostBuffer.storageTier)
           val unspilled =
             catalog.unspillBufferToDeviceStore(
               acquiredHostBuffer,
-              acquiredHostBuffer.getMemoryBuffer,
               Cuda.DEFAULT_STREAM)
           withResource(unspilled) { _ =>
             assertResult(DEVICE)(unspilled.storageTier)
           }
           val unspilledSame = catalog.unspillBufferToDeviceStore(
             acquiredHostBuffer,
-            acquiredHostBuffer.getMemoryBuffer,
             Cuda.DEFAULT_STREAM)
           withResource(unspilledSame) { _ =>
             assertResult(unspilled)(unspilledSame)
           }
           // verify that we invoked the copy function exactly once
-          verify(deviceStore, times(1)).copyBuffer(any(), any(), any())
+          verify(deviceStore, times(1)).copyBuffer(any(), any())
+          unspilled
         }
+        val unspilledSame = catalog.unspillBufferToDeviceStore(
+          acquiredHostBuffer,
+          Cuda.DEFAULT_STREAM)
+        withResource(unspilledSame) { _ =>
+          assertResult(unspilled)(unspilledSame)
+        }
+        // verify that we invoked the copy function exactly once
+        verify(deviceStore, times(1)).copyBuffer(any(), any())
       }
     }
   }
@@ -322,8 +329,8 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar {
       var _acquireAttempts: Int = acquireAttempts
       var currentPriority: Long =  initialPriority
       override val id: RapidsBufferId = bufferId
-      override val size: Long = 0
-      override val meta: TableMeta = tableMeta
+      override def getMemoryUsedBytes: Long = 0
+      override def getMeta: TableMeta = tableMeta
       override val storageTier: StorageTier = tier
       override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = null
       override def getMemoryBuffer: MemoryBuffer = null

@@ -18,11 +18,15 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, MemoryBuffer, Table}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.RapidsDiskBlockManager
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -59,16 +63,166 @@ object StorageTier extends Enumeration {
   val GDS: StorageTier = Value(3, "GPUDirect Storage")
 }
 
+/**
+ * ChunkedPacker is an Iterator that uses a cudf::chunked_pack to copy a cuDF `Table`
+ * to a target buffer in chunks.
+ *
+ * Each chunk is sized at most `bounceBuffer.getLength`, and the caller should cudaMemcpy
+ * bytes from `bounceBuffer` to a target buffer after each call to `next()`.
+ *
+ * @note `ChunkedPacker` must be closed by the caller as it has GPU and host resources
+ *       associated with it.
+ *
+ * @param id The RapidsBufferId for this pack operation to be included in the metadata
+ * @param table cuDF Table to chunk_pack
+ * @param bounceBuffer GPU memory to be used for packing. The buffer should be at least 1MB
+ *                     in length.
+ */
+class ChunkedPacker(
+    id: RapidsBufferId,
+    table: Table,
+    bounceBuffer: DeviceMemoryBuffer)
+    extends Iterator[MemoryBuffer]
+        with Logging
+        with AutoCloseable {
+
+  private var closed: Boolean = false
+
+  private val chunkedPack =
+    table.makeChunkedPack(
+      bounceBuffer.getLength,
+      GpuDeviceManager.chunkedPackMemoryResource)
+
+  private val tableMeta = withResource(chunkedPack.buildMetadata()) { packedMeta =>
+    MetaUtils.buildTableMeta(
+      id.tableId,
+      chunkedPack.getTotalContiguousSize,
+      packedMeta.getMetadataDirectBuffer,
+      table.getRowCount)
+  }
+
+  // take out a lease on the bounce buffer
+  bounceBuffer.incRefCount()
+
+  def getTotalContiguousSize: Long = chunkedPack.getTotalContiguousSize
+
+  def getMeta: TableMeta = {
+    tableMeta
+  }
+
+  override def hasNext: Boolean = {
+    !closed && chunkedPack.hasNext
+  }
+
+  def next(): MemoryBuffer = {
+    val bytesWritten = chunkedPack.next(bounceBuffer)
+    // we increment the refcount because the caller has no idea where
+    // this memory came from, so it should close it.
+    bounceBuffer.slice(0, bytesWritten)
+  }
+
+  override def close(): Unit = synchronized {
+    if (!closed) {
+      closed = true
+      val toClose = new ArrayBuffer[AutoCloseable]()
+      toClose.append(chunkedPack, bounceBuffer)
+      toClose.safeClose()
+    }
+  }
+}
+
+/**
+ * This iterator encapsulates a buffer's internal `MemoryBuffer` access
+ * for spill reasons. Internally, there are two known implementations:
+ * - either this is a "single shot" copy, where the entirety of the `RapidsBuffer` is
+ *   already represented as a single contiguous blob of memory, then the expectation
+ *   is that this iterator is exhausted with a single call to `next`
+ * - or, we have a `RapidsBuffer` that isn't contiguous. This iteration will then
+ *   drive a `ChunkedPacker` to pack the `RapidsBuffer`'s table as needed. The
+ *   iterator will likely need several calls to `next` to be exhausted.
+ *
+ * @param buffer `RapidsBuffer` to copy out of its tier.
+ */
+class RapidsBufferCopyIterator(buffer: RapidsBuffer)
+    extends Iterator[MemoryBuffer] with AutoCloseable with Logging {
+
+  private val chunkedPacker: Option[ChunkedPacker] = if (buffer.supportsChunkedPacker) {
+    Some(buffer.getChunkedPacker)
+  } else {
+    None
+  }
+
+  def isChunked: Boolean = chunkedPacker.isDefined
+
+  // this is used for the single shot case to flag when `next` is call
+  // to satisfy the Iterator interface
+  private var singleShotCopyHasNext: Boolean = false
+  private var singleShotBuffer: MemoryBuffer = _
+
+  if (!isChunked) {
+    singleShotCopyHasNext = true
+    singleShotBuffer = buffer.getMemoryBuffer
+  }
+
+  override def hasNext: Boolean =
+    chunkedPacker.map(_.hasNext).getOrElse(singleShotCopyHasNext)
+
+  override def next(): MemoryBuffer = {
+    require(hasNext,
+      "next called on exhausted iterator")
+    chunkedPacker.map(_.next()).getOrElse {
+      singleShotCopyHasNext = false
+      singleShotBuffer.slice(0, singleShotBuffer.getLength)
+    }
+  }
+
+  def getTotalCopySize: Long = {
+    chunkedPacker
+        .map(_.getTotalContiguousSize)
+        .getOrElse(singleShotBuffer.getLength)
+  }
+
+  override def close(): Unit = {
+    val hasNextBeforeClose = hasNext
+    val toClose = new ArrayBuffer[AutoCloseable]()
+    toClose.appendAll(chunkedPacker)
+    toClose.appendAll(Option(singleShotBuffer))
+
+    toClose.safeClose()
+    require(!hasNextBeforeClose,
+      "RapidsBufferCopyIterator was closed before exhausting")
+  }
+}
+
 /** Interface provided by all types of RAPIDS buffers */
 trait RapidsBuffer extends AutoCloseable {
   /** The buffer identifier for this buffer. */
   val id: RapidsBufferId
 
-  /** The size of this buffer in bytes. */
-  val size: Long
+  /**
+   * The size of this buffer in bytes in its _current_ store. As the buffer goes through
+   * contiguous split (either added as a contiguous table already, or spilled to host),
+   * its size changes because contiguous_split adds its own alignment padding.
+   *
+   * @note Do not use this size to allocate a target buffer to copy, always use `getPackedSize.`
+   */
+  def getMemoryUsedBytes: Long
+
+  /**
+   * The size of this buffer if it has already gone through contiguous_split.
+   *
+   * @note Use this function when allocating a target buffer for spill or shuffle purposes.
+   */
+  def getPackedSizeBytes: Long = getMemoryUsedBytes
+
+  /**
+   * At spill time, obtain an iterator used to copy this buffer to a different tier.
+   */
+  def getCopyIterator: RapidsBufferCopyIterator =
+    new RapidsBufferCopyIterator(this)
 
   /** Descriptor for how the memory buffer is formatted */
-  val meta: TableMeta
+  def getMeta: TableMeta
 
   /** The storage tier for this buffer */
   val storageTier: StorageTier
@@ -93,6 +247,12 @@ trait RapidsBuffer extends AutoCloseable {
    * @note It is the responsibility of the caller to close the buffer.
    */
   def getMemoryBuffer: MemoryBuffer
+
+  val supportsChunkedPacker: Boolean = false
+
+  def getChunkedPacker: ChunkedPacker = {
+    throw new NotImplementedError("not implemented for this store")
+  }
 
   /**
    * Copy the content of this buffer into the specified memory buffer, starting from the given
@@ -162,8 +322,10 @@ trait RapidsBuffer extends AutoCloseable {
  */
 sealed class DegenerateRapidsBuffer(
     override val id: RapidsBufferId,
-    override val meta: TableMeta) extends RapidsBuffer {
-  override val size: Long = 0L
+    val meta: TableMeta) extends RapidsBuffer {
+
+  override def getMemoryUsedBytes: Long = 0L
+
   override val storageTier: StorageTier = StorageTier.DEVICE
 
   override def getColumnarBatch(sparkTypes: Array[DataType]): ColumnarBatch = {
@@ -200,4 +362,7 @@ sealed class DegenerateRapidsBuffer(
   override def setSpillPriority(priority: Long): Unit = {}
 
   override def close(): Unit = {}
+
+  /** Descriptor for how the memory buffer is formatted */
+  override def getMeta: TableMeta = meta
 }
