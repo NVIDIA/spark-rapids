@@ -20,7 +20,7 @@ process, we try to stay on top of these changes and release updates as quickly a
 The RAPIDS Accelerator for Apache Spark officially supports:
 - [Apache Spark](get-started/getting-started-on-prem.md)
 - [AWS EMR 6.2+](get-started/getting-started-aws-emr.md)
-- [Databricks Runtime 9.1, 10.4, 11.3](get-started/getting-started-databricks.md)
+- [Databricks Runtime 10.4, 11.3](get-started/getting-started-databricks.md)
 - [Google Cloud Dataproc 2.0](get-started/getting-started-gcp.md)
 - [Azure Synapse](get-started/getting-started-azure-synapse-analytics.md)
 - Cloudera provides the plugin packaged through

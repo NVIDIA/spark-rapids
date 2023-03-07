@@ -63,7 +63,7 @@ if [[ "$TEST_TAGS" == "iceberg" ]]; then
         "3.3.0")
             ICEBERG_VERSION=${ICEBERG_VERSION:-0.14.1}
             ;;
-        "3.2.1" | "3.1.2")
+        "3.2.1")
             ICEBERG_VERSION=${ICEBERG_VERSION:-0.13.2}
             ;;
         *) echo "Unexpected Spark version: $SPARK_VER"; exit 1;;
