@@ -59,7 +59,7 @@ object ConcatAndConsumeAll {
    * @param dataTypes the output types.
    * @return a single batch with all of them concated together.
    */
-  def buildNonEmptyBatchFromTypes(arrayOfBatches: Seq[ColumnarBatch],
+  def buildNonEmptyBatchFromTypes(arrayOfBatches: Array[ColumnarBatch],
                                   dataTypes: Array[DataType]): ColumnarBatch = {
     if (arrayOfBatches.length == 1) {
       arrayOfBatches(0)
@@ -615,7 +615,7 @@ abstract class AbstractGpuCoalesceIterator(
  * instances in `batches`
  * @param batches a sequence of `SpillableColumnarBatch` to manage.
  */
-case class BatchesToCoalesce(batches: Seq[SpillableColumnarBatch])
+case class BatchesToCoalesce(batches: Array[SpillableColumnarBatch])
     extends AutoCloseable {
   override def close(): Unit = {
     batches.safeClose()
@@ -659,7 +659,7 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     batches.append(SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_BATCHING_PRIORITY,
       spillCallback))
 
-  private def concatBatches(batches: Seq[SpillableColumnarBatch]): ColumnarBatch = {
+  private def concatBatches(batches: Array[SpillableColumnarBatch]): ColumnarBatch = {
     val wip = batches.safeMap(_.getColumnarBatch())
     val ret = ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(wip, sparkTypes)
     // sum of current batches and concatenating batches. Approximately sizeof(ret * 2).
@@ -671,12 +671,12 @@ class GpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     val candidates = batches.clone()
     batches.clear()
     withRetryNoSplit(candidates) { attempt =>
-      concatBatches(attempt)
+      concatBatches(attempt.toArray)
     }
   }
 
   override def getCoalesceRetryIterator: Iterator[ColumnarBatch] = {
-    val candidates = BatchesToCoalesce(batches.clone())
+    val candidates = BatchesToCoalesce(batches.clone().toArray)
     batches.clear()
     withRetry(candidates, splitBatchesToCoalesceFn) { attempt: BatchesToCoalesce =>
       concatBatches(attempt.batches)
@@ -797,10 +797,10 @@ class GpuCompressionAwareCoalesceIterator(
   }
 
   override def getCoalesceRetryIterator(): Iterator[ColumnarBatch] = {
-    val candidates = BatchesToCoalesce(batches.clone())
+    val candidates = BatchesToCoalesce(batches.clone().toArray)
     batches.clear()
     withRetry(candidates, splitBatchesToCoalesceFn) { attempt: BatchesToCoalesce =>
-      concatBatches(attempt.batches.toArray)
+      concatBatches(attempt.batches)
     }
   }
 }

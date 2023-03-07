@@ -298,8 +298,7 @@ object RmmRapidsRetryIterator extends Arm {
       input: Iterator[T],
       fn: T => K,
       splitPolicy: T => Seq[T])
-      extends Iterator[K]
-          with Spliterator[K] {
+      extends Spliterator[K] {
     def this(input: Iterator[T], fn: T => K) =
       this(input, fn, null)
 
