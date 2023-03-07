@@ -626,7 +626,9 @@ class RapidsBufferCatalog(
         registerNewBuffer(newBuffer)
         newBuffer
       case Some(existingBuffer) =>
-        existingBuffer
+        withResource(memoryBuffer) { _ =>
+          existingBuffer
+        }
     }
   }
 
