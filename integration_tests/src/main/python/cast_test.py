@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.
+# Copyright (c) 2021-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -96,19 +96,9 @@ def test_cast_string_date_invalid_ansi_before_320():
         conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
               'spark.sql.ansi.enabled': 'true'}, )
 
-# test databricks, ANSI mode, all databricks versions supports Ansi mode when casting string to date
-@pytest.mark.skipif(not is_databricks104_or_later(), reason="Spark versions(< 320) not support Ansi mode when casting string to date")
-@pytest.mark.parametrize('invalid', invalid_values_string_to_date)
-def test_cast_string_date_invalid_ansi_databricks(invalid):
-    assert_gpu_and_cpu_error(
-        lambda spark: spark.createDataFrame([(invalid,)], "a string").select(f.col('a').cast(DateType())).collect(),
-        conf={'spark.rapids.sql.hasExtendedYearValues': 'false',
-              'spark.sql.ansi.enabled': 'true'},
-        error_message="DateTimeException")
-
-# test databricks, ANSI mode, valid values
-@pytest.mark.skipif(not is_databricks104_or_later(), reason="Spark versions(< 320) not support Ansi mode when casting string to date")
-def test_cast_string_date_valid_ansi_databricks():
+# test Spark versions >= 320 and databricks, ANSI mode, valid values
+@pytest.mark.skipif(is_before_spark_320(), reason="Spark versions(< 320) not support Ansi mode when casting string to date")
+def test_cast_string_date_valid_ansi():
     data_rows = [(v,) for v in valid_values_string_to_date]
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data_rows, "a string").select(f.col('a').cast(DateType())),
