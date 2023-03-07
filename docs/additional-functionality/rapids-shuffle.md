@@ -27,7 +27,6 @@ in our plugin:
 | 3.3.0           | com.nvidia.spark.rapids.spark330.RapidsShuffleManager    |
 | 3.3.1           | com.nvidia.spark.rapids.spark331.RapidsShuffleManager    |
 | 3.3.2           | com.nvidia.spark.rapids.spark332.RapidsShuffleManager    |
-| Databricks 9.1  | com.nvidia.spark.rapids.spark312db.RapidsShuffleManager  |
 | Databricks 10.4 | com.nvidia.spark.rapids.spark321db.RapidsShuffleManager  |
 | Databricks 11.3 | com.nvidia.spark.rapids.spark330db.RapidsShuffleManager  |
 
@@ -393,10 +392,10 @@ Save the script in DBFS and add it to the "Init Scripts" list:
 
 2) Add the UCX minimum configuration for your Cluster. 
 
-Databricks 9.1:
+Databricks 10.4:
 
 ```
-spark.shuffle.manager com.nvidia.spark.rapids.spark312db.RapidsShuffleManager
+spark.shuffle.manager com.nvidia.spark.rapids.spark321db.RapidsShuffleManager
 spark.rapids.shuffle.mode UCX
 spark.shuffle.service.enabled false
 spark.executorEnv.UCX_MEMTYPE_CACHE n
