@@ -19,11 +19,7 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids._
-
 object SparkShimImpl extends Spark321PlusShims
     with Spark320PlusNonDBShims
     with Spark31Xuntil33XShims
-    with AnsiCastRuleShims {
-  override def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
-}
+    with AnsiCastRuleShims

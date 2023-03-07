@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -2048,7 +2048,7 @@ trait SparkQueryCompareTestSuite extends FunSuite with Arm {
     assume(isSpark340OrLater, "Spark version not 3.4.0+")
 
   def cmpSparkVersion(major: Int, minor: Int, bugfix: Int): Int = {
-    val sparkShimVersion = SparkShimImpl.getSparkShimVersion
+    val sparkShimVersion = ShimLoader.getShimVersion
     val (sparkMajor, sparkMinor, sparkBugfix) = sparkShimVersion match {
       case SparkShimVersion(a, b, c) => (a, b, c)
       case DatabricksShimVersion(a, b, c, _) => (a, b, c)

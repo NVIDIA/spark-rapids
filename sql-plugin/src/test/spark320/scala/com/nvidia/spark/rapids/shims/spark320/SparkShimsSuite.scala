@@ -20,14 +20,13 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims.spark320;
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.scalatest.FunSuite
 
 import org.apache.spark.sql.types.{DayTimeIntervalType, YearMonthIntervalType}
 
 class SparkShimsSuite extends FunSuite with FQSuiteName {
   test("spark shims version") {
-    assert(SparkShimImpl.getSparkShimVersion === SparkShimVersion(3, 2, 0))
+    assert(ShimLoader.getShimVersion === SparkShimVersion(3, 2, 0))
   }
 
   test("shuffle manager class") {
