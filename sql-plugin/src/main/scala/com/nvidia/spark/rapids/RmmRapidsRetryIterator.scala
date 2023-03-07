@@ -240,6 +240,14 @@ object RmmRapidsRetryIterator extends Arm {
   trait Spliterator[K] extends Iterator[K] with AutoCloseable {
     override def hasNext: Boolean
 
+    /**
+     * Split is a function that is invoked by `RmmRapidsRetryIterator` when `SplitAndRetryOOM`
+     * is thrown. This function is implemented by `Spliterator` classes to attempt to handle
+     * this exception by reducing the size of attempts (the thing that `.next` is
+     * using as an input), usually by splitting a batch in half by number of rows, or
+     * splitting a collection of batches into smaller collections to be attempted separately,
+     * likely reducing GPU memory that needs to be manifested while calling `.next`.
+     */
     def split(): Unit
 
     override def next(): K
