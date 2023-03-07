@@ -1188,7 +1188,6 @@ class GpuRegExpExtractMeta(
   extends TernaryExprMeta[RegExpExtract](expr, conf, parent, rule) {
 
   private var pattern: Option[String] = None
-  private var numGroups = 0
 
   override def tagExprForGpu(): Unit = {
     GpuRegExpUtils.tagForRegExpEnabled(this)
@@ -1199,6 +1198,7 @@ class GpuRegExpExtractMeta(
       case _ =>
     }
 
+    var numGroups = 0
     val groupIdx = expr.idx match {
       case Literal(value, DataTypes.IntegerType) =>
         Some(value.asInstanceOf[Int])
@@ -1226,7 +1226,7 @@ class GpuRegExpExtractMeta(
         willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
     }
 
-    groupIdx.map { idx =>
+    groupIdx.foreach { idx =>
       if (idx < 0) {
         willNotWorkOnGpu("the specified group index cannot be less than zero")
       }
@@ -1278,7 +1278,6 @@ case class GpuRegExpExtract(
       case i: Int if i == 0 =>
         ("(" + cudfRegexPattern + ")", 0)
       case i =>
-        // (cudfRegexPattern, i.asInstanceOf[Int] - 1)
         // Since we have transpiled all but one of the capture groups to non-capturing, the index
         // here moves to 0 to single out the one capture group left
         (cudfRegexPattern, 0)
@@ -1323,10 +1322,11 @@ class GpuRegExpExtractAllMeta(
   extends TernaryExprMeta[RegExpExtractAll](expr, conf, parent, rule) {
 
   private var pattern: Option[String] = None
-  private var numGroups = 0
 
   override def tagExprForGpu(): Unit = {
     GpuRegExpUtils.tagForRegExpEnabled(this)
+
+    var numGroups = 0
     val groupIdx = expr.idx match {
       case Literal(value, DataTypes.IntegerType) =>
         Some(value.asInstanceOf[Int])
@@ -1334,7 +1334,6 @@ class GpuRegExpExtractAllMeta(
         willNotWorkOnGpu("GPU only supports literal index")
         None
     }
-
 
     expr.regexp match {
       case Literal(str: UTF8String, DataTypes.StringType) if str != null =>
@@ -1355,7 +1354,7 @@ class GpuRegExpExtractAllMeta(
         willNotWorkOnGpu(s"only non-null literal strings are supported on GPU")
     }
 
-    groupIdx.map { idx =>
+    groupIdx.foreach { idx =>
       if (idx < 0) {
         willNotWorkOnGpu("the specified group index cannot be less than zero")
       }
