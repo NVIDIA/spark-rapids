@@ -734,7 +734,7 @@
             340
         </all.buildvers>
         <shimplify.shims>${all.buildvers}</shimplify.shims>
-        <pmd.sourceType>main</pmd.sourceType>
+        <cpd.sourceType>main</cpd.sourceType>
     </properties>
 
     <dependencyManagement>
@@ -1204,8 +1204,8 @@
                         <configuration>
                             <target>
                                 <java classname="net.sourceforge.pmd.cpd.CPD">
-                                    <arg line="--dir ${project.basedir}/src/${pmd.sourceType}"/>
-                                    <arg line="${pmd.argLine}"/>
+                                    <arg line="--dir ${project.basedir}/src/${cpd.sourceType}"/>
+                                    <arg line="${cpd.argLine}"/>
                                 </java>
                             </target>
                         </configuration>
