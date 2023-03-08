@@ -731,6 +731,7 @@ class HashFullJoinIterator(
         }
       }
     }
+    builtSideTracker.foreach(_.close())
     builtSideTracker = withResource(updatedTrackingTable) { _ =>
       Some(SpillableColumnarBatch(
         GpuColumnVector.from(updatedTrackingTable, Array[DataType](DataTypes.BooleanType)),

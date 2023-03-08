@@ -30,7 +30,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.rapids.GpuOr
 import org.apache.spark.sql.rapids.execution.{BatchTypeSizeAwareIterator, GpuHashJoin, GpuSubPartitionHashJoin, JoinTypeChecks}
-import org.apache.spark.sql.types.{BooleanType, Decimal, DecimalType}
+import org.apache.spark.sql.types.BooleanType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuShuffledHashJoinMeta(
@@ -165,22 +165,12 @@ case class GpuShuffledHashJoinExec(
     // Small data does not need joins by sub-partitioning
     val bigJoinThreshold = Math.max(batchSizeBytes, 100 * 1024 * 1024)
 
-    // A WAR for issue https://github.com/NVIDIA/spark-rapids/issues/7814
-    // Can be removed once the issue is fixed.
-    val noBigDecimal = (localBuildOutput ++ streamedPlan.output).forall { attr =>
-      attr.dataType match {
-        case dec: DecimalType => dec.precision <= Decimal.MAX_LONG_DIGITS
-        case _ => true
-      }
-    }
-
     streamedPlan.executeColumnar().zipPartitions(buildPlan.executeColumnar()) {
       (streamIter, buildIter) => {
         val batchAwareIter = new BatchTypeSizeAwareIterator(buildIter, bigJoinThreshold,
           buildDataSize)
         // SubPartition conf has higher priority.
-        val trySubPartition = subPartConf.getOrElse(batchAwareIter.isBatchesSizeOverflow)
-        if (trySubPartition && noBigDecimal) {
+        if (subPartConf.getOrElse(batchAwareIter.isBatchesSizeOverflow)) {
           // For the quite big joins, when the built batch will go beyond the
           // the target batch size.
           val gpuBuildIter = GpuShuffledHashJoinExec.ensureBatchesOnGpu(

@@ -21,6 +21,7 @@ import ai.rapids.cudf.{HashType, Table}
 import com.nvidia.spark.rapids.{Arm, GpuBoundReference, GpuColumnVector, GpuExpression, GpuMetric, GpuShuffledHashJoinExec, SerializedTableColumn, SpillableColumnarBatch, SpillCallback, SpillPriorities, TaskAutoCloseableResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
+import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.plans.InnerLike
 import org.apache.spark.sql.types.StructType
@@ -38,7 +39,7 @@ class BatchTypeSizeAwareIterator(
   with Arm with TaskAutoCloseableResource {
 
   assert(targetBatchSize > 0,
-    s"Target batch size should not be negative, but got $targetBatchSize")
+    s"Target batch size should be positive, but got $targetBatchSize")
 
   private val readBatchesQueue = ArrayBuffer.empty[ColumnarBatch]
 
@@ -608,7 +609,8 @@ trait GpuSubPartitionHashJoin extends Arm with Logging { self: GpuHashJoin =>
       joinTime: GpuMetric): Iterator[ColumnarBatch] = {
 
     // A log for test to verify that sub-partitioning is used.
-    logInfo(s"$joinType hash join is executed by sub-partitioning ...")
+    logInfo(s"$joinType hash join is executed by sub-partitioning " +
+      s"in task ${TaskContext.get().taskAttemptId()}")
 
     new BaseSubHashJoinIterator(builtIter, boundBuildKeys, streamIter,
         boundStreamKeys, numPartitions, targetSize, spillCallback, opTime) {
