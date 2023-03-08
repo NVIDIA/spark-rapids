@@ -543,13 +543,13 @@ abstract class AbstractGpuCoalesceIterator(
       batchInitialized = false
       batchRowLimit = 0
 
-      val isLastBatch = if (!coalesceBatchIterator.hasNext) {
-        populateCandidateBatches()
-      } else {
-        wasLastBatch
-      }
-
       try {
+        val isLastBatch = if (!coalesceBatchIterator.hasNext) {
+          populateCandidateBatches()
+        } else {
+          wasLastBatch
+        }
+
         withResource(new NvtxWithMetrics(s"$opName concat", NvtxColor.CYAN, concatTime)) { _ =>
           goal match {
             case _: SplittableGoal if supportsRetryIterator =>
@@ -749,7 +749,7 @@ class GpuCompressionAwareCoalesceIterator(
   private[this] var codec: TableCompressionCodec = _
 
   private def concatBatches(batches: Array[SpillableColumnarBatch]): ColumnarBatch = {
-    closeOnExcept(batches.safeMap(_.getColumnarBatch())) { wip =>
+    val toConcat = closeOnExcept(batches.safeMap(_.getColumnarBatch())) { wip =>
       val compressedBatchIndices = wip.zipWithIndex.filter { pair =>
         GpuCompressedColumnVector.isBatchCompressed(pair._1)
       }.map(_._2)
@@ -782,10 +782,11 @@ class GpuCompressionAwareCoalesceIterator(
           }
         }
       }
-      val onGPU = ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(wip, sparkTypes)
-      maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(onGPU) * 2
-      onGPU
+      wip
     }
+    val onGPU = ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(toConcat, sparkTypes)
+    maxDeviceMemory = GpuColumnVector.getTotalDeviceMemoryUsed(onGPU) * 2
+    onGPU
   }
 
   override def concatAllAndPutOnGPU(): ColumnarBatch = {
