@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -707,11 +707,13 @@ class CudfRegexTranspiler(mode: RegexMode) {
    * Parse Java regular expression and translate into cuDF regular expression.
    *
    * @param pattern Regular expression that is valid in Java's engine
+   * @param extractIndex extraction index for regular expression
    * @param repl Optional replacement pattern
    * @return Regular expression and optional replacement in cuDF format
    */
-  def transpile(pattern: String, repl: Option[String]): (String, Option[String]) = {
-    val (cudfRegex, replacement) = getTranspiledAST(pattern, repl)
+  def transpile(pattern: String, extractIndex: Option[Int], repl: Option[String]):
+        (String, Option[String]) = {
+    val (cudfRegex, replacement) = getTranspiledAST(pattern, extractIndex, repl)
 
     // write out to regex string, performing minor transformations
     // such as adding additional escaping
@@ -722,11 +724,14 @@ class CudfRegexTranspiler(mode: RegexMode) {
    * Parse Java regular expression and translate into cuDF regular expression in AST form.
    *
    * @param pattern Regular expression that is valid in Java's engine
+   * @param extractIndex extraction index for regular expression
    * @param repl Optional replacement pattern
    * @return Regular expression AST and optional replacement in cuDF format
    */
   def getTranspiledAST(
-    pattern: String, repl: Option[String]): (RegexAST, Option[RegexReplacement]) = {
+      pattern: String,
+      extractIndex: Option[Int],
+      repl: Option[String]): (RegexAST, Option[RegexReplacement]) = {
     // parse the source regular expression
     val regex = new RegexParser(pattern).parse()
     // if we have a replacement, parse the replacement string using the regex parser to account
@@ -734,7 +739,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     val replacement = repl.map(s => new RegexParser(s).parseReplacement(countCaptureGroups(regex)))
 
     // validate that the regex is supported by cuDF
-    val cudfRegex = transpile(regex, replacement, None)
+    val cudfRegex = transpile(regex, extractIndex, replacement, None)
 
     (cudfRegex, replacement)
   }
@@ -893,7 +898,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
     }
   }
 
-  private def transpile(regex: RegexAST, replacement: Option[RegexReplacement],
+  private def transpile(regex: RegexAST, extractIndex: Option[Int],
+      replacement: Option[RegexReplacement],
       previous: Option[RegexAST]): RegexAST = {
 
     def containsBeginAnchor(regex: RegexAST): Boolean = {
@@ -992,9 +998,31 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
     checkUnsupported(regex)
 
+    var current = 0
+    // capture groups can be nested, so we need to do this logic outside of the rewrite
+    def updateGroupsForExtract(regex: RegexAST, n: Int): RegexAST = {
+      regex match {
+        case RegexGroup(capture, term, lookahead) if capture => {
+          current += 1
+          RegexGroup(n == current, updateGroupsForExtract(term, n), lookahead)
+        }
+        case RegexSequence(parts) => 
+          RegexSequence(parts.map(updateGroupsForExtract(_, n)))
+        case RegexRepetition(term, quantifier) => 
+          RegexRepetition(updateGroupsForExtract(term, n), quantifier)
+        case _ => regex
+      }
+    }
+
+    val withUpdatedGroups = extractIndex match {
+      case Some(n) =>
+        updateGroupsForExtract(regex, n)
+      case _ => regex
+    }
+
     val flags = new RegexRewriteFlags(isEmptyRepetition(regex))
 
-    rewrite(regex, replacement, previous, flags)
+    rewrite(withUpdatedGroups, replacement, previous, flags)
   }
 
   private def rewrite(regex: RegexAST, replacement: Option[RegexReplacement],
