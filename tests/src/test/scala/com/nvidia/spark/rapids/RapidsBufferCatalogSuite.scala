@@ -256,37 +256,39 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar with Arm {
   test("multiple calls to unspill return existing DEVICE buffer") {
     val deviceStore = spy(new RapidsDeviceMemoryStore)
     val mockStore = mock[RapidsBufferStore]
-    val hostStore = new RapidsHostMemoryStore(10000, 1000)
-    deviceStore.setSpillStore(hostStore)
-    hostStore.setSpillStore(mockStore)
-    val catalog = new RapidsBufferCatalog(deviceStore)
-    val handle = withResource(DeviceMemoryBuffer.allocate(1024)) { buff =>
-      val meta = MetaUtils.getTableMetaNoTable(buff)
-      catalog.addBuffer(
-        buff, meta, -1, RapidsBuffer.defaultSpillCallback)
-    }
-    withResource(handle) { _ =>
-      catalog.synchronousSpill(deviceStore, 0)
-      val acquiredHostBuffer = catalog.acquireBuffer(handle)
-      withResource(acquiredHostBuffer) { _ =>
-        assertResult(HOST)(acquiredHostBuffer.storageTier)
-        val unspilled =
-          catalog.unspillBufferToDeviceStore(
+    withResource(
+      new RapidsHostMemoryStore(10000, 1000)) { hostStore =>
+      deviceStore.setSpillStore(hostStore)
+      hostStore.setSpillStore(mockStore)
+      val catalog = new RapidsBufferCatalog(deviceStore)
+      val handle = withResource(DeviceMemoryBuffer.allocate(1024)) { buff =>
+        val meta = MetaUtils.getTableMetaNoTable(buff)
+        catalog.addBuffer(
+          buff, meta, -1, RapidsBuffer.defaultSpillCallback)
+      }
+      withResource(handle) { _ =>
+        catalog.synchronousSpill(deviceStore, 0)
+        val acquiredHostBuffer = catalog.acquireBuffer(handle)
+        withResource(acquiredHostBuffer) { _ =>
+          assertResult(HOST)(acquiredHostBuffer.storageTier)
+          val unspilled =
+            catalog.unspillBufferToDeviceStore(
+              acquiredHostBuffer,
+              acquiredHostBuffer.getMemoryBuffer,
+              Cuda.DEFAULT_STREAM)
+          withResource(unspilled) { _ =>
+            assertResult(DEVICE)(unspilled.storageTier)
+          }
+          val unspilledSame = catalog.unspillBufferToDeviceStore(
             acquiredHostBuffer,
             acquiredHostBuffer.getMemoryBuffer,
             Cuda.DEFAULT_STREAM)
-        withResource(unspilled) { _ =>
-          assertResult(DEVICE)(unspilled.storageTier)
+          withResource(unspilledSame) { _ =>
+            assertResult(unspilled)(unspilledSame)
+          }
+          // verify that we invoked the copy function exactly once
+          verify(deviceStore, times(1)).copyBuffer(any(), any(), any())
         }
-        val unspilledSame = catalog.unspillBufferToDeviceStore(
-          acquiredHostBuffer,
-          acquiredHostBuffer.getMemoryBuffer,
-          Cuda.DEFAULT_STREAM)
-        withResource(unspilledSame) { _ =>
-          assertResult(unspilled)(unspilledSame)
-        }
-        // verify that we invoked the copy function exactly once
-        verify(deviceStore, times(1)).copyBuffer(any(), any(), any())
       }
     }
   }

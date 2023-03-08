@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -245,6 +245,13 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     totalRows = 0
   }
 
+
+  /**
+   * addBatchToConcat for HostToGpuCoalesceIterator does not need to close `batch`
+   * because the batch is closed by the producer iterator.
+   * See: https://github.com/NVIDIA/spark-rapids/issues/6995
+   * @param batch the batch to add in.
+   */
   override def addBatchToConcat(batch: ColumnarBatch): Unit = {
     withResource(new MetricRange(copyBufTime)) { _ =>
       val rows = batch.numRows()
@@ -269,8 +276,14 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     // refine the estimate for number of rows based on this batch
     batchRowLimit = GpuBatchUtils.estimateRowCount(goal.targetSizeBytes, maxDeviceMemory,
       ret.numRows())
-
     ret
+  }
+
+  override val supportsRetryIterator: Boolean = false
+
+  override def getCoalesceRetryIterator: Iterator[ColumnarBatch] = {
+    throw new UnsupportedOperationException(
+      "HostColumnarToGpu iterator does not support retry iterators")
   }
 
   override def cleanupConcatIsDone(): Unit = {
