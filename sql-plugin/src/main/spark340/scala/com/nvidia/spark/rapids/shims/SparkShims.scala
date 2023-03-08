@@ -19,6 +19,4 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{ShimLoader, ShimVersion}
-
 object SparkShimImpl extends Spark340PlusShims

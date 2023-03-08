@@ -28,7 +28,6 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.security.SecureRandom
 
-import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.conf.Configuration
 import org.apache.orc.{EncryptionAlgorithm, InMemoryKeystore}
 import org.apache.orc.impl.CryptoUtils

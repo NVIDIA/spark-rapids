@@ -20,7 +20,6 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims.spark314;
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.scalatest.FunSuite
 
 class SparkShimsSuite extends FunSuite with FQSuiteName {
