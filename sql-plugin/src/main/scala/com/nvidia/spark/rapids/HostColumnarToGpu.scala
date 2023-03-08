@@ -245,15 +245,20 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
     totalRows = 0
   }
 
+
+  /**
+   * addBatchToConcat for HostToGpuCoalesceIterator does not need to close `batch`
+   * because the batch is closed by the producer iterator.
+   * See: https://github.com/NVIDIA/spark-rapids/issues/6995
+   * @param batch the batch to add in.
+   */
   override def addBatchToConcat(batch: ColumnarBatch): Unit = {
-    withResource(batch) { _ =>
-      withResource(new MetricRange(copyBufTime)) { _ =>
-        val rows = batch.numRows()
-        for (i <- 0 until batch.numCols()) {
-          batchBuilder.copyColumnar(batch.column(i), i, rows)
-        }
-        totalRows += rows
+    withResource(new MetricRange(copyBufTime)) { _ =>
+      val rows = batch.numRows()
+      for (i <- 0 until batch.numCols()) {
+        batchBuilder.copyColumnar(batch.column(i), i, rows)
       }
+      totalRows += rows
     }
   }
 

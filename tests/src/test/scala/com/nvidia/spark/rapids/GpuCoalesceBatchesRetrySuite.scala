@@ -82,13 +82,30 @@ class GpuCoalesceBatchesRetrySuite
   }
 
   test("coalesce gpu batches without failures") {
-    val iters = getIters() ++ Seq(getHostIter())
+    val iters = getIters()
     iters.foreach { iter =>
       withResource(iter.next()) { coalesced =>
         assertResult(10)(coalesced.numRows())
         assertResult(true)(GpuColumnVector.isTaggedAsFinalBatch(coalesced))
       }
     }
+  }
+
+  test("coalesce host batches without failures") {
+    val iter = getHostIter()
+    withResource(iter.next()) { coalesced =>
+      assertResult(10)(coalesced.numRows())
+      assertResult(true)(GpuColumnVector.isTaggedAsFinalBatch(coalesced))
+    }
+
+    // ensure that this iterator _did not close_ the incoming batches
+    // as that is the semantics of the HostToGpuCoalesceIterator
+    val allBatches = iter.asInstanceOf[CoalesceIteratorMocks].getBatches()
+    assertResult(10)(allBatches.length)
+    allBatches.foreach { x =>
+      verify(x, times(0)).close()
+    }
+    allBatches.foreach(_.close())
   }
 
   test("coalesce gpu batches with retry") {
@@ -111,11 +128,14 @@ class GpuCoalesceBatchesRetrySuite
         assertResult(10)(coalesced.numRows())
       }
     }
+    // ensure that this iterator _did not close_ the incoming batches
+    // as that is the semantics of the HostToGpuCoalesceIterator
     val allBatches = iter.asInstanceOf[CoalesceIteratorMocks].getBatches()
     assertResult(10)(allBatches.length)
     allBatches.foreach { x =>
-      verify(x, times(1)).close()
+      verify(x, times(0)).close()
     }
+    allBatches.foreach(_.close())
   }
 
   test("coalesce gpu batches splits in half with SplitAndRetryOOM") {
