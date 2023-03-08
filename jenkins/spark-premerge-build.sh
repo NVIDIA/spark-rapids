@@ -102,6 +102,9 @@ rapids_shuffle_smoke_test() {
       # check out what else is on the GPU
       nvidia-smi
 
+      # because the RapidsShuffleManager smoke tests work against a standalone cluster
+      # we do not want the integration tests to launch N different applications, just one app
+      # is what is expected.
       TEST_PARALLEL=0 \
       PYSP_TEST_spark_master=$SPARK_MASTER \
         PYSP_TEST_spark_cores_max=2 \
