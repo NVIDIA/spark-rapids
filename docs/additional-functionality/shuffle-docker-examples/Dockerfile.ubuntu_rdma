@@ -34,9 +34,9 @@
 
 ARG RDMA_CORE_VERSION=32.1
 ARG CUDA_VER=11.8.0
-ARG UCX_VER=1.14.0
+ARG UCX_VER=1.14.0-rc6
 ARG UCX_CUDA_VER=11
-ARG UBUNTU_VER=20.04
+ARG UBUNTU_VER=22.04
 
 # Throw away image to build rdma_core
 FROM ubuntu:${UBUNTU_VER} as rdma_core
@@ -46,7 +46,8 @@ ARG CUDA_VER
 
 RUN apt-get update && apt-get install -y gnupg2
 # https://forums.developer.nvidia.com/t/notice-cuda-linux-repository-key-rotation/212771
-RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub
+RUN CUDA_UBUNTU_VER=`echo "$UBUNTU_VER"| sed -s 's/\.//'` && \
+  apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu$CUDA_UBUNTU_VER/x86_64/3bf863cc.pub
 
 # hack to get tzdata to install
 RUN DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get -y install tzdata
@@ -60,10 +61,13 @@ RUN tar -xvf *.tar.gz && cd rdma-core*/ && dpkg-buildpackage -b -d
 FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu${UBUNTU_VER}
 ARG UCX_VER
 ARG UCX_CUDA_VER
+ARG UBUNTU_VER
 
 COPY --from=rdma_core /*.deb /tmp/
 
 RUN apt update
 RUN apt-get install -y wget
-RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-v$UCX_VER-ubuntu18.04-mofed5-cuda$UCX_CUDA_VER.deb
+RUN cd /tmp && \
+  wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-$UCX_VER-ubuntu$UBUNTU_VER-mofed5-cuda$UCX_CUDA_VER.tar.bz2 && \
+  tar -xvf ucx-$UCX_VER-ubuntu$UBUNTU_VER-mofed5-cuda$UCX_CUDA_VER.tar.bz2
 RUN apt install -y /tmp/*.deb && rm -rf /tmp/*.deb
