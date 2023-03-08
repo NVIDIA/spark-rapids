@@ -46,7 +46,7 @@ class GpuCoalesceBatchesRetrySuite
       withResource(dcb) { _ =>
         val hostColumns = (0 until dcb.numCols()).map(
           i => dcb.column(i).asInstanceOf[GpuColumnVector].copyToHost())
-        new ColumnarBatch(hostColumns.toArray, dcb.numRows())
+        spy(new ColumnarBatch(hostColumns.toArray, dcb.numRows()))
       }
     }
   }
@@ -111,6 +111,11 @@ class GpuCoalesceBatchesRetrySuite
         assertResult(10)(coalesced.numRows())
       }
     }
+    val allBatches = iter.asInstanceOf[CoalesceIteratorMocks].getBatches()
+    assertResult(10)(allBatches.length)
+    allBatches.foreach { x =>
+      verify(x, times(1)).close()
+    }
   }
 
   test("coalesce gpu batches splits in half with SplitAndRetryOOM") {
@@ -153,7 +158,7 @@ class GpuCoalesceBatchesRetrySuite
       assertThrows[OutOfMemoryError] {
         iter.next() // throws
       }
-      val batches = iter.asInstanceOf[GpuCoalesceIteratorMocks].getBatches()
+      val batches = iter.asInstanceOf[CoalesceIteratorMocks].getBatches()
       assertResult(10)(batches.length)
       batches.foreach(b =>
         verify(b, times(1)).close()
@@ -176,7 +181,7 @@ class GpuCoalesceBatchesRetrySuite
       assertThrows[OutOfMemoryError] {
         iter.next()
       }
-      val batches = iter.asInstanceOf[GpuCoalesceIteratorMocks].getBatches()
+      val batches = iter.asInstanceOf[CoalesceIteratorMocks].getBatches()
       assertResult(10)(batches.length)
       batches.foreach(b =>
         verify(b, times(1)).close()
@@ -198,7 +203,7 @@ class GpuCoalesceBatchesRetrySuite
     override def close(): Unit = batch.close()
   }
 
-  trait GpuCoalesceIteratorMocks {
+  trait CoalesceIteratorMocks {
     def getBatches(): Seq[ColumnarBatch]
 
     def injectError(injectRetry: Int, injectSplitAndRetry: Int): Unit = {
@@ -246,7 +251,7 @@ class GpuCoalesceBatchesRetrySuite
       NoopMetric,
       "test",
       false)
-    with GpuCoalesceIteratorMocks {
+    with CoalesceIteratorMocks {
 
     override def populateCandidateBatches(): Boolean = {
       val lastBatchTag = super.populateCandidateBatches()
@@ -278,7 +283,7 @@ class GpuCoalesceBatchesRetrySuite
         NoopMetric,
         RapidsBuffer.defaultSpillCallback,
         "test",
-        TableCompressionCodecConfig(1024)) with GpuCoalesceIteratorMocks {
+        TableCompressionCodecConfig(1024)) with CoalesceIteratorMocks {
     override def populateCandidateBatches(): Boolean = {
       val lastBatchTag = super.populateCandidateBatches()
       injectError(injectRetry, injectSplitAndRetry)
@@ -311,7 +316,7 @@ class GpuCoalesceBatchesRetrySuite
         NoopMetric,
         NoopMetric,
         RapidsBuffer.defaultSpillCallback,
-        "test") with GpuCoalesceIteratorMocks {
+        "test") with CoalesceIteratorMocks {
     override def populateCandidateBatches(): Boolean = {
       val lastBatchTag = super.populateCandidateBatches()
       injectError(injectRetry, injectSplitAndRetry)
