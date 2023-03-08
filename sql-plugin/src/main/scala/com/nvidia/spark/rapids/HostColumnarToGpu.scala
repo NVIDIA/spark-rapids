@@ -246,12 +246,14 @@ class HostToGpuCoalesceIterator(iter: Iterator[ColumnarBatch],
   }
 
   override def addBatchToConcat(batch: ColumnarBatch): Unit = {
-    withResource(new MetricRange(copyBufTime)) { _ =>
-      val rows = batch.numRows()
-      for (i <- 0 until batch.numCols()) {
-        batchBuilder.copyColumnar(batch.column(i), i, rows)
+    withResource(batch) { _ =>
+      withResource(new MetricRange(copyBufTime)) { _ =>
+        val rows = batch.numRows()
+        for (i <- 0 until batch.numCols()) {
+          batchBuilder.copyColumnar(batch.column(i), i, rows)
+        }
+        totalRows += rows
       }
-      totalRows += rows
     }
   }
 
