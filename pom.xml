@@ -859,6 +859,23 @@
                 </plugin>
                 <plugin>
                   <groupId>org.apache.maven.plugins</groupId>
+                  <artifactId>maven-pmd-plugin</artifactId>
+                  <version>3.20.0</version>
+                  <executions>
+                    <execution>
+                        <id>detect-copy-and-paste-shim</id>
+                        <phase>process-sources</phase>
+                        <goals>
+                            <goal>cpd</goal>
+                        </goals>
+                    </execution>
+                  </executions>
+                  <configuration>
+                    <language>scala</language>
+                  </configuration>
+                </plugin>
+                <plugin>
+                  <groupId>org.apache.maven.plugins</groupId>
                   <artifactId>maven-antrun-plugin</artifactId>
                   <version>3.1.0</version>
                   <executions>
@@ -1425,6 +1442,10 @@
                         </configuration>
                     </execution>
                 </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-pmd-plugin</artifactId>
             </plugin>
 
             <plugin>
