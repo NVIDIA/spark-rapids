@@ -84,12 +84,6 @@ object GpuProjectExec extends Arm {
     case _ => None
   }
 
-  private def isAllSingleBoundIndex(boundExprs: Seq[Expression]): Boolean =
-    extractSingleBoundIndex(boundExprs).forall {
-      case Some(index) => true
-      case _ => false
-    }
-
   def extractSingleBoundIndex(boundExprs: Seq[Expression]): Seq[Option[Int]] =
     boundExprs.map(extractSingleBoundIndex)
 
@@ -114,6 +108,71 @@ object GpuProjectExec extends Arm {
     } else {
       val newColumns = boundExprs.safeMap(expr => projectSingle(cb, expr)).toArray[ColumnVector]
       new ColumnarBatch(newColumns, cb.numRows())
+    }
+  }
+
+  /**
+   * Just like project, but it will try and retry the operations if it can.
+   * @param sb the input batch
+   * @param boundExprs the expressions to run
+   * @return the resulting batch
+   */
+  def projectAndCloseWithRetrySingleBatch(sb: SpillableColumnarBatch,
+      boundExprs: Seq[Expression],
+      spillCallback: SpillCallback): ColumnarBatch = {
+    // First off we want to find/run all of the expressions that are non-deterministic
+    // These cannot be retried.
+    val nonDeterministicExprs = ArrayBuffer[Expression]()
+    val deterministicExprs = ArrayBuffer[Expression]()
+    boundExprs.foreach { expr =>
+      if (expr.deterministic) {
+        deterministicExprs += expr
+      } else {
+        nonDeterministicExprs += expr
+      }
+    }
+
+    val snd = withResource(sb.getColumnarBatch()) { cb =>
+      // First run the nonDeterministic ops because we cannot retry them
+      // In the future we might be able to isolate the non-deterministic expressions and do it more
+      // of a tiered operation
+      if (nonDeterministicExprs.nonEmpty) {
+        Some(SpillableColumnarBatch(project(cb, nonDeterministicExprs),
+          SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback))
+      } else {
+        None
+      }
+    }
+    withResource(snd) { snd =>
+      RmmRapidsRetryIterator.withRetryNoSplit(sb) { sb =>
+        val deterministicResults = withResource(sb.getColumnarBatch()) { cb =>
+          // For now we are just going to run all of these and deal with losing work...
+          project(cb, deterministicExprs)
+        }
+        if (snd.isEmpty) {
+          // We are done and the order should be the same so we don't need to do anything...
+          deterministicResults
+        } else {
+          // There was a mix of deterministic and non-deterministic...
+          withResource(deterministicResults) { _ =>
+            withResource(snd.get.getColumnarBatch()) { nd =>
+              var ndAt = 0
+              var detAt = 0
+              val outputColumns = ArrayBuffer[ColumnVector]()
+              boundExprs.foreach { expr =>
+                if (expr.deterministic) {
+                  outputColumns += deterministicResults.column(detAt)
+                  detAt += 1
+                } else {
+                  outputColumns += nd.column(ndAt)
+                  ndAt += 1
+                }
+              }
+              GpuColumnVector.incRefCounts(new ColumnarBatch(outputColumns.toArray, sb.numRows()))
+            }
+          }
+        }
+      }
     }
   }
 }
@@ -160,24 +219,26 @@ case class GpuProjectExec(
 
   override def output: Seq[Attribute] = projectList.map(_.toAttribute)
 
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME)) ++ spillMetrics
+
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
-    val (boundProjectList, boundProjectListTiered) = if (useTieredProject) {
-      (None, Some(GpuBindReferences.bindGpuReferencesTiered(projectList, child.output)))
-    } else {
-      (Some(GpuBindReferences.bindGpuReferences(projectList, child.output)), None)
-    }
+    val boundProjectList = GpuBindReferences.bindGpuReferencesTiered(projectList, child.output,
+      useTieredProject)
+
     val rdd = child.executeColumnar()
     rdd.map { cb =>
-      numOutputBatches += 1
-      numOutputRows += cb.numRows()
-      if (useTieredProject) {
-        boundProjectListTiered.get.tieredProjectAndClose(cb, opTime)
-      } else {
-        GpuProjectExec.projectAndClose(cb, boundProjectList.get, opTime)
+      val ret = withResource(new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, opTime)) { _ =>
+        val spillCb = makeSpillCallback(allMetrics)
+        val sb = SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCb)
+        boundProjectList.projectAndCloseWithRetrySingleBatch(sb, spillCb)
       }
+      numOutputBatches += 1
+      numOutputRows += ret.numRows()
+      ret
     }
   }
 }
@@ -283,46 +344,61 @@ case class GpuProjectAstExec(
  *   Input columns for tier 3: a, c, e, f, ref2, ref3
  *   Tier 3: (ref2 * e), (ref3 * f), (a + e), (c + f)
  */
- case class GpuTieredProject(exprTiers: Seq[Seq[GpuExpression]],
-    inputAttrTiers: Seq[AttributeSeq]) extends Arm {
+ case class GpuTieredProject(exprTiers: Seq[Seq[GpuExpression]]) extends Arm {
 
-  // Determine which attributes in the first AttributeSeq can be skipped when
-  // building the list of attributes for the next AttributeSeq.
-  // Returns a list of boolean values the same size as the first
-  // sequence, where the values are true if the corresponding attribute can be skipped.
-  // The indices of these attributes correspond to the columns that were bound via
-  // GpuBindReferences.bindGpuReference.
-  private def getColumnSkips(inputTiers: Seq[AttributeSeq]): Array[Boolean] = inputTiers match {
-    case Nil => Array.emptyBooleanArray
-    case curTier :: Nil =>
-      // For the last tier, fill with all true (skip) values, because the output
-      // of the last tier does not include any input columns.
-      Array.fill(curTier.attrs.size)(true)
-    case curTier :: tail =>
-      val curAttrs = curTier.attrs
-      val nextAttrs = tail.head.attrs
-      // This is equivalent to:
-      // skipList = curAttrs.map(a => if (nextAttrs.contains(a)) false else true)
-      // but this should be faster
-      val skipList = new Array[Boolean](curAttrs.size)
-      var curIdx = 0
-      var nextIdx = 0
-      while (curIdx < curAttrs.size) {
-        if (nextAttrs(nextIdx) == curAttrs(curIdx)) {
-          skipList(curIdx) = false
-          nextIdx += 1
-        } else {
-          skipList(curIdx) = true
-        }
-        curIdx += 1
-      }
-      skipList
+  /**
+   * Is everything deterministic. This can help with reliability in the common case.
+   */
+  private lazy val areAllDeterministic = !exprTiers.exists { tier =>
+    tier.exists { expr =>
+      !expr.deterministic
+    }
   }
 
-  def tieredProject(batch: ColumnarBatch): ColumnarBatch = {
+  def projectAndCloseWithRetrySingleBatch(sb: SpillableColumnarBatch,
+      spillCallback: SpillCallback): ColumnarBatch = {
+    if (areAllDeterministic) {
+      // If all of the expressions are deterministic we can just run everything are retry it
+      // at the top level. If some things are non-deterministic we need to split them up and
+      // do the processing in a way that makes it so retries are more likely to succeed.
+      RmmRapidsRetryIterator.withRetryNoSplit(sb) { sb =>
+        withResource(sb.getColumnarBatch()) { cb =>
+          project(cb)
+        }
+      }
+    } else {
+      @tailrec
+      def recurse(boundExprs: Seq[Seq[GpuExpression]],
+          sb: SpillableColumnarBatch,
+          isFirst: Boolean): SpillableColumnarBatch = boundExprs match {
+        case Nil =>
+          if (isFirst) {
+            new JustRowsColumnarBatch(sb.numRows(), spillCallback)
+          } else {
+            sb
+          }
+        case exprSet :: tail =>
+          val projectSb = withResource(new NvtxRange("project tier", NvtxColor.ORANGE)) { _ =>
+            val projectResult = GpuProjectExec.projectAndCloseWithRetrySingleBatch(sb,
+              exprSet, spillCallback)
+            SpillableColumnarBatch(projectResult, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
+              spillCallback)
+          }
+          // Close intermediate batches
+          if (!isFirst) sb.close()
+          recurse(tail, projectSb, false)
+      }
+      // Process tiers sequentially
+      withResource(recurse(exprTiers, sb, true)) { ret =>
+        ret.getColumnarBatch()
+      }
+    }
+  }
+
+  def project(batch: ColumnarBatch): ColumnarBatch = {
     @tailrec
-    def recurse(boundExprs: Seq[Seq[GpuExpression]], attrTiers: Seq[AttributeSeq],
-        cb: ColumnarBatch, isFirst: Boolean): ColumnarBatch = boundExprs match {
+    def recurse(boundExprs: Seq[Seq[GpuExpression]], cb: ColumnarBatch,
+        isFirst: Boolean): ColumnarBatch = boundExprs match {
       case Nil =>
         if (isFirst) {
           // if there are no bound expressions, return an empty ColumnarBatch.
@@ -332,34 +408,14 @@ case class GpuProjectAstExec(
         }
       case exprSet :: tail =>
         val projectCb = withResource(new NvtxRange("project tier", NvtxColor.ORANGE)) { _ =>
-          closeOnExcept(GpuProjectExec.project(cb, exprSet)) { projectResult =>
-            projectResult
-          }
-        }
-        val nextCb = if (tail.isEmpty) {
-          projectCb
-        } else {
-          val columnSkips = getColumnSkips(attrTiers)
-          withResource(projectCb) { newCols =>
-            withResource(GpuColumnVector.dropColumns(cb, columnSkips)) { remainingCb =>
-              GpuColumnVector.combineColumns(remainingCb, newCols)
-            }
-          }
+          GpuProjectExec.project(cb, exprSet)
         }
         // Close intermediate batches
         if (!isFirst) cb.close()
-        recurse(tail, attrTiers.tail, nextCb, false)
+        recurse(tail, projectCb, false)
     }
     // Process tiers sequentially
-    recurse(exprTiers, inputAttrTiers, batch, true)
-  }
-
-  def tieredProjectAndClose(cb: ColumnarBatch, opTime: GpuMetric): ColumnarBatch = {
-    withResource(cb) { cb =>
-      withResource(new NvtxWithMetrics("ProjectExec", NvtxColor.CYAN, opTime)) { _ =>
-        tieredProject(cb)
-      }
-    }
+    recurse(exprTiers, batch, true)
   }
 }
 
@@ -381,6 +437,21 @@ object GpuFilter extends Arm {
     }
   }
 
+  def filterAndClose(
+      batch: ColumnarBatch,
+      boundCondition: Expression,
+      numOutputRows: GpuMetric,
+      numOutputBatches: GpuMetric,
+      filterTime: GpuMetric,
+      spillCallback: SpillCallback): ColumnarBatch = {
+    withResource(new NvtxWithMetrics("filter batch", NvtxColor.YELLOW, filterTime)) { _ =>
+      val filteredBatch = GpuFilter.filterAndClose(batch, boundCondition, spillCallback)
+      numOutputBatches += 1
+      numOutputRows += filteredBatch.numRows()
+      filteredBatch
+    }
+  }
+
   private def allEntriesAreTrue(mask: GpuColumnVector): Boolean = {
     if (mask.hasNull) {
       false
@@ -391,32 +462,61 @@ object GpuFilter extends Arm {
     }
   }
 
-  def apply(batch: ColumnarBatch,
-      boundCondition: Expression) : ColumnarBatch = {
-    withResource(batch) { batch =>
-      val checkedFilterMask = withResource(
-        GpuProjectExec.projectSingle(batch, boundCondition)) { filterMask =>
-        // If  filter is a noop then return a None for the mask
-        if (allEntriesAreTrue(filterMask)) {
-          None
-        } else {
-          Some(filterMask.getBase.incRefCount())
-        }
-      }
-      checkedFilterMask.map { checkedFilterMask =>
-        withResource(checkedFilterMask) { checkedFilterMask =>
-          val colTypes = GpuColumnVector.extractTypes(batch)
-          withResource(GpuColumnVector.from(batch)) { tbl =>
-            withResource(tbl.filter(checkedFilterMask)) { filteredData =>
-              GpuColumnVector.from(filteredData, colTypes)
-            }
+  private def doFilter(checkedFilterMask: Option[cudf.ColumnVector],
+      cb: ColumnarBatch): ColumnarBatch = {
+    checkedFilterMask.map { checkedFilterMask =>
+      withResource(checkedFilterMask) { checkedFilterMask =>
+        val colTypes = GpuColumnVector.extractTypes(cb)
+        withResource(GpuColumnVector.from(cb)) { tbl =>
+          withResource(tbl.filter(checkedFilterMask)) { filteredData =>
+            GpuColumnVector.from(filteredData, colTypes)
           }
         }
-      }.getOrElse {
-        // Nothing to filter so it is a NOOP
-        GpuColumnVector.incRefCounts(batch)
+      }
+    }.getOrElse {
+      // Nothing to filter so it is a NOOP
+      GpuColumnVector.incRefCounts(cb)
+    }
+  }
+
+  private def computeCheckedFilterMask(boundCondition: Expression,
+      cb: ColumnarBatch): Option[cudf.ColumnVector] = {
+    withResource(
+      GpuProjectExec.projectSingle(cb, boundCondition)) { filterMask =>
+      // If  filter is a noop then return a None for the mask
+      if (allEntriesAreTrue(filterMask)) {
+        None
+      } else {
+        Some(filterMask.getBase.incRefCount())
       }
     }
+  }
+
+  def filterAndClose(batch: ColumnarBatch,
+      boundCondition: Expression,
+      spillCallback: SpillCallback): ColumnarBatch = {
+    if (!boundCondition.deterministic) {
+      // If the condition is non-deterministic we cannot retry it, we could retry the filter, but
+      // this should be super rare. So we are not going to spend time trying to make it happen.
+      withResource(batch) { batch =>
+        val checkedFilterMask = computeCheckedFilterMask(boundCondition, batch)
+        doFilter(checkedFilterMask, batch)
+      }
+    } else {
+      val sb = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+      RmmRapidsRetryIterator.withRetryNoSplit(sb) { sb =>
+        withResource(sb.getColumnarBatch()) { cb =>
+          val checkedFilterMask = computeCheckedFilterMask(boundCondition, cb)
+          doFilter(checkedFilterMask, cb)
+        }
+      }
+    }
+  }
+
+  def apply(batch: ColumnarBatch,
+      boundCondition: Expression) : ColumnarBatch = {
+    val checkedFilterMask = computeCheckedFilterMask(boundCondition, batch)
+    doFilter(checkedFilterMask, batch)
   }
 }
 
@@ -427,7 +527,8 @@ case class GpuFilterExec(
     extends ShimUnaryExecNode with ShimPredicateHelper with GpuExec {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME))
+    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME)) ++
+      spillMetrics
 
   // Split out all the IsNotNulls from condition.
   private val (notNullPreds, _) = splitConjunctivePredicates(condition).partition {
@@ -463,9 +564,11 @@ case class GpuFilterExec(
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME)
     val boundCondition = GpuBindReferences.bindReference(condition, child.output)
+    val spillCallback = makeSpillCallback(allMetrics)
     val rdd = child.executeColumnar()
     rdd.map { batch =>
-      GpuFilter(batch, boundCondition, numOutputRows, numOutputBatches, opTime)
+      GpuFilter.filterAndClose(batch, boundCondition, numOutputRows, numOutputBatches, opTime,
+        spillCallback)
     }
   }
 }
