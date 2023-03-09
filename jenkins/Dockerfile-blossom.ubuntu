@@ -27,7 +27,7 @@
 
 ARG CUDA_VER=11.0.3
 ARG UBUNTU_VER=20.04
-ARG UCX_VER=1.14.0
+ARG UCX_VER=1.14.0-rc6
 ARG UCX_CUDA_VER=11
 FROM nvidia/cuda:${CUDA_VER}-runtime-ubuntu${UBUNTU_VER}
 ARG CUDA_VER
@@ -65,7 +65,8 @@ RUN apt install -y inetutils-ping expect wget libnuma1 libgomp1
 
 RUN mkdir -p /tmp/ucx && \
     cd /tmp/ucx && \
-    wget https://github.com/openucx/ucx/releases/download/v${UCX_VER}/ucx-v${UCX_VER}-ubuntu${UBUNTU_VER}-mofed5-cuda${UCX_CUDA_VER}.deb && \
+    wget https://github.com/openucx/ucx/releases/download/v${UCX_VER}/ucx-${UCX_VER}-ubuntu${UBUNTU_VER}-mofed5-cuda${UCX_CUDA_VER}.tar.bz2 && \
+    tar -xvf *.bz2 && \
     dpkg -i *.deb && \
     rm -rf /tmp/ucx
 
