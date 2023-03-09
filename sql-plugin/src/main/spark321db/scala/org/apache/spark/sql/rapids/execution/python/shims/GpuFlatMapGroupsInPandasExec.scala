@@ -117,21 +117,22 @@ case class GpuFlatMapGroupsInPandasExec(
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
     val chainedFunc = Seq(ChainedPythonFunctions(Seq(pandasFunction)))
-    val sessionLocalTimeZone = conf.sessionLocalTimeZone
-    val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
     val localOutput = output
     val localChildOutput = child.output
     // Python wraps the resulting columns in a single struct column.
     val pythonOutputSchema = StructType(
         StructField("out_struct", StructType.fromAttributes(localOutput)) :: Nil)
 
-    // Configs from DB 10.4 runtime
-    val maxBytes = conf.pandasZeroConfConversionGroupbyApplyMaxBytesPerSlice
-    val zeroConfEnabled = conf.pandasZeroConfConversionGroupbyApplyEnabled
-
     // Resolve the argument offsets and related attributes.
     val GroupArgs(dedupAttrs, argOffsets, groupingOffsets) =
         resolveArgOffsets(child, groupingAttributes)
+
+    val runnerShims = GpuPythonRunnerShim(conf,
+                        chainedFunc,
+                        Array(argOffsets),
+                        StructType.fromAttributes(dedupAttrs),
+                        pythonOutputSchema,
+                        spillCallback)
 
     // Start processing. Map grouped batches to ArrowPythonRunner results.
     child.executeColumnar().mapPartitionsInternal { inputIter =>
@@ -148,36 +149,53 @@ case class GpuFlatMapGroupsInPandasExec(
       if (pyInputIter.hasNext) {
         // Launch Python workers only when the data is not empty.
         // Choose the right DB SPECIFIC serializer from 9.1 runtime.
-        val pyRunner = if (zeroConfEnabled && maxBytes > 0L) {
-          new GpuGroupUDFArrowPythonRunner(
-            chainedFunc,
-            PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,
-            Array(argOffsets),
-            StructType.fromAttributes(dedupAttrs),
-            sessionLocalTimeZone,
-            pythonRunnerConf,
-            // The whole group data should be written in a single call, so here is unlimited
-            Int.MaxValue,
-            spillCallback.semaphoreWaitTime,
-            pythonOutputSchema)
-        } else {
-          new GpuArrowPythonRunner(
-            chainedFunc,
-            PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,
-            Array(argOffsets),
-            StructType.fromAttributes(dedupAttrs),
-            sessionLocalTimeZone,
-            pythonRunnerConf,
-            Int.MaxValue,
-            spillCallback.semaphoreWaitTime,
-            pythonOutputSchema)
-        }
-
+        val pyRunner = runnerShims.getRunner()
         executePython(pyInputIter, localOutput, pyRunner, mNumOutputRows, mNumOutputBatches)
       } else {
         // Empty partition, return it directly
         inputIter
       }
     } // end of mapPartitionsInternal
+  }
+}
+
+case class GpuPythonRunnerShim(
+  conf: org.apache.spark.sql.internal.SQLConf,
+  chainedFunc: Seq[ChainedPythonFunctions],
+  argOffsets: Array[Array[Int]],
+  dedupAttrs: StructType,
+  pythonOutputSchema: StructType,
+  spillCallback: SpillCallback) {
+  // Configs from DB runtime
+  val maxBytes = conf.pandasZeroConfConversionGroupbyApplyMaxBytesPerSlice
+  val zeroConfEnabled = conf.pandasZeroConfConversionGroupbyApplyEnabled
+  val sessionLocalTimeZone = conf.sessionLocalTimeZone
+  val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
+
+  def getRunner() = {
+    if (zeroConfEnabled && maxBytes > 0L) {
+      new GpuGroupUDFArrowPythonRunner(
+        chainedFunc,
+        PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,
+        argOffsets,
+        dedupAttrs,
+        sessionLocalTimeZone,
+        pythonRunnerConf,
+        // The whole group data should be written in a single call, so here is unlimited
+        Int.MaxValue,
+        spillCallback.semaphoreWaitTime,
+        pythonOutputSchema)
+    } else {
+      new GpuArrowPythonRunner(
+        chainedFunc,
+        PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,
+        argOffsets,
+        dedupAttrs,
+        sessionLocalTimeZone,
+        pythonRunnerConf,
+        Int.MaxValue,
+        spillCallback.semaphoreWaitTime,
+        pythonOutputSchema)
+    }
   }
 }
