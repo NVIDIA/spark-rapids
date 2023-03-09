@@ -287,21 +287,21 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
 
       // asking to spill 0 bytes should not spill
       val sizeBeforeSpill = store.currentSize
-      catalog.synchronousSpill(store, sizeBeforeSpill)
+      catalog.synchronousSpill(store, Some(sizeBeforeSpill))
       assert(spillStore.spilledBuffers.isEmpty)
       assertResult(sizeBeforeSpill)(store.currentSize)
-      catalog.synchronousSpill(store, sizeBeforeSpill + 1)
+      catalog.synchronousSpill(store, Some(sizeBeforeSpill + 1))
       assert(spillStore.spilledBuffers.isEmpty)
       assertResult(sizeBeforeSpill)(store.currentSize)
 
       // spilling 1 byte should force one buffer to spill in priority order
-      catalog.synchronousSpill(store, sizeBeforeSpill - 1)
+      catalog.synchronousSpill(store, Some(sizeBeforeSpill - 1))
       assertResult(1)(spillStore.spilledBuffers.length)
       assertResult(bufferSizes.drop(1).sum)(store.currentSize)
       assertResult(1)(spillStore.spilledBuffers(0).tableId)
 
       // spilling to zero should force all buffers to spill in priority order
-      catalog.synchronousSpill(store, 0)
+      catalog.synchronousSpill(store, Some(0))
       assertResult(3)(spillStore.spilledBuffers.length)
       assertResult(0)(store.currentSize)
       assertResult(0)(spillStore.spilledBuffers(1).tableId)

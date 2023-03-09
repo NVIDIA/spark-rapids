@@ -472,23 +472,32 @@ class RapidsBufferCatalog(
   /**
    * Free memory in `store` by spilling buffers to the spill store synchronously.
    * @param store store to spill from
-   * @param targetTotalSize maximum total size of this store after spilling completes
+   * @param targetTotalSize optional maximum total size of this store after spilling
+   *                        completes. Only stores that want to stay within a certain size
+   *                        would calculate this target, other stores are going to spill
+   *                        anything and retry allocations.
    * @param stream CUDA stream to use or null for default stream
    * @return optionally number of bytes that were spilled, or None if this called
    *         made no attempt to spill due to a detected spill race
    */
   def synchronousSpill(
       store: RapidsBufferStore,
-      targetTotalSize: Long,
+      targetTotalSize: Option[Long] = None,
       stream: Cuda.Stream = Cuda.DEFAULT_STREAM): Option[Long] = {
     val spillStore = store.spillStore
     if (spillStore == null) {
       throw new OutOfMemoryError("Requested to spill without a spill store")
     }
-    require(targetTotalSize >= 0, s"Negative spill target size: $targetTotalSize")
-    logWarning(s"Targeting a ${store.name} size of $targetTotalSize. " +
-      s"Current total ${store.currentSize}. " +
-      s"Current spillable ${store.currentSpillableSize}")
+    targetTotalSize.map { tgt =>
+      require(tgt >= 0, s"Negative spill target size: $tgt")
+      logWarning(s"Targeting a ${store.name} size of $tgt. " +
+          s"Current total ${store.currentSize}. " +
+          s"Current spillable ${store.currentSpillableSize}")
+    }.getOrElse {
+      logWarning(s"Spilling from ${store.name} " +
+          s"Current total ${store.currentSize}. " +
+          s"Current spillable ${store.currentSpillableSize}")
+    }
 
     // we try to spill in this thread. If another thread is also spilling, we let that
     // thread win and we return letting RMM retry the alloc
@@ -497,39 +506,34 @@ class RapidsBufferCatalog(
     // total amount spilled in this invocation
     var totalSpilled: Long = 0
 
-    if (store.currentSpillableSize > targetTotalSize) {
-      withResource(new NvtxRange(s"${store.name} sync spill", NvtxColor.ORANGE)) { _ =>
-        logWarning(s"${store.name} store spilling to reduce usage from " +
-          s"${store.currentSize} total (${store.currentSpillableSize} spillable) " +
-          s"to $targetTotalSize bytes")
+    var firstAttempt = true
 
-        // If the store has 0 spillable bytes left, it has exhausted.
-        var exhausted = false
-
-        while (!exhausted && !rmmShouldRetryAlloc &&
-            store.currentSpillableSize > targetTotalSize) {
-          val mySpillCount = spillCount
-          synchronized {
-            if (spillCount == mySpillCount) {
-              spillCount += 1
-              val nextSpillable = store.nextSpillable()
-              if (nextSpillable != null) {
-                // we have a buffer (nextSpillable) to spill
-                spillAndFreeBuffer(nextSpillable, spillStore, stream)
-                totalSpilled += nextSpillable.size
-              }
-            } else {
-              rmmShouldRetryAlloc = true
+    // attempt to spill something
+    while (firstAttempt || (
+        !rmmShouldRetryAlloc &&
+        // if a target size is provided, that the store has more spillable than the target
+        targetTotalSize.exists(tgt => store.currentSpillableSize > tgt))) {
+      firstAttempt = false
+      val mySpillCount = spillCount
+      synchronized {
+        if (spillCount == mySpillCount) {
+          spillCount += 1
+          val nextSpillable = store.nextSpillable()
+          if (nextSpillable != null) {
+            withResource(new NvtxRange(s"${store.name} sync spill", NvtxColor.ORANGE)) { _ =>
+              // we have a buffer (nextSpillable) to spill
+              spillAndFreeBuffer(nextSpillable, spillStore, stream)
+              totalSpilled += nextSpillable.size
             }
           }
-          if (!rmmShouldRetryAlloc && totalSpilled <= 0) {
-            // we didn't spill in this iteration, exit loop
-            exhausted = true
-            logWarning("Unable to spill enough to meet request. " +
-                s"Total=${store.currentSize} " +
-                s"Spillable=${store.currentSpillableSize} " +
-                s"Target=$targetTotalSize")
-          }
+        } else {
+          rmmShouldRetryAlloc = true
+        }
+        if (!rmmShouldRetryAlloc && totalSpilled <= 0) {
+          logWarning("Unable to spill enough to meet request. " +
+              s"Total=${store.currentSize} " +
+              s"Spillable=${store.currentSpillableSize}" +
+              targetTotalSize.map(tgt => s" Target=$tgt").getOrElse(""))
         }
       }
     }
@@ -593,7 +597,7 @@ class RapidsBufferCatalog(
       // in order to make room for `buffer`.
       val targetTotalSize =
         math.max(spillStoreMaxSize.get - buffer.size, 0)
-      val maybeAmountSpilled = synchronousSpill(spillStore, targetTotalSize, stream)
+      val maybeAmountSpilled = synchronousSpill(spillStore, Some(targetTotalSize), stream)
       maybeAmountSpilled.foreach { amountSpilled =>
         if (amountSpilled != 0) {
           logInfo(s"Spilled $amountSpilled bytes from the ${spillStore.name} store")

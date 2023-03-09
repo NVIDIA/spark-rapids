@@ -71,7 +71,7 @@ class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar
 
        bufferIds.zipWithIndex.foreach { case(id, ix) =>
          val (size, handle) = addTableToCatalog(catalog, id, spillPriority)
-         catalog.synchronousSpill(devStore, 0)
+         catalog.synchronousSpill(devStore, Some(0))
          bufferSizes(ix) = size
          bufferHandles(ix) = handle
        }
@@ -116,7 +116,7 @@ class RapidsGdsStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSugar
         devStore.setSpillStore(gdsStore)
         assertResult(0)(gdsStore.currentSize)
         val (bufferSize, handle) = addTableToCatalog(catalog, bufferId, spillPriority)
-        catalog.synchronousSpill(devStore, 0)
+        catalog.synchronousSpill(devStore, Some(0))
         assertResult(bufferSize)(gdsStore.currentSize)
         assert(path.exists)
         assertResult(bufferSize)(path.length)

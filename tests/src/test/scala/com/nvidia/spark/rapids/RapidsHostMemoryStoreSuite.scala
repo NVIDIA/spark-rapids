@@ -77,7 +77,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
             (len, handle)
           }
 
-          catalog.synchronousSpill(devStore, 0)
+          catalog.synchronousSpill(devStore, Some(0))
           assertResult(bufferSize)(hostStore.currentSize)
           assertResult(hostStoreMaxSize - bufferSize)(hostStore.numBytesFree)
           verify(catalog, times(2)).registerNewBuffer(ArgumentMatchers.any[RapidsBuffer])
@@ -113,7 +113,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
               RapidsBuffer.defaultSpillCallback)
           }
           withResource(expectedBuffer) { _ =>
-            catalog.synchronousSpill(devStore, 0)
+            catalog.synchronousSpill(devStore, Some(0))
             withResource(catalog.acquireBuffer(handle)) { buffer =>
               withResource(buffer.getMemoryBuffer) { actualBuffer =>
                 assert(actualBuffer.isInstanceOf[HostMemoryBuffer])
@@ -152,7 +152,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
               RapidsBuffer.defaultSpillCallback)
           }
           withResource(expectedBatch) { _ =>
-            catalog.synchronousSpill(devStore, 0)
+            catalog.synchronousSpill(devStore, Some(0))
             withResource(catalog.acquireBuffer(handle)) { buffer =>
               assertResult(StorageTier.HOST)(buffer.storageTier)
               withResource(buffer.getColumnarBatch(sparkTypes)) { actualBatch =>
@@ -201,7 +201,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
                   RapidsBuffer.defaultSpillCallback)
               } // close the bigTable so it can be spilled
               bigTable = null
-              catalog.synchronousSpill(devStore, 0)
+              catalog.synchronousSpill(devStore, Some(0))
               verify(mockStore, never()).copyBuffer(ArgumentMatchers.any[RapidsBuffer],
                 ArgumentMatchers.any[MemoryBuffer],
                 ArgumentMatchers.any[Cuda.Stream])
@@ -218,7 +218,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
                 RapidsBuffer.defaultSpillCallback, false)
             } // close the smallTable so it can be spilled
             smallTable = null
-            catalog.synchronousSpill(devStore, 0)
+            catalog.synchronousSpill(devStore, Some(0))
             val rapidsBufferCaptor: ArgumentCaptor[RapidsBuffer] =
               ArgumentCaptor.forClass(classOf[RapidsBuffer])
             val memoryBufferCaptor: ArgumentCaptor[MemoryBuffer] =

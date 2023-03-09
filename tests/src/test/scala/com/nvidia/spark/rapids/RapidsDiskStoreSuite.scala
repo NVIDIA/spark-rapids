@@ -56,8 +56,8 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
               addTableToCatalog(catalog, bufferId, spillPriority)
             val path = handle.id.getDiskPath(null)
             assert(!path.exists())
-            catalog.synchronousSpill(devStore, 0)
-            catalog.synchronousSpill(hostStore, 0)
+            catalog.synchronousSpill(devStore, Some(0))
+            catalog.synchronousSpill(hostStore, Some(0))
             assertResult(0)(hostStore.currentSize)
             assertResult(bufferSize)(diskStore.currentSize)
             assert(path.exists)
@@ -105,8 +105,8 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
               withResource(expectedTable) { _ =>
                 withResource(
                     GpuColumnVector.from(expectedTable.getTable, sparkTypes)) { expectedBatch =>
-                  catalog.synchronousSpill(devStore, 0)
-                  catalog.synchronousSpill(hostStore, 0)
+                  catalog.synchronousSpill(devStore, Some(0))
+                  catalog.synchronousSpill(hostStore, Some(0))
                   withResource(catalog.acquireBuffer(handle)) { buffer =>
                     assertResult(StorageTier.DISK)(buffer.storageTier)
                     withResource(buffer.getColumnarBatch(sparkTypes)) { actualBatch =>
@@ -145,8 +145,8 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
               }
             }
             withResource(expectedBuffer) { expectedBuffer =>
-              catalog.synchronousSpill(devStore, 0)
-              catalog.synchronousSpill(hostStore, 0)
+              catalog.synchronousSpill(devStore, Some(0))
+              catalog.synchronousSpill(hostStore, Some(0))
               withResource(catalog.acquireBuffer(handle)) { buffer =>
                 assertResult(StorageTier.DISK)(buffer.storageTier)
                 withResource(buffer.getMemoryBuffer) { actualBuffer =>
@@ -185,8 +185,8 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
             val (_, handle) = addTableToCatalog(catalog, bufferId, spillPriority)
             val bufferPath = handle.id.getDiskPath(null)
             assert(!bufferPath.exists())
-            catalog.synchronousSpill(devStore, 0)
-            catalog.synchronousSpill(hostStore, 0)
+            catalog.synchronousSpill(devStore, Some(0))
+            catalog.synchronousSpill(hostStore, Some(0))
             assert(bufferPath.exists)
             handle.close()
             if (canShareDiskPaths) {

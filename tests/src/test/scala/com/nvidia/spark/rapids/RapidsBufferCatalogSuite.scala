@@ -267,7 +267,7 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar with Arm {
           buff, meta, -1, RapidsBuffer.defaultSpillCallback)
       }
       withResource(handle) { _ =>
-        catalog.synchronousSpill(deviceStore, 0)
+        catalog.synchronousSpill(deviceStore, Some(0))
         val acquiredHostBuffer = catalog.acquireBuffer(handle)
         withResource(acquiredHostBuffer) { _ =>
           assertResult(HOST)(acquiredHostBuffer.storageTier)
