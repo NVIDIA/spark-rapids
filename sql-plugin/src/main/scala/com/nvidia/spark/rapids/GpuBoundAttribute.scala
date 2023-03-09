@@ -144,18 +144,19 @@ object GpuBindReferences extends Logging {
       val exprTiers = GpuEquivalentExpressions.getExprTiers(expressions)
       val inputTiers = GpuEquivalentExpressions.getInputTiers(exprTiers, input)
       // Update ExprTiers to include the columns that are pass through and drop unneeded columns
-      var atInput = 0
-      val newExprTiers = exprTiers.map { exprTier =>
-        atInput += 1
-        if (atInput < inputTiers.length) {
-          inputTiers(atInput).attrs.map { attr =>
-            exprTier.find { expr =>
-              expr.asInstanceOf[NamedExpression].toAttribute == attr
-            }.getOrElse(attr)
+      val newExprTiers = exprTiers.zipWithIndex.map {
+        case (exprTier, index) =>
+          // get what the output should look like.
+          val atInput = index + 1
+          if (atInput < inputTiers.length) {
+            inputTiers(atInput).attrs.map { attr =>
+              exprTier.find { expr =>
+                expr.asInstanceOf[NamedExpression].toAttribute == attr
+              }.getOrElse(attr)
+            }
+          } else {
+            exprTier
           }
-        } else {
-          exprTier
-        }
       }
       GpuTieredProject(newExprTiers.zip(inputTiers).map {
         case (es: Seq[Expression], is: AttributeSeq) =>

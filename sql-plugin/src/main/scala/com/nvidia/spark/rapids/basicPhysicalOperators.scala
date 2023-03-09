@@ -112,9 +112,11 @@ object GpuProjectExec extends Arm {
   }
 
   /**
-   * Just like project, but it will try and retry the operations if it can.
+   * Similar to project, but it will try and retry the operations if it can. It also will close
+   * the input SpillableColumnarBatch if it succeeds.
    * @param sb the input batch
    * @param boundExprs the expressions to run
+   * @param spillCallback used for tracking spill metrics
    * @return the resulting batch
    */
   def projectAndCloseWithRetrySingleBatch(sb: SpillableColumnarBatch,
@@ -122,27 +124,17 @@ object GpuProjectExec extends Arm {
       spillCallback: SpillCallback): ColumnarBatch = {
     // First off we want to find/run all of the expressions that are non-deterministic
     // These cannot be retried.
-    val nonDeterministicExprs = ArrayBuffer[Expression]()
-    val deterministicExprs = ArrayBuffer[Expression]()
-    boundExprs.foreach { expr =>
-      if (expr.deterministic) {
-        deterministicExprs += expr
-      } else {
-        nonDeterministicExprs += expr
-      }
-    }
+    val (deterministicExprs, nonDeterministicExprs) = boundExprs.partition(_.deterministic)
 
-    val snd = withResource(sb.getColumnarBatch()) { cb =>
-      // First run the nonDeterministic ops because we cannot retry them
-      // In the future we might be able to isolate the non-deterministic expressions and do it more
-      // of a tiered operation
-      if (nonDeterministicExprs.nonEmpty) {
+    val snd = if (nonDeterministicExprs.nonEmpty) {
+      withResource(sb.getColumnarBatch()) { cb =>
         Some(SpillableColumnarBatch(project(cb, nonDeterministicExprs),
           SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback))
-      } else {
-        None
       }
+    } else {
+      None
     }
+
     withResource(snd) { snd =>
       RmmRapidsRetryIterator.withRetryNoSplit(sb) { sb =>
         val deterministicResults = withResource(sb.getColumnarBatch()) { cb =>
@@ -358,7 +350,7 @@ case class GpuProjectAstExec(
   def projectAndCloseWithRetrySingleBatch(sb: SpillableColumnarBatch,
       spillCallback: SpillCallback): ColumnarBatch = {
     if (areAllDeterministic) {
-      // If all of the expressions are deterministic we can just run everything are retry it
+      // If all of the expressions are deterministic we can just run everything and retry it
       // at the top level. If some things are non-deterministic we need to split them up and
       // do the processing in a way that makes it so retries are more likely to succeed.
       RmmRapidsRetryIterator.withRetryNoSplit(sb) { sb =>
@@ -369,14 +361,8 @@ case class GpuProjectAstExec(
     } else {
       @tailrec
       def recurse(boundExprs: Seq[Seq[GpuExpression]],
-          sb: SpillableColumnarBatch,
-          isFirst: Boolean): SpillableColumnarBatch = boundExprs match {
-        case Nil =>
-          if (isFirst) {
-            new JustRowsColumnarBatch(sb.numRows(), spillCallback)
-          } else {
-            sb
-          }
+          sb: SpillableColumnarBatch): SpillableColumnarBatch = boundExprs match {
+        case Nil => sb
         case exprSet :: tail =>
           val projectSb = withResource(new NvtxRange("project tier", NvtxColor.ORANGE)) { _ =>
             val projectResult = GpuProjectExec.projectAndCloseWithRetrySingleBatch(sb,
@@ -384,12 +370,10 @@ case class GpuProjectAstExec(
             SpillableColumnarBatch(projectResult, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
               spillCallback)
           }
-          // Close intermediate batches
-          if (!isFirst) sb.close()
-          recurse(tail, projectSb, false)
+          recurse(tail, projectSb)
       }
       // Process tiers sequentially
-      withResource(recurse(exprTiers, sb, true)) { ret =>
+      withResource(recurse(exprTiers, sb)) { ret =>
         ret.getColumnarBatch()
       }
     }
@@ -397,22 +381,24 @@ case class GpuProjectAstExec(
 
   def project(batch: ColumnarBatch): ColumnarBatch = {
     @tailrec
-    def recurse(boundExprs: Seq[Seq[GpuExpression]], cb: ColumnarBatch,
-        isFirst: Boolean): ColumnarBatch = boundExprs match {
-      case Nil =>
-        if (isFirst) {
-          // if there are no bound expressions, return an empty ColumnarBatch.
-          new ColumnarBatch(Array.empty, cb.numRows())
-        } else {
-          cb
-        }
-      case exprSet :: tail =>
-        val projectCb = withResource(new NvtxRange("project tier", NvtxColor.ORANGE)) { _ =>
-          GpuProjectExec.project(cb, exprSet)
-        }
-        // Close intermediate batches
-        if (!isFirst) cb.close()
-        recurse(tail, projectCb, false)
+    def recurse(boundExprs: Seq[Seq[GpuExpression]],
+        cb: ColumnarBatch,
+        isFirst: Boolean): ColumnarBatch = {
+      boundExprs match {
+        case Nil => cb
+        case exprSet :: tail =>
+          val projectCb = try {
+            withResource(new NvtxRange("project tier", NvtxColor.ORANGE)) { _ =>
+              GpuProjectExec.project(cb, exprSet)
+            }
+          } finally {
+            // Close intermediate batches
+            if (!isFirst) {
+              cb.close()
+            }
+          }
+          recurse(tail, projectCb, false)
+      }
     }
     // Process tiers sequentially
     recurse(exprTiers, batch, true)
@@ -499,15 +485,13 @@ object GpuFilter extends Arm {
       // If the condition is non-deterministic we cannot retry it, we could retry the filter, but
       // this should be super rare. So we are not going to spend time trying to make it happen.
       withResource(batch) { batch =>
-        val checkedFilterMask = computeCheckedFilterMask(boundCondition, batch)
-        doFilter(checkedFilterMask, batch)
+        GpuFilter(batch, boundCondition)
       }
     } else {
       val sb = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
       RmmRapidsRetryIterator.withRetryNoSplit(sb) { sb =>
         withResource(sb.getColumnarBatch()) { cb =>
-          val checkedFilterMask = computeCheckedFilterMask(boundCondition, cb)
-          doFilter(checkedFilterMask, cb)
+          GpuFilter(cb, boundCondition)
         }
       }
     }
