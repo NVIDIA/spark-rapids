@@ -32,7 +32,7 @@ The advanced guide will walk through the steps to:
 
 ## Qualify CPU Workloads for GPU Acceleration
 
-The [qualification tool](https://nvidia.github.io/spark-rapids/docs/spark-qualification-tool.html) is launched on a Dataproc cluster that has applications that have already run.
+The [qualification tool](https://pypi.org/project/spark-rapids-user-tools/) is launched on a Dataproc cluster that has applications that have already run.
 The tool will output the applications recommended for acceleration along with estimated speed-up
 and cost saving metrics.  Additionally, it will provide information on how to launch a GPU-
 accelerated cluster to take advantage of the speed-up and cost savings.
