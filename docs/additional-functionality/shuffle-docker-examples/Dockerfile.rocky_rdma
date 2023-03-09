@@ -26,17 +26,15 @@ ARG CUDA_VER=11.8.0
 ARG UCX_VER=1.14.0
 ARG UCX_CUDA_VER=11
 ARG ROCKY_VER=8
-
 FROM nvidia/cuda:${CUDA_VER}-runtime-rockylinux${ROCKY_VER}
 ARG UCX_VER
 ARG UCX_CUDA_VER
 
-RUN yum update -y
-RUN yum install -y wget bzip2 rdma-core
-RUN cd /tmp && wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-v$UCX_VER-centos8-mofed5-cuda$UCX_CUDA_VER.tar.bz2
-RUN cd /tmp && \
+RUN yum update -y && yum install -y wget bzip2 rdma-core numactl-libs libgomp libibverbs librdmacm
+RUN mkdir /tmp/ucx_install && cd /tmp/ucx_install && \
+  wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-$UCX_VER-centos8-mofed5-cuda$UCX_CUDA_VER.tar.bz2 && \
   tar -xvf *.bz2 && \
-  yum install -y ucx-$UCX_VER-1.el8.x86_64.rpm && \
-  yum install -y ucx-cuda-$UCX_VER-1.el8.x86_64.rpm && \
-  yum install -y ucx-ib-$UCX_VER-1.el8.x86_64.rpm && \
-  yum install -y ucx-rdmacm-$UCX_VER-1.el8.x86_64.rpm
+  rpm -i ucx-$UCX_VER*.rpm && \
+  rpm -i ucx-cuda-$UCX_VER*.rpm --nodeps && \
+  rpm -i ucx-ib-$UCX_VER-1.el8.x86_64.rpm ucx-rdmacm-$UCX_VER-1.el8.x86_64.rpm && \
+  rm -rf /tmp/ucx_install
