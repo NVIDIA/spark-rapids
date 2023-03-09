@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,27 +14,22 @@
  * limitations under the License.
  */
 
-/*** spark-rapids-shim-json-lines
-{"spark": "321db"}
-{"spark": "330db"}
-spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids.execution.python.shims
+package org.apache.spark.sql.rapids.execution.python
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
-import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
+import org.apache.spark.api.python.ChainedPythonFunctions
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.python.FlatMapGroupsInPandasExec
-import org.apache.spark.sql.rapids.execution.python.{GpuArrowPythonRunner, GpuPythonExecBase, GpuPythonHelper, GpuPythonUDF, GroupArgs}
 import org.apache.spark.sql.rapids.execution.python.BatchGroupUtils._
+import org.apache.spark.sql.rapids.execution.python.shims._
 import org.apache.spark.sql.types.{StructField, StructType}
-import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuFlatMapGroupsInPandasExecMeta(
@@ -127,7 +122,7 @@ case class GpuFlatMapGroupsInPandasExec(
     val GroupArgs(dedupAttrs, argOffsets, groupingOffsets) =
         resolveArgOffsets(child, groupingAttributes)
 
-    val runnerShims = GpuPythonRunnerShim(conf,
+    val runnerShims = GpuArrowPythonRunnerShims(conf,
                         chainedFunc,
                         Array(argOffsets),
                         StructType.fromAttributes(dedupAttrs),
@@ -148,7 +143,6 @@ case class GpuFlatMapGroupsInPandasExec(
 
       if (pyInputIter.hasNext) {
         // Launch Python workers only when the data is not empty.
-        // Choose the right DB SPECIFIC serializer from 9.1 runtime.
         val pyRunner = runnerShims.getRunner()
         executePython(pyInputIter, localOutput, pyRunner, mNumOutputRows, mNumOutputBatches)
       } else {
@@ -156,46 +150,5 @@ case class GpuFlatMapGroupsInPandasExec(
         inputIter
       }
     } // end of mapPartitionsInternal
-  }
-}
-
-case class GpuPythonRunnerShim(
-  conf: org.apache.spark.sql.internal.SQLConf,
-  chainedFunc: Seq[ChainedPythonFunctions],
-  argOffsets: Array[Array[Int]],
-  dedupAttrs: StructType,
-  pythonOutputSchema: StructType,
-  spillCallback: SpillCallback) {
-  // Configs from DB runtime
-  val maxBytes = conf.pandasZeroConfConversionGroupbyApplyMaxBytesPerSlice
-  val zeroConfEnabled = conf.pandasZeroConfConversionGroupbyApplyEnabled
-  val sessionLocalTimeZone = conf.sessionLocalTimeZone
-  val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
-
-  def getRunner() = {
-    if (zeroConfEnabled && maxBytes > 0L) {
-      new GpuGroupUDFArrowPythonRunner(
-        chainedFunc,
-        PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,
-        argOffsets,
-        dedupAttrs,
-        sessionLocalTimeZone,
-        pythonRunnerConf,
-        // The whole group data should be written in a single call, so here is unlimited
-        Int.MaxValue,
-        spillCallback.semaphoreWaitTime,
-        pythonOutputSchema)
-    } else {
-      new GpuArrowPythonRunner(
-        chainedFunc,
-        PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,
-        argOffsets,
-        dedupAttrs,
-        sessionLocalTimeZone,
-        pythonRunnerConf,
-        Int.MaxValue,
-        spillCallback.semaphoreWaitTime,
-        pythonOutputSchema)
-    }
   }
 }
