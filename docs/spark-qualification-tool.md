@@ -76,15 +76,15 @@ any machine and include the jars in the classpath.
     multiple event logs files or directories containing spark event logs in the local filesystem, HDFS, S3 or mixed.
 
     ```bash
-    Usage: java ${QUALIFICATION_HEAP}
+    Usage: java ${QUALIFICATION_HEAP} \
              -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/* \
-             com.nvidia.spark.rapids.tool.qualification.QualificationMain [options]
+             com.nvidia.spark.rapids.tool.qualification.QualificationMain [options] \
              <eventlogs | eventlog directories ...>
     ```
 
     ```bash
     Sample: java ${QUALIFICATION_HEAP} \
-              -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/*
+              -cp rapids-4-spark-tools_2.12-<version>.jar:$SPARK_HOME/jars/* \
               com.nvidia.spark.rapids.tool.qualification.QualificationMain /usr/logs/app-name1
     ```
 
