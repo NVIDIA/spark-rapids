@@ -282,27 +282,27 @@ class JsonPartitionReader(
     val dataSize = dataBufferer.getLength
     // cuDF does not yet support reading a subset of columns so we have
     // to apply the read schema projection here
-    withResource(dataBufferer.getBufferAndRelease) { dataBuffer =>
-      val jsonTbl = try {
+    val jsonTbl = try {
+      RmmRapidsRetryIterator.withRetryNoSplit(dataBufferer.getBufferAndRelease) { dataBuffer =>
         Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)
-      } catch {
-        case e: Exception =>
-          throw new IOException(s"Error when processing file [$partFile]", e)
       }
-      withResource(jsonTbl) { tbl =>
-        val columns = new ListBuffer[ColumnVector]()
-        closeOnExcept(columns) { _ =>
-          for (name <- readDataSchema.fieldNames) {
-            val i = cudfSchema.getColumnNames.indexOf(name)
-            if (i == -1) {
-              throw new IllegalStateException(
-                s"read schema contains field named '$name' that is not in the data schema")
-            }
-            columns += tbl.getColumn(i)
+    } catch {
+      case e: Exception =>
+        throw new IOException(s"Error when processing file [$partFile]", e)
+    }
+    withResource(jsonTbl) { tbl =>
+      val columns = new ListBuffer[ColumnVector]()
+      closeOnExcept(columns) { _ =>
+        for (name <- readDataSchema.fieldNames) {
+          val i = cudfSchema.getColumnNames.indexOf(name)
+          if (i == -1) {
+            throw new IllegalStateException(
+              s"read schema contains field named '$name' that is not in the data schema")
           }
+          columns += tbl.getColumn(i)
         }
-        new Table(columns: _*)
       }
+      new Table(columns: _*)
     }
   }
 

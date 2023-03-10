@@ -380,7 +380,7 @@ class CSVPartitionReader(
     val csvOpts = buildCsvOptions(parsedOptions, readDataSchema, hasHeader)
     val dataSize = dataBufferer.getLength
     try {
-      withResource(dataBufferer.getBufferAndRelease) { dataBuffer =>
+      RmmRapidsRetryIterator.withRetryNoSplit(dataBufferer.getBufferAndRelease) { dataBuffer =>
         Table.readCSV(cudfSchema, csvOpts.build, dataBuffer, 0, dataSize)
       }
     } catch {
