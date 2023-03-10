@@ -39,7 +39,8 @@ object GpuDoAutoCompaction extends PostCommitHook
                    committedVersion: Long,
                    postCommitSnapshot: Snapshot,
                    committedActions: Seq[Action]): Unit = {
-    val newTxn = txn.deltaLog.startTransaction()
+    val gpuTxn = txn.asInstanceOf[GpuOptimisticTransaction]
+    val newTxn = new GpuDeltaLog(gpuTxn.deltaLog, gpuTxn.rapidsConf).startTransaction()
     new GpuOptimizeExecutor(spark, newTxn, Seq.empty, Seq.empty, committedActions).optimize()
   }
 

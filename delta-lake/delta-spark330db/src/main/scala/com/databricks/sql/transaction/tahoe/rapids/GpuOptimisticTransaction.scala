@@ -64,7 +64,7 @@ import org.apache.spark.util.{Clock, SerializableConfiguration}
 class GpuOptimisticTransaction(
     deltaLog: DeltaLog,
     snapshot: Snapshot,
-    rapidsConf: RapidsConf)(implicit clock: Clock)
+    val rapidsConf: RapidsConf)(implicit clock: Clock)
     extends GpuOptimisticTransactionBase(deltaLog, snapshot, rapidsConf)(clock) {
 
   /** Creates a new OptimisticTransaction.
