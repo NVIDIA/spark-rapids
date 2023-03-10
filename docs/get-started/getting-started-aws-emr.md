@@ -34,42 +34,6 @@ Please follow AWS EMR document ["Using the NVIDIA Spark-RAPIDS Accelerator
 for Spark"](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-rapids.html). 
 Below is an example.
 
-###  Launch an EMR Cluster using AWS CLI
-
-You can use the AWS CLI to launch a cluster with one Master node (m5.xlarge) and two 
-g4dn.2xlarge nodes: 
-
-```
-aws emr create-cluster \
---release-label emr-6.9.0 \
---applications Name=Hadoop Name=Spark Name=Livy Name=JupyterEnterpriseGateway \
---service-role EMR_DefaultRole \
---ec2-attributes KeyName=my-key-pair,InstanceProfile=EMR_EC2_DefaultRole \
---instance-groups InstanceGroupType=MASTER,InstanceCount=1,InstanceType=m4.4xlarge \
-                  InstanceGroupType=CORE,InstanceCount=1,InstanceType=g4dn.2xlarge \
-                  InstanceGroupType=TASK,InstanceCount=1,InstanceType=g4dn.2xlarge \
---configurations file:///my-configurations.json \
---bootstrap-actions Name='My Spark Rapids Bootstrap action',Path=s3://my-bucket/my-bootstrap-action.sh
-```
-
-Please fill with actual value for `KeyName` and file paths. You can further customize SubnetId,
-EmrManagedSlaveSecurityGroup, EmrManagedMasterSecurityGroup, name and region etc. 
-
-The `my-configurations.json` installs the spark-rapids plugin on your cluster, configures YARN to use
-GPUs, configures Spark to use RAPIDS, and configures the YARN capacity scheduler.  An example JSON
-configuration can be found in the section on launching in the GUI below. 
-
-The `my-boostrap-action.sh` script referenced in the above script opens cgroup permissions to YARN
-on your cluster.  This is required for YARN to use GPUs.  An example script is as follows: 
-```bash
-#!/bin/bash
- 
-set -ex
- 
-sudo chmod a+rwx -R /sys/fs/cgroup/cpu,cpuacct
-sudo chmod a+rwx -R /sys/fs/cgroup/devices
-```
-
 ###  Launch an EMR Cluster using AWS Console (GUI)
 
 Go to the AWS Management Console and select the `EMR` service from the "Analytics" section. Choose
@@ -232,6 +196,41 @@ button. Follow the instructions to SSH to the new cluster's master node.
 
 ![Finish Cluster Configuration](../img/AWS-EMR/RAPIDS_EMR_GUI_5.png)
 
+###  Launch an EMR Cluster using AWS CLI
+
+You can use the AWS CLI to launch a cluster with one Master node (m5.xlarge) and two
+g4dn.2xlarge nodes:
+
+```
+aws emr create-cluster \
+--release-label emr-6.9.0 \
+--applications Name=Hadoop Name=Spark Name=Livy Name=JupyterEnterpriseGateway \
+--service-role EMR_DefaultRole \
+--ec2-attributes KeyName=my-key-pair,InstanceProfile=EMR_EC2_DefaultRole \
+--instance-groups InstanceGroupType=MASTER,InstanceCount=1,InstanceType=m4.4xlarge \
+                  InstanceGroupType=CORE,InstanceCount=1,InstanceType=g4dn.2xlarge \
+                  InstanceGroupType=TASK,InstanceCount=1,InstanceType=g4dn.2xlarge \
+--configurations file:///my-configurations.json \
+--bootstrap-actions Name='My Spark Rapids Bootstrap action',Path=s3://my-bucket/my-bootstrap-action.sh
+```
+
+Please fill with actual value for `KeyName` and file paths. You can further customize SubnetId,
+EmrManagedSlaveSecurityGroup, EmrManagedMasterSecurityGroup, name and region etc.
+
+The `my-configurations.json` installs the spark-rapids plugin on your cluster, configures YARN to use
+GPUs, configures Spark to use RAPIDS, and configures the YARN capacity scheduler.  An example JSON
+configuration can be found in the section on launching in the GUI above.
+
+The `my-boostrap-action.sh` script referenced in the above script opens cgroup permissions to YARN
+on your cluster.  This is required for YARN to use GPUs.  An example script is as follows:
+```bash
+#!/bin/bash
+ 
+set -ex
+ 
+sudo chmod a+rwx -R /sys/fs/cgroup/cpu,cpuacct
+sudo chmod a+rwx -R /sys/fs/cgroup/devices
+```
 
 ### Running an example joint operation using Spark Shell
 
@@ -239,6 +238,8 @@ Please follow EMR doc [Connect to the primary node using
 SSH](https://docs.aws.amazon.com/emr/latest/ManagementGuide/emr-connect-master-node-ssh.html) to ssh
 to the EMR cluster's master node. And then get into sparks shell and run the sql join example to verify
 GPU operation.
+
+Note: Use `hadoop` user for SSH and below command.
 
 ```bash
 spark-shell
