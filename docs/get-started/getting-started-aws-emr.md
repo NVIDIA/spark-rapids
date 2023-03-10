@@ -30,8 +30,9 @@ documentation](https://docs.aws.amazon.com/emr/latest/ManagementGuide/emr-what-i
 
 ## Configure and Launch AWS EMR with GPU Nodes
 
-The following steps are based on the AWS EMR document ["Using the NVIDIA Spark-RAPIDS Accelerator
-for Spark"](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-rapids.html)
+Please follow AWS EMR document ["Using the NVIDIA Spark-RAPIDS Accelerator
+for Spark"](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-rapids.html). 
+Below is an example.
 
 ###  Launch an EMR Cluster using AWS CLI
 
@@ -55,9 +56,7 @@ Please fill with actual value for `KeyName` and file paths. You can further cust
 EmrManagedSlaveSecurityGroup, EmrManagedMasterSecurityGroup, name and region etc. 
 
 The `my-configurations.json` installs the spark-rapids plugin on your cluster, configures YARN to use
-
 GPUs, configures Spark to use RAPIDS, and configures the YARN capacity scheduler.  An example JSON
-
 configuration can be found in the section on launching in the GUI below. 
 
 The `my-boostrap-action.sh` script referenced in the above script opens cgroup permissions to YARN
@@ -236,7 +235,9 @@ button. Follow the instructions to SSH to the new cluster's master node.
 
 ### Running an example joint operation using Spark Shell
 
-SSH to the EMR cluster's master node, get into sparks shell and run the sql join example to verify
+Please follow EMR doc [Connect to the primary node using 
+SSH](https://docs.aws.amazon.com/emr/latest/ManagementGuide/emr-connect-master-node-ssh.html) to ssh
+to the EMR cluster's master node. And then get into sparks shell and run the sql join example to verify
 GPU operation.
 
 ```bash
