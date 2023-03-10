@@ -133,14 +133,14 @@ The script below will initialize with the following:
 
 ### Create a Dataproc Cluster using T4's
 * One 16-core master node and 5 32-core worker nodes
-* Four NVIDIA T4 for each worker node
+* Two NVIDIA T4 for each worker node
 
 ```bash
     export REGION=[Your Preferred GCP Region]
     export GCS_BUCKET=[Your GCS Bucket]
     export CLUSTER_NAME=[Your Cluster Name]
     export NUM_GPUS=2
-    export NUM_WORKERS=4
+    export NUM_WORKERS=5
 
 gcloud dataproc clusters create $CLUSTER_NAME  \
     --region=$REGION \
