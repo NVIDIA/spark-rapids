@@ -134,6 +134,20 @@ case class GpuShuffledHashJoinExec(
     case _ => RequireSingleBatch
   }
 
+  private def realTargetBatchSize(): Long = {
+    val configValue = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+    // The 10k is mostly for tests, hopefully no one is setting anything that low in production.
+    Math.max(configValue, 10 * 1024)
+  }
+
+  override def childrenCoalesceGoal: Seq[CoalesceGoal] = {
+    val batchedBuildGoal = TargetSize(realTargetBatchSize())
+    (joinType, buildSide) match {
+      case (_, GpuBuildLeft) => Seq(batchedBuildGoal, null)
+      case (_, GpuBuildRight) => Seq(null, batchedBuildGoal)
+    }
+  }
+
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
     val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
@@ -142,7 +156,6 @@ case class GpuShuffledHashJoinExec(
     val streamTime = gpuLongMetric(STREAM_TIME)
     val joinTime = gpuLongMetric(JOIN_TIME)
     val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
-    val batchSizeBytes = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     val numPartitions = RapidsConf.NUM_SUB_PARTITIONS.get(conf)
     val subPartConf = RapidsConf.HASH_SUB_PARTITION_TEST_ENABLED.get(conf)
        .map(_ && RapidsConf.TEST_CONF.get(conf))
@@ -159,11 +172,9 @@ case class GpuShuffledHashJoinExec(
        GpuMetric.NUM_OUTPUT_BATCHES -> NoopMetric,
        GpuMetric.NUM_OUTPUT_ROWS -> NoopMetric)
 
-    // The 10k is mostly for tests, hopefully no one is setting anything that low in production.
-    val realTarget = Math.max(batchSizeBytes, 10 * 1024)
-
+    val realTarget = realTargetBatchSize()
     // Small data does not need joins by sub-partitioning
-    val bigJoinThreshold = Math.max(batchSizeBytes, 100 * 1024 * 1024)
+    val bigJoinThreshold = Math.max(realTarget, 100 * 1024 * 1024)
 
     streamedPlan.executeColumnar().zipPartitions(buildPlan.executeColumnar()) {
       (streamIter, buildIter) => {
