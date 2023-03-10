@@ -122,18 +122,15 @@ class ShuffleBufferCatalog(
     val bufferId = nextShuffleBufferId(blockId)
     // update the table metadata for the buffer ID generated above
     tableMeta.bufferMeta.mutateId(bufferId.tableId)
-    // when we call `addBuffer` the store will incRefCount
-    withResource(buffer) { _ =>
-      val handle = catalog.addBuffer(
-        bufferId,
-        buffer,
-        tableMeta,
-        initialSpillPriority,
-        defaultSpillCallback,
-        needsSync)
-      trackCachedHandle(bufferId, handle)
-      handle
-    }
+    val handle = catalog.addBuffer(
+      bufferId,
+      buffer,
+      tableMeta,
+      initialSpillPriority,
+      defaultSpillCallback,
+      needsSync)
+    trackCachedHandle(bufferId, handle)
+    handle
   }
 
   /**
