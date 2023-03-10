@@ -148,10 +148,8 @@ object GpuSubPartitionHashJoin extends Arm {
       }
       // Make the concatenated table spillable.
       withResource(concatTable) { _ =>
-        closeOnExcept(GpuColumnVector.from(concatTable, types)) { concatBatch =>
-          SpillableColumnarBatch(concatBatch, SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-            spillCallback)
-        }
+        SpillableColumnarBatch(GpuColumnVector.from(concatTable, types),
+          SpillPriorities.ACTIVE_BATCHING_PRIORITY, spillCallback)
       }
     } else if (spillBatches.length == 1) {
       // only one batch
