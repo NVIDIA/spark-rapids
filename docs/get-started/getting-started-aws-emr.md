@@ -7,8 +7,7 @@ parent: Getting-Started
 # Get Started with RAPIDS on AWS EMR
 
 This is a getting started guide for the RAPIDS Accelerator for Apache Spark on AWS EMR. At the end
-of this guide, the user will be able to run a sample Apache Spark application that runs on NVIDIA
-GPUs on AWS EMR.
+of this guide, the user will be able to run a sample Apache Spark application on NVIDIA GPUs on AWS EMR.
 
 Different versions of EMR ship with different versions of Spark, RAPIDS Accelerator, cuDF and xgboost4j-spark:
 
