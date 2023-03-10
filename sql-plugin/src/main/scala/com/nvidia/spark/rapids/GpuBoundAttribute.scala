@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import ai.rapids.cudf.ast
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, Expression, ExprId, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, Expression, ExprId, NamedExpression, SortOrder}
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuEquivalentExpressions
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -130,19 +130,41 @@ object GpuBindReferences extends Logging {
 
   /**
    * A helper function to bind given expressions to an input schema where the expressions are
-   * to be processed on the GPU, and the result type indicates this.  Common sub-expressions
-   * bound with their inputs are placed into a sequence of tiers in a GpuTieredProject object.
+   * to be processed on the GPU, and the result type indicates this. If runTiered is true
+   * Common sub-expressions will be factored out where possible to reduce the runtime and memory.
+   * If set to false a GpuTieredProject object will still be returned, but no common
+   * sub-expressions will be factored out.
    */
   def bindGpuReferencesTiered[A <: Expression](
       expressions: Seq[A],
-      input: AttributeSeq): GpuTieredProject = {
+      input: AttributeSeq,
+      runTiered: Boolean): GpuTieredProject = {
 
-    val exprTiers = GpuEquivalentExpressions.getExprTiers(expressions)
-    val inputTiers = GpuEquivalentExpressions.getInputTiers(exprTiers, input)
-    GpuTieredProject(exprTiers.zip(inputTiers).map {
-      case (es:Seq[Expression], is:AttributeSeq) =>
-        es.map(GpuBindReferences.bindGpuReference(_, is)).toList
-    }, inputTiers)
+    if (runTiered) {
+      val exprTiers = GpuEquivalentExpressions.getExprTiers(expressions)
+      val inputTiers = GpuEquivalentExpressions.getInputTiers(exprTiers, input)
+      // Update ExprTiers to include the columns that are pass through and drop unneeded columns
+      val newExprTiers = exprTiers.zipWithIndex.map {
+        case (exprTier, index) =>
+          // get what the output should look like.
+          val atInput = index + 1
+          if (atInput < inputTiers.length) {
+            inputTiers(atInput).attrs.map { attr =>
+              exprTier.find { expr =>
+                expr.asInstanceOf[NamedExpression].toAttribute == attr
+              }.getOrElse(attr)
+            }
+          } else {
+            exprTier
+          }
+      }
+      GpuTieredProject(newExprTiers.zip(inputTiers).map {
+        case (es: Seq[Expression], is: AttributeSeq) =>
+          es.map(GpuBindReferences.bindGpuReference(_, is)).toList
+      })
+    } else {
+      GpuTieredProject(Seq(GpuBindReferences.bindGpuReferences(expressions, input)))
+    }
   }
 }
 

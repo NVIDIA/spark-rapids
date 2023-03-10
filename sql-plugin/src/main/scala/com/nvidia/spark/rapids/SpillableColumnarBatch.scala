@@ -181,6 +181,25 @@ object SpillableColumnarBatch extends Arm {
     }
   }
 
+  private[this] def allFromSameBuffer(batch: ColumnarBatch): Boolean = {
+    var bufferAddr = 0L
+    var isSet = false
+    val numColumns = batch.numCols()
+    (0 until numColumns).forall { i =>
+      batch.column(i) match {
+        case fb: GpuColumnVectorFromBuffer =>
+          if (!isSet) {
+            bufferAddr = fb.getBuffer.getAddress
+            isSet = true
+            true
+          } else {
+            bufferAddr == fb.getBuffer.getAddress
+          }
+        case _ => false
+      }
+    }
+  }
+
   private[this] def addBatch(
       batch: ColumnarBatch,
       initialSpillPriority: Long,
@@ -199,8 +218,7 @@ object SpillableColumnarBatch extends Arm {
           initialSpillPriority,
           spillCallback)
       } else if (numColumns > 0 &&
-          (0 until numColumns)
-              .forall(i => batch.column(i).isInstanceOf[GpuColumnVectorFromBuffer])) {
+          allFromSameBuffer(batch)) {
         val cv = batch.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
         val buff = cv.getBuffer
         RapidsBufferCatalog.addBuffer(buff, cv.getTableMeta, initialSpillPriority,
