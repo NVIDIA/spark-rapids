@@ -19,7 +19,9 @@ Rapids Accelerator for Apache Spark reaps the benefit of GPU performance while s
 *ETL for FannieMae Mortgage Dataset (~200GB) as shown in our 
 [demo](https://databricks.com/session_na20/deep-dive-into-gpu-support-in-apache-spark-3-x). Costs 
 based on Cloud T4 GPU instance market price.
-
+Please refer to  
+[spark-rapids-examples repo](https://github.com/NVIDIA/spark-rapids-examples/tree/main/examples/XGBoost-Examples)
+for details of this example job.
 
 ## Ease of Use
 Run your existing Apache Spark applications with no code change.  Launch Spark with the RAPIDS Accelerator for Apache Spark plugin jar and enable a configuration setting: 
