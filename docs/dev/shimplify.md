@@ -235,9 +235,32 @@ on the affected stack frame in which case you will see an extra editor tab being
 No matter whether or not you use the [Resolve Symlinks][6] plugin, IDEA is able to add a breakpoint
 set directly via the original physical file or a symlink path.
 
+## Reducing Code Duplication
+
+You can help reducing code complexity by consolidating copy-and-pasted shim code accumulated because
+it had been hard to fit it into a less flexible shim inheritance hierarchy based on versions with
+exceptions.
+
+You can use the CPD tool that is integrated into our Maven build to find duplicate code in the shim
+and in the regular code base. It is not ready for automation and has to invoked manually, separately
+for Java and Scala, e.g.:
+
+```bash
+mvn antrun:run@duplicate-code-detector \
+    -Dcpd.argLine='--minimum-tokens 50 --language scala --skip-blocks-pattern /*|*/' \
+    -Dcpd.sourceType='main' \
+    > target/cpd.scala.txt
+```
+
+Delete duplicate methods and move a single copy into an object such as `SomethingShim` and annotate
+its file with the list of buildvers.
+
+See [CPD user doc][7] for more details about the options you can pass inside `cpd.argLine`.
+
 [1]: https://github.com/NVIDIA/spark-rapids/issues/3223
-[2]: https://github.com/NVIDIA/spark-rapids/blob/main/build/shimplify.py
+[2]: https://github.com/NVIDIA/spark-rapids/blob/b7b1a5d544b6a3ac35ed064b5c32ee0d63c78845/build/shimplify.py#L15-L79
 [3]: https://github.com/NVIDIA/spark-rapids/blob/74ce729ca1306db01359e68f7f0b7cc31cd3d850/pom.xml#L494-L500
 [4]: https://jsonlines.org/
 [5]: https://spark.apache.org/versioning-policy.html
 [6]: https://plugins.jetbrains.com/plugin/16429-idea-resolve-symlinks
+[7]: https://pmd.github.io/latest/pmd_userdocs_cpd.html

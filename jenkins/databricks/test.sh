@@ -19,7 +19,7 @@
 # All the environments can be overwritten by shell variables:
 #   LOCAL_JAR_PATH: Location of the RAPIDS jars
 #   SPARK_CONF: Spark configuration parameters
-#   BASE_SPARK_VERSION: Spark version [3.1.2, 3.2.1, 3.3.0]. Default is pulled from current instance.
+#   BASE_SPARK_VERSION: Spark version [3.2.1, 3.3.0]. Default is pulled from current instance.
 #   SHUFFLE_SPARK_SHIM: Set the default value for the shuffle shim. For databricks versions, append
 #                       db. Example: spark330 => spark330db
 #   ICEBERG_VERSION: The iceberg version. To find the list of supported ICEBERG versions,
@@ -86,10 +86,6 @@ case "$BASE_SPARK_VERSION" in
         # Available versions https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.2_2.12/
         sw_versions[ICEBERG]=${ICEBERG_VERSION:-'0.13.2'}
         ;;
-    "3.1.2")
-        # Available versions https://repo.maven.apache.org/maven2/org/apache/iceberg/iceberg-spark-runtime-3.2_2.12/
-        sw_versions[ICEBERG]=${ICEBERG_VERSION:-'0.13.2'}
-        ;;
     *) echo "Unexpected Spark version: $BASE_SPARK_VERSION"; exit 1;;
 esac
 # Set the iceberg_spark to something like 3.3 for DB11.3, 3.2 for DB10.4
@@ -118,8 +114,8 @@ if [ -n "$SPARK_CONF" ]; then
     SPARK_CONF="--conf ${SPARK_CONF/','/' --conf '}"
 fi
 
-IS_SPARK_311_OR_LATER=0
-[[ "$(printf '%s\n' "3.1.1" "$BASE_SPARK_VERSION" | sort -V | head -n1)" = "3.1.1" ]] && IS_SPARK_311_OR_LATER=1
+IS_SPARK_321_OR_LATER=0
+[[ "$(printf '%s\n' "3.2.1" "$BASE_SPARK_VERSION" | sort -V | head -n1)" = "3.2.1" ]] && IS_SPARK_321_OR_LATER=1
 
 
 # TEST_MODE
@@ -167,7 +163,7 @@ if [ -d "$LOCAL_JAR_PATH" ]; then
         LOCAL_JAR_PATH=$LOCAL_JAR_PATH bash $LOCAL_JAR_PATH/integration_tests/run_pyspark_from_build.sh  --runtime_env="databricks" --test_type=$TEST_TYPE
 
         ## Run cache tests
-        if [[ "$IS_SPARK_311_OR_LATER" -eq "1" ]]; then
+        if [[ "$IS_SPARK_321_OR_LATER" -eq "1" ]]; then
           PYSP_TEST_spark_sql_cache_serializer=${PCBS_CONF} \
            LOCAL_JAR_PATH=$LOCAL_JAR_PATH bash $LOCAL_JAR_PATH/integration_tests/run_pyspark_from_build.sh  --runtime_env="databricks" --test_type=$TEST_TYPE -k cache_test
         fi
@@ -184,7 +180,7 @@ else
         bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE
 
         ## Run cache tests
-        if [[ "$IS_SPARK_311_OR_LATER" -eq "1" ]]; then
+        if [[ "$IS_SPARK_321_OR_LATER" -eq "1" ]]; then
             PYSP_TEST_spark_sql_cache_serializer=${PCBS_CONF} \
             bash /home/ubuntu/spark-rapids/integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE -k cache_test
         fi

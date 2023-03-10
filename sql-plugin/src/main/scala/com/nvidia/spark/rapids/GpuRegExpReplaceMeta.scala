@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,8 @@ class GpuRegExpReplaceMeta(
           try {
             javaPattern = Some(s.toString())
             val (pat, repl) = 
-                new CudfRegexTranspiler(RegexReplaceMode).getTranspiledAST(s.toString, replacement)
+                new CudfRegexTranspiler(RegexReplaceMode).getTranspiledAST(s.toString, None,
+                    replacement)
             GpuRegExpUtils.validateRegExpComplexity(this, pat)
             cudfPattern = Some(pat.toRegexString)
             repl.map { r => GpuRegExpUtils.backrefConversion(r.toRegexString) }.foreach {

@@ -1039,7 +1039,7 @@ def test_div_overflow_exception_when_ansi(expr, ansi_enabled):
 
 # Only run this test before Spark v3.2.0 to verify IntegralDivide will NOT
 # throw exceptions for overflow even ANSI mode is enabled.
-@pytest.mark.skipif(not is_before_spark_320() or is_databricks91_or_later(), reason='https://github.com/apache/spark/pull/32260')
+@pytest.mark.skipif(not is_before_spark_320(), reason='https://github.com/apache/spark/pull/32260')
 @pytest.mark.parametrize('expr', div_overflow_exprs)
 @pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
 def test_div_overflow_no_exception_when_ansi(expr, ansi_enabled):

@@ -263,6 +263,12 @@ export -f build_single_shim
 time (
   # printf a single buildver array element per line
   if [[ "$SKIP_DIST_DEPS" != "1" ]]; then
+    # Execute initialize to download a massive jar for spark-rapids-jni in a single thread to
+    # avoid repeating this work in parallel
+    # Initialize sql-plugin only to avoid dealing with missing submodule dependencies
+    #
+    $MVN initialize -pl sql-plugin -am
+
     printf "%s\n" "${SPARK_SHIM_VERSIONS[@]}" | \
       xargs -t -I% -P "$BUILD_PARALLEL" -n 1 \
       bash -c 'build_single_shim "$@"' _ %

@@ -22,6 +22,7 @@ import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.{Arm, GpuSemaphore, NoopMetric, RapidsBuffer, RapidsBufferHandle, RapidsConf, ShuffleReceivedBufferCatalog}
+import com.nvidia.spark.rapids.jni.RmmSpark
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -345,9 +346,14 @@ class RapidsShuffleIterator(
 
     val blockedStart = System.currentTimeMillis()
     var result: Option[ShuffleClientResult] = None
-
-    result = pollForResult(timeoutSeconds)
+    RmmSpark.threadCouldBlockOnShuffle()
+    try {
+      result = pollForResult(timeoutSeconds)
+    } finally {
+      RmmSpark.threadDoneWithShuffle()
+    }
     val blockedTime = System.currentTimeMillis() - blockedStart
+
     result match {
       case Some(BufferReceived(handle)) =>
         val nvtxRangeAfterGettingBatch = new NvtxRange("RapidsShuffleIterator.gotBatch",

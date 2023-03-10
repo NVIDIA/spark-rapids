@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -133,7 +133,10 @@ trait GpuRowBasedUserDefinedFunction extends GpuExpression
             NoopMetric,
             NoopMetric,
             NoopMetric,
-            nullSafe).foreach { row =>
+            nullSafe,
+            // ensure `releaseSemaphore` is false so we don't release the semaphore
+            // mid projection.
+            releaseSemaphore = false).foreach { row =>
           retRow.update(0, evaluateRow(row))
           retConverter.append(retRow, 0, builder)
         }
