@@ -228,7 +228,9 @@ class GpuOptimisticTransaction(
       }
 
       val gpuFileFormat = deltaLog.fileFormat(metadata) match {
-        case _: DeltaParquetFileFormat => new GpuParquetFileFormat
+        case _: DeltaParquetFileFormat =>
+          println("CALEB: GPU Writing Parquet!")
+          new GpuParquetFileFormat
         case f => throw new IllegalStateException(s"file format $f is not supported")
       }
 
@@ -279,6 +281,23 @@ class GpuOptimisticTransaction(
     identityTracker.foreach { tracker =>
       updatedIdentityHighWaterMarks.appendAll(tracker.highWaterMarks.toSeq)
     }
-    resultFiles.toSeq ++ committer.changeFiles
+    val fileActions = resultFiles.toSeq ++ committer.changeFiles
+
+    // Check if auto-compaction is enabled.
+    // (Auto compaction checks are derived from the work in
+    //  https://github.com/delta-io/delta/pull/1156).
+    lazy val autoCompactEnabled =
+      spark.sessionState.conf
+        .getConf[String](DeltaSQLConf.DELTA_AUTO_COMPACT_ENABLED)
+        .getOrElse {
+        //  DeltaConfigs.AUTO_COMPACT.fromMetaData(metadata)
+          "false" // TODO: Fix getting this from DeltaConfigs.AUTO_COMPACT.
+        }.toBoolean
+
+    if (!isOptimize && autoCompactEnabled && fileActions.nonEmpty) {
+      registerPostCommitHook(GpuDoAutoCompaction)
+    }
+
+    fileActions
   }
 }
