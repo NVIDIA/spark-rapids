@@ -403,7 +403,7 @@ There are multiple reasons why this a problematic configuration:
 - CUDA context switches between processes sharing a single GPU can be expensive
 - Each executor would have a fraction of the GPU memory available for processing
 
-### Is [Multi-Instance GPU (MIG)](https://docs.nvidia.com/cuda/mig/index.html) supported?
+### Is [Multi-Instance GPU (MIG)](https://www.nvidia.com/en-gb/technologies/multi-instance-gpu/) supported?
 
 Yes, but it requires support from the underlying cluster manager to isolate the MIG GPU instance
 for each executor (e.g.: by setting `CUDA_VISIBLE_DEVICES`,
