@@ -1269,6 +1269,16 @@ object RapidsConf {
     .toSequence
     .createWithDefault(Nil)
 
+  val HASH_SUB_PARTITION_TEST_ENABLED = conf("spark.rapids.sql.test.subPartitioning.enabled")
+    .doc("Setting to true will force hash joins to use the sub-partitioning algorithm if " +
+      s"${TEST_CONF.key} is also enabled, while false means always disabling it. This is " +
+      "intended for tests. Do not set any value under production environments, since it " +
+      "will override the default behavior that will choose one automatically according to " +
+      "the input batch size")
+    .internal()
+    .booleanConf
+    .createOptional
+
   val LOG_TRANSFORMATIONS = conf("spark.rapids.sql.debug.logTransformations")
     .doc("When enabled, all query transformations will be logged.")
     .internal()
@@ -1805,6 +1815,14 @@ object RapidsConf {
             "spillable cache and big value may cause more IO swaps.")
         .bytesConf(ByteUnit.BYTE)
         .createWithDefault(0L)
+
+  val NUM_SUB_PARTITIONS = conf("spark.rapids.sql.join.hash.numSubPartitions")
+    .doc("The number of partitions for the repartition in each partition for big hash join. " +
+      "GPU will try to repartition the data into smaller partitions in each partition when the " +
+      "data from the build side is too large to fit into a single batch.")
+    .internal()
+    .integerConf
+    .createWithDefault(16)
 
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
