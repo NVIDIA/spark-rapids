@@ -122,11 +122,11 @@ def join_batch_size_test_params(*args):
 
 def test_join_reorder_enabled():
     join_reorder_enabled = with_cpu_session( \
-        lambda spark: spark.conf.get("spark.rapids.sql.optimizer.joinReorder.enabled"))
+        lambda spark: spark.conf.get("spark.rapids.sql.optimizer.joinReorder.enabled", "false"))
     if is_databricks_runtime or is_emr_runtime:
-        assert join_reorder_enabled == False
+        assert join_reorder_enabled == "false"
     else:
-        assert join_reorder_enabled
+        assert join_reorder_enabled == "true"
 
 
 @ignore_order(local=True)
