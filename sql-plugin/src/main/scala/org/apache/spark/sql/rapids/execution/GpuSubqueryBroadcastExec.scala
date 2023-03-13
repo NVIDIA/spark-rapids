@@ -32,7 +32,7 @@ import org.apache.spark.sql.catalyst.plans.physical.IdentityBroadcastMode
 import org.apache.spark.sql.execution.{BaseSubqueryExec, SparkPlan, SQLExecution, SubqueryBroadcastExec}
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
-import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
+import org.apache.spark.sql.execution.joins.{HashedRelationBroadcastMode, HashJoin}
 import org.apache.spark.util.ThreadUtils
 
 
@@ -229,14 +229,28 @@ case class GpuSubqueryBroadcastExec(
     // are being extracted. The CPU already has the key projections applied in the broadcast
     // data and thus does not have similar logic here.
     val broadcastModeProject = modeKeys.map { keyExprs =>
-      val keyExpr = keyExprs(index)
+      val keyExpr = if (GpuHashJoin.canRewriteAsLongType(buildKeys)) {
+        // in this case, there is only 1 key expression since it's a packed version that encompasses
+        // multiple integral values into a single long using bit logic. In CPU Spark, the broadcast
+        // would create a LongHashedRelation instead of a standard HashedRelation.
+        keyExprs(0)
+      } else {
+        keyExprs(index)
+      }
       UnsafeProjection.create(keyExpr)
     }
 
     // Use the single output of the broadcast mode projection if it exists
     val rowProjectIndex = if (broadcastModeProject.isDefined) 0 else index
-    val rowProject = UnsafeProjection.create(
-      BoundReference(rowProjectIndex, buildKeys(index).dataType, buildKeys(index).nullable))
+    val rowExpr = if (GpuHashJoin.canRewriteAsLongType(buildKeys)) {
+      // Since this is the expected output for a LongHashedRelation, we can extract the key from the
+      // long packed key using bit logic, using this method available in HashJoin to give us the 
+      // correct key expression. 
+      HashJoin.extractKeyExprAt(buildKeys, index)
+    } else {
+      BoundReference(rowProjectIndex, buildKeys(index).dataType, buildKeys(index).nullable)
+    }
+    val rowProject = UnsafeProjection.create(rowExpr)
 
     // Deserializes the batch on the host. Then, transforms it to rows and performs row-wise
     // projection. We should NOT run any device operation on the driver node.

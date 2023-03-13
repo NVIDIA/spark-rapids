@@ -226,6 +226,15 @@ object GpuHashJoin extends Arm {
       case _ => false
     }
   }
+
+  /**
+    * Copied from Apache Spark, returns whether the keys can be rewritten as a packed long. If
+    * they can, we can assume that they are packed when we extract them out.
+    */
+  def canRewriteAsLongType(keys: Seq[Expression]): Boolean = {
+    keys.forall(_.dataType.isInstanceOf[IntegralType]) &&
+      keys.map(_.dataType.defaultSize).sum <= 8
+  }
 }
 
 abstract class BaseHashJoinIterator(
