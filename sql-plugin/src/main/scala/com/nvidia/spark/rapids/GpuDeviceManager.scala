@@ -281,7 +281,7 @@ object GpuDeviceManager extends Logging {
 
       if (conf.isUvmEnabled) {
         // Enable managed memory only if async allocator is not used.
-        if ((init | RmmAllocationMode.CUDA_ASYNC) == 0) {
+        if ((init & RmmAllocationMode.CUDA_ASYNC) == 0) {
           features += "UVM"
           init = init | RmmAllocationMode.CUDA_MANAGED_MEMORY
         } else {
@@ -318,7 +318,7 @@ object GpuDeviceManager extends Logging {
       try {
         Rmm.initialize(init, logConf, poolAllocation)
       } catch {
-        case firstEx: CudfException if ((init | RmmAllocationMode.CUDA_ASYNC) != 0) => {
+        case firstEx: CudfException if ((init & RmmAllocationMode.CUDA_ASYNC) != 0) => {
           logWarning("Failed to initialize RMM with ASYNC allocator. " +
             "Try to initialize it again with ARENA allocator as a fallback option.")
           init = init & (~RmmAllocationMode.CUDA_ASYNC) | RmmAllocationMode.ARENA
