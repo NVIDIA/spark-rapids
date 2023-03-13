@@ -333,7 +333,6 @@ object GpuDeviceManager extends Logging {
             }
           }
         }
-        case ex: Throwable => throw ex
       }
 
       RapidsBufferCatalog.init(conf)
