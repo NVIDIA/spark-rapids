@@ -1,0 +1,6 @@
+pytest
+sre_yield
+pandas
+pyarrow
+pytest-xdist
+findspark
