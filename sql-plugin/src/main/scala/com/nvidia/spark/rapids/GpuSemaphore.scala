@@ -21,6 +21,7 @@ import java.util.concurrent.{ConcurrentHashMap, Semaphore}
 import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.jni.RmmSpark
 import org.apache.commons.lang3.mutable.MutableInt
 
 import org.apache.spark.TaskContext
@@ -132,6 +133,7 @@ private final class GpuSemaphore() extends Logging with Arm {
         }
         logDebug(s"Task $taskAttemptId acquiring GPU with $permits permits")
         semaphore.acquire(permits)
+        RmmSpark.associateCurrentThreadWithTask(taskAttemptId)
         if (refs != null) {
           refs.count.increment()
         } else {
@@ -142,6 +144,9 @@ private final class GpuSemaphore() extends Logging with Arm {
           context.addTaskCompletionListener[Unit](completeTask)
         }
         GpuDeviceManager.initializeFromTask()
+      } else {
+        // Already had the semaphore, but we don't know if the thread is new or not
+        RmmSpark.associateCurrentThreadWithTask(taskAttemptId)
       }
     }
   }
@@ -149,6 +154,7 @@ private final class GpuSemaphore() extends Logging with Arm {
   def releaseIfNecessary(context: TaskContext): Unit = {
     val nvtxRange = new NvtxRange("Release GPU", NvtxColor.RED)
     try {
+      RmmSpark.removeCurrentThreadAssociation()
       val taskAttemptId = context.taskAttemptId()
       val refs = activeTasks.get(taskAttemptId)
       if (refs != null && refs.count.getValue > 0) {
@@ -164,6 +170,7 @@ private final class GpuSemaphore() extends Logging with Arm {
 
   def completeTask(context: TaskContext): Unit = {
     val taskAttemptId = context.taskAttemptId()
+    RmmSpark.taskDone(taskAttemptId)
     val refs = activeTasks.remove(taskAttemptId)
     if (refs == null) {
       throw new IllegalStateException(s"Completion of unknown task $taskAttemptId")

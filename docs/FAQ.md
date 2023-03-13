@@ -20,7 +20,7 @@ process, we try to stay on top of these changes and release updates as quickly a
 The RAPIDS Accelerator for Apache Spark officially supports:
 - [Apache Spark](get-started/getting-started-on-prem.md)
 - [AWS EMR 6.2+](get-started/getting-started-aws-emr.md)
-- [Databricks Runtime 9.1, 10.4, 11.3](get-started/getting-started-databricks.md)
+- [Databricks Runtime 10.4, 11.3](get-started/getting-started-databricks.md)
 - [Google Cloud Dataproc 2.0](get-started/getting-started-gcp.md)
 - [Azure Synapse](get-started/getting-started-azure-synapse-analytics.md)
 - Cloudera provides the plugin packaged through
@@ -403,7 +403,7 @@ There are multiple reasons why this a problematic configuration:
 - CUDA context switches between processes sharing a single GPU can be expensive
 - Each executor would have a fraction of the GPU memory available for processing
 
-### Is [Multi-Instance GPU (MIG)](https://docs.nvidia.com/cuda/mig/index.html) supported?
+### Is [Multi-Instance GPU (MIG)](https://www.nvidia.com/en-gb/technologies/multi-instance-gpu/) supported?
 
 Yes, but it requires support from the underlying cluster manager to isolate the MIG GPU instance
 for each executor (e.g.: by setting `CUDA_VISIBLE_DEVICES`,

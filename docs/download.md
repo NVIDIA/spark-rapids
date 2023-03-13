@@ -31,7 +31,7 @@ Software Requirements:
 
 	CUDA & NVIDIA Drivers*: 11.x & v450.80.02+
 
-	Apache Spark 3.1.1, 3.1.2, 3.1.3, 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.3.0, 3.3.1, Databricks 9.1 ML LTS, 10.4 ML LTS or 11.3 ML LTS Runtime and GCP Dataproc 2.0
+	Apache Spark 3.1.1, 3.1.2, 3.1.3, 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.3.0, 3.3.1, Databricks 10.4 ML LTS or 11.3 ML LTS Runtime and GCP Dataproc 2.0
 
 	Python 3.6+, Scala 2.12, Java 8
 
@@ -45,7 +45,7 @@ for your hardware's minimum driver version.
 * Download the [RAPIDS
   Accelerator for Apache Spark 23.02.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.02.0/rapids-4-spark_2.12-23.02.0.jar)
 
-This package is built against CUDA 11.5 and all CUDA 11.x versions are supported through [CUDA forward
+This package is built against CUDA 11.8 and all CUDA 11.x versions are supported through [CUDA forward
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html). It is tested
 on V100, T4, A2, A10, A30 and A100 GPUs with CUDA 11.0-11.5.  For those using other types of GPUs which
 do not have CUDA forward compatibility (for example, GeForce), CUDA 11.5 or later is required. Users will

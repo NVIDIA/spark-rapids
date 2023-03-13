@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -101,13 +101,14 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
 
   test("fallback with a non-SerializedTableColumn 1 col and 0 rows") {
     TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
+      val attrs = Seq(AttributeReference("a1", IntegerType)())
       val emptyBatch = GpuColumnVector.emptyBatchFromTypes(Seq(IntegerType).toArray)
       val buildIter = Seq(emptyBatch).iterator
       val mockStreamIter = mock[Iterator[ColumnarBatch]]
       val (builtBatch, bStreamIter) = GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
         RequireSingleBatch,
         0,
-        Seq.empty,
+        attrs,
         buildIter,
         mockStreamIter,
         mock[SpillCallback],
@@ -128,13 +129,14 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
     TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
       closeOnExcept(ColumnVector.fromInts(1, 2, 3, 4, 5)) { cudfCol =>
         val cv = GpuColumnVector.from(cudfCol, IntegerType)
+        val attrs = Seq(AttributeReference("a1", IntegerType)())
         val batch = new ColumnarBatch(Seq(cv).toArray, 5)
         val buildIter = Seq(batch).iterator
         val mockStreamIter = mock[Iterator[ColumnarBatch]]
         val (builtBatch, bStreamIter) = GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
           RequireSingleBatch,
           0,
-          Seq.empty,
+          attrs,
           buildIter,
           mockStreamIter,
           mock[SpillCallback],

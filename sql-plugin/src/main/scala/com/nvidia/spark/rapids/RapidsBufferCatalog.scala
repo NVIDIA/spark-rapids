@@ -24,6 +24,7 @@ import com.nvidia.spark.rapids.RapidsBufferCatalog.getExistingRapidsBufferAndAcq
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.StorageTier.StorageTier
 import com.nvidia.spark.rapids.format.TableMeta
+import com.nvidia.spark.rapids.jni.RmmSpark
 
 import org.apache.spark.{SparkConf, SparkEnv}
 import org.apache.spark.internal.Logging
@@ -626,7 +627,9 @@ class RapidsBufferCatalog(
         registerNewBuffer(newBuffer)
         newBuffer
       case Some(existingBuffer) =>
-        existingBuffer
+        withResource(memoryBuffer) { _ =>
+          existingBuffer
+        }
     }
   }
 
@@ -760,7 +763,19 @@ object RapidsBufferCatalog extends Logging with Arm {
       rapidsConf.gpuOomDumpDir,
       rapidsConf.isGdsSpillEnabled,
       rapidsConf.gpuOomMaxRetries)
-    Rmm.setEventHandler(memoryEventHandler)
+
+    if (rapidsConf.sparkRmmStateEnable) {
+      val debugLoc = if (rapidsConf.sparkRmmDebugLocation.isEmpty) {
+        null
+      } else {
+        rapidsConf.sparkRmmDebugLocation
+      }
+
+      RmmSpark.setEventHandler(memoryEventHandler, debugLoc)
+    } else {
+      logWarning("SparkRMM retry has been disabled")
+      Rmm.setEventHandler(memoryEventHandler)
+    }
 
     _shouldUnspill = rapidsConf.isUnspillEnabled
   }

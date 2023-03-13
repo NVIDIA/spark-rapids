@@ -343,6 +343,25 @@ object RapidsConf {
     .stringConf
     .createWithDefault("NONE")
 
+  val SPARK_RMM_STATE_DEBUG = conf("spark.rapids.memory.gpu.state.debug")
+      .doc("To better recover from out of memory errors, RMM will track several states for " +
+          "the threads that interact with the GPU. This provides a log of those state " +
+          "transitions to aid in debugging it. STDOUT or STDERR will have the logging go there " +
+          "empty string will disable logging and anything else will be treated as a file to " +
+          "write the logs to.")
+      .startupOnly()
+      .stringConf
+      .createWithDefault("")
+
+  val SPARK_RMM_STATE_ENABLE = conf("spark.rapids.memory.gpu.state.enable")
+      .doc("Enabled or disable using the SparkRMM state tracking to improve " +
+          "OOM response. This includes possibly retrying parts of the processing in " +
+          "the case of an OOM")
+      .startupOnly()
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   val GPU_OOM_DUMP_DIR = conf("spark.rapids.memory.gpu.oomDumpDir")
     .doc("The path to a local directory where a heap dump will be created if the GPU " +
       "encounters an unrecoverable out-of-memory (OOM) error. The filename will be of the " +
@@ -1250,6 +1269,16 @@ object RapidsConf {
     .toSequence
     .createWithDefault(Nil)
 
+  val HASH_SUB_PARTITION_TEST_ENABLED = conf("spark.rapids.sql.test.subPartitioning.enabled")
+    .doc("Setting to true will force hash joins to use the sub-partitioning algorithm if " +
+      s"${TEST_CONF.key} is also enabled, while false means always disabling it. This is " +
+      "intended for tests. Do not set any value under production environments, since it " +
+      "will override the default behavior that will choose one automatically according to " +
+      "the input batch size")
+    .internal()
+    .booleanConf
+    .createOptional
+
   val LOG_TRANSFORMATIONS = conf("spark.rapids.sql.debug.logTransformations")
     .doc("When enabled, all query transformations will be logged.")
     .internal()
@@ -1787,6 +1816,14 @@ object RapidsConf {
         .bytesConf(ByteUnit.BYTE)
         .createWithDefault(0L)
 
+  val NUM_SUB_PARTITIONS = conf("spark.rapids.sql.join.hash.numSubPartitions")
+    .doc("The number of partitions for the repartition in each partition for big hash join. " +
+      "GPU will try to repartition the data into smaller partitions in each partition when the " +
+      "data from the build side is too large to fit into a single batch.")
+    .internal()
+    .integerConf
+    .createWithDefault(16)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -1958,6 +1995,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val logQueryTransformations: Boolean = get(LOG_TRANSFORMATIONS)
 
   lazy val rmmDebugLocation: String = get(RMM_DEBUG)
+
+  lazy val sparkRmmDebugLocation: String = get(SPARK_RMM_STATE_DEBUG)
+
+  lazy val sparkRmmStateEnable: Boolean = get(SPARK_RMM_STATE_ENABLE)
 
   lazy val gpuOomDumpDir: Option[String] = get(GPU_OOM_DUMP_DIR)
 

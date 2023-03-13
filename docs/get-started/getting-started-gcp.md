@@ -32,7 +32,7 @@ The advanced guide will walk through the steps to:
 
 ## Qualify CPU Workloads for GPU Acceleration
 
-The [qualification tool](https://nvidia.github.io/spark-rapids/docs/spark-qualification-tool.html) is launched on a Dataproc cluster that has applications that have already run.
+The [qualification tool](https://pypi.org/project/spark-rapids-user-tools/) is launched on a Dataproc cluster that has applications that have already run.
 The tool will output the applications recommended for acceleration along with estimated speed-up
 and cost saving metrics.  Additionally, it will provide information on how to launch a GPU-
 accelerated cluster to take advantage of the speed-up and cost savings.
@@ -58,7 +58,7 @@ Example output:
 |  8 | query51    | application_1664888311321_0002 | Recommended          |            1.53 |           53.94 |         82.63 |            8.18 |
 +----+------------+--------------------------------+----------------------+-----------------+-----------------+---------------+-----------------+
 To launch a GPU-accelerated cluster with Spark RAPIDS, add the following to your cluster creation script:
-        --initialization-actions=gs://goog-dataproc-initialization-actions-us-central1/gpu/install_gpu_driver.sh,gs://goog-dataproc-initialization-actions-us-central1/rapids/rapids.sh \
+        --initialization-actions=gs://goog-dataproc-initialization-actions-${REGION}/spark-rapids/spark-rapids.sh \
         --worker-accelerator type=nvidia-tesla-t4,count=2 \
         --metadata gpu-driver-provider="NVIDIA" \
         --metadata rapids-runtime=SPARK \
@@ -317,7 +317,7 @@ gcloud dataproc clusters create $CLUSTER_NAME  \
     --worker-machine-type=a2-highgpu-1g \
     --num-worker-local-ssds=4 \
     --initialization-actions=gs://goog-dataproc-initialization-actions-${REGION}/spark-rapids/spark-rapids.sh \
-    --metadata=startup-script-url=gs://goog-dataproc-initialization-actions-${REGION}/gpu/mig.sh \
+    --metadata=startup-script-url=gs://goog-dataproc-initialization-actions-${REGION}/spark-rapids/mig.sh \
     --optional-components=JUPYTER,ZEPPELIN \
     --metadata=rapids-runtime=SPARK \
     --bucket=$GCS_BUCKET \
