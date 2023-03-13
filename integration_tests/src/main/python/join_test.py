@@ -119,14 +119,28 @@ def join_batch_size_test_params(*args):
                 params += [ pytest.param(obj, batch_size) ]
     return params
 
+
+def test_join_reorder_enabled():
+    join_reorder_enabled = with_cpu_session( \
+        lambda spark: spark.conf.get("spark.rapids.sql.optimizer.joinReorder.enabled"))
+    if is_databricks_runtime or is_emr_runtime:
+        assert join_reorder_enabled == False
+    else:
+        assert join_reorder_enabled
+
+
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @pytest.mark.parametrize("aqe_enabled", ["true", "false"], ids=idfn)
-def test_right_broadcast_nested_loop_join_without_condition_empty(join_type, aqe_enabled):
+@pytest.mark.parametrize("join_reorder_enabled", ["true", "false"], ids=idfn)
+def test_right_broadcast_nested_loop_join_without_condition_empty(join_type, aqe_enabled, join_reorder_enabled):
     def do_join(spark):
         left, right = create_df(spark, long_gen, 50, 0)
         return left.join(broadcast(right), how=join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf={ "spark.sql.adaptive.enabled": aqe_enabled })
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf={
+        "spark.sql.adaptive.enabled": aqe_enabled,
+        "spark.rapids.sql.optimizer.joinReorder.enabled": join_reorder_enabled
+    })
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
