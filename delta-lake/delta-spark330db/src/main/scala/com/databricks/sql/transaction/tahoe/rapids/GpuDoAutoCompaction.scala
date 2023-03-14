@@ -22,10 +22,10 @@
 
 package com.databricks.sql.transaction.tahoe.rapids
 
+import com.databricks.sql.transaction.tahoe._
 import com.databricks.sql.transaction.tahoe.actions.Action
 import com.databricks.sql.transaction.tahoe.hooks.PostCommitHook
 import com.databricks.sql.transaction.tahoe.metering.DeltaLogging
-import com.databricks.sql.transaction.tahoe._
 
 import org.apache.spark.sql.SparkSession
 
