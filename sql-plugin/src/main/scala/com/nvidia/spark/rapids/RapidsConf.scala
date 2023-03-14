@@ -1502,9 +1502,7 @@ object RapidsConf {
 
   // ALLUXIO CONFIGS
   val ALLUXIO_HOME = conf("spark.rapids.alluxio.home")
-    .doc("The Alluxio installation home path or link to the installation home path. " +
-      "You can create a link to Alluxio installation path, " +
-      "e.g: ln -s /opt/alluxio-x.y.z /opt/alluxio")
+    .doc("The Alluxio installation home path or link to the installation home path. ")
     .startupOnly()
     .stringConf
     .createWithDefault("/opt/alluxio")
