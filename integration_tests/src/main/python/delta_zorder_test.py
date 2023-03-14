@@ -60,6 +60,15 @@ _statements = [
     WHERE dim.filter = {2}
     GROUP BY fact.ex_key
     ''',
+    # join on 2 z-ordered columns
+    '''
+    SELECT fact.ex_key, fact.ex_skey, sum(fact.value)
+    FROM {0} fact
+    JOIN {1} dim
+    ON fact.ex_key = dim.ex_key AND fact.ex_skey = dim.ex_skey
+    WHERE dim.filter = {2}
+    GROUP BY fact.ex_key, fact.ex_skey
+    ''',
     # join on 1 partitioned and 1 z-ordered column
     '''
     SELECT fact.key, fact.ex_key, sum(fact.value)
@@ -115,9 +124,10 @@ def test_delta_dfp_reuse_broadcast_exchange(spark_tmp_table_factory, s_index, aq
         # Note that ex_key is a high-cardinality column, which makes it a good candidate for 
         # for Z-ordering, which then means it can then be used in Dynamic File Pruning in joins
         df = gen_df(spark, [
-            ('key', LongGen(nullable=False, min_val=0, max_val=9, special_cases=[])),
-            ('skey', LongGen(nullable=False, min_val=0, max_val=4, special_cases=[])),
-            ('ex_key', LongGen(nullable=False, min_val=0, max_val=10000, special_cases=[])),
+            ('key', IntegerGen(nullable=False, min_val=0, max_val=9, special_cases=[])),
+            ('skey', IntegerGen(nullable=False, min_val=0, max_val=4, special_cases=[])),
+            ('ex_key', IntegerGen(nullable=False, min_val=0, max_val=10000, special_cases=[])),
+            ('ex_skey', IntegerGen(nullable=False, min_val=0, max_val=1000, special_cases=[])),
             ('value', int_gen),
         ], 10000)
 
@@ -125,12 +135,13 @@ def test_delta_dfp_reuse_broadcast_exchange(spark_tmp_table_factory, s_index, aq
             .mode("overwrite") \
             .partitionBy("key", "skey") \
             .saveAsTable(fact_table)
-        spark.sql("OPTIMIZE {} ZORDER BY ex_key".format(fact_table)).show()
+        spark.sql("OPTIMIZE {} ZORDER BY (ex_key, ex_skey)".format(fact_table)).show()
 
         df = gen_df(spark, [
-            ('key', LongGen(nullable=False, min_val=0, max_val=9, special_cases=[])),
-            ('skey', LongGen(nullable=False, min_val=0, max_val=4, special_cases=[])),
-            ('ex_key', LongGen(nullable=False, min_val=0, max_val=10000, special_cases=[])),
+            ('key', IntegerGen(nullable=False, min_val=0, max_val=9, special_cases=[])),
+            ('skey', IntegerGen(nullable=False, min_val=0, max_val=4, special_cases=[])),
+            ('ex_key', IntegerGen(nullable=False, min_val=0, max_val=10000, special_cases=[])),
+            ('ex_skey', IntegerGen(nullable=False, min_val=0, max_val=1000, special_cases=[])),
             ('value', int_gen),
             ('filter', RepeatSeqGen(
                 IntegerGen(min_val=0, max_val=2000, special_cases=[]), length=2000 // 20))
