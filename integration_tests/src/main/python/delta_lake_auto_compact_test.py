@@ -67,3 +67,60 @@ def test_auto_compact(spark_tmp_path):
         read_func=read_metadata,
         base_path=data_path,
         conf=_conf)
+
+
+@delta_lake
+@allow_non_gpu(*delta_meta_allow)
+@pytest.mark.skipif(not is_databricks104_or_later(),
+                    reason="Auto compaction of Delta Lake tables is only supported "
+                           "on Databricks 10.4+")
+def test_auto_compact_partitioned(spark_tmp_path):
+
+    """
+    This test checks whether the results of auto compaction on a partitioned table
+    match, when written via CPU and GPU.
+    Note: The behaviour of compaction itself differs from Databricks, in that
+    the plugin enforces `minFiles` restriction uniformly across all partitions.
+    Databricks' Delta implementation appears not to.
+    """
+    data_path = spark_tmp_path + "/AUTO_COMPACT_TEST_DATA_PARTITIONED"
+
+    # Write to Delta table. Ensure reads with CPU/GPU produce the same results.
+    def write_to_delta(spark, table_path):
+        input_data = spark.range(3).withColumn("part", expr("id % 3"))
+        writer = input_data.write.partitionBy("part").format("delta").mode("append")
+        writer.save(table_path)  # <-- Wait for it.
+        writer.save(table_path)  # <-- Wait for it.
+        writer.save(table_path)  # <-- Auto compact on 3.
+
+    def read_data(spark, table_path):
+        return spark.read.format("delta").load(table_path).orderBy("id", "part")
+
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        write_func=write_to_delta,
+        read_func=read_data,
+        base_path=data_path,
+        conf=_conf)
+
+    def read_metadata(spark, table_path):
+        """
+        The snapshots might not look alike, in the partitioned case.
+        Ensure that auto compaction has occurred, even if it's not identical.
+        """
+        input_table = DeltaTable.forPath(spark, table_path)
+        table_history = input_table.history()
+        return table_history.select(
+            "version",
+            "operation",
+            expr("operationMetrics[\"numFiles\"] > 0"),
+            expr("operationMetrics[\"numRemovedFiles\"] > 0"),
+            expr("operationMetrics[\"numAddedFiles\"] > 0")
+        )
+
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        write_func=write_to_delta,
+        read_func=read_metadata,
+        base_path=data_path,
+        conf=_conf)
+
+
