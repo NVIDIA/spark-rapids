@@ -64,7 +64,7 @@ import org.apache.spark.util.{Clock, SerializableConfiguration}
 class GpuOptimisticTransaction(
     deltaLog: DeltaLog,
     snapshot: Snapshot,
-    val rapidsConf: RapidsConf)(implicit clock: Clock)
+    rapidsConf: RapidsConf)(implicit clock: Clock)
     extends GpuOptimisticTransactionBase(deltaLog, snapshot, rapidsConf)(clock) {
 
   /** Creates a new OptimisticTransaction.
@@ -228,9 +228,7 @@ class GpuOptimisticTransaction(
       }
 
       val gpuFileFormat = deltaLog.fileFormat(metadata) match {
-        case _: DeltaParquetFileFormat =>
-          println("CALEB: GPU Writing Parquet!")
-          new GpuParquetFileFormat
+        case _: DeltaParquetFileFormat => new GpuParquetFileFormat
         case f => throw new IllegalStateException(s"file format $f is not supported")
       }
 

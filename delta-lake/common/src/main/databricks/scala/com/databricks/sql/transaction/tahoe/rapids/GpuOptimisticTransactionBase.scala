@@ -53,7 +53,7 @@ import org.apache.spark.util.Clock
  * @param rapidsConf RAPIDS Accelerator config settings.
  */
 abstract class GpuOptimisticTransactionBase
-    (deltaLog: DeltaLog, snapshot: Snapshot, rapidsConf: RapidsConf)
+    (deltaLog: DeltaLog, snapshot: Snapshot, val rapidsConf: RapidsConf)
     (implicit clock: Clock)
   extends OptimisticTransaction(deltaLog, snapshot)(clock)
   with DeltaLogging {
