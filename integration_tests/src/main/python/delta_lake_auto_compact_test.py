@@ -45,25 +45,25 @@ def test_auto_compact(spark_tmp_path):
     def read_data(spark, table_path):
         return spark.read.format("delta").load(table_path)
 
-    def read_metadata(spark, table_path):
-        input_table = DeltaTable.forPath(spark, table_path)
-        table_history = input_table.history()
-        return table_history.select(
-            "version",
-            "operation",
-            expr("operationMetrics[\"numFiles\"]"),
-            expr("operationMetrics[\"numRemovedFiles\"]"),
-            expr("operationMetrics[\"numAddedFiles\"]")
-        )
-
     assert_gpu_and_cpu_writes_are_equal_collect(
         write_func=write_to_delta,
         read_func=read_data,
         base_path=data_path,
         conf=_conf)
 
+    def read_metadata(spark, table_path):
+        input_table = DeltaTable.forPath(spark, table_path)
+        table_history = input_table.history()
+        return table_history.select(
+            "version",
+            "operation",
+            expr("operationMetrics[\"numFiles\"]").alias("numFiles"),
+            expr("operationMetrics[\"numRemovedFiles\"]").alias("numRemoved"),
+            expr("operationMetrics[\"numAddedFiles\"]").alias("numAdded")
+        )
+
     assert_gpu_and_cpu_writes_are_equal_collect(
-        write_func=write_to_delta,
+        write_func=lambda spark, table_path: None,  # Already written.
         read_func=read_metadata,
         base_path=data_path,
         conf=_conf)
@@ -112,13 +112,13 @@ def test_auto_compact_partitioned(spark_tmp_path):
         return table_history.select(
             "version",
             "operation",
-            expr("operationMetrics[\"numFiles\"] > 0"),
-            expr("operationMetrics[\"numRemovedFiles\"] > 0"),
-            expr("operationMetrics[\"numAddedFiles\"] > 0")
+            expr("operationMetrics[\"numFiles\"] > 0").alias("numFiles_gt_0"),
+            expr("operationMetrics[\"numRemovedFiles\"] > 0").alias("numRemoved_gt_0"),
+            expr("operationMetrics[\"numAddedFiles\"] > 0").alias("numAdded_gt_0")
         )
 
     assert_gpu_and_cpu_writes_are_equal_collect(
-        write_func=write_to_delta,
+        write_func=lambda spark, table_path: None,  # Already written.
         read_func=read_metadata,
         base_path=data_path,
         conf=_conf)
