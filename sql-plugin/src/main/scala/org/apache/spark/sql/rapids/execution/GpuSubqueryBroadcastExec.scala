@@ -233,7 +233,7 @@ case class GpuSubqueryBroadcastExec(
         // in this case, there is only 1 key expression since it's a packed version that encompasses
         // multiple integral values into a single long using bit logic. In CPU Spark, the broadcast
         // would create a LongHashedRelation instead of a standard HashedRelation.
-        keyExprs(0)
+        keyExprs.head
       } else {
         keyExprs(index)
       }
