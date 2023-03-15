@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import pytest
-from asserts import assert_gpu_and_cpu_writes_are_equal_collect
+from asserts import assert_gpu_and_cpu_writes_are_equal_collect, with_cpu_session, with_gpu_session
 from delta.tables import DeltaTable
 from delta_lake_write_test import delta_meta_allow
 from marks import allow_non_gpu, delta_lake
@@ -22,7 +22,23 @@ from spark_session import is_databricks104_or_later
 
 _conf = {'spark.rapids.sql.explain': 'ALL',
          'spark.databricks.delta.autoCompact.enabled': 'true',  # Enable auto compaction.
-         'spark.databricks.delta.autoCompact.minNumFiles': 3}   # Num files before compaction.
+         'spark.databricks.delta.autoCompact.minNumFiles': 3}  # Num files before compaction.
+
+
+def write_to_delta(num_rows=30, is_partitioned=False, num_writes=3):
+    """
+    Returns bound function that writes to a delta table.
+    """
+
+    def write(spark, table_path):
+        input_data = spark.range(num_rows)
+        input_data = input_data.withColumn("part", expr("id % 3")) if is_partitioned \
+            else input_data.repartition(1)
+        writer = input_data.write.format("delta").mode("append")
+        for _ in range(num_writes):
+            writer.save(table_path)
+
+    return write
 
 
 @delta_lake
@@ -31,22 +47,13 @@ _conf = {'spark.rapids.sql.explain': 'ALL',
                     reason="Auto compaction of Delta Lake tables is only supported "
                            "on Databricks 10.4+")
 def test_auto_compact(spark_tmp_path):
-
     data_path = spark_tmp_path + "/AUTO_COMPACT_TEST_DATA"
-
-    # Write to Delta table. Ensure reads with CPU/GPU produce the same results.
-    def write_to_delta(spark, table_path):
-        input_data = spark.range(3).repartition(1)
-        writer = input_data.write.format("delta").mode("append")
-        writer.save(table_path)  # <-- Wait for it.
-        writer.save(table_path)  # <-- Wait for it.
-        writer.save(table_path)  # <-- Auto compact on 3.
 
     def read_data(spark, table_path):
         return spark.read.format("delta").load(table_path)
 
     assert_gpu_and_cpu_writes_are_equal_collect(
-        write_func=write_to_delta,
+        write_func=write_to_delta(is_partitioned=False),
         read_func=read_data,
         base_path=data_path,
         conf=_conf)
@@ -75,7 +82,6 @@ def test_auto_compact(spark_tmp_path):
                     reason="Auto compaction of Delta Lake tables is only supported "
                            "on Databricks 10.4+")
 def test_auto_compact_partitioned(spark_tmp_path):
-
     """
     This test checks whether the results of auto compaction on a partitioned table
     match, when written via CPU and GPU.
@@ -85,19 +91,11 @@ def test_auto_compact_partitioned(spark_tmp_path):
     """
     data_path = spark_tmp_path + "/AUTO_COMPACT_TEST_DATA_PARTITIONED"
 
-    # Write to Delta table. Ensure reads with CPU/GPU produce the same results.
-    def write_to_delta(spark, table_path):
-        input_data = spark.range(3).withColumn("part", expr("id % 3"))
-        writer = input_data.write.partitionBy("part").format("delta").mode("append")
-        writer.save(table_path)  # <-- Wait for it.
-        writer.save(table_path)  # <-- Wait for it.
-        writer.save(table_path)  # <-- Auto compact on 3.
-
     def read_data(spark, table_path):
         return spark.read.format("delta").load(table_path).orderBy("id", "part")
 
     assert_gpu_and_cpu_writes_are_equal_collect(
-        write_func=write_to_delta,
+        write_func=write_to_delta(is_partitioned=True),
         read_func=read_data,
         base_path=data_path,
         conf=_conf)
@@ -123,4 +121,37 @@ def test_auto_compact_partitioned(spark_tmp_path):
         base_path=data_path,
         conf=_conf)
 
+
+@delta_lake
+@allow_non_gpu(*delta_meta_allow)
+@pytest.mark.skipif(not is_databricks104_or_later(),
+                    reason="Auto compaction of Delta Lake tables is only supported "
+                           "on Databricks 10.4+")
+def test_auto_compact_disabled(spark_tmp_path):
+    """
+    This test verifies that auto-compaction does not run if disabled.
+    """
+    data_path = spark_tmp_path + "/AUTO_COMPACT_TEST_CHECK_DISABLED"
+
+    disable_auto_compaction = {
+        'spark.databricks.delta.autoCompact.enabled': 'false'  # Enable auto compaction.
+    }
+
+    writer = write_to_delta(num_writes=10)
+    with_gpu_session(func=lambda spark: writer(spark, data_path),
+                     conf=disable_auto_compaction)
+
+    # 10 writes should correspond to 10 commits.
+    # (i.e. there should be no OPTIMIZE commits.)
+    def verify_table_history(spark):
+        input_table = DeltaTable.forPath(spark, data_path)
+        table_history = input_table.history()
+        assert table_history.select("version", "operation").count() == 10, \
+            "Expected 10 versions, 1 for each WRITE."
+        assert table_history.select("version")\
+            .where("operation = 'OPTIMIZE'")\
+            .count() == 0,\
+            "Expected 0 OPTIMIZE operations."
+
+    with_cpu_session(verify_table_history, {})
 
