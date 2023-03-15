@@ -227,11 +227,17 @@ object GpuHashJoin extends Arm {
     }
   }
 
+  // scalastyle:off line.size.limit
   /**
-   * Copied from Apache Spark, returns whether the keys can be rewritten as a packed long. If
+   * The function is copied from Spark 3.2:
+   *   https://github.com/apache/spark/blob/v3.2.2/sql/core/src/main/scala/org/apache/spark/sql/execution/joins/HashJoin.scala#L709-L713
+   *
+   * Returns whether the keys can be rewritten as a packed long. If
    * they can, we can assume that they are packed when we extract them out.
    */
+  // scalastyle:on
   def canRewriteAsLongType(keys: Seq[Expression]): Boolean = {
+    // TODO: support BooleanType, DateType and TimestampType
     keys.forall(_.dataType.isInstanceOf[IntegralType]) &&
       keys.map(_.dataType.defaultSize).sum <= 8
   }
