@@ -134,7 +134,7 @@ def test_auto_compact_disabled(spark_tmp_path):
     data_path = spark_tmp_path + "/AUTO_COMPACT_TEST_CHECK_DISABLED"
 
     disable_auto_compaction = {
-        'spark.databricks.delta.autoCompact.enabled': 'false'  # Enable auto compaction.
+        'spark.databricks.delta.autoCompact.enabled': 'false'  # Disable auto compaction.
     }
 
     writer = write_to_delta(num_writes=10)
@@ -155,3 +155,50 @@ def test_auto_compact_disabled(spark_tmp_path):
 
     with_cpu_session(verify_table_history, {})
 
+
+@delta_lake
+@allow_non_gpu(*delta_meta_allow)
+@pytest.mark.skipif(not is_databricks104_or_later(),
+                    reason="Auto compaction of Delta Lake tables is only supported "
+                           "on Databricks 10.4+")
+def test_auto_compact_min_num_files(spark_tmp_path):
+    """
+    This test verifies that auto-compaction honours the minNumFiles setting.
+    """
+    data_path = spark_tmp_path + "/AUTO_COMPACT_TEST_MIN_FILES"
+    enable_auto_compaction_on_5 = {
+        'spark.databricks.delta.autoCompact.enabled': 'true',  # Enable auto compaction.
+        'spark.databricks.delta.autoCompact.minNumFiles': 5  # Num files before compaction.
+    }
+
+    # Minimum number of input files == 5.
+    # If 4 files are written, there should be no OPTIMIZE.
+    writer = write_to_delta(num_writes=4)
+    with_gpu_session(func=lambda spark: writer(spark, data_path),
+                     conf=enable_auto_compaction_on_5)
+
+    def verify_table_history_before_limit(spark):
+        input_table = DeltaTable.forPath(spark, data_path)
+        table_history = input_table.history()
+        assert table_history.select("version", "operation").count() == 4, \
+            "Expected 4 versions, 1 for each WRITE."
+        assert table_history.select("version") \
+                   .where("operation = 'OPTIMIZE'") \
+                   .count() == 0, \
+            "Expected 0 OPTIMIZE operations."
+    with_cpu_session(verify_table_history_before_limit, {})
+
+    # On the 5th file write, auto-OPTIMIZE should kick in.
+    with_gpu_session(func=lambda spark: write_to_delta(num_writes=1)(spark, data_path),
+                     conf=enable_auto_compaction_on_5)
+
+    def verify_table_history_after_limit(spark):
+        input_table = DeltaTable.forPath(spark, data_path)
+        table_history = input_table.history()
+        assert table_history.select("version", "operation").count() == 6, \
+            "Expected 6 versions, i.e. 5 WRITEs + 1 OPTIMIZE."
+        assert table_history.select("version") \
+                   .where("operation = 'OPTIMIZE'") \
+                   .count() == 1, \
+            "Expected 1 OPTIMIZE operations."
+    with_cpu_session(verify_table_history_after_limit, {})
