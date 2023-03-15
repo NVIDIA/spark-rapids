@@ -41,7 +41,7 @@ import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.execution.metric.SQLMetrics.createMetric
-import org.apache.spark.util.{SystemClock, ThreadUtils}
+import org.apache.spark.util.ThreadUtils
 
 class GpuOptimizeExecutor(
                         sparkSession: SparkSession,
@@ -52,7 +52,7 @@ class GpuOptimizeExecutor(
   extends DeltaCommand with SQLMetricsReporting with Serializable {
 
   /** Timestamp to use in [[FileAction]] */
-  private val operationTimestamp = new SystemClock().getTimeMillis()
+  private val operationTimestamp = System.currentTimeMillis
 
   private val isMultiDimClustering = zOrderByColumns.nonEmpty
   private val isAutoCompact = prevCommitActions.nonEmpty
