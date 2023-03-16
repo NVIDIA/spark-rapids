@@ -14,7 +14,6 @@
 
 import pytest
 from asserts import assert_gpu_and_cpu_writes_are_equal_collect, with_cpu_session, with_gpu_session
-from delta.tables import DeltaTable
 from delta_lake_write_test import delta_meta_allow
 from marks import allow_non_gpu, delta_lake
 from pyspark.sql.functions import *
@@ -47,6 +46,13 @@ def write_to_delta(num_rows=30, is_partitioned=False, num_writes=3):
                     reason="Auto compaction of Delta Lake tables is only supported "
                            "on Databricks 10.4+")
 def test_auto_compact(spark_tmp_path):
+    """
+    This test checks whether the results of auto compactions on an un-partitioned table
+    match, when written via CPU and GPU.
+    It also checks that the snapshot metrics (number of files added/removed, etc.)
+    match.
+    """
+    from delta.tables import DeltaTable
     data_path = spark_tmp_path + "/AUTO_COMPACT_TEST_DATA"
 
     def read_data(spark, table_path):
@@ -89,6 +95,7 @@ def test_auto_compact_partitioned(spark_tmp_path):
     the plugin enforces `minFiles` restriction uniformly across all partitions.
     Databricks' Delta implementation appears not to.
     """
+    from delta.tables import DeltaTable
     data_path = spark_tmp_path + "/AUTO_COMPACT_TEST_DATA_PARTITIONED"
 
     def read_data(spark, table_path):
@@ -131,6 +138,7 @@ def test_auto_compact_disabled(spark_tmp_path):
     """
     This test verifies that auto-compaction does not run if disabled.
     """
+    from delta.tables import DeltaTable
     data_path = spark_tmp_path + "/AUTO_COMPACT_TEST_CHECK_DISABLED"
 
     disable_auto_compaction = {
@@ -165,6 +173,7 @@ def test_auto_compact_min_num_files(spark_tmp_path):
     """
     This test verifies that auto-compaction honours the minNumFiles setting.
     """
+    from delta.tables import DeltaTable
     data_path = spark_tmp_path + "/AUTO_COMPACT_TEST_MIN_FILES"
     enable_auto_compaction_on_5 = {
         'spark.databricks.delta.autoCompact.enabled': 'true',  # Enable auto compaction.
