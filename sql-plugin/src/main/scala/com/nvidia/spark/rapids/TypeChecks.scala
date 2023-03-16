@@ -406,7 +406,7 @@ final class TypeSig private(
         s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
         s" Set both of the timezones to UTC to enable $dataType support"))
     } else {
-      basicNotSupportedMessage(dataType, TypeEnum.DATE, check, isChild)
+      basicNotSupportedMessage(dataType, te, check, isChild)
     }
   }
 
