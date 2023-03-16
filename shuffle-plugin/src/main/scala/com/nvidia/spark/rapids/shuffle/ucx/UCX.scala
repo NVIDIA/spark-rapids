@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ import ai.rapids.cudf.{BaseDeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRang
 import com.nvidia.spark.rapids.{Arm, GpuDeviceManager, RapidsConf}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ThreadFactoryBuilder
+import com.nvidia.spark.rapids.jni.RmmSpark
 import com.nvidia.spark.rapids.shuffle.{ClientConnection, MemoryRegistrationCallback, MessageType, MetadataTransportBuffer, TransportBuffer, TransportUtils}
 import org.openucx.jucx._
 import org.openucx.jucx.ucp._
@@ -105,7 +106,9 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
       new ThreadFactoryBuilder()
         .setNameFormat("progress-thread-%d")
         .setDaemon(true)
-        .build))
+        .build,
+      () => RmmSpark.associateCurrentThreadWithShuffle(),
+      () => RmmSpark.removeCurrentThreadAssociation()))
 
   // The pending queues are used to enqueue [[PendingReceive]] or [[PendingSend]], from executor
   // task threads and [[progressThread]] will hand them to the UcpWorker thread.

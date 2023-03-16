@@ -211,11 +211,15 @@ def test_sortmerge_join_wrong_key_fallback(data_gen, join_type):
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', basic_nested_gens + [decimal_gen_128bit], ids=idfn)
 @pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
-def test_hash_join_ridealong(data_gen, join_type):
+@pytest.mark.parametrize('sub_part_enabled', ['false', 'true'], ids=['SubPartition_OFF', 'SubPartition_ON'])
+def test_hash_join_ridealong(data_gen, join_type, sub_part_enabled):
     def do_join(spark):
         left, right = create_ridealong_df(spark, short_gen, data_gen, 50, 500)
         return left.join(right, left.key == right.r_key, join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_hash_join_conf)
+    _all_conf = copy_and_update(_hash_join_conf, {
+        "spark.rapids.sql.test.subPartitioning.enabled": sub_part_enabled
+    })
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_all_conf)
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84
 # After 3.1.0 is the min spark version we can drop this

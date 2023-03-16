@@ -15,7 +15,7 @@
 import pytest
 
 from conftest import is_at_least_precommit_run
-from spark_session import is_databricks91_or_later, is_before_spark_330
+from spark_session import is_databricks_runtime, is_before_spark_330
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 
@@ -218,7 +218,7 @@ def test_window_aggregate_udf_array_from_python(data_gen, window):
 
 # separate the tests into before and after db 91. To verify
 # the new "zero-conf-conversion" feature introduced from db 9.1.
-@pytest.mark.skipif(not is_databricks91_or_later(), reason="zero-conf is supported only from db9.1")
+@pytest.mark.skipif(not is_databricks_runtime(), reason="zero-conf is supported only from db9.1")
 @ignore_order(local=True)
 @pytest.mark.parametrize('zero_enabled', [False, True])
 @pytest.mark.parametrize('data_gen', [LongGen()], ids=idfn)
@@ -238,7 +238,7 @@ def test_group_apply_udf_zero_conf(data_gen, zero_enabled):
             conf=conf_with_zero)
 
 
-@pytest.mark.skipif(is_databricks91_or_later(), reason="This is tested by other tests from db9.1")
+@pytest.mark.skipif(is_databricks_runtime(), reason="This is tested by other tests from db9.1")
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', [LongGen()], ids=idfn)
 def test_group_apply_udf(data_gen):

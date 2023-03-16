@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import java.util.concurrent.{Executors, ScheduledExecutorService, TimeUnit}
 
 import scala.collection.mutable.ArrayBuffer
 
+import com.nvidia.spark.rapids.jni.RmmSpark
 import org.apache.commons.lang3.mutable.MutableLong
 
 import org.apache.spark.SparkEnv
@@ -194,7 +195,9 @@ class RapidsShuffleHeartbeatEndpoint(pluginContext: PluginContext, conf: RapidsC
       GpuDeviceManager.wrapThreadFactory(new ThreadFactoryBuilder()
         .setNameFormat("rapids-shuffle-hb")
         .setDaemon(true)
-        .build()))
+        .build(),
+        () => RmmSpark.associateCurrentThreadWithShuffle(),
+        () => RmmSpark.removeCurrentThreadAssociation()))
 
   private class InitializeShuffleManager(ctx: PluginContext,
       shuffleManager: RapidsShuffleInternalManagerBase) extends Runnable {

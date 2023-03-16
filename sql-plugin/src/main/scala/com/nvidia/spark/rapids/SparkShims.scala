@@ -56,7 +56,6 @@ case class DatabricksShimVersion(
 }
 
 trait SparkShims {
-  def getSparkShimVersion: ShimVersion = ShimLoader.getShimVersion
   def parquetRebaseReadKey: String
   def parquetRebaseWriteKey: String
   def avroRebaseReadKey: String
@@ -154,8 +153,8 @@ trait SparkShims {
     false
 
   /**
-   * Adds a row-based shuffle to the transititonal shuffle query stage if needed. This 
-   * is needed when AQE plans a GPU shuffleexchange to be reused by a parent plan exec 
+   * Adds a row-based shuffle to the transititonal shuffle query stage if needed. This
+   * is needed when AQE plans a GPU shuffleexchange to be reused by a parent plan exec
    * that consumes rows
    */
   def addRowShuffleToQueryStageTransitionIfNeeded(c2r: ColumnarToRowTransition,
