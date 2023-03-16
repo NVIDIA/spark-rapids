@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -358,7 +358,8 @@ final class TypeSig private(
       case LongType => check.contains(TypeEnum.LONG)
       case FloatType => check.contains(TypeEnum.FLOAT)
       case DoubleType => check.contains(TypeEnum.DOUBLE)
-      case DateType => check.contains(TypeEnum.DATE)
+      case DateType if check.contains(TypeEnum.DATE) =>
+          TypeChecks.areTimestampsSupported()
       case TimestampType if check.contains(TypeEnum.TIMESTAMP) =>
           TypeChecks.areTimestampsSupported()
       case StringType => check.contains(TypeEnum.STRING)
@@ -398,6 +399,17 @@ final class TypeSig private(
     }
   }
 
+  private[this] def timezoneNotSupportedMessage(dataType: DataType,
+      te: TypeEnum.Value, check: TypeEnum.ValueSet, isChild: Boolean): Seq[String] = {
+    if (check.contains(te) && !TypeChecks.areTimestampsSupported()) {
+      Seq(withChild(isChild, s"$dataType is not supported with timezone settings: (JVM:" +
+        s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
+        s" Set both of the timezones to UTC to enable $dataType support"))
+    } else {
+      basicNotSupportedMessage(dataType, TypeEnum.DATE, check, isChild)
+    }
+  }
+
   private[this] def reasonNotSupported(
       check: TypeEnum.ValueSet,
       dataType: DataType,
@@ -418,16 +430,9 @@ final class TypeSig private(
       case DoubleType =>
         basicNotSupportedMessage(dataType, TypeEnum.DOUBLE, check, isChild)
       case DateType =>
-        basicNotSupportedMessage(dataType, TypeEnum.DATE, check, isChild)
+        timezoneNotSupportedMessage(dataType, TypeEnum.DATE, check, isChild)
       case TimestampType =>
-        if (check.contains(TypeEnum.TIMESTAMP) &&
-            !TypeChecks.areTimestampsSupported()) {
-          Seq(withChild(isChild, s"$dataType is not supported with timezone settings: (JVM:" +
-              s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
-              s" Set both of the timezones to UTC to enable $dataType support"))
-        } else {
-          basicNotSupportedMessage(dataType, TypeEnum.TIMESTAMP, check, isChild)
-        }
+        timezoneNotSupportedMessage(dataType, TypeEnum.TIMESTAMP, check, isChild)
       case StringType =>
         basicNotSupportedMessage(dataType, TypeEnum.STRING, check, isChild)
       case dt: DecimalType =>
@@ -783,12 +788,10 @@ abstract class TypeChecks[RET] {
     meta: RapidsMeta[_, _, _]
     ): Unit = {
     def checkTimestampType(dataType: DataType): Unit = dataType match {
-        case TimestampType if !TypeChecks.areTimestampsSupported() => {
+        case (TimestampType | DateType) if !TypeChecks.areTimestampsSupported() =>
           meta.willNotWorkOnGpu(s"your timezone isn't in UTC (JVM:" +
             s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
             s" Set both of the timezones to UTC to enable TimestampType support")
-          return
-        }
         case ArrayType(elementType, _) =>
           checkTimestampType(elementType)
         case MapType(keyType, valueType, _) =>
@@ -796,10 +799,9 @@ abstract class TypeChecks[RET] {
           checkTimestampType(valueType)
         case StructType(fields) =>
           fields.foreach(field => checkTimestampType(field.dataType))
-        case _ =>
-          // do nothing
+        case _ => // do nothing
     }
-    unsupportedTypes.foreach { case (dataType, nameSet) =>
+    unsupportedTypes.foreach { case (dataType, _) =>
       checkTimestampType(dataType)
     }
   }
