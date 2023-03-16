@@ -119,45 +119,32 @@ def join_batch_size_test_params(*args):
                 params += [ pytest.param(obj, batch_size) ]
     return params
 
-
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @pytest.mark.parametrize("aqe_enabled", ["true", "false"], ids=idfn)
-@pytest.mark.parametrize("join_reorder_enabled", ["true", "false"], ids=idfn)
-def test_right_broadcast_nested_loop_join_without_condition_empty(join_type, aqe_enabled, join_reorder_enabled):
+def test_right_broadcast_nested_loop_join_without_condition_empty(join_type, aqe_enabled):
     def do_join(spark):
         left, right = create_df(spark, long_gen, 50, 0)
         return left.join(broadcast(right), how=join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf={
-        "spark.sql.adaptive.enabled": aqe_enabled,
-        "spark.rapids.sql.optimizer.joinReorder.enabled": join_reorder_enabled
-    })
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf={ "spark.sql.adaptive.enabled": aqe_enabled })
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @pytest.mark.parametrize("aqe_enabled", ["true", "false"], ids=idfn)
-@pytest.mark.parametrize("join_reorder_enabled", ["true", "false"], ids=idfn)
-def test_left_broadcast_nested_loop_join_without_condition_empty(join_type, aqe_enabled, join_reorder_enabled):
+def test_left_broadcast_nested_loop_join_without_condition_empty(join_type, aqe_enabled):
     def do_join(spark):
         left, right = create_df(spark, long_gen, 0, 50)
         return left.join(broadcast(right), how=join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf={
-        "spark.sql.adaptive.enabled": aqe_enabled,
-        "spark.rapids.sql.optimizer.joinReorder.enabled": join_reorder_enabled
-    })
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf={ "spark.sql.adaptive.enabled": aqe_enabled })
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @pytest.mark.parametrize("aqe_enabled", ["true", "false"], ids=idfn)
-@pytest.mark.parametrize("join_reorder_enabled", ["true", "false"], ids=idfn)
-def test_broadcast_nested_loop_join_without_condition_empty(join_type, aqe_enabled, join_reorder_enabled):
+def test_broadcast_nested_loop_join_without_condition_empty(join_type, aqe_enabled):
     def do_join(spark):
         left, right = create_df(spark, long_gen, 0, 0)
         return left.join(broadcast(right), how=join_type)
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf={
-        "spark.sql.adaptive.enabled": aqe_enabled,
-        "spark.rapids.sql.optimizer.joinReorder.enabled": join_reorder_enabled
-    })
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf={ "spark.sql.adaptive.enabled": aqe_enabled })
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['Left', 'Inner', 'LeftSemi', 'LeftAnti'], ids=idfn)
@@ -905,3 +892,23 @@ def test_degenerate_broadcast_nested_loop_existence_join(spark_tmp_table_factory
     capture_regexp = r"GpuBroadcastNestedLoopJoin ExistenceJoin\(exists#[0-9]+\),"
     assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, capture_regexp,
                                                       conf={"spark.sql.adaptive.enabled": aqeEnabled})
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [StringGen(), IntegerGen()], ids=idfn)
+@pytest.mark.parametrize("aqe_enabled", ["true", "false"], ids=idfn)
+@pytest.mark.parametrize("join_reorder_enabled", ["true", "false"], ids=idfn)
+def test_multi_table_hash_join(data_gen, aqe_enabled, join_reorder_enabled):
+    def do_join(spark):
+        t1 = binary_op_df(spark, data_gen, length=1000)
+        t2 = binary_op_df(spark, data_gen, length=800)
+        t3 = binary_op_df(spark, data_gen, length=300)
+        t4 = binary_op_df(spark, data_gen, length=50)
+        return t1.join(t2, t1.a == t2.a, 'Inner') \
+                 .join(t3, t2.a == t3.a, 'Inner') \
+                 .join(t4, t3.a == t4.a, 'Inner')
+    conf = copy_and_update(_hash_join_conf, {
+        'spark.sql.adaptive.enabled': aqe_enabled,
+        'spark.rapids.sql.optimizer.joinReorder.enabled': join_reorder_enabled
+    })
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
