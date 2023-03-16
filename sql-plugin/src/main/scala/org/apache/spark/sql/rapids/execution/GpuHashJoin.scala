@@ -19,6 +19,7 @@ import ai.rapids.cudf.{ColumnView, DType, GatherMap, GroupByAggregation, NullEqu
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.{Cross, ExistenceJoin, FullOuter, Inner, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
@@ -287,11 +288,14 @@ abstract class BaseHashJoinIterator(
   }
 
   override def createGatherer(
-      cb: ColumnarBatch,
+      streamBatch: LazySpillableColumnarBatch,
       numJoinRows: Option[Long]): Option[JoinGatherer] = {
     try {
-      withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
-        joinGatherer(builtKeys, built, cb)
+      streamBatch.allowSpilling()
+      withRetryNoSplit {
+        withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
+          joinGatherer(builtKeys, built, streamBatch)
+        }
       }
     } catch {
       // This should work for all join types. There should be no need to do this for any
@@ -303,10 +307,10 @@ abstract class BaseHashJoinIterator(
           || joinType == FullOuter =>
         // Because this is just an estimate, it is possible for us to get this wrong, so
         // make sure we at least split the batch in half.
-        val numBatches = Math.max(2, estimatedNumBatches(cb))
+        val numBatches = Math.max(2, estimatedNumBatches(streamBatch))
 
         // Split batch and return no gatherer so the outer loop will try again
-        splitAndSave(cb, numBatches, Some(oom))
+        splitAndSave(streamBatch.releaseBatch(), numBatches, Some(oom))
         None
     }
   }
@@ -354,11 +358,9 @@ abstract class BaseHashJoinIterator(
   private def joinGatherer(
       buildKeys: ColumnarBatch,
       buildData: LazySpillableColumnarBatch,
-      streamCb: ColumnarBatch): Option[JoinGatherer] = {
-    withResource(GpuProjectExec.project(streamCb, boundStreamKeys)) { streamKeys =>
-      closeOnExcept(LazySpillableColumnarBatch(streamCb, spillCallback, "stream_data")) { sd =>
-        joinGatherer(buildKeys, LazySpillableColumnarBatch.spillOnly(buildData), streamKeys, sd)
-      }
+      streamCb: LazySpillableColumnarBatch): Option[JoinGatherer] = {
+    withResource(GpuProjectExec.project(streamCb.getBatch, boundStreamKeys)) { streamKeys =>
+      joinGatherer(buildKeys, LazySpillableColumnarBatch.spillOnly(buildData), streamKeys, streamCb)
     }
   }
 
@@ -385,7 +387,7 @@ abstract class BaseHashJoinIterator(
     }
   }
 
-  private def estimatedNumBatches(cb: ColumnarBatch): Int = joinType match {
+  private def estimatedNumBatches(cb: LazySpillableColumnarBatch): Int = joinType match {
     case _: InnerLike | LeftOuter | RightOuter | FullOuter =>
       // We want the gather map size to be around the target size. There are two gather maps
       // that are made up of ints, so estimate how many rows per batch on the stream side
@@ -393,7 +395,7 @@ abstract class BaseHashJoinIterator(
       val approximateStreamRowCount = ((targetSize.toDouble / 2) /
           DType.INT32.getSizeInBytes) / streamMagnificationFactor
       val estimatedRowsPerStreamBatch = Math.min(Int.MaxValue, approximateStreamRowCount)
-      Math.ceil(cb.numRows() / estimatedRowsPerStreamBatch).toInt
+      Math.ceil(cb.numRows / estimatedRowsPerStreamBatch).toInt
     case _ => 1
   }
 }
@@ -746,12 +748,14 @@ class HashFullJoinIterator(
         }
       }
     }
-    builtSideTracker.foreach(_.close())
+    val previousTracker = builtSideTracker
     builtSideTracker = withResource(updatedTrackingTable) { _ =>
       Some(SpillableColumnarBatch(
         GpuColumnVector.from(updatedTrackingTable, Array[DataType](DataTypes.BooleanType)),
         SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback))
     }
+    // If we throw above, we should not close the existing tracker
+    previousTracker.foreach(_.close())
   }
 }
 
