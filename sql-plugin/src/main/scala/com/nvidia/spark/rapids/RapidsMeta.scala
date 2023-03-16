@@ -1061,10 +1061,6 @@ abstract class BaseExprMeta[INPUT <: Expression](
         s"$wrapped is foldable and operates on non literals")
     }
     rule.getChecks.foreach(_.tag(this))
-    wrapped match {
-      case tzAware: TimeZoneAwareExpression => checkTimeZoneId(tzAware.zoneId)
-      case _ => // do nothing
-    }
     tagExprForGpu()
   }
 
