@@ -273,6 +273,23 @@ def test_re_replace_issue_5492():
         'RegExpReplace',
         conf=_regexp_conf)
 
+def test_re_replace_escaped_chars():
+    # https://github.com/NVIDIA/spark-rapids/issues/7892
+    gen = mk_str_gen('.{0,5}TEST[\n\r\t\f\a\b\u001b]{0,5}')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'REGEXP_REPLACE(a, "\\\\t", " ")',
+            'REGEXP_REPLACE(a, "\\\\n", " ")',
+            'REGEXP_REPLACE(a, "TEST\\\\n", "PROD")',
+            'REGEXP_REPLACE(a, "TEST\\\\r", "PROD")',
+            'REGEXP_REPLACE(a, "TEST\\\\f", "PROD")',
+            'REGEXP_REPLACE(a, "TEST\\\\a", "PROD")',
+            'REGEXP_REPLACE(a, "TEST\\\\b", "PROD")',
+            'REGEXP_REPLACE(a, "TEST\\\\e", "PROD")',
+            'REGEXP_REPLACE(a, "TEST[\\\\r\\\\n]", "PROD")'),
+        conf=_regexp_conf)
+
+
 def test_re_replace_backrefs():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}TEST')
     assert_gpu_and_cpu_are_equal_collect(
