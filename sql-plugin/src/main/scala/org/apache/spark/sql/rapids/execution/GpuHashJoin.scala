@@ -941,10 +941,10 @@ trait GpuHashJoin extends GpuExec {
     val builtAnyNullable = compareNullsEqual && buildKeys.exists(_.nullable)
 
     val nullFiltered = if (builtAnyNullable) {
-      GpuHashJoin.filterNulls(builtBatch, boundBuildKeys)
-    } else {
-      GpuColumnVector.incRefCounts(builtBatch)
-    }
+      withResource(builtBatch) { _ =>
+        GpuHashJoin.filterNulls(builtBatch, boundBuildKeys)
+      }
+    } else builtBatch
 
     val spillableBuiltBatch = withResource(nullFiltered) {
       LazySpillableColumnarBatch(_, spillCallback, "built")

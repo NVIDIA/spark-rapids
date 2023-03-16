@@ -540,16 +540,15 @@ trait GpuSubPartitionHashJoin extends Arm with Logging { self: GpuHashJoin =>
           val (build, stream) = pair.get
           val buildCb = build.map(_.getColumnarBatch())
             .getOrElse(GpuColumnVector.emptyBatch(buildSchema))
-          withResource(buildCb) { _ =>
-            val streamIter = closeOnExcept(stream.safeMap(_.getColumnarBatch())) { streamCbs =>
+          val streamIter = closeOnExcept(buildCb) { _ =>
+            closeOnExcept(stream.safeMap(_.getColumnarBatch())) { streamCbs =>
               GpuSubPartitionHashJoin.safeIteratorFromSeq(streamCbs)
             }
-
-            // Leverage the original join iterators
-            val joinIter = doJoin(buildCb, streamIter, targetSize, spillCallback,
-              numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
-            Some(joinIter)
           }
+          // Leverage the original join iterators
+          val joinIter = doJoin(buildCb, streamIter, targetSize, spillCallback,
+            numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
+          Some(joinIter)
         }
       }
 

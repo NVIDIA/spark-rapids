@@ -182,17 +182,19 @@ case class GpuShuffledHashJoinExec(
             realTarget, localBuildOutput, buildGoal, subPartConf, spillCallback, coalesceMetrics)
 
         buildData match {
-          case Left(singleBuildBatch) =>
-            withResource(singleBuildBatch) { _ =>
-              // doJoin will increment the reference counts as needed for the builtBatch
-              buildDataSize += GpuColumnVector.getTotalDeviceMemoryUsed(singleBuildBatch)
-              doJoin(singleBuildBatch, maybeBufferedStreamIter, realTarget, spillCallback,
-                numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
+          case Left(singleBatch) =>
+            closeOnExcept(singleBatch) { _ =>
+              buildDataSize += GpuColumnVector.getTotalDeviceMemoryUsed(singleBatch)
             }
-          case Right(gpuBuildIter) =>
+            // doJoin will close singleBatch
+            doJoin(singleBatch, maybeBufferedStreamIter, realTarget, spillCallback,
+              numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
+          case Right(builtBatchIter) =>
             // For big joins, when the build data can not fit into a single batch.
-            val sizeBuildIter = gpuBuildIter.map { cb =>
-              buildDataSize += closeOnExcept(cb)(GpuColumnVector.getTotalDeviceMemoryUsed)
+            val sizeBuildIter = builtBatchIter.map { cb =>
+              closeOnExcept(cb) { _ =>
+                buildDataSize += GpuColumnVector.getTotalDeviceMemoryUsed(cb)
+              }
               cb
             }
             doJoinBySubPartition(sizeBuildIter, maybeBufferedStreamIter, realTarget,
@@ -270,12 +272,11 @@ object GpuShuffledHashJoinExec extends Arm {
         val firstBuildBatch = coalesceBuiltIter.next()
         // Batches have coalesced to the target size, so size will overflow if there are
         // more than one batch, or the first batch size already exceeds the target.
-        val (sizeOverflow, needSingleBuildBatch) = closeOnExcept(firstBuildBatch) { _ =>
-          val sizeExceedsTarget = coalesceBuiltIter.hasNext ||
-            getBatchSize(firstBuildBatch) > targetSize
-          (sizeExceedsTarget, !subPartConf.getOrElse(sizeExceedsTarget))
+        val (sizeOverflow, hasMultipleBatches) = closeOnExcept(firstBuildBatch) { _ =>
+          val hasSecondBatch = coalesceBuiltIter.hasNext
+          (hasSecondBatch || getBatchSize(firstBuildBatch) > targetSize, hasSecondBatch)
         }
-
+        val needSingleBuildBatch = !subPartConf.getOrElse(sizeOverflow)
         if (needSingleBuildBatch && isBuildSerialized && !sizeOverflow) {
           // add the time it took to fetch that first host-side build batch
           buildTime += System.nanoTime() - startTime
@@ -298,8 +299,8 @@ object GpuShuffledHashJoinExec extends Arm {
           }
 
           val buildRet = if (needSingleBuildBatch) {
-            val singleBuildCb = getAsSingleBatch(gpuBuildIter, buildOutput, sizeOverflow,
-              buildGoal, spillCallback, coalesceMetrics)
+            val singleBuildCb = getAsSingleBatch(gpuBuildIter, buildOutput,
+              hasMultipleBatches, buildGoal, spillCallback, coalesceMetrics)
             Left(singleBuildCb)
           } else { // this is for sub-partitioning
             Right(new CollectTimeIterator("hash join build", gpuBuildIter, buildTime))
