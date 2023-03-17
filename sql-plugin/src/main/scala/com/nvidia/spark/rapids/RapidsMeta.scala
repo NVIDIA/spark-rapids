@@ -1056,7 +1056,8 @@ abstract class BaseExprMeta[INPUT <: Expression](
   val isFoldableNonLitAllowed: Boolean = false
 
   /**
-   * This is a flag used for tagging a TimeZoneAwareExpression for timezone.
+   * This is a flag used for tagging a TimeZoneAwareExpression for timezone after all
+   * the other tagging is done.
    * By default a TimeZoneAwareExpression always requires the timezone tagging, but there
    * are some exceptions. e.g. Cast, which requires timezone tagging only when it has
    * timestamp/date type as input or output. Override this to match special cases.
@@ -1070,12 +1071,10 @@ abstract class BaseExprMeta[INPUT <: Expression](
     }
     rule.getChecks.foreach(_.tag(this))
     tagExprForGpu()
-    // Try to tag a TimeZoneAwareExpression for timezone when the expression is going to run
-    // on GPU and asks for additional timezone tagging. Because a TimeZoneAwareExpression
-    // having no timestamp/date types as input/output will escape from the timezone tagging
-    // during the above type checks.
+    // A TimeZoneAwareExpression having no timestamp/date types as input/output will escape
+    // from the timezone tagging in the above type checks.
     wrapped match {
-      case tzAware: TimeZoneAwareExpression if canThisBeReplaced && needTimezoneTagging =>
+      case tzAware: TimeZoneAwareExpression if needTimezoneTagging =>
         checkTimeZoneId(tzAware.zoneId)
       case _ => // do nothing
     }
