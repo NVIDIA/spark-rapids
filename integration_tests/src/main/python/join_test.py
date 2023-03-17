@@ -893,11 +893,10 @@ def test_degenerate_broadcast_nested_loop_existence_join(spark_tmp_table_factory
     assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, capture_regexp,
                                                       conf={"spark.sql.adaptive.enabled": aqeEnabled})
 
-
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', [StringGen(), IntegerGen()], ids=idfn)
-@pytest.mark.parametrize("aqe_enabled", ["true", "false"], ids=idfn)
-@pytest.mark.parametrize("join_reorder_enabled", ["true", "false"], ids=idfn)
+@pytest.mark.parametrize("aqe_enabled", [True, False], ids=idfn)
+@pytest.mark.parametrize("join_reorder_enabled", [True, False], ids=idfn)
 def test_multi_table_hash_join(data_gen, aqe_enabled, join_reorder_enabled):
     def do_join(spark):
         t1 = binary_op_df(spark, data_gen, length=1000)
