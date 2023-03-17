@@ -22,7 +22,7 @@ import scala.collection.mutable
 
 import com.nvidia.spark.rapids.shims.{DistributionUtil, SparkShimImpl}
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, UnaryExpression, WindowExpression, WindowFunction}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, ComplexTypeMergingExpression, Expression, QuaternaryExpression, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
@@ -1055,6 +1055,14 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   val isFoldableNonLitAllowed: Boolean = false
 
+  /**
+   * This is a flag used for tagging a TimeZoneAwareExpression for timezone.
+   * By default a TimeZoneAwareExpression always requires the timezone tagging, but there
+   * are some exceptions. e.g. Cast, which requires timezone tagging only when it has
+   * timestamp/date type as input or output. Override this to match special cases.
+   */
+  protected val needTimezoneTagging = true
+
   final override def tagSelfForGpu(): Unit = {
     if (wrapped.foldable && !GpuOverrides.isLit(wrapped) && !isFoldableNonLitAllowed) {
       willNotWorkOnGpu(s"Cannot run on GPU. Is ConstantFolding excluded? Expression " +
@@ -1062,6 +1070,15 @@ abstract class BaseExprMeta[INPUT <: Expression](
     }
     rule.getChecks.foreach(_.tag(this))
     tagExprForGpu()
+    // Try to tag a TimeZoneAwareExpression for timezone when the expression is going to run
+    // on GPU and asks for additional timezone tagging. Because a TimeZoneAwareExpression
+    // having no timestamp/date types as input/output will escape from the timezone tagging
+    // during the above type checks.
+    wrapped match {
+      case tzAware: TimeZoneAwareExpression if canThisBeReplaced && needTimezoneTagging =>
+        checkTimeZoneId(tzAware.zoneId)
+      case _ => // do nothing
+    }
   }
 
   /**
