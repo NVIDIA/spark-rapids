@@ -608,11 +608,14 @@ case class GpuMergeIntoCommand(
        """.stripMargin)
 
     // UDFs to update metrics
+    // Make UDFs that appear in the custom join processor node deterministic, as they always
+    // return true and update a metric. Catalyst precludes non-deterministic UDFs that are not
+    // allowed outside a very specific set of Catalyst nodes (Project, Filter, Window, Aggregate).
     val incrSourceRowCountExpr = makeMetricUpdateUDF("numSourceRowsInSecondScan")
-    val incrUpdatedCountExpr = makeMetricUpdateUDF("numTargetRowsUpdated")
-    val incrInsertedCountExpr = makeMetricUpdateUDF("numTargetRowsInserted")
-    val incrNoopCountExpr = makeMetricUpdateUDF("numTargetRowsCopied")
-    val incrDeletedCountExpr = makeMetricUpdateUDF("numTargetRowsDeleted")
+    val incrUpdatedCountExpr = makeMetricUpdateUDF("numTargetRowsUpdated", deterministic = true)
+    val incrInsertedCountExpr = makeMetricUpdateUDF("numTargetRowsInserted", deterministic = true)
+    val incrNoopCountExpr = makeMetricUpdateUDF("numTargetRowsCopied", deterministic = true)
+    val incrDeletedCountExpr = makeMetricUpdateUDF("numTargetRowsDeleted", deterministic = true)
 
     // Apply an outer join to find both, matches and non-matches. We are adding two boolean fields
     // with value `true`, one to each side of the join. Whether this field is null or not after
@@ -870,16 +873,17 @@ case class GpuMergeIntoCommand(
     }
 
     if (canReplace) {
-      val processedJoinPlan = RapidsProcessDeltaMergeJoin(joinedPlan, outputRowSchema.toAttributes,
-        RapidsProcessDeltaMergeJoinExpressions(
-          targetRowHasNoMatch = targetRowHasNoMatchMeta.convertToGpu(),
-          sourceRowHasNoMatch = sourceRowHasNoMatchMeta.convertToGpu(),
-          matchedConditions = matchedConditionsMetas.map(_.convertToGpu()),
-          matchedOutputs = matchedOutputsMetas.map(_.map(_.map(_.convertToGpu()))),
-          notMatchedConditions = notMatchedConditionsMetas.map(_.convertToGpu()),
-          notMatchedOutputs = notMatchedOutputsMetas.map(_.map(_.map(_.convertToGpu()))),
-          noopCopyOutput = noopCopyOutputMetas.map(_.convertToGpu()),
-          deleteRowOutput = deleteRowOutputMetas.map(_.convertToGpu())))
+      val processedJoinPlan = RapidsProcessDeltaMergeJoin(
+        joinedPlan,
+        outputRowSchema.toAttributes,
+        targetRowHasNoMatch = targetRowHasNoMatch,
+        sourceRowHasNoMatch = sourceRowHasNoMatch,
+        matchedConditions = matchedConditions,
+        matchedOutputs = matchedOutputs,
+        notMatchedConditions = notMatchedConditions,
+        notMatchedOutputs = notMatchedOutputs,
+        noopCopyOutput = noopCopyOutput,
+        deleteRowOutput = deleteRowOutput)
       Dataset.ofRows(spark, processedJoinPlan)
     } else {
       val joinedRowEncoder = RowEncoder(joinedPlan.schema)
@@ -970,10 +974,14 @@ case class GpuMergeIntoCommand(
   }
 
   /** Expressions to increment SQL metrics */
-  private def makeMetricUpdateUDF(name: String): Expression = {
+  private def makeMetricUpdateUDF(name: String, deterministic: Boolean = false): Expression = {
     // only capture the needed metric in a local variable
     val metric = metrics(name)
-    udf(new GpuDeltaMetricUpdateUDF(metric)).asNondeterministic().apply().expr
+    var u = udf(new GpuDeltaMetricUpdateUDF(metric))
+    if (!deterministic) {
+      u = u.asNondeterministic()
+    }
+    u.apply().expr
   }
 
   private def seqToString(exprs: Seq[Expression]): String = exprs.map(_.sql).mkString("\n\t")
