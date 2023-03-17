@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -70,8 +70,12 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    * @param cb the batch to print out.
    */
   public static synchronized void debug(String name, ColumnarBatch cb) {
-    try (Table table = from(cb)) {
-      debug(name, table);
+    if (cb.numCols() <= 0) {
+      System.err.println("DEBUG " + name + " NO COLS " + cb.numRows() + " ROWS");
+    } else {
+      try (Table table = from(cb)) {
+        debug(name, table);
+      }
     }
   }
 
