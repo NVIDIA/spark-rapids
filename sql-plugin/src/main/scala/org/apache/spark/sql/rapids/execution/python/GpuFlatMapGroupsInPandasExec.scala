@@ -14,38 +14,22 @@
  * limitations under the License.
  */
 
-/*** spark-rapids-shim-json-lines
-{"spark": "311"}
-{"spark": "312"}
-{"spark": "313"}
-{"spark": "320"}
-{"spark": "321"}
-{"spark": "321cdh"}
-{"spark": "322"}
-{"spark": "323"}
-{"spark": "330"}
-{"spark": "330cdh"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "340"}
-spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids.execution.python.shims
+package org.apache.spark.sql.rapids.execution.python
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
-import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
+import org.apache.spark.api.python.ChainedPythonFunctions
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.python.FlatMapGroupsInPandasExec
-import org.apache.spark.sql.rapids.execution.python.{GpuArrowPythonRunner, GpuPythonExecBase, GpuPythonHelper, GpuPythonUDF, GroupArgs}
 import org.apache.spark.sql.rapids.execution.python.BatchGroupUtils._
+import org.apache.spark.sql.rapids.execution.python.shims._
 import org.apache.spark.sql.types.{StructField, StructType}
-import org.apache.spark.sql.util.ArrowUtils
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuFlatMapGroupsInPandasExecMeta(
@@ -128,8 +112,6 @@ case class GpuFlatMapGroupsInPandasExec(
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
     val chainedFunc = Seq(ChainedPythonFunctions(Seq(pandasFunction)))
-    val sessionLocalTimeZone = conf.sessionLocalTimeZone
-    val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
     val localOutput = output
     val localChildOutput = child.output
     // Python wraps the resulting columns in a single struct column.
@@ -139,6 +121,13 @@ case class GpuFlatMapGroupsInPandasExec(
     // Resolve the argument offsets and related attributes.
     val GroupArgs(dedupAttrs, argOffsets, groupingOffsets) =
         resolveArgOffsets(child, groupingAttributes)
+
+    val runnerShims = GpuArrowPythonRunnerShims(conf,
+                        chainedFunc,
+                        Array(argOffsets),
+                        StructType.fromAttributes(dedupAttrs),
+                        pythonOutputSchema,
+                        spillCallback)
 
     // Start processing. Map grouped batches to ArrowPythonRunner results.
     child.executeColumnar().mapPartitionsInternal { inputIter =>
@@ -154,18 +143,7 @@ case class GpuFlatMapGroupsInPandasExec(
 
       if (pyInputIter.hasNext) {
         // Launch Python workers only when the data is not empty.
-        val pyRunner = new GpuArrowPythonRunner(
-          chainedFunc,
-          PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,
-          Array(argOffsets),
-          StructType.fromAttributes(dedupAttrs),
-          sessionLocalTimeZone,
-          pythonRunnerConf,
-          // The whole group data should be written in a single call, so here is unlimited
-          Int.MaxValue,
-          spillCallback.semaphoreWaitTime,
-          pythonOutputSchema)
-
+        val pyRunner = runnerShims.getRunner()
         executePython(pyInputIter, localOutput, pyRunner, mNumOutputRows, mNumOutputBatches)
       } else {
         // Empty partition, return it directly
