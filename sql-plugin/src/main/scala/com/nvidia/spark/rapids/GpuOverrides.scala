@@ -572,6 +572,11 @@ object GpuOverrides extends Logging {
     lit.value == null
   }
 
+  def isSupportedStringReplacePattern(strLit: String): Boolean = {
+    // check for regex special characters, except for \u0000 which we can support
+    !regexList.filterNot(_ == "\u0000").exists(pattern => strLit.contains(pattern))
+  }
+
   def isSupportedStringReplacePattern(exp: Expression): Boolean = {
     extractLit(exp) match {
       case Some(Literal(null, _)) => false
@@ -581,7 +586,7 @@ object GpuOverrides extends Logging {
           false
         } else {
           // check for regex special characters, except for \u0000 which we can support
-          !regexList.filterNot(_ == "\u0000").exists(pattern => strLit.contains(pattern))
+          isSupportedStringReplacePattern(strLit)
         }
       case _ => false
     }
