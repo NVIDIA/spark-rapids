@@ -185,13 +185,12 @@ abstract class SplittableJoinIterator(
 
   /**
    * Create a join gatherer.
-   * @param streamBatch next column batch from the streaming side of the join, if successful,
-   *                    the returned gatherer takes over responsibility for closing it.
+   * @param cb next column batch from the streaming side of the join
    * @param numJoinRows if present, the number of join output rows computed for this batch
    * @return some gatherer to use next or None if there is no next gatherer or the loop should try
    *         to build the gatherer again (e.g.: to skip a degenerate join result batch)
    */
-  protected def createGatherer(streamBatch: LazySpillableColumnarBatch,
+  protected def createGatherer(cb: LazySpillableColumnarBatch,
       numJoinRows: Option[Long]): Option[JoinGatherer]
 
   override def hasNextStreamBatch: Boolean = {
@@ -208,7 +207,7 @@ abstract class SplittableJoinIterator(
         stream.next()
       }
       opTime.ns {
-        closeOnExcept(scb) { scb =>
+        withResource(scb) { scb =>
           val numJoinRows = computeNumJoinRows(scb.getBatch)
 
           // We want the gather maps size to be around the target size. There are two gather maps
@@ -220,7 +219,7 @@ abstract class SplittableJoinIterator(
             // approach of assuming the data is uniformly distributed in the stream table.
             val numSplits = Math.min(scb.numRows,
               Math.ceil(numJoinRows.toDouble / maxJoinRows).toInt)
-            splitAndSave(scb.releaseBatch(), numSplits)
+            splitAndSave(scb.getBatch, numSplits)
 
             // Return no gatherer so the outer loop will try again
             return None
@@ -234,7 +233,7 @@ abstract class SplittableJoinIterator(
         assert(wasInitialJoin)
         import scala.collection.JavaConverters._
         withResource(GpuColumnVector.emptyBatch(streamAttributes.asJava)) { cb =>
-          closeOnExcept(LazySpillableColumnarBatch(cb, spillCallback, "empty_stream")) { scb =>
+          withResource(LazySpillableColumnarBatch(cb, spillCallback, "empty_stream")) { scb =>
             createGatherer(scb, None)
           }
         }
@@ -254,21 +253,19 @@ abstract class SplittableJoinIterator(
   private def splitStreamBatch(
       cb: ColumnarBatch,
       numBatches: Int): Seq[LazySpillableColumnarBatch] = {
-    withResource(cb) { cb =>
-      val batchSize = cb.numRows() / numBatches
-      val splits = withResource(GpuColumnVector.from(cb)) { tab =>
-        val splitIndexes = (1 until numBatches).map(num => num * batchSize)
-        tab.contiguousSplit(splitIndexes: _*)
-      }
-      withResource(splits) { splits =>
-        val schema = GpuColumnVector.extractTypes(cb)
-        val tables = splits.map(_.getTable)
-        val batches = tables.safeMap(GpuColumnVector.from(_, schema))
-        batches.safeMap { splitBatch =>
-          val lazyCb = LazySpillableColumnarBatch(splitBatch, spillCallback, "stream_data")
-          lazyCb.allowSpilling()
-          lazyCb
-        }
+    val batchSize = cb.numRows() / numBatches
+    val splits = withResource(GpuColumnVector.from(cb)) { tab =>
+      val splitIndexes = (1 until numBatches).map(num => num * batchSize)
+      tab.contiguousSplit(splitIndexes: _*)
+    }
+    withResource(splits) { splits =>
+      val schema = GpuColumnVector.extractTypes(cb)
+      val tables = splits.map(_.getTable)
+      val batches = tables.safeMap(GpuColumnVector.from(_, schema))
+      batches.safeMap { splitBatch =>
+        val lazyCb = LazySpillableColumnarBatch(splitBatch, spillCallback, "stream_data")
+        lazyCb.allowSpilling()
+        lazyCb
       }
     }
   }
@@ -289,7 +286,6 @@ abstract class SplittableJoinIterator(
       // We just need some kind of cutoff to not get stuck in a loop if the batches get to be too
       // small but we want to at least give it a chance to work (mostly for tests where the
       // targetSize can be set really small)
-      cb.close()
       throw oom.get
     }
     val msg = s"Split stream batch into $numBatches batches of about $batchSize rows"

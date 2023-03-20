@@ -199,26 +199,26 @@ class ConditionalNestedLoopJoinIterator(
   }
 
   override def createGatherer(
-      streamBatch: LazySpillableColumnarBatch,
+      cb: LazySpillableColumnarBatch,
       numJoinRows: Option[Long]): Option[JoinGatherer] = {
     if (numJoinRows.contains(0)) {
       // nothing matched
-      streamBatch.close()
       return None
     }
-    closeOnExcept(streamBatch) { streamBatch =>
-      streamBatch.allowSpilling()
-      withRetryNoSplit {
-        withResource(GpuColumnVector.from(builtBatch.getBatch)) { builtTable =>
-          withResource(GpuColumnVector.from(streamBatch.getBatch)) { streamTable =>
-            val builtSpillOnly = LazySpillableColumnarBatch.spillOnly(builtBatch)
-            val (leftTable, leftBatch, rightTable, rightBatch) = buildSide match {
-              case GpuBuildLeft => (builtTable, builtSpillOnly, streamTable, streamBatch)
-              case GpuBuildRight => (streamTable, streamBatch, builtTable, builtSpillOnly)
+    cb.allowSpilling()
+    val builtSpillOnly = LazySpillableColumnarBatch.spillOnly(builtBatch)
+    withRetryNoSplit {
+      withResource(GpuColumnVector.from(builtBatch.getBatch)) { builtTable =>
+        withResource(GpuColumnVector.from(cb.getBatch)) { streamTable =>
+          closeOnExcept(LazySpillableColumnarBatch(cb.getBatch, spillCallback, "stream_data")) {
+            streamBatch =>
+              val (leftTable, leftBatch, rightTable, rightBatch) = buildSide match {
+                case GpuBuildLeft => (builtTable, builtSpillOnly, streamTable, streamBatch)
+                case GpuBuildRight => (streamTable, streamBatch, builtTable, builtSpillOnly)
+              }
+              val maps = computeGatherMaps(leftTable, rightTable, numJoinRows)
+              makeGatherer(maps, leftBatch, rightBatch, joinType)
             }
-            val maps = computeGatherMaps(leftTable, rightTable, numJoinRows)
-            makeGatherer(maps, leftBatch, rightBatch, joinType)
-          }
         }
       }
     }

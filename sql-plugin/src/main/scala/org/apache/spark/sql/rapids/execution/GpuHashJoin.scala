@@ -288,13 +288,16 @@ abstract class BaseHashJoinIterator(
   }
 
   override def createGatherer(
-      streamBatch: LazySpillableColumnarBatch,
+      cb: LazySpillableColumnarBatch,
       numJoinRows: Option[Long]): Option[JoinGatherer] = {
     try {
-      streamBatch.allowSpilling()
+      cb.allowSpilling()
       withRetryNoSplit {
-        withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
-          joinGatherer(builtKeys, built, streamBatch)
+        closeOnExcept(LazySpillableColumnarBatch(cb.getBatch, spillCallback, "stream_data")) {
+          streamBatch =>
+            withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
+              joinGatherer(builtKeys, built, streamBatch)
+            }
         }
       }
     } catch {
@@ -307,10 +310,10 @@ abstract class BaseHashJoinIterator(
           || joinType == FullOuter =>
         // Because this is just an estimate, it is possible for us to get this wrong, so
         // make sure we at least split the batch in half.
-        val numBatches = Math.max(2, estimatedNumBatches(streamBatch))
+        val numBatches = Math.max(2, estimatedNumBatches(cb))
 
         // Split batch and return no gatherer so the outer loop will try again
-        splitAndSave(streamBatch.releaseBatch(), numBatches, Some(oom))
+        splitAndSave(cb.getBatch, numBatches, Some(oom))
         None
     }
   }
