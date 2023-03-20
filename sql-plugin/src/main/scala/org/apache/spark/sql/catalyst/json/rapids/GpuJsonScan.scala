@@ -23,7 +23,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, RegexProgram, Scalar, Schema, Table}
+import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, NvtxColor, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
@@ -277,14 +277,18 @@ class JsonPartitionReader(
       dataBufferer: HostLineBufferer,
       cudfSchema: Schema,
       readDataSchema: StructType,
-      hasHeader: Boolean): Table = {
+      hasHeader: Boolean,
+      decodeTime: GpuMetric): Table = {
     val jsonOpts = buildJsonOptions(parsedOptions)
     val dataSize = dataBufferer.getLength
     // cuDF does not yet support reading a subset of columns so we have
     // to apply the read schema projection here
     val jsonTbl = try {
       RmmRapidsRetryIterator.withRetryNoSplit(dataBufferer.getBufferAndRelease) { dataBuffer =>
-        Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)
+        withResource(new NvtxWithMetrics(getFileFormatShortName + " decode",
+          NvtxColor.DARK_GREEN, decodeTime)) { _ =>
+          Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)
+        }
       }
     } catch {
       case e: Exception =>
