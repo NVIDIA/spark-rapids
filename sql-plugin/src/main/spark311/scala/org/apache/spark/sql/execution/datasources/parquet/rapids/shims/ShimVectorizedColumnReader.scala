@@ -18,7 +18,6 @@
 {"spark": "311"}
 {"spark": "312"}
 {"spark": "313"}
-{"spark": "314"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.parquet.rapids.shims
 
