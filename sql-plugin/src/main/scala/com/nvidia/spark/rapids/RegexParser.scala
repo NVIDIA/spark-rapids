@@ -42,6 +42,8 @@ import com.nvidia.spark.rapids.RegexParser.toReadableString
  */
 class RegexParser(pattern: String) {
   private val regexPunct = "!\"#$%&'()*+,-./:;<=>?@\\^_`{|}~"
+  private val escapeChars = Map('n' -> '\n', 'r' -> '\r', 't' -> '\t', 'f' -> '\f', 'a' -> '\u0007',
+      'b' -> '\b', 'e' -> '\u001b')
 
   /** index of current position within the string being parsed */
   private var pos = 0
@@ -208,13 +210,8 @@ class RegexParser(pattern: String) {
             case 'd' => RegexCharacterRange(RegexChar('0'), RegexChar('9'))
             // List of character literals with an escape from here, under "Characters"
             // https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html
-            case 'n' => RegexChar('\n')
-            case 'r' => RegexChar('\r')
-            case 't' => RegexChar('\t')
-            case 'f' => RegexChar('\f')
-            case 'a' => RegexChar('\u0007')
-            case 'b' => RegexChar('\b')
-            case 'e' => RegexChar('\u001b')
+            case ch if escapeChars.contains(ch) =>
+              RegexChar(escapeChars(ch))
             case ch => 
               if (supportedMetaCharacters.contains(ch)) {
                 // an escaped metacharacter ('\\', '^', '-', ']', '+')
@@ -431,14 +428,9 @@ class RegexParser(pattern: String) {
             parseOctalDigit
           case 'p' | 'P' =>
             parsePredefinedClass
-          case 'a' =>
-            // alert (bell) character \a
+          case _ if escapeChars.contains(ch) =>
             consumeExpected(ch)
-            RegexChar('\u0007')
-          case 'e' =>
-            // escape character \e
-            consumeExpected(ch)
-            RegexChar('\u001b')
+            RegexChar(escapeChars(ch))
           case _ if regexPunct.contains(ch) =>
             // other punctuation
             // note that this may include metacharacters from earlier, this is just to
@@ -689,6 +681,8 @@ sealed class RegexRewriteFlags(val emptyRepetition: Boolean)
 class CudfRegexTranspiler(mode: RegexMode) {
   private val regexMetaChars = ".$^[]\\|?*+(){}"
   private val regexPunct = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+  private val escapeChars = Map('n' -> '\n', 'r' -> '\r', 't' -> '\t', 'f' -> '\f', 'a' -> '\u0007',
+      'b' -> '\b', 'e' -> '\u001b')
 
   private def countCaptureGroups(regex: RegexAST): Int = {
     regex match {
@@ -746,6 +740,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
   
   def transpileToSplittableString(e: RegexAST): Option[String] = {
     e match {
+      case RegexEscaped(ch) if escapeChars.contains(ch) => Some(escapeChars(ch).toString)
       case RegexEscaped(ch) if regexPunct.contains(ch) => Some(ch.toString)
       case RegexChar(ch) if !regexMetaChars.contains(ch) => Some(ch.toString)
       case RegexSequence(parts) =>
@@ -1232,6 +1227,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
             RegexChar('\u0085'), RegexChar('\u2028'), RegexChar('\u2029')
           ))
           RegexGroup(true, RegexChoice(l, r), None)
+        case _ if escapeChars.contains(ch) =>
+          RegexChar(escapeChars(ch))
         case _ if regexPunct.contains(ch) && !regexMetaChars.contains(ch) =>
           RegexChar(ch)
         case _ =>

@@ -29,7 +29,7 @@ import org.apache.spark.sql.catalyst.plans.physical.Distribution
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.joins.ShuffledHashJoinExec
 import org.apache.spark.sql.rapids.GpuOr
-import org.apache.spark.sql.rapids.execution.{GpuHashJoin, JoinTypeChecks}
+import org.apache.spark.sql.rapids.execution.{BatchTypeSizeAwareIterator, GpuHashJoin, GpuSubPartitionHashJoin, JoinTypeChecks}
 import org.apache.spark.sql.types.BooleanType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -92,7 +92,8 @@ case class GpuShuffledHashJoinExec(
     right: SparkPlan,
     isSkewJoin: Boolean)(
     cpuLeftKeys: Seq[Expression],
-    cpuRightKeys: Seq[Expression]) extends ShimBinaryExecNode with GpuHashJoin {
+    cpuRightKeys: Seq[Expression]) extends ShimBinaryExecNode with GpuHashJoin
+  with GpuSubPartitionHashJoin {
 
   override def otherCopyArgs: Seq[AnyRef] = cpuLeftKeys :: cpuRightKeys :: Nil
 
@@ -133,9 +134,18 @@ case class GpuShuffledHashJoinExec(
     case _ => RequireSingleBatch
   }
 
-  override def childrenCoalesceGoal: Seq[CoalesceGoal] = (joinType, buildSide) match {
-    case (_, GpuBuildLeft) => Seq(buildGoal, null)
-    case (_, GpuBuildRight) => Seq(null, buildGoal)
+  private def realTargetBatchSize(): Long = {
+    val configValue = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+    // The 10k is mostly for tests, hopefully no one is setting anything that low in production.
+    Math.max(configValue, 10 * 1024)
+  }
+
+  override def childrenCoalesceGoal: Seq[CoalesceGoal] = {
+    val batchedBuildGoal = TargetSize(realTargetBatchSize())
+    (joinType, buildSide) match {
+      case (_, GpuBuildLeft) => Seq(batchedBuildGoal, null)
+      case (_, GpuBuildRight) => Seq(null, batchedBuildGoal)
+    }
   }
 
   override def doExecuteColumnar() : RDD[ColumnarBatch] = {
@@ -146,7 +156,9 @@ case class GpuShuffledHashJoinExec(
     val streamTime = gpuLongMetric(STREAM_TIME)
     val joinTime = gpuLongMetric(JOIN_TIME)
     val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
-    val batchSizeBytes = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+    val numPartitions = RapidsConf.NUM_SUB_PARTITIONS.get(conf)
+    val subPartConf = RapidsConf.HASH_SUB_PARTITION_TEST_ENABLED.get(conf)
+       .map(_ && RapidsConf.TEST_CONF.get(conf))
     val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
     val localBuildOutput = buildPlan.output
 
@@ -160,24 +172,45 @@ case class GpuShuffledHashJoinExec(
        GpuMetric.NUM_OUTPUT_BATCHES -> NoopMetric,
        GpuMetric.NUM_OUTPUT_ROWS -> NoopMetric)
 
+    val realTarget = realTargetBatchSize()
+    // Small data does not need joins by sub-partitioning
+    val bigJoinThreshold = Math.max(realTarget, 100 * 1024 * 1024)
+
     streamedPlan.executeColumnar().zipPartitions(buildPlan.executeColumnar()) {
       (streamIter, buildIter) => {
-        val (builtBatch, maybeBufferedStreamIter) =
-          GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
-            buildGoal,
-            batchSizeBytes,
+        val batchAwareIter = new BatchTypeSizeAwareIterator(buildIter, bigJoinThreshold,
+          buildDataSize)
+        // SubPartition conf has higher priority.
+        if (subPartConf.getOrElse(batchAwareIter.isBatchesSizeOverflow)) {
+          // For the quite big joins, when the built batch will go beyond the
+          // the target batch size.
+          val gpuBuildIter = GpuShuffledHashJoinExec.ensureBatchesOnGpu(
+            batchAwareIter,
             localBuildOutput,
-            buildIter,
-            new CollectTimeIterator("shuffled join stream", streamIter, streamTime),
-            spillCallback,
+            batchAwareIter.areBatchesSerialized,
+            realTarget,
             coalesceMetricsMap)
 
-        withResource(builtBatch) { _ =>
-          // doJoin will increment the reference counts as needed for the builtBatch
-          buildDataSize += GpuColumnVector.getTotalDeviceMemoryUsed(builtBatch)
-          doJoin(builtBatch, maybeBufferedStreamIter,
-            batchSizeBytes, spillCallback, numOutputRows, joinOutputRows, numOutputBatches,
-            opTime, joinTime)
+          doJoinBySubPartition(gpuBuildIter, streamIter, realTarget, numPartitions,
+            spillCallback, numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
+        } else {
+          val (builtBatch, maybeBufferedStreamIter) =
+            GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
+              buildGoal,
+              realTarget,
+              localBuildOutput,
+              batchAwareIter,
+              new CollectTimeIterator("shuffled join stream", streamIter, streamTime),
+              spillCallback,
+              coalesceMetricsMap)
+
+          withResource(builtBatch) { _ =>
+            // doJoin will increment the reference counts as needed for the builtBatch
+            buildDataSize += GpuColumnVector.getTotalDeviceMemoryUsed(builtBatch)
+            doJoin(builtBatch, maybeBufferedStreamIter,
+              realTarget, spillCallback, numOutputRows, joinOutputRows, numOutputBatches,
+              opTime, joinTime)
+          }
         }
       }
     }
@@ -250,17 +283,24 @@ object GpuShuffledHashJoinExec extends Arm {
         }
       }
 
+      val dataTypes = buildOutput.map(_.dataType).toArray
       if (!firstBatchIsSerialized) {
         // In this scenario we are getting non host-side batches in the build side
         // given the plan rules we expect this to be a single batch
+        val singBatchIter = new GpuCoalesceIterator(
+          Option(bufferedBuildIterator).getOrElse(buildIter),
+          dataTypes, buildGoal,
+          NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric,
+          coalesceMetricsMap(GpuMetric.CONCAT_TIME),
+          coalesceMetricsMap(GpuMetric.OP_TIME),
+          coalesceMetricsMap(GpuMetric.PEAK_DEVICE_MEMORY),
+          spillCallback, "single build batch")
         val builtBatch =
-          ConcatAndConsumeAll.getSingleBatchWithVerification(
-            Option(bufferedBuildIterator).getOrElse(buildIter), buildOutput)
+          ConcatAndConsumeAll.getSingleBatchWithVerification(singBatchIter, buildOutput)
         val delta = System.nanoTime() - startTime
         buildTime += delta
         (builtBatch, streamIter)
       } else {
-        val dataTypes = buildOutput.map(_.dataType).toArray
         val hostConcatIter = new HostShuffleCoalesceIterator(bufferedBuildIterator,
           hostTargetBatchSize, dataTypes, coalesceMetricsMap)
         withResource(hostConcatIter) { _ =>
@@ -340,6 +380,25 @@ object GpuShuffledHashJoinExec extends Arm {
         cudf_utils.HostConcatResultUtil.getColumnarBatch(hostConcatResult, dataTypes)
       }
     }
+  }
+
+  def isBatchSerialized(batch: ColumnarBatch): Boolean = {
+    batch.numCols() == 1 && batch.column(0).isInstanceOf[SerializedTableColumn]
+  }
+
+  def ensureBatchesOnGpu(
+      inputIter: Iterator[ColumnarBatch],
+      inputSchema: Seq[Attribute],
+      areBatchesSerialized: Boolean,
+      batchSizeBytes: Long,
+      metricsMap: Map[String, GpuMetric]): Iterator[ColumnarBatch] = {
+    if (areBatchesSerialized) {
+      val dataTypes = inputSchema.map(_.dataType).toArray
+      // Get host batches, move them to GPU
+      val hostIter = new HostShuffleCoalesceIterator(inputIter, batchSizeBytes, dataTypes,
+        metricsMap)
+      new GpuShuffleCoalesceIterator(hostIter, dataTypes, metricsMap)
+    } else inputIter
   }
 }
 

@@ -226,6 +226,21 @@ object GpuHashJoin extends Arm {
       case _ => false
     }
   }
+
+  // scalastyle:off line.size.limit
+  /**
+   * The function is copied from Spark 3.2:
+   *   https://github.com/apache/spark/blob/v3.2.2/sql/core/src/main/scala/org/apache/spark/sql/execution/joins/HashJoin.scala#L709-L713
+   *
+   * Returns whether the keys can be rewritten as a packed long. If
+   * they can, we can assume that they are packed when we extract them out.
+   */
+  // scalastyle:on
+  def canRewriteAsLongType(keys: Seq[Expression]): Boolean = {
+    // TODO: support BooleanType, DateType and TimestampType
+    keys.forall(_.dataType.isInstanceOf[IntegralType]) &&
+      keys.map(_.dataType.defaultSize).sum <= 8
+  }
 }
 
 abstract class BaseHashJoinIterator(
@@ -731,6 +746,7 @@ class HashFullJoinIterator(
         }
       }
     }
+    builtSideTracker.foreach(_.close())
     builtSideTracker = withResource(updatedTrackingTable) { _ =>
       Some(SpillableColumnarBatch(
         GpuColumnVector.from(updatedTrackingTable, Array[DataType](DataTypes.BooleanType)),
@@ -935,9 +951,6 @@ trait GpuHashJoin extends GpuExec {
       numOutputBatches: GpuMetric,
       opTime: GpuMetric,
       joinTime: GpuMetric): Iterator[ColumnarBatch] = {
-    // The 10k is mostly for tests, hopefully no one is setting anything that low in production.
-    val realTarget = Math.max(targetSize, 10 * 1024)
-
     // Filtering nulls on the build side is a workaround for Struct joins with nullable children
     // see https://github.com/NVIDIA/spark-rapids/issues/2126 for more info
     val builtAnyNullable = compareNullsEqual && buildKeys.exists(_.nullable)
@@ -975,7 +988,7 @@ trait GpuHashJoin extends GpuExec {
       case FullOuter =>
         new HashFullJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream,
           boundStreamKeys, streamedPlan.output, boundCondition, numFirstConditionTableColumns,
-          realTarget, buildSide, compareNullsEqual, spillCallback, opTime, joinTime)
+          targetSize, buildSide, compareNullsEqual, spillCallback, opTime, joinTime)
       case _ =>
         if (boundCondition.isDefined) {
           // ConditionalHashJoinIterator will close the compiled condition
@@ -983,11 +996,11 @@ trait GpuHashJoin extends GpuExec {
             boundCondition.get.convertToAst(numFirstConditionTableColumns).compile()
           new ConditionalHashJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream,
             boundStreamKeys, streamedPlan.output, compiledCondition,
-            realTarget, joinType, buildSide, compareNullsEqual, spillCallback, opTime, joinTime)
+            targetSize, joinType, buildSide, compareNullsEqual, spillCallback, opTime, joinTime)
         } else {
           new HashJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream, boundStreamKeys,
-            streamedPlan.output, realTarget, joinType, buildSide, compareNullsEqual, spillCallback,
-            opTime, joinTime)
+            streamedPlan.output, targetSize, joinType, buildSide, compareNullsEqual,
+            spillCallback, opTime, joinTime)
         }
     }
 

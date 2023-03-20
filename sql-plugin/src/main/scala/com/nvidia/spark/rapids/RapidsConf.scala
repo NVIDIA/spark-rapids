@@ -1269,6 +1269,16 @@ object RapidsConf {
     .toSequence
     .createWithDefault(Nil)
 
+  val HASH_SUB_PARTITION_TEST_ENABLED = conf("spark.rapids.sql.test.subPartitioning.enabled")
+    .doc("Setting to true will force hash joins to use the sub-partitioning algorithm if " +
+      s"${TEST_CONF.key} is also enabled, while false means always disabling it. This is " +
+      "intended for tests. Do not set any value under production environments, since it " +
+      "will override the default behavior that will choose one automatically according to " +
+      "the input batch size")
+    .internal()
+    .booleanConf
+    .createOptional
+
   val LOG_TRANSFORMATIONS = conf("spark.rapids.sql.debug.logTransformations")
     .doc("When enabled, all query transformations will be logged.")
     .internal()
@@ -1520,6 +1530,11 @@ object RapidsConf {
         .createWithDefault(20)
 
   // ALLUXIO CONFIGS
+  val ALLUXIO_HOME = conf("spark.rapids.alluxio.home")
+    .doc("The Alluxio installation home path or link to the installation home path. ")
+    .startupOnly()
+    .stringConf
+    .createWithDefault("/opt/alluxio")
 
   val ALLUXIO_PATHS_REPLACE = conf("spark.rapids.alluxio.pathsToReplace")
     .doc("List of paths to be replaced with corresponding Alluxio scheme. " +
@@ -1538,10 +1553,6 @@ object RapidsConf {
   val ALLUXIO_AUTOMOUNT_ENABLED = conf("spark.rapids.alluxio.automount.enabled")
     .doc("Enable the feature of auto mounting the cloud storage to Alluxio. " +
       "It requires the Alluxio master is the same node of Spark driver node. " +
-      "When it's true, it requires an environment variable ALLUXIO_HOME be set properly. " +
-      "The default value of ALLUXIO_HOME is \"/opt/alluxio-2.8.0\". " +
-      "You can set it as an environment variable when running a spark-submit or " +
-      "you can use spark.yarn.appMasterEnv.ALLUXIO_HOME to set it on Yarn. " +
       "The Alluxio master's host and port will be read from alluxio.master.hostname and " +
       "alluxio.master.rpc.port(default: 19998) from ALLUXIO_HOME/conf/alluxio-site.properties, " +
       "then replace a cloud path which matches spark.rapids.alluxio.bucket.regex like " +
@@ -1805,6 +1816,14 @@ object RapidsConf {
             "spillable cache and big value may cause more IO swaps.")
         .bytesConf(ByteUnit.BYTE)
         .createWithDefault(0L)
+
+  val NUM_SUB_PARTITIONS = conf("spark.rapids.sql.join.hash.numSubPartitions")
+    .doc("The number of partitions for the repartition in each partition for big hash join. " +
+      "GPU will try to repartition the data into smaller partitions in each partition when the " +
+      "data from the build side is too large to fit into a single batch.")
+    .internal()
+    .integerConf
+    .createWithDefault(16)
 
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
@@ -2343,6 +2362,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val gpuReadMemorySpeed: Double = get(OPTIMIZER_GPU_READ_SPEED)
 
   lazy val gpuWriteMemorySpeed: Double = get(OPTIMIZER_GPU_WRITE_SPEED)
+
+  lazy val getAlluxioHome: String = get(ALLUXIO_HOME)
 
   lazy val getAlluxioPathsToReplace: Option[Seq[String]] = get(ALLUXIO_PATHS_REPLACE)
 
