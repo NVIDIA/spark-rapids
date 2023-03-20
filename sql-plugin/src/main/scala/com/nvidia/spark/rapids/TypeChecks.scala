@@ -842,6 +842,10 @@ object TypeChecks {
     areTimestampsSupported(ZoneId.systemDefault()) &&
       areTimestampsSupported(SQLConf.get.sessionLocalTimeZone)
   }
+
+  def isTimezoneSensitiveType(dataType: DataType): Boolean = {
+    dataType == DateType || dataType == TimestampType
+  }
 }
 
 /**

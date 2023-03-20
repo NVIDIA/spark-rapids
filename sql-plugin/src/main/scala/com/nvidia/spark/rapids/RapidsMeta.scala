@@ -1056,13 +1056,17 @@ abstract class BaseExprMeta[INPUT <: Expression](
   val isFoldableNonLitAllowed: Boolean = false
 
   /**
-   * This is a flag used for tagging a TimeZoneAwareExpression for timezone after all
-   * the other tagging is done.
-   * By default a TimeZoneAwareExpression always requires the timezone tagging, but there
-   * are some exceptions. e.g. Cast, which requires timezone tagging only when it has
-   * timestamp/date type as input or output. Override this to match special cases.
+   * Whether to tag a TimeZoneAwareExpression for timezone after all the other tagging
+   * is done.
+   * By default a TimeZoneAwareExpression always requires the timezone tagging, but
+   * there is one exception sa far, 'Cast', who requires timezone tagging only when it
+   * has timestamp/date type as input or output. Override it to match the special case.
    */
-  protected val needTimezoneTagging = true
+  protected def needTimezoneTagging: Boolean = {
+    // A TimeZoneAwareExpression having no timestamp/date types as input/output will escape
+    // from the timezone tagging in the prior type checks. So ask for tagging it here.
+    !(expr.dataType +: expr.children.map(_.dataType)).exists(TypeChecks.isTimezoneSensitiveType)
+  }
 
   final override def tagSelfForGpu(): Unit = {
     if (wrapped.foldable && !GpuOverrides.isLit(wrapped) && !isFoldableNonLitAllowed) {
@@ -1071,8 +1075,6 @@ abstract class BaseExprMeta[INPUT <: Expression](
     }
     rule.getChecks.foreach(_.tag(this))
     tagExprForGpu()
-    // A TimeZoneAwareExpression having no timestamp/date types as input/output will escape
-    // from the timezone tagging in the above type checks.
     wrapped match {
       case tzAware: TimeZoneAwareExpression if needTimezoneTagging =>
         checkTimeZoneId(tzAware.zoneId)
