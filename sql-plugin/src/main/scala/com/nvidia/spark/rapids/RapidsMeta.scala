@@ -1065,7 +1065,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
   protected def needTimezoneTagging: Boolean = {
     // A TimeZoneAwareExpression having no timestamp/date types as input/output will escape
     // from the timezone tagging in the prior type checks. So ask for tagging it here.
-    !(expr.dataType +: expr.children.map(_.dataType)).exists(TypeChecks.isTimezoneSensitiveType)
+    !(dataType +: childExprs.map(_.dataType)).exists(TypeChecks.isTimezoneSensitiveType)
   }
 
   final override def tagSelfForGpu(): Unit = {
