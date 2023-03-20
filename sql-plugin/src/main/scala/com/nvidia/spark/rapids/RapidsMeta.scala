@@ -1059,7 +1059,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
    * Whether to tag a TimeZoneAwareExpression for timezone after all the other tagging
    * is done.
    * By default a TimeZoneAwareExpression always requires the timezone tagging, but
-   * there is one exception sa far, 'Cast', who requires timezone tagging only when it
+   * there is one exception so far, 'Cast', who requires timezone tagging only when it
    * has timestamp/date type as input or output. Override it to match the special case.
    */
   protected def needTimezoneTagging: Boolean = {
