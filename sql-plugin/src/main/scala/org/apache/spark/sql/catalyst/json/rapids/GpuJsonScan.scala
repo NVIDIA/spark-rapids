@@ -245,6 +245,31 @@ case class GpuJsonPartitionReaderFactory(
   }
 }
 
+object JsonPartitionReader extends Arm {
+  def readToTable(
+      dataBufferer: HostLineBufferer,
+      cudfSchema: Schema,
+      decodeTime: GpuMetric,
+      jsonOpts:  cudf.JSONOptions,
+      formatName: String,
+      partFile: PartitionedFile): Table = {
+    val dataSize = dataBufferer.getLength
+    // cuDF does not yet support reading a subset of columns so we have
+    // to apply the read schema projection here
+    try {
+      RmmRapidsRetryIterator.withRetryNoSplit(dataBufferer.getBufferAndRelease) { dataBuffer =>
+        withResource(new NvtxWithMetrics(formatName + " decode",
+          NvtxColor.DARK_GREEN, decodeTime)) { _ =>
+          Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)
+        }
+      }
+    } catch {
+      case e: Exception =>
+        throw new IOException(s"Error when processing file [$partFile]", e)
+    }
+  }
+}
+
 class JsonPartitionReader(
     conf: Configuration,
     partFile: PartitionedFile,
@@ -280,20 +305,8 @@ class JsonPartitionReader(
       hasHeader: Boolean,
       decodeTime: GpuMetric): Table = {
     val jsonOpts = buildJsonOptions(parsedOptions)
-    val dataSize = dataBufferer.getLength
-    // cuDF does not yet support reading a subset of columns so we have
-    // to apply the read schema projection here
-    val jsonTbl = try {
-      RmmRapidsRetryIterator.withRetryNoSplit(dataBufferer.getBufferAndRelease) { dataBuffer =>
-        withResource(new NvtxWithMetrics(getFileFormatShortName + " decode",
-          NvtxColor.DARK_GREEN, decodeTime)) { _ =>
-          Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)
-        }
-      }
-    } catch {
-      case e: Exception =>
-        throw new IOException(s"Error when processing file [$partFile]", e)
-    }
+    val jsonTbl = JsonPartitionReader.readToTable(dataBufferer, cudfSchema, decodeTime, jsonOpts,
+      getFileFormatShortName, partFile)
     withResource(jsonTbl) { tbl =>
       val columns = new ListBuffer[ColumnVector]()
       closeOnExcept(columns) { _ =>
