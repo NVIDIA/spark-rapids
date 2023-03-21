@@ -273,7 +273,7 @@ abstract class SplittableJoinIterator(
   /**
    * Split a stream-side input batch, making all splits spillable, and replacing this batch with
    * the splits in the stream-side input
-   * @param cb stream-side input batch to split, which will be closed
+   * @param cb stream-side input batch to split
    * @param numBatches number of splits to produce with approximately the same number of rows each
    * @param oom a prior OOM exception that this will try to recover from by splitting
    */
