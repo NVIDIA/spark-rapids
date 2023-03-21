@@ -632,9 +632,12 @@ def test_cast_int_to_string_not_UTC():
         {"spark.sql.session.timeZone": "+08"})
 
 
-not_utc_fallback_test_params = [(timestamp_gen, 'STRING'), (date_gen, 'STRING'),
-        (SetValuesGen(StringType(), ['2023-03-20 10:38:50', '2023-03-20 10:39:02']), 'TIMESTAMP'),
-        (SetValuesGen(StringType(), valid_values_string_to_date), 'DATE')]
+# The cases here should match "Cast.needsTimeZone(from, to)"
+valid_ts_str_gen = SetValuesGen(StringType(), ['2023-03-20 10:38:50', '2023-03-20 10:39:02'])
+valid_date_str_gen = SetValuesGen(StringType(), valid_values_string_to_date)
+not_utc_fallback_test_params = [(timestamp_gen, 'STRING'), (timestamp_gen, 'DATE'),
+                                (date_gen, 'STRING',), (date_gen, 'TIMESTAMP'),
+                                (valid_ts_str_gen, 'TIMESTAMP'), (valid_date_str_gen, 'DATE')]
 
 @allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('from_gen, to_type', not_utc_fallback_test_params)

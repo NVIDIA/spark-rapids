@@ -158,8 +158,7 @@ final class CastExprMeta[INPUT <: UnaryExpression with TimeZoneAwareExpression w
     GpuCast(child, toType, ansiEnabled, cast.timeZoneId, legacyCastToString,
       stringToAnsiDate)
 
-  // The timezone tagging in type checks is enough for Cast, so always false.
-  override protected val needTimezoneTagging: Boolean = false
+  override protected def needTimezoneTagging: Boolean = Cast.needsTimeZone(fromType, toType)
 }
 
 object GpuCast extends Arm {
