@@ -1282,6 +1282,7 @@
                             <jvmArg>-Xmx1024m</jvmArg>
                         </jvmArgs>
                         <addJavacArgs>${scala.javac.args}</addJavacArgs>
+                        <secondaryCacheDir>${spark.rapids.source.basedir}/target/${spark.version.classifier}/.sbt/1.0/zinc/org.scala-sbt</secondaryCacheDir>
                     </configuration>
                 </plugin>
                 <plugin>
