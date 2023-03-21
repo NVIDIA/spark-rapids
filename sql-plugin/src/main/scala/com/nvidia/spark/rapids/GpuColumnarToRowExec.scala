@@ -20,8 +20,8 @@ import scala.annotation.tailrec
 import scala.collection.mutable.Queue
 
 import ai.rapids.cudf.{Cuda, HostColumnVector, NvtxColor, Table}
-import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
