@@ -67,6 +67,11 @@ that control the operation of the optimized write.
 | spark.databricks.delta.optimizeWrite.smallPartitionFactor   | 0.5     | Merge partitions smaller than this factor multiplied by the target partition size          |
 | spark.databricks.delta.optimizeWrite.mergedPartitionFactor  | 1.2     | Avoid combining partitions larger than this factor multiplied by the target partition size |
 
+Note that optimized write support requires round-robin partitioning of the data, and round-robin
+partitioning requires sorting across all columns for deterministic operation. If the GPU cannot
+support sorting a particular column type in order to support the round-robin partitioning, the
+Delta Lake write will fallback to the CPU.
+
 ### RapidsDeltaWrite Node in Query Plans
 
 A side-effect of performing a GPU accelerated Delta Lake write is a new node will appear in the
