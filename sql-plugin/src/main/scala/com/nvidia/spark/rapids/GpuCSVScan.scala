@@ -334,6 +334,29 @@ abstract class CSVPartitionReaderBase[BUFF <: LineBufferer, FACT <: LineBufferer
 }
 
 
+object CSVPartitionReader extends Arm {
+  def readToTable(
+      dataBufferer: HostLineBufferer,
+      cudfSchema: Schema,
+      decodeTime: GpuMetric,
+      csvOpts: cudf.CSVOptions.Builder,
+      formatName: String,
+      partFile: PartitionedFile): Table = {
+    val dataSize = dataBufferer.getLength
+    try {
+      RmmRapidsRetryIterator.withRetryNoSplit(dataBufferer.getBufferAndRelease) { dataBuffer =>
+        withResource(new NvtxWithMetrics(formatName + " decode", NvtxColor.DARK_GREEN,
+          decodeTime)) { _ =>
+          Table.readCSV(cudfSchema, csvOpts.build, dataBuffer, 0, dataSize)
+        }
+      }
+    } catch {
+      case e: Exception =>
+        throw new IOException(s"Error when processing file [$partFile]", e)
+    }
+  }
+}
+
 class CSVPartitionReader(
     conf: Configuration,
     partFile: PartitionedFile,
@@ -379,17 +402,7 @@ class CSVPartitionReader(
       decodeTime: GpuMetric): Table = {
     val hasHeader = isFirstChunk && parsedOptions.headerFlag
     val csvOpts = buildCsvOptions(parsedOptions, readDataSchema, hasHeader)
-    val dataSize = dataBufferer.getLength
-    try {
-      RmmRapidsRetryIterator.withRetryNoSplit(dataBufferer.getBufferAndRelease) { dataBuffer =>
-        withResource(new NvtxWithMetrics(getFileFormatShortName + " decode",
-          NvtxColor.DARK_GREEN, decodeTime)) { _ =>
-          Table.readCSV(cudfSchema, csvOpts.build, dataBuffer, 0, dataSize)
-        }
-      }
-    } catch {
-      case e: Exception =>
-        throw new IOException(s"Error when processing file [$partFile]", e)
-    }
+    CSVPartitionReader.readToTable(dataBufferer, cudfSchema, decodeTime, csvOpts,
+      getFileFormatShortName, partFile)
   }
 }
