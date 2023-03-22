@@ -32,13 +32,16 @@ import org.apache.spark.sql.SparkSession
 object GpuDoAutoCompaction extends PostCommitHook
     with DeltaLogging
     with Serializable {
-  override val name: String = "GpuDoAutoCompaction"
+  override val name: String = "Triggers compaction if necessary"
 
   override def run(spark: SparkSession,
                    txn: OptimisticTransactionImpl,
                    committedActions: Seq[Action]): Unit = {
     val gpuTxn = txn.asInstanceOf[GpuOptimisticTransaction]
     val newTxn = new GpuDeltaLog(gpuTxn.deltaLog, gpuTxn.rapidsConf).startTransaction()
+    // Note: The Databricks AutoCompact PostCommitHook cannot be used here
+    // (with a GpuOptimisticTransaction). It does not appear to use OptimisticTransaction.writeFiles
+    // to write the compacted file.
     new GpuOptimizeExecutor(spark, newTxn, Seq.empty, Seq.empty, committedActions).optimize()
   }
 

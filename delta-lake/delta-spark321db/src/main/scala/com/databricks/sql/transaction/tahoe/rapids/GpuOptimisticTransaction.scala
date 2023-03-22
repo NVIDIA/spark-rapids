@@ -262,7 +262,7 @@ class GpuOptimisticTransaction(
       .getConf[String](DeltaSQLConf.DELTA_AUTO_COMPACT_ENABLED)
       .getOrElse {
         DeltaConfigs.AUTO_COMPACT.fromMetaData(metadata)
-        "false" // TODO: Fix getting this from DeltaConfigs.AUTO_COMPACT.
+          .getOrElse("false")
       }.toBoolean
 
     if (!isOptimize && autoCompactEnabled && fileActions.nonEmpty) {

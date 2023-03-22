@@ -57,7 +57,7 @@ class GpuOptimizeExecutor(
 
   private val isMultiDimClustering = zOrderByColumns.nonEmpty
   private val isAutoCompact = prevCommitActions.nonEmpty
-  private val optimizeType = OptimizeType(isMultiDimClustering, isAutoCompact)
+  private val optimizeType = GpuOptimizeType(isMultiDimClustering, isAutoCompact)
 
   def optimize(): Seq[Row] = {
     recordDeltaOperation(txn.deltaLog, "delta.optimize") {
@@ -235,9 +235,9 @@ class GpuOptimizeExecutor(
     updates
   }
 
-  type PartitionedBin = (Map[String, String], Seq[AddFile])
+  private type PartitionedBin = (Map[String, String], Seq[AddFile])
 
-  trait OptimizeType {
+  private trait GpuOptimizeType {
     def minNumFiles: Long
 
     def maxFileSize: Long =
@@ -248,7 +248,7 @@ class GpuOptimizeExecutor(
     def targetBins(jobs: Seq[PartitionedBin]): Seq[PartitionedBin] = jobs
   }
 
-  case class Compaction() extends OptimizeType {
+  private case class GpuCompaction() extends GpuOptimizeType {
     def minNumFiles: Long = 2
 
     def targetFiles: (Seq[AddFile], Seq[AddFile]) = {
@@ -261,7 +261,7 @@ class GpuOptimizeExecutor(
     }
   }
 
-  case class MultiDimOrdering() extends OptimizeType {
+  private case class GpuMultiDimOrdering() extends GpuOptimizeType {
     def minNumFiles: Long = 1
 
     def targetFiles: (Seq[AddFile], Seq[AddFile]) = {
@@ -271,7 +271,7 @@ class GpuOptimizeExecutor(
     }
   }
 
-  case class AutoCompaction() extends OptimizeType {
+  private case class GpuAutoCompaction() extends GpuOptimizeType {
     def minNumFiles: Long = {
       val minNumFiles =
         sparkSession.sessionState.conf.getConf(DeltaSQLConf.DELTA_AUTO_COMPACT_MIN_NUM_FILES)
@@ -319,15 +319,15 @@ class GpuOptimizeExecutor(
     }
   }
 
-  object OptimizeType {
+  private object GpuOptimizeType {
 
-    def apply(isMultiDimClustering: Boolean, isAutoCompact: Boolean): OptimizeType = {
+    def apply(isMultiDimClustering: Boolean, isAutoCompact: Boolean): GpuOptimizeType = {
       if (isMultiDimClustering) {
-        MultiDimOrdering()
+        GpuMultiDimOrdering()
       } else if (isAutoCompact) {
-        AutoCompaction()
+        GpuAutoCompaction()
       } else {
-        Compaction()
+        GpuCompaction()
       }
     }
   }

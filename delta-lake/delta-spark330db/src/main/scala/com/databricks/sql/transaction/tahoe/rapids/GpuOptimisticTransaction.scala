@@ -288,8 +288,8 @@ class GpuOptimisticTransaction(
       spark.sessionState.conf
         .getConf[String](DeltaSQLConf.DELTA_AUTO_COMPACT_ENABLED)
         .getOrElse {
-        //  DeltaConfigs.AUTO_COMPACT.fromMetaData(metadata)
-          "false" // TODO: Fix getting this from DeltaConfigs.AUTO_COMPACT.
+          DeltaConfigs.AUTO_COMPACT.fromMetaData(metadata)
+            .getOrElse("false")
         }.toBoolean
 
     if (!isOptimize && autoCompactEnabled && fileActions.nonEmpty) {
