@@ -323,10 +323,8 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
         GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
 
         // The buffer that is sent down
-        val table = withResource(new NvtxWithMetrics(getFileFormatShortName + " decode",
-          NvtxColor.DARK_GREEN, metrics(GPU_DECODE_TIME))) { _ =>
-          readToTable(dataBuffer, cudfSchema, newReadDataSchema, isFirstChunk)
-        }
+        val table = readToTable(dataBuffer, cudfSchema, newReadDataSchema, isFirstChunk,
+            metrics(GPU_DECODE_TIME))
         maxDeviceMemory = max(GpuColumnVector.getTotalDeviceMemoryUsed(table), maxDeviceMemory)
 
         // parse boolean and numeric columns that were read as strings
@@ -552,7 +550,8 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
     dataBuffer: BUFF,
     cudfSchema: Schema,
     readDataSchema: StructType,
-    isFirstChunk: Boolean): Table
+    isFirstChunk: Boolean,
+    decodeTime: GpuMetric): Table
 
   /**
    * File format short name used for logging and other things to uniquely identity

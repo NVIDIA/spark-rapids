@@ -16,9 +16,9 @@
 
 package org.apache.spark.sql.hive.rapids
 
-import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, RegexProgram, Scalar, Schema, Table}
+import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, NvtxColor, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.RebaseHelper.withResource
-import com.nvidia.spark.rapids.{ColumnarPartitionReaderWithPartitionValues, CSVPartitionReaderBase, DateUtils, GpuColumnVector, GpuExec, GpuMetric, HostStringColBufferer, HostStringColBuffererFactory, PartitionReaderIterator, PartitionReaderWithBytesRead, RapidsConf}
+import com.nvidia.spark.rapids.{ColumnarPartitionReaderWithPartitionValues, CSVPartitionReaderBase, DateUtils, GpuColumnVector, GpuExec, GpuMetric, HostStringColBufferer, HostStringColBuffererFactory, NvtxWithMetrics, PartitionReaderIterator, PartitionReaderWithBytesRead, RapidsConf}
 import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, DEBUG_LEVEL, DESCRIPTION_BUFFER_TIME, DESCRIPTION_FILTER_TIME, DESCRIPTION_GPU_DECODE_TIME, DESCRIPTION_PEAK_DEVICE_MEMORY, ESSENTIAL_LEVEL, FILTER_TIME, GPU_DECODE_TIME, MODERATE_LEVEL, NUM_OUTPUT_ROWS, PEAK_DEVICE_MEMORY}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.CastStrings
@@ -498,45 +498,49 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
   override def readToTable(dataBufferer: HostStringColBufferer,
                            inputFileCudfSchema: Schema,
                            requestedOutputDataSchema: StructType,
-                           isFirstChunk: Boolean): Table = {
-    // The delimiter is currently hard coded to ^A. This should be able to support any format
-    //  but we don't want to test that yet
-    val splitTable = withResource(dataBufferer.getColumnAndRelease) { cv =>
-      cv.stringSplit("\u0001")
-    }
+                           isFirstChunk: Boolean,
+                           decodeTime: GpuMetric): Table = {
+    withResource(new NvtxWithMetrics(getFileFormatShortName + " decode",
+      NvtxColor.DARK_GREEN, decodeTime)) { _ =>
+      // The delimiter is currently hard coded to ^A. This should be able to support any format
+      //  but we don't want to test that yet
+      val splitTable = withResource(dataBufferer.getColumnAndRelease) { cv =>
+        cv.stringSplit("\u0001")
+      }
 
-    // inputFileCudfSchema       == Schema of the input file/buffer.
-    //                              Presented in the order of input columns in the file.
-    // requestedOutputDataSchema == Spark output schema. This is inexplicably sorted alphabetically
-    //                              in HiveTSExec, unlike FileSourceScanExec (which has file-input
-    //                              ordering).
-    //                              This trips up the downstream string->numeric casts in
-    //                              GpuTextBasedPartitionReader.readToTable().
-    // Given that Table.readCsv presents the output columns in the order of the input file,
-    // we need to reorder the table read from the input file in the order specified in
-    // [[requestedOutputDataSchema]] (i.e. requiredAttributes).
+      // inputFileCudfSchema       == Schema of the input file/buffer.
+      //                              Presented in the order of input columns in the file.
+      // requestedOutputDataSchema == Spark output schema. This is inexplicably sorted
+      //                              alphabetically in HiveTSExec, unlike FileSourceScanExec
+      //                              (which has file-input ordering).
+      //                              This trips up the downstream string->numeric casts in
+      //                              GpuTextBasedPartitionReader.readToTable().
+      // Given that Table.readCsv presents the output columns in the order of the input file,
+      // we need to reorder the table read from the input file in the order specified in
+      // [[requestedOutputDataSchema]] (i.e. requiredAttributes).
 
-    withResource(splitTable) { _ =>
-      val nullFormat = params.getOrElse("serialization.null.format", "\\N")
-      withResource(Scalar.fromString(nullFormat)) { nullTag =>
-        withResource(Scalar.fromNull(DType.STRING)) { nullVal =>
-          // This is a bit different because we are dropping columns/etc ourselves
-          val requiredColumnSequence = requestedOutputDataSchema.map(_.name).toList
-          val outputColumnNames = inputFileCudfSchema.getColumnNames
-          val reorderedColumns = requiredColumnSequence.safeMap { colName =>
-            val colIndex = outputColumnNames.indexOf(colName)
-            if (splitTable.getNumberOfColumns > colIndex) {
-              val col = splitTable.getColumn(colIndex)
-              withResource(col.equalTo(nullTag)) { shouldBeNull =>
-                shouldBeNull.ifElse(nullVal, col)
+      withResource(splitTable) { _ =>
+        val nullFormat = params.getOrElse("serialization.null.format", "\\N")
+        withResource(Scalar.fromString(nullFormat)) { nullTag =>
+          withResource(Scalar.fromNull(DType.STRING)) { nullVal =>
+            // This is a bit different because we are dropping columns/etc ourselves
+            val requiredColumnSequence = requestedOutputDataSchema.map(_.name).toList
+            val outputColumnNames = inputFileCudfSchema.getColumnNames
+            val reorderedColumns = requiredColumnSequence.safeMap { colName =>
+              val colIndex = outputColumnNames.indexOf(colName)
+              if (splitTable.getNumberOfColumns > colIndex) {
+                val col = splitTable.getColumn(colIndex)
+                withResource(col.equalTo(nullTag)) { shouldBeNull =>
+                  shouldBeNull.ifElse(nullVal, col)
+                }
+              } else {
+                // the column didn't exist in the output, so we need to make an all null one
+                ColumnVector.fromScalar(nullVal, splitTable.getRowCount.toInt)
               }
-            } else {
-              // the column didn't exist in the output, so we need to make an all null one
-              ColumnVector.fromScalar(nullVal, splitTable.getRowCount.toInt)
             }
-          }
-          withResource(reorderedColumns) { _ =>
-            new Table(reorderedColumns: _*)
+            withResource(reorderedColumns) { _ =>
+              new Table(reorderedColumns: _*)
+            }
           }
         }
       }

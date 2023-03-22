@@ -825,18 +825,21 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
     // about to start using the GPU
     GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
 
-    val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
-        metrics(GPU_DECODE_TIME))) { _ =>
-      try {
-        Table.readORC(parseOpts, hostBuf, 0, bufSize)
-      } catch {
-        case e: Exception => 
-          throw new IOException(s"Error when processing file splits [${splits.mkString("; ")}]", e)
+    try {
+      RmmRapidsRetryIterator.withRetryNoSplit[Table] {
+        val table = withResource(new NvtxWithMetrics("ORC decode", NvtxColor.DARK_GREEN,
+          metrics(GPU_DECODE_TIME))) { _ =>
+          Table.readORC(parseOpts, hostBuf, 0, bufSize)
+        }
+
+        // Execute the schema evolution
+        SchemaUtils.evolveSchemaIfNeededAndClose(table, tableSchema, readDataSchema,
+          isCaseSensitive, Some(GpuOrcScan.castColumnTo))
       }
+    } catch {
+      case e: Exception =>
+        throw new IOException(s"Error when processing file splits [${splits.mkString("; ")}]", e)
     }
-    // Execute the schema evolution
-    SchemaUtils.evolveSchemaIfNeededAndClose(table, tableSchema, readDataSchema,
-      isCaseSensitive, Some(GpuOrcScan.castColumnTo))
   }
 }
 
