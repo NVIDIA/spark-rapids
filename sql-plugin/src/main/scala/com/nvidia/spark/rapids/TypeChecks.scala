@@ -784,7 +784,7 @@ abstract class TypeChecks[RET] {
       unsupportedTypes: Map[DataType, Set[String]],
       meta: RapidsMeta[_, _, _]): Unit = {
     def checkTimestampType(dataType: DataType): Unit = dataType match {
-      case TimestampType =>
+      case TimestampType if !TypeChecks.areTimestampsSupported() =>
         meta.willNotWorkOnGpu(TypeChecks.timezoneNotSupportedString(dataType))
       case ArrayType(elementType, _) =>
         checkTimestampType(elementType)

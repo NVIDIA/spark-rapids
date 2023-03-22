@@ -1059,12 +1059,16 @@ abstract class BaseExprMeta[INPUT <: Expression](
    * Whether to tag a TimeZoneAwareExpression for timezone after all the other tagging
    * is done.
    * By default a TimeZoneAwareExpression always requires the timezone tagging, but
-   * there is one exception so far, 'Cast', who requires timezone tagging only when it
-   * has timezone sensitive type as input or output. Override it to match the special case.
+   * there are some exceptions, e.g. 'Cast', who requires timezone tagging only when it
+   * has timezone sensitive type as input or output.
+   *
+   * Override this to match special cases.
    */
   protected def needTimezoneTagging: Boolean = {
     // A TimeZoneAwareExpression with no timezone sensitive types as input/output will
     // escape from the timezone tagging in the prior type checks. So ask for tagging here.
+    // e.g. 'UnixTimestamp' with 'DateType' as the input, timezone will be taken into
+    // account when converting a Date to a Long.
     !(dataType +: childExprs.map(_.dataType)).exists(TypeChecks.isTimezoneSensitiveType)
   }
 
