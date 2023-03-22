@@ -320,6 +320,8 @@ object GpuShuffledHashJoinExec extends Arm {
   private def getBatchSize(maybeBatch: AnyRef): Long = maybeBatch match {
     case batch: ColumnarBatch => GpuColumnVector.getTotalDeviceMemoryUsed(batch)
     case hostBatch: HostConcatResult => hostBatch.getTableHeader().getDataLen()
+    case _ => throw new IllegalArgumentException(s"Expect a HostConcatResult or a " +
+      s"ColumnarBatch, but got a ${maybeBatch.getClass.getSimpleName}")
   }
 
   private def getBuildBatchOptimizedAndClose(
@@ -363,7 +365,9 @@ object GpuShuffledHashJoinExec extends Arm {
         NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric,
         coalesceMetrics(GpuMetric.CONCAT_TIME), coalesceMetrics(GpuMetric.OP_TIME),
         coalesceMetrics(GpuMetric.PEAK_DEVICE_MEMORY), spillCallback, "single build batch")
-    } else inputIter
+    } else {
+      inputIter
+    }
     ConcatAndConsumeAll.getSingleBatchWithVerification(singleBatchIter, inputAttrs)
   }
 
