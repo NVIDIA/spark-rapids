@@ -320,7 +320,7 @@ object GpuShuffledHashJoinExec extends Arm {
   private def getBatchSize(maybeBatch: AnyRef): Long = maybeBatch match {
     case batch: ColumnarBatch => GpuColumnVector.getTotalDeviceMemoryUsed(batch)
     case hostBatch: HostConcatResult => hostBatch.getTableHeader().getDataLen()
-    case _ => throw new IllegalArgumentException(s"Expect a HostConcatResult or a " +
+    case _ => throw new IllegalStateException(s"Expect a HostConcatResult or a " +
       s"ColumnarBatch, but got a ${maybeBatch.getClass.getSimpleName}")
   }
 
