@@ -522,7 +522,7 @@ def __add_new_shim_to_file_map(files2bv):
         bv_list = files2bv[shim_file]
         if __add_shim_base in bv_list:
             # adding a lookalike
-            # case 1) dedicated per-shim files with a spark${buldver} in the package path:
+            # case 1) dedicated per-shim files with a spark${buildver} in the package path:
             #         CLONE the file with modifications
             # case 2) otherwise simply add the new buildver to the files2bv[shimfile] mapping
             base_package = "spark%s" % __add_shim_base
