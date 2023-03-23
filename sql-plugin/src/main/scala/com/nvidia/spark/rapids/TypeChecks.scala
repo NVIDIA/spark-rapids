@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -398,6 +398,15 @@ final class TypeSig private(
     }
   }
 
+  private[this] def timezoneNotSupportedMessage(dataType: DataType,
+      te: TypeEnum.Value, check: TypeEnum.ValueSet, isChild: Boolean): Seq[String] = {
+    if (check.contains(te) && !TypeChecks.areTimestampsSupported()) {
+      Seq(withChild(isChild, TypeChecks.timezoneNotSupportedString(dataType)))
+    } else {
+      basicNotSupportedMessage(dataType, te, check, isChild)
+    }
+  }
+
   private[this] def reasonNotSupported(
       check: TypeEnum.ValueSet,
       dataType: DataType,
@@ -420,14 +429,7 @@ final class TypeSig private(
       case DateType =>
         basicNotSupportedMessage(dataType, TypeEnum.DATE, check, isChild)
       case TimestampType =>
-        if (check.contains(TypeEnum.TIMESTAMP) &&
-            !TypeChecks.areTimestampsSupported()) {
-          Seq(withChild(isChild, s"$dataType is not supported with timezone settings: (JVM:" +
-              s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
-              s" Set both of the timezones to UTC to enable $dataType support"))
-        } else {
-          basicNotSupportedMessage(dataType, TypeEnum.TIMESTAMP, check, isChild)
-        }
+        timezoneNotSupportedMessage(dataType, TypeEnum.TIMESTAMP, check, isChild)
       case StringType =>
         basicNotSupportedMessage(dataType, TypeEnum.STRING, check, isChild)
       case dt: DecimalType =>
@@ -779,27 +781,21 @@ abstract class TypeChecks[RET] {
    * here check again to add UTC info.
    */
   private def tagTimezoneInfoIfHasTimestampType(
-    unsupportedTypes: Map[DataType, Set[String]],
-    meta: RapidsMeta[_, _, _]
-    ): Unit = {
+      unsupportedTypes: Map[DataType, Set[String]],
+      meta: RapidsMeta[_, _, _]): Unit = {
     def checkTimestampType(dataType: DataType): Unit = dataType match {
-        case TimestampType if !TypeChecks.areTimestampsSupported() => {
-          meta.willNotWorkOnGpu(s"your timezone isn't in UTC (JVM:" +
-            s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
-            s" Set both of the timezones to UTC to enable TimestampType support")
-          return
-        }
-        case ArrayType(elementType, _) =>
-          checkTimestampType(elementType)
-        case MapType(keyType, valueType, _) =>
-          checkTimestampType(keyType)
-          checkTimestampType(valueType)
-        case StructType(fields) =>
-          fields.foreach(field => checkTimestampType(field.dataType))
-        case _ =>
-          // do nothing
+      case TimestampType if !TypeChecks.areTimestampsSupported() =>
+        meta.willNotWorkOnGpu(TypeChecks.timezoneNotSupportedString(dataType))
+      case ArrayType(elementType, _) =>
+        checkTimestampType(elementType)
+      case MapType(keyType, valueType, _) =>
+        checkTimestampType(keyType)
+        checkTimestampType(valueType)
+      case StructType(fields) =>
+        fields.foreach(field => checkTimestampType(field.dataType))
+      case _ => // do nothing
     }
-    unsupportedTypes.foreach { case (dataType, nameSet) =>
+    unsupportedTypes.foreach { case (dataType, _) =>
       checkTimestampType(dataType)
     }
   }
@@ -839,6 +835,16 @@ object TypeChecks {
   def areTimestampsSupported(): Boolean = {
     areTimestampsSupported(ZoneId.systemDefault()) &&
       areTimestampsSupported(SQLConf.get.sessionLocalTimeZone)
+  }
+
+  def isTimezoneSensitiveType(dataType: DataType): Boolean = {
+    dataType == TimestampType
+  }
+
+  def timezoneNotSupportedString(dataType: DataType): String = {
+    s"$dataType is not supported with timezone settings: (JVM:" +
+      s" ${ZoneId.systemDefault()}, session: ${SQLConf.get.sessionLocalTimeZone})." +
+      s" Set both of the timezones to UTC to enable $dataType support"
   }
 }
 
