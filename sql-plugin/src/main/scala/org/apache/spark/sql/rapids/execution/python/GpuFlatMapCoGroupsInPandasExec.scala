@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -129,7 +129,7 @@ case class GpuFlatMapCoGroupsInPandasExec(
   override def childrenCoalesceGoal: Seq[CoalesceGoal] =
     Seq(RequireSingleBatch, RequireSingleBatch)
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val (numInputRows, numInputBatches, numOutputRows, numOutputBatches,
          spillCallback) = commonGpuMetrics()
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
@@ -176,5 +176,5 @@ case class GpuFlatMapCoGroupsInPandasExec(
         executePython(pyInputIter, output, pyRunner, numOutputRows, numOutputBatches)
       }
     }
-  } // end of doExecuteColumnar
+  } // end of internalDoExecuteColumnar
 }

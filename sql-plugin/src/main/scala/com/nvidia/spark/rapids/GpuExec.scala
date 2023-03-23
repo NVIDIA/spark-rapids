@@ -22,11 +22,14 @@ import com.nvidia.spark.rapids.StorageTier.{DEVICE, DISK, GDS, HOST, StorageTier
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, ExprId}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
+import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.rapids.GpuTaskMetrics
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 sealed class MetricsLevel(val num: Integer) extends Serializable {
@@ -202,6 +205,8 @@ object GpuExec {
     case gpu: GpuExec => gpu.outputBatching
     case _ => null
   }
+
+  val TASK_METRICS_TAG = new TreeNodeTag[GpuTaskMetrics]("gpu_task_metrics")
 }
 
 trait GpuExec extends SparkPlan with Arm {
@@ -328,5 +333,32 @@ trait GpuExec extends SparkPlan with Arm {
         ar.withExprId(ExprId(id)).canonicalized
       case other => QueryPlan.normalizeExpressions(other, allAttributes)
     }.withNewChildren(canonicalizedChildren)
+  }
+
+  // This is ugly, we don't need to access these metrics directly, but we do need to make sure
+  // that we can send them over the wire to the executor so that things work as expected
+  def setTaskMetrics(gpuTaskMetrics: GpuTaskMetrics): Unit =
+    setTagValue(GpuExec.TASK_METRICS_TAG, gpuTaskMetrics)
+
+  def getTaskMetrics: Option[GpuTaskMetrics] =
+    this.getTagValue(GpuExec.TASK_METRICS_TAG)
+
+  final override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+    val orig = internalDoExecuteColumnar()
+    val metrics = getTaskMetrics
+    if (metrics.isDefined) {
+      // This is really ugly, but I hope it will make it a simpler transition everywhere
+      orig.mapPartitions { iter =>
+        metrics.foreach(_.makeSureRegistered())
+        iter
+      }
+    } else {
+      orig
+    }
+  }
+
+  protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    throw new IllegalStateException(s"Internal Error ${this.getClass} has column support" +
+        s" mismatch:\n${this}")
   }
 }

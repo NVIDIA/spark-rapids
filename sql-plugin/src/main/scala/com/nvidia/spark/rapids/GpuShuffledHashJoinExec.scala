@@ -148,7 +148,7 @@ case class GpuShuffledHashJoinExec(
     }
   }
 
-  override def doExecuteColumnar() : RDD[ColumnarBatch] = {
+  override def internalDoExecuteColumnar() : RDD[ColumnarBatch] = {
     val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)

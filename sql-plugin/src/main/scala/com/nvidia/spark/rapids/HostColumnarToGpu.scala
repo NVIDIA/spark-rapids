@@ -351,7 +351,7 @@ case class HostColumnarToGpu(child: SparkPlan, goal: CoalesceSizeGoal)
    *
    * @return an RDD of `ColumnarBatch`
    */
-  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
 
     val numInputRows = gpuLongMetric(NUM_INPUT_ROWS)
     val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)

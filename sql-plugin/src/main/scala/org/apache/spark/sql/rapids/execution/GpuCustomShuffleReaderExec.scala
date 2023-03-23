@@ -116,7 +116,7 @@ case class GpuCustomShuffleReaderExec(
    * true. By convention the executor that creates a ColumnarBatch is responsible for closing it
    * when it is no longer needed. This allows input formats to be able to reuse batches if needed.
    */
-  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     if (cachedShuffleRDD == null) {
       cachedShuffleRDD = child match {
         case stage: ShuffleQueryStageExec =>

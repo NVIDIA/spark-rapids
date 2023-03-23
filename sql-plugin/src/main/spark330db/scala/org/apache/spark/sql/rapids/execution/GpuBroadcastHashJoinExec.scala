@@ -183,7 +183,7 @@ case class GpuBroadcastHashJoinExec(
     }
   }
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     if (isExecutorBroadcast) {
       doColumnarExecutorBroadcastJoin()
     } else {

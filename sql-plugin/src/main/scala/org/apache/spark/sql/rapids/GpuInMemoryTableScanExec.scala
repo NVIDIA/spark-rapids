@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -152,7 +152,7 @@ case class GpuInMemoryTableScanExec(
     throw new UnsupportedOperationException("This Exec only deals with Columnar Data")
   }
 
-  protected override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  protected override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     columnarInputRDD
   }
 }

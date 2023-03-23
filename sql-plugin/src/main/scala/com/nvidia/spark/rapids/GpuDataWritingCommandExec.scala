@@ -133,7 +133,7 @@ case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPla
   protected override def doExecute(): RDD[InternalRow] = throw new UnsupportedOperationException(
     s"${getClass.getCanonicalName} does not support row-based execution")
 
-  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     sparkContext.parallelize(sideEffectResult, 1)
   }
 

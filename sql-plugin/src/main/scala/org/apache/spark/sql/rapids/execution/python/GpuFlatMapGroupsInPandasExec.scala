@@ -106,7 +106,7 @@ case class GpuFlatMapGroupsInPandasExec(
   // processed by Python executors group by group, so better to coalesce the output batches.
   override def coalesceAfter: Boolean = true
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val (mNumInputRows, mNumInputBatches, mNumOutputRows, mNumOutputBatches,
          spillCallback) = commonGpuMetrics()
 

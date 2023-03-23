@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,7 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
 
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val (numInputRows, numInputBatches, numOutputRows, numOutputBatches,
          spillCallback) = commonGpuMetrics()
 
@@ -114,6 +114,6 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
         inputIter
       }
     } // end of mapPartitionsInternal
-  } // end of doExecuteColumnar
+  } // end of internalDoExecuteColumnar
 
 }

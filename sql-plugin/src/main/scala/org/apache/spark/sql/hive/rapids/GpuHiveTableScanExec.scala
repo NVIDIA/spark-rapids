@@ -360,7 +360,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
     rdd
   }
 
-  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val scanTime = gpuLongMetric("scanTime")
     inputRDD.mapPartitionsInternal { batches =>

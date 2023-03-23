@@ -87,8 +87,8 @@ case class GpuWindowInPandasExec(
       projectList.map(_.transform(unboundToRefMap)), child.output)
   }
 
-  // Override doExecuteColumnar so we use the correct GpuArrowPythonRunner
-  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  // Override internalDoExecuteColumnar so we use the correct GpuArrowPythonRunner
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val (numInputRows, numInputBatches, numOutputRows, numOutputBatches,
          spillCallback) = commonGpuMetrics()
     val sessionLocalTimeZone = conf.sessionLocalTimeZone
@@ -240,6 +240,6 @@ case class GpuWindowInPandasExec(
       }
 
     } // End of mapPartitions
-  } // End of doExecuteColumnar
+  } // End of internalDoExecuteColumnar
 
 }

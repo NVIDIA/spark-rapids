@@ -242,7 +242,7 @@ case class GpuCartesianProductExec(
   protected override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException("This should only be called from columnar")
 
-  protected override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  protected override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val joinTime = gpuLongMetric(JOIN_TIME)

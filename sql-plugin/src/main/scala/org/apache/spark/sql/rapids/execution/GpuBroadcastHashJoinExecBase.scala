@@ -188,7 +188,7 @@ abstract class GpuBroadcastHashJoinExecBase(
     }
   }
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     doColumnarBroadcastJoin()
   }
 }

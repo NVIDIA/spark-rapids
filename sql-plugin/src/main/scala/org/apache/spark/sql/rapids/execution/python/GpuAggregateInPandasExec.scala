@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -131,7 +131,7 @@ case class GpuAggregateInPandasExec(
   // so better to coalesce the output batches.
   override def coalesceAfter: Boolean = gpuGroupingExpressions.nonEmpty
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val (mNumInputRows, mNumInputBatches, mNumOutputRows, mNumOutputBatches,
       spillCallback) = commonGpuMetrics()
 
@@ -270,6 +270,6 @@ case class GpuAggregateInPandasExec(
         inputIter
       }
     }
-  } // end of doExecuteColumnar
+  } // end of internalDoExecuteColumnar
 
 }
