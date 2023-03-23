@@ -42,8 +42,9 @@ object GpuDoAutoCompaction extends PostCommitHook
     val gpuTxn = txn.asInstanceOf[GpuOptimisticTransaction]
     val newTxn = new GpuDeltaLog(gpuTxn.deltaLog, gpuTxn.rapidsConf).startTransaction()
     // Note: The Databricks AutoCompact PostCommitHook cannot be used here
-    // (with a GpuOptimisticTransaction). It does not appear to use OptimisticTransaction.writeFiles
-    // to write the compacted file.
+    // (with a GpuOptimisticTransaction). It appears that AutoCompact creates a new transaction,
+    // thereby circumventing GpuOptimisticTransaction (which intercepts Parquet writes
+    // to go through the GPU).
     new GpuOptimizeExecutor(spark, newTxn, Seq.empty, Seq.empty, committedActions).optimize()
   }
 
