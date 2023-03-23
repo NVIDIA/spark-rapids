@@ -69,9 +69,9 @@ def is_tz_utc(spark=_spark):
 def _set_all_confs(conf):
     newconf = _default_conf.copy()
     if (should_inject_oom()):
-        _spark.conf.set("spark.rapids.sql.test.inject", "true")
+        _spark.conf.set("spark.rapids.sql.test.injectRetryOOM", "true")
     else:
-        _spark.conf.set("spark.rapids.sql.test.inject", "false")
+        _spark.conf.set("spark.rapids.sql.test.injectRetryOOM", "false")
     newconf.update(conf)
     for key, value in newconf.items():
         if _spark.conf.get(key, None) != value:

@@ -20,6 +20,7 @@ import scala.collection.mutable
 
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, SplitAndRetryOOM}
+import org.apache.spark.TaskContext
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.internal.SQLConf
@@ -421,8 +422,11 @@ object RmmRapidsRetryIterator extends Arm with Logging {
         doSplit = false
         try {
           // call the user's function
-          if (config.injectionEnabled && !injectedOOM) {
+          if (config.testRetryOOMInjectionEnabled && !injectedOOM) {
             injectedOOM = true
+            // ensure we have associated our thread with the running task, as
+            // `forceRetryOOM` requires a prior association.
+            RmmSpark.associateCurrentThreadWithTask(TaskContext.get().taskAttemptId())
             RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
           }
           result = Some(attemptIter.next())
