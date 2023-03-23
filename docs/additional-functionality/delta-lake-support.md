@@ -67,6 +67,16 @@ that control the operation of the optimized write.
 | spark.databricks.delta.optimizeWrite.smallPartitionFactor   | 0.5     | Merge partitions smaller than this factor multiplied by the target partition size          |
 | spark.databricks.delta.optimizeWrite.mergedPartitionFactor  | 1.2     | Avoid combining partitions larger than this factor multiplied by the target partition size |
 
+Automatic compaction is supported only on Databricks platforms. The algorithm is similar but 
+not identical to the Databricks version. The following table describes configuration settings
+that control the operation of automatic compaction.
+
+| Configuration                                                       | Default | Description                                                                                            |
+|---------------------------------------------------------------------|---------|--------------------------------------------------------------------------------------------------------|
+| spark.databricks.delta.autoCompact.enabled                          | false   | Enable/disable auto compaction for writes to Delta directories                                         |
+| spark.databricks.delta.properties.defaults.autoOptimize.autoCompact | false   | Whether to enable auto compaction by default, if spark.databricks.delta.autoCompact.enabled is not set |
+| spark.databricks.delta.autoCompact.minNumFiles                      | 50      | Minimum number of files in the Delta directory before which auto optimize does not begin compaction    |
+
 ### RapidsDeltaWrite Node in Query Plans
 
 A side-effect of performing a GPU accelerated Delta Lake write is a new node will appear in the
