@@ -14,13 +14,13 @@
 
 import pytest
 from asserts import assert_gpu_and_cpu_writes_are_equal_collect, with_cpu_session, with_gpu_session
+from data_gen import copy_and_update
 from delta_lake_write_test import delta_meta_allow
 from marks import allow_non_gpu, delta_lake
 from pyspark.sql.functions import *
 from spark_session import is_databricks104_or_later
 
 _conf = {'spark.rapids.sql.explain': 'ALL',
-         'spark.databricks.delta.autoCompact.enabled': 'true',  # Enable auto compaction.
          'spark.databricks.delta.autoCompact.minNumFiles': 3}  # Num files before compaction.
 
 
@@ -45,7 +45,10 @@ def write_to_delta(num_rows=30, is_partitioned=False, num_writes=3):
 @pytest.mark.skipif(not is_databricks104_or_later(),
                     reason="Auto compaction of Delta Lake tables is only supported "
                            "on Databricks 10.4+")
-def test_auto_compact(spark_tmp_path):
+@pytest.mark.parametrize("auto_compact_conf",
+                         ["spark.databricks.delta.autoCompact.enabled",
+                          "spark.databricks.delta.properties.defaults.autoOptimize.autoCompact"])
+def test_auto_compact_basic(spark_tmp_path, auto_compact_conf):
     """
     This test checks whether the results of auto compactions on an un-partitioned table
     match, when written via CPU and GPU.
@@ -75,11 +78,13 @@ def test_auto_compact(spark_tmp_path):
             expr("operationMetrics[\"numAddedFiles\"]").alias("numAdded")
         )
 
+    conf_enable_auto_compact = copy_and_update(_conf, {auto_compact_conf: "true"})
+
     assert_gpu_and_cpu_writes_are_equal_collect(
         write_func=lambda spark, table_path: None,  # Already written.
         read_func=read_metadata,
         base_path=data_path,
-        conf=_conf)
+        conf=conf_enable_auto_compact)
 
 
 @delta_lake
@@ -87,7 +92,10 @@ def test_auto_compact(spark_tmp_path):
 @pytest.mark.skipif(not is_databricks104_or_later(),
                     reason="Auto compaction of Delta Lake tables is only supported "
                            "on Databricks 10.4+")
-def test_auto_compact_partitioned(spark_tmp_path):
+@pytest.mark.parametrize("auto_compact_conf",
+                         ["spark.databricks.delta.autoCompact.enabled",
+                          "spark.databricks.delta.properties.defaults.autoOptimize.autoCompact"])
+def test_auto_compact_partitioned(spark_tmp_path, auto_compact_conf):
     """
     This test checks whether the results of auto compaction on a partitioned table
     match, when written via CPU and GPU.
@@ -122,11 +130,13 @@ def test_auto_compact_partitioned(spark_tmp_path):
             expr("operationMetrics[\"numAddedFiles\"] > 0").alias("numAdded_gt_0")
         )
 
+    conf_enable_auto_compact = copy_and_update(_conf, {auto_compact_conf: "true"})
+
     assert_gpu_and_cpu_writes_are_equal_collect(
         write_func=lambda spark, table_path: None,  # Already written.
         read_func=read_metadata,
         base_path=data_path,
-        conf=_conf)
+        conf=conf_enable_auto_compact)
 
 
 @delta_lake
@@ -134,16 +144,17 @@ def test_auto_compact_partitioned(spark_tmp_path):
 @pytest.mark.skipif(not is_databricks104_or_later(),
                     reason="Auto compaction of Delta Lake tables is only supported "
                            "on Databricks 10.4+")
-def test_auto_compact_disabled(spark_tmp_path):
+@pytest.mark.parametrize("auto_compact_conf",
+                         ["spark.databricks.delta.autoCompact.enabled",
+                          "spark.databricks.delta.properties.defaults.autoOptimize.autoCompact"])
+def test_auto_compact_disabled(spark_tmp_path, auto_compact_conf):
     """
     This test verifies that auto-compaction does not run if disabled.
     """
     from delta.tables import DeltaTable
     data_path = spark_tmp_path + "/AUTO_COMPACT_TEST_CHECK_DISABLED"
 
-    disable_auto_compaction = {
-        'spark.databricks.delta.autoCompact.enabled': 'false'  # Disable auto compaction.
-    }
+    disable_auto_compaction = copy_and_update(_conf, {auto_compact_conf: 'false'})
 
     writer = write_to_delta(num_writes=10)
     with_gpu_session(func=lambda spark: writer(spark, data_path),
