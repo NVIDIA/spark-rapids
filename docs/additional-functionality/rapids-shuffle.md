@@ -32,7 +32,7 @@ in our plugin:
 
 ## Multi-Threaded Mode
 
-Mult-threaded mode (default) is similar to the built-in Spark shuffle, but it attempts to use
+Multi-threaded mode (default) is similar to the built-in Spark shuffle, but it attempts to use
 more CPU threads for compute-intensive tasks, such as compression and decompression. 
 
 Minimum configuration:

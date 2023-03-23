@@ -23,7 +23,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, RegexProgram, Scalar, Schema, Table}
+import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, NvtxColor, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
@@ -245,6 +245,31 @@ case class GpuJsonPartitionReaderFactory(
   }
 }
 
+object JsonPartitionReader extends Arm {
+  def readToTable(
+      dataBufferer: HostLineBufferer,
+      cudfSchema: Schema,
+      decodeTime: GpuMetric,
+      jsonOpts:  cudf.JSONOptions,
+      formatName: String,
+      partFile: PartitionedFile): Table = {
+    val dataSize = dataBufferer.getLength
+    // cuDF does not yet support reading a subset of columns so we have
+    // to apply the read schema projection here
+    try {
+      RmmRapidsRetryIterator.withRetryNoSplit(dataBufferer.getBufferAndRelease) { dataBuffer =>
+        withResource(new NvtxWithMetrics(formatName + " decode",
+          NvtxColor.DARK_GREEN, decodeTime)) { _ =>
+          Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)
+        }
+      }
+    } catch {
+      case e: Exception =>
+        throw new IOException(s"Error when processing file [$partFile]", e)
+    }
+  }
+}
+
 class JsonPartitionReader(
     conf: Configuration,
     partFile: PartitionedFile,
@@ -277,32 +302,24 @@ class JsonPartitionReader(
       dataBufferer: HostLineBufferer,
       cudfSchema: Schema,
       readDataSchema: StructType,
-      hasHeader: Boolean): Table = {
+      hasHeader: Boolean,
+      decodeTime: GpuMetric): Table = {
     val jsonOpts = buildJsonOptions(parsedOptions)
-    val dataSize = dataBufferer.getLength
-    // cuDF does not yet support reading a subset of columns so we have
-    // to apply the read schema projection here
-    withResource(dataBufferer.getBufferAndRelease) { dataBuffer =>
-      val jsonTbl = try {
-        Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)
-      } catch {
-        case e: Exception =>
-          throw new IOException(s"Error when processing file [$partFile]", e)
-      }
-      withResource(jsonTbl) { tbl =>
-        val columns = new ListBuffer[ColumnVector]()
-        closeOnExcept(columns) { _ =>
-          for (name <- readDataSchema.fieldNames) {
-            val i = cudfSchema.getColumnNames.indexOf(name)
-            if (i == -1) {
-              throw new IllegalStateException(
-                s"read schema contains field named '$name' that is not in the data schema")
-            }
-            columns += tbl.getColumn(i)
+    val jsonTbl = JsonPartitionReader.readToTable(dataBufferer, cudfSchema, decodeTime, jsonOpts,
+      getFileFormatShortName, partFile)
+    withResource(jsonTbl) { tbl =>
+      val columns = new ListBuffer[ColumnVector]()
+      closeOnExcept(columns) { _ =>
+        for (name <- readDataSchema.fieldNames) {
+          val i = cudfSchema.getColumnNames.indexOf(name)
+          if (i == -1) {
+            throw new IllegalStateException(
+              s"read schema contains field named '$name' that is not in the data schema")
           }
+          columns += tbl.getColumn(i)
         }
-        new Table(columns: _*)
       }
+      new Table(columns: _*)
     }
   }
 
