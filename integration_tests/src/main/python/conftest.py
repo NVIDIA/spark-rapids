@@ -219,7 +219,10 @@ def pytest_configure(config):
     elif "developer" != test_type:
         raise Exception("not supported test type {}".format(test_type))
 
+oom_random_injection_seed = int(os.getenv("SPARK_RAPIDS_TEST_INJECT_OOM_SEED", 1))
+
 def pytest_collection_modifyitems(config, items):
+    r = random.Random(oom_random_injection_seed)
     for item in items:
         extras = []
         order = item.get_closest_marker('ignore_order')
@@ -227,7 +230,7 @@ def pytest_collection_modifyitems(config, items):
         injection_mode = config.getoption('test_oom_injection_mode').lower()
         inject_choice = False
         if injection_mode == 'random':
-            inject_choice = random.choice([0, 1]) == 1
+            inject_choice = r.randrange(0, 2) == 1
         elif injection_mode == 'always':
             inject_choice = True
         if inject_choice:
