@@ -488,13 +488,15 @@ class RapidsBufferCatalog(
     if (spillStore == null) {
       throw new OutOfMemoryError("Requested to spill without a spill store")
     }
-    targetTotalSize.map { tgt =>
-      require(tgt >= 0, s"Negative spill target size: $tgt")
-      logWarning(s"Targeting a ${store.name} size of $tgt. " +
+
+    targetTotalSize.orElse {
+      logWarning(s"Spilling from ${store.name} " +
           s"Current total ${store.currentSize}. " +
           s"Current spillable ${store.currentSpillableSize}")
-    }.getOrElse {
-      logWarning(s"Spilling from ${store.name} " +
+      None
+    }.foreach { tgt =>
+      require(tgt >= 0, s"Negative spill target size: $tgt")
+      logWarning(s"Targeting a ${store.name} size of $tgt. " +
           s"Current total ${store.currentSize}. " +
           s"Current spillable ${store.currentSpillableSize}")
     }
