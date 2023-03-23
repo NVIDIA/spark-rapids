@@ -132,7 +132,6 @@ case class GpuHashAggregateMetrics(
     computeAggTime: GpuMetric,
     concatTime: GpuMetric,
     sortTime: GpuMetric,
-    semWaitTime: GpuMetric,
     spillCallback: SpillCallback)
 
 /** Utility class to convey information on the aggregation modes being used */
@@ -811,7 +810,7 @@ class GpuHashAggregateIterator(
     // rows on the GPU out of empty input, meaning that if a batch has 0 rows, a new single
     // row is getting created with 0 as the count (if count is the operation), and other default
     // values.
-    GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics.semWaitTime)
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
     val vecs = defaultValues.safeMap { ref =>
       withResource(GpuScalar.from(ref.asInstanceOf[GpuLiteral].value, ref.dataType)) {
         scalar => GpuColumnVector.from(scalar, 1, ref.dataType)
@@ -1536,7 +1535,6 @@ case class GpuHashAggregateExec(
       computeAggTime = gpuLongMetric(AGG_TIME),
       concatTime = gpuLongMetric(CONCAT_TIME),
       sortTime = gpuLongMetric(SORT_TIME),
-      semWaitTime = gpuLongMetric(SEMAPHORE_WAIT_TIME),
       makeSpillCallback(allMetrics))
 
     // cache in a local variable to avoid serializing the full child plan

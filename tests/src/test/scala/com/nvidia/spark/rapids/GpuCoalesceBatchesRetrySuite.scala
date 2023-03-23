@@ -268,7 +268,6 @@ class GpuCoalesceBatchesRetrySuite
       NoopMetric,
       NoopMetric,
       NoopMetric,
-      NoopMetric,
       "test",
       false)
     with CoalesceIteratorMocks {

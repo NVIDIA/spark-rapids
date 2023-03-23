@@ -129,7 +129,6 @@ case class GpuBroadcastHashJoinExec(
       buildOutput: Seq[Attribute],
       streamIter: Iterator[ColumnarBatch],
       coalesceMetricsMap: Map[String, GpuMetric]): (ColumnarBatch, Iterator[ColumnarBatch]) = {
-    val semWait = coalesceMetricsMap(GpuMetric.SEMAPHORE_WAIT_TIME)
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     val metricsMap = allMetrics
 
@@ -139,7 +138,7 @@ case class GpuBroadcastHashJoinExec(
         if (bufferedStreamIter.hasNext) {
           bufferedStreamIter.head
         } else {
-          GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWait)
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
         }
       }
       val buildBatch = GpuExecutorBroadcastHelper.getExecutorBroadcastBatch(buildRelation,

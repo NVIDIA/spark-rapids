@@ -297,6 +297,8 @@ partition sizes to avoid GPU out of memory errors.
 
 ## Metrics
 
+### SQL
+
 Custom Spark SQL Metrics are available which can help identify performance bottlenecks in a query.
 
 | Key               | Name                         | Description                                                                                                                                                                                                                                                            |
@@ -322,7 +324,6 @@ Custom Spark SQL Metrics are available which can help identify performance bottl
 | opTime            | op time                      | Time that an operator takes, exclusive of the time for executing or fetching results from child operators, and typically outside of the time it takes to acquire the GPU semaphore. <br/> Note: Sometimes contains CPU times, e.g.: concatTime                         |
 | partitionSize     | partition data size          | Total size in bytes of output partitions.                                                                                                                                                                                                                              |
 | peakDevMemory     | peak device memory           | Peak GPU memory used during execution of an operator.                                                                                                                                                                                                                  |
-| semaphoreWaitTime | GPU semaphore wait time      | Time spent waiting for the GPU semaphore.                                                                                                                                                                                                                              |
 | sortTime          | sort time                    | Time spent in sort operations in GpuSortExec and GpuTopN.                                                                                                                                                                                                              |
 | spillData         | bytes spilled from GPU       | Total bytes spilled from GPU.                                                                                                                                                                                                                                          |
 | spillDisk         | bytes spilled to disk        | Total bytes spilled from GPU to disk.                                                                                                                                                                                                                                  |
@@ -343,6 +344,15 @@ Input rows and batches are really only for debugging and can mostly be ignored.
 Many of the questions people really want to answer with the metrics are around how long various
 operators take. Where is the bottleneck in my query? How much of my query is executing on the GPU?
 How long does operator X take on the GPU vs the CPU?
+
+### Task
+
+Custom Task level accumulators are also included. These metrics are not for individual
+stages of the SQL plan, but are per task and roll up to stages in the plan.
+
+| Name | Description                                                                               |
+|------|-------------------------------------------------------------------------------------------|
+|semaphore_wait| The time the task spent waiting on the GPU semaphore. It is in the format of HH:MM:SS.sss |
 
 ### Time taken on the GPU
 

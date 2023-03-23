@@ -140,7 +140,6 @@ abstract class GpuBroadcastHashJoinExecBase(
       buildSchema: StructType,
       streamIter: Iterator[ColumnarBatch],
       coalesceMetricsMap: Map[String, GpuMetric]): (ColumnarBatch, Iterator[ColumnarBatch]) = {
-    val semWait = coalesceMetricsMap(GpuMetric.SEMAPHORE_WAIT_TIME)
 
     val bufferedStreamIter = new CloseableBufferedIterator(streamIter.buffered)
     closeOnExcept(bufferedStreamIter) { _ =>
@@ -148,7 +147,7 @@ abstract class GpuBroadcastHashJoinExecBase(
         if (bufferedStreamIter.hasNext) {
           bufferedStreamIter.head
         } else {
-          GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWait)
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
         }
       }
 

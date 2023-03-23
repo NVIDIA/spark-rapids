@@ -57,7 +57,6 @@ object GpuMetric extends Logging {
   val PARTITION_SIZE = "partitionSize"
   val NUM_PARTITIONS = "numPartitions"
   val OP_TIME = "opTime"
-  val SEMAPHORE_WAIT_TIME = "semaphoreWaitTime"
   val PEAK_DEVICE_MEMORY = "peakDevMemory"
   val COLLECT_TIME = "collectTime"
   val CONCAT_TIME = "concatTime"
@@ -87,7 +86,6 @@ object GpuMetric extends Logging {
   val DESCRIPTION_PARTITION_SIZE = "partition data size"
   val DESCRIPTION_NUM_PARTITIONS = "partitions"
   val DESCRIPTION_OP_TIME = "op time"
-  val DESCRIPTION_SEMAPHORE_WAIT_TIME = "GPU semaphore wait time"
   val DESCRIPTION_PEAK_DEVICE_MEMORY = "peak device memory"
   val DESCRIPTION_COLLECT_TIME = "collect batch time"
   val DESCRIPTION_CONCAT_TIME = "concat batch time"
@@ -130,7 +128,6 @@ object GpuMetric extends Logging {
     val spillAmount = allMetrics(SPILL_AMOUNT)
     val disk = allMetrics(SPILL_AMOUNT_DISK)
     val host = allMetrics(SPILL_AMOUNT_HOST)
-    val sem = allMetrics(SEMAPHORE_WAIT_TIME)
     new SpillCallback {
       override def apply(from: StorageTier, to: StorageTier, amount: Long): Unit = {
         from match {
@@ -147,8 +144,6 @@ object GpuMetric extends Logging {
             logWarning(s"Spill to $to is unsupported in metrics: $amount")
         }
       }
-
-      override def semaphoreWaitTime: GpuMetric = sem
     }
   }
 }
@@ -289,10 +284,6 @@ trait GpuExec extends SparkPlan with Arm {
     SPILL_AMOUNT -> createSizeMetric(ESSENTIAL_LEVEL, DESCRIPTION_SPILL_AMOUNT),
     SPILL_AMOUNT_DISK -> createSizeMetric(DEBUG_LEVEL, DESCRIPTION_SPILL_AMOUNT_DISK),
     SPILL_AMOUNT_HOST -> createSizeMetric(DEBUG_LEVEL, DESCRIPTION_SPILL_AMOUNT_HOST)
-  ) ++ semaphoreMetrics
-
-  protected def semaphoreMetrics: Map[String, GpuMetric] = Map(
-    SEMAPHORE_WAIT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_SEMAPHORE_WAIT_TIME)
   )
 
   /**

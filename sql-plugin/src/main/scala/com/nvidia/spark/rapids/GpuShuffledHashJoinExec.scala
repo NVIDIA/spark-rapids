@@ -261,7 +261,6 @@ object GpuShuffledHashJoinExec extends Arm {
       streamIter: Iterator[ColumnarBatch],
       spillCallback: SpillCallback,
       coalesceMetricsMap: Map[String, GpuMetric]): (ColumnarBatch, Iterator[ColumnarBatch]) = {
-    val semWait = coalesceMetricsMap(GpuMetric.SEMAPHORE_WAIT_TIME)
     val buildTime = coalesceMetricsMap(GpuMetric.BUILD_TIME)
     var bufferedBuildIterator: CloseableBufferedIterator[ColumnarBatch] = null
     closeOnExcept(bufferedBuildIterator) { _ =>
@@ -319,7 +318,7 @@ object GpuShuffledHashJoinExec extends Arm {
                   if (bufferedStreamIter.hasNext) {
                     bufferedStreamIter.head
                   } else {
-                    GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWait)
+                    GpuSemaphore.acquireIfNecessary(TaskContext.get())
                   }
                 }
                 val buildBatch = getBuildBatchOptimized(hostConcatResult, buildOutput, buildTime)

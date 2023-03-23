@@ -64,9 +64,9 @@ object GpuSemaphore {
    * NOTE: A task completion listener will automatically be installed to ensure
    *       the semaphore is always released by the time the task completes.
    */
-  def acquireIfNecessary(context: TaskContext, waitMetric: GpuMetric): Unit = {
+  def acquireIfNecessary(context: TaskContext): Unit = {
     if (context != null) {
-      getInstance.acquireIfNecessary(context, waitMetric)
+      getInstance.acquireIfNecessary(context)
     }
   }
 
@@ -122,8 +122,8 @@ private final class GpuSemaphore() extends Logging with Arm {
   case class TaskInfo(count: MutableInt, thread: Thread, numPermits: Int)
   private val activeTasks = new ConcurrentHashMap[Long, TaskInfo]
 
-  def acquireIfNecessary(context: TaskContext, waitMetric: GpuMetric): Unit = {
-    GpuTaskMetrics.get.semWaitTime(waitMetric) {
+  def acquireIfNecessary(context: TaskContext): Unit = {
+    GpuTaskMetrics.get.semWaitTime {
       val taskAttemptId = context.taskAttemptId()
       val refs = activeTasks.get(taskAttemptId)
       if (refs == null || refs.count.getValue == 0) {

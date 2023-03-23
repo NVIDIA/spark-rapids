@@ -22,8 +22,8 @@ import java.util.concurrent.TimeUnit
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.NvtxColor
-import com.nvidia.spark.rapids.{Arm, GpuMetric, NvtxWithMetrics}
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
+import com.nvidia.spark.rapids.Arm
 import java.{lang => jl}
 
 import org.apache.spark.{SparkContext, TaskContext}
@@ -80,7 +80,7 @@ class GpuTaskMetrics extends Arm with Serializable {
   private val semWaitTimeNs: NanoSecondAccumulator = new NanoSecondAccumulator
 
   private val metrics = Map[String, AccumulatorV2[_, _]](
-    "semaphore_wait_ns" -> semWaitTimeNs)
+    "semaphore_wait" -> semWaitTimeNs)
 
   def register(sc: SparkContext): Unit = {
     metrics.foreach { case (k, m) =>
@@ -99,9 +99,9 @@ class GpuTaskMetrics extends Arm with Serializable {
     GpuTaskMetrics.registerOnTask(this)
   }
 
-  def semWaitTime[A](semWaitTime: GpuMetric)(f: => A): A = {
+  def semWaitTime[A](f: => A): A = {
     val start = System.nanoTime()
-    withResource(new NvtxWithMetrics("Acquire GPU", NvtxColor.RED, semWaitTime)) { _ =>
+    withResource(new NvtxRange("Acquire GPU", NvtxColor.RED)) { _ =>
       try {
         f
       } finally {

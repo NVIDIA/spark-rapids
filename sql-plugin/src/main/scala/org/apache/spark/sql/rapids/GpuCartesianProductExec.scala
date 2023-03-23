@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
 import scala.collection.mutable
 
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel, NoopMetric, SpillCallback}
+import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel, SpillCallback}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimBinaryExecNode
 
@@ -72,7 +72,7 @@ class GpuSerializableBatch(batch: ColumnarBatch)
   private def readObject(in: ObjectInputStream): Unit = {
     // There is no good way to tie this object deserialization to a specific metric, and I am not
     // sure it is worth trying.
-    GpuSemaphore.acquireIfNecessary(TaskContext.get(), NoopMetric)
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
     withResource(new NvtxRange("DeserializeBatch", NvtxColor.PURPLE)) { _ =>
       val schemaArray = in.readObject().asInstanceOf[Array[DataType]]
       withResource(JCudfSerialization.readTableFrom(in)) { tableInfo =>
@@ -247,7 +247,6 @@ case class GpuCartesianProductExec(
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val joinTime = gpuLongMetric(JOIN_TIME)
     val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
-    val semWait = gpuLongMetric(SEMAPHORE_WAIT_TIME)
     val opTime = gpuLongMetric(OP_TIME)
 
     val boundCondition = condition.map(GpuBindReferences.bindGpuReference(_, output))
@@ -272,8 +271,7 @@ case class GpuCartesianProductExec(
         l.cartesian(r).map(p => p._1 * p._2),
         targetSizeBytes,
         numOutputRows,
-        numOutputBatches,
-        semWait)
+        numOutputBatches)
     } else {
       val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
       val numFirstTableColumns = left.output.size

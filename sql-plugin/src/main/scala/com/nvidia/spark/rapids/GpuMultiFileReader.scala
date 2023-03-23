@@ -27,7 +27,7 @@ import scala.collection.mutable
 import scala.language.implicitConversions
 
 import ai.rapids.cudf.{ColumnVector, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
-import com.nvidia.spark.rapids.GpuMetric.{makeSpillCallback, BUFFER_TIME, FILTER_TIME, PEAK_DEVICE_MEMORY, SEMAPHORE_WAIT_TIME}
+import com.nvidia.spark.rapids.GpuMetric.{makeSpillCallback, BUFFER_TIME, FILTER_TIME, PEAK_DEVICE_MEMORY}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
@@ -1143,7 +1143,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
         } else {
           val rows = currentChunkMeta.numTotalRows.toInt
           // Someone is going to process this data, even if it is just a row count
-          GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
           val nullColumns = currentChunkMeta.readSchema.safeMap(f =>
             GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
           val emptyBatch = new ColumnarBatch(nullColumns.toArray, rows)

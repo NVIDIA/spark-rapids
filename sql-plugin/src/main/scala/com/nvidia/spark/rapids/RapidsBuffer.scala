@@ -71,8 +71,6 @@ abstract class SpillCallback extends Serializable {
    * @param amount the amount of data in bytes that is spilled.
    */
   def apply (from: StorageTier, to: StorageTier, amount: Long): Unit
-
-  def semaphoreWaitTime: GpuMetric
 }
 
 object RapidsBuffer {
@@ -82,8 +80,6 @@ object RapidsBuffer {
    */
   val defaultSpillCallback: SpillCallback = new SpillCallback {
     override def apply(from: StorageTier, to: StorageTier, amount: Long): Unit = ()
-
-    override def semaphoreWaitTime: GpuMetric = NoopMetric
   }
 }
 

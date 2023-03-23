@@ -170,7 +170,6 @@ case class GpuFlatMapCoGroupsInPandasExec(
           pythonRunnerConf,
           // The whole group data should be written in a single call, so here is unlimited
           Int.MaxValue,
-          spillCallback.semaphoreWaitTime,
           pythonOutputSchema)
 
         executePython(pyInputIter, output, pyRunner, numOutputRows, numOutputBatches)

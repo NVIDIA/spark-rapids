@@ -52,7 +52,6 @@ case class GpuArrowPythonRunnerShims(
         pythonRunnerConf,
         // The whole group data should be written in a single call, so here is unlimited
         Int.MaxValue,
-        spillCallback.semaphoreWaitTime,
         pythonOutputSchema)
     } else {
       new GpuArrowPythonRunner(
@@ -63,7 +62,6 @@ case class GpuArrowPythonRunnerShims(
         sessionLocalTimeZone,
         pythonRunnerConf,
         Int.MaxValue,
-        spillCallback.semaphoreWaitTime,
         pythonOutputSchema)
     }
   }

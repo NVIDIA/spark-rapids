@@ -63,7 +63,7 @@ class JustRowsColumnarBatch(numRows: Int, spillCallback: SpillCallback)
   override def setSpillPriority(priority: Long): Unit = () // NOOP nothing to spill
 
   def getColumnarBatch(): ColumnarBatch = {
-    GpuSemaphore.acquireIfNecessary(TaskContext.get(), spillCallback.semaphoreWaitTime)
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
     new ColumnarBatch(Array.empty, numRows)
   }
 
@@ -112,7 +112,7 @@ class SpillableColumnarBatchImpl (
 
   override def getColumnarBatch(): ColumnarBatch = {
     withRapidsBuffer { rapidsBuffer =>
-      GpuSemaphore.acquireIfNecessary(TaskContext.get(), spillCallback.semaphoreWaitTime)
+      GpuSemaphore.acquireIfNecessary(TaskContext.get())
       rapidsBuffer.getColumnarBatch(sparkTypes)
     }
   }
@@ -244,8 +244,7 @@ object SpillableColumnarBatch extends Arm {
  * Just like a SpillableColumnarBatch but for buffers.
  */
 class SpillableBuffer(
-    handle: RapidsBufferHandle,
-    semWait: GpuMetric) extends AutoCloseable with Arm {
+    handle: RapidsBufferHandle) extends AutoCloseable with Arm {
 
   /**
    * Set a new spill priority.
@@ -288,6 +287,6 @@ object SpillableBuffer extends Arm {
     val handle = withResource(buffer) { _ => 
       RapidsBufferCatalog.addBuffer(buffer, meta, priority, spillCallback)
     }
-    new SpillableBuffer(handle, spillCallback.semaphoreWaitTime)
+    new SpillableBuffer(handle)
   }
 }

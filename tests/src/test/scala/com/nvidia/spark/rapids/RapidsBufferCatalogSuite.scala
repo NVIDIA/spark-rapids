@@ -137,7 +137,6 @@ class RapidsBufferCatalogSuite extends FunSuite with MockitoSugar with Arm {
     // adding a new handle puts a new callback in front, that's the new callback
     val mySpillCallback = new SpillCallback {
       override def apply(from: StorageTier, to: StorageTier, amount: Long): Unit = {}
-      override def semaphoreWaitTime: GpuMetric = null
     }
 
     val handle3 =

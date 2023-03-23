@@ -755,7 +755,7 @@ case class GpuRangeExec(
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME)
-  ) ++ semaphoreMetrics
+  )
 
   override def outputOrdering: Seq[SortOrder] = {
     val order = if (step > 0) {
@@ -783,7 +783,6 @@ case class GpuRangeExec(
   protected override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val semTime = gpuLongMetric(SEMAPHORE_WAIT_TIME)
     val opTime = gpuLongMetric(OP_TIME)
     val maxRowCountPerBatch = Math.min(targetSizeBytes/8, Int.MaxValue)
 
@@ -825,7 +824,7 @@ case class GpuRangeExec(
                 } else false
 
               override def next(): ColumnarBatch = {
-                GpuSemaphore.acquireIfNecessary(taskContext, semTime)
+                GpuSemaphore.acquireIfNecessary(taskContext)
                 withResource(
                   new NvtxWithMetrics("GpuRange", NvtxColor.DARK_GREEN, opTime)) { _ =>
                     val start = number

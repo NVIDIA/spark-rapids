@@ -96,8 +96,7 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
             pyInputSchema,
             sessionLocalTimeZone,
             pythonRunnerConf,
-            batchSize,
-            spillCallback.semaphoreWaitTime) {
+            batchSize) {
           override def toBatch(table: Table): ColumnarBatch = {
             BatchGroupedIterator.extractChildren(table, localOutput)
           }

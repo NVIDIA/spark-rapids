@@ -342,8 +342,7 @@ object GpuBroadcastNestedLoopJoinExecBase extends Arm {
       rowCounts: RDD[Long],
       targetSizeBytes: Long,
       numOutputRows: GpuMetric,
-      numOutputBatches: GpuMetric,
-      semWait: GpuMetric): RDD[ColumnarBatch] = {
+      numOutputBatches: GpuMetric): RDD[ColumnarBatch] = {
     // Hash aggregate explodes the rows out, so if we go too large
     // it can blow up. The size of a Long is 8 bytes so we just go with
     // that as our estimate, no nulls.
@@ -361,7 +360,7 @@ object GpuBroadcastNestedLoopJoinExecBase extends Arm {
         numOutputRows += ret.numRows()
         numOutputBatches += 1
         // grab the semaphore for downstream processing
-        GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWait)
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
         ret
       })
     }
@@ -618,14 +617,12 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
 
       val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
       val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-      val semWait = gpuLongMetric(SEMAPHORE_WAIT_TIME)
       val counts = streamed.executeColumnar().map(getRowCountAndClose)
       GpuBroadcastNestedLoopJoinExecBase.divideIntoBatches(
         counts.map(s => s * buildCount),
         targetSizeBytes,
         numOutputRows,
-        numOutputBatches,
-        semWait)
+        numOutputBatches)
     }
   }
 

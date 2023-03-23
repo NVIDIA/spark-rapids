@@ -175,7 +175,7 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
     FILTER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME),
     PEAK_DEVICE_MEMORY -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_PEAK_DEVICE_MEMORY),
     "scanTime" -> createTimingMetric(ESSENTIAL_LEVEL, "scan time")
-  ) ++ semaphoreMetrics
+  )
 
   private lazy val driverMetrics: mutable.HashMap[String, Long] = mutable.HashMap.empty
 

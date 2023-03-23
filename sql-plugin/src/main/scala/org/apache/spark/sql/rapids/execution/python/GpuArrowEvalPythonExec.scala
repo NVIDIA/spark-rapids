@@ -94,7 +94,7 @@ class RebatchingRoundoffIterator(
   }
 
   override def next(): ColumnarBatch = {
-    GpuSemaphore.acquireIfNecessary(TaskContext.get(), spillCallback.semaphoreWaitTime)
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
     val combined : ColumnarBatch = if (pending.isDefined) {
       if (!wrapped.hasNext) {
@@ -346,7 +346,6 @@ case class GpuArrowEvalPythonExec(
           timeZone,
           runnerConf,
           targetBatchSize,
-          spillCallback.semaphoreWaitTime,
           pythonOutputSchema,
           () => queue.finish())
 

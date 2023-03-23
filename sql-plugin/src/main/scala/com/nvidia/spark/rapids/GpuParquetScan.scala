@@ -1713,7 +1713,7 @@ class MultiFileParquetPartitionReader(
     val parseOpts = getParquetOptions(readDataSchema, clippedSchema, useFieldId)
 
     // About to start using the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
     MakeParquetTableProducer(useChunkedReader, conf, targetBatchSizeBytes, parseOpts,
       dataBuffer, 0, dataSize, metrics,
@@ -2230,7 +2230,7 @@ class MultiFileCloudParquetPartitionReader(
         new ColumnarBatch(Array.empty, rows)
       } else {
         // Someone is going to process this data, even if it is just a row count
-        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
         val nullColumns = meta.readSchema.fields.safeMap(f =>
           GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
         new ColumnarBatch(nullColumns, rows)
@@ -2282,7 +2282,7 @@ class MultiFileCloudParquetPartitionReader(
       val parseOpts = getParquetOptions(readDataSchema, clippedSchema, useFieldId)
 
       // about to start using the GPU
-      GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+      GpuSemaphore.acquireIfNecessary(TaskContext.get())
       parseOpts
     }
     val colTypes = readDataSchema.fields.map(f => f.dataType)
@@ -2510,7 +2510,7 @@ class ParquetPartitionReader(
           EmptyGpuColumnarBatchIterator
         } else {
           // Someone is going to process this data, even if it is just a row count
-          GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
           val nullColumns = readDataSchema.safeMap(f =>
             GpuColumnVector.fromNull(numRows, f.dataType).asInstanceOf[SparkVector])
           new SingleGpuColumnarBatchIterator(new ColumnarBatch(nullColumns.toArray, numRows))
@@ -2534,7 +2534,7 @@ class ParquetPartitionReader(
                 Some("parquet"))
 
               // about to start using the GPU
-              GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+              GpuSemaphore.acquireIfNecessary(TaskContext.get())
             }
             RmmRapidsRetryIterator.withRetryNoSplit(dataBuffer) { _ =>
               // Inc the ref count because MakeParquetTableProducer will try to close the dataBuffer

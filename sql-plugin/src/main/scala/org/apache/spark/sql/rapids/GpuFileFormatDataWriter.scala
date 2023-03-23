@@ -800,8 +800,6 @@ class GpuDynamicPartitionDataConcurrentWriter(
     val spillCallback = new SpillCallback {
       override def apply(from: StorageTier, to: StorageTier, amount: Long): Unit = {
       }
-
-      override def semaphoreWaitTime: GpuMetric = NoopMetric
     }
 
     val targetSize = GpuSortExec.targetSize(spec.batchSize)
