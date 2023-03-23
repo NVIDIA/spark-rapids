@@ -263,6 +263,25 @@ def test_delta_merge_upsert_with_unmatchable_match_condition(spark_tmp_path, spa
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
+@pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
+def test_delta_merge_update_with_aggregation(spark_tmp_path, spark_tmp_table_factory, use_cdf):
+    # Need to eliminate duplicate keys in the source table otherwise update semantics are ambiguous
+    src_table_func = lambda spark: spark.range(10).withColumn("x", f.col("id") + 1)\
+        .select(f.col("id"), (f.col("x") + 1).alias("x"))\
+        .drop_duplicates(["id"])\
+        .limit(10)
+    dest_table_func = lambda spark: spark.range(5).withColumn("x", f.col("id") + 1)
+    merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.id == {src_table}.id" \
+                " WHEN MATCHED THEN UPDATE SET {dest_table}.x = {src_table}.x + 2" \
+                " WHEN NOT MATCHED AND {src_table}.x < 7 THEN INSERT *"
+
+    assert_delta_sql_merge_collect(spark_tmp_path, spark_tmp_table_factory, use_cdf,
+                                   src_table_func, dest_table_func, merge_sql, compare_logs=False)
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.xfail(not is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/7573")
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)

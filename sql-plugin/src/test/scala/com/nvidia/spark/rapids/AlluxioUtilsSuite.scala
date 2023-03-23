@@ -30,7 +30,7 @@ import org.apache.spark.sql.internal.SQLConf
 
 class AlluxioMasterAndPortReaderMock(master: String, port: String)
   extends AlluxioConfigReader {
-  override def readAlluxioMasterAndPort(): (String, String) = (master, port)
+  override def readAlluxioMasterAndPort(conf: RapidsConf): (String, String) = (master, port)
 }
 
 class AlluxioFSMock extends AlluxioFS {
