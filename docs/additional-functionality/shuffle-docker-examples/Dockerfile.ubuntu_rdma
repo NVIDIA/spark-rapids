@@ -67,7 +67,8 @@ COPY --from=rdma_core /*.deb /tmp/
 
 RUN apt update
 RUN apt-get install -y wget
-RUN cd /tmp && \
+RUN mkdir /tmp/ucx_install && cd /tmp/ucx_install && \
   wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-$UCX_VER-ubuntu$UBUNTU_VER-mofed5-cuda$UCX_CUDA_VER.tar.bz2 && \
-  tar -xvf ucx-$UCX_VER-ubuntu$UBUNTU_VER-mofed5-cuda$UCX_CUDA_VER.tar.bz2
-RUN apt install -y /tmp/*.deb && rm -rf /tmp/*.deb
+  tar -xvf ucx-$UCX_VER-ubuntu$UBUNTU_VER-mofed5-cuda$UCX_CUDA_VER.tar.bz2 && \
+  apt install -y /tmp/ucx_install/*.deb && \
+  rm -rf /tmp/ucx_install
