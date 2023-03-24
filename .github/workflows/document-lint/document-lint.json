@@ -1,0 +1,6 @@
+{
+  "MD007": { "indent": 4 },
+  "MD031": false,
+  "MD032": { "max_nested_level": 2 },
+  "MD040": false
+}
