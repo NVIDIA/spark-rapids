@@ -23,14 +23,9 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@master
-    - uses: tj-actions/changed-files@v35
-      id: changed-files
-      with:
-        files: 'docs/*.md'
-        separator: ","
+    - uses: actions/checkout@v3
     - uses: DavidAnson/markdownlint-cli2-action@v9
-      if: steps.changed-files.outputs.any_changed == 'true'
       with:
-        globs: ${{ steps.changed-files.outputs.all_changed_files }}
-        separator: ","
+        globs: |
+          docs/*.md
+          docs/*/*.md
