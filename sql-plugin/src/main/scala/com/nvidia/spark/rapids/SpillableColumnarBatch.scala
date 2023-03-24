@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{ContiguousTable, DeviceMemoryBuffer}
 
 import org.apache.spark.TaskContext
+import org.apache.spark.sql.rapids.GpuTaskMetrics
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -237,8 +238,10 @@ class SpillableBuffer(
    * Use the device buffer.
    */
   def getDeviceBuffer(): DeviceMemoryBuffer = {
-    withResource(RapidsBufferCatalog.acquireBuffer(handle)) { rapidsBuffer =>
-      rapidsBuffer.getDeviceMemoryBuffer
+    GpuTaskMetrics.get.readSpillTime {
+      withResource(RapidsBufferCatalog.acquireBuffer(handle)) { rapidsBuffer =>
+        rapidsBuffer.getDeviceMemoryBuffer
+      }
     }
   }
 

@@ -38,7 +38,7 @@ case class NanoTime(value: java.lang.Long) {
     remaining = remaining - TimeUnit.MINUTES.toNanos(minutes)
     val seconds = remaining.toDouble / TimeUnit.SECONDS.toNanos(1)
     val locale = Locale.US
-    "%02d:%02d:%02.3f".formatLocal(locale, hours, minutes, seconds)
+    "%02d:%02d:%06.3f".formatLocal(locale, hours, minutes, seconds)
   }
 }
 
@@ -77,10 +77,14 @@ class NanoSecondAccumulator extends AccumulatorV2[jl.Long, NanoTime] {
 }
 
 class GpuTaskMetrics extends Arm with Serializable {
-  private val semWaitTimeNs: NanoSecondAccumulator = new NanoSecondAccumulator
+  private val semWaitTimeNs = new NanoSecondAccumulator
+  private val spillBlockTimeNs = new NanoSecondAccumulator
+  private val readSpillTimeNs = new NanoSecondAccumulator
 
   private val metrics = Map[String, AccumulatorV2[_, _]](
-    "semaphore_wait" -> semWaitTimeNs)
+    "semaphore_wait" -> semWaitTimeNs,
+    "spill_block_time" -> spillBlockTimeNs,
+    "read_spill_time" -> readSpillTimeNs)
 
   def register(sc: SparkContext): Unit = {
     metrics.foreach { case (k, m) =>
@@ -99,16 +103,25 @@ class GpuTaskMetrics extends Arm with Serializable {
     GpuTaskMetrics.registerOnTask(this)
   }
 
-  def semWaitTime[A](f: => A): A = {
+  private def timeIt[A](timer: NanoSecondAccumulator,
+      range: String,
+      color: NvtxColor,
+      f: => A): A = {
     val start = System.nanoTime()
-    withResource(new NvtxRange("Acquire GPU", NvtxColor.RED)) { _ =>
+    withResource(new NvtxRange(range, color)) { _ =>
       try {
         f
       } finally {
-        semWaitTimeNs.add(System.nanoTime() - start)
+        timer.add(System.nanoTime() - start)
       }
     }
   }
+
+  def semWaitTime[A](f: => A): A = timeIt(semWaitTimeNs, "Acquire GPU", NvtxColor.RED, f)
+
+  def spillTime[A](f: => A): A = timeIt(spillBlockTimeNs, "OnAllocFailure", NvtxColor.RED, f)
+
+  def readSpillTime[A](f: => A): A = timeIt(readSpillTimeNs, "Read Spill", NvtxColor.ORANGE, f)
 }
 
 /**
