@@ -28,6 +28,6 @@ jobs:
       with:
         command: config
         globs: |
-          .github/workflows/document-lint/document-lint.json
+          .github/workflows/document-lint/.markdownlint.json
           docs/*.md
           docs/*/*.md
