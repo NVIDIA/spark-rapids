@@ -1,0 +1,13 @@
+{
+  // Example markdownlint JSON(C) configuration with all properties set to their default value
+  // https://github.com/DavidAnson/markdownlint/blob/main/schema/.markdownlint.jsonc
+
+  // Default state for all rules
+  "default": false,
+
+  // Path to configuration file to extend
+  "extends": null,
+
+  // MD032/blanks-around-lists - Lists should be surrounded by blank lines
+  "MD032": true
+}
