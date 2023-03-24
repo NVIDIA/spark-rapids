@@ -90,12 +90,12 @@ trait JoinGatherer extends LazySpillable with Arm {
   def getFixedWidthBitSize: Option[Int]
 
   /**
-   * Save state so it can be restored.
+   * Save state so it can be restored in case of an OOM Retry.
    */
   def checkpoint: Unit
 
   /**
-   * Restore state that was checkpointed
+   * Restore state that was checkpointed.
    */
   def restore: Unit
 
