@@ -54,13 +54,7 @@ GPU accelerated. These operations will fallback to the CPU.
 
 Delta Lake on Databricks has
 [automatic optimization](https://docs.databricks.com/optimizations/auto-optimize.html)
-features for optimized writes and automatic compaction.  Automatic compaction is supported
-when writing to directories via Scala/Python APIs, as follows:
-```scala
-my_dataframe.write.format("delta").mode("append").save("/path/to/delta-dir")
-```
-Automatic compaction is not supported to Delta tables via SQL. Auto compaction for such tables
-will automatically fall back to the CPU.
+features for optimized writes and automatic compaction.
 
 Optimized writes are supported only on Databricks platforms. The algorithm used is similar but
 not identical to the Databricks version. The following table describes configuration settings
