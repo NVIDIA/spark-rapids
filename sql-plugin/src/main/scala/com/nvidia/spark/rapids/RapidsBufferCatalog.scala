@@ -469,6 +469,22 @@ class RapidsBufferCatalog(
     bufferMap.compute(buffer.id, updater)
   }
 
+  private def shouldAttemptSpilling(
+      firstAttempt: Boolean,
+      rmmShouldRetryAlloc: Boolean,
+      targetTotalSize: Option[Long],
+      currentSpillableSize: Long,
+      exhausted: Boolean): Boolean = {
+    val spillDueToTargetSize =
+      targetTotalSize.map(tgt => currentSpillableSize > tgt)
+
+    // if we have defined a target size, we want to drive our
+    // spillable size down, else we want to spill on first attempt.
+    // if the spill logic that we should retry the allocation, don't
+    // try to spill.
+    !exhausted && spillDueToTargetSize.getOrElse(firstAttempt || !rmmShouldRetryAlloc)
+  }
+
   /**
    * Free memory in `store` by spilling buffers to the spill store synchronously.
    * @param store store to spill from
@@ -510,11 +526,15 @@ class RapidsBufferCatalog(
 
     var firstAttempt = true
 
+    var exhausted = false
+
     // attempt to spill something
-    while (firstAttempt || (
-        !rmmShouldRetryAlloc &&
-        // if a target size is provided, that the store has more spillable than the target
-        targetTotalSize.exists(tgt => store.currentSpillableSize > tgt))) {
+    while (shouldAttemptSpilling(
+        firstAttempt,
+        rmmShouldRetryAlloc,
+        targetTotalSize,
+        store.currentSpillableSize,
+        exhausted)) {
       firstAttempt = false
       val mySpillCount = spillCount
       synchronized {
@@ -527,6 +547,8 @@ class RapidsBufferCatalog(
               spillAndFreeBuffer(nextSpillable, spillStore, stream)
               totalSpilled += nextSpillable.size
             }
+          } else {
+            exhausted = true
           }
         } else {
           rmmShouldRetryAlloc = true
