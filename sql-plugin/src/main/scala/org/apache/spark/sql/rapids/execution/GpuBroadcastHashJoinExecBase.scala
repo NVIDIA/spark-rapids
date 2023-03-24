@@ -96,7 +96,7 @@ abstract class GpuBroadcastHashJoinExecBase(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
-    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME)) ++ spillMetrics
+    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
 
   override def requiredChildDistribution: Seq[Distribution] = {
     val mode = HashedRelationBroadcastMode(buildKeys)
@@ -165,8 +165,6 @@ abstract class GpuBroadcastHashJoinExecBase(
     val joinTime = gpuLongMetric(JOIN_TIME)
     val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
 
-    val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
-
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
 
     val broadcastRelation = broadcastExchange.executeColumnarBroadcast[Any]()
@@ -181,7 +179,7 @@ abstract class GpuBroadcastHashJoinExecBase(
           new CollectTimeIterator("broadcast join stream", it, streamTime),
           allMetrics)
       withResource(builtBatch) { _ =>
-        doJoin(builtBatch, streamIter, targetSize, spillCallback,
+        doJoin(builtBatch, streamIter, targetSize,
           numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
       }
     }

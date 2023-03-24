@@ -89,8 +89,7 @@ case class GpuWindowInPandasExec(
 
   // Override internalDoExecuteColumnar so we use the correct GpuArrowPythonRunner
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val (numInputRows, numInputBatches, numOutputRows, numOutputBatches,
-         spillCallback) = commonGpuMetrics()
+    val (numInputRows, numInputBatches, numOutputRows, numOutputBatches) = commonGpuMetrics()
     val sessionLocalTimeZone = conf.sessionLocalTimeZone
 
     // 1) Unwrap the expressions and build some info data:
@@ -199,7 +198,7 @@ case class GpuWindowInPandasExec(
       // Re-batching the input data by GroupingIterator
       val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput)
       val groupedIterator = new GroupingIterator(inputIter, boundPartitionRefs,
-        numInputRows, numInputBatches, spillCallback)
+        numInputRows, numInputBatches)
       val pyInputIterator = groupedIterator.map { batch =>
         // We have to do the project before we add the batch because the batch might be closed
         // when it is added
@@ -208,7 +207,7 @@ case class GpuWindowInPandasExec(
         val inputBatch = withResource(projectedBatch) { projectedCb =>
           insertWindowBounds(projectedCb)
         }
-        queue.add(batch, spillCallback)
+        queue.add(batch)
         inputBatch
       }
 

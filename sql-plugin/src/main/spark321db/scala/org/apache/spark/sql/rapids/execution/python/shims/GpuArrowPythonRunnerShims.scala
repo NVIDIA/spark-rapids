@@ -33,8 +33,7 @@ case class GpuArrowPythonRunnerShims(
   chainedFunc: Seq[ChainedPythonFunctions],
   argOffsets: Array[Array[Int]],
   dedupAttrs: StructType,
-  pythonOutputSchema: StructType,
-  spillCallback: SpillCallback) {
+  pythonOutputSchema: StructType) {
   // Configs from DB runtime
   val maxBytes = conf.pandasZeroConfConversionGroupbyApplyMaxBytesPerSlice
   val zeroConfEnabled = conf.pandasZeroConfConversionGroupbyApplyEnabled

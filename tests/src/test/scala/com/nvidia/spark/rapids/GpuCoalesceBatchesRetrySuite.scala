@@ -211,8 +211,6 @@ class GpuCoalesceBatchesRetrySuite
 
   class SpillableColumnarBatchThatThrows(batch: ColumnarBatch)
       extends SpillableColumnarBatch {
-    override def getSpillCallback: SpillCallback =
-      RapidsBuffer.defaultSpillCallback
     override def numRows(): Int = 0
     override def setSpillPriority(priority: Long): Unit = {}
     override def getColumnarBatch(): ColumnarBatch = {
@@ -244,8 +242,7 @@ class GpuCoalesceBatchesRetrySuite
       } else {
         spy(SpillableColumnarBatch(
           batch,
-          SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-          RapidsBuffer.defaultSpillCallback))
+          SpillPriorities.ACTIVE_BATCHING_PRIORITY))
       }
       spillableSpy
     }
@@ -300,7 +297,6 @@ class GpuCoalesceBatchesRetrySuite
         NoopMetric,
         NoopMetric,
         NoopMetric,
-        RapidsBuffer.defaultSpillCallback,
         "test",
         TableCompressionCodecConfig(1024)) with CoalesceIteratorMocks {
     override def populateCandidateBatches(): Boolean = {
@@ -334,7 +330,6 @@ class GpuCoalesceBatchesRetrySuite
         NoopMetric,
         NoopMetric,
         NoopMetric,
-        RapidsBuffer.defaultSpillCallback,
         "test") with CoalesceIteratorMocks {
     override def populateCandidateBatches(): Boolean = {
       val lastBatchTag = super.populateCandidateBatches()

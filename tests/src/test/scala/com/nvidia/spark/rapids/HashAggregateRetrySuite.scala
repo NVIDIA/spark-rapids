@@ -36,7 +36,7 @@ class HashAggregateRetrySuite
       .build()
     withResource(reductionTable) { tbl =>
       val cb = GpuColumnVector.from(tbl, Seq(LongType).toArray[DataType])
-      spy(SpillableColumnarBatch(cb, -1, RapidsBuffer.defaultSpillCallback))
+      spy(SpillableColumnarBatch(cb, -1))
     }
   }
 
@@ -47,7 +47,7 @@ class HashAggregateRetrySuite
         .build()
     withResource(groupByTable) { tbl =>
       val cb = GpuColumnVector.from(tbl, Seq(IntegerType, LongType).toArray[DataType])
-      spy(SpillableColumnarBatch(cb, -1, RapidsBuffer.defaultSpillCallback))
+      spy(SpillableColumnarBatch(cb, -1))
     }
   }
 

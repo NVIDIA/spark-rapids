@@ -49,8 +49,7 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
   override def outputPartitioning: Partitioning = child.outputPartitioning
 
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val (numInputRows, numInputBatches, numOutputRows, numOutputBatches,
-         spillCallback) = commonGpuMetrics()
+    val (numInputRows, numInputBatches, numOutputRows, numOutputBatches) = commonGpuMetrics()
 
     val pyInputTypes = child.schema
     val chainedFunc = Seq(ChainedPythonFunctions(Seq(pandasFunction)))
@@ -75,7 +74,7 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
       val contextAwareIter = new ContextAwareIterator(context, inputIter)
 
       val pyInputIterator = new RebatchingRoundoffIterator(contextAwareIter, pyInputTypes,
-          batchSize, numInputRows, numInputBatches, spillCallback)
+          batchSize, numInputRows, numInputBatches)
         .map { batch =>
           // Here we wrap it via another column so that Python sides understand it
           // as a DataFrame.

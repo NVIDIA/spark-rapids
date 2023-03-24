@@ -158,7 +158,6 @@ abstract class AbstractGpuJoinIterator(
  * @param streamAttributes attributes corresponding to the streaming side input
  * @param builtBatch batch for the built side input of the join
  * @param targetSize configured target batch size in bytes
- * @param spillCallback callback to use when spilling
  * @param opTime metric to record time spent for this operation
  * @param joinTime metric to record GPU time spent in join
  */
@@ -168,7 +167,6 @@ abstract class SplittableJoinIterator(
     streamAttributes: Seq[Attribute],
     builtBatch: LazySpillableColumnarBatch,
     targetSize: Long,
-    spillCallback: SpillCallback,
     opTime: GpuMetric,
     joinTime: GpuMetric)
     extends AbstractGpuJoinIterator(
@@ -288,7 +286,7 @@ abstract class SplittableJoinIterator(
       val schema = GpuColumnVector.extractTypes(cb)
       pendingSplits ++= splits.map { ct =>
         SpillableColumnarBatch(ct, schema,
-          SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+          SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
       }
     }
   }
@@ -319,7 +317,7 @@ abstract class SplittableJoinIterator(
         None
       }
 
-      val lazyLeftMap = LazySpillableGatherMap(leftMap, spillCallback, "left_map")
+      val lazyLeftMap = LazySpillableGatherMap(leftMap, "left_map")
       val gatherer = rightMap match {
         case None =>
           // When there isn't a `rightMap` we are in either LeftSemi or LeftAnti joins.
@@ -350,7 +348,7 @@ abstract class SplittableJoinIterator(
             case _: InnerLike | RightOuter => OutOfBoundsPolicy.DONT_CHECK
             case _ => OutOfBoundsPolicy.NULLIFY
           }
-          val lazyRightMap = LazySpillableGatherMap(right, spillCallback, "right_map")
+          val lazyRightMap = LazySpillableGatherMap(right, "right_map")
           JoinGatherer(lazyLeftMap, leftData, lazyRightMap, rightData,
             leftOutOfBoundsPolicy, rightOutOfBoundsPolicy)
       }

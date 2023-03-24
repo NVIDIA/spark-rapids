@@ -86,8 +86,7 @@ class GroupingIterator(
     wrapped: Iterator[ColumnarBatch],
     partitionSpec: Seq[Expression],
     inputRows: GpuMetric,
-    inputBatches: GpuMetric,
-    spillCallback: SpillCallback) extends Iterator[ColumnarBatch] with Arm {
+    inputBatches: GpuMetric) extends Iterator[ColumnarBatch] with Arm {
 
   // Currently do it in a somewhat ugly way. In the future cuDF will provide a dedicated API.
   // Current solution assumes one group data exists in only one batch, so just split the
@@ -149,8 +148,7 @@ class GroupingIterator(
                   GpuColumnVectorFromBuffer.from(table, GpuColumnVector.extractTypes(batch))
                 }
                 groupBatches.enqueue(splitBatches.tail.map(sb =>
-                  SpillableColumnarBatch(sb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-                    spillCallback)): _*)
+                  SpillableColumnarBatch(sb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)): _*)
                 splitBatches.head
               }
             }
@@ -394,8 +392,7 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
   }
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val (numInputRows, numInputBatches, numOutputRows, numOutputBatches,
-         spillCallback) = commonGpuMetrics()
+    val (numInputRows, numInputBatches, numOutputRows, numOutputBatches) = commonGpuMetrics()
     val sessionLocalTimeZone = conf.sessionLocalTimeZone
 
     // 1) Unwrap the expressions and build some info data:
@@ -504,7 +501,7 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
       // Re-batching the input data by GroupingIterator
       val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput)
       val groupedIterator = new GroupingIterator(inputIter, boundPartitionRefs,
-        numInputRows, numInputBatches, spillCallback)
+        numInputRows, numInputBatches)
       val pyInputIterator = groupedIterator.map { batch =>
         // We have to do the project before we add the batch because the batch might be closed
         // when it is added
@@ -513,7 +510,7 @@ trait GpuWindowInPandasExecBase extends ShimUnaryExecNode with GpuPythonExecBase
         val inputBatch = withResource(projectedBatch) { projectedCb =>
           insertWindowBounds(projectedCb)
         }
-        queue.add(batch, spillCallback)
+        queue.add(batch)
         inputBatch
       }
 

@@ -213,9 +213,8 @@ trait LazySpillableColumnarBatch extends LazySpillable {
 
 object LazySpillableColumnarBatch {
   def apply(cb: ColumnarBatch,
-      spillCallback: SpillCallback,
       name: String): LazySpillableColumnarBatch =
-    new LazySpillableColumnarBatchImpl(cb, spillCallback, name)
+    new LazySpillableColumnarBatchImpl(cb, name)
 
   def spillOnly(wrapped: LazySpillableColumnarBatch): LazySpillableColumnarBatch = wrapped match {
     case alreadyGood: AllowSpillOnlyLazySpillableColumnarBatchImpl => alreadyGood
@@ -261,7 +260,6 @@ case class AllowSpillOnlyLazySpillableColumnarBatchImpl(wrapped: LazySpillableCo
  */
 class LazySpillableColumnarBatchImpl(
     cb: ColumnarBatch,
-    spillCallback: SpillCallback,
     name: String) extends LazySpillableColumnarBatch with Arm {
 
   private var cached: Option[ColumnarBatch] = Some(GpuColumnVector.incRefCounts(cb))
@@ -293,8 +291,7 @@ class LazySpillableColumnarBatchImpl(
       withResource(new NvtxRange("spill batch " + name, NvtxColor.RED)) { _ =>
         // First time we need to allow for spilling
         spill = Some(SpillableColumnarBatch(cached.get,
-          SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-          spillCallback))
+          SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
         // Putting data in a SpillableColumnarBatch takes ownership of it.
         cached = None
       }
@@ -328,8 +325,8 @@ trait LazySpillableGatherMap extends LazySpillable with Arm {
 }
 
 object LazySpillableGatherMap {
-  def apply(map: GatherMap, spillCallback: SpillCallback, name: String): LazySpillableGatherMap =
-    new LazySpillableGatherMapImpl(map, spillCallback, name)
+  def apply(map: GatherMap, name: String): LazySpillableGatherMap =
+    new LazySpillableGatherMapImpl(map, name)
 
   def leftCross(leftCount: Int, rightCount: Int): LazySpillableGatherMap =
     new LeftCrossGatherMap(leftCount, rightCount)
@@ -343,7 +340,6 @@ object LazySpillableGatherMap {
  */
 class LazySpillableGatherMapImpl(
     map: GatherMap,
-    spillCallback: SpillCallback,
     name: String) extends LazySpillableGatherMap {
 
   override val getRowCount: Long = map.getRowCount
@@ -369,8 +365,7 @@ class LazySpillableGatherMapImpl(
       withResource(new NvtxRange("spill map " + name, NvtxColor.RED)) { _ =>
         // First time we need to allow for spilling
         spill = Some(SpillableBuffer(cached.get,
-          SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-          spillCallback))
+          SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
         // Putting data in a SpillableBuffer takes ownership of it.
         cached = None
       }

@@ -324,10 +324,7 @@ Custom Spark SQL Metrics are available which can help identify performance bottl
 | opTime            | op time                      | Time that an operator takes, exclusive of the time for executing or fetching results from child operators, and typically outside of the time it takes to acquire the GPU semaphore. <br/> Note: Sometimes contains CPU times, e.g.: concatTime                         |
 | partitionSize     | partition data size          | Total size in bytes of output partitions.                                                                                                                                                                                                                              |
 | peakDevMemory     | peak device memory           | Peak GPU memory used during execution of an operator.                                                                                                                                                                                                                  |
-| sortTime          | sort time                    | Time spent in sort operations in GpuSortExec and GpuTopN.                                                                                                                                                                                                              |
-| spillData         | bytes spilled from GPU       | Total bytes spilled from GPU.                                                                                                                                                                                                                                          |
-| spillDisk         | bytes spilled to disk        | Total bytes spilled from GPU to disk.                                                                                                                                                                                                                                  |
-| spillHost         | bytes spilled to host        | Total bytes spilled from GPU to host memory.                                                                                                                                                                                                                           |
+| sortTime          | sort time                    | Time spent in sort operations in GpuSortExec and GpuTopN.                                                                                                                                                                                                              |                                                                                                                                                                                          |
 | streamTime        | stream time                  | Time spent reading data from a child. This generally happens for the stream side of a hash join or for columnar to row and row to columnar operations.                                                                                                                 |
 
 Not all metrics are enabled by default. The configuration setting `spark.rapids.sql.metrics.level` can be set
@@ -353,6 +350,8 @@ stages of the SQL plan, but are per task and roll up to stages in the plan.
 | Name | Description                                                                               |
 |------|-------------------------------------------------------------------------------------------|
 |semaphore_wait| The time the task spent waiting on the GPU semaphore. It is in the format of HH:MM:SS.sss |
+
+The spill data sizes going to host/CPU memory and disk are the same as used by spark task level metrics.
 
 ### Time taken on the GPU
 

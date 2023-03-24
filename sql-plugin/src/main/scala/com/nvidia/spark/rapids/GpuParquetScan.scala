@@ -2298,7 +2298,7 @@ class MultiFileCloudParquetPartitionReader(
         isSchemaCaseSensitive, useFieldId, readDataSchema, clippedSchema, None,
         tableSize => maxDeviceMemory = max(tableSize, maxDeviceMemory))
 
-      val batchIter = CachedGpuBatchIterator(tableReader, colTypes, spillCallback)
+      val batchIter = CachedGpuBatchIterator(tableReader, colTypes)
 
       if (allPartValues.isDefined) {
         val allPartInternalRows = allPartValues.get.map(_._2)
@@ -2518,7 +2518,7 @@ class ParquetPartitionReader(
       } else {
         val colTypes = readDataSchema.fields.map(f => f.dataType)
         val iter = if (currentChunkedBlocks.isEmpty) {
-          CachedGpuBatchIterator(EmptyTableReader, colTypes, spillCallback)
+          CachedGpuBatchIterator(EmptyTableReader, colTypes)
         } else {
           val parseOpts = getParquetOptions(readDataSchema, clippedParquetSchema, useFieldId)
           val (dataBuffer, dataSize, _) = metrics(BUFFER_TIME).ns {
@@ -2526,7 +2526,7 @@ class ParquetPartitionReader(
           }
           if (dataSize == 0) {
             dataBuffer.close()
-            CachedGpuBatchIterator(EmptyTableReader, colTypes, spillCallback)
+            CachedGpuBatchIterator(EmptyTableReader, colTypes)
           } else {
             closeOnExcept(dataBuffer) { _ =>
               // Dump parquet data into a file
@@ -2548,7 +2548,7 @@ class ParquetPartitionReader(
                 useFieldId, readDataSchema,
                 clippedParquetSchema, Some(filePath),
                 tableSize => maxDeviceMemory = max(tableSize, maxDeviceMemory))
-              CachedGpuBatchIterator(producer, colTypes, spillCallback)
+              CachedGpuBatchIterator(producer, colTypes)
             }
           }
         }

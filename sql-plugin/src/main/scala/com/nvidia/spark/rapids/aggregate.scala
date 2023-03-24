@@ -131,8 +131,7 @@ case class GpuHashAggregateMetrics(
     opTime: GpuMetric,
     computeAggTime: GpuMetric,
     concatTime: GpuMetric,
-    sortTime: GpuMetric,
-    spillCallback: SpillCallback)
+    sortTime: GpuMetric)
 
 /** Utility class to convey information on the aggregation modes being used */
 case class AggregateModeInfo(
@@ -265,15 +264,14 @@ object GpuHashAggregateIterator extends Arm with Logging {
         toAggregateBatch: ColumnarBatch,
         metrics: GpuHashAggregateMetrics): SpillableColumnarBatch = {
       val inputBatch = SpillableColumnarBatch(toAggregateBatch,
-        SpillPriorities.ACTIVE_ON_DECK_PRIORITY, metrics.spillCallback)
+        SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
 
       val projectedCb = withResource(new NvtxRange("pre-process", NvtxColor.DARK_GREEN)) { _ =>
-        preStepBound.projectAndCloseWithRetrySingleBatch(inputBatch, metrics.spillCallback)
+        preStepBound.projectAndCloseWithRetrySingleBatch(inputBatch)
       }
       SpillableColumnarBatch(
         projectedCb,
-        SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-        metrics.spillCallback)
+        SpillPriorities.ACTIVE_BATCHING_PRIORITY)
     }
 
     def aggregate(preProcessed: ColumnarBatch): ColumnarBatch = {
@@ -292,8 +290,7 @@ object GpuHashAggregateIterator extends Arm with Logging {
           withResource(preProcessedAttempt.getColumnarBatch()) { cb =>
             SpillableColumnarBatch(
               aggregate(cb),
-              SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-              preProcessed.getSpillCallback)
+              SpillPriorities.ACTIVE_BATCHING_PRIORITY)
           }
         }.toSeq
 
@@ -305,8 +302,7 @@ object GpuHashAggregateIterator extends Arm with Logging {
           withResource(attempt.getColumnarBatch()) { cb =>
             SpillableColumnarBatch(
               aggregate(cb),
-              SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-              concatted.getSpillCallback)
+              SpillPriorities.ACTIVE_BATCHING_PRIORITY)
           }
         }
       } else {
@@ -378,13 +374,11 @@ object GpuHashAggregateIterator extends Arm with Logging {
         metrics: GpuHashAggregateMetrics): SpillableColumnarBatch = {
       val postProcessed =
         withResource(new NvtxRange("post-process", NvtxColor.ORANGE)) { _ =>
-          postStepBound.projectAndCloseWithRetrySingleBatch(aggregatedSpillable,
-            metrics.spillCallback)
+          postStepBound.projectAndCloseWithRetrySingleBatch(aggregatedSpillable)
         }
       SpillableColumnarBatch(
         postProcessed,
-        SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-        aggregatedSpillable.getSpillCallback)
+        SpillPriorities.ACTIVE_BATCHING_PRIORITY)
     }
   }
 
@@ -464,8 +458,7 @@ object GpuHashAggregateIterator extends Arm with Logging {
               withResource(cudf.Table.concatenate(tbl: _*)) { concatenated =>
                 val cb = GpuColumnVector.from(concatenated, dataTypes)
                 SpillableColumnarBatch(cb,
-                  SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-                  attempt.head.getSpillCallback)
+                  SpillPriorities.ACTIVE_BATCHING_PRIORITY)
               }
             }
           }
@@ -758,8 +751,7 @@ class GpuHashAggregateIterator(
       sortTime = metrics.sortTime,
       outputBatches = NoopMetric,
       outputRows = NoopMetric,
-      peakDevMemory = NoopMetric,
-      spillCallback = metrics.spillCallback))
+      peakDevMemory = NoopMetric))
 
     // The out of core sort iterator does not guarantee that a batch contains all of the values
     // for a particular key, so add a key batching iterator to enforce this. That allows each batch
@@ -776,8 +768,7 @@ class GpuHashAggregateIterator(
       numOutputBatches = NoopMetric,
       concatTime = metrics.concatTime,
       opTime = metrics.opTime,
-      peakDevMemory = NoopMetric,
-      spillCallback = metrics.spillCallback)
+      peakDevMemory = NoopMetric)
 
     // Finally wrap the key batching iterator with a merge aggregation on the output batches.
     new Iterator[ColumnarBatch] {
@@ -1509,7 +1500,7 @@ case class GpuHashAggregateExec(
     AGG_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_AGG_TIME),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
     SORT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_SORT_TIME)
-  ) ++ spillMetrics
+  )
 
   // requiredChildDistributions are CPU expressions, so remove it from the GPU expressions list
   override def gpuExpressions: Seq[Expression] =
@@ -1534,8 +1525,7 @@ case class GpuHashAggregateExec(
       opTime = gpuLongMetric(OP_TIME),
       computeAggTime = gpuLongMetric(AGG_TIME),
       concatTime = gpuLongMetric(CONCAT_TIME),
-      sortTime = gpuLongMetric(SORT_TIME),
-      makeSpillCallback(allMetrics))
+      sortTime = gpuLongMetric(SORT_TIME))
 
     // cache in a local variable to avoid serializing the full child plan
     val inputAttrs = inputAttributes

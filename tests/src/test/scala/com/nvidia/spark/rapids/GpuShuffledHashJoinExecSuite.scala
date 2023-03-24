@@ -44,7 +44,6 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
         Seq.empty,
         mockBuildIter,
         mockStreamIter,
-        mock[SpillCallback],
         metricMap)
       withResource(builtBatch) { _ =>
         // we ge an empty batch with no columns or rows
@@ -77,7 +76,6 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
             Seq.empty,
             buildIter,
             mockStreamIter,
-            mock[SpillCallback],
             metricMap)
           withResource(builtBatch) { _ =>
             assertResult(builtBatch.numCols())(0)
@@ -111,7 +109,6 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
         attrs,
         buildIter,
         mockStreamIter,
-        mock[SpillCallback],
         metricMap)
       withResource(builtBatch) { _ =>
         assertResult(builtBatch.numCols())(1)
@@ -139,7 +136,6 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
           attrs,
           buildIter,
           mockStreamIter,
-          mock[SpillCallback],
           metricMap)
         withResource(builtBatch) { _ =>
           assertResult(builtBatch.numCols())(1)
@@ -193,7 +189,6 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
           attrs,
           buildIter,
           mockStreamIter,
-          mock[SpillCallback],
           metricMap)
         withResource(builtBatch) { _ =>
           verify(mockBufferedStreamIterator, times(1)).hasNext
@@ -227,7 +222,6 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
               attrs,
               buildIter,
               mockStreamIter,
-              mock[SpillCallback],
               metricMap)
             withResource(builtBatch) { _ =>
               verify(mockBufferedStreamIterator, times(1)).hasNext
@@ -265,7 +259,6 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
                 attrs,
                 buildIter,
                 mockStreamIter,
-                mock[SpillCallback],
                 metricMap)
               withResource(builtBatch) { _ =>
                 verify(mockBufferedStreamIterator, times(0)).hasNext
@@ -304,7 +297,6 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
                 attrs,
                 buildIter,
                 mockStreamIter,
-                mock[SpillCallback],
                 metricMap)
               withResource(builtBatch) { _ =>
                 verify(mockBufferedStreamIterator, times(1)).hasNext

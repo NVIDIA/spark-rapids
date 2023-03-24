@@ -527,7 +527,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       dummyMetric,
       dummyMetric,
       dummyMetric,
-      RapidsBuffer.defaultSpillCallback,
       "test concat",
       TableCompressionCodec.makeCodecConfig(rapidsConf))
 
@@ -611,7 +610,6 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
       dummyMetric,
       dummyMetric,
       dummyMetric,
-      RapidsBuffer.defaultSpillCallback,
       "test concat",
       TableCompressionCodec.makeCodecConfig(rapidsConf))
 

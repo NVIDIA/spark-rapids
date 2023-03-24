@@ -31,8 +31,6 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
-import com.nvidia.spark.rapids._
-
 import org.apache.spark.api.python._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types._
@@ -44,8 +42,7 @@ case class GpuArrowPythonRunnerShims(
   chainedFunc: Seq[ChainedPythonFunctions],
   argOffsets: Array[Array[Int]],
   dedupAttrs: StructType,
-  pythonOutputSchema: StructType,
-  spillCallback: SpillCallback) {
+  pythonOutputSchema: StructType) {
   val sessionLocalTimeZone = conf.sessionLocalTimeZone
   val pythonRunnerConf = ArrowUtils.getPythonRunnerConfMap(conf)
 

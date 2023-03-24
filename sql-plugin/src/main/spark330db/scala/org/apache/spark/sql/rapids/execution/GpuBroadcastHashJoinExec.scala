@@ -155,8 +155,6 @@ case class GpuBroadcastHashJoinExec(
     val joinTime = gpuLongMetric(JOIN_TIME)
     val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
 
-    val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
-
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
 
     // Get all the broadcast data from the shuffle coalesced into a single partition 
@@ -176,7 +174,7 @@ case class GpuBroadcastHashJoinExec(
           new CollectTimeIterator("executor broadcast join stream", it, streamTime),
           allMetrics)
       withResource(builtBatch) { _ =>
-        doJoin(builtBatch, streamIter, targetSize, spillCallback,
+        doJoin(builtBatch, streamIter, targetSize,
           numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
       }
     }

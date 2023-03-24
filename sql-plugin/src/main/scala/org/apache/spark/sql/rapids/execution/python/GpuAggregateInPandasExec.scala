@@ -132,8 +132,7 @@ case class GpuAggregateInPandasExec(
   override def coalesceAfter: Boolean = gpuGroupingExpressions.nonEmpty
 
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val (mNumInputRows, mNumInputBatches, mNumOutputRows, mNumOutputBatches,
-      spillCallback) = commonGpuMetrics()
+    val (mNumInputRows, mNumInputBatches, mNumOutputRows, mNumOutputBatches) = commonGpuMetrics()
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
     val sessionLocalTimeZone = conf.sessionLocalTimeZone
@@ -193,7 +192,7 @@ case class GpuAggregateInPandasExec(
       // Second splits into separate group batches.
       val miniAttrs = gpuGroupingExpressions ++ allInputs
       val pyInputIter = BatchGroupedIterator(miniIter, miniAttrs.asInstanceOf[Seq[Attribute]],
-          groupingRefs.indices, spillCallback)
+          groupingRefs.indices)
         .map { groupedBatch =>
           // Resolves the group key and the python input from a grouped batch. Then
           //  - Caches the key to be combined with the Python output later. And
@@ -228,7 +227,7 @@ case class GpuAggregateInPandasExec(
                 }
               }
             }
-            queue.add(keyBatch, spillCallback)
+            queue.add(keyBatch)
 
             // Python input batch
             val pyInputColumns = pyInputRefs.indices.safeMap { idx =>

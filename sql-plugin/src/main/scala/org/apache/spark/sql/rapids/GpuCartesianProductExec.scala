@@ -21,7 +21,7 @@ import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
 import scala.collection.mutable
 
 import ai.rapids.cudf.{JCudfSerialization, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel, SpillCallback}
+import com.nvidia.spark.rapids.{Arm, GpuBindReferences, GpuBuildLeft, GpuColumnVector, GpuExec, GpuExpression, GpuMetric, GpuSemaphore, LazySpillableColumnarBatch, MetricsLevel}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimBinaryExecNode
 
@@ -117,7 +117,6 @@ class GpuCartesianRDD(
     boundCondition: Option[GpuExpression],
     numFirstTableColumns: Int,
     streamAttributes: Seq[Attribute],
-    spillCallback: SpillCallback,
     targetSize: Long,
     opTime: GpuMetric,
     joinTime: GpuMetric,
@@ -166,7 +165,7 @@ class GpuCartesianRDD(
 
     rdd1.iterator(currSplit.s1, context).flatMap { lhs =>
       val batch = withResource(lhs.getBatch) { lhsBatch =>
-        LazySpillableColumnarBatch(lhsBatch, spillCallback, "cross_lhs")
+        LazySpillableColumnarBatch(lhsBatch, "cross_lhs")
       }
       // Introduce sentinel `streamSideCached` to record whether stream-side data is cached or
       // not, because predicate `spillBatchBuffer.isEmpty` will always be true if
@@ -176,7 +175,7 @@ class GpuCartesianRDD(
         // lazily compute and cache stream-side data
         rdd2.iterator(currSplit.s2, context).map { serializableBatch =>
           withResource(serializableBatch.getBatch) { batch =>
-            val lzyBatch = LazySpillableColumnarBatch(batch, spillCallback, "cross_rhs")
+            val lzyBatch = LazySpillableColumnarBatch(batch, "cross_rhs")
             spillBatchBuffer += lzyBatch
             // return a spill only version so we don't close it until the end
             LazySpillableColumnarBatch.spillOnly(lzyBatch)
@@ -189,7 +188,7 @@ class GpuCartesianRDD(
 
       GpuBroadcastNestedLoopJoinExecBase.nestedLoopJoin(
         Cross, GpuBuildLeft, numFirstTableColumns, batch, streamIterator, streamAttributes,
-        targetSize, boundCondition, spillCallback,
+        targetSize, boundCondition,
         numOutputRows = numOutputRows,
         joinOutputRows = joinOutputRows,
         numOutputBatches = numOutputBatches,
@@ -237,7 +236,7 @@ case class GpuCartesianProductExec(
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
     JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
-    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS)) ++ spillMetrics
+    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS))
 
   protected override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException("This should only be called from columnar")
@@ -273,14 +272,12 @@ case class GpuCartesianProductExec(
         numOutputRows,
         numOutputBatches)
     } else {
-      val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
       val numFirstTableColumns = left.output.size
 
       new GpuCartesianRDD(sparkContext,
         boundCondition,
         numFirstTableColumns,
         right.output,
-        spillCallback,
         targetSizeBytes,
         opTime,
         joinTime,

@@ -36,8 +36,7 @@ class GpuSubPartitionSuite extends SparkQueryCompareTestSuite {
       val subPartitioner = new GpuBatchSubPartitioner(
         Iterator.empty,
         boundKeys,
-        numPartitions = 0,
-        RapidsBuffer.defaultSpillCallback)
+        numPartitions = 0)
 
       // at least two partitions even given 0
       assertResult(expected = 2)(subPartitioner.partitionsCount)
@@ -61,8 +60,7 @@ class GpuSubPartitionSuite extends SparkQueryCompareTestSuite {
         val subPartitioner = new GpuBatchSubPartitioner(
           Seq(emptyBatch).toIterator,
           boundKeys,
-          numPartitions = 5,
-          RapidsBuffer.defaultSpillCallback)
+          numPartitions = 5)
 
         assertResult(expected = 5)(subPartitioner.partitionsCount)
         // empty batch is skipped
@@ -88,8 +86,7 @@ class GpuSubPartitionSuite extends SparkQueryCompareTestSuite {
         val subPartitioner = new GpuBatchSubPartitioner(
           Seq(nonemptyBatch).toIterator,
           boundKeys,
-          numPartitions = 5,
-          RapidsBuffer.defaultSpillCallback)
+          numPartitions = 5)
 
         assertResult(expected = 5)(subPartitioner.partitionsCount)
         // nonempty batches exist
@@ -115,12 +112,10 @@ class GpuSubPartitionSuite extends SparkQueryCompareTestSuite {
         val subPartitioner = new GpuBatchSubPartitioner(
           Seq(emptyBatch).toIterator,
           boundKeys,
-          numPartitions = 5,
-          RapidsBuffer.defaultSpillCallback)
+          numPartitions = 5)
         val subIter = new GpuBatchSubPartitionIterator(
           subPartitioner,
-          targetBatchSize = 12L,
-          RapidsBuffer.defaultSpillCallback)
+          targetBatchSize = 12L)
 
         // return empty partitions one by one
         val partCounts = ArrayBuffer(1, 1, 1, 1, 1)
@@ -147,12 +142,10 @@ class GpuSubPartitionSuite extends SparkQueryCompareTestSuite {
         val subPartitioner = new GpuBatchSubPartitioner(
           Seq(nonemptyBatch).toIterator,
           boundKeys,
-          numPartitions = 5,
-          RapidsBuffer.defaultSpillCallback)
+          numPartitions = 5)
         val subIter = new GpuBatchSubPartitionIterator(
           subPartitioner,
-          targetBatchSize = 12L,
-          RapidsBuffer.defaultSpillCallback)
+          targetBatchSize = 12L)
 
         var actualRowNum = 0
         while(subIter.hasNext) {

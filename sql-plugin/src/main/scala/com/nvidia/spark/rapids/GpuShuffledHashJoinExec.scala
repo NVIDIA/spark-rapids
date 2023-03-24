@@ -109,7 +109,7 @@ case class GpuShuffledHashJoinExec(
     BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
     JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
-    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS)) ++ spillMetrics
+    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS))
 
   override def requiredChildDistribution: Seq[Distribution] =
     Seq(GpuHashPartitioning.getDistribution(cpuLeftKeys),
@@ -159,7 +159,6 @@ case class GpuShuffledHashJoinExec(
     val numPartitions = RapidsConf.NUM_SUB_PARTITIONS.get(conf)
     val subPartConf = RapidsConf.HASH_SUB_PARTITION_TEST_ENABLED.get(conf)
        .map(_ && RapidsConf.TEST_CONF.get(conf))
-    val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
     val localBuildOutput = buildPlan.output
 
     // Create a map of metrics that can be handed down to shuffle and coalesce
@@ -192,7 +191,7 @@ case class GpuShuffledHashJoinExec(
             coalesceMetricsMap)
 
           doJoinBySubPartition(gpuBuildIter, streamIter, realTarget, numPartitions,
-            spillCallback, numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
+            numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
         } else {
           val (builtBatch, maybeBufferedStreamIter) =
             GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
@@ -201,14 +200,13 @@ case class GpuShuffledHashJoinExec(
               localBuildOutput,
               batchAwareIter,
               new CollectTimeIterator("shuffled join stream", streamIter, streamTime),
-              spillCallback,
               coalesceMetricsMap)
 
           withResource(builtBatch) { _ =>
             // doJoin will increment the reference counts as needed for the builtBatch
             buildDataSize += GpuColumnVector.getTotalDeviceMemoryUsed(builtBatch)
             doJoin(builtBatch, maybeBufferedStreamIter,
-              realTarget, spillCallback, numOutputRows, joinOutputRows, numOutputBatches,
+              realTarget, numOutputRows, joinOutputRows, numOutputBatches,
               opTime, joinTime)
           }
         }
@@ -247,7 +245,6 @@ object GpuShuffledHashJoinExec extends Arm {
    * @param buildOutput output attributes of the build plan
    * @param buildIter build iterator
    * @param streamIter stream iterator
-   * @param spillCallback metric updater in case downstream iterators spill
    * @param coalesceMetricsMap metrics map with metrics to be used in downstream
    *                           iterators
    * @return a pair of `ColumnarBatch` and streamed iterator that can be
@@ -259,7 +256,6 @@ object GpuShuffledHashJoinExec extends Arm {
       buildOutput: Seq[Attribute],
       buildIter: Iterator[ColumnarBatch],
       streamIter: Iterator[ColumnarBatch],
-      spillCallback: SpillCallback,
       coalesceMetricsMap: Map[String, GpuMetric]): (ColumnarBatch, Iterator[ColumnarBatch]) = {
     val buildTime = coalesceMetricsMap(GpuMetric.BUILD_TIME)
     var bufferedBuildIterator: CloseableBufferedIterator[ColumnarBatch] = null
@@ -293,7 +289,7 @@ object GpuShuffledHashJoinExec extends Arm {
           coalesceMetricsMap(GpuMetric.CONCAT_TIME),
           coalesceMetricsMap(GpuMetric.OP_TIME),
           coalesceMetricsMap(GpuMetric.PEAK_DEVICE_MEMORY),
-          spillCallback, "single build batch")
+          "single build batch")
         val builtBatch =
           ConcatAndConsumeAll.getSingleBatchWithVerification(singBatchIter, buildOutput)
         val delta = System.nanoTime() - startTime
@@ -327,7 +323,7 @@ object GpuShuffledHashJoinExec extends Arm {
             } else {
               val buildBatch = getBuildBatchFromUnfinished(
                 buildGoal, Seq(hostConcatResult).iterator ++ hostConcatIter,
-                buildOutput, spillCallback, coalesceMetricsMap)
+                buildOutput, coalesceMetricsMap)
               buildTime += System.nanoTime() - startTime
               (buildBatch, streamIter)
             }
@@ -341,7 +337,6 @@ object GpuShuffledHashJoinExec extends Arm {
       buildGoal: CoalesceSizeGoal,
       iterWithPrior: Iterator[HostConcatResult],
       buildOutput: Seq[Attribute],
-      spillCallback: SpillCallback,
       coalesceMetricsMap: Map[String, GpuMetric]): ColumnarBatch = {
     // In the fallback case we build the same iterator chain that the Spark plan
     // would have produced:
@@ -361,7 +356,6 @@ object GpuShuffledHashJoinExec extends Arm {
           coalesceMetricsMap(GpuMetric.CONCAT_TIME),
           coalesceMetricsMap(GpuMetric.OP_TIME),
           coalesceMetricsMap(GpuMetric.PEAK_DEVICE_MEMORY),
-          spillCallback,
           "build batch"),
         buildOutput)
       res
