@@ -90,16 +90,6 @@ trait JoinGatherer extends LazySpillable with Arm {
   def getFixedWidthBitSize: Option[Int]
 
   /**
-   * Save state so it can be restored.
-   */
-  def checkpoint: Unit
-
-  /**
-   * Restore state that was checkpointed
-   */
-  def restore: Unit
-
-  /**
    * Do a complete/expensive job to get the number of rows that can be gathered to get close
    * to the targetSize for the final output.
    *
@@ -513,7 +503,6 @@ class JoinGathererImpl(
 
   // How much of the gather map we have output so far
   private var gatheredUpTo: Long = 0
-  private var gatheredUpToCheckpoint: Long = 0
   private val totalRows: Long = gatherMap.getRowCount
   private val (fixedWidthRowSizeBits, nullRowSizeBits) = {
     val dts = data.dataTypes
@@ -521,9 +510,6 @@ class JoinGathererImpl(
     val nullVal = JoinGathererImpl.nullRowSizeBits(dts)
     (fw, nullVal)
   }
-
-  override def checkpoint: Unit = { gatheredUpToCheckpoint = gatheredUpTo }
-  override def restore: Unit = { gatheredUpTo = gatheredUpToCheckpoint }
 
   override def toString: String = {
     s"GATHERER $gatheredUpTo/$totalRows $gatherMap $data"
@@ -633,15 +619,6 @@ case class MultiJoinGather(left: JoinGatherer, right: JoinGatherer) extends Join
   override def isDone: Boolean = left.isDone
 
   override def numRowsLeft: Long = left.numRowsLeft
-
-  override def checkpoint: Unit = {
-    left.checkpoint
-    right.checkpoint
-  }
-  override def restore: Unit = {
-    left.restore
-    right.restore
-  }
 
   override def allowSpilling(): Unit = {
     left.allowSpilling()
