@@ -20,8 +20,6 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
-import com.nvidia.spark.rapids._
-
 import org.apache.spark.api.python._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types._
