@@ -25,132 +25,132 @@ import org.scalatest.FunSuite
 import org.scalatest.mockito.MockitoSugar
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.catalyst.expressions.AttributeReference
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
 import org.apache.spark.sql.types.IntegerType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+/** Tests for the "prepareBuildBatchesForJoin" function. */
 class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
-  val metricMap = mock[Map[String, GpuMetric]]
+  private val metricMap = mock[Map[String, GpuMetric]]
   when(metricMap(any())).thenReturn(NoopMetric)
 
-  test("fallback with empty build iterator") {
+  // The test table size is 20 (= 4 * 5) bytes
+  private val TARGET_SIZE_SMALL = 10L
+  private val TARGET_SIZE_BIG = 1024L
+  private val attrs = Array(AttributeReference("a1", IntegerType, nullable=false)())
+
+  private def newOneIntColumnTable(): Table = {
+    withResource(ColumnVector.fromInts(1, 2, 3, 4, 5)) { cudfCol =>
+      new Table(cudfCol)
+    }
+  }
+
+  private def testJoinPreparation(
+      buildIter: Iterator[ColumnarBatch],
+      buildAttrs: Seq[Attribute] = attrs,
+      targetSize: Long = TARGET_SIZE_BIG,
+      optimalCase: Boolean = false)
+      (verifyBuiltData: Either[ColumnarBatch, Iterator[ColumnarBatch]] => Unit): Unit = {
+    val mockStreamIter = mock[Iterator[ColumnarBatch]]
+    val mockBufferedStreamIterator = mock[BufferedIterator[ColumnarBatch]]
+    when(mockStreamIter.buffered).thenReturn(mockBufferedStreamIterator)
+    when(mockBufferedStreamIterator.hasNext).thenReturn(true)
+    val (builtData, _) = GpuShuffledHashJoinExec.prepareBuildBatchesForJoin(
+      buildIter,
+      mockStreamIter,
+      targetSize,
+      buildAttrs,
+      RequireSingleBatch, None, metricMap)
+
+    verifyBuiltData(builtData)
+    // build iterator should be drained
+    assertResult(expected = false)(buildIter.hasNext)
+    verify(mockStreamIter, times(0)).hasNext
+    if (optimalCase) {
+      verify(mockStreamIter, times(1)).buffered
+      verify(mockBufferedStreamIterator, times(1)).hasNext
+      verify(mockBufferedStreamIterator, times(1)).head
+    }
+  }
+
+  private def assertBatchColsAndRowsAndClose(batch: ColumnarBatch,
+      expectedNumCols: Int, expectedNumRows: Int): Unit = {
+    withResource(batch) { _ =>
+      assertResult(expectedNumCols)(batch.numCols())
+      assertResult(expectedNumRows)(batch.numRows())
+    }
+  }
+
+  test("test empty build iterator") {
     TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-      val mockBuildIter = mock[Iterator[ColumnarBatch]]
-      when(mockBuildIter.hasNext).thenReturn(false)
-      val mockStreamIter = mock[Iterator[ColumnarBatch]]
-      val (builtBatch, bStreamIter) = GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
-        RequireSingleBatch,
-        0,
-        Seq.empty,
-        mockBuildIter,
-        mockStreamIter,
-        metricMap)
-      withResource(builtBatch) { _ =>
-        // we ge an empty batch with no columns or rows
-        assertResult(builtBatch.numCols())(0)
-        assertResult(builtBatch.numRows())(0)
-        // 2 invocations, once in the `getBuiltBatchAndStreamIter`
-        // method, and a second one in `getSingleBatchWithVerification`
-        verify(mockBuildIter, times(2)).hasNext
-        verify(mockBuildIter, times(0)).next
-        verify(mockStreamIter, times(0)).hasNext
+      testJoinPreparation(Iterator.empty) { builtData =>
+        assert(builtData.isLeft)
+        // we get an empty batch
+        assertBatchColsAndRowsAndClose(builtData.left.get, 1, 0)
       }
     }
   }
 
-  test("fallback with 0 column build batches") {
+  test("test a batch of 0 cols and 0 rows") {
     TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-      withResource(GpuColumnVector.emptyBatchFromTypes(Array.empty)) {
-        emptyBatch =>
-          val buildIter = mock[Iterator[ColumnarBatch]]
-          when(buildIter.hasNext).thenReturn(true, false)
-          val buildBufferedIter = mock[BufferedIterator[ColumnarBatch]]
-          when(buildBufferedIter.hasNext).thenReturn(true, false)
-          when(buildBufferedIter.head).thenReturn(emptyBatch)
-          when(buildBufferedIter.next).thenReturn(emptyBatch)
-          when(buildIter.buffered).thenReturn(buildBufferedIter)
-          val mockStreamIter = mock[Iterator[ColumnarBatch]]
-          val (builtBatch, bStreamIter) = GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
-            RequireSingleBatch,
-            0,
-            Seq.empty,
-            buildIter,
-            mockStreamIter,
-            metricMap)
-          withResource(builtBatch) { _ =>
-            assertResult(builtBatch.numCols())(0)
-            assertResult(builtBatch.numRows())(0)
-            // 1 invocation in the `getBuiltBatchAndStreamIter`
-            // after which a buffered iterator is obtained and used for the fallback case
-            verify(buildIter, times(1)).hasNext
-            verify(buildIter, times(1)).buffered
-            // we ask the buffered iterator for `head` to inspect the number of columns
-            verify(buildBufferedIter, times(1)).head
-            // the buffered iterator is passed to `getSingleBatchWithVerification`,
-            // and that code calls hasNext twice
-            verify(buildBufferedIter, times(2)).hasNext
-            // and calls next to get that batch we buffered
-            verify(buildBufferedIter, times(1)).next
-            verify(mockStreamIter, times(0)).hasNext
-          }
+      val buildIter = Iterator(GpuColumnVector.emptyBatchFromTypes(Array.empty))
+      testJoinPreparation(buildIter, Seq.empty) { builtData =>
+        assert(builtData.isLeft)
+        assertBatchColsAndRowsAndClose(builtData.left.get, 0, 0)
       }
     }
   }
 
-  test("fallback with a non-SerializedTableColumn 1 col and 0 rows") {
+  test("test a batch of 1 col and 0 rows") {
     TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-      val attrs = Seq(AttributeReference("a1", IntegerType)())
-      val emptyBatch = GpuColumnVector.emptyBatchFromTypes(Seq(IntegerType).toArray)
-      val buildIter = Seq(emptyBatch).iterator
-      val mockStreamIter = mock[Iterator[ColumnarBatch]]
-      val (builtBatch, bStreamIter) = GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
-        RequireSingleBatch,
-        0,
-        attrs,
-        buildIter,
-        mockStreamIter,
-        metricMap)
-      withResource(builtBatch) { _ =>
-        assertResult(builtBatch.numCols())(1)
-        assertResult(builtBatch.numRows())(0)
-        // 2 invocations, once in the `getBuiltBatchAndStreamIter
-        // method, and one in `getSingleBatchWithVerification`
-        verify(mockStreamIter, times(0)).hasNext
-        // the buffered iterator drained the build iterator
-        assertResult(buildIter.hasNext)(false)
+      val buildIter = Iterator(GpuColumnVector.emptyBatchFromTypes(attrs.map(_.dataType)))
+      testJoinPreparation(buildIter) { builtData =>
+        assert(builtData.isLeft)
+        assertBatchColsAndRowsAndClose(builtData.left.get, 1, 0)
+
       }
     }
   }
 
-  test("fallback with a non-SerialiedTableColumn") {
+  test("test a nonempty batch going over the limit") {
     TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-      closeOnExcept(ColumnVector.fromInts(1, 2, 3, 4, 5)) { cudfCol =>
-        val cv = GpuColumnVector.from(cudfCol, IntegerType)
-        val attrs = Seq(AttributeReference("a1", IntegerType)())
-        val batch = new ColumnarBatch(Seq(cv).toArray, 5)
-        val buildIter = Seq(batch).iterator
-        val mockStreamIter = mock[Iterator[ColumnarBatch]]
-        val (builtBatch, bStreamIter) = GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
-          RequireSingleBatch,
-          0,
-          attrs,
-          buildIter,
-          mockStreamIter,
-          metricMap)
-        withResource(builtBatch) { _ =>
-          assertResult(builtBatch.numCols())(1)
-          assertResult(builtBatch.numRows())(5)
-          // 2 invocations, once in the `getBuiltBatchAndStreamIter
-          // method, and one in `getSingleBatchWithVerification`
-          verify(mockStreamIter, times(0)).hasNext
-          // the buffered iterator drained the build iterator
-          assertResult(buildIter.hasNext)(false)
+      val buildIter = withResource(newOneIntColumnTable()) { testTable =>
+        Iterator(GpuColumnVector.from(testTable, attrs.map(_.dataType)))
+      }
+      testJoinPreparation(buildIter, targetSize = TARGET_SIZE_SMALL) { builtData =>
+        assert(builtData.isRight)
+        var batchCount = 0
+        val builtIt = builtData.right.get
+        builtIt.foreach { builtBatch =>
+          batchCount += 1
+          assertBatchColsAndRowsAndClose(builtBatch, 1, 5)
+        }
+        assert(batchCount == 1)
+      }
+    }
+  }
+
+  test("test two batches going over the limit") {
+    TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
+      val buildIter = withResource(newOneIntColumnTable()) { testTable =>
+        closeOnExcept(GpuColumnVector.from(testTable, attrs.map(_.dataType))) { batch1 =>
+          Iterator(batch1, GpuColumnVector.from(testTable, attrs.map(_.dataType)))
         }
       }
+      testJoinPreparation(buildIter, targetSize = TARGET_SIZE_SMALL) { builtData =>
+        assert(builtData.isRight)
+        var batchCount = 0
+        val builtIt = builtData.right.get
+        builtIt.foreach { builtBatch =>
+          batchCount += 1
+          assertBatchColsAndRowsAndClose(builtBatch, 1, 5)
+        }
+        assert(batchCount == 2)
+      }
     }
   }
 
-  def getSerializedBatch(tbl: Table): ColumnarBatch = {
+  private def getSerializedBatch(tbl: Table): ColumnarBatch = {
     val outStream = new ByteArrayOutputStream()
     JCudfSerialization.writeToStream(tbl, outStream, 0, tbl.getRowCount)
     val dIn = new DataInputStream(new ByteArrayInputStream(outStream.toByteArray))
@@ -161,7 +161,7 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
     }
   }
 
-  def getSerializedBatch(numRows: Int): ColumnarBatch = {
+  private def getSerializedBatch(numRows: Int): ColumnarBatch = {
     val outStream = new ByteArrayOutputStream()
     JCudfSerialization.writeRowsToStream(outStream, numRows)
     val dIn = new DataInputStream(new ByteArrayInputStream(outStream.toByteArray))
@@ -172,142 +172,58 @@ class GpuShuffledHashJoinExecSuite extends FunSuite with Arm with MockitoSugar {
     }
   }
 
-  test("test a 0-column SerializedTableColumn") {
+  test("test a 0-column serialized batch, optimal case") {
     TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-      val serializedBatch = getSerializedBatch(5)
-      val mockStreamIter = mock[Iterator[ColumnarBatch]]
-      val mockBufferedStreamIterator = mock[BufferedIterator[ColumnarBatch]]
-      when(mockStreamIter.hasNext).thenReturn(true)
-      when(mockStreamIter.buffered).thenReturn(mockBufferedStreamIterator)
-      when(mockBufferedStreamIterator.hasNext).thenReturn(true)
-      closeOnExcept(serializedBatch) { _ =>
-        val buildIter = Seq(serializedBatch).iterator
-        val attrs = AttributeReference("a", IntegerType, false)() :: Nil
-        val (builtBatch, bStreamIter) = GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
-          RequireSingleBatch,
-          1024,
-          attrs,
-          buildIter,
-          mockStreamIter,
-          metricMap)
-        withResource(builtBatch) { _ =>
-          verify(mockBufferedStreamIterator, times(1)).hasNext
-          assertResult(builtBatch.numCols())(0)
-          assertResult(builtBatch.numRows())(5)
-          // the buffered iterator drained the build iterator
-          assertResult(buildIter.hasNext)(false)
-        }
+      val buildIter = Iterator(getSerializedBatch(5))
+      testJoinPreparation(buildIter, Seq.empty, optimalCase = true) { builtData =>
+        assert(builtData.isLeft)
+        assertBatchColsAndRowsAndClose(builtData.left.get, 0, 5)
       }
     }
   }
 
-  test("test a SerializedTableColumn") {
+  test("test a serialized batch, optimal case") {
     TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-      withResource(ColumnVector.fromInts(1, 2, 3, 4, 5)) { cudfCol =>
-        val cv = GpuColumnVector.from(cudfCol, IntegerType)
-        val batch = new ColumnarBatch(Seq(cv).toArray, 5)
-        withResource(GpuColumnVector.from(batch)) { tbl =>
-          val serializedBatch = getSerializedBatch(tbl)
-          val mockStreamIter = mock[Iterator[ColumnarBatch]]
-          val mockBufferedStreamIterator = mock[BufferedIterator[ColumnarBatch]]
-          when(mockStreamIter.hasNext).thenReturn(true)
-          when(mockStreamIter.buffered).thenReturn(mockBufferedStreamIterator)
-          when(mockBufferedStreamIterator.hasNext).thenReturn(true)
-          closeOnExcept(serializedBatch) { _ =>
-            val buildIter = Seq(serializedBatch).iterator
-            val attrs = AttributeReference("a", IntegerType, false)() :: Nil
-            val (builtBatch, bStreamIter) = GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
-              RequireSingleBatch,
-              1024,
-              attrs,
-              buildIter,
-              mockStreamIter,
-              metricMap)
-            withResource(builtBatch) { _ =>
-              verify(mockBufferedStreamIterator, times(1)).hasNext
-              assertResult(builtBatch.numCols())(1)
-              assertResult(builtBatch.numRows())(5)
-              // the buffered iterator drained the build iterator
-              assertResult(buildIter.hasNext)(false)
-            }
-          }
-        }
+      val buildIter = withResource(newOneIntColumnTable()) { tbl =>
+        Iterator(getSerializedBatch(tbl))
+      }
+      testJoinPreparation(buildIter, optimalCase = true) { builtData =>
+        assert(builtData.isLeft)
+        assertBatchColsAndRowsAndClose(builtData.left.get, 1, 5)
       }
     }
   }
 
-  test("test two batches, going over the limit") {
+  test("test two serialized batches, going over the limit") {
     TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-      withResource(ColumnVector.fromInts(1, 2, 3, 4, 5)) { cudfCol =>
-        val cv = GpuColumnVector.from(cudfCol, IntegerType)
-        val batch = new ColumnarBatch(Seq(cv).toArray, 5)
-        withResource(GpuColumnVector.from(batch)) { tbl =>
-          val serializedBatch = getSerializedBatch(tbl)
-          val serializedBatch2 = getSerializedBatch(tbl)
-          val mockStreamIter = mock[Iterator[ColumnarBatch]]
-          val mockBufferedStreamIterator = mock[BufferedIterator[ColumnarBatch]]
-          when(mockStreamIter.hasNext).thenReturn(true)
-          when(mockStreamIter.buffered).thenReturn(mockBufferedStreamIterator)
-          when(mockBufferedStreamIterator.hasNext).thenReturn(true)
-          closeOnExcept(serializedBatch) { _ =>
-            closeOnExcept(serializedBatch2) { _ =>
-              val buildIter = Seq(serializedBatch, serializedBatch2).iterator
-              val attrs = AttributeReference("a", IntegerType, false)() :: Nil
-              val (builtBatch, bStreamIter) = GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
-                RequireSingleBatch,
-                1,
-                attrs,
-                buildIter,
-                mockStreamIter,
-                metricMap)
-              withResource(builtBatch) { _ =>
-                verify(mockBufferedStreamIterator, times(0)).hasNext
-                assertResult(builtBatch.numCols())(1)
-                assertResult(builtBatch.numRows())(10)
-                // the buffered iterator drained the build iterator
-                assertResult(buildIter.hasNext)(false)
-              }
-            }
-          }
+      val buildIter = withResource(newOneIntColumnTable()) { tbl =>
+        closeOnExcept(getSerializedBatch(tbl)) { serializedBatch1 =>
+          Iterator(serializedBatch1, getSerializedBatch(tbl))
         }
+      }
+      testJoinPreparation(buildIter, targetSize = TARGET_SIZE_SMALL) { builtData =>
+        assert(builtData.isRight)
+        var batchCount = 0
+        val builtIt = builtData.right.get
+        builtIt.foreach { builtBatch =>
+          batchCount += 1
+          assertBatchColsAndRowsAndClose(builtBatch, 1, 5)
+        }
+        assert(batchCount == 2)
       }
     }
   }
 
-  test("test two batches, stating within the limit") {
+  test("test two serialized batches, stating within the limit, optimal case") {
     TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
-      withResource(ColumnVector.fromInts(1, 2, 3, 4, 5)) { cudfCol =>
-        val cv = GpuColumnVector.from(cudfCol, IntegerType)
-        val batch = new ColumnarBatch(Seq(cv).toArray, 5)
-        withResource(GpuColumnVector.from(batch)) { tbl =>
-          val serializedBatch = getSerializedBatch(tbl)
-          val serializedBatch2 = getSerializedBatch(tbl)
-          val mockStreamIter = mock[Iterator[ColumnarBatch]]
-          val mockBufferedStreamIterator = mock[BufferedIterator[ColumnarBatch]]
-          when(mockStreamIter.hasNext).thenReturn(true)
-          when(mockStreamIter.buffered).thenReturn(mockBufferedStreamIterator)
-          when(mockBufferedStreamIterator.hasNext).thenReturn(true)
-          closeOnExcept(serializedBatch) { _ =>
-            closeOnExcept(serializedBatch2) { _ =>
-              val buildIter = Seq(serializedBatch, serializedBatch2).iterator
-              val attrs = AttributeReference("a", IntegerType, false)() :: Nil
-              val (builtBatch, bStreamIter) = GpuShuffledHashJoinExec.getBuiltBatchAndStreamIter(
-                RequireSingleBatch,
-                1024,
-                attrs,
-                buildIter,
-                mockStreamIter,
-                metricMap)
-              withResource(builtBatch) { _ =>
-                verify(mockBufferedStreamIterator, times(1)).hasNext
-                assertResult(builtBatch.numCols())(1)
-                assertResult(builtBatch.numRows())(10)
-                // the buffered iterator drained the build iterator
-                assertResult(buildIter.hasNext)(false)
-              }
-            }
-          }
+      val buildIter = withResource(newOneIntColumnTable()) { tbl =>
+        closeOnExcept(getSerializedBatch(tbl)) { serializedBatch1 =>
+          Iterator(serializedBatch1, getSerializedBatch(tbl))
         }
+      }
+      testJoinPreparation(buildIter, optimalCase = true) { builtData =>
+        assert(builtData.isLeft)
+        assertBatchColsAndRowsAndClose(builtData.left.get, 1, 10)
       }
     }
   }

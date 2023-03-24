@@ -1289,6 +1289,21 @@ def test_parquet_int32_downcast(spark_tmp_path, reader_confs, v1_enabled_list):
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+@pytest.mark.parametrize("types", [("byte", "short"), ("byte", "int"), ("short", "int")], ids=idfn)
+def test_parquet_read_int_upcast(spark_tmp_path, reader_confs, v1_enabled_list, types):
+    data_path = spark_tmp_path + "/PARQUET_DATA"
+    store_type, load_type = types
+    with_cpu_session(lambda spark: spark.range(10) \
+                     .selectExpr(f"cast(id as {store_type})") \
+                     .write.parquet(data_path))
+    conf = copy_and_update(reader_confs,
+                           {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(f"id {load_type}").parquet(data_path),
+        conf=conf)
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
 def test_parquet_nested_column_missing(spark_tmp_path, reader_confs, v1_enabled_list):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     write_schema = [("a", string_gen), ("b", int_gen), ("c", StructGen([("ca", long_gen)]))]

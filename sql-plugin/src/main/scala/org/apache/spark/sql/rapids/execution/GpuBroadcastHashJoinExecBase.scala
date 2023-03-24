@@ -178,10 +178,9 @@ abstract class GpuBroadcastHashJoinExecBase(
           buildSchema,
           new CollectTimeIterator("broadcast join stream", it, streamTime),
           allMetrics)
-      withResource(builtBatch) { _ =>
-        doJoin(builtBatch, streamIter, targetSize,
-          numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
-      }
+      // builtBatch will be closed in doJoin
+      doJoin(builtBatch, streamIter, targetSize,
+        numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
     }
   }
 

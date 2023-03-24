@@ -522,15 +522,13 @@ def __add_new_shim_to_file_map(files2bv):
         bv_list = files2bv[shim_file]
         if __add_shim_base in bv_list:
             # adding a lookalike
-            # case 1) dedicated per-shim files such as SparkShims.scala and anything with
-            #         a spark${buldver} in the package path: CLONE the file with modifications
+            # case 1) dedicated per-shim files with a spark${buildver} in the package path:
+            #         CLONE the file with modifications
             # case 2) otherwise simply add the new buildver to the files2bv[shimfile] mapping
             base_package = "spark%s" % __add_shim_base
-            shim_impl_file = 'com.nvidia.spark.rapids.shims.SparkShims'\
-                .replace('.', os.sep) + '.scala'
-            if (base_package in shim_file) or shim_file.endswith(shim_impl_file):
-                assert len(bv_list) == 1, "Per-shim file are expect to belong to a single "\
-                        "shim, actual number of shims: %s" % len(bv_list)
+            if base_package in shim_file:
+                assert len(bv_list) == 1, "Per-shim file %s is expected to belong to a single "\
+                        "shim, actual shims: %s" % (shim_file, bv_list)
                 new_shim_file = __git_rename_or_copy(shim_file, __add_shim_buildver,
                                                      from_shim=__add_shim_base)
                 # schedule new file for comment update

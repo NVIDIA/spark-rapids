@@ -173,10 +173,9 @@ case class GpuBroadcastHashJoinExec(
           localBuildOutput,
           new CollectTimeIterator("executor broadcast join stream", it, streamTime),
           allMetrics)
-      withResource(builtBatch) { _ =>
-        doJoin(builtBatch, streamIter, targetSize,
-          numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
-      }
+      // builtBatch will be closed in doJoin
+      doJoin(builtBatch, streamIter, targetSize,
+        numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
     }
   }
 
@@ -188,3 +187,4 @@ case class GpuBroadcastHashJoinExec(
     }
   }
 }
+

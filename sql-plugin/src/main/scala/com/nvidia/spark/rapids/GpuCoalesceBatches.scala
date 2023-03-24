@@ -771,9 +771,14 @@ class GpuCompressionAwareCoalesceIterator(
               val cv = compressedVecs(outputIndex)
               val batchIndex = compressedBatchIndices(outputIndex)
               val compressedBatch = wip(batchIndex)
-              wip(batchIndex) =
-                MetaUtils.getBatchFromMeta(outputBuffer, cv.getTableMeta, sparkTypes)
-              compressedBatch.close()
+              withResource(compressedBatch) { _ =>
+                // the decompressed batch should get a new meta without codec information
+                // so that future materializations of the batch don't get confused and attempt
+                // to use GpuCompressedColumnVector instead of GpuPackedTableColumn
+                wip(batchIndex) =
+                  MetaUtils.getBatchFromMeta(
+                    outputBuffer, MetaUtils.dropCodecs(cv.getTableMeta), sparkTypes)
+              }
             }
           }
         }
