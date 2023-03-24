@@ -102,9 +102,9 @@ object AlluxioUtils extends Logging with Arm {
     }
   }
 
-  // Default to read from /opt/alluxio-2.8.0 if not setting ALLUXIO_HOME
-  private def readAlluxioMasterAndPort: (String, String) = {
-    alluxioMasterAndPortReader.readAlluxioMasterAndPort()
+  // By default, read from /opt/alluxio, refer to `spark.rapids.alluxio.home` config in `RapidsConf`
+  private def readAlluxioMasterAndPort(conf: RapidsConf): (String, String) = {
+    alluxioMasterAndPortReader.readAlluxioMasterAndPort(conf)
   }
 
   // Read out alluxio.master.hostname, alluxio.master.rpc.port
@@ -126,7 +126,7 @@ object AlluxioUtils extends Logging with Arm {
       } else if (conf.getAlluxioAutoMountEnabled) {
         // auto-mount is enabled
         if (!isInitMountPointsForAutoMount) {
-          val (alluxioMasterHostStr, alluxioMasterPortStr) = readAlluxioMasterAndPort
+          val (alluxioMasterHostStr, alluxioMasterPortStr) = readAlluxioMasterAndPort(conf)
           alluxioBucketRegex = Some(conf.getAlluxioBucketRegex)
           // load mounted point by call Alluxio client.
           try {

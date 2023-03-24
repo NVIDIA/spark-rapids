@@ -41,7 +41,7 @@ trait TaskAutoCloseableResource extends AutoCloseable {
     resources.clear()
   }
 
-  TaskContext.get().addTaskCompletionListener[Unit](_ => close())
+  Option(TaskContext.get()).foreach(_.addTaskCompletionListener[Unit](_ => close()))
 }
 
 /**
