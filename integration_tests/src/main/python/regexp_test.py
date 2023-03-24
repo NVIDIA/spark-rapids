@@ -787,6 +787,21 @@ def test_regexp_replace_unicode_support():
         ),
         conf=_regexp_conf)
 
+def test_regexp_replace_multi_optimization():
+    gen = mk_str_gen('[abcdef]{0,2}')
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'REGEXP_REPLACE(a, "aa|bb", "PROD")',
+            'REGEXP_REPLACE(a, "(aa)|(bb)", "PROD")',
+            'REGEXP_REPLACE(a, "aa|bb|cc", "PROD")',
+            'REGEXP_REPLACE(a, "(aa)|(bb)|(cc)", "PROD")',
+            'REGEXP_REPLACE(a, "aa|bb|cc|dd", "PROD")',
+            'REGEXP_REPLACE(a, "aa|bb|cc|dd|ee", "PROD")',
+            'REGEXP_REPLACE(a, "aa|bb|cc|dd|ee|ff", "PROD")'
+        )
+    )
+
 def test_regexp_split_unicode_support():
     data_gen = mk_str_gen('([bf]o{0,2}青){1,7}') \
         .with_special_case('boo青and青foo')
