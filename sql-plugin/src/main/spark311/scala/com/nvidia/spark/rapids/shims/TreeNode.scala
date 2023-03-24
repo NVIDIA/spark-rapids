@@ -36,6 +36,7 @@ trait ShimTernaryExpression extends TernaryExpression {
   def second: Expression
   def third: Expression
   final def children: Seq[Expression] = IndexedSeq(first, second, third)
+  override def stringArgs: Iterator[Any] = Seq(first, second, third).toIterator
 }
 
 trait ShimSparkPlan extends SparkPlan
