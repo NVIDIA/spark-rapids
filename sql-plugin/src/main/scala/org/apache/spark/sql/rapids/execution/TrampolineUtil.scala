@@ -159,4 +159,12 @@ object TrampolineUtil {
   def addShutdownHook(priority: Int, runnable: Runnable): AnyRef = {
     ShutdownHookManager.addShutdownHook(priority)(() => runnable.run())
   }
+
+  def classForName[C](
+      className: String,
+      initialize: Boolean = true,
+      noSparkClassLoader: Boolean = false): Class[C] = {
+    Utils.classForName(className, initialize, noSparkClassLoader)
+  }
+
 }

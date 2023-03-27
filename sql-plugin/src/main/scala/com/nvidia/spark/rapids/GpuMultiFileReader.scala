@@ -1151,9 +1151,26 @@ abstract class MultiFileCoalescingPartitionReaderBase(
         }
       } else {
         val colTypes = currentChunkMeta.readSchema.fields.map(f => f.dataType)
-        val tableReader = readToTable(currentChunkMeta.currentChunk, currentChunkMeta.clippedSchema,
-          currentChunkMeta.readSchema, currentChunkMeta.extraInfo)
-        CachedGpuBatchIterator(tableReader, colTypes, spillCallback)
+        if (currentChunkMeta.currentChunk.isEmpty) {
+          CachedGpuBatchIterator(EmptyTableReader, colTypes, spillCallback)
+        } else {
+          val (dataBuffer, dataSize) = readPartFiles(currentChunkMeta.currentChunk,
+            currentChunkMeta.clippedSchema)
+          if (dataSize == 0) {
+            dataBuffer.close()
+            CachedGpuBatchIterator(EmptyTableReader, colTypes, spillCallback)
+          } else {
+            RmmRapidsRetryIterator.withRetryNoSplit(dataBuffer) { _ =>
+              // We don't want to actually close the host buffer until we know that we don't
+              // want to retry more, so offset the close for now.
+              dataBuffer.incRefCount()
+              val tableReader = readBufferToTablesAndClose(dataBuffer,
+                dataSize, currentChunkMeta.clippedSchema, currentChunkMeta.readSchema,
+                currentChunkMeta.extraInfo)
+              CachedGpuBatchIterator(tableReader, colTypes, spillCallback)
+            }
+          }
+        }
       }
       new GpuColumnarBatchWithPartitionValuesIterator(batchIter, currentChunkMeta.allPartValues,
           currentChunkMeta.rowsPerPartition, partitionSchema).map { withParts =>

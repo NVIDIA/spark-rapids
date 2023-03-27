@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -135,9 +135,6 @@ def is_before_spark_312():
 def is_before_spark_313():
     return spark_version() < "3.1.3"
 
-def is_before_spark_314():
-    return spark_version() < "3.1.4"
-
 def is_before_spark_320():
     return spark_version() < "3.2.0"
 
@@ -183,9 +180,6 @@ def is_databricks_version_or_later(major, minor):
     db_major = int(parts[0])
     db_minor = int(parts[1])
     return db_minor >= minor if (db_major == major) else db_major >= major
-
-def is_databricks91_or_later():
-    return is_databricks_version_or_later(9, 1)
 
 def is_databricks104_or_later():
     return is_databricks_version_or_later(10, 4)

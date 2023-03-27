@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,6 @@
 package com.nvidia.spark.rapids
 
 import java.nio.charset.Charset
-
-import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
@@ -43,7 +41,7 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
     frame => {
       // this test is only valid in Spark 3.0.x because the expression is NullIntolerant
       // since Spark 3.1.0 and gets replaced with a null literal instead
-      val isValidTestForSparkVersion = SparkShimImpl.getSparkShimVersion match {
+      val isValidTestForSparkVersion = ShimLoader.getShimVersion match {
         case SparkShimVersion(major, minor, _) => major == 3 && minor == 0
         case DatabricksShimVersion(major, minor, _, _) => major == 3 && minor == 0
         case ClouderaShimVersion(major, minor, _, _) => major == 3 && minor == 0

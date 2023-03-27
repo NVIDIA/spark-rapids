@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.
+# Copyright (c) 2022-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,15 +16,13 @@ import pytest
 from pyspark.sql import Row
 from asserts import assert_gpu_fallback_collect
 from marks import allow_non_gpu, delta_lake
-from spark_session import with_cpu_session, is_databricks91_or_later, spark_version
-from spark_session import with_cpu_session, with_gpu_session, is_databricks91_or_later, is_databricks104_or_later, \
-    spark_version
+from spark_session import with_cpu_session, with_gpu_session, is_databricks_runtime, spark_version
 
 _conf = {'spark.rapids.sql.explain': 'ALL'}
 
 @delta_lake
 @allow_non_gpu('FileSourceScanExec')
-@pytest.mark.skipif(not (is_databricks91_or_later() or spark_version().startswith("3.2.")), \
+@pytest.mark.skipif(not (is_databricks_runtime() or spark_version().startswith("3.2.")), \
     reason="Delta Lake is already configured on Databricks and CI supports Delta Lake OSS with Spark 3.2.x so far")
 def test_delta_metadata_query_fallback(spark_tmp_table_factory):
     table = spark_tmp_table_factory.get()
@@ -40,7 +38,7 @@ def test_delta_metadata_query_fallback(spark_tmp_table_factory):
         "FileSourceScanExec", conf = _conf)
 
 @delta_lake
-@pytest.mark.skipif(not is_databricks104_or_later(), \
+@pytest.mark.skipif(not is_databricks_runtime(), \
     reason="This test is specific to Databricks because we only fall back to CPU for merges on Databricks")
 @allow_non_gpu(any = True)
 def test_delta_merge_query(spark_tmp_table_factory):

@@ -17,9 +17,7 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "311"}
 {"spark": "312"}
-{"spark": "312db"}
 {"spark": "313"}
-{"spark": "314"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -30,7 +28,7 @@ import com.nvidia.spark.rapids.GpuOrcScan
 object OrcCastingShims {
 
   def castIntegerToTimestamp(col: ColumnView, colType: DType): ColumnView = {
-    // For 311 <= spark < 320 (including 311, 312, 313, 314), they consider the integer as
+    // For 311 <= spark < 320 (including 311, 312, 313), they consider the integer as
     // milliseconds.
     GpuOrcScan.castIntegersToTimestamp(col, colType, DType.TIMESTAMP_MILLISECONDS)
   }

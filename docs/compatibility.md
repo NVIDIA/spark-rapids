@@ -327,7 +327,6 @@ Due to such limitations, the input JSON schema must be `MAP<STRING,STRING>` and 
  ```
 scala> val df = Seq("{}", "BAD", "{\"A\": 100}").toDF
 df: org.apache.spark.sql.DataFrame = [value: string]
-
 scala> df.selectExpr("from_json(value, 'MAP<STRING,STRING>')").show()
 +----------+
 |   entries|

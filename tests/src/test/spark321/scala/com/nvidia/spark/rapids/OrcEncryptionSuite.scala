@@ -28,7 +28,6 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.security.SecureRandom
 
-import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.conf.Configuration
 import org.apache.orc.{EncryptionAlgorithm, InMemoryKeystore}
 import org.apache.orc.impl.CryptoUtils
@@ -56,7 +55,7 @@ class OrcEncryptionSuite extends SparkQueryCompareTestSuite {
     execsAllowedNonGpu = Seq("ShuffleExchangeExec", "DataWritingCommandExec")) {
     frame =>
       // ORC encryption is only allowed in 3.2+
-      val isValidTestForSparkVersion = SparkShimImpl.getSparkShimVersion match {
+      val isValidTestForSparkVersion = ShimLoader.getShimVersion match {
         case SparkShimVersion(major, minor, _) => major == 3 && minor != 1
         case DatabricksShimVersion(major, minor, _, _) => major == 3 && minor != 1
         case ClouderaShimVersion(major, minor, _, _) => major == 3 && minor != 1

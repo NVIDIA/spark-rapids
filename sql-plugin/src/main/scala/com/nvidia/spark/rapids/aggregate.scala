@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -249,16 +249,12 @@ object GpuHashAggregateIterator extends Arm with Logging {
     } else {
       inputAttributes
     }
-    private val (preStepBound, preStepBoundTiered) = if (useTieredProject) {
-      (None, Some(GpuBindReferences.bindGpuReferencesTiered(preStep.toList,
-        preStepAttributes.toList)))
-    } else {
-      (Some(GpuBindReferences.bindGpuReferences(preStep, preStepAttributes.toList)), None)
-    }
+    private val preStepBound = GpuBindReferences.bindGpuReferencesTiered(preStep.toList,
+      preStepAttributes.toList, useTieredProject)
 
     // a bound expression that is applied after the cuDF aggregate
-    private val postStepBound =
-      GpuBindReferences.bindGpuReferences(postStep, postStepAttr)
+    private val postStepBound = GpuBindReferences.bindGpuReferencesTiered(postStep.toList,
+      postStepAttr.toList, useTieredProject)
 
     /**
      * Apply the "pre" step: preMerge for merge, or pass-through in the update case
@@ -269,14 +265,11 @@ object GpuHashAggregateIterator extends Arm with Logging {
     def preProcess(
         toAggregateBatch: ColumnarBatch,
         metrics: GpuHashAggregateMetrics): SpillableColumnarBatch = {
-      val projectedCb = withResource(toAggregateBatch) { inputBatch  =>
-        withResource(new NvtxRange("pre-process", NvtxColor.DARK_GREEN)) { _ =>
-          if (useTieredProject) {
-            preStepBoundTiered.get.tieredProject(inputBatch)
-          } else {
-            GpuProjectExec.project(inputBatch, preStepBound.get)
-          }
-        }
+      val inputBatch = SpillableColumnarBatch(toAggregateBatch,
+        SpillPriorities.ACTIVE_ON_DECK_PRIORITY, metrics.spillCallback)
+
+      val projectedCb = withResource(new NvtxRange("pre-process", NvtxColor.DARK_GREEN)) { _ =>
+        preStepBound.projectAndCloseWithRetrySingleBatch(inputBatch, metrics.spillCallback)
       }
       SpillableColumnarBatch(
         projectedCb,
@@ -382,14 +375,12 @@ object GpuHashAggregateIterator extends Arm with Logging {
      * @return output batch from the aggregate
      */
     def postProcess(
-        aggregatedSpillable: SpillableColumnarBatch): SpillableColumnarBatch = {
+        aggregatedSpillable: SpillableColumnarBatch,
+        metrics: GpuHashAggregateMetrics): SpillableColumnarBatch = {
       val postProcessed =
-        withResource(aggregatedSpillable) { _ =>
-          withResource(aggregatedSpillable.getColumnarBatch()) { aggregated =>
-            withResource(new NvtxRange("post-process", NvtxColor.ORANGE)) { _ =>
-              GpuProjectExec.project(aggregated, postStepBound)
-            }
-          }
+        withResource(new NvtxRange("post-process", NvtxColor.ORANGE)) { _ =>
+          postStepBound.projectAndCloseWithRetrySingleBatch(aggregatedSpillable,
+            metrics.spillCallback)
         }
       SpillableColumnarBatch(
         postProcessed,
@@ -441,7 +432,7 @@ object GpuHashAggregateIterator extends Arm with Logging {
 
       // 3) a post-processing step required in some scenarios, casting or picking
       // apart a struct
-      helper.postProcess(aggregatedSpillable)
+      helper.postProcess(aggregatedSpillable, metrics)
     }
   }
 

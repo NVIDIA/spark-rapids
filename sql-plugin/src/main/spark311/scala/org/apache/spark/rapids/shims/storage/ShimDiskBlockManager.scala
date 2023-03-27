@@ -17,9 +17,7 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "311"}
 {"spark": "312"}
-{"spark": "312db"}
 {"spark": "313"}
-{"spark": "314"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.rapids.shims.storage
 
