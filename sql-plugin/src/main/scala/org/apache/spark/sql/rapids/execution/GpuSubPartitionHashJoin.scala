@@ -17,8 +17,8 @@ package org.apache.spark.sql.rapids.execution
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{HashType, Table}
-import com.nvidia.spark.rapids.{Arm, GpuBoundReference, GpuColumnVector, GpuExpression, GpuMetric, SpillableColumnarBatch, SpillCallback, SpillPriorities, TaskAutoCloseableResource}
+import ai.rapids.cudf.Table
+import com.nvidia.spark.rapids.{Arm, GpuColumnVector, GpuExpression, GpuHashPartitioningBase, GpuMetric, SpillableColumnarBatch, SpillCallback, SpillPriorities, TaskAutoCloseableResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
@@ -120,16 +120,6 @@ class GpuBatchSubPartitioner(
   private val pendingParts =
     Array.fill(realNumPartitions)(ArrayBuffer.empty[SpillableColumnarBatch])
 
-  private val keyIndices = {
-    val boundIndices = ArrayBuffer.empty[Int]
-    inputBoundKeys.foreach { e =>
-      boundIndices ++= e.collect {
-        case bound: GpuBoundReference => bound.ordinal
-      }
-    }
-    boundIndices.distinct.toArray
-  }
-
   /** The actual count of partitions */
   def partitionsCount: Int = realNumPartitions
 
@@ -191,13 +181,9 @@ class GpuBatchSubPartitioner(
       if (gpuBatch.numRows() > 0 && gpuBatch.numCols() > 0) {
         val types = GpuColumnVector.extractTypes(gpuBatch)
         // 1) Hash partition on the batch
-        val partedTable = withResource(gpuBatch) { _ =>
-          withResource(GpuColumnVector.from(gpuBatch)) { table =>
-            table.onColumns(keyIndices: _*)
-              .hashPartition(HashType.MURMUR3, realNumPartitions,
-                GpuSubPartitionHashJoin.SUB_PARTITION_HASH_SEED)
-          }
-        }
+        val partedTable = GpuHashPartitioningBase.hashPartitionAndClose(
+          gpuBatch, inputBoundKeys, realNumPartitions, "Sub-Hash Calculate",
+          GpuSubPartitionHashJoin.SUB_PARTITION_HASH_SEED)
         // 2) Split into smaller tables according to partitions
         val subTables = withResource(partedTable) { _ =>
           partedTable.getTable.contiguousSplit(partedTable.getPartitions.tail: _*)
