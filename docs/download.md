@@ -18,7 +18,7 @@ cuDF jar, that is either preinstalled in the Spark classpath on all nodes or sub
 that uses the RAPIDS Accelerator For Apache Spark. See the [getting-started
 guide](https://nvidia.github.io/spark-rapids/Getting-Started/) for more details.
 
-## Release v23.02.0
+## Release v23.04.0
 Hardware Requirements:
 
 The plugin is tested on the following architectures:
@@ -41,9 +41,9 @@ for your hardware's minimum driver version.
 *For Cloudera and EMR support, please refer to the
 [Distributions](./FAQ.md#which-distributions-are-supported) section of the FAQ.
 
-### Download v23.02.0
+### Download v23.04.0
 * Download the [RAPIDS
-  Accelerator for Apache Spark 23.02.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.02.0/rapids-4-spark_2.12-23.02.0.jar)
+  Accelerator for Apache Spark 23.04.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.04.0/rapids-4-spark_2.12-23.04.0.jar)
 
 This package is built against CUDA 11.8 and all CUDA 11.x versions are supported through [CUDA forward
 compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/index.html). It is tested
@@ -52,11 +52,11 @@ do not have CUDA forward compatibility (for example, GeForce), CUDA 11.5 or late
 need to ensure the minimum driver (450.80.02) and CUDA toolkit are installed on each Spark node.
 
 ### Verify signature
-* Download the [RAPIDS Accelerator for Apache Spark 23.02.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.02.0/rapids-4-spark_2.12-23.02.0.jar)
-  and [RAPIDS Accelerator for Apache Spark 23.02.0 jars.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.02.0/rapids-4-spark_2.12-23.02.0.jar.asc)
+* Download the [RAPIDS Accelerator for Apache Spark 23.04.0 jar](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.04.0/rapids-4-spark_2.12-23.04.0.jar)
+  and [RAPIDS Accelerator for Apache Spark 23.04.0 jars.asc](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/23.04.0/rapids-4-spark_2.12-23.04.0.jar.asc)
 * Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
 * Import the public key: `gpg --import PUB_KEY`
-* Verify the signature: `gpg --verify rapids-4-spark_2.12-23.02.0.jar.asc rapids-4-spark_2.12-23.02.0.jar`
+* Verify the signature: `gpg --verify rapids-4-spark_2.12-23.04.0.jar.asc rapids-4-spark_2.12-23.04.0.jar`
 
 The output if signature verify:
 
@@ -64,15 +64,15 @@ The output if signature verify:
 
 ### Release Notes
 New functionality and performance improvements for this release include:
-* Delta Lake MERGE/DELETE/UPDATE (experimental feature, can be enabled with a config flag)
-* Function `from_json`
-* Hive text table write 
-* Databricks 11.3 ML LTS support
-* Support batched full join to improve full join's performance
+* Optimize HashAggregate and Join operators with the new retry framework to avoid OOM errors and recover in some cases
+* Support dynamic repartitioning in large/skewed hash joins
+* Optimize the transpilation in `regexp_extract` function
+* Support Delta Lake write without auto-optimization specified
 * Qualification and Profiling tool:
-  * EMR user tools support for qualification
-  * EMR user tools support for bootstrap
-  * Updated estimated speedup factors for on-prem, Dataproc, and EMR environments for qualification
+  * Add support to recommend cluster shape options on CSPs
+  * Add support for Databricks local mode with cost savings based on cluster metadata
+  * Add TCO calculator to estimate annualized cost savings, including estimated frequency for applications
+  * Add support in the qualification tool to generate estimated speed-up for ML functionality in Spark applications
   
   
 For a detailed list of changes, please refer to the
