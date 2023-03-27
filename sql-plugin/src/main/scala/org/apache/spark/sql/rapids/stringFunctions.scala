@@ -1125,10 +1125,10 @@ case class GpuRegExpReplace(
   override def second: Expression = searchExpr
   override def third: Expression = replaceExpr
 
-  def this(srcExpr: Expression, searchExpr: Expression, javaRegexpPattern: String,
+  def this(srcExpr: Expression, searchExpr: Expression)(javaRegexpPattern: String,
     cudfRegexPattern: String, cudfReplacementString: String) = {
 
-    this(srcExpr, searchExpr, GpuLiteral("", StringType), javaRegexpPattern,
+    this(srcExpr, searchExpr, GpuLiteral("", StringType))(javaRegexpPattern,
       cudfRegexPattern, cudfReplacementString)
   }
 
@@ -1374,7 +1374,7 @@ class GpuRegExpExtractAllMeta(
       idx: Expression): GpuExpression = {
     val cudfPattern = pattern.getOrElse(
       throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern"))
-    GpuRegExpExtractAll(str, regexp, idx, cudfPattern)
+    GpuRegExpExtractAll(str, regexp, idx)(cudfPattern)
   }
 }
 
