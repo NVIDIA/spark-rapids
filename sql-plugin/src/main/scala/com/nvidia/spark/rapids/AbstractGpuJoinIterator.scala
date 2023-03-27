@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{GatherMap, NvtxColor, OutOfBoundsPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
+import com.nvidia.spark.rapids.jni.RetryOOM
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -133,8 +135,21 @@ abstract class AbstractGpuJoinIterator(
   private def nextCbFromGatherer(): Option[ColumnarBatch] = {
     withResource(new NvtxWithMetrics(gatherNvtxName, NvtxColor.DARK_GREEN, joinTime)) { _ =>
       val ret = gathererStore.map { gather =>
-        val nextRows = JoinGatherer.getRowsInNextBatch(gather, targetSize)
-        gather.gatherNext(nextRows)
+        gather.checkpoint
+        gather.allowSpilling()
+        withRetryNoSplit[ColumnarBatch] {
+          try {
+            val nextRows = JoinGatherer.getRowsInNextBatch(gather, targetSize)
+            gather.gatherNext(nextRows)
+          } catch {
+            case retryOOM: RetryOOM =>
+              // If we are retrying, we need to do this again to close the cached cb(s).
+              // This should not cause it to spill again.
+              gather.allowSpilling()
+              gather.restore
+              throw retryOOM
+          }
+        }
       }
       if (gathererStore.exists(_.isDone)) {
         gathererStore.foreach(_.close())
