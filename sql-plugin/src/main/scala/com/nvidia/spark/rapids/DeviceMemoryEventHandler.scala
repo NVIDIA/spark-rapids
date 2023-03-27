@@ -20,10 +20,11 @@ import java.io.File
 import java.lang.management.ManagementFactory
 import java.util.concurrent.atomic.AtomicLong
 
-import ai.rapids.cudf.{Cuda, NvtxColor, NvtxRange, Rmm, RmmEventHandler}
+import ai.rapids.cudf.{Cuda, Rmm, RmmEventHandler}
 import com.sun.management.HotSpotDiagnosticMXBean
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.rapids.GpuTaskMetrics
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 /**
@@ -116,7 +117,7 @@ class DeviceMemoryEventHandler(
       s"onAllocFailure invoked with invalid retryCount $retryCount")
 
     try {
-      withResource(new NvtxRange("onAllocFailure", NvtxColor.RED)) { _ =>
+      GpuTaskMetrics.get.spillTime {
         val storeSize = store.currentSize
         val storeSpillableSize = store.currentSpillableSize
 

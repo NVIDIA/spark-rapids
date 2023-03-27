@@ -167,7 +167,7 @@ case class GpuRapidsProcessDeltaMergeJoinExec(
     throw new IllegalStateException("Row-based execution should not occur for this class")
   }
 
-  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val localInputTypes = inputTypes
     val localOutput = output
     val localOutputExprs = outputExprs

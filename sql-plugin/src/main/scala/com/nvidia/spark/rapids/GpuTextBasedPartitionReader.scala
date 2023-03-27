@@ -320,7 +320,7 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
         val cudfSchema = GpuColumnVector.from(dataSchemaWithStrings)
 
         // about to start using the GPU
-        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
         // The buffer that is sent down
         val table = readToTable(dataBuffer, cudfSchema, newReadDataSchema, isFirstChunk,

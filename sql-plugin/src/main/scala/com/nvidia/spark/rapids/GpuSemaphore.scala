@@ -27,6 +27,7 @@ import org.apache.commons.lang3.mutable.MutableInt
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.GpuTaskMetrics
 
 object GpuSemaphore {
   // DO NOT ACCESS DIRECTLY!  Use `getInstance` instead.
@@ -63,9 +64,9 @@ object GpuSemaphore {
    * NOTE: A task completion listener will automatically be installed to ensure
    *       the semaphore is always released by the time the task completes.
    */
-  def acquireIfNecessary(context: TaskContext, waitMetric: GpuMetric): Unit = {
+  def acquireIfNecessary(context: TaskContext): Unit = {
     if (context != null) {
-      getInstance.acquireIfNecessary(context, waitMetric)
+      getInstance.acquireIfNecessary(context)
     }
   }
 
@@ -121,8 +122,8 @@ private final class GpuSemaphore() extends Logging with Arm {
   case class TaskInfo(count: MutableInt, thread: Thread, numPermits: Int)
   private val activeTasks = new ConcurrentHashMap[Long, TaskInfo]
 
-  def acquireIfNecessary(context: TaskContext, waitMetric: GpuMetric): Unit = {
-    withResource(new NvtxWithMetrics("Acquire GPU", NvtxColor.RED, waitMetric)) { _ =>
+  def acquireIfNecessary(context: TaskContext): Unit = {
+    GpuTaskMetrics.get.semWaitTime {
       val taskAttemptId = context.taskAttemptId()
       val refs = activeTasks.get(taskAttemptId)
       if (refs == null || refs.count.getValue == 0) {

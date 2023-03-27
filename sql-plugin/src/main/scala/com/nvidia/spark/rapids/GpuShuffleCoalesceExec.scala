@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,7 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME)
-  ) ++ semaphoreMetrics
+  )
 
   override def output: Seq[Attribute] = child.output
 
@@ -58,7 +58,7 @@ case class GpuShuffleCoalesceExec(child: SparkPlan, targetBatchByteSize: Long)
     throw new IllegalStateException("ROW BASED PROCESSING IS NOT SUPPORTED")
   }
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val metricsMap = allMetrics
     val targetSize = targetBatchByteSize
     val dataTypes = GpuColumnVector.extractTypes(schema)
@@ -192,7 +192,6 @@ class GpuShuffleCoalesceIterator(iter: Iterator[HostConcatResult],
                                  dataTypes: Array[DataType],
                                  metricsMap: Map[String, GpuMetric])
       extends Iterator[ColumnarBatch] with Arm {
-  private[this] val semWaitTime = metricsMap(GpuMetric.SEMAPHORE_WAIT_TIME)
   private[this] val opTimeMetric = metricsMap(GpuMetric.OP_TIME)
   private[this] val outputBatchesMetric = metricsMap(GpuMetric.NUM_OUTPUT_BATCHES)
   private[this] val outputRowsMetric = metricsMap(GpuMetric.NUM_OUTPUT_ROWS)
@@ -216,7 +215,7 @@ class GpuShuffleCoalesceIterator(iter: Iterator[HostConcatResult],
         // is an empty batch or not, because the downstream tasks expect
         // the `GpuShuffleCoalesceIterator` to acquire the semaphore and may
         // generate GPU data from batches that are empty.
-        GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWaitTime)
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
         withResource(new MetricRange(opTimeMetric)) { _ =>
           val batch = cudf_utils.HostConcatResultUtil.getColumnarBatch(hostConcatResult, dataTypes)

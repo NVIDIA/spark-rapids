@@ -663,8 +663,7 @@ def test_delta_write_auto_optimize_write_opts_fallback(confkey, spark_tmp_path):
     pytest.param("delta.autoOptimize", marks=pytest.mark.skipif(
         is_databricks_runtime(), reason="Optimize write is supported on Databricks")),
     pytest.param("delta.autoOptimize.optimizeWrite", marks=pytest.mark.skipif(
-        is_databricks_runtime(), reason="Optimize write is supported on Databricks")),
-    "delta.autoOptimize.autoCompact" ], ids=idfn)
+        is_databricks_runtime(), reason="Optimize write is supported on Databricks"))], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.skipif(not is_databricks_runtime(), reason="Auto optimize only supported on Databricks")
 def test_delta_write_auto_optimize_table_props_fallback(confkey, spark_tmp_path):
@@ -687,8 +686,7 @@ def test_delta_write_auto_optimize_table_props_fallback(confkey, spark_tmp_path)
     pytest.param("spark.databricks.delta.optimizeWrite.enabled", marks=pytest.mark.skipif(
         is_databricks_runtime(), reason="Optimize write is supported on Databricks")),
     pytest.param("spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite", marks=pytest.mark.skipif(
-        is_databricks_runtime(), reason="Optimize write is supported on Databricks")),
-    "spark.databricks.delta.properties.defaults.autoOptimize.autoCompact" ], ids=idfn)
+        is_databricks_runtime(), reason="Optimize write is supported on Databricks"))], ids=idfn)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 def test_delta_write_auto_optimize_sql_conf_fallback(confkey, spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"

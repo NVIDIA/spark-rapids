@@ -21,7 +21,7 @@ import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
 import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{Arm, GpuSemaphore, NoopMetric, RapidsBuffer, RapidsBufferHandle, RapidsConf, ShuffleReceivedBufferCatalog}
+import com.nvidia.spark.rapids.{Arm, GpuSemaphore, RapidsBuffer, RapidsBufferHandle, RapidsConf, ShuffleReceivedBufferCatalog}
 import com.nvidia.spark.rapids.jni.RmmSpark
 
 import org.apache.spark.TaskContext
@@ -336,7 +336,7 @@ class RapidsShuffleIterator(
     // thread to schedule the fetches for us, it may be something we consider in the future, given
     // memory pressure.
     // No good way to get a metric in here for semaphore time.
-    taskContext.foreach(GpuSemaphore.acquireIfNecessary(_, NoopMetric))
+    taskContext.foreach(GpuSemaphore.acquireIfNecessary(_))
 
     if (!started) {
       // kick off if we haven't already
