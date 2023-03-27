@@ -923,7 +923,6 @@ class RapidsCachingWriter[K, V](
                 blockId,
                 contigTable,
                 SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY,
-                RapidsBuffer.defaultSpillCallback,
                 // we don't need to sync here, because we sync on the cuda
                 // stream after sliceInternalOnGpu (contiguous_split)
                 needsSync = false)
@@ -937,7 +936,6 @@ class RapidsCachingWriter[K, V](
                 buffer,
                 tableMeta,
                 SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_PRIORITY,
-                RapidsBuffer.defaultSpillCallback,
                 // we don't need to sync here, because we sync on the cuda
                 // stream after compression.
                 needsSync = false)
@@ -953,8 +951,7 @@ class RapidsCachingWriter[K, V](
           val handle =
             catalog.addDegenerateRapidsBuffer(
               blockId,
-              tableMeta,
-              RapidsBuffer.defaultSpillCallback)
+              tableMeta)
 
           // The size of the data is really only used to tell if the data should be shuffled or not
           // a 0 indicates that we should not shuffle anything.  This is here for the special case

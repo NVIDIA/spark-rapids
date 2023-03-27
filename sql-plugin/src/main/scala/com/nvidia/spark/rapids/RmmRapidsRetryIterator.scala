@@ -455,7 +455,6 @@ object RmmRapidsRetryIterator extends Arm {
    */
   def splitSpillableInHalfByRows: SpillableColumnarBatch => Seq[SpillableColumnarBatch] = {
     (spillable: SpillableColumnarBatch) => {
-      val spillCallback = spillable.getSpillCallback
       withResource(spillable) { _ =>
         val toSplitRows = spillable.numRows()
         if (toSplitRows <= 1) {
@@ -470,8 +469,7 @@ object RmmRapidsRetryIterator extends Arm {
               val spillables = batches.safeMap { b =>
                 SpillableColumnarBatch(
                   b,
-                  SpillPriorities.ACTIVE_BATCHING_PRIORITY,
-                  spillCallback)
+                  SpillPriorities.ACTIVE_BATCHING_PRIORITY)
               }
               closeOnExcept(spillables) { _ =>
                 require(spillables.length == 2,

@@ -144,6 +144,11 @@ case class GpuWriteFilesExec(
     throw SparkException.internalError(s"$nodeName does not support doExecute")
   }
 
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    throw new IllegalStateException(s"Internal Error ${this.getClass} has column support" +
+        s" mismatch:\n$this")
+  }
+
   override protected def stringArgs: Iterator[Any] = Iterator(child)
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,7 +39,7 @@ case class GpuBringBackToHost(child: SparkPlan) extends ShimUnaryExecNode with G
     columnarToRow.execute()
   }
 
-  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     // Both GPU and CPU code expects this to close the incoming batch.
     AutoCloseColumnBatchIterator.map[ColumnarBatch](child.executeColumnar(), b => {
       val range = new NvtxRange("BringBackToHost", NvtxColor.RED)

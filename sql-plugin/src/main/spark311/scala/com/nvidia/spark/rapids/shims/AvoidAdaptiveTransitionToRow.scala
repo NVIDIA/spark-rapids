@@ -60,7 +60,7 @@ case class AvoidAdaptiveTransitionToRow(child: SparkPlan) extends ShimUnaryExecN
 
   override def output: Seq[Attribute] = child.output
 
-  override protected def doExecuteColumnar(): RDD[ColumnarBatch] = child match {
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = child match {
     case GpuRowToColumnarExec(a: AdaptiveSparkPlanExec, _) =>
       val getFinalPhysicalPlan = getPrivateMethod("getFinalPhysicalPlan")
       val plan = getFinalPhysicalPlan.invoke(a)
