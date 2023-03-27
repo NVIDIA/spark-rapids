@@ -16,8 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import org.scalatest.FunSuite
-
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.optimizer.BuildRight
 import org.apache.spark.sql.catalyst.plans.Inner
 import org.apache.spark.sql.catalyst.plans.logical.Range
@@ -25,12 +25,12 @@ import org.apache.spark.sql.execution.{RangeExec, UnionExec}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeExec, ReusedExchangeExec}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, HashedRelationBroadcastMode}
 
-class ReusedExchangeFixupSuite extends FunSuite {
+class ReusedExchangeFixupSuite extends SparkQueryCompareTestSuite {
   /**
    * Tests reuse exchange fixup. Ideally this would be an integration test, but
    * attempts to reproduce the failure to reuse were not successful at smaller scales.
    */
-  test("fixupExchangeReuse") {
+  private def fixupExchangeReuseTest(spark: SparkSession) {
     val range = RangeExec(Range(1, 2, 1, Some(1)))
     val broadcast1 = BroadcastExchangeExec(
       HashedRelationBroadcastMode(range.output),
@@ -65,5 +65,10 @@ class ReusedExchangeFixupSuite extends FunSuite {
       case _ => false
     }
     assert(reused.isDefined)
+  }
+
+  test("fixupExchangeReuse") {
+    val conf = new SparkConf().set("spark.sql.adaptive.enabled", "true")
+    withGpuSparkSession(fixupExchangeReuseTest, conf)
   }
 }
