@@ -911,3 +911,21 @@ def test_multi_table_hash_join(data_gen, aqe_enabled, join_reorder_enabled):
         'spark.rapids.sql.optimizer.joinReorder.enabled': join_reorder_enabled
     })
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
+
+
+limited_integral_gens = [byte_gen, ShortGen(max_val=BYTE_MAX), IntegerGen(max_val=BYTE_MAX), LongGen(max_val=BYTE_MAX)]
+
+@validate_execs_in_gpu_plan('GpuShuffledHashJoinExec')
+@ignore_order(local=True)
+@pytest.mark.parametrize('left_gen', limited_integral_gens, ids=idfn)
+@pytest.mark.parametrize('right_gen', limited_integral_gens, ids=idfn)
+@pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
+def test_hash_join_different_key_integral_types(left_gen, right_gen, join_type):
+    def do_join(spark):
+        left = unary_op_df(spark, left_gen, length=50)
+        right = unary_op_df(spark, right_gen, length=500)
+        return left.join(right, left.a == right.a, join_type)
+    _all_conf = copy_and_update(_hash_join_conf, {
+        "spark.rapids.sql.test.subPartitioning.enabled": True
+    })
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_all_conf)
