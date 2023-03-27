@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -131,9 +131,8 @@ case class GpuAggregateInPandasExec(
   // so better to coalesce the output batches.
   override def coalesceAfter: Boolean = gpuGroupingExpressions.nonEmpty
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val (mNumInputRows, mNumInputBatches, mNumOutputRows, mNumOutputBatches,
-      spillCallback) = commonGpuMetrics()
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    val (mNumInputRows, mNumInputBatches, mNumOutputRows, mNumOutputBatches) = commonGpuMetrics()
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
     val sessionLocalTimeZone = conf.sessionLocalTimeZone
@@ -193,7 +192,7 @@ case class GpuAggregateInPandasExec(
       // Second splits into separate group batches.
       val miniAttrs = gpuGroupingExpressions ++ allInputs
       val pyInputIter = BatchGroupedIterator(miniIter, miniAttrs.asInstanceOf[Seq[Attribute]],
-          groupingRefs.indices, spillCallback)
+          groupingRefs.indices)
         .map { groupedBatch =>
           // Resolves the group key and the python input from a grouped batch. Then
           //  - Caches the key to be combined with the Python output later. And
@@ -228,7 +227,7 @@ case class GpuAggregateInPandasExec(
                 }
               }
             }
-            queue.add(keyBatch, spillCallback)
+            queue.add(keyBatch)
 
             // Python input batch
             val pyInputColumns = pyInputRefs.indices.safeMap { idx =>
@@ -250,7 +249,6 @@ case class GpuAggregateInPandasExec(
           pythonRunnerConf,
           // The whole group data should be written in a single call, so here is unlimited
           Int.MaxValue,
-          spillCallback.semaphoreWaitTime,
           StructType.fromAttributes(pyOutAttributes),
           () => queue.finish())
 
@@ -270,6 +268,6 @@ case class GpuAggregateInPandasExec(
         inputIter
       }
     }
-  } // end of doExecuteColumnar
+  } // end of internalDoExecuteColumnar
 
 }

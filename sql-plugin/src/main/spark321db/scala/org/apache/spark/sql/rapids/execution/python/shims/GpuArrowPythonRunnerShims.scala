@@ -20,8 +20,6 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
-import com.nvidia.spark.rapids._
-
 import org.apache.spark.api.python._
 import org.apache.spark.sql.rapids.execution.python._
 import org.apache.spark.sql.types._
@@ -33,8 +31,7 @@ case class GpuArrowPythonRunnerShims(
   chainedFunc: Seq[ChainedPythonFunctions],
   argOffsets: Array[Array[Int]],
   dedupAttrs: StructType,
-  pythonOutputSchema: StructType,
-  spillCallback: SpillCallback) {
+  pythonOutputSchema: StructType) {
   // Configs from DB runtime
   val maxBytes = conf.pandasZeroConfConversionGroupbyApplyMaxBytesPerSlice
   val zeroConfEnabled = conf.pandasZeroConfConversionGroupbyApplyEnabled
@@ -52,7 +49,6 @@ case class GpuArrowPythonRunnerShims(
         pythonRunnerConf,
         // The whole group data should be written in a single call, so here is unlimited
         Int.MaxValue,
-        spillCallback.semaphoreWaitTime,
         pythonOutputSchema)
     } else {
       new GpuArrowPythonRunner(
@@ -63,7 +59,6 @@ case class GpuArrowPythonRunnerShims(
         sessionLocalTimeZone,
         pythonRunnerConf,
         Int.MaxValue,
-        spillCallback.semaphoreWaitTime,
         pythonOutputSchema)
     }
   }

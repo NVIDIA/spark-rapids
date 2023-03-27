@@ -338,6 +338,11 @@ case class GpuColumnarToRowExec(
       cdata.mapPartitions(f)
     }
   }
+
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    throw new IllegalStateException(s"Internal Error ${this.getClass} has column support" +
+        s" mismatch:\n$this")
+  }
 }
 
 object GpuColumnarToRowExec {

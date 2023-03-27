@@ -51,7 +51,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
       val bufferId = MockRapidsBufferId(7)
       withResource(buildContiguousTable()) { ct =>
         catalog.addContiguousTable(
-          bufferId, ct, spillPriority, RapidsBuffer.defaultSpillCallback, false)
+          bufferId, ct, spillPriority, false)
       }
       val captor: ArgumentCaptor[RapidsBuffer] = ArgumentCaptor.forClass(classOf[RapidsBuffer])
       verify(catalog).registerNewBuffer(captor.capture())
@@ -73,7 +73,6 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
           bufferId,
           ct,
           spillPriority,
-          RapidsBuffer.defaultSpillCallback,
           false)
         assertResult(buffSize)(store.currentSize)
         assertResult(0)(store.currentSpillableSize)
@@ -99,7 +98,6 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
             ct.getBuffer,
             meta,
             spillPriority,
-            RapidsBuffer.defaultSpillCallback,
             false)
           assertResult(buffSize)(store.currentSize)
           assertResult(0)(store.currentSpillableSize)
@@ -126,7 +124,6 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
           ct.getBuffer,
           meta,
           spillPriority,
-          RapidsBuffer.defaultSpillCallback,
           false)
         assertResult(buffSize)(store.currentSize)
         assertResult(0)(store.currentSpillableSize)
@@ -161,7 +158,6 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
             ct.getBuffer,
             meta,
             spillPriority,
-            RapidsBuffer.defaultSpillCallback,
             false)
         }
         meta
@@ -189,7 +185,6 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
               ct.getBuffer,
               meta,
               initialSpillPriority = 3,
-              RapidsBuffer.defaultSpillCallback,
               needsSync = false)
           }
           withResource(catalog.acquireBuffer(handle)) { buffer =>
@@ -221,7 +216,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
                 ct.getBuffer,
                 meta,
                 initialSpillPriority = 3,
-                RapidsBuffer.defaultSpillCallback, false)
+                false)
             }
             withResource(catalog.acquireBuffer(handle)) { buffer =>
               withResource(buffer.getColumnarBatch(sparkTypes)) { actualBatch =>
@@ -256,7 +251,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
               MockRapidsBufferId(i),
               ct,
               initialSpillPriority = 0,
-              RapidsBuffer.defaultSpillCallback, false)
+              false)
         }
         assertResult(bufferSizes.take(i+1).sum)(store.currentSize)
       }
@@ -280,7 +275,7 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
           // store takes ownership of the table
           catalog.addContiguousTable(
             MockRapidsBufferId(i), ct, spillPriorities(i),
-            RapidsBuffer.defaultSpillCallback, false)
+            false)
         }
       }
       assert(spillStore.spilledBuffers.isEmpty)
@@ -328,17 +323,13 @@ class RapidsDeviceMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
     }
 
     class MockRapidsBuffer(id: RapidsBufferId, size: Long, meta: TableMeta, spillPriority: Long)
-        extends RapidsBufferBase(id, size, meta, spillPriority, RapidsBuffer.defaultSpillCallback) {
+        extends RapidsBufferBase(id, size, meta, spillPriority) {
       override protected def releaseResources(): Unit = {}
 
       override val storageTier: StorageTier = StorageTier.HOST
 
       override def getMemoryBuffer: MemoryBuffer =
         throw new UnsupportedOperationException
-
-      override def getSpillCallback: SpillCallback = RapidsBuffer.defaultSpillCallback
-
-      override def setSpillCallback(spillCallback: SpillCallback): Unit = {}
     }
   }
 }

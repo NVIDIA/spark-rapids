@@ -37,7 +37,7 @@ class WithRetrySuite
         .build()
     withResource(reductionTable) { tbl =>
       val cb = GpuColumnVector.from(tbl, Seq(LongType).toArray[DataType])
-      spy(SpillableColumnarBatch(cb, -1, RapidsBuffer.defaultSpillCallback))
+      spy(SpillableColumnarBatch(cb, -1))
     }
   }
   

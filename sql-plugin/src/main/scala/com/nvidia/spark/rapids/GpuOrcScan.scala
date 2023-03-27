@@ -823,7 +823,7 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
       .build()
 
     // about to start using the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
     try {
       RmmRapidsRetryIterator.withRetryNoSplit[Table] {
@@ -1078,7 +1078,7 @@ class GpuOrcPartitionReader(
           None
         } else {
           // Someone is going to process this data, even if it is just a row count
-          GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
           val nullColumns = readDataSchema.safeMap(f =>
             GpuColumnVector.fromNull(numRows, f.dataType).asInstanceOf[SparkVector])
           Some(new ColumnarBatch(nullColumns.toArray, numRows))
@@ -1747,7 +1747,7 @@ class MultiFileCloudOrcPartitionReader(
           new ColumnarBatch(Array.empty, 0)
         } else {
           // Someone is going to process this data, even if it is just a row count
-          GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
           val nullColumns = meta.readSchema.fields.safeMap(f =>
             GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
           new ColumnarBatch(nullColumns, rows)

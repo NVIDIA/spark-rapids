@@ -134,7 +134,7 @@ case class GpuOptimizeWriteExchangeExec(
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
   }
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     // Collect execution statistics, these will be used to adjust/decide how to split files
     val stats = ThreadUtils.awaitResult(mapOutputStatisticsFuture, Duration.Inf)
     if (stats == null) {

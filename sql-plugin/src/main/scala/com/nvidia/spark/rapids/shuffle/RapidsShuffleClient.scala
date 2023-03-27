@@ -439,8 +439,7 @@ class RapidsShuffleClient(
     } else {
       // no device data, just tracking metadata
       catalog.addDegenerateRapidsBuffer(
-        meta,
-        RapidsBuffer.defaultSpillCallback)
+        meta)
 
     }
   }

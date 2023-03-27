@@ -118,7 +118,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
         try {
           val res = if (headers.isEmpty) {
             SpillableColumnarBatch(GpuColumnVector.emptyBatchFromTypes(dataTypes),
-            SpillPriorities.ACTIVE_BATCHING_PRIORITY, RapidsBuffer.defaultSpillCallback)
+            SpillPriorities.ACTIVE_BATCHING_PRIORITY)
           } else {
             withResource(JCudfSerialization.readTableFrom(headers.head, buffers.head)) {
               tableInfo =>
@@ -126,10 +126,9 @@ class SerializeConcatHostBuffersDeserializeBatch(
                 if (table == null) {
                   val numRows = tableInfo.getNumRows
                   SpillableColumnarBatch(new ColumnarBatch(Array.empty[ColumnVector], numRows),
-                    SpillPriorities.ACTIVE_BATCHING_PRIORITY, RapidsBuffer.defaultSpillCallback)
+                    SpillPriorities.ACTIVE_BATCHING_PRIORITY)
                 } else {
-                  SpillableColumnarBatch(table, dataTypes,
-                    SpillPriorities.ACTIVE_BATCHING_PRIORITY, RapidsBuffer.defaultSpillCallback)
+                  SpillableColumnarBatch(table, dataTypes, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
                 }
             }
           }
@@ -499,6 +498,11 @@ abstract class GpuBroadcastExchangeExecBase(
     Statistics(
       sizeInBytes = metrics("dataSize").value,
       rowCount = Some(metrics(GpuMetric.NUM_OUTPUT_ROWS).value))
+  }
+
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    throw new IllegalStateException(s"Internal Error ${this.getClass} has column support" +
+        s" mismatch:\n$this")
   }
 }
 
