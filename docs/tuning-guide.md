@@ -345,13 +345,14 @@ How long does operator X take on the GPU vs the CPU?
 ### Task
 
 Custom Task level accumulators are also included. These metrics are not for individual
-stages of the SQL plan, but are per task and roll up to stages in the plan.
+stages of the SQL plan, but are per task and roll up to stages in the plan. Timing metrics
+are reported in the format of HH:MM:SS.sss
 
-| Name           | Description                                                                               |
-|----------------|-------------------------------------------------------------------------------------------|
-| semaphoreWait  | The time the task spent waiting on the GPU semaphore. It is in the format of HH:MM:SS.sss |
-| spillBlockTime | The time that this task was blocked spilling data. |
-| spillReadTime  | The time that this task was blocked reading back in data that was spilled. |
+| Name              | Description                                            |
+|-------------------|--------------------------------------------------------|
+| gpuSemaphoreWait  | The time the task spent waiting on the GPU semaphore.  |
+| gpuSpillBlockTime | The time that this task was blocked spilling data from the GPU. |
+| gpuSpillReadTime  | The time that this task was blocked reading data to the GPU that was spilled previously. |
 
 The spill data sizes going to host/CPU memory and disk are the same as used by Spark task level
 metrics.

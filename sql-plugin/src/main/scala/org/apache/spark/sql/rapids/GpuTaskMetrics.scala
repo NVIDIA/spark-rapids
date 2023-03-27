@@ -82,9 +82,9 @@ class GpuTaskMetrics extends Arm with Serializable {
   private val readSpillTimeNs = new NanoSecondAccumulator
 
   private val metrics = Map[String, AccumulatorV2[_, _]](
-    "semaphoreWait" -> semWaitTimeNs,
-    "spillBlockTime" -> spillBlockTimeNs,
-    "readSpillTime" -> readSpillTimeNs)
+    "gpuSemaphoreWait" -> semWaitTimeNs,
+    "gpuSpillBlockTime" -> spillBlockTimeNs,
+    "gpuReadSpillTime" -> readSpillTimeNs)
 
   def register(sc: SparkContext): Unit = {
     metrics.foreach { case (k, m) =>
