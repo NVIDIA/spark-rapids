@@ -1243,17 +1243,17 @@ class GpuRegExpExtractMeta(
       idx: Expression): GpuExpression = {
     val cudfPattern = pattern.getOrElse(
       throw new IllegalStateException("Expression has not been tagged with cuDF regex pattern"))
-    GpuRegExpExtract(str, regexp, idx, cudfPattern)
+    GpuRegExpExtract(str, regexp, idx)(cudfPattern)
   }
 }
 
 case class GpuRegExpExtract(
     subject: Expression,
     regexp: Expression,
-    idx: Expression,
-    cudfRegexPattern: String)
+    idx: Expression)(cudfRegexPattern: String)
   extends GpuRegExpTernaryBase with ImplicitCastInputTypes with NullIntolerant {
 
+  override def otherCopyArgs: Seq[AnyRef] = cudfRegexPattern :: Nil
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType, IntegerType)
   override def first: Expression = subject
   override def second: Expression = regexp

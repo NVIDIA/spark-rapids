@@ -58,8 +58,6 @@ trait ShimTernaryExpression extends TernaryExpression {
   ): Expression = {
     legacyWithNewChildren(Seq(newFirst, newSecond, newThird))
   }
-
-  override def stringArgs: Iterator[Any] = Seq(first, second, third).toIterator
 }
 
 trait ShimSparkPlan extends SparkPlan {
