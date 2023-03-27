@@ -301,19 +301,14 @@ trait GpuExec extends SparkPlan with Arm {
   final override def doExecuteColumnar(): RDD[ColumnarBatch] = {
     val orig = internalDoExecuteColumnar()
     val metrics = getTaskMetrics
-    if (metrics.isDefined) {
+    metrics.map { gpuMetrics =>
       // This is really ugly, but I hope it will make it a simpler transition everywhere
       orig.mapPartitions { iter =>
         metrics.foreach(_.makeSureRegistered())
         iter
       }
-    } else {
-      orig
-    }
+    }.getOrElse(orig)
   }
 
-  protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    throw new IllegalStateException(s"Internal Error ${this.getClass} has column support" +
-        s" mismatch:\n${this}")
-  }
+  protected def internalDoExecuteColumnar(): RDD[ColumnarBatch]
 }

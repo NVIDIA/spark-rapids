@@ -499,6 +499,11 @@ abstract class GpuBroadcastExchangeExecBase(
       sizeInBytes = metrics("dataSize").value,
       rowCount = Some(metrics(GpuMetric.NUM_OUTPUT_ROWS).value))
   }
+
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    throw new IllegalStateException(s"Internal Error ${this.getClass} has column support" +
+        s" mismatch:\n$this")
+  }
 }
 
 object GpuBroadcastExchangeExecBase {

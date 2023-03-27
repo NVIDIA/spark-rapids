@@ -82,9 +82,9 @@ class GpuTaskMetrics extends Arm with Serializable {
   private val readSpillTimeNs = new NanoSecondAccumulator
 
   private val metrics = Map[String, AccumulatorV2[_, _]](
-    "semaphore_wait" -> semWaitTimeNs,
-    "spill_block_time" -> spillBlockTimeNs,
-    "read_spill_time" -> readSpillTimeNs)
+    "semaphoreWait" -> semWaitTimeNs,
+    "spillBlockTime" -> spillBlockTimeNs,
+    "readSpillTime" -> readSpillTimeNs)
 
   def register(sc: SparkContext): Unit = {
     metrics.foreach { case (k, m) =>
@@ -132,13 +132,15 @@ object GpuTaskMetrics extends Logging {
 
   def registerOnTask(metrics: GpuTaskMetrics): Unit = synchronized {
     val tc = TaskContext.get()
-    val id = tc.taskAttemptId()
-    // avoid double registering the task metrics...
-    if (!taskLevelMetrics.contains(id)) {
-      taskLevelMetrics.put(id, metrics)
-      tc.addTaskCompletionListener { tc =>
-        synchronized {
-          taskLevelMetrics.remove(tc.taskAttemptId())
+    if (tc != null) {
+      val id = tc.taskAttemptId()
+      // avoid double registering the task metrics...
+      if (!taskLevelMetrics.contains(id)) {
+        taskLevelMetrics.put(id, metrics)
+        tc.addTaskCompletionListener { tc =>
+          synchronized {
+            taskLevelMetrics.remove(tc.taskAttemptId())
+          }
         }
       }
     }
