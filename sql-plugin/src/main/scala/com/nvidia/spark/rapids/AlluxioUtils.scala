@@ -26,7 +26,7 @@ import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.RuntimeConfig
-import org.apache.spark.sql.catalyst.expressions.{Expression, PlanExpression}
+import org.apache.spark.sql.catalyst.expressions.{DynamicPruning, Expression, PlanExpression}
 import org.apache.spark.sql.execution.datasources.{CatalogFileIndex, FileIndex, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile, PartitionSpec}
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 
@@ -521,16 +521,22 @@ object AlluxioUtils extends Logging with Arm {
       // We use this approach to handle all the file index types for all CSPs like Databricks.
       relation.location match {
         case cfi: CatalogFileIndex =>
-          logDebug("Handling CatalogFileIndex")
+          logWarning("Handling CatalogFileIndex")
           val memFI = cfi.filterPartitions(Nil)
           createNewFileIndexWithPathsReplaced(memFI.partitionSpec(), memFI.rootPaths)
         case _ =>
-          logDebug(s"Handling file index type: ${relation.location.getClass}")
+          logWarning(s"Handling file index type: ${relation.location.getClass}")
 
           // With the base Spark FileIndex type we don't know how to modify it to
           // just replace the paths so we have to try to recompute.
-          def isDynamicPruningFilter(e: Expression): Boolean =
-            e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
+          def isDynamicPruningFilter(e: Expression): Boolean = {
+            // val ret = e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
+            // logWarning(s"isDynamicPruningFilter: $e, ${e.getClass}," +
+            //   s"superclass: ${e.getClass.getSuperclass}, " +
+            //   s"interfaces: ${e.getClass.getInterfaces.toList.mkString("|")}, ret: $ret")
+            // ret
+            e.isInstanceOf[DynamicPruning] || e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
+          }
 
           val partitionDirs = relation.location.listFiles(
             partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
