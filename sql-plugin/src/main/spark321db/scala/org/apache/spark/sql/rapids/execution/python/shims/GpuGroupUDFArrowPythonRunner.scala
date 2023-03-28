@@ -58,7 +58,6 @@ class GpuGroupUDFArrowPythonRunner(
     timeZoneId: String,
     conf: Map[String, String],
     batchSize: Long,
-    val semWait: GpuMetric,
     pythonOutSchema: StructType)
   extends GpuPythonRunnerBase[ColumnarBatch](funcs, evalType, argOffsets)
     with GpuPythonArrowOutput {

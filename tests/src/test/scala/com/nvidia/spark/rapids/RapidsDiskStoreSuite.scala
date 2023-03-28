@@ -210,7 +210,6 @@ class RapidsDiskStoreSuite extends FunSuiteWithTempDir with Arm with MockitoSuga
         bufferId,
         ct,
         spillPriority,
-        RapidsBuffer.defaultSpillCallback,
         false)
       (bufferSize, handle)
     }

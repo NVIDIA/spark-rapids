@@ -72,8 +72,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
             // store takes ownership of the table
             val handle = catalog.addContiguousTable(
               ct,
-              spillPriority,
-              RapidsBuffer.defaultSpillCallback)
+              spillPriority)
             (len, handle)
           }
 
@@ -109,8 +108,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
             expectedBuffer.copyFromDeviceBuffer(ct.getBuffer)
             catalog.addContiguousTable(
               ct,
-              spillPriority,
-              RapidsBuffer.defaultSpillCallback)
+              spillPriority)
           }
           withResource(expectedBuffer) { _ =>
             catalog.synchronousSpill(devStore, 0)
@@ -148,8 +146,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
             }
             catalog.addContiguousTable(
               ct,
-              spillPriority,
-              RapidsBuffer.defaultSpillCallback)
+              spillPriority)
           }
           withResource(expectedBatch) { _ =>
             catalog.synchronousSpill(devStore, 0)
@@ -197,8 +194,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
               bigHandle = withResource(bigTable) { _ =>
                 catalog.addContiguousTable(
                   bigTable,
-                  spillPriority,
-                  RapidsBuffer.defaultSpillCallback)
+                  spillPriority)
               } // close the bigTable so it can be spilled
               bigTable = null
               catalog.synchronousSpill(devStore, 0)
@@ -215,7 +211,7 @@ class RapidsHostMemoryStoreSuite extends FunSuite with Arm with MockitoSugar {
             withResource(smallTable) { _ =>
               catalog.addContiguousTable(
                 smallTable, spillPriority,
-                RapidsBuffer.defaultSpillCallback, false)
+                false)
             } // close the smallTable so it can be spilled
             smallTable = null
             catalog.synchronousSpill(devStore, 0)

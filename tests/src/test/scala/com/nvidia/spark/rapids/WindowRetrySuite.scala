@@ -36,7 +36,7 @@ class WindowRetrySuite
       .build()
     withResource(windowTable) { tbl =>
       val cb = GpuColumnVector.from(tbl, Seq(IntegerType, LongType).toArray[DataType])
-      spy(SpillableColumnarBatch(cb, -1, RapidsBuffer.defaultSpillCallback))
+      spy(SpillableColumnarBatch(cb, -1))
     }
   }
 

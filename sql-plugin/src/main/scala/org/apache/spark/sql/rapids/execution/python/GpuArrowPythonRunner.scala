@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2023, NVIDIA CORPORATION.
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -94,8 +94,6 @@ trait GpuPythonArrowOutput extends Arm { _: GpuPythonRunnerBase[_] =>
     minReadTargetBatchSize = size
   }
 
-  def semWait: GpuMetric
-
   /** Convert the table received from the Python side to a batch. */
   protected def toBatch(table: Table): ColumnarBatch
 
@@ -169,7 +167,7 @@ trait GpuPythonArrowOutput extends Arm { _: GpuPythonRunnerBase[_] =>
               case SpecialLengths.START_ARROW_STREAM =>
                 val builder = ArrowIPCOptions.builder()
                 builder.withCallback(() =>
-                  GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWait))
+                  GpuSemaphore.acquireIfNecessary(TaskContext.get()))
                 arrowReader = Table.readArrowIPCChunked(builder.build(),
                   new StreamToBufferProvider(stream))
                 read()
@@ -210,7 +208,6 @@ abstract class GpuArrowPythonRunnerBase(
     timeZoneId: String,
     conf: Map[String, String],
     batchSize: Long,
-    val semWait: GpuMetric,
     onDataWriteFinished: () => Unit = null)
   extends GpuPythonRunnerBase[ColumnarBatch](funcs, evalType, argOffsets)
     with GpuPythonArrowOutput {
@@ -290,7 +287,6 @@ class GpuArrowPythonRunner(
     timeZoneId: String,
     conf: Map[String, String],
     batchSize: Long,
-    override val semWait: GpuMetric,
     pythonOutSchema: StructType,
     onDataWriteFinished: () => Unit = null)
   extends GpuArrowPythonRunnerBase(
@@ -301,7 +297,6 @@ class GpuArrowPythonRunner(
     timeZoneId,
     conf,
     batchSize,
-    semWait,
     onDataWriteFinished) {
 
   def toBatch(table: Table): ColumnarBatch = {

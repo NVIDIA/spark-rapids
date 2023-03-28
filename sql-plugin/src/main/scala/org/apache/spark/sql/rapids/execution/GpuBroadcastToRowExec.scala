@@ -37,6 +37,7 @@ import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.joins.HashedRelationBroadcastMode
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.ThreadUtils
 
 // a version of GpuSubqueryBroadcastExec that implements doExecuteBroadcast
@@ -151,6 +152,10 @@ case class GpuBroadcastToRowExec(
       rowCount = Some(metrics(NUM_OUTPUT_ROWS).value))
   }
 
+  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
+    throw new IllegalStateException(s"Internal Error ${this.getClass} has column support" +
+        s" mismatch:\n$this")
+  }
 }
 
 object GpuBroadcastToRowExec {

@@ -62,18 +62,18 @@ class GpuSemaphoreSuite extends FunSuite
   test("Double release is not an error") {
     GpuDeviceManager.setRmmTaskInitEnabled(false)
     val context = mockContext(1)
-    GpuSemaphore.acquireIfNecessary(context, NoopMetric)
-    GpuSemaphore.acquireIfNecessary(context, NoopMetric)
+    GpuSemaphore.acquireIfNecessary(context)
+    GpuSemaphore.acquireIfNecessary(context)
     GpuSemaphore.releaseIfNecessary(context)
     GpuSemaphore.releaseIfNecessary(context)
   }
 
   test("Completion listener registered on first acquire") {
     val context = mockContext(1)
-    GpuSemaphore.acquireIfNecessary(context, NoopMetric)
+    GpuSemaphore.acquireIfNecessary(context)
     verify(context, times(1)).addTaskCompletionListener[Unit](any())
-    GpuSemaphore.acquireIfNecessary(context, NoopMetric)
-    GpuSemaphore.acquireIfNecessary(context, NoopMetric)
+    GpuSemaphore.acquireIfNecessary(context)
+    GpuSemaphore.acquireIfNecessary(context)
     verify(context, times(1)).addTaskCompletionListener[Unit](any())
   }
 }

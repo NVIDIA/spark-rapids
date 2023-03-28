@@ -109,7 +109,7 @@ case class GpuShuffledHashJoinExec(
     BUILD_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_BUILD_TIME),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
     JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
-    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS)) ++ spillMetrics
+    JOIN_OUTPUT_ROWS -> createMetric(MODERATE_LEVEL, DESCRIPTION_JOIN_OUTPUT_ROWS))
 
   override def requiredChildDistribution: Seq[Distribution] =
     Seq(GpuHashPartitioning.getDistribution(cpuLeftKeys),
@@ -148,7 +148,7 @@ case class GpuShuffledHashJoinExec(
     }
   }
 
-  override def doExecuteColumnar() : RDD[ColumnarBatch] = {
+  override def internalDoExecuteColumnar() : RDD[ColumnarBatch] = {
     val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
@@ -159,7 +159,6 @@ case class GpuShuffledHashJoinExec(
     val numPartitions = RapidsConf.NUM_SUB_PARTITIONS.get(conf)
     val subPartConf = RapidsConf.HASH_SUB_PARTITION_TEST_ENABLED.get(conf)
        .map(_ && RapidsConf.TEST_CONF.get(conf))
-    val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
     val localBuildOutput = buildPlan.output
 
     // Create a map of metrics that can be handed down to shuffle and coalesce
@@ -179,7 +178,7 @@ case class GpuShuffledHashJoinExec(
         val (buildData, maybeBufferedStreamIter) =
           GpuShuffledHashJoinExec.prepareBuildBatchesForJoin(buildIter,
             new CollectTimeIterator("shuffled join stream", streamIter, streamTime),
-            realTarget, localBuildOutput, buildGoal, subPartConf, spillCallback, coalesceMetrics)
+            realTarget, localBuildOutput, buildGoal, subPartConf, coalesceMetrics)
 
         buildData match {
           case Left(singleBatch) =>
@@ -187,7 +186,7 @@ case class GpuShuffledHashJoinExec(
               buildDataSize += GpuColumnVector.getTotalDeviceMemoryUsed(singleBatch)
             }
             // doJoin will close singleBatch
-            doJoin(singleBatch, maybeBufferedStreamIter, realTarget, spillCallback,
+            doJoin(singleBatch, maybeBufferedStreamIter, realTarget,
               numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
           case Right(builtBatchIter) =>
             // For big joins, when the build data can not fit into a single batch.
@@ -198,7 +197,7 @@ case class GpuShuffledHashJoinExec(
               cb
             }
             doJoinBySubPartition(sizeBuildIter, maybeBufferedStreamIter, realTarget,
-              numPartitions, spillCallback, numOutputRows, joinOutputRows, numOutputBatches,
+              numPartitions, numOutputRows, joinOutputRows, numOutputBatches,
               opTime, joinTime)
         }
       }
@@ -238,7 +237,6 @@ object GpuShuffledHashJoinExec extends Arm {
    * @param buildOutput output attributes of the build plan
    * @param buildGoal the build goal to use when coalescing batches
    * @param subPartConf the config whether to enable sub-partitioning algorithm
-   * @param spillCallback metric updater in case downstream iterators spill
    * @param coalesceMetrics metrics map with metrics to be used in downstream
    *                        iterators
    * @return a pair of an Either for build and streamed iterator that can be used
@@ -251,7 +249,6 @@ object GpuShuffledHashJoinExec extends Arm {
       buildOutput: Seq[Attribute],
       buildGoal: CoalesceSizeGoal,
       subPartConf: Option[Boolean],
-      spillCallback: SpillCallback,
       coalesceMetrics: Map[String, GpuMetric]):
   (Either[ColumnarBatch, Iterator[ColumnarBatch]], Iterator[ColumnarBatch]) = {
     val buildTime = coalesceMetrics(GpuMetric.BUILD_TIME)
@@ -284,7 +281,7 @@ object GpuShuffledHashJoinExec extends Arm {
           // serialized host batch and the sub-partitioning is not activated.
           val (singleBuildCb, bufferedStreamIter) = getBuildBatchOptimizedAndClose(
             firstBuildBatch.asInstanceOf[HostConcatResult], streamIter, buildTypes,
-            spillCallback.semaphoreWaitTime, buildTime)
+            buildTime)
           (Left(singleBuildCb), bufferedStreamIter)
 
         } else { // Other cases without optimization
@@ -300,7 +297,7 @@ object GpuShuffledHashJoinExec extends Arm {
 
           val buildRet = if (needSingleBuildBatch) {
             val singleBuildCb = getAsSingleBatch(gpuBuildIter, buildOutput,
-              hasMultipleBatches, buildGoal, spillCallback, coalesceMetrics)
+              hasMultipleBatches, buildGoal, coalesceMetrics)
             Left(singleBuildCb)
           } else { // this is for sub-partitioning
             Right(new CollectTimeIterator("hash join build", gpuBuildIter, buildTime))
@@ -328,7 +325,6 @@ object GpuShuffledHashJoinExec extends Arm {
       hostConcatResult: HostConcatResult,
       streamIter: Iterator[ColumnarBatch],
       buildDataTypes: Array[DataType],
-      semWait: GpuMetric,
       buildTime: GpuMetric): (ColumnarBatch, Iterator[ColumnarBatch]) = {
     // For the optimal case, the build iterator is already drained and didn't have a
     // prior so it was a single batch, and is entirely on the host.
@@ -341,7 +337,7 @@ object GpuShuffledHashJoinExec extends Arm {
           if (bufStreamIter.hasNext) {
             bufStreamIter.head
           } else {
-            GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWait)
+            GpuSemaphore.acquireIfNecessary(TaskContext.get())
           }
         }
         // Bring the build batch to the GPU now
@@ -358,13 +354,12 @@ object GpuShuffledHashJoinExec extends Arm {
       inputAttrs: Seq[Attribute],
       hasMultipleBatches: Boolean,
       goal: CoalesceSizeGoal,
-      spillCallback: SpillCallback,
       coalesceMetrics: Map[String, GpuMetric]): ColumnarBatch = {
     val singleBatchIter = if (hasMultipleBatches) {
       new GpuCoalesceIterator(inputIter, inputAttrs.map(_.dataType).toArray, goal,
         NoopMetric, NoopMetric, NoopMetric, NoopMetric, NoopMetric,
         coalesceMetrics(GpuMetric.CONCAT_TIME), coalesceMetrics(GpuMetric.OP_TIME),
-        coalesceMetrics(GpuMetric.PEAK_DEVICE_MEMORY), spillCallback, "single build batch")
+        coalesceMetrics(GpuMetric.PEAK_DEVICE_MEMORY), "single build batch")
     } else {
       inputIter
     }

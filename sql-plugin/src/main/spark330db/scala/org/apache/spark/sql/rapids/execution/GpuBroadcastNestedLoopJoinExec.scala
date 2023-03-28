@@ -109,7 +109,7 @@ case class GpuBroadcastNestedLoopJoinExec(
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME)
-  ) ++ semaphoreMetrics ++ spillMetrics
+  )
 
   def isExecutorBroadcast(): Boolean = {
     executorBroadcast
