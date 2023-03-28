@@ -549,8 +549,17 @@ case class GpuBroadcastExchangeExec(
 
   private var _isGpuPlanningComplete = false
 
+  /**
+   * Returns true if this node and children are finished being optimized by the RAPIDS Accelerator.
+   */
   def isGpuPlanningComplete: Boolean = _isGpuPlanningComplete
 
+  /**
+   * Method to call after all RAPIDS Accelerator optimizations have been applied
+   * to indicate this node and its children are done being planned by the RAPIDS Accelerator.
+   * Some optimizations, such as AQE exchange reuse fixup, need to know when a node will no longer
+   * be updated so it can be tracked for reuse.
+   */
   def markGpuPlanningComplete(): Unit = {
     if (!_isGpuPlanningComplete) {
       _isGpuPlanningComplete = true
