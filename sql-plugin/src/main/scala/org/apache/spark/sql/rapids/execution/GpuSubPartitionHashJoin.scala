@@ -29,12 +29,6 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuSubPartitionHashJoin extends Arm {
   /**
-   * The seed for sub partitioner for hash join.
-   * Differ from the default value: 0.
-   */
-  val SUB_PARTITION_HASH_SEED: Int = 100
-
-  /**
    * Concatenate the input batches into a single one.
    * The caller is responsible for closing the returned batch.
    *
@@ -93,6 +87,27 @@ object GpuSubPartitionHashJoin extends Arm {
   }
 }
 
+trait SeedGenerator {
+  /** Return the current seed */
+  def currentSeed: Int
+
+  /** Generate the next seed */
+  def nextSeed: Int
+}
+
+/** A simple seed generator, not thread-safe */
+class SimpleSeedGenerator(initialSeed: Int = 100) extends SeedGenerator {
+
+  private[this] var seed = initialSeed
+
+  override def currentSeed: Int = seed
+
+  override def nextSeed: Int = {
+    seed += 10
+    seed
+  }
+}
+
 /**
  * Drain the batches in the input iterator and partition each batch into smaller parts.
  * It assumes all the batches are on GPU.
@@ -109,14 +124,16 @@ object GpuSubPartitionHashJoin extends Arm {
 class GpuBatchSubPartitioner(
     inputIter: Iterator[ColumnarBatch],
     inputBoundKeys: Seq[GpuExpression],
-    numPartitions: Int) extends AutoCloseable with Arm {
+    numPartitions: Int,
+    seedGenerator: SeedGenerator = new SimpleSeedGenerator())
+  extends AutoCloseable with Arm with SeedGenerator {
 
+  type SubPartitionBuffer = Array[ArrayBuffer[SpillableColumnarBatch]]
   private var isNotInited = true
   private var numCurBatches = 0
   // At least two partitions
   private val realNumPartitions = Math.max(2, numPartitions)
-  private val pendingParts =
-    Array.fill(realNumPartitions)(ArrayBuffer.empty[SpillableColumnarBatch])
+  private var pendingParts: SubPartitionBuffer = _
 
   /** The actual count of partitions */
   def partitionsCount: Int = realNumPartitions
@@ -166,45 +183,120 @@ class GpuBatchSubPartitioner(
     (0 until realNumPartitions).foreach(releaseBatchesByPartition)
   }
 
-  private def initPartitions(): Unit = {
+  protected final def initPartitions(): Unit = {
     if (isNotInited) {
-      partitionBatches()
+      pendingParts = partitionBatches(realNumPartitions)
+      numCurBatches = pendingParts.map(_.length).sum
       isNotInited = false
     }
   }
 
-  private[this] def partitionBatches(): Unit = {
-    while (inputIter.hasNext) {
-      val gpuBatch = inputIter.next()
-      if (gpuBatch.numRows() > 0 && gpuBatch.numCols() > 0) {
-        val types = GpuColumnVector.extractTypes(gpuBatch)
-        // 1) Hash partition on the batch
-        val partedTable = GpuHashPartitioningBase.hashPartitionAndClose(
-          gpuBatch, inputBoundKeys, realNumPartitions, "Sub-Hash Calculate",
-          GpuSubPartitionHashJoin.SUB_PARTITION_HASH_SEED)
-        // 2) Split into smaller tables according to partitions
-        val subTables = withResource(partedTable) { _ =>
-          partedTable.getTable.contiguousSplit(partedTable.getPartitions.tail: _*)
-        }
-        // 3) Make each smaller table spillable and cache them in the queue
-        withResource(subTables) { _ =>
-          subTables.zipWithIndex.foreach { case (table, id) =>
-            // skip empty tables
-            if (table.getRowCount > 0) {
-              pendingParts(id) += SpillableColumnarBatch(table, types,
-                SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-              numCurBatches += 1
+  protected def partitionBatches(numParts: Int): SubPartitionBuffer = {
+    partitionBatchesOnceAndClose(inputIter, numParts)
+  }
+
+  protected final def partitionBatchesOnceAndClose(batchesIter: Iterator[ColumnarBatch],
+      numParts: Int): SubPartitionBuffer = {
+    closeOnExcept(Array.fill(numParts)(ArrayBuffer.empty[SpillableColumnarBatch])) { subParts =>
+      val hashSeed = seedGenerator.nextSeed
+      while (batchesIter.hasNext) {
+        val gpuBatch = inputIter.next()
+        if (gpuBatch.numRows() > 0 && gpuBatch.numCols() > 0) {
+          val types = closeOnExcept(gpuBatch)(GpuColumnVector.extractTypes)
+          // 1) Hash partition on the batch
+          val partedTable = GpuHashPartitioningBase.hashPartitionAndClose(gpuBatch,
+            inputBoundKeys, numParts, "Sub-Hash Calculate", hashSeed)
+          // 2) Split into smaller tables according to partitions
+          val subTables = withResource(partedTable) { _ =>
+            partedTable.getTable.contiguousSplit(partedTable.getPartitions.tail: _*)
+          }
+          // 3) Make each smaller table spillable and cache them in the queue
+          withResource(subTables) { _ =>
+            subTables.zipWithIndex.foreach { case (table, id) =>
+              // skip empty tables
+              if (table.getRowCount > 0) {
+                subParts(id) += SpillableColumnarBatch(table, types,
+                  SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+              }
             }
           }
+        } else if (gpuBatch.numRows() > 0 && gpuBatch.numCols() == 0) {
+          // Rows only batch. This should never happen for a hash join in Spark.
+          gpuBatch.close()
+        } else {
+          // Skip empty batches
+          gpuBatch.close()
         }
-      } else if (gpuBatch.numRows() > 0 && gpuBatch.numCols() == 0) {
-        // Rows only batch. This should never happen for a hash join in Spark.
-        gpuBatch.close()
-      } else {
-        // Skip empty batches
-        gpuBatch.close()
       }
-    } // end of while
+      subParts
+    }
+  }
+
+  override final def currentSeed: Int = seedGenerator.currentSeed
+
+  /**
+   * Always return the current seed.
+   * This is intended to share the same seed across sub-partitioners.
+   */
+  override final def nextSeed: Int = seedGenerator.currentSeed
+}
+
+/**
+ * A sub-partitioner supports partitioning the input batches multiple times to try to
+ * have each sub partition been smaller than the target batch size.
+ * However it may fail if the data is highly skewed, meaning there may be some
+ * partitions still going beyond the target batch size.
+ */
+class GpuBatchSizeAwareSubPartitioner(
+    inputIter: Iterator[ColumnarBatch],
+    inputBoundKeys: Seq[GpuExpression],
+    numPartitions: Int,
+    targetBatchSize: Long,
+    seedGenerator: SeedGenerator = new SimpleSeedGenerator())
+  extends GpuBatchSubPartitioner(inputIter, inputBoundKeys, numPartitions, seedGenerator) {
+
+  // FIXME how many times do we need to repartition batches?
+  private var retryCount = 3
+  private var actualNumPartitions = 0
+
+  private[this] def computeNumPartitions(parts: SubPartitionBuffer): Int = {
+    val totalSize = parts.flatten.map(_.sizeInBytes).sum
+    Math.floorDiv(totalSize, targetBatchSize).toInt + 1
+  }
+
+  private[this] def needRepartition(parts: SubPartitionBuffer): Boolean = {
+    // FIXME Is it good enough to ask for repartitioning when there exists any sub
+    //       partition that its size > target batch size ?
+    closeOnExcept(parts) { _ =>
+      retryCount -= 1
+      retryCount >= 0 && parts.exists(_.map(_.sizeInBytes).sum > targetBatchSize)
+    }
+  }
+
+  override protected def partitionBatches(numParts: Int): SubPartitionBuffer = {
+    // read in all the batches from the iterator
+    var parts = super.partitionBatches(numParts)
+    val actualNumParts = closeOnExcept(parts) { _ =>
+      // Now we have all the data read in, so we know the total data size, and can get
+      // the actual number of partitions that is required. The actual number may be less
+      // than current partition number when the data is highly skewed.
+      math.max(computeNumPartitions(parts), numParts)
+    }
+
+    while (needRepartition(parts)) {
+      val batches = closeOnExcept(parts) { _ =>
+        GpuSubPartitionHashJoin.safeIteratorFromSeq(parts.flatten.toSeq)
+          .map(withResource(_)(_.getColumnarBatch()))
+      }
+      parts = partitionBatchesOnceAndClose(batches, actualNumParts)
+    }
+    actualNumPartitions = actualNumParts
+    parts
+  }
+
+  override def partitionsCount: Int = {
+    initPartitions()
+    actualNumPartitions
   }
 }
 
@@ -219,7 +311,7 @@ class GpuBatchSubPartitionIterator(
   extends Iterator[(Seq[Int], Option[SpillableColumnarBatch])] with Arm with Logging {
 
   // The partitions to be read. Initially it is all the partitions.
-  private val remainingPartIds: ArrayBuffer[Int] =
+  private lazy val remainingPartIds: ArrayBuffer[Int] =
     ArrayBuffer.range(0, batchSubPartitioner.partitionsCount)
 
   override def hasNext: Boolean = remainingPartIds.nonEmpty
@@ -349,12 +441,14 @@ class GpuSubPartitionPairIterator(
     skipEmptyPairs: Boolean = true)
   extends Iterator[PartitionPair] with Arm with AutoCloseable {
 
-  private val buildSubPartitioner =
-    new GpuBatchSubPartitioner(buildIter, boundBuildKeys, numPartitions)
+  private val buildSubPartitioner = new GpuBatchSizeAwareSubPartitioner(buildIter,
+    boundBuildKeys, numPartitions, targetBatchSize)
   private val buildSubIterator =
     new GpuBatchSubPartitionIterator(buildSubPartitioner, targetBatchSize)
-  private val streamSubPartitioner =
-    new GpuBatchSubPartitioner(streamIter, boundStreamKeys, numPartitions)
+
+  // Use the same seed and partition number as the `buildSubPartitioner`.
+  private lazy val streamSubPartitioner = new GpuBatchSubPartitioner(streamIter,
+    boundStreamKeys, buildSubPartitioner.partitionsCount, buildSubPartitioner)
 
   private[this] var closed = false
 
@@ -397,6 +491,9 @@ class GpuSubPartitionPairIterator(
   private[this] val hasNextBatch: () => Boolean = if (skipEmptyPairs) {
     // Check the batch numbers directly can stop early when the remaining partitions
     // are all empty on both build side and stream side.
+    // NOTE Here should call `batchesCount` on `buildSubPartitioner` prior to
+    // `streamSubPartitioner` for the seed and partitions number sync between the
+    // two sub-partitioners.
     () => buildSubPartitioner.batchesCount > 0 || streamSubPartitioner.batchesCount > 0
   } else {
     () => buildSubIterator.hasNext
