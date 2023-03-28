@@ -30,7 +30,7 @@ class ReusedExchangeFixupSuite extends SparkQueryCompareTestSuite {
    * Tests reuse exchange fixup. Ideally this would be an integration test, but
    * attempts to reproduce the failure to reuse were not successful at smaller scales.
    */
-  private def fixupExchangeReuseTest(spark: SparkSession) {
+  private def fixupExchangeReuseTest(spark: SparkSession): Unit = {
     val range = RangeExec(Range(1, 2, 1, Some(1)))
     val broadcast1 = BroadcastExchangeExec(
       HashedRelationBroadcastMode(range.output),
@@ -68,7 +68,10 @@ class ReusedExchangeFixupSuite extends SparkQueryCompareTestSuite {
   }
 
   test("fixupExchangeReuse") {
-    val conf = new SparkConf().set("spark.sql.adaptive.enabled", "true")
+    val conf = new SparkConf()
+        .set("spark.sql.adaptive.enabled", "true")
+        .set("spark.sql.exchange.reuse", "true")
+        .set(RapidsConf.ENABLE_AQE_EXCHANGE_REUSE_FIXUP.key, "true")
     withGpuSparkSession(fixupExchangeReuseTest, conf)
   }
 }

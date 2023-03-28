@@ -4268,7 +4268,9 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
 
       // Some Spark implementations are caching CPU exchanges for reuse which can be problematic
       // when the RAPIDS Accelerator replaces the original exchange.
-      newPlan = GpuOverrides.fixupCpuReusedExchanges(newPlan)
+      if (conf.isAqeExchangeReuseFixupEnabled && plan.conf.exchangeReuseEnabled) {
+        newPlan = GpuOverrides.fixupCpuReusedExchanges(newPlan)
+      }
 
       // AQE can cause ReusedExchangeExec instance to cache the wrong aggregation buffer type
       // compared to the desired buffer type from a reused GPU shuffle.

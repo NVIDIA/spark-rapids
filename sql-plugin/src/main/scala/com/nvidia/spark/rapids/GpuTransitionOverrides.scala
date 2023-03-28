@@ -783,7 +783,8 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         updatedPlan = SparkShimImpl.applyPostShimPlanRules(updatedPlan)
 
         updatedPlan = markGpuPlanningComplete(updatedPlan)
-        if (plan.conf.adaptiveExecutionEnabled) {
+        if (rapidsConf.isAqeExchangeReuseFixupEnabled &&
+            plan.conf.adaptiveExecutionEnabled && plan.conf.exchangeReuseEnabled) {
           updatedPlan = fixupAdaptiveExchangeReuse(updatedPlan)
         }
 
