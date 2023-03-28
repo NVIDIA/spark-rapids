@@ -26,7 +26,7 @@ import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.RuntimeConfig
-import org.apache.spark.sql.catalyst.expressions.{Expression, PlanExpression}
+import org.apache.spark.sql.catalyst.expressions.{DynamicPruning, Expression, PlanExpression}
 import org.apache.spark.sql.execution.datasources.{CatalogFileIndex, FileIndex, HadoopFsRelation, InMemoryFileIndex, PartitionDirectory, PartitionedFile, PartitionSpec}
 import org.apache.spark.sql.execution.datasources.rapids.GpuPartitioningUtils
 
@@ -529,8 +529,9 @@ object AlluxioUtils extends Logging with Arm {
 
           // With the base Spark FileIndex type we don't know how to modify it to
           // just replace the paths so we have to try to recompute.
-          def isDynamicPruningFilter(e: Expression): Boolean =
-            e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
+          def isDynamicPruningFilter(e: Expression): Boolean = {
+            e.isInstanceOf[DynamicPruning] || e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
+          }
 
           val partitionDirs = relation.location.listFiles(
             partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
