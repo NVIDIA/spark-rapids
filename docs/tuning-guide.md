@@ -345,14 +345,25 @@ How long does operator X take on the GPU vs the CPU?
 ### Task
 
 Custom Task level accumulators are also included. These metrics are not for individual
-stages of the SQL plan, but are per task and roll up to stages in the plan. Timing metrics
-are reported in the format of HH:MM:SS.sss
+operators in the SQL plan, but are per task and roll up to stages in the plan. Timing metrics
+are reported in the format of HH:MM:SS.sss. It should be noted that spill metrics,
+including the spill to memory and disk sizes, are not isolated to a single
+task, or even a single stage in the plan. The amount of data spilled is the amount of
+data that this particular task needed to spill in order to make room for the task to
+allocate new memory. The spill time metric is how long it took that task to spill
+that memory. It could have spilled memory associated with a different task,
+or even a different stage or job in the plan.  The spill read time metric is how
+long it took to read back in the data it needed to complete the task. This does not
+correspond to the data that was spilled by this task.
 
 | Name              | Description                                            |
 |-------------------|--------------------------------------------------------|
 | gpuSemaphoreWait  | The time the task spent waiting on the GPU semaphore.  |
 | gpuSpillBlockTime | The time that this task was blocked spilling data from the GPU. |
 | gpuSpillReadTime  | The time that this task was blocked reading data to the GPU that was spilled previously. |
+| gpuRetryCount | The number of times that a retry exception was thrown in an attempt to roll back processing to free memory. |
+| gpuSplitAndRetryCount | The number of times that a split and retry exception was thrown in an attempt to roll back processing to free memory, and split the input to make more room. |
+| gpuRetryBlockTime | The amount of time that this task was blocked ether hoping that other tasks will free up more memory or after a retry exception was thrown to wait until the task can go on. |
 
 The spill data sizes going to host/CPU memory and disk are the same as used by Spark task level
 metrics.
@@ -378,11 +389,7 @@ Some operators provide out of core algorithms, or algorithms that can process da
 than can fit in GPU memory. This is often done by breaking the problem up into smaller pieces and
 letting some of those pieces be moved out of GPU memory when not being worked on. Apache Spark does
 similar things when processing data on the CPU. When these types of algorithms are used
-`bytes spilled from GPU` will show up as a metric to indicate how much data was transferred off of
-the GPU to either host memory or disk to make room for more data to be processed. Generally this
-spilling happens while the GPU semaphore is held, and can really slow down processing. Details
-about how much data was spilled to host memory vs spilled to disk show up in `DEBUG` mode for the
-metrics.
+the task level spill metrics will indicate that spilling happened.
 
 ### Time taken on the CPU
 
