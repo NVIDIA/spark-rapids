@@ -521,20 +521,15 @@ object AlluxioUtils extends Logging with Arm {
       // We use this approach to handle all the file index types for all CSPs like Databricks.
       relation.location match {
         case cfi: CatalogFileIndex =>
-          logWarning("Handling CatalogFileIndex")
+          logDebug("Handling CatalogFileIndex")
           val memFI = cfi.filterPartitions(Nil)
           createNewFileIndexWithPathsReplaced(memFI.partitionSpec(), memFI.rootPaths)
         case _ =>
-          logWarning(s"Handling file index type: ${relation.location.getClass}")
+          logDebug(s"Handling file index type: ${relation.location.getClass}")
 
           // With the base Spark FileIndex type we don't know how to modify it to
           // just replace the paths so we have to try to recompute.
           def isDynamicPruningFilter(e: Expression): Boolean = {
-            // val ret = e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
-            // logWarning(s"isDynamicPruningFilter: $e, ${e.getClass}," +
-            //   s"superclass: ${e.getClass.getSuperclass}, " +
-            //   s"interfaces: ${e.getClass.getInterfaces.toList.mkString("|")}, ret: $ret")
-            // ret
             e.isInstanceOf[DynamicPruning] || e.find(_.isInstanceOf[PlanExpression[_]]).isDefined
           }
 
