@@ -67,7 +67,7 @@ New functionality and performance improvements for this release include:
 * Optimize HashAggregate and Join operators with the new retry framework to avoid OOM errors and recover in some cases
 * Support dynamic repartitioning in large/skewed hash joins
 * Optimize the transpilation in `regexp_extract` function
-* Support Delta Lake write without auto-optimization specified
+* Support Delta Lake write with auto-optimization and auto-compaction on Databricks platforms
 * Qualification and Profiling tool:
   * Add support to recommend cluster shape options on CSPs
   * Add support for Databricks local mode with cost savings based on cluster metadata
