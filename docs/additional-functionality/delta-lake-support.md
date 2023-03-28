@@ -54,8 +54,7 @@ GPU accelerated. These operations will fallback to the CPU.
 
 Delta Lake on Databricks has
 [automatic optimization](https://docs.databricks.com/optimizations/auto-optimize.html)
-features for optimized writes and automatic compaction.  Automatic compaction is not supported,
-and writes configured for automatic compaction will fallback to the CPU.
+features for optimized writes and automatic compaction.
 
 Optimized writes are supported only on Databricks platforms. The algorithm used is similar but
 not identical to the Databricks version. The following table describes configuration settings
@@ -66,6 +65,21 @@ that control the operation of the optimized write.
 | spark.databricks.delta.optimizeWrite.binSize                | 512     | Target uncompressed partition size in megabytes                                            |
 | spark.databricks.delta.optimizeWrite.smallPartitionFactor   | 0.5     | Merge partitions smaller than this factor multiplied by the target partition size          |
 | spark.databricks.delta.optimizeWrite.mergedPartitionFactor  | 1.2     | Avoid combining partitions larger than this factor multiplied by the target partition size |
+
+Automatic compaction is supported only on Databricks platforms. The algorithm is similar but 
+not identical to the Databricks version. The following table describes configuration settings
+that control the operation of automatic compaction.
+
+| Configuration                                                       | Default | Description                                                                                            |
+|---------------------------------------------------------------------|---------|--------------------------------------------------------------------------------------------------------|
+| spark.databricks.delta.autoCompact.enabled                          | false   | Enable/disable auto compaction for writes to Delta directories                                         |
+| spark.databricks.delta.properties.defaults.autoOptimize.autoCompact | false   | Whether to enable auto compaction by default, if spark.databricks.delta.autoCompact.enabled is not set |
+| spark.databricks.delta.autoCompact.minNumFiles                      | 50      | Minimum number of files in the Delta directory before which auto optimize does not begin compaction    |
+
+Note that optimized write support requires round-robin partitioning of the data, and round-robin
+partitioning requires sorting across all columns for deterministic operation. If the GPU cannot
+support sorting a particular column type in order to support the round-robin partitioning, the
+Delta Lake write will fallback to the CPU.
 
 ### RapidsDeltaWrite Node in Query Plans
 

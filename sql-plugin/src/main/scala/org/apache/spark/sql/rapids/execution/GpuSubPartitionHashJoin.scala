@@ -17,8 +17,8 @@ package org.apache.spark.sql.rapids.execution
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{HashType, Table}
-import com.nvidia.spark.rapids.{Arm, GpuBoundReference, GpuColumnVector, GpuExpression, GpuMetric, GpuShuffledHashJoinExec, SerializedTableColumn, SpillableColumnarBatch, SpillCallback, SpillPriorities, TaskAutoCloseableResource}
+import ai.rapids.cudf.Table
+import com.nvidia.spark.rapids.{Arm, GpuColumnVector, GpuExpression, GpuHashPartitioningBase, GpuMetric, SpillableColumnarBatch, SpillPriorities, TaskAutoCloseableResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
@@ -26,97 +26,6 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.plans.InnerLike
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
-
-/**
- * Iterator that can tell if the data size of all the batches from current position
- * is larger than the specified `targetBatchSize`, and whether the batches are
- * serialized.
- */
-class BatchTypeSizeAwareIterator(
-    inputIter: Iterator[ColumnarBatch],
-    targetBatchSize: Long,
-    intputBatchSize: GpuMetric) extends Iterator[ColumnarBatch]
-  with Arm with TaskAutoCloseableResource {
-
-  assert(targetBatchSize > 0,
-    s"Target batch size should be positive, but got $targetBatchSize")
-
-  private val readBatchesQueue = ArrayBuffer.empty[ColumnarBatch]
-
-  private var anyBatchSerialized: Option[Boolean] = None
-
-  private[this] def getBatchSize(batch: ColumnarBatch): Long = {
-    val isSerializedBatch = anyBatchSerialized.getOrElse {
-      val ret = GpuShuffledHashJoinExec.isBatchSerialized(batch)
-      // cache the result because it applies to all the input batches.
-      anyBatchSerialized = Some(ret)
-      ret
-    }
-    if (isSerializedBatch) {
-      // Need to take care of this case because of the optimization introduced by
-      // https://github.com/NVIDIA/spark-rapids/pull/4588.
-      // Roughly return the serialized data length as the batch size.
-      SerializedTableColumn.getMemoryUsed(batch)
-    } else {
-      GpuColumnVector.getTotalDeviceMemoryUsed(batch)
-    }
-  }
-
-  private[this] def pullAndCacheOneBatch(): ColumnarBatch = {
-    val batch = inputIter.next()
-    readBatchesQueue += batch
-    batch
-  }
-
-  override def close(): Unit = if (!closed) {
-    readBatchesQueue.safeClose()
-    readBatchesQueue.clear()
-    super.close()
-  }
-
-  override def hasNext: Boolean = readBatchesQueue.nonEmpty || inputIter.hasNext
-
-  override def next(): ColumnarBatch = {
-    if (!hasNext) throw new NoSuchElementException()
-    closeOnExcept {
-      if (readBatchesQueue.nonEmpty) {
-        readBatchesQueue.remove(0)
-      } else {
-        inputIter.next()
-      }
-    } { batch =>
-      intputBatchSize += getBatchSize(batch)
-      batch
-    }
-  }
-
-  /**
-   * Whether the data size of all the batches from current position is larger than
-   * the given `targetBatchSize`.
-   */
-  def isBatchesSizeOverflow: Boolean = {
-    var readBatchesSize = readBatchesQueue.map(getBatchSize).sum
-    while (readBatchesSize <= targetBatchSize && inputIter.hasNext) {
-      readBatchesSize += getBatchSize(pullAndCacheOneBatch())
-    }
-    readBatchesSize > targetBatchSize
-  }
-
-  /**
-   * Whether the batches in the input iterator are serialized.
-   */
-  def areBatchesSerialized: Boolean = anyBatchSerialized.getOrElse {
-    val anyBatch = if (readBatchesQueue.nonEmpty) {
-      Some(readBatchesQueue.head)
-    } else if (inputIter.hasNext) {
-      Some(pullAndCacheOneBatch())
-    } else None
-    val ret = anyBatch.exists(GpuShuffledHashJoinExec.isBatchSerialized)
-    // cache the result because it applies to all the input batches.
-    anyBatchSerialized = Some(ret)
-    ret
-  }
-}
 
 object GpuSubPartitionHashJoin extends Arm {
   /**
@@ -134,8 +43,7 @@ object GpuSubPartitionHashJoin extends Arm {
    * @return the concatenated SpillableColumnarBatch or None if the input is empty.
    */
   def concatSpillBatchesAndClose(
-      spillBatches: Seq[SpillableColumnarBatch],
-      spillCallback: SpillCallback): Option[SpillableColumnarBatch] = {
+      spillBatches: Seq[SpillableColumnarBatch]): Option[SpillableColumnarBatch] = {
     val retBatch = if (spillBatches.length >= 2) {
       // two or more batches, concatenate them
       val (concatTable, types) = withResource(spillBatches) { _ =>
@@ -149,7 +57,7 @@ object GpuSubPartitionHashJoin extends Arm {
       // Make the concatenated table spillable.
       withResource(concatTable) { _ =>
         SpillableColumnarBatch(GpuColumnVector.from(concatTable, types),
-          SpillPriorities.ACTIVE_BATCHING_PRIORITY, spillCallback)
+          SpillPriorities.ACTIVE_BATCHING_PRIORITY)
       }
     } else if (spillBatches.length == 1) {
       // only one batch
@@ -201,8 +109,7 @@ object GpuSubPartitionHashJoin extends Arm {
 class GpuBatchSubPartitioner(
     inputIter: Iterator[ColumnarBatch],
     inputBoundKeys: Seq[GpuExpression],
-    numPartitions: Int,
-    spillCallback: SpillCallback) extends AutoCloseable with Arm {
+    numPartitions: Int) extends AutoCloseable with Arm {
 
   private var isNotInited = true
   private var numCurBatches = 0
@@ -210,16 +117,6 @@ class GpuBatchSubPartitioner(
   private val realNumPartitions = Math.max(2, numPartitions)
   private val pendingParts =
     Array.fill(realNumPartitions)(ArrayBuffer.empty[SpillableColumnarBatch])
-
-  private val keyIndices = {
-    val boundIndices = ArrayBuffer.empty[Int]
-    inputBoundKeys.foreach { e =>
-      boundIndices ++= e.collect {
-        case bound: GpuBoundReference => bound.ordinal
-      }
-    }
-    boundIndices.distinct.toArray
-  }
 
   /** The actual count of partitions */
   def partitionsCount: Int = realNumPartitions
@@ -282,13 +179,9 @@ class GpuBatchSubPartitioner(
       if (gpuBatch.numRows() > 0 && gpuBatch.numCols() > 0) {
         val types = GpuColumnVector.extractTypes(gpuBatch)
         // 1) Hash partition on the batch
-        val partedTable = withResource(gpuBatch) { _ =>
-          withResource(GpuColumnVector.from(gpuBatch)) { table =>
-            table.onColumns(keyIndices: _*)
-              .hashPartition(HashType.MURMUR3, realNumPartitions,
-                GpuSubPartitionHashJoin.SUB_PARTITION_HASH_SEED)
-          }
-        }
+        val partedTable = GpuHashPartitioningBase.hashPartitionAndClose(
+          gpuBatch, inputBoundKeys, realNumPartitions, "Sub-Hash Calculate",
+          GpuSubPartitionHashJoin.SUB_PARTITION_HASH_SEED)
         // 2) Split into smaller tables according to partitions
         val subTables = withResource(partedTable) { _ =>
           partedTable.getTable.contiguousSplit(partedTable.getPartitions.tail: _*)
@@ -299,7 +192,7 @@ class GpuBatchSubPartitioner(
             // skip empty tables
             if (table.getRowCount > 0) {
               pendingParts(id) += SpillableColumnarBatch(table, types,
-                SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback)
+                SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
               numCurBatches += 1
             }
           }
@@ -322,8 +215,7 @@ class GpuBatchSubPartitioner(
  */
 class GpuBatchSubPartitionIterator(
     batchSubPartitioner: GpuBatchSubPartitioner,
-    targetBatchSize: Long,
-    spillCallback: SpillCallback)
+    targetBatchSize: Long)
   extends Iterator[(Seq[Int], Option[SpillableColumnarBatch])] with Arm with Logging {
 
   // The partitions to be read. Initially it is all the partitions.
@@ -344,8 +236,7 @@ class GpuBatchSubPartitionIterator(
       }
       buf
     }
-    val retBatch = GpuSubPartitionHashJoin.concatSpillBatchesAndClose(
-      spillBatches, spillCallback)
+    val retBatch = GpuSubPartitionHashJoin.concatSpillBatchesAndClose(spillBatches)
     closeOnExcept(retBatch) { _ =>
       // Update the remaining partitions
       remainingPartIds --= partIds
@@ -420,9 +311,20 @@ class PartitionPair(
     (build, stream)
   }
 
+  /**
+   * Release the batches from two sides as a Tuple(build, stream).
+   * Callers should close the returned batches.
+   */
+  def release: (Option[SpillableColumnarBatch], Seq[SpillableColumnarBatch]) = {
+    val ret = (build, stream)
+    build = None
+    stream = Seq.empty
+    ret
+  }
+
   override def close(): Unit = {
     stream.safeClose()
-    stream = Seq.empty[SpillableColumnarBatch]
+    stream = Seq.empty
     build.foreach(_.safeClose())
     build = None
   }
@@ -444,16 +346,15 @@ class GpuSubPartitionPairIterator(
     boundStreamKeys: Seq[GpuExpression],
     numPartitions: Int,
     targetBatchSize: Long,
-    spillCallback: SpillCallback,
     skipEmptyPairs: Boolean = true)
   extends Iterator[PartitionPair] with Arm with AutoCloseable {
 
   private val buildSubPartitioner =
-    new GpuBatchSubPartitioner(buildIter, boundBuildKeys, numPartitions, spillCallback)
+    new GpuBatchSubPartitioner(buildIter, boundBuildKeys, numPartitions)
   private val buildSubIterator =
-    new GpuBatchSubPartitionIterator(buildSubPartitioner, targetBatchSize, spillCallback)
+    new GpuBatchSubPartitionIterator(buildSubPartitioner, targetBatchSize)
   private val streamSubPartitioner =
-    new GpuBatchSubPartitioner(streamIter, boundStreamKeys, numPartitions, spillCallback)
+    new GpuBatchSubPartitioner(streamIter, boundStreamKeys, numPartitions)
 
   private[this] var closed = false
 
@@ -524,13 +425,12 @@ abstract class BaseSubHashJoinIterator(
     boundStreamKeys: Seq[GpuExpression],
     numPartitions: Int,
     targetSize: Long,
-    spillCallback: SpillCallback,
     opTime: GpuMetric)
   extends Iterator[ColumnarBatch] with Arm with TaskAutoCloseableResource {
 
   // skip empty partition pairs
   private[this] val subPartitionPairIter = new GpuSubPartitionPairIterator(buildIter,
-    boundBuildKeys, streamIter, boundStreamKeys, numPartitions, targetSize, spillCallback)
+    boundBuildKeys, streamIter, boundStreamKeys, numPartitions, targetSize)
 
   private[this] var joinIter: Option[Iterator[ColumnarBatch]] = None
   private[this] var nextCb: Option[ColumnarBatch] = None
@@ -599,7 +499,6 @@ trait GpuSubPartitionHashJoin extends Arm with Logging { self: GpuHashJoin =>
       streamIter: Iterator[ColumnarBatch],
       targetSize: Long,
       numPartitions: Int,
-      spillCallback: SpillCallback,
       numOutputRows: GpuMetric,
       joinOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
@@ -611,7 +510,7 @@ trait GpuSubPartitionHashJoin extends Arm with Logging { self: GpuHashJoin =>
       s"in task ${TaskContext.get().taskAttemptId()}")
 
     new BaseSubHashJoinIterator(builtIter, boundBuildKeys, streamIter,
-        boundStreamKeys, numPartitions, targetSize, spillCallback, opTime) {
+        boundStreamKeys, numPartitions, targetSize, opTime) {
 
       private[this] def canOptimizeOut(pair: PartitionPair): Boolean = {
         val (build, stream) = pair.get
@@ -628,19 +527,21 @@ trait GpuSubPartitionHashJoin extends Arm with Logging { self: GpuHashJoin =>
           // Skip it due to optimization
           None
         } else {
-          val (build, stream) = pair.get
-          val buildCb = build.map(_.getColumnarBatch())
-            .getOrElse(GpuColumnVector.emptyBatch(buildSchema))
-          withResource(buildCb) { _ =>
-            val streamIter = closeOnExcept(stream.safeMap(_.getColumnarBatch())) { streamCbs =>
-              GpuSubPartitionHashJoin.safeIteratorFromSeq(streamCbs)
+          val (build, stream) = pair.release
+          val buildCb = closeOnExcept(stream) { _ =>
+            withResource(build) { _ =>
+              build.map(_.getColumnarBatch()).getOrElse(GpuColumnVector.emptyBatch(buildSchema))
             }
-
-            // Leverage the original join iterators
-            val joinIter = doJoin(buildCb, streamIter, targetSize, spillCallback,
-              numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
-            Some(joinIter)
           }
+          val streamIter = closeOnExcept(buildCb) { _ =>
+            GpuSubPartitionHashJoin.safeIteratorFromSeq(stream).map { spill =>
+              withResource(spill)(_.getColumnarBatch())
+            }
+          }
+          // Leverage the original join iterators
+          val joinIter = doJoin(buildCb, streamIter, targetSize, 
+            numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
+          Some(joinIter)
         }
       }
 

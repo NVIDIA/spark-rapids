@@ -76,8 +76,6 @@ class ShuffleBufferCatalog(
    * @param blockId Spark's `ShuffleBlockId` that identifies this buffer
    * @param contigTable contiguous table to track in storage
    * @param initialSpillPriority starting spill priority value for the buffer
-   * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
-   *                      It should never allocate GPU memory and really just be used for metrics.
    * @param needsSync whether the spill framework should stream synchronize while adding
    *                  this device buffer (defaults to true)
    * @return RapidsBufferHandle identifying this table
@@ -86,7 +84,6 @@ class ShuffleBufferCatalog(
       blockId: ShuffleBlockId,
       contigTable: ContiguousTable,
       initialSpillPriority: Long,
-      defaultSpillCallback: SpillCallback,
       needsSync: Boolean): RapidsBufferHandle = {
     val bufferId = nextShuffleBufferId(blockId)
     withResource(contigTable) { _ =>
@@ -94,7 +91,6 @@ class ShuffleBufferCatalog(
         bufferId,
         contigTable,
         initialSpillPriority,
-        defaultSpillCallback,
         needsSync)
       trackCachedHandle(bufferId, handle)
       handle
@@ -108,8 +104,6 @@ class ShuffleBufferCatalog(
    * @param buffer buffer that will be owned by the store
    * @param tableMeta metadata describing the buffer layout
    * @param initialSpillPriority starting spill priority value for the buffer
-   * @param spillCallback a callback when the buffer is spilled. This should be very light weight.
-   *                      It should never allocate GPU memory and really just be used for metrics.
    * @return RapidsBufferHandle associated with this buffer
    */
   def addBuffer(
@@ -117,23 +111,18 @@ class ShuffleBufferCatalog(
       buffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long,
-      defaultSpillCallback: SpillCallback,
       needsSync: Boolean): RapidsBufferHandle = {
     val bufferId = nextShuffleBufferId(blockId)
     // update the table metadata for the buffer ID generated above
     tableMeta.bufferMeta.mutateId(bufferId.tableId)
-    // when we call `addBuffer` the store will incRefCount
-    withResource(buffer) { _ =>
-      val handle = catalog.addBuffer(
-        bufferId,
-        buffer,
-        tableMeta,
-        initialSpillPriority,
-        defaultSpillCallback,
-        needsSync)
-      trackCachedHandle(bufferId, handle)
-      handle
-    }
+    val handle = catalog.addBuffer(
+      bufferId,
+      buffer,
+      tableMeta,
+      initialSpillPriority,
+      needsSync)
+    trackCachedHandle(bufferId, handle)
+    handle
   }
 
   /**
@@ -142,10 +131,9 @@ class ShuffleBufferCatalog(
    */
   def addDegenerateRapidsBuffer(
       blockId: ShuffleBlockId,
-      meta: TableMeta,
-      spillCallback: SpillCallback): RapidsBufferHandle = {
+      meta: TableMeta): RapidsBufferHandle = {
     val bufferId = nextShuffleBufferId(blockId)
-    val handle = catalog.registerDegenerateBuffer(bufferId, meta, spillCallback)
+    val handle = catalog.registerDegenerateBuffer(bufferId, meta)
     trackCachedHandle(bufferId, handle)
     handle
   }

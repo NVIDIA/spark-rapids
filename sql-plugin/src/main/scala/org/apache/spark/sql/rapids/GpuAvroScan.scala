@@ -28,7 +28,7 @@ import scala.math.max
 
 import ai.rapids.cudf.{AvroOptions => CudfAvroOptions, HostMemoryBuffer, NvtxColor, NvtxRange, Table}
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, READ_FS_TIME, SEMAPHORE_WAIT_TIME, WRITE_BUFFER_TIME}
+import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, FILTER_TIME, GPU_DECODE_TIME, NUM_OUTPUT_BATCHES, PEAK_DEVICE_MEMORY, READ_FS_TIME, WRITE_BUFFER_TIME}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimFilePartitionReaderFactory
 import org.apache.avro.Schema
@@ -325,16 +325,18 @@ trait GpuAvroReaderBase extends Arm with Logging { self: FilePartitionReaderBase
       .includeColumn(readDataSchema.fieldNames.toSeq: _*)
       .build()
     // about to start using the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
-    withResource(new NvtxWithMetrics("Avro decode",
-        NvtxColor.DARK_GREEN, metrics(GPU_DECODE_TIME))) { _ =>
-      try {
-        Table.readAvro(readOpts, hostBuf, 0, bufSize)
-      } catch {
-        case e: Exception =>
-          throw new IOException(s"Error when processing file splits [${splits.mkString("; ")}]", e)
+    try {
+      RmmRapidsRetryIterator.withRetryNoSplit {
+        withResource(new NvtxWithMetrics("Avro decode",
+          NvtxColor.DARK_GREEN, metrics(GPU_DECODE_TIME))) { _ =>
+          Table.readAvro(readOpts, hostBuf, 0, bufSize)
+        }
       }
+    } catch {
+      case e: Exception =>
+        throw new IOException(s"Error when processing file splits [${splits.mkString("; ")}]", e)
     }
   }
 
@@ -641,7 +643,7 @@ class GpuMultiFileCloudAvroPartitionReader(
       val optBatch = if (bufAndSizeInfo.hmb == null) {
         // Not reading any data, but add in partition data if needed
         // Someone is going to process this data, even if it is just a row count
-        GpuSemaphore.acquireIfNecessary(TaskContext.get(), metrics(SEMAPHORE_WAIT_TIME))
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
         val emptyBatch = new ColumnarBatch(Array.empty, bufAndSizeInfo.numRows.toInt)
         Some(addPartitionValues(emptyBatch, partitionValues, partitionSchema))
       } else {

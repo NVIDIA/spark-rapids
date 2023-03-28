@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2021-2023, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -88,6 +88,16 @@ trait JoinGatherer extends LazySpillable with Arm {
    * If the data is all fixed width return the size of each row, otherwise return None.
    */
   def getFixedWidthBitSize: Option[Int]
+
+  /**
+   * Save state so it can be restored in case of an OOM Retry.
+   */
+  def checkpoint: Unit
+
+  /**
+   * Restore state that was checkpointed.
+   */
+  def restore: Unit
 
   /**
    * Do a complete/expensive job to get the number of rows that can be gathered to get close
@@ -213,9 +223,8 @@ trait LazySpillableColumnarBatch extends LazySpillable {
 
 object LazySpillableColumnarBatch {
   def apply(cb: ColumnarBatch,
-      spillCallback: SpillCallback,
       name: String): LazySpillableColumnarBatch =
-    new LazySpillableColumnarBatchImpl(cb, spillCallback, name)
+    new LazySpillableColumnarBatchImpl(cb, name)
 
   def spillOnly(wrapped: LazySpillableColumnarBatch): LazySpillableColumnarBatch = wrapped match {
     case alreadyGood: AllowSpillOnlyLazySpillableColumnarBatchImpl => alreadyGood
@@ -261,7 +270,6 @@ case class AllowSpillOnlyLazySpillableColumnarBatchImpl(wrapped: LazySpillableCo
  */
 class LazySpillableColumnarBatchImpl(
     cb: ColumnarBatch,
-    spillCallback: SpillCallback,
     name: String) extends LazySpillableColumnarBatch with Arm {
 
   private var cached: Option[ColumnarBatch] = Some(GpuColumnVector.incRefCounts(cb))
@@ -293,8 +301,7 @@ class LazySpillableColumnarBatchImpl(
       withResource(new NvtxRange("spill batch " + name, NvtxColor.RED)) { _ =>
         // First time we need to allow for spilling
         spill = Some(SpillableColumnarBatch(cached.get,
-          SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-          spillCallback))
+          SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
         // Putting data in a SpillableColumnarBatch takes ownership of it.
         cached = None
       }
@@ -328,8 +335,8 @@ trait LazySpillableGatherMap extends LazySpillable with Arm {
 }
 
 object LazySpillableGatherMap {
-  def apply(map: GatherMap, spillCallback: SpillCallback, name: String): LazySpillableGatherMap =
-    new LazySpillableGatherMapImpl(map, spillCallback, name)
+  def apply(map: GatherMap, name: String): LazySpillableGatherMap =
+    new LazySpillableGatherMapImpl(map, name)
 
   def leftCross(leftCount: Int, rightCount: Int): LazySpillableGatherMap =
     new LeftCrossGatherMap(leftCount, rightCount)
@@ -343,7 +350,6 @@ object LazySpillableGatherMap {
  */
 class LazySpillableGatherMapImpl(
     map: GatherMap,
-    spillCallback: SpillCallback,
     name: String) extends LazySpillableGatherMap {
 
   override val getRowCount: Long = map.getRowCount
@@ -369,8 +375,7 @@ class LazySpillableGatherMapImpl(
       withResource(new NvtxRange("spill map " + name, NvtxColor.RED)) { _ =>
         // First time we need to allow for spilling
         spill = Some(SpillableBuffer(cached.get,
-          SpillPriorities.ACTIVE_ON_DECK_PRIORITY,
-          spillCallback))
+          SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
         // Putting data in a SpillableBuffer takes ownership of it.
         cached = None
       }
@@ -503,6 +508,7 @@ class JoinGathererImpl(
 
   // How much of the gather map we have output so far
   private var gatheredUpTo: Long = 0
+  private var gatheredUpToCheckpoint: Long = 0
   private val totalRows: Long = gatherMap.getRowCount
   private val (fixedWidthRowSizeBits, nullRowSizeBits) = {
     val dts = data.dataTypes
@@ -510,6 +516,9 @@ class JoinGathererImpl(
     val nullVal = JoinGathererImpl.nullRowSizeBits(dts)
     (fw, nullVal)
   }
+
+  override def checkpoint: Unit = { gatheredUpToCheckpoint = gatheredUpTo }
+  override def restore: Unit = { gatheredUpTo = gatheredUpToCheckpoint }
 
   override def toString: String = {
     s"GATHERER $gatheredUpTo/$totalRows $gatherMap $data"
@@ -619,6 +628,15 @@ case class MultiJoinGather(left: JoinGatherer, right: JoinGatherer) extends Join
   override def isDone: Boolean = left.isDone
 
   override def numRowsLeft: Long = left.numRowsLeft
+
+  override def checkpoint: Unit = {
+    left.checkpoint
+    right.checkpoint
+  }
+  override def restore: Unit = {
+    left.restore
+    right.restore
+  }
 
   override def allowSpilling(): Unit = {
     left.allowSpilling()

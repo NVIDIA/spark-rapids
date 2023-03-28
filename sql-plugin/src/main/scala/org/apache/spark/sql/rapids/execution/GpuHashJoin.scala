@@ -226,6 +226,21 @@ object GpuHashJoin extends Arm {
       case _ => false
     }
   }
+
+  // scalastyle:off line.size.limit
+  /**
+   * The function is copied from Spark 3.2:
+   *   https://github.com/apache/spark/blob/v3.2.2/sql/core/src/main/scala/org/apache/spark/sql/execution/joins/HashJoin.scala#L709-L713
+   *
+   * Returns whether the keys can be rewritten as a packed long. If
+   * they can, we can assume that they are packed when we extract them out.
+   */
+  // scalastyle:on
+  def canRewriteAsLongType(keys: Seq[Expression]): Boolean = {
+    // TODO: support BooleanType, DateType and TimestampType
+    keys.forall(_.dataType.isInstanceOf[IntegralType]) &&
+      keys.map(_.dataType.defaultSize).sum <= 8
+  }
 }
 
 abstract class BaseHashJoinIterator(
@@ -237,7 +252,6 @@ abstract class BaseHashJoinIterator(
     targetSize: Long,
     joinType: JoinType,
     buildSide: GpuBuildSide,
-    spillCallback: SpillCallback,
     opTime: GpuMetric,
     joinTime: GpuMetric)
     extends SplittableJoinIterator(
@@ -246,7 +260,6 @@ abstract class BaseHashJoinIterator(
       streamAttributes,
       built,
       targetSize,
-      spillCallback,
       opTime = opTime,
       joinTime = joinTime) {
   // We can cache this because the build side is not changing
@@ -341,7 +354,7 @@ abstract class BaseHashJoinIterator(
       buildData: LazySpillableColumnarBatch,
       streamCb: ColumnarBatch): Option[JoinGatherer] = {
     withResource(GpuProjectExec.project(streamCb, boundStreamKeys)) { streamKeys =>
-      closeOnExcept(LazySpillableColumnarBatch(streamCb, spillCallback, "stream_data")) { sd =>
+      closeOnExcept(LazySpillableColumnarBatch(streamCb, "stream_data")) { sd =>
         joinGatherer(buildKeys, LazySpillableColumnarBatch.spillOnly(buildData), streamKeys, sd)
       }
     }
@@ -396,7 +409,6 @@ class HashJoinIterator(
     val joinType: JoinType,
     val buildSide: GpuBuildSide,
     val compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
-    private val spillCallback: SpillCallback,
     opTime: GpuMetric,
     private val joinTime: GpuMetric)
     extends BaseHashJoinIterator(
@@ -408,7 +420,6 @@ class HashJoinIterator(
       targetSize,
       joinType,
       buildSide,
-      spillCallback,
       opTime = opTime,
       joinTime = joinTime) {
   override protected def joinGathererLeftRight(
@@ -450,7 +461,6 @@ class ConditionalHashJoinIterator(
     joinType: JoinType,
     buildSide: GpuBuildSide,
     compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
-    spillCallback: SpillCallback,
     opTime: GpuMetric,
     joinTime: GpuMetric)
     extends BaseHashJoinIterator(
@@ -462,7 +472,6 @@ class ConditionalHashJoinIterator(
       targetSize,
       joinType,
       buildSide,
-      spillCallback,
       opTime = opTime,
       joinTime = joinTime) {
   override protected def joinGathererLeftRight(
@@ -526,7 +535,6 @@ class HashFullJoinIterator(
     targetSize: Long,
     buildSide: GpuBuildSide,
     compareNullsEqual: Boolean, // This is a workaround to how cudf support joins for structs
-    spillCallback: SpillCallback,
     opTime: GpuMetric,
     joinTime: GpuMetric)
     extends BaseHashJoinIterator(
@@ -538,7 +546,6 @@ class HashFullJoinIterator(
       targetSize,
       FullOuter,
       buildSide,
-      spillCallback,
       opTime = opTime,
       joinTime = joinTime) {
   // Full Join is implemented via LeftOuter or RightOuter join, depending on the build side.
@@ -599,8 +606,8 @@ class HashFullJoinIterator(
       }
       assert(maps.length == 2)
       try {
-        val lazyLeftMap = LazySpillableGatherMap(maps(0), spillCallback, "left_map")
-        val lazyRightMap = LazySpillableGatherMap(maps(1), spillCallback, "right_map")
+        val lazyLeftMap = LazySpillableGatherMap(maps(0), "left_map")
+        val lazyRightMap = LazySpillableGatherMap(maps(1), "right_map")
         withResource(new NvtxWithMetrics("update tracking mask",
           NvtxColor.ORANGE, joinTime)) { _ =>
           closeOnExcept(Seq(lazyLeftMap, lazyRightMap)) { _ =>
@@ -735,7 +742,7 @@ class HashFullJoinIterator(
     builtSideTracker = withResource(updatedTrackingTable) { _ =>
       Some(SpillableColumnarBatch(
         GpuColumnVector.from(updatedTrackingTable, Array[DataType](DataTypes.BooleanType)),
-        SpillPriorities.ACTIVE_ON_DECK_PRIORITY, spillCallback))
+        SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
     }
   }
 }
@@ -930,7 +937,6 @@ trait GpuHashJoin extends GpuExec {
       builtBatch: ColumnarBatch,
       stream: Iterator[ColumnarBatch],
       targetSize: Long,
-      spillCallback: SpillCallback,
       numOutputRows: GpuMetric,
       joinOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
@@ -941,18 +947,20 @@ trait GpuHashJoin extends GpuExec {
     val builtAnyNullable = compareNullsEqual && buildKeys.exists(_.nullable)
 
     val nullFiltered = if (builtAnyNullable) {
-      GpuHashJoin.filterNulls(builtBatch, boundBuildKeys)
+      withResource(builtBatch) { _ =>
+        GpuHashJoin.filterNulls(builtBatch, boundBuildKeys)
+      }
     } else {
-      GpuColumnVector.incRefCounts(builtBatch)
+      builtBatch
     }
 
     val spillableBuiltBatch = withResource(nullFiltered) {
-      LazySpillableColumnarBatch(_, spillCallback, "built")
+      LazySpillableColumnarBatch(_, "built")
     }
 
     val lazyStream = stream.map { cb =>
       withResource(cb) { cb =>
-        LazySpillableColumnarBatch(cb, spillCallback, "stream_batch")
+        LazySpillableColumnarBatch(cb, "stream_batch")
       }
     }
 
@@ -973,7 +981,7 @@ trait GpuHashJoin extends GpuExec {
       case FullOuter =>
         new HashFullJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream,
           boundStreamKeys, streamedPlan.output, boundCondition, numFirstConditionTableColumns,
-          targetSize, buildSide, compareNullsEqual, spillCallback, opTime, joinTime)
+          targetSize, buildSide, compareNullsEqual, opTime, joinTime)
       case _ =>
         if (boundCondition.isDefined) {
           // ConditionalHashJoinIterator will close the compiled condition
@@ -981,11 +989,11 @@ trait GpuHashJoin extends GpuExec {
             boundCondition.get.convertToAst(numFirstConditionTableColumns).compile()
           new ConditionalHashJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream,
             boundStreamKeys, streamedPlan.output, compiledCondition,
-            targetSize, joinType, buildSide, compareNullsEqual, spillCallback, opTime, joinTime)
+            targetSize, joinType, buildSide, compareNullsEqual, opTime, joinTime)
         } else {
           new HashJoinIterator(spillableBuiltBatch, boundBuildKeys, lazyStream, boundStreamKeys,
             streamedPlan.output, targetSize, joinType, buildSide, compareNullsEqual,
-            spillCallback, opTime, joinTime)
+            opTime, joinTime)
         }
     }
 

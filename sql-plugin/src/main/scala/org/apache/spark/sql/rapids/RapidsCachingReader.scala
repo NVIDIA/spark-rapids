@@ -142,7 +142,7 @@ class RapidsCachingReader[K, C](
       try {
         val cachedIt = cachedBufferHandles.iterator.map(bufferHandle => {
           // No good way to get a metric in here for semaphore wait time
-          GpuSemaphore.acquireIfNecessary(context, NoopMetric)
+          GpuSemaphore.acquireIfNecessary(context)
           val cb = withResource(catalog.acquireBuffer(bufferHandle)) { buffer =>
             buffer.getColumnarBatch(sparkTypes)
           }

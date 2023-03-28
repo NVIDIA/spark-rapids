@@ -22,7 +22,11 @@
 
 package com.nvidia.spark.rapids.delta
 
+import java.util.Locale
+
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
+
+import org.apache.spark.network.util.ByteUnit
 
 /** Delta Lake related configs that are not yet provided by Delta Lake. */
 trait RapidsDeltaSQLConf {
@@ -39,6 +43,30 @@ trait RapidsDeltaSQLConf {
         .doc("Factor used to rebalance partitions for optimize write.")
         .doubleConf
         .createWithDefault(1.2)
+
+  val AUTO_COMPACT_TARGET =
+    DeltaSQLConf.buildConf("autoCompact.target")
+      .internal()
+      .doc(
+        """
+          |Target files for auto compaction.
+          | "table", "commit", "partition" options are available. (default: partition)
+          | If "table", all files in table are eligible for auto compaction.
+          | If "commit", added/updated files by the commit are eligible.
+          | If "partition", all files in partitions containing any added/updated files
+          |  by the commit are eligible.
+          |""".stripMargin
+      )
+      .stringConf
+      .transform(_.toLowerCase(Locale.ROOT))
+      .createWithDefault("partition")
+
+  val AUTO_COMPACT_MAX_COMPACT_BYTES =
+    DeltaSQLConf.buildConf("autoCompact.maxCompactBytes")
+      .internal()
+      .doc("Maximum amount of data for auto compaction.")
+      .bytesConf(ByteUnit.BYTE)
+      .createWithDefaultString("20GB")
 }
 
 object RapidsDeltaSQLConf extends RapidsDeltaSQLConf

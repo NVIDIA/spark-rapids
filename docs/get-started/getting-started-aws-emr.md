@@ -7,8 +7,7 @@ parent: Getting-Started
 # Get Started with RAPIDS on AWS EMR
 
 This is a getting started guide for the RAPIDS Accelerator for Apache Spark on AWS EMR. At the end
-of this guide, the user will be able to run a sample Apache Spark application that runs on NVIDIA
-GPUs on AWS EMR.
+of this guide, the user will be able to run a sample Apache Spark application on NVIDIA GPUs on AWS EMR.
 
 Different versions of EMR ship with different versions of Spark, RAPIDS Accelerator, cuDF and xgboost4j-spark:
 
@@ -32,46 +31,9 @@ documentation](https://docs.aws.amazon.com/emr/latest/ManagementGuide/emr-what-i
 
 ## Configure and Launch AWS EMR with GPU Nodes
 
-The following steps are based on the AWS EMR document ["Using the NVIDIA Spark-RAPIDS Accelerator
-for Spark"](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-rapids.html)
-
-###  Launch an EMR Cluster using AWS CLI
-
-You can use the AWS CLI to launch a cluster with one Master node (m5.xlarge) and two 
-g4dn.2xlarge nodes: 
-
-```
-aws emr create-cluster \
---release-label emr-6.10.0 \
---applications Name=Hadoop Name=Spark Name=Livy Name=JupyterEnterpriseGateway \
---service-role EMR_DefaultRole \
---ec2-attributes KeyName=my-key-pair,InstanceProfile=EMR_EC2_DefaultRole \
---instance-groups InstanceGroupType=MASTER,InstanceCount=1,InstanceType=m4.4xlarge \
-                  InstanceGroupType=CORE,InstanceCount=1,InstanceType=g4dn.2xlarge \
-                  InstanceGroupType=TASK,InstanceCount=1,InstanceType=g4dn.2xlarge \
---configurations file:///my-configurations.json \
---bootstrap-actions Name='My Spark Rapids Bootstrap action',Path=s3://my-bucket/my-bootstrap-action.sh
-```
-
-Please fill with actual value for `KeyName` and file paths. You can further customize SubnetId,
-EmrManagedSlaveSecurityGroup, EmrManagedMasterSecurityGroup, name and region etc. 
-
-The `my-configurations.json` installs the spark-rapids plugin on your cluster, configures YARN to use
-
-GPUs, configures Spark to use RAPIDS, and configures the YARN capacity scheduler.  An example JSON
-
-configuration can be found in the section on launching in the GUI below. 
-
-The `my-boostrap-action.sh` script referenced in the above script opens cgroup permissions to YARN
-on your cluster.  This is required for YARN to use GPUs.  An example script is as follows: 
-```bash
-#!/bin/bash
- 
-set -ex
- 
-sudo chmod a+rwx -R /sys/fs/cgroup/cpu,cpuacct
-sudo chmod a+rwx -R /sys/fs/cgroup/devices
-```
+Please follow AWS EMR document ["Using the NVIDIA Spark-RAPIDS Accelerator
+for Spark"](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-rapids.html).
+Below is an example.
 
 ###  Launch an EMR Cluster using AWS Console (GUI)
 
@@ -87,10 +49,10 @@ Select **emr-6.10.0** for the release, uncheck all the software options, and the
 
 In the "Edit software settings" field, copy and paste the configuration from the [EMR
 document](https://docs.aws.amazon.com/emr/latest/ReleaseGuide/emr-spark-rapids.html). You can also
-create a JSON file on you own S3 bucket. 
+create a JSON file on you own S3 bucket.
 
 For clusters with 2x g4dn.2xlarge GPU instances as worker nodes, we recommend the following
-default settings: 
+default settings:
 ```json
 [
 	{
@@ -163,16 +125,16 @@ default settings:
 ```
 Adjust the settings as appropriate for your cluster.  For example, setting the appropriate
 number of cores based on the node type.  The `spark.task.resource.gpu.amount` should be set to
-1/(number of cores per executor) which will allow multiple tasks to run in parallel on the GPU. 
+1/(number of cores per executor) which will allow multiple tasks to run in parallel on the GPU.
 
-For example, for clusters with 2x g4dn.12xlarge as core nodes, use the following: 
+For example, for clusters with 2x g4dn.12xlarge as core nodes, use the following:
 
 ```json
         "spark.executor.cores":"12",
         "spark.task.resource.gpu.amount":"0.0833",
 ```
 
-More configuration details can be found in the [configuration](../configs.md) documentation. 
+More configuration details can be found in the [configuration](../configs.md) documentation.
 
 ![Step 1: Step 1:  Software, Configuration and Steps](../img/AWS-EMR/RAPIDS_EMR_GUI_1.png)
 
@@ -192,7 +154,7 @@ In the "Core" node row, change the "Instance type" to **g4dn.xlarge**, **g4dn.2x
 Enter a custom "Cluster name" and make a note of the s3 folder that cluster logs will be written to.
 
 Add a custom "Bootstrap Actions" to allow cgroup permissions to YARN on your cluster.  An example
-bootstrap script is as follows: 
+bootstrap script is as follows:
 ```bash
 #!/bin/bash
  
@@ -235,11 +197,53 @@ button. Follow the instructions to SSH to the new cluster's master node.
 
 ![Finish Cluster Configuration](../img/AWS-EMR/RAPIDS_EMR_GUI_5.png)
 
+###  Launch an EMR Cluster using AWS CLI
+
+You can use the AWS CLI to launch a cluster with one Master node (m5.xlarge) and two 
+g4dn.2xlarge nodes: 
+
+```bash
+aws emr create-cluster \
+--release-label emr-6.10.0 \
+--applications Name=Hadoop Name=Spark Name=Livy Name=JupyterEnterpriseGateway \
+--service-role EMR_DefaultRole \
+--ec2-attributes KeyName=my-key-pair,InstanceProfile=EMR_EC2_DefaultRole \
+--instance-groups InstanceGroupType=MASTER,InstanceCount=1,InstanceType=m4.4xlarge \
+                  InstanceGroupType=CORE,InstanceCount=1,InstanceType=g4dn.2xlarge \
+                  InstanceGroupType=TASK,InstanceCount=1,InstanceType=g4dn.2xlarge \
+--configurations file:///my-configurations.json \
+--bootstrap-actions Name='My Spark Rapids Bootstrap action',Path=s3://my-bucket/my-bootstrap-action.sh
+```
+
+Please fill with actual value for `KeyName` and file paths. You can further customize `SubnetId`,
+`EmrManagedSlaveSecurityGroup`, `EmrManagedMasterSecurityGroup`, name and region etc. 
+
+The `my-configurations.json` installs the spark-rapids plugin on your cluster, configures YARN to use
+
+GPUs, configures Spark to use RAPIDS, and configures the YARN capacity scheduler.  An example JSON
+
+configuration can be found in the section on launching in the GUI below. 
+
+The `my-boostrap-action.sh` script referenced in the above script opens cgroup permissions to YARN
+on your cluster.  This is required for YARN to use GPUs.  An example script is as follows: 
+
+```bash
+#!/bin/bash
+ 
+set -ex
+ 
+sudo chmod a+rwx -R /sys/fs/cgroup/cpu,cpuacct
+sudo chmod a+rwx -R /sys/fs/cgroup/devices
+```
 
 ### Running an example joint operation using Spark Shell
 
-SSH to the EMR cluster's master node, get into sparks shell and run the sql join example to verify
+Please follow EMR doc [Connect to the primary node using
+SSH](https://docs.aws.amazon.com/emr/latest/ManagementGuide/emr-connect-master-node-ssh.html) to ssh
+to the EMR cluster's master node. And then get into sparks shell and run the sql join example to verify
 GPU operation.
+
+Note: Use `hadoop` user for SSH and below command.
 
 ```bash
 spark-shell

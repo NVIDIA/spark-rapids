@@ -16,10 +16,15 @@
 
 package com.nvidia.spark.rapids
 
+import java.util.concurrent.atomic.AtomicInteger
+
 import scala.annotation.tailrec
+import scala.collection.mutable
 
 import com.nvidia.spark.rapids.shims.{GpuBatchScanExec, SparkShimImpl}
 
+import org.apache.spark.SparkContext
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, AttributeReference, Expression, InputFileBlockLength, InputFileBlockStart, InputFileName, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.IdentityBroadcastMode
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -30,7 +35,7 @@ import org.apache.spark.sql.execution.command.{DataWritingCommandExec, ExecutedC
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2ScanExecBase, DropTableExec, ShowTablesExec}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec, HashedRelationBroadcastMode}
-import org.apache.spark.sql.rapids.{ExternalSource, GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv}
+import org.apache.spark.sql.rapids.{ExternalSource, GpuDataSourceScanExec, GpuFileSourceScanExec, GpuInputFileBlockLength, GpuInputFileBlockStart, GpuInputFileName, GpuShuffleEnv, GpuTaskMetrics}
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase, GpuBroadcastToRowExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.types.StructType
 
@@ -662,6 +667,43 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     case _ => plan
   }
 
+  private def insertStageLevelMetrics(plan: SparkPlan): Unit = {
+    val sc = SparkSession.active.sparkContext
+    val gen = new AtomicInteger(0)
+    val allMetrics = mutable.Map[Int, GpuTaskMetrics]()
+    insertStageLevelMetrics(sc, plan, gen.getAndIncrement(), gen, allMetrics)
+  }
+
+  private def insertStageLevelMetrics(sc: SparkContext,
+      plan: SparkPlan,
+      currentStageId: Int,
+      stageIdGen: AtomicInteger,
+      allMetrics: mutable.Map[Int, GpuTaskMetrics]): Unit = {
+    plan match {
+      case shuffle: Exchange =>
+        shuffle.children.foreach { child =>
+          val newStageId = stageIdGen.getAndIncrement()
+          insertStageLevelMetrics(sc, child, newStageId, stageIdGen, allMetrics)
+        }
+      case gpu: GpuExec if gpu.supportsColumnar =>
+        // We only want to insert the metrics the for the first one
+        // This is to reduce the overhead of inserting a mapPartitions everywhere.
+        if (!allMetrics.contains(currentStageId)) {
+          val metrics = new GpuTaskMetrics
+          metrics.register(sc)
+          allMetrics.put(currentStageId, metrics)
+          gpu.setTaskMetrics(metrics)
+        }
+        gpu.children.foreach { child =>
+          insertStageLevelMetrics(sc, child, currentStageId, stageIdGen, allMetrics)
+        }
+      case other =>
+        other.children.foreach { child =>
+          insertStageLevelMetrics(sc, child, currentStageId, stageIdGen, allMetrics)
+        }
+    }
+  }
+
   override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
     this.rapidsConf = new RapidsConf(plan.conf)
     if (rapidsConf.isSqlEnabled && rapidsConf.isSqlExecuteOnGPU) {
@@ -709,6 +751,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
             s"\nOriginal Plan:\n$plan\nTransformed Plan:\n$updatedPlan")
         }
 
+        insertStageLevelMetrics(updatedPlan)
         updatedPlan
       }
     } else {

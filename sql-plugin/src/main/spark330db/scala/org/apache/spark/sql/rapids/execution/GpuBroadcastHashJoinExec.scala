@@ -94,7 +94,7 @@ case class GpuBroadcastHashJoinExec(
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME)
-  ) ++ semaphoreMetrics ++ spillMetrics
+  )
 
   override def requiredChildDistribution: Seq[Distribution] = {
     if (isExecutorBroadcast) {
@@ -129,7 +129,6 @@ case class GpuBroadcastHashJoinExec(
       buildOutput: Seq[Attribute],
       streamIter: Iterator[ColumnarBatch],
       coalesceMetricsMap: Map[String, GpuMetric]): (ColumnarBatch, Iterator[ColumnarBatch]) = {
-    val semWait = coalesceMetricsMap(GpuMetric.SEMAPHORE_WAIT_TIME)
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     val metricsMap = allMetrics
 
@@ -139,7 +138,7 @@ case class GpuBroadcastHashJoinExec(
         if (bufferedStreamIter.hasNext) {
           bufferedStreamIter.head
         } else {
-          GpuSemaphore.acquireIfNecessary(TaskContext.get(), semWait)
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
         }
       }
       val buildBatch = GpuExecutorBroadcastHelper.getExecutorBroadcastBatch(buildRelation,
@@ -155,8 +154,6 @@ case class GpuBroadcastHashJoinExec(
     val streamTime = gpuLongMetric(STREAM_TIME)
     val joinTime = gpuLongMetric(JOIN_TIME)
     val joinOutputRows = gpuLongMetric(JOIN_OUTPUT_ROWS)
-
-    val spillCallback = GpuMetric.makeSpillCallback(allMetrics)
 
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
 
@@ -176,14 +173,13 @@ case class GpuBroadcastHashJoinExec(
           localBuildOutput,
           new CollectTimeIterator("executor broadcast join stream", it, streamTime),
           allMetrics)
-      withResource(builtBatch) { _ =>
-        doJoin(builtBatch, streamIter, targetSize, spillCallback,
-          numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
-      }
+      // builtBatch will be closed in doJoin
+      doJoin(builtBatch, streamIter, targetSize,
+        numOutputRows, joinOutputRows, numOutputBatches, opTime, joinTime)
     }
   }
 
-  override def doExecuteColumnar(): RDD[ColumnarBatch] = {
+  override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     if (isExecutorBroadcast) {
       doColumnarExecutorBroadcastJoin()
     } else {
@@ -191,3 +187,4 @@ case class GpuBroadcastHashJoinExec(
     }
   }
 }
+

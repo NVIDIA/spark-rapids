@@ -892,3 +892,40 @@ def test_degenerate_broadcast_nested_loop_existence_join(spark_tmp_table_factory
     capture_regexp = r"GpuBroadcastNestedLoopJoin ExistenceJoin\(exists#[0-9]+\),"
     assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, capture_regexp,
                                                       conf={"spark.sql.adaptive.enabled": aqeEnabled})
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('data_gen', [StringGen(), IntegerGen()], ids=idfn)
+@pytest.mark.parametrize("aqe_enabled", [True, False], ids=idfn)
+@pytest.mark.parametrize("join_reorder_enabled", [True, False], ids=idfn)
+def test_multi_table_hash_join(data_gen, aqe_enabled, join_reorder_enabled):
+    def do_join(spark):
+        t1 = binary_op_df(spark, data_gen, length=1000)
+        t2 = binary_op_df(spark, data_gen, length=800)
+        t3 = binary_op_df(spark, data_gen, length=300)
+        t4 = binary_op_df(spark, data_gen, length=50)
+        return t1.join(t2, t1.a == t2.a, 'Inner') \
+                 .join(t3, t2.a == t3.a, 'Inner') \
+                 .join(t4, t3.a == t4.a, 'Inner')
+    conf = copy_and_update(_hash_join_conf, {
+        'spark.sql.adaptive.enabled': aqe_enabled,
+        'spark.rapids.sql.optimizer.joinReorder.enabled': join_reorder_enabled
+    })
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
+
+
+limited_integral_gens = [byte_gen, ShortGen(max_val=BYTE_MAX), IntegerGen(max_val=BYTE_MAX), LongGen(max_val=BYTE_MAX)]
+
+@validate_execs_in_gpu_plan('GpuShuffledHashJoinExec')
+@ignore_order(local=True)
+@pytest.mark.parametrize('left_gen', limited_integral_gens, ids=idfn)
+@pytest.mark.parametrize('right_gen', limited_integral_gens, ids=idfn)
+@pytest.mark.parametrize('join_type', all_join_types, ids=idfn)
+def test_hash_join_different_key_integral_types(left_gen, right_gen, join_type):
+    def do_join(spark):
+        left = unary_op_df(spark, left_gen, length=50)
+        right = unary_op_df(spark, right_gen, length=500)
+        return left.join(right, left.a == right.a, join_type)
+    _all_conf = copy_and_update(_hash_join_conf, {
+        "spark.rapids.sql.test.subPartitioning.enabled": True
+    })
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=_all_conf)
