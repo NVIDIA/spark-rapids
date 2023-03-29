@@ -28,6 +28,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.{ByteUnit, JavaUtils}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.RapidsPrivateUtil
 
 object ConfHelper {
   def toBoolean(s: String, key: String): Boolean = {
@@ -1886,7 +1887,9 @@ object RapidsConf {
     } else {
       println("Rapids Configs:")
     }
-    registeredConfs.sortBy(_.key).foreach(_.help(asTable))
+    val allConfs = registeredConfs.clone()
+    allConfs.append(RapidsPrivateUtil.getPrivateConfigs(): _*)
+    allConfs.sortBy(_.key).foreach(_.help(asTable))
     if (asTable) {
       println("")
       // scalastyle:off line.size.limit
