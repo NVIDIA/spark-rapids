@@ -403,6 +403,26 @@ object RmmRapidsRetryIterator extends Arm with Logging {
 
     override def hasNext: Boolean = attemptIter.hasNext
 
+    private def clearInjectedOOMIfNeeded(): Unit = {
+      if (injectedOOM) {
+        // if for some reason we don't throw, or we throw something that isn't a RetryOOM
+        // we want to remove the retry we registered before we leave the withRetry block.
+        RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 0)
+      }
+    }
+
+    /**
+     * Returns a tuple of (shouldRetry, shouldSplit) depending the exception
+     * passed
+     */
+    private def isRetryOrSplitAndRetry(ex: Throwable): (Boolean, Boolean) = {
+      ex match {
+        case retryOOM: RetryOOM => (true, false)
+        case splitAndRetryOOM: SplitAndRetryOOM => (true, true)
+        case _ => (false, false)
+      }
+    }
+
     override def next(): K = {
       // this is set on the first exception, and we add suppressed if there are others
       // during the retry attempts
@@ -430,32 +450,40 @@ object RmmRapidsRetryIterator extends Arm with Logging {
             RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId)
           }
           result = Some(attemptIter.next())
-          if (injectedOOM) {
-            // if for some reason we don't throw, say a code path that
-            // allocates from RMM conditionally, we want to remove the retry
-            // we registered before we leave the withRetry block.
-            RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 0)
-          }
+          clearInjectedOOMIfNeeded()
         } catch {
-          case retryOOM: RetryOOM =>
-            if (lastException != null) {
-              retryOOM.addSuppressed(lastException)
+          case ex: Throwable =>
+            // handle a retry as the top-level exception
+            val (topLevelIsRetry, isSplitAndRetry) = isRetryOrSplitAndRetry(ex)
+            doSplit = isSplitAndRetry
+
+            // handle any retries that are wrapped in a different top-level exception
+            var causedByRetry = false
+            if (!topLevelIsRetry) {
+              var current = ex
+              // check if there is a hidden retry OOM
+              while (current != null && !causedByRetry) {
+                current = current.getCause()
+                val (isRetry, isSplit) = isRetryOrSplitAndRetry(current)
+                causedByRetry = isRetry
+                doSplit = doSplit || isSplit
+              }
             }
-            lastException = retryOOM
-          case splitAndRetryOOM: SplitAndRetryOOM => // we are the only thread
+
+            clearInjectedOOMIfNeeded()
+
+            // make sure we add any prior exceptions to this one as causes
             if (lastException != null) {
-              splitAndRetryOOM.addSuppressed(lastException)
+              ex.addSuppressed(lastException)
             }
-            lastException = splitAndRetryOOM
-            doSplit = true
-          case other: Throwable =>
-            if (lastException != null) {
-              other.addSuppressed(lastException)
-            }
-            lastException = other
-            // we want to throw early here, since we got an exception
-            // we were not prepared to handle
-            throw lastException
+            lastException = ex
+
+            if (!topLevelIsRetry && !causedByRetry) {
+              // we want to throw early here, since we got an exception
+              // we were not prepared to handle
+              throw lastException
+            } 
+            // else another exception wrapped a retry. So we are going to try again
         }
       }
       if (result.isEmpty) {
