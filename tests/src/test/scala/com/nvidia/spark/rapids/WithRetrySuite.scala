@@ -17,8 +17,8 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{Rmm, RmmAllocationMode, RmmEventHandler, Table}
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetry, withRetryNoSplit}
-import com.nvidia.spark.rapids.jni.{RmmSpark, SplitAndRetryOOM}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.jni.{RetryOOM, RmmSpark, SplitAndRetryOOM}
 import org.mockito.Mockito._
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.FunSuite
@@ -146,6 +146,27 @@ class WithRetrySuite
     }
   }
 
+  test("withRestoreOnRetry restores state on retry") {
+    val initialValue = 5
+    val increment = 5
+    var didThrow = false
+    val myCheckpointable = new SimpleCheckpointRestore(initialValue)
+    try {
+      myCheckpointable.checkpoint()
+      withRetryNoSplit {
+        withRestoreOnRetry(myCheckpointable) {
+          myCheckpointable.value += increment
+          if (!didThrow) {
+            didThrow = true
+            throw new RetryOOM("in tests")
+          }
+        }
+      }
+    } finally {
+      assert(myCheckpointable.value == (initialValue + increment))
+    }
+  }
+
   private class BaseRmmEventHandler extends RmmEventHandler {
     override def getAllocThresholds: Array[Long] = null
     override def getDeallocThresholds: Array[Long] = null
@@ -153,6 +174,18 @@ class WithRetrySuite
     override def onDeallocThreshold(totalAllocSize: Long): Unit = {}
     override def onAllocFailure(sizeRequested: Long, retryCount: Int): Boolean = {
       false
+    }
+  }
+  private class SimpleCheckpointRestore(var value:Int) extends CheckpointRestore {
+    private var lastValue:Int = value
+    def setValue(newVal: Int) = {
+      value = newVal
+    }
+    override def checkpoint() = {
+      lastValue = value
+    }
+    override def restore() = {
+      value = lastValue
     }
   }
 }
