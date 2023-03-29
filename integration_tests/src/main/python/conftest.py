@@ -219,7 +219,14 @@ def pytest_configure(config):
     elif "developer" != test_type:
         raise Exception("not supported test type {}".format(test_type))
 
+# For OOM injection: we expect a seed to be provided by the environment, or default to 1.
+# This is done such that any worker started by the xdist plugin for pytest will
+# have the same seed. Since each worker creates a list of tests independently and then
+# pytest expects this starting list to match for all workers, it is important that the same seed
+# is set for all, either from the environment or as a constant.
 oom_random_injection_seed = int(os.getenv("SPARK_RAPIDS_TEST_INJECT_OOM_SEED", 1))
+print("Starting with OOM injection seed: %s. " % str(oom_random_injection_seed) + 
+      "Set env variable SPARK_RAPIDS_TEST_INJECT_OOM_SEED to override.")
 
 def pytest_collection_modifyitems(config, items):
     r = random.Random(oom_random_injection_seed)

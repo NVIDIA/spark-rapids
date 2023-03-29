@@ -270,8 +270,7 @@ else
       fi
     fi
 
-    # Set a seed to be used for parallel jobs injecting OOMs in tests, as all tests names must
-    # match, and we use the test name to label whether OOM injection was attempted.
+    # Set a seed to be used to pick random tests to inject with OOM
     export SPARK_RAPIDS_TEST_INJECT_OOM_SEED=${SPARK_RAPIDS_TEST_INJECT_OOM_SEED:-`date +%s`}
     echo "SPARK_RAPIDS_TEST_INJECT_OOM_SEED used: $SPARK_RAPIDS_TEST_INJECT_OOM_SEED"
 
