@@ -944,9 +944,9 @@ object GpuRegExpUtils {
     Charset.defaultCharset().name() match {
       case "UTF-8" =>
         // supported
-      case _ =>
+      case other =>
         meta.willNotWorkOnGpu(s"regular expression support is disabled because the GPU only " +
-        "supports the UTF-8 charset when using regular expressions")
+        s"supports the UTF-8 charset when using regular expressions (current charset is $other)")
     }
   }
 
