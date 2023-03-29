@@ -19,7 +19,8 @@ import ai.rapids.cudf.{ColumnView, DType, GatherMap, GroupByAggregation, NullEqu
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.jni.GpuOOM
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.{Cross, ExistenceJoin, FullOuter, Inner, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
@@ -289,20 +290,23 @@ abstract class BaseHashJoinIterator(
       cb: LazySpillableColumnarBatch,
       numJoinRows: Option[Long]): Option[JoinGatherer] = {
     try {
-      cb.allowSpilling()
+      val batches = Seq(built, cb)
+      batches.foreach(_.checkpoint())
       withRetryNoSplit {
-        closeOnExcept(LazySpillableColumnarBatch(cb.getBatch, "stream_data")) {
-          streamBatch =>
-            withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
-              joinGatherer(builtKeys, built, streamBatch)
-            }
+        withRestoreOnRetry(batches) {
+          closeOnExcept(LazySpillableColumnarBatch(cb.getBatch, "stream_data")) {
+            streamBatch =>
+              withResource(GpuProjectExec.project(built.getBatch, boundBuiltKeys)) { builtKeys =>
+                joinGatherer(builtKeys, built, streamBatch)
+              }
+          }
         }
       }
     } catch {
       // This should work for all join types. There should be no need to do this for any
       // of the existence joins because the output rows will never be larger than the
       // input rows on the stream side.
-      case oom: OutOfMemoryError if joinType.isInstanceOf[InnerLike]
+      case oom @ (_ : OutOfMemoryError | _: GpuOOM) if joinType.isInstanceOf[InnerLike]
           || joinType == LeftOuter
           || joinType == RightOuter
           || joinType == FullOuter =>

@@ -284,7 +284,7 @@ abstract class SplittableJoinIterator(
   protected def splitAndSave(
       cb: ColumnarBatch,
       numBatches: Int,
-      oom: Option[OutOfMemoryError] = None): Unit = {
+      oom: Option[Throwable] = None): Unit = {
     val batchSize = cb.numRows() / numBatches
     if (oom.isDefined && batchSize < 100) {
       // We just need some kind of cutoff to not get stuck in a loop if the batches get to be too
