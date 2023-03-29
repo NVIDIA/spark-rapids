@@ -32,7 +32,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * If the data is needed after `allowSpilling` is called the implementations should get the data
  * back and cache it again until allowSpilling is called once more.
  */
-trait LazySpillable extends AutoCloseable {
+trait LazySpillable extends AutoCloseable with CheckpointRestore {
 
   /**
    * Indicate that we are done using the data for now and it can be spilled.
@@ -89,15 +89,6 @@ trait JoinGatherer extends LazySpillable with Arm {
    */
   def getFixedWidthBitSize: Option[Int]
 
-  /**
-   * Save state so it can be restored in case of an OOM Retry.
-   */
-  def checkpoint: Unit
-
-  /**
-   * Restore state that was checkpointed.
-   */
-  def restore: Unit
 
   /**
    * Do a complete/expensive job to get the number of rows that can be gathered to get close
@@ -262,6 +253,12 @@ case class AllowSpillOnlyLazySpillableColumnarBatchImpl(wrapped: LazySpillableCo
     wrapped.allowSpilling()
   }
 
+  override def checkpoint(): Unit =
+    wrapped.checkpoint()
+
+  override def restore(): Unit =
+    wrapped.restore()
+
   override def toString: String = s"SPILL_ONLY $wrapped"
 }
 
@@ -316,6 +313,12 @@ class LazySpillableColumnarBatchImpl(
     spill.foreach(_.close())
     spill = None
   }
+
+  override def checkpoint(): Unit =
+    allowSpilling()
+
+  override def restore(): Unit =
+    allowSpilling()
 
   override def toString: String = s"SpillableBatch $name $numCols X $numRows"
 }
@@ -390,6 +393,12 @@ class LazySpillableGatherMapImpl(
     spill.foreach(_.close())
     spill = None
   }
+
+  override def checkpoint(): Unit =
+    allowSpilling()
+
+  override def restore(): Unit =
+    allowSpilling()
 }
 
 abstract class BaseCrossJoinGatherMap(leftCount: Int, rightCount: Int)
@@ -417,6 +426,14 @@ abstract class BaseCrossJoinGatherMap(leftCount: Int, rightCount: Int)
   override def close(): Unit = {
     // NOOP, we don't cache anything on the GPU
   }
+  override def checkpoint(): Unit = {
+    // NOOP, we don't cache anything on the GPU
+  }
+
+  override def restore(): Unit = {
+    // NOOP, we don't cache anything on the GPU
+  }
+
 }
 
 class LeftCrossGatherMap(leftCount: Int, rightCount: Int) extends
@@ -517,8 +534,17 @@ class JoinGathererImpl(
     (fw, nullVal)
   }
 
-  override def checkpoint: Unit = { gatheredUpToCheckpoint = gatheredUpTo }
-  override def restore: Unit = { gatheredUpTo = gatheredUpToCheckpoint }
+  override def checkpoint: Unit = {
+    gatheredUpToCheckpoint = gatheredUpTo
+    gatherMap.checkpoint()
+    data.checkpoint()
+  }
+
+  override def restore: Unit = {
+    gatheredUpTo = gatheredUpToCheckpoint
+    gatherMap.restore()
+    data.restore()
+  }
 
   override def toString: String = {
     s"GATHERER $gatheredUpTo/$totalRows $gatherMap $data"
