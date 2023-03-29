@@ -170,7 +170,7 @@ class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
 class GpuOrcWriter(override val path: String,
                    dataSchema: StructType,
                    context: TaskAttemptContext)
-  extends ColumnarOutputWriter(context, dataSchema, "ORC") {
+  extends ColumnarOutputWriter(context, dataSchema, "ORC", true) {
 
   override val tableWriter: TableWriter = {
     val builder = SchemaUtils

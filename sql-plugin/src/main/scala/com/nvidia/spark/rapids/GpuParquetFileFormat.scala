@@ -290,7 +290,7 @@ class GpuParquetWriter(
     timestampRebaseException: Boolean,
     context: TaskAttemptContext,
     parquetFieldIdEnabled: Boolean)
-  extends ColumnarOutputWriter(context, dataSchema, "Parquet") {
+  extends ColumnarOutputWriter(context, dataSchema, "Parquet", false) {
 
   val outputTimestampType = conf.get(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key)
 

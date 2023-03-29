@@ -293,7 +293,7 @@ object RmmRapidsRetryIterator extends Arm {
     override def hasNext: Boolean = !wasCalledSuccessfully
 
     override def split(): Unit = {
-      throw new OutOfMemoryError(
+      throw new SplitAndRetryOOM(
         "Attempted to handle a split, but was not initialized with a splitPolicy.")
     }
 
@@ -345,7 +345,7 @@ object RmmRapidsRetryIterator extends Arm {
       // there is likely not much we can do, and for now we don't handle
       // this OOM
       if (splitPolicy == null) {
-        throw new OutOfMemoryError(
+        throw new SplitAndRetryOOM(
           "Attempted to handle a split, but was not initialized with a splitPolicy.")
       }
       // splitPolicy must take ownership of the argument
@@ -473,7 +473,7 @@ object RmmRapidsRetryIterator extends Arm {
   /**
    * Common split function from a single SpillableColumnarBatch to a sequence of them,
    * that tries to split the input into two chunks. If the input cannot be split in two,
-   * because we are down to 1 row, this function throws `OutOfMemoryError`.
+   * because we are down to 1 row, this function throws `SplitAndRetryOOM`.
    *
    * Note how this function closes the input `spillable` that is passed in.
    *
@@ -484,7 +484,7 @@ object RmmRapidsRetryIterator extends Arm {
       withResource(spillable) { _ =>
         val toSplitRows = spillable.numRows()
         if (toSplitRows <= 1) {
-          throw new OutOfMemoryError(s"A batch of $toSplitRows cannot be split!")
+          throw new SplitAndRetryOOM(s"A batch of $toSplitRows cannot be split!")
         }
         val (firstHalf, secondHalf) = withResource(spillable.getColumnarBatch()) { src =>
           withResource(GpuColumnVector.from(src)) { tbl =>

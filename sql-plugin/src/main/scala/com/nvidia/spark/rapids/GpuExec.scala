@@ -304,7 +304,7 @@ trait GpuExec extends SparkPlan with Arm {
     metrics.map { gpuMetrics =>
       // This is really ugly, but I hope it will make it a simpler transition everywhere
       orig.mapPartitions { iter =>
-        metrics.foreach(_.makeSureRegistered())
+        gpuMetrics.makeSureRegistered()
         iter
       }
     }.getOrElse(orig)
