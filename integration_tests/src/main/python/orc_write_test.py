@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2023, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -188,6 +188,39 @@ def test_buckets_write_fallback(spark_tmp_path, spark_tmp_table_factory):
             data_path,
             'DataWritingCommandExec',
             conf = {'spark.rapids.sql.format.orc.write.enabled': True})
+
+
+@ignore_order
+@allow_non_gpu('DataWritingCommandExec')
+def test_orc_write_bloom_filter_with_options_cpu_fallback(spark_tmp_path, spark_tmp_table_factory):
+    data_path = spark_tmp_path + '/ORC_DATA'
+    assert_gpu_fallback_write(
+      lambda spark, path: spark.range(10e4).write.mode('overwrite').option("orc.bloom.filter.columns", "id").orc(path),
+      lambda spark, path: spark.read.orc(path),
+      data_path,
+      'DataWritingCommandExec',
+      conf={'spark.rapids.sql.format.orc.write.enabled': True})
+
+
+@ignore_order
+@allow_non_gpu('DataWritingCommandExec')
+def test_orc_write_bloom_filter_sql_cpu_fallback(spark_tmp_path, spark_tmp_table_factory):
+    data_path = spark_tmp_path + '/ORC_DATA'
+    base_table_name = spark_tmp_table_factory.get()
+
+    def sql_write(spark, path):
+        is_gpu = path.endswith('GPU')
+        table_name = base_table_name + '_GPU' if is_gpu else base_table_name + '_CPU'
+        spark.sql('CREATE TABLE `{}` STORED AS ORCFILE location \'{}\' TBLPROPERTIES("orc.bloom.filter.columns"="id") '
+                  'AS SELECT id from range(100)'.format(table_name, path))
+
+    assert_gpu_fallback_write(
+      sql_write,
+      lambda spark, path: spark.read.orc(path),
+      data_path,
+      'DataWritingCommandExec',
+      conf={'spark.rapids.sql.format.orc.write.enabled': True})
+
 
 @pytest.mark.parametrize('orc_gens', orc_write_gens_list, ids=idfn)
 def test_write_empty_orc_round_trip(spark_tmp_path, orc_gens):
