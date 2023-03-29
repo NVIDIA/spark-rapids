@@ -1825,6 +1825,13 @@ object RapidsConf {
     .integerConf
     .createWithDefault(16)
 
+  val ENABLE_AQE_EXCHANGE_REUSE_FIXUP = conf("spark.rapids.sql.aqeExchangeReuseFixup.enable")
+      .doc("Option to turn on the fixup of exchange reuse when running with " +
+          "adaptive query execution.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   private def printSectionHeader(category: String): Unit =
     println(s"\n### $category")
 
@@ -2419,7 +2426,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isDetectDeltaCheckpointQueries: Boolean = get(DETECT_DELTA_CHECKPOINT_QUERIES)
 
-  lazy val concurrentWriterPartitionFlushSize:Long = get(CONCURRENT_WRITER_PARTITION_FLUSH_SIZE)
+  lazy val concurrentWriterPartitionFlushSize: Long = get(CONCURRENT_WRITER_PARTITION_FLUSH_SIZE)
+
+  lazy val isAqeExchangeReuseFixupEnabled: Boolean = get(ENABLE_AQE_EXCHANGE_REUSE_FIXUP)
 
   private val optimizerDefaults = Map(
     // this is not accurate because CPU projections do have a cost due to appending values
