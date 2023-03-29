@@ -192,7 +192,8 @@ class RegularExpressionParserSuite extends FunSuite {
   }
 
   test("multiple choice (3)") {
-    assert(parse("aa|bb|cc") == RegexChoice(RegexSequence(ListBuffer(RegexChar('a'), RegexChar('a'))),
+    assert(parse("aa|bb|cc") ==
+          RegexChoice(RegexSequence(ListBuffer(RegexChar('a'), RegexChar('a'))),
           RegexChoice(RegexSequence(ListBuffer(RegexChar('b'), RegexChar('b'))),
           RegexSequence(ListBuffer(RegexChar('c'), RegexChar('c')))
       )))
