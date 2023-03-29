@@ -804,8 +804,43 @@ def test_regexp_replace_unicode_support():
         ),
         conf=_regexp_conf)
 
-def test_regexp_replace_multi_optimization():
+@allow_non_gpu('ProjectExec', 'RegExpReplace')
+def test_regexp_replace_fallback():
     gen = mk_str_gen('[abcdef]{0,2}')
+
+    conf = { 'spark.rapids.sql.regexp.enabled': 'false' }
+
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'REGEXP_REPLACE(a, "[a-z]+", "PROD")',
+            'REGEXP_REPLACE(a, "aa", "PROD")',
+        ),
+        cpu_fallback_class_name='RegExpReplace',
+        conf=conf
+    )
+
+@pytest.mark.parametrize("regexp_enabled", ['true', 'false'])
+def test_regexp_replace_simple(regexp_enabled):
+    gen = mk_str_gen('[abcdef]{0,2}')
+
+    conf = { 'spark.rapids.sql.regexp.enabled': regexp_enabled }
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
+            'REGEXP_REPLACE(a, "aa", "PROD")',
+            'REGEXP_REPLACE(a, "ab", "PROD")',
+            'REGEXP_REPLACE(a, "ae", "PROD")',
+            'REGEXP_REPLACE(a, "bc", "PROD")',
+            'REGEXP_REPLACE(a, "fa", "PROD")'
+        ),
+        conf=conf
+    )
+
+@pytest.mark.parametrize("regexp_enabled", ['true', 'false'])
+def test_regexp_replace_multi_optimization(regexp_enabled):
+    gen = mk_str_gen('[abcdef]{0,2}')
+
+    conf = { 'spark.rapids.sql.regexp.enabled': regexp_enabled }
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen).selectExpr(
@@ -816,8 +851,10 @@ def test_regexp_replace_multi_optimization():
             'REGEXP_REPLACE(a, "aa|bb|cc|dd", "PROD")',
             'REGEXP_REPLACE(a, "aa|bb|cc|dd|ee", "PROD")',
             'REGEXP_REPLACE(a, "aa|bb|cc|dd|ee|ff", "PROD")'
-        )
+        ),
+        conf=conf
     )
+
 
 def test_regexp_split_unicode_support():
     data_gen = mk_str_gen('([bf]o{0,2}青){1,7}') \

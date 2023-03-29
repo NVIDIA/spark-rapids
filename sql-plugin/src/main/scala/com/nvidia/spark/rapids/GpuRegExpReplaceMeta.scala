@@ -43,7 +43,6 @@ class GpuRegExpReplaceMeta(
   private var containsBackref: Boolean = false
 
   override def tagExprForGpu(): Unit = {
-    GpuRegExpUtils.tagForRegExpEnabled(this)
     replacement = expr.rep match {
       case Literal(s: UTF8String, DataTypes.StringType) if s != null => Some(s.toString)
       case _ => None
@@ -51,33 +50,32 @@ class GpuRegExpReplaceMeta(
 
     expr.regexp match {
       case Literal(s: UTF8String, DataTypes.StringType) if s != null =>
-        if (GpuOverrides.isSupportedStringReplacePattern(expr.regexp)) {
-          javaPattern = Some(s.toString())
-          replaceOpt = Some(GpuRegExpStringReplace)
-        } else {
-          try {
-            javaPattern = Some(s.toString())
-            val (pat, repl) = 
-                new CudfRegexTranspiler(RegexReplaceMode).getTranspiledAST(s.toString, None,
-                    replacement)
-            javaPattern = Some(s.toString())
-            searchList = GpuRegExpUtils.getChoicesFromRegex(pat)
-            searchList match {
-              case Some(_) => 
-                replaceOpt = Some(GpuRegExpStringReplaceMulti)
-              case _ =>
-                GpuRegExpUtils.validateRegExpComplexity(this, pat)
-                cudfPattern = Some(pat.toRegexString)
-                repl.map { r => GpuRegExpUtils.backrefConversion(r.toRegexString) }.foreach {
-                    case (hasBackref, convertedRep) =>
-                      containsBackref = hasBackref
-                      replacement = Some(GpuRegExpUtils.unescapeReplaceString(convertedRep))
-                }
-            }
-          } catch {
-            case e: RegexUnsupportedException =>
-              willNotWorkOnGpu(e.getMessage)
+        javaPattern = Some(s.toString())
+        try {
+          val (pat, repl) =
+              new CudfRegexTranspiler(RegexReplaceMode).getTranspiledAST(s.toString, None,
+                  replacement)
+          repl.map { r => GpuRegExpUtils.backrefConversion(r.toRegexString) }.foreach {
+              case (hasBackref, convertedRep) =>
+                containsBackref = hasBackref
+                replacement = Some(GpuRegExpUtils.unescapeReplaceString(convertedRep))
           }
+          if (!containsBackref && GpuOverrides.isSupportedStringReplacePattern(expr.regexp)) {
+            replaceOpt = Some(GpuRegExpStringReplace)
+          } else {
+              searchList = GpuRegExpUtils.getChoicesFromRegex(pat)
+              searchList match {
+                case Some(_) if !containsBackref =>
+                  replaceOpt = Some(GpuRegExpStringReplaceMulti)
+                case _ =>
+                  GpuRegExpUtils.tagForRegExpEnabled(this)
+                  GpuRegExpUtils.validateRegExpComplexity(this, pat)
+                  cudfPattern = Some(pat.toRegexString)
+              }
+          }
+        } catch {
+          case e: RegexUnsupportedException =>
+            willNotWorkOnGpu(e.getMessage)
         }
 
       case _ =>
