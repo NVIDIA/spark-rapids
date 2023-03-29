@@ -155,8 +155,9 @@ private final class GpuSemaphore() extends Logging with Arm {
   def releaseIfNecessary(context: TaskContext): Unit = {
     val nvtxRange = new NvtxRange("Release GPU", NvtxColor.RED)
     try {
-      RmmSpark.removeCurrentThreadAssociation()
       val taskAttemptId = context.taskAttemptId()
+      GpuTaskMetrics.get.updateRetry(taskAttemptId)
+      RmmSpark.removeCurrentThreadAssociation()
       val refs = activeTasks.get(taskAttemptId)
       if (refs != null && refs.count.getValue > 0) {
         if (refs.count.decrementAndGet() == 0) {
@@ -171,6 +172,7 @@ private final class GpuSemaphore() extends Logging with Arm {
 
   def completeTask(context: TaskContext): Unit = {
     val taskAttemptId = context.taskAttemptId()
+    GpuTaskMetrics.get.updateRetry(taskAttemptId)
     RmmSpark.taskDone(taskAttemptId)
     val refs = activeTasks.remove(taskAttemptId)
     if (refs == null) {
