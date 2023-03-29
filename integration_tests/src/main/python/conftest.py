@@ -225,7 +225,7 @@ def pytest_configure(config):
 # pytest expects this starting list to match for all workers, it is important that the same seed
 # is set for all, either from the environment or as a constant.
 oom_random_injection_seed = int(os.getenv("SPARK_RAPIDS_TEST_INJECT_OOM_SEED", 1))
-print("Starting with OOM injection seed: %s. " % str(oom_random_injection_seed) + 
+print(f"Starting with OOM injection seed: {oom_random_injection_seed}. " 
       "Set env variable SPARK_RAPIDS_TEST_INJECT_OOM_SEED to override.")
 
 def pytest_collection_modifyitems(config, items):
