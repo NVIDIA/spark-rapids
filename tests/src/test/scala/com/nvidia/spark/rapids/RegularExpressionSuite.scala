@@ -26,6 +26,7 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
     .set(RapidsConf.ENABLE_REGEXP.key, "true")
 
   test("Plan toString should not leak internal details of ternary expressions") {
+    assume(isUnicodeEnabled())
     // see https://github.com/NVIDIA/spark-rapids/issues/7924 for background, but our ternary
     // operators, such as GpuRegexpExtract have additional attributes (cuDF patterns) that we
     // do not want displayed when printing a plan
