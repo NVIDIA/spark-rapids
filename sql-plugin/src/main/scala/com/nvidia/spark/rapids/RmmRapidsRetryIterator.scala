@@ -177,6 +177,32 @@ object RmmRapidsRetryIterator extends Arm {
   }
 
   /**
+   * withRestoreOnRetry for CheckpointRestore. This helper function calls `fn` with no input and
+   * returns the result. In the event of an OOM Retry exception, it calls the restore() method
+   * of the input and then throws the oom exception.  This is intended to be used within the `fn`
+   * of one of the withRetry* functions.  It provides an opportunity to reset state in the case
+   * of a retry.
+   *
+   * @param r  a single item T
+   * @param fn the work to perform. Takes no input and produces K
+   * @tparam T element type that must be a `CheckpointRestore` subclass
+   * @tparam K `fn` result type
+   * @return a single item of type K
+   */
+  def withRestoreOnRetry[T <: CheckpointRestore, K](r: T)(fn: => K): K = {
+    try {
+      fn
+    } catch {
+      case t: RetryOOM =>
+        r.restore()
+        throw t
+      case t: SplitAndRetryOOM =>
+        r.restore()
+        throw t
+    }
+  }
+
+  /**
    * Helper method to drain an iterator and ensuring that it was non-empty
    * and it had a single item in it.
    */
@@ -484,4 +510,16 @@ object RmmRapidsRetryIterator extends Arm {
       }
     }
   }
+}
+
+trait CheckpointRestore {
+  /**
+   * Save state so it can be restored in case of an OOM Retry.
+   */
+  def checkpoint(): Unit
+
+  /**
+   * Restore state that was checkpointed.
+   */
+  def restore(): Unit
 }
