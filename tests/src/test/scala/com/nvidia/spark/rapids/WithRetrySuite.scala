@@ -167,6 +167,29 @@ class WithRetrySuite
     }
   }
 
+  test("withRestoreOnRetry restores state for Seq on retry") {
+    val initialValue = 5
+    val increment = 3
+    var didThrow = false
+    val myCheckpointables = Seq(new SimpleCheckpointRestore(initialValue),
+      new SimpleCheckpointRestore(initialValue + 10))
+    try {
+      myCheckpointables.foreach(_.checkpoint())
+      withRetryNoSplit {
+        withRestoreOnRetry(myCheckpointables) {
+          myCheckpointables.foreach(_.value += increment)
+          if (!didThrow) {
+            didThrow = true
+            throw new RetryOOM("in tests")
+          }
+        }
+      }
+    } finally {
+      assert(myCheckpointables(0).value == (initialValue + increment))
+      assert(myCheckpointables(1).value == (initialValue + 10 + increment))
+    }
+  }
+
   private class BaseRmmEventHandler extends RmmEventHandler {
     override def getAllocThresholds: Array[Long] = null
     override def getDeallocThresholds: Array[Long] = null

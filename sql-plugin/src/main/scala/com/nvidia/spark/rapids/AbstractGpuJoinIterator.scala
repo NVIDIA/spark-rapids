@@ -264,12 +264,14 @@ abstract class SplittableJoinIterator(
     }
     withResource(splits) { splits =>
       val schema = GpuColumnVector.extractTypes(cb)
-      val tables = splits.map(_.getTable)
-      val batches = tables.safeMap(GpuColumnVector.from(_, schema))
-      batches.safeMap { splitBatch =>
-        val lazyCb = LazySpillableColumnarBatch(splitBatch, "stream_data")
-        lazyCb.allowSpilling()
-        lazyCb
+      withResource(splits.safeMap(_.getTable)) { tables =>
+        withResource(tables.safeMap(GpuColumnVector.from(_, schema))) { batches =>
+          batches.safeMap { splitBatch =>
+            val lazyCb = LazySpillableColumnarBatch(splitBatch, "stream_data")
+            lazyCb.allowSpilling()
+            lazyCb
+          }
+        }
       }
     }
   }
